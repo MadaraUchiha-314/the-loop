@@ -1,2 +1,90 @@
 # the-loop
-The loop for everything!
+
+**The loop for everything!** — an opinionated product-development-lifecycle (PDLC)
+harness, shipped as a Claude Code plugin. Once a plan is approved, an agent harness
+delivers a work item end-to-end with minimal or no human intervention, escalating to
+humans only when a decision is genuinely needed.
+
+> Status: **v0 foundation.** This release establishes the plugin skeleton, the
+> configuration contract, templates, commands, the operating skill, and the
+> documentation/knowledge structure. Runtime automation (webhooks, remote execution,
+> DAG orchestration, language-specific tooling) is tracked as follow-up work. See
+> [`docs/decisions/decision-003.md`](docs/decisions/decision-003.md).
+
+## The loop, in one line
+
+`define → plan (+approve) → execute (+self-check) → self-review → critic-review → escalate → evidence → learn`
+
+## Install (Claude Code)
+
+the-loop is installable directly from GitHub via the marketplace construct — no
+bespoke marketplace publishing.
+
+```
+/plugin marketplace add MadaraUchiha-314/the-loop
+/plugin install the-loop@the-loop
+```
+
+## Commands
+
+| Command | What it does |
+|---------|--------------|
+| `/the-loop:init` | Scaffold the-loop into the current repo (config, docs, templates). Idempotent. |
+| `/the-loop:work-on <ticket>` | Run the loop on a GitHub issue / Jira id. Resumable. |
+| `/the-loop:upgrade-the-loop` | Reconcile a project's the-loop files with the installed plugin version. |
+
+## How it works
+
+- **Configuration** lives in [`.the-loop/config.yaml`](.the-loop/templates/config.yaml),
+  validated against [`.the-loop/config.schema.json`](.the-loop/config.schema.json). A
+  subset of keys can be overridden per work item via the markdown front-matter.
+- **Everything the-loop manages** is tracked in
+  [`.the-loop/manifest.yaml`](.the-loop/manifest.yaml).
+- **Templates** for epics, stories, bugs and the process artifacts live under
+  [`.the-loop/templates/`](.the-loop/templates/).
+- **The operating model** is captured in the
+  [`the-loop` skill](skills/the-loop/SKILL.md).
+
+## Rules the loop enforces
+
+- Every work item has a ticket. A delivery plan is created and **approved before
+  execution**.
+- Collaborators are identified up-front; not every task needs every persona.
+- Every human decision leaves a **paper trail** on the ticket or PR.
+- Self-checks run tests at logical checkpoints; progress is logged for visibility.
+- Configured self-reviews and critic reviews run **before** escalating to a human.
+- The same tooling runs locally and in CI; logging is identical at dev-time and runtime.
+
+## Repository layout
+
+```
+.claude-plugin/        plugin.json, marketplace.json
+.the-loop/             config schema, default config, manifest, templates, registries
+commands/              init, work-on, upgrade-the-loop
+skills/the-loop/       operating-model skill
+hooks/                 hooks.json (SessionStart reminder)
+docs/
+  architecture/        architecture.md (index)
+  decisions/           decisions.md + decision-<nnn>.md
+  delivery-plans/      <id>-delivery-plan.md   (checked in)
+  execution-logs/      <id>-execution-log.md   (checked in)
+learnings/             learnings.md + learning-<nnn>.md
+```
+
+## Roadmap (deferred from v0)
+
+- Webhook triggers (PR review comments, GitHub Actions results).
+- Remote-workspace execution ("the dream").
+- DAG orchestration across work items (depends-on / blocked-by).
+- Concrete per-language tooling integrations (uv, bun, nx, pytest, vitest, playwright,
+  oxlint, ruff, pyright, …) and messaging integrations.
+- Cursor packaging.
+
+## Feedback
+
+All feedback for the-loop is provided through GitHub issues on this repository. And —
+fittingly — the-loop uses the-loop to improve itself.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

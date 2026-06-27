@@ -1,0 +1,14 @@
+# .the-loop/collaborators.yaml
+# The complete list of collaborators available for this project, defined up-front.
+# Collaborators may be individuals or groups. A user can hold multiple roles.
+# All collaboration happens through ticket/PR comments; notifications/escalations
+# go through configured messaging channels.
+
+collaborators:
+  # - handle: "@MadaraUchiha-314"
+  #   kind: individual            # individual | group
+  #   roles: [product-manager, architect, engineer, approver]
+  #   notify: [slack]             # channels (must exist in config.messaging)
+  # - handle: "@org/design"
+  #   kind: group
+  #   roles: [designer]

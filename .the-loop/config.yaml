@@ -1,0 +1,63 @@
+# .the-loop/config.yaml — configuration for the-loop's own repository.
+# Validated against .the-loop/config.schema.json.
+
+version: "0.1.0"
+
+ticketing:
+  system: github
+  github:
+    owner: MadaraUchiha-314
+    repo: the-loop
+    useProjects: true
+
+repository:
+  monorepo: false          # the-loop itself is not (yet) a monorepo
+  monorepoTool: none
+  runScriptsFromRoot: true
+
+tooling:
+  languages: [ts]
+  packageManager:
+    ts: bun
+  unitTest:
+    ts: vitest
+  integrationTest:
+    ts: playwright
+  lint:
+    ts: oxlint
+    markdown: markdownlint
+  typeCheck:
+    ts: tsc
+  release:
+    ts: npm
+    containers: ghcr
+
+localOrchestration:
+  containerRuntime: podman
+  linkPackagesLocally: true
+  remoteServices: []
+
+hooks:
+  preCommit: [lint, typecheck, unit-test]
+  prePush: [lint, typecheck, unit-test]
+
+observability:
+  devLevel: debug
+  runtimeLevel: info
+  browserLogging: chrome-devtools-mcp
+
+reviews:
+  selfReviewCount: 3
+  criticReviewCount: 3
+  critics: []
+
+personas:
+  - handle: "@MadaraUchiha-314"
+    kind: individual
+    roles: [product-manager, architect, engineer, approver]
+
+messaging:
+  channels: []
+
+externalTools:
+  referenceFile: .the-loop/external-tools.md

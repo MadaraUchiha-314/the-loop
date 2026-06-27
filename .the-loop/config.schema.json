@@ -1,0 +1,262 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/MadaraUchiha-314/the-loop/.the-loop/config.schema.json",
+  "title": "the-loop configuration",
+  "description": "Schema for .the-loop/config.yaml. A subset of these keys may be overridden per work-item via the YAML front-matter of the work-item / delivery-plan markdown.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "ticketing", "repository", "reviews"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Schema version of this config file. Used by /upgrade-the-loop to reconcile.",
+      "examples": ["0.1.0"]
+    },
+    "ticketing": {
+      "type": "object",
+      "description": "Where work items live.",
+      "additionalProperties": false,
+      "required": ["system"],
+      "properties": {
+        "system": {
+          "type": "string",
+          "enum": ["github", "jira"],
+          "default": "github"
+        },
+        "github": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "owner": { "type": "string" },
+            "repo": { "type": "string" },
+            "useProjects": { "type": "boolean", "default": true }
+          }
+        },
+        "jira": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "baseUrl": { "type": "string", "format": "uri" },
+            "projectKey": { "type": "string" }
+          }
+        }
+      }
+    },
+    "repository": {
+      "type": "object",
+      "description": "Repository layout and tooling.",
+      "additionalProperties": false,
+      "required": ["monorepo"],
+      "properties": {
+        "monorepo": { "type": "boolean", "default": true },
+        "monorepoTool": {
+          "type": "string",
+          "enum": ["nx", "yarn", "pnpm", "bun", "none"],
+          "default": "nx",
+          "description": "Only meaningful when monorepo is true. Default is Nx; the-loop must also work when monorepo is false."
+        },
+        "runScriptsFromRoot": {
+          "type": "boolean",
+          "default": true,
+          "description": "All scripts are invoked from the project root."
+        }
+      }
+    },
+    "tooling": {
+      "type": "object",
+      "description": "Per-language tooling. RULE: CI/CD must use exactly the same tooling as local.",
+      "additionalProperties": false,
+      "properties": {
+        "languages": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["python", "js", "ts", "go"] },
+          "uniqueItems": true
+        },
+        "packageManager": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "python": { "type": "string", "default": "uv" },
+            "js": { "type": "string", "default": "bun" },
+            "ts": { "type": "string", "default": "bun" },
+            "go": { "type": "string", "default": "go" }
+          }
+        },
+        "unitTest": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "python": { "type": "string", "default": "pytest" },
+            "js": { "type": "string", "default": "vitest" },
+            "ts": { "type": "string", "default": "vitest" },
+            "go": { "type": "string", "default": "go test" }
+          }
+        },
+        "integrationTest": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "python": { "type": "string", "default": "pytest" },
+            "js": { "type": "string", "default": "playwright" },
+            "ts": { "type": "string", "default": "playwright" },
+            "go": { "type": "string", "default": "go test" }
+          }
+        },
+        "lint": {
+          "type": "object",
+          "description": "RULE: all files including markdown should be linted.",
+          "additionalProperties": false,
+          "properties": {
+            "python": { "type": "string", "default": "ruff" },
+            "js": { "type": "string", "default": "oxlint" },
+            "ts": { "type": "string", "default": "oxlint" },
+            "go": { "type": "string", "default": "golangci-lint" },
+            "markdown": { "type": "string", "default": "markdownlint" }
+          }
+        },
+        "typeCheck": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "python": { "type": "string", "default": "pyright" },
+            "ts": { "type": "string", "default": "tsc" },
+            "go": { "type": "string", "default": "go build" }
+          }
+        },
+        "release": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "js": { "type": "string", "default": "npm" },
+            "ts": { "type": "string", "default": "npm" },
+            "python": { "type": "string", "default": "pypi" },
+            "go": { "type": "string", "default": "go-modules" },
+            "containers": { "type": "string", "default": "ghcr" }
+          }
+        }
+      }
+    },
+    "localOrchestration": {
+      "type": "object",
+      "description": "Multi-artifact & multi-entity testing.",
+      "additionalProperties": false,
+      "properties": {
+        "containerRuntime": { "type": "string", "default": "podman" },
+        "linkPackagesLocally": { "type": "boolean", "default": true },
+        "remoteServices": {
+          "type": "array",
+          "description": "Services that should point at a remote instead of running locally.",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "hooks": {
+      "type": "object",
+      "description": "Pre-commit / pre-push gating. RULE: same tooling as CI.",
+      "additionalProperties": false,
+      "properties": {
+        "preCommit": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["lint", "typecheck", "unit-test"] },
+          "default": ["lint", "typecheck", "unit-test"]
+        },
+        "prePush": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["lint", "typecheck", "unit-test", "integration-test"] },
+          "default": ["lint", "typecheck", "unit-test"]
+        }
+      }
+    },
+    "observability": {
+      "type": "object",
+      "description": "Logging must be identical at dev-time and run-time; only breakpoints differ.",
+      "additionalProperties": false,
+      "properties": {
+        "devLevel": { "type": "string", "enum": ["debug", "info", "warn", "error"], "default": "debug" },
+        "runtimeLevel": { "type": "string", "enum": ["debug", "info", "warn", "error"], "default": "info" },
+        "browserLogging": {
+          "type": "string",
+          "description": "How browser logs are surfaced to the harness, e.g. chrome-devtools-mcp.",
+          "default": "chrome-devtools-mcp"
+        }
+      }
+    },
+    "reviews": {
+      "type": "object",
+      "description": "Self-review and critic-review loop before escalating to a human.",
+      "additionalProperties": false,
+      "required": ["selfReviewCount", "criticReviewCount"],
+      "properties": {
+        "selfReviewCount": { "type": "integer", "minimum": 0, "default": 3 },
+        "criticReviewCount": { "type": "integer", "minimum": 0, "default": 3 },
+        "critics": {
+          "type": "array",
+          "description": "Alternate harness/model combos used as critics, e.g. cursor+gpt-5.5 reviewing claude-opus output.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string" },
+              "harness": { "type": "string", "enum": ["claude", "cursor"] },
+              "model": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "personas": {
+      "type": "array",
+      "description": "People and groups available to collaborate. A user can hold multiple roles.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["handle", "roles"],
+        "properties": {
+          "handle": { "type": "string", "description": "GitHub handle or group, e.g. @octocat or @org/team." },
+          "kind": { "type": "string", "enum": ["individual", "group"], "default": "individual" },
+          "roles": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": ["product-manager", "architect", "designer", "engineer", "qa", "reviewer", "approver"]
+            }
+          }
+        }
+      }
+    },
+    "messaging": {
+      "type": "object",
+      "description": "Optional channels for notifying/escalating to humans when a decision is pending.",
+      "additionalProperties": false,
+      "properties": {
+        "channels": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type"],
+            "properties": {
+              "type": { "type": "string", "enum": ["slack", "whatsapp", "email"] },
+              "target": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "externalTools": {
+      "type": "object",
+      "description": "Tools/skills/MCPs/plugins the-loop should be aware of. Free-form, fully user-configurable.",
+      "additionalProperties": false,
+      "properties": {
+        "referenceFile": {
+          "type": "string",
+          "default": ".the-loop/external-tools.md",
+          "description": "Path to a free-form markdown file describing available tools/MCPs/plugins."
+        },
+        "notes": { "type": "string", "description": "Inline free-form description (alternative to referenceFile)." }
+      }
+    }
+  }
+}
