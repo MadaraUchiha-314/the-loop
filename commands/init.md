@@ -27,18 +27,24 @@ and the templates under `${CLAUDE_PLUGIN_ROOT}/.the-loop/templates/`.
    - `.the-loop/external-tools.md` and `.the-loop/collaborators.yaml` — from templates (user-owned).
    - `.the-loop/templates/` — the work-item & process templates.
    - `docs/architecture/architecture.md`, `docs/decisions/decisions.md`,
-     `docs/delivery-plans/`, `docs/execution-logs/`.
+     `docs/specs/` (per-work-item Kiro specs + execution logs).
    - `learnings/learnings.md`.
 
-3. **Validate** the generated `.the-loop/config.yaml` against
+3. **Create phase labels/tags** in the ticketing system for the workflow state
+   machine — one per `workflow.phases`, named `<workflow.phaseLabelPrefix><phase>`
+   (e.g. `loop:requirements-definition`, `loop:design`, … `loop:complete`). On GitHub
+   create issue labels; on Jira create the equivalent statuses/labels. Skip any that
+   already exist.
+
+4. **Validate** the generated `.the-loop/config.yaml` against
    `.the-loop/config.schema.json`. Report any gaps the user must fill (e.g. empty
    `personas`, `ticketing.github.owner`).
 
-4. **Confirm collaborators & personas.** If `personas`/collaborators are empty, ask
+5. **Confirm collaborators & personas.** If `personas`/collaborators are empty, ask
    the user (via a ticket comment if a ticket exists, otherwise interactively) to
    define at least one approver. RULE: every decision needs a paper trail.
 
-5. **Summarize** what was created and the immediate next action
+6. **Summarize** what was created and the immediate next action
    (`/the-loop:work-on <ticket>`).
 
 Respect existing files. This command is idempotent and safe to re-run.

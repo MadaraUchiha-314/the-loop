@@ -13,7 +13,13 @@ humans only when a decision is genuinely needed.
 
 ## The loop, in one line
 
-`define → plan (+approve) → execute (+self-check) → self-review → critic-review → escalate → evidence → learn`
+`requirements → design → tasks (each human-reviewed) → implement (+self-check) → self/critic review → evidence → complete → learn`
+
+Work items are specified with a [Kiro-style](https://kiro.dev/docs/specs/) 3-phase
+spec (`requirements.md` → `design.md` → `tasks.md`), each gated by a human review, then
+executed autonomously. Each work item's phase is tracked on the ticket via labels:
+`not-started → requirements-definition → design → tasks-breakdown → implementation →
+needs-review → complete`.
 
 ## Install (Claude Code)
 
@@ -30,7 +36,7 @@ bespoke marketplace publishing.
 | Command | What it does |
 |---------|--------------|
 | `/the-loop:init` | Scaffold the-loop into the current repo (config, docs, templates). Idempotent. |
-| `/the-loop:work-on <ticket>` | Run the loop on a GitHub issue / Jira id. Resumable. |
+| `/the-loop:work-on <ticket>` | Run the 3-phase spec workflow (requirements → design → tasks → execute) on a GitHub issue / Jira id. Resumable per phase. |
 | `/the-loop:upgrade-the-loop` | Reconcile a project's the-loop files with the installed plugin version. |
 
 ## How it works
@@ -40,15 +46,16 @@ bespoke marketplace publishing.
   subset of keys can be overridden per work item via the markdown front-matter.
 - **Everything the-loop manages** is tracked in
   [`.the-loop/manifest.yaml`](.the-loop/manifest.yaml).
-- **Templates** for epics, stories, bugs and the process artifacts live under
+- **Templates** for epics, stories, bugs and the 3-phase spec artifacts
+  (`requirements`/`bugfix`, `design`, `tasks`, `execution-log`) live under
   [`.the-loop/templates/`](.the-loop/templates/).
 - **The operating model** is captured in the
   [`the-loop` skill](skills/the-loop/SKILL.md).
 
 ## Rules the loop enforces
 
-- Every work item has a ticket. A delivery plan is created and **approved before
-  execution**.
+- Every work item has a ticket. Its 3-phase spec is **reviewed and approved per phase
+  before execution**.
 - Collaborators are identified up-front; not every task needs every persona.
 - Every human decision leaves a **paper trail** on the ticket or PR.
 - Self-checks run tests at logical checkpoints; progress is logged for visibility.
@@ -66,8 +73,7 @@ hooks/                 hooks.json (SessionStart reminder)
 docs/
   architecture/        architecture.md (index)
   decisions/           decisions.md + decision-<nnn>.md
-  delivery-plans/      <id>-delivery-plan.md   (checked in)
-  execution-logs/      <id>-execution-log.md   (checked in)
+  specs/<id>/          requirements.md|bugfix.md, design.md, tasks.md, execution-log.md
 learnings/             learnings.md + learning-<nnn>.md
 ```
 

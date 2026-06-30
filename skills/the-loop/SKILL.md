@@ -5,23 +5,43 @@ description: The operating model for delivering product work items end-to-end. U
 
 # the-loop
 
-"the-loop" is an opinionated product-development-lifecycle (PDLC) harness. Once a
-plan is approved, the harness executes a work item end-to-end with minimal or no
-human intervention, escalating only when a decision is genuinely required.
+"the-loop" is an opinionated product-development-lifecycle (PDLC) harness. Once the
+3-phase spec (requirements → design → tasks) is approved, the harness executes a work
+item end-to-end with minimal or no human intervention, escalating only when a decision
+is genuinely required.
+
+## The 3-phase spec workflow (Kiro-style)
+
+Every non-trivial work item is specified in three phases, each gated by a human review
+(https://kiro.dev/docs/specs/). Specs live in `docs/specs/<id>/`:
+
+1. **`requirements.md`** (or **`bugfix.md`** for bugs) — user stories + EARS acceptance
+   criteria. Phase label: `requirements-definition`.
+2. **`design.md`** — architecture, components, data models, error handling, testing
+   strategy. Phase label: `design`.
+3. **`tasks.md`** — a DAG of small, verifiable tasks referencing requirements. Phase
+   label: `tasks-breakdown`.
+
+The work item's **phase** is tracked on the ticket via a label
+(`<phaseLabelPrefix><phase>`) and mirrored in the execution log. The state machine:
+
+`not-started → requirements-definition → design → tasks-breakdown → implementation → needs-review → complete`
 
 ## Operating principles (rules)
 
 - **Every work item has a ticket.** Nothing the harness works on lacks a GH issue (or
   Jira) ticket.
-- **Plan before execution.** A `docs/delivery-plans/<id>-delivery-plan.md` is created,
-  reviewed and approved by the required collaborators before any code is written.
+- **Spec before execution.** The 3-phase spec under `docs/specs/<id>/` is created and
+  each phase reviewed/approved by the required collaborators before code is written.
+- **Human review per phase.** A human approves at the end of requirements, design and
+  tasks (`workflow.requireHumanReviewPerPhase`, default true).
 - **Identify collaborators up-front.** Each work item names the personas it needs
   (architect, designer, PM, engineer, QA…). Not every task needs every persona. More
   can be added later.
 - **Paper trail.** Every decision/opinion from a human is captured on the ticket or
   the PR. Planning questions → ticket comments. PR review → PR comments/replies.
-- **Self-check continuously.** Maintain `docs/execution-logs/<id>-execution-log.md`;
-  run tests at logical checkpoints; log progress for user visibility.
+- **Self-check continuously.** Maintain `docs/specs/<id>/execution-log.md`; keep the
+  phase label in sync; run tests at logical checkpoints; log progress for visibility.
 - **Review before escalating.** Run configured self-reviews then critic reviews
   (a different harness/model) before reaching out to a human reviewer. All reviews are
   comments on the PR/ticket.
@@ -35,8 +55,8 @@ human intervention, escalating only when a decision is genuinely required.
 
 The project's behaviour is driven by `.the-loop/config.yaml`, validated against
 `.the-loop/config.schema.json`. A subset of keys can be overridden per work item via
-the YAML front-matter `overrides` of the work-item / delivery-plan markdown. Files the
-loop manages are listed in `.the-loop/manifest.yaml`.
+the YAML front-matter `overrides` of the work-item / spec markdown. Files the loop
+manages are listed in `.the-loop/manifest.yaml`.
 
 ## Commands
 

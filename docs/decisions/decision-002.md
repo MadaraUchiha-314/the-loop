@@ -16,7 +16,7 @@ must be overridable globally and per task.
 - Configuration lives in `.the-loop/config.yaml`, validated against a versioned
   `.the-loop/config.schema.json` that the plugin owns and exposes.
 - A subset of config keys is overridable per work item via the YAML front-matter
-  `overrides` of the work-item / delivery-plan markdown.
+  `overrides` of the work-item / spec markdown.
 
 ## Consequences
 - `/init` and `/upgrade-the-loop` have a single source of truth to reconcile against.

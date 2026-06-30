@@ -15,6 +15,20 @@ repository:
   monorepoTool: none
   runScriptsFromRoot: true
 
+workflow:
+  specApproach: kiro-3-phase
+  requireHumanReviewPerPhase: true
+  specDir: docs/specs
+  phaseLabelPrefix: "loop:"
+  phases:
+    - not-started
+    - requirements-definition
+    - design
+    - tasks-breakdown
+    - implementation
+    - needs-review
+    - complete
+
 tooling:
   languages: [ts]
   packageManager:

@@ -25,13 +25,21 @@ Everything the-loop creates/maintains is tracked in `.the-loop/manifest.yaml`.
 - `external-tools.md`, `collaborators.yaml` — user-owned registries.
 
 ### 3. The loop (runtime workflow)
-`define → plan (+approve) → execute (+self-check) → self-review → critic-review →
-escalate → evidence → learn`. Implemented as commands/skills today; hooks add
-predictability where a step must always run.
+A Kiro-style 3-phase spec workflow (https://kiro.dev/docs/specs/), each phase gated by
+a human review, then autonomous execution:
+
+`requirements/bugfix (+approve) → design (+approve) → tasks DAG (+approve) →
+implementation (+self-check) → self-review → critic-review → needs-review → evidence →
+complete → learn`.
+
+The work item's phase is tracked on the ticket via labels and mirrored in the execution
+log: `not-started → requirements-definition → design → tasks-breakdown → implementation
+→ needs-review → complete`. Per-work-item specs live in `docs/specs/<id>/`. Implemented
+as commands/skills today; hooks add predictability where a step must always run.
 
 ### 4. Knowledge & feedback
-- `docs/architecture/`, `docs/decisions/`, `docs/delivery-plans/`,
-  `docs/execution-logs/`, `learnings/`.
+- `docs/architecture/`, `docs/decisions/`, `docs/specs/<id>/` (requirements/bugfix,
+  design, tasks, execution-log), `learnings/`.
 
 ### 5. Collaboration & ticketing
 - GitHub Issues/Projects (default) or Jira. All collaboration via ticket/PR comments;

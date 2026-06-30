@@ -28,19 +28,33 @@ templates:
   - path: .the-loop/templates/epic.md
   - path: .the-loop/templates/story.md
   - path: .the-loop/templates/bug.md
-  - path: .the-loop/templates/delivery-plan.md
+  - path: .the-loop/templates/requirements.md
+  - path: .the-loop/templates/bugfix.md
+  - path: .the-loop/templates/design.md
+  - path: .the-loop/templates/tasks.md
   - path: .the-loop/templates/execution-log.md
   - path: .the-loop/templates/decision.md
   - path: .the-loop/templates/learning.md
   - path: .the-loop/templates/config.yaml
   - path: .the-loop/templates/collaborators.yaml
 
-# Per-work-item artifacts. <id> is the ticket id (e.g. issue-1, PROJ-42).
-# These MUST be checked in.
+# Per-work-item artifacts: the Kiro-style 3-phase spec plus the execution log.
+# <id> is the ticket id (e.g. issue-1, PROJ-42). These MUST be checked in.
+# A bug uses bugfix.md in place of requirements.md.
 workItemArtifacts:
-  - pathPattern: docs/delivery-plans/<id>-delivery-plan.md
-    role: delivery-plan
-  - pathPattern: docs/execution-logs/<id>-execution-log.md
+  - pathPattern: docs/specs/<id>/requirements.md
+    role: spec-requirements
+    phase: requirements-definition
+  - pathPattern: docs/specs/<id>/bugfix.md
+    role: spec-bugfix
+    phase: requirements-definition
+  - pathPattern: docs/specs/<id>/design.md
+    role: spec-design
+    phase: design
+  - pathPattern: docs/specs/<id>/tasks.md
+    role: spec-tasks
+    phase: tasks-breakdown
+  - pathPattern: docs/specs/<id>/execution-log.md
     role: execution-log
 
 # Long-lived project knowledge maintained by the-loop.

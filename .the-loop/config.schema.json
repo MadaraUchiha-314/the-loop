@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/MadaraUchiha-314/the-loop/.the-loop/config.schema.json",
   "title": "the-loop configuration",
-  "description": "Schema for .the-loop/config.yaml. A subset of these keys may be overridden per work-item via the YAML front-matter of the work-item / delivery-plan markdown.",
+  "description": "Schema for .the-loop/config.yaml. A subset of these keys may be overridden per work-item via the YAML front-matter of the work-item / spec markdown.",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "ticketing", "repository", "reviews"],
@@ -59,6 +59,59 @@
           "type": "boolean",
           "default": true,
           "description": "All scripts are invoked from the project root."
+        }
+      }
+    },
+    "workflow": {
+      "type": "object",
+      "description": "The Kiro-style 3-phase spec workflow and the phase state machine tracked on the ticket.",
+      "additionalProperties": false,
+      "properties": {
+        "specApproach": {
+          "type": "string",
+          "enum": ["kiro-3-phase"],
+          "default": "kiro-3-phase",
+          "description": "requirements(.md)/bugfix(.md) -> design.md -> tasks.md, each gated by a human review."
+        },
+        "requireHumanReviewPerPhase": {
+          "type": "boolean",
+          "default": true,
+          "description": "A human review/approval is required at the end of each spec phase."
+        },
+        "specDir": {
+          "type": "string",
+          "default": "docs/specs",
+          "description": "Per-work-item spec files live in <specDir>/<id>/{requirements|bugfix,design,tasks,execution-log}.md."
+        },
+        "phaseLabelPrefix": {
+          "type": "string",
+          "default": "loop:",
+          "description": "Prefix for the labels/tags created in the ticketing system to track phase."
+        },
+        "phases": {
+          "type": "array",
+          "description": "Ordered phase state machine for a work item. Each maps to a ticket label.",
+          "default": [
+            "not-started",
+            "requirements-definition",
+            "design",
+            "tasks-breakdown",
+            "implementation",
+            "needs-review",
+            "complete"
+          ],
+          "items": {
+            "type": "string",
+            "enum": [
+              "not-started",
+              "requirements-definition",
+              "design",
+              "tasks-breakdown",
+              "implementation",
+              "needs-review",
+              "complete"
+            ]
+          }
         }
       }
     },
