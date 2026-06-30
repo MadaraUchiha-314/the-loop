@@ -49,10 +49,15 @@ mirror it in the execution log's `phase` front-matter:
    small, verifiable tasks, each referencing the requirement(s) it satisfies and its
    dependencies. Request human review; do not proceed until approved.
 
-6. **Implementation** (`implementation`). Execute the task DAG autonomously. Maintain
-   `docs/specs/<id>/execution-log.md`: append progress, check off tasks, and run tests
-   (unit/integration per config) at logical checkpoints — self-checking as you go.
-   Same tooling as CI; logging/observability identical to runtime.
+   **After each phase doc is established, update the ticket with a reference (link) to
+   the checked-in artifact** — single source of truth, not a copy. Later changes to a
+   spec doc are made as **edits to that file, not new comments**.
+
+6. **Implementation** (`implementation`). Execute the task DAG autonomously. **Tick each
+   task in `tasks.md` (`- [ ]` → `- [x]`) as it completes.** Maintain
+   `docs/specs/<id>/execution-log.md`: append progress and run tests (unit/integration
+   per config) at logical checkpoints — self-checking as you go. Same tooling as CI;
+   logging/observability identical to runtime.
 
 7. **Review** (`needs-review`). Run up to `reviews.selfReviewCount` self-reviews and
    `reviews.criticReviewCount` critic reviews (configured critics, e.g. a different

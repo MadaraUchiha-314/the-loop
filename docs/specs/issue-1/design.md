@@ -31,7 +31,8 @@ Six components. Each requirement maps to one or more.
 | The loop (behaviour) | `commands/`, `skills/the-loop/` (+ `reference/`), `hooks/` | R4, and operationalizes R1–R6 |
 | Knowledge & feedback | `docs/{architecture,decisions,specs}/`, `learnings/` | R4, R6 |
 | Collaboration & ticketing | GitHub/Jira; comments as paper trail; `collaborators.yaml`, `messaging` | R1, R5 |
-| Automation (future) | webhooks, remote exec, DAG orchestration | R8 [deferred] |
+| CLI companion | `cli/` Python package `the_loop` (`gh-webhook` receiver) | R9, R8 (receiver) |
+| Automation (future) | remote exec, DAG orchestration, event→harness routing | R8 [deferred] |
 
 ## Components & interfaces
 
@@ -61,7 +62,15 @@ Six components. Each requirement maps to one or more.
 
 ### Hooks (predictability)
 - `hooks/hooks.json` ships a SessionStart reminder in v0; the predictability mechanism
-  (hooks vs custom code) for forcing PDLC steps is an open question.
+  (hooks vs custom code/scripts) for forcing PDLC steps is an open question — the CLI is
+  a natural home for scripted guarantees.
+
+### CLI companion (R9)
+- `cli/` is a Python package `the_loop` with the `the-loop` entry point and an
+  extensible command registry (`Command` + `@register`). Core is stdlib-only.
+- `gh-webhook start|stop` runs a threaded `http.server` receiver that HMAC-verifies
+  GitHub deliveries (secret from env), serves `GET /health`, logs events, and exposes an
+  `on_event` seam for future harness routing. Config: `webhooks.ghWebhook`.
 
 ## Data models
 - `.the-loop/config.yaml` ⟷ `config.schema.json`.

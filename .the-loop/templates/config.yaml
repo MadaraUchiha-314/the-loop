@@ -94,3 +94,12 @@ messaging:
 
 externalTools:
   referenceFile: .the-loop/external-tools.md
+
+webhooks:
+  ghWebhook:
+    host: 127.0.0.1
+    port: 8787
+    path: /webhook
+    secretEnv: THE_LOOP_GH_WEBHOOK_SECRET   # env var holding the secret (not stored here)
+    pidfile: .the-loop/gh-webhook.pid
+    events: []   # e.g. [pull_request_review_comment, workflow_run]

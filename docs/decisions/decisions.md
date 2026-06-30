@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [005](decision-005.md) | Provide a lightweight, extensible Python CLI (`the-loop`) | accepted | 2026-06-30 |
 | [004](decision-004.md) | Adopt Kiro's 3-phase spec workflow for the loop | accepted | 2026-06-30 |
 | [003](decision-003.md) | Bootstrap a v0 skeleton first, defer runtime automation | accepted | 2026-06-27 |
 | [002](decision-002.md) | Track the-loop's footprint via `.the-loop/manifest.yaml` and a config schema | accepted | 2026-06-27 |

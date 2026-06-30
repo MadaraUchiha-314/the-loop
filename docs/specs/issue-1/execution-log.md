@@ -57,6 +57,31 @@ status: in-progress
 - **Blockers:** None. Note: `design.md`/`tasks.md` already existed on the branch since
   commit 4ab647b; now made substantive.
 
+### 2026-06-30 — Add the the-loop Python CLI (gh-webhook receiver)
+- **Phase:** needs-review
+- **Did:** Per issue-#1 update (Realization §6), added a lightweight, extensible Python
+  CLI under `cli/` (package `the_loop`, zero runtime deps): command registry
+  (`Command` + `@register`) and `the-loop gh-webhook start|stop` — a stdlib webhook
+  receiver that HMAC-verifies `X-Hub-Signature-256`, serves `GET /health`, logs events,
+  and exposes an `on_event` seam. Added `webhooks.ghWebhook` to the schema + both
+  configs, `decision-005`, architecture component 6, reference + README sections, and
+  folded R9 + a CLI task into the issue-1 spec. Added `pytest` tests.
+- **Checkpoint/tests:** `pytest` → 7 passed. Live smoke test: `/health` 200; signed POST
+  202; bad signature 401; clean SIGTERM stop. JSON + both configs validate against the
+  updated schema.
+- **Next:** Fold in the latest issue updates, then push to PR #2.
+- **Blockers:** None.
+
+### 2026-06-30 — Encode artifact-reference & tasks.md-checkmark rules
+- **Phase:** needs-review
+- **Did:** Per issue-#1 update (LOOP §4.5, §4.8), encoded two rules across the artifacts:
+  (1) once requirements/design/tasks exist, reference them on the ticket (single source
+  of truth) and make later changes as edits, not new comments; (2) keep `tasks.md`
+  checkmarks current as tasks complete. Updated `reference/workflow.md`, `SKILL.md`,
+  `work-on.md`, and requirements R4.
+- **Checkpoint/tests:** Schema/config validation + CLI pytest still green.
+- **Next:** Push to PR #2; reference the spec artifacts in the PR thread.
+
 ## Review cycles
 | Cycle | Type (self/critic) | Reviewer | Outcome | Link |
 |-------|--------------------|----------|---------|------|

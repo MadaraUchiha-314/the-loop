@@ -39,38 +39,42 @@ overrides: {}
   - _Depends on:_ 2, 4 — _Requirements:_ R4
 - [x] 10. Validate (JSON, schema, manifest tree); commit; push
   - _Depends on:_ 1–9 — _Requirements:_ R2, R7
+- [x] 11. CLI: extensible `the-loop` Python CLI (zero-dep core) + `gh-webhook start|stop`
+       receiver (HMAC verify, `/health`, pytest); `webhooks.ghWebhook` config
+  - _Depends on:_ 2 — _Requirements:_ R9, R8 (receiver)
 
 ## Deferred — runtime & integrations (follow-up work items)
 
-- [ ] 11. Make `init` actually scaffold (write files, detect tooling, create labels)
+- [ ] 12. Make `init` actually scaffold (write files, detect tooling, create labels)
   - _Depends on:_ 4 — _Requirements:_ R7
-- [ ] 12. Per-language tooling integrations: uv/bun, pytest/vitest, playwright, ruff/
+- [ ] 13. Per-language tooling integrations: uv/bun, pytest/vitest, playwright, ruff/
        oxlint, pyright/tsc, markdownlint, with root scripts
   - _Depends on:_ 2 — _Requirements:_ R2
-- [ ] 13. Pre-commit/pre-push hooks + CI workflow sharing the SAME commands
-  - _Depends on:_ 12 — _Requirements:_ R2
-- [ ] 14. Multi-entity testing: local linking, podman service orchestration, local-vs-
+- [ ] 14. Pre-commit/pre-push hooks + CI workflow sharing the SAME commands
+  - _Depends on:_ 13 — _Requirements:_ R2
+- [ ] 15. Multi-entity testing: local linking, podman service orchestration, local-vs-
        remote selection
-  - _Depends on:_ 12 — _Requirements:_ R2
-- [ ] 15. Observability wiring: shared logger, configurable levels, chrome-devtools MCP
+  - _Depends on:_ 13 — _Requirements:_ R2
+- [ ] 16. Observability wiring: shared logger, configurable levels, chrome-devtools MCP
        browser logs
   - _Depends on:_ none — _Requirements:_ R3
-- [ ] 16. Messaging integrations (slack/whatsapp/email) for escalations
+- [ ] 17. Messaging integrations (slack/whatsapp/email) for escalations
   - _Depends on:_ none — _Requirements:_ R5
-- [ ] 17. Predictability: decide hooks vs custom code; enforce PDLC steps
+- [ ] 18. Predictability: decide hooks vs custom code/scripts; enforce PDLC steps
   - _Depends on:_ 5 — _Requirements:_ R4
-- [ ] 18. Webhooks: GitHub PR-comment and Actions triggers → harness
-  - _Depends on:_ 17 — _Requirements:_ R8
-- [ ] 19. Remote-workspace auto-trigger on ticket creation ("the dream")
-  - _Depends on:_ 18 — _Requirements:_ R8
-- [ ] 20. Project-wide DAG orchestration (depends-on/blocked-by) + Cursor packaging
-  - _Depends on:_ 17 — _Requirements:_ R8, R7
+- [ ] 19. Route received webhook events (PR comments, Actions) from the CLI → harness
+  - _Depends on:_ 11, 18 — _Requirements:_ R8
+- [ ] 20. Remote-workspace auto-trigger on ticket creation ("the dream")
+  - _Depends on:_ 19 — _Requirements:_ R8
+- [ ] 21. Project-wide DAG orchestration (depends-on/blocked-by) + Cursor packaging
+  - _Depends on:_ 18 — _Requirements:_ R8, R7
 
 ## Dependency graph (DAG)
-v0: `{1,2,6} → 3 → {4,5,7,9} → 8 → 10` (2 also feeds 4/5/9; 1 also feeds 8).
-Deferred: `4 → 11`; `2 → 12 → {13,14}`; `15,16` independent; `5 → 17 → 18 → 19`;
-`17 → 20`.
+v0: `{1,2,6} → 3 → {4,5,7,9} → 8 → 10`; `2 → 11` (2 also feeds 4/5/9; 1 also feeds 8).
+Deferred: `4 → 12`; `2 → 13 → {14,15}`; `16,17` independent; `5 → 18`;
+`{11,18} → 19 → 20`; `18 → 21`.
 
 ## Checkpoints
-- v0: after task 10 — JSON + schema validation + manifest tree check (see execution-log).
+- v0: after task 10 — JSON + schema validation + manifest tree check; after task 11 —
+  `pytest` for the CLI (see execution-log).
 - Each deferred task: tests at logical checkpoints per `reference/workflow.md`.

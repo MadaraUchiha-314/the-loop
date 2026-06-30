@@ -310,6 +310,33 @@
         },
         "notes": { "type": "string", "description": "Inline free-form description (alternative to referenceFile)." }
       }
+    },
+    "webhooks": {
+      "type": "object",
+      "description": "Config for the the-loop CLI webhook receiver(s) (e.g. `the-loop gh-webhook start`).",
+      "additionalProperties": false,
+      "properties": {
+        "ghWebhook": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "host": { "type": "string", "default": "127.0.0.1" },
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535, "default": 8787 },
+            "path": { "type": "string", "default": "/webhook" },
+            "secretEnv": {
+              "type": "string",
+              "default": "THE_LOOP_GH_WEBHOOK_SECRET",
+              "description": "Env var holding the GitHub webhook secret for HMAC verification (never stored in config)."
+            },
+            "pidfile": { "type": "string", "default": ".the-loop/gh-webhook.pid" },
+            "events": {
+              "type": "array",
+              "description": "GitHub event names of interest, e.g. pull_request_review_comment, workflow_run.",
+              "items": { "type": "string" }
+            }
+          }
+        }
+      }
     }
   }
 }

@@ -45,8 +45,17 @@ as commands/skills today; hooks add predictability where a step must always run.
 - GitHub Issues/Projects (default) or Jira. All collaboration via ticket/PR comments;
   notifications/escalations via configured messaging channels.
 
-### 6. Triggers (future)
-- Webhooks: PR review comments and GitHub Actions results auto-trigger the harness.
+### 6. CLI companion (`the-loop`, Python)
+A lightweight, extensible Python CLI under `cli/` (package `the_loop`) for
+quality-of-life commands the plugin itself can use. Zero runtime deps (stdlib only);
+Python is chosen to leave room for future self-learning/ML SDKs. Extensible command
+registry. First command: `the-loop gh-webhook start|stop` — a GitHub webhook receiver
+(HMAC-verified) that is the on-ramp to the trigger automation below. See
+`docs/decisions/decision-005.md`.
+
+### 7. Triggers (future)
+- Webhooks: PR review comments and GitHub Actions results auto-trigger the harness
+  (received by the CLI's `gh-webhook` server).
 - The "dream": creating a ticket spins up the-loop in a remote workspace and delivers
   the work, notifying humans only when a decision is needed.
 - DAG orchestration across work items using depends-on / blocked-by relationships.

@@ -18,17 +18,37 @@ lost. Items here that are not yet built are tracked as deferred work (see
 - Every file the-loop creates/maintains/tracks is listed in `.the-loop/manifest.yaml`.
 - All meta files the-loop uses internally live under `.the-loop/`.
 
+## CLI companion (`the-loop`, Python)
+
+the-loop is primarily a plugin, but it ALSO ships a lightweight, extensible **Python
+CLI** (`cli/`, package `the_loop`) for quality-of-life commands the plugin itself can
+use. Python is deliberate — future self-learning/ML capabilities are mostly exposed as
+Python SDKs. The core has **zero runtime dependencies** (stdlib only).
+
+- Primary CLI: **`the-loop`**. Adding a command = subclass `Command`, `@register` it,
+  drop the module under `the_loop/commands/`.
+- First command — GitHub webhook receiver:
+  - `the-loop gh-webhook start [--host --port --path --pidfile --secret-env]`
+  - `the-loop gh-webhook stop [--pidfile]`
+  - Verifies the GitHub `X-Hub-Signature-256` HMAC (secret from an env var), exposes
+    `GET /health`, logs events, and is structured to route events to the harness.
+  - Defaults come from `webhooks.ghWebhook` in `.the-loop/config.yaml`.
+
+See `docs/decisions/decision-005.md`.
+
 ## Predictability & execution guarantees
 
 The PDLC is largely fixed; the harness should not re-derive it each run. Make steps
 predictable/guaranteed via:
 - **Claude hooks** (`hooks/hooks.json`) — force steps to run at lifecycle points.
-- **Custom code** where hooks are insufficient.
+- **Custom code/scripts** where hooks are insufficient (the CLI is a natural home).
 This is an open design question; record decisions as the approach firms up.
 
-## Webhooks (deferred)
+## Webhooks (receiver in CLI; harness routing deferred)
 
-Auto-trigger the harness from external systems:
+Auto-trigger the harness from external systems. The **receiver** is provided by the CLI
+(`the-loop gh-webhook`); routing received events through to actually trigger the harness
+is deferred:
 - **GitHub PR review comments** → trigger the harness to respond.
 - **GitHub Actions completion/failure** → trigger the harness to react/fix.
 

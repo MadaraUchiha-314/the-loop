@@ -36,11 +36,24 @@ not-started → requirements-definition → design → tasks-breakdown
 
 `/the-loop:init` creates the labels; `/the-loop:work-on` drives the transitions.
 
+## Link artifacts to the ticket (single source of truth)
+
+Once each spec document is established (requirements, design, tasks), **update the work
+item (GitHub issue / Jira) with a reference (link) to the checked-in artifact** — not a
+copy of its contents. The checked-in file is the single source of truth.
+
+- Reference, don't duplicate: link to `docs/specs/<id>/{requirements,design,tasks}.md`.
+- **Subsequent changes to a spec doc happen as EDITS to that file (and, where the ticket
+  embeds a summary, an edit to that comment/description) — NOT as new comments.** This
+  keeps one canonical version and a clean history.
+
 ## Implementation & self-checking
 
 - Execute the task DAG in dependency order (`implementation`).
-- Maintain `docs/specs/<id>/execution-log.md` (checked in): append progress, check off
-  tasks, and **run tests at logical checkpoints** — self-checking as you go.
+- **Keep `tasks.md` checkmarks current**: as each task is completed, tick its `- [ ]` →
+  `- [x]` so the ticket/spec always shows what is done vs. outstanding.
+- Maintain `docs/specs/<id>/execution-log.md` (checked in): append progress, and **run
+  tests at logical checkpoints** — self-checking as you go.
 - Use the configured tooling (see `tooling.md`); same commands as CI.
 
 ## Self-review & critic-review (before a human)

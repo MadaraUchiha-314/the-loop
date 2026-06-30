@@ -1,0 +1,110 @@
+"""A minimal, dependency-free GitHub webhook receiver.
+
+Uses only the standard library so the CLI stays very lightweight. The server
+verifies the GitHub ``X-Hub-Signature-256`` HMAC (when a secret is configured),
+logs each received event, and invokes an optional ``on_event`` callback. Wiring
+events through to actually trigger the agent harness is future work — this is the
+receiver scaffold the issue asks the CLI to provide.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import hmac
+import json
+import logging
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Callable, Optional
+
+logger = logging.getLogger("the-loop.gh-webhook")
+
+# Type of the optional per-event callback: (event_name, payload_dict) -> None
+OnEvent = Callable[[str, dict], None]
+
+
+def verify_signature(secret: Optional[str], body: bytes, signature_header: Optional[str]):
+    """Verify a GitHub ``X-Hub-Signature-256`` header.
+
+    Returns ``True``/``False`` when a secret is configured, or ``None`` when no
+    secret is configured (signature cannot be verified). Uses a constant-time
+    comparison.
+    """
+    if not secret:
+        return None
+    if not signature_header or not signature_header.startswith("sha256="):
+        return False
+    digest = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+    expected = "sha256=" + digest
+    return hmac.compare_digest(expected, signature_header)
+
+
+def make_handler(path: str, secret: Optional[str], on_event: Optional[OnEvent] = None):
+    """Build a ``BaseHTTPRequestHandler`` subclass bound to the given config."""
+
+    class _Handler(BaseHTTPRequestHandler):
+        server_version = "the-loop-gh-webhook/0.1.0"
+
+        def _send(self, code: int, message: str) -> None:
+            payload = json.dumps({"status": message}).encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def do_GET(self):  # noqa: N802 (stdlib naming)
+            if self.path.rstrip("/") in ("/health", "/healthz"):
+                self._send(200, "ok")
+            else:
+                self._send(404, "not found")
+
+        def do_POST(self):  # noqa: N802
+            if self.path.rstrip("/") != path.rstrip("/"):
+                self._send(404, "not found")
+                return
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            body = self.rfile.read(length) if length else b""
+
+            verified = verify_signature(
+                secret, body, self.headers.get("X-Hub-Signature-256")
+            )
+            if verified is False:
+                logger.warning("rejected webhook: invalid signature")
+                self._send(401, "invalid signature")
+                return
+            if verified is None:
+                logger.warning("webhook signature NOT verified (no secret configured)")
+
+            event = self.headers.get("X-GitHub-Event", "unknown")
+            delivery = self.headers.get("X-GitHub-Delivery", "-")
+            try:
+                payload = json.loads(body.decode("utf-8")) if body else {}
+            except json.JSONDecodeError:
+                logger.error("webhook payload was not valid JSON (delivery=%s)", delivery)
+                self._send(400, "invalid payload")
+                return
+
+            logger.info("received event=%s delivery=%s", event, delivery)
+            if on_event is not None:
+                try:
+                    on_event(event, payload)
+                except Exception:  # noqa: BLE001 - never let a handler crash the server
+                    logger.exception("on_event handler failed for event=%s", event)
+            self._send(202, "accepted")
+
+        def log_message(self, fmt, *args):  # silence default stderr access log
+            logger.debug(fmt, *args)
+
+    return _Handler
+
+
+def serve(
+    host: str,
+    port: int,
+    path: str = "/webhook",
+    secret: Optional[str] = None,
+    on_event: Optional[OnEvent] = None,
+) -> ThreadingHTTPServer:
+    """Create (but do not start) a threaded HTTP server bound to ``host:port``."""
+    handler = make_handler(path=path, secret=secret, on_event=on_event)
+    return ThreadingHTTPServer((host, port), handler)

@@ -63,7 +63,11 @@ requirements, design and tasks before implementation.
 3. The work item phase SHALL be tracked on the ticket via labels across
    `not-started → requirements-definition → design → tasks-breakdown → implementation →
    needs-review → complete`.
-4. The-loop SHALL self-check (run tests at checkpoints) and maintain a checked-in
+4. Once a spec doc is established, the work item SHALL be updated with a **reference**
+   (link) to the checked-in artifact (single source of truth); subsequent changes SHALL
+   be **edits to the doc, not new comments**.
+5. `tasks.md` checkmarks SHALL be kept current as tasks complete.
+6. The-loop SHALL self-check (run tests at checkpoints) and maintain a checked-in
    `execution-log.md`.
 5. The-loop SHALL run X self-reviews and X critic reviews (default 3, configurable) via
    PR/ticket comments before escalating to a human, and present validated evidence at
@@ -91,11 +95,24 @@ requirements, design and tasks before implementation.
 3. The-loop SHALL expose `init`, `work-on` and `upgrade-the-loop`; config SHALL be
    schema-validated and per-task overridable.
 
-### R8 — Automation & the dream **[deferred]**
+### R8 — Automation & the dream **[receiver v0; routing deferred]**
 1. Webhooks (GitHub PR comments, Actions results) SHALL be able to trigger the harness.
+   The **receiver** is delivered by the CLI (R9); routing events to the harness is
+   deferred.
 2. Creating a ticket SHALL be able to auto-trigger the-loop in a remote workspace,
-   notifying humans only for decisions.
+   notifying humans only for decisions. **[deferred]**
 3. The-loop SHALL orchestrate a project-wide DAG of work items (depends-on/blocked-by).
+   **[deferred]**
+
+### R9 — CLI companion **[v0]**
+**User story:** As the the-loop plugin, I want a lightweight CLI for quality-of-life
+commands, so that I can do things outside the harness (e.g. receive webhooks).
+1. the-loop SHALL ship a Python CLI named `the-loop`, lightweight (zero required runtime
+   deps) and **extensible** (easy to add commands).
+2. The CLI SHALL provide `the-loop gh-webhook start|stop` — a GitHub webhook receiver
+   that verifies the `X-Hub-Signature-256` HMAC and is configurable via
+   `webhooks.ghWebhook`.
+3. The CLI SHALL be written in Python (to allow future ML/self-learning SDKs).
 
 ## Non-functional requirements
 - All JSON parses; configs validate against `.the-loop/config.schema.json`.

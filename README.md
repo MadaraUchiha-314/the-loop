@@ -54,6 +54,20 @@ bespoke marketplace publishing.
   [reference docs](skills/the-loop/reference/) — `workflow`, `tooling`, `collaboration`,
   `observability`, and `automation-and-roadmap`.
 
+## CLI companion (`the-loop`)
+
+Besides the plugin, the-loop ships a lightweight, **extensible Python CLI** (in
+[`cli/`](cli/), package `the_loop`, zero runtime deps) for quality-of-life commands the
+plugin can use. Python is intentional — it leaves room for future self-learning/ML
+capabilities (mostly Python SDKs). First command is a GitHub webhook receiver:
+
+```bash
+the-loop gh-webhook start   # HMAC-verified receiver; GET /health; logs events
+the-loop gh-webhook stop
+```
+
+See [`cli/README.md`](cli/README.md) for install and how to add commands.
+
 ## Rules the loop enforces
 
 - Every work item has a ticket. Its 3-phase spec is **reviewed and approved per phase
@@ -70,8 +84,9 @@ bespoke marketplace publishing.
 .claude-plugin/        plugin.json, marketplace.json
 .the-loop/             config schema, default config, manifest, templates, registries
 commands/              init, work-on, upgrade-the-loop
-skills/the-loop/       operating-model skill
+skills/the-loop/       operating-model skill (+ reference/ docs)
 hooks/                 hooks.json (SessionStart reminder)
+cli/                   the-loop Python CLI (the_loop package; gh-webhook receiver)
 docs/
   architecture/        architecture.md (index)
   decisions/           decisions.md + decision-<nnn>.md

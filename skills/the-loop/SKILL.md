@@ -48,6 +48,10 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
 - **Spec before execution.** Create the 3-phase spec and get each phase
   reviewed/approved by the required collaborators before writing code.
 - **Human review per phase** (`workflow.requireHumanReviewPerPhase`, default true).
+- **Reference, don't duplicate (single source of truth).** Once requirements/design/
+  tasks exist, update the ticket with a **link** to each checked-in artifact. Subsequent
+  changes are **edits to those files, not new comments**.
+- **Keep `tasks.md` checkmarks current** as tasks complete (`- [ ]` → `- [x]`).
 - **Identify collaborators up-front.** Each work item names the personas it needs; not
   every task needs every persona (a bug fix needs the engineer; a content fix may not).
   More can be added later. See `reference/collaboration.md`.
