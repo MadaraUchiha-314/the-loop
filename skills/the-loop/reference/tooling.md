@@ -53,8 +53,18 @@ When several entities in a monorepo must be tested together:
 
 - **pre-commit**: `lint`, `typecheck`, `unit-test` (default).
 - **pre-push**: `lint`, `typecheck`, `unit-test` (add `integration-test` where cheap).
+- **commit-msg**: enforce the commit convention (`hooks.commitConvention`).
 - These are git hooks (e.g. wired via the repo's hook manager); they run the SAME
   commands as CI.
+
+## RULE: Conventional Commits
+
+All commits MUST follow Conventional Commits v1.0.0
+(https://www.conventionalcommits.org/en/v1.0.0/):
+`<type>[optional scope][!]: <description>`, where type is one of
+`feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert`.
+`hooks.commitConvention` (default `conventional-commits`) wires a `commit-msg` hook that
+rejects non-conforming messages. Merge/revert/fixup/squash messages are exempt.
 
 ## RULE: CI/CD must use exactly the same tooling as local
 

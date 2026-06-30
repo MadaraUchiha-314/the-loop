@@ -52,5 +52,5 @@ def test_verify_signature_roundtrip():
 
 
 def test_make_handler_returns_class():
-    handler = make_handler(path="/webhook", secret=None)
+    handler = make_handler(path="/gh-webhook", secret=None)
     assert isinstance(handler, type)

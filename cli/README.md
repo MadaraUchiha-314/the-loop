@@ -21,7 +21,7 @@ This exposes the primary CLI: `the-loop`.
 ### `gh-webhook` — GitHub webhook receiver
 
 ```bash
-the-loop gh-webhook start [--host 127.0.0.1] [--port 8787] [--path /webhook] \
+the-loop gh-webhook start [--host 127.0.0.1] [--port 8787] [--path /gh-webhook] \
                           [--pidfile .the-loop/gh-webhook.pid] \
                           [--secret-env THE_LOOP_GH_WEBHOOK_SECRET]
 the-loop gh-webhook stop  [--pidfile .the-loop/gh-webhook.pid]

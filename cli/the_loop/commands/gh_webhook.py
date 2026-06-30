@@ -23,7 +23,7 @@ logger = logging.getLogger("the-loop.gh-webhook")
 _DEFAULTS = {
     "host": "127.0.0.1",
     "port": 8787,
-    "path": "/webhook",
+    "path": "/gh-webhook",
     "secretEnv": "THE_LOOP_GH_WEBHOOK_SECRET",
     "pidfile": ".the-loop/gh-webhook.pid",
 }

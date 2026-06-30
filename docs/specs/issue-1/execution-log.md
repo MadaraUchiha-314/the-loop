@@ -105,6 +105,21 @@ status: in-progress
 - **Next:** Push to PR #2 (gives the PR a green CI signal); create + apply phase labels
   to issue #1.
 
+### 2026-06-30 — Conventional Commits, Claude settings, gh-webhook path
+
+- **Phase:** needs-review
+- **Did:** (1) Per issue §2.9.3, enforce Conventional Commits: `hooks.commitConvention`
+  config + a `commit-msg` pre-commit hook backed by `scripts/check_commit_msg.py`;
+  documented in skill + `reference/tooling.md`; `decision-007`. (2) Per PR comment, added
+  `.claude/settings.json` (permissions allowlist mirroring the referenced goldfishmem
+  config, tuned to the-loop's tooling + `make`/`markdownlint-cli2`). (3) Per PR review
+  suggestion, changed the gh-webhook default path `/webhook` → `/gh-webhook` across the
+  CLI, server, schema, configs and docs. Applied phase label `loop:needs-review` to
+  issue #1.
+- **Checkpoint/tests:** `pre-commit run --all-files` green; commit-msg validator
+  unit-checked (valid/invalid/merge); pytest green.
+- **Next:** Push to PR #2; reply to the open comments.
+
 ## Review cycles
 
 | Cycle | Type (self/critic) | Reviewer | Outcome | Link |

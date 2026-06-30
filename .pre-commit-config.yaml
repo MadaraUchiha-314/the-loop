@@ -6,7 +6,7 @@
 # versions before running `pre-commit run`. This keeps local == CI and avoids
 # duplicate tool installs.
 minimum_pre_commit_version: "3.0.0"
-default_install_hook_types: [pre-commit, pre-push]
+default_install_hook_types: [pre-commit, pre-push, commit-msg]
 
 repos:
   - repo: local
@@ -51,3 +51,9 @@ repos:
         language: system
         pass_filenames: false
         files: '^\.the-loop/(config\.ya?ml|config\.schema\.json)$|^scripts/validate_config\.py$'
+
+      - id: conventional-commit
+        name: Conventional Commits (commit message)
+        entry: python scripts/check_commit_msg.py
+        language: system
+        stages: [commit-msg]

@@ -105,7 +105,7 @@ def make_handler(path: str, secret: Optional[str], on_event: Optional[OnEvent] =
 def serve(
     host: str,
     port: int,
-    path: str = "/webhook",
+    path: str = "/gh-webhook",
     secret: Optional[str] = None,
     on_event: Optional[OnEvent] = None,
 ) -> ThreadingHTTPServer:

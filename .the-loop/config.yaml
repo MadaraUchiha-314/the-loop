@@ -54,6 +54,7 @@ localOrchestration:
 hooks:
   preCommit: [lint, typecheck, unit-test]
   prePush: [lint, typecheck, unit-test]
+  commitConvention: conventional-commits
 
 observability:
   devLevel: debug
@@ -80,7 +81,7 @@ webhooks:
   ghWebhook:
     host: 127.0.0.1
     port: 8787
-    path: /webhook
+    path: /gh-webhook
     secretEnv: THE_LOOP_GH_WEBHOOK_SECRET
     pidfile: .the-loop/gh-webhook.pid
     events: [pull_request_review_comment, workflow_run]

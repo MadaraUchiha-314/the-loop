@@ -69,6 +69,9 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   root; lint ALL files including markdown. See `reference/tooling.md`.
 - **Same tooling everywhere.** Pre-commit/pre-push hooks and CI run the SAME commands —
   no last-minute build surprises.
+- **Conventional Commits.** All commits follow Conventional Commits v1.0.0
+  (`<type>[scope][!]: <desc>`), enforced by a commit-msg hook
+  (`hooks.commitConvention`). See `reference/tooling.md`.
 - **Identical observability.** Logging is the same at dev-time and runtime; the only dev
   advantage is breakpoints. See `reference/observability.md`.
 

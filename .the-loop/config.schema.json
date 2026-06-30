@@ -217,6 +217,12 @@
           "type": "array",
           "items": { "type": "string", "enum": ["lint", "typecheck", "unit-test", "integration-test"] },
           "default": ["lint", "typecheck", "unit-test"]
+        },
+        "commitConvention": {
+          "type": "string",
+          "enum": ["conventional-commits", "none"],
+          "default": "conventional-commits",
+          "description": "Commit-message convention enforced via a commit-msg hook. RULE: all commits are Conventional Commits (https://www.conventionalcommits.org/en/v1.0.0/)."
         }
       }
     },
@@ -322,7 +328,7 @@
           "properties": {
             "host": { "type": "string", "default": "127.0.0.1" },
             "port": { "type": "integer", "minimum": 1, "maximum": 65535, "default": 8787 },
-            "path": { "type": "string", "default": "/webhook" },
+            "path": { "type": "string", "default": "/gh-webhook" },
             "secretEnv": {
               "type": "string",
               "default": "THE_LOOP_GH_WEBHOOK_SECRET",
