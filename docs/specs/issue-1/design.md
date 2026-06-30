@@ -7,54 +7,83 @@ approvedBy: ["@MadaraUchiha-314 (issue author intent)"]
 overrides: {}
 ---
 
-# Design: The Loop — bootstrap the-loop
+# Design: the-loop (create itself)
 
-> Phase 2. Derives from `requirements.md`. See `docs/architecture/architecture.md` for
-> the living architecture.
+> Phase 2. Derives from `requirements.md` (which distills issue #1). See
+> `docs/architecture/architecture.md` for the living architecture and the `the-loop`
+> skill's `reference/` files for the full operating detail.
 
 ## Overview
-Ship the-loop as a Claude plugin whose repository simultaneously serves as: (a) the
-distributable plugin, and (b) a reference project that has the-loop initialized in it.
-Encode every rule from issue #1 as concrete files/contracts, deferring runtime
-automation (decision-003).
+Ship the-loop as a Claude plugin whose repository simultaneously is (a) the
+distributable plugin and (b) a reference project that has the-loop initialized in it.
+Encode every rule from issue #1 as concrete, validated files/contracts, realize the
+behaviour as commands + a skill (with reference docs) + hooks, and defer runtime
+automation to follow-up work items (`decision-003`).
 
 ## Architecture
-Five components (detailed in `docs/architecture/architecture.md`):
-1. Distribution — `.claude-plugin/{plugin,marketplace}.json`.
-2. Project footprint — `.the-loop/` (config + schema + manifest + templates + registries).
-3. The loop — the 3-phase spec workflow + phase state machine (decision-004),
-   realized as `commands/` + `skills/the-loop` + `hooks/`.
-4. Knowledge & feedback — `docs/{architecture,decisions,specs}/`, `learnings/`.
-5. Collaboration & ticketing — GitHub/Jira, comments as the paper trail.
+
+Six components. Each requirement maps to one or more.
+
+| Component | Realized by | Satisfies |
+|-----------|-------------|-----------|
+| Distribution | `.claude-plugin/{plugin,marketplace}.json` | R7 |
+| Project footprint | `.the-loop/` (config, schema, manifest, templates, registries) | R1, R2, R3, R5, R7 |
+| The loop (behaviour) | `commands/`, `skills/the-loop/` (+ `reference/`), `hooks/` | R4, and operationalizes R1–R6 |
+| Knowledge & feedback | `docs/{architecture,decisions,specs}/`, `learnings/` | R4, R6 |
+| Collaboration & ticketing | GitHub/Jira; comments as paper trail; `collaborators.yaml`, `messaging` | R1, R5 |
+| Automation (future) | webhooks, remote exec, DAG orchestration | R8 [deferred] |
 
 ## Components & interfaces
-- **config.schema.json** — JSON Schema (draft 2020-12); the contract `/init` and
-  `/upgrade-the-loop` validate/migrate against. Key sections: `ticketing`,
-  `repository`, `workflow`, `tooling`, `reviews`, `personas`, `messaging`.
-- **manifest.yaml** — enumerates managed files, templates, per-work-item artifacts and
-  knowledge files; the source of truth for init/upgrade reconciliation.
-- **Commands** — markdown with front-matter (`description`, `argument-hint`,
-  `allowed-tools`): `init`, `work-on`, `upgrade-the-loop`.
-- **Skill** — `skills/the-loop/SKILL.md` encodes the operating model.
+
+### Config & schema (R2/R3/R5/R7)
+- `config.schema.json` (JSON Schema draft 2020-12) is the contract. Sections:
+  `ticketing`, `repository`, `workflow`, `tooling`, `localOrchestration`, `hooks`,
+  `observability`, `reviews`, `personas`, `messaging`, `externalTools`.
+- `config.yaml` is validated against it; a subset of keys is overridable per work item
+  via spec front-matter `overrides`.
+
+### Manifest (R7)
+- `manifest.yaml` enumerates managed meta files, templates, per-work-item artifacts and
+  knowledge files — the single source of truth `init` and `upgrade-the-loop` reconcile
+  against.
+
+### Commands (R4/R7)
+- `init` — detect project, scaffold footprint + docs, create phase labels, wire local
+  hooks/CI parity, validate config.
+- `work-on` — drive the 3-phase loop (requirements → design → tasks → implement →
+  review → complete), keeping phase labels in sync; resumable per phase.
+- `upgrade-the-loop` — reconcile files and migrate the schema across versions.
+
+### Skill + reference (R2–R6)
+- `skills/the-loop/SKILL.md` is the operating manual; `reference/{workflow,tooling,
+  collaboration,observability,automation-and-roadmap}.md` carry the full detail so the
+  essence of issue #1 is preserved for the harness at runtime.
+
+### Hooks (predictability)
+- `hooks/hooks.json` ships a SessionStart reminder in v0; the predictability mechanism
+  (hooks vs custom code) for forcing PDLC steps is an open question.
 
 ## Data models
 - `.the-loop/config.yaml` ⟷ `config.schema.json`.
-- Per-work-item specs in `docs/specs/<id>/` with YAML front-matter carrying `phase`,
-  `status`, `approvedBy`, `overrides`.
+- Per-work-item specs in `docs/specs/<id>/` with front-matter (`phase`, `status`,
+  `approvedBy`, `collaborators`, `overrides`).
+- Phase state machine: 7 phases ⟷ ticket labels `<phaseLabelPrefix><phase>`.
 
 ## Error handling
-- `/init` and `/upgrade-the-loop` are idempotent and never clobber user-owned files
-  (`managed: false`); they diff and suggest instead.
+- `init`/`upgrade-the-loop` are idempotent and never clobber user-owned files
+  (`managed: false`) — they diff and suggest.
 - Config validation surfaces gaps (empty personas, missing owner) rather than failing
   silently.
+- Missing ticket → refuse to proceed (R1).
 
 ## Testing strategy
-- Static validation: all JSON parses; both config files validate against the schema.
-- Structural validation: the file tree matches `.the-loop/manifest.yaml`.
-- Acceptance: each issue #1 section maps to a file/contract or a recorded deferral.
+- Static: all JSON parses; both configs validate against the schema.
+- Structural: the file tree matches `manifest.yaml`.
+- Acceptance: every requirement maps to a delivered file/contract **[v0]** or a recorded
+  deferral **[deferred]**; evidence recorded in `execution-log.md`.
 
 ## Trade-offs & decisions
-- Plugin vs standalone CLI → plugin (decision-001).
-- Manifest + schema for reconciliation (decision-002).
-- v0 skeleton, defer automation (decision-003).
-- Kiro 3-phase specs with per-phase review (decision-004).
+- Plugin vs standalone CLI → plugin (`decision-001`).
+- Manifest + schema for reconciliation (`decision-002`).
+- v0 skeleton, defer automation (`decision-003`).
+- Kiro 3-phase specs with per-phase review (`decision-004`).

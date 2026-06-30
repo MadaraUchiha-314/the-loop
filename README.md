@@ -50,7 +50,9 @@ bespoke marketplace publishing.
   (`requirements`/`bugfix`, `design`, `tasks`, `execution-log`) live under
   [`.the-loop/templates/`](.the-loop/templates/).
 - **The operating model** is captured in the
-  [`the-loop` skill](skills/the-loop/SKILL.md).
+  [`the-loop` skill](skills/the-loop/SKILL.md), with the full detail in its
+  [reference docs](skills/the-loop/reference/) — `workflow`, `tooling`, `collaboration`,
+  `observability`, and `automation-and-roadmap`.
 
 ## Rules the loop enforces
 

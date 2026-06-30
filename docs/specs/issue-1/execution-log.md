@@ -40,6 +40,23 @@ status: in-progress
 - **Next:** Push to PR #2; await human review of the spec/phase model.
 - **Blockers:** None.
 
+### 2026-06-30 — Deepen detail per PR review (robustness + judicious specs)
+- **Phase:** needs-review
+- **Did:** Addressed two PR comments. (1) Robustness: added `skills/the-loop/reference/`
+  (workflow, tooling, collaboration, observability, automation-and-roadmap) embedding
+  the full issue-#1 detail — tooling matrix incl. Go defaults, root-scripts/monorepo
+  rules, multi-entity podman testing, pre-commit/pre-push + CI-parity, observability,
+  paper-trail + persona→task mapping, predictability/webhooks/the-dream/open-TODOs — and
+  rewrote SKILL.md as an index over them; enriched `work-on`/`init` to point at and use
+  them. (2) Judicious specs: rewrote issue-1 `requirements.md` (R1–R8, sourced from
+  issue #1, v0 vs deferred), `design.md` (requirement→component mapping), and `tasks.md`
+  (real DAG: tasks 1–10 v0 done, 11–20 deferred forward graph).
+- **Checkpoint/tests:** Re-validated JSON + both configs against the schema; tree still
+  matches manifest (reference files are plugin source, not project-managed artifacts).
+- **Next:** Push to PR #2; reply on the PR (paper trail). Await human review.
+- **Blockers:** None. Note: `design.md`/`tasks.md` already existed on the branch since
+  commit 4ab647b; now made substantive.
+
 ## Review cycles
 | Cycle | Type (self/critic) | Reviewer | Outcome | Link |
 |-------|--------------------|----------|---------|------|

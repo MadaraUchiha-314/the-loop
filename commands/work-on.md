@@ -11,6 +11,12 @@ Kiro-style 3-phase spec workflow (https://kiro.dev/docs/specs/). Load
 `.the-loop/config.yaml` first; apply any per-task `overrides` from the work item's
 front-matter. Specs live in `<workflow.specDir>/<id>/` (default `docs/specs/<id>/`).
 
+**Before acting, read the `the-loop` skill and its reference files** for the full rules:
+`reference/workflow.md` (phases, reviews, DAG), `reference/tooling.md` (which commands
+to run), `reference/collaboration.md` (who to involve, paper trail),
+`reference/observability.md`. The summary below is the procedure; the references are the
+detail — do not lose it.
+
 ## Phase state machine
 
 Keep the work item's phase **label** in the ticketing system in sync at every

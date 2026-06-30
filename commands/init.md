@@ -15,7 +15,10 @@ and the templates under `${CLAUDE_PLUGIN_ROOT}/.the-loop/templates/`.
 
 1. **Detect the project.** Inspect the repo to infer sensible defaults:
    - languages present (python / js / ts / go),
-   - whether it looks like a monorepo (nx.json, pnpm-workspace.yaml, workspaces),
+   - whether it looks like a monorepo (nx.json, pnpm-workspace.yaml, workspaces) and
+     which tool — default Nx; support non-monorepo (`monorepo: false`),
+   - existing package manager / test / lint / type-check tooling, mapped onto the
+     `tooling` matrix (see the `the-loop` skill's `reference/tooling.md`),
    - the git remote / owner / repo for ticketing.
    Use these to pre-fill the config rather than blindly copying defaults.
 
@@ -44,7 +47,13 @@ and the templates under `${CLAUDE_PLUGIN_ROOT}/.the-loop/templates/`.
    the user (via a ticket comment if a ticket exists, otherwise interactively) to
    define at least one approver. RULE: every decision needs a paper trail.
 
-6. **Summarize** what was created and the immediate next action
+6. **Wire local hooks & CI parity.** Set up pre-commit / pre-push hooks that run the
+   `hooks.preCommit` / `hooks.prePush` steps (lint, typecheck, unit-test) using the
+   configured tooling, and ensure CI invokes the SAME root commands (see
+   `reference/tooling.md` → "CI/CD must use exactly the same tooling as local"). Only
+   scaffold what the project doesn't already have.
+
+7. **Summarize** what was created and the immediate next action
    (`/the-loop:work-on <ticket>`).
 
 Respect existing files. This command is idempotent and safe to re-run.

@@ -6,4 +6,5 @@ are checked in so the user can review and give feedback.
 
 | # | Title | Source | Date |
 |---|-------|--------|------|
+| [002](learning-002.md) | Translate the full detail into the artifacts, not just config defaults | user-feedback | 2026-06-30 |
 | [001](learning-001.md) | A broad vision issue must be decomposed before execution | system-feedback | 2026-06-27 |
