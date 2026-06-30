@@ -13,6 +13,7 @@ status: in-progress          # in-progress | complete
 > (runs tests at logical checkpoints) recording the outcome here.
 
 ## Phase transitions
+
 | Phase | Entered | Reviewed/approved by | Notes |
 |-------|---------|----------------------|-------|
 | requirements-definition |  |  |  |
@@ -25,6 +26,7 @@ status: in-progress          # in-progress | complete
 ## Progress entries
 
 ### <timestamp> — <short summary>
+
 - **Phase:** <current phase>
 - **Did:** what was done
 - **Checkpoint/tests:** commands run and their result (pass/fail + evidence)
@@ -32,9 +34,11 @@ status: in-progress          # in-progress | complete
 - **Blockers:** anything waiting on a human (link the ticket comment)
 
 ## Review cycles
+
 | Cycle | Type (self/critic) | Reviewer | Outcome | Link |
 |-------|--------------------|----------|---------|------|
 |       |                    |          |         |      |
 
 ## Final validation evidence
+
 The evidence presented to the user proving acceptance criteria are met.

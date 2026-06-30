@@ -12,23 +12,29 @@ overrides: {}
 # Bug: <title>
 
 ## Description
+
 What is wrong?
 
 ## Steps to reproduce
+
 1.
 2.
 3.
 
 ## Expected behaviour
+
 What should happen.
 
 ## Actual behaviour
+
 What happens instead. Include logs / errors (same log format as runtime).
 
 ## Acceptance criteria
+
 - [ ] Root cause identified and documented
 - [ ] Fix implemented
 - [ ] Regression test added that fails before the fix and passes after
 
 ## Validation evidence
+
 Test output / reproduction showing the bug is fixed.

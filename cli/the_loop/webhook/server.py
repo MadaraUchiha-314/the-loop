@@ -22,7 +22,9 @@ logger = logging.getLogger("the-loop.gh-webhook")
 OnEvent = Callable[[str, dict], None]
 
 
-def verify_signature(secret: Optional[str], body: bytes, signature_header: Optional[str]):
+def verify_signature(
+    secret: Optional[str], body: bytes, signature_header: Optional[str]
+):
     """Verify a GitHub ``X-Hub-Signature-256`` header.
 
     Returns ``True``/``False`` when a secret is configured, or ``None`` when no
@@ -80,7 +82,9 @@ def make_handler(path: str, secret: Optional[str], on_event: Optional[OnEvent] =
             try:
                 payload = json.loads(body.decode("utf-8")) if body else {}
             except json.JSONDecodeError:
-                logger.error("webhook payload was not valid JSON (delivery=%s)", delivery)
+                logger.error(
+                    "webhook payload was not valid JSON (delivery=%s)", delivery
+                )
                 self._send(400, "invalid payload")
                 return
 
@@ -92,8 +96,8 @@ def make_handler(path: str, secret: Optional[str], on_event: Optional[OnEvent] =
                     logger.exception("on_event handler failed for event=%s", event)
             self._send(202, "accepted")
 
-        def log_message(self, fmt, *args):  # silence default stderr access log
-            logger.debug(fmt, *args)
+        def log_message(self, format, *args):  # noqa: A002 - match base signature
+            logger.debug(format, *args)
 
     return _Handler
 

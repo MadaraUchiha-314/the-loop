@@ -30,20 +30,20 @@ workflow:
     - complete
 
 tooling:
-  languages: [ts]
+  languages: [python]      # the-loop itself: a Python CLI + markdown docs
   packageManager:
-    ts: bun
+    python: uv
   unitTest:
-    ts: vitest
+    python: pytest
   integrationTest:
-    ts: playwright
+    python: pytest
   lint:
-    ts: oxlint
+    python: ruff
     markdown: markdownlint
   typeCheck:
-    ts: tsc
+    python: pyright
   release:
-    ts: npm
+    python: pypi
     containers: ghcr
 
 localOrchestration:

@@ -94,6 +94,22 @@ docs/
 learnings/             learnings.md + learning-<nnn>.md
 ```
 
+## Development (the-loop's own quality gates)
+
+the-loop dogfoods its own rules: the same checks run locally (pre-commit) and in CI.
+
+```bash
+make install-dev     # ruff, pyright, pytest, pre-commit, jsonschema, pyyaml, the CLI
+pre-commit install   # run the gates on every commit
+make check           # ruff (lint+format) · pyright · schema validation · pytest
+pre-commit run --all-files   # exactly what CI runs
+```
+
+Gates: **ruff** (lint+format) and **pyright** for `cli/`, **pytest** for the CLI,
+**markdownlint** for all docs, and **schema validation** for `.the-loop` config. CI
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs the very same pre-commit
+hooks — no local-vs-CI drift. See [`docs/decisions/decision-006.md`](docs/decisions/decision-006.md).
+
 ## Roadmap (deferred from v0)
 
 - Webhook triggers (PR review comments, GitHub Actions results).

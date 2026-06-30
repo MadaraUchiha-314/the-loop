@@ -15,26 +15,33 @@ overrides: {}
 > may be minimal. This phase MUST be reviewed/approved before moving on.
 
 ## Summary
+
 What is wrong, and the observed impact. Link the ticket.
 
 ## Steps to reproduce
+
 1.
 2.
 3.
 
 ## Expected vs actual
+
 - **Expected:** what should happen.
 - **Actual:** what happens instead. Include logs/errors (same format as runtime).
 
 ## Root cause (hypothesis / confirmed)
+
 What is causing the bug, once known.
 
 ## Acceptance criteria (EARS)
+
 1. WHEN <repro steps> THEN the system SHALL <correct behaviour>.
 2. The fix SHALL include a regression test that fails before the fix and passes after.
 
 ## Out of scope
+
 Related issues intentionally not addressed here.
 
 ## Open questions
+
 Raised as ticket comments and linked here.

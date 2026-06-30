@@ -12,11 +12,13 @@ agent harness delivers a work item end-to-end, escalating to humans only for dec
 ## Components
 
 ### 1. Distribution (plugin + marketplace)
+
 - `.claude-plugin/plugin.json` — plugin manifest (commands, skills, hooks).
 - `.claude-plugin/marketplace.json` — installable directly from GitHub; no bespoke
   marketplace. Cursor equivalent: TODO.
 
 ### 2. Project footprint (`.the-loop/`)
+
 Everything the-loop creates/maintains is tracked in `.the-loop/manifest.yaml`.
 - `config.yaml` (+ `config.schema.json`) — per-project configuration; per-task
   overrides via work-item front-matter.
@@ -25,6 +27,7 @@ Everything the-loop creates/maintains is tracked in `.the-loop/manifest.yaml`.
 - `external-tools.md`, `collaborators.yaml` — user-owned registries.
 
 ### 3. The loop (runtime workflow)
+
 A Kiro-style 3-phase spec workflow (https://kiro.dev/docs/specs/), each phase gated by
 a human review, then autonomous execution:
 
@@ -38,14 +41,17 @@ log: `not-started → requirements-definition → design → tasks-breakdown →
 as commands/skills today; hooks add predictability where a step must always run.
 
 ### 4. Knowledge & feedback
+
 - `docs/architecture/`, `docs/decisions/`, `docs/specs/<id>/` (requirements/bugfix,
   design, tasks, execution-log), `learnings/`.
 
 ### 5. Collaboration & ticketing
+
 - GitHub Issues/Projects (default) or Jira. All collaboration via ticket/PR comments;
   notifications/escalations via configured messaging channels.
 
 ### 6. CLI companion (`the-loop`, Python)
+
 A lightweight, extensible Python CLI under `cli/` (package `the_loop`) for
 quality-of-life commands the plugin itself can use. Zero runtime deps (stdlib only);
 Python is chosen to leave room for future self-learning/ML SDKs. Extensible command
@@ -54,6 +60,7 @@ registry. First command: `the-loop gh-webhook start|stop` — a GitHub webhook r
 `docs/decisions/decision-005.md`.
 
 ### 7. Triggers (future)
+
 - Webhooks: PR review comments and GitHub Actions results auto-trigger the harness
   (received by the CLI's `gh-webhook` server).
 - The "dream": creating a ticket spins up the-loop in a remote workspace and delivers

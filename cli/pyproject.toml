@@ -28,3 +28,12 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["the_loop"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py39"
+
+[tool.pytest.ini_options]
+# Let `pytest` find the package without an editable install (run from cli/).
+pythonpath = ["."]
+testpaths = ["tests"]

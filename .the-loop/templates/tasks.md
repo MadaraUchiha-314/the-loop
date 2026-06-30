@@ -31,7 +31,9 @@ dependencies so the-loop can build the execution DAG. Keep tasks small and verif
   - _Requirements:_ R3
 
 ## Dependency graph (DAG)
+
 A quick textual view of the order, e.g. `1 → 2 → 3` (or a mermaid graph).
 
 ## Checkpoints
+
 At which task boundaries the-loop runs tests/validations and updates the execution log.

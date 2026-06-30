@@ -8,6 +8,7 @@ status: in-progress
 # Execution Log: The Loop — bootstrap the-loop
 
 ## Phase transitions
+
 | Phase | Entered | Reviewed/approved by | Notes |
 |-------|---------|----------------------|-------|
 | requirements-definition | 2026-06-30 | issue author intent | Captured retroactively for v0 |
@@ -20,6 +21,7 @@ status: in-progress
 ## Progress entries
 
 ### 2026-06-27 — v0 skeleton scaffolded
+
 - **Phase:** implementation
 - **Did:** Created plugin distribution; project footprint; templates; commands; the
   `the-loop` skill; SessionStart hook; docs (architecture, decisions); learnings; the
@@ -29,6 +31,7 @@ status: in-progress
 - **Next:** Adapt to the Kiro 3-phase spec model after the issue update.
 
 ### 2026-06-30 — Adopt Kiro 3-phase spec workflow
+
 - **Phase:** needs-review
 - **Did:** Replaced `delivery-plan.md` with `requirements`/`bugfix`, `design`, `tasks`
   templates; added the `workflow` config section + phase state machine + phase labels;
@@ -41,6 +44,7 @@ status: in-progress
 - **Blockers:** None.
 
 ### 2026-06-30 — Deepen detail per PR review (robustness + judicious specs)
+
 - **Phase:** needs-review
 - **Did:** Addressed two PR comments. (1) Robustness: added `skills/the-loop/reference/`
   (workflow, tooling, collaboration, observability, automation-and-roadmap) embedding
@@ -58,6 +62,7 @@ status: in-progress
   commit 4ab647b; now made substantive.
 
 ### 2026-06-30 — Add the the-loop Python CLI (gh-webhook receiver)
+
 - **Phase:** needs-review
 - **Did:** Per issue-#1 update (Realization §6), added a lightweight, extensible Python
   CLI under `cli/` (package `the_loop`, zero runtime deps): command registry
@@ -73,6 +78,7 @@ status: in-progress
 - **Blockers:** None.
 
 ### 2026-06-30 — Encode artifact-reference & tasks.md-checkmark rules
+
 - **Phase:** needs-review
 - **Did:** Per issue-#1 update (LOOP §4.5, §4.8), encoded two rules across the artifacts:
   (1) once requirements/design/tasks exist, reference them on the ticket (single source
@@ -82,12 +88,31 @@ status: in-progress
 - **Checkpoint/tests:** Schema/config validation + CLI pytest still green.
 - **Next:** Push to PR #2; reference the spec artifacts in the PR thread.
 
+### 2026-06-30 — Dogfood quality gates (pre-commit + CI parity)
+
+- **Phase:** needs-review
+- **Did:** Per PR review ("we didn't add pre-commit hooks / linting / type-checking"),
+  wired real gates for the-loop: ruff (lint+format), pyright, pytest, markdownlint-cli2,
+  and a `scripts/validate_config.py` schema check — all driven by a `.pre-commit-config.yaml`
+  (local/system hooks) and a GitHub Actions workflow that runs the SAME `pre-commit run
+  --all-files`. Added a root `Makefile`, `.markdownlint-cli2.jsonc`, ruff/pytest config;
+  fixed the-loop's own `.the-loop/config.yaml` (was `ts`, now `python`); recorded
+  decision-006; added task 12. Auto-fixed markdown blank-line hygiene across docs.
+- **Checkpoint/tests:** `pre-commit run --all-files` → all 6 hooks **Passed** (ruff lint,
+  ruff format, pyright, pytest 7 passed, markdownlint 0 errors over 37 files, schema
+  validation). (pre-commit's remote hook repos are blocked by the sandbox proxy, so hooks
+  are local/system — CI installs the same tools; parity holds.)
+- **Next:** Push to PR #2 (gives the PR a green CI signal); create + apply phase labels
+  to issue #1.
+
 ## Review cycles
+
 | Cycle | Type (self/critic) | Reviewer | Outcome | Link |
 |-------|--------------------|----------|---------|------|
 | 1 | self | the-loop | Structure validated against manifest; JSON + schema OK | this log |
 
 ## Final validation evidence
+
 - `config.schema.json`, `plugin.json`, `marketplace.json`, `hooks.json` parse.
 - `.the-loop/config.yaml` and `.the-loop/templates/config.yaml` validate against the
   updated schema (incl. the new `workflow` section).

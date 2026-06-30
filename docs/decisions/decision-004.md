@@ -6,12 +6,14 @@
 - **Work item:** issue-1
 
 ## Context
+
 Issue #1 was updated to borrow Kiro's spec methodology
 (https://kiro.dev/docs/specs/). The original single "delivery plan" is replaced by a
 structured, phased specification with a human review gate at the end of each phase, and
 an explicit phase state machine tracked on the ticket.
 
 ## Decision
+
 - Replace `delivery-plan.md` with a 3-phase spec per work item, stored in
   `docs/specs/<id>/`:
   1. `requirements.md` (user stories + EARS acceptance criteria) — or `bugfix.md` for bugs,
@@ -26,11 +28,13 @@ an explicit phase state machine tracked on the ticket.
 - The execution log moves alongside the spec at `docs/specs/<id>/execution-log.md`.
 
 ## Consequences
+
 - Clearer separation of "what / how / steps", each independently reviewable.
 - The ticket reflects live progress through phase labels.
 - `/work-on` becomes resumable per phase.
 - Supersedes the delivery-plan portion of decision-003's v0 scope.
 
 ## Alternatives considered
+
 - Keep the single delivery-plan — rejected: the updated issue explicitly adopts the
   Kiro 3-phase approach with per-phase human review.

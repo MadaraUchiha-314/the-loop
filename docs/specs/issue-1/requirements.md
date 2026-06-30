@@ -18,6 +18,7 @@ overrides: {}
 > `design.md` and `tasks.md`.
 
 ## Introduction
+
 the-loop is an opinionated product-development-lifecycle (PDLC) harness, shipped as a
 Claude plugin, that lets an agent harness deliver a work item end-to-end with minimal/no
 human intervention. The first work item is for the-loop to create itself.
@@ -25,6 +26,7 @@ human intervention. The first work item is for the-loop to create itself.
 ## Requirements
 
 ### R1 — Work-item ticketing **[v0]**
+
 **User story:** As a maintainer, I want every worked item to have a ticket, so that work
 is traceable.
 1. WHEN a project is configured THEN the-loop SHALL support `github` (Issues/Projects)
@@ -33,6 +35,7 @@ is traceable.
 3. The-loop SHALL provide fill-in templates for **Epics**, **Stories** and **Bugs**.
 
 ### R2 — Tooling contract **[v0 config; integrations deferred]**
+
 **User story:** As the harness, I want declared, validated tooling, so that I can do
 maximum work and validate against acceptance criteria.
 1. The config SHALL declare, per language, the package manager, unit + integration test
@@ -48,6 +51,7 @@ maximum work and validate against acceptance criteria.
    SAME tooling (no environment drift).
 
 ### R3 — Observability **[v0 config; integrations deferred]**
+
 1. Logging SHALL be identical at dev-time and runtime; the only dev advantage is
    breakpoints.
 2. Levels SHALL be configurable (dev: debug+, runtime: info+).
@@ -55,6 +59,7 @@ maximum work and validate against acceptance criteria.
    chrome-devtools MCP).
 
 ### R4 — The loop: 3-phase spec workflow **[v0 process; automation deferred]**
+
 **User story:** As a collaborator, I want phased, reviewable specs, so that I approve
 requirements, design and tasks before implementation.
 1. Each work item SHALL be specified as `requirements.md` (or `bugfix.md`) → `design.md`
@@ -69,12 +74,13 @@ requirements, design and tasks before implementation.
 5. `tasks.md` checkmarks SHALL be kept current as tasks complete.
 6. The-loop SHALL self-check (run tests at checkpoints) and maintain a checked-in
    `execution-log.md`.
-5. The-loop SHALL run X self-reviews and X critic reviews (default 3, configurable) via
+7. The-loop SHALL run X self-reviews and X critic reviews (default 3, configurable) via
    PR/ticket comments before escalating to a human, and present validated evidence at
    completion.
-6. The-loop SHALL be resumable from any phase using the checked-in specs + log.
+8. The-loop SHALL be resumable from any phase using the checked-in specs + log.
 
 ### R5 — Multi-party collaboration **[v0]**
+
 1. Available collaborators (individuals or groups, multi-role) SHALL be defined up-front
    in the repo.
 2. Each work item SHALL identify required collaborators up-front; not all tasks need all
@@ -83,11 +89,13 @@ requirements, design and tasks before implementation.
    via configured messaging channels.
 
 ### R6 — Documentation, decisions, learnings **[v0]**
+
 1. Docs SHALL live under `docs/`, with `docs/architecture/architecture.md` as an index.
 2. Decisions SHALL be logged under `docs/decisions/` (`decisions.md` + `decision-<nnn>.md`).
 3. Learnings (user + system feedback) SHALL be captured under `learnings/`.
 
 ### R7 — Distribution, footprint & lifecycle **[v0]**
+
 1. the-loop SHALL be installable as a Claude plugin directly from GitHub (no bespoke
    marketplace). (Cursor support **[deferred]**.)
 2. Every managed file SHALL be tracked in `.the-loop/manifest.yaml`; meta files live
@@ -96,6 +104,7 @@ requirements, design and tasks before implementation.
    schema-validated and per-task overridable.
 
 ### R8 — Automation & the dream **[receiver v0; routing deferred]**
+
 1. Webhooks (GitHub PR comments, Actions results) SHALL be able to trigger the harness.
    The **receiver** is delivered by the CLI (R9); routing events to the harness is
    deferred.
@@ -105,6 +114,7 @@ requirements, design and tasks before implementation.
    **[deferred]**
 
 ### R9 — CLI companion **[v0]**
+
 **User story:** As the the-loop plugin, I want a lightweight CLI for quality-of-life
 commands, so that I can do things outside the harness (e.g. receive webhooks).
 1. the-loop SHALL ship a Python CLI named `the-loop`, lightweight (zero required runtime
@@ -115,15 +125,18 @@ commands, so that I can do things outside the harness (e.g. receive webhooks).
 3. The CLI SHALL be written in Python (to allow future ML/self-learning SDKs).
 
 ## Non-functional requirements
+
 - All JSON parses; configs validate against `.the-loop/config.schema.json`.
 - The file tree matches `.the-loop/manifest.yaml`.
 
 ## Out of scope (this work item)
+
 Concrete language-tool integrations, webhook/remote automation, DAG execution across
 items, messaging integrations and Cursor packaging are **[deferred]** to follow-up work
 items (R2/R3/R8) per `decision-003`.
 
 ## Open questions (carried from issue #1)
+
 Scripts-from-root scaling; chrome-devtools MCP for browser logs; predictability via
 hooks vs custom code; Cursor marketplace equivalent; GitHub depends-on/blocked-by; Go
 tooling defaults. Tracked in `reference/automation-and-roadmap.md`.

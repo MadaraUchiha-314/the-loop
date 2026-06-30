@@ -1,0 +1,19 @@
+{
+  // markdownlint config for the-loop docs. Keeps structural correctness rules,
+  // relaxes stylistic ones that fight our technical-doc style (prose wrapping,
+  // ASCII diagrams, <placeholder> tokens, blockquoted lists, intentional bare URLs).
+  "config": {
+    "default": true,
+    "MD013": false, // line-length: prose is wrapped at ~90, not 80
+    "MD033": false, // inline HTML: we use <id>, <nnn>, <phase> placeholders
+    "MD041": false, // first-line heading: templates start with YAML front matter
+    "MD040": false, // fenced code language: ASCII state-machine/diagram blocks
+    "MD032": false, // blanks around lists: we use blockquoted lists
+    "MD034": false, // bare URLs: intentional in docs
+    "MD060": false, // table-column-style: cosmetic pipe alignment
+    "MD024": { "siblings_only": true }, // repeated headings allowed under different parents
+    "MD025": { "front_matter_title": "" } // don't treat YAML front-matter title: as an H1
+
+  },
+  "ignores": ["**/node_modules/**", "cli/node_modules/**"]
+}

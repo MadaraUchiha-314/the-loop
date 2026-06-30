@@ -1,0 +1,53 @@
+# Pre-commit hooks for the-loop. RULE: CI runs these SAME hooks
+# (`pre-commit run --all-files`) so there are no local-vs-CI surprises.
+#
+# All hooks are `local`/`system`: they invoke the binaries a developer already has
+# on PATH (installed via `make install-dev`), and CI installs the same pinned
+# versions before running `pre-commit run`. This keeps local == CI and avoids
+# duplicate tool installs.
+minimum_pre_commit_version: "3.0.0"
+default_install_hook_types: [pre-commit, pre-push]
+
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-lint
+        name: ruff (lint + autofix)
+        entry: ruff check --fix
+        language: system
+        types_or: [python, pyi]
+        files: ^cli/
+
+      - id: ruff-format
+        name: ruff (format)
+        entry: ruff format
+        language: system
+        types_or: [python, pyi]
+        files: ^cli/
+
+      - id: pyright
+        name: pyright (type check cli)
+        entry: pyright cli
+        language: system
+        pass_filenames: false
+        files: ^cli/.*\.py$
+
+      - id: pytest
+        name: pytest (cli unit tests)
+        entry: bash -c 'cd cli && python -m pytest -q'
+        language: system
+        pass_filenames: false
+        files: ^cli/
+
+      - id: markdownlint
+        name: markdownlint (all markdown, incl. docs)
+        entry: npx --yes markdownlint-cli2
+        language: system
+        types: [markdown]
+
+      - id: validate-the-loop-config
+        name: validate .the-loop config against schema
+        entry: python scripts/validate_config.py
+        language: system
+        pass_filenames: false
+        files: '^\.the-loop/(config\.ya?ml|config\.schema\.json)$|^scripts/validate_config\.py$'

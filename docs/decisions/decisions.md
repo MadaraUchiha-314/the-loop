@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [006](decision-006.md) | Dogfood the-loop's own quality gates (pre-commit + CI parity) | accepted | 2026-06-30 |
 | [005](decision-005.md) | Provide a lightweight, extensible Python CLI (`the-loop`) | accepted | 2026-06-30 |
 | [004](decision-004.md) | Adopt Kiro's 3-phase spec workflow for the loop | accepted | 2026-06-30 |
 | [003](decision-003.md) | Bootstrap a v0 skeleton first, defer runtime automation | accepted | 2026-06-27 |
