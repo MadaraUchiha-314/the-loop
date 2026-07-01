@@ -96,9 +96,21 @@ copy of its contents. The checked-in file is the single source of truth.
 At the end, present **validated evidence** that the work item meets the acceptance
 criteria (test output, screenshots, logs).
 
-Before any autonomous completion, the **ready-to-ship gate** must ALL hold: green checks,
-**all review threads resolved**, and validated evidence recorded. Then the loop marks the
-work item ready and applies **risk-tiered autonomy** (`config.autonomy`):
+Before requesting human review or any autonomous completion, the **ready-to-ship gate**
+must ALL hold:
+
+- green checks;
+- **all review threads resolved**;
+- validated evidence recorded; **and**
+- the **R10 reviewer briefing** is posted/updated in the PR — a condensed, prioritized
+  summary (where to focus), mermaid diagram(s), and the low-level decisions — produced
+  from `userInteraction.prSummary.templatePath` (default
+  `.the-loop/templates/pr-briefing.md`). This is the **trigger** that makes mandatory
+  user-education actually fire (`userInteraction.prSummary.required`, default true); do
+  not request review without it. RULE: educating the reviewer is not optional.
+
+Then the loop marks the work item ready and applies **risk-tiered autonomy**
+(`config.autonomy`):
 
 - Each work item has a **risk tier 1–5** (from its front-matter `riskTier`, else
   `autonomy.defaultTier`; raised automatically when the change touches

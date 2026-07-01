@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [013](decision-013.md) | Trigger mandatory user-education via a required PR-briefing gate | accepted | 2026-07-01 |
 | [012](decision-012.md) | Adopt eight review-driven robustness features (issues #3–#10) | accepted | 2026-07-01 |
 | [011](decision-011.md) | Expose granular per-phase commands (with /work-on as superset) | accepted | 2026-07-01 |
 | [010](decision-010.md) | Keep the-loop's internal roadmap out of the published skill | accepted | 2026-07-01 |

@@ -73,7 +73,11 @@ dropping, so how the-loop communicates is a first-class concern. Driven by
   the right judgement call without digging.
 - **Condensed, prioritized PR summaries.** Every PR the-loop raises tells the reviewer
   **where to focus and in what order** — reviewing a huge AI-authored PR top-to-bottom
-  is not realistic. Lead with the highest-priority items to scrutinize.
+  is not realistic. Lead with the highest-priority items to scrutinize. This briefing is
+  produced from `.the-loop/templates/pr-briefing.md` and **posted/updated in the PR
+  BEFORE human review is requested** — a required item of the ready-to-ship gate
+  (`userInteraction.prSummary.required`), so it triggers on every PR (see
+  `workflow.md`).
 - **RULE: all diagrams are mermaid.** PR summaries, design docs and educational snippets
   use mermaid diagrams to explain low-level details (`diagramFormat: mermaid`).
 - **Document insights & decisions in the PR description.** Capture the insights from
@@ -81,8 +85,10 @@ dropping, so how the-loop communicates is a first-class concern. Driven by
   so the user sees the reasoning, not just the diff.
 - **RULE: educate the user (mandatory, not optional).** As the user's familiarity with
   the code drops, use every opportunity to teach them the low-level design decisions.
-  This is intentional and required (`educateUser: true`), not a nicety. *How to hard-
-  enforce this is still evolving; today it is a standing rule + config flag.*
+  This is intentional and required (`educateUser: true`), not a nicety. **Enforcement:**
+  it is not left to chance — the reviewer briefing is a required item of the ready-to-ship
+  gate (`workflow.md`), so "request human review" cannot happen without the education
+  step having fired.
 
 ## Working with other tools (MCP / CLIs / plugins)
 

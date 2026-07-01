@@ -30,10 +30,14 @@ Load `.the-loop/config.yaml`; apply any per-task `overrides` from the spec front
    human. Record every review as a PR/ticket comment and in the log's review table.
    Notify via configured messaging channels when a human action is pending.
 
-4. **Evidence.** Present validated evidence that the acceptance criteria are met (tests,
-   screenshots, logs) on the PR. Write the PR description for the reviewer: a condensed,
-   prioritized summary (where to focus), **mermaid** diagrams, and the low-level
-   decisions — and educate the user (`config.userInteraction`).
+4. **Evidence + reviewer briefing (required gate).** Present validated evidence that the
+   acceptance criteria are met (tests, screenshots, logs). BEFORE requesting human
+   review, **post/update the R10 reviewer briefing in the PR** — produced from
+   `userInteraction.prSummary.templatePath` (`.the-loop/templates/pr-briefing.md`): a
+   condensed, prioritized summary (where to focus), **mermaid** diagram(s), and the
+   low-level decisions the harness made. This is a ready-to-ship gate item
+   (`userInteraction.prSummary.required`) — educating the reviewer is mandatory, not
+   optional; do not request review without it.
 
 5. **Next step:** once every task is checked and reviewed, `/the-loop:finish-tasks <id>`.
 

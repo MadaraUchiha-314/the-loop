@@ -210,6 +210,23 @@ status: in-progress
 - **Blockers:** None. Assumption (implement-all vs the reviewer's staged sequencing)
   recorded in `docs/decisions/conflicts.md`.
 
+### 2026-07-01 — Retro: mandatory user-education never triggered on this PR
+
+- **Phase:** needs-review
+- **Did:** PR #2 retro — R10 education never fired (reviewer got per-change replies, no
+  PR-level briefing, no updated PR description). Root cause: R10 was a rule with **no
+  trigger point**. Fix: added `.the-loop/templates/pr-briefing.md` and made the reviewer
+  briefing a **required item of the ready-to-ship gate** (adding
+  `userInteraction.prSummary.required` and `templatePath` to the schema and both configs);
+  wired it into `workflow.md`, `execute-tasks`, `work-on`, and `collaboration.md` ("cannot
+  request review without the briefing"). Resolved the formerly-deferred R10.4 enforcement
+  question (now R10.6). Recorded `decision-013` and `learning-007`. Also produced the
+  actual PR #2 briefing (PR description and top comment) to brief the reviewer now.
+- **Checkpoint/tests:** both configs validate against the updated schema; `uv run
+  pre-commit run --all-files` green.
+- **Next:** Push; post the briefing + update the PR description; reply to the retro.
+- **Blockers:** None.
+
 ## Review cycles
 
 | Cycle | Type (self/critic) | Reviewer | Outcome | Link |

@@ -81,11 +81,13 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
 - **Learnings lifecycle.** Capture → write-gate (rule-of-three) → consolidate (size cap)
   → inject a capped index (`config.selfImprovement`). See `reference/automation.md`.
 - **Evidence at the end.** Present validated evidence that acceptance criteria are met.
-- **Communicate for the reviewer.** Give enough context whenever asking for input. PRs
-  carry a **condensed, prioritized** summary (where to focus first), document the
-  spec→implementation insights and low-level decisions, and use **mermaid** for all
-  diagrams. **Educating the user on low-level design decisions is mandatory, not
-  optional** (`config.userInteraction`). See `reference/collaboration.md`.
+- **Communicate for the reviewer (required gate).** Before requesting human review,
+  post/update the **reviewer briefing** in the PR — produced from
+  `.the-loop/templates/pr-briefing.md`: a **condensed, prioritized** summary (where to
+  focus first), the spec→implementation insights and low-level decisions, and **mermaid**
+  diagrams. This is a required item of the ready-to-ship gate
+  (`userInteraction.prSummary.required`), so **mandatory user-education is triggered, not
+  optional** — you cannot request review without it. See `reference/collaboration.md`.
 - **Use the configured tooling.** Package managers, test runners, linters, type checkers
   and release tooling come from `.the-loop/config.yaml`; run scripts from the project
   root; lint ALL files including markdown. See `reference/tooling.md`.

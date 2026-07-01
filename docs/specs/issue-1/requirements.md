@@ -144,6 +144,10 @@ education, so that I can make good calls on large PRs I didn't write.
    decisions as their familiarity with the codebase decreases — this is not optional.
 5. These behaviours SHALL be driven by `config.userInteraction`
    (`diagramFormat: mermaid`, `prSummary.*`, `educateUser: true`).
+6. The reviewer briefing SHALL be produced from `.the-loop/templates/pr-briefing.md` and
+   posted/updated in the PR **before** human review is requested — a required item of the
+   ready-to-ship gate (`prSummary.required`, default true) — so the education behaviour is
+   **triggered**, not silently skipped (`decision-013`).
 
 ### R11 — Review-driven robustness features **[v0]**
 
@@ -183,6 +187,7 @@ items (R2/R3/R8) per `decision-003`.
 ## Open questions (carried from issue #1)
 
 Scripts-from-root scaling; chrome-devtools MCP for browser logs; predictability via
-hooks vs custom code; how to _enforce_ mandatory user-education (R10.4) — config flag
-today, a mechanism (hook/checklist) deferred; Cursor marketplace equivalent; GitHub
-depends-on/blocked-by; Go tooling defaults. Tracked in `docs/roadmap.md`.
+hooks vs custom code; Cursor marketplace equivalent; GitHub depends-on/blocked-by; Go
+tooling defaults. Tracked in `docs/roadmap.md`. (Enforcing mandatory user-education,
+formerly R10.4, is **resolved** — the reviewer briefing is a required ready-to-ship gate
+item; see `decision-013`.)

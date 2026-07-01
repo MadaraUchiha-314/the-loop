@@ -112,6 +112,8 @@ selfImprovement:
 userInteraction:
   diagramFormat: mermaid          # RULE: all diagrams are mermaid
   prSummary:
+    required: true                # gate: post the briefing BEFORE requesting human review
+    templatePath: .the-loop/templates/pr-briefing.md
     condensed: true               # tell the reviewer where to focus, and in what order
     includeDiagrams: true         # mermaid diagrams explaining the low-level details
     documentInsightsAndDecisions: true

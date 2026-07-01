@@ -396,6 +396,16 @@
           "additionalProperties": false,
           "description": "What every PR the-loop raises must contain so a human can review AI-authored work efficiently.",
           "properties": {
+            "required": {
+              "type": "boolean",
+              "default": true,
+              "description": "The reviewer briefing MUST be posted/updated in the PR (description or top comment) BEFORE requesting human review — a ready-to-ship gate item, so R10 education is triggered rather than silently skipped."
+            },
+            "templatePath": {
+              "type": "string",
+              "default": ".the-loop/templates/pr-briefing.md",
+              "description": "Template the reviewer briefing is produced from."
+            },
             "condensed": {
               "type": "boolean",
               "default": true,
