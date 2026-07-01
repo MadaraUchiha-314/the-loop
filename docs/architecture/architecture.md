@@ -71,5 +71,5 @@ registry. First command: `the-loop gh-webhook start|stop` — a GitHub webhook r
 
 v0 establishes the plugin skeleton, configuration contract, templates, commands,
 skill, and documentation/knowledge structure. Runtime automation (webhooks, remote
-execution, DAG orchestration, language-specific tooling integrations) is future work
-tracked via the decision log and follow-up issues.
+execution, DAG orchestration, language-specific tooling integrations) is future work,
+tracked in `docs/roadmap.md` (kept out of the published skill) and the decision log.

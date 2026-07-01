@@ -27,7 +27,7 @@ overrides: {}
 - [x] 4. Commands: `init`, `work-on` (3-phase), `upgrade-the-loop`
   - _Depends on:_ 2, 3 — _Requirements:_ R4, R7
 - [x] 5. Skill + reference docs (workflow, tooling, collaboration, observability,
-  automation-and-roadmap) + SessionStart hook
+  automation) + SessionStart hook
   - _Depends on:_ 2 — _Requirements:_ R2, R3, R4, R5
 - [x] 6. Knowledge: architecture index, decisions 001–006, learnings index
   - _Depends on:_ none — _Requirements:_ R6

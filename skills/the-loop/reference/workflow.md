@@ -79,7 +79,7 @@ Because the specs and execution log are checked in, the-loop can resume a work i
 exactly where it left off — read the execution log's `phase` and the specs' `status`,
 and continue.
 
-## DAG orchestration across work items (the dream)
+## DAG orchestration across work items
 
 When an entire project is broken into work items, the-loop orchestrates them as a DAG
 using dependency relationships:
@@ -100,4 +100,4 @@ Much of this is a fixed PDLC process; the harness should not re-derive it each t
 Candidate mechanisms to make steps predictable/guaranteed:
 - **Claude hooks** (this plugin's `hooks/`) to force steps to run.
 - **Custom code** where hooks are insufficient.
-This is an open question from issue #1 — evaluate and record a decision as it firms up.
+This is an open question — evaluate and record a decision as it firms up.

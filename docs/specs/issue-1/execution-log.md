@@ -156,6 +156,23 @@ status: in-progress
 - **Next:** Push to PR #2; confirm CI green; reply to the review comments.
 - **Blockers:** None.
 
+### 2026-07-01 — Keep internal roadmap out of the published skill (PR review)
+
+- **Phase:** needs-review
+- **Did:** Per PR review ("the roadmap/issue is internal — why publish it in the skill?"),
+  separated the published artifact from internal meta. Moved the-loop's roadmap (deferred
+  automation, the dream, open TODOs carried from issue #1, self-dev meta) to a new
+  `docs/roadmap.md`; rewrote `reference/automation-and-roadmap.md` →
+  `reference/automation.md` as user-facing capability docs (no issue/decision/deferred
+  framing); scrubbed "(issue #1)" / roadmap references from `tooling`, `observability`,
+  `workflow`, `collaboration` and both SKILL index lines; updated README + issue-1 spec
+  references and linked the roadmap from `architecture.md`. Recorded `decision-010` +
+  `learning-006`.
+- **Checkpoint/tests:** `uv run pre-commit run --all-files` green; no `issue #1` /
+  `decision-` / `roadmap` references remain under `skills/`.
+- **Next:** Push to PR #2; confirm CI; reply to the review comment.
+- **Blockers:** None.
+
 ## Review cycles
 
 | Cycle | Type (self/critic) | Reviewer | Outcome | Link |

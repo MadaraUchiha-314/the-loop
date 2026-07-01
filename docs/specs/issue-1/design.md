@@ -63,7 +63,7 @@ Six components. Each requirement maps to one or more.
 ### Skill + reference (R2–R6)
 
 - `skills/the-loop/SKILL.md` is the operating manual; `reference/{workflow,tooling,
-  collaboration,observability,automation-and-roadmap}.md` carry the full detail so the
+  collaboration,observability,automation}.md` carry the full detail so the
   essence of issue #1 is preserved for the harness at runtime.
 
 ### User interaction (R10)

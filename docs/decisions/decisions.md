@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [010](decision-010.md) | Keep the-loop's internal roadmap out of the published skill | accepted | 2026-07-01 |
 | [009](decision-009.md) | Dogfood uv (workspace + uv.lock) for the-loop's own tooling | accepted | 2026-07-01 |
 | [008](decision-008.md) | Use commitizen for Conventional Commits (not custom code) | accepted | 2026-07-01 |
 | [007](decision-007.md) | Enforce Conventional Commits | superseded (by 008) | 2026-06-30 |

@@ -16,7 +16,7 @@ escalating only when a decision/opinion is genuinely required.
 > - `reference/tooling.md` — repo management, per-language tooling matrix, hooks, CI parity.
 > - `reference/collaboration.md` — personas/roles/groups, paper-trail rules, messaging, MCP tools.
 > - `reference/observability.md` — dev==runtime logging, levels, browser logging.
-> - `reference/automation-and-roadmap.md` — distribution, webhooks, the dream, meta, open TODOs.
+> - `reference/automation.md` — distribution, the CLI, webhooks, predictability, learnings.
 
 ## The 3-phase spec workflow (Kiro-style)
 
@@ -102,7 +102,7 @@ in `.the-loop/manifest.yaml`.
   decision is recorded).
 - `docs/specs/<id>/` — the per-work-item 3-phase spec + execution log.
 - `learnings/learnings.md` + `learning-<nnn>.md` — learnings from user & system
-  feedback, checked in for review. See `reference/automation-and-roadmap.md`.
+  feedback, checked in for review. See `reference/automation.md`.
 
 ## Interacting with other tools
 

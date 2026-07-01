@@ -13,8 +13,8 @@ the rules and the per-language matrix so the essence is not lost.
 - **All scripts run from the project root** (`repository.runScriptsFromRoot: true`).
   Invoke build/test/lint/typecheck from the root, delegating to the workspace tool
   (e.g. `nx run <project>:test`) rather than `cd`-ing into packages.
-  - _Open question (from issue #1):_ validate that "all scripts from root" scales for
-    large monorepos; revisit and log a decision if it doesn't.
+  - _Open question:_ validate that "all scripts from root" scales for large monorepos;
+    revisit and log a decision if it doesn't.
 
 ## Per-language tooling matrix
 

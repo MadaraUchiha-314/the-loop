@@ -63,8 +63,7 @@ dropping, so how the-loop communicates is a first-class concern. Driven by
 - **RULE: educate the user (mandatory, not optional).** As the user's familiarity with
   the code drops, use every opportunity to teach them the low-level design decisions.
   This is intentional and required (`educateUser: true`), not a nicety. *How to hard-
-  enforce this is an open question (see `automation-and-roadmap.md`); today it is a
-  standing rule + config flag.*
+  enforce this is still evolving; today it is a standing rule + config flag.*
 
 ## Working with other tools (MCP / CLIs / plugins)
 

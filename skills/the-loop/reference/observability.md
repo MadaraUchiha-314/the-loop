@@ -26,5 +26,5 @@ Use the same logger and the same log lines in both; only the active level differ
 - **Browser-based logging**: surface browser console/network logs to the harness via
   `observability.browserLogging` (default `chrome-devtools-mcp` — the Chrome DevTools
   MCP server).
-  - _Open question (issue #1):_ confirm chrome-devtools MCP is the right mechanism for
-    browser logging, and document the setup. Record a decision once validated.
+  - _Open question:_ confirm chrome-devtools MCP is the right mechanism for browser
+    logging, and document the setup. Record a decision once validated.

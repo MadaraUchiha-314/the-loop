@@ -52,7 +52,7 @@ bespoke marketplace publishing.
 - **The operating model** is captured in the
   [`the-loop` skill](skills/the-loop/SKILL.md), with the full detail in its
   [reference docs](skills/the-loop/reference/) — `workflow`, `tooling`, `collaboration`,
-  `observability`, and `automation-and-roadmap`.
+  `observability`, and `automation`.
 
 ## CLI companion (`the-loop`)
 

@@ -156,5 +156,4 @@ items (R2/R3/R8) per `decision-003`.
 Scripts-from-root scaling; chrome-devtools MCP for browser logs; predictability via
 hooks vs custom code; how to _enforce_ mandatory user-education (R10.4) — config flag
 today, a mechanism (hook/checklist) deferred; Cursor marketplace equivalent; GitHub
-depends-on/blocked-by; Go tooling defaults. Tracked in
-`reference/automation-and-roadmap.md`.
+depends-on/blocked-by; Go tooling defaults. Tracked in `docs/roadmap.md`.
