@@ -1,0 +1,18 @@
+# the-loop repo root — a uv workspace. the-loop declares `uv` as its Python package
+# manager (`.the-loop/config.yaml` -> tooling.packageManager.python: uv), so it
+# dogfoods uv here rather than raw pip. This root is a *virtual* workspace root (not a
+# published package); it aggregates the `cli` member and the repo-level dev tooling.
+# Reproducibility (RULE: no local-vs-CI drift) comes from the committed `uv.lock`.
+[tool.uv.workspace]
+members = ["cli"]
+
+[dependency-groups]
+dev = [
+    "ruff==0.15.8",
+    "pyright",
+    "pytest>=8",
+    "pre-commit",
+    "commitizen>=3",
+    "jsonschema",
+    "pyyaml",
+]

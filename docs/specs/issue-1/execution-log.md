@@ -138,6 +138,24 @@ status: in-progress
 - **Next:** Push to PR #2; reference the updated spec on the ticket.
 - **Blockers:** None.
 
+### 2026-07-01 — Dogfood uv; commitizen; fix CI markdownlint drift (PR review)
+
+- **Phase:** needs-review
+- **Did:** Three PR-review items. (1) Replaced the custom `check_commit_msg.py` with
+  **commitizen** (`cz check`) — `decision-008`, `learning-004`. (2) **Practice what you
+  preach:** converted the repo to a **uv workspace** (root `pyproject.toml` + committed
+  `uv.lock`); `make install-dev` = `uv sync`; all Makefile targets and pre-commit hook
+  entries run via `uv run` (locked versions on `git commit`, `pre-commit run` and CI);
+  CI installs uv + `uv sync` + `uv run pre-commit` — `decision-009`, `learning-005`.
+  (3) Fixed a **CI-only markdownlint failure** (0 lint errors, but an unpinned
+  `npx --yes markdownlint-cli2` crashed under Node 20): pinned
+  `markdownlint-cli2@0.18.1` and bumped CI Node 20 → 22 to match local.
+- **Checkpoint/tests:** `uv sync` OK; `uv run pre-commit run --all-files` → all 6 hooks
+  Passed (ruff, ruff-format, pyright, pytest, markdownlint 0 errors/42 files, schema);
+  commit-msg hook validated the commits via `uv run cz check`.
+- **Next:** Push to PR #2; confirm CI green; reply to the review comments.
+- **Blockers:** None.
+
 ## Review cycles
 
 | Cycle | Type (self/critic) | Reviewer | Outcome | Link |

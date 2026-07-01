@@ -6,12 +6,19 @@ room to add self-learning / ML capabilities later (mostly exposed as Python SDKs
 
 ## Install
 
+the-loop uses **uv** (its declared Python package manager). From the repo root:
+
 ```bash
-# from this directory
-pip install -e .            # or: uv pip install -e .
-# optional extras:
-pip install -e ".[config]"  # PyYAML, for reading .the-loop/config.yaml defaults
-pip install -e ".[dev]"     # pytest
+uv sync                     # installs the workspace (this CLI + dev tooling) from uv.lock
+uv run the-loop --help      # run the CLI
+```
+
+Or install this package on its own with any PEP 517 installer:
+
+```bash
+uv pip install -e .            # or: pip install -e .
+uv pip install -e ".[config]"  # PyYAML, for reading .the-loop/config.yaml defaults
+uv pip install -e ".[dev]"     # pytest + commitizen
 ```
 
 This exposes the primary CLI: `the-loop`.
