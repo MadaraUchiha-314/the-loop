@@ -32,6 +32,7 @@ Six components. Each requirement maps to one or more.
 | The loop (behaviour) | `commands/`, `skills/the-loop/` (+ `reference/`), `hooks/` | R4, and operationalizes R1–R6 |
 | Knowledge & feedback | `docs/{architecture,decisions,specs}/`, `learnings/` | R4, R6 |
 | Collaboration & ticketing | GitHub/Jira; comments as paper trail; `collaborators.yaml`, `messaging` | R1, R5 |
+| User interaction | `config.userInteraction`; PR-summary/mermaid/education rules in skill + `work-on` + `reference/collaboration.md` | R10 |
 | CLI companion | `cli/` Python package `the_loop` (`gh-webhook` receiver) | R9, R8 (receiver) |
 | Automation (future) | remote exec, DAG orchestration, event→harness routing | R8 [deferred] |
 
@@ -64,6 +65,16 @@ Six components. Each requirement maps to one or more.
 - `skills/the-loop/SKILL.md` is the operating manual; `reference/{workflow,tooling,
   collaboration,observability,automation-and-roadmap}.md` carry the full detail so the
   essence of issue #1 is preserved for the harness at runtime.
+
+### User interaction (R10)
+
+- `config.userInteraction` encodes the rules as validated, checkable settings:
+  `diagramFormat: mermaid`, `prSummary.{condensed,includeDiagrams,documentInsightsAndDecisions}`,
+  `educateUser: true`.
+- The behaviour is operationalized in `SKILL.md`, `commands/work-on.md` (Complete step)
+  and `reference/collaboration.md`: condensed/prioritized PR summaries that say where to
+  focus, mermaid diagrams, documented spec→implementation insights/decisions, and
+  mandatory user education. Hard-enforcement mechanism is deferred (open question).
 
 ### Hooks (predictability)
 

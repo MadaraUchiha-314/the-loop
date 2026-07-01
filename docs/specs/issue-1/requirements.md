@@ -124,6 +124,22 @@ commands, so that I can do things outside the harness (e.g. receive webhooks).
    `webhooks.ghWebhook`.
 3. The CLI SHALL be written in Python (to allow future ML/self-learning SDKs).
 
+### R10 — User-interaction principles **[v0 process]**
+
+**User story:** As a human reviewing AI-authored work, I want enough context, focus and
+education, so that I can make good calls on large PRs I didn't write.
+1. WHEN the-loop requests any user input THEN it SHALL provide enough context for the
+   user to make the right judgement call.
+2. WHEN the-loop opens or updates a PR THEN the PR description SHALL present a
+   **condensed, prioritized** summary telling the reviewer **where to focus** (and in
+   what order), and SHALL document the insights from spec→implementation and the
+   low-level decisions the harness made.
+3. All diagrams (PR summaries, design docs, education) SHALL be authored in **mermaid**.
+4. the-loop SHALL **intentionally and mandatorily educate** the user on low-level design
+   decisions as their familiarity with the codebase decreases — this is not optional.
+5. These behaviours SHALL be driven by `config.userInteraction`
+   (`diagramFormat: mermaid`, `prSummary.*`, `educateUser: true`).
+
 ## Non-functional requirements
 
 - All JSON parses; configs validate against `.the-loop/config.schema.json`.
@@ -138,5 +154,7 @@ items (R2/R3/R8) per `decision-003`.
 ## Open questions (carried from issue #1)
 
 Scripts-from-root scaling; chrome-devtools MCP for browser logs; predictability via
-hooks vs custom code; Cursor marketplace equivalent; GitHub depends-on/blocked-by; Go
-tooling defaults. Tracked in `reference/automation-and-roadmap.md`.
+hooks vs custom code; how to _enforce_ mandatory user-education (R10.4) — config flag
+today, a mechanism (hook/checklist) deferred; Cursor marketplace equivalent; GitHub
+depends-on/blocked-by; Go tooling defaults. Tracked in
+`reference/automation-and-roadmap.md`.

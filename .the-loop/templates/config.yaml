@@ -83,6 +83,14 @@ reviews:
   #   harness: cursor
   #   model: gpt-5.5
 
+userInteraction:
+  diagramFormat: mermaid          # RULE: all diagrams are mermaid
+  prSummary:
+    condensed: true               # tell the reviewer where to focus, and in what order
+    includeDiagrams: true         # mermaid diagrams explaining the low-level details
+    documentInsightsAndDecisions: true
+  educateUser: true               # mandatory, not optional
+
 personas: []
   # - handle: "@MadaraUchiha-314"
   #   kind: individual

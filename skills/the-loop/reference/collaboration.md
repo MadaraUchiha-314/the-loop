@@ -43,6 +43,29 @@ Match personas to the work:
 
 Pull required reviewers/approvers for each phase from `collaborators.yaml` by role.
 
+## User-interaction principles (reviewing AI-authored work)
+
+The human often did not write the code and their familiarity with the codebase keeps
+dropping, so how the-loop communicates is a first-class concern. Driven by
+`config.userInteraction`.
+
+- **Give enough context to decide.** Whenever user input is requested (a planning
+  question, a design opinion, a review), include enough context that the user can make
+  the right judgement call without digging.
+- **Condensed, prioritized PR summaries.** Every PR the-loop raises tells the reviewer
+  **where to focus and in what order** — reviewing a huge AI-authored PR top-to-bottom
+  is not realistic. Lead with the highest-priority items to scrutinize.
+- **RULE: all diagrams are mermaid.** PR summaries, design docs and educational snippets
+  use mermaid diagrams to explain low-level details (`diagramFormat: mermaid`).
+- **Document insights & decisions in the PR description.** Capture the insights from
+  taking the spec to implementation and every low-level decision the harness had to make,
+  so the user sees the reasoning, not just the diff.
+- **RULE: educate the user (mandatory, not optional).** As the user's familiarity with
+  the code drops, use every opportunity to teach them the low-level design decisions.
+  This is intentional and required (`educateUser: true`), not a nicety. *How to hard-
+  enforce this is an open question (see `automation-and-roadmap.md`); today it is a
+  standing rule + config flag.*
+
 ## Working with other tools (MCP / CLIs / plugins)
 
 the-loop is allowed to freely interact with the MCP tools, skills and plugins available

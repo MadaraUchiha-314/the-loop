@@ -64,6 +64,11 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   `reviews.criticReviewCount` critic reviews (a different harness/model), default 3
   each, BEFORE reaching out to a human. All reviews are comments.
 - **Evidence at the end.** Present validated evidence that acceptance criteria are met.
+- **Communicate for the reviewer.** Give enough context whenever asking for input. PRs
+  carry a **condensed, prioritized** summary (where to focus first), document the
+  spec→implementation insights and low-level decisions, and use **mermaid** for all
+  diagrams. **Educating the user on low-level design decisions is mandatory, not
+  optional** (`config.userInteraction`). See `reference/collaboration.md`.
 - **Use the configured tooling.** Package managers, test runners, linters, type checkers
   and release tooling come from `.the-loop/config.yaml`; run scripts from the project
   root; lint ALL files including markdown. See `reference/tooling.md`.
@@ -79,8 +84,8 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
 
 Behaviour is driven by `.the-loop/config.yaml`, validated against
 `.the-loop/config.schema.json`. Sections: `ticketing`, `repository`, `workflow`,
-`tooling`, `localOrchestration`, `hooks`, `observability`, `reviews`, `personas`,
-`messaging`, `externalTools`. A subset of keys can be overridden per work item via the
+`tooling`, `localOrchestration`, `hooks`, `observability`, `reviews`, `userInteraction`,
+`personas`, `messaging`, `externalTools`, `webhooks`. A subset of keys can be overridden per work item via the
 YAML front-matter `overrides` of the work-item / spec markdown. Managed files are listed
 in `.the-loop/manifest.yaml`.
 

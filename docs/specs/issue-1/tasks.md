@@ -9,8 +9,8 @@ overrides: {}
 
 # Tasks: the-loop (create itself)
 
-> Phase 3. The implementation DAG for the-loop. **v0** tasks (1–12) are done and form
-> the current PR; **deferred** tasks (13–22) are the planned forward DAG and remain
+> Phase 3. The implementation DAG for the-loop. **v0** tasks (1–13) are done and form
+> the current PR; **deferred** tasks (14–23) are the planned forward DAG and remain
 > unchecked until taken up as follow-up work items (per `decision-003`). Each task
 > references the requirement(s) it satisfies and its dependencies.
 
@@ -46,39 +46,44 @@ overrides: {}
   markdownlint, schema validation, Conventional Commits (commit-msg) — via pre-commit +
   GitHub Actions CI (same tooling local & CI) + root Makefile + `.claude/settings.json`
   - _Depends on:_ 11 — _Requirements:_ R2
+- [x] 13. User-interaction principles: `config.userInteraction` (mermaid diagrams,
+  condensed/prioritized PR summaries, mandatory user education) encoded in schema + both
+  configs, and operationalized in SKILL/`work-on`/`reference/collaboration.md`
+  - _Depends on:_ 2, 5 — _Requirements:_ R10
 
 ## Deferred — runtime & integrations (follow-up work items)
 
-- [ ] 13. Make `init` actually scaffold (write files, detect tooling, create labels)
+- [ ] 14. Make `init` actually scaffold (write files, detect tooling, create labels)
   - _Depends on:_ 4 — _Requirements:_ R7
-- [ ] 14. Scaffold per-language tooling into _user_ projects: uv/bun, pytest/vitest,
+- [ ] 15. Scaffold per-language tooling into _user_ projects: uv/bun, pytest/vitest,
   playwright, ruff/oxlint, pyright/tsc, markdownlint, with root scripts
   - _Depends on:_ 2 — _Requirements:_ R2
-- [ ] 15. Scaffold pre-commit/pre-push hooks + CI into user projects (same-tooling rule)
-  - _Depends on:_ 14 — _Requirements:_ R2
-- [ ] 16. Multi-entity testing: local linking, podman service orchestration, local-vs-
+- [ ] 16. Scaffold pre-commit/pre-push hooks + CI into user projects (same-tooling rule)
+  - _Depends on:_ 15 — _Requirements:_ R2
+- [ ] 17. Multi-entity testing: local linking, podman service orchestration, local-vs-
   remote selection
-  - _Depends on:_ 14 — _Requirements:_ R2
-- [ ] 17. Observability wiring: shared logger, configurable levels, chrome-devtools MCP
+  - _Depends on:_ 15 — _Requirements:_ R2
+- [ ] 18. Observability wiring: shared logger, configurable levels, chrome-devtools MCP
   browser logs
   - _Depends on:_ none — _Requirements:_ R3
-- [ ] 18. Messaging integrations (slack/whatsapp/email) for escalations
+- [ ] 19. Messaging integrations (slack/whatsapp/email) for escalations
   - _Depends on:_ none — _Requirements:_ R5
-- [ ] 19. Predictability: decide hooks vs custom code/scripts; enforce PDLC steps
-  - _Depends on:_ 5 — _Requirements:_ R4
-- [ ] 20. Route received webhook events (PR comments, Actions) from the CLI → harness
-  - _Depends on:_ 11, 19 — _Requirements:_ R8
-- [ ] 21. Remote-workspace auto-trigger on ticket creation ("the dream")
-  - _Depends on:_ 20 — _Requirements:_ R8
-- [ ] 22. Project-wide DAG orchestration (depends-on/blocked-by) + Cursor packaging
-  - _Depends on:_ 19 — _Requirements:_ R8, R7
+- [ ] 20. Predictability: decide hooks vs custom code/scripts; enforce PDLC steps
+  (incl. hard-enforcing mandatory user education, R10.4)
+  - _Depends on:_ 5 — _Requirements:_ R4, R10
+- [ ] 21. Route received webhook events (PR comments, Actions) from the CLI → harness
+  - _Depends on:_ 11, 20 — _Requirements:_ R8
+- [ ] 22. Remote-workspace auto-trigger on ticket creation ("the dream")
+  - _Depends on:_ 21 — _Requirements:_ R8
+- [ ] 23. Project-wide DAG orchestration (depends-on/blocked-by) + Cursor packaging
+  - _Depends on:_ 20 — _Requirements:_ R8, R7
 
 ## Dependency graph (DAG)
 
-v0: `{1,2,6} → 3 → {4,5,7,9} → 8 → 10`; `2 → 11 → 12` (2 also feeds 4/5/9; 1 also
-feeds 8).
-Deferred: `4 → 13`; `2 → 14 → {15,16}`; `17,18` independent; `5 → 19`;
-`{11,19} → 20 → 21`; `19 → 22`.
+v0: `{1,2,6} → 3 → {4,5,7,9} → 8 → 10`; `2 → 11 → 12`; `{2,5} → 13` (2 also feeds
+4/5/9; 1 also feeds 8).
+Deferred: `4 → 14`; `2 → 15 → {16,17}`; `18,19` independent; `5 → 20`;
+`{11,20} → 21 → 22`; `20 → 23`.
 
 ## Checkpoints
 

@@ -66,7 +66,12 @@ mirror it in the execution log's `phase` front-matter:
    messaging channels when a human action is pending.
 
 8. **Complete** (`complete`). Present validated evidence that the acceptance criteria
-   are met (tests, screenshots, logs) on the PR; record it in the execution log.
+   are met (tests, screenshots, logs) on the PR; record it in the execution log. Write
+   the PR description for the human reviewer (`config.userInteraction`): a **condensed,
+   prioritized** summary saying **where to focus first**, **mermaid** diagram(s) of the
+   change, and the spec→implementation insights + low-level decisions the harness made.
+   Whenever you ask for input, give enough context to decide, and **educate the user on
+   the low-level design decisions — this is mandatory, not optional.**
 
 9. **Capture learnings.** Add to `learnings/learnings.md` (+ a `learning-<nnn>.md`) for
    any user/system feedback worth remembering. Log durable decisions under

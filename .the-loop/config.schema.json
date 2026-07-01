@@ -264,6 +264,46 @@
         }
       }
     },
+    "userInteraction": {
+      "type": "object",
+      "description": "How the-loop communicates with humans when requesting input and presenting work. RULES: always give enough context to make the call; all diagrams are mermaid; educating the user on low-level decisions is mandatory, not optional.",
+      "additionalProperties": false,
+      "properties": {
+        "diagramFormat": {
+          "type": "string",
+          "enum": ["mermaid"],
+          "default": "mermaid",
+          "description": "RULE: all diagrams (PR summaries, design docs, education) are authored in mermaid."
+        },
+        "prSummary": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "What every PR the-loop raises must contain so a human can review AI-authored work efficiently.",
+          "properties": {
+            "condensed": {
+              "type": "boolean",
+              "default": true,
+              "description": "Present a condensed, prioritized summary telling the reviewer where to focus and in what order."
+            },
+            "includeDiagrams": {
+              "type": "boolean",
+              "default": true,
+              "description": "Include mermaid diagrams explaining the low-level details of the change."
+            },
+            "documentInsightsAndDecisions": {
+              "type": "boolean",
+              "default": true,
+              "description": "Document the insights from spec->implementation and every low-level decision the harness had to make, in the PR description."
+            }
+          }
+        },
+        "educateUser": {
+          "type": "boolean",
+          "default": true,
+          "description": "RULE: intentionally and mandatorily educate the user on low-level design decisions as their familiarity with the codebase decreases. Not optional."
+        }
+      }
+    },
     "personas": {
       "type": "array",
       "description": "People and groups available to collaborate. A user can hold multiple roles.",

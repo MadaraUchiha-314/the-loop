@@ -120,6 +120,24 @@ status: in-progress
   unit-checked (valid/invalid/merge); pytest green.
 - **Next:** Push to PR #2; reply to the open comments.
 
+### 2026-07-01 — Translate issue §5 (User Interaction Principles) — closes a gap
+
+- **Phase:** needs-review
+- **Did:** A top-to-bottom re-check of issue #1 found §5 "User Interaction Principles"
+  had never been translated (requirements jumped §4→§6). Added **R10** to the issue-1
+  requirements; added `config.userInteraction` (mermaid-only diagrams, condensed/
+  prioritized PR summaries that say where to focus, documented insights/decisions,
+  mandatory user education) to the schema + both configs; added a "User-interaction
+  principles" section to `reference/collaboration.md`, a SKILL rule + config-section
+  update, and enriched `work-on`'s Complete step; mapped R10 in `design.md` and added
+  v0 task 13 in `tasks.md` (renumbered deferred 14–23). Recorded `learning-003`
+  (cross-check every source section by name).
+- **Checkpoint/tests:** `pre-commit run --all-files` green (ruff, pyright, pytest,
+  markdownlint, schema validation, commit-msg); both configs validate against the updated
+  schema.
+- **Next:** Push to PR #2; reference the updated spec on the ticket.
+- **Blockers:** None.
+
 ## Review cycles
 
 | Cycle | Type (self/critic) | Reviewer | Outcome | Link |

@@ -77,6 +77,10 @@ See [`cli/README.md`](cli/README.md) for install and how to add commands.
 - Self-checks run tests at logical checkpoints; progress is logged for visibility.
 - Configured self-reviews and critic reviews run **before** escalating to a human.
 - The same tooling runs locally and in CI; logging is identical at dev-time and runtime.
+- All commits follow **Conventional Commits**.
+- PRs are written **for the reviewer**: a condensed, prioritized summary of where to
+  focus, **mermaid** diagrams, and documented low-level decisions — and the loop
+  **educates the user** on those decisions (mandatory, not optional).
 
 ## Repository layout
 
