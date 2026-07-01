@@ -1,6 +1,7 @@
 # Decision 007: Enforce Conventional Commits
 
-- **Status:** accepted
+- **Status:** superseded by [decision-008](decision-008.md) (the enforcement
+  *mechanism* changed from a custom validator to commitizen; the *rule* still stands)
 - **Date:** 2026-06-30
 - **Deciders:** @MadaraUchiha-314 (via issue #1 update, §2.9.3)
 - **Work item:** issue-1

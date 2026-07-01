@@ -52,8 +52,12 @@ repos:
         pass_filenames: false
         files: '^\.the-loop/(config\.ya?ml|config\.schema\.json)$|^scripts/validate_config\.py$'
 
-      - id: conventional-commit
-        name: Conventional Commits (commit message)
-        entry: python scripts/check_commit_msg.py
+      # Conventional Commits via commitizen (popular, well-maintained) rather than a
+      # custom validator. Run as a local/system hook — `cz` is installed via
+      # `make install-dev`/CI, so the sandbox proxy's block on remote hook repos does
+      # not apply and local == CI still holds.
+      - id: commitizen
+        name: Conventional Commits (commitizen)
+        entry: cz check --allow-abort --commit-msg-file
         language: system
         stages: [commit-msg]

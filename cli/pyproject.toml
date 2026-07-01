@@ -13,7 +13,7 @@ dependencies = []
 [project.optional-dependencies]
 # Optional: richer config-file parsing. The CLI works without it (flags + env).
 config = ["pyyaml>=6"]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "commitizen>=3"]
 
 [project.scripts]
 the-loop = "the_loop.__main__:main"

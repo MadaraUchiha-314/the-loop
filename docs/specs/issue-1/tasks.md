@@ -43,8 +43,9 @@ overrides: {}
   receiver (HMAC verify, `/health`, pytest); `webhooks.ghWebhook` config
   - _Depends on:_ 2 — _Requirements:_ R9, R8 (receiver)
 - [x] 12. the-loop's own quality gates: ruff (lint+format), pyright, pytest,
-  markdownlint, schema validation, Conventional Commits (commit-msg) — via pre-commit +
-  GitHub Actions CI (same tooling local & CI) + root Makefile + `.claude/settings.json`
+  markdownlint, schema validation, Conventional Commits via **commitizen** (commit-msg) —
+  via pre-commit + GitHub Actions CI (same tooling local & CI) + root Makefile +
+  `.claude/settings.json`
   - _Depends on:_ 11 — _Requirements:_ R2
 - [x] 13. User-interaction principles: `config.userInteraction` (mermaid diagrams,
   condensed/prioritized PR summaries, mandatory user education) encoded in schema + both

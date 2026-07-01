@@ -5,7 +5,8 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
-| [007](decision-007.md) | Enforce Conventional Commits | accepted | 2026-06-30 |
+| [008](decision-008.md) | Use commitizen for Conventional Commits (not custom code) | accepted | 2026-07-01 |
+| [007](decision-007.md) | Enforce Conventional Commits | superseded (by 008) | 2026-06-30 |
 | [006](decision-006.md) | Dogfood the-loop's own quality gates (pre-commit + CI parity) | accepted | 2026-06-30 |
 | [005](decision-005.md) | Provide a lightweight, extensible Python CLI (`the-loop`) | accepted | 2026-06-30 |
 | [004](decision-004.md) | Adopt Kiro's 3-phase spec workflow for the loop | accepted | 2026-06-30 |

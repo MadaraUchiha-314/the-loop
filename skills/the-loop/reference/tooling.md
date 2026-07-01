@@ -64,7 +64,11 @@ All commits MUST follow Conventional Commits v1.0.0
 `<type>[optional scope][!]: <description>`, where type is one of
 `feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert`.
 `hooks.commitConvention` (default `conventional-commits`) wires a `commit-msg` hook that
-rejects non-conforming messages. Merge/revert/fixup/squash messages are exempt.
+rejects non-conforming messages. **Prefer a well-maintained library over custom code:**
+enforcement uses **[commitizen](https://commitizen-tools.github.io/commitizen/)**
+(`cz check`) — configured in `.cz.toml` — not a bespoke validator. Merge/revert messages
+are allowed through (`--allow-abort`). commitizen also offers `cz commit` (guided
+messages) and `cz bump` (versioning/changelog) for later.
 
 ## RULE: CI/CD must use exactly the same tooling as local
 
