@@ -96,6 +96,23 @@ Six components. Each requirement maps to one or more.
   GitHub deliveries (secret from env), serves `GET /health`, logs events, and exposes an
   `on_event` seam for future harness routing. Config: `webhooks.ghWebhook`.
 
+### Review-driven robustness (R11)
+
+Eight PR-review improvements (issues #3–#10, `decision-012`), realized as config + skill
+surface (no new runtime; matches v0's skill-driven model):
+
+- **Config:** `reviews.{stopOnNoNewFindings,escalateOnRepeatFinding}` + free-form
+  `critics[].harness`/`command`; new sections `autonomy` (tiers + policy + `$defs`),
+  `tdd`, `minimalism`, `selfImprovement`.
+- **Skill:** new `reference/reviewing.md` (review procedure) and `reference/minimalism.md`
+  (decision ladder); `workflow.md` gains TDD, the ready-to-ship gate and risk-tiered
+  autonomy; `automation.md` gains the learnings lifecycle; `collaboration.md` gains the
+  conflict-log rule.
+- **Artifacts:** `docs/decisions/conflicts.md` (+ template), `learnings/topics/` overflow
+  (+ git-ignored `.the-loop/learnings-pending/` queue), `tasks.md` template carries each
+  task's test; `init`/`upgrade-the-loop` made idempotent/non-clobbering with `--dry-run`
+  and a created/skipped/drifted/needs-user report.
+
 ## Data models
 
 - `.the-loop/config.yaml` ⟷ `config.schema.json`.

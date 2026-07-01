@@ -9,8 +9,8 @@ overrides: {}
 
 # Tasks: the-loop (create itself)
 
-> Phase 3. The implementation DAG for the-loop. **v0** tasks (1–14) are done and form
-> the current PR; **deferred** tasks (15–24) are the planned forward DAG and remain
+> Phase 3. The implementation DAG for the-loop. **v0** tasks (1–15) are done and form
+> the current PR; **deferred** tasks (16–25) are the planned forward DAG and remain
 > unchecked until taken up as follow-up work items (per `decision-003`). Each task
 > references the requirement(s) it satisfies and its dependencies.
 
@@ -56,40 +56,45 @@ overrides: {}
   (with `work-on` as superset); pre-ticket draft-folder flow. SKILL/README/workflow
   updated
   - _Depends on:_ 4 — _Requirements:_ R7
+- [x] 15. Review-driven robustness (issues #3–#10): review method (`reviewing.md`),
+  learnings lifecycle (`selfImprovement`), risk-tiered autonomy (`autonomy`), TDD
+  (`tdd`), minimalism (`minimalism.md`/`minimalism`), conflict log (`conflicts.md`), open
+  critic harness enum, idempotent `init`/`upgrade` (`--dry-run`, drift report)
+  - _Depends on:_ 4, 5, 9 — _Requirements:_ R11 (each item has its own ticket #3–#10)
 
 ## Deferred — runtime & integrations (follow-up work items)
 
-- [ ] 15. Make `init` actually scaffold (write files, detect tooling, create labels)
+- [ ] 16. Make `init` actually scaffold (write files, detect tooling, create labels)
   - _Depends on:_ 4 — _Requirements:_ R7
-- [ ] 16. Scaffold per-language tooling into _user_ projects: uv/bun, pytest/vitest,
+- [ ] 17. Scaffold per-language tooling into _user_ projects: uv/bun, pytest/vitest,
   playwright, ruff/oxlint, pyright/tsc, markdownlint, with root scripts
   - _Depends on:_ 2 — _Requirements:_ R2
-- [ ] 17. Scaffold pre-commit/pre-push hooks + CI into user projects (same-tooling rule)
-  - _Depends on:_ 16 — _Requirements:_ R2
-- [ ] 18. Multi-entity testing: local linking, podman service orchestration, local-vs-
+- [ ] 18. Scaffold pre-commit/pre-push hooks + CI into user projects (same-tooling rule)
+  - _Depends on:_ 17 — _Requirements:_ R2
+- [ ] 19. Multi-entity testing: local linking, podman service orchestration, local-vs-
   remote selection
-  - _Depends on:_ 16 — _Requirements:_ R2
-- [ ] 19. Observability wiring: shared logger, configurable levels, chrome-devtools MCP
+  - _Depends on:_ 17 — _Requirements:_ R2
+- [ ] 20. Observability wiring: shared logger, configurable levels, chrome-devtools MCP
   browser logs
   - _Depends on:_ none — _Requirements:_ R3
-- [ ] 20. Messaging integrations (slack/whatsapp/email) for escalations
+- [ ] 21. Messaging integrations (slack/whatsapp/email) for escalations
   - _Depends on:_ none — _Requirements:_ R5
-- [ ] 21. Predictability: decide hooks vs custom code/scripts; enforce PDLC steps
+- [ ] 22. Predictability: decide hooks vs custom code/scripts; enforce PDLC steps
   (incl. hard-enforcing mandatory user education, R10.4)
   - _Depends on:_ 5 — _Requirements:_ R4, R10
-- [ ] 22. Route received webhook events (PR comments, Actions) from the CLI → harness
-  - _Depends on:_ 11, 21 — _Requirements:_ R8
-- [ ] 23. Remote-workspace auto-trigger on ticket creation ("the dream")
-  - _Depends on:_ 22 — _Requirements:_ R8
-- [ ] 24. Project-wide DAG orchestration (depends-on/blocked-by) + Cursor packaging
-  - _Depends on:_ 21 — _Requirements:_ R8, R7
+- [ ] 23. Route received webhook events (PR comments, Actions) from the CLI → harness
+  - _Depends on:_ 11, 22 — _Requirements:_ R8
+- [ ] 24. Remote-workspace auto-trigger on ticket creation ("the dream")
+  - _Depends on:_ 23 — _Requirements:_ R8
+- [ ] 25. Project-wide DAG orchestration (depends-on/blocked-by) + Cursor packaging
+  - _Depends on:_ 22 — _Requirements:_ R8, R7
 
 ## Dependency graph (DAG)
 
-v0: `{1,2,6} → 3 → {4,5,7,9} → 8 → 10`; `2 → 11 → 12`; `{2,5} → 13`; `4 → 14` (2 also
-feeds 4/5/9; 1 also feeds 8).
-Deferred: `4 → 15`; `2 → 16 → {17,18}`; `19,20` independent; `5 → 21`;
-`{11,21} → 22 → 23`; `21 → 24`.
+v0: `{1,2,6} → 3 → {4,5,7,9} → 8 → 10`; `2 → 11 → 12`; `{2,5} → 13`; `4 → 14`;
+`{4,5,9} → 15` (2 also feeds 4/5/9; 1 also feeds 8).
+Deferred: `4 → 16`; `2 → 17 → {18,19}`; `20,21` independent; `5 → 22`;
+`{11,22} → 23 → 24`; `22 → 25`.
 
 ## Checkpoints
 

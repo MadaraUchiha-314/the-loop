@@ -37,6 +37,7 @@ templates:
   - path: .the-loop/templates/learning.md
   - path: .the-loop/templates/config.yaml
   - path: .the-loop/templates/collaborators.yaml
+  - path: .the-loop/templates/conflicts.md
 
 # Per-work-item artifacts: the Kiro-style 3-phase spec plus the execution log.
 # <id> is the ticket id (e.g. issue-1, PROJ-42). These MUST be checked in.
@@ -65,7 +66,11 @@ knowledge:
     role: decisions-index
   - pathPattern: docs/decisions/decision-<nnn>.md
     role: decision-record
+  - path: docs/decisions/conflicts.md
+    role: conflict-log
   - path: learnings/learnings.md
     role: learnings-index
   - pathPattern: learnings/learning-<nnn>.md
     role: learning-record
+  - pathPattern: learnings/topics/<category>.md
+    role: learning-topic-overflow

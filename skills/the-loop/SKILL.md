@@ -12,11 +12,13 @@ escalating only when a decision/opinion is genuinely required.
 
 > **Read the relevant reference file before acting** — they carry the full detail so the
 > essence is not lost:
-> - `reference/workflow.md` — the loop, phases, reviews, DAG, resumability, predictability.
+> - `reference/workflow.md` — the loop, phases, TDD, reviews, autonomy, DAG, resumability.
+> - `reference/reviewing.md` — the self/critic review procedure the review counts drive.
 > - `reference/tooling.md` — repo management, per-language tooling matrix, hooks, CI parity.
-> - `reference/collaboration.md` — personas/roles/groups, paper-trail rules, messaging, MCP tools.
+> - `reference/minimalism.md` — generation-time decision ladder to counter code bloat.
+> - `reference/collaboration.md` — personas/roles, paper trail, conflict log, messaging, MCP.
 > - `reference/observability.md` — dev==runtime logging, levels, browser logging.
-> - `reference/automation.md` — distribution, the CLI, webhooks, predictability, learnings.
+> - `reference/automation.md` — distribution, the CLI, webhooks, predictability, learnings lifecycle.
 
 ## The 3-phase spec workflow (Kiro-style)
 
@@ -62,7 +64,22 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   phase label in sync; run tests at logical checkpoints; log progress for visibility.
 - **Review before escalating.** Run `reviews.selfReviewCount` self-reviews then
   `reviews.criticReviewCount` critic reviews (a different harness/model), default 3
-  each, BEFORE reaching out to a human. All reviews are comments.
+  each, BEFORE reaching out to a human. All reviews are comments. **Follow the defined
+  procedure** in `reference/reviewing.md` (attribution prefix, reply-first-then-fix,
+  stop on zero new findings, escalate on a repeated finding).
+- **Test-first.** `tdd.mode` (default `standard`): no production code without a failing
+  test that motivates it; record the red→green transition as evidence.
+- **Minimalism.** Apply the `reference/minimalism.md` decision ladder (YAGNI → stdlib →
+  native → existing dep → inline → new abstraction); justify every new dependency in
+  `design.md`. Never trade away validation/error-handling/security/accessibility.
+- **Risk-tiered autonomy.** Gate completion by the work item's risk tier
+  (`config.autonomy`): low tiers may complete after the review loop; high tiers wait for
+  a human. Only complete autonomously once the **ready-to-ship gate** holds (green
+  checks, all threads resolved, evidence recorded).
+- **Keep moving; log conflicts.** Resolvable ambiguity → assume a reasonable default and
+  continue; genuine block → log to `docs/decisions/conflicts.md`, escalate once, move on.
+- **Learnings lifecycle.** Capture → write-gate (rule-of-three) → consolidate (size cap)
+  → inject a capped index (`config.selfImprovement`). See `reference/automation.md`.
 - **Evidence at the end.** Present validated evidence that acceptance criteria are met.
 - **Communicate for the reviewer.** Give enough context whenever asking for input. PRs
   carry a **condensed, prioritized** summary (where to focus first), document the
@@ -84,8 +101,9 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
 
 Behaviour is driven by `.the-loop/config.yaml`, validated against
 `.the-loop/config.schema.json`. Sections: `ticketing`, `repository`, `workflow`,
-`tooling`, `localOrchestration`, `hooks`, `observability`, `reviews`, `userInteraction`,
-`personas`, `messaging`, `externalTools`, `webhooks`. A subset of keys can be overridden per work item via the
+`tooling`, `localOrchestration`, `hooks`, `observability`, `reviews`, `autonomy`, `tdd`,
+`minimalism`, `selfImprovement`, `userInteraction`, `personas`, `messaging`,
+`externalTools`, `webhooks`. A subset of keys can be overridden per work item via the
 YAML front-matter `overrides` of the work-item / spec markdown. Managed files are listed
 in `.the-loop/manifest.yaml`.
 

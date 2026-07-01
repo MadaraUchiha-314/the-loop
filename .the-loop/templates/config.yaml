@@ -76,12 +76,38 @@ observability:
   browserLogging: chrome-devtools-mcp
 
 reviews:
-  selfReviewCount: 3
+  selfReviewCount: 3              # cap; loop stops early on zero new findings
   criticReviewCount: 3
+  stopOnNoNewFindings: true       # stop when a round finds nothing new actionable
+  escalateOnRepeatFinding: true   # same finding twice in a row -> escalate to a human
   critics: []
   # - name: cursor-gpt
-  #   harness: cursor
+  #   harness: cursor              # free-form; e.g. claude | cursor | aider | continue
   #   model: gpt-5.5
+  #   command: "cursor-agent review"   # optional explicit invocation
+
+autonomy:                         # risk-tiered autonomy (see reference/workflow.md)
+  defaultTier: 3                  # 1-Trivial … 5-Critical (or set riskTier per work item)
+  inferFromChange: true           # bump tier when sensitive paths are touched
+  sensitivePaths: []              # e.g. ["**/auth/**", "**/*secret*", "**/*schema*"]
+  tiers:
+    "1": autonomous-complete      # may finish after the review loop passes
+    "2": autonomous-complete
+    "3": human-approves-pr
+    "4": human-approves-pr
+    "5": human-approves-spec-and-pr
+
+tdd:
+  mode: standard                  # standard = red→green per task | tdd-first | off
+
+minimalism:
+  enabled: true                   # advisory generation-time bloat guard
+  intensity: standard             # low | standard | high
+
+selfImprovement:
+  enabled: true
+  maxIndexLines: 200              # cap on the injected learnings index
+  writeGateOccurrences: 3         # rule-of-three before a candidate becomes durable
 
 userInteraction:
   diagramFormat: mermaid          # RULE: all diagrams are mermaid

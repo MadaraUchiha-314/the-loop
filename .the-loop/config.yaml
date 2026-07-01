@@ -64,7 +64,39 @@ observability:
 reviews:
   selfReviewCount: 3
   criticReviewCount: 3
+  stopOnNoNewFindings: true       # stop the loop when a round finds nothing new
+  escalateOnRepeatFinding: true   # same finding twice in a row -> escalate to a human
   critics: []
+  # - name: cursor-gpt
+  #   harness: cursor              # free-form; e.g. claude | cursor | aider | continue
+  #   model: gpt-5.5
+  #   command: "cursor-agent review"   # optional explicit invocation
+
+autonomy:
+  defaultTier: 3                  # 1-Trivial … 5-Critical
+  inferFromChange: true
+  sensitivePaths:
+    - "**/*schema*"
+    - ".the-loop/config.schema.json"
+    - ".github/workflows/**"
+  tiers:
+    "1": autonomous-complete
+    "2": autonomous-complete
+    "3": human-approves-pr
+    "4": human-approves-pr
+    "5": human-approves-spec-and-pr
+
+tdd:
+  mode: standard                  # standard | tdd-first | off
+
+minimalism:
+  enabled: true
+  intensity: standard             # low | standard | high
+
+selfImprovement:
+  enabled: true
+  maxIndexLines: 200
+  writeGateOccurrences: 3
 
 userInteraction:
   diagramFormat: mermaid          # RULE: all diagrams are mermaid

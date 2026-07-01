@@ -190,6 +190,26 @@ status: in-progress
 - **Next:** Push to PR #2; confirm CI; reply to the review comment.
 - **Blockers:** None.
 
+### 2026-07-01 — Eight review-driven robustness features (issues #3–#10)
+
+- **Phase:** needs-review
+- **Did:** Per a PR #2 feature-proposal comment (maintainer chose "implement all"), opened
+  one tracking issue per feature (#3–#10) and implemented all eight as config + skill
+  surface: (1) `reference/reviewing.md` + `reviews.stopOnNoNewFindings`/
+  `escalateOnRepeatFinding`; (2) learnings lifecycle in `automation.md` + `selfImprovement`
+  config + `learnings/topics/` + git-ignored pending queue; (3) `autonomy` config (tiers/
+  policy/`$defs`) + ready-to-ship gate in `workflow.md`; (4) `tdd.mode` + implementation
+  invariant + `tasks.md` template test column; (5) `reference/minimalism.md` + `minimalism`
+  config; (6) `docs/decisions/conflicts.md` (+ template) + `collaboration.md` rule; (7)
+  free-form `critics[].harness` + `command`; (8) idempotent/non-clobbering `init` +
+  `upgrade-the-loop` with `--dry-run` and a drift report. Recorded `decision-012`; folded
+  into R11 + task 15 (deferred renumbered 16–25).
+- **Checkpoint/tests:** both configs validate against the updated schema (incl. new
+  sections + `$defs`); `uv run pre-commit run --all-files` green.
+- **Next:** Push to PR #2; confirm CI; reply on the PR referencing issues #3–#10.
+- **Blockers:** None. Assumption (implement-all vs the reviewer's staged sequencing)
+  recorded in `docs/decisions/conflicts.md`.
+
 ## Review cycles
 
 | Cycle | Type (self/critic) | Reviewer | Outcome | Link |

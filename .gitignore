@@ -223,3 +223,6 @@ cli/build/
 cli/dist/
 cli/*.egg-info/
 cli/.pytest_cache/
+
+# the-loop: not-yet-durable learning candidates (write-gate queue)
+.the-loop/learnings-pending/

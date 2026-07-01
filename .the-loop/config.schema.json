@@ -6,6 +6,13 @@
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "ticketing", "repository", "reviews"],
+  "$defs": {
+    "autonomyPolicy": {
+      "type": "string",
+      "enum": ["autonomous-complete", "human-approves-pr", "human-approves-spec-and-pr"],
+      "description": "What a risk tier requires before completion: finish autonomously after the review loop, or require a human to approve the PR (and optionally the spec)."
+    }
+  },
   "properties": {
     "version": {
       "type": "string",
@@ -242,12 +249,32 @@
     },
     "reviews": {
       "type": "object",
-      "description": "Self-review and critic-review loop before escalating to a human.",
+      "description": "Self-review and critic-review loop before escalating to a human. The counts are caps; see reference/reviewing.md for the procedure they drive.",
       "additionalProperties": false,
       "required": ["selfReviewCount", "criticReviewCount"],
       "properties": {
-        "selfReviewCount": { "type": "integer", "minimum": 0, "default": 3 },
-        "criticReviewCount": { "type": "integer", "minimum": 0, "default": 3 },
+        "selfReviewCount": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 3,
+          "description": "Max self-review rounds (a cap; the loop stops early when a round yields zero new actionable findings)."
+        },
+        "criticReviewCount": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 3,
+          "description": "Max critic-review rounds (a cap; also stops early on zero new findings)."
+        },
+        "stopOnNoNewFindings": {
+          "type": "boolean",
+          "default": true,
+          "description": "Stop the review loop as soon as a round surfaces no new actionable finding."
+        },
+        "escalateOnRepeatFinding": {
+          "type": "boolean",
+          "default": true,
+          "description": "Diminishing-returns guard: if two consecutive rounds surface the SAME finding, escalate to a human instead of looping."
+        },
         "critics": {
           "type": "array",
           "description": "Alternate harness/model combos used as critics, e.g. cursor+gpt-5.5 reviewing claude-opus output.",
@@ -257,10 +284,99 @@
             "required": ["name"],
             "properties": {
               "name": { "type": "string" },
-              "harness": { "type": "string", "enum": ["claude", "cursor"] },
-              "model": { "type": "string" }
+              "harness": {
+                "type": "string",
+                "description": "Critic harness/CLI. Free-form so any harness works; known examples: claude, cursor, aider, continue, a local model runner."
+              },
+              "model": { "type": "string" },
+              "command": {
+                "type": "string",
+                "description": "Optional explicit invocation for an arbitrary critic harness (how to run it)."
+              }
             }
           }
+        }
+      }
+    },
+    "autonomy": {
+      "type": "object",
+      "description": "Risk-tiered autonomy: how much a work item may complete without a human, by risk tier (1-Trivial … 5-Critical). See reference/workflow.md.",
+      "additionalProperties": false,
+      "properties": {
+        "defaultTier": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5,
+          "default": 3,
+          "description": "Risk tier assumed when a work item does not declare `riskTier` in its front-matter."
+        },
+        "inferFromChange": {
+          "type": "boolean",
+          "default": true,
+          "description": "Raise the effective tier automatically when the change touches sensitive areas (auth/security/schema/public API)."
+        },
+        "sensitivePaths": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Globs that force a high tier when touched, e.g. **/auth/**, **/*secret*, **/*schema*."
+        },
+        "tiers": {
+          "type": "object",
+          "description": "Per-tier gate policy (keys \"1\"–\"5\"). Lower tiers may complete autonomously after the review loop; higher tiers require the named human gate.",
+          "additionalProperties": false,
+          "properties": {
+            "1": { "$ref": "#/$defs/autonomyPolicy" },
+            "2": { "$ref": "#/$defs/autonomyPolicy" },
+            "3": { "$ref": "#/$defs/autonomyPolicy" },
+            "4": { "$ref": "#/$defs/autonomyPolicy" },
+            "5": { "$ref": "#/$defs/autonomyPolicy" }
+          }
+        }
+      }
+    },
+    "tdd": {
+      "type": "object",
+      "description": "Test-driven-development discipline in the implementation phase. See reference/workflow.md.",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["standard", "tdd-first", "off"],
+          "default": "standard",
+          "description": "standard = red→green→refactor per task; tdd-first = all tests for the work item written and failing before any production code; off = no enforced test-first."
+        }
+      }
+    },
+    "minimalism": {
+      "type": "object",
+      "description": "Generation-time minimalism pass to counter code bloat. Advisory: informs generation, never gates a merge and never trades away validation/error-handling/security/accessibility. See reference/minimalism.md.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "intensity": {
+          "type": "string",
+          "enum": ["low", "standard", "high"],
+          "default": "standard"
+        }
+      }
+    },
+    "selfImprovement": {
+      "type": "object",
+      "description": "Lifecycle for learnings: capture → write-gate → consolidate → inject. See reference/automation.md.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "maxIndexLines": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 200,
+          "description": "Cap on the injected learnings index; overflow detail spills to learnings/topics/<category>.md, read on demand."
+        },
+        "writeGateOccurrences": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 3,
+          "description": "A learning candidate becomes durable only after recurring this many times (rule-of-three); a clearly high-severity one-off may bypass the gate."
         }
       }
     },

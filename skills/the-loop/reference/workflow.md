@@ -65,28 +65,51 @@ copy of its contents. The checked-in file is the single source of truth.
 ## Implementation & self-checking
 
 - Execute the task DAG in dependency order (`implementation`).
+- **Test-first discipline** (`tdd.mode`): the invariant is **no production code without a
+  failing test that motivates it**. `standard` = red→green→refactor per task;
+  `tdd-first` = all tests for the work item written and failing before any production
+  code; `off` = not enforced. Each task's checkpoint in the execution log records the
+  **test command and its red→green transition** as evidence — "did a test fail first?"
+  is a recorded fact, not an assumption.
 - **Keep `tasks.md` checkmarks current**: as each task is completed, tick its `- [ ]` →
   `- [x]` so the ticket/spec always shows what is done vs. outstanding.
 - Maintain `docs/specs/<id>/execution-log.md` (checked in): append progress, and **run
   tests at logical checkpoints** — self-checking as you go.
 - Use the configured tooling (see `tooling.md`); same commands as CI.
+- Apply the **minimalism** ladder (see `minimalism.md`) to avoid generating bloat — least
+  code that correctly does the job; justify any new dependency in `design.md`.
 
 ## Self-review & critic-review (before a human)
 
-- After the work is done, do a **self-review**.
-- Then run **critic reviews** using configured critics — a *different* harness/model
-  (e.g. Cursor + GPT‑5.5 reviewing Claude Opus output).
-- Run **X** self-reviews and **X** critic reviews (configurable;
-  `reviews.selfReviewCount` / `reviews.criticReviewCount`, default **3**) BEFORE
-  reaching out to the human reviewer (`needs-review`).
-- **All reviews happen as comments** in the PR and/or ticket (paper trail). Record them
-  in the execution log's review table.
+- After the work is done, run **self-reviews** then **critic reviews** using configured
+  critics — a *different* harness/model (e.g. Cursor + GPT‑5.5 reviewing Claude Opus
+  output). `reviews.selfReviewCount` / `reviews.criticReviewCount` (default **3**) are
+  caps run BEFORE reaching out to the human reviewer (`needs-review`).
+- **The procedure is defined in `reviewing.md`** — attribution prefixes, reply-first-
+  then-fix, one-finding-per-commit, stop-on-zero-new-findings, and the diminishing-
+  returns escalation. Follow it so review depth is reproducible and the loop converges.
+- **All reviews happen as comments** in the PR and/or ticket (paper trail). Record every
+  round in the execution log's review table.
 
-## Evidence & completion
+## Evidence, the ready-to-ship gate & risk-tiered autonomy
 
-At the end, present **validated evidence** that gives the user confidence the work item
-meets the acceptance criteria (test output, screenshots, logs). Then move to
-`complete`.
+At the end, present **validated evidence** that the work item meets the acceptance
+criteria (test output, screenshots, logs).
+
+Before any autonomous completion, the **ready-to-ship gate** must ALL hold: green checks,
+**all review threads resolved**, and validated evidence recorded. Then the loop marks the
+work item ready and applies **risk-tiered autonomy** (`config.autonomy`):
+
+- Each work item has a **risk tier 1–5** (from its front-matter `riskTier`, else
+  `autonomy.defaultTier`; raised automatically when the change touches
+  `autonomy.sensitivePaths` — auth/security/schema/public API — if `inferFromChange`).
+- `autonomy.tiers` maps each tier to a gate: `autonomous-complete` (finish after the
+  review loop), `human-approves-pr`, or `human-approves-spec-and-pr`. Only tiers the
+  policy permits complete without a human; the rest wait for the named approval.
+
+This makes autonomy safe-by-construction: a typo fix (low tier) can complete on its own,
+while an auth/payments change (high tier) always waits for a human — one meaningful
+signal instead of a firehose of approvals. Then move to `complete`.
 
 ## Resumability
 

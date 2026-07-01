@@ -1,15 +1,24 @@
 ---
-description: Initialize "the-loop" in the current repository — scaffold .the-loop/, docs/, learnings/ and a validated config.
-argument-hint: "[--monorepo-tool nx|pnpm|yarn|bun|none] [--ticketing github|jira]"
+description: Initialize "the-loop" in the current repository — scaffold .the-loop/, docs/, learnings/ and a validated config. Idempotent, non-clobbering, with drift detection.
+argument-hint: "[--dry-run] [--monorepo-tool nx|pnpm|yarn|bun|none] [--ticketing github|jira]"
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 
 # the-loop: init
 
-Initialize "the-loop" into the current project repository.
+Initialize "the-loop" into the current project repository. **Idempotent and safe to
+re-run:** it is driven entirely by the manifest, creates only what is missing, and
+**never overwrites user-owned files**.
 
-Source of truth for what to create is `${CLAUDE_PLUGIN_ROOT}/.the-loop/manifest.yaml`
-and the templates under `${CLAUDE_PLUGIN_ROOT}/.the-loop/templates/`.
+The **authoritative** source of what to create — and which files are managed vs.
+user-owned — is `${CLAUDE_PLUGIN_ROOT}/.the-loop/manifest.yaml` (each entry's
+`managed: true|false`), with the templates under
+`${CLAUDE_PLUGIN_ROOT}/.the-loop/templates/`.
+
+## Modes
+
+- **`--dry-run`** — compute and print the report (below) **without writing anything**.
+  Use it to preview an init or an upgrade safely.
 
 ## Steps
 
@@ -22,8 +31,14 @@ and the templates under `${CLAUDE_PLUGIN_ROOT}/.the-loop/templates/`.
    - the git remote / owner / repo for ticketing.
    Use these to pre-fill the config rather than blindly copying defaults.
 
-2. **Create the structure** (skip anything that already exists; never overwrite
-   user-owned files):
+2. **Reconcile against the manifest (idempotent, non-clobbering).** For every managed
+   path, classify it and act:
+   - **missing** → create it (from the template/default);
+   - **present & `managed: false`** (user-owned) → **never overwrite**; leave it, note it;
+   - **present & `managed: true` but drifted** from the current template/schema → **do
+     not clobber**: diff and *suggest* the change (or apply only with explicit consent);
+   - **present & up to date** → skip.
+   Create the following where missing (never overwrite user-owned files):
    - `.the-loop/config.yaml` — from the template, with detected defaults applied.
    - `.the-loop/config.schema.json` — copy of the schema.
    - `.the-loop/manifest.yaml` — the manifest.
@@ -53,7 +68,10 @@ and the templates under `${CLAUDE_PLUGIN_ROOT}/.the-loop/templates/`.
    `reference/tooling.md` → "CI/CD must use exactly the same tooling as local"). Only
    scaffold what the project doesn't already have.
 
-7. **Summarize** what was created and the immediate next action
-   (`/the-loop:work-on <ticket>`).
+7. **Report.** End with a short summary grouped as **created / skipped (up to date) /
+   drifted (suggested) / needs-user** (files or config gaps the user must fill), then the
+   immediate next action (`/the-loop:work-on <ticket>` or `/the-loop:new-requirement`).
+   Under `--dry-run`, print exactly this report and write nothing.
 
-Respect existing files. This command is idempotent and safe to re-run.
+Respect existing files. This command is idempotent, non-clobbering, and safe to re-run —
+which is what makes it trustworthy to run on someone's repository.

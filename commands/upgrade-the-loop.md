@@ -1,6 +1,6 @@
 ---
-description: Reconcile a project's "the-loop" files with the installed plugin version — create missing files and migrate schemas.
-argument-hint: ""
+description: Reconcile a project's "the-loop" files with the installed plugin version — create missing files and migrate schemas. Idempotent, non-clobbering, with --dry-run.
+argument-hint: "[--dry-run]"
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 
@@ -28,7 +28,8 @@ command reconciles them.
 
 4. **Update manifest.** Bump `theLoopVersion`/`manifestVersion` to match the plugin.
 
-5. **Report.** Summarize what was created, migrated, or needs user attention. Make no
-   silent breaking changes.
+5. **Report.** Summarize grouped as **created / skipped (up to date) / drifted
+   (suggested) / migrated / needs-user**. Make no silent breaking changes.
 
-Idempotent and safe to re-run.
+`--dry-run` computes and prints the report above **without writing anything** — the same
+preview `/the-loop:init --dry-run` gives. Idempotent, non-clobbering, and safe to re-run.

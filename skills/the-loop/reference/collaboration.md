@@ -14,6 +14,25 @@ PR.
   **messaging channels** (`messaging.channels`: slack / whatsapp / email) if configured.
   Messaging is for notification only; the decision itself still lands as a comment.
 
+## Conflicts & assumptions (keep unattended runs moving)
+
+`docs/decisions/` captures *deliberate* decisions; unattended runs also hit **ambiguities
+and conflicts** mid-flight (a missing field, contested ownership, an unexpected tool
+failure, an assumption the agent had to make). Those must neither block the loop nor
+vanish. Rule:
+
+- **Resolvable with a reasonable default → assume and continue.** Record the assumption in
+  the append-only conflict log and keep going; do not stall the whole run on one
+  low-stakes ambiguity.
+- **Genuinely blocked → log, escalate once, move on.** Record the conflict, escalate once
+  via the paper trail (ticket/PR comment + configured messaging), and proceed to the next
+  available work rather than spinning.
+
+The log is `docs/decisions/conflicts.md` (append-only). Each entry is one line:
+**timestamp · phase · one-liner · status** (`assumed` / `escalated` / `resolved`). It
+gives the human a precise, reviewable trail of every judgment call the agent made on their
+behalf.
+
 ## Personas, roles and groups
 
 - The full list of available collaborators is defined up-front in the repo:

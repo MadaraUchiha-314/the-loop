@@ -145,6 +145,30 @@ education, so that I can make good calls on large PRs I didn't write.
 5. These behaviours SHALL be driven by `config.userInteraction`
    (`diagramFormat: mermaid`, `prSummary.*`, `educateUser: true`).
 
+### R11 — Review-driven robustness features **[v0]**
+
+Eight improvements proposed on PR #2 (tracked as issues #3–#10), each framed against
+existing artifacts and harness-agnostic:
+1. **Executable review method** (#3): `reference/reviewing.md` defines the procedure the
+   `reviews.*` counts drive — attribution prefix, reply-first-then-fix, stop on zero new
+   findings, escalate on a repeated finding; `reviews.stopOnNoNewFindings` /
+   `escalateOnRepeatFinding`.
+2. **Learnings lifecycle** (#4): capture → write-gate → consolidate → inject, with
+   `config.selfImprovement` and `learnings/topics/` overflow.
+3. **Risk-tiered autonomy** (#5): `config.autonomy` (tiers 1–5, policy, sensitive-path
+   inference) + a ready-to-ship gate; work-item `riskTier` front-matter.
+4. **TDD discipline** (#6): `tdd.mode`; no production code without a failing test;
+   red→green recorded as evidence; `tasks.md` carries each task's test.
+5. **Minimalism** (#7): `reference/minimalism.md` decision ladder + `config.minimalism`
+   (advisory; never trades away validation/security/a11y).
+6. **Conflict/assumption log** (#8): `docs/decisions/conflicts.md` + assume-and-continue
+   vs escalate-once rule.
+7. **Open critic harness** (#9): `reviews.critics[].harness` is free-form + optional
+   `command`.
+8. **Idempotent init** (#10): `init`/`upgrade-the-loop` drive off the manifest, never
+   clobber `managed:false`, report created/skipped/drifted/needs-user, support
+   `--dry-run`.
+
 ## Non-functional requirements
 
 - All JSON parses; configs validate against `.the-loop/config.schema.json`.

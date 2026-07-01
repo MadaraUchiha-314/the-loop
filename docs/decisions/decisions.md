@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [012](decision-012.md) | Adopt eight review-driven robustness features (issues #3–#10) | accepted | 2026-07-01 |
 | [011](decision-011.md) | Expose granular per-phase commands (with /work-on as superset) | accepted | 2026-07-01 |
 | [010](decision-010.md) | Keep the-loop's internal roadmap out of the published skill | accepted | 2026-07-01 |
 | [009](decision-009.md) | Dogfood uv (workspace + uv.lock) for the-loop's own tooling | accepted | 2026-07-01 |
