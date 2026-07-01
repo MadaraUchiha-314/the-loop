@@ -216,3 +216,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# the-loop CLI runtime artifacts
+.the-loop/*.pid
+cli/build/
+cli/dist/
+cli/*.egg-info/
+cli/.pytest_cache/
+
+# the-loop: not-yet-durable learning candidates (write-gate queue)
+.the-loop/learnings-pending/

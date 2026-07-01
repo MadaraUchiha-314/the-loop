@@ -1,0 +1,129 @@
+# .the-loop/config.yaml — configuration for the-loop's own repository.
+# Validated against .the-loop/config.schema.json.
+
+version: "0.1.0"
+
+ticketing:
+  system: github
+  github:
+    owner: MadaraUchiha-314
+    repo: the-loop
+    useProjects: true
+
+repository:
+  monorepo: false          # the-loop itself is not (yet) a monorepo
+  monorepoTool: none
+  runScriptsFromRoot: true
+
+workflow:
+  specApproach: kiro-3-phase
+  requireHumanReviewPerPhase: true
+  specDir: docs/specs
+  phaseLabelPrefix: "loop:"
+  phases:
+    - not-started
+    - requirements-definition
+    - design
+    - tasks-breakdown
+    - implementation
+    - needs-review
+    - complete
+
+tooling:
+  languages: [python]      # the-loop itself: a Python CLI + markdown docs
+  packageManager:
+    python: uv
+  unitTest:
+    python: pytest
+  integrationTest:
+    python: pytest
+  lint:
+    python: ruff
+    markdown: markdownlint
+  typeCheck:
+    python: pyright
+  release:
+    python: pypi
+    containers: ghcr
+
+localOrchestration:
+  containerRuntime: podman
+  linkPackagesLocally: true
+  remoteServices: []
+
+hooks:
+  preCommit: [lint, typecheck, unit-test]
+  prePush: [lint, typecheck, unit-test]
+  commitConvention: conventional-commits
+
+observability:
+  devLevel: debug
+  runtimeLevel: info
+  browserLogging: chrome-devtools-mcp
+
+reviews:
+  selfReviewCount: 3
+  criticReviewCount: 3
+  stopOnNoNewFindings: true       # stop the loop when a round finds nothing new
+  escalateOnRepeatFinding: true   # same finding twice in a row -> escalate to a human
+  critics: []
+  # - name: cursor-gpt
+  #   harness: cursor              # free-form; e.g. claude | cursor | aider | continue
+  #   model: gpt-5.5
+  #   command: "cursor-agent review"   # optional explicit invocation
+
+autonomy:
+  defaultTier: 3                  # 1-Trivial … 5-Critical
+  inferFromChange: true
+  sensitivePaths:
+    - "**/*schema*"
+    - ".the-loop/config.schema.json"
+    - ".github/workflows/**"
+  tiers:
+    "1": autonomous-complete
+    "2": autonomous-complete
+    "3": human-approves-pr
+    "4": human-approves-pr
+    "5": human-approves-spec-and-pr
+
+tdd:
+  mode: standard                  # standard | tdd-first | off
+
+minimalism:
+  enabled: true
+  intensity: standard             # low | standard | high
+
+selfImprovement:
+  enabled: true
+  maxIndexLines: 200
+  writeGateOccurrences: 3
+
+userInteraction:
+  diagramFormat: mermaid          # RULE: all diagrams are mermaid
+  prSummary:
+    required: true                # gate: post the briefing BEFORE requesting human review
+    templatePath: .the-loop/templates/pr-briefing.md
+    condensed: true               # tell the reviewer where to focus, and in what order
+    includeDiagrams: true         # mermaid diagrams explaining the low-level details
+    documentInsightsAndDecisions: true
+  educateUser: true               # mandatory, not optional
+
+personas:
+  - handle: "@MadaraUchiha-314"
+    kind: individual
+    roles: [product-manager, architect, engineer, approver]
+
+messaging:
+  channels: []
+
+externalTools:
+  referenceFile: .the-loop/external-tools.md
+
+webhooks:
+  ghWebhook:
+    host: 127.0.0.1
+    port: 8787
+    path: /gh-webhook
+    secretEnv: THE_LOOP_GH_WEBHOOK_SECRET
+    pidfile: .the-loop/gh-webhook.pid
+    events: [pull_request_review_comment, workflow_run]

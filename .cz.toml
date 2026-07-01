@@ -1,0 +1,8 @@
+# commitizen config for the-loop. Enforces Conventional Commits v1.0.0 via the
+# commit-msg pre-commit hook (`cz check`) and enables `cz commit`/`cz bump` later.
+# See https://commitizen-tools.github.io/commitizen/
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.1.0"
+tag_format = "v$version"
+version_scheme = "semver"

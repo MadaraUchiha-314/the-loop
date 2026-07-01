@@ -1,0 +1,90 @@
+---
+description: Run "the-loop" on a work item (GitHub issue or Jira id) via the 3-phase spec workflow — requirements → design → tasks → execute, with self/critic review.
+argument-hint: "<ticket-id> (e.g. 12 | issue-12 | PROJ-42)"
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Task
+---
+
+# the-loop: work-on `$ARGUMENTS`
+
+Drive a single work item end-to-end with minimal/no human intervention, following the
+Kiro-style 3-phase spec workflow (https://kiro.dev/docs/specs/). Load
+`.the-loop/config.yaml` first; apply any per-task `overrides` from the work item's
+front-matter. Specs live in `<workflow.specDir>/<id>/` (default `docs/specs/<id>/`).
+
+**`work-on` is the superset.** The same flow is also exposed as granular commands you can
+run one step at a time: `/the-loop:new-requirement` → `/the-loop:create-ticket` →
+`/the-loop:create-design` → `/the-loop:create-tasks-plan` → `/the-loop:execute-tasks` →
+`/the-loop:finish-tasks`, with `/the-loop:work-status <id>` to report progress. `work-on`
+runs them end-to-end; reach for the granular commands to start pre-ticket or to drive a
+single phase.
+
+**Before acting, read the `the-loop` skill and its reference files** for the full rules:
+`reference/workflow.md` (phases, reviews, DAG), `reference/tooling.md` (which commands
+to run), `reference/collaboration.md` (who to involve, paper trail),
+`reference/observability.md`. The summary below is the procedure; the references are the
+detail — do not lose it.
+
+## Phase state machine
+
+Keep the work item's phase **label** in the ticketing system in sync at every
+transition (label = `<workflow.phaseLabelPrefix><phase>`, e.g. `loop:design`), and
+mirror it in the execution log's `phase` front-matter:
+
+`not-started → requirements-definition → design → tasks-breakdown → implementation → needs-review → complete`
+
+## The loop
+
+1. **Resume or start.** Look in `docs/specs/<id>/` for existing
+   `requirements.md`/`bugfix.md`, `design.md`, `tasks.md`, `execution-log.md`. Use the
+   execution log's `phase` and the specs' `status` to resume from where you left off
+   rather than restarting.
+
+2. **Identify collaborators up-front** from the work item + `collaborators.yaml`. Not
+   every task needs every persona (a bug fix needs the engineer; a content fix may not).
+
+3. **Phase 1 — Requirements** (`requirements-definition`). Create
+   `docs/specs/<id>/requirements.md` (or `bugfix.md` for a bug) from the template:
+   introduction, user stories, and EARS acceptance criteria. Post/link it on the ticket
+   and **request human review**. Do not proceed until approved (record approver →
+   paper trail). `requireHumanReviewPerPhase` defaults to true.
+
+4. **Phase 2 — Design** (`design`). Create `docs/specs/<id>/design.md` derived from the
+   approved requirements: architecture, components/interfaces, data models, error
+   handling, testing strategy. Request human review; do not proceed until approved.
+
+5. **Phase 3 — Tasks** (`tasks-breakdown`). Create `docs/specs/<id>/tasks.md`: a DAG of
+   small, verifiable tasks, each referencing the requirement(s) it satisfies and its
+   dependencies. Request human review; do not proceed until approved.
+
+   **After each phase doc is established, update the ticket with a reference (link) to
+   the checked-in artifact** — single source of truth, not a copy. Later changes to a
+   spec doc are made as **edits to that file, not new comments**.
+
+6. **Implementation** (`implementation`). Execute the task DAG autonomously. **Tick each
+   task in `tasks.md` (`- [ ]` → `- [x]`) as it completes.** Maintain
+   `docs/specs/<id>/execution-log.md`: append progress and run tests (unit/integration
+   per config) at logical checkpoints — self-checking as you go. Same tooling as CI;
+   logging/observability identical to runtime.
+
+7. **Review** (`needs-review`). Run up to `reviews.selfReviewCount` self-reviews and
+   `reviews.criticReviewCount` critic reviews (configured critics, e.g. a different
+   harness/model) BEFORE escalating to the human reviewer. Record every review as a
+   PR/ticket comment and in the execution log's review table. Notify via configured
+   messaging channels when a human action is pending.
+
+8. **Complete** (`complete`). Present validated evidence that the acceptance criteria
+   are met (tests, screenshots, logs) on the PR; record it in the execution log.
+   **Before requesting human review, post/update the R10 reviewer briefing in the PR**
+   (required gate item — `userInteraction.prSummary.required`), produced from
+   `.the-loop/templates/pr-briefing.md`: a **condensed, prioritized** summary saying
+   **where to focus first**, **mermaid** diagram(s) of the change, and the
+   spec→implementation insights + low-level decisions. Whenever you ask for input, give
+   enough context to decide, and **educate the user on the low-level design decisions —
+   this is mandatory, not optional.**
+
+9. **Capture learnings.** Add to `learnings/learnings.md` (+ a `learning-<nnn>.md`) for
+   any user/system feedback worth remembering. Log durable decisions under
+   `docs/decisions/`.
+
+All questions and decisions go through ticket/PR comments (paper trail). The checked-in
+specs + execution log are the single record of the work.

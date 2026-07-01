@@ -1,0 +1,33 @@
+---
+description: Create design.md for a work item from its approved requirements.md (Phase 2 of the loop).
+argument-hint: "<ticket-id | spec-dir> (e.g. 42 | issue-42 | docs/specs/issue-42)"
+allowed-tools: Read, Write, Edit, Bash, Glob, Grep
+---
+
+# the-loop: create-design `$ARGUMENTS`
+
+Produce the **design** for a work item from its approved requirements — Phase 2 of the
+3-phase spec workflow. A slice of `/the-loop:work-on`; `work-on` remains the superset.
+
+**Read the `the-loop` skill and `reference/workflow.md` first.** Load
+`.the-loop/config.yaml`.
+
+## Steps
+
+1. **Locate the spec.** Resolve `$ARGUMENTS` to `docs/specs/<id>/` and read
+   `requirements.md`. It should be approved; if not, say so and stop (do not design
+   ahead of approved requirements).
+
+2. **Write `design.md`** from `${CLAUDE_PLUGIN_ROOT}/.the-loop/templates/design.md`,
+   derived from the requirements: overview, architecture, components/interfaces, data
+   models, error handling, testing strategy. Map each requirement to a component. RULE:
+   all diagrams are **mermaid** (`config.userInteraction`).
+
+3. **Advance the phase.** Set the ticket label to `<phaseLabelPrefix>design` and mirror
+   `phase: design` in the spec/execution log.
+
+4. **Reference on the ticket** (link the checked-in `design.md`; edits go to the file,
+   not new comments) and **request human review**. Do not proceed until approved —
+   record the approver (paper trail).
+
+5. **Next step:** `/the-loop:create-tasks-plan <id>`.

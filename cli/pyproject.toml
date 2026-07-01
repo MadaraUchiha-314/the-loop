@@ -1,0 +1,39 @@
+[project]
+name = "the-loop"
+version = "0.1.0"
+description = "Lightweight, extensible CLI for the-loop — quality-of-life commands the the-loop plugin can use (e.g. a GitHub webhook receiver)."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "MadaraUchiha-314" }]
+keywords = ["the-loop", "cli", "webhook", "pdlc"]
+# Core CLI has ZERO runtime dependencies (stdlib only) to stay very lightweight.
+dependencies = []
+
+[project.optional-dependencies]
+# Optional: richer config-file parsing. The CLI works without it (flags + env).
+config = ["pyyaml>=6"]
+dev = ["pytest>=8", "commitizen>=3"]
+
+[project.scripts]
+the-loop = "the_loop.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/MadaraUchiha-314/the-loop"
+Repository = "https://github.com/MadaraUchiha-314/the-loop"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["the_loop"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py39"
+
+[tool.pytest.ini_options]
+# Let `pytest` find the package without an editable install (run from cli/).
+pythonpath = ["."]
+testpaths = ["tests"]

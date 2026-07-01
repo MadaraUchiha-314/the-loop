@@ -1,0 +1,143 @@
+---
+type: design
+phase: design
+workItem: issue-1
+status: approved
+approvedBy: ["@MadaraUchiha-314 (issue author intent)"]
+overrides: {}
+---
+
+# Design: the-loop (create itself)
+
+> Phase 2. Derives from `requirements.md` (which distills issue #1). See
+> `docs/architecture/architecture.md` for the living architecture and the `the-loop`
+> skill's `reference/` files for the full operating detail.
+
+## Overview
+
+Ship the-loop as a Claude plugin whose repository simultaneously is (a) the
+distributable plugin and (b) a reference project that has the-loop initialized in it.
+Encode every rule from issue #1 as concrete, validated files/contracts, realize the
+behaviour as commands + a skill (with reference docs) + hooks, and defer runtime
+automation to follow-up work items (`decision-003`).
+
+## Architecture
+
+Six components. Each requirement maps to one or more.
+
+| Component | Realized by | Satisfies |
+|-----------|-------------|-----------|
+| Distribution | `.claude-plugin/{plugin,marketplace}.json` | R7 |
+| Project footprint | `.the-loop/` (config, schema, manifest, templates, registries) | R1, R2, R3, R5, R7 |
+| The loop (behaviour) | `commands/`, `skills/the-loop/` (+ `reference/`), `hooks/` | R4, and operationalizes R1–R6 |
+| Knowledge & feedback | `docs/{architecture,decisions,specs}/`, `learnings/` | R4, R6 |
+| Collaboration & ticketing | GitHub/Jira; comments as paper trail; `collaborators.yaml`, `messaging` | R1, R5 |
+| User interaction | `config.userInteraction`; PR-summary/mermaid/education rules in skill + `work-on` + `reference/collaboration.md` | R10 |
+| CLI companion | `cli/` Python package `the_loop` (`gh-webhook` receiver) | R9, R8 (receiver) |
+| Automation (future) | remote exec, DAG orchestration, event→harness routing | R8 [deferred] |
+
+## Components & interfaces
+
+### Config & schema (R2/R3/R5/R7)
+
+- `config.schema.json` (JSON Schema draft 2020-12) is the contract. Sections:
+  `ticketing`, `repository`, `workflow`, `tooling`, `localOrchestration`, `hooks`,
+  `observability`, `reviews`, `personas`, `messaging`, `externalTools`.
+- `config.yaml` is validated against it; a subset of keys is overridable per work item
+  via spec front-matter `overrides`.
+
+### Manifest (R7)
+
+- `manifest.yaml` enumerates managed meta files, templates, per-work-item artifacts and
+  knowledge files — the single source of truth `init` and `upgrade-the-loop` reconcile
+  against.
+
+### Commands (R4/R7)
+
+- `init` — detect project, scaffold footprint + docs, create phase labels, wire local
+  hooks/CI parity, validate config.
+- `work-on` — drive the 3-phase loop (requirements → design → tasks → implement →
+  review → complete), keeping phase labels in sync; resumable per phase. **Superset** of
+  the granular commands.
+- Granular per-phase commands (`decision-011`): `new-requirement` (pre-ticket draft in
+  `docs/specs/draft-<slug>/`), `create-ticket` (mint ticket + promote folder),
+  `create-design`, `create-tasks-plan`, `execute-tasks`, `finish-tasks` (cleanup — close
+  ticket, extensible), and read-only `work-status`. Each maps to one phase transition and
+  reuses the same skill/reference rules.
+- `upgrade-the-loop` — reconcile files and migrate the schema across versions.
+
+### Skill + reference (R2–R6)
+
+- `skills/the-loop/SKILL.md` is the operating manual; `reference/{workflow,tooling,
+  collaboration,observability,automation}.md` carry the full detail so the
+  essence of issue #1 is preserved for the harness at runtime.
+
+### User interaction (R10)
+
+- `config.userInteraction` encodes the rules as validated, checkable settings:
+  `diagramFormat: mermaid`, `prSummary.{condensed,includeDiagrams,documentInsightsAndDecisions}`,
+  `educateUser: true`.
+- The behaviour is operationalized in `SKILL.md`, `commands/work-on.md` (Complete step)
+  and `reference/collaboration.md`: condensed/prioritized PR summaries that say where to
+  focus, mermaid diagrams, documented spec→implementation insights/decisions, and
+  mandatory user education. Hard-enforcement mechanism is deferred (open question).
+
+### Hooks (predictability)
+
+- `hooks/hooks.json` ships a SessionStart reminder in v0; the predictability mechanism
+  (hooks vs custom code/scripts) for forcing PDLC steps is an open question — the CLI is
+  a natural home for scripted guarantees.
+
+### CLI companion (R9)
+
+- `cli/` is a Python package `the_loop` with the `the-loop` entry point and an
+  extensible command registry (`Command` + `@register`). Core is stdlib-only.
+- `gh-webhook start|stop` runs a threaded `http.server` receiver that HMAC-verifies
+  GitHub deliveries (secret from env), serves `GET /health`, logs events, and exposes an
+  `on_event` seam for future harness routing. Config: `webhooks.ghWebhook`.
+
+### Review-driven robustness (R11)
+
+Eight PR-review improvements (issues #3–#10, `decision-012`), realized as config + skill
+surface (no new runtime; matches v0's skill-driven model):
+
+- **Config:** `reviews.{stopOnNoNewFindings,escalateOnRepeatFinding}` + free-form
+  `critics[].harness`/`command`; new sections `autonomy` (tiers + policy + `$defs`),
+  `tdd`, `minimalism`, `selfImprovement`.
+- **Skill:** new `reference/reviewing.md` (review procedure) and `reference/minimalism.md`
+  (decision ladder); `workflow.md` gains TDD, the ready-to-ship gate and risk-tiered
+  autonomy; `automation.md` gains the learnings lifecycle; `collaboration.md` gains the
+  conflict-log rule.
+- **Artifacts:** `docs/decisions/conflicts.md` (+ template), `learnings/topics/` overflow
+  (+ git-ignored `.the-loop/learnings-pending/` queue), `tasks.md` template carries each
+  task's test; `init`/`upgrade-the-loop` made idempotent/non-clobbering with `--dry-run`
+  and a created/skipped/drifted/needs-user report.
+
+## Data models
+
+- `.the-loop/config.yaml` ⟷ `config.schema.json`.
+- Per-work-item specs in `docs/specs/<id>/` with front-matter (`phase`, `status`,
+  `approvedBy`, `collaborators`, `overrides`).
+- Phase state machine: 7 phases ⟷ ticket labels `<phaseLabelPrefix><phase>`.
+
+## Error handling
+
+- `init`/`upgrade-the-loop` are idempotent and never clobber user-owned files
+  (`managed: false`) — they diff and suggest.
+- Config validation surfaces gaps (empty personas, missing owner) rather than failing
+  silently.
+- Missing ticket → refuse to proceed (R1).
+
+## Testing strategy
+
+- Static: all JSON parses; both configs validate against the schema.
+- Structural: the file tree matches `manifest.yaml`.
+- Acceptance: every requirement maps to a delivered file/contract **[v0]** or a recorded
+  deferral **[deferred]**; evidence recorded in `execution-log.md`.
+
+## Trade-offs & decisions
+
+- Plugin vs standalone CLI → plugin (`decision-001`).
+- Manifest + schema for reconciliation (`decision-002`).
+- v0 skeleton, defer automation (`decision-003`).
+- Kiro 3-phase specs with per-phase review (`decision-004`).
