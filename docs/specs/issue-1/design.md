@@ -57,7 +57,13 @@ Six components. Each requirement maps to one or more.
 - `init` — detect project, scaffold footprint + docs, create phase labels, wire local
   hooks/CI parity, validate config.
 - `work-on` — drive the 3-phase loop (requirements → design → tasks → implement →
-  review → complete), keeping phase labels in sync; resumable per phase.
+  review → complete), keeping phase labels in sync; resumable per phase. **Superset** of
+  the granular commands.
+- Granular per-phase commands (`decision-011`): `new-requirement` (pre-ticket draft in
+  `docs/specs/draft-<slug>/`), `create-ticket` (mint ticket + promote folder),
+  `create-design`, `create-tasks-plan`, `execute-tasks`, `finish-tasks` (cleanup — close
+  ticket, extensible), and read-only `work-status`. Each maps to one phase transition and
+  reuses the same skill/reference rules.
 - `upgrade-the-loop` — reconcile files and migrate the schema across versions.
 
 ### Skill + reference (R2–R6)

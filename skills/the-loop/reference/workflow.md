@@ -34,7 +34,22 @@ not-started → requirements-definition → design → tasks-breakdown
             → implementation → needs-review → complete
 ```
 
-`/the-loop:init` creates the labels; `/the-loop:work-on` drives the transitions.
+`/the-loop:init` creates the labels; `/the-loop:work-on` drives all the transitions
+end-to-end. The same transitions are also exposed as **granular commands** (`work-on` is
+their superset), one per step:
+
+| Step | Command | Phase entered |
+|------|---------|---------------|
+| Draft requirements (pre-ticket, temp folder) | `new-requirement <title>` | requirements-definition |
+| Create the ticket; promote `draft-<slug>/` → `docs/specs/<id>/` | `create-ticket <path>` | requirements-definition |
+| Requirements → design | `create-design <id>` | design |
+| Requirements + design → tasks DAG | `create-tasks-plan <id>` | tasks-breakdown |
+| Implement, self-check, self/critic-review | `execute-tasks <id>` | implementation → needs-review |
+| Cleanup after all tasks (close ticket; extensible) | `finish-tasks <id>` | complete |
+| Read-only status report | `work-status <id>` | — |
+
+`new-requirement`/`create-ticket` support the case where work starts as an idea: define
+requirements first, then mint the ticket from them.
 
 ## Link artifacts to the ticket (single source of truth)
 

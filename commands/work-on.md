@@ -11,6 +11,13 @@ Kiro-style 3-phase spec workflow (https://kiro.dev/docs/specs/). Load
 `.the-loop/config.yaml` first; apply any per-task `overrides` from the work item's
 front-matter. Specs live in `<workflow.specDir>/<id>/` (default `docs/specs/<id>/`).
 
+**`work-on` is the superset.** The same flow is also exposed as granular commands you can
+run one step at a time: `/the-loop:new-requirement` → `/the-loop:create-ticket` →
+`/the-loop:create-design` → `/the-loop:create-tasks-plan` → `/the-loop:execute-tasks` →
+`/the-loop:finish-tasks`, with `/the-loop:work-status <id>` to report progress. `work-on`
+runs them end-to-end; reach for the granular commands to start pre-ticket or to drive a
+single phase.
+
 **Before acting, read the `the-loop` skill and its reference files** for the full rules:
 `reference/workflow.md` (phases, reviews, DAG), `reference/tooling.md` (which commands
 to run), `reference/collaboration.md` (who to involve, paper trail),

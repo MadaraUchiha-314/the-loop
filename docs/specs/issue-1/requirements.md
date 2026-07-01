@@ -102,6 +102,11 @@ requirements, design and tasks before implementation.
    under `.the-loop/`.
 3. The-loop SHALL expose `init`, `work-on` and `upgrade-the-loop`; config SHALL be
    schema-validated and per-task overridable.
+4. The-loop SHALL also expose **granular per-phase commands** — `new-requirement`,
+   `create-ticket`, `create-design`, `create-tasks-plan`, `execute-tasks`,
+   `finish-tasks` and (read-only) `work-status` — with `work-on` as their superset.
+   `new-requirement`/`create-ticket` SHALL support starting work **before a ticket
+   exists** (draft spec folder → promoted to `docs/specs/<id>/` on ticket creation).
 
 ### R8 — Automation & the dream **[receiver v0; routing deferred]**
 

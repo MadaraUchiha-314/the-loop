@@ -173,6 +173,23 @@ status: in-progress
 - **Next:** Push to PR #2; confirm CI; reply to the review comment.
 - **Blockers:** None.
 
+### 2026-07-01 — Expose granular per-phase commands (PR review)
+
+- **Phase:** needs-review
+- **Did:** Per PR review ("expose more commands"), added seven granular commands under
+  `commands/`: `new-requirement` (pre-ticket draft in `docs/specs/draft-<slug>/`),
+  `create-ticket` (mint ticket + promote folder to `docs/specs/<id>/`), `create-design`,
+  `create-tasks-plan`, `execute-tasks`, `finish-tasks` (cleanup — close ticket,
+  extensible), and read-only `work-status`. Each maps to one phase transition and reuses
+  the skill/reference rules; `/work-on` is documented as their superset. Updated
+  `work-on.md`, `SKILL.md` (Commands), `README.md`, `reference/workflow.md` (phase→command
+  table), and the issue-1 spec (R7.4, design, task 14 — deferred renumbered 15–24).
+  Recorded `decision-011`.
+- **Checkpoint/tests:** `uv run pre-commit run --all-files` green (markdownlint over all
+  command files + schema + CLI tests); all command front-matter parses.
+- **Next:** Push to PR #2; confirm CI; reply to the review comment.
+- **Blockers:** None.
+
 ## Review cycles
 
 | Cycle | Type (self/critic) | Reviewer | Outcome | Link |

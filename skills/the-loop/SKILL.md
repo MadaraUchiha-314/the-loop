@@ -92,8 +92,21 @@ in `.the-loop/manifest.yaml`.
 ## Commands
 
 - `/the-loop:init` — scaffold the-loop into a repo (config, docs, templates, phase labels).
-- `/the-loop:work-on <ticket>` — run the 3-phase loop on a work item (resumable per phase).
+- `/the-loop:work-on <ticket>` — run the whole loop on a work item (resumable per phase).
+  **Superset** of the granular commands below.
 - `/the-loop:upgrade-the-loop` — reconcile project files with the installed plugin version.
+
+Granular commands (one step at a time; same flow `work-on` runs end-to-end):
+
+- `/the-loop:new-requirement <title>` — draft `requirements.md` in a temporary
+  `docs/specs/draft-<slug>/` folder **before a ticket exists**.
+- `/the-loop:create-ticket <path>` — create the ticket from a `requirements.md` and
+  promote `draft-<slug>/` → `docs/specs/<id>/`.
+- `/the-loop:create-design <id>` — `requirements.md` → `design.md` (Phase 2).
+- `/the-loop:create-tasks-plan <id>` — requirements + design → `tasks.md` DAG (Phase 3).
+- `/the-loop:execute-tasks <id>` — implement the DAG, self-check, self/critic-review.
+- `/the-loop:finish-tasks <id>` — cleanup after all tasks (close the ticket; extensible).
+- `/the-loop:work-status <id>` — read-only status from the specs, tasks checkmarks and log.
 
 ## Knowledge the loop maintains
 
