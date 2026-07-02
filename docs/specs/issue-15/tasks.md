@@ -75,7 +75,7 @@ overrides: {}
   - _Depends on:_ 3, 6, 7
   - _Requirements:_ R3, R4, R5
   - _Test:_ `uv run --project cli python -m pytest -q cli -k webhook_routing` (red→green)
-- [ ] 9. Registration automation + docs
+- [x] 9. Registration automation + docs
   - Workflow step registering/closing sessions (Claude: `$CLAUDE_SESSION_ID` /
     SessionStart hook input; Cursor: rule instruction with the chat id); update
     `skills/the-loop/reference/automation.md`, `SKILL.md`, `docs/architecture/`
@@ -83,7 +83,7 @@ overrides: {}
   - _Depends on:_ 8
   - _Requirements:_ R2.2, R4.3
   - _Test:_ `npx markdownlint-cli2 "**/*.md"`
-- [ ] 10. Records & evidence
+- [x] 10. Records & evidence
   - Finalize `decision-016` status, update `docs/roadmap.md` (webhook-routing item →
     shipped), execution log, PR briefing with evidence (`make check` green, scenario
     table).

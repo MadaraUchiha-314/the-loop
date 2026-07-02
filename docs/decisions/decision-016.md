@@ -1,6 +1,6 @@
 # Decision 016 — Route GitHub webhooks to harness sessions via the CLI receiver, not GitHub MCP
 
-- **Status:** proposed (accepted when the issue-15 spec is approved)
+- **Status:** accepted (spec approved and implemented on PR #16)
 - **Date:** 2026-07-02
 - **Work item:** issue #15
 - **Spec:** `docs/specs/issue-15/`

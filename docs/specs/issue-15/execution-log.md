@@ -1,7 +1,7 @@
 ---
 type: execution-log
 workItem: issue-15
-phase: tasks-breakdown
+phase: needs-review
 status: in-progress
 ---
 
@@ -14,11 +14,11 @@ status: in-progress
 
 | Phase | Entered | Reviewed/approved by | Notes |
 |-------|---------|----------------------|-------|
-| requirements-definition | 2026-07-02 | pending | Distilled from issue #15 |
-| design | 2026-07-02 | pending | MCP vs webhook decision → `decision-016` |
-| tasks-breakdown | 2026-07-02 | pending | 10-task DAG; implementation awaits approval |
-| implementation |  |  | not started (out of scope for issue #15) |
-| needs-review |  |  |  |
+| requirements-definition | 2026-07-02 | @MadaraUchiha-314 (PR #16) | Distilled from issue #15 |
+| design | 2026-07-02 | @MadaraUchiha-314 (PR #16) | MCP vs webhook decision → `decision-016` |
+| tasks-breakdown | 2026-07-02 | @MadaraUchiha-314 (PR #16) | 10-task DAG |
+| implementation | 2026-07-02 | — | approved via "Let's implement it now." on PR #16 |
+| needs-review | 2026-07-02 |  | all 10 tasks done; PR #16 updated |
 | complete |  |  |  |
 
 ## Progress entries
@@ -69,6 +69,26 @@ status: in-progress
 - **Next:** Phase approvals.
 - **Blockers:** none.
 
+### 2026-07-02 — Implementation: tasks 1–10 executed
+
+- **Phase:** implementation → needs-review
+- **Did:** Executed the DAG in order 1 → {2,4,5,6,7} → 3 → 8 → 9 → 10.
+  Red→green evidence per task:
+  - Task 1: `validate_config.py` INVALID (`'routing' was unexpected`) → schema
+    extended → VALID.
+  - Tasks 2/4/5/6/7: `pytest cli/tests/test_routing.py` collection error
+    (`No module named 'the_loop.harness'`) → modules implemented → 32 passed.
+  - Task 3: `pytest -k sessions_command` 5 failed (command missing) → 5 passed.
+  - Task 8: integration tests 3 failed (`--route` unknown; on_event lacked the
+    delivery id) → wired → 57 passed total; scenarios queryable via
+    `the-loop scenarios` (4 rows, Requirement-linked).
+  - Tasks 9/10: docs (CLI README, automation.md, architecture.md), records
+    (decision-016 accepted, roadmap item shipped), markdownlint 0 errors.
+- **Checkpoint/tests:** `make check` green (ruff · pyright · validate ·
+  57 pytest · markdownlint).
+- **Next:** Human review of PR #16 (autonomy tier 3: human-approves-pr).
+- **Blockers:** none.
+
 ## Review cycles
 
 | Cycle | Type (self/critic) | Reviewer | Outcome | Link |
@@ -76,7 +96,16 @@ status: in-progress
 | 1 | self | harness | Fixed: EARS phrasing, DAG edges, untrusted-payload handling made explicit | — |
 | 2 | human | @MadaraUchiha-314 | Fixed: MCP-notifications rationale sharpened; optional Claude SDK adapter added | PR #16 comment |
 | 3 | human | @MadaraUchiha-314 | Decision applied: CLI-only triggering for both harnesses; SDK adapter removed | PR #16 comment |
+| 4 | self | harness | Fixed: router and dispatcher now share one Deduper (router's early duplicate check was inert); design §3 protocol snippet aligned with implemented signatures | — |
 
 ## Final validation evidence
 
-Pending — recorded when the implementation tasks execute.
+- `make check` green: ruff · pyright · `validate_config.py` (schema + both configs) ·
+  **57 pytest** (16 pre-existing + 41 new) · markdownlint (0 errors) — the same
+  commands CI runs.
+- Acceptance mapping: R2 → registry + `sessions` command tests; R3 →
+  router/dispatcher tests + the three Gherkin integration scenarios
+  (`the-loop scenarios` lists them with `Requirement:` links); R4 → adapter tests
+  against stub `claude`/`cursor-agent` binaries (argv + cwd asserted); R5 →
+  same-session FIFO / cross-session parallelism dispatcher tests; R1 →
+  `decision-016` (accepted).

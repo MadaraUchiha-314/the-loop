@@ -57,17 +57,24 @@ as commands/skills today; hooks add predictability where a step must always run.
 A lightweight, extensible Python CLI under `cli/` (package `the_loop`) for
 quality-of-life commands the plugin itself can use. Zero runtime deps (stdlib only);
 Python is chosen to leave room for future self-learning/ML SDKs. Extensible command
-registry. First command: `the-loop gh-webhook start|stop` — a GitHub webhook receiver
-(HMAC-verified) that is the on-ramp to the trigger automation below. See
+registry. Commands: `gh-webhook start|stop` (HMAC-verified GitHub webhook receiver
+with `--route`), `sessions register|list|close` (work item ↔ session registry), and
+`scenarios` (queryable integration-test scenario table). See
 `docs/decisions/decision-005.md`.
 
-### 7. Triggers (future)
+### 7. Triggers
 
-- Webhooks: PR review comments and GitHub Actions results auto-trigger the harness
-  (received by the CLI's `gh-webhook` server).
-- The "dream": creating a ticket spins up the-loop in a remote workspace and delivers
-  the work, notifying humans only when a decision is needed.
-- DAG orchestration across work items using depends-on / blocked-by relationships.
+- **Webhook → session routing (shipped, issue #15).** PR/issue comments and GitHub
+  Actions results reach the harness session working that item: the `gh-webhook`
+  receiver routes verified events through a session registry
+  (`.the-loop/sessions/*.json`, managed by `the-loop sessions`) and resumes the
+  matched session via its official CLI (`claude -p --resume` /
+  `cursor-agent -p --resume`), serialized per session and parallel across sessions.
+  See `docs/specs/issue-15/design.md` and `docs/decisions/decision-016.md`.
+- The "dream" (future): creating a ticket spins up the-loop in a remote workspace and
+  delivers the work, notifying humans only when a decision is needed.
+- DAG orchestration across work items using depends-on / blocked-by relationships
+  (future).
 
 ## Status
 

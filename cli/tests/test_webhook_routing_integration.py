@@ -137,15 +137,18 @@ def test_review_comment_resumes_registered_session(routed_server, tmp_path):
         port, "issue_comment", issue_comment_payload("CI is red, please fix"), "d-1"
     )
     assert status == 202
-    assert wait_until(lambda: len(calls()) == 1)
+
+    def delivery_recorded():
+        found = registry.find_by_work_item(REF)
+        return found is not None and "d-1" in found.recent_deliveries
+
+    assert wait_until(delivery_recorded)  # dispatch completed AND was recorded
     (call,) = calls()
     argv = call["argv"]
     assert argv[argv.index("--resume") + 1] == "sess-1"
     prompt = argv[argv.index("-p") + 1]
     assert "CI is red, please fix" in prompt
     assert "UNTRUSTED" in prompt
-    found = registry.find_by_work_item(REF)
-    assert found is not None and "d-1" in found.recent_deliveries
 
 
 def test_unmatched_event_is_dropped_by_default(routed_server):

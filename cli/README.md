@@ -30,7 +30,8 @@ This exposes the primary CLI: `the-loop`.
 ```bash
 the-loop gh-webhook start [--host 127.0.0.1] [--port 8787] [--path /gh-webhook] \
                           [--pidfile .the-loop/gh-webhook.pid] \
-                          [--secret-env THE_LOOP_GH_WEBHOOK_SECRET]
+                          [--secret-env THE_LOOP_GH_WEBHOOK_SECRET] \
+                          [--route | --no-route]
 the-loop gh-webhook stop  [--pidfile .the-loop/gh-webhook.pid]
 ```
 
@@ -40,8 +41,32 @@ the-loop gh-webhook stop  [--pidfile .the-loop/gh-webhook.pid]
 - `GET /health` returns `200 ok`.
 - Defaults can come from `.the-loop/config.yaml` (`webhooks.ghWebhook`) when PyYAML is
   installed; flags always override.
-- Receiving events and routing them to the agent harness is future work — this is the
-  receiver scaffold the issue asks the CLI to provide.
+- **`--route`** (default from `webhooks.ghWebhook.routing.enabled`) routes each verified
+  event to the registered harness session working that item: the router extracts the
+  work item(s) from the payload (issue/PR number, PR head-branch `issue-<n>` convention,
+  closing keywords, `workflow_run`/`check_*` PRs), deduplicates on `X-GitHub-Delivery`,
+  and the dispatcher resumes the matched session via its official CLI
+  (`claude -p … --resume <session-id>` / `cursor-agent -p … --resume <chat-id>`), one
+  event at a time per session, in parallel across sessions. Unmatched events follow
+  `routing.spawnOnUnmatched` (`never` drops; `always` spawns + registers a session).
+  Design: `docs/specs/issue-15/design.md`, `docs/decisions/decision-016.md`.
+
+### `sessions` — link work items to harness sessions (webhook routing)
+
+```bash
+the-loop sessions register --work-item github:OWNER/REPO#N --harness claude \
+    --harness-session-id "$CLAUDE_SESSION_ID" [--cwd .] [--force]
+the-loop sessions list  [--status active|closed] [--format table|json]
+the-loop sessions close --work-item github:OWNER/REPO#N
+```
+
+- The registry lives in `webhooks.ghWebhook.routing.registryDir` (default
+  `.the-loop/sessions/`, git-ignored) as one human-inspectable JSON file per session;
+  writes are atomic, so concurrent sessions on the same machine are safe.
+- One work item ↔ one active session; `--force` replaces a stale registration.
+- Claude Code sessions register with `$CLAUDE_SESSION_ID`; Cursor sessions register
+  with the chat id they were launched with (non-interactive `cursor-agent ls` is
+  unreliable for id discovery, so the id is captured at registration time).
 
 ### `scenarios` — query the Gherkin scenarios integration tests cover
 

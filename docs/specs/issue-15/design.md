@@ -95,11 +95,12 @@ Responsibility: pure functions from `(event_name, payload)` to routing decisions
 Responsibility: one contract, per-harness subprocess invocation (R4).
 
 ```python
-class HarnessAdapter(Protocol):
+class HarnessAdapter:
     name: str                                   # "claude" | "cursor"
     def is_available(self) -> bool              # shutil.which on the CLI binary
-    def resume(self, session: Session, prompt: str) -> DispatchResult
-    def spawn(self, work_item: WorkItemRef, prompt: str, cwd: str) -> Session
+    def resume(self, session, prompt, timeout=None) -> DispatchResult
+    # DispatchResult.session_id carries the new id; the dispatcher registers it
+    def spawn(self, work_item, prompt, cwd, timeout=None) -> DispatchResult
 ```
 
 - **`claude_code.py`** — `claude -p <prompt> --resume <session_id> --output-format json`,

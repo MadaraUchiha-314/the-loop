@@ -124,9 +124,16 @@ def extract_work_items(event: str, payload: dict) -> List[WorkItemRef]:
 class Router:
     """Filter (R3.5) + dedup check (R3.4) + work-item extraction (R3.1)."""
 
-    def __init__(self, events: Sequence[str] = (), dedup_size: int = 1024):
+    def __init__(
+        self,
+        events: Sequence[str] = (),
+        dedup_size: int = 1024,
+        deduper: Optional[Deduper] = None,
+    ):
         self.events = list(events)
-        self.deduper = Deduper(maxsize=dedup_size)
+        # Share the dispatcher's deduper so the router's early duplicate check
+        # sees the ids the dispatcher marks as processed.
+        self.deduper = deduper if deduper is not None else Deduper(maxsize=dedup_size)
 
     def route(
         self, event: str, payload: dict, delivery_id: str

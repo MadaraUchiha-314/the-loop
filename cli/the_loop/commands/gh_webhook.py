@@ -69,9 +69,11 @@ def _build_routing(gh_webhook_config: dict):
         adapters=build_adapters(config.harness_args),
         config=config,
     )
+    # The router shares the dispatcher's deduper: the dispatcher marks processed
+    # delivery ids, the router drops duplicates before extraction.
     router = Router(
         events=gh_webhook_config.get("events") or [],
-        dedup_size=config.dedup_cache_size,
+        deduper=dispatcher.deduper,
     )
 
     def on_event(event: str, payload: dict, delivery_id: str) -> None:

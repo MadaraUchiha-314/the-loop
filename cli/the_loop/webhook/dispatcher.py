@@ -114,11 +114,16 @@ class Dispatcher:
         registry: SessionRegistry,
         adapters: Dict[str, HarnessAdapter],
         config: Optional[RoutingConfig] = None,
+        deduper: Optional[Deduper] = None,
     ):
         self.registry = registry
         self.adapters = adapters
         self.config = config or RoutingConfig()
-        self.deduper = Deduper(maxsize=self.config.dedup_cache_size)
+        self.deduper = (
+            deduper
+            if deduper is not None
+            else Deduper(maxsize=self.config.dedup_cache_size)
+        )
         self._template = self._load_template()
         self._semaphore = threading.BoundedSemaphore(
             max(1, self.config.max_concurrent_dispatches)
