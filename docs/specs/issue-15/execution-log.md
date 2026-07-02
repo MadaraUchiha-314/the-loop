@@ -57,12 +57,25 @@ status: in-progress
 - **Next:** Phase approvals.
 - **Blockers:** none new.
 
+### 2026-07-02 — Owner decision: CLI-only triggering for both harnesses
+
+- **Phase:** tasks-breakdown
+- **Did:** Applied @MadaraUchiha-314's decision on PR #16 ("let's use cli to trigger
+  the harnesses not the sdks, for both cursor and claude"): removed the optional
+  Claude Python-SDK adapter (former task 10) from the design and DAG; recorded the
+  CLI-only decision in `design.md` trade-offs and `decision-016`. The `HarnessAdapter`
+  contract still permits SDK implementations later (R4.5).
+- **Checkpoint/tests:** `make check` green.
+- **Next:** Phase approvals.
+- **Blockers:** none.
+
 ## Review cycles
 
 | Cycle | Type (self/critic) | Reviewer | Outcome | Link |
 |-------|--------------------|----------|---------|------|
 | 1 | self | harness | Fixed: EARS phrasing, DAG edges, untrusted-payload handling made explicit | — |
 | 2 | human | @MadaraUchiha-314 | Fixed: MCP-notifications rationale sharpened; optional Claude SDK adapter added | PR #16 comment |
+| 3 | human | @MadaraUchiha-314 | Decision applied: CLI-only triggering for both harnesses; SDK adapter removed | PR #16 comment |
 
 ## Final validation evidence
 

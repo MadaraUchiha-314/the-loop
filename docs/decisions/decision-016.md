@@ -42,11 +42,12 @@ subprocesses.
   over stdio — a per-event `resume` through it costs what a per-event CLI invocation
   costs. Subprocessing the vendor CLIs keeps the zero-runtime-dependency guarantee
   (decision-005) and treats both harnesses uniformly.
-- **SDK adapter as an optional extra, not a rewrite.** What the Python SDK genuinely
-  adds — interrupting an in-flight run when a superseding event arrives, message-level
-  trace/hooks, streaming input — is exposed behind the same `HarnessAdapter` contract as
-  an optional extra (`the-loop[claude-sdk]`) for users who opt into the dependencies.
-  Event *queueing* lives in the-loop's dispatcher either way; no SDK provides it.
+- **CLI-only for both harnesses (owner decision, PR #16).** An optional
+  `claude-agent-sdk` adapter was considered and set aside: the extra control it adds
+  (interrupting an in-flight run, message-level trace/hooks, streaming input) is not
+  needed for v1, and the `HarnessAdapter` contract keeps SDK implementations possible
+  later without redesign. Event *queueing* lives in the-loop's dispatcher either way;
+  no SDK provides it.
 - **Resume, don't respawn.** Routing to an *existing* session preserves its context —
   the point of linking events to sessions via registry metadata.
 

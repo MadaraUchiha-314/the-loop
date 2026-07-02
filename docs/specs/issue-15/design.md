@@ -115,14 +115,10 @@ class HarnessAdapter(Protocol):
   (`routing.harnessArgs.cursor`).
 - Timeouts (`routing.dispatchTimeoutSeconds`, default 1800) and captured
   stdout/stderr on failure; `DispatchResult {ok, session_id, output, error}`.
-- **`claude_sdk.py` (optional extra `the-loop[claude-sdk]`)** — same contract, built on
-  `claude-agent-sdk` (`ClaudeAgentOptions(resume=…)` / `ClaudeSDKClient`). Adds what the
-  CLI can't: interrupting an in-flight dispatch when a superseding event arrives,
-  message-level trace/hooks, streaming input. It carries runtime dependencies (`anyio`,
-  `mcp`, `sniffio`) and drives the bundled `claude` CLI over stdio itself, so it is
-  opt-in and auto-selected only when importable; the stdlib CLI adapter remains the
-  default. (Cursor has no official Python SDK — its TypeScript SDK would require a Node
-  sidecar, so the Cursor adapter stays CLI-only.)
+- Both adapters are **CLI-only by decision** (owner, PR #16): no `claude-agent-sdk`
+  (runtime deps; drives the same CLI over stdio anyway) and no `@cursor/sdk` (TypeScript
+  — would need a Node sidecar). The `HarnessAdapter` contract still leaves room for SDK
+  implementations if interrupt/trace control is ever needed (R4.5).
 
 ### 4. Dispatcher — `cli/the_loop/webhook/dispatcher.py` (new)
 
@@ -267,13 +263,15 @@ Evidence: red→green per task (`tdd.mode: standard`), `make check` green.
   they can't wake a disconnected harness, the GitHub MCP server doesn't emit them for
   repo events, and something still has to receive GitHub's webhooks; recorded with the
   re-evaluation trigger in `decision-016`.
-- **Official CLIs by default, Python SDK as an opt-in adapter** — `claude -p --resume`
-  and `cursor-agent -p --resume` are the vendor surfaces reachable from a
-  zero-dependency Python process. `claude-agent-sdk` (deps: `anyio`, `mcp`, `sniffio`;
-  it drives the same CLI over stdio) is offered behind the same adapter contract as the
-  `the-loop[claude-sdk]` extra for interrupt/trace/hook control; Cursor's only official
-  SDK is TypeScript and would need a Node sidecar, so its adapter stays CLI-only. Event
-  queueing lives in the dispatcher regardless — no SDK provides it.
+- **Official CLIs only, for both harnesses** (owner decision, PR #16) — `claude -p
+  --resume` and `cursor-agent -p --resume` are the vendor surfaces reachable from a
+  zero-dependency Python process. SDKs were evaluated and set aside: `claude-agent-sdk`
+  carries runtime deps (`anyio`, `mcp`, `sniffio`) and drives the same CLI over stdio,
+  so per-event resume costs the same — its extra control (interrupt-in-flight,
+  message-level trace, hooks) isn't needed for v1; Cursor's only official SDK is
+  TypeScript and would need a Node sidecar. Event queueing lives in the dispatcher
+  regardless — no SDK provides it. The adapter contract keeps SDK implementations
+  possible later (R4.5).
 - **Resume over fresh sessions** — resuming preserves the session's context (the whole
   point of routing to the *right* session); a fresh `-p` run would re-derive it.
 - **Registry as JSON files** — inspectable, atomic-per-session, no locking; sqlite3
