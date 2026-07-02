@@ -1,0 +1,25 @@
+{
+  "name": "the-loop",
+  "displayName": "the-loop",
+  "version": "0.1.0",
+  "description": "An opinionated product-development-lifecycle harness that lets coding agents deliver work items end-to-end, with minimal human intervention, through a predictable loop of plan, execute, self-review, critic-review and escalate.",
+  "author": {
+    "name": "MadaraUchiha-314",
+    "url": "https://github.com/MadaraUchiha-314"
+  },
+  "homepage": "https://github.com/MadaraUchiha-314/the-loop",
+  "repository": "https://github.com/MadaraUchiha-314/the-loop",
+  "license": "MIT",
+  "category": "workflow",
+  "keywords": [
+    "pdlc",
+    "agent-harness",
+    "automation",
+    "workflow",
+    "loop",
+    "cursor"
+  ],
+  "skills": "./skills/",
+  "commands": "./commands/",
+  "rules": "./rules/"
+}

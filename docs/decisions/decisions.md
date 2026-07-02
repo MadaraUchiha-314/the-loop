@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [015](decision-015.md) | Ship the-loop as a Cursor plugin from the same repo | accepted | 2026-07-02 |
 | [014](decision-014.md) | Gherkin scenario docstrings on integration tests + contract-first API specs | accepted | 2026-07-02 |
 | [013](decision-013.md) | Trigger mandatory user-education via a required PR-briefing gate | accepted | 2026-07-01 |
 | [012](decision-012.md) | Adopt eight review-driven robustness features (issues #3–#10) | accepted | 2026-07-01 |

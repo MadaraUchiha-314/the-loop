@@ -5,17 +5,19 @@ here as they are added (`docs/architecture/<component>.md`).
 
 ## What the-loop is
 
-A distributable harness (shipped as a **Claude plugin**, with Cursor support planned)
-that encodes a predictable product-development-lifecycle. Given an approved plan, an
+A distributable harness (shipped as a plugin for **Claude Code and Cursor**) that
+encodes a predictable product-development-lifecycle. Given an approved plan, an
 agent harness delivers a work item end-to-end, escalating to humans only for decisions.
 
 ## Components
 
 ### 1. Distribution (plugin + marketplace)
 
-- `.claude-plugin/plugin.json` — plugin manifest (commands, skills, hooks).
-- `.claude-plugin/marketplace.json` — installable directly from GitHub; no bespoke
-  marketplace. Cursor equivalent: TODO.
+- `.claude-plugin/plugin.json` — Claude Code plugin manifest (commands, skills, hooks).
+- `.cursor-plugin/plugin.json` — Cursor plugin manifest over the SAME `skills/` (Agent
+  Skills standard) and `commands/`; `rules/the-loop.mdc` replaces the SessionStart hook.
+- `.claude-plugin/marketplace.json` + `.cursor-plugin/marketplace.json` — installable
+  directly from GitHub in both harnesses; no bespoke marketplace. See `decision-015`.
 
 ### 2. Project footprint (`.the-loop/`)
 

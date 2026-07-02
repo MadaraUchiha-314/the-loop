@@ -5,10 +5,14 @@ This describes what the-loop *does* today, in your project.
 
 ## Distribution
 
-- the-loop ships as a **Claude plugin**. Personas across the PDLC (PM, design, architect,
-  dev, QA) all work through an agent harness, so the-loop meets them there.
-- It is hosted on GitHub and installed via Claude's **marketplace** construct, **directly
-  from GitHub** — no bespoke marketplace publishing.
+- the-loop ships as a plugin for **Claude Code** and **Cursor**. Personas across the PDLC
+  (PM, design, architect, dev, QA) all work through an agent harness, so the-loop meets
+  them there.
+- It is hosted on GitHub and installed via each harness's **marketplace** construct,
+  **directly from GitHub** — no bespoke marketplace publishing. The Claude Code manifest
+  lives in `.claude-plugin/`, the Cursor manifest in `.cursor-plugin/`; both share the
+  same `skills/`, `commands/` and templates (skills follow the Agent Skills open
+  standard, so one `SKILL.md` serves both harnesses).
 
 ## Footprint tracking
 
@@ -38,7 +42,10 @@ Python SDKs. The core has **zero runtime dependencies** (stdlib only).
 The PDLC is largely fixed; the harness should not re-derive it each run. Steps are made
 predictable via:
 
-- **Claude hooks** (`hooks/hooks.json`) — force steps to run at lifecycle points.
+- **Harness hooks** — force steps to run at lifecycle points. In Claude Code:
+  `hooks/hooks.json` (SessionStart reminder). In Cursor: the always-applied rule
+  `rules/the-loop.mdc` carries the same reminder (Cursor hook events have no
+  SessionStart equivalent).
 - **Custom code/scripts** (the CLI is a natural home) where hooks are insufficient.
 
 ## Self-improvement (learnings lifecycle)
