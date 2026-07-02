@@ -32,6 +32,9 @@ the rules and the per-language matrix so the essence is not lost.
   the user and record a decision before relying on them.
 - **Linting covers ALL files, including markdown** (`tooling.lint.markdown`, default
   `markdownlint`). Lint markdown too — docs are first-class.
+- **Integration tests carry Gherkin scenario docstrings** and REST/GraphQL contracts
+  live under `specs/` (`config.testing` / `config.apiSpecs`) — see
+  `reference/testing.md` for the conventions and the `the-loop scenarios` query.
 
 ## Artifact & release management
 

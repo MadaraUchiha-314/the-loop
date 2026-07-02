@@ -196,6 +196,91 @@
         }
       }
     },
+    "testing": {
+      "type": "object",
+      "description": "Integration-test scenario conventions and how the harness queries them. See reference/testing.md.",
+      "additionalProperties": false,
+      "properties": {
+        "gherkinDocstrings": {
+          "type": "string",
+          "enum": ["required", "recommended", "off"],
+          "default": "required",
+          "description": "RULE: every integration test carries a Gherkin-syntax docstring (Feature/Scenario/Given-When-Then) naming the scenario under test."
+        },
+        "linkRequirements": {
+          "type": "boolean",
+          "default": true,
+          "description": "When a test is tied to a requirements.md, its docstring includes a `Requirement:` link to that file (and section anchor)."
+        },
+        "integrationTestGlobs": {
+          "type": "array",
+          "description": "Globs the harness scans to enumerate integration-test scenarios (`the-loop scenarios`). Empty = use the CLI's built-in defaults.",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "apiSpecs": {
+      "type": "object",
+      "description": "Where API contracts are authored and how docs are generated from them. See reference/testing.md (API specs).",
+      "additionalProperties": false,
+      "properties": {
+        "rest": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "RESTful API contracts.",
+          "properties": {
+            "dir": {
+              "type": "string",
+              "default": "specs/openapi",
+              "description": "RULE: all RESTful API specs are authored here in the OpenAPI format."
+            },
+            "format": {
+              "type": "string",
+              "enum": ["openapi-3.1", "openapi-3.0"],
+              "default": "openapi-3.1"
+            },
+            "generateDocs": {
+              "type": "boolean",
+              "default": true,
+              "description": "Documentation is generated automatically from the OpenAPI specs."
+            },
+            "docsTool": {
+              "type": "string",
+              "default": "redocly",
+              "description": "Tool that renders docs from OpenAPI. Free-form; e.g. redocly, widdershins, swagger-ui."
+            }
+          }
+        },
+        "graphql": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "GraphQL best practice: an SDL-first schema, checked in, linted/snapshot-tested, and documented.",
+          "properties": {
+            "dir": {
+              "type": "string",
+              "default": "specs/graphql",
+              "description": "Where the checked-in GraphQL schema lives."
+            },
+            "schemaFormat": {
+              "type": "string",
+              "enum": ["sdl"],
+              "default": "sdl",
+              "description": "Schema Definition Language — the human-authored, checked-in, snapshot-tested contract."
+            },
+            "generateDocs": {
+              "type": "boolean",
+              "default": true,
+              "description": "Documentation is generated automatically from the SDL schema."
+            },
+            "docsTool": {
+              "type": "string",
+              "default": "spectaql",
+              "description": "Tool that renders docs from the SDL. Free-form; e.g. spectaql, graphdoc, magidoc."
+            }
+          }
+        }
+      }
+    },
     "localOrchestration": {
       "type": "object",
       "description": "Multi-artifact & multi-entity testing.",

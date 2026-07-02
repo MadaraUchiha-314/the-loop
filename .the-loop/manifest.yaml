@@ -59,6 +59,14 @@ workItemArtifacts:
   - pathPattern: docs/specs/<id>/execution-log.md
     role: execution-log
 
+# API contracts authored contract-first (config.apiSpecs). Documentation is generated
+# from these, never hand-written. Only present in projects that expose an API.
+apiContracts:
+  - pathPattern: specs/openapi/<service>.yaml
+    role: rest-api-contract
+  - pathPattern: specs/graphql/<schema>.graphql
+    role: graphql-schema
+
 # Long-lived project knowledge maintained by the-loop.
 knowledge:
   - path: docs/architecture/architecture.md

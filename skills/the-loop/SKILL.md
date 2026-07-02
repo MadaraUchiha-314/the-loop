@@ -15,6 +15,7 @@ escalating only when a decision/opinion is genuinely required.
 > - `reference/workflow.md` — the loop, phases, TDD, reviews, autonomy, DAG, resumability.
 > - `reference/reviewing.md` — the self/critic review procedure the review counts drive.
 > - `reference/tooling.md` — repo management, per-language tooling matrix, hooks, CI parity.
+> - `reference/testing.md` — Gherkin scenario docstrings on integration tests, the queryable scenario view, OpenAPI/GraphQL contract conventions.
 > - `reference/minimalism.md` — generation-time decision ladder to counter code bloat.
 > - `reference/collaboration.md` — personas/roles, paper trail, conflict log, messaging, MCP.
 > - `reference/observability.md` — dev==runtime logging, levels, browser logging.
@@ -69,6 +70,15 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   stop on zero new findings, escalate on a repeated finding).
 - **Test-first.** `tdd.mode` (default `standard`): no production code without a failing
   test that motivates it; record the red→green transition as evidence.
+- **Scenario-documented integration tests.** Every integration test carries a
+  Gherkin-syntax docstring (`Feature:`/`Scenario:`/Given-When-Then) naming the scenario
+  under test, with a `Requirement:` link when tied to a `requirements.md`
+  (`config.testing`). The harness can query all covered scenarios as a table via
+  `the-loop scenarios` (`--format table|markdown|json`). See `reference/testing.md`.
+- **Contract-first APIs.** RESTful API specs are authored in `specs/openapi/` in the
+  OpenAPI format; GraphQL schemas are SDL-first under `specs/graphql/`; documentation is
+  generated from those contracts, never hand-written (`config.apiSpecs`). See
+  `reference/testing.md`.
 - **Minimalism.** Apply the `reference/minimalism.md` decision ladder (YAGNI → stdlib →
   native → existing dep → inline → new abstraction); justify every new dependency in
   `design.md`. Never trade away validation/error-handling/security/accessibility.
@@ -103,7 +113,8 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
 
 Behaviour is driven by `.the-loop/config.yaml`, validated against
 `.the-loop/config.schema.json`. Sections: `ticketing`, `repository`, `workflow`,
-`tooling`, `localOrchestration`, `hooks`, `observability`, `reviews`, `autonomy`, `tdd`,
+`tooling`, `testing`, `apiSpecs`, `localOrchestration`, `hooks`, `observability`,
+`reviews`, `autonomy`, `tdd`,
 `minimalism`, `selfImprovement`, `userInteraction`, `personas`, `messaging`,
 `externalTools`, `webhooks`. A subset of keys can be overridden per work item via the
 YAML front-matter `overrides` of the work-item / spec markdown. Managed files are listed

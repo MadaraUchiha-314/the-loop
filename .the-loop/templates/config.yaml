@@ -60,6 +60,23 @@ tooling:
     go: go-modules
     containers: ghcr
 
+testing:
+  gherkinDocstrings: required   # required | recommended | off — Gherkin docstring per integration test
+  linkRequirements: true        # link the docstring to requirements.md when the test is tied to one
+  integrationTestGlobs: []      # where `the-loop scenarios` looks (empty = CLI built-in defaults)
+
+apiSpecs:
+  rest:
+    dir: specs/openapi          # RULE: all RESTful API specs authored here in OpenAPI format
+    format: openapi-3.1         # openapi-3.1 | openapi-3.0
+    generateDocs: true          # docs generated automatically from the OpenAPI specs
+    docsTool: redocly           # free-form: redocly | widdershins | swagger-ui | …
+  graphql:                      # best practice: SDL-first, checked in, snapshot-tested, documented
+    dir: specs/graphql
+    schemaFormat: sdl
+    generateDocs: true
+    docsTool: spectaql          # free-form: spectaql | graphdoc | magidoc | …
+
 localOrchestration:
   containerRuntime: podman
   linkPackagesLocally: true

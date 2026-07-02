@@ -64,7 +64,7 @@ Granular commands run the same flow one step at a time:
 - **The operating model** is captured in the
   [`the-loop` skill](skills/the-loop/SKILL.md), with the full detail in its
   [reference docs](skills/the-loop/reference/) — `workflow`, `reviewing`, `tooling`,
-  `minimalism`, `collaboration`, `observability`, and `automation`.
+  `testing`, `minimalism`, `collaboration`, `observability`, and `automation`.
 
 ## CLI companion (`the-loop`)
 
@@ -76,6 +76,7 @@ capabilities (mostly Python SDKs). First command is a GitHub webhook receiver:
 ```bash
 the-loop gh-webhook start   # HMAC-verified receiver; GET /health; logs events
 the-loop gh-webhook stop
+the-loop scenarios          # tabular view of every Gherkin scenario the integration tests cover
 ```
 
 See [`cli/README.md`](cli/README.md) for install and how to add commands.
@@ -89,6 +90,10 @@ See [`cli/README.md`](cli/README.md) for install and how to add commands.
 - Self-checks run tests at logical checkpoints; progress is logged for visibility.
 - Configured self-reviews and critic reviews run **before** escalating to a human.
 - The same tooling runs locally and in CI; logging is identical at dev-time and runtime.
+- Integration tests document their scenario in **Gherkin** docstrings (linked to the
+  spec's `requirements.md`), queryable as a table via `the-loop scenarios`.
+- APIs are **contract-first**: REST specs in `specs/openapi/` (OpenAPI), GraphQL SDL in
+  `specs/graphql/`; docs are generated from the contracts, never hand-written.
 - All commits follow **Conventional Commits**.
 - PRs are written **for the reviewer**: a condensed, prioritized summary of where to
   focus, **mermaid** diagrams, and documented low-level decisions — and the loop
