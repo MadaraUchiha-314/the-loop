@@ -2,8 +2,8 @@
 type: requirements
 phase: requirements-definition
 workItem: issue-15
-status: in-review
-approvedBy: []
+status: approved
+approvedBy: ["@MadaraUchiha-314 (PR #16: let's implement it now)"]
 collaborators: [architect, engineer]
 overrides: {}
 ---
@@ -134,8 +134,6 @@ running on one machine, so that events for each item reach only its own session.
 
 ## Out of scope (this work item)
 
-- Implementation itself — issue #15 asks for the detailed design and the task
-  breakdown; the tasks DAG in `tasks.md` is executed as follow-up work once approved.
 - Jira webhooks (the work-item reference format reserves the `jira:` prefix; a Jira
   router is a follow-up).
 - Remote auto-provisioning of workspaces (the roadmap's "dream"); this work item routes

@@ -156,4 +156,17 @@ webhooks:
     path: /gh-webhook
     secretEnv: THE_LOOP_GH_WEBHOOK_SECRET   # env var holding the secret (not stored here)
     pidfile: .the-loop/gh-webhook.pid
-    events: []   # e.g. [pull_request_review_comment, workflow_run]
+    events: []   # e.g. [pull_request_review_comment, workflow_run]; empty = all
+    routing:
+      enabled: false                # route events to registered harness sessions
+      registryDir: .the-loop/sessions
+      defaultHarness: claude        # claude | cursor
+      spawnOnUnmatched: never       # never | always
+      spawnWorkdir: "."
+      maxConcurrentDispatches: 4
+      dedupCacheSize: 1024
+      dispatchTimeoutSeconds: 1800
+      promptTemplate: .the-loop/templates/webhook-event-prompt.md
+      harnessArgs:
+        claude: []                  # e.g. [--permission-mode, acceptEdits]
+        cursor: []                  # e.g. [--force]

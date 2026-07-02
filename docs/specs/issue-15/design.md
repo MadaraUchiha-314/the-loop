@@ -2,8 +2,8 @@
 type: design
 phase: design
 workItem: issue-15
-status: in-review
-approvedBy: []
+status: approved
+approvedBy: ["@MadaraUchiha-314 (PR #16: let's implement it now)"]
 overrides: {}
 ---
 

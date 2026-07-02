@@ -2,8 +2,8 @@
 type: tasks
 phase: tasks-breakdown
 workItem: issue-15
-status: in-review
-approvedBy: []
+status: approved
+approvedBy: ["@MadaraUchiha-314 (PR #16: let's implement it now)"]
 overrides: {}
 ---
 
@@ -16,7 +16,7 @@ overrides: {}
 
 ## Task list
 
-- [ ] 1. Config contract: `webhooks.ghWebhook.routing`
+- [x] 1. Config contract: `webhooks.ghWebhook.routing`
   - Extend `.the-loop/config.schema.json` with the `routing` object (design §8); mirror
     in `.the-loop/templates/config.yaml` and this repo's `.the-loop/config.yaml`
     (`enabled: false`); git-ignore `.the-loop/sessions/`; track the new template in
@@ -24,20 +24,20 @@ overrides: {}
   - _Depends on:_ none
   - _Requirements:_ R2, R3, R5
   - _Test:_ `uv run python scripts/validate_config.py` (red→green)
-- [ ] 2. Session registry library (`the_loop/sessions/registry.py`)
+- [x] 2. Session registry library (`the_loop/sessions/registry.py`)
   - `Session` / `WorkItemRef` dataclasses, ref parsing (`github:owner/repo#n`), JSON
     file-per-session storage with atomic writes, `register` (one-active-per-item,
     `--force` semantics), `close`, `find_by_work_item`, `list_sessions`, `touch`.
   - _Depends on:_ 1
   - _Requirements:_ R2.1, R2.3, R2.4
   - _Test:_ `uv run --project cli python -m pytest -q cli -k registry` (red→green)
-- [ ] 3. `the-loop sessions` command (register/list/close)
+- [x] 3. `the-loop sessions` command (register/list/close)
   - Registered `Command` with the three actions (design §5); table/json output for
     `list`; availability check (`shutil.which`) with an actionable error.
   - _Depends on:_ 2
   - _Requirements:_ R2.2
   - _Test:_ `uv run --project cli python -m pytest -q cli -k sessions_command` (red→green)
-- [ ] 4. Event router (`the_loop/webhook/router.py`)
+- [x] 4. Event router (`the_loop/webhook/router.py`)
   - `extract_work_items(event, payload)` for `issues`, `issue_comment`,
     `pull_request*`, `workflow_run`/`check_run`/`check_suite`/`status` (branch-name and
     closing-keyword issue linkage); event-type filter from `webhooks.ghWebhook.events`;
@@ -45,21 +45,21 @@ overrides: {}
   - _Depends on:_ 1
   - _Requirements:_ R3.1, R3.4, R3.5
   - _Test:_ `uv run --project cli python -m pytest -q cli -k router` (red→green)
-- [ ] 5. Harness adapter contract + Claude Code adapter (`the_loop/harness/`)
+- [x] 5. Harness adapter contract + Claude Code adapter (`the_loop/harness/`)
   - `HarnessAdapter` protocol, `DispatchResult`; `claude_code.py` resume/spawn via
     `claude -p … --output-format json` run in `session.cwd`, timeout + stderr capture;
     tests use a stub `claude` executable emitting canned JSON.
   - _Depends on:_ 2
   - _Requirements:_ R4.1, R4.2, R4.4, R4.5
   - _Test:_ `uv run --project cli python -m pytest -q cli -k claude_adapter` (red→green)
-- [ ] 6. Cursor adapter (`the_loop/harness/cursor_agent.py`)
+- [x] 6. Cursor adapter (`the_loop/harness/cursor_agent.py`)
   - Resume/spawn via `cursor-agent -p … --resume <chat-id> --output-format json`;
     configured extra args only (`harnessArgs.cursor`); stub `cursor-agent` executable in
     tests; document the chat-id-at-registration requirement.
   - _Depends on:_ 5
   - _Requirements:_ R4.1, R4.3, R4.4, R4.5
   - _Test:_ `uv run --project cli python -m pytest -q cli -k cursor_adapter` (red→green)
-- [ ] 7. Dispatcher (`the_loop/webhook/dispatcher.py`) + prompt template
+- [x] 7. Dispatcher (`the_loop/webhook/dispatcher.py`) + prompt template
   - Per-session FIFO queues + worker threads, global dispatch semaphore
     (`maxConcurrentDispatches`); unmatched policy (`never`/`always` + spawn);
     `.the-loop/templates/webhook-event-prompt.md` rendering with fenced untrusted
@@ -67,7 +67,7 @@ overrides: {}
   - _Depends on:_ 2, 4, 5
   - _Requirements:_ R3.2, R3.3, R5.1, R5.2, R5.3
   - _Test:_ `uv run --project cli python -m pytest -q cli -k dispatcher` (red→green)
-- [ ] 8. Wire routing into `gh-webhook start` + end-to-end integration test
+- [x] 8. Wire routing into `gh-webhook start` + end-to-end integration test
   - `--route/--no-route` (default `routing.enabled`); compose router+dispatcher as the
     server's `on_event`; integration test with Gherkin docstrings (design §Testing):
     signed POST → stub harness invoked with `--resume`; unmatched-drop and
