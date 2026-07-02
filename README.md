@@ -36,13 +36,27 @@ two plugin manifests (`.claude-plugin/` and `.cursor-plugin/`).
 
 ### Cursor
 
-Cursor (≥ 2.5) resolves the plugin from this repo's `.cursor-plugin/` manifests —
-add it from **Settings → Plugins** (or `/add-plugin`) using the repository URL
-`https://github.com/MadaraUchiha-314/the-loop`, or drop a checkout under
-`~/.cursor/plugins/local/the-loop/` for local use. Skills follow the
-[Agent Skills](https://agentskills.io) open standard, so the same `SKILL.md` powers
-both harnesses; commands appear in Cursor's slash menu; the Claude Code SessionStart
-hook is replaced by the always-applied rule `rules/the-loop.mdc`.
+Cursor (≥ 2.5) resolves the plugin from this repo's `.cursor-plugin/` manifests. Install
+it either way:
+
+- **From the marketplace** — in the slash menu run `/add-plugin`, or open **Settings →
+  Plugins → Add**, and point it at the repository URL:
+
+  ```
+  https://github.com/MadaraUchiha-314/the-loop
+  ```
+
+- **Locally** (for development) — check the repo out under Cursor's local plugins dir:
+
+  ```
+  git clone https://github.com/MadaraUchiha-314/the-loop \
+    ~/.cursor/plugins/local/the-loop
+  ```
+
+Skills follow the [Agent Skills](https://agentskills.io) open standard, so the same
+`SKILL.md` powers both harnesses; commands appear in Cursor's slash menu (by filename,
+e.g. `/init`); the Claude Code SessionStart hook is replaced by the always-applied rule
+`rules/the-loop.mdc`.
 
 ## Commands
 
