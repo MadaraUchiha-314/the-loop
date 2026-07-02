@@ -41,11 +41,28 @@ status: in-progress
 - **Blockers:** Phase approvals (`workflow.requireHumanReviewPerPhase: true`); open
   questions raised on the ticket (label-gating for `spawnOnUnmatched`).
 
+### 2026-07-02 — Design review feedback addressed (MCP notifications, SDK adapters)
+
+- **Phase:** tasks-breakdown
+- **Did:** Addressed @MadaraUchiha-314's PR #16 review: (1) sharpened decision-016 —
+  MCP *does* define in-session notifications (`resources/subscribe`, `listChanged`),
+  but they only reach a connected client, the GitHub MCP server declares no event
+  surface, and an event-pushing MCP server still needs a webhook receiver; (2) promoted
+  the Claude Python-SDK adapter from "future work" to an explicit opt-in extra
+  (`the-loop[claude-sdk]`, new optional task 10) — verified `claude-agent-sdk` carries
+  runtime deps (`anyio`, `mcp`, `sniffio`) and drives the `claude` CLI over stdio, so
+  the stdlib CLI adapter stays default; Cursor's TypeScript SDK would need a Node
+  sidecar, so its adapter stays CLI-only.
+- **Checkpoint/tests:** `make check` green.
+- **Next:** Phase approvals.
+- **Blockers:** none new.
+
 ## Review cycles
 
 | Cycle | Type (self/critic) | Reviewer | Outcome | Link |
 |-------|--------------------|----------|---------|------|
 | 1 | self | harness | Fixed: EARS phrasing, DAG edges, untrusted-payload handling made explicit | — |
+| 2 | human | @MadaraUchiha-314 | Fixed: MCP-notifications rationale sharpened; optional Claude SDK adapter added | PR #16 comment |
 
 ## Final validation evidence
 

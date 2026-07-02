@@ -83,11 +83,19 @@ overrides: {}
   - _Depends on:_ 8
   - _Requirements:_ R2.2, R4.3
   - _Test:_ `npx markdownlint-cli2 "**/*.md"`
-- [ ] 10. Records & evidence
+- [ ] 10. (Optional) Claude Python-SDK adapter (`the_loop/harness/claude_sdk.py`)
+  - Same `HarnessAdapter` contract on `claude-agent-sdk` behind the
+    `the-loop[claude-sdk]` extra (design §3): resume via `ClaudeAgentOptions(resume=…)`,
+    interrupt-on-superseding-event, message-trace logging; auto-selected only when
+    importable, CLI adapter stays the default. Core package keeps zero runtime deps.
+  - _Depends on:_ 5, 7
+  - _Requirements:_ R4.5
+  - _Test:_ `uv run --project cli python -m pytest -q cli -k claude_sdk_adapter` (red→green)
+- [ ] 11. Records & evidence
   - Finalize `decision-016` status, update `docs/roadmap.md` (webhook-routing item →
     shipped), execution log, PR briefing with evidence (`make check` green, scenario
     table).
-  - _Depends on:_ 9
+  - _Depends on:_ 9 (task 10 is optional and does not gate this)
   - _Requirements:_ R1.2
   - _Test:_ `make check`
 
@@ -100,13 +108,15 @@ flowchart LR
   T5 --> T6[6 cursor adapter]
   T2 & T4 & T5 --> T7[7 dispatcher]
   T3 & T6 & T7 --> T8[8 wiring + e2e]
-  T8 --> T9[9 automation + docs] --> T10[10 records]
+  T5 & T7 -.-> T10[10 optional SDK adapter]
+  T8 --> T9[9 automation + docs] --> T11[11 records]
 ```
 
-Parallelizable fronts: after 1 → {2, 4}; after 2 → {3, 5}; 6 alongside 7.
+Parallelizable fronts: after 1 → {2, 4}; after 2 → {3, 5}; 6 alongside 7; optional 10
+any time after 5+7.
 
 ## Checkpoints
 
-After tasks 3, 7, 8 and 10: `make check` (ruff · pyright · schema validation · pytest ·
+After tasks 3, 7, 8 and 11: `make check` (ruff · pyright · schema validation · pytest ·
 markdownlint) — the same command CI runs. Record each task's red→green transition in
 `execution-log.md`.
