@@ -46,6 +46,12 @@ tooling:
     python: pypi
     containers: ghcr
 
+testing:
+  gherkinDocstrings: required   # integration tests get a Gherkin docstring (the-loop's own tests are unit tests today)
+  linkRequirements: true
+  integrationTestGlobs: []      # no HTTP integration tests yet; `the-loop scenarios` uses built-in defaults
+# apiSpecs: omitted — the-loop ships a CLI + docs, not a REST/GraphQL API.
+
 localOrchestration:
   containerRuntime: podman
   linkPackagesLocally: true

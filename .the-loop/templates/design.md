@@ -36,6 +36,9 @@ Failure modes and how they are surfaced (observability identical at dev-time/run
 ## Testing strategy
 
 How requirements map to unit/integration tests, and what evidence proves acceptance.
+Name the integration scenarios by their Gherkin `Scenario:` titles (each test's
+docstring links back here via `Requirement:`); for API work, link the OpenAPI/SDL
+contract files under `specs/`. See `reference/testing.md`.
 
 ## Trade-offs & decisions
 

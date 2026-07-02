@@ -43,6 +43,23 @@ the-loop gh-webhook stop  [--pidfile .the-loop/gh-webhook.pid]
 - Receiving events and routing them to the agent harness is future work — this is the
   receiver scaffold the issue asks the CLI to provide.
 
+### `scenarios` — query the Gherkin scenarios integration tests cover
+
+```bash
+the-loop scenarios [--root .] [--glob PATTERN ...] [--format table|markdown|json]
+```
+
+- Scans integration-test files for the Gherkin-syntax docstrings the-loop requires
+  (`Feature:` / `Scenario:` / Given-When-Then, plus an optional `Requirement:` link to a
+  `requirements.md`) and presents them as a table — so a coding-agent harness can answer
+  "what scenarios are tested?" without running anything.
+- Language-agnostic: Python docstrings, JS/TS block comments and Go comments all work.
+- Globs come from `--glob` (repeatable), else `testing.integrationTestGlobs` in
+  `.the-loop/config.yaml` (when PyYAML is installed), else built-in defaults covering
+  common layouts.
+- `--format markdown` emits a GitHub-flavoured table (for PR briefings); `--format json`
+  is machine-readable (includes each scenario's steps and `file:line`).
+
 ## Adding a command (extensibility)
 
 1. Create `the_loop/commands/<your_command>.py`.
