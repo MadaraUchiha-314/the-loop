@@ -89,6 +89,18 @@ status: in-progress
 - **Next:** Human review of PR #16 (autonomy tier 3: human-approves-pr).
 - **Blockers:** none.
 
+### 2026-07-02 — CI red: ruff-format drift; gate parity fixed
+
+- **Phase:** needs-review
+- **Did:** CI (pre-commit) failed on `ruff format` for the new files — `make check`
+  did not include a format check, so local was green while CI was red (exactly the
+  tooling drift the-loop forbids). Applied the formatter, and added a `format-check`
+  target to `make check` so the gap cannot recur.
+- **Checkpoint/tests:** `uv run pre-commit run --all-files` all hooks Passed;
+  `make check` (now incl. format-check) green.
+- **Next:** CI green on the re-push; human review.
+- **Blockers:** none.
+
 ## Review cycles
 
 | Cycle | Type (self/critic) | Reviewer | Outcome | Link |

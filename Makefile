@@ -3,7 +3,7 @@
 # configured tooling so local == CI. the-loop declares `uv` as its Python package
 # manager, so it uses `uv` here (uv workspace; deps pinned in uv.lock).
 
-.PHONY: help install-dev check lint format typecheck test validate pre-commit
+.PHONY: help install-dev check lint format format-check typecheck test validate pre-commit
 
 help:
 	@echo "targets: install-dev, check, lint, format, typecheck, test, validate, pre-commit"
@@ -18,6 +18,10 @@ lint:
 format:
 	uv run ruff format cli
 
+# CI parity: pre-commit runs `ruff format`, so `check` must catch format drift too.
+format-check:
+	uv run ruff format --check cli
+
 typecheck:
 	uv run pyright cli
 
@@ -31,4 +35,4 @@ validate:
 pre-commit:
 	uv run pre-commit run --all-files --show-diff-on-failure
 
-check: lint typecheck validate test
+check: lint format-check typecheck validate test

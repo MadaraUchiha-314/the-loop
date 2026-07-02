@@ -53,9 +53,7 @@ class SessionsCommand(Command):
             required=True,
             help="Work-item ref, e.g. github:OWNER/REPO#15",
         )
-        reg.add_argument(
-            "--harness", required=True, choices=sorted(_HARNESS_BINARIES)
-        )
+        reg.add_argument("--harness", required=True, choices=sorted(_HARNESS_BINARIES))
         reg.add_argument(
             "--harness-session-id",
             required=True,
@@ -120,9 +118,7 @@ class SessionsCommand(Command):
         return 0
 
     def _list(self, args: argparse.Namespace) -> int:
-        sessions = SessionRegistry(args.registry_dir).list_sessions(
-            status=args.status
-        )
+        sessions = SessionRegistry(args.registry_dir).list_sessions(status=args.status)
         if args.format == "json":
             print(json.dumps([s.to_dict() for s in sessions]))
             return 0

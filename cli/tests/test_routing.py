@@ -488,15 +488,21 @@ def test_sessions_command_register_list_close_roundtrip(tmp_path, capsys):
         ]
     )
     assert rc == 0
-    rc = run_cli(["sessions", "list", "--registry-dir", registry_dir, "--format", "json"])
+    rc = run_cli(
+        ["sessions", "list", "--registry-dir", registry_dir, "--format", "json"]
+    )
     assert rc == 0
     out = capsys.readouterr().out
     payload = json.loads(out.splitlines()[-1])
     assert payload[0]["workItem"]["ref"] == REF
     assert payload[0]["status"] == "active"
-    rc = run_cli(["sessions", "close", "--work-item", REF, "--registry-dir", registry_dir])
+    rc = run_cli(
+        ["sessions", "close", "--work-item", REF, "--registry-dir", registry_dir]
+    )
     assert rc == 0
-    rc = run_cli(["sessions", "list", "--registry-dir", registry_dir, "--format", "json"])
+    rc = run_cli(
+        ["sessions", "list", "--registry-dir", registry_dir, "--format", "json"]
+    )
     payload = json.loads(capsys.readouterr().out.splitlines()[-1])
     assert payload[0]["status"] == "closed"
 

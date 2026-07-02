@@ -71,9 +71,7 @@ def routed_server(tmp_path, monkeypatch):
     def calls():
         if not record.exists():
             return []
-        return [
-            json.loads(line) for line in record.read_text().strip().splitlines()
-        ]
+        return [json.loads(line) for line in record.read_text().strip().splitlines()]
 
     try:
         yield httpd.server_address[1], registry, calls
@@ -85,9 +83,7 @@ def routed_server(tmp_path, monkeypatch):
 
 def post_webhook(port, event, payload, delivery_id):
     body = json.dumps(payload).encode()
-    signature = (
-        "sha256=" + hmac.new(SECRET.encode(), body, hashlib.sha256).hexdigest()
-    )
+    signature = "sha256=" + hmac.new(SECRET.encode(), body, hashlib.sha256).hexdigest()
     request = urllib.request.Request(
         f"http://127.0.0.1:{port}/gh-webhook",
         data=body,
@@ -162,9 +158,12 @@ def test_unmatched_event_is_dropped_by_default(routed_server):
     Requirement: docs/specs/issue-15/requirements.md#R3 (R3.3)
     """
     port, _, calls = routed_server
-    assert post_webhook(
-        port, "issue_comment", issue_comment_payload("anyone there?"), "d-2"
-    ) == 202
+    assert (
+        post_webhook(
+            port, "issue_comment", issue_comment_payload("anyone there?"), "d-2"
+        )
+        == 202
+    )
     time.sleep(0.3)  # give a would-be dispatch time to (wrongly) happen
     assert calls() == []
 

@@ -91,7 +91,9 @@ class RoutingConfig:
             dedup_cache_size=int(data.get("dedupCacheSize", 1024)),
             dispatch_timeout_seconds=float(data.get("dispatchTimeoutSeconds", 1800)),
             prompt_template=str(
-                data.get("promptTemplate", ".the-loop/templates/webhook-event-prompt.md")
+                data.get(
+                    "promptTemplate", ".the-loop/templates/webhook-event-prompt.md"
+                )
             ),
             harness_args=dict(data.get("harnessArgs") or {}),
         )
@@ -136,9 +138,7 @@ class Dispatcher:
         path = Path(self.config.prompt_template)
         if path.is_file():
             return Template(path.read_text())
-        logger.debug(
-            "prompt template %s not found; using the built-in default", path
-        )
+        logger.debug("prompt template %s not found; using the built-in default", path)
         return Template(DEFAULT_PROMPT_TEMPLATE)
 
     # -- intake -----------------------------------------------------------------
@@ -199,7 +199,9 @@ class Dispatcher:
             if key not in self._queues:
                 self._queues[key] = queue.Queue()
                 worker = threading.Thread(
-                    target=self._worker, args=(key,), daemon=True,
+                    target=self._worker,
+                    args=(key,),
+                    daemon=True,
                     name=f"dispatch-{key}",
                 )
                 self._workers[key] = worker
@@ -250,8 +252,9 @@ class Dispatcher:
             logger.info("resumed %s for %s", session.harness, key)
             self.registry.touch(key, delivery_id=routed.delivery_id or None)
         else:
-            logger.error("resume of %s for %s failed: %s", session.harness, key,
-                         result.error)
+            logger.error(
+                "resume of %s for %s failed: %s", session.harness, key, result.error
+            )
             if routed.delivery_id:
                 self.deduper.discard(routed.delivery_id)
 
