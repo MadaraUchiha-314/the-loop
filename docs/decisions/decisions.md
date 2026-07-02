@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [016](decision-016.md) | Route GitHub webhooks to harness sessions via the CLI receiver, not GitHub MCP | proposed | 2026-07-02 |
 | [015](decision-015.md) | Ship the-loop as a Cursor plugin from the same repo | accepted | 2026-07-02 |
 | [014](decision-014.md) | Gherkin scenario docstrings on integration tests + contract-first API specs | accepted | 2026-07-02 |
 | [013](decision-013.md) | Trigger mandatory user-education via a required PR-briefing gate | accepted | 2026-07-01 |
