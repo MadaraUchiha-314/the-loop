@@ -148,6 +148,7 @@ registers what to be aware of in `.the-loop/external-tools.md`
 
 Much of this is a fixed PDLC process; the harness should not re-derive it each time.
 Candidate mechanisms to make steps predictable/guaranteed:
-- **Claude hooks** (this plugin's `hooks/`) to force steps to run.
+- **Harness hooks** (this plugin's `hooks/` in Claude Code; the always-applied rule in
+  `rules/` in Cursor) to force steps to run.
 - **Custom code** where hooks are insufficient.
 This is an open question — evaluate and record a decision as it firms up.

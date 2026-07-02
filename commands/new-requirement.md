@@ -20,7 +20,8 @@ idea; the-loop lets you define the requirements first, then mint the ticket from
    that has no ticket yet; `/the-loop:create-ticket` renames it to `docs/specs/<id>/`.
 
 2. **Write `requirements.md`** from
-   `${CLAUDE_PLUGIN_ROOT}/.the-loop/templates/requirements.md`: introduction, user
+   `${CLAUDE_PLUGIN_ROOT}/.the-loop/templates/requirements.md`
+   (`${CLAUDE_PLUGIN_ROOT}` = the installed plugin's root; same in Cursor): introduction, user
    stories, and EARS acceptance criteria (`WHEN <event> THEN the system SHALL
    <response>`). Set front-matter `phase: requirements-definition`, `status: draft`,
    `workItem: draft-<slug>`, and the required `collaborators`.

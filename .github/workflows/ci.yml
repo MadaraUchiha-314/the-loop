@@ -34,4 +34,4 @@ jobs:
       # Structural invariant: the repo tree matches the manifest's knowledge files.
       - name: Validate JSON artifacts parse
         run: |
-          uv run python -c "import json; [json.load(open(p)) for p in ['.claude-plugin/plugin.json', '.claude-plugin/marketplace.json', '.the-loop/config.schema.json', 'hooks/hooks.json']]; print('json ok')"
+          uv run python -c "import json; [json.load(open(p)) for p in ['.claude-plugin/plugin.json', '.claude-plugin/marketplace.json', '.cursor-plugin/plugin.json', '.cursor-plugin/marketplace.json', '.the-loop/config.schema.json', 'hooks/hooks.json']]; print('json ok')"

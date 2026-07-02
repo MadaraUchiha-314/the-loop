@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-hooks.json",
-  "description": "Hooks add predictability/guarantees to the-loop's PDLC process. v0 ships a SessionStart reminder that surfaces the project's the-loop config so the harness loads its rules. Quality gates (lint/typecheck/test) are documented for projects to wire to their own tooling, since commands are project-specific.",
+  "description": "Hooks add predictability/guarantees to the-loop's PDLC process. v0 ships a SessionStart reminder that surfaces the project's the-loop config so the harness loads its rules. This file is Claude Code hook format; in Cursor the same reminder ships as the always-applied rule rules/the-loop.mdc (Cursor's hook events have no SessionStart equivalent). Quality gates (lint/typecheck/test) are documented for projects to wire to their own tooling, since commands are project-specific.",
   "hooks": {
     "SessionStart": [
       {

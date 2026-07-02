@@ -1,9 +1,9 @@
 # the-loop
 
 **The loop for everything!** — an opinionated product-development-lifecycle (PDLC)
-harness, shipped as a Claude Code plugin. Once a plan is approved, an agent harness
-delivers a work item end-to-end with minimal or no human intervention, escalating to
-humans only when a decision is genuinely needed.
+harness, shipped as a Claude Code **and Cursor** plugin. Once a plan is approved, an
+agent harness delivers a work item end-to-end with minimal or no human intervention,
+escalating to humans only when a decision is genuinely needed.
 
 > Status: **v0 foundation.** This release establishes the plugin skeleton, the
 > configuration contract, templates, commands, the operating skill, and the
@@ -21,17 +21,47 @@ executed autonomously. Each work item's phase is tracked on the ticket via label
 `not-started → requirements-definition → design → tasks-breakdown → implementation →
 needs-review → complete`.
 
-## Install (Claude Code)
+## Install
 
-the-loop is installable directly from GitHub via the marketplace construct — no
-bespoke marketplace publishing.
+the-loop is installable directly from GitHub via each harness's marketplace construct —
+no bespoke marketplace publishing. One repo, one set of skills/commands/templates,
+two plugin manifests (`.claude-plugin/` and `.cursor-plugin/`).
+
+### Claude Code
 
 ```
 /plugin marketplace add MadaraUchiha-314/the-loop
 /plugin install the-loop@the-loop
 ```
 
+### Cursor
+
+Cursor (≥ 2.5) resolves the plugin from this repo's `.cursor-plugin/` manifests. Install
+it either way:
+
+- **From the marketplace** — in the slash menu run `/add-plugin`, or open **Settings →
+  Plugins → Add**, and point it at the repository URL:
+
+  ```
+  https://github.com/MadaraUchiha-314/the-loop
+  ```
+
+- **Locally** (for development) — check the repo out under Cursor's local plugins dir:
+
+  ```
+  git clone https://github.com/MadaraUchiha-314/the-loop \
+    ~/.cursor/plugins/local/the-loop
+  ```
+
+Skills follow the [Agent Skills](https://agentskills.io) open standard, so the same
+`SKILL.md` powers both harnesses; commands appear in Cursor's slash menu (by filename,
+e.g. `/init`); the Claude Code SessionStart hook is replaced by the always-applied rule
+`rules/the-loop.mdc`.
+
 ## Commands
+
+Names below use Claude Code's `/the-loop:` prefix; in Cursor the same commands appear
+in the slash menu by filename (e.g. `/init`, `/work-on`).
 
 | Command | What it does |
 |---------|--------------|
@@ -102,11 +132,13 @@ See [`cli/README.md`](cli/README.md) for install and how to add commands.
 ## Repository layout
 
 ```
-.claude-plugin/        plugin.json, marketplace.json
+.claude-plugin/        plugin.json, marketplace.json (Claude Code)
+.cursor-plugin/        plugin.json, marketplace.json (Cursor)
 .the-loop/             config schema, default config, manifest, templates, registries
 commands/              init, work-on, upgrade-the-loop
-skills/the-loop/       operating-model skill (+ reference/ docs)
-hooks/                 hooks.json (SessionStart reminder)
+skills/the-loop/       operating-model skill (+ reference/ docs), Agent Skills standard
+rules/                 the-loop.mdc (Cursor always-applied reminder rule)
+hooks/                 hooks.json (Claude Code SessionStart reminder)
 cli/                   the-loop Python CLI (the_loop package; gh-webhook receiver)
 docs/
   architecture/        architecture.md (index)
@@ -138,7 +170,6 @@ hooks — no local-vs-CI drift. See [`docs/decisions/decision-006.md`](docs/deci
 - DAG orchestration across work items (depends-on / blocked-by).
 - Concrete per-language tooling integrations (uv, bun, nx, pytest, vitest, playwright,
   oxlint, ruff, pyright, …) and messaging integrations.
-- Cursor packaging.
 
 ## Feedback
 

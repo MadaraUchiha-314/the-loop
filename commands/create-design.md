@@ -18,7 +18,8 @@ Produce the **design** for a work item from its approved requirements — Phase 
    `requirements.md`. It should be approved; if not, say so and stop (do not design
    ahead of approved requirements).
 
-2. **Write `design.md`** from `${CLAUDE_PLUGIN_ROOT}/.the-loop/templates/design.md`,
+2. **Write `design.md`** from `${CLAUDE_PLUGIN_ROOT}/.the-loop/templates/design.md`
+   (`${CLAUDE_PLUGIN_ROOT}` = the installed plugin's root; same in Cursor),
    derived from the requirements: overview, architecture, components/interfaces, data
    models, error handling, testing strategy. Map each requirement to a component. RULE:
    all diagrams are **mermaid** (`config.userInteraction`).

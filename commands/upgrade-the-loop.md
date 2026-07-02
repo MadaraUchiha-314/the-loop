@@ -14,7 +14,9 @@ command reconciles them.
 
 1. **Read versions.** Compare `theLoopVersion` in the project's
    `.the-loop/manifest.yaml` with the plugin's version
-   (`${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json`).
+   (`${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json`; in Cursor,
+   `.cursor-plugin/plugin.json` under the plugin's install directory —
+   `${CLAUDE_PLUGIN_ROOT}` below means that same plugin root).
 
 2. **Reconcile files.** Using `${CLAUDE_PLUGIN_ROOT}/.the-loop/manifest.yaml` as the
    source of truth:

@@ -1,0 +1,10 @@
+---
+description: the-loop session reminder — surface the project's the-loop config so the agent loads its PDLC operating rules. Cursor-native equivalent of the Claude Code SessionStart hook in hooks/hooks.json.
+alwaysApply: true
+---
+
+If `.the-loop/config.yaml` exists in this repository, the-loop is initialized here.
+Operating rules: plan → execute → self/critic-review → escalate. Read
+`.the-loop/config.yaml` and follow the `the-loop` skill before working any ticket.
+If the file does not exist, the-loop is not initialized — ignore this rule (or run
+the-loop's `init` command from the slash menu to scaffold it).

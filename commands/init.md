@@ -13,7 +13,8 @@ re-run:** it is driven entirely by the manifest, creates only what is missing, a
 The **authoritative** source of what to create — and which files are managed vs.
 user-owned — is `${CLAUDE_PLUGIN_ROOT}/.the-loop/manifest.yaml` (each entry's
 `managed: true|false`), with the templates under
-`${CLAUDE_PLUGIN_ROOT}/.the-loop/templates/`.
+`${CLAUDE_PLUGIN_ROOT}/.the-loop/templates/`. (`${CLAUDE_PLUGIN_ROOT}` is the installed
+plugin's root directory; in Cursor, resolve it to the plugin's install directory.)
 
 ## Modes
 
