@@ -101,6 +101,23 @@ status: in-progress
 - **Next:** CI green on the re-push; human review.
 - **Blockers:** none.
 
+### 2026-07-02 — Expanded integration scenarios (reviewer request, PR #16)
+
+- **Phase:** needs-review
+- **Did:** @MadaraUchiha-314 asked for integration tests that prove the harness is
+  actually triggered, covering specific lifecycle scenarios. Refactored the integration
+  suite around a `ServerFactory` (live receiver + stub harness with configurable
+  delay/exit + timing capture) and grew it from 4 to **10** end-to-end scenarios, one
+  per question: idle-resume, unmatched-drop, unmatched-**spawn**, busy-session
+  **queueing** (asserts the 2nd run starts after the 1st ends), **parallel** across
+  different items (asserts overlap), duplicate-once, **harness-error isolation +
+  redelivery-retry**, bad-HMAC→401, disabled-event-type ignored. All assert on the stub
+  CLI's real argv/cwd/timing. Ran the timing-sensitive ones 3× for flake safety.
+- **Checkpoint/tests:** `make check` green (**63 pytest**, incl. 10 Gherkin
+  integration scenarios queryable via `the-loop scenarios`).
+- **Next:** Review.
+- **Blockers:** none.
+
 ## Review cycles
 
 | Cycle | Type (self/critic) | Reviewer | Outcome | Link |

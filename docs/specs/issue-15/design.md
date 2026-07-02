@@ -245,16 +245,24 @@ cross-session parallelism) against a fake in-process adapter; adapters against *
 `claude` / `cursor-agent` executables** (shell scripts on `PATH` emitting canned JSON) so
 no real harness or network is needed.
 
-Integration test (Gherkin docstring per `reference/testing.md`, queryable via
-`the-loop scenarios`):
+Integration tests (`cli/tests/test_webhook_routing_integration.py`) each drive a **real
+signed HTTP POST** into a live receiver and assert on what the **stub harness CLI was
+actually invoked with** (argv, cwd, start/end timing) — proving the harness is triggered,
+not just that routing functions return the right value. Each carries a Gherkin docstring
+(per `reference/testing.md`), so all are queryable via `the-loop scenarios`. The suite
+covers the reviewer's lifecycle questions (PR #16):
 
-- `Feature: Webhook event routing` / `Scenario: A PR review comment resumes the
-  registered session` — Given a running receiver with routing enabled and a registered
-  session, When a signed `pull_request_review_comment` webhook is POSTed, Then the stub
-  harness CLI is invoked with `--resume <id>` and a prompt containing the comment, And
-  the registry `lastEventAt` is updated. (`Requirement:` links to R3/R4/R5.)
-- Companion scenarios: unmatched event dropped under `never`; duplicate delivery id
-  dispatched once.
+- **Idle session resumed** — registered session, no work in flight → `--resume <id>` in
+  the session's cwd, comment embedded as untrusted data, delivery recorded (R3.2/R4.2).
+- **Unmatched event** — no work item → dropped under `never`; **spawned + registered**
+  under `always`, invoked *without* `--resume` (R3.3/R4.4).
+- **Busy session** — harness mid-run when a second same-item event arrives → second run
+  starts only after the first ends (per-session FIFO, R5.2).
+- **Multiple sessions** — events for two different items overlap in time (R5.1/R5.3).
+- **Error handling** — harness exits non-zero → failure isolated, delivery *not*
+  recorded, receiver stays up, and a redelivery of the same id retries.
+- **Security / filtering** — bad HMAC → 401, harness never invoked; disabled event type
+  → ignored; duplicate delivery → dispatched once (R3.4/R3.5).
 
 Evidence: red→green per task (`tdd.mode: standard`), `make check` green.
 
