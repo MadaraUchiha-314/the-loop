@@ -32,7 +32,8 @@ Forces at play:
 
 **Publish only the `cli` workspace member**, as the PyPI distribution **`the-loopy-one`**,
 using **PyPI Trusted Publishing (GitHub Actions OIDC)** driven by a new
-`.github/workflows/release.yml`.
+`.github/workflows/release.yml`, released **automatically on merge to `main`** with
+**semantic versioning derived from Conventional Commits** (owner request, PR #22).
 
 Three names are kept deliberately distinct:
 
@@ -45,12 +46,33 @@ Three names are kept deliberately distinct:
 Only the distribution name is affected by the PyPI collision; the import package and CLI
 command keep the natural `the_loop`/`the-loop`, so user-facing ergonomics are unchanged.
 
-The workflow triggers on a **published GitHub Release** (tag `v<version>`, matching
-`cli/pyproject.toml` and `.cz.toml`). A `build` job packages the member with
-`uv build --package the-loopy-one` and guards that the release tag equals the packaged
-version; a `publish-pypi` job — gated by the `pypi` environment and granted `id-token:
-write` — uploads via `pypa/gh-action-pypi-publish`. Manual `workflow_dispatch` runs build
-the artifacts (a safe dry run) but never publish.
+### Release trigger — semantic, on merge to main (revised on PR #22)
+
+The **first design** cut releases manually (publish a GitHub Release → build → publish).
+The owner asked for **semantic-release** instead: version bumps derived from PR titles /
+commit types, published automatically. Adopted model:
+
+- **Engine: commitizen (`cz bump`)** — the tool the-loop already standardised on
+  (decision-008), so no second release tool is introduced. It reads the Conventional
+  Commits since the last tag and applies `feat → minor`, `fix → patch`,
+  `BREAKING CHANGE`/`!` → major. With squash-merge the squash commit is the PR title, so
+  this is exactly "versioned by PR titles".
+- **Trigger: `push` to `main`.** On each merge, the `release` job runs `cz bump`, which
+  rewrites the version in `.cz.toml` **and** `cli/pyproject.toml` (`version_files`),
+  commits `bump: …`, tags `v<version>`, and generates the changelog. The job pushes the
+  bump commit + tag back to `main`, cuts a GitHub Release (`gh release create
+  --generate-notes`), and builds the distribution. The `publish-pypi` job — gated by the
+  `pypi` environment with `id-token: write` — uploads via `pypa/gh-action-pypi-publish`.
+- **No-op when nothing is releasable.** If no commit since the last tag warrants a bump,
+  `cz bump` exits `21`/`3` (NoneIncrementExit / NoCommitsFoundError) and the run publishes
+  nothing. The self-push of the `bump:` commit does not recurse: pushes authenticated with
+  `GITHUB_TOKEN` don't re-trigger `on: push`, and an explicit `if: !startsWith(…, 'bump:')`
+  guard makes that intent explicit.
+- **Operational prerequisite:** the `release` job pushes to `main`, so if `main` is a
+  protected branch the repo must allow `github-actions[bot]` to bypass the protection (or
+  swap in a bot PAT). Trusted-Publishing identity is unaffected — the workflow filename
+  (`release.yml`) and environment (`pypi`) are unchanged, so the registered publisher
+  still matches.
 
 ## Future-proofing (answering issue #21's second question)
 
@@ -81,8 +103,14 @@ additive change.
 - No PyPI token secret is stored — OIDC only. If Trusted Publishing is ever unavailable,
   the fallback is an API token in the `pypi` environment's secrets; the workflow structure
   is unchanged.
-- Releases are cut by publishing a GitHub Release; `cz bump` produces the matching
-  `v<version>` tag (decision-008).
+- **Releases are automatic on merge to `main`.** Every merge whose commit type is
+  `feat`/`fix`/breaking cuts a new version + PyPI release; docs/chore/refactor-only merges
+  publish nothing. Because the version files start at `0.1.0`, the first `feat` merge
+  publishes **`0.2.0`** (0.1.0 is the pre-release baseline, never uploaded).
+- `.cz.toml` gains `version_files` (so a bump rewrites the package version) and a
+  generated `CHANGELOG.md` appears at the repo root, committed by the release job.
+- **Branch protection on `main` must permit the release job's push** (bot bypass or PAT),
+  or the bump commit/tag can't land.
 
 ## Alternatives considered
 
@@ -93,6 +121,10 @@ additive change.
 - **Rename the import package / CLI to `the-loopy-one`** — rejected: needlessly degrades
   ergonomics (`import the_loopy_one`, `the-loopy-one --help`) for a name collision that only
   needs to be resolved at the distribution layer.
-- **Trigger on tag push (`v*`) instead of Release** — rejected: a published Release is an
-  explicit human gate and pairs naturally with the `pypi` environment; the tag guard still
-  enforces version/tag agreement.
+- **Manual GitHub-Release-triggered publish (the first design)** — superseded on PR #22:
+  the owner wanted zero-touch semantic releases from PR titles, not a manual Release step.
+- **A dedicated semantic-release tool (`python-semantic-release`) or `release-please`** —
+  rejected: commitizen is already adopted (decision-008) and does the same job; adding a
+  second release tool would duplicate config and versioning authority. `release-please`'s
+  release-PR model was considered (it avoids pushing to `main`) but not worth a new tool
+  given the bot-bypass path is straightforward.

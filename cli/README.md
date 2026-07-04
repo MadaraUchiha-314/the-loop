@@ -31,9 +31,12 @@ uv pip install -e ".[config]"  # PyYAML, for reading .the-loop/config.yaml defau
 uv pip install -e ".[dev]"     # pytest + commitizen
 ```
 
-This exposes the primary CLI: `the-loop`. Releases are cut by publishing a GitHub Release
-(tag `v<version>`); `.github/workflows/release.yml` builds the distribution and uploads it
-to PyPI via Trusted Publishing (OIDC — no stored token). See `docs/decisions/decision-019.md`.
+This exposes the primary CLI: `the-loop`. Releases are **automatic**: on merge to `main`,
+`.github/workflows/release.yml` runs `cz bump` to derive the next version from the
+Conventional Commits / PR titles since the last tag (`feat` → minor, `fix` → patch,
+`BREAKING CHANGE` → major), tags it, and publishes to PyPI via Trusted Publishing (OIDC —
+no stored token). Merges with no `feat`/`fix`/breaking change publish nothing. See
+`docs/decisions/decision-019.md`.
 
 ## Commands
 

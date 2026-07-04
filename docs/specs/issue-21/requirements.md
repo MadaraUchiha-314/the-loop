@@ -62,20 +62,22 @@ that no long-lived PyPI token is stored as a secret.
    workflow name) that builds and publishes the distribution.
 2. The publish job SHALL run in the `pypi` GitHub environment and request an OIDC
    `id-token` (Trusted Publishing); it SHALL NOT reference a stored PyPI API token.
-3. WHEN a GitHub Release is published (tag `v<version>`) THEN the workflow SHALL build and
-   publish that version to PyPI.
-4. WHEN the workflow is run manually (`workflow_dispatch`) THEN it SHALL build and verify
-   the artifacts but SHALL NOT publish (safe dry run).
 
-### R3 — Version/tag integrity guard
+### R3 — Semantic, automatic versioning on merge to main (owner request, PR #22)
 
-**User story:** As the maintainer, I want the release to refuse a version/tag mismatch, so
-that a distribution is never published under a tag that disagrees with its version.
+**User story:** As the maintainer, I want versions and PyPI releases produced automatically
+from Conventional Commit / PR-title types, so that I never hand-cut a release.
 
 #### Acceptance criteria (EARS)
 
-1. IF a Release is published whose tag is not `v<packaged-version>` THEN the workflow SHALL
-   fail before building/publishing.
+1. WHEN a commit lands on `main` THEN the workflow SHALL derive the next version from the
+   Conventional Commits since the last tag (`feat → minor`, `fix → patch`,
+   `BREAKING CHANGE`/`!` → major) using commitizen (`cz bump`).
+2. WHEN a release is warranted THEN the workflow SHALL rewrite the version in `.cz.toml`
+   and `cli/pyproject.toml`, tag `v<version>`, push the bump commit + tag to `main`, cut a
+   GitHub Release, build the distribution, and publish it to PyPI.
+3. IF no commit since the last tag warrants a bump THEN the workflow SHALL publish nothing
+   (clean no-op), and the bump commit it pushes SHALL NOT recursively trigger a release.
 
 ### R4 — Reproducible build tooling (no local-vs-CI drift)
 
@@ -111,8 +113,6 @@ packages is an additive change, not a redesign.
 ## Out of scope
 
 - Publishing to TestPyPI, or a separate staging environment.
-- Automating version bumps / changelog generation (commitizen `cz bump` already exists;
-  wiring it into the release trigger is future work).
 - Splitting the import package into namespace sub-packages, or publishing more than the
   one `cli` distribution (only the convention is documented — see R5).
 - Container image publishing (`ghcr`, per `tooling.release.containers`).

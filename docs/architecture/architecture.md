@@ -65,9 +65,10 @@ with `--route`), `sessions register|list|close` (work item ↔ session registry)
 Published to PyPI as the distribution **`the-loopy-one`** (the base name was taken; the
 import package `the_loop` and the `the-loop` console script are unchanged) via
 `.github/workflows/release.yml`, using GitHub Actions **Trusted Publishing (OIDC)** — no
-stored token. A published GitHub Release (tag `v<version>`) builds the member with `uv`
-and, gated by the `pypi` environment, uploads it. See `docs/specs/issue-21/design.md` and
-`docs/decisions/decision-019.md`.
+stored token. Releases are **automatic and semantic**: on merge to `main`, `cz bump`
+(commitizen) derives the version from the Conventional Commits / PR titles since the last
+tag, tags it, and — gated by the `pypi` environment — builds the member with `uv` and
+publishes. See `docs/specs/issue-21/design.md` and `docs/decisions/decision-019.md`.
 
 ### 7. Triggers
 

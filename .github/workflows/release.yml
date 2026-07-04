@@ -1,35 +1,48 @@
-# Release — build the-loop's Python distribution and publish it to PyPI.
+# Release — semantic, automated versioning + PyPI publish on merge to main.
 #
-# Publishing uses PyPI **Trusted Publishing** (GitHub Actions OIDC): no long-lived API
-# token is stored. PyPI is configured to trust this exact workflow via:
-#   PyPI project : the-loopy-one   (the distribution name; import stays `the_loop`)
-#   owner/repo   : MadaraUchiha-314/the-loop
-#   workflow     : release.yml
-#   environment  : pypi
-# See docs/specs/issue-21/design.md and docs/decisions/decision-019.md.
+# Versioning is derived from Conventional Commits (which, with squash-merge, is the PR
+# title): feat -> minor, fix -> patch, `BREAKING CHANGE`/`!` -> major. On every push to
+# main, `cz bump` (commitizen — the tool the-loop already uses, decision-008) computes the
+# next version from the commits since the last tag, rewrites the version in `.cz.toml` and
+# `cli/pyproject.toml` (version_files), commits `bump: …`, and tags `v<version>`. The tag +
+# commit are pushed back to main, a GitHub Release is cut, and the built distribution is
+# published to PyPI. If no commit since the last tag warrants a release, the run is a no-op.
 #
-# Flow: cut a GitHub Release (tag `v<version>`, matching cli/pyproject.toml + .cz.toml).
-# The `build` job packages the workspace member with uv (the-loop's package manager, so
-# local == CI); the `publish-pypi` job runs only for a published Release, gated by the
-# `pypi` environment and granted an OIDC id-token to authenticate to PyPI.
+# Publishing uses PyPI **Trusted Publishing** (GitHub Actions OIDC) — no stored token. PyPI
+# trusts this exact workflow: project `the-loopy-one`, owner/repo `MadaraUchiha-314/the-loop`,
+# workflow `release.yml`, environment `pypi`. See docs/decisions/decision-019.md.
 name: Release
 
 on:
-  release:
-    types: [published]
-  # Manual runs build + verify the artifacts (a safe dry run) but never publish —
-  # publishing is gated on the Release event below.
+  push:
+    branches: [main]
   workflow_dispatch:
+
+# Never run two releases at once (they would race on the tag / main push).
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  build:
-    name: Build sdist + wheel
+  release:
+    name: Version bump + build
     runs-on: ubuntu-latest
+    # Skip the run the workflow triggers on itself when it pushes the `bump:` commit —
+    # that commit carries no releasable change, so re-entering would be wasted work.
+    if: ${{ !startsWith(github.event.head_commit.message, 'bump:') }}
+    permissions:
+      contents: write        # push the bump commit + tag back to main, and cut the Release
+    outputs:
+      released: ${{ steps.bump.outputs.released }}
+      version: ${{ steps.bump.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0     # commitizen needs full history to read commits since the last tag
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       # Same uv setup as CI (.github/workflows/ci.yml) — RULE: no local-vs-CI drift.
       - name: Install uv
@@ -37,25 +50,50 @@ jobs:
         with:
           python-version: "3.11"
 
-      # Guard: a published Release must carry tag `v<version>` matching the packaged
-      # version, so we never upload a distribution whose version disagrees with its tag.
-      - name: Verify release tag matches package version
-        if: github.event_name == 'release'
+      - name: Configure git identity
         run: |
-          pkg_version="$(uv version --package the-loopy-one --short)"
-          tag="${GITHUB_REF_NAME}"
-          echo "package version: ${pkg_version}"
-          echo "release tag    : ${tag}"
-          if [ "${tag}" != "v${pkg_version}" ]; then
-            echo "::error::release tag '${tag}' does not match package version 'v${pkg_version}'"
-            exit 1
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      # Compute + apply the version bump. commitizen exits 21 (NoneIncrementExit) or 3
+      # (NoCommitsFoundError) when nothing warrants a release — treated as a clean no-op.
+      - name: Bump version (commitizen)
+        id: bump
+        run: |
+          set +e
+          out="$(uv run cz bump --yes --changelog 2>&1)"
+          code=$?
+          set -e
+          echo "$out"
+          if [ "$code" -eq 0 ]; then
+            version="$(uv run cz version --project)"
+            echo "released=true"          >> "$GITHUB_OUTPUT"
+            echo "version=${version}"      >> "$GITHUB_OUTPUT"
+            echo "Bumped to ${version}"
+          elif [ "$code" -eq 21 ] || [ "$code" -eq 3 ]; then
+            echo "released=false"          >> "$GITHUB_OUTPUT"
+            echo "No releasable commits since the last tag — skipping publish."
+          else
+            echo "::error::cz bump failed (exit ${code})"
+            exit "$code"
           fi
 
-      # Build the published member only (root is a virtual workspace, not a package).
+      - name: Push bump commit + tag to main
+        if: steps.bump.outputs.released == 'true'
+        run: git push --follow-tags origin HEAD:main
+
       - name: Build distribution
+        if: steps.bump.outputs.released == 'true'
         run: uv build --package the-loopy-one
 
+      - name: Create GitHub Release
+        if: steps.bump.outputs.released == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "v${{ steps.bump.outputs.version }}" --generate-notes --verify-tag
+
       - name: Upload dist artifacts
+        if: steps.bump.outputs.released == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: dist
@@ -64,9 +102,8 @@ jobs:
 
   publish-pypi:
     name: Publish to PyPI
-    needs: build
-    # Only real, published Releases publish; manual/dry-run builds stop after `build`.
-    if: github.event_name == 'release'
+    needs: release
+    if: needs.release.outputs.released == 'true'
     runs-on: ubuntu-latest
     environment:
       name: pypi

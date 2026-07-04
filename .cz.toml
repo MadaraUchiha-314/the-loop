@@ -1,8 +1,20 @@
 # commitizen config for the-loop. Enforces Conventional Commits v1.0.0 via the
-# commit-msg pre-commit hook (`cz check`) and enables `cz commit`/`cz bump` later.
+# commit-msg pre-commit hook (`cz check`) and drives automated releases: on merge to
+# main, `.github/workflows/release.yml` runs `cz bump` to compute the next version from
+# the conventional-commit types since the last tag (feat -> minor, fix -> patch,
+# BREAKING CHANGE -> major), tag it, and publish to PyPI. See docs/decisions/decision-019.md.
 # See https://commitizen-tools.github.io/commitizen/
 [tool.commitizen]
 name = "cz_conventional_commits"
 version = "0.1.0"
 tag_format = "v$version"
 version_scheme = "semver"
+# commitizen owns the canonical version (the `version` field above). `version_files`
+# keeps the published distribution's version in lockstep, so a bump rewrites the
+# package's `[project] version` too — the release build then packages the new version.
+version_files = [
+    "cli/pyproject.toml:^version = ",
+]
+# The changelog is generated at release time by the workflow (--changelog), not committed
+# from developer machines, so a plain `cz bump` locally doesn't require a CHANGELOG.md.
+update_changelog_on_bump = false

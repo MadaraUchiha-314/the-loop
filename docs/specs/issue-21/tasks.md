@@ -31,27 +31,35 @@ overrides: {}
   - _Requirements:_ R4
   - _Test:_ `uv sync` resolves clean; `grep 'the-loopy-one' uv.lock`.
 
-- [x] 3. Add the release workflow
-  - New `.github/workflows/release.yml`: `build` job (uv build + tag/version guard,
-    upload artifact) and `publish-pypi` job (`environment: pypi`, `id-token: write`,
-    `pypa/gh-action-pypi-publish`, `if: release`). `workflow_dispatch` builds only.
+- [x] 3. Configure commitizen for semantic version bumps
+  - `.cz.toml`: add `version_files = ["cli/pyproject.toml:^version = "]` (so a bump
+    rewrites the package version) and `update_changelog_on_bump = false`.
   - _Depends on:_ 1
-  - _Requirements:_ R2, R3
-  - _Test:_ YAML parses; guard logic verified locally
-    (`uv version --package the-loopy-one --short` == `0.1.0`; matching tag passes,
-    mismatch fails).
+  - _Requirements:_ R3
+  - _Test:_ `uv run cz bump --yes` computes `0.1.0 → 0.2.0` and rewrites both `.cz.toml`
+    and `cli/pyproject.toml` (verified locally, then reverted).
 
-- [x] 4. Document install + the decision
-  - `cli/README.md`: `pip install the-loopy-one` + release note. New
-    `docs/decisions/decision-019.md` (scope + future-proofing convention) and index row.
-    Update `docs/architecture/architecture.md` and `docs/roadmap.md`.
+- [x] 4. Add the semantic-release workflow
+  - New `.github/workflows/release.yml`: on `push: main`, `release` job runs `cz bump`
+    (classify exit 0 / 21 / 3), push bump+tag to main, `gh release create`, `uv build`,
+    upload artifact; `publish-pypi` job (`environment: pypi`, `id-token: write`,
+    `pypa/gh-action-pypi-publish`, `if: released`). `concurrency: release`; skip on
+    `bump:` commits.
   - _Depends on:_ 1, 3
+  - _Requirements:_ R2, R3
+  - _Test:_ YAML parses; jobs/env/permissions asserted; no token reference.
+
+- [x] 5. Document install + the decision
+  - `cli/README.md`: `pip install the-loopy-one` + semantic-release note. New
+    `docs/decisions/decision-019.md` (scope + semantic release + future-proofing) and
+    index row. Update `docs/architecture/architecture.md` and `docs/roadmap.md`.
+  - _Depends on:_ 1, 4
   - _Requirements:_ R5
   - _Test:_ `make lint` (markdownlint) passes; decision index links resolve.
 
-- [x] 5. Full quality gate
+- [x] 6. Full quality gate
   - Run the repo's CI-parity gate.
-  - _Depends on:_ 2, 3, 4
+  - _Depends on:_ 2, 3, 4, 5
   - _Requirements:_ R1–R5
   - _Test:_ `make check` (lint, format-check, typecheck, validate, test) green.
 
@@ -63,14 +71,18 @@ graph LR
   1 --> 3
   1 --> 4
   3 --> 4
-  2 --> 5
-  3 --> 5
+  1 --> 5
   4 --> 5
+  2 --> 6
+  4 --> 6
+  5 --> 6
 ```
 
 ## Checkpoints
 
 - After task 1: build the wheel and assert distribution/import/script names (R1 evidence).
-- After task 3: confirm `release.yml` structure + guard behaviour (R2/R3 evidence).
-- After task 5: `make check` green — the pre-merge gate. First real publish is evidenced
-  when a `v<version>` Release is cut (recorded in the execution log).
+- After tasks 3–4: `cz bump` computes `0.2.0` + rewrites both version files; `release.yml`
+  structure/env/permissions asserted (R2/R3 evidence).
+- After task 6: `make check` green — the pre-merge gate. The first real publish is
+  evidenced when this PR merges to `main` and the release job publishes `0.2.0` (recorded
+  in the execution log).
