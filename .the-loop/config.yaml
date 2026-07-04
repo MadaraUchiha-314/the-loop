@@ -47,9 +47,10 @@ tooling:
     containers: ghcr
 
 testing:
-  gherkinDocstrings: required   # integration tests get a Gherkin docstring (the-loop's own tests are unit tests today)
+  gherkinDocstrings: required   # integration tests get a Gherkin docstring
   linkRequirements: true
-  integrationTestGlobs: []      # no HTTP integration tests yet; `the-loop scenarios` uses built-in defaults
+  integrationTestGlobs:
+    - cli/tests/test_*_integration.py   # webhook→session routing scenarios (issue-15)
 # apiSpecs: omitted — the-loop ships a CLI + docs, not a REST/GraphQL API.
 
 localOrchestration:
@@ -132,4 +133,19 @@ webhooks:
     path: /gh-webhook
     secretEnv: THE_LOOP_GH_WEBHOOK_SECRET
     pidfile: .the-loop/gh-webhook.pid
-    events: [pull_request_review_comment, workflow_run]
+    events: [issues, issue_comment, pull_request, pull_request_review, pull_request_review_comment, workflow_run]
+    routing:
+      enabled: false                # flip on to route events to registered sessions
+      registryDir: .the-loop/sessions
+      defaultHarness: claude        # claude | cursor
+      spawnOnUnmatched: labeled     # never | always | labeled
+      autoExecuteLabel: "the-loop: auto-execute"   # label that opts an issue/PR into autonomous execution
+      spawnWorkdir: "."
+      maxConcurrentDispatches: 4
+      dedupCacheSize: 1024
+      dispatchTimeoutSeconds: 1800
+      promptTemplate: .the-loop/templates/webhook-event-prompt.md
+      spawnPromptTemplate: .the-loop/templates/webhook-autoexecute-prompt.md
+      harnessArgs:
+        claude: []                  # e.g. [--permission-mode, acceptEdits]
+        cursor: []                  # e.g. [--force]

@@ -2,9 +2,9 @@
 
 Uses only the standard library so the CLI stays very lightweight. The server
 verifies the GitHub ``X-Hub-Signature-256`` HMAC (when a secret is configured),
-logs each received event, and invokes an optional ``on_event`` callback. Wiring
-events through to actually trigger the agent harness is future work — this is the
-receiver scaffold the issue asks the CLI to provide.
+logs each received event, and invokes an optional ``on_event`` callback.
+Routing events to harness sessions is composed on top via ``on_event``
+(``gh-webhook start --route``; docs/specs/issue-15/design.md).
 """
 
 from __future__ import annotations
@@ -18,8 +18,9 @@ from typing import Callable, Optional
 
 logger = logging.getLogger("the-loop.gh-webhook")
 
-# Type of the optional per-event callback: (event_name, payload_dict) -> None
-OnEvent = Callable[[str, dict], None]
+# Per-event callback: (event_name, payload_dict, delivery_id) -> None.
+# The delivery id (X-GitHub-Delivery) enables at-most-once routing.
+OnEvent = Callable[[str, dict, str], None]
 
 
 def verify_signature(
@@ -91,7 +92,7 @@ def make_handler(path: str, secret: Optional[str], on_event: Optional[OnEvent] =
             logger.info("received event=%s delivery=%s", event, delivery)
             if on_event is not None:
                 try:
-                    on_event(event, payload)
+                    on_event(event, payload, delivery)
                 except Exception:  # noqa: BLE001 - never let a handler crash the server
                     logger.exception("on_event handler failed for event=%s", event)
             self._send(202, "accepted")

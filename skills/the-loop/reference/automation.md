@@ -29,13 +29,44 @@ Python SDKs. The core has **zero runtime dependencies** (stdlib only).
 - Primary CLI: **`the-loop`**. Add a command by subclassing `Command`, `@register`-ing
   it, and dropping the module under `the_loop/commands/`.
 - GitHub webhook receiver:
-  - `the-loop gh-webhook start [--host --port --path --pidfile --secret-env]`
+  - `the-loop gh-webhook start [--host --port --path --pidfile --secret-env --route]`
   - `the-loop gh-webhook stop [--pidfile]`
   - Verifies the GitHub `X-Hub-Signature-256` HMAC (secret from an env var), exposes
     `GET /health`, and logs deliveries. Defaults come from `webhooks.ghWebhook` in
     `.the-loop/config.yaml`.
-  - It receives and verifies events today; wiring received events through to harness
-    actions is a capability still being built.
+- **Webhook → session routing** (`--route`; `webhooks.ghWebhook.routing`): a received
+  event (PR/issue comment, `workflow_run` result, …) is matched to the registered
+  session working that item and delivered by *resuming* that session through its
+  official CLI (`claude -p … --resume` / `cursor-agent -p … --resume`) with a prompt
+  that embeds the payload as untrusted data. Per-session FIFO, parallel across
+  sessions; duplicates (`X-GitHub-Delivery`) processed at most once; unmatched events
+  follow `routing.spawnOnUnmatched`. Design: `docs/specs/issue-15/design.md`,
+  decision: `docs/decisions/decision-016.md`.
+- **Label-gated auto-execution** (`spawnOnUnmatched: labeled`): a configurable label
+  (`routing.autoExecuteLabel`, default `the-loop: auto-execute`) opts a work item into
+  autonomous execution. Labelling an issue/PR spawns a session that runs
+  `/the-loop:work-on` on it; the item's later activity (and its linked PR's) resumes that
+  session; a merged/closed PR auto-closes it. An unlabelled new issue is received and
+  ignored. Label presence is read from the webhook payload (no extra API call).
+- **Session registration is a workflow step.** When the harness starts executing a
+  work item (execute-tasks / work-on), it registers itself so events can find it —
+  and closes the registration in finish-tasks:
+
+  ```bash
+  # Claude Code (session id is exposed to hooks/commands as $CLAUDE_SESSION_ID)
+  the-loop sessions register --work-item github:OWNER/REPO#N \
+      --harness claude --harness-session-id "$CLAUDE_SESSION_ID"
+  # Cursor (use the chat id this agent was launched with)
+  the-loop sessions register --work-item github:OWNER/REPO#N \
+      --harness cursor --harness-session-id "<chat-id>"
+  # on completion
+  the-loop sessions close --work-item github:OWNER/REPO#N
+  ```
+
+  Registration is best-effort: if it fails, routing degrades to log-and-drop (or
+  spawn), never blocking the session's own work. When the work item's PR is merged or
+  closed, the receiver **auto-closes** the session (a `pull_request` `closed` event), so
+  a finished work item never leaves a dangling `active` session.
 
 ## Predictability & execution guarantees
 

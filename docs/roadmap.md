@@ -8,9 +8,10 @@
 
 ## Deferred automation (planned, not yet built)
 
-- **Webhook → harness routing.** The CLI `the-loop gh-webhook` receiver exists (HMAC
-  verify, `/health`, event logging). Routing received events (PR review comments, GitHub
-  Actions results) into actual harness actions is deferred.
+- ~~**Webhook → harness routing.**~~ Shipped (issue #15, `decision-016`): the
+  `gh-webhook` receiver routes verified events through the session registry
+  (`the-loop sessions`) and resumes the matched Claude/Cursor session via its official
+  CLI. Spec: `docs/specs/issue-15/`.
 - **The dream — remote auto-trigger.** An authorized user creates a work item (GH issue /
   Jira) → the-loop is automatically triggered in a remote workspace (e.g. Codespaces) and
   delivers it end-to-end, notifying humans only when a decision is required.

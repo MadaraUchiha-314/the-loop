@@ -39,6 +39,8 @@ templates:
   - path: .the-loop/templates/collaborators.yaml
   - path: .the-loop/templates/conflicts.md
   - path: .the-loop/templates/pr-briefing.md
+  - path: .the-loop/templates/webhook-event-prompt.md
+  - path: .the-loop/templates/webhook-autoexecute-prompt.md
 
 # Per-work-item artifacts: the Kiro-style 3-phase spec plus the execution log.
 # <id> is the ticket id (e.g. issue-1, PROJ-42). These MUST be checked in.

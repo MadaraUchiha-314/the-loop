@@ -226,3 +226,6 @@ cli/.pytest_cache/
 
 # the-loop: not-yet-durable learning candidates (write-gate queue)
 .the-loop/learnings-pending/
+
+# the-loop: webhook->session routing registry (runtime state)
+.the-loop/sessions/

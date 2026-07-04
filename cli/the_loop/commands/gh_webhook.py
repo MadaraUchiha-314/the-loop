@@ -51,6 +51,46 @@ def _load_config_defaults() -> dict:
     return ((data.get("webhooks") or {}).get("ghWebhook")) or {}
 
 
+def _build_routing(gh_webhook_config: dict):
+    """Compose router + dispatcher into the server's on_event callback.
+
+    Spec: docs/specs/issue-15/design.md §6. Imported lazily-ish here (module
+    level is fine — everything is stdlib) and returned with the dispatcher so
+    `start` can drain it on shutdown.
+    """
+    from ..harness import build_adapters
+    from ..sessions import SessionRegistry
+    from ..webhook.dispatcher import Dispatcher, RoutingConfig
+    from ..webhook.router import Router
+
+    config = RoutingConfig.from_mapping(gh_webhook_config.get("routing") or {})
+    dispatcher = Dispatcher(
+        registry=SessionRegistry(config.registry_dir),
+        adapters=build_adapters(config.harness_args),
+        config=config,
+    )
+    # The router shares the dispatcher's deduper: the dispatcher marks processed
+    # delivery ids, the router drops duplicates before extraction.
+    router = Router(
+        events=gh_webhook_config.get("events") or [],
+        deduper=dispatcher.deduper,
+        auto_execute_label=config.auto_execute_label,
+    )
+
+    def on_event(event: str, payload: dict, delivery_id: str) -> None:
+        routed = router.route(event, payload, delivery_id)
+        if routed is not None:
+            dispatcher.handle(routed)
+
+    logger.info(
+        "routing enabled: registry=%s defaultHarness=%s spawnOnUnmatched=%s",
+        config.registry_dir,
+        config.default_harness,
+        config.spawn_on_unmatched,
+    )
+    return on_event, dispatcher
+
+
 @register
 class GhWebhookCommand(Command):
     name = "gh-webhook"
@@ -61,10 +101,18 @@ class GhWebhookCommand(Command):
         actions = parser.add_subparsers(dest="action", metavar="<action>")
         actions.required = True
 
+        routing_defaults = defaults.get("routing") or {}
         start = actions.add_parser("start", help="Start the webhook receiver")
         start.add_argument("--host", default=defaults["host"])
         start.add_argument("--port", type=int, default=int(defaults["port"]))
         start.add_argument("--path", default=defaults["path"])
+        start.add_argument(
+            "--route",
+            action=argparse.BooleanOptionalAction,
+            default=bool(routing_defaults.get("enabled", False)),
+            help="Route events to registered harness sessions "
+            "(default: webhooks.ghWebhook.routing.enabled).",
+        )
         start.add_argument(
             "--pidfile",
             default=defaults["pidfile"],
@@ -97,8 +145,18 @@ class GhWebhookCommand(Command):
                 args.secret_env,
             )
 
+        on_event = dispatcher = None
+        if args.route:
+            on_event, dispatcher = _build_routing(_load_config_defaults())
+
         try:
-            httpd = serve(host=args.host, port=args.port, path=args.path, secret=secret)
+            httpd = serve(
+                host=args.host,
+                port=args.port,
+                path=args.path,
+                secret=secret,
+                on_event=on_event,
+            )
         except OSError as exc:
             logger.error("could not bind %s:%s — %s", args.host, args.port, exc)
             return 1
@@ -125,6 +183,8 @@ class GhWebhookCommand(Command):
             httpd.serve_forever()
         finally:
             httpd.server_close()
+            if dispatcher is not None:
+                dispatcher.stop()
             try:
                 pidfile.unlink()
             except FileNotFoundError:
