@@ -67,6 +67,8 @@ the-loop sessions close --work-item github:OWNER/REPO#N
 - Claude Code sessions register with `$CLAUDE_SESSION_ID`; Cursor sessions register
   with the chat id they were launched with (non-interactive `cursor-agent ls` is
   unreliable for id discovery, so the id is captured at registration time).
+- When a work item's PR is merged or closed, the receiver **auto-closes** the session
+  (on the `pull_request` `closed` event) — no manual `sessions close` needed.
 
 ### `scenarios` — query the Gherkin scenarios integration tests cover
 

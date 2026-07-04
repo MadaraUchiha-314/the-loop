@@ -58,7 +58,9 @@ Python SDKs. The core has **zero runtime dependencies** (stdlib only).
   ```
 
   Registration is best-effort: if it fails, routing degrades to log-and-drop (or
-  spawn), never blocking the session's own work.
+  spawn), never blocking the session's own work. When the work item's PR is merged or
+  closed, the receiver **auto-closes** the session (a `pull_request` `closed` event), so
+  a finished work item never leaves a dangling `active` session.
 
 ## Predictability & execution guarantees
 

@@ -86,7 +86,7 @@ class ServerFactory:
         lines = self._record.read_text().strip().splitlines()
         return [json.loads(line) for line in lines]
 
-    def __call__(self, binary=None, registry=None, **routing_overrides):
+    def __call__(self, binary=None, registry=None, events=None, **routing_overrides):
         binary = binary or self.make_stub()
         registry = registry or SessionRegistry(self._tmp_path / "sessions")
         config = RoutingConfig(
@@ -99,7 +99,10 @@ class ServerFactory:
             adapters={"claude": ClaudeCodeAdapter(binary=binary)},
             config=config,
         )
-        router = Router(events=ROUTED_EVENTS, deduper=dispatcher.deduper)
+        router = Router(
+            events=ROUTED_EVENTS if events is None else events,
+            deduper=dispatcher.deduper,
+        )
 
         def on_event(event, payload, delivery_id):
             routed = router.route(event, payload, delivery_id)
@@ -407,6 +410,34 @@ def test_disabled_event_type_is_not_routed(server_factory, tmp_path):
     assert post_webhook(port, "pull_request", payload, "f-1") == 202
     time.sleep(0.3)
     assert calls() == []
+
+
+def test_pr_close_auto_closes_session(server_factory, tmp_path):
+    """
+    Feature: Webhook event routing
+    Scenario: A session auto-closes when its PR is merged/closed
+        Given a session registered for github:octo/repo#15
+        When a signed pull_request 'closed' webhook (merged) for the linked PR arrives
+        Then the session is closed in the registry
+        And the harness is not resumed for the close event
+    Requirement: docs/specs/issue-15/requirements.md#R3 (session lifecycle)
+    """
+    port, registry, calls = server_factory(events=["pull_request"])
+    register(registry, tmp_path)
+    payload = {
+        "action": "closed",
+        "repository": {"full_name": "octo/repo"},
+        "pull_request": {
+            "number": 16,
+            "head": {"ref": "claude/github-issue-15-x"},
+            "body": "Closes #15",
+            "merged": True,
+        },
+    }
+    assert post_webhook(port, "pull_request", payload, "close-1") == 202
+    assert wait_until(lambda: registry.find_by_work_item(REF) is None)
+    time.sleep(0.2)
+    assert calls() == []  # auto-closed, harness never resumed
 
 
 def test_gh_webhook_start_accepts_route_flag():

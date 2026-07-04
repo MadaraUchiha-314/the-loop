@@ -454,6 +454,65 @@ def test_dispatcher_skips_session_whose_adapter_is_unknown(tmp_path, caplog):
     assert adapter.calls == []
 
 
+def routed_pr_closed(
+    delivery="c-1",
+    number=16,
+    branch="claude/github-issue-15-x",
+    body="Closes #15",
+    merged=True,
+):
+    payload = {
+        "action": "closed",
+        "repository": {"full_name": "octo/repo"},
+        "pull_request": {
+            "number": number,
+            "head": {"ref": branch},
+            "body": body,
+            "merged": merged,
+        },
+    }
+    return RoutedEvent(
+        event="pull_request",
+        action="closed",
+        delivery_id=delivery,
+        work_items=extract_work_items("pull_request", payload),
+        payload=payload,
+    )
+
+
+def test_dispatcher_auto_closes_session_on_pr_close(tmp_path):
+    adapter = FakeAdapter()
+    registry, dispatcher = make_dispatcher(tmp_path, adapter)
+    registry.register(make_session())  # session for the issue #15
+    dispatcher.handle(routed_pr_closed())  # PR #16 closes, links issue #15
+    dispatcher.stop()
+    assert registry.find_by_work_item(REF) is None  # auto-closed
+    assert registry.list_sessions(status="closed")  # persisted as closed
+    assert adapter.calls == []  # closed, not resumed
+
+
+def test_dispatcher_pr_close_never_spawns(tmp_path):
+    adapter = FakeAdapter()
+    registry, dispatcher = make_dispatcher(
+        tmp_path, adapter, spawn_on_unmatched="always"
+    )
+    dispatcher.handle(routed_pr_closed())  # no session registered
+    dispatcher.stop()
+    assert adapter.spawns == []  # never spawn a session to handle a close
+
+
+def test_dispatcher_still_resumes_on_pr_events_that_are_not_close(tmp_path):
+    adapter = FakeAdapter()
+    registry, dispatcher = make_dispatcher(tmp_path, adapter)
+    registry.register(make_session())
+    open_pr = routed_pr_closed(delivery="o-1", merged=False)
+    open_pr.action = "synchronize"  # a non-close PR event still routes normally
+    dispatcher.handle(open_pr)
+    assert wait_until(lambda: len(adapter.calls) == 1)
+    dispatcher.stop()
+    assert registry.find_by_work_item(REF) is not None  # not closed
+
+
 # -- `the-loop sessions` command (R2.2) ----------------------------------------
 
 

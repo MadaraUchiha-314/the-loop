@@ -118,6 +118,21 @@ status: in-progress
 - **Next:** Review.
 - **Blockers:** none.
 
+### 2026-07-02 — Auto-close session on PR merge/close (reviewer request, PR #16)
+
+- **Phase:** needs-review
+- **Did:** @MadaraUchiha-314 confirmed the receiver should auto-close a session when its
+  PR closes. Added dispatcher handling: a `pull_request` `closed` event closes the
+  matched session(s) in the registry instead of resuming, and never spawns on a close.
+  Updated the prompt templates (self-close guidance → "the receiver auto-closes"),
+  design (Dispatcher §4 + Open→Resolved), CLI README, and automation.md. New tests:
+  3 unit (`auto_closes_on_pr_close`, `pr_close_never_spawns`, non-close PR still
+  resumes) + 1 integration scenario (`A session auto-closes when its PR is
+  merged/closed`).
+- **Checkpoint/tests:** `make check` green (**67 pytest**).
+- **Next:** Review.
+- **Blockers:** none.
+
 ## Review cycles
 
 | Cycle | Type (self/critic) | Reviewer | Outcome | Link |

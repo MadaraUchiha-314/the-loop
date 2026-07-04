@@ -138,6 +138,11 @@ Responsibility: ordering and concurrency (R5), unmatched policy (R3.3).
 - Unmatched events: `spawnOnUnmatched: never` (default) logs and drops; `always` spawns
   via the `routing.defaultHarness` adapter in `routing.spawnWorkdir` and registers the
   new session.
+- **Session lifecycle — auto-close on PR close.** A `pull_request` event with action
+  `closed` (merged or not) ends the work item: the dispatcher closes the matched
+  session(s) in the registry instead of resuming them, and never spawns a session to
+  handle a close. This is the receiver-side complement to the prompt template's
+  self-close guidance, so a merged PR never leaves a dangling `active` session.
 
 ### 5. CLI command — `cli/the_loop/commands/sessions_cmd.py` (new)
 
@@ -294,7 +299,9 @@ Evidence: red→green per task (`tdd.mode: standard`), `make check` green.
 
 - Label-gating for `spawnOnUnmatched: always` (see `requirements.md`) — raised on the
   ticket.
-- Should `finish-tasks` also stop routing by closing the session automatically when the
-  PR merges (a `pull_request.closed` event addressed to the session itself)? Proposed
-  yes, as part of task 8's prompt template ("if the PR is merged/closed, run
-  `the-loop sessions close …`").
+
+## Resolved
+
+- **Auto-close on PR merge/close** — resolved yes (owner, PR #16): the receiver closes
+  the matched session on a `pull_request` `closed` event (see Dispatcher §4), in
+  addition to the prompt template's self-close guidance.
