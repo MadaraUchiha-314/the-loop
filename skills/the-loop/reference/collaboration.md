@@ -62,6 +62,11 @@ Match personas to the work:
 
 Pull required reviewers/approvers for each phase from `collaborators.yaml` by role.
 
+For **UI/UX work**, the `designer` reviews the **UI/UX design artifacts** produced in the
+design phase (Figma links / self-contained HTML prototypes under `docs/specs/<id>/design/`)
+— iterating on the *rendered* output until locked, with every opinion recorded as a ticket
+comment (paper trail). See `reference/design-artifacts.md`.
+
 ## User-interaction principles (reviewing AI-authored work)
 
 The human often did not write the code and their familiarity with the codebase keeps

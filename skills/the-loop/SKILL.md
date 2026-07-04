@@ -13,6 +13,7 @@ intervention, escalating only when a decision/opinion is genuinely required.
 > **Read the relevant reference file before acting** — they carry the full detail so the
 > essence is not lost:
 > - `reference/workflow.md` — the loop, phases, TDD, reviews, autonomy, DAG, resumability.
+> - `reference/design-artifacts.md` — UI/UX design artifacts (Figma / HTML prototypes) in the design phase and the designer iteration loop.
 > - `reference/reviewing.md` — the self/critic review procedure the review counts drive.
 > - `reference/tooling.md` — repo management, per-language tooling matrix, hooks, CI parity.
 > - `reference/testing.md` — Gherkin scenario docstrings on integration tests, the queryable scenario view, OpenAPI/GraphQL contract conventions.
@@ -35,7 +36,10 @@ it is **locked** (`status: approved`), and only then is the next one derived. Sp
 1. **`requirements.md`** (or **`bugfix.md`** for bugs) — user stories + EARS acceptance
    criteria (`WHEN <event> THEN the system SHALL <response>`). Phase: `requirements-definition`.
 2. **`design.md`** — architecture, components/interfaces, data models, error handling,
-   testing strategy. Phase: `design`.
+   testing strategy. Phase: `design`. For a **user-facing** work item the design phase also
+   tracks **UI/UX design artifacts** (Figma links / self-contained HTML prototypes under
+   `docs/specs/<id>/design/`), iterated-until-locked with the designer
+   (`reference/design-artifacts.md`).
 3. **`tasks.md`** — a **DAG** of small, verifiable tasks referencing requirements.
    Phase: `tasks-breakdown`.
 
@@ -91,6 +95,13 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   OpenAPI format; GraphQL schemas are SDL-first under `specs/graphql/`; documentation is
   generated from those contracts, never hand-written (`config.apiSpecs`). See
   `reference/testing.md`.
+- **UI/UX design is a first-class artifact.** For user-facing work, `design.md` (markdown +
+  mermaid) is not enough — the **visual** design is tracked as artifacts under
+  `docs/specs/<id>/design/` (`design.uiArtifacts`): Figma links and/or self-contained
+  HTML+CSS+JS prototypes (Claude-artifact style). They are iterated-until-locked with the
+  **designer** on the *rendered* output, referenced from the ticket, and become the visual
+  contract implementation matches. Backend/CLI/infra work produces none. See
+  `reference/design-artifacts.md`.
 - **Minimalism.** Apply the `reference/minimalism.md` decision ladder (YAGNI → stdlib →
   native → existing dep → inline → new abstraction); justify every new dependency in
   `design.md`. Never trade away validation/error-handling/security/accessibility.
