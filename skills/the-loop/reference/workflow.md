@@ -4,11 +4,38 @@ The end-to-end loop to complete a work item. Once `requirements.md`, `design.md`
 `tasks.md` are finalized and approved, the harness executes end-to-end with MINIMAL or
 NO user intervention.
 
+## The artifact chain & the iterate-until-locked rule
+
+Every work item is a chain of artifacts, each **derived from the one before it**:
+
+```
+brainstorm.md (optional, root) → requirements.md → design.md → tasks.md → implementation
+```
+
+The core rule holds at **every** link, not just requirements: an artifact is **iterated
+on with human feedback until it is locked** (`status: approved`), and only then does the
+loop derive the next artifact and advance the phase. Feedback and refinement happen on
+each artifact in turn; nothing downstream is written against an unlocked upstream artifact.
+
+## Phase 0 — brainstorm (optional, the root artifact)
+
+When work starts as a **fuzzy idea** rather than a well-formed requirement, begin with a
+`brainstorm.md` scratchpad (`/the-loop:brainstorm`) — the **root artifact** the rest of
+the chain grows from. It is deliberately free-form: problem/opportunity, context &
+constraints, ideas & options (including rejected ones and *why*), sketches, open
+questions, and a working hypothesis. Iterate it with feedback until locked, then
+**convert** it to `requirements.md` (`/the-loop:new-requirement` reads the sibling
+brainstorm and derives requirements from it). Everything considered-and-dropped stays in
+`brainstorm.md` as the record; only the chosen direction carries forward.
+
+**Brainstorming is optional.** A work item whose scope is already clear starts directly at
+`requirements-definition` — nothing forces a brainstorm.
+
 ## Pre-conditions for a work item
 
 A work item must have a well-defined **description**, detailed **goal**, and
-**acceptance criteria** before specs begin. If missing, draft them and confirm via a
-ticket comment.
+**acceptance criteria** before specs begin. If missing, draft them (a `brainstorm.md` is a
+good place to converge on them) and confirm via a ticket comment.
 
 ## The 3-phase spec (Kiro-style — https://kiro.dev/docs/specs/)
 
@@ -30,9 +57,12 @@ Label = `<workflow.phaseLabelPrefix><phase>` (e.g. `loop:design`). Keep the labe
 sync at every transition and mirror it in the execution log's `phase` front-matter.
 
 ```
-not-started → requirements-definition → design → tasks-breakdown
+not-started → brainstorming → requirements-definition → design → tasks-breakdown
             → implementation → needs-review → complete
 ```
+
+`brainstorming` is **optional**: a work item either enters it (when it needs a scratchpad)
+or transitions straight from `not-started` to `requirements-definition`.
 
 `/the-loop:init` creates the labels; `/the-loop:work-on` drives all the transitions
 end-to-end. The same transitions are also exposed as **granular commands** (`work-on` is
@@ -40,7 +70,8 @@ their superset), one per step:
 
 | Step | Command | Phase entered |
 |------|---------|---------------|
-| Draft requirements (pre-ticket, temp folder) | `new-requirement <title>` | requirements-definition |
+| Brainstorm a fuzzy idea (optional, pre-ticket) | `brainstorm <title>` | brainstorming |
+| Draft requirements (pre-ticket, temp folder; converts a brainstorm if present) | `new-requirement <title>` | requirements-definition |
 | Create the ticket; promote `draft-<slug>/` → `docs/specs/<id>/` | `create-ticket <path>` | requirements-definition |
 | Requirements → design | `create-design <id>` | design |
 | Requirements + design → tasks DAG | `create-tasks-plan <id>` | tasks-breakdown |
@@ -48,8 +79,9 @@ their superset), one per step:
 | Cleanup after all tasks (close ticket; extensible) | `finish-tasks <id>` | complete |
 | Read-only status report | `work-status <id>` | — |
 
-`new-requirement`/`create-ticket` support the case where work starts as an idea: define
-requirements first, then mint the ticket from them.
+`brainstorm`/`new-requirement`/`create-ticket` support the case where work starts as an
+idea: optionally brainstorm it, define requirements (from the brainstorm or fresh), then
+mint the ticket from them.
 
 ## Link artifacts to the ticket (single source of truth)
 

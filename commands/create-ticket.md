@@ -26,8 +26,9 @@ Load `.the-loop/config.yaml` for `ticketing` (github | jira).
 
 3. **Promote the folder.** Derive the canonical id from the new ticket (e.g. `issue-42`,
    `PROJ-42`). If the requirements live under `docs/specs/draft-<slug>/`, rename that
-   folder to `docs/specs/<id>/`. Update the spec front-matter: `workItem: <id>`,
-   `status` as appropriate.
+   folder to `docs/specs/<id>/` — this carries any sibling `brainstorm.md` (the root
+   artifact) along with it. Update the front-matter of every promoted file (`brainstorm.md`
+   included): `workItem: <id>`, `status` as appropriate.
 
 4. **Reference on the ticket.** Post/confirm a comment or description link pointing to
    the checked-in `docs/specs/<id>/requirements.md` (single source of truth; later

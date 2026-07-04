@@ -13,13 +13,16 @@ escalating to humans only when a decision is genuinely needed.
 
 ## The loop, in one line
 
-`requirements → design → tasks (each human-reviewed) → implement (+self-check) → self/critic review → evidence → complete → learn`
+`(brainstorm) → requirements → design → tasks (each iterated until locked + human-reviewed) → implement (+self-check) → self/critic review → evidence → complete → learn`
 
-Work items are specified with a [Kiro-style](https://kiro.dev/docs/specs/) 3-phase
-spec (`requirements.md` → `design.md` → `tasks.md`), each gated by a human review, then
-executed autonomously. Each work item's phase is tracked on the ticket via labels:
-`not-started → requirements-definition → design → tasks-breakdown → implementation →
-needs-review → complete`.
+A work item is a chain of artifacts, each derived from the one before it and **iterated
+with feedback until it is locked** before the loop advances. Optionally it starts with a
+free-form `brainstorm.md` scratchpad (the root artifact); then it is specified with a
+[Kiro-style](https://kiro.dev/docs/specs/) 3-phase spec (`requirements.md` → `design.md` →
+`tasks.md`), each gated by a human review, then executed autonomously. Each work item's
+phase is tracked on the ticket via labels: `not-started → brainstorming (optional) →
+requirements-definition → design → tasks-breakdown → implementation → needs-review →
+complete`.
 
 ## Install
 
@@ -73,7 +76,8 @@ Granular commands run the same flow one step at a time:
 
 | Command | What it does |
 |---------|--------------|
-| `/the-loop:new-requirement <title>` | Draft a `requirements.md` in a temporary `docs/specs/draft-<slug>/` folder **before a ticket exists**. |
+| `/the-loop:brainstorm <title>` | *(Optional Phase 0)* Draft a free-form `brainstorm.md` scratchpad (the root artifact) for a fuzzy idea; iterate, then convert to requirements. |
+| `/the-loop:new-requirement <title>` | Draft a `requirements.md` in a temporary `docs/specs/draft-<slug>/` folder **before a ticket exists** (converts a sibling `brainstorm.md` if present). |
 | `/the-loop:create-ticket <path>` | Create the ticket from a `requirements.md`; promote `draft-<slug>/` → `docs/specs/<id>/`. |
 | `/the-loop:create-design <id>` | Create `design.md` from the approved requirements (Phase 2). |
 | `/the-loop:create-tasks-plan <id>` | Create the `tasks.md` DAG from requirements + design (Phase 3). |
@@ -88,9 +92,9 @@ Granular commands run the same flow one step at a time:
   subset of keys can be overridden per work item via the markdown front-matter.
 - **Everything the-loop manages** is tracked in
   [`.the-loop/manifest.yaml`](.the-loop/manifest.yaml).
-- **Templates** for epics, stories, bugs and the 3-phase spec artifacts
-  (`requirements`/`bugfix`, `design`, `tasks`, `execution-log`) live under
-  [`.the-loop/templates/`](.the-loop/templates/).
+- **Templates** for epics, stories, bugs, the optional `brainstorm` root artifact and the
+  3-phase spec artifacts (`requirements`/`bugfix`, `design`, `tasks`, `execution-log`) live
+  under [`.the-loop/templates/`](.the-loop/templates/).
 - **The operating model** is captured in the
   [`the-loop` skill](skills/the-loop/SKILL.md), with the full detail in its
   [reference docs](skills/the-loop/reference/) — `workflow`, `reviewing`, `tooling`,
@@ -143,7 +147,7 @@ cli/                   the-loop Python CLI (the_loop package; gh-webhook receive
 docs/
   architecture/        architecture.md (index)
   decisions/           decisions.md + decision-<nnn>.md
-  specs/<id>/          requirements.md|bugfix.md, design.md, tasks.md, execution-log.md
+  specs/<id>/          brainstorm.md (optional), requirements.md|bugfix.md, design.md, tasks.md, execution-log.md
 learnings/             learnings.md + learning-<nnn>.md
 ```
 

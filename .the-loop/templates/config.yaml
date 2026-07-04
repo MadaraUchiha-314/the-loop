@@ -18,12 +18,13 @@ repository:
   runScriptsFromRoot: true
 
 workflow:
-  specApproach: kiro-3-phase        # requirements/bugfix -> design -> tasks
+  specApproach: kiro-3-phase        # (optional brainstorm ->) requirements/bugfix -> design -> tasks
   requireHumanReviewPerPhase: true
   specDir: docs/specs
   phaseLabelPrefix: "loop:"
   phases:
     - not-started
+    - brainstorming          # optional Phase 0 (root artifact: brainstorm.md)
     - requirements-definition
     - design
     - tasks-breakdown
