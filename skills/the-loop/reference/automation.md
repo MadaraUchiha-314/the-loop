@@ -42,6 +42,12 @@ Python SDKs. The core has **zero runtime dependencies** (stdlib only).
   sessions; duplicates (`X-GitHub-Delivery`) processed at most once; unmatched events
   follow `routing.spawnOnUnmatched`. Design: `docs/specs/issue-15/design.md`,
   decision: `docs/decisions/decision-016.md`.
+- **Label-gated auto-execution** (`spawnOnUnmatched: labeled`): a configurable label
+  (`routing.autoExecuteLabel`, default `the-loop: auto-execute`) opts a work item into
+  autonomous execution. Labelling an issue/PR spawns a session that runs
+  `/the-loop:work-on` on it; the item's later activity (and its linked PR's) resumes that
+  session; a merged/closed PR auto-closes it. An unlabelled new issue is received and
+  ignored. Label presence is read from the webhook payload (no extra API call).
 - **Session registration is a workflow step.** When the harness starts executing a
   work item (execute-tasks / work-on), it registers itself so events can find it —
   and closes the registration in finish-tasks:

@@ -37,6 +37,9 @@ class RoutedEvent:
     delivery_id: str
     work_items: List[WorkItemRef]
     payload: dict = field(repr=False, default_factory=dict)
+    # True when the event's issue/PR carries the configured auto-execute label
+    # (or is the label being added right now). Gates label-driven spawning.
+    labeled: bool = False
 
 
 class Deduper:
@@ -74,6 +77,25 @@ def _repo_parts(payload: dict) -> Optional[tuple]:
 def _issue_from_branch(branch: str) -> Optional[int]:
     match = _BRANCH_ISSUE_RE.search(branch or "")
     return int(match.group(1)) if match else None
+
+
+def event_carries_label(payload: dict, label: str) -> bool:
+    """True if this event's issue/PR carries ``label`` (or is adding it now).
+
+    Reads labels straight from the webhook payload (no GitHub API call), so
+    label-gating keeps the zero-dependency guarantee. Matches either the label
+    being added in a ``labeled`` action or the item's current label set.
+    """
+    if not label:
+        return False
+    if payload.get("action") == "labeled":
+        if ((payload.get("label") or {}).get("name")) == label:
+            return True
+    for key in ("issue", "pull_request"):
+        for lab in (payload.get(key) or {}).get("labels") or []:
+            if (lab or {}).get("name") == label:
+                return True
+    return False
 
 
 def extract_work_items(event: str, payload: dict) -> List[WorkItemRef]:
@@ -129,8 +151,10 @@ class Router:
         events: Sequence[str] = (),
         dedup_size: int = 1024,
         deduper: Optional[Deduper] = None,
+        auto_execute_label: str = "",
     ):
         self.events = list(events)
+        self.auto_execute_label = auto_execute_label
         # Share the dispatcher's deduper so the router's early duplicate check
         # sees the ids the dispatcher marks as processed.
         self.deduper = deduper if deduper is not None else Deduper(maxsize=dedup_size)
@@ -155,4 +179,5 @@ class Router:
             delivery_id=delivery_id or "",
             work_items=work_items,
             payload=payload,
+            labeled=event_carries_label(payload, self.auto_execute_label),
         )

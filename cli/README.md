@@ -70,6 +70,13 @@ the-loop sessions close --work-item github:OWNER/REPO#N
 - When a work item's PR is merged or closed, the receiver **auto-closes** the session
   (on the `pull_request` `closed` event) — no manual `sessions close` needed.
 
+**Label-gated auto-execution** (`spawnOnUnmatched: labeled`): give an issue/PR the
+configurable `routing.autoExecuteLabel` (default `the-loop: auto-execute`) and the
+receiver spawns a session and starts `/the-loop:work-on` on it — then routes that item's
+later activity (comments, reviews, CI, its linked PR) to the same session, and
+auto-closes on PR merge. Label presence is read straight from the webhook payload (no
+extra API call). A new issue *without* the label is received and ignored.
+
 ### `scenarios` — query the Gherkin scenarios integration tests cover
 
 ```bash

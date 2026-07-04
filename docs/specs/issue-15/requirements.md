@@ -120,6 +120,29 @@ running on one machine, so that events for each item reach only its own session.
 3. Events for *different* sessions SHALL be dispatched in parallel, bounded by a
    configurable concurrency limit.
 
+### R6 — Label-gated auto-execution (GitHub workflow)
+
+**User story:** As a maintainer, I want a configurable issue/PR label to opt a work item
+into autonomous execution, so that the-loop starts (and continues) work only on items I
+have explicitly marked.
+
+#### Acceptance criteria (EARS)
+
+1. The label SHALL be configurable per project (`webhooks.ghWebhook.routing.autoExecuteLabel`,
+   default `the-loop: auto-execute`), and gating SHALL be enabled by
+   `spawnOnUnmatched: labeled`.
+2. WHEN an issue is created without the label THEN the system SHALL receive the event and
+   take no action (no session).
+3. WHEN the configured label is added to an issue (or PR) THEN the system SHALL spawn and
+   register a new session and start the-loop's work-on flow on that item.
+4. WHEN activity (comment, review, CI) occurs on a labelled item THEN the system SHALL
+   route it to the existing session, or spawn one if the item is labelled but has none.
+5. WHEN a PR linked to an issue (branch convention / closing keyword) has activity THEN
+   the system SHALL resume the linked item's session; a PR that carries the label but is
+   not linked to an issue SHALL be treated on its own ref the same way.
+6. Label presence SHALL be read from the webhook payload (no extra GitHub API call),
+   preserving the zero-dependency guarantee.
+
 ## Non-functional requirements
 
 - **Zero runtime dependencies** — routing, registry and adapters use the stdlib only

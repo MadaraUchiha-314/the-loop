@@ -133,6 +133,29 @@ status: in-progress
 - **Next:** Review.
 - **Blockers:** none.
 
+### 2026-07-02 — Label-gated auto-execution (reviewer request, PR #16)
+
+- **Phase:** needs-review
+- **Did:** @MadaraUchiha-314 specified a GitHub auto-execution workflow. Added new
+  requirement R6 and implemented it: `spawnOnUnmatched: labeled` mode +
+  configurable `autoExecuteLabel` (default `the-loop: auto-execute`). The router now
+  reads label presence from the payload (`event_carries_label`: `labeled` action's
+  `label.name` or the item's current `labels`) and sets `RoutedEvent.labeled`; the
+  dispatcher spawns only for labelled items under `labeled` mode, using a dedicated
+  spawn prompt template (`webhook-autoexecute-prompt.md`) that kicks off
+  `/the-loop:work-on`. Added `issues` to the event list. Config schema/template/repo
+  config updated (repo default is now `labeled`). Two design decisions I made without a
+  reply because the AskUserQuestion tool kept failing (connector flapping): (1) extend
+  the enum with `labeled` rather than replace `never/always` (backward compatible);
+  (2) a labelled spawn runs the full `work-on` loop — both stated on the PR for veto.
+- **Checkpoint/tests:** `make check` green (**76 pytest**; 13 integration scenarios). New
+  tests: label detection, router flag, labeled-mode spawn-only-for-labelled, spawn
+  prompt kicks off work-on, `always` still ignores the label, + 2 integration scenarios
+  (label spawns; unlabelled new issue ignored).
+- **Next:** Meta — create the `the-loop: auto-execute` label + apply to issue #15 (needs
+  GitHub MCP auth); reply on PR. Then review.
+- **Blockers:** GitHub MCP re-auth for the label meta-task.
+
 ## Review cycles
 
 | Cycle | Type (self/critic) | Reviewer | Outcome | Link |

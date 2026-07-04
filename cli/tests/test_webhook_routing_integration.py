@@ -102,6 +102,7 @@ class ServerFactory:
         router = Router(
             events=ROUTED_EVENTS if events is None else events,
             deduper=dispatcher.deduper,
+            auto_execute_label=config.auto_execute_label,
         )
 
         def on_event(event, payload, delivery_id):
@@ -438,6 +439,63 @@ def test_pr_close_auto_closes_session(server_factory, tmp_path):
     assert wait_until(lambda: registry.find_by_work_item(REF) is None)
     time.sleep(0.2)
     assert calls() == []  # auto-closed, harness never resumed
+
+
+AUTO_LABEL = "the-loop: auto-execute"
+
+
+def labeled_issue_event(number=15, label=AUTO_LABEL):
+    return {
+        "action": "labeled",
+        "repository": {"full_name": "octo/repo"},
+        "label": {"name": label},
+        "issue": {"number": number, "labels": [{"name": label}]},
+        "sender": {"login": "octocat"},
+    }
+
+
+def test_auto_execute_label_spawns_a_session(server_factory):
+    """
+    Feature: Webhook event routing
+    Scenario: Adding the auto-execute label spawns a session and starts work
+        Given a receiver with spawnOnUnmatched: labeled and an empty registry
+        When the 'the-loop: auto-execute' label is added to issue 15
+        Then a session is spawned WITHOUT --resume and registered for the issue
+        And the spawn prompt kicks off /the-loop:work-on for that work item
+    Requirement: docs/specs/issue-15/requirements.md#R6
+    """
+    port, registry, calls = server_factory(
+        events=["issues"], spawn_on_unmatched="labeled", auto_execute_label=AUTO_LABEL
+    )
+    assert post_webhook(port, "issues", labeled_issue_event(), "lbl-1") == 202
+    assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
+    (call,) = calls()
+    assert "--resume" not in call["argv"]  # spawned, not resumed
+    assert "/the-loop:work-on" in prompt_of(call)
+    session = registry.find_by_work_item(REF)
+    assert session is not None and session.harness_session_id == "spawned-1"
+
+
+def test_new_issue_without_label_does_nothing(server_factory):
+    """
+    Feature: Webhook event routing
+    Scenario: A new issue without the auto-execute label is ignored
+        Given a receiver with spawnOnUnmatched: labeled and an empty registry
+        When an issue is opened WITHOUT the auto-execute label
+        Then the receiver acknowledges but no session is spawned
+    Requirement: docs/specs/issue-15/requirements.md#R6
+    """
+    port, registry, calls = server_factory(
+        events=["issues"], spawn_on_unmatched="labeled", auto_execute_label=AUTO_LABEL
+    )
+    payload = {
+        "action": "opened",
+        "repository": {"full_name": "octo/repo"},
+        "issue": {"number": 15, "labels": []},
+    }
+    assert post_webhook(port, "issues", payload, "open-1") == 202
+    time.sleep(0.3)
+    assert calls() == [] and registry.find_by_work_item(REF) is None
 
 
 def test_gh_webhook_start_accepts_route_flag():

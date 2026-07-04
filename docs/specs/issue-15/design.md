@@ -135,9 +135,16 @@ Responsibility: ordering and concurrency (R5), unmatched policy (R3.3).
   embeds the relevant payload excerpt in a fenced block **as untrusted data**, and asks
   the session to react per the-loop's rules (reply-first-then-fix for review comments,
   diagnose-then-fix for failed `workflow_run`s).
-- Unmatched events: `spawnOnUnmatched: never` (default) logs and drops; `always` spawns
+- Unmatched events: `spawnOnUnmatched` policy — `never` logs and drops; `always` spawns
   via the `routing.defaultHarness` adapter in `routing.spawnWorkdir` and registers the
-  new session.
+  new session; **`labeled`** spawns only when the event's issue/PR carries
+  `routing.autoExecuteLabel` (default `the-loop: auto-execute`). The label is read from
+  the payload (`labeled` action's `label.name`, or the item's current `labels`) — no
+  GitHub API call. A spawn renders the **`spawnPromptTemplate`**
+  (`webhook-autoexecute-prompt.md`, kicks off `/the-loop:work-on <ref>`); a resume
+  renders the event template. This is the GitHub auto-execution workflow (R6): label an
+  issue → session spawns and starts the loop; its later activity and its PR's activity
+  resume that session; a merged PR auto-closes it.
 - **Session lifecycle — auto-close on PR close.** A `pull_request` event with action
   `closed` (merged or not) ends the work item: the dispatcher closes the matched
   session(s) in the registry instead of resuming them, and never spawns a session to

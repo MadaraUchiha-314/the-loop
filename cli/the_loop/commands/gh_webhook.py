@@ -74,6 +74,7 @@ def _build_routing(gh_webhook_config: dict):
     router = Router(
         events=gh_webhook_config.get("events") or [],
         deduper=dispatcher.deduper,
+        auto_execute_label=config.auto_execute_label,
     )
 
     def on_event(event: str, payload: dict, delivery_id: str) -> None:

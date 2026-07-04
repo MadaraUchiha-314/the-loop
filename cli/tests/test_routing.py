@@ -23,7 +23,15 @@ from the_loop.sessions import (
     WorkItemRef,
 )
 from the_loop.webhook.dispatcher import Dispatcher, RoutingConfig
-from the_loop.webhook.router import Deduper, RoutedEvent, Router, extract_work_items
+from the_loop.webhook.router import (
+    Deduper,
+    RoutedEvent,
+    Router,
+    event_carries_label,
+    extract_work_items,
+)
+
+LABEL = "the-loop: auto-execute"
 
 REF = "github:octo/repo#15"
 
@@ -198,6 +206,43 @@ def test_router_filters_disabled_event_types():
 def test_router_empty_event_filter_allows_all():
     router = Router(events=[])
     assert router.route("issue_comment", payload_issue_comment(), "d-1") is not None
+
+
+def test_event_carries_label_from_labeled_action():
+    payload = {"action": "labeled", "label": {"name": LABEL}, "issue": {"number": 15}}
+    assert event_carries_label(payload, LABEL) is True
+    other = {"action": "labeled", "label": {"name": "bug"}, "issue": {"number": 15}}
+    assert event_carries_label(other, LABEL) is False
+
+
+def test_event_carries_label_from_current_label_set():
+    issue = {"action": "created", "issue": {"number": 15, "labels": [{"name": LABEL}]}}
+    assert event_carries_label(issue, LABEL) is True
+    pr = {"action": "synchronize", "pull_request": {"labels": [{"name": LABEL}]}}
+    assert event_carries_label(pr, LABEL) is True
+
+
+def test_event_carries_label_false_when_absent_or_unlabelled():
+    assert event_carries_label({"issue": {"number": 15, "labels": []}}, LABEL) is False
+    assert event_carries_label({"workflow_run": {}}, LABEL) is False  # no labels
+    assert event_carries_label({"issue": {"labels": [{"name": LABEL}]}}, "") is False
+
+
+def test_router_sets_labeled_flag():
+    router = Router(events=[], auto_execute_label=LABEL)
+    labeled = router.route(
+        "issues",
+        {
+            "action": "labeled",
+            "label": {"name": LABEL},
+            "repository": {"full_name": "octo/repo"},
+            "issue": {"number": 15},
+        },
+        "d-1",
+    )
+    assert labeled is not None and labeled.labeled is True
+    plain = router.route("issue_comment", payload_issue_comment(), "d-2")
+    assert plain is not None and plain.labeled is False
 
 
 def test_router_deduper_is_bounded_lru():
@@ -431,6 +476,57 @@ def test_dispatcher_spawns_and_registers_when_configured(tmp_path):
     dispatcher.stop()
     found = registry.find_by_work_item(REF)
     assert found is not None and found.harness_session_id == "fresh-9"
+
+
+def routed_labeled_issue(delivery="l-1", number=15, labeled=True):
+    payload = {
+        "action": "labeled",
+        "label": {"name": LABEL if labeled else "bug"},
+        "repository": {"full_name": "octo/repo"},
+        "issue": {"number": number},
+    }
+    return RoutedEvent(
+        event="issues",
+        action="labeled",
+        delivery_id=delivery,
+        work_items=extract_work_items("issues", payload),
+        payload=payload,
+        labeled=labeled,
+    )
+
+
+def test_dispatcher_labeled_mode_spawns_only_for_labeled_items(tmp_path):
+    adapter = FakeAdapter(spawn_id="auto-1")
+    registry, dispatcher = make_dispatcher(
+        tmp_path, adapter, spawn_on_unmatched="labeled"
+    )
+    # An unlabelled unmatched event does nothing (owner scenario 1).
+    dispatcher.handle(routed_labeled_issue(delivery="u-1", labeled=False))
+    # A labelled one spawns + registers a session (owner scenario 2).
+    dispatcher.handle(routed_labeled_issue(delivery="l-1", labeled=True))
+    assert wait_until(lambda: len(adapter.spawns) == 1)
+    dispatcher.stop()
+    assert len(adapter.spawns) == 1  # only the labelled event spawned
+    found = registry.find_by_work_item(REF)
+    assert found is not None and found.harness_session_id == "auto-1"
+
+
+def test_dispatcher_labeled_spawn_prompt_kicks_off_work_on(tmp_path):
+    adapter = FakeAdapter()
+    _, dispatcher = make_dispatcher(tmp_path, adapter, spawn_on_unmatched="labeled")
+    dispatcher.handle(routed_labeled_issue())
+    assert wait_until(lambda: len(adapter.spawns) == 1)
+    dispatcher.stop()
+    _, prompt, _ = adapter.spawns[0]
+    assert "/the-loop:work-on" in prompt and REF in prompt
+
+
+def test_dispatcher_always_mode_still_spawns_regardless_of_label(tmp_path):
+    adapter = FakeAdapter()
+    _, dispatcher = make_dispatcher(tmp_path, adapter, spawn_on_unmatched="always")
+    dispatcher.handle(routed_labeled_issue(labeled=False))  # unlabelled
+    assert wait_until(lambda: len(adapter.spawns) == 1)  # 'always' ignores the label
+    dispatcher.stop()
 
 
 def test_dispatcher_processes_duplicate_delivery_at_most_once(tmp_path):

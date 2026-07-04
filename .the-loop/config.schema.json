@@ -614,9 +614,14 @@
                 },
                 "spawnOnUnmatched": {
                   "type": "string",
-                  "enum": ["never", "always"],
+                  "enum": ["never", "always", "labeled"],
                   "default": "never",
-                  "description": "Policy for events matching no registered session: log-and-drop, or spawn+register a new session."
+                  "description": "Policy for events matching no registered session: 'never' log-and-drop; 'always' spawn+register a new session; 'labeled' spawn only when the issue/PR carries autoExecuteLabel."
+                },
+                "autoExecuteLabel": {
+                  "type": "string",
+                  "default": "the-loop: auto-execute",
+                  "description": "Issue/PR label that opts a work item into autonomous execution (spawnOnUnmatched: labeled). Read from the webhook payload, no API call."
                 },
                 "spawnWorkdir": {
                   "type": "string",
@@ -645,6 +650,11 @@
                   "type": "string",
                   "default": ".the-loop/templates/webhook-event-prompt.md",
                   "description": "string.Template rendered into the prompt that resumes a session."
+                },
+                "spawnPromptTemplate": {
+                  "type": "string",
+                  "default": ".the-loop/templates/webhook-autoexecute-prompt.md",
+                  "description": "string.Template rendered into the prompt for a newly spawned (auto-execute) session — kicks off the-loop's work-on flow."
                 },
                 "harnessArgs": {
                   "type": "object",
