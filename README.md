@@ -97,8 +97,9 @@ Granular commands run the same flow one step at a time:
   under [`.the-loop/templates/`](.the-loop/templates/).
 - **The operating model** is captured in the
   [`the-loop` skill](skills/the-loop/SKILL.md), with the full detail in its
-  [reference docs](skills/the-loop/reference/) — `workflow`, `reviewing`, `tooling`,
-  `testing`, `minimalism`, `collaboration`, `observability`, and `automation`.
+  [reference docs](skills/the-loop/reference/) — `workflow`, `design-artifacts`,
+  `reviewing`, `tooling`, `testing`, `minimalism`, `collaboration`, `observability`, and
+  `automation`.
 
 ## CLI companion (`the-loop`)
 
@@ -128,6 +129,9 @@ See [`cli/README.md`](cli/README.md) for install and how to add commands.
   spec's `requirements.md`), queryable as a table via `the-loop scenarios`.
 - APIs are **contract-first**: REST specs in `specs/openapi/` (OpenAPI), GraphQL SDL in
   `specs/graphql/`; docs are generated from the contracts, never hand-written.
+- **UI/UX design is a first-class artifact**: for user-facing work the design phase tracks
+  Figma links and/or self-contained HTML+CSS+JS prototypes under `docs/specs/<id>/design/`,
+  iterated-until-locked with the designer — the visual contract implementation matches.
 - All commits follow **Conventional Commits**.
 - PRs are written **for the reviewer**: a condensed, prioritized summary of where to
   focus, **mermaid** diagrams, and documented low-level decisions — and the loop
@@ -147,7 +151,7 @@ cli/                   the-loop Python CLI (the_loop package; gh-webhook receive
 docs/
   architecture/        architecture.md (index)
   decisions/           decisions.md + decision-<nnn>.md
-  specs/<id>/          brainstorm.md (optional), requirements.md|bugfix.md, design.md, tasks.md, execution-log.md
+  specs/<id>/          brainstorm.md (optional), requirements.md|bugfix.md, design.md, design/ (UI/UX artifacts, optional), tasks.md, execution-log.md
 learnings/             learnings.md + learning-<nnn>.md
 ```
 

@@ -25,6 +25,25 @@ and add sub-component docs if needed. Include diagrams where helpful.
 
 For each component: responsibility, inputs/outputs, public interface/contract.
 
+## UI/UX design
+
+> Only for work items with a **user-facing surface** (skip for backend/CLI/infra — write
+> `N/A`). Architecture/HLD/LLD stays above in markdown + mermaid; the **visual** design is
+> tracked as first-class artifacts — Figma links and/or self-contained HTML+CSS+JS
+> prototypes (Claude-artifact style) — under `<specDir>/<id>/design/`
+> (`design.uiArtifacts.dir`). Iterate each with the **designer** until locked
+> (`status: approved`), exactly like every other artifact. See `reference/design-artifacts.md`.
+
+| Artifact | Type | Location / link | Covers (screen · requirement) | Status |
+|----------|------|-----------------|-------------------------------|--------|
+| `design/<screen>.html` | html-prototype | `design/<screen>.html` | <Screen> · R<n> | draft |
+| Figma — <flow> | figma | https://figma.com/file/… | <Flow> · R<n> | draft |
+
+- **Flows & states:** the screens/states covered and the transitions between them.
+- **Design system / tokens:** colours, type, spacing, components reused (link the source).
+- **Accessibility & responsiveness:** target breakpoints, keyboard/contrast intent.
+- **Evidence:** rendered screenshots of the **locked** artifacts (`design.uiArtifacts.screenshotEvidence`).
+
 ## Data models
 
 Schemas, types, persistence. (Link `.the-loop/config.schema.json`-style schemas if any.)

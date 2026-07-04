@@ -61,6 +61,10 @@ workItemArtifacts:
   - pathPattern: docs/specs/<id>/design.md
     role: spec-design
     phase: design
+  - pathPattern: docs/specs/<id>/design/
+    role: spec-design-artifacts
+    phase: design
+    optional: true            # UI/UX (visual) design artifacts — html prototypes / figma exports; only when the work item has a user-facing surface
   - pathPattern: docs/specs/<id>/tasks.md
     role: spec-tasks
     phase: tasks-breakdown

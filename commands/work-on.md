@@ -62,7 +62,11 @@ requirements.
 
 5. **Phase 2 — Design** (`design`). Create `docs/specs/<id>/design.md` derived from the
    approved requirements: architecture, components/interfaces, data models, error
-   handling, testing strategy. Request human review; do not proceed until approved.
+   handling, testing strategy. **If the work item has a user-facing surface**, also
+   produce **UI/UX design artifacts** under `docs/specs/<id>/design/` (self-contained
+   HTML+CSS+JS prototypes and/or a linked Figma file), inventory them in `design.md`, and
+   iterate them with the **designer** until locked (`reference/design-artifacts.md`).
+   Request human review; do not proceed until approved.
 
 6. **Phase 3 — Tasks** (`tasks-breakdown`). Create `docs/specs/<id>/tasks.md`: a DAG of
    small, verifiable tasks, each referencing the requirement(s) it satisfies and its

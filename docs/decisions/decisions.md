@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [018](decision-018.md) | UI/UX design artifacts are first-class, tracked design-phase artifacts | accepted | 2026-07-04 |
 | [017](decision-017.md) | Add an optional brainstorm phase (the root artifact) before requirements | accepted | 2026-07-04 |
 | [016](decision-016.md) | Route GitHub webhooks to harness sessions via the CLI receiver, not GitHub MCP | accepted | 2026-07-02 |
 | [015](decision-015.md) | Ship the-loop as a Cursor plugin from the same repo | accepted | 2026-07-02 |

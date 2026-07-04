@@ -283,6 +283,41 @@
         }
       }
     },
+    "design": {
+      "type": "object",
+      "description": "How UI/UX (visual) design is captured and iterated in the design phase, alongside design.md's architecture/HLD/LLD. See reference/design-artifacts.md.",
+      "additionalProperties": false,
+      "properties": {
+        "uiArtifacts": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Visual design artifacts for work items with a user-facing surface. First-class, tracked design-phase artifacts (siblings of design.md), iterated-until-locked with the designer persona and referenced from the ticket. Work items with no UI simply produce none.",
+          "properties": {
+            "dir": {
+              "type": "string",
+              "default": "design",
+              "description": "Directory (relative to the work item's spec dir, <specDir>/<id>/) holding checked-in UI/UX design artifacts, e.g. docs/specs/<id>/design/."
+            },
+            "format": {
+              "type": "string",
+              "enum": ["html", "figma", "both"],
+              "default": "html",
+              "description": "Preferred representation for generated visual design: self-contained HTML+CSS+JS prototypes (Claude-artifact style), a linked Figma file, or both."
+            },
+            "selfContained": {
+              "type": "boolean",
+              "default": true,
+              "description": "RULE for HTML prototypes: self-contained (inline CSS/JS, data-URI assets, no external network deps) so they render standalone in a browser and as a Claude-style artifact."
+            },
+            "screenshotEvidence": {
+              "type": "boolean",
+              "default": true,
+              "description": "Capture rendered screenshots of the locked design artifacts as design-phase evidence, embedded in the reviewer briefing."
+            }
+          }
+        }
+      }
+    },
     "localOrchestration": {
       "type": "object",
       "description": "Multi-artifact & multi-entity testing.",

@@ -47,7 +47,11 @@ until the current phase is approved; record the approver (paper trail).
    acceptance criteria in **EARS** notation
    (`WHEN <event> THEN the system SHALL <response>`). Phase: `requirements-definition`.
 2. **`design.md`** — overview, architecture, components/interfaces, data models, error
-   handling, testing strategy. Derived from approved requirements. Phase: `design`.
+   handling, testing strategy. Derived from approved requirements. Phase: `design`. For
+   work items with a **user-facing surface**, the design phase also produces **UI/UX design
+   artifacts** — Figma links and/or self-contained HTML+CSS+JS prototypes checked in under
+   `docs/specs/<id>/design/` (`design.uiArtifacts`) — inventoried in `design.md` and
+   iterated-until-locked with the **designer**. See `reference/design-artifacts.md`.
 3. **`tasks.md`** — a **DAG** of small, verifiable tasks. Each task references the
    requirement(s) it satisfies and declares dependencies. Phase: `tasks-breakdown`.
 

@@ -54,6 +54,13 @@ testing:
     - cli/tests/test_*_integration.py   # webhook→session routing scenarios (issue-15)
 # apiSpecs: omitted — the-loop ships a CLI + docs, not a REST/GraphQL API.
 
+design:
+  uiArtifacts:                  # UI/UX (visual) design artifacts — see reference/design-artifacts.md
+    dir: design                 # docs/specs/<id>/design/ — checked-in html prototypes / figma exports
+    format: html                # html | figma | both (the-loop itself has no product UI)
+    selfContained: true         # RULE: html prototypes inline all CSS/JS, no external network deps
+    screenshotEvidence: true    # capture rendered screenshots of the locked design as evidence
+
 localOrchestration:
   containerRuntime: podman
   linkPackagesLocally: true
