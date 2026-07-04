@@ -1,7 +1,7 @@
 ---
 type: execution-log
 workItem: ""
-phase: not-started           # not-started | requirements-definition | design | tasks-breakdown | implementation | needs-review | complete
+phase: not-started           # not-started | brainstorming | requirements-definition | design | tasks-breakdown | implementation | needs-review | complete
 status: in-progress          # in-progress | complete
 ---
 

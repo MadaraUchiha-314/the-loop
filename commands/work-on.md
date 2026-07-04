@@ -12,11 +12,11 @@ Kiro-style 3-phase spec workflow (https://kiro.dev/docs/specs/). Load
 front-matter. Specs live in `<workflow.specDir>/<id>/` (default `docs/specs/<id>/`).
 
 **`work-on` is the superset.** The same flow is also exposed as granular commands you can
-run one step at a time: `/the-loop:new-requirement` → `/the-loop:create-ticket` →
-`/the-loop:create-design` → `/the-loop:create-tasks-plan` → `/the-loop:execute-tasks` →
-`/the-loop:finish-tasks`, with `/the-loop:work-status <id>` to report progress. `work-on`
-runs them end-to-end; reach for the granular commands to start pre-ticket or to drive a
-single phase.
+run one step at a time: `/the-loop:brainstorm` (optional) → `/the-loop:new-requirement` →
+`/the-loop:create-ticket` → `/the-loop:create-design` → `/the-loop:create-tasks-plan` →
+`/the-loop:execute-tasks` → `/the-loop:finish-tasks`, with `/the-loop:work-status <id>` to
+report progress. `work-on` runs them end-to-end; reach for the granular commands to start
+pre-ticket (or with a brainstorm) or to drive a single phase.
 
 **Before acting, read the `the-loop` skill and its reference files** for the full rules:
 `reference/workflow.md` (phases, reviews, DAG), `reference/tooling.md` (which commands
@@ -28,13 +28,19 @@ detail — do not lose it.
 
 Keep the work item's phase **label** in the ticketing system in sync at every
 transition (label = `<workflow.phaseLabelPrefix><phase>`, e.g. `loop:design`), and
-mirror it in the execution log's `phase` front-matter:
+mirror it in the execution log's `phase` front-matter (`brainstorming` is optional — enter
+it only when the work needs a scratchpad; otherwise start at `requirements-definition`):
 
-`not-started → requirements-definition → design → tasks-breakdown → implementation → needs-review → complete`
+`not-started → brainstorming → requirements-definition → design → tasks-breakdown → implementation → needs-review → complete`
+
+**Iterate, then advance.** Every artifact — starting from the optional `brainstorm.md`
+root — is refined with human feedback until it is **locked** (`status: approved`); only
+then does the loop move to the next phase. This is the same rule at every phase, not just
+requirements.
 
 ## The loop
 
-1. **Resume or start.** Look in `docs/specs/<id>/` for existing
+1. **Resume or start.** Look in `docs/specs/<id>/` for existing `brainstorm.md`,
    `requirements.md`/`bugfix.md`, `design.md`, `tasks.md`, `execution-log.md`. Use the
    execution log's `phase` and the specs' `status` to resume from where you left off
    rather than restarting.
@@ -42,17 +48,23 @@ mirror it in the execution log's `phase` front-matter:
 2. **Identify collaborators up-front** from the work item + `collaborators.yaml`. Not
    every task needs every persona (a bug fix needs the engineer; a content fix may not).
 
-3. **Phase 1 — Requirements** (`requirements-definition`). Create
+3. **Phase 0 — Brainstorm (optional)** (`brainstorming`). When the work starts as a fuzzy
+   idea, create `docs/specs/<id>/brainstorm.md` (the **root artifact**) from the template:
+   problem, options, open questions, working hypothesis. Iterate it with feedback until
+   locked, then **derive** `requirements.md` from it. Skip this phase when the work is
+   already well-defined.
+
+4. **Phase 1 — Requirements** (`requirements-definition`). Create
    `docs/specs/<id>/requirements.md` (or `bugfix.md` for a bug) from the template:
    introduction, user stories, and EARS acceptance criteria. Post/link it on the ticket
    and **request human review**. Do not proceed until approved (record approver →
    paper trail). `requireHumanReviewPerPhase` defaults to true.
 
-4. **Phase 2 — Design** (`design`). Create `docs/specs/<id>/design.md` derived from the
+5. **Phase 2 — Design** (`design`). Create `docs/specs/<id>/design.md` derived from the
    approved requirements: architecture, components/interfaces, data models, error
    handling, testing strategy. Request human review; do not proceed until approved.
 
-5. **Phase 3 — Tasks** (`tasks-breakdown`). Create `docs/specs/<id>/tasks.md`: a DAG of
+6. **Phase 3 — Tasks** (`tasks-breakdown`). Create `docs/specs/<id>/tasks.md`: a DAG of
    small, verifiable tasks, each referencing the requirement(s) it satisfies and its
    dependencies. Request human review; do not proceed until approved.
 
@@ -60,19 +72,19 @@ mirror it in the execution log's `phase` front-matter:
    the checked-in artifact** — single source of truth, not a copy. Later changes to a
    spec doc are made as **edits to that file, not new comments**.
 
-6. **Implementation** (`implementation`). Execute the task DAG autonomously. **Tick each
+7. **Implementation** (`implementation`). Execute the task DAG autonomously. **Tick each
    task in `tasks.md` (`- [ ]` → `- [x]`) as it completes.** Maintain
    `docs/specs/<id>/execution-log.md`: append progress and run tests (unit/integration
    per config) at logical checkpoints — self-checking as you go. Same tooling as CI;
    logging/observability identical to runtime.
 
-7. **Review** (`needs-review`). Run up to `reviews.selfReviewCount` self-reviews and
+8. **Review** (`needs-review`). Run up to `reviews.selfReviewCount` self-reviews and
    `reviews.criticReviewCount` critic reviews (configured critics, e.g. a different
    harness/model) BEFORE escalating to the human reviewer. Record every review as a
    PR/ticket comment and in the execution log's review table. Notify via configured
    messaging channels when a human action is pending.
 
-8. **Complete** (`complete`). Present validated evidence that the acceptance criteria
+9. **Complete** (`complete`). Present validated evidence that the acceptance criteria
    are met (tests, screenshots, logs) on the PR; record it in the execution log.
    **Before requesting human review, post/update the R10 reviewer briefing in the PR**
    (required gate item — `userInteraction.prSummary.required`), produced from
@@ -82,7 +94,7 @@ mirror it in the execution log's `phase` front-matter:
    enough context to decide, and **educate the user on the low-level design decisions —
    this is mandatory, not optional.**
 
-9. **Capture learnings.** Add to `learnings/learnings.md` (+ a `learning-<nnn>.md`) for
+10. **Capture learnings.** Add to `learnings/learnings.md` (+ a `learning-<nnn>.md`) for
    any user/system feedback worth remembering. Log durable decisions under
    `docs/decisions/`.
 

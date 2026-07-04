@@ -78,7 +78,7 @@
           "type": "string",
           "enum": ["kiro-3-phase"],
           "default": "kiro-3-phase",
-          "description": "requirements(.md)/bugfix(.md) -> design.md -> tasks.md, each gated by a human review."
+          "description": "(optional brainstorm.md ->) requirements(.md)/bugfix(.md) -> design.md -> tasks.md, each artifact iterated with feedback and gated by a human review before advancing."
         },
         "requireHumanReviewPerPhase": {
           "type": "boolean",
@@ -97,9 +97,10 @@
         },
         "phases": {
           "type": "array",
-          "description": "Ordered phase state machine for a work item. Each maps to a ticket label.",
+          "description": "Ordered phase state machine for a work item. Each maps to a ticket label. `brainstorming` is optional — a work item may enter it or start directly at `requirements-definition`.",
           "default": [
             "not-started",
+            "brainstorming",
             "requirements-definition",
             "design",
             "tasks-breakdown",
@@ -111,6 +112,7 @@
             "type": "string",
             "enum": [
               "not-started",
+              "brainstorming",
               "requirements-definition",
               "design",
               "tasks-breakdown",

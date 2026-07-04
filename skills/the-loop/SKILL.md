@@ -21,11 +21,17 @@ intervention, escalating only when a decision/opinion is genuinely required.
 > - `reference/observability.md` — dev==runtime logging, levels, browser logging.
 > - `reference/automation.md` — distribution, the CLI, webhooks, predictability, learnings lifecycle.
 
-## The 3-phase spec workflow (Kiro-style)
+## The artifact chain (optional brainstorm → 3-phase spec, Kiro-style)
 
-Every non-trivial work item is specified in three phases, each gated by a **human
-review** (https://kiro.dev/docs/specs/). Specs live in `docs/specs/<id>/`:
+Every work item is a chain of artifacts, each **derived from and iterated after** the one
+before it. The rule holds at every link: an artifact is refined with human feedback until
+it is **locked** (`status: approved`), and only then is the next one derived. Specs live in
+`docs/specs/<id>/`:
 
+0. **`brainstorm.md`** *(optional, the root artifact)* — a free-form scratchpad to explore
+   a fuzzy idea before committing to requirements: problem, options, open questions,
+   working hypothesis. Created by `/the-loop:brainstorm`; converted to requirements once
+   locked. Phase: `brainstorming`. Skip it when the work is already clear.
 1. **`requirements.md`** (or **`bugfix.md`** for bugs) — user stories + EARS acceptance
    criteria (`WHEN <event> THEN the system SHALL <response>`). Phase: `requirements-definition`.
 2. **`design.md`** — architecture, components/interfaces, data models, error handling,
@@ -34,10 +40,11 @@ review** (https://kiro.dev/docs/specs/). Specs live in `docs/specs/<id>/`:
    Phase: `tasks-breakdown`.
 
 The work item's **phase** is tracked on the ticket via a label
-(`<workflow.phaseLabelPrefix><phase>`) and mirrored in the execution log:
+(`<workflow.phaseLabelPrefix><phase>`) and mirrored in the execution log (`brainstorming`
+is optional):
 
 ```
-not-started → requirements-definition → design → tasks-breakdown
+not-started → brainstorming → requirements-definition → design → tasks-breakdown
             → implementation → needs-review → complete
 ```
 
@@ -50,6 +57,11 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   Jira) ticket.
 - **Spec before execution.** Create the 3-phase spec and get each phase
   reviewed/approved by the required collaborators before writing code.
+- **Iterate each artifact until locked, then advance.** Starting from the optional
+  `brainstorm.md` root, every artifact is refined with human feedback until it is **locked**
+  (`status: approved`); only then is the next artifact derived and the phase advanced.
+  Never write a downstream artifact against an unlocked upstream one. Brainstorming is
+  optional — a well-defined work item starts at requirements.
 - **Human review per phase** (`workflow.requireHumanReviewPerPhase`, default true).
 - **Reference, don't duplicate (single source of truth).** Once requirements/design/
   tasks exist, update the ticket with a **link** to each checked-in artifact. Subsequent
@@ -129,8 +141,12 @@ in `.the-loop/manifest.yaml`.
 
 Granular commands (one step at a time; same flow `work-on` runs end-to-end):
 
+- `/the-loop:brainstorm <title>` — *(optional Phase 0)* draft a free-form `brainstorm.md`
+  scratchpad (the root artifact) in `docs/specs/draft-<slug>/` for a fuzzy idea; iterate,
+  then convert to requirements.
 - `/the-loop:new-requirement <title>` — draft `requirements.md` in a temporary
-  `docs/specs/draft-<slug>/` folder **before a ticket exists**.
+  `docs/specs/draft-<slug>/` folder **before a ticket exists** (converts a sibling
+  `brainstorm.md` if one is present).
 - `/the-loop:create-ticket <path>` — create the ticket from a `requirements.md` and
   promote `draft-<slug>/` → `docs/specs/<id>/`.
 - `/the-loop:create-design <id>` — `requirements.md` → `design.md` (Phase 2).
@@ -141,6 +157,8 @@ Granular commands (one step at a time; same flow `work-on` runs end-to-end):
 
 ## Knowledge the loop maintains
 
+- `docs/specs/<id>/brainstorm.md` — *(optional)* the root scratchpad a work item was
+  explored in before requirements.
 - `docs/architecture/architecture.md` — architecture index → sub-component docs.
 - `docs/decisions/decisions.md` + `decision-<nnn>.md` — decision log (every durable
   decision is recorded).

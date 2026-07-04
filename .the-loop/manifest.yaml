@@ -28,6 +28,7 @@ templates:
   - path: .the-loop/templates/epic.md
   - path: .the-loop/templates/story.md
   - path: .the-loop/templates/bug.md
+  - path: .the-loop/templates/brainstorm.md
   - path: .the-loop/templates/requirements.md
   - path: .the-loop/templates/bugfix.md
   - path: .the-loop/templates/design.md
@@ -42,10 +43,15 @@ templates:
   - path: .the-loop/templates/webhook-event-prompt.md
   - path: .the-loop/templates/webhook-autoexecute-prompt.md
 
-# Per-work-item artifacts: the Kiro-style 3-phase spec plus the execution log.
-# <id> is the ticket id (e.g. issue-1, PROJ-42). These MUST be checked in.
+# Per-work-item artifacts: an optional brainstorm scratchpad, the Kiro-style 3-phase spec,
+# plus the execution log. <id> is the ticket id (e.g. issue-1, PROJ-42) — before a ticket
+# exists these live under docs/specs/draft-<slug>/. These MUST be checked in.
 # A bug uses bugfix.md in place of requirements.md.
 workItemArtifacts:
+  - pathPattern: docs/specs/<id>/brainstorm.md
+    role: spec-brainstorm
+    phase: brainstorming
+    optional: true            # the root artifact; only present when the work item was brainstormed
   - pathPattern: docs/specs/<id>/requirements.md
     role: spec-requirements
     phase: requirements-definition
