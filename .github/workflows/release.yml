@@ -1,0 +1,85 @@
+# Release — build the-loop's Python distribution and publish it to PyPI.
+#
+# Publishing uses PyPI **Trusted Publishing** (GitHub Actions OIDC): no long-lived API
+# token is stored. PyPI is configured to trust this exact workflow via:
+#   PyPI project : the-loopy-one   (the distribution name; import stays `the_loop`)
+#   owner/repo   : MadaraUchiha-314/the-loop
+#   workflow     : release.yml
+#   environment  : pypi
+# See docs/specs/issue-21/design.md and docs/decisions/decision-019.md.
+#
+# Flow: cut a GitHub Release (tag `v<version>`, matching cli/pyproject.toml + .cz.toml).
+# The `build` job packages the workspace member with uv (the-loop's package manager, so
+# local == CI); the `publish-pypi` job runs only for a published Release, gated by the
+# `pypi` environment and granted an OIDC id-token to authenticate to PyPI.
+name: Release
+
+on:
+  release:
+    types: [published]
+  # Manual runs build + verify the artifacts (a safe dry run) but never publish —
+  # publishing is gated on the Release event below.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build sdist + wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same uv setup as CI (.github/workflows/ci.yml) — RULE: no local-vs-CI drift.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+
+      # Guard: a published Release must carry tag `v<version>` matching the packaged
+      # version, so we never upload a distribution whose version disagrees with its tag.
+      - name: Verify release tag matches package version
+        if: github.event_name == 'release'
+        run: |
+          pkg_version="$(uv version --package the-loopy-one --short)"
+          tag="${GITHUB_REF_NAME}"
+          echo "package version: ${pkg_version}"
+          echo "release tag    : ${tag}"
+          if [ "${tag}" != "v${pkg_version}" ]; then
+            echo "::error::release tag '${tag}' does not match package version 'v${pkg_version}'"
+            exit 1
+          fi
+
+      # Build the published member only (root is a virtual workspace, not a package).
+      - name: Build distribution
+        run: uv build --package the-loopy-one
+
+      - name: Upload dist artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish-pypi:
+    name: Publish to PyPI
+    needs: build
+    # Only real, published Releases publish; manual/dry-run builds stop after `build`.
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/the-loopy-one/
+    permissions:
+      # OIDC token for Trusted Publishing — the ONLY credential this job needs.
+      id-token: write
+    steps:
+      - name: Download dist artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI (Trusted Publishing / OIDC)
+        uses: pypa/gh-action-pypi-publish@release/v1

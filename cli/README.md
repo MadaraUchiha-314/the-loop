@@ -6,7 +6,17 @@ room to add self-learning / ML capabilities later (mostly exposed as Python SDKs
 
 ## Install
 
-the-loop uses **uv** (its declared Python package manager). From the repo root:
+From PyPI (published as **`the-loopy-one`** — the base name `the-loop` was taken; the
+import package and CLI keep the natural `the_loop`/`the-loop`):
+
+```bash
+pip install the-loopy-one            # or: uv pip install the-loopy-one
+pip install "the-loopy-one[config]"  # + PyYAML, for reading .the-loop/config.yaml defaults
+the-loop --help
+```
+
+For local development the-loop uses **uv** (its declared Python package manager). From the
+repo root:
 
 ```bash
 uv sync                     # installs the workspace (this CLI + dev tooling) from uv.lock
@@ -21,7 +31,9 @@ uv pip install -e ".[config]"  # PyYAML, for reading .the-loop/config.yaml defau
 uv pip install -e ".[dev]"     # pytest + commitizen
 ```
 
-This exposes the primary CLI: `the-loop`.
+This exposes the primary CLI: `the-loop`. Releases are cut by publishing a GitHub Release
+(tag `v<version>`); `.github/workflows/release.yml` builds the distribution and uploads it
+to PyPI via Trusted Publishing (OIDC — no stored token). See `docs/decisions/decision-019.md`.
 
 ## Commands
 
