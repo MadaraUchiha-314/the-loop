@@ -105,12 +105,28 @@ additive change.
   is unchanged.
 - **Releases are automatic on merge to `main`.** Every merge whose commit type is
   `feat`/`fix`/breaking cuts a new version + PyPI release; docs/chore/refactor-only merges
-  publish nothing. Because the version files start at `0.1.0`, the first `feat` merge
-  publishes **`0.2.0`** (0.1.0 is the pre-release baseline, never uploaded).
+  publish nothing.
 - `.cz.toml` gains `version_files` (so a bump rewrites the package version) and a
   generated `CHANGELOG.md` appears at the repo root, committed by the release job.
-- **Branch protection on `main` must permit the release job's push** (bot bypass or PAT),
-  or the bump commit/tag can't land.
+- The release job pushes the bump commit + tag to `main`; in practice `github-actions[bot]`
+  was able to push to `main` directly (no branch-protection bypass was needed).
+
+### Post-merge fixup (issue #21 follow-up)
+
+The first release run (on the issue-21 merge) **bumped `main` to `0.2.0` but published
+nothing**: `git push --follow-tags` pushes only *annotated* tags, while commitizen creates
+a *lightweight* one, so `v0.2.0` never reached the remote and `gh release create
+--verify-tag` aborted. Two workflow fixes (this follow-up PR):
+
+1. **Push the tag explicitly** — `git push origin HEAD:refs/heads/main refs/tags/v<version>`
+   instead of `--follow-tags`.
+2. **First-release baseline bootstrap** — when no `v*` tag exists, tag the version already
+   in the repo on `HEAD^` before bumping, so `cz bump` computes the increment from the
+   commits merged since (not the whole history). It runs exactly once.
+
+Because `main` already sits at `0.2.0` (files) with a seeded `v0.2.0` baseline, the next
+release is a **patch → `0.2.1`**, which is the first version actually uploaded to PyPI.
+`0.1.0`/`0.2.0` remain un-uploaded baselines.
 
 ## Alternatives considered
 
