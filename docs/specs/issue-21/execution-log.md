@@ -71,6 +71,27 @@ status: in-progress
 - **Blockers/caveat:** the release job pushes to `main` — protected `main` must allow
   `github-actions[bot]` to bypass (or use a bot PAT). Flagged to the owner on PR #22.
 
+### 2026-07-05 — First release run failed to publish; workflow fixed (follow-up)
+
+- **Phase:** post-merge fixup (fresh change on the same branch)
+- **Did:** PR #22 merged. The Release workflow ran on `main`, `cz bump` produced `0.2.0`,
+  and the bump commit landed on `main` (so `github-actions[bot]` could push to `main` — the
+  branch-protection caveat was moot). But it then **failed**: run
+  [28758938779](https://github.com/MadaraUchiha-314/the-loop/actions/runs/28758938779) —
+  `gh release create v0.2.0 --verify-tag` aborted with `tag v0.2.0 doesn't exist`, so
+  nothing published. Root cause: `git push --follow-tags` pushes only annotated tags, but
+  commitizen creates a lightweight one → the tag was never pushed. Confirmed `0.2.0` absent
+  from PyPI (404) and no remote `v*` tags. Owner chose to roll forward to `0.2.1`. Fixes:
+  (1) push the tag explicitly by ref; (2) a first-release baseline-bootstrap step so
+  `cz bump` computes a patch (`0.2.0 → 0.2.1`) instead of scanning all history.
+- **Checkpoint/tests:** `release.yml` re-parses with the new steps; bootstrap logic tags
+  the in-repo version at `HEAD^` only when no `v*` tag exists (runs once). `make check`
+  green on the fix branch.
+- **Next:** on merge of the fix PR, the run bootstraps `v0.2.0`, bumps to `0.2.1`, pushes
+  the tag, cuts the Release, and publishes **`0.2.1`** — the first PyPI upload.
+- **Blockers:** none (all tag pushes happen inside the runner via `GITHUB_TOKEN`; the
+  sandbox git proxy blocks tag/`main` pushes locally, which is why the fix is workflow-side).
+
 ## Review cycles
 
 | Cycle | Type (self/critic) | Reviewer | Outcome | Link |

@@ -55,6 +55,20 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+      # First-release bootstrap: with no release tag yet, `cz bump` would scan the whole
+      # history and over-count the increment. Instead, treat the version currently in the
+      # repo as already-released by tagging it on the PREVIOUS commit (HEAD^), so the bump
+      # is computed only from the commits merged since. Guarded by "no v* tag exists", so
+      # it runs exactly once — every later release already has a baseline tag.
+      - name: Bootstrap baseline tag (first release only)
+        run: |
+          if [ -z "$(git tag -l 'v*')" ]; then
+            base="v$(uv run cz version --project)"
+            git tag "$base" "HEAD^"
+            git push origin "refs/tags/${base}"
+            echo "Seeded baseline ${base} at $(git rev-parse --short 'HEAD^') (first release)."
+          fi
+
       # Compute + apply the version bump. commitizen exits 21 (NoneIncrementExit) or 3
       # (NoCommitsFoundError) when nothing warrants a release — treated as a clean no-op.
       - name: Bump version (commitizen)
@@ -78,9 +92,13 @@ jobs:
             exit "$code"
           fi
 
+      # Push the bump commit and its tag together. NOTE: `git push --follow-tags` only
+      # pushes *annotated* tags, but commitizen creates a *lightweight* tag — so the tag
+      # must be pushed explicitly by ref, or `gh release create --verify-tag` (below) can't
+      # find it on the remote and the release/publish fails.
       - name: Push bump commit + tag to main
         if: steps.bump.outputs.released == 'true'
-        run: git push --follow-tags origin HEAD:main
+        run: git push origin "HEAD:refs/heads/main" "refs/tags/v${{ steps.bump.outputs.version }}"
 
       - name: Build distribution
         if: steps.bump.outputs.released == 'true'
