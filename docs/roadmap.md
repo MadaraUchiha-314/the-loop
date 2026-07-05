@@ -17,6 +17,11 @@
   delivers it end-to-end, notifying humans only when a decision is required.
 - **Project-wide DAG orchestration.** Given a full work-breakdown, orchestrate the whole
   DAG of work items via depends-on / blocked-by relationships.
+- ~~**PyPI distribution.**~~ Shipped (issue #21, `decision-019`): the CLI publishes to
+  PyPI as `the-loopy-one` via `.github/workflows/release.yml` using Trusted Publishing
+  (OIDC, no stored token). Releases are automatic + semantic — on merge to `main`,
+  `cz bump` derives the version from Conventional Commits / PR titles, tags, and publishes.
+  Spec: `docs/specs/issue-21/`.
 - ~~**Cursor packaging.**~~ Shipped (issue #12, `decision-015`): `.cursor-plugin/`
   manifests reuse the same skills/commands; the SessionStart hook is a Cursor rule.
 

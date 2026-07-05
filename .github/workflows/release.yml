@@ -1,0 +1,122 @@
+# Release — semantic, automated versioning + PyPI publish on merge to main.
+#
+# Versioning is derived from Conventional Commits (which, with squash-merge, is the PR
+# title): feat -> minor, fix -> patch, `BREAKING CHANGE`/`!` -> major. On every push to
+# main, `cz bump` (commitizen — the tool the-loop already uses, decision-008) computes the
+# next version from the commits since the last tag, rewrites the version in `.cz.toml` and
+# `cli/pyproject.toml` (version_files), commits `bump: …`, and tags `v<version>`. The tag +
+# commit are pushed back to main, a GitHub Release is cut, and the built distribution is
+# published to PyPI. If no commit since the last tag warrants a release, the run is a no-op.
+#
+# Publishing uses PyPI **Trusted Publishing** (GitHub Actions OIDC) — no stored token. PyPI
+# trusts this exact workflow: project `the-loopy-one`, owner/repo `MadaraUchiha-314/the-loop`,
+# workflow `release.yml`, environment `pypi`. See docs/decisions/decision-019.md.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Never run two releases at once (they would race on the tag / main push).
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Version bump + build
+    runs-on: ubuntu-latest
+    # Skip the run the workflow triggers on itself when it pushes the `bump:` commit —
+    # that commit carries no releasable change, so re-entering would be wasted work.
+    if: ${{ !startsWith(github.event.head_commit.message, 'bump:') }}
+    permissions:
+      contents: write        # push the bump commit + tag back to main, and cut the Release
+    outputs:
+      released: ${{ steps.bump.outputs.released }}
+      version: ${{ steps.bump.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0     # commitizen needs full history to read commits since the last tag
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Same uv setup as CI (.github/workflows/ci.yml) — RULE: no local-vs-CI drift.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      # Compute + apply the version bump. commitizen exits 21 (NoneIncrementExit) or 3
+      # (NoCommitsFoundError) when nothing warrants a release — treated as a clean no-op.
+      - name: Bump version (commitizen)
+        id: bump
+        run: |
+          set +e
+          out="$(uv run cz bump --yes --changelog 2>&1)"
+          code=$?
+          set -e
+          echo "$out"
+          if [ "$code" -eq 0 ]; then
+            version="$(uv run cz version --project)"
+            echo "released=true"          >> "$GITHUB_OUTPUT"
+            echo "version=${version}"      >> "$GITHUB_OUTPUT"
+            echo "Bumped to ${version}"
+          elif [ "$code" -eq 21 ] || [ "$code" -eq 3 ]; then
+            echo "released=false"          >> "$GITHUB_OUTPUT"
+            echo "No releasable commits since the last tag — skipping publish."
+          else
+            echo "::error::cz bump failed (exit ${code})"
+            exit "$code"
+          fi
+
+      - name: Push bump commit + tag to main
+        if: steps.bump.outputs.released == 'true'
+        run: git push --follow-tags origin HEAD:main
+
+      - name: Build distribution
+        if: steps.bump.outputs.released == 'true'
+        run: uv build --package the-loopy-one
+
+      - name: Create GitHub Release
+        if: steps.bump.outputs.released == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "v${{ steps.bump.outputs.version }}" --generate-notes --verify-tag
+
+      - name: Upload dist artifacts
+        if: steps.bump.outputs.released == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish-pypi:
+    name: Publish to PyPI
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/the-loopy-one/
+    permissions:
+      # OIDC token for Trusted Publishing — the ONLY credential this job needs.
+      id-token: write
+    steps:
+      - name: Download dist artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI (Trusted Publishing / OIDC)
+        uses: pypa/gh-action-pypi-publish@release/v1
