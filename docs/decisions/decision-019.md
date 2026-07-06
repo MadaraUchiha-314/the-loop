@@ -124,9 +124,16 @@ a *lightweight* one, so `v0.2.0` never reached the remote and `gh release create
    in the repo on `HEAD^` before bumping, so `cz bump` computes the increment from the
    commits merged since (not the whole history). It runs exactly once.
 
-Because `main` already sits at `0.2.0` (files) with a seeded `v0.2.0` baseline, the next
-release is a **patch → `0.2.1`**, which is the first version actually uploaded to PyPI.
-`0.1.0`/`0.2.0` remain un-uploaded baselines.
+A second run then failed at the bootstrap's tag push: `GITHUB_TOKEN` is **refused when a
+pushed ref touches `.github/workflows/`** ("without `workflows` permission"), and the
+baseline tag pointed at an older commit whose `release.yml` differed from the tip. Fix: the
+baseline tag is **local-only** — `cz bump` reads it from the runner's checkout and it is
+never pushed. The real `v<next>` tag (created at the bump commit, whose workflow files match
+the tip) pushes fine, as does the bump commit itself (it doesn't modify workflows).
+
+Because `main` already sits at `0.2.0` (files) and the local baseline makes the merge a
+**patch → `0.2.1`**, that is the first version actually uploaded to PyPI. `0.1.0`/`0.2.0`
+remain un-uploaded baselines.
 
 ## Alternatives considered
 

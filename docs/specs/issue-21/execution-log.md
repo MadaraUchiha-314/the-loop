@@ -92,6 +92,26 @@ status: in-progress
 - **Blockers:** none (all tag pushes happen inside the runner via `GITHUB_TOKEN`; the
   sandbox git proxy blocks tag/`main` pushes locally, which is why the fix is workflow-side).
 
+### 2026-07-06 — Second release run failed on tag push; bootstrap made local-only
+
+- **Phase:** post-merge fixup (round 2)
+- **Did:** PR #23 merged; the release run
+  [28759364293](https://github.com/MadaraUchiha-314/the-loop/actions/runs/28759364293)
+  **failed** at the bootstrap step: `git push origin refs/tags/v0.2.0` was rejected —
+  `refusing to allow a GitHub App to create or update workflow .github/workflows/release.yml
+  without workflows permission`. Cause: the baseline tag pointed at the older bump commit
+  (`680bb10`), whose `release.yml` differs from the branch tip, so `GITHUB_TOKEN` treated
+  the tag push as a workflow-file change (a permission it cannot hold). Fix: the baseline
+  tag is now **local-only** (never pushed) — `cz bump` reads it from the runner; the real
+  `v0.2.1` tag, created at the bump commit (workflow files == tip), pushes without issue.
+- **Checkpoint/tests:** `release.yml` re-parses; the bootstrap step no longer pushes; the
+  bump commit + `v<next>` tag don't touch workflows (the #22 run already proved a bump
+  commit pushes to `main`). `make check` green.
+- **Next:** on merge, the run seeds the local baseline, bumps to `0.2.1`, pushes the bump
+  commit + `v0.2.1` tag, cuts the Release, and publishes **`0.2.1`** to PyPI. (The `pypi`
+  environment may pause for a required-reviewer approval if one is configured.)
+- **Blockers:** none anticipated.
+
 ## Review cycles
 
 | Cycle | Type (self/critic) | Reviewer | Outcome | Link |

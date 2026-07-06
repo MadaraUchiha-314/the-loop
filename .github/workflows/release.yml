@@ -58,15 +58,19 @@ jobs:
       # First-release bootstrap: with no release tag yet, `cz bump` would scan the whole
       # history and over-count the increment. Instead, treat the version currently in the
       # repo as already-released by tagging it on the PREVIOUS commit (HEAD^), so the bump
-      # is computed only from the commits merged since. Guarded by "no v* tag exists", so
-      # it runs exactly once — every later release already has a baseline tag.
-      - name: Bootstrap baseline tag (first release only)
+      # is computed only from the commits merged since. The tag is LOCAL-ONLY and never
+      # pushed: `cz bump` reads it from the runner's checkout, and pushing a tag that points
+      # at an older commit whose `.github/workflows/` differs from the branch tip is rejected
+      # for GITHUB_TOKEN ("refusing to allow a GitHub App to create or update workflow …
+      # without `workflows` permission"). The real `v<next>` tag created at the bump commit
+      # (below) matches the tip's workflow files, so it pushes fine. Guarded by "no v* tag
+      # exists", so it runs exactly once — later runs fetch the real remote tags.
+      - name: Bootstrap baseline tag (first release only, local-only)
         run: |
           if [ -z "$(git tag -l 'v*')" ]; then
             base="v$(uv run cz version --project)"
-            git tag "$base" "HEAD^"
-            git push origin "refs/tags/${base}"
-            echo "Seeded baseline ${base} at $(git rev-parse --short 'HEAD^') (first release)."
+            git tag "$base" "HEAD^"   # LOCAL ONLY — do not push (see comment above)
+            echo "Seeded local baseline ${base} at $(git rev-parse --short 'HEAD^') for increment computation."
           fi
 
       # Compute + apply the version bump. commitizen exits 21 (NoneIncrementExit) or 3
