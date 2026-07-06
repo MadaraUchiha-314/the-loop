@@ -1,3 +1,9 @@
+## v0.2.1 (2026-07-06)
+
+### Fix
+
+- make first-release baseline tag local-only so release publishes (issue #21) (#24)
+
 ## v0.2.0 (2026-07-05)
 
 ### Feat
