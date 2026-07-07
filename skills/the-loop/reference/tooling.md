@@ -78,3 +78,54 @@ messages) and `cz bump` (versioning/changelog) for later.
 No last-minute build failures from config/environment drift. CI jobs invoke the very
 same root scripts/commands the pre-commit/pre-push hooks and the harness use locally.
 When adding a check, add it in one place and reference it from both local hooks and CI.
+
+## Tooling detection (`/the-loop:init`)
+
+`init` must never blindly stamp the defaults above onto an existing project — it must
+first look for signals of what the project already uses, and only fall back to a
+default where no signal exists. Check, per language present in the repo:
+
+### JS/TS
+
+- `package.json` → `packageManager` field (e.g. `"pnpm@9.0.0"`) is authoritative for
+  the package manager if present.
+- Otherwise, lock file presence: `package-lock.json` → `npm`, `yarn.lock` → `yarn`,
+  `bun.lockb` / `bun.lock` → `bun`, `pnpm-lock.yaml` → `pnpm`.
+- `package.json` `devDependencies`/`dependencies` → infer:
+  - unit/integration test runner: `jest`, `vitest`, `mocha`, `@playwright/test`, `cypress`.
+  - linter: `eslint` (+ config flavor), `oxlint`, `biome`.
+  - type checker: `typescript` (`tsc`), `ts-node`.
+- Monorepo tool: `nx.json` → `nx`; `pnpm-workspace.yaml` → `pnpm`; `workspaces` field in
+  root `package.json` → `yarn` or `bun` depending on the detected package manager.
+
+### Python
+
+- `pyproject.toml` → `[tool.poetry]`/`[project]` sections, `[tool.uv]`; `setup.cfg`;
+  `requirements.txt`.
+- `pyproject.toml` / lock files → package manager: `uv.lock` → `uv`, `poetry.lock` →
+  `poetry`, bare `requirements.txt` → `pip`.
+- Dependencies/dev-dependencies → test runner (`pytest`, `unittest`), linter (`ruff`,
+  `flake8`), type checker (`pyright`, `mypy`).
+
+### Go
+
+- `go.mod` present → Go stack, package manager is always `go modules`.
+- Look for `golangci.yml`/`.golangci.yaml` → `golangci-lint`; absence doesn't rule it out,
+  check `go.sum`/tool directives too.
+
+### Cross-check with CI
+
+- Read `.github/workflows/*.yml` (or other CI config) for the actual commands invoked
+  (e.g. `npm test`, `pytest`, `golangci-lint run`) and use them to confirm or override
+  inferred tooling — CI is often the most reliable signal since it's what actually runs.
+
+### Applying results
+
+- Where a signal is unambiguous, write the detected tool directly into
+  `tooling.<concern>.<language>`.
+- Where signals conflict, are absent, or only partially cover a concern (e.g. a test
+  runner is inferred but no linter can be determined), write the plugin default but
+  append a same-line comment `# TODO: verify — no signal found, defaulted` so it's
+  flagged in the init report's needs-user section rather than silently applied.
+- Never silently apply a default when the project has _some_ tooling for that concern
+  that merely wasn't recognized — prefer flagging over guessing wrong.
