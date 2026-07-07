@@ -46,6 +46,11 @@ as commands/skills today; hooks add predictability where a step must always run.
 
 - `docs/architecture/`, `docs/decisions/`, `docs/specs/<id>/` (requirements/bugfix,
   design, tasks, execution-log), `learnings/`.
+- `docs/capabilities/` — living capability docs, the **organized view of the specs**:
+  one doc per capability (product-feature and architecture shaped), the single source
+  of truth for its *current* behaviour, with history rows linking the raw specs and
+  decisions that produced it. Updated in the same PR as the work item (ready-to-ship
+  gate item). See `docs/decisions/decision-020.md`.
 
 ### 5. Collaboration & ticketing
 

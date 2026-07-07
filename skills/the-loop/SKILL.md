@@ -70,6 +70,15 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
 - **Reference, don't duplicate (single source of truth).** Once requirements/design/
   tasks exist, update the ticket with a **link** to each checked-in artifact. Subsequent
   changes are **edits to those files, not new comments**.
+- **Capability docs are the organized view of specs.** Raw specs under
+  `docs/specs/<id>/` are the per-work-item record (*deltas*); living capability docs
+  under `workflow.capabilitiesDir` (default `docs/capabilities/`, indexed by
+  `capabilities.md`) are the **single source of truth for a capability's *current*
+  behaviour** (*state*), each behaviour traced by a history row to the specs/decisions
+  that produced it. Update the affected capability docs **in the same PR** as the work
+  item — a ready-to-ship gate item. Mint docs emergently (product-feature and
+  architecture shaped both valid) and evolve the taxonomy through PR-review feedback.
+  See `reference/workflow.md`.
 - **Keep `tasks.md` checkmarks current** as tasks complete (`- [ ]` → `- [x]`).
 - **Identify collaborators up-front.** Each work item names the personas it needs; not
   every task needs every persona (a bug fix needs the engineer; a content fix may not).
@@ -171,6 +180,8 @@ Granular commands (one step at a time; same flow `work-on` runs end-to-end):
 - `docs/specs/<id>/brainstorm.md` — *(optional)* the root scratchpad a work item was
   explored in before requirements.
 - `docs/architecture/architecture.md` — architecture index → sub-component docs.
+- `docs/capabilities/capabilities.md` + `<capability>.md` — living capability docs:
+  the organized view of specs; current behaviour per capability with history links.
 - `docs/decisions/decisions.md` + `decision-<nnn>.md` — decision log (every durable
   decision is recorded).
 - `docs/specs/<id>/` — the per-work-item 3-phase spec + execution log.

@@ -115,6 +115,26 @@ copy of its contents. The checked-in file is the single source of truth.
 - Apply the **minimalism** ladder (see `minimalism.md`) to avoid generating bloat — least
   code that correctly does the job; justify any new dependency in `design.md`.
 
+## Capability docs — the organized view of specs (fold-in step)
+
+Per-work-item specs are *deltas*; readers need *state*. The loop maintains **living
+capability docs** under `workflow.capabilitiesDir` (default `docs/capabilities/`,
+indexed by `capabilities.md`, template `.the-loop/templates/capability.md`):
+
+- One doc per capability — product-feature and architecture shaped are both valid.
+- Each doc is the **single source of truth for the capability's *current* behaviour**;
+  the raw specs under `docs/specs/<id>/` are the historical record of how each change
+  arrived.
+- **Traceability:** every behaviour statement maps to a history-table row linking the
+  work item's spec folder, decision record(s) and PR.
+- **Fold-in happens in the same PR** as the work item: when implementation changes a
+  capability's behaviour, update the affected capability doc(s) (minting new ones for
+  first-touched capabilities and updating the index) before requesting review. A work
+  item that affects no capability records "none affected" in its execution log.
+- **The taxonomy is emergent and review-driven:** structure/organization feedback
+  arrives as PR review comments on the capability-doc diffs and is handled like any
+  other finding (reply-first-then-fix).
+
 ## Self-review & critic-review (before a human)
 
 - After the work is done, run **self-reviews** then **critic reviews** using configured
@@ -137,7 +157,9 @@ must ALL hold:
 
 - green checks;
 - **all review threads resolved**;
-- validated evidence recorded; **and**
+- validated evidence recorded;
+- the **affected capability docs are updated in the same PR** (or "none affected" is
+  recorded in the execution log) — the organized view of specs must not rot; **and**
 - the **R10 reviewer briefing** is posted/updated in the PR — a condensed, prioritized
   summary (where to focus), mermaid diagram(s), and the low-level decisions — produced
   from `userInteraction.prSummary.templatePath` (default

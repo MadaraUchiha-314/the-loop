@@ -129,6 +129,10 @@ See [`cli/README.md`](cli/README.md) for install and how to add commands.
   spec's `requirements.md`), queryable as a table via `the-loop scenarios`.
 - APIs are **contract-first**: REST specs in `specs/openapi/` (OpenAPI), GraphQL SDL in
   `specs/graphql/`; docs are generated from the contracts, never hand-written.
+- **Capability docs are the organized view of specs**: per-work-item specs are the
+  historical record; living docs under `docs/capabilities/` are the single source of
+  truth for each capability's *current* behaviour, updated **in the same PR** as the
+  work item (a ready-to-ship gate item), with history links back to the specs.
 - **UI/UX design is a first-class artifact**: for user-facing work the design phase tracks
   Figma links and/or self-contained HTML+CSS+JS prototypes under `docs/specs/<id>/design/`,
   iterated-until-locked with the designer — the visual contract implementation matches.
@@ -150,6 +154,7 @@ hooks/                 hooks.json (Claude Code SessionStart reminder)
 cli/                   the-loop Python CLI (the_loop package; gh-webhook receiver)
 docs/
   architecture/        architecture.md (index)
+  capabilities/        capabilities.md (index) + <capability>.md (organized view of specs; current behaviour per capability)
   decisions/           decisions.md + decision-<nnn>.md
   specs/<id>/          brainstorm.md (optional), requirements.md|bugfix.md, design.md, design/ (UI/UX artifacts, optional), tasks.md, execution-log.md
 learnings/             learnings.md + learning-<nnn>.md
