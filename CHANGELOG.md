@@ -1,3 +1,9 @@
+## v0.3.1 (2026-07-07)
+
+### Fix
+
+- **init**: detect existing project tooling instead of hardcoded defaults (#1) (#31)
+
 ## v0.3.0 (2026-07-07)
 
 ### Feat
