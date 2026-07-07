@@ -23,14 +23,26 @@ plugin's root directory; in Cursor, resolve it to the plugin's install directory
 
 ## Steps
 
-1. **Detect the project.** Inspect the repo to infer sensible defaults:
-   - languages present (python / js / ts / go),
+1. **Detect the project.** Inspect the repo to infer sensible defaults — never stamp
+   the plugin's hardcoded tooling defaults onto an existing project unread:
+   - languages present (python / js / ts / go) — from file extensions and manifests
+     (`package.json`, `pyproject.toml`/`setup.cfg`/`requirements.txt`, `go.mod`).
    - whether it looks like a monorepo (nx.json, pnpm-workspace.yaml, workspaces) and
-     which tool — default Nx; support non-monorepo (`monorepo: false`),
-   - existing package manager / test / lint / type-check tooling, mapped onto the
-     `tooling` matrix (see the `the-loop` skill's `reference/tooling.md`),
+     which tool — default Nx; support non-monorepo (`monorepo: false`).
+   - existing package manager / test runner / linter / type-checker per language, by
+     reading lock files, manifest fields, and dependency lists, per the exact signal
+     table in the `the-loop` skill's `reference/tooling.md` → "Tooling detection"
+     (e.g. `package-lock.json`→npm, `yarn.lock`→yarn, `bun.lockb`→bun,
+     `pnpm-lock.yaml`→pnpm; devDependencies for `jest`/`vitest`/`mocha`,
+     `eslint`/`oxlint`/`biome`, etc.; the Python and Go equivalents).
+   - cross-check inferred tooling against `.github/workflows/` (or other CI config) —
+     the commands CI actually runs are a strong signal.
    - the git remote / owner / repo for ticketing.
-   Use these to pre-fill the config rather than blindly copying defaults.
+   Where detection is unambiguous, write the detected tool into `tooling.<concern>.<lang>`.
+   Where it's ambiguous or no signal exists, fall back to the plugin default but mark
+   that line with a trailing `# TODO: verify — no signal found, defaulted` comment, and
+   surface it in the **needs-user** section of the final report (step 7) so the user
+   confirms it before the agent invokes it.
 
 2. **Reconcile against the manifest (idempotent, non-clobbering).** For every managed
    path, classify it and act:
