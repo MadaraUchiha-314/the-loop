@@ -19,6 +19,7 @@ workflow:
   specApproach: kiro-3-phase
   requireHumanReviewPerPhase: true
   specDir: docs/specs
+  capabilitiesDir: docs/capabilities   # living capability docs — the organized view of specs (issue-25)
   phaseLabelPrefix: "loop:"
   phases:
     - not-started

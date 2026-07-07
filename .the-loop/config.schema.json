@@ -90,6 +90,11 @@
           "default": "docs/specs",
           "description": "Per-work-item spec files live in <specDir>/<id>/{requirements|bugfix,design,tasks,execution-log}.md."
         },
+        "capabilitiesDir": {
+          "type": "string",
+          "default": "docs/capabilities",
+          "description": "Living capability docs (the organized view of specs; single source of truth for a capability's current behaviour) live in <capabilitiesDir>/, indexed by <capabilitiesDir>/capabilities.md. Affected docs are updated in the same PR as the work item (ready-to-ship gate item)."
+        },
         "phaseLabelPrefix": {
           "type": "string",
           "default": "loop:",

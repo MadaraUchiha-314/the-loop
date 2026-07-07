@@ -34,6 +34,7 @@ templates:
   - path: .the-loop/templates/design.md
   - path: .the-loop/templates/tasks.md
   - path: .the-loop/templates/execution-log.md
+  - path: .the-loop/templates/capability.md
   - path: .the-loop/templates/decision.md
   - path: .the-loop/templates/learning.md
   - path: .the-loop/templates/config.yaml
@@ -83,6 +84,10 @@ apiContracts:
 knowledge:
   - path: docs/architecture/architecture.md
     role: architecture-index
+  - path: docs/capabilities/capabilities.md
+    role: capabilities-index
+  - pathPattern: docs/capabilities/<capability>.md
+    role: capability-doc   # organized view of specs; single source of truth for current behaviour (issue-25)
   - path: docs/decisions/decisions.md
     role: decisions-index
   - pathPattern: docs/decisions/decision-<nnn>.md
