@@ -2,8 +2,8 @@
 type: brainstorm
 phase: brainstorming
 workItem: issue-25
-status: in-review
-approvedBy: []
+status: approved
+approvedBy: ["@MadaraUchiha-314 (PR #26 review — answered all five open questions)"]
 collaborators: [product-manager, architect]
 overrides: {}
 ---
@@ -14,7 +14,9 @@ overrides: {}
 > (`docs/specs/issue-<n>/`) — a chronological record, not the shape humans (or AI) read
 > a product in. This scratchpad explores how the-loop should organize specs so the
 > *current truth* of the system is readable by capability, without breaking the
-> per-work-item paper trail. Iterated with feedback in PR review until locked.
+> per-work-item paper trail. **Locked** — the open questions were answered by
+> @MadaraUchiha-314 in PR #26 review; the chosen direction carries forward into
+> `requirements.md`.
 
 ## Problem / opportunity
 
@@ -124,43 +126,46 @@ flowchart LR
   (work item → what it changed → links). The exact template is a requirements-phase
   question.
 
-## Open questions
+## Open questions (resolved)
 
-Raised for the human to answer (paper trail on issue #25); resolved answers get folded
-back here before this artifact locks.
+Answered by @MadaraUchiha-314 in PR #26 review (paper trail: the five inline threads).
 
-1. **Where does the organized layer live?** Unify with the architecture sub-component
-   docs (`docs/architecture/<capability>.md` — one topical view, no new tree) or a new
-   `docs/capabilities/` (keeps "how it's built" separate from "what it does")?
-2. **What is the taxonomy, and who owns it?** Architecture-shaped, product-feature-
-   shaped, or both? Emergent (a doc is minted when a spec first touches a capability,
-   reviewed in that PR) or curated up-front in an index?
-3. **How normative is a capability doc?** Does it *carry* the current consolidated
-   EARS requirements (becoming the single source of truth for *current* behaviour,
-   with raw specs demoted to history), or is it narrative + links only? This is the
-   single-source-of-truth fork in the road.
-4. **When does the fold-in happen?** In the same PR as the implementation (gate it in
-   the ready-to-ship checklist, like the PR briefing) or as a periodic consolidation
-   pass (like learnings)? Same-PR keeps feedback-on-organization inside PR review —
-   which the issue explicitly asks for.
-5. **Migration:** backfill capability docs from the seven existing specs in this work
-   item, or let them accrete as future work items touch each area?
+1. **Where does the organized layer live?** → **A new `docs/capabilities/`.** Keeps
+   "what the product does" (capabilities) separate from `docs/architecture/`'s "how
+   it's built".
+2. **What is the taxonomy, and who owns it?** → **Both product-feature and
+   architecture shaped.** The taxonomy is established and refined through user
+   feedback in PR reviews — emergent and reviewed as ordinary diffs, not curated
+   up-front.
+3. **How normative is a capability doc?** → **Single source of truth.** A capability
+   doc carries the current consolidated requirements for its capability; the raw specs
+   under `docs/specs/<id>/` are demoted to the historical record of how each change
+   arrived.
+4. **When does the fold-in happen?** → **Same PR as the work item**, gated in the
+   ready-to-ship checklist — feedback on the organization of specs stays inside PR
+   review, exactly as the issue asks.
+5. **Migration?** → **Yes, backfill** capability docs from the existing specs as part
+   of this work item.
 
-## Leaning / working hypothesis
+## Leaning / working hypothesis (confirmed)
 
-**Option A.** Keep `docs/specs/<id>/` untouched as the raw, per-work-item record.
-Maintain living **capability documentation** as the organized view — one doc per
-capability, stating current behaviour with links back to the raw specs and decisions
+**Option A, confirmed by review.** Keep `docs/specs/<id>/` untouched as the raw,
+per-work-item record. Maintain living **capability documentation** under
+`docs/capabilities/` as the organized view — one doc per capability (product-feature
+and architecture shaped), carrying the current consolidated requirements as the single
+source of truth for *current* behaviour, with links back to the raw specs and decisions
 that produced it (the issue's own answer: the organized spec *is* the capability
 documentation, so no third artifact kind is invented). Fold-in happens in the same PR
 as the work item and is gated in the ready-to-ship checklist, so the structure and
 organization of specs is itself reviewable — and correctable — during PR review.
+Existing specs are backfilled as part of this work item.
 
 ## Hand-off → requirements
 
-When locked, `requirements.md` should assert: the raw/organized split (specs stay
-per-work-item; capability docs are the organized view); the capability-doc template and
-its traceability links; the fold-in step and its gate in the loop (skill + workflow
-reference + config where needed); the answers adopted for the open questions above
-(location, taxonomy ownership, normativity, timing, migration); and the corresponding
-decision record. Options B/C/D stay here as the record of what was considered.
+`requirements.md` should assert: the raw/organized split (specs stay per-work-item;
+`docs/capabilities/` is the organized view); the capability-doc template and its
+traceability links; capability docs as the single source of truth for current
+behaviour; the same-PR fold-in step and its ready-to-ship gate in the loop (skill +
+workflow reference + config where needed); taxonomy evolution through PR-review
+feedback; the backfill of the existing specs; and the corresponding decision record.
+Options B/C/D stay here as the record of what was considered.

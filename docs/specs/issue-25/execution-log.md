@@ -14,7 +14,7 @@ status: in-progress
 
 | Phase | Entered | Reviewed/approved by | Notes |
 |-------|---------|----------------------|-------|
-| brainstorming | 2026-07-06 |  | Root artifact `brainstorm.md` drafted; open questions raised on issue #25 |
+| brainstorming | 2026-07-06 | @MadaraUchiha-314 (PR #26 review) | Root artifact drafted; all five open questions answered in PR #26 review and folded back; brainstorm locked |
 | requirements-definition |  |  |  |
 | design |  |  |  |
 | tasks-breakdown |  |  |  |
@@ -40,6 +40,21 @@ status: in-progress
 - **Next:** iterate the brainstorm with feedback until locked (`status: approved`),
   then derive `requirements.md` from it.
 - **Blockers:** open questions 1–5 in `brainstorm.md` need human answers.
+
+### 2026-07-07 — fold review answers back in; lock the brainstorm
+
+- **Phase:** brainstorming
+- **Did:** @MadaraUchiha-314 answered all five open questions in PR #26 review:
+  `docs/capabilities/` as the organized layer; taxonomy both product-feature and
+  architecture shaped, established via PR-review feedback; capability docs are the
+  **single source of truth** for current behaviour; fold-in happens in the **same PR**
+  (ready-to-ship gate); **backfill** existing specs. Folded the answers into
+  `brainstorm.md` (§ Open questions resolved, leaning confirmed, hand-off updated) and
+  locked it (`status: approved`).
+- **Checkpoint/tests:** markdownlint via pre-commit — green.
+- **Next:** derive `requirements.md` from the locked brainstorm
+  (requirements-definition phase) once this PR merges.
+- **Blockers:** none.
 
 ## Review cycles
 
