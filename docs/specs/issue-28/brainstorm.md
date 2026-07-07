@@ -57,6 +57,15 @@ exactly the "trigger point wired into the workflow" learning-007 demands.
 - **Cross-harness parity is a real constraint**: the same plugin serves Cursor, whose
   hook surface differs (no SessionStart equivalent today). Whatever we build must
   degrade gracefully to the rule-reminder there.
+- **`.claude/rules/` (https://code.claude.com/docs/en/memory#organize-rules-with-claude/rules/)
+  is the injection counterpart to hooks**: markdown rules checked into the *consumer
+  repo*, optionally **path-scoped** via `paths` front-matter so they load exactly when
+  matching files are touched (e.g. the phase/label rules whenever `docs/specs/**` is
+  edited). Because they live in the repo — not the plugin — they reach sessions that
+  never loaded the plugin, and they mirror Cursor's `rules/*.mdc` almost 1:1. The docs
+  are explicit about the boundary, and it is this brainstorm's boundary too: rules are
+  "context, not enforced configuration — to block an action regardless of what Claude
+  decides, use a PreToolUse hook instead."
 - **Hooks only help where the plugin is loaded.** A session that never loaded the
   plugin fires none of them — an enforcement layer *outside* the harness (CI /
   the webhook receiver) is the only harness-independent backstop.
@@ -106,8 +115,12 @@ Not deterministically checkable; hooks must NOT block on these. Spec quality (EA
 phrasing, design completeness), minimalism-ladder choices, review-finding quality,
 reviewer education content, learnings quality, collaborator selection. `prompt`-type
 (LLM-judge) hooks *could* score these, but that reinjects the nondeterminism this
-issue exists to remove — rejected for now, revisit with evidence. What hooks *can* do:
-inject the relevant rule slice at the right moment (UserPromptSubmit / PostToolUse
+issue exists to remove — rejected for now, revisit with evidence. What this tier *can*
+get is better **delivery**: `/the-loop:init` scaffolds path-scoped `.claude/rules/`
+into the consumer repo (e.g. spec-writing rules gated on `docs/specs/**`) so the right
+prose loads exactly when matching files are touched — checked in, so it reaches
+sessions that never loaded the plugin, and it maps 1:1 to Cursor's `.mdc` rules.
+Hooks complement this with in-flight injection (UserPromptSubmit / PostToolUse
 `additionalContext`) instead of hoping the skill was read at session start.
 
 ## Ideas & options
@@ -175,7 +188,8 @@ end-to-end.
 
 Carries forward: the three-tier enforcement model and the audit tables above; the
 label-sync fix (Tier 1 + backstop) as the first implementation slice; a CLI `verify` /
-`sync-labels` surface; an `enforcement` config knob; the "mandatory rule ⇒ named
+`sync-labels` surface; an `enforcement` config knob; path-scoped `.claude/rules/`
+scaffolding in `/the-loop:init` as Tier-3 delivery; the "mandatory rule ⇒ named
 trigger point + tier" documentation rule for `workflow.md`/`automation.md`. Stays
 here: LLM-judge enforcement (Option B) and full Cursor hook parity, as considered-and-
 deferred records.
