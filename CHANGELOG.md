@@ -1,3 +1,9 @@
+## v0.3.0 (2026-07-07)
+
+### Feat
+
+- **capabilities**: specs organization via living capability docs (issue #25) (#26)
+
 ## v0.2.1 (2026-07-06)
 
 ### Fix
