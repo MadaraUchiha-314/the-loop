@@ -1,7 +1,7 @@
 ---
 type: execution-log
 workItem: issue-32
-phase: brainstorming
+phase: requirements-definition
 status: in-progress
 ---
 
@@ -15,8 +15,8 @@ status: in-progress
 
 | Phase | Entered | Reviewed/approved by | Notes |
 |-------|---------|----------------------|-------|
-| brainstorming | 2026-07-16 |  | issue #32 is exploratory (asks architecture/alternatives questions) → Phase 0 |
-| requirements-definition |  |  | derived from the locked brainstorm |
+| brainstorming | 2026-07-16 | @MadaraUchiha-314 (PR #33 reviews + merge; advance instruction) | issue #32 is exploratory (asks architecture/alternatives questions) → Phase 0 |
+| requirements-definition | 2026-07-17 |  | derived from the locked brainstorm; Q2/Q3 carried to design |
 | design |  |  |  |
 | tasks-breakdown |  |  |  |
 | implementation |  |  |  |
@@ -82,6 +82,22 @@ status: in-progress
 - **Next:** questions 2 (injection reliability) and 3 (id/completion capture) remain;
   then lock the brainstorm and derive `requirements.md`.
 - **Blockers:** brainstorm still `in-review` (questions 2–3 open).
+
+### 2026-07-17 — brainstorm locked; requirements derived (new rolling PR)
+
+- **Phase:** requirements-definition
+- **Did:** PR #33 was merged (owner notes: by mistake, but the artifact content stands);
+  a merged PR cannot be reopened, so the work continues on the same branch restarted
+  from `main` with a new rolling PR carrying the remaining phases. Owner instructed to
+  advance to design/implementation → brainstorm marked `approved` (Q2/Q3 explicitly
+  carried to design), and `requirements.md` derived: 7 requirements (tmux runner,
+  session identity, event delivery, attach UX, web terminal, dependency verification,
+  lifecycle) + NFRs, scope fences, and the two design-phase questions.
+- **Checkpoint/tests:** markdownlint on the spec docs (docs-only change).
+- **Next:** owner reviews/locks `requirements.md` on the new PR, then `design.md` is
+  derived (deciding Q2 with a spike) in the same PR.
+- **Blockers:** requirements `in-review` — awaiting owner approval
+  (`requireHumanReviewPerPhase`).
 
 ## Review cycles
 
