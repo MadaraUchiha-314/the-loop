@@ -39,8 +39,12 @@ observe and interact with the live session.
   (one worker thread per session), so "one thing talks to the session at a time" is an
   established invariant a design must preserve or consciously relax.
 - **Zero-runtime-dependency guarantee (decision-005/016):** the CLI subprocess-drives the
-  official harness CLIs; no SDK, no daemons beyond the receiver itself. tmux would be an
-  *optional* host tool, not a Python dependency.
+  official harness CLIs; no SDK, no daemons beyond the receiver itself. tmux and ttyd are
+  **native host binaries** — a Python wheel cannot carry or `pip install` them — so, like
+  the `claude`/`cursor-agent` CLIs today, they are host tools. **Installability
+  requirement (owner, PR #33 review, 2026-07-17):** installing the-loop must ensure these
+  dependencies are satisfied — at minimum verified with actionable, per-platform install
+  guidance when the modes that need them are enabled.
 - **Both harnesses matter:** whatever the mechanism, it should treat `claude` and
   `cursor-agent` uniformly through the `HarnessAdapter` contract (R4 of issue-15).
 - **Access control is environmental, not a the-loop feature** *(owner assumption, PR #33
@@ -193,22 +197,26 @@ plain child process is not.
 3. **Session-id + completion signals per harness:** confirm `claude --session-id` /
    SessionStart-hook capture and the cursor-agent equivalents; without an id the registry
    can't route follow-up events.
-4. **Web mode scope** *(auth half resolved — owner, PR #33 review, 2026-07-17:
-   access control is environmental — VPN / hosting provider network for remote hosts,
-   nothing needed on a local laptop; the-loop ships no auth of its own)*. Remaining
-   half — a pure scope/minimalism call, no longer security-gated: does the-loop **ship**
-   the web layer (e.g. `the-loop sessions serve --web` wrapping ttyd) or **document** it
-   as a recipe? (Recommend: document first.) Context:
-   - *What web mode is:* a web-terminal server (ttyd or GoTTY) on the same host serving
+4. **Web mode scope** → **Resolved: in scope, shipped** (owner, PR #33 review,
+   2026-07-17). Two rulings landed here:
+   - *Auth:* access control is environmental — VPN / hosting provider network for remote
+     hosts, nothing needed on a local laptop; the-loop ships no auth of its own, only
+     sensible default binding.
+   - *Installability:* "if one installs the-loop, the dependency of ttyd is satisfied."
+     The web layer is therefore a first-class capability, not a documented recipe. Since
+     ttyd (like tmux) is a native binary a Python wheel cannot carry, the candidate
+     satisfaction mechanisms are: **(a) preflight/doctor checks** — `the-loop init` and
+     `gh-webhook start` verify `tmux`/`ttyd` on PATH when the modes needing them are
+     enabled, failing with per-platform install guidance (`brew install ttyd`,
+     `apt install ttyd`, …), the same pattern as `HarnessAdapter.is_available()` — the
+     recommended baseline; **(b) auto-download of ttyd's static release binary** into a
+     the-loop-managed dir — parked as a design-phase enhancement (supply-chain and
+     update burden); **(c) auto-install via the system package manager** — rejected
+     (sudo, unpredictable across platforms).
+   - *What web mode is:* a web-terminal server (ttyd) on the same host serving
      `tmux attach -t loop/<slug>` as a browser page — opening the URL gives a live
-     terminal on the agent's PTY. The whole recipe is roughly
-     `ttyd --writable tmux attach -t loop/<slug>` bound to localhost or the VPN
-     interface.
-   - *Why document rather than ship in v1:* shipping means the-loop spawns and
-     supervises a network-exposed service and owns its lifecycle and configuration
-     surface. A documented recipe delivers the capability without that ownership, and
-     the web layer is purely additive later — it is just another client attaching to
-     the same tmux session.
+     terminal on the agent's PTY, roughly `ttyd --writable tmux attach -t loop/<slug>`
+     bound to localhost or the VPN interface.
 5. **Mixed fleets:** ~~may `runner` differ per work item (overrides), or is it
    receiver-global?~~ → **Resolved: receiver-global** (owner, PR #33 review,
    2026-07-17). One setting (`routing.runner`) in `.the-loop/config.yaml`; every spawned
@@ -225,16 +233,20 @@ question 1 — staged: introduce a **receiver-global** `routing.runner` (`proces
 `tmux` opt-in; question 5 resolved); tmux mode spawns the harness TUI in
 `loop/<work-item-slug>`, captures the session id via pre-assigned id/hook, injects events
 via bracketed-paste + idle-check (keeping the dispatcher's FIFO as the safety layer), and
-registers `tmuxTarget` in the session registry. Local + SSH attach are v1; the web
-terminal rides on the environmental-access-control assumption (localhost / VPN /
-provider network — no auth built by the-loop), pending only the ship-vs-document call in
-question 4. Option B's stream-view remains the documented fallback if the question-2
-spike finds injection too fragile.
+registers `tmuxTarget` in the session registry. Local + SSH attach are v1; the **web
+terminal ships too** (question 4 resolved) riding on the environmental-access-control
+assumption (localhost / VPN / provider network — no auth built by the-loop), with
+tmux/ttyd dependency verification at init/receiver-start (per-platform install guidance;
+static-binary auto-download as a candidate enhancement). Option B's stream-view remains
+the documented fallback if the question-2 spike finds injection too fragile.
 
 ## Hand-off → requirements
 
-Carries forward once locked: the `runner` config seam, tmux session naming + registry
-fields, event-injection contract (or the B fallback), per-harness id/completion capture,
-`sessions list/attach` UX, and the three-mode access matrix with the web-auth gate.
-Rejected alternatives (screen, dtach, Zellij, asciinema, vendor-hosted) stay here as the
+Carries forward once locked: the receiver-global `runner` config seam, tmux session
+naming + registry fields, event-injection contract (or the B fallback), per-harness
+id/completion capture, `sessions list/attach` UX, the shipped web-terminal layer with
+the environmental-access-control assumption, and the installability requirement (verify
+tmux/ttyd with per-platform guidance; static-binary auto-download as a candidate
+enhancement). Rejected alternatives (screen, dtach, Zellij, asciinema, vendor-hosted)
+and rejected dependency mechanisms (system-package auto-install) stay here as the
 record.

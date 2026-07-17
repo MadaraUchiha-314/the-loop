@@ -68,12 +68,28 @@ status: in-progress
   the web layer); then lock the brainstorm and derive `requirements.md`.
 - **Blockers:** brainstorm still `in-review` (questions 2–4 open).
 
+### 2026-07-17 — third human review round: web layer in scope + installability
+
+- **Phase:** brainstorming
+- **Did:** owner ruled that installing the-loop must satisfy the ttyd dependency —
+  resolving question 4 fully: the web layer **ships** (not just a documented recipe).
+  Replied on the thread with the dependency mechanics (native binaries can't ride the
+  Python wheel → preflight/doctor verification with per-platform guidance as the
+  baseline; static-binary auto-download parked as enhancement; system-package
+  auto-install rejected) and updated `brainstorm.md`: constraints, question 4, leaning
+  and hand-off now carry the installability requirement.
+- **Checkpoint/tests:** markdownlint on the spec docs.
+- **Next:** questions 2 (injection reliability) and 3 (id/completion capture) remain;
+  then lock the brainstorm and derive `requirements.md`.
+- **Blockers:** brainstorm still `in-review` (questions 2–3 open).
+
 ## Review cycles
 
 | Cycle | Type (self/critic) | Reviewer | Outcome | Link |
 |-------|--------------------|----------|---------|------|
 | 1 | human (brainstorm) | @MadaraUchiha-314 | Option A chosen (Q1); Q4/Q5 explanations expanded | [PR #33 review threads](https://github.com/MadaraUchiha-314/the-loop/pull/33#discussion_r3600112067) |
 | 2 | human (brainstorm) | @MadaraUchiha-314 | Access control environmental (Q4 auth half); receiver-global runner (Q5) | [PR #33 review threads](https://github.com/MadaraUchiha-314/the-loop/pull/33#discussion_r3600144073) |
+| 3 | human (brainstorm) | @MadaraUchiha-314 | Web layer ships; installing the-loop must satisfy the ttyd dependency (Q4 resolved) | [PR #33 review thread](https://github.com/MadaraUchiha-314/the-loop/pull/33#discussion_r3600170758) |
 
 ## Final validation evidence
 
