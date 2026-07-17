@@ -39,17 +39,23 @@ def make_session(**overrides) -> Session:
 
 
 class FakeRun:
-    """Capture subprocess.run calls inside the runner module; always succeed."""
+    """Capture subprocess.run calls inside the runner module.
 
-    def __init__(self, returncode=0):
+    ``per_verb`` overrides the exit code for specific tmux sub-commands
+    (e.g. ``{"has-session": 1}`` = "no such session").
+    """
+
+    def __init__(self, returncode=0, per_verb=None):
         self.calls = []
         self.returncode = returncode
+        self.per_verb = per_verb or {}
 
     def __call__(self, cmd, **kwargs):
         self.calls.append(list(cmd))
+        rc = self.per_verb.get(cmd[1], self.returncode)
 
         class Proc:
-            returncode = self.returncode
+            returncode = rc
             stdout = ""
             stderr = ""
 
@@ -87,10 +93,10 @@ class TestInteractiveArgv:
         argv = ClaudeCodeAdapter().interactive_argv("do the thing", "uuid-1")
         assert argv == ["--session-id", "uuid-1", "do the thing"]
 
-    def test_claude_appends_extra_args(self):
+    def test_claude_puts_extra_args_before_the_positional_prompt(self):
         adapter = ClaudeCodeAdapter(extra_args=["--permission-mode", "acceptEdits"])
         argv = adapter.interactive_argv("p", "id")
-        assert argv[-2:] == ["--permission-mode", "acceptEdits"]
+        assert argv == ["--session-id", "id", "--permission-mode", "acceptEdits", "p"]
 
     def test_cursor_is_unsupported(self):
         with pytest.raises(UnsupportedRunnerError):
@@ -103,7 +109,7 @@ class TestTmuxRunner:
         assert target == "loop-github-octo-repo-15"
 
     def test_spawn_builds_detached_session_with_interactive_argv(self, monkeypatch):
-        fake = FakeRun()
+        fake = FakeRun(per_verb={"has-session": 1})  # no stale session
         monkeypatch.setattr(runner_mod.subprocess, "run", fake)
         monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
         result = TmuxRunner().spawn(
@@ -114,13 +120,31 @@ class TestTmuxRunner:
             session_id="uuid-1",
         )
         assert result.ok, result.error
-        (cmd,) = fake.calls
+        cmd = fake.calls[-1]
         assert cmd[:2] == ["tmux", "new-session"]
         assert "-d" in cmd
         assert cmd[cmd.index("-s") + 1] == "loop-github-octo-repo-15"
         assert cmd[cmd.index("-c") + 1] == "/work"
         tail = cmd[cmd.index("--") + 1 :]
         assert tail == ["claude", "--session-id", "uuid-1", "start work"]
+
+    def test_spawn_clears_a_stale_session_with_the_same_name(self, monkeypatch):
+        fake = FakeRun()  # has-session exits 0: a stale leftover exists
+        monkeypatch.setattr(runner_mod.subprocess, "run", fake)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        result = TmuxRunner().spawn(
+            work_item=WorkItemRef.parse(REF),
+            adapter=ClaudeCodeAdapter(),
+            prompt="p",
+            cwd="/work",
+            session_id="uuid-1",
+        )
+        assert result.ok, result.error
+        assert [c[1] for c in fake.calls] == [
+            "has-session",
+            "kill-session",
+            "new-session",
+        ]
 
     def test_spawn_fails_without_tmux(self, monkeypatch):
         monkeypatch.setattr(runner_mod.shutil, "which", lambda _: None)
@@ -239,11 +263,25 @@ class TestSessionsCli:
         assert code == 1
         assert "process" in capsys.readouterr().err
 
+    def test_attach_reports_missing_tmux_binary(self, tmp_path, capsys, monkeypatch):
+        from the_loop.sessions import SessionRegistry
+
+        registry = SessionRegistry(tmp_path)
+        registry.register(make_session(runner="tmux", tmux_target="loop-x"))
+        monkeypatch.setattr(TmuxRunner, "is_available", lambda self: False)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: None)
+        code = sessions_cmd.attach_session(
+            registry, REF, read_only=False, execvp=lambda *_: None
+        )
+        assert code == 1
+        assert "install" in capsys.readouterr().err
+
     def test_attach_execs_tmux_for_live_session(self, tmp_path, monkeypatch):
         from the_loop.sessions import SessionRegistry
 
         registry = SessionRegistry(tmp_path)
         registry.register(make_session(runner="tmux", tmux_target="loop-x"))
+        monkeypatch.setattr(TmuxRunner, "is_available", lambda self: True)
         monkeypatch.setattr(TmuxRunner, "has_session", lambda self, target: True)
         execs = []
         code = sessions_cmd.attach_session(
@@ -257,6 +295,7 @@ class TestSessionsCli:
 
         registry = SessionRegistry(tmp_path)
         registry.register(make_session(runner="tmux", tmux_target="loop-x"))
+        monkeypatch.setattr(TmuxRunner, "is_available", lambda self: True)
         monkeypatch.setattr(TmuxRunner, "has_session", lambda self, target: False)
         code = sessions_cmd.attach_session(
             registry, REF, read_only=False, execvp=lambda *_: None

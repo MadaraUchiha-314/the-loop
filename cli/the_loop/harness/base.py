@@ -15,10 +15,14 @@ import subprocess
 from dataclasses import dataclass
 from typing import List, Optional, Sequence
 
-from ..runner import UnsupportedRunnerError
 from ..sessions import Session, WorkItemRef
 
 logger = logging.getLogger("the-loop.harness")
+
+
+class UnsupportedRunnerError(Exception):
+    """The adapter cannot host an interactive (tmux-mode) session (issue-32)."""
+
 
 # JSON keys the harness CLIs use for their session/chat id, in match order.
 _SESSION_ID_KEYS = ("session_id", "sessionId", "chat_id", "chatId", "id")

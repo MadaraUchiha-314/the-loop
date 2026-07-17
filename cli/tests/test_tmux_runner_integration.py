@@ -61,13 +61,19 @@ def stub_tmux(tmp_path, monkeypatch):
 def pipeline(tmp_path, stub_tmux):
     """Router + Dispatcher wired for tmux mode over the stub binary."""
     binary, calls = stub_tmux
+    # The dispatcher refuses to spawn when the harness CLI is absent, so give
+    # the adapter a stub `claude` too (never executed — the stub tmux records
+    # the argv instead of running it).
+    claude = tmp_path / "claude"
+    claude.write_text("#!/usr/bin/env python3\n")
+    claude.chmod(claude.stat().st_mode | stat.S_IXUSR)
     registry = SessionRegistry(tmp_path / "sessions")
     config = RoutingConfig.from_mapping(
         {"runner": "tmux", "spawnOnUnmatched": "labeled", "spawnWorkdir": str(tmp_path)}
     )
     dispatcher = Dispatcher(
         registry=registry,
-        adapters={"claude": ClaudeCodeAdapter()},
+        adapters={"claude": ClaudeCodeAdapter(binary=str(claude))},
         config=config,
         tmux_runner=TmuxRunner(binary=binary),
     )
@@ -119,7 +125,7 @@ def test_labeled_issue_spawns_tmux_hosted_interactive_session(pipeline):
     assert "-d" in spawn
     assert spawn[spawn.index("-s") + 1] == "loop-github-octo-repo-15"
     tail = spawn[spawn.index("--") + 1 :]
-    assert tail[0] == "claude"
+    assert tail[0].endswith("claude")
     assert tail[1] == "--session-id"
     assert tail[2] == session.harness_session_id
 

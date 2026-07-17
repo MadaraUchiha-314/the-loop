@@ -52,6 +52,17 @@ def _load_config_defaults() -> dict:
     return ((data.get("webhooks") or {}).get("ghWebhook")) or {}
 
 
+def _terminate(proc) -> None:
+    """Stop a child process (ttyd), escalating to kill if it ignores SIGTERM."""
+    if proc is None:
+        return
+    proc.terminate()
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+
+
 def _build_routing(gh_webhook_config: dict):
     """Compose router + dispatcher into the server's on_event callback.
 
@@ -181,8 +192,7 @@ class GhWebhookCommand(Command):
             )
         except OSError as exc:
             logger.error("could not bind %s:%s — %s", args.host, args.port, exc)
-            if web_proc is not None:
-                web_proc.terminate()
+            _terminate(web_proc)
             return 1
 
         pidfile = Path(args.pidfile)
@@ -209,12 +219,7 @@ class GhWebhookCommand(Command):
             httpd.server_close()
             if dispatcher is not None:
                 dispatcher.stop()
-            if web_proc is not None:
-                web_proc.terminate()
-                try:
-                    web_proc.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    web_proc.kill()
+            _terminate(web_proc)
             try:
                 pidfile.unlink()
             except FileNotFoundError:

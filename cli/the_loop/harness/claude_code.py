@@ -31,4 +31,6 @@ class ClaudeCodeAdapter(HarnessAdapter):
         return ["-p", prompt, "--output-format", "json"] + self.extra_args
 
     def interactive_argv(self, prompt: str, session_id: str) -> List[str]:
-        return ["--session-id", session_id, prompt] + self.extra_args
+        # Flags first, positional prompt last — parsers that stop option
+        # processing at the first positional must still see extra_args.
+        return ["--session-id", session_id] + self.extra_args + [prompt]

@@ -128,7 +128,18 @@ status: in-progress
 | 1 | human (brainstorm) | @MadaraUchiha-314 | Option A chosen (Q1); Q4/Q5 explanations expanded | [PR #33 review threads](https://github.com/MadaraUchiha-314/the-loop/pull/33#discussion_r3600112067) |
 | 2 | human (brainstorm) | @MadaraUchiha-314 | Access control environmental (Q4 auth half); receiver-global runner (Q5) | [PR #33 review threads](https://github.com/MadaraUchiha-314/the-loop/pull/33#discussion_r3600144073) |
 | 3 | human (brainstorm) | @MadaraUchiha-314 | Web layer ships; installing the-loop must satisfy the ttyd dependency (Q4 resolved) | [PR #33 review thread](https://github.com/MadaraUchiha-314/the-loop/pull/33#discussion_r3600170758) |
+| 4 | self (implementation) | claude (multi-angle finder + verify) | 6 confirmed findings fixed (stale-session collision on spawn, flags-after-positional extra_args, attach misreporting missing tmux, unreaped ttyd on bind failure, unbounded PR-close kill, spawn registering doomed sessions when the harness binary is missing) + 1 layering cleanup (UnsupportedRunnerError moved to harness/base); 2 candidates refuted/recorded as design choices | commit on PR #35 |
 
 ## Final validation evidence
 
-Pending — the work item is in the brainstorming phase.
+- **Test suite:** `uv run --project cli python -m pytest -q cli` → 102 passed (22 new
+  for issue-32: 19 unit + 3 Gherkin integration scenarios against a recording stub
+  tmux). `make check` (ruff, markdownlint, format, pyright, config validate, tests)
+  green.
+- **Live smoke test against real tmux** (container, tmux 3.x): `TmuxRunner.spawn` with
+  a fake echoing harness → session visible via `has_session`; `deliver` bracketed-pasted
+  a webhook prompt which the PTY process received (`GOT: webhook event #1…` captured
+  from the pane); `kill` terminated it and `has_session` went false. Full transcript in
+  PR #35's reviewer briefing.
+- **Back-compat:** pre-issue-32 registry JSON (no `runner`/`tmuxTarget`) loads as a
+  process-mode session (unit-tested); `routing.runner` unset behaves as before.

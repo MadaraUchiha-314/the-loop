@@ -247,7 +247,9 @@ class Dispatcher:
             for session in matched:
                 self.registry.close(session.work_item)
                 if session.runner == "tmux":
-                    result = self.tmux.kill(session)
+                    result = self.tmux.kill(
+                        session, timeout=self.config.dispatch_timeout_seconds
+                    )
                     if not result.ok:  # already gone — best-effort (R7.3)
                         logger.info(
                             "tmux session %s already gone: %s",
@@ -414,12 +416,19 @@ class Dispatcher:
     ) -> None:
         """Spawn the harness TUI in a tmux session with a pre-assigned id (R1/R2)."""
         if not adapter.is_available():
-            logger.warning(
-                "harness CLI %r not found on PATH; the tmux session for %s may "
-                "exit immediately",
+            # tmux new-session would "succeed" (the pane exists briefly) and
+            # register a session doomed to die — fail honestly instead, like
+            # the process runner does (HarnessAdapter._run).
+            logger.error(
+                "harness CLI %r not found on PATH; cannot spawn a tmux session "
+                "for %s — install it or point the %s adapter at the binary",
                 adapter.binary,
                 work_item.ref,
+                self.config.default_harness,
             )
+            if routed.delivery_id:
+                self.deduper.discard(routed.delivery_id)
+            return
         session_id = str(uuid.uuid4())
         result = self.tmux.spawn(
             work_item,

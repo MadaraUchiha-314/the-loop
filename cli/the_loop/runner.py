@@ -20,10 +20,20 @@ import tempfile
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, List, Optional
 
+from .harness.base import UnsupportedRunnerError
 from .sessions import Session, WorkItemRef
 
-if TYPE_CHECKING:  # pragma: no cover — type-only, avoids a runtime import cycle
+if TYPE_CHECKING:  # pragma: no cover — type-only
     from .harness.base import HarnessAdapter
+
+__all__ = [
+    "HUB_SESSION",
+    "TmuxResult",
+    "TmuxRunner",
+    "UnsupportedRunnerError",
+    "check_dependencies",
+    "web_terminal_argv",
+]
 
 logger = logging.getLogger("the-loop.runner")
 
@@ -43,10 +53,6 @@ _INSTALL_HINTS = {
         "static builds: https://github.com/tsl0922/ttyd/releases"
     ),
 }
-
-
-class UnsupportedRunnerError(Exception):
-    """The harness adapter cannot host an interactive (tmux-mode) session."""
 
 
 @dataclass
@@ -156,6 +162,13 @@ class TmuxRunner:
         except UnsupportedRunnerError as exc:
             return TmuxResult(ok=False, error=str(exc))
         target = self.target_for(work_item)
+        if self.has_session(target):
+            # A stale session with this deterministic name (crash/restart
+            # leftover) would make new-session fail with "duplicate session";
+            # the registry says the work item has no active session, so the
+            # leftover is dead weight — clear it.
+            logger.info("clearing stale tmux session %s before spawn", target)
+            self._run(["kill-session", "-t", target], timeout)
         return self._run(
             ["new-session", "-d", "-s", target, "-c", cwd, "--", adapter.binary]
             + harness_argv,

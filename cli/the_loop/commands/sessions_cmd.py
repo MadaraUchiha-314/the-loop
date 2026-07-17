@@ -73,7 +73,14 @@ def attach_session(
             file=sys.stderr,
         )
         return 1
-    if not TmuxRunner().has_session(session.tmux_target):
+    runner = TmuxRunner()
+    if not runner.is_available():
+        from ..runner import check_dependencies
+
+        for line in check_dependencies("tmux", web_enabled=False):
+            print(f"error: {line}", file=sys.stderr)
+        return 1
+    if not runner.has_session(session.tmux_target):
         print(
             f"error: tmux session {session.tmux_target} not found (crashed or "
             "was killed) — check `the-loop sessions list` for live sessions",
