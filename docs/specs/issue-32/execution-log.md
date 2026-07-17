@@ -40,11 +40,24 @@ status: in-progress
   the owner's answers before the artifact can lock and requirements be derived.
 - **Blockers:** waiting on brainstorm review/lock (`requireHumanReviewPerPhase`).
 
+### 2026-07-17 — first human review round on the brainstorm
+
+- **Phase:** brainstorming
+- **Did:** owner reviewed on PR #33: **Option A chosen** for question 1 (typing into the
+  live TUI is the bar), and asked for more detail on questions 4 (web-mode scope) and 5
+  (mixed fleets). Replied on each thread, then edited `brainstorm.md` in place: question 1
+  marked resolved, questions 4/5 expanded with the unpacked recommendations, leaning
+  updated to "A semantics confirmed".
+- **Checkpoint/tests:** markdownlint on the spec docs.
+- **Next:** owner's calls on the remaining questions (2–5); then lock the brainstorm and
+  derive `requirements.md`.
+- **Blockers:** brainstorm still `in-review` (questions 2–5 open).
+
 ## Review cycles
 
 | Cycle | Type (self/critic) | Reviewer | Outcome | Link |
 |-------|--------------------|----------|---------|------|
-|       |                    |          |         |      |
+| 1 | human (brainstorm) | @MadaraUchiha-314 | Option A chosen (Q1); Q4/Q5 explanations expanded | [PR #33 review threads](https://github.com/MadaraUchiha-314/the-loop/pull/33#discussion_r3600112067) |
 
 ## Final validation evidence
 
