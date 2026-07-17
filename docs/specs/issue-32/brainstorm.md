@@ -43,9 +43,13 @@ observe and interact with the live session.
   *optional* host tool, not a Python dependency.
 - **Both harnesses matter:** whatever the mechanism, it should treat `claude` and
   `cursor-agent` uniformly through the `HarnessAdapter` contract (R4 of issue-15).
-- **Security non-negotiable:** an attachable session is a keyboard into an agent with
-  repo write access. Local/SSH attach inherits host auth; a *web* URL does not — it needs
-  its own auth story before it exists at all.
+- **Access control is environmental, not a the-loop feature** *(owner assumption, PR #33
+  review, 2026-07-17)*: an attachable session is a keyboard into an agent with repo write
+  access, but the-loop builds no auth of its own. On a local laptop nothing is needed
+  (bind to localhost); on a remote host the network layer is assumed to protect access —
+  VPN, private network, or the hosting provider's controls. The design's obligation is
+  only to *bind sensibly by default* (e.g. any web terminal listens on 127.0.0.1 or the
+  VPN interface unless explicitly told otherwise).
 
 ## The core tension: headless dispatch vs. interactive terminal
 
@@ -133,8 +137,9 @@ decision-005 (tmux absent → clean error or fallback to `process`).
   (`zellij action write-chars`) is younger than tmux's. Revisit if tmux proves limiting. ✗
 - **ttyd / GoTTY / wetty (web terminal servers)** — **not alternatives; the complement.**
   They serve a command's PTY over HTTP(S); serving `tmux attach -t …` is precisely the
-  "user with a URL" mode. Parked as an optional layer *on top of* tmux, gated on auth
-  (ttyd `-c user:pass` / behind a reverse proxy with TLS + SSO). ○
+  "user with a URL" mode. Parked as an optional layer *on top of* tmux; access control is
+  assumed environmental (localhost / VPN / provider network — see constraints), so the
+  layer only needs sensible default binding, not its own auth. ○
 - **Harness-native sharing** (claude.ai/code remote sessions, Cursor background agents'
   web UI) — solves observe/interact but only on the vendor's hosted surface; issue #32
   is explicitly about the *self-hosted* receiver (same reasoning as decision-016). ✗
@@ -152,7 +157,7 @@ flowchart LR
     T --> H["claude / cursor-agent<br/>interactive TUI in PTY"]
     U1[laptop terminal] -- "tmux attach" --> T
     U2[ssh user] -- "ssh host + tmux attach" --> T
-    U3[browser] -- "https → ttyd (auth) → tmux attach" --> T
+    U3[browser] -- "http(s) → ttyd (VPN/localhost) → tmux attach" --> T
 ```
 
 User-interaction pattern (Option A): the human is a *co-pilot on the same keyboard* —
@@ -167,7 +172,7 @@ pane, visibly.
 |------|------|---------|
 | Local (receiver on laptop) | any terminal → `tmux attach -t loop/<slug>` (same user's tmux server) | ✅ native |
 | SSH into remote host | `ssh host`, then attach; this is tmux's canonical use-case; read-only attach for spectators | ✅ native |
-| Web terminal (user has a URL) | ttyd/GoTTY on the host serving `tmux attach` (or a picker script), behind auth + TLS | ✅ workable, **only** with the auth story; optional layer, not v1-default |
+| Web terminal (user has a URL) | ttyd/GoTTY on the host serving `tmux attach` (or a picker script); access control assumed environmental (localhost / VPN / provider network) | ✅ workable; optional layer, not v1-default |
 
 All three converge on "get a shell as the right user, attach to the tmux socket" — which
 is exactly why tmux (a user-level daemon owning the PTYs) is the right substrate and a
@@ -188,46 +193,43 @@ plain child process is not.
 3. **Session-id + completion signals per harness:** confirm `claude --session-id` /
    SessionStart-hook capture and the cursor-agent equivalents; without an id the registry
    can't route follow-up events.
-4. **Web mode scope:** is ttyd-behind-auth in scope for this work item, or documented as
-   a follow-up recipe? (Recommend: document, don't ship, in v1.) Unpacking the
-   recommendation:
+4. **Web mode scope** *(auth half resolved — owner, PR #33 review, 2026-07-17:
+   access control is environmental — VPN / hosting provider network for remote hosts,
+   nothing needed on a local laptop; the-loop ships no auth of its own)*. Remaining
+   half — a pure scope/minimalism call, no longer security-gated: does the-loop **ship**
+   the web layer (e.g. `the-loop sessions serve --web` wrapping ttyd) or **document** it
+   as a recipe? (Recommend: document first.) Context:
    - *What web mode is:* a web-terminal server (ttyd or GoTTY) on the same host serving
-     `tmux attach -t loop/<slug>` as a browser page — anyone opening the URL gets a live
+     `tmux attach -t loop/<slug>` as a browser page — opening the URL gives a live
      terminal on the agent's PTY. The whole recipe is roughly
-     `ttyd --writable -c user:pass tmux attach -t loop/<slug>` behind a TLS reverse
-     proxy (Caddy/nginx).
-   - *Why it's gated on auth:* local/SSH attach inherit host login/SSH authentication; a
-     URL has none by default, and a writable terminal into the agent is effectively a
-     shell as the receiver's user. Minimum bar: TLS + credentials (ttyd basic auth or
-     SSO at the proxy) and a read-only vs. writable decision per viewer.
+     `ttyd --writable tmux attach -t loop/<slug>` bound to localhost or the VPN
+     interface.
    - *Why document rather than ship in v1:* shipping means the-loop spawns and
-     supervises a network-exposed service and owns its security surface (auth config,
-     TLS, ttyd CVEs, process lifecycle). A documented recipe delivers the capability
-     without that ownership, and the web layer is purely additive later — it is just
-     another client attaching to the same tmux session.
-5. **Mixed fleets:** may `runner` differ per work item (overrides), or is it
-   receiver-global? (Recommend: global first.) Unpacking the recommendation:
-   - *Receiver-global:* one setting (`routing.runner`) — every spawned session uses the
-     same runner. One code path; flipping it needs no migration since it only affects
-     newly spawned sessions.
-   - *Per-work-item:* spec front-matter `overrides` (or a label) picks the runner per
-     issue — e.g. routine fixes headless, risky refactors in tmux for supervision.
-     Costs override resolution at spawn time and more test surface, with no demonstrated
-     v1 need (minimalism ladder: wait).
-   - *Why global loses nothing:* the registry records `runner`/`tmuxTarget` per session
-     anyway, so the dispatcher handles a mixed fleet regardless; per-item selection later
-     is just one more override read at spawn time — no schema or registry change.
+     supervises a network-exposed service and owns its lifecycle and configuration
+     surface. A documented recipe delivers the capability without that ownership, and
+     the web layer is purely additive later — it is just another client attaching to
+     the same tmux session.
+5. **Mixed fleets:** ~~may `runner` differ per work item (overrides), or is it
+   receiver-global?~~ → **Resolved: receiver-global** (owner, PR #33 review,
+   2026-07-17). One setting (`routing.runner`) in `.the-loop/config.yaml`; every spawned
+   session uses the same runner, and flipping it needs no migration since it only
+   affects newly spawned sessions. Per-work-item selection (front-matter `overrides` or
+   a label) stays a possible later extension at zero migration cost — the registry
+   records `runner`/`tmuxTarget` per session anyway, so the dispatcher handles a mixed
+   fleet regardless.
 
 ## Leaning / working hypothesis
 
 Option **C packaging** with **A semantics** — confirmed by the owner's Option-A call on
-question 1 — staged: introduce `routing.runner` (`process` default, `tmux` opt-in); tmux
-mode spawns the harness TUI in `loop/<work-item-slug>`, captures the session id via
-pre-assigned id/hook, injects events via bracketed-paste + idle-check (keeping the
-dispatcher's FIFO as the safety layer), and registers `tmuxTarget` in the session
-registry. Local + SSH attach are v1; the web terminal is a documented ttyd recipe gated
-on auth. Option B's stream-view remains the documented fallback if the question-2 spike
-finds injection too fragile.
+question 1 — staged: introduce a **receiver-global** `routing.runner` (`process` default,
+`tmux` opt-in; question 5 resolved); tmux mode spawns the harness TUI in
+`loop/<work-item-slug>`, captures the session id via pre-assigned id/hook, injects events
+via bracketed-paste + idle-check (keeping the dispatcher's FIFO as the safety layer), and
+registers `tmuxTarget` in the session registry. Local + SSH attach are v1; the web
+terminal rides on the environmental-access-control assumption (localhost / VPN /
+provider network — no auth built by the-loop), pending only the ship-vs-document call in
+question 4. Option B's stream-view remains the documented fallback if the question-2
+spike finds injection too fragile.
 
 ## Hand-off → requirements
 

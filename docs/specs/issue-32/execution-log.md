@@ -53,11 +53,27 @@ status: in-progress
   derive `requirements.md`.
 - **Blockers:** brainstorm still `in-review` (questions 2–5 open).
 
+### 2026-07-17 — second human review round on the brainstorm
+
+- **Phase:** brainstorming
+- **Did:** owner resolved more open questions on PR #33: access control is
+  **environmental** (VPN / provider network for remote hosts; nothing needed on a local
+  laptop — the-loop ships no auth of its own), and question 5 is **receiver-global**
+  `routing.runner`. Replied on both threads and updated `brainstorm.md`: security
+  constraint rewritten as the environmental-access assumption, question 4 reduced to the
+  ship-vs-document call, question 5 marked resolved, leaning updated.
+- **Checkpoint/tests:** markdownlint on the spec docs.
+- **Next:** owner's calls on questions 2 (injection reliability), 3 (id/completion
+  capture — likely a design-phase spike) and the remaining half of 4 (ship vs. document
+  the web layer); then lock the brainstorm and derive `requirements.md`.
+- **Blockers:** brainstorm still `in-review` (questions 2–4 open).
+
 ## Review cycles
 
 | Cycle | Type (self/critic) | Reviewer | Outcome | Link |
 |-------|--------------------|----------|---------|------|
 | 1 | human (brainstorm) | @MadaraUchiha-314 | Option A chosen (Q1); Q4/Q5 explanations expanded | [PR #33 review threads](https://github.com/MadaraUchiha-314/the-loop/pull/33#discussion_r3600112067) |
+| 2 | human (brainstorm) | @MadaraUchiha-314 | Access control environmental (Q4 auth half); receiver-global runner (Q5) | [PR #33 review threads](https://github.com/MadaraUchiha-314/the-loop/pull/33#discussion_r3600144073) |
 
 ## Final validation evidence
 
