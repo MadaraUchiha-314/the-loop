@@ -25,6 +25,9 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 - WHEN no session matches THEN the router SHALL spawn a new session per
   `spawnOnUnmatched` (`never | always | labeled`, default `labeled` — opt-in via the
   `the-loop: auto-execute` label) using the configured prompt templates.
+- WHEN `routing.runner` is `tmux` THEN spawned sessions SHALL be hosted as attachable
+  interactive tmux sessions and events pasted into them — see
+  [interactive-sessions](interactive-sessions.md).
 - Duplicate deliveries SHALL be dropped via a dedup cache (`dedupCacheSize`).
 
 ## Design
@@ -36,5 +39,6 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-32 | Added the tmux runner option for spawned sessions (dispatch via paste-injection; PR-close kills the tmux session) | [spec](../specs/issue-32/), [decision-021](../decisions/decision-021.md) |
 | issue-15 | Added session registry, event→session routing and harness resume (receiver shipped in v0 gained `--route`) | [spec](../specs/issue-15/), [decision-016](../decisions/decision-016.md) |
 | issue-1 | Shipped the HMAC-verified `gh-webhook` receiver (v0) | [spec](../specs/issue-1/), [decision-005](../decisions/decision-005.md) |

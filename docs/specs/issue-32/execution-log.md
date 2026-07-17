@@ -1,7 +1,7 @@
 ---
 type: execution-log
 workItem: issue-32
-phase: requirements-definition
+phase: needs-review
 status: in-progress
 ---
 
@@ -16,11 +16,11 @@ status: in-progress
 | Phase | Entered | Reviewed/approved by | Notes |
 |-------|---------|----------------------|-------|
 | brainstorming | 2026-07-16 | @MadaraUchiha-314 (PR #33 reviews + merge; advance instruction) | issue #32 is exploratory (asks architecture/alternatives questions) → Phase 0 |
-| requirements-definition | 2026-07-17 |  | derived from the locked brainstorm; Q2/Q3 carried to design |
-| design |  |  |  |
-| tasks-breakdown |  |  |  |
-| implementation |  |  |  |
-| needs-review |  |  |  |
+| requirements-definition | 2026-07-17 | @MadaraUchiha-314 ("let's implement", PR #35) | derived from the locked brainstorm; Q2/Q3 carried to design |
+| design | 2026-07-17 | @MadaraUchiha-314 (same instruction — spec+implementation approved together) | decides Q2 (paste injection) and Q3 (pre-assigned id) → decision-021 |
+| tasks-breakdown | 2026-07-17 | @MadaraUchiha-314 (same instruction) | 8-task DAG |
+| implementation | 2026-07-17 |  | TDD: 22 new tests red → green; `make check` green |
+| needs-review | 2026-07-17 |  | awaiting owner review of PR #35 |
 | complete |  |  |  |
 
 ## Progress entries
@@ -98,6 +98,28 @@ status: in-progress
   derived (deciding Q2 with a spike) in the same PR.
 - **Blockers:** requirements `in-review` — awaiting owner approval
   (`requireHumanReviewPerPhase`).
+
+### 2026-07-17 — design + tasks + implementation (owner: "let's implement", PR #35)
+
+- **Phase:** implementation → needs-review
+- **Did:** owner approved the requirements and instructed to proceed. Derived
+  `design.md` (Q2 → bracketed-paste injection, Q3 → pre-assigned session id;
+  decision-021) and the 8-task `tasks.md` DAG, then implemented end-to-end:
+  `cli/the_loop/runner.py` (TmuxRunner + `check_dependencies` + `web_terminal_argv`),
+  `interactive_argv` on the adapters, registry `runner`/`tmuxTarget` fields,
+  dispatcher tmux spawn/deliver/PR-close-kill, receiver preflight + ttyd lifecycle,
+  `sessions attach` + tmux-aware `list`/`close`, config schema + config keys, and the
+  docs fold-in (capability doc `interactive-sessions.md`, decision-021).
+- **Checkpoint/tests (red→green evidence):**
+  - RED: `pytest cli/tests/test_tmux_runner.py cli/tests/test_tmux_runner_integration.py`
+    → 2 collection errors (`the_loop.runner` absent; new fields/APIs missing).
+  - GREEN: full suite `uv run --project cli python -m pytest -q cli` → **102 passed**
+    (22 new: 19 unit + 3 Gherkin integration scenarios; 80 pre-existing unaffected).
+  - `make check` (ruff, markdownlint, ruff-format, pyright, config validate, pytest)
+    → all green.
+- **Next:** self-review, then reviewer briefing on PR #35 and owner review
+  (`needs-review`; tier 3+ → human-approves-pr).
+- **Blockers:** none.
 
 ## Review cycles
 

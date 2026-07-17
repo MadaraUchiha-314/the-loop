@@ -14,12 +14,14 @@ import json
 import logging
 import queue
 import threading
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from string import Template
 from typing import Dict, Optional
 
 from ..harness.base import HarnessAdapter
+from ..runner import TmuxRunner
 from ..sessions import Session, SessionRegistry, WorkItemRef
 from .router import Deduper, RoutedEvent
 
@@ -89,12 +91,32 @@ $payload_excerpt
 
 
 @dataclass
+class WebTerminalConfig:
+    """Mirror of ``routing.webTerminal`` — the optional ttyd browser terminal."""
+
+    enabled: bool = False
+    host: str = "127.0.0.1"
+    port: int = 7681
+
+    @classmethod
+    def from_mapping(cls, data: dict) -> "WebTerminalConfig":
+        data = data or {}
+        return cls(
+            enabled=bool(data.get("enabled", False)),
+            host=str(data.get("host", "127.0.0.1")),
+            port=int(data.get("port", 7681)),
+        )
+
+
+@dataclass
 class RoutingConfig:
     """Python-side mirror of ``webhooks.ghWebhook.routing`` (see config schema)."""
 
     enabled: bool = False
     registry_dir: str = ".the-loop/sessions"
     default_harness: str = "claude"
+    runner: str = "process"  # process | tmux (issue-32, decision-021)
+    web_terminal: WebTerminalConfig = field(default_factory=WebTerminalConfig)
     spawn_on_unmatched: str = "never"  # never | always | labeled
     auto_execute_label: str = "the-loop: auto-execute"
     spawn_workdir: str = "."
@@ -112,6 +134,8 @@ class RoutingConfig:
             enabled=bool(data.get("enabled", False)),
             registry_dir=str(data.get("registryDir", ".the-loop/sessions")),
             default_harness=str(data.get("defaultHarness", "claude")),
+            runner=str(data.get("runner", "process")),
+            web_terminal=WebTerminalConfig.from_mapping(data.get("webTerminal") or {}),
             spawn_on_unmatched=str(data.get("spawnOnUnmatched", "never")),
             auto_execute_label=str(
                 data.get("autoExecuteLabel", "the-loop: auto-execute")
@@ -151,10 +175,14 @@ class Dispatcher:
         adapters: Dict[str, HarnessAdapter],
         config: Optional[RoutingConfig] = None,
         deduper: Optional[Deduper] = None,
+        tmux_runner: Optional[TmuxRunner] = None,
     ):
         self.registry = registry
         self.adapters = adapters
         self.config = config or RoutingConfig()
+        # Built unconditionally: a registry may hold tmux-mode sessions even
+        # when config.runner is "process" (the session's recorded runner wins).
+        self.tmux = tmux_runner if tmux_runner is not None else TmuxRunner()
         self.deduper = (
             deduper
             if deduper is not None
@@ -218,6 +246,14 @@ class Dispatcher:
             merged = bool((routed.payload.get("pull_request") or {}).get("merged"))
             for session in matched:
                 self.registry.close(session.work_item)
+                if session.runner == "tmux":
+                    result = self.tmux.kill(session)
+                    if not result.ok:  # already gone — best-effort (R7.3)
+                        logger.info(
+                            "tmux session %s already gone: %s",
+                            session.tmux_target,
+                            result.error,
+                        )
                 logger.info(
                     "auto-closed session %s (PR %s)",
                     session.work_item.ref,
@@ -298,27 +334,35 @@ class Dispatcher:
                 logger.info("session %s vanished before dispatch; dropping", key)
             return
 
-        adapter = self.adapters.get(session.harness)
-        if adapter is None:
-            logger.error(
-                "no adapter for harness %r (session %s); event dropped",
-                session.harness,
-                key,
-            )
-            if routed.delivery_id:
-                self.deduper.discard(routed.delivery_id)
-            return
-
         prompt = self._render_prompt(routed, session.work_item, self._event_template)
-        result = adapter.resume(
-            session, prompt, timeout=self.config.dispatch_timeout_seconds
-        )
-        if result.ok:
-            logger.info("resumed %s for %s", session.harness, key)
+        if session.runner == "tmux":
+            # The session's recorded runner wins (mixed fleets, decision-021).
+            result = self.tmux.deliver(
+                session, prompt, timeout=self.config.dispatch_timeout_seconds
+            )
+            ok, error, verb = result.ok, result.error, "delivered into tmux session"
+        else:
+            adapter = self.adapters.get(session.harness)
+            if adapter is None:
+                logger.error(
+                    "no adapter for harness %r (session %s); event dropped",
+                    session.harness,
+                    key,
+                )
+                if routed.delivery_id:
+                    self.deduper.discard(routed.delivery_id)
+                return
+            resumed = adapter.resume(
+                session, prompt, timeout=self.config.dispatch_timeout_seconds
+            )
+            ok, error, verb = resumed.ok, resumed.error, "resumed"
+
+        if ok:
+            logger.info("%s %s for %s", verb, session.harness, key)
             self.registry.touch(key, delivery_id=routed.delivery_id or None)
         else:
             logger.error(
-                "resume of %s for %s failed: %s", session.harness, key, result.error
+                "%s of %s for %s failed: %s", verb, session.harness, key, error
             )
             if routed.delivery_id:
                 self.deduper.discard(routed.delivery_id)
@@ -332,6 +376,9 @@ class Dispatcher:
             )
             return
         prompt = self._render_prompt(routed, work_item, self._spawn_template)
+        if self.config.runner == "tmux":
+            self._spawn_tmux(work_item, routed, adapter, prompt)
+            return
         result = adapter.spawn(
             work_item,
             prompt,
@@ -356,6 +403,54 @@ class Dispatcher:
             self.config.default_harness,
             result.session_id,
             work_item.ref,
+        )
+
+    def _spawn_tmux(
+        self,
+        work_item: WorkItemRef,
+        routed: RoutedEvent,
+        adapter: HarnessAdapter,
+        prompt: str,
+    ) -> None:
+        """Spawn the harness TUI in a tmux session with a pre-assigned id (R1/R2)."""
+        if not adapter.is_available():
+            logger.warning(
+                "harness CLI %r not found on PATH; the tmux session for %s may "
+                "exit immediately",
+                adapter.binary,
+                work_item.ref,
+            )
+        session_id = str(uuid.uuid4())
+        result = self.tmux.spawn(
+            work_item,
+            adapter,
+            prompt,
+            cwd=self.config.spawn_workdir,
+            session_id=session_id,
+            timeout=self.config.dispatch_timeout_seconds,
+        )
+        if not result.ok:
+            logger.error("tmux spawn for %s failed: %s", work_item.ref, result.error)
+            if routed.delivery_id:
+                self.deduper.discard(routed.delivery_id)
+            return
+        session = Session(
+            work_item=work_item,
+            harness=self.config.default_harness,
+            harness_session_id=session_id,
+            cwd=self.config.spawn_workdir,
+            runner="tmux",
+            tmux_target=self.tmux.target_for(work_item),
+        )
+        self.registry.register(session, force=True)
+        self.registry.touch(work_item, delivery_id=routed.delivery_id or None)
+        logger.info(
+            "spawned tmux session %s (%s %s) for %s — attach: tmux attach -t %s",
+            session.tmux_target,
+            self.config.default_harness,
+            session_id,
+            work_item.ref,
+            session.tmux_target,
         )
 
     def _render_prompt(

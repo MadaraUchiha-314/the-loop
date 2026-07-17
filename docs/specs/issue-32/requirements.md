@@ -2,8 +2,8 @@
 type: requirements
 phase: requirements-definition
 workItem: issue-32
-status: in-review
-approvedBy: []
+status: approved
+approvedBy: ["@MadaraUchiha-314 (PR #35: \"let's implement\", 2026-07-17)"]
 collaborators: [product-manager, architect, engineer]
 overrides: {}
 ---

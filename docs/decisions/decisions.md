@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [021](decision-021.md) | tmux runner for observable/interactive webhook-spawned sessions | accepted | 2026-07-17 |
 | [020](decision-020.md) | Capability docs are the organized view of specs (SoT for current behaviour) | accepted | 2026-07-07 |
 | [019](decision-019.md) | Publish the CLI to PyPI as `the-loopy-one` via Trusted Publishing | accepted | 2026-07-04 |
 | [018](decision-018.md) | UI/UX design artifacts are first-class, tracked design-phase artifacts | accepted | 2026-07-04 |

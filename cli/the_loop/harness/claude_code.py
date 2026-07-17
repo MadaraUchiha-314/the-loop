@@ -29,3 +29,6 @@ class ClaudeCodeAdapter(HarnessAdapter):
 
     def _spawn_argv(self, prompt: str) -> List[str]:
         return ["-p", prompt, "--output-format", "json"] + self.extra_args
+
+    def interactive_argv(self, prompt: str, session_id: str) -> List[str]:
+        return ["--session-id", session_id, prompt] + self.extra_args
