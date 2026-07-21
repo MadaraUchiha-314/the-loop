@@ -8,7 +8,7 @@ collaborators: [product-manager, architect, engineer]
 overrides: {}
 ---
 
-# Requirements: poll GitHub for labelled work and spawn/route harness sessions
+# Requirements: poll ticketing/PR systems for labelled work and spawn/route sessions
 
 > Phase 1 of 3 (requirements → design → tasks). Ticket:
 > [issue #34](https://github.com/MadaraUchiha-314/the-loop/issues/34). This phase should
@@ -19,27 +19,31 @@ overrides: {}
 The webhook receiver (issue-15) is *push*: GitHub calls us. Sometimes it can't — the
 host running the harness sits behind a firewall/NAT, on a laptop, or on infrastructure
 GitHub cannot reach — so the events never arrive. This work item adds a *pull* ingress:
-a `the-loop gh-poll` command that periodically asks GitHub (via the user's existing
-`gh` CLI) which issues/PRs carry the-loop's auto-execute label, then feeds them through
-the **same** routing/dispatch/session machinery the webhook receiver already uses.
+a `the-loop poll` command that periodically asks each configured **provider** which of
+its work items carry the-loop's auto-execute label, then feeds them through the **same**
+routing/dispatch/session machinery the webhook receiver already uses.
 
-The poller therefore owns only the ingress: discovery, an interval loop, and durable
-cross-poll dedup. Spawning, one-session-per-work-item, the tmux runner, harness
-adapters and prompt rendering are reused unchanged (decision-016/021).
+The ingress is **provider-agnostic** (PR #45 review): the poller core and CLI carry no
+GitHub-specific knobs; a `polling.sources` config entry selects a provider by name, and
+the provider owns all provider-specific discovery and event construction. GitHub ships as
+one provider; the system interfaces with it *only* through config. The poller therefore
+owns only the agnostic ingress: discovery orchestration, an interval loop, and durable
+cross-poll dedup. Spawning, one-session-per-work-item, the tmux runner, harness adapters
+and prompt rendering are reused unchanged (decision-016/021).
 
 ## Requirements
 
-### Requirement 1 — poll labelled GitHub issues/PRs and act on them
+### Requirement 1 — poll labelled work items and act on them
 
 **User story:** As a developer whose harness host a webhook cannot reach, I want a
-command that polls GitHub for work the-loop should act on, so that automation runs
-without an inbound webhook.
+command that polls my ticketing/PR system for work the-loop should act on, so that
+automation runs without an inbound webhook.
 
 #### Acceptance criteria (EARS)
 
-1. WHEN `the-loop gh-poll start` runs THEN the system SHALL, every `intervalSeconds`,
-   list the open issues and/or PRs in each configured repository that carry the
-   configured label, using the `gh` CLI (inheriting the user's `gh` auth).
+1. WHEN `the-loop poll start` runs THEN the system SHALL, every `intervalSeconds`, ask
+   each configured provider for the work items in its scope that carry the configured
+   label.
 2. WHEN a labelled item has no active registered session THEN the system SHALL spawn one
    for it via the existing `spawnOnUnmatched` policy and session registry.
 3. WHEN a labelled item already has an active session THEN the system SHALL NOT spawn a
@@ -47,26 +51,33 @@ without an inbound webhook.
    of truth.
 4. WHEN `--once` is given THEN the system SHALL run exactly one poll cycle and exit
    (for cron/systemd timers); otherwise it SHALL loop until signalled to stop.
-5. IF the `gh` binary is not available THEN `start` SHALL fail with an actionable error
-   naming the missing dependency and SHALL NOT start the loop.
+5. IF a provider's required tool (e.g. GitHub's `gh`) is not available THEN `start` SHALL
+   fail with an actionable error naming the missing dependency and SHALL NOT start the
+   loop.
 
-### Requirement 2 — configurable, label-gated monitoring scope
+### Requirement 2 — provider-agnostic, config-driven monitoring scope
 
-**User story:** As a maintainer, I want to configure which repositories and entity kinds
-are polled and which label gates them, so that the poller only acts on opted-in work.
+**User story:** As a maintainer, I want the poller and its config to be agnostic of any
+specific system, with each provider (e.g. GitHub) reached only through configuration, so
+that no provider is hard-wired into the core.
 
 #### Acceptance criteria (EARS)
 
-1. WHEN `polling.ghPoll` is present in `.the-loop/config.yaml` THEN its `repos`,
-   `monitor.issues`, `monitor.pullRequests`, `intervalSeconds`, `label`, `stateFile`,
-   `ghBinary` and `pidfile` SHALL supply defaults; CLI flags SHALL override them.
-2. WHEN no `label` is configured for polling THEN the system SHALL fall back to
+1. WHEN the poller decides what to monitor THEN it SHALL read `polling.sources` from
+   `.the-loop/config.yaml`; each entry SHALL name a `provider`, and the remaining keys
+   SHALL be that provider's own settings (opaque to the core).
+2. WHEN no `polling.sources` entries exist THEN `start` SHALL fail with a message telling
+   the user to configure a source (nothing is polled by default).
+3. WHEN the core, CLI flags, session registry, dedup state or run loop are examined THEN
+   they SHALL contain no provider-specific vocabulary; provider specifics SHALL live only
+   in the provider implementation selected by config.
+4. WHEN a source names an unknown or missing `provider` THEN `start` SHALL fail with a
+   message listing the known providers.
+5. WHEN a source omits its `label` THEN the system SHALL fall back to
    `webhooks.ghWebhook.routing.autoExecuteLabel`, so one label configures both ingresses.
-3. WHEN no repositories are configured or passed THEN the system SHALL fall back to
-   `ticketing.github` (`owner`/`repo`); IF none can be determined THEN `start` SHALL
-   fail with a message telling the user how to supply one.
-4. WHEN an item does not carry the configured label THEN the system SHALL NOT act on it
-   (label presence is read from the `gh` listing, which is already label-filtered).
+6. WHEN a GitHub source omits `repos` THEN the system SHALL fall back to
+   `ticketing.github` (`owner`/`repo`); IF none can be determined THEN listing that
+   source SHALL fail with an actionable message.
 
 ### Requirement 3 — reuse routing/dispatch and never duplicate sessions
 
@@ -114,7 +125,7 @@ the webhook receiver, so that operating both is uniform.
 
 1. WHEN `start` runs without `--once` THEN it SHALL write its PID to `pidfile` and remove
    it on exit.
-2. WHEN `the-loop gh-poll stop` runs THEN it SHALL signal the recorded PID to shut down
+2. WHEN `the-loop poll stop` runs THEN it SHALL signal the recorded PID to shut down
    gracefully (draining in-flight dispatches), and report a stale/missing pidfile
    clearly.
 3. WHEN the poller receives SIGINT/SIGTERM THEN it SHALL stop the loop, drain the
@@ -122,8 +133,9 @@ the webhook receiver, so that operating both is uniform.
 
 ## Out of scope (this iteration)
 
-- **Jira / non-GitHub ticketing polling.** The config surface and `WorkItemRef` reserve
-  the `jira:` provider, but only GitHub polling is implemented here ("for now let's
-  support polling github using `gh`").
+- **Non-GitHub provider implementations (e.g. Jira).** The provider seam, config surface
+  and `WorkItemRef` are provider-agnostic and reserve the `jira:` provider, but only the
+  GitHub provider is implemented here ("for now let's support polling github using
+  `gh`"). A new provider drops into the registry with no core changes.
 - **PR review (inline code) comment threads.** Conversation comments on issues and PRs
   are covered; review-thread polling is a follow-up.

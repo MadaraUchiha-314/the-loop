@@ -92,41 +92,53 @@ later activity (comments, reviews, CI, its linked PR) to the same session, and
 auto-closes on PR merge. Label presence is read straight from the webhook payload (no
 extra API call). A new issue *without* the label is received and ignored.
 
-### `gh-poll` — poll GitHub (pull ingress) when a webhook can't reach you
+### `poll` — pull ingress (provider-agnostic) when a webhook can't reach you
 
 ```bash
-the-loop gh-poll start [--interval 60] [--once] \
-                       [--repo OWNER/REPO ...] [--label "the-loop: auto-execute"] \
-                       [--issues | --no-issues] [--prs | --no-prs] \
-                       [--state-file .the-loop/poll-state.json] \
-                       [--gh-binary gh] [--pidfile .the-loop/gh-poll.pid]
-the-loop gh-poll stop  [--pidfile .the-loop/gh-poll.pid]
+the-loop poll start [--interval 60] [--once] \
+                    [--state-file .the-loop/poll-state.json] \
+                    [--pidfile .the-loop/poll.pid]
+the-loop poll stop  [--pidfile .the-loop/poll.pid]
 ```
 
 A **pull-based** alternative to `gh-webhook` for hosts a webhook cannot reach (behind
-NAT/a firewall, a laptop, unreachable infra). Every `--interval` seconds it lists the
-open issues/PRs carrying the label (via your existing `gh` auth) and drives them through
-the **same** routing/dispatch/session stack the webhook receiver uses — so spawning,
-one-session-per-work-item, the `tmux` runner, harness adapters and prompt templates are
-all reused unchanged.
+NAT/a firewall, a laptop, unreachable infra). Every `--interval` seconds it asks each
+configured **provider** for the label-gated work items in its scope and drives them
+through the **same** routing/dispatch/session stack the webhook receiver uses — so
+spawning, one-session-per-work-item, the `tmux` runner, harness adapters and prompt
+templates are all reused unchanged.
 
-- **Label-gated:** only issues/PRs with the configured label are polled. `--label`
-  defaults to `webhooks.ghWebhook.routing.autoExecuteLabel`, so one label drives both
-  ingresses.
+- **Provider-agnostic:** the poller core and CLI carry no GitHub knobs. Which systems
+  are polled is defined purely by `polling.sources` in `.the-loop/config.yaml` — each
+  entry names a `provider` (GitHub ships; the seam admits others). GitHub is reached
+  *only* through a configured source:
+
+  ```yaml
+  polling:
+    intervalSeconds: 60
+    sources:
+      - provider: github
+        repos: [octo/repo]         # empty = fall back to ticketing.github
+        monitor: { issues: true, pullRequests: true }
+        label: ""                  # empty = reuse routing.autoExecuteLabel
+  ```
+
+- **Label-gated:** only items carrying the configured label are polled. A source's
+  `label` defaults to `webhooks.ghWebhook.routing.autoExecuteLabel`, so one label drives
+  both ingresses.
 - **No duplicate sessions:** a session is spawned for a labelled item only when the
   registry has none; a live session is never doubled (the registry is the source of
-  truth), so a labelled issue maps to exactly one session — the same one on later polls.
+  truth), so a work item maps to exactly one session — the same one on later polls.
 - **Spawns tmux sessions** when `webhooks.ghWebhook.routing.runner: tmux` — attach with
   `the-loop sessions attach --work-item github:OWNER/REPO#N` (issue-32).
-- **New comments** on a labelled issue/PR are forwarded to its session exactly once,
-  deduped across polls **and restarts** via `--state-file` (git-ignored runtime state).
-  The pre-existing thread is baselined on first sight, not replayed.
-- **Config:** ingress defaults come from `polling.ghPoll` in `.the-loop/config.yaml`
-  (when PyYAML is installed); dispatch behaviour is reused from
-  `webhooks.ghWebhook.routing`. Flags always override. `--repo` falls back to
-  `polling.ghPoll.repos`, then `ticketing.github`.
+- **New comments** are forwarded to the item's session exactly once, deduped across
+  polls **and restarts** via `--state-file` (git-ignored runtime state). The pre-existing
+  thread is baselined on first sight, not replayed.
+- **Config:** ingress defaults come from `polling` in `.the-loop/config.yaml` (when
+  PyYAML is installed); dispatch behaviour is reused from `webhooks.ghWebhook.routing`.
+  Flags cover only the run loop.
 - **`--once`** runs a single cycle and exits (for a cron/systemd timer); otherwise it
-  loops until `gh-poll stop` (or SIGINT/SIGTERM), writing a pidfile like the receiver.
+  loops until `poll stop` (or SIGINT/SIGTERM), writing a pidfile like the receiver.
   Design: `docs/specs/issue-34/design.md`, `docs/decisions/decision-022.md`.
 
 ### `scenarios` — query the Gherkin scenarios integration tests cover

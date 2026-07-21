@@ -1,20 +1,29 @@
-"""Integration tests: gh poll → router extraction → dispatcher → harness spawn.
+"""Integration tests: gh poll → GitHub provider → dispatcher → harness spawn.
 
-Unlike ``test_poller.py`` (which asserts on synthesised events via a recording
-double), these drive the *real* Dispatcher — a poll cycle actually spawns and
-registers a session and a later cycle actually resumes it — so they prove the
-poller reuses the webhook routing/dispatch stack end to end, including the
-one-session-per-work-item guarantee.
+Unlike ``test_poller.py`` (which asserts on synthesised events via doubles),
+these drive the *real* GitHub provider and the *real* Dispatcher — a poll cycle
+actually spawns and registers a session and a later cycle actually resumes it —
+so they prove the provider-agnostic poller reuses the webhook routing/dispatch
+stack end to end, including the one-session-per-work-item guarantee.
 
 Feature: Poll GitHub and spawn/route harness sessions
 Requirement: docs/specs/issue-34/requirements.md#R1
 """
 
+import json
+import subprocess
 import threading
 import time
 
 from the_loop.harness import DispatchResult
-from the_loop.poller import GhComment, GhItem, PollConfig, Poller, PollState
+from the_loop.poller import (
+    GhClient,
+    GitHubPollProvider,
+    PollConfig,
+    Poller,
+    PollState,
+    parse_repos,
+)
 from the_loop.sessions import SessionRegistry
 from the_loop.webhook.dispatcher import Dispatcher, RoutingConfig
 
@@ -56,51 +65,59 @@ class FakeAdapter:
         return DispatchResult(ok=True, session_id=session.harness_session_id)
 
 
-class FakeGh:
-    """Duck-typed GhClient with mutable canned data across cycles."""
+class GhState:
+    """Mutable canned gh responses shared across poll cycles."""
 
     def __init__(self):
-        self.issues = []
-        self.prs = []
-        self.comments = {}
+        self.issues = [
+            {"number": 15, "title": "i", "labels": [{"name": LABEL}], "url": "u"}
+        ]
+        self.comments = []
 
-    def list_labeled_issues(self, owner, repo, label):
-        return list(self.issues)
-
-    def list_labeled_prs(self, owner, repo, label):
-        return list(self.prs)
-
-    def list_comments(self, owner, repo, number, is_pr):
-        return list(self.comments.get(number, []))
-
-
-def _issue(number=15):
-    return GhItem(number, "t", [LABEL], "2026-07-20T00:00:00Z", "u", is_pr=False)
+    def runner(self, cmd, **kwargs):
+        sub = (cmd[1], cmd[2])
+        if sub == ("issue", "list"):
+            out = json.dumps(self.issues)
+        elif sub == ("pr", "list"):
+            out = json.dumps([])
+        else:  # issue view --json comments
+            out = json.dumps({"comments": self.comments})
+        return subprocess.CompletedProcess(cmd, 0, out, "")
 
 
 def _comment(cid, body):
-    return GhComment(id=cid, body=body, author="octocat", created_at="", url="")
+    return {
+        "id": cid,
+        "body": body,
+        "author": {"login": "octocat"},
+        "createdAt": "",
+        "url": "u",
+    }
 
 
 def _dispatcher(registry, adapter, config):
-    # adapter is intentionally unannotated so the in-process FakeAdapter double
-    # satisfies the Dict[str, HarnessAdapter] parameter (mirrors
-    # test_routing.make_dispatcher) without a cast.
+    # adapter intentionally unannotated so the in-process FakeAdapter double
+    # satisfies Dict[str, HarnessAdapter] (mirrors test_routing.make_dispatcher).
     return Dispatcher(registry=registry, adapters={"claude": adapter}, config=config)
 
 
-def _make(tmp_path, gh):
+def _make(tmp_path, gh_state):
     registry = SessionRegistry(tmp_path / "sessions")
     adapter = FakeAdapter()
     dispatcher = _dispatcher(
         registry, adapter, RoutingConfig(spawn_on_unmatched="labeled")
     )
+    provider = GitHubPollProvider(
+        parse_repos(["octo/repo"]),
+        LABEL,
+        monitor_prs=False,
+        gh=GhClient(runner=gh_state.runner),
+    )
     poller = Poller(
-        gh=gh,
+        providers=[provider],
         registry=registry,
         dispatcher=dispatcher,
-        config=PollConfig(repos=["octo/repo"]),
-        auto_execute_label=LABEL,
+        config=PollConfig(),
         state=PollState(tmp_path / "state.json"),
     )
     return registry, adapter, dispatcher, poller
@@ -113,14 +130,11 @@ def test_labeled_issue_spawns_a_registered_session_once(tmp_path):
     When two poll cycles run
     Then a single harness session is spawned and registered for it
     """
-    gh = FakeGh()
-    gh.issues = [_issue(15)]
-    registry, adapter, dispatcher, poller = _make(tmp_path, gh)
+    registry, adapter, dispatcher, poller = _make(tmp_path, GhState())
 
     poller.poll_once()
     assert wait_until(lambda: len(adapter.spawns) == 1)
-    # a second cycle must NOT spawn again — the registry says it exists now
-    poller.poll_once()
+    poller.poll_once()  # registry now has it -> must not spawn again
     time.sleep(0.1)
     dispatcher.stop()
 
@@ -138,15 +152,14 @@ def test_new_comment_after_spawn_resumes_same_session(tmp_path):
     When a new comment appears and the next poll cycle runs
     Then the existing session is resumed with the comment (no new spawn)
     """
-    gh = FakeGh()
-    gh.issues = [_issue(15)]
-    gh.comments = {15: [_comment("IC_1", "old")]}
+    gh = GhState()
+    gh.comments = [_comment("IC_1", "old")]
     registry, adapter, dispatcher, poller = _make(tmp_path, gh)
 
     poller.poll_once()  # spawn + baseline IC_1
     assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
 
-    gh.comments = {15: [_comment("IC_1", "old"), _comment("IC_2", "the build is red")]}
+    gh.comments = [_comment("IC_1", "old"), _comment("IC_2", "the build is red")]
     poller.poll_once()  # forward IC_2 only
     assert wait_until(lambda: len(adapter.resumes) == 1)
     dispatcher.stop()
@@ -164,14 +177,13 @@ def test_comment_not_reforwarded_across_cycles(tmp_path):
     When further poll cycles run with no new comments
     Then the comment is not resumed again (durable dedup)
     """
-    gh = FakeGh()
-    gh.issues = [_issue(15)]
-    gh.comments = {15: [_comment("IC_1", "baseline")]}
+    gh = GhState()
+    gh.comments = [_comment("IC_1", "baseline")]
     registry, adapter, dispatcher, poller = _make(tmp_path, gh)
 
     poller.poll_once()
     assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
-    gh.comments = {15: [_comment("IC_1", "baseline"), _comment("IC_2", "fix it")]}
+    gh.comments = [_comment("IC_1", "baseline"), _comment("IC_2", "fix it")]
     poller.poll_once()
     assert wait_until(lambda: len(adapter.resumes) == 1)
     poller.poll_once()  # no new comments
@@ -183,10 +195,7 @@ def test_comment_not_reforwarded_across_cycles(tmp_path):
 
 
 def test_run_once_stops_after_a_single_cycle(tmp_path):
-    gh = FakeGh()
-    gh.issues = [_issue(15)]
-    _, adapter, dispatcher, poller = _make(tmp_path, gh)
-    stop = threading.Event()
-    poller.run(once=True, stop_event=stop)
+    _, adapter, dispatcher, poller = _make(tmp_path, GhState())
+    poller.run(once=True, stop_event=threading.Event())
     assert wait_until(lambda: len(adapter.spawns) == 1)
     dispatcher.stop()

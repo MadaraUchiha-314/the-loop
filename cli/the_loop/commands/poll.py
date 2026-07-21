@@ -1,11 +1,14 @@
-"""``the-loop gh-poll start|stop`` — poll GitHub and spawn/route harness sessions.
+"""``the-loop poll start|stop`` — poll ticketing/PR systems and spawn/route sessions.
 
-A pull-based sibling of ``gh-webhook`` for machines a webhook cannot reach
-(issue-34). ``start`` discovers issues/PRs carrying the auto-execute label via
-``gh`` and drives them through the *same* router/dispatcher/registry the webhook
-receiver uses, so sessions spawn and events route identically (including the
-tmux runner). Poll-ingress defaults come from ``polling.ghPoll``; dispatch
-behaviour is reused from ``webhooks.ghWebhook.routing``. Flags always win.
+A pull-based, **provider-agnostic** sibling of ``gh-webhook`` for machines a
+webhook cannot reach (issue-34). ``start`` reads ``polling.sources`` from
+``.the-loop/config.yaml``, builds a :class:`PollProvider` for each (GitHub
+ships), discovers the label-gated work items in each source, and drives them
+through the *same* router/dispatcher/registry the webhook receiver uses — so
+sessions spawn and events route identically (including the tmux runner). The
+system interfaces with a provider (e.g. GitHub) *only* through config; the CLI
+and core carry no provider-specific knobs. Dispatch behaviour is reused from
+``webhooks.ghWebhook.routing``. Flags cover only the run loop.
 
 Spec: docs/specs/issue-34/design.md.
 """
@@ -19,19 +22,18 @@ import signal
 import sys
 import threading
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from .base import Command, register
 from .gh_webhook import _load_config_defaults
-from ..poller import GhClient, PollConfig, Poller, PollState, check_gh_dependency
+from ..poller import PollConfig, Poller, PollState, ProviderError, build_provider
 
-logger = logging.getLogger("the-loop.gh-poll")
+logger = logging.getLogger("the-loop.poll")
 
 _DEFAULTS = {
     "intervalSeconds": 60,
     "stateFile": ".the-loop/poll-state.json",
-    "pidfile": ".the-loop/gh-poll.pid",
-    "ghBinary": "gh",
+    "pidfile": ".the-loop/poll.pid",
 }
 
 
@@ -52,12 +54,12 @@ def _load_full_config() -> dict:
         return {}
 
 
-def _load_poll_defaults() -> dict:
-    return ((_load_full_config().get("polling") or {}).get("ghPoll")) or {}
+def _load_polling_config() -> dict:
+    return _load_full_config().get("polling") or {}
 
 
-def _repos_from_ticketing() -> list:
-    """Fall back to ``ticketing.github`` (owner/repo) when no repos configured."""
+def _repos_from_ticketing() -> List[str]:
+    """Fall back to ``ticketing.github`` (owner/repo) for a github source."""
     gh = (_load_full_config().get("ticketing") or {}).get("github") or {}
     owner, repo = gh.get("owner"), gh.get("repo")
     return [f"{owner}/{repo}"] if owner and repo else []
@@ -79,22 +81,21 @@ def _build_dispatcher(routing_map: Optional[dict]):
 
 
 @register
-class GhPollCommand(Command):
-    name = "gh-poll"
-    help = "Poll GitHub for labelled issues/PRs and spawn/route harness sessions"
+class PollCommand(Command):
+    name = "poll"
+    help = "Poll configured ticketing/PR sources and spawn/route harness sessions"
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
-        defaults = {**_DEFAULTS, **_load_poll_defaults()}
-        monitor = defaults.get("monitor") or {}
+        defaults = {**_DEFAULTS, **_load_polling_config()}
         actions = parser.add_subparsers(dest="action", metavar="<action>")
         actions.required = True
 
-        start = actions.add_parser("start", help="Start polling GitHub")
+        start = actions.add_parser("start", help="Start polling configured sources")
         start.add_argument(
             "--interval",
             type=int,
             default=int(defaults["intervalSeconds"]),
-            help="Seconds between poll cycles (default: polling.ghPoll.intervalSeconds).",
+            help="Seconds between poll cycles (default: polling.intervalSeconds).",
         )
         start.add_argument(
             "--once",
@@ -102,39 +103,9 @@ class GhPollCommand(Command):
             help="Run a single poll cycle and exit (useful under cron/systemd).",
         )
         start.add_argument(
-            "--repo",
-            action="append",
-            default=None,
-            metavar="OWNER/REPO",
-            help="Repo to poll (repeatable). Default: polling.ghPoll.repos, "
-            "else ticketing.github.",
-        )
-        start.add_argument(
-            "--label",
-            default=str(defaults.get("label", "")),
-            help="Label gating what is polled (default: the routing autoExecuteLabel).",
-        )
-        start.add_argument(
-            "--issues",
-            action=argparse.BooleanOptionalAction,
-            default=bool(monitor.get("issues", True)),
-            help="Poll issues (default: polling.ghPoll.monitor.issues).",
-        )
-        start.add_argument(
-            "--prs",
-            action=argparse.BooleanOptionalAction,
-            default=bool(monitor.get("pullRequests", True)),
-            help="Poll pull requests (default: polling.ghPoll.monitor.pullRequests).",
-        )
-        start.add_argument(
             "--state-file",
             default=str(defaults["stateFile"]),
             help="Durable cross-poll comment-dedup state.",
-        )
-        start.add_argument(
-            "--gh-binary",
-            default=str(defaults["ghBinary"]),
-            help="Path/name of the gh CLI.",
         )
         start.add_argument(
             "--pidfile",
@@ -156,36 +127,42 @@ class GhPollCommand(Command):
         logging.basicConfig(
             level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
         )
-        poll_defaults = _load_poll_defaults()
-        config = PollConfig.from_mapping(poll_defaults)
+        config = PollConfig.from_mapping(_load_polling_config())
         config.interval_seconds = args.interval
-        config.monitor_issues = args.issues
-        config.monitor_prs = args.prs
         config.state_file = args.state_file
-        config.gh_binary = args.gh_binary
-        if args.label:
-            config.label = args.label
-        config.repos = args.repo or config.repos or _repos_from_ticketing()
-        if not config.repos:
+        if not config.sources:
             logger.error(
-                "no repositories to poll — pass --repo OWNER/REPO, set "
-                "polling.ghPoll.repos, or configure ticketing.github"
+                "no polling sources configured — add entries under "
+                "polling.sources in .the-loop/config.yaml (e.g. provider: github)"
             )
             return 1
 
-        missing = check_gh_dependency(config.gh_binary)
+        dispatcher, routing = _build_dispatcher(_load_config_defaults().get("routing"))
+        fallback_repos = _repos_from_ticketing()
+        try:
+            providers = [
+                build_provider(
+                    source,
+                    default_label=routing.auto_execute_label,
+                    fallback_repos=fallback_repos,
+                )
+                for source in config.sources
+            ]
+        except ProviderError as exc:
+            logger.error("%s", exc)
+            return 1
+
+        missing = [line for p in providers for line in p.check_dependencies()]
         if missing:
             for line in missing:
                 logger.error(line)
             return 1
 
-        dispatcher, routing = _build_dispatcher(_load_config_defaults().get("routing"))
         poller = Poller(
-            gh=GhClient(binary=config.gh_binary),
+            providers=providers,
             registry=dispatcher.registry,
             dispatcher=dispatcher,
             config=config,
-            auto_execute_label=routing.auto_execute_label,
             state=PollState(config.state_file),
         )
 
@@ -203,10 +180,9 @@ class GhPollCommand(Command):
             pidfile.parent.mkdir(parents=True, exist_ok=True)
             pidfile.write_text(str(os.getpid()))
         logger.info(
-            "gh-poll polling %s every %ss (label=%r, runner=%s, spawnOnUnmatched=%s)",
-            ", ".join(config.repos),
+            "poll: %s every %ss (runner=%s, spawnOnUnmatched=%s)",
+            "; ".join(p.describe() for p in providers),
             config.interval_seconds,
-            poller.label,
             routing.runner,
             routing.spawn_on_unmatched,
         )
@@ -237,5 +213,5 @@ class GhPollCommand(Command):
             print(f"process {pid} not running; removing stale pidfile", file=sys.stderr)
             pidfile.unlink(missing_ok=True)
             return 1
-        print(f"sent SIGTERM to gh-poll poller (pid {pid})")
+        print(f"sent SIGTERM to poll process (pid {pid})")
         return 0

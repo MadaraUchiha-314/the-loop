@@ -8,99 +8,107 @@ collaborators: [architect, engineer]
 overrides: {}
 ---
 
-# Design: poll GitHub for labelled work and spawn/route harness sessions
+# Design: poll ticketing/PR systems for labelled work and spawn/route sessions
 
-> Phase 2 of 3, derived from [`requirements.md`](requirements.md). Records the reuse
-> decision in [decision-022](../../decisions/decision-022.md). No UI artifacts: this is
-> CLI/infra work.
+> Phase 2 of 3, derived from [`requirements.md`](requirements.md). Records the reuse +
+> provider-seam decision in [decision-022](../../decisions/decision-022.md). No UI
+> artifacts: this is CLI/infra work.
 
 ## Overview
 
-`the-loop gh-poll` is a **pull ingress** that reuses the entire webhook routing/dispatch
-stack. Each cycle it asks `gh` for labelled issues/PRs, synthesises the same
-`RoutedEvent` shape the webhook receiver produces, and hands it to the existing
+`the-loop poll` is a **pull ingress** that reuses the entire webhook routing/dispatch
+stack and is **agnostic of any specific provider**. Each cycle it asks every configured
+provider for its labelled work items, and the provider synthesises the same
+`RoutedEvent` shape the webhook receiver produces and hands it to the existing
 `Dispatcher`. Everything after ingress — session registry (one session per work item),
 per-session FIFO dispatch, tmux runner, harness adapters, prompt templates — is unchanged.
 
+GitHub is reached **only** through a configured `polling.sources` entry; the core, CLI,
+registry, dedup state and run loop carry no GitHub vocabulary.
+
 ```mermaid
 flowchart LR
-    GH[GitHub] -- "gh issue/pr list --label" --> P[Poller]
-    P -- "gh issue/pr view --json comments" --> P
-    P -- "RoutedEvent (presence / comment)" --> D[Dispatcher<br/>per-session FIFO]
-    D -- "runner=process" --> H["adapter.spawn/resume<br/>claude -p … (headless)"]
+    CFG[polling.sources] --> P[Poller core<br/>provider-agnostic]
+    P -- "list_work_items / list_comments" --> PR[PollProvider]
+    PR -. github .-> GH["GitHubPollProvider<br/>(gh CLI)"]
+    PR -. jira (future) .-> JIRA[JiraPollProvider]
+    P -- "provider.presence_event / comment_event<br/>(RoutedEvent)" --> D[Dispatcher<br/>per-session FIFO]
+    D -- "runner=process" --> H["adapter.spawn/resume (headless)"]
     D -- "runner=tmux" --> T["TmuxRunner → loop-&lt;slug&gt; TUI"]
     R[(Session registry)] <--> D
     P <--> R
     S[(poll-state.json)] <--> P
 ```
 
-## Components
+## Provider seam (`poller/base.py`)
 
-New package `cli/the_loop/poller/`:
+The core speaks one contract:
 
-- **`github.py`** — `GhClient`, a read-only `gh` wrapper (`subprocess.run` injectable for
-  tests). `list_labeled_issues` / `list_labeled_prs` (`gh issue|pr list --label … --json
-  …`) and `list_comments` (`gh issue|pr view N --json comments` — `gh` paginates and the
-  sub-command is kind-specific because `gh issue view` rejects PR numbers). `RepoSpec`
-  parses `owner/repo`. `check_gh_dependency` mirrors the tmux/ttyd preflight.
-- **`poller.py`** — `PollConfig` (ingress knobs), `PollState` (durable comment dedup,
-  atomic write like the session registry), and `Poller` (the cycle + run loop).
+- `WorkItem` / `Comment` — provider-agnostic value objects. `WorkItem`'s
+  `provider/owner/repo/number` map onto the existing `WorkItemRef`
+  (`<provider>:<owner>/<repo>#<n>`), so the registry stays the neutral identity store;
+  `raw` carries provider extras (e.g. a PR head branch) without leaking into the core.
+- `PollProvider` — `from_source` (build bound to one config entry), `check_dependencies`,
+  `list_work_items`, `list_comments`, `refs` (registry refs incl. linked items), and
+  `presence_event` / `comment_event` (build the shared `RoutedEvent`).
+- A tiny registry (`register_provider`, `build_provider`) resolves a source's `provider`
+  name to a class. A new provider drops in with **zero** core changes.
 
-New command `commands/gh_poll.py` — `the-loop gh-poll start|stop`, mirroring `gh-webhook`
-(pidfile, signal-driven shutdown, config-file defaults + flag overrides). It builds the
-dispatcher from `webhooks.ghWebhook.routing` (`_build_dispatcher`) so poll and webhook
-dispatch are literally the same objects.
+`GitHubPollProvider` (`poller/github.py`) is the only GitHub-aware code: it wraps `gh`
+(`GhClient`, injectable runner for tests), maps `gh` shapes to `WorkItem`/`Comment`, and
+builds GitHub-shaped `RoutedEvent`s via the real `router.extract_work_items` /
+`event_carries_label` (so a PR yields its number *and* its linked issue).
 
-## Per-item cycle logic (`Poller._process_item`)
+## Per-item cycle logic (`Poller._process_item`, provider-agnostic)
 
-For each labelled item (`ref = github:owner/repo#n`):
+For each work item (`ref = item.ref`):
 
-1. Synthesise a webhook-shaped payload and extract work items with the **real**
-   `router.extract_work_items` (so a PR yields its number *and* its linked issue).
-2. Fetch comments; compute `new_comments` = those whose id is not in `PollState`.
-3. `has_session = any(registry.find_by_work_item(wi))` over the extracted work items.
-4. **Spawn** (presence event, `labeled=True`) iff `not has_session and (first_sight or
-   new_comments)`. The registry is the dedup authority: a live session is never doubled;
-   a failed spawn simply retries next cycle. The presence delivery id is a fresh UUID
-   each emission (it is only emitted while no session exists, so it never spams).
-5. **Forward** each `new_comment` (`issue_comment`, `labeled=False` → routes to the
+1. `refs = provider.refs(item)` (item + any linked items).
+2. `comments = provider.list_comments(item)`; `new_comments` = ids not in `PollState`.
+3. `has_session = any(registry.find_by_work_item(r) for r in refs)`.
+4. **Spawn** `provider.presence_event(item, refs)` iff `not has_session and (first_sight
+   or new_comments)`. The registry is the dedup authority: a live session is never
+   doubled; a failed spawn retries next cycle. (GitHub's presence delivery id is a fresh
+   UUID each emission — only emitted while no session exists, so it never spams.)
+5. **Forward** each `new_comment` via `provider.comment_event(...)` (routes to the
    session, never spawns). Skipped on `first_sight` so the pre-existing thread is a
    baseline, not a replay.
 6. Record the item's current comment ids in `PollState` and `save()`.
 
-### Why two event kinds
+### Two event kinds (built by the provider)
 
 | Concern | Presence event | Comment event |
 |---|---|---|
-| `event` | `issues` / `pull_request` | `issue_comment` |
 | `labeled` | `True` (drives `spawnOnUnmatched`) | `False` (never spawns) |
 | Emitted when | no session yet + first sight or new activity | per new comment |
-| Delivery id | `poll-presence-<ref>-<uuid>` | `poll-comment-<comment-id>` |
 
-Splitting them keeps spawning idempotent (registry-gated) and comment forwarding
-exactly-once (state-gated), without either concern leaking into the other.
+Splitting them keeps spawning registry-idempotent and comment forwarding exactly-once,
+without either concern leaking into the other.
 
 ## Dedup, two layers
 
 - **`PollState`** (durable, per item, this feature): the primary guarantee — a comment
-  id is forwarded once across cycles and restarts. There is no GitHub redelivery to lean
+  id is forwarded once across cycles and restarts. There is no webhook redelivery to lean
   on, so the poller owns reliability. Missing/corrupt state ⇒ safe re-baseline.
 - **Dispatcher `Deduper` + registry `recentDeliveries`** (reused): a second, in-process
   safety net on the same delivery ids.
 
 ## Configuration
 
-`polling.ghPoll` (new) holds ingress-only knobs; **dispatch behaviour is reused from
-`webhooks.ghWebhook.routing`** — one place configures harness, runner (`process`/`tmux`),
-`spawnOnUnmatched`, templates, `registryDir`. `polling.ghPoll.label` defaults to the
-routing `autoExecuteLabel`, and `repos` falls back to `ticketing.github`. Runtime state
-(`poll-state.json`, `gh-poll.pid`) is git-ignored.
+`polling` (new) is provider-agnostic: `intervalSeconds`, `stateFile`, and a `sources`
+list. Each source names a `provider` plus that provider's own keys (a GitHub source:
+`repos`, `monitor`, `label`, `ghBinary`). **Dispatch behaviour is reused from
+`webhooks.ghWebhook.routing`** (harness, runner, spawn policy, templates, `registryDir`).
+A source's `label` defaults to the routing `autoExecuteLabel`; a GitHub source's `repos`
+falls back to `ticketing.github`. Runtime state (`poll-state.json`, `poll.pid`) is
+git-ignored. The CLI (`the-loop poll start|stop`) exposes only run-loop flags
+(`--interval`, `--once`, `--state-file`, `--pidfile`) — no provider knobs.
 
 ## Reuse map (nothing re-implemented downstream)
 
 | Concern | Reused from |
 |---|---|
-| work-item extraction, label read | `webhook/router.py` |
+| work-item extraction, label read (in GitHub provider) | `webhook/router.py` |
 | spawn/resume, one-session-per-item, FIFO, dedup | `webhook/dispatcher.py`, `sessions/registry.py` |
 | tmux hosting + attach | `runner.py`, `commands/sessions_cmd.py` |
 | harness invocation | `harness/*` |
@@ -108,9 +116,12 @@ routing `autoExecuteLabel`, and `repos` falls back to `ticketing.github`. Runtim
 
 ## Testing
 
-- `tests/test_poller.py` (unit): `gh` JSON parsing/argv, `PollConfig`, `PollState`
-  round-trip + corrupt-file tolerance, and the cycle decision matrix via a recording
-  dispatcher double (deterministic, no threads).
+- `tests/test_poller.py` (unit): `gh` JSON parsing/argv; the GitHub provider
+  (from_source, work-item mapping, PR→issue linking, presence/comment events); the
+  provider registry (`build_provider` rejects missing/unknown); `PollConfig`; `PollState`
+  round-trip + corrupt-file tolerance; and the **provider-agnostic** cycle decision
+  matrix via a fake provider + recording dispatcher (deterministic, no threads).
 - `tests/test_poller_integration.py` (Gherkin, `Requirement:` → this spec): real
-  `Dispatcher` + fake adapter — a cycle actually spawns+registers a session, a later
-  cycle resumes it, no duplicate spawn, a comment delivered at most once, `--once` stops.
+  `GitHubPollProvider` + real `Dispatcher` — a cycle actually spawns+registers a session,
+  a later cycle resumes it, no duplicate spawn, a comment delivered at most once,
+  `--once` stops.
