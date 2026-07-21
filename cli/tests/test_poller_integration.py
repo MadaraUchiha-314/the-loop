@@ -82,13 +82,18 @@ def _comment(cid, body):
     return GhComment(id=cid, body=body, author="octocat", created_at="", url="")
 
 
+def _dispatcher(registry, adapter, config):
+    # adapter is intentionally unannotated so the in-process FakeAdapter double
+    # satisfies the Dict[str, HarnessAdapter] parameter (mirrors
+    # test_routing.make_dispatcher) without a cast.
+    return Dispatcher(registry=registry, adapters={"claude": adapter}, config=config)
+
+
 def _make(tmp_path, gh):
     registry = SessionRegistry(tmp_path / "sessions")
     adapter = FakeAdapter()
-    dispatcher = Dispatcher(
-        registry=registry,
-        adapters={"claude": adapter},
-        config=RoutingConfig(spawn_on_unmatched="labeled"),
+    dispatcher = _dispatcher(
+        registry, adapter, RoutingConfig(spawn_on_unmatched="labeled")
     )
     poller = Poller(
         gh=gh,

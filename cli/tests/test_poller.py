@@ -9,6 +9,7 @@ Spec: docs/specs/issue-34/design.md.
 """
 
 import json
+import subprocess
 
 import pytest
 
@@ -43,15 +44,14 @@ class FakeRun:
         self.stderr = stderr
         self.calls = []
 
-    def __call__(self, cmd, **kwargs):
+    def __call__(self, cmd, **kwargs) -> subprocess.CompletedProcess:
         self.calls.append(list(cmd))
-
-        class Proc:
-            returncode = self.returncode
-            stdout = self.stdout
-            stderr = self.stderr
-
-        return Proc()
+        return subprocess.CompletedProcess(
+            args=cmd,
+            returncode=self.returncode,
+            stdout=self.stdout,
+            stderr=self.stderr,
+        )
 
 
 def test_gh_list_labeled_issues_parses_and_builds_argv():
