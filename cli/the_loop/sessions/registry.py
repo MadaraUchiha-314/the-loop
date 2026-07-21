@@ -91,6 +91,8 @@ class Session:
     status: str = "active"  # active | closed
     created_at: str = ""
     last_event_at: Optional[str] = None
+    runner: str = "process"  # process | tmux (issue-32)
+    tmux_target: str = ""  # tmux session name when runner == "tmux"
     recent_deliveries: List[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -109,6 +111,8 @@ class Session:
             "status": self.status,
             "createdAt": self.created_at,
             "lastEventAt": self.last_event_at,
+            "runner": self.runner,
+            "tmuxTarget": self.tmux_target,
             "recentDeliveries": self.recent_deliveries,
         }
 
@@ -122,6 +126,8 @@ class Session:
             status=data.get("status", "active"),
             created_at=data.get("createdAt", ""),
             last_event_at=data.get("lastEventAt"),
+            runner=data.get("runner", "process"),
+            tmux_target=data.get("tmuxTarget", ""),
             recent_deliveries=list(data.get("recentDeliveries") or []),
         )
 

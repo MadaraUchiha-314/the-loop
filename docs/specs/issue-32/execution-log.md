@@ -1,7 +1,7 @@
 ---
 type: execution-log
 workItem: issue-32
-phase: brainstorming
+phase: needs-review
 status: in-progress
 ---
 
@@ -15,12 +15,12 @@ status: in-progress
 
 | Phase | Entered | Reviewed/approved by | Notes |
 |-------|---------|----------------------|-------|
-| brainstorming | 2026-07-16 |  | issue #32 is exploratory (asks architecture/alternatives questions) → Phase 0 |
-| requirements-definition |  |  | derived from the locked brainstorm |
-| design |  |  |  |
-| tasks-breakdown |  |  |  |
-| implementation |  |  |  |
-| needs-review |  |  |  |
+| brainstorming | 2026-07-16 | @MadaraUchiha-314 (PR #33 reviews + merge; advance instruction) | issue #32 is exploratory (asks architecture/alternatives questions) → Phase 0 |
+| requirements-definition | 2026-07-17 | @MadaraUchiha-314 ("let's implement", PR #35) | derived from the locked brainstorm; Q2/Q3 carried to design |
+| design | 2026-07-17 | @MadaraUchiha-314 (same instruction — spec+implementation approved together) | decides Q2 (paste injection) and Q3 (pre-assigned id) → decision-021 |
+| tasks-breakdown | 2026-07-17 | @MadaraUchiha-314 (same instruction) | 8-task DAG |
+| implementation | 2026-07-17 |  | TDD: 22 new tests red → green; `make check` green |
+| needs-review | 2026-07-17 |  | awaiting owner review of PR #35 |
 | complete |  |  |  |
 
 ## Progress entries
@@ -83,6 +83,44 @@ status: in-progress
   then lock the brainstorm and derive `requirements.md`.
 - **Blockers:** brainstorm still `in-review` (questions 2–3 open).
 
+### 2026-07-17 — brainstorm locked; requirements derived (new rolling PR)
+
+- **Phase:** requirements-definition
+- **Did:** PR #33 was merged (owner notes: by mistake, but the artifact content stands);
+  a merged PR cannot be reopened, so the work continues on the same branch restarted
+  from `main` with a new rolling PR carrying the remaining phases. Owner instructed to
+  advance to design/implementation → brainstorm marked `approved` (Q2/Q3 explicitly
+  carried to design), and `requirements.md` derived: 7 requirements (tmux runner,
+  session identity, event delivery, attach UX, web terminal, dependency verification,
+  lifecycle) + NFRs, scope fences, and the two design-phase questions.
+- **Checkpoint/tests:** markdownlint on the spec docs (docs-only change).
+- **Next:** owner reviews/locks `requirements.md` on the new PR, then `design.md` is
+  derived (deciding Q2 with a spike) in the same PR.
+- **Blockers:** requirements `in-review` — awaiting owner approval
+  (`requireHumanReviewPerPhase`).
+
+### 2026-07-17 — design + tasks + implementation (owner: "let's implement", PR #35)
+
+- **Phase:** implementation → needs-review
+- **Did:** owner approved the requirements and instructed to proceed. Derived
+  `design.md` (Q2 → bracketed-paste injection, Q3 → pre-assigned session id;
+  decision-021) and the 8-task `tasks.md` DAG, then implemented end-to-end:
+  `cli/the_loop/runner.py` (TmuxRunner + `check_dependencies` + `web_terminal_argv`),
+  `interactive_argv` on the adapters, registry `runner`/`tmuxTarget` fields,
+  dispatcher tmux spawn/deliver/PR-close-kill, receiver preflight + ttyd lifecycle,
+  `sessions attach` + tmux-aware `list`/`close`, config schema + config keys, and the
+  docs fold-in (capability doc `interactive-sessions.md`, decision-021).
+- **Checkpoint/tests (red→green evidence):**
+  - RED: `pytest cli/tests/test_tmux_runner.py cli/tests/test_tmux_runner_integration.py`
+    → 2 collection errors (`the_loop.runner` absent; new fields/APIs missing).
+  - GREEN: full suite `uv run --project cli python -m pytest -q cli` → **102 passed**
+    (22 new: 19 unit + 3 Gherkin integration scenarios; 80 pre-existing unaffected).
+  - `make check` (ruff, markdownlint, ruff-format, pyright, config validate, pytest)
+    → all green.
+- **Next:** self-review, then reviewer briefing on PR #35 and owner review
+  (`needs-review`; tier 3+ → human-approves-pr).
+- **Blockers:** none.
+
 ## Review cycles
 
 | Cycle | Type (self/critic) | Reviewer | Outcome | Link |
@@ -90,7 +128,19 @@ status: in-progress
 | 1 | human (brainstorm) | @MadaraUchiha-314 | Option A chosen (Q1); Q4/Q5 explanations expanded | [PR #33 review threads](https://github.com/MadaraUchiha-314/the-loop/pull/33#discussion_r3600112067) |
 | 2 | human (brainstorm) | @MadaraUchiha-314 | Access control environmental (Q4 auth half); receiver-global runner (Q5) | [PR #33 review threads](https://github.com/MadaraUchiha-314/the-loop/pull/33#discussion_r3600144073) |
 | 3 | human (brainstorm) | @MadaraUchiha-314 | Web layer ships; installing the-loop must satisfy the ttyd dependency (Q4 resolved) | [PR #33 review thread](https://github.com/MadaraUchiha-314/the-loop/pull/33#discussion_r3600170758) |
+| 4 | self (implementation) | claude (multi-angle finder + verify) | 6 confirmed findings fixed (stale-session collision on spawn, flags-after-positional extra_args, attach misreporting missing tmux, unreaped ttyd on bind failure, unbounded PR-close kill, spawn registering doomed sessions when the harness binary is missing) + 1 layering cleanup (UnsupportedRunnerError moved to harness/base); 2 candidates refuted/recorded as design choices | commit on PR #35 |
+| 5 | human (review) | @MadaraUchiha-314 | design.md mermaid sequence diagram failed to render — `<br/>` unsupported in sequenceDiagram notes; collapsed note to one line + escaped `<slug>` (e8c16e7) | [PR #35 thread](https://github.com/MadaraUchiha-314/the-loop/pull/35#discussion_r3619526141) |
 
 ## Final validation evidence
 
-Pending — the work item is in the brainstorming phase.
+- **Test suite:** `uv run --project cli python -m pytest -q cli` → 102 passed (22 new
+  for issue-32: 19 unit + 3 Gherkin integration scenarios against a recording stub
+  tmux). `make check` (ruff, markdownlint, format, pyright, config validate, tests)
+  green.
+- **Live smoke test against real tmux** (container, tmux 3.x): `TmuxRunner.spawn` with
+  a fake echoing harness → session visible via `has_session`; `deliver` bracketed-pasted
+  a webhook prompt which the PTY process received (`GOT: webhook event #1…` captured
+  from the pane); `kill` terminated it and `has_session` went false. Full transcript in
+  PR #35's reviewer briefing.
+- **Back-compat:** pre-issue-32 registry JSON (no `runner`/`tmuxTarget`) loads as a
+  process-mode session (unit-tested); `routing.runner` unset behaves as before.

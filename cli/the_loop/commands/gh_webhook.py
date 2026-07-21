@@ -12,6 +12,7 @@ import argparse
 import logging
 import os
 import signal
+import subprocess
 import sys
 from pathlib import Path
 
@@ -51,6 +52,17 @@ def _load_config_defaults() -> dict:
     return ((data.get("webhooks") or {}).get("ghWebhook")) or {}
 
 
+def _terminate(proc) -> None:
+    """Stop a child process (ttyd), escalating to kill if it ignores SIGTERM."""
+    if proc is None:
+        return
+    proc.terminate()
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+
+
 def _build_routing(gh_webhook_config: dict):
     """Compose router + dispatcher into the server's on_event callback.
 
@@ -83,12 +95,13 @@ def _build_routing(gh_webhook_config: dict):
             dispatcher.handle(routed)
 
     logger.info(
-        "routing enabled: registry=%s defaultHarness=%s spawnOnUnmatched=%s",
+        "routing enabled: registry=%s defaultHarness=%s spawnOnUnmatched=%s runner=%s",
         config.registry_dir,
         config.default_harness,
         config.spawn_on_unmatched,
+        config.runner,
     )
-    return on_event, dispatcher
+    return on_event, dispatcher, config
 
 
 @register
@@ -145,9 +158,29 @@ class GhWebhookCommand(Command):
                 args.secret_env,
             )
 
-        on_event = dispatcher = None
+        on_event = dispatcher = web_proc = None
         if args.route:
-            on_event, dispatcher = _build_routing(_load_config_defaults())
+            from ..runner import check_dependencies, web_terminal_argv
+
+            on_event, dispatcher, routing_config = _build_routing(
+                _load_config_defaults()
+            )
+            missing = check_dependencies(
+                routing_config.runner, routing_config.web_terminal.enabled
+            )
+            if missing:  # R6.1: fail with per-platform guidance; R6.2: else silent
+                for line in missing:
+                    logger.error(line)
+                return 1
+            if routing_config.web_terminal.enabled:
+                web = routing_config.web_terminal
+                web_proc = subprocess.Popen(web_terminal_argv(web.host, web.port))
+                logger.info(
+                    "web terminal (ttyd) serving tmux sessions on http://%s:%s "
+                    "— access control is environmental (decision-021)",
+                    web.host,
+                    web.port,
+                )
 
         try:
             httpd = serve(
@@ -159,6 +192,7 @@ class GhWebhookCommand(Command):
             )
         except OSError as exc:
             logger.error("could not bind %s:%s — %s", args.host, args.port, exc)
+            _terminate(web_proc)
             return 1
 
         pidfile = Path(args.pidfile)
@@ -185,6 +219,7 @@ class GhWebhookCommand(Command):
             httpd.server_close()
             if dispatcher is not None:
                 dispatcher.stop()
+            _terminate(web_proc)
             try:
                 pidfile.unlink()
             except FileNotFoundError:

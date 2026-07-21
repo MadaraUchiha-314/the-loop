@@ -2,8 +2,8 @@
 type: brainstorm
 phase: brainstorming
 workItem: issue-32
-status: in-review
-approvedBy: []
+status: approved
+approvedBy: ["@MadaraUchiha-314 (PR #33 review rounds + merge; advance-to-design instruction, 2026-07-17)"]
 collaborators: [product-manager, architect, engineer]
 overrides: {}
 ---
@@ -194,6 +194,8 @@ plain child process is not.
    interactive TUI in tmux *plus* headless `-p --resume` only when the pane is idle — may
    be the pragmatic middle. With Option A chosen, this becomes the central design-phase
    decision (likely resolved by a small spike against both harness TUIs).
+   *Carried forward open (owner locked the brainstorm and advanced, 2026-07-17): to be
+   decided in `design.md`.*
 3. **Session-id + completion signals per harness:** confirm `claude --session-id` /
    SessionStart-hook capture and the cursor-agent equivalents; without an id the registry
    can't route follow-up events.

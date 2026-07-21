@@ -150,6 +150,11 @@ webhooks:
       spawnOnUnmatched: labeled     # never | always | labeled
       autoExecuteLabel: "the-loop: auto-execute"   # label that opts an issue/PR into autonomous execution
       spawnWorkdir: "."
+      runner: process             # process (headless) | tmux (attachable interactive TUI — issue-32)
+      webTerminal:                # ttyd browser terminal onto tmux sessions (runner: tmux)
+        enabled: false            # access control is environmental: localhost/VPN/provider (decision-021)
+        host: 127.0.0.1
+        port: 7681
       maxConcurrentDispatches: 4
       dedupCacheSize: 1024
       dispatchTimeoutSeconds: 1800

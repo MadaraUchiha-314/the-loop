@@ -670,6 +670,36 @@
                   "default": ".",
                   "description": "Working directory for sessions spawned on unmatched events."
                 },
+                "runner": {
+                  "type": "string",
+                  "enum": ["process", "tmux"],
+                  "default": "process",
+                  "description": "How spawned sessions are hosted (receiver-global): 'process' = headless one-shot subprocess; 'tmux' = interactive harness TUI in a named tmux session (loop-<slug>) humans can attach to (issue-32, decision-021)."
+                },
+                "webTerminal": {
+                  "type": "object",
+                  "description": "Optional ttyd-served browser terminal onto the tmux sessions (runner: tmux). No auth of its own — access control is environmental: localhost, VPN, or the hosting provider's network (decision-021).",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean",
+                      "default": false,
+                      "description": "Serve tmux sessions over HTTP via ttyd (verified at receiver start)."
+                    },
+                    "host": {
+                      "type": "string",
+                      "default": "127.0.0.1",
+                      "description": "Interface/IP ttyd binds. Keep 127.0.0.1 unless the network layer protects wider exposure."
+                    },
+                    "port": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 65535,
+                      "default": 7681,
+                      "description": "ttyd listen port."
+                    }
+                  }
+                },
                 "maxConcurrentDispatches": {
                   "type": "integer",
                   "minimum": 1,

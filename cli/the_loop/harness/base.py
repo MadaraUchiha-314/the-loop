@@ -19,6 +19,11 @@ from ..sessions import Session, WorkItemRef
 
 logger = logging.getLogger("the-loop.harness")
 
+
+class UnsupportedRunnerError(Exception):
+    """The adapter cannot host an interactive (tmux-mode) session (issue-32)."""
+
+
 # JSON keys the harness CLIs use for their session/chat id, in match order.
 _SESSION_ID_KEYS = ("session_id", "sessionId", "chat_id", "chatId", "id")
 
@@ -60,6 +65,15 @@ class HarnessAdapter:
 
     def _spawn_argv(self, prompt: str) -> List[str]:
         raise NotImplementedError
+
+    def interactive_argv(self, prompt: str, session_id: str) -> List[str]:
+        """Argv hosting this harness's interactive TUI with a pre-assigned
+        session id (tmux runner, issue-32). Adapters without a pre-assignable
+        id keep this raising so tmux-mode spawns fail cleanly (R2.2)."""
+        raise UnsupportedRunnerError(
+            f"the {self.name or self.binary} harness does not support the tmux "
+            "runner (no pre-assignable session id in interactive mode)"
+        )
 
     def resume(
         self, session: Session, prompt: str, timeout: Optional[float] = None
