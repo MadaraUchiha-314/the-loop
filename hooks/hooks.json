@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-hooks.json",
-  "description": "Hooks add predictability/guarantees to the-loop's PDLC process. v0 ships a SessionStart reminder that surfaces the project's the-loop config so the harness loads its rules. This file is Claude Code hook format; in Cursor the same reminder ships as the always-applied rule rules/the-loop.mdc (Cursor's hook events have no SessionStart equivalent). Quality gates (lint/typecheck/test) are documented for projects to wire to their own tooling, since commands are project-specific.",
+  "description": "Hooks add predictability/guarantees to the-loop's PDLC process. The SessionStart hook runs session-start.sh, which (1) auto-upgrades the installed plugin so every new session runs the latest the-loop — fast-forwarding the plugin's git checkout to origin, best-effort and non-blocking; opt out with THE_LOOP_AUTO_UPGRADE=0 (issue #38) — and (2) surfaces the project's the-loop config so the harness loads its rules. This file is Claude Code hook format; in Cursor the same reminder ships as the always-applied rule rules/the-loop.mdc (Cursor has no SessionStart equivalent, and it resolves the plugin from the repo directly, so it self-upgrades without a hook). Quality gates (lint/typecheck/test) are documented for projects to wire to their own tooling, since commands are project-specific.",
   "hooks": {
     "SessionStart": [
       {
@@ -8,7 +8,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "test -f .the-loop/config.yaml && echo 'the-loop is initialized in this repo. Operating rules: plan→execute→self/critic-review→escalate. See .the-loop/config.yaml and the the-loop skill.' || true"
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh\""
           }
         ]
       }

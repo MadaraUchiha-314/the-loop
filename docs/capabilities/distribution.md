@@ -19,8 +19,15 @@ manifests over one shared set of skills, commands and templates.
   `~/.cursor/plugins/local/`.
 - Both plugins SHALL reuse the SAME `skills/` (Agent Skills standard) and `commands/`;
   nothing is forked per harness.
-- WHERE Claude Code uses the SessionStart hook (`hooks/hooks.json`) the Cursor package
-  SHALL use the always-applied rule `rules/the-loop.mdc` instead.
+- WHERE Claude Code uses the SessionStart hook (`hooks/hooks.json` →
+  `hooks/session-start.sh`) the Cursor package SHALL use the always-applied rule
+  `rules/the-loop.mdc` instead.
+- On Claude Code, the SessionStart hook SHALL keep the installed plugin current: it
+  fast-forwards the plugin's git checkout to `origin` on every new session, so a session
+  is always up to date without a manual `/plugin update` (issue #38, decision-022). It is
+  best-effort and never blocks or fails a session; skips a dirty/detached checkout;
+  opt out with `THE_LOOP_AUTO_UPGRADE=0`. Cursor resolves the plugin from the repo
+  directly and needs no hook for this.
 
 ## Design
 

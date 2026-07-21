@@ -59,7 +59,9 @@ it either way:
 Skills follow the [Agent Skills](https://agentskills.io) open standard, so the same
 `SKILL.md` powers both harnesses; commands appear in Cursor's slash menu (by filename,
 e.g. `/init`); the Claude Code SessionStart hook is replaced by the always-applied rule
-`rules/the-loop.mdc`.
+`rules/the-loop.mdc`. The hook's plugin auto-upgrade (below) is Claude-Code-only —
+Cursor resolves the plugin from the repo directly and has no SessionStart event to run
+it from.
 
 ## Commands
 
@@ -150,7 +152,7 @@ See [`cli/README.md`](cli/README.md) for install and how to add commands.
 commands/              init, work-on, upgrade-the-loop
 skills/the-loop/       operating-model skill (+ reference/ docs), Agent Skills standard
 rules/                 the-loop.mdc (Cursor always-applied reminder rule)
-hooks/                 hooks.json (Claude Code SessionStart reminder)
+hooks/                 hooks.json + session-start.sh (Claude Code SessionStart: plugin auto-upgrade + reminder)
 cli/                   the-loop Python CLI (the_loop package; gh-webhook receiver)
 docs/
   architecture/        architecture.md (index)
