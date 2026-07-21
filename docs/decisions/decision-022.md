@@ -56,6 +56,11 @@ receiver produces, and the poller hands it to the existing `Dispatcher`. Consequ
   lean on, the poller is the reliability layer: it baselines an item's comments on first
   sight (no replay) and forwards each new comment once, surviving restarts via
   `.the-loop/poll-state.json`.
+- **The `polling` config hot-reloads** (PR #45 review) at one-poll-cycle granularity: a
+  `Reloader` content-hashes `.the-loop/config.yaml` and rebuilds the provider/interval
+  plan on change — no restart to add/remove sources or retune the interval. A bad edit is
+  logged and the previous plan is kept. Only `polling` reloads; the dispatcher/routing
+  (worker threads, in-memory dedup) stays established at start.
 
 Only the GitHub provider is implemented now; `jira:` stays reserved in `WorkItemRef` and
 the seam. PR review (inline) comment threads are a follow-up — conversation comments are

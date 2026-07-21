@@ -26,9 +26,19 @@ from typing import List, Optional
 
 from .base import Command, register
 from .gh_webhook import _load_config_defaults
-from ..poller import PollConfig, Poller, PollState, ProviderError, build_provider
+from ..poller import (
+    PollConfig,
+    Poller,
+    PollPlan,
+    PollState,
+    ProviderError,
+    Reloader,
+    build_provider,
+)
 
 logger = logging.getLogger("the-loop.poll")
+
+_CONFIG_PATH = Path(".the-loop/config.yaml")
 
 _DEFAULTS = {
     "intervalSeconds": 60,
@@ -127,44 +137,53 @@ class PollCommand(Command):
         logging.basicConfig(
             level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
         )
-        config = PollConfig.from_mapping(_load_polling_config())
-        config.interval_seconds = args.interval
-        config.state_file = args.state_file
-        if not config.sources:
+        dispatcher, routing = _build_dispatcher(_load_config_defaults().get("routing"))
+
+        # Rebuilds the mutable plan (providers + interval) from the config file.
+        # Used once for the initial plan and again by the Reloader on each edit,
+        # so a hot reload and a cold start go through exactly the same code.
+        def build_plan() -> PollPlan:
+            cfg = PollConfig.from_mapping(_load_polling_config())
+            providers = [
+                build_provider(
+                    source,
+                    default_label=routing.auto_execute_label,
+                    fallback_repos=_repos_from_ticketing(),
+                )
+                for source in cfg.sources
+            ]
+            return PollPlan(providers=providers, interval_seconds=cfg.interval_seconds)
+
+        try:
+            plan = build_plan()
+        except ProviderError as exc:
+            logger.error("%s", exc)
+            return 1
+        if not plan.providers:
             logger.error(
                 "no polling sources configured — add entries under "
                 "polling.sources in .the-loop/config.yaml (e.g. provider: github)"
             )
             return 1
 
-        dispatcher, routing = _build_dispatcher(_load_config_defaults().get("routing"))
-        fallback_repos = _repos_from_ticketing()
-        try:
-            providers = [
-                build_provider(
-                    source,
-                    default_label=routing.auto_execute_label,
-                    fallback_repos=fallback_repos,
-                )
-                for source in config.sources
-            ]
-        except ProviderError as exc:
-            logger.error("%s", exc)
-            return 1
-
-        missing = [line for p in providers for line in p.check_dependencies()]
+        missing = [line for p in plan.providers for line in p.check_dependencies()]
         if missing:
             for line in missing:
                 logger.error(line)
             return 1
 
+        config = PollConfig.from_mapping(_load_polling_config())
+        config.interval_seconds = args.interval  # flag overrides until a config edit
+        config.state_file = args.state_file
         poller = Poller(
-            providers=providers,
+            providers=plan.providers,
             registry=dispatcher.registry,
             dispatcher=dispatcher,
             config=config,
             state=PollState(config.state_file),
+            reloader=Reloader(_CONFIG_PATH, build_plan),
         )
+        providers = plan.providers
 
         stop_event = threading.Event()
         pidfile = Path(args.pidfile)

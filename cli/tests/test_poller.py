@@ -23,8 +23,11 @@ from the_loop.poller import (
     GitHubPollProvider,
     PollConfig,
     Poller,
+    PollPlan,
+    PollProvider,
     PollState,
     ProviderError,
+    Reloader,
     RepoSpec,
     WorkItem,
     build_provider,
@@ -345,8 +348,10 @@ def test_poll_state_ignores_corrupt_file(tmp_path):
 # -- Poller core (provider-agnostic, recording dispatcher double) -------------
 
 
-class FakeProvider:
+class FakeProvider(PollProvider):
     """A provider-agnostic double: canned items/comments, records event asks."""
+
+    name = "fake"
 
     def __init__(self, items=(), comments=None, linked=None):
         self._items = list(items)
@@ -409,13 +414,16 @@ def _comment(cid, body="hello"):
     return Comment(id=cid, body=body, author="octocat", created_at="", url="")
 
 
-def make_poller(provider, registry, dispatcher, state):
+def make_poller(provider, registry, dispatcher, state, reloader=None):
+    # provider/dispatcher/reloader intentionally unannotated so the in-process
+    # doubles satisfy the typed Poller params without casts (see test_routing).
     return Poller(
         providers=[provider],
         registry=registry,
         dispatcher=dispatcher,
         config=PollConfig(),
         state=state,
+        reloader=reloader,
     )
 
 
@@ -508,3 +516,71 @@ def test_provider_error_is_captured_not_raised(tmp_path):
     ).poll_once()
     assert summary.errors and "boom" in summary.errors[0]
     assert disp.events == []
+
+
+# -- hot reload ---------------------------------------------------------------
+
+
+def test_reloader_returns_plan_only_when_file_changes(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text("v: 1\n")
+    builds = {"n": 0}
+
+    def build():
+        builds["n"] += 1
+        return PollPlan(providers=[], interval_seconds=10 + builds["n"])
+
+    reloader = Reloader(path, build)  # baseline = current file content
+    assert reloader.poll_for_change() is None  # unchanged -> no rebuild
+    assert builds["n"] == 0
+    path.write_text("v: 2\n")
+    plan = reloader.poll_for_change()
+    assert plan is not None and plan.interval_seconds == 11
+    assert reloader.poll_for_change() is None  # stable again
+
+
+def test_reloader_keeps_previous_plan_on_build_error(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text("v: 1\n")
+
+    def build():
+        raise ProviderError("unknown provider: gitlab")
+
+    reloader = Reloader(path, build)
+    path.write_text("v: 2\n")
+    assert reloader.poll_for_change() is None  # error swallowed, previous kept
+
+
+def test_reloader_without_file_never_reloads(tmp_path):
+    def build():
+        raise AssertionError("must not be called when there is no config file")
+
+    reloader = Reloader(tmp_path / "missing.yaml", build)
+    assert reloader.poll_for_change() is None
+
+
+def test_poller_hot_reloads_providers_and_interval(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text("v: 1\n")
+    reloaded_provider = FakeProvider(items=[_item(15)], comments={15: []})
+
+    def build():
+        return PollPlan(providers=[reloaded_provider], interval_seconds=7)
+
+    reloader = Reloader(path, build)
+    registry = SessionRegistry(tmp_path / "sessions")
+    disp = RecordingDispatcher()
+    poller = make_poller(
+        FakeProvider(),  # initial: nothing to poll
+        registry,
+        disp,
+        PollState(tmp_path / "state.json"),
+        reloader=reloader,
+    )
+    path.write_text("v: 2\n")  # edit the config -> next cycle reloads
+
+    poller.run(once=True)
+
+    assert poller.providers == [reloaded_provider]  # swapped in live
+    assert poller.config.interval_seconds == 7  # interval reloaded too
+    assert [e.event for e in disp.events] == ["issues"]  # the new source was polled

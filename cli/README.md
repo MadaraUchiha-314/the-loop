@@ -137,6 +137,9 @@ templates are all reused unchanged.
 - **Config:** ingress defaults come from `polling` in `.the-loop/config.yaml` (when
   PyYAML is installed); dispatch behaviour is reused from `webhooks.ghWebhook.routing`.
   Flags cover only the run loop.
+- **Hot reload:** edit `polling.sources` / `intervalSeconds` while it runs and the change
+  is picked up on the next cycle — no restart. An invalid edit is logged and the previous
+  config kept. (The shared dispatch config still needs a restart.)
 - **`--once`** runs a single cycle and exits (for a cron/systemd timer); otherwise it
   loops until `poll stop` (or SIGINT/SIGTERM), writing a pidfile like the receiver.
   Design: `docs/specs/issue-34/design.md`, `docs/decisions/decision-022.md`.

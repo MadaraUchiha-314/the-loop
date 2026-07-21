@@ -85,6 +85,23 @@ For each work item (`ref = item.ref`):
 Splitting them keeps spawning registry-idempotent and comment forwarding exactly-once,
 without either concern leaking into the other.
 
+## Hot reload (`Reloader`)
+
+The `polling` config hot-reloads at **one-poll-cycle granularity** — no watcher thread,
+stdlib only, matching the loop the poller already runs. `Reloader` holds a content hash of
+`.the-loop/config.yaml` and a `build_plan` callback (the same closure that builds the
+initial plan, so cold start and reload share one code path). Before each cycle,
+`Poller._maybe_reload` asks the reloader for changes:
+
+- unchanged hash → `None` (no rebuild);
+- changed hash → rebuild a `PollPlan` (providers + interval) and swap it in live;
+- rebuild raises (invalid config, unknown provider) → log and **keep the previous plan**,
+  so a bad edit never takes the poller down; no file → nothing to reload.
+
+`--interval` acts as a start-time override that holds until the config file is edited
+(after which the file's `intervalSeconds` wins). Only the `polling` block reloads; the
+dispatcher/routing (worker threads, in-memory dedup) is established once at start.
+
 ## Dedup, two layers
 
 - **`PollState`** (durable, per item, this feature): the primary guarantee — a comment
@@ -119,8 +136,9 @@ git-ignored. The CLI (`the-loop poll start|stop`) exposes only run-loop flags
 - `tests/test_poller.py` (unit): `gh` JSON parsing/argv; the GitHub provider
   (from_source, work-item mapping, PR→issue linking, presence/comment events); the
   provider registry (`build_provider` rejects missing/unknown); `PollConfig`; `PollState`
-  round-trip + corrupt-file tolerance; and the **provider-agnostic** cycle decision
-  matrix via a fake provider + recording dispatcher (deterministic, no threads).
+  round-trip + corrupt-file tolerance; the **provider-agnostic** cycle decision matrix via
+  a fake provider + recording dispatcher (deterministic, no threads); and hot reload
+  (`Reloader` change-detection, invalid-config tolerance, live provider/interval swap).
 - `tests/test_poller_integration.py` (Gherkin, `Requirement:` → this spec): real
   `GitHubPollProvider` + real `Dispatcher` — a cycle actually spawns+registers a session,
   a later cycle resumes it, no duplicate spawn, a comment delivered at most once,

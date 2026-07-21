@@ -24,6 +24,7 @@ Spec: docs/specs/issue-34/design.md.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -31,7 +32,7 @@ import tempfile
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
+from typing import Callable, Dict, List, Optional, Sequence
 
 from ..sessions import SessionRegistry
 from ..webhook.dispatcher import Dispatcher
@@ -134,6 +135,64 @@ def _utcnow() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+@dataclass
+class PollPlan:
+    """The mutable part of a running poller: which providers, how often.
+
+    Rebuilt from config on a hot reload; the dispatcher/registry (routing) are
+    established once at start and are not part of the plan.
+    """
+
+    providers: List[PollProvider]
+    interval_seconds: int
+
+
+class Reloader:
+    """Detects config-file changes and rebuilds the :class:`PollPlan` (hot reload).
+
+    Change detection is a content hash checked once per cycle (no watcher
+    thread; stdlib only) — reload granularity is therefore one poll cycle. A
+    build that raises (invalid config, unknown provider) is logged and the
+    previous plan is kept, so a bad edit never takes the poller down.
+    """
+
+    def __init__(
+        self,
+        path,
+        build: Callable[[], PollPlan],
+        baseline: Optional[str] = None,
+    ):
+        self.path = Path(path)
+        self._build = build
+        # Baseline to the current file so the first cycle doesn't rebuild the
+        # plan the caller already constructed; None => read it now.
+        self._fingerprint = baseline if baseline is not None else self._read_fp()
+
+    def _read_fp(self) -> str:
+        try:
+            return hashlib.sha256(self.path.read_bytes()).hexdigest()
+        except OSError:
+            return ""  # no file (or unreadable) => nothing to hot-reload
+
+    def poll_for_change(self) -> Optional[PollPlan]:
+        """Return a fresh plan iff the config changed since the last check."""
+        fingerprint = self._read_fp()
+        if fingerprint == self._fingerprint:
+            return None
+        self._fingerprint = fingerprint
+        try:
+            plan = self._build()
+        except Exception as exc:  # noqa: BLE001 — a bad edit must not crash us
+            logger.error("config reload failed; keeping previous config: %s", exc)
+            return None
+        logger.info(
+            "config change detected: reloaded %d source(s), interval=%ss",
+            len(plan.providers),
+            plan.interval_seconds,
+        )
+        return plan
+
+
 class Poller:
     """Poll each provider and feed discovered work to the shared dispatcher."""
 
@@ -144,12 +203,14 @@ class Poller:
         dispatcher: Dispatcher,
         config: PollConfig,
         state: PollState,
+        reloader: Optional[Reloader] = None,
     ):
         self.providers = list(providers)
         self.registry = registry
         self.dispatcher = dispatcher
         self.config = config
         self.state = state
+        self.reloader = reloader
 
     # -- one cycle --------------------------------------------------------------
 
@@ -217,6 +278,18 @@ class Poller:
 
         self.state.update(ref, [c.id for c in comments if c.id], _utcnow())
 
+    # -- hot reload -------------------------------------------------------------
+
+    def _maybe_reload(self) -> None:
+        """Swap in a fresh plan if the config file changed since last cycle."""
+        if self.reloader is None:
+            return
+        plan = self.reloader.poll_for_change()
+        if plan is None:
+            return
+        self.providers = plan.providers
+        self.config.interval_seconds = plan.interval_seconds
+
     # -- run loop ---------------------------------------------------------------
 
     def run(
@@ -224,9 +297,15 @@ class Poller:
         once: bool = False,
         stop_event: Optional[threading.Event] = None,
     ) -> None:
-        """Poll forever (or once), waking early when ``stop_event`` is set."""
+        """Poll forever (or once), waking early when ``stop_event`` is set.
+
+        The config file is re-checked before every cycle (hot reload): edits to
+        ``polling.sources`` / ``intervalSeconds`` take effect on the next cycle
+        with no restart.
+        """
         stop_event = stop_event or threading.Event()
         while not stop_event.is_set():
+            self._maybe_reload()
             try:
                 self.poll_once()
             except Exception:  # noqa: BLE001 — one bad cycle must not kill the loop

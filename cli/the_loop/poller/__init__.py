@@ -26,7 +26,14 @@ from .github import (  # noqa: F401
     check_gh_dependency,
     parse_repos,
 )
-from .poller import PollConfig, Poller, PollState, PollSummary  # noqa: F401
+from .poller import (  # noqa: F401
+    PollConfig,
+    Poller,
+    PollPlan,
+    PollState,
+    PollSummary,
+    Reloader,
+)
 
 __all__ = [
     "Comment",
@@ -36,11 +43,13 @@ __all__ = [
     "GhItem",
     "GitHubPollProvider",
     "PollConfig",
+    "PollPlan",
     "PollProvider",
     "PollState",
     "PollSummary",
     "Poller",
     "ProviderError",
+    "Reloader",
     "RepoSpec",
     "WorkItem",
     "build_provider",

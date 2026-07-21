@@ -131,11 +131,34 @@ the webhook receiver, so that operating both is uniform.
 3. WHEN the poller receives SIGINT/SIGTERM THEN it SHALL stop the loop, drain the
    dispatcher and exit 0.
 
+### Requirement 6 — hot-reload the polling config without a restart
+
+**User story:** As an operator, I want to add/remove sources or change the interval by
+editing `.the-loop/config.yaml` while the poller runs, so that I don't have to restart it
+to change what is monitored.
+
+#### Acceptance criteria (EARS)
+
+1. WHILE the poller is running, WHEN `.the-loop/config.yaml` changes THEN the system SHALL
+   pick up the new `polling.sources` and `polling.intervalSeconds` on the next poll cycle,
+   without a restart (reload granularity is one cycle).
+2. WHEN the config file is unchanged between cycles THEN the system SHALL NOT rebuild the
+   providers (change is detected by content, not on every cycle).
+3. IF a reloaded config is invalid (parse error, unknown/missing `provider`) THEN the
+   system SHALL log the error, keep running with the previously loaded config, and retry
+   on the next change — a bad edit SHALL NOT take the poller down.
+4. WHEN there is no config file THEN the system SHALL run with its start-time
+   configuration and simply have nothing to hot-reload.
+
 ## Out of scope (this iteration)
 
 - **Non-GitHub provider implementations (e.g. Jira).** The provider seam, config surface
   and `WorkItemRef` are provider-agnostic and reserve the `jira:` provider, but only the
   GitHub provider is implemented here ("for now let's support polling github using
   `gh`"). A new provider drops into the registry with no core changes.
+- **Hot-reloading the shared dispatch config** (`webhooks.ghWebhook.routing`: harness,
+  runner, spawn policy). The dispatcher owns worker threads and the in-memory dedup, so
+  it is established once at start; changing those still needs a restart. Only the
+  `polling` block hot-reloads.
 - **PR review (inline code) comment threads.** Conversation comments on issues and PRs
   are covered; review-thread polling is a follow-up.
