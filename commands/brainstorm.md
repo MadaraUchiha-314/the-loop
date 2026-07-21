@@ -23,7 +23,7 @@ iterate-until-locked-then-advance principle, reviews).
    it already exists.
 
 2. **Write `brainstorm.md`** from
-   `${CLAUDE_PLUGIN_ROOT}/.the-loop/templates/brainstorm.md`
+   `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/brainstorm.md`
    (`${CLAUDE_PLUGIN_ROOT}` = the installed plugin's root; same in Cursor): problem /
    opportunity, context & constraints, ideas & options, sketches, open questions, and a
    working hypothesis. Keep it free-form — this is a scratchpad, not a spec. Set

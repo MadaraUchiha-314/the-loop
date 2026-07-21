@@ -25,7 +25,8 @@ ROOT = Path(__file__).resolve().parent.parent
 SCHEMA = ROOT / ".the-loop" / "config.schema.json"
 TARGETS = [
     ROOT / ".the-loop" / "config.yaml",
-    ROOT / ".the-loop" / "templates" / "config.yaml",
+    # Templates are internal to the-loop and ship with the skill (issue #36).
+    ROOT / "skills" / "the-loop" / "templates" / "config.yaml",
 ]
 
 

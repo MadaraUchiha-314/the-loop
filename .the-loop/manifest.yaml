@@ -24,25 +24,23 @@ meta:
     role: collaborators
     managed: false
 
-templates:
-  - path: .the-loop/templates/epic.md
-  - path: .the-loop/templates/story.md
-  - path: .the-loop/templates/bug.md
-  - path: .the-loop/templates/brainstorm.md
-  - path: .the-loop/templates/requirements.md
-  - path: .the-loop/templates/bugfix.md
-  - path: .the-loop/templates/design.md
-  - path: .the-loop/templates/tasks.md
-  - path: .the-loop/templates/execution-log.md
-  - path: .the-loop/templates/capability.md
-  - path: .the-loop/templates/decision.md
-  - path: .the-loop/templates/learning.md
-  - path: .the-loop/templates/config.yaml
-  - path: .the-loop/templates/collaborators.yaml
-  - path: .the-loop/templates/conflicts.md
-  - path: .the-loop/templates/pr-briefing.md
-  - path: .the-loop/templates/webhook-event-prompt.md
-  - path: .the-loop/templates/webhook-autoexecute-prompt.md
+# Templates are INTERNAL to the-loop and are NOT copied into a project. They ship with
+# the plugin under `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/` and the-loop's
+# commands read them from there when authoring an artifact. `templatesDir` records that
+# location so tooling has a single place to resolve it.
+templatesDir: skills/the-loop/templates   # relative to ${CLAUDE_PLUGIN_ROOT}
+
+# Paths that OLDER versions of the-loop created inside a project but that current
+# versions no longer manage. `/the-loop:upgrade-the-loop` removes these when present so
+# projects stop carrying duplicated, internal-only artifacts. Never touch anything a user
+# added under these paths without confirming first.
+deprecated:
+  - path: .the-loop/templates/
+    role: internal-templates
+    reason: >-
+      Templates are now internal to the-loop (issue #36) and live with the plugin's skill
+      under skills/the-loop/templates/; they are no longer copied into each project.
+    removeIn: "0.5.0"
 
 # Per-work-item artifacts: an optional brainstorm scratchpad, the Kiro-style 3-phase spec,
 # plus the execution log. <id> is the ticket id (e.g. issue-1, PROJ-42) — before a ticket

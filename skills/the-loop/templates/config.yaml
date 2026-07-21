@@ -139,7 +139,7 @@ userInteraction:
   diagramFormat: mermaid          # RULE: all diagrams are mermaid
   prSummary:
     required: true                # gate: post the briefing BEFORE requesting human review
-    templatePath: .the-loop/templates/pr-briefing.md
+    templatePath: skills/the-loop/templates/pr-briefing.md   # the-loop's internal template (under ${CLAUDE_PLUGIN_ROOT})
     condensed: true               # tell the reviewer where to focus, and in what order
     includeDiagrams: true         # mermaid diagrams explaining the low-level details
     documentInsightsAndDecisions: true
@@ -182,8 +182,8 @@ webhooks:
       maxConcurrentDispatches: 4
       dedupCacheSize: 1024
       dispatchTimeoutSeconds: 1800
-      promptTemplate: .the-loop/templates/webhook-event-prompt.md
-      spawnPromptTemplate: .the-loop/templates/webhook-autoexecute-prompt.md
+      promptTemplate: skills/the-loop/templates/webhook-event-prompt.md          # internal template; dispatcher falls back to a built-in default when absent
+      spawnPromptTemplate: skills/the-loop/templates/webhook-autoexecute-prompt.md  # internal template; dispatcher falls back to a built-in default when absent
       harnessArgs:
         claude: []                  # e.g. [--permission-mode, acceptEdits]
         cursor: []                  # e.g. [--force]
