@@ -187,7 +187,7 @@ sequenceDiagram
     participant RX as receiver/router
     participant D as dispatcher (FIFO/session)
     participant TR as TmuxRunner
-    participant T as tmux session loop-<slug>
+    participant T as tmux session loop-&lt;slug&gt;
     participant H as harness TUI
     GH->>RX: POST /gh-webhook (signed)
     RX->>D: RoutedEvent
@@ -195,7 +195,7 @@ sequenceDiagram
     TR->>T: load-buffer + paste-buffer -p
     TR->>T: send-keys Enter
     T->>H: prompt appears as (queued) input
-    Note over H: human attached sees the event arrive;<br/>TUI queues it if a turn is running
+    Note over H: human attached sees the event arrive; the TUI queues it if a turn is running
     TR-->>D: ok → registry.touch(delivery id)
 ```
 
