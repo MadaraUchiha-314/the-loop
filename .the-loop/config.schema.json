@@ -742,6 +742,59 @@
           }
         }
       }
+    },
+    "polling": {
+      "type": "object",
+      "description": "Config for the the-loop CLI GitHub poller (`the-loop gh-poll start`) — a pull-based alternative to the webhook receiver for hosts a webhook cannot reach. Dispatch behaviour (harness, runner, spawn policy, templates, registry) is reused from `webhooks.ghWebhook.routing`; only the poll ingress is configured here.",
+      "additionalProperties": false,
+      "properties": {
+        "ghPoll": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "intervalSeconds": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 60,
+              "description": "Seconds between poll cycles."
+            },
+            "repos": {
+              "type": "array",
+              "description": "Repositories to poll as OWNER/REPO. Empty = fall back to ticketing.github.",
+              "items": { "type": "string" }
+            },
+            "monitor": {
+              "type": "object",
+              "description": "Which GitHub entity kinds to poll.",
+              "additionalProperties": false,
+              "properties": {
+                "issues": { "type": "boolean", "default": true },
+                "pullRequests": { "type": "boolean", "default": true }
+              }
+            },
+            "label": {
+              "type": "string",
+              "default": "",
+              "description": "Label gating what is polled. Empty = reuse webhooks.ghWebhook.routing.autoExecuteLabel."
+            },
+            "stateFile": {
+              "type": "string",
+              "default": ".the-loop/poll-state.json",
+              "description": "Durable JSON tracking which comments each item has processed (cross-poll/restart dedup). Git-ignored runtime state."
+            },
+            "ghBinary": {
+              "type": "string",
+              "default": "gh",
+              "description": "Path/name of the gh CLI the poller shells out to (uses the user's existing gh auth)."
+            },
+            "pidfile": {
+              "type": "string",
+              "default": ".the-loop/gh-poll.pid",
+              "description": "Where `start` records the poller PID (for `stop`)."
+            }
+          }
+        }
+      }
     }
   }
 }

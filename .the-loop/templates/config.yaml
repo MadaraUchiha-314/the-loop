@@ -181,3 +181,20 @@ webhooks:
       harnessArgs:
         claude: []                  # e.g. [--permission-mode, acceptEdits]
         cursor: []                  # e.g. [--force]
+
+# Pull-based ingress for hosts a webhook cannot reach (`the-loop gh-poll start`).
+# Discovers issues/PRs carrying the auto-execute label via `gh` and drives them
+# through the SAME routing/dispatch stack above (harness, runner, spawn policy,
+# templates, session registry) — so no duplicate session is ever spawned for the
+# same issue/PR. Only the poll ingress is configured here.
+polling:
+  ghPoll:
+    intervalSeconds: 60             # seconds between poll cycles
+    repos: []                       # OWNER/REPO list; empty = fall back to ticketing.github
+    monitor:
+      issues: true
+      pullRequests: true
+    label: ""                       # empty = reuse routing.autoExecuteLabel above
+    stateFile: .the-loop/poll-state.json
+    ghBinary: gh                    # uses your existing `gh auth` credentials
+    pidfile: .the-loop/gh-poll.pid
