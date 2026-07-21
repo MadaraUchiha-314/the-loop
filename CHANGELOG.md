@@ -1,3 +1,9 @@
+## v0.4.0 (2026-07-21)
+
+### Feat
+
+- **sessions**: tmux runner — attachable interactive harness sessions (issue #32) (#35)
+
 ## v0.3.1 (2026-07-07)
 
 ### Fix
