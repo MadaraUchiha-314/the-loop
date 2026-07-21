@@ -129,6 +129,7 @@ status: in-progress
 | 2 | human (brainstorm) | @MadaraUchiha-314 | Access control environmental (Q4 auth half); receiver-global runner (Q5) | [PR #33 review threads](https://github.com/MadaraUchiha-314/the-loop/pull/33#discussion_r3600144073) |
 | 3 | human (brainstorm) | @MadaraUchiha-314 | Web layer ships; installing the-loop must satisfy the ttyd dependency (Q4 resolved) | [PR #33 review thread](https://github.com/MadaraUchiha-314/the-loop/pull/33#discussion_r3600170758) |
 | 4 | self (implementation) | claude (multi-angle finder + verify) | 6 confirmed findings fixed (stale-session collision on spawn, flags-after-positional extra_args, attach misreporting missing tmux, unreaped ttyd on bind failure, unbounded PR-close kill, spawn registering doomed sessions when the harness binary is missing) + 1 layering cleanup (UnsupportedRunnerError moved to harness/base); 2 candidates refuted/recorded as design choices | commit on PR #35 |
+| 5 | human (review) | @MadaraUchiha-314 | design.md mermaid sequence diagram failed to render — `<br/>` unsupported in sequenceDiagram notes; collapsed note to one line + escaped `<slug>` (e8c16e7) | [PR #35 thread](https://github.com/MadaraUchiha-314/the-loop/pull/35#discussion_r3619526141) |
 
 ## Final validation evidence
 
