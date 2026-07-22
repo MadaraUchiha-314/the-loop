@@ -21,6 +21,7 @@ from typing import Callable, List
 
 from .base import Command, register
 from .gh_webhook import _load_config_defaults
+from .. import eventlog
 from ..harness import ClaudeCodeAdapter, CursorAgentAdapter
 from ..runner import TmuxRunner
 from ..sessions import RegistryError, Session, SessionRegistry, WorkItemRef
@@ -153,6 +154,8 @@ class SessionsCommand(Command):
         close.set_defaults(_action=self._close)
 
     def run(self, args: argparse.Namespace) -> int:
+        # register/close write session-lifecycle events via the registry.
+        eventlog.configure_from_file("sessions")
         return int(args._action(args) or 0)
 
     # -- actions -----------------------------------------------------------------

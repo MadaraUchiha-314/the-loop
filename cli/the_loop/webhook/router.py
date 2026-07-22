@@ -14,6 +14,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import List, Optional, Sequence
 
+from .. import eventlog
 from ..authz import is_authorized
 from ..sessions import WorkItemRef
 
@@ -184,15 +185,39 @@ class Router:
         self, event: str, payload: dict, delivery_id: str
     ) -> Optional[RoutedEvent]:
         """Return a RoutedEvent, or None when filtered / duplicate / unmappable."""
+        action = str(payload.get("action") or "")
         if self.events and event not in self.events:
             logger.debug("ignoring disabled event type %s", event)
+            eventlog.emit(
+                "routing.dropped",
+                level="debug",
+                reason="disabled-event",
+                gh_event=event,
+                action=action,
+                delivery_id=delivery_id,
+            )
             return None
         if delivery_id and delivery_id in self.deduper:
             logger.info("duplicate delivery %s ignored (already seen)", delivery_id)
+            eventlog.emit(
+                "routing.dropped",
+                reason="duplicate-delivery",
+                gh_event=event,
+                action=action,
+                delivery_id=delivery_id,
+            )
             return None
         work_items = extract_work_items(event, payload)
         if not work_items:
             logger.debug("event %s maps to no work item; ignoring", event)
+            eventlog.emit(
+                "routing.dropped",
+                level="debug",
+                reason="no-work-item",
+                gh_event=event,
+                action=action,
+                delivery_id=delivery_id,
+            )
             return None
         # Authorization guard (prompt-injection remediation). PR-close is a
         # lifecycle signal (it only auto-closes the-loop's own session, injects
@@ -209,12 +234,32 @@ class Router:
                 ", ".join(w.ref for w in work_items),
                 actor,
             )
+            eventlog.emit(
+                "routing.dropped",
+                level="warning",
+                reason="unauthorized-actor",
+                gh_event=event,
+                action=action,
+                delivery_id=delivery_id,
+                actor=actor,
+                work_items=[w.ref for w in work_items],
+            )
             return None
+        labeled = event_carries_label(payload, self.auto_execute_label)
+        eventlog.emit(
+            "routing.routed",
+            gh_event=event,
+            action=action,
+            delivery_id=delivery_id,
+            actor=actor,
+            work_items=[w.ref for w in work_items],
+            labeled=labeled,
+        )
         return RoutedEvent(
             event=event,
-            action=str(payload.get("action") or ""),
+            action=action,
             delivery_id=delivery_id or "",
             work_items=work_items,
             payload=payload,
-            labeled=event_carries_label(payload, self.auto_execute_label),
+            labeled=labeled,
         )

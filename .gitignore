@@ -232,3 +232,6 @@ cli/.pytest_cache/
 
 # the-loop: poller cross-poll dedup state (runtime state)
 .the-loop/poll-state.json
+
+# the-loop: structured event log (runtime state; `the-loop events`)
+.the-loop/logs/
