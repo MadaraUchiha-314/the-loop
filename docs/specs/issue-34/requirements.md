@@ -173,15 +173,40 @@ config — no restart of the webhook server either.
    the `webTerminal` — changing it MAY still require a restart (documented), because it
    owns a socket, a subprocess, or live concurrency/dedup state.
 
+### Requirement 8 — only authorized users' actions are actionable (prompt-injection guard)
+
+**User story:** As an operator, I want the-loop to act only on actions taken by users I
+authorize in config, so that a malicious comment/review/issue on a labelled work item
+cannot inject instructions into the agent. Each operator runs their own instance for
+their own logins.
+
+#### Acceptance criteria (EARS)
+
+1. WHEN an event/action's responsible human actor (comment/review author, or the actor
+   who labelled/opened an issue/PR) is not in the configured `authorizedUsers` THEN both
+   the webhook receiver AND the poller SHALL ignore it — not forward it, not spawn on it.
+2. WHEN an action has no identifiable human actor (e.g. a CI `workflow_run`/`check_*`
+   status) THEN the system MAY act on it (it carries status, not free-form instructions).
+3. WHEN `authorizedUsers` is empty THEN the system SHALL fall back to
+   `ticketing.github.owner`; IF that is also unset THEN the system SHALL ignore all
+   human-authored actions (fail closed) and warn at startup.
+4. WHEN the poller evaluates an item THEN it SHALL spawn only for items authored by an
+   authorized user, and forward only comments authored by an authorized user; a dropped
+   comment SHALL be recorded as seen so it is never re-evaluated.
+5. WHEN a `pull_request` `closed` event arrives THEN the receiver MAY act on it regardless
+   of actor (it only auto-closes the-loop's own session and injects no content).
+6. WHEN `authorizedUsers` changes and the receiver hot-reloads THEN the new allowlist
+   SHALL take effect on the next event.
+
 ## Out of scope (this iteration)
 
 - **Non-GitHub provider implementations (e.g. Jira).** The provider seam, config surface
   and `WorkItemRef` are provider-agnostic and reserve the `jira:` provider, but only the
   GitHub provider is implemented here ("for now let's support polling github using
   `gh`"). A new provider drops into the registry with no core changes.
-- **Hot-reloading the shared dispatch config** (`webhooks.ghWebhook.routing`: harness,
-  runner, spawn policy). The dispatcher owns worker threads and the in-memory dedup, so
-  it is established once at start; changing those still needs a restart. Only the
+- **Rebuilding live infrastructure on reload** — see R7.4: the listener bind, `secretEnv`,
+  `webTerminal` and the dispatcher's threads/dedup/registry stay start-time. The dispatcher
+  owns worker threads and the in-memory dedup, so it is established once at start. Only the
   `polling` block hot-reloads.
 - **PR review (inline code) comment threads.** Conversation comments on issues and PRs
   are covered; review-thread polling is a follow-up.

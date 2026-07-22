@@ -80,6 +80,7 @@ class GhItem:
     updated_at: str
     url: str
     is_pr: bool
+    author: str = ""  # login that opened the issue/PR (authorization guard)
     head_ref: str = ""  # PRs only (links a PR to its issue-<n> branch)
     body: str = ""  # PRs only (closing keywords live here)
 
@@ -148,7 +149,7 @@ class GhClient:
                 "--limit",
                 str(_LIST_LIMIT),
                 "--json",
-                "number,title,labels,updatedAt,url",
+                "number,title,labels,updatedAt,url,author",
             ]
         )
         return [self._item_from_json(row, is_pr=False) for row in data or []]
@@ -168,7 +169,7 @@ class GhClient:
                 "--limit",
                 str(_LIST_LIMIT),
                 "--json",
-                "number,title,labels,updatedAt,url,headRefName,body",
+                "number,title,labels,updatedAt,url,headRefName,body,author",
             ]
         )
         return [self._item_from_json(row, is_pr=True) for row in data or []]
@@ -212,6 +213,7 @@ class GhClient:
             updated_at=str(row.get("updatedAt") or ""),
             url=str(row.get("url") or ""),
             is_pr=is_pr,
+            author=str((row.get("author") or {}).get("login") or ""),
             head_ref=str(row.get("headRefName") or ""),
             body=str(row.get("body") or ""),
         )
@@ -399,6 +401,7 @@ class GitHubPollProvider(PollProvider):
             kind=_KIND_PR if gh_item.is_pr else _KIND_ISSUE,
             title=gh_item.title,
             url=gh_item.url,
+            author=gh_item.author,
             labels=list(gh_item.labels),
             raw={"headRef": gh_item.head_ref, "body": gh_item.body},
         )

@@ -16,6 +16,7 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
+from typing import Optional
 
 from .base import Command, register
 from ..webhook import serve
@@ -70,6 +71,22 @@ def _load_config_defaults() -> dict:
     return _read_gh_webhook_config(strict=False)
 
 
+def _ticketing_owner() -> Optional[str]:
+    """``ticketing.github.owner`` — the fallback authorized user (or ``None``)."""
+    if not _CONFIG_PATH.is_file():
+        return None
+    try:
+        import yaml  # optional dependency
+    except ImportError:
+        return None
+    try:
+        data = yaml.safe_load(_CONFIG_PATH.read_text()) or {}
+    except Exception:  # noqa: BLE001
+        return None
+    owner = ((data.get("ticketing") or {}).get("github") or {}).get("owner")
+    return str(owner) if owner else None
+
+
 def _terminate(proc) -> None:
     """Stop a child process (ttyd), escalating to kill if it ignores SIGTERM."""
     if proc is None:
@@ -81,13 +98,15 @@ def _terminate(proc) -> None:
         proc.kill()
 
 
-def _build_routing(gh_webhook_config: dict):
+def _build_routing(gh_webhook_config: dict, owner: Optional[str] = None):
     """Compose router + dispatcher into the server's on_event callback.
 
     Spec: docs/specs/issue-15/design.md §6. Imported lazily-ish here (module
     level is fine — everything is stdlib) and returned with the dispatcher so
-    `start` can drain it on shutdown.
+    `start` can drain it on shutdown. ``owner`` is ``ticketing.github.owner``,
+    the fallback authorized user (prompt-injection guard, issue-34 review).
     """
+    from ..authz import resolve_authorized_users
     from ..harness import build_adapters
     from ..reload import Reloader
     from ..sessions import SessionRegistry
@@ -100,12 +119,20 @@ def _build_routing(gh_webhook_config: dict):
         adapters=build_adapters(config.harness_args),
         config=config,
     )
+    authorized = resolve_authorized_users(config.authorized_users, owner)
+    if not authorized:
+        logger.warning(
+            "no authorizedUsers configured (and no ticketing.github.owner) — the "
+            "receiver will act on NO human-authored events until you set "
+            "webhooks.ghWebhook.routing.authorizedUsers (prompt-injection guard)"
+        )
     # The router shares the dispatcher's deduper: the dispatcher marks processed
     # delivery ids, the router drops duplicates before extraction.
     router = Router(
         events=gh_webhook_config.get("events") or [],
         deduper=dispatcher.deduper,
         auto_execute_label=config.auto_execute_label,
+        authorized_users=authorized,
     )
 
     def apply(gh_cfg: dict) -> None:
@@ -114,13 +141,15 @@ def _build_routing(gh_webhook_config: dict):
         dispatcher.reload(new)
         router.events = list(gh_cfg.get("events") or [])
         router.auto_execute_label = new.auto_execute_label
+        router.authorized_users = resolve_authorized_users(new.authorized_users, owner)
         logger.info(
             "hot-reloaded gh-webhook routing: spawnOnUnmatched=%s runner=%s "
-            "label=%r events=%d",
+            "label=%r events=%d authorizedUsers=%d",
             new.spawn_on_unmatched,
             new.runner,
             new.auto_execute_label,
             len(router.events),
+            len(router.authorized_users),
         )
 
     # Re-read the config file on each event and hot-swap soft policy on change
@@ -213,7 +242,7 @@ class GhWebhookCommand(Command):
             from ..runner import check_dependencies, web_terminal_argv
 
             on_event, dispatcher, routing_config = _build_routing(
-                _load_config_defaults()
+                _load_config_defaults(), owner=_ticketing_owner()
             )
             missing = check_dependencies(
                 routing_config.runner, routing_config.web_terminal.enabled

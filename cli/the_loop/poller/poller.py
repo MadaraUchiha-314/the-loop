@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
+from ..authz import is_authorized
 from ..reload import Reloader
 from ..sessions import SessionRegistry
 from ..webhook.dispatcher import Dispatcher
@@ -158,6 +159,7 @@ class Poller:
         config: PollConfig,
         state: PollState,
         reloader: Optional[Reloader] = None,
+        authorized_users: Sequence[str] = (),
     ):
         self.providers = list(providers)
         self.registry = registry
@@ -165,6 +167,9 @@ class Poller:
         self.config = config
         self.state = state
         self.reloader = reloader
+        # Prompt-injection guard: only these logins' items/comments are acted on
+        # (empty => fail closed for human-authored input). See the_loop.authz.
+        self.authorized_users = list(authorized_users)
 
     # -- one cycle --------------------------------------------------------------
 
@@ -209,7 +214,23 @@ class Poller:
         comments = provider.list_comments(item)
         first_sight = not self.state.is_known(ref)
         seen = self.state.seen_comments(ref)
-        new_comments = [c for c in comments if c.id and c.id not in seen]
+        # Authorization guard (prompt-injection remediation): only act on input
+        # authored by an authorized user. A dropped comment is still baselined
+        # below, so it is never re-evaluated on later cycles.
+        item_authorized = is_authorized(item.author, self.authorized_users)
+        new_comments = [
+            c
+            for c in comments
+            if c.id
+            and c.id not in seen
+            and is_authorized(c.author, self.authorized_users)
+        ]
+        if item.author and not item_authorized:
+            logger.warning(
+                "ignoring %s from unauthorized author %r (not in authorizedUsers)",
+                ref,
+                item.author,
+            )
         has_session = any(
             self.registry.find_by_work_item(wi) is not None for wi in refs
         )
@@ -218,13 +239,15 @@ class Poller:
         # when fresh activity arrives after a prior session ended. The registry
         # (one active session per work item) is the source of truth, so a failed
         # spawn simply retries next cycle and a live session is never doubled.
-        if not has_session and (first_sight or new_comments):
+        # Only spawn for items an authorized user authored (the input we'd feed
+        # to /the-loop:work-on is that item's own body).
+        if item_authorized and not has_session and (first_sight or new_comments):
             self.dispatcher.handle(provider.presence_event(item, refs))
             summary.spawns += 1
 
-        # Forward only genuinely new comments; on first sight the existing
-        # thread is the baseline (the spawned session reads it itself), matching
-        # webhook semantics where you only receive events going forward.
+        # Forward only genuinely new, authorized comments; on first sight the
+        # existing thread is the baseline (the spawned session reads it itself),
+        # matching webhook semantics where you only receive events going forward.
         if not first_sight:
             for comment in new_comments:
                 self.dispatcher.handle(provider.comment_event(item, comment, refs))

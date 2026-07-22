@@ -117,6 +117,29 @@ bind, `secretEnv` and the web terminal are start-time only. The reload build use
 *strict* config read (raises on a broken/missing file) so a transient bad save keeps the
 previous config instead of resetting to defaults.
 
+## Authorization guard (prompt-injection remediation)
+
+the-loop reacts to labelled work items, but the content it then ingests (issue/PR bodies,
+comments, reviews) is authored by anyone on GitHub — treating it as instructions is a
+prompt-injection vector. The guard (`the_loop/authz.py`) enforces: **only actions by
+authorized users are an input the-loop acts on**, at *both* trigger paths.
+
+- `is_authorized(actor, allowlist)`: an actor-less action (CI status — no human free-text)
+  is allowed; a named actor is allowed only if listed; an empty allowlist fails closed for
+  human-authored actions.
+- **Webhook** (`Router`): `event_actor(event, payload)` resolves the responsible human
+  (comment/review author; the `sender` who labelled/opened an issue/PR). Unauthorized →
+  the event is dropped before dispatch. A `pull_request` `closed` event bypasses the guard
+  (lifecycle only — it auto-closes the-loop's own session, injects nothing).
+- **Poller**: `WorkItem.author` (issue/PR opener, added to the `gh` listing) gates spawning;
+  `Comment.author` gates comment forwarding. A dropped comment is still baselined so it is
+  never re-evaluated. (The labeller isn't visible via `gh ... list`, so the item author is
+  the poller's authorizing identity — matching "each operator works their own items".)
+- **Config**: `webhooks.ghWebhook.routing.authorizedUsers` (governs both ingresses).
+  `resolve_authorized_users` falls back to `ticketing.github.owner` when unset, so the
+  common single-operator setup needs no extra config; empty-and-no-owner warns and fails
+  closed. The receiver re-resolves the allowlist on hot-reload.
+
 ## Dedup, two layers
 
 - **`PollState`** (durable, per item, this feature): the primary guarantee — a comment

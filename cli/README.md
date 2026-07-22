@@ -72,6 +72,12 @@ the-loop gh-webhook stop  [--pidfile .the-loop/gh-webhook.pid]
   settings (`host`/`port`/`path`, `secretEnv`, `maxConcurrentDispatches`, `dedupCacheSize`,
   `registryDir`, `webTerminal`) still need a restart. An invalid edit is logged and the
   previous config kept.
+- **Authorized-actor guard (prompt-injection remediation):** the receiver acts only on
+  actions by logins in `routing.authorizedUsers` — comments/reviews and issue/PR
+  labels/opens from anyone else are dropped before dispatch (CI/system events, which carry
+  no human instructions, still pass; a PR-close still auto-closes the session). Empty ⇒
+  falls back to `ticketing.github.owner`, else fails closed with a warning. Each operator
+  runs their own instance for their own login(s). See `docs/decisions/decision-023.md`.
 
 ### `sessions` — link work items to harness sessions (webhook routing)
 
@@ -147,6 +153,11 @@ templates are all reused unchanged.
 - **Hot reload:** edit `polling.sources` / `intervalSeconds` while it runs and the change
   is picked up on the next cycle — no restart. An invalid edit is logged and the previous
   config kept. (The shared dispatch config still needs a restart.)
+- **Authorized-actor guard (prompt-injection remediation):** the poller spawns only for
+  items authored by a login in `routing.authorizedUsers`, and forwards only comments from
+  authorized authors — everything else is ignored. Empty ⇒ falls back to
+  `ticketing.github.owner`, else fails closed with a warning. See
+  `docs/decisions/decision-023.md`.
 - **`--once`** runs a single cycle and exits (for a cron/systemd timer); otherwise it
   loops until `poll stop` (or SIGINT/SIGTERM), writing a pidfile like the receiver.
   Design: `docs/specs/issue-34/design.md`, `docs/decisions/decision-022.md`.

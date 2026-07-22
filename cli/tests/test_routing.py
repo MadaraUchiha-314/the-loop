@@ -27,6 +27,7 @@ from the_loop.webhook.router import (
     Deduper,
     RoutedEvent,
     Router,
+    event_actor,
     event_carries_label,
     extract_work_items,
 )
@@ -243,6 +244,71 @@ def test_router_sets_labeled_flag():
     assert labeled is not None and labeled.labeled is True
     plain = router.route("issue_comment", payload_issue_comment(), "d-2")
     assert plain is not None and plain.labeled is False
+
+
+def _issue_comment_by(login, number=15):
+    return {
+        "action": "created",
+        "repository": {"full_name": "octo/repo"},
+        "issue": {"number": number},
+        "comment": {"user": {"login": login}, "body": "hi"},
+    }
+
+
+def test_event_actor_extraction():
+    assert event_actor("issue_comment", _issue_comment_by("alice")) == "alice"
+    assert (
+        event_actor(
+            "pull_request_review",
+            {"review": {"user": {"login": "bob"}}},
+        )
+        == "bob"
+    )
+    assert (
+        event_actor("issues", {"sender": {"login": "carol"}, "action": "labeled"})
+        == "carol"
+    )
+    # pure system events (CI) have no human actor
+    assert event_actor("workflow_run", {"workflow_run": {}}) is None
+
+
+def test_router_drops_event_from_unauthorized_actor():
+    router = Router(events=[], authorized_users=["me"])
+    assert router.route("issue_comment", _issue_comment_by("attacker"), "d-1") is None
+    assert router.route("issue_comment", _issue_comment_by("me"), "d-2") is not None
+
+
+def test_router_empty_allowlist_fails_closed_for_human_events():
+    router = Router(events=[], authorized_users=[])  # nobody authorized
+    assert router.route("issue_comment", _issue_comment_by("anyone"), "d-1") is None
+
+
+def test_router_allows_actorless_ci_event_even_when_gated():
+    router = Router(events=[], authorized_users=["me"])
+    routed = router.route(
+        "workflow_run",
+        {
+            "repository": {"full_name": "octo/repo"},
+            "workflow_run": {"head_branch": "issue-15", "pull_requests": []},
+        },
+        "d-1",
+    )
+    assert routed is not None  # CI status carries no human instruction
+
+
+def test_router_pr_close_bypasses_authz_for_cleanup():
+    router = Router(events=[], authorized_users=["me"])
+    routed = router.route(
+        "pull_request",
+        {
+            "action": "closed",
+            "repository": {"full_name": "octo/repo"},
+            "sender": {"login": "attacker"},
+            "pull_request": {"number": 20, "merged": True},
+        },
+        "d-1",
+    )
+    assert routed is not None  # lifecycle auto-close must still fire
 
 
 def test_router_deduper_is_bounded_lru():

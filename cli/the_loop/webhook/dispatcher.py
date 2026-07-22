@@ -18,7 +18,7 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from string import Template
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from ..harness.base import HarnessAdapter
 from ..runner import TmuxRunner
@@ -126,6 +126,9 @@ class RoutingConfig:
     prompt_template: str = _DEFAULT_EVENT_PROMPT
     spawn_prompt_template: str = _DEFAULT_SPAWN_PROMPT
     harness_args: Dict[str, list] = field(default_factory=dict)
+    # GitHub logins whose actions the-loop may act on (prompt-injection guard,
+    # issue-34 review). Empty => fail closed for human-authored actions.
+    authorized_users: List[str] = field(default_factory=list)
 
     @classmethod
     def from_mapping(cls, data: dict) -> "RoutingConfig":
@@ -149,6 +152,7 @@ class RoutingConfig:
                 data.get("spawnPromptTemplate", _DEFAULT_SPAWN_PROMPT)
             ),
             harness_args=dict(data.get("harnessArgs") or {}),
+            authorized_users=[str(u) for u in (data.get("authorizedUsers") or [])],
         )
 
 

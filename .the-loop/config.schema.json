@@ -665,6 +665,12 @@
                   "default": "the-loop: auto-execute",
                   "description": "Issue/PR label that opts a work item into autonomous execution (spawnOnUnmatched: labeled). Read from the webhook payload, no API call."
                 },
+                "authorizedUsers": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "description": "SECURITY (prompt-injection guard): GitHub logins whose actions the-loop may act on. Comments/reviews/labels/items authored by anyone not listed are ignored by BOTH the webhook receiver and the poller. Empty = fall back to ticketing.github.owner; if that is also unset, human-authored events are all ignored (fail closed). Each operator runs their own instance for their own logins.",
+                  "default": []
+                },
                 "spawnWorkdir": {
                   "type": "string",
                   "default": ".",

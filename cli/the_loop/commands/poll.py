@@ -26,6 +26,7 @@ from typing import List, Optional
 
 from .base import Command, register
 from .gh_webhook import _load_config_defaults
+from ..authz import resolve_authorized_users
 from ..poller import (
     PollConfig,
     Poller,
@@ -73,6 +74,12 @@ def _repos_from_ticketing() -> List[str]:
     gh = (_load_full_config().get("ticketing") or {}).get("github") or {}
     owner, repo = gh.get("owner"), gh.get("repo")
     return [f"{owner}/{repo}"] if owner and repo else []
+
+
+def _ticketing_owner() -> Optional[str]:
+    gh = (_load_full_config().get("ticketing") or {}).get("github") or {}
+    owner = gh.get("owner")
+    return str(owner) if owner else None
 
 
 def _build_dispatcher(routing_map: Optional[dict]):
@@ -175,6 +182,15 @@ class PollCommand(Command):
         config = PollConfig.from_mapping(_load_polling_config())
         config.interval_seconds = args.interval  # flag overrides until a config edit
         config.state_file = args.state_file
+        authorized = resolve_authorized_users(
+            routing.authorized_users, _ticketing_owner()
+        )
+        if not authorized:
+            logger.warning(
+                "no authorizedUsers configured (and no ticketing.github.owner) — "
+                "the poller will act on NO items or comments until you set "
+                "webhooks.ghWebhook.routing.authorizedUsers (prompt-injection guard)"
+            )
         poller = Poller(
             providers=plan.providers,
             registry=dispatcher.registry,
@@ -182,6 +198,7 @@ class PollCommand(Command):
             config=config,
             state=PollState(config.state_file),
             reloader=Reloader(_CONFIG_PATH, build_plan),
+            authorized_users=authorized,
         )
         providers = plan.providers
 

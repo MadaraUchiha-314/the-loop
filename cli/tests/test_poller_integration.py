@@ -70,7 +70,13 @@ class GhState:
 
     def __init__(self):
         self.issues = [
-            {"number": 15, "title": "i", "labels": [{"name": LABEL}], "url": "u"}
+            {
+                "number": 15,
+                "title": "i",
+                "labels": [{"name": LABEL}],
+                "url": "u",
+                "author": {"login": "octocat"},
+            }
         ]
         self.comments = []
 
@@ -119,6 +125,7 @@ def _make(tmp_path, gh_state):
         dispatcher=dispatcher,
         config=PollConfig(),
         state=PollState(tmp_path / "state.json"),
+        authorized_users=["octocat"],  # the fixture author (authz guard)
     )
     return registry, adapter, dispatcher, poller
 

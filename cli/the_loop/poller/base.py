@@ -53,6 +53,7 @@ class WorkItem:
     kind: str  # provider vocabulary, e.g. "issue" | "pull-request"
     title: str = ""
     url: str = ""
+    author: str = ""  # login that created the item (authorization guard)
     labels: List[str] = field(default_factory=list)
     raw: Dict = field(default_factory=dict)
 
