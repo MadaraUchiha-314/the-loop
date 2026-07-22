@@ -13,6 +13,7 @@ intervention, escalating only when a decision/opinion is genuinely required.
 > **Read the relevant reference file before acting** — they carry the full detail so the
 > essence is not lost:
 > - `reference/workflow.md` — the loop, phases, TDD, reviews, autonomy, DAG, resumability.
+> - `reference/onboarding.md` — the guided, schema-driven config onboarding `/init` runs (groups, ask levels, sensible-defaults precedence).
 > - `reference/design-artifacts.md` — UI/UX design artifacts (Figma / HTML prototypes) in the design phase and the designer iteration loop.
 > - `reference/reviewing.md` — the self/critic review procedure the review counts drive.
 > - `reference/tooling.md` — repo management, per-language tooling matrix, hooks, CI parity.
