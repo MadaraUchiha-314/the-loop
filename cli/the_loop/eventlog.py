@@ -114,8 +114,7 @@ EVENT_TYPES: Dict[str, str] = {
     ),
     # -- poller (source: poll) ------------------------------------------------
     "poll.cycle": (
-        "One poll cycle finished (items_seen, spawns, comments_forwarded, "
-        "errors)."
+        "One poll cycle finished (items_seen, spawns, comments_forwarded, errors)."
     ),
     "poll.provider_error": (
         "Asking a provider for its work items failed; retried next cycle "
@@ -146,8 +145,9 @@ EVENT_TYPES: Dict[str, str] = {
 
 def _utcnow() -> str:
     return (
-        datetime.now(timezone.utc)
-        .strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]  # microseconds -> milliseconds
+        datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[
+            :-3
+        ]  # microseconds -> milliseconds
         + "Z"
     )
 

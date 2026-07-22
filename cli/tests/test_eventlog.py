@@ -111,9 +111,7 @@ def test_read_events_filters(tmp_path):
         "dispatch.failed"
     ]
     # work_item matches both the scalar field and the work_items list
-    assert (
-        len(list(eventlog.read_events(path, work_item="github:octo/repo#15"))) == 2
-    )
+    assert len(list(eventlog.read_events(path, work_item="github:octo/repo#15"))) == 2
     assert len(list(eventlog.read_events(path, delivery_id="d-1"))) == 3
     assert [r["event"] for r in eventlog.read_events(path, source="poll")] == [
         "poll.cycle"
@@ -122,8 +120,7 @@ def test_read_events_filters(tmp_path):
         "dispatch.failed"
     ]
     assert [
-        r["event"]
-        for r in eventlog.read_events(path, since="2026-07-22T10:30:00.000Z")
+        r["event"] for r in eventlog.read_events(path, since="2026-07-22T10:30:00.000Z")
     ] == ["poll.cycle"]
 
 
@@ -193,7 +190,9 @@ def test_events_json_formats(tmp_path, capsys):
         "dispatch.failed",
         "poll.cycle",
     ]
-    assert main(["events", "--file", str(path), "--format", "jsonl", "--limit", "2"]) == 0
+    assert (
+        main(["events", "--file", str(path), "--format", "jsonl", "--limit", "2"]) == 0
+    )
     lines = capsys.readouterr().out.strip().splitlines()
     assert [json.loads(line)["event"] for line in lines] == [
         "dispatch.failed",

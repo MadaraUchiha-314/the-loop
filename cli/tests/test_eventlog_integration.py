@@ -95,7 +95,10 @@ def stack(tmp_path):
                 dispatcher.handle(routed)
 
         httpd = serve(
-            host="127.0.0.1", port=0, path="/gh-webhook", secret=SECRET,
+            host="127.0.0.1",
+            port=0,
+            path="/gh-webhook",
+            secret=SECRET,
             on_event=on_event,
         )
         threading.Thread(target=httpd.serve_forever, daemon=True).start()
@@ -159,7 +162,9 @@ def test_accepted_event_leaves_a_full_trail(stack):
     """
     start, events, _ = stack
     port, _ = start()
-    assert post_webhook(port, "issue_comment", issue_comment_payload("hi"), "d-1") == 202
+    assert (
+        post_webhook(port, "issue_comment", issue_comment_payload("hi"), "d-1") == 202
+    )
     assert wait_until(lambda: any(e["event"] == "dispatch.succeeded" for e in events()))
     trail = [e["event"] for e in events(delivery_id="d-1")]
     for expected in (
@@ -192,7 +197,10 @@ def test_rejections_are_recorded_with_reasons(stack):
     port, _ = start()
     assert (
         post_webhook(
-            port, "issue_comment", issue_comment_payload("x"), "d-bad",
+            port,
+            "issue_comment",
+            issue_comment_payload("x"),
+            "d-bad",
             secret="wrong",
         )
         == 401
@@ -233,7 +241,9 @@ def test_failed_dispatch_is_recorded_as_retryable(stack):
     """
     start, events, _ = stack
     port, _ = start(exit_code=3)
-    assert post_webhook(port, "issue_comment", issue_comment_payload("go"), "d-f") == 202
+    assert (
+        post_webhook(port, "issue_comment", issue_comment_payload("go"), "d-f") == 202
+    )
     assert wait_until(lambda: events(types=["dispatch.failed"]))
     (failed,) = events(types=["dispatch.failed"])
     assert failed["level"] == "error"
@@ -255,7 +265,9 @@ def test_spawn_and_session_lifecycle_are_recorded(stack):
     """
     start, events, _ = stack
     port, _ = start(register_session=False, spawn_on_unmatched="always")
-    assert post_webhook(port, "issue_comment", issue_comment_payload("new"), "d-s") == 202
+    assert (
+        post_webhook(port, "issue_comment", issue_comment_payload("new"), "d-s") == 202
+    )
     assert wait_until(lambda: events(types=["session.spawned"]))
     (spawned,) = events(types=["session.spawned"])
     assert spawned["work_item"] == REF
@@ -283,8 +295,17 @@ def test_events_command_reads_the_live_trail(stack, capsys):
     out = capsys.readouterr().out
     assert "dispatch.succeeded" in out
     assert (
-        main(["events", "--file", str(log_path), "--format", "json", "--type",
-              "dispatch.*"])
+        main(
+            [
+                "events",
+                "--file",
+                str(log_path),
+                "--format",
+                "json",
+                "--type",
+                "dispatch.*",
+            ]
+        )
         == 0
     )
     records = json.loads(capsys.readouterr().out)
