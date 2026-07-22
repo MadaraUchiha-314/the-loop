@@ -1,3 +1,9 @@
+## v0.5.1 (2026-07-22)
+
+### Fix
+
+- **templates**: keep templates internal to the-loop instead of copying to every repo (issue #36) (#44)
+
 ## v0.5.0 (2026-07-22)
 
 ### Feat
