@@ -78,6 +78,8 @@ the-loop gh-webhook stop  [--pidfile .the-loop/gh-webhook.pid]
   no human instructions, still pass; a PR-close still auto-closes the session). Empty ⇒
   falls back to `ticketing.github.owner`, else fails closed with a warning. Each operator
   runs their own instance for their own login(s). See `docs/decisions/decision-023.md`.
+- **Structured event log:** every receive/reject/route/dispatch/spawn/close decision is
+  appended to `.the-loop/logs/events.jsonl` — query it with `the-loop events` (below).
 
 ### `sessions` — link work items to harness sessions (webhook routing)
 
@@ -161,6 +163,44 @@ templates are all reused unchanged.
 - **`--once`** runs a single cycle and exits (for a cron/systemd timer); otherwise it
   loops until `poll stop` (or SIGINT/SIGTERM), writing a pidfile like the receiver.
   Design: `docs/specs/issue-34/design.md`, `docs/decisions/decision-022.md`.
+- **Structured event log:** cycle summaries, spawns, forwarded comments and
+  provider/item errors are appended to the same event log as the receiver — query with
+  `the-loop events --source poll`.
+
+### `events` — query the structured event log (end-to-end o11y)
+
+```bash
+the-loop events [--file .the-loop/logs/events.jsonl] [--type PATTERN ...] \
+                [--work-item github:OWNER/REPO#N] [--delivery-id ID] \
+                [--source gh-webhook|poll|sessions] [--level warning] \
+                [--since 2h|2026-07-22T10:00:00Z] [--limit 50] \
+                [--format table|json|jsonl] [--follow]
+the-loop events --types      # the documented catalog of event types
+```
+
+The receiver, the poller and the sessions CLI append **every decision they make** —
+webhook accepted/rejected (and why), event routed/dropped (with a machine-readable
+`reason` like `unauthorized-actor` or `duplicate-delivery`), session spawned/resumed
+(naming the triggering event and delivery id), dispatch failed (with the error and
+whether redelivery/the next poll cycle retries it), session closed/auto-closed — as one
+JSON object per line to `observability.eventLog.path` (default
+`.the-loop/logs/events.jsonl`, git-ignored). This command is the query surface:
+
+- `--work-item` shows one item's full history ("which events triggered this
+  session?"); `--delivery-id` follows a single GitHub delivery end to end.
+- `--type` takes fnmatch patterns (repeatable): `--type 'dispatch.*' --level error`
+  answers "what failed?".
+- `--since` accepts ISO-8601 UTC or relative (`30s`/`15m`/`2h`/`1d`); `--follow`
+  tails the log live; `--limit` keeps the last N (default 50, `0` = all).
+- `--format json|jsonl` is machine-readable (for agents and dashboards); the file
+  itself is plain JSONL, so `grep`/`jq`/`tail -f` work directly on it.
+
+Every record carries `ts`/`source`/`event`/`level`/`pid` plus documented per-type
+fields; the catalog (`the-loop events --types`) is enforced against the emitted types
+by a unit test. Writes are append-only and multi-process safe, a broken log never
+breaks ingress, and `observability.eventLog.enabled: false` turns emission off.
+Schema + agent guidance: `skills/the-loop/reference/observability.md`; storage decision
+(JSONL, not SQLite): `docs/decisions/decision-025.md`.
 
 ### `scenarios` — query the Gherkin scenarios integration tests cover
 

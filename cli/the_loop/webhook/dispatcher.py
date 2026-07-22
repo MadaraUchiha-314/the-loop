@@ -20,6 +20,7 @@ from pathlib import Path
 from string import Template
 from typing import Dict, List, Optional
 
+from .. import eventlog
 from ..harness.base import HarnessAdapter
 from ..runner import TmuxRunner
 from ..sessions import Session, SessionRegistry, WorkItemRef
@@ -259,6 +260,12 @@ class Dispatcher:
                     "duplicate delivery %s ignored (already dispatched)",
                     routed.delivery_id,
                 )
+                eventlog.emit(
+                    "dispatch.dropped",
+                    reason="duplicate-delivery",
+                    gh_event=routed.event,
+                    delivery_id=routed.delivery_id,
+                )
                 return
             # Mark at enqueue so an in-flight duplicate can't double-dispatch;
             # a failed dispatch discards the id so GitHub redelivery retries it.
@@ -293,6 +300,12 @@ class Dispatcher:
                     session.work_item.ref,
                     "merged" if merged else "closed",
                 )
+                eventlog.emit(
+                    "session.autoclosed",
+                    work_item=session.work_item.ref,
+                    merged=merged,
+                    delivery_id=routed.delivery_id or None,
+                )
             if not matched:
                 logger.debug("PR-close matched no active session; nothing to close")
             return
@@ -307,6 +320,13 @@ class Dispatcher:
                     routed.delivery_id,
                     session.work_item.ref,
                 )
+                eventlog.emit(
+                    "dispatch.dropped",
+                    reason="already-processed",
+                    work_item=session.work_item.ref,
+                    gh_event=routed.event,
+                    delivery_id=routed.delivery_id,
+                )
                 continue
             logger.info(
                 "routing %s (delivery=%s) -> session %s",
@@ -320,6 +340,13 @@ class Dispatcher:
         refs = ", ".join(item.ref for item in routed.work_items)
         if not self._should_spawn(routed):
             logger.info("no active session for %s; dropping %s", refs, routed.event)
+            eventlog.emit(
+                "dispatch.dropped",
+                reason="spawn-policy",
+                work_items=[item.ref for item in routed.work_items],
+                gh_event=routed.event,
+                delivery_id=routed.delivery_id or None,
+            )
             if routed.delivery_id:
                 self.deduper.discard(routed.delivery_id)
             return
@@ -341,6 +368,13 @@ class Dispatcher:
                 self._workers[key] = worker
                 worker.start()
             self._queues[key].put((routed, spawn))
+        eventlog.emit(
+            "dispatch.queued",
+            work_item=key,
+            gh_event=routed.event,
+            delivery_id=routed.delivery_id or None,
+            spawn=spawn,
+        )
 
     # -- dispatch ----------------------------------------------------------------
 
@@ -354,8 +388,17 @@ class Dispatcher:
             with self._semaphore:
                 try:
                     self._dispatch_one(key, routed, spawn)
-                except Exception:
+                except Exception as exc:
                     logger.exception("dispatch failed for %s", key)
+                    eventlog.emit(
+                        "dispatch.error",
+                        level="error",
+                        work_item=key,
+                        gh_event=routed.event,
+                        delivery_id=routed.delivery_id or None,
+                        error=str(exc),
+                        will_retry=bool(routed.delivery_id),
+                    )
                     if routed.delivery_id:
                         self.deduper.discard(routed.delivery_id)
 
@@ -366,6 +409,13 @@ class Dispatcher:
                 self._spawn_for(WorkItemRef.parse(key), routed)
             else:
                 logger.info("session %s vanished before dispatch; dropping", key)
+                eventlog.emit(
+                    "dispatch.dropped",
+                    reason="session-vanished",
+                    work_item=key,
+                    gh_event=routed.event,
+                    delivery_id=routed.delivery_id or None,
+                )
             return
 
         prompt = self._render_prompt(routed, session.work_item, self._event_template)
@@ -383,6 +433,15 @@ class Dispatcher:
                     session.harness,
                     key,
                 )
+                eventlog.emit(
+                    "dispatch.dropped",
+                    level="error",
+                    reason="no-adapter",
+                    work_item=key,
+                    harness=session.harness,
+                    gh_event=routed.event,
+                    delivery_id=routed.delivery_id or None,
+                )
                 if routed.delivery_id:
                     self.deduper.discard(routed.delivery_id)
                 return
@@ -393,10 +452,29 @@ class Dispatcher:
 
         if ok:
             logger.info("%s %s for %s", verb, session.harness, key)
+            eventlog.emit(
+                "dispatch.succeeded",
+                work_item=key,
+                harness=session.harness,
+                via=session.runner,
+                gh_event=routed.event,
+                delivery_id=routed.delivery_id or None,
+            )
             self.registry.touch(key, delivery_id=routed.delivery_id or None)
         else:
             logger.error(
                 "%s of %s for %s failed: %s", verb, session.harness, key, error
+            )
+            eventlog.emit(
+                "dispatch.failed",
+                level="error",
+                work_item=key,
+                harness=session.harness,
+                via=session.runner,
+                gh_event=routed.event,
+                delivery_id=routed.delivery_id or None,
+                error=error,
+                will_retry=bool(routed.delivery_id),
             )
             if routed.delivery_id:
                 self.deduper.discard(routed.delivery_id)
@@ -407,6 +485,14 @@ class Dispatcher:
             logger.error(
                 "no adapter for defaultHarness %r; cannot spawn",
                 self.config.default_harness,
+            )
+            eventlog.emit(
+                "session.spawn_failed",
+                level="error",
+                work_item=work_item.ref,
+                harness=self.config.default_harness,
+                error="no adapter for defaultHarness",
+                will_retry=False,
             )
             return
         prompt = self._render_prompt(routed, work_item, self._spawn_template)
@@ -421,6 +507,14 @@ class Dispatcher:
         )
         if not result.ok:
             logger.error("spawn for %s failed: %s", work_item.ref, result.error)
+            eventlog.emit(
+                "session.spawn_failed",
+                level="error",
+                work_item=work_item.ref,
+                harness=self.config.default_harness,
+                error=result.error,
+                will_retry=bool(routed.delivery_id),
+            )
             if routed.delivery_id:
                 self.deduper.discard(routed.delivery_id)
             return
@@ -437,6 +531,16 @@ class Dispatcher:
             self.config.default_harness,
             result.session_id,
             work_item.ref,
+        )
+        eventlog.emit(
+            "session.spawned",
+            work_item=work_item.ref,
+            harness=self.config.default_harness,
+            harness_session_id=result.session_id,
+            runner="process",
+            gh_event=routed.event,
+            action=routed.action or None,
+            delivery_id=routed.delivery_id or None,
         )
 
     def _spawn_tmux(
@@ -458,6 +562,14 @@ class Dispatcher:
                 work_item.ref,
                 self.config.default_harness,
             )
+            eventlog.emit(
+                "session.spawn_failed",
+                level="error",
+                work_item=work_item.ref,
+                harness=self.config.default_harness,
+                error=f"harness CLI {adapter.binary!r} not found on PATH",
+                will_retry=bool(routed.delivery_id),
+            )
             if routed.delivery_id:
                 self.deduper.discard(routed.delivery_id)
             return
@@ -472,6 +584,14 @@ class Dispatcher:
         )
         if not result.ok:
             logger.error("tmux spawn for %s failed: %s", work_item.ref, result.error)
+            eventlog.emit(
+                "session.spawn_failed",
+                level="error",
+                work_item=work_item.ref,
+                harness=self.config.default_harness,
+                error=result.error,
+                will_retry=bool(routed.delivery_id),
+            )
             if routed.delivery_id:
                 self.deduper.discard(routed.delivery_id)
             return
@@ -492,6 +612,17 @@ class Dispatcher:
             session_id,
             work_item.ref,
             session.tmux_target,
+        )
+        eventlog.emit(
+            "session.spawned",
+            work_item=work_item.ref,
+            harness=self.config.default_harness,
+            harness_session_id=session_id,
+            runner="tmux",
+            tmux_target=session.tmux_target,
+            gh_event=routed.event,
+            action=routed.action or None,
+            delivery_id=routed.delivery_id or None,
         )
 
     def _render_prompt(

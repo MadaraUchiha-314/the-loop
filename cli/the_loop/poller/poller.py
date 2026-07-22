@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
+from .. import eventlog
 from ..authz import is_authorized
 from ..reload import Reloader
 from ..sessions import SessionRegistry
@@ -186,6 +187,13 @@ class Poller:
             summary.comments_forwarded,
             f", {len(summary.errors)} error(s)" if summary.errors else "",
         )
+        eventlog.emit(
+            "poll.cycle",
+            items_seen=summary.items_seen,
+            spawns=summary.spawns,
+            comments_forwarded=summary.comments_forwarded,
+            errors=summary.errors or None,
+        )
         return summary
 
     def _poll_provider(self, provider: PollProvider, summary: PollSummary) -> None:
@@ -193,6 +201,13 @@ class Poller:
             items = provider.list_work_items()
         except ProviderError as exc:
             logger.error("polling %s failed: %s", provider.describe(), exc)
+            eventlog.emit(
+                "poll.provider_error",
+                level="error",
+                provider=provider.describe(),
+                error=str(exc),
+                will_retry=True,
+            )
             summary.errors.append(f"{provider.describe()}: {exc}")
             return
         for item in items:
@@ -201,6 +216,13 @@ class Poller:
                 self._process_item(provider, item, summary)
             except ProviderError as exc:
                 logger.error("processing %s failed: %s", item.ref, exc)
+                eventlog.emit(
+                    "poll.item_error",
+                    level="error",
+                    work_item=item.ref,
+                    error=str(exc),
+                    will_retry=True,
+                )
                 summary.errors.append(f"{item.ref}: {exc}")
 
     def _process_item(
@@ -231,6 +253,12 @@ class Poller:
                 ref,
                 item.author,
             )
+            eventlog.emit(
+                "poll.unauthorized",
+                level="warning",
+                work_item=ref,
+                actor=item.author,
+            )
         has_session = any(
             self.registry.find_by_work_item(wi) is not None for wi in refs
         )
@@ -251,6 +279,12 @@ class Poller:
         if not first_sight:
             for comment in new_comments:
                 self.dispatcher.handle(provider.comment_event(item, comment, refs))
+                eventlog.emit(
+                    "poll.comment_forwarded",
+                    work_item=ref,
+                    comment_id=comment.id,
+                    actor=comment.author,
+                )
                 summary.comments_forwarded += 1
 
         self.state.update(ref, [c.id for c in comments if c.id], _utcnow())
@@ -270,6 +304,13 @@ class Poller:
             "hot-reloaded polling: %d source(s), interval=%ss",
             len(plan.providers),
             plan.interval_seconds,
+        )
+        eventlog.emit(
+            "config.reloaded",
+            detail=(
+                f"polling: {len(plan.providers)} source(s), "
+                f"interval={plan.interval_seconds}s"
+            ),
         )
 
     # -- run loop ---------------------------------------------------------------

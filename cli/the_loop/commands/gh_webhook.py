@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Optional
 
 from .base import Command, register
+from .. import eventlog
 from ..webhook import serve
 
 logger = logging.getLogger("the-loop.gh-webhook")
@@ -151,6 +152,14 @@ def _build_routing(gh_webhook_config: dict, owner: Optional[str] = None):
             len(router.events),
             len(router.authorized_users),
         )
+        eventlog.emit(
+            "config.reloaded",
+            detail=(
+                f"gh-webhook routing: spawnOnUnmatched={new.spawn_on_unmatched} "
+                f"runner={new.runner} events={len(router.events)} "
+                f"authorizedUsers={len(router.authorized_users)}"
+            ),
+        )
 
     # Re-read the config file on each event and hot-swap soft policy on change
     # (a bad edit is logged and the previous config kept). Bind/secret, the web
@@ -230,6 +239,7 @@ class GhWebhookCommand(Command):
         logging.basicConfig(
             level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
         )
+        eventlog.configure_from_file("gh-webhook")
         secret = os.environ.get(args.secret_env)
         if not secret:
             logger.warning(
@@ -292,6 +302,14 @@ class GhWebhookCommand(Command):
             args.path,
             pidfile,
         )
+        eventlog.emit(
+            "server.started",
+            host=args.host,
+            port=args.port,
+            path=args.path,
+            routing=bool(args.route),
+            verifying_signatures=bool(secret),
+        )
         try:
             httpd.serve_forever()
         finally:
@@ -299,6 +317,7 @@ class GhWebhookCommand(Command):
             if dispatcher is not None:
                 dispatcher.stop()
             _terminate(web_proc)
+            eventlog.emit("server.stopped", host=args.host, port=args.port)
             try:
                 pidfile.unlink()
             except FileNotFoundError:

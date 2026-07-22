@@ -76,6 +76,9 @@ observability:
   devLevel: debug
   runtimeLevel: info
   browserLogging: chrome-devtools-mcp
+  eventLog:                       # structured JSONL o11y trail; `the-loop events`
+    enabled: true
+    path: .the-loop/logs/events.jsonl
 
 reviews:
   selfReviewCount: 3

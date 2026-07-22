@@ -445,6 +445,19 @@
           "type": "string",
           "description": "How browser logs are surfaced to the harness, e.g. chrome-devtools-mcp.",
           "default": "chrome-devtools-mcp"
+        },
+        "eventLog": {
+          "type": "object",
+          "description": "Structured JSONL event log of every routing/dispatch/session decision made by the-loop's CLI processes (gh-webhook, poll, sessions). Queried with `the-loop events`; schema in skills/the-loop/reference/observability.md (decision-025).",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "path": {
+              "type": "string",
+              "default": ".the-loop/logs/events.jsonl",
+              "description": "Append-only JSONL file (git-ignored runtime state)."
+            }
+          }
         }
       }
     },

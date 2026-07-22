@@ -26,6 +26,7 @@ from typing import List, Optional
 
 from .base import Command, register
 from .gh_webhook import _load_config_defaults
+from .. import eventlog
 from ..authz import resolve_authorized_users
 from ..poller import (
     PollConfig,
@@ -144,6 +145,7 @@ class PollCommand(Command):
         logging.basicConfig(
             level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
         )
+        eventlog.configure_from_file("poll")
         dispatcher, routing = _build_dispatcher(_load_config_defaults().get("routing"))
 
         # Rebuilds the mutable plan (providers + interval) from the config file.
@@ -222,10 +224,17 @@ class PollCommand(Command):
             routing.runner,
             routing.spawn_on_unmatched,
         )
+        eventlog.emit(
+            "poller.started",
+            interval_seconds=config.interval_seconds,
+            sources=[p.describe() for p in providers],
+            once=args.once,
+        )
         try:
             poller.run(once=args.once, stop_event=stop_event)
         finally:
             dispatcher.stop()
+            eventlog.emit("poller.stopped")
             if not args.once:
                 try:
                     pidfile.unlink()
