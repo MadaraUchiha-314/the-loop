@@ -1,3 +1,9 @@
+## v0.7.0 (2026-07-22)
+
+### Feat
+
+- **cli**: structured JSONL event log — end-to-end o11y of the CLI's actions (issue #50) (#52)
+
 ## v0.6.0 (2026-07-22)
 
 ### Feat
