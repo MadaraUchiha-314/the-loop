@@ -13,6 +13,79 @@
       "description": "What a risk tier requires before completion: finish autonomously after the review loop, or require a human to approve the PR (and optionally the spec)."
     }
   },
+  "x-onboarding": {
+    "description": "Drives the guided onboarding `/the-loop:init` runs (see the the-loop skill's reference/onboarding.md). Groups club related top-level keys that interact and are established with the user together, in this order. Per-key explanations, defaults, enum possibilities and examples come from the property schemas below — this block only adds grouping and ask policy, so the schema stays the single source of truth. `version` belongs to no group: init stamps it. Validators ignore x-* keywords.",
+    "askLevels": {
+      "always": "No sensible default exists — init MUST establish this group with the user (or report it under needs-user when running non-interactively).",
+      "confirm": "Init proposes sensible values (detected from the repo, else the schema default) and asks the user to confirm or adjust the whole group in one pass.",
+      "advanced": "Sensible defaults are applied silently; the group is only walked through when the user asks for the full tour."
+    },
+    "groups": [
+      {
+        "id": "project",
+        "title": "Project & ticketing",
+        "ask": "always",
+        "explain": "Where work items (tickets) live and how the repository is laid out. Every work item needs a ticket, so the loop cannot run until this is right.",
+        "keys": ["ticketing", "repository"]
+      },
+      {
+        "id": "tooling",
+        "title": "Languages & tooling",
+        "ask": "confirm",
+        "explain": "The exact package manager / test runner / linter / type-checker per language. Detected from lock files, manifests and CI config; CI must use exactly the same tooling as local.",
+        "keys": ["tooling"]
+      },
+      {
+        "id": "workflow",
+        "title": "Workflow & phases",
+        "ask": "confirm",
+        "explain": "The Kiro-style 3-phase spec workflow (requirements → design → tasks), where specs and capability docs live, and the phase labels tracked on the ticket.",
+        "keys": ["workflow"]
+      },
+      {
+        "id": "quality",
+        "title": "Quality gates",
+        "ask": "confirm",
+        "explain": "What runs before a commit/push (lint, typecheck, tests), the commit convention, the TDD discipline, Gherkin scenario docstrings on integration tests, and the minimalism guard.",
+        "keys": ["hooks", "testing", "tdd", "minimalism"]
+      },
+      {
+        "id": "reviews-autonomy",
+        "title": "Reviews & autonomy",
+        "ask": "confirm",
+        "explain": "How many self/critic review rounds run before escalating to a human, and how much a work item may complete without one (risk tiers 1-Trivial … 5-Critical).",
+        "keys": ["reviews", "autonomy"]
+      },
+      {
+        "id": "people",
+        "title": "People & communication",
+        "ask": "always",
+        "explain": "Who approves work (personas/roles — every decision needs a paper trail), optional notification channels, and how the harness presents work to and educates humans.",
+        "keys": ["personas", "messaging", "userInteraction"]
+      },
+      {
+        "id": "contracts-design",
+        "title": "API contracts & design artifacts",
+        "ask": "advanced",
+        "explain": "Contract-first API specs (OpenAPI/GraphQL) and how UI/UX design artifacts are captured in the design phase. Only relevant to projects exposing an API or a user-facing surface.",
+        "keys": ["apiSpecs", "design"]
+      },
+      {
+        "id": "runtime",
+        "title": "Observability & local orchestration",
+        "ask": "advanced",
+        "explain": "Logging levels (dev == runtime, only breakpoints differ), browser logging, container runtime and local service wiring for multi-artifact testing, and the external-tools registry.",
+        "keys": ["observability", "localOrchestration", "externalTools"]
+      },
+      {
+        "id": "automation",
+        "title": "Automation ingress & self-improvement",
+        "ask": "advanced",
+        "explain": "The webhook receiver / poller that route GitHub events into harness sessions, and the learnings lifecycle. Localhost/off by default; configure only when running the-loop's runtime automation.",
+        "keys": ["webhooks", "polling", "selfImprovement"]
+      }
+    ]
+  },
   "properties": {
     "version": {
       "type": "string",
@@ -34,8 +107,8 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "owner": { "type": "string" },
-            "repo": { "type": "string" },
+            "owner": { "type": "string", "description": "GitHub org/user that owns the repository.", "examples": ["MadaraUchiha-314"] },
+            "repo": { "type": "string", "description": "Repository name.", "examples": ["the-loop"] },
             "useProjects": { "type": "boolean", "default": true }
           }
         },
@@ -43,8 +116,8 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "baseUrl": { "type": "string", "format": "uri" },
-            "projectKey": { "type": "string" }
+            "baseUrl": { "type": "string", "format": "uri", "description": "Jira site base URL.", "examples": ["https://your-org.atlassian.net"] },
+            "projectKey": { "type": "string", "description": "Jira project key work items are created under.", "examples": ["PROJ"] }
           }
         }
       }
@@ -222,7 +295,8 @@
         "integrationTestGlobs": {
           "type": "array",
           "description": "Globs the harness scans to enumerate integration-test scenarios (`the-loop scenarios`). Empty = use the CLI's built-in defaults.",
-          "items": { "type": "string" }
+          "items": { "type": "string" },
+          "examples": [["tests/integration/**/*.py", "e2e/**/*.spec.ts"]]
         }
       }
     },
@@ -405,6 +479,7 @@
         "critics": {
           "type": "array",
           "description": "Alternate harness/model combos used as critics, e.g. cursor+gpt-5.5 reviewing claude-opus output.",
+          "examples": [[{ "name": "cursor-gpt", "harness": "cursor", "model": "gpt-5.5", "command": "cursor-agent review" }]],
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -445,7 +520,8 @@
         "sensitivePaths": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Globs that force a high tier when touched, e.g. **/auth/**, **/*secret*, **/*schema*."
+          "description": "Globs that force a high tier when touched.",
+          "examples": [["**/auth/**", "**/*secret*", "**/*schema*"]]
         },
         "tiers": {
           "type": "object",
@@ -559,7 +635,8 @@
     },
     "personas": {
       "type": "array",
-      "description": "People and groups available to collaborate. A user can hold multiple roles.",
+      "description": "People and groups available to collaborate. A user can hold multiple roles. RULE: every decision needs a paper trail, so at least one approver must be defined.",
+      "examples": [[{ "handle": "@MadaraUchiha-314", "kind": "individual", "roles": ["product-manager", "architect", "engineer", "approver"] }]],
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -585,6 +662,7 @@
       "properties": {
         "channels": {
           "type": "array",
+          "examples": [[{ "type": "slack", "target": "#the-loop" }]],
           "items": {
             "type": "object",
             "additionalProperties": false,

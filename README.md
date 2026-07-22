@@ -68,7 +68,7 @@ in the slash menu by filename (e.g. `/init`, `/work-on`).
 
 | Command | What it does |
 |---------|--------------|
-| `/the-loop:init` | Scaffold the-loop into the current repo (config, docs, templates). Idempotent. |
+| `/the-loop:init` | Scaffold the-loop into the current repo (config, docs) via a guided, schema-driven onboarding with sensible defaults (`--defaults` skips the interaction). Idempotent. |
 | `/the-loop:work-on <ticket>` | Run the whole 3-phase spec workflow (requirements → design → tasks → execute) on a GitHub issue / Jira id. Resumable per phase. **Superset of the granular commands below.** |
 | `/the-loop:upgrade-the-loop` | Reconcile a project's the-loop files with the installed plugin version. |
 
