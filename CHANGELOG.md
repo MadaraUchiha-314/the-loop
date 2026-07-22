@@ -1,3 +1,9 @@
+## v0.6.0 (2026-07-22)
+
+### Feat
+
+- **init**: guided, schema-driven config onboarding with sensible defaults (issue #49) (#51)
+
 ## v0.5.1 (2026-07-22)
 
 ### Fix
