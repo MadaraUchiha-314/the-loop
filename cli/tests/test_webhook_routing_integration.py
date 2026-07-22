@@ -103,6 +103,7 @@ class ServerFactory:
             events=ROUTED_EVENTS if events is None else events,
             deduper=dispatcher.deduper,
             auto_execute_label=config.auto_execute_label,
+            authorized_users=["octocat"],  # the acting user in these fixtures
         )
 
         def on_event(event, payload, delivery_id):

@@ -229,3 +229,6 @@ cli/.pytest_cache/
 
 # the-loop: webhook->session routing registry (runtime state)
 .the-loop/sessions/
+
+# the-loop: poller cross-poll dedup state (runtime state)
+.the-loop/poll-state.json

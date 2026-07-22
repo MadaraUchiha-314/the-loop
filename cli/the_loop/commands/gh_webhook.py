@@ -14,12 +14,16 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 from pathlib import Path
+from typing import Optional
 
 from .base import Command, register
 from ..webhook import serve
 
 logger = logging.getLogger("the-loop.gh-webhook")
+
+_CONFIG_PATH = Path(".the-loop/config.yaml")
 
 _DEFAULTS = {
     "host": "127.0.0.1",
@@ -30,26 +34,57 @@ _DEFAULTS = {
 }
 
 
-def _load_config_defaults() -> dict:
-    """Best-effort read of webhooks.ghWebhook from .the-loop/config.yaml.
+def _read_gh_webhook_config(strict: bool = False) -> dict:
+    """Read ``webhooks.ghWebhook`` from ``.the-loop/config.yaml``.
 
-    Returns ``{}`` if the file or PyYAML is unavailable — the CLI must work with
-    zero runtime dependencies.
+    ``strict=False`` (defaults path): returns ``{}`` when the file or PyYAML is
+    unavailable or unparseable — the CLI must work with zero runtime deps.
+    ``strict=True`` (hot-reload path): raises on a missing file / missing PyYAML
+    / parse error, so the :class:`Reloader` keeps the previously loaded config
+    instead of resetting to defaults on a transient broken save.
     """
-    cfg_path = Path(".the-loop/config.yaml")
-    if not cfg_path.is_file():
+    if not _CONFIG_PATH.is_file():
+        if strict:
+            raise FileNotFoundError(f"{_CONFIG_PATH} not found")
         return {}
     try:
         import yaml  # optional dependency
     except ImportError:
+        if strict:
+            raise
         logger.debug("pyyaml not installed; skipping config-file defaults")
         return {}
-    try:
-        data = yaml.safe_load(cfg_path.read_text()) or {}
-    except Exception:  # noqa: BLE001
-        logger.warning("could not parse %s; using built-in defaults", cfg_path)
-        return {}
+    text = _CONFIG_PATH.read_text()
+    if strict:
+        data = yaml.safe_load(text) or {}  # let a YAMLError propagate
+    else:
+        try:
+            data = yaml.safe_load(text) or {}
+        except Exception:  # noqa: BLE001
+            logger.warning("could not parse %s; using built-in defaults", _CONFIG_PATH)
+            return {}
     return ((data.get("webhooks") or {}).get("ghWebhook")) or {}
+
+
+def _load_config_defaults() -> dict:
+    """Best-effort read of webhooks.ghWebhook (never raises)."""
+    return _read_gh_webhook_config(strict=False)
+
+
+def _ticketing_owner() -> Optional[str]:
+    """``ticketing.github.owner`` — the fallback authorized user (or ``None``)."""
+    if not _CONFIG_PATH.is_file():
+        return None
+    try:
+        import yaml  # optional dependency
+    except ImportError:
+        return None
+    try:
+        data = yaml.safe_load(_CONFIG_PATH.read_text()) or {}
+    except Exception:  # noqa: BLE001
+        return None
+    owner = ((data.get("ticketing") or {}).get("github") or {}).get("owner")
+    return str(owner) if owner else None
 
 
 def _terminate(proc) -> None:
@@ -63,14 +98,17 @@ def _terminate(proc) -> None:
         proc.kill()
 
 
-def _build_routing(gh_webhook_config: dict):
+def _build_routing(gh_webhook_config: dict, owner: Optional[str] = None):
     """Compose router + dispatcher into the server's on_event callback.
 
     Spec: docs/specs/issue-15/design.md §6. Imported lazily-ish here (module
     level is fine — everything is stdlib) and returned with the dispatcher so
-    `start` can drain it on shutdown.
+    `start` can drain it on shutdown. ``owner`` is ``ticketing.github.owner``,
+    the fallback authorized user (prompt-injection guard, issue-34 review).
     """
+    from ..authz import resolve_authorized_users
     from ..harness import build_adapters
+    from ..reload import Reloader
     from ..sessions import SessionRegistry
     from ..webhook.dispatcher import Dispatcher, RoutingConfig
     from ..webhook.router import Router
@@ -81,21 +119,62 @@ def _build_routing(gh_webhook_config: dict):
         adapters=build_adapters(config.harness_args),
         config=config,
     )
+    authorized = resolve_authorized_users(config.authorized_users, owner)
+    if not authorized:
+        logger.warning(
+            "no authorizedUsers configured (and no ticketing.github.owner) — the "
+            "receiver will act on NO human-authored events until you set "
+            "webhooks.ghWebhook.routing.authorizedUsers (prompt-injection guard)"
+        )
     # The router shares the dispatcher's deduper: the dispatcher marks processed
     # delivery ids, the router drops duplicates before extraction.
     router = Router(
         events=gh_webhook_config.get("events") or [],
         deduper=dispatcher.deduper,
         auto_execute_label=config.auto_execute_label,
+        authorized_users=authorized,
     )
 
+    def apply(gh_cfg: dict) -> None:
+        """Hot-swap the soft routing policy from a freshly read config."""
+        new = RoutingConfig.from_mapping(gh_cfg.get("routing") or {})
+        dispatcher.reload(new)
+        router.events = list(gh_cfg.get("events") or [])
+        router.auto_execute_label = new.auto_execute_label
+        router.authorized_users = resolve_authorized_users(new.authorized_users, owner)
+        logger.info(
+            "hot-reloaded gh-webhook routing: spawnOnUnmatched=%s runner=%s "
+            "label=%r events=%d authorizedUsers=%d",
+            new.spawn_on_unmatched,
+            new.runner,
+            new.auto_execute_label,
+            len(router.events),
+            len(router.authorized_users),
+        )
+
+    # Re-read the config file on each event and hot-swap soft policy on change
+    # (a bad edit is logged and the previous config kept). Bind/secret, the web
+    # terminal and the dispatcher's threads/dedup/registry are start-time only.
+    reloader = Reloader(_CONFIG_PATH, lambda: _read_gh_webhook_config(strict=True))
+    reload_lock = threading.Lock()
+
     def on_event(event: str, payload: dict, delivery_id: str) -> None:
+        # One thread reloads at a time; others skip and pick it up next event
+        # (the ThreadingHTTPServer handles events concurrently).
+        if reload_lock.acquire(blocking=False):
+            try:
+                changed = reloader.poll_for_change()
+                if changed is not None:
+                    apply(changed)
+            finally:
+                reload_lock.release()
         routed = router.route(event, payload, delivery_id)
         if routed is not None:
             dispatcher.handle(routed)
 
     logger.info(
-        "routing enabled: registry=%s defaultHarness=%s spawnOnUnmatched=%s runner=%s",
+        "routing enabled: registry=%s defaultHarness=%s spawnOnUnmatched=%s runner=%s "
+        "(routing config hot-reloads on change)",
         config.registry_dir,
         config.default_harness,
         config.spawn_on_unmatched,
@@ -163,7 +242,7 @@ class GhWebhookCommand(Command):
             from ..runner import check_dependencies, web_terminal_argv
 
             on_event, dispatcher, routing_config = _build_routing(
-                _load_config_defaults()
+                _load_config_defaults(), owner=_ticketing_owner()
             )
             missing = check_dependencies(
                 routing_config.runner, routing_config.web_terminal.enabled

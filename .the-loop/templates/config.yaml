@@ -172,6 +172,12 @@ webhooks:
       defaultHarness: claude        # claude | cursor
       spawnOnUnmatched: labeled     # never | always | labeled
       autoExecuteLabel: "the-loop: auto-execute"   # label that opts an issue/PR into autonomous execution
+      # SECURITY (prompt-injection guard): only these GitHub logins' actions are acted on
+      # by BOTH the webhook receiver and the poller. Comments/reviews/labels/items from
+      # anyone else are ignored. Empty = fall back to ticketing.github.owner; if that is
+      # also unset, human-authored events are all ignored (fail closed). Run your own
+      # instance for your own login(s).
+      authorizedUsers: []           # e.g. ["your-github-login"]
       spawnWorkdir: "."
       maxConcurrentDispatches: 4
       dedupCacheSize: 1024
@@ -181,3 +187,21 @@ webhooks:
       harnessArgs:
         claude: []                  # e.g. [--permission-mode, acceptEdits]
         cursor: []                  # e.g. [--force]
+
+# Pull-based, provider-agnostic ingress for hosts a webhook cannot reach
+# (`the-loop poll start`). Each `sources` entry selects a provider the system
+# interfaces with (github ships); discovered work drives the SAME routing/dispatch
+# stack above (harness, runner, spawn policy, templates, session registry) — so no
+# duplicate session is ever spawned for the same work item. The core carries no
+# provider-specific knobs; provider settings live under the source entry.
+polling:
+  intervalSeconds: 60               # seconds between poll cycles (all sources)
+  stateFile: .the-loop/poll-state.json
+  sources: []                       # e.g. the github source below (empty = nothing polled)
+    # - provider: github
+    #   repos: []                   # OWNER/REPO list; empty = fall back to ticketing.github
+    #   monitor:
+    #     issues: true
+    #     pullRequests: true
+    #   label: ""                   # empty = reuse routing.autoExecuteLabel above
+    #   ghBinary: gh                # uses your existing `gh auth` credentials

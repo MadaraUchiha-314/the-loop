@@ -665,6 +665,12 @@
                   "default": "the-loop: auto-execute",
                   "description": "Issue/PR label that opts a work item into autonomous execution (spawnOnUnmatched: labeled). Read from the webhook payload, no API call."
                 },
+                "authorizedUsers": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "description": "SECURITY (prompt-injection guard): GitHub logins whose actions the-loop may act on. Comments/reviews/labels/items authored by anyone not listed are ignored by BOTH the webhook receiver and the poller. Empty = fall back to ticketing.github.owner; if that is also unset, human-authored events are all ignored (fail closed). Each operator runs their own instance for their own logins.",
+                  "default": []
+                },
                 "spawnWorkdir": {
                   "type": "string",
                   "default": ".",
@@ -737,6 +743,63 @@
                     "cursor": { "type": "array", "items": { "type": "string" } }
                   }
                 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "polling": {
+      "type": "object",
+      "description": "Config for the the-loop CLI poller (`the-loop poll start`) — a pull-based, provider-agnostic alternative to the webhook receiver for hosts a webhook cannot reach. Each entry in `sources` selects a provider (e.g. github) the system interfaces with; the core carries no provider-specific knobs. Dispatch behaviour (harness, runner, spawn policy, templates, registry) is reused from `webhooks.ghWebhook.routing`.",
+      "additionalProperties": false,
+      "properties": {
+        "intervalSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 60,
+          "description": "Seconds between poll cycles (applies to all sources)."
+        },
+        "stateFile": {
+          "type": "string",
+          "default": ".the-loop/poll-state.json",
+          "description": "Durable JSON tracking which comments each item has processed (cross-poll/restart dedup). Git-ignored runtime state."
+        },
+        "sources": {
+          "type": "array",
+          "description": "Ordered list of provider-specific poll sources. Each entry MUST name a `provider`; the remaining keys are that provider's own config (unknown to the core).",
+          "items": {
+            "type": "object",
+            "required": ["provider"],
+            "properties": {
+              "provider": {
+                "type": "string",
+                "enum": ["github"],
+                "description": "Which poll provider handles this source. Only `github` ships today (jira is reserved for a follow-up)."
+              },
+              "label": {
+                "type": "string",
+                "default": "",
+                "description": "Label gating what this source polls. Empty = reuse webhooks.ghWebhook.routing.autoExecuteLabel."
+              },
+              "repos": {
+                "type": "array",
+                "description": "[github] Repositories to poll as OWNER/REPO. Empty = fall back to ticketing.github.",
+                "items": { "type": "string" }
+              },
+              "monitor": {
+                "type": "object",
+                "description": "[github] Which entity kinds to poll.",
+                "additionalProperties": false,
+                "properties": {
+                  "issues": { "type": "boolean", "default": true },
+                  "pullRequests": { "type": "boolean", "default": true }
+                }
+              },
+              "ghBinary": {
+                "type": "string",
+                "default": "gh",
+                "description": "[github] Path/name of the gh CLI (uses the user's existing gh auth)."
               }
             }
           }

@@ -65,6 +65,19 @@ the-loop gh-webhook stop  [--pidfile .the-loop/gh-webhook.pid]
   event at a time per session, in parallel across sessions. Unmatched events follow
   `routing.spawnOnUnmatched` (`never` drops; `always` spawns + registers a session).
   Design: `docs/specs/issue-15/design.md`, `docs/decisions/decision-016.md`.
+- **Config hot-reload:** while the receiver runs, edits to `webhooks.ghWebhook.routing` /
+  `events` are picked up on the next received event — no restart. The soft policy (events
+  filter, label, spawn policy, harness/runner, per-harness args, prompt templates) swaps
+  live; the dedup cache, per-session queues and registry are preserved. Infrastructural
+  settings (`host`/`port`/`path`, `secretEnv`, `maxConcurrentDispatches`, `dedupCacheSize`,
+  `registryDir`, `webTerminal`) still need a restart. An invalid edit is logged and the
+  previous config kept.
+- **Authorized-actor guard (prompt-injection remediation):** the receiver acts only on
+  actions by logins in `routing.authorizedUsers` — comments/reviews and issue/PR
+  labels/opens from anyone else are dropped before dispatch (CI/system events, which carry
+  no human instructions, still pass; a PR-close still auto-closes the session). Empty ⇒
+  falls back to `ticketing.github.owner`, else fails closed with a warning. Each operator
+  runs their own instance for their own login(s). See `docs/decisions/decision-023.md`.
 
 ### `sessions` — link work items to harness sessions (webhook routing)
 
@@ -91,6 +104,63 @@ receiver spawns a session and starts `/the-loop:work-on` on it — then routes t
 later activity (comments, reviews, CI, its linked PR) to the same session, and
 auto-closes on PR merge. Label presence is read straight from the webhook payload (no
 extra API call). A new issue *without* the label is received and ignored.
+
+### `poll` — pull ingress (provider-agnostic) when a webhook can't reach you
+
+```bash
+the-loop poll start [--interval 60] [--once] \
+                    [--state-file .the-loop/poll-state.json] \
+                    [--pidfile .the-loop/poll.pid]
+the-loop poll stop  [--pidfile .the-loop/poll.pid]
+```
+
+A **pull-based** alternative to `gh-webhook` for hosts a webhook cannot reach (behind
+NAT/a firewall, a laptop, unreachable infra). Every `--interval` seconds it asks each
+configured **provider** for the label-gated work items in its scope and drives them
+through the **same** routing/dispatch/session stack the webhook receiver uses — so
+spawning, one-session-per-work-item, the `tmux` runner, harness adapters and prompt
+templates are all reused unchanged.
+
+- **Provider-agnostic:** the poller core and CLI carry no GitHub knobs. Which systems
+  are polled is defined purely by `polling.sources` in `.the-loop/config.yaml` — each
+  entry names a `provider` (GitHub ships; the seam admits others). GitHub is reached
+  *only* through a configured source:
+
+  ```yaml
+  polling:
+    intervalSeconds: 60
+    sources:
+      - provider: github
+        repos: [octo/repo]         # empty = fall back to ticketing.github
+        monitor: { issues: true, pullRequests: true }
+        label: ""                  # empty = reuse routing.autoExecuteLabel
+  ```
+
+- **Label-gated:** only items carrying the configured label are polled. A source's
+  `label` defaults to `webhooks.ghWebhook.routing.autoExecuteLabel`, so one label drives
+  both ingresses.
+- **No duplicate sessions:** a session is spawned for a labelled item only when the
+  registry has none; a live session is never doubled (the registry is the source of
+  truth), so a work item maps to exactly one session — the same one on later polls.
+- **Spawns tmux sessions** when `webhooks.ghWebhook.routing.runner: tmux` — attach with
+  `the-loop sessions attach --work-item github:OWNER/REPO#N` (issue-32).
+- **New comments** are forwarded to the item's session exactly once, deduped across
+  polls **and restarts** via `--state-file` (git-ignored runtime state). The pre-existing
+  thread is baselined on first sight, not replayed.
+- **Config:** ingress defaults come from `polling` in `.the-loop/config.yaml` (when
+  PyYAML is installed); dispatch behaviour is reused from `webhooks.ghWebhook.routing`.
+  Flags cover only the run loop.
+- **Hot reload:** edit `polling.sources` / `intervalSeconds` while it runs and the change
+  is picked up on the next cycle — no restart. An invalid edit is logged and the previous
+  config kept. (The shared dispatch config still needs a restart.)
+- **Authorized-actor guard (prompt-injection remediation):** the poller spawns only for
+  items authored by a login in `routing.authorizedUsers`, and forwards only comments from
+  authorized authors — everything else is ignored. Empty ⇒ falls back to
+  `ticketing.github.owner`, else fails closed with a warning. See
+  `docs/decisions/decision-023.md`.
+- **`--once`** runs a single cycle and exits (for a cron/systemd timer); otherwise it
+  loops until `poll stop` (or SIGINT/SIGTERM), writing a pidfile like the receiver.
+  Design: `docs/specs/issue-34/design.md`, `docs/decisions/decision-022.md`.
 
 ### `scenarios` — query the Gherkin scenarios integration tests cover
 

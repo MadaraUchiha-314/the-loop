@@ -5,6 +5,8 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [023](decision-023.md) | Authorized-actor guard on both trigger paths (prompt-injection remediation) | accepted | 2026-07-22 |
+| [022](decision-022.md) | Poll as a provider-agnostic pull ingress reusing the webhook dispatch stack | accepted | 2026-07-21 |
 | [021](decision-021.md) | tmux runner for observable/interactive webhook-spawned sessions | accepted | 2026-07-17 |
 | [020](decision-020.md) | Capability docs are the organized view of specs (SoT for current behaviour) | accepted | 2026-07-07 |
 | [019](decision-019.md) | Publish the CLI to PyPI as `the-loopy-one` via Trusted Publishing | accepted | 2026-07-04 |

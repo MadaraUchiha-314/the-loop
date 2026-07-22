@@ -18,7 +18,7 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from string import Template
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from ..harness.base import HarnessAdapter
 from ..runner import TmuxRunner
@@ -126,6 +126,9 @@ class RoutingConfig:
     prompt_template: str = _DEFAULT_EVENT_PROMPT
     spawn_prompt_template: str = _DEFAULT_SPAWN_PROMPT
     harness_args: Dict[str, list] = field(default_factory=dict)
+    # GitHub logins whose actions the-loop may act on (prompt-injection guard,
+    # issue-34 review). Empty => fail closed for human-authored actions.
+    authorized_users: List[str] = field(default_factory=list)
 
     @classmethod
     def from_mapping(cls, data: dict) -> "RoutingConfig":
@@ -149,6 +152,7 @@ class RoutingConfig:
                 data.get("spawnPromptTemplate", _DEFAULT_SPAWN_PROMPT)
             ),
             harness_args=dict(data.get("harnessArgs") or {}),
+            authorized_users=[str(u) for u in (data.get("authorizedUsers") or [])],
         )
 
 
@@ -207,6 +211,32 @@ class Dispatcher:
             return Template(path.read_text())
         logger.debug("prompt template %s not found; using the built-in default", path)
         return Template(default)
+
+    def reload(self, config: RoutingConfig) -> None:
+        """Hot-swap the *soft* routing policy without disturbing running work.
+
+        Live-reloaded: spawn policy, default harness, runner, spawn workdir,
+        dispatch timeout, per-harness args (adapters rebuilt) and the prompt
+        templates. Each is read from ``self.config`` (or the swapped dict) at
+        dispatch time, so a plain reassignment takes effect on the next event.
+
+        Deliberately NOT reloaded (they own live state — change needs a
+        restart): the session registry (``registryDir``), the dedup cache
+        (``dedupCacheSize`` — losing it would replay events), the concurrency
+        semaphore (``maxConcurrentDispatches``) and the per-session worker
+        queues. The receiver's bind/secret and the web terminal are likewise
+        start-time only.
+        """
+        from ..harness import build_adapters
+
+        self.config = config
+        self.adapters = build_adapters(config.harness_args)
+        self._event_template = self._load_template(
+            config.prompt_template, DEFAULT_PROMPT_TEMPLATE
+        )
+        self._spawn_template = self._load_template(
+            config.spawn_prompt_template, DEFAULT_SPAWN_TEMPLATE
+        )
 
     def _should_spawn(self, routed: RoutedEvent) -> bool:
         """Whether an unmatched event should spawn a session (R3.3)."""
