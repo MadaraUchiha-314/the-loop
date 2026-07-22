@@ -59,8 +59,15 @@ receiver produces, and the poller hands it to the existing `Dispatcher`. Consequ
 - **The `polling` config hot-reloads** (PR #45 review) at one-poll-cycle granularity: a
   `Reloader` content-hashes `.the-loop/config.yaml` and rebuilds the provider/interval
   plan on change — no restart to add/remove sources or retune the interval. A bad edit is
-  logged and the previous plan is kept. Only `polling` reloads; the dispatcher/routing
-  (worker threads, in-memory dedup) stays established at start.
+  logged and the previous plan is kept.
+- **The `gh-webhook` receiver hot-reloads too** (PR #45 review): `Reloader` is a shared
+  primitive (`the_loop/reload.py`), and the event-driven receiver checks it on each
+  received event (non-blocking lock; the HTTP server is threaded). On change it hot-swaps
+  the **soft** routing policy via `Dispatcher.reload` (config, adapters, templates) plus
+  the router's `events`/`autoExecuteLabel`. The dispatcher's worker queues, concurrency
+  semaphore, dedup cache and session registry are preserved — rebuilding them would replay
+  events or drop in-flight work — so those, plus the listener bind / `secretEnv` /
+  `webTerminal`, remain restart-only (documented).
 
 Only the GitHub provider is implemented now; `jira:` stays reserved in `WorkItemRef` and
 the seam. PR review (inline) comment threads are a follow-up — conversation comments are

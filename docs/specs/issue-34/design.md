@@ -102,6 +102,21 @@ initial plan, so cold start and reload share one code path). Before each cycle,
 (after which the file's `intervalSeconds` wins). Only the `polling` block reloads; the
 dispatcher/routing (worker threads, in-memory dedup) is established once at start.
 
+### The webhook receiver hot-reloads too
+
+`Reloader` is a shared primitive (`the_loop/reload.py`, generic over the built value), so
+the `gh-webhook` receiver reuses it (PR #45 review). The receiver is event-driven, not a
+loop, so it checks for changes at the natural point — **on each received event** — under a
+non-blocking lock (the `ThreadingHTTPServer` handles events concurrently; one thread
+reloads, others skip and pick it up next event). On change it hot-swaps the **soft**
+routing policy via `Dispatcher.reload(new_config)` — `self.config`, adapters (rebuilt from
+`harnessArgs`) and prompt templates — plus the router's `events`/`autoExecuteLabel`. The
+dispatcher's worker queues, concurrency semaphore, dedup cache and session registry are
+**not** rebuilt (rebuilding would replay events or drop in-flight work); the listener
+bind, `secretEnv` and the web terminal are start-time only. The reload build uses a
+*strict* config read (raises on a broken/missing file) so a transient bad save keeps the
+previous config instead of resetting to defaults.
+
 ## Dedup, two layers
 
 - **`PollState`** (durable, per item, this feature): the primary guarantee — a comment

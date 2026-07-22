@@ -715,3 +715,91 @@ def test_sessions_command_table_output(tmp_path, capsys):
     assert run_cli(["sessions", "list", "--registry-dir", registry_dir]) == 0
     out = capsys.readouterr().out
     assert "Work item" in out and REF in out and "cursor" in out
+
+
+# -- config hot reload (issue-34 review) --------------------------------------
+
+
+def test_dispatcher_reload_swaps_policy_and_templates_keeps_dedup(tmp_path):
+    adapter = FakeAdapter()
+    registry, dispatcher = make_dispatcher(
+        tmp_path, adapter, spawn_on_unmatched="never"
+    )
+    dispatcher.deduper.add("keep-me")  # in-memory dedup must survive a reload
+    tmpl = tmp_path / "evt.md"
+    tmpl.write_text("RELOADED $work_item")
+
+    dispatcher.reload(
+        RoutingConfig(
+            spawn_on_unmatched="always",
+            registry_dir="ignored-on-reload",
+            prompt_template=str(tmpl),
+        )
+    )
+    dispatcher.stop()
+
+    # soft policy took effect
+    assert dispatcher.config.spawn_on_unmatched == "always"
+    assert dispatcher._should_spawn(routed_labeled_issue(labeled=False)) is True
+    # prompt template reloaded
+    rendered = dispatcher._render_prompt(
+        routed_issue_comment(), WorkItemRef.parse(REF), dispatcher._event_template
+    )
+    assert rendered.startswith("RELOADED github:octo/repo#15")
+    # infrastructure preserved (change needs a restart)
+    assert "keep-me" in dispatcher.deduper  # dedup cache kept
+    assert dispatcher.registry is registry  # registryDir change ignored
+    assert "claude" in dispatcher.adapters  # adapters rebuilt from harnessArgs
+
+
+def test_read_gh_webhook_config_strict_vs_lenient(tmp_path, monkeypatch):
+    from the_loop.commands import gh_webhook
+
+    cfg = tmp_path / "config.yaml"
+    monkeypatch.setattr(gh_webhook, "_CONFIG_PATH", cfg)
+
+    # missing file: lenient => {}, strict => raises
+    assert gh_webhook._read_gh_webhook_config(strict=False) == {}
+    with pytest.raises(FileNotFoundError):
+        gh_webhook._read_gh_webhook_config(strict=True)
+
+    # unparseable: lenient => {} (keep defaults), strict => raises (keep previous)
+    cfg.write_text("webhooks: [unclosed\n")
+    assert gh_webhook._read_gh_webhook_config(strict=False) == {}
+    with pytest.raises(Exception):
+        gh_webhook._read_gh_webhook_config(strict=True)
+
+
+def _write_webhook_config(path, policy, sessions_dir):
+    path.write_text(
+        "webhooks:\n"
+        "  ghWebhook:\n"
+        "    events: []\n"
+        "    routing:\n"
+        f"      spawnOnUnmatched: {policy}\n"
+        f"      registryDir: {sessions_dir}\n"
+    )
+
+
+def test_webhook_hot_reload_applies_on_next_event(tmp_path, monkeypatch):
+    from the_loop.commands import gh_webhook
+
+    cfg = tmp_path / "config.yaml"
+    _write_webhook_config(cfg, "never", tmp_path / "sessions")
+    monkeypatch.setattr(gh_webhook, "_CONFIG_PATH", cfg)
+
+    on_event, dispatcher, _ = gh_webhook._build_routing(
+        gh_webhook._read_gh_webhook_config()
+    )
+    assert dispatcher.config.spawn_on_unmatched == "never"
+
+    # edit the config while "running"; the next received event applies it
+    _write_webhook_config(cfg, "always", tmp_path / "sessions")
+    on_event(
+        "issues",
+        {"repository": {"full_name": "octo/repo"}, "issue": {"number": 1}},
+        "d-1",
+    )
+    dispatcher.stop()
+
+    assert dispatcher.config.spawn_on_unmatched == "always"

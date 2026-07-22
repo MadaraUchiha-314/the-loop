@@ -65,6 +65,13 @@ the-loop gh-webhook stop  [--pidfile .the-loop/gh-webhook.pid]
   event at a time per session, in parallel across sessions. Unmatched events follow
   `routing.spawnOnUnmatched` (`never` drops; `always` spawns + registers a session).
   Design: `docs/specs/issue-15/design.md`, `docs/decisions/decision-016.md`.
+- **Config hot-reload:** while the receiver runs, edits to `webhooks.ghWebhook.routing` /
+  `events` are picked up on the next received event — no restart. The soft policy (events
+  filter, label, spawn policy, harness/runner, per-harness args, prompt templates) swaps
+  live; the dedup cache, per-session queues and registry are preserved. Infrastructural
+  settings (`host`/`port`/`path`, `secretEnv`, `maxConcurrentDispatches`, `dedupCacheSize`,
+  `registryDir`, `webTerminal`) still need a restart. An invalid edit is logged and the
+  previous config kept.
 
 ### `sessions` — link work items to harness sessions (webhook routing)
 

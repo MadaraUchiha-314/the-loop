@@ -150,6 +150,29 @@ to change what is monitored.
 4. WHEN there is no config file THEN the system SHALL run with its start-time
    configuration and simply have nothing to hot-reload.
 
+### Requirement 7 — hot-reload the webhook receiver's routing config too
+
+**User story:** As an operator, I want the running `gh-webhook` receiver to pick up config
+edits the same way the poller does, so that I set up the dev box once and just edit
+config — no restart of the webhook server either.
+
+#### Acceptance criteria (EARS)
+
+1. WHILE the receiver is running with routing enabled, WHEN
+   `webhooks.ghWebhook.routing`/`events` change THEN the system SHALL apply the new soft
+   policy (events filter, auto-execute label, spawn policy, default harness, runner,
+   spawn workdir, dispatch timeout, per-harness args, prompt templates) on the next
+   received event, without a restart.
+2. WHEN routing config is reloaded THEN the in-memory dedup cache, the per-session work
+   queues and the session registry SHALL be preserved (a reload SHALL NOT replay events
+   or drop in-flight work).
+3. IF a reloaded config is invalid THEN the system SHALL log it and keep the previous
+   routing config (same tolerance as the poller).
+4. WHERE a setting is infrastructural — the listener bind (`host`/`port`/`path`), the
+   webhook `secretEnv`, `maxConcurrentDispatches`, `dedupCacheSize`, `registryDir`, and
+   the `webTerminal` — changing it MAY still require a restart (documented), because it
+   owns a socket, a subprocess, or live concurrency/dedup state.
+
 ## Out of scope (this iteration)
 
 - **Non-GitHub provider implementations (e.g. Jira).** The provider seam, config surface

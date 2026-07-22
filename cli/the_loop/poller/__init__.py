@@ -26,13 +26,13 @@ from .github import (  # noqa: F401
     check_gh_dependency,
     parse_repos,
 )
+from ..reload import Reloader  # noqa: F401
 from .poller import (  # noqa: F401
     PollConfig,
     Poller,
     PollPlan,
     PollState,
     PollSummary,
-    Reloader,
 )
 
 __all__ = [

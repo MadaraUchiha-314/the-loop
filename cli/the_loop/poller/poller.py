@@ -24,7 +24,6 @@ Spec: docs/specs/issue-34/design.md.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import os
@@ -32,8 +31,9 @@ import tempfile
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence
 
+from ..reload import Reloader
 from ..sessions import SessionRegistry
 from ..webhook.dispatcher import Dispatcher
 from .base import PollProvider, ProviderError, WorkItem
@@ -147,52 +147,6 @@ class PollPlan:
     interval_seconds: int
 
 
-class Reloader:
-    """Detects config-file changes and rebuilds the :class:`PollPlan` (hot reload).
-
-    Change detection is a content hash checked once per cycle (no watcher
-    thread; stdlib only) — reload granularity is therefore one poll cycle. A
-    build that raises (invalid config, unknown provider) is logged and the
-    previous plan is kept, so a bad edit never takes the poller down.
-    """
-
-    def __init__(
-        self,
-        path,
-        build: Callable[[], PollPlan],
-        baseline: Optional[str] = None,
-    ):
-        self.path = Path(path)
-        self._build = build
-        # Baseline to the current file so the first cycle doesn't rebuild the
-        # plan the caller already constructed; None => read it now.
-        self._fingerprint = baseline if baseline is not None else self._read_fp()
-
-    def _read_fp(self) -> str:
-        try:
-            return hashlib.sha256(self.path.read_bytes()).hexdigest()
-        except OSError:
-            return ""  # no file (or unreadable) => nothing to hot-reload
-
-    def poll_for_change(self) -> Optional[PollPlan]:
-        """Return a fresh plan iff the config changed since the last check."""
-        fingerprint = self._read_fp()
-        if fingerprint == self._fingerprint:
-            return None
-        self._fingerprint = fingerprint
-        try:
-            plan = self._build()
-        except Exception as exc:  # noqa: BLE001 — a bad edit must not crash us
-            logger.error("config reload failed; keeping previous config: %s", exc)
-            return None
-        logger.info(
-            "config change detected: reloaded %d source(s), interval=%ss",
-            len(plan.providers),
-            plan.interval_seconds,
-        )
-        return plan
-
-
 class Poller:
     """Poll each provider and feed discovered work to the shared dispatcher."""
 
@@ -289,6 +243,11 @@ class Poller:
             return
         self.providers = plan.providers
         self.config.interval_seconds = plan.interval_seconds
+        logger.info(
+            "hot-reloaded polling: %d source(s), interval=%ss",
+            len(plan.providers),
+            plan.interval_seconds,
+        )
 
     # -- run loop ---------------------------------------------------------------
 

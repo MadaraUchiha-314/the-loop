@@ -14,12 +14,15 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 from .base import Command, register
 from ..webhook import serve
 
 logger = logging.getLogger("the-loop.gh-webhook")
+
+_CONFIG_PATH = Path(".the-loop/config.yaml")
 
 _DEFAULTS = {
     "host": "127.0.0.1",
@@ -30,26 +33,41 @@ _DEFAULTS = {
 }
 
 
-def _load_config_defaults() -> dict:
-    """Best-effort read of webhooks.ghWebhook from .the-loop/config.yaml.
+def _read_gh_webhook_config(strict: bool = False) -> dict:
+    """Read ``webhooks.ghWebhook`` from ``.the-loop/config.yaml``.
 
-    Returns ``{}`` if the file or PyYAML is unavailable — the CLI must work with
-    zero runtime dependencies.
+    ``strict=False`` (defaults path): returns ``{}`` when the file or PyYAML is
+    unavailable or unparseable — the CLI must work with zero runtime deps.
+    ``strict=True`` (hot-reload path): raises on a missing file / missing PyYAML
+    / parse error, so the :class:`Reloader` keeps the previously loaded config
+    instead of resetting to defaults on a transient broken save.
     """
-    cfg_path = Path(".the-loop/config.yaml")
-    if not cfg_path.is_file():
+    if not _CONFIG_PATH.is_file():
+        if strict:
+            raise FileNotFoundError(f"{_CONFIG_PATH} not found")
         return {}
     try:
         import yaml  # optional dependency
     except ImportError:
+        if strict:
+            raise
         logger.debug("pyyaml not installed; skipping config-file defaults")
         return {}
-    try:
-        data = yaml.safe_load(cfg_path.read_text()) or {}
-    except Exception:  # noqa: BLE001
-        logger.warning("could not parse %s; using built-in defaults", cfg_path)
-        return {}
+    text = _CONFIG_PATH.read_text()
+    if strict:
+        data = yaml.safe_load(text) or {}  # let a YAMLError propagate
+    else:
+        try:
+            data = yaml.safe_load(text) or {}
+        except Exception:  # noqa: BLE001
+            logger.warning("could not parse %s; using built-in defaults", _CONFIG_PATH)
+            return {}
     return ((data.get("webhooks") or {}).get("ghWebhook")) or {}
+
+
+def _load_config_defaults() -> dict:
+    """Best-effort read of webhooks.ghWebhook (never raises)."""
+    return _read_gh_webhook_config(strict=False)
 
 
 def _terminate(proc) -> None:
@@ -71,6 +89,7 @@ def _build_routing(gh_webhook_config: dict):
     `start` can drain it on shutdown.
     """
     from ..harness import build_adapters
+    from ..reload import Reloader
     from ..sessions import SessionRegistry
     from ..webhook.dispatcher import Dispatcher, RoutingConfig
     from ..webhook.router import Router
@@ -89,13 +108,44 @@ def _build_routing(gh_webhook_config: dict):
         auto_execute_label=config.auto_execute_label,
     )
 
+    def apply(gh_cfg: dict) -> None:
+        """Hot-swap the soft routing policy from a freshly read config."""
+        new = RoutingConfig.from_mapping(gh_cfg.get("routing") or {})
+        dispatcher.reload(new)
+        router.events = list(gh_cfg.get("events") or [])
+        router.auto_execute_label = new.auto_execute_label
+        logger.info(
+            "hot-reloaded gh-webhook routing: spawnOnUnmatched=%s runner=%s "
+            "label=%r events=%d",
+            new.spawn_on_unmatched,
+            new.runner,
+            new.auto_execute_label,
+            len(router.events),
+        )
+
+    # Re-read the config file on each event and hot-swap soft policy on change
+    # (a bad edit is logged and the previous config kept). Bind/secret, the web
+    # terminal and the dispatcher's threads/dedup/registry are start-time only.
+    reloader = Reloader(_CONFIG_PATH, lambda: _read_gh_webhook_config(strict=True))
+    reload_lock = threading.Lock()
+
     def on_event(event: str, payload: dict, delivery_id: str) -> None:
+        # One thread reloads at a time; others skip and pick it up next event
+        # (the ThreadingHTTPServer handles events concurrently).
+        if reload_lock.acquire(blocking=False):
+            try:
+                changed = reloader.poll_for_change()
+                if changed is not None:
+                    apply(changed)
+            finally:
+                reload_lock.release()
         routed = router.route(event, payload, delivery_id)
         if routed is not None:
             dispatcher.handle(routed)
 
     logger.info(
-        "routing enabled: registry=%s defaultHarness=%s spawnOnUnmatched=%s runner=%s",
+        "routing enabled: registry=%s defaultHarness=%s spawnOnUnmatched=%s runner=%s "
+        "(routing config hot-reloads on change)",
         config.registry_dir,
         config.default_harness,
         config.spawn_on_unmatched,
