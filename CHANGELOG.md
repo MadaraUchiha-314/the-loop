@@ -1,3 +1,9 @@
+## v0.5.0 (2026-07-22)
+
+### Feat
+
+- **cli**: poll — provider-agnostic pull ingress to spawn/route harness sessions (#34) (#45)
+
 ## v0.4.0 (2026-07-21)
 
 ### Feat
