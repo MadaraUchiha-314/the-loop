@@ -530,8 +530,8 @@
             },
             "templatePath": {
               "type": "string",
-              "default": ".the-loop/templates/pr-briefing.md",
-              "description": "Template the reviewer briefing is produced from."
+              "default": "skills/the-loop/templates/pr-briefing.md",
+              "description": "Template the reviewer briefing is produced from. the-loop's internal template, resolved under ${CLAUDE_PLUGIN_ROOT} (the installed plugin). Set a repo-relative path to override with your own."
             },
             "condensed": {
               "type": "boolean",
@@ -726,13 +726,13 @@
                 },
                 "promptTemplate": {
                   "type": "string",
-                  "default": ".the-loop/templates/webhook-event-prompt.md",
-                  "description": "string.Template rendered into the prompt that resumes a session."
+                  "default": "skills/the-loop/templates/webhook-event-prompt.md",
+                  "description": "string.Template rendered into the prompt that resumes a session. the-loop's internal template; the dispatcher falls back to a built-in default when the path is absent (the case in a project repo, which does not carry the-loop's templates). Set a repo-relative path to override."
                 },
                 "spawnPromptTemplate": {
                   "type": "string",
-                  "default": ".the-loop/templates/webhook-autoexecute-prompt.md",
-                  "description": "string.Template rendered into the prompt for a newly spawned (auto-execute) session — kicks off the-loop's work-on flow."
+                  "default": "skills/the-loop/templates/webhook-autoexecute-prompt.md",
+                  "description": "string.Template rendered into the prompt for a newly spawned (auto-execute) session — kicks off the-loop's work-on flow. the-loop's internal template; the dispatcher falls back to a built-in default when the path is absent. Set a repo-relative path to override."
                 },
                 "harnessArgs": {
                   "type": "object",

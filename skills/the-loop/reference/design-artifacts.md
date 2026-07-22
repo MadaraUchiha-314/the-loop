@@ -106,7 +106,7 @@ edit the artifact; the design review reviews the rendered artifact.
 
 - **Evidence.** With `design.uiArtifacts.screenshotEvidence` (default true), rendered
   screenshots of the **locked** artifact are captured (into `design/screenshots/`) and
-  embedded in the reviewer briefing (`.the-loop/templates/pr-briefing.md`) so the human
+  embedded in the reviewer briefing (`${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/pr-briefing.md`) so the human
   sees the intended UI at a glance, mapped to requirements.
 - **Hand-off.** `tasks.md` references the locked artifact per screen/component; the
   implementation reproduces it with production components. Visual-regression / snapshot

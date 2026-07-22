@@ -18,14 +18,16 @@ agent harness delivers a work item end-to-end, escalating to humans only for dec
   Skills standard) and `commands/`; `rules/the-loop.mdc` replaces the SessionStart hook.
 - `.claude-plugin/marketplace.json` + `.cursor-plugin/marketplace.json` — installable
   directly from GitHub in both harnesses; no bespoke marketplace. See `decision-015`.
+- `skills/the-loop/templates/` — work-item (epic/story/bug) and process
+  (plan/log/decision/learning) templates. **Internal to the plugin** (`manifest.templatesDir`):
+  read from `${CLAUDE_PLUGIN_ROOT}` when an artifact is authored, never copied into a
+  project (issue-36).
 
 ### 2. Project footprint (`.the-loop/`)
 
 Everything the-loop creates/maintains is tracked in `.the-loop/manifest.yaml`.
 - `config.yaml` (+ `config.schema.json`) — per-project configuration; per-task
   overrides via work-item front-matter.
-- `templates/` — work-item (epic/story/bug) and process (plan/log/decision/learning)
-  templates.
 - `external-tools.md`, `collaborators.yaml` — user-owned registries.
 
 ### 3. The loop (runtime workflow)

@@ -12,7 +12,7 @@ merge specs in ticket order. Raw specs are *deltas*; capability docs are *state*
 ## Current behaviour
 
 - Each capability SHALL have one living doc `<capabilitiesDir>/<capability>.md`
-  (template `.the-loop/templates/capability.md`) containing: narrative, current
+  (template `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/capability.md`) containing: narrative, current
   behaviour (normative), design pointers, and a history table.
 - A capability doc SHALL be the **single source of truth for the capability's current
   behaviour**; the raw specs under `docs/specs/<id>/` remain the historical record.

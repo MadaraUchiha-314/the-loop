@@ -40,8 +40,10 @@ _PAYLOAD_EXCERPT_KEYS = (
 )
 _PAYLOAD_EXCERPT_MAX_CHARS = 4000
 
-# Fallback when routing.promptTemplate does not exist (e.g. uninitialized repo).
-# Kept in sync with .the-loop/templates/webhook-event-prompt.md.
+# Fallback when routing.promptTemplate does not exist. Templates are internal to
+# the-loop and ship with the plugin, not the project repo (issue #36), so this
+# built-in default is the source of truth in a project repo.
+# Kept in sync with skills/the-loop/templates/webhook-event-prompt.md.
 DEFAULT_PROMPT_TEMPLATE = """\
 # GitHub webhook event for $work_item
 
@@ -63,11 +65,11 @@ $payload_excerpt
 ```
 """
 
-_DEFAULT_EVENT_PROMPT = ".the-loop/templates/webhook-event-prompt.md"
-_DEFAULT_SPAWN_PROMPT = ".the-loop/templates/webhook-autoexecute-prompt.md"
+_DEFAULT_EVENT_PROMPT = "skills/the-loop/templates/webhook-event-prompt.md"
+_DEFAULT_SPAWN_PROMPT = "skills/the-loop/templates/webhook-autoexecute-prompt.md"
 
 # Fallback for a spawned (auto-execute) session — kick off the loop on the work
-# item. Kept in sync with .the-loop/templates/webhook-autoexecute-prompt.md.
+# item. Kept in sync with skills/the-loop/templates/webhook-autoexecute-prompt.md.
 DEFAULT_SPAWN_TEMPLATE = """\
 # the-loop auto-execute: $work_item
 

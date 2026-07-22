@@ -12,8 +12,10 @@ re-run:** it is driven entirely by the manifest, creates only what is missing, a
 
 The **authoritative** source of what to create — and which files are managed vs.
 user-owned — is `${CLAUDE_PLUGIN_ROOT}/.the-loop/manifest.yaml` (each entry's
-`managed: true|false`), with the templates under
-`${CLAUDE_PLUGIN_ROOT}/.the-loop/templates/`. (`${CLAUDE_PLUGIN_ROOT}` is the installed
+`managed: true|false`). Templates are **internal to the-loop** and are **not** copied
+into the project; they live with the plugin's skill under
+`${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/` (`manifest.templatesDir`) and are read
+from there when a file needs scaffolding. (`${CLAUDE_PLUGIN_ROOT}` is the installed
 plugin's root directory; in Cursor, resolve it to the plugin's install directory.)
 
 ## Modes
@@ -51,12 +53,13 @@ plugin's root directory; in Cursor, resolve it to the plugin's install directory
    - **present & `managed: true` but drifted** from the current template/schema → **do
      not clobber**: diff and *suggest* the change (or apply only with explicit consent);
    - **present & up to date** → skip.
-   Create the following where missing (never overwrite user-owned files):
+   Create the following where missing (never overwrite user-owned files). Scaffold each
+   from its template under `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/` — **do not**
+   copy the templates directory itself into the project (templates are internal to the-loop):
    - `.the-loop/config.yaml` — from the template, with detected defaults applied.
    - `.the-loop/config.schema.json` — copy of the schema.
    - `.the-loop/manifest.yaml` — the manifest.
    - `.the-loop/external-tools.md` and `.the-loop/collaborators.yaml` — from templates (user-owned).
-   - `.the-loop/templates/` — the work-item & process templates.
    - `docs/architecture/architecture.md`, `docs/decisions/decisions.md`,
      `docs/specs/` (per-work-item Kiro specs + execution logs).
    - `learnings/learnings.md`.
