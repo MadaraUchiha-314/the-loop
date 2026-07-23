@@ -1,3 +1,9 @@
+## v0.12.2 (2026-07-23)
+
+### Fix
+
+- **cli**: drop the-loop's own replies before they can re-enter the trigger loop (#68)
+
 ## v0.12.1 (2026-07-23)
 
 ### Fix
