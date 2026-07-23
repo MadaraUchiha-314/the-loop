@@ -18,6 +18,33 @@ installation, quickstart, CLI reference, and developer docs.
 
 `(brainstorm) → requirements → design → tasks (each iterated until locked + human-reviewed) → implement (+self-check) → self/critic review → evidence → complete → learn`
 
+```mermaid
+flowchart TD
+    subgraph spec["Specified and reviewed — each artifact iterated with feedback until locked"]
+        direction TB
+        B["brainstorm.md\n(optional root artifact)\nlabel: brainstorming"]
+        R["requirements.md\nlabel: requirements-definition"]
+        D["design.md\nlabel: design"]
+        K["tasks.md\nlabel: tasks-breakdown"]
+        B -->|convert| R
+        R -->|human review| D
+        D -->|human review| K
+    end
+
+    subgraph exec["Executed autonomously"]
+        direction TB
+        I["implement + self-check\nlabel: implementation"]
+        C["self / critic review\nlabel: needs-review"]
+        E["evidence"]
+        I --> C --> E
+    end
+
+    T(["🎫 ticket opened\nnot-started"]) --> B
+    K -->|human review| I
+    E --> X(["✅ complete"])
+    X --> L[["📚 learn"]]
+```
+
 A work item is a chain of artifacts, each derived from the one before it and **iterated
 with feedback until it is locked** before the loop advances. Optionally it starts with a
 free-form `brainstorm.md` scratchpad (the root artifact); then it is specified with a
