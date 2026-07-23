@@ -107,6 +107,13 @@ later activity (comments, reviews, CI, its linked PR) to the same session, and
 auto-closes on PR merge. Label presence is read straight from the webhook payload (no
 extra API call). A new issue *without* the label is received and ignored.
 
+The label applies to **PRs directly** too — a labelled PR with no linked issue is routed
+as its own work item (`github:OWNER/REPO#<pr-number>`). That makes PRs monitorable even
+when the ticketing system is **Jira or another provider**: the ticket can't be routed,
+but the PR delivering it can. `/the-loop:work-on <jira-id>` adds the label to the PR it
+opens and registers its session against the PR's ref automatically, so PR activity
+resumes the session and merge/close ends it — same as a GitHub-ticketed item.
+
 ### `poll` — pull ingress (provider-agnostic) when a webhook can't reach you
 
 ```bash

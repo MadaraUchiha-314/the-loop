@@ -25,6 +25,10 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 - WHEN no session matches THEN the router SHALL spawn a new session per
   `spawnOnUnmatched` (`never | always | labeled`, default `labeled` — opt-in via the
   `the-loop: auto-execute` label) using the configured prompt templates.
+- The auto-execute label SHALL work on **PRs directly**: a labelled PR linked to no
+  GitHub issue is routed as its own work item (`github:OWNER/REPO#<pr-number>`), so PRs
+  stay monitorable when the ticketing system is not GitHub (Jira, …) — `work-on` adds
+  the label to the PR it opens and registers the session against the PR's ref.
 - WHEN `routing.runner` is `tmux` THEN spawned sessions SHALL be hosted as attachable
   interactive tmux sessions and events pasted into them — see
   [interactive-sessions](interactive-sessions.md).

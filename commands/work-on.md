@@ -49,6 +49,19 @@ requirements.
 2. **Identify collaborators up-front** from the work item + `collaborators.yaml`. Not
    every task needs every persona (a bug fix needs the engineer; a content fix may not).
 
+   **Stay monitorable (auto-execute label + session registration).** So the-loop's CLI
+   (webhook receiver / poller) can route the item's later activity back to this session:
+   - **GitHub ticketing:** add `webhooks.ghWebhook.routing.autoExecuteLabel` (default
+     `the-loop: auto-execute`; create the label if missing) to the issue, and register
+     the session (`the-loop sessions register --work-item github:OWNER/REPO#N …`, see
+     the skill's `reference/automation.md`).
+   - **Jira / other ticketing providers:** the ticket itself is not a GitHub object, but
+     the **PR still is** — as soon as the PR exists, **automatically add the same
+     auto-execute label to the PR directly** and register the session against the PR's
+     own ref (`github:OWNER/REPO#<pr-number>`). PR comments, reviews and CI results then
+     resume this session exactly as for a GitHub-ticketed item, and PR merge/close
+     auto-closes it.
+
 3. **Phase 0 — Brainstorm (optional)** (`brainstorming`). When the work starts as a fuzzy
    idea, create `docs/specs/<id>/brainstorm.md` (the **root artifact**) from the template:
    problem, options, open questions, working hypothesis. Iterate it with feedback until

@@ -34,6 +34,13 @@ locked spec files read from disk, not the drafting conversation (plan-mode style
    `compact`). Mid-task, compact only — never clear. Never reset without the
    checkpoint.** See `reference/context.md`.
 
+   **Stay monitorable.** Register the session for webhook/poll routing
+   (`the-loop sessions register`, see the skill's `reference/automation.md`). When the
+   ticketing provider is **not GitHub** (Jira, …), the PR is the monitorable GitHub
+   object: once the PR exists, **add the `routing.autoExecuteLabel` (default
+   `the-loop: auto-execute`) to the PR directly** and register against the PR's own ref
+   (`github:OWNER/REPO#<pr-number>`), so PR activity still resumes this session.
+
 3. **Review** (`needs-review`). Run up to `reviews.selfReviewCount` self-reviews then
    `reviews.criticReviewCount` critic reviews (configured critics) BEFORE escalating to a
    human. Then run the **security review gate** (`security.review` — built-in

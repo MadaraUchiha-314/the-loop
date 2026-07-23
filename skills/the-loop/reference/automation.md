@@ -48,9 +48,20 @@ Python SDKs. The core has **zero runtime dependencies** (stdlib only).
   `/the-loop:work-on` on it; the item's later activity (and its linked PR's) resumes that
   session; a merged/closed PR auto-closes it. An unlabelled new issue is received and
   ignored. Label presence is read from the webhook payload (no extra API call).
+- **The label works on PRs directly — the ticketing system need not be GitHub.** A PR
+  carrying the auto-execute label is routed as its own work item
+  (`github:OWNER/REPO#<pr-number>`) even when it is linked to no GitHub issue. This is
+  the supported path when work items live in **Jira or another provider**: the ticket
+  itself can't be routed, but the PR delivering it is still monitorable by the-loop's
+  CLI. `/the-loop:work-on <jira-id>` applies this automatically — once the PR is opened
+  it adds the label to the PR and registers the session against the PR's ref, so PR
+  comments/reviews/CI resume the session and PR merge/close auto-closes it, identical
+  to the GitHub-ticketed flow.
 - **Session registration is a workflow step.** When the harness starts executing a
   work item (execute-tasks / work-on), it registers itself so events can find it —
-  and closes the registration in finish-tasks:
+  and closes the registration in finish-tasks. `N` is the GitHub issue number — or,
+  for a non-GitHub-ticketed item (Jira, …), the **PR number** once the PR exists
+  (the ref names the routable GitHub object, not the ticket):
 
   ```bash
   # Claude Code (session id is exposed to hooks/commands as $CLAUDE_SESSION_ID)
