@@ -1,3 +1,9 @@
+## v0.10.0 (2026-07-23)
+
+### Feat
+
+- **skill**: checkpoint-then-reset context-window management (issue #48) (#53)
+
 ## v0.9.0 (2026-07-23)
 
 ### Feat
