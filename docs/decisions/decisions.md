@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [030](decision-030.md) | Stay on Python for the CLI — a rewrite in Go/Rust/Bun buys nothing measurable | proposed | 2026-07-23 |
 | [029](decision-029.md) | Register user instruction docs inline in config (guidance counterpart of externalTools) | accepted | 2026-07-23 |
 | [028](decision-028.md) | Version plugin manifests in lockstep via commitizen `version_files` (no second release tool) | accepted | 2026-07-23 |
 | [027](decision-027.md) | Checkpoint-then-reset context management (clear at phase boundaries, compact at task boundaries) | accepted | 2026-07-23 |
