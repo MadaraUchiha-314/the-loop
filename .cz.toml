@@ -6,7 +6,7 @@
 # See https://commitizen-tools.github.io/commitizen/
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "0.8.0"
+version = "0.9.0"
 tag_format = "v$version"
 version_scheme = "semver"
 # commitizen owns the canonical version (the `version` field above). `version_files`

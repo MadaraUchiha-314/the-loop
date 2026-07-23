@@ -1,3 +1,9 @@
+## v0.9.0 (2026-07-23)
+
+### Feat
+
+- **workflow**: security as a first-class, gated concern across the phase gates (issue #47) (#54)
+
 ## v0.8.0 (2026-07-23)
 
 ### Feat
