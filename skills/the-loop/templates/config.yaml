@@ -65,6 +65,12 @@ tooling:
     go: go-modules
     containers: ghcr
 
+customInstructions:             # user-provided instruction docs the harness reads before working
+  docs: []                      # ordered; later docs win on conflict — reference/instructions.md
+    # - path: docs/team-conventions.md        # repo-relative, or absolute for per-machine docs
+    #   notes: House TS style, naming, PR etiquette.
+  onMissing: warn               # warn | error | ignore — when a configured doc is absent
+
 testing:
   gherkinDocstrings: required   # required | recommended | off — Gherkin docstring per integration test
   linkRequirements: true        # link the docstring to requirements.md when the test is tied to one
