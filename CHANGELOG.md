@@ -1,3 +1,9 @@
+## v0.11.0 (2026-07-23)
+
+### Feat
+
+- **release**: bump plugin manifests in lockstep with releases via commitizen (issue #46) (#55)
+
 ## v0.10.0 (2026-07-23)
 
 ### Feat
