@@ -9,7 +9,7 @@ intervention, escalating to humans only when a decision is genuinely needed.
 > configuration contract, templates, commands, the operating skill, and the
 > documentation/knowledge structure. Runtime automation (webhooks, remote execution, DAG
 > orchestration, language-specific tooling) continues to land as follow-up work — see the
-> [decision log](/developer/decisions/decision-003).
+> [decision log](/decisions/decision-003).
 
 ## The loop, in one line
 
@@ -44,7 +44,7 @@ not-started → brainstorming (optional) → requirements-definition → design
 - APIs are **contract-first**: REST specs in `specs/openapi/` (OpenAPI), GraphQL SDL in
   `specs/graphql/`; docs are generated from the contracts, never hand-written.
 - **Capability docs are the organized view of specs**: per-work-item specs are the
-  historical record; living docs under [`developer/capabilities`](/developer/capabilities/capabilities)
+  historical record; living docs under [`developer/capabilities`](/capabilities/capabilities)
   are the single source of truth for each capability's *current* behaviour, updated in
   the same PR as the work item.
 - **UI/UX design is a first-class artifact**: for user-facing work the design phase

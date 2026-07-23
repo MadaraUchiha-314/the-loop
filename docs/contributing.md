@@ -11,7 +11,7 @@ pre-commit install   # run the gates on every commit
 
 the-loop uses [uv](https://docs.astral.sh/uv/) as its declared Python package manager
 (a `uv` workspace with the `cli/` member) — see
-[decision-009](/developer/decisions/decision-009).
+[decision-009](/decisions/decision-009).
 
 ## Quality gates
 
@@ -27,28 +27,34 @@ pre-commit run --all-files    # exactly what CI runs
 
 CI ([`.github/workflows/ci.yml`](https://github.com/MadaraUchiha-314/the-loop/blob/main/.github/workflows/ci.yml))
 runs the very same pre-commit hooks — no local-vs-CI drift. See
-[decision-006](/developer/decisions/decision-006).
+[decision-006](/decisions/decision-006).
 
 ## Commits
 
 All commits follow [Conventional Commits](https://www.conventionalcommits.org/),
 enforced via [commitizen](https://commitizen-tools.github.io/commitizen/) — see
-[decision-008](/developer/decisions/decision-008). `feat`/`fix`/`BREAKING CHANGE`
+[decision-008](/decisions/decision-008). `feat`/`fix`/`BREAKING CHANGE`
 commits on `main` drive the CLI's automatic semantic release to PyPI — see
-[decision-019](/developer/decisions/decision-019).
+[decision-019](/decisions/decision-019).
 
 ## This documentation site
 
-The site lives in `docs-site/` (a [VitePress](https://vitepress.dev/) project) and
-pulls the canonical `docs/`, `cli/README.md`, and `skills/the-loop/reference/` content
-into itself at build time via `docs-site/scripts/sync-content.mjs` — so there is one
-source of truth, not a hand-copied fork.
+The site is [VitePress](https://vitepress.dev/) reading `docs/` directly as its source
+— `docs/architecture/`, `docs/capabilities/`, `docs/decisions/` and `docs/roadmap.md`
+are the site's pages, not a copy of them. The only synced content is the two sources
+that must physically live elsewhere for functional reasons: `cli/README.md` (also the
+CLI's PyPI package readme) and `skills/the-loop/reference/*.md` (read at runtime by the
+harness from that exact path) — `docs/scripts/sync-content.mjs` copies those two into
+`docs/cli.md` and `docs/operating-model/reference/` at build time (git-ignored).
+`docs/specs/` (per-work-item historical artifacts) and `docs/reports/` are excluded
+from the built site (`srcExclude` in `docs/.vitepress/config.mts`) — real content, just
+not part of the polished product-doc nav.
 
 ```bash
-cd docs-site
+cd docs
 npm install
 npm run docs:dev     # local preview at http://localhost:5173
-npm run docs:build   # production build to docs-site/.vitepress/dist
+npm run docs:build   # production build to docs/.vitepress/dist
 ```
 
 It deploys to GitHub Pages via

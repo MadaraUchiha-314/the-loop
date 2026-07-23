@@ -63,5 +63,5 @@ The ticket's phase label moves through `not-started → requirements-definition 
 - [How it works](/guide/how-it-works) — configuration, templates, and where knowledge
   lives.
 - [Command reference](/reference/commands) — every command in one table.
-- [CLI reference](/cli/) — the optional `the-loop` companion CLI (webhooks, polling,
+- [CLI reference](/cli) — the optional `the-loop` companion CLI (webhooks, polling,
   observability).

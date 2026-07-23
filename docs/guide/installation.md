@@ -39,7 +39,7 @@ e.g. `/init`); the Claude Code SessionStart hook is replaced by the always-appli
 
 Besides the plugin, the-loop ships a lightweight, extensible Python CLI for
 quality-of-life commands the plugin uses (webhook routing, polling, observability).
-See the [CLI reference](/cli/) for install instructions and the full command set.
+See the [CLI reference](/cli) for install instructions and the full command set.
 
 ## Next
 

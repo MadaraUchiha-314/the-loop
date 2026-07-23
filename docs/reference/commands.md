@@ -26,6 +26,6 @@ Run the same flow one step at a time:
 | `/the-loop:finish-tasks <id>` | Cleanup after all tasks complete (close the ticket; extensible). |
 | `/the-loop:work-status <id>` | Read-only status from the specs, task checkmarks and execution log. |
 
-See the [operating model](/developer/operating-model/) reference for what happens
-inside each phase, and the [CLI reference](/cli/) for the separate `the-loop`
+See the [operating model](/operating-model/) reference for what happens
+inside each phase, and the [CLI reference](/cli) for the separate `the-loop`
 companion CLI commands (`gh-webhook`, `poll`, `sessions`, `events`, `scenarios`).

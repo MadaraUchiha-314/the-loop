@@ -4,7 +4,7 @@
   `.the-loop/config.schema.json`. A subset of keys can be overridden per work item via
   the markdown front-matter. The CLI companion's own daemon config (webhook receiver /
   poller) is independent and not tied to a repo — see the
-  [CLI reference](/cli/#two-independent-config-files-decision-032).
+  [CLI reference](/cli#two-independent-config-files-decision-032).
 - **Everything the-loop manages** is tracked in `.the-loop/manifest.yaml`.
 - **Templates** for epics, stories, bugs, the optional `brainstorm` root artifact and
   the 3-phase spec artifacts (`requirements`/`bugfix`, `design`, `tasks`,
@@ -12,7 +12,7 @@
   `skills/the-loop/templates/` and are read from there when an artifact is authored,
   rather than being copied into every project.
 - **The operating model** is captured in the `the-loop` skill, with the full detail in
-  its [reference docs](/developer/operating-model/) — workflow, design-artifacts,
+  its [reference docs](/operating-model/) — workflow, design-artifacts,
   reviewing, tooling, testing, minimalism, collaboration, observability, and
   automation.
 
@@ -51,9 +51,9 @@ pre-commit run --all-files   # exactly what CI runs
 Gates: **ruff** (lint+format) and **pyright** for `cli/`, **pytest** for the CLI,
 **markdownlint** for all docs, and **schema validation** for `.the-loop` config. CI
 runs the very same pre-commit hooks — no local-vs-CI drift. See
-[decision-006](/developer/decisions/decision-006).
+[decision-006](/decisions/decision-006).
 
 ## Roadmap
 
 Deferred work and open questions from the founding issue live in the
-[roadmap](/developer/roadmap).
+[roadmap](/roadmap).
