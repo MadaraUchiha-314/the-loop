@@ -1,3 +1,9 @@
+## v0.14.0 (2026-07-23)
+
+### Feat
+
+- **cli**: clone event repos into per-work-item git worktrees (issue #76) (#77)
+
 ## v0.13.0 (2026-07-23)
 
 ### Feat
