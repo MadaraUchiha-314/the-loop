@@ -10,10 +10,19 @@ version = "0.10.0"
 tag_format = "v$version"
 version_scheme = "semver"
 # commitizen owns the canonical version (the `version` field above). `version_files`
-# keeps the published distribution's version in lockstep, so a bump rewrites the
-# package's `[project] version` too — the release build then packages the new version.
+# keeps every other artifact that carries a version in lockstep, so a bump rewrites
+# them all in the same commit: the published distribution's `[project] version` and the
+# Claude Code / Cursor plugin + marketplace manifests (issue #46, decision-028). On a
+# matching line commitizen replaces the CURRENT version string with the new one, so
+# each file must already carry the current version — guarded by
+# `scripts/check_version_lockstep.py`, run on every PR via the CLI test suite
+# (`cli/tests/test_version_lockstep.py`).
 version_files = [
     "cli/pyproject.toml:^version = ",
+    ".claude-plugin/plugin.json:\"version\"",
+    ".claude-plugin/marketplace.json:\"version\"",
+    ".cursor-plugin/plugin.json:\"version\"",
+    ".cursor-plugin/marketplace.json:\"version\"",
 ]
 # The changelog is generated at release time by the workflow (--changelog), not committed
 # from developer machines, so a plain `cz bump` locally doesn't require a CHANGELOG.md.
