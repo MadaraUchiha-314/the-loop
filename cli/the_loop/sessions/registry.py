@@ -20,6 +20,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Union
 
+from .. import eventlog
+
 logger = logging.getLogger("the-loop.sessions")
 
 # How many processed delivery ids each session keeps (restart-surviving dedup).
@@ -193,6 +195,15 @@ class SessionRegistry:
             session.harness_session_id,
             session.cwd,
         )
+        eventlog.emit(
+            "session.registered",
+            work_item=session.work_item.ref,
+            harness=session.harness,
+            harness_session_id=session.harness_session_id,
+            runner=session.runner,
+            cwd=session.cwd,
+            replaced=bool(existing is not None and force) or None,
+        )
         return session
 
     def find_by_work_item(
@@ -224,6 +235,12 @@ class SessionRegistry:
         session.status = "closed"
         self._write(session)
         logger.info("closed session %s", session.work_item.ref)
+        eventlog.emit(
+            "session.closed",
+            work_item=session.work_item.ref,
+            harness=session.harness,
+            harness_session_id=session.harness_session_id,
+        )
         return True
 
     def touch(

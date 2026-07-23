@@ -92,7 +92,8 @@ requirements.
    are met (tests, screenshots, logs) on the PR; record it in the execution log.
    **Before requesting human review, post/update the R10 reviewer briefing in the PR**
    (required gate item — `userInteraction.prSummary.required`), produced from
-   `.the-loop/templates/pr-briefing.md`: a **condensed, prioritized** summary saying
+   `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/pr-briefing.md`: a **condensed,
+   prioritized** summary saying
    **where to focus first**, **mermaid** diagram(s) of the change, and the
    spec→implementation insights + low-level decisions. Whenever you ask for input, give
    enough context to decide, and **educate the user on the low-level design decisions —

@@ -68,7 +68,7 @@ in the slash menu by filename (e.g. `/init`, `/work-on`).
 
 | Command | What it does |
 |---------|--------------|
-| `/the-loop:init` | Scaffold the-loop into the current repo (config, docs, templates). Idempotent. |
+| `/the-loop:init` | Scaffold the-loop into the current repo (config, docs) via a guided, schema-driven onboarding with sensible defaults (`--defaults` skips the interaction). Idempotent. |
 | `/the-loop:work-on <ticket>` | Run the whole 3-phase spec workflow (requirements → design → tasks → execute) on a GitHub issue / Jira id. Resumable per phase. **Superset of the granular commands below.** |
 | `/the-loop:upgrade-the-loop` | Reconcile a project's the-loop files with the installed plugin version. |
 
@@ -87,14 +87,16 @@ Granular commands run the same flow one step at a time:
 
 ## How it works
 
-- **Configuration** lives in [`.the-loop/config.yaml`](.the-loop/templates/config.yaml),
+- **Configuration** lives in [`.the-loop/config.yaml`](skills/the-loop/templates/config.yaml),
   validated against [`.the-loop/config.schema.json`](.the-loop/config.schema.json). A
   subset of keys can be overridden per work item via the markdown front-matter.
 - **Everything the-loop manages** is tracked in
   [`.the-loop/manifest.yaml`](.the-loop/manifest.yaml).
 - **Templates** for epics, stories, bugs, the optional `brainstorm` root artifact and the
-  3-phase spec artifacts (`requirements`/`bugfix`, `design`, `tasks`, `execution-log`) live
-  under [`.the-loop/templates/`](.the-loop/templates/).
+  3-phase spec artifacts (`requirements`/`bugfix`, `design`, `tasks`, `execution-log`) are
+  **internal to the-loop** — they ship with the plugin under
+  [`skills/the-loop/templates/`](skills/the-loop/templates/) and are read from there when
+  an artifact is authored, rather than being copied into every project.
 - **The operating model** is captured in the
   [`the-loop` skill](skills/the-loop/SKILL.md), with the full detail in its
   [reference docs](skills/the-loop/reference/) — `workflow`, `design-artifacts`,

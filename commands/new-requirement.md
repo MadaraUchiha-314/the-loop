@@ -33,7 +33,7 @@ into requirements rather than starting from a blank page.
    only the carried-forward direction lands in `requirements.md`.
 
 3. **Write `requirements.md`** from
-   `${CLAUDE_PLUGIN_ROOT}/.the-loop/templates/requirements.md`
+   `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/requirements.md`
    (`${CLAUDE_PLUGIN_ROOT}` = the installed plugin's root; same in Cursor): introduction, user
    stories, and EARS acceptance criteria (`WHEN <event> THEN the system SHALL
    <response>`). Set front-matter `phase: requirements-definition`, `status: draft`,

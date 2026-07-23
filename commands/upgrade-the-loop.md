@@ -20,18 +20,30 @@ command reconciles them.
 
 2. **Reconcile files.** Using `${CLAUDE_PLUGIN_ROOT}/.the-loop/manifest.yaml` as the
    source of truth:
-   - Create any missing managed files / templates / directories.
+   - Create any missing managed files / directories.
    - Never clobber user-owned files (`managed: false`) — diff and suggest changes
      instead.
+   - Templates are **internal to the-loop** and are **not** materialized in the project;
+     read them from `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/`
+     (`manifest.templatesDir`) rather than creating a `.the-loop/templates/` folder.
 
-3. **Migrate schema.** If `.the-loop/config.schema.json` changed, update the project's
+3. **Clean up deprecated paths.** For each entry under `manifest.deprecated`, if the path
+   is present in the project, remove it — this is how projects initialized by older
+   versions shed the duplicated, internal-only artifacts (notably
+   `.the-loop/templates/`, superseded by the plugin's own skill templates in issue #36).
+   If a user has clearly added their own files under a deprecated path, surface them in
+   the report and confirm before deleting rather than removing silently.
+
+4. **Migrate schema.** If `.the-loop/config.schema.json` changed, update the project's
    copy and migrate `.the-loop/config.yaml` to the new shape (add new keys with
-   defaults, flag removed/renamed keys for the user). Validate the result.
+   defaults, flag removed/renamed keys for the user — e.g. template paths that used to
+   point under `.the-loop/templates/`). Validate the result.
 
-4. **Update manifest.** Bump `theLoopVersion`/`manifestVersion` to match the plugin.
+5. **Update manifest.** Bump `theLoopVersion`/`manifestVersion` to match the plugin.
 
-5. **Report.** Summarize grouped as **created / skipped (up to date) / drifted
-   (suggested) / migrated / needs-user**. Make no silent breaking changes.
+6. **Report.** Summarize grouped as **created / skipped (up to date) / drifted
+   (suggested) / removed (deprecated) / migrated / needs-user**. Make no silent
+   breaking changes.
 
 `--dry-run` computes and prints the report above **without writing anything** — the same
 preview `/the-loop:init --dry-run` gives. Idempotent, non-clobbering, and safe to re-run.

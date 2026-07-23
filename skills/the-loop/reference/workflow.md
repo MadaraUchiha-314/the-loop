@@ -119,7 +119,8 @@ copy of its contents. The checked-in file is the single source of truth.
 
 Per-work-item specs are *deltas*; readers need *state*. The loop maintains **living
 capability docs** under `workflow.capabilitiesDir` (default `docs/capabilities/`,
-indexed by `capabilities.md`, template `.the-loop/templates/capability.md`):
+indexed by `capabilities.md`, template
+`${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/capability.md`):
 
 - One doc per capability — product-feature and architecture shaped are both valid.
 - Each doc is the **single source of truth for the capability's *current* behaviour**;
@@ -162,8 +163,9 @@ must ALL hold:
   recorded in the execution log) — the organized view of specs must not rot; **and**
 - the **R10 reviewer briefing** is posted/updated in the PR — a condensed, prioritized
   summary (where to focus), mermaid diagram(s), and the low-level decisions — produced
-  from `userInteraction.prSummary.templatePath` (default
-  `.the-loop/templates/pr-briefing.md`). This is the **trigger** that makes mandatory
+  from `userInteraction.prSummary.templatePath` (default the-loop's internal
+  `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/pr-briefing.md`). This is the
+  **trigger** that makes mandatory
   user-education actually fire (`userInteraction.prSummary.required`, default true); do
   not request review without it. RULE: educating the reviewer is not optional.
 

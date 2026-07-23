@@ -14,6 +14,8 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import List, Optional, Sequence
 
+from .. import eventlog
+from ..authz import is_authorized
 from ..sessions import WorkItemRef
 
 logger = logging.getLogger("the-loop.gh-webhook")
@@ -98,6 +100,22 @@ def event_carries_label(payload: dict, label: str) -> bool:
     return False
 
 
+def event_actor(event: str, payload: dict) -> Optional[str]:
+    """The human GitHub login responsible for this event, or ``None``.
+
+    Content/action events resolve to their author/actor (the prompt-injection
+    surface); pure system events (CI ``workflow_run``/``check_*``/``status``)
+    resolve to ``None`` — they carry status, not free-form instructions.
+    """
+    if event in ("issue_comment", "pull_request_review_comment"):
+        return ((payload.get("comment") or {}).get("user") or {}).get("login")
+    if event == "pull_request_review":
+        return ((payload.get("review") or {}).get("user") or {}).get("login")
+    if event == "issues" or event.startswith("pull_request"):
+        return (payload.get("sender") or {}).get("login")
+    return None
+
+
 def extract_work_items(event: str, payload: dict) -> List[WorkItemRef]:
     """Map a GitHub event payload to the work item(s) it concerns (R3.1).
 
@@ -152,9 +170,13 @@ class Router:
         dedup_size: int = 1024,
         deduper: Optional[Deduper] = None,
         auto_execute_label: str = "",
+        authorized_users: Sequence[str] = (),
     ):
         self.events = list(events)
         self.auto_execute_label = auto_execute_label
+        # Prompt-injection guard: only these logins' actions are actionable
+        # (empty => fail closed for human-authored events). See the_loop.authz.
+        self.authorized_users = list(authorized_users)
         # Share the dispatcher's deduper so the router's early duplicate check
         # sees the ids the dispatcher marks as processed.
         self.deduper = deduper if deduper is not None else Deduper(maxsize=dedup_size)
@@ -163,21 +185,81 @@ class Router:
         self, event: str, payload: dict, delivery_id: str
     ) -> Optional[RoutedEvent]:
         """Return a RoutedEvent, or None when filtered / duplicate / unmappable."""
+        action = str(payload.get("action") or "")
         if self.events and event not in self.events:
             logger.debug("ignoring disabled event type %s", event)
+            eventlog.emit(
+                "routing.dropped",
+                level="debug",
+                reason="disabled-event",
+                gh_event=event,
+                action=action,
+                delivery_id=delivery_id,
+            )
             return None
         if delivery_id and delivery_id in self.deduper:
             logger.info("duplicate delivery %s ignored (already seen)", delivery_id)
+            eventlog.emit(
+                "routing.dropped",
+                reason="duplicate-delivery",
+                gh_event=event,
+                action=action,
+                delivery_id=delivery_id,
+            )
             return None
         work_items = extract_work_items(event, payload)
         if not work_items:
             logger.debug("event %s maps to no work item; ignoring", event)
+            eventlog.emit(
+                "routing.dropped",
+                level="debug",
+                reason="no-work-item",
+                gh_event=event,
+                action=action,
+                delivery_id=delivery_id,
+            )
             return None
+        # Authorization guard (prompt-injection remediation). PR-close is a
+        # lifecycle signal (it only auto-closes the-loop's own session, injects
+        # nothing), so it bypasses the actor check to keep cleanup working.
+        is_pr_close = event == "pull_request" and (
+            str(payload.get("action") or "") == "closed"
+        )
+        actor = event_actor(event, payload)
+        if not is_pr_close and not is_authorized(actor, self.authorized_users):
+            logger.warning(
+                "ignoring %s for %s from unauthorized actor %r "
+                "(not in routing.authorizedUsers)",
+                event,
+                ", ".join(w.ref for w in work_items),
+                actor,
+            )
+            eventlog.emit(
+                "routing.dropped",
+                level="warning",
+                reason="unauthorized-actor",
+                gh_event=event,
+                action=action,
+                delivery_id=delivery_id,
+                actor=actor,
+                work_items=[w.ref for w in work_items],
+            )
+            return None
+        labeled = event_carries_label(payload, self.auto_execute_label)
+        eventlog.emit(
+            "routing.routed",
+            gh_event=event,
+            action=action,
+            delivery_id=delivery_id,
+            actor=actor,
+            work_items=[w.ref for w in work_items],
+            labeled=labeled,
+        )
         return RoutedEvent(
             event=event,
-            action=str(payload.get("action") or ""),
+            action=action,
             delivery_id=delivery_id or "",
             work_items=work_items,
             payload=payload,
-            labeled=event_carries_label(payload, self.auto_execute_label),
+            labeled=labeled,
         )

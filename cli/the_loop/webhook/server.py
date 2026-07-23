@@ -16,6 +16,8 @@ import logging
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable, Optional
 
+from .. import eventlog
+
 logger = logging.getLogger("the-loop.gh-webhook")
 
 # Per-event callback: (event_name, payload_dict, delivery_id) -> None.
@@ -71,25 +73,46 @@ def make_handler(path: str, secret: Optional[str], on_event: Optional[OnEvent] =
             verified = verify_signature(
                 secret, body, self.headers.get("X-Hub-Signature-256")
             )
+            delivery = self.headers.get("X-GitHub-Delivery", "-")
+            event = self.headers.get("X-GitHub-Event", "unknown")
             if verified is False:
                 logger.warning("rejected webhook: invalid signature")
+                eventlog.emit(
+                    "webhook.rejected",
+                    level="warning",
+                    reason="invalid-signature",
+                    gh_event=event,
+                    delivery_id=delivery,
+                )
                 self._send(401, "invalid signature")
                 return
             if verified is None:
                 logger.warning("webhook signature NOT verified (no secret configured)")
 
-            event = self.headers.get("X-GitHub-Event", "unknown")
-            delivery = self.headers.get("X-GitHub-Delivery", "-")
             try:
                 payload = json.loads(body.decode("utf-8")) if body else {}
             except json.JSONDecodeError:
                 logger.error(
                     "webhook payload was not valid JSON (delivery=%s)", delivery
                 )
+                eventlog.emit(
+                    "webhook.rejected",
+                    level="error",
+                    reason="invalid-payload",
+                    gh_event=event,
+                    delivery_id=delivery,
+                )
                 self._send(400, "invalid payload")
                 return
 
             logger.info("received event=%s delivery=%s", event, delivery)
+            eventlog.emit(
+                "webhook.received",
+                gh_event=event,
+                action=payload.get("action"),
+                delivery_id=delivery,
+                verified=bool(verified),
+            )
             if on_event is not None:
                 try:
                     on_event(event, payload, delivery)

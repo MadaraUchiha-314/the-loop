@@ -27,6 +27,7 @@ from the_loop.webhook.router import (
     Deduper,
     RoutedEvent,
     Router,
+    event_actor,
     event_carries_label,
     extract_work_items,
 )
@@ -243,6 +244,71 @@ def test_router_sets_labeled_flag():
     assert labeled is not None and labeled.labeled is True
     plain = router.route("issue_comment", payload_issue_comment(), "d-2")
     assert plain is not None and plain.labeled is False
+
+
+def _issue_comment_by(login, number=15):
+    return {
+        "action": "created",
+        "repository": {"full_name": "octo/repo"},
+        "issue": {"number": number},
+        "comment": {"user": {"login": login}, "body": "hi"},
+    }
+
+
+def test_event_actor_extraction():
+    assert event_actor("issue_comment", _issue_comment_by("alice")) == "alice"
+    assert (
+        event_actor(
+            "pull_request_review",
+            {"review": {"user": {"login": "bob"}}},
+        )
+        == "bob"
+    )
+    assert (
+        event_actor("issues", {"sender": {"login": "carol"}, "action": "labeled"})
+        == "carol"
+    )
+    # pure system events (CI) have no human actor
+    assert event_actor("workflow_run", {"workflow_run": {}}) is None
+
+
+def test_router_drops_event_from_unauthorized_actor():
+    router = Router(events=[], authorized_users=["me"])
+    assert router.route("issue_comment", _issue_comment_by("attacker"), "d-1") is None
+    assert router.route("issue_comment", _issue_comment_by("me"), "d-2") is not None
+
+
+def test_router_empty_allowlist_fails_closed_for_human_events():
+    router = Router(events=[], authorized_users=[])  # nobody authorized
+    assert router.route("issue_comment", _issue_comment_by("anyone"), "d-1") is None
+
+
+def test_router_allows_actorless_ci_event_even_when_gated():
+    router = Router(events=[], authorized_users=["me"])
+    routed = router.route(
+        "workflow_run",
+        {
+            "repository": {"full_name": "octo/repo"},
+            "workflow_run": {"head_branch": "issue-15", "pull_requests": []},
+        },
+        "d-1",
+    )
+    assert routed is not None  # CI status carries no human instruction
+
+
+def test_router_pr_close_bypasses_authz_for_cleanup():
+    router = Router(events=[], authorized_users=["me"])
+    routed = router.route(
+        "pull_request",
+        {
+            "action": "closed",
+            "repository": {"full_name": "octo/repo"},
+            "sender": {"login": "attacker"},
+            "pull_request": {"number": 20, "merged": True},
+        },
+        "d-1",
+    )
+    assert routed is not None  # lifecycle auto-close must still fire
 
 
 def test_router_deduper_is_bounded_lru():
@@ -715,3 +781,91 @@ def test_sessions_command_table_output(tmp_path, capsys):
     assert run_cli(["sessions", "list", "--registry-dir", registry_dir]) == 0
     out = capsys.readouterr().out
     assert "Work item" in out and REF in out and "cursor" in out
+
+
+# -- config hot reload (issue-34 review) --------------------------------------
+
+
+def test_dispatcher_reload_swaps_policy_and_templates_keeps_dedup(tmp_path):
+    adapter = FakeAdapter()
+    registry, dispatcher = make_dispatcher(
+        tmp_path, adapter, spawn_on_unmatched="never"
+    )
+    dispatcher.deduper.add("keep-me")  # in-memory dedup must survive a reload
+    tmpl = tmp_path / "evt.md"
+    tmpl.write_text("RELOADED $work_item")
+
+    dispatcher.reload(
+        RoutingConfig(
+            spawn_on_unmatched="always",
+            registry_dir="ignored-on-reload",
+            prompt_template=str(tmpl),
+        )
+    )
+    dispatcher.stop()
+
+    # soft policy took effect
+    assert dispatcher.config.spawn_on_unmatched == "always"
+    assert dispatcher._should_spawn(routed_labeled_issue(labeled=False)) is True
+    # prompt template reloaded
+    rendered = dispatcher._render_prompt(
+        routed_issue_comment(), WorkItemRef.parse(REF), dispatcher._event_template
+    )
+    assert rendered.startswith("RELOADED github:octo/repo#15")
+    # infrastructure preserved (change needs a restart)
+    assert "keep-me" in dispatcher.deduper  # dedup cache kept
+    assert dispatcher.registry is registry  # registryDir change ignored
+    assert "claude" in dispatcher.adapters  # adapters rebuilt from harnessArgs
+
+
+def test_read_gh_webhook_config_strict_vs_lenient(tmp_path, monkeypatch):
+    from the_loop.commands import gh_webhook
+
+    cfg = tmp_path / "config.yaml"
+    monkeypatch.setattr(gh_webhook, "_CONFIG_PATH", cfg)
+
+    # missing file: lenient => {}, strict => raises
+    assert gh_webhook._read_gh_webhook_config(strict=False) == {}
+    with pytest.raises(FileNotFoundError):
+        gh_webhook._read_gh_webhook_config(strict=True)
+
+    # unparseable: lenient => {} (keep defaults), strict => raises (keep previous)
+    cfg.write_text("webhooks: [unclosed\n")
+    assert gh_webhook._read_gh_webhook_config(strict=False) == {}
+    with pytest.raises(Exception):
+        gh_webhook._read_gh_webhook_config(strict=True)
+
+
+def _write_webhook_config(path, policy, sessions_dir):
+    path.write_text(
+        "webhooks:\n"
+        "  ghWebhook:\n"
+        "    events: []\n"
+        "    routing:\n"
+        f"      spawnOnUnmatched: {policy}\n"
+        f"      registryDir: {sessions_dir}\n"
+    )
+
+
+def test_webhook_hot_reload_applies_on_next_event(tmp_path, monkeypatch):
+    from the_loop.commands import gh_webhook
+
+    cfg = tmp_path / "config.yaml"
+    _write_webhook_config(cfg, "never", tmp_path / "sessions")
+    monkeypatch.setattr(gh_webhook, "_CONFIG_PATH", cfg)
+
+    on_event, dispatcher, _ = gh_webhook._build_routing(
+        gh_webhook._read_gh_webhook_config()
+    )
+    assert dispatcher.config.spawn_on_unmatched == "never"
+
+    # edit the config while "running"; the next received event applies it
+    _write_webhook_config(cfg, "always", tmp_path / "sessions")
+    on_event(
+        "issues",
+        {"repository": {"full_name": "octo/repo"}, "issue": {"number": 1}},
+        "d-1",
+    )
+    dispatcher.stop()
+
+    assert dispatcher.config.spawn_on_unmatched == "always"

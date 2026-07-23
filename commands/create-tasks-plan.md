@@ -17,7 +17,7 @@ spec workflow. A slice of `/the-loop:work-on`; `work-on` remains the superset.
 1. **Locate the spec.** Resolve `$ARGUMENTS` to `docs/specs/<id>/` and read both
    `requirements.md` and `design.md`. Both should be approved; if not, say so and stop.
 
-2. **Write `tasks.md`** from `${CLAUDE_PLUGIN_ROOT}/.the-loop/templates/tasks.md`
+2. **Write `tasks.md`** from `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/tasks.md`
    (`${CLAUDE_PLUGIN_ROOT}` = the installed plugin's root; same in Cursor): small,
    verifiable tasks as a **DAG**, each `- [ ]` referencing the requirement(s) it
    satisfies and its dependencies, plus checkpoints (tests to run). Include the explicit

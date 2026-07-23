@@ -1,3 +1,27 @@
+## v0.7.0 (2026-07-22)
+
+### Feat
+
+- **cli**: structured JSONL event log — end-to-end o11y of the CLI's actions (issue #50) (#52)
+
+## v0.6.0 (2026-07-22)
+
+### Feat
+
+- **init**: guided, schema-driven config onboarding with sensible defaults (issue #49) (#51)
+
+## v0.5.1 (2026-07-22)
+
+### Fix
+
+- **templates**: keep templates internal to the-loop instead of copying to every repo (issue #36) (#44)
+
+## v0.5.0 (2026-07-22)
+
+### Feat
+
+- **cli**: poll — provider-agnostic pull ingress to spawn/route harness sessions (#34) (#45)
+
 ## v0.4.0 (2026-07-21)
 
 ### Feat

@@ -33,7 +33,8 @@ Load `.the-loop/config.yaml`; apply any per-task `overrides` from the spec front
 4. **Evidence + reviewer briefing (required gate).** Present validated evidence that the
    acceptance criteria are met (tests, screenshots, logs). BEFORE requesting human
    review, **post/update the R10 reviewer briefing in the PR** — produced from
-   `userInteraction.prSummary.templatePath` (`.the-loop/templates/pr-briefing.md`): a
+   `userInteraction.prSummary.templatePath` (the-loop's internal
+   `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/pr-briefing.md`): a
    condensed, prioritized summary (where to focus), **mermaid** diagram(s), and the
    low-level decisions the harness made. This is a ready-to-ship gate item
    (`userInteraction.prSummary.required`) — educating the reviewer is mandatory, not

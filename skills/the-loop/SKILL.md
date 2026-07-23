@@ -13,6 +13,7 @@ intervention, escalating only when a decision/opinion is genuinely required.
 > **Read the relevant reference file before acting** — they carry the full detail so the
 > essence is not lost:
 > - `reference/workflow.md` — the loop, phases, TDD, reviews, autonomy, DAG, resumability.
+> - `reference/onboarding.md` — the guided, schema-driven config onboarding `/init` runs (groups, ask levels, sensible-defaults precedence).
 > - `reference/design-artifacts.md` — UI/UX design artifacts (Figma / HTML prototypes) in the design phase and the designer iteration loop.
 > - `reference/reviewing.md` — the self/critic review procedure the review counts drive.
 > - `reference/tooling.md` — repo management, per-language tooling matrix, hooks, CI parity.
@@ -131,8 +132,9 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   → inject a capped index (`config.selfImprovement`). See `reference/automation.md`.
 - **Evidence at the end.** Present validated evidence that acceptance criteria are met.
 - **Communicate for the reviewer (required gate).** Before requesting human review,
-  post/update the **reviewer briefing** in the PR — produced from
-  `.the-loop/templates/pr-briefing.md`: a **condensed, prioritized** summary (where to
+  post/update the **reviewer briefing** in the PR — produced from the-loop's internal
+  `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/pr-briefing.md`: a **condensed,
+  prioritized** summary (where to
   focus first), the spec→implementation insights and low-level decisions, and **mermaid**
   diagrams. This is a required item of the ready-to-ship gate
   (`userInteraction.prSummary.required`), so **mandatory user-education is triggered, not

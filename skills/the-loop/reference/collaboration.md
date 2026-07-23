@@ -79,7 +79,8 @@ dropping, so how the-loop communicates is a first-class concern. Driven by
 - **Condensed, prioritized PR summaries.** Every PR the-loop raises tells the reviewer
   **where to focus and in what order** — reviewing a huge AI-authored PR top-to-bottom
   is not realistic. Lead with the highest-priority items to scrutinize. This briefing is
-  produced from `.the-loop/templates/pr-briefing.md` and **posted/updated in the PR
+  produced from the-loop's internal
+  `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/pr-briefing.md` and **posted/updated in the PR
   BEFORE human review is requested** — a required item of the ready-to-ship gate
   (`userInteraction.prSummary.required`), so it triggers on every PR (see
   `workflow.md`).
