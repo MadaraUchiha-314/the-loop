@@ -13,6 +13,7 @@ intervention, escalating only when a decision/opinion is genuinely required.
 > **Read the relevant reference file before acting** — they carry the full detail so the
 > essence is not lost:
 > - `reference/workflow.md` — the loop, phases, TDD, reviews, autonomy, DAG, resumability.
+> - `reference/context.md` — context-window management: clearing vs compaction, the checkpoint-then-reset protocol, per-harness mechanics.
 > - `reference/onboarding.md` — the guided, schema-driven config onboarding `/init` runs (groups, ask levels, sensible-defaults precedence).
 > - `reference/design-artifacts.md` — UI/UX design artifacts (Figma / HTML prototypes) in the design phase and the designer iteration loop.
 > - `reference/reviewing.md` — the self/critic review procedure the review counts drive.
@@ -91,6 +92,13 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   Notify via configured messaging channels when a human action is pending.
 - **Self-check continuously.** Maintain `docs/specs/<id>/execution-log.md`; keep the
   phase label in sync; run tests at logical checkpoints; log progress for visibility.
+- **Manage the context window deliberately (checkpoint, then reset).** Never reset
+  context without first checkpointing (checkmarks, execution-log entry with a concrete
+  next step, phase label, WIP committed/noted). Then: **clear** at phase boundaries
+  (locked spec → fresh window for implementation, plan-mode style), **compact** after
+  each completed task and mid-task (never clear mid-task), and isolate high-volume
+  exploration in subagents. The checked-in artifacts are the memory that makes resets
+  affordable (`contextManagement`). See `reference/context.md`.
 - **Review before escalating.** Run `reviews.selfReviewCount` self-reviews then
   `reviews.criticReviewCount` critic reviews (a different harness/model), default 3
   each, BEFORE reaching out to a human. All reviews are comments. **Follow the defined
@@ -165,8 +173,8 @@ Behaviour is driven by `.the-loop/config.yaml`, validated against
 `.the-loop/config.schema.json`. Sections: `ticketing`, `repository`, `workflow`,
 `tooling`, `testing`, `apiSpecs`, `localOrchestration`, `hooks`, `observability`,
 `reviews`, `autonomy`, `security`, `tdd`,
-`minimalism`, `selfImprovement`, `userInteraction`, `personas`, `messaging`,
-`externalTools`, `webhooks`. A subset of keys can be overridden per work item via the
+`minimalism`, `selfImprovement`, `contextManagement`, `userInteraction`, `personas`,
+`messaging`, `externalTools`, `webhooks`. A subset of keys can be overridden per work item via the
 YAML front-matter `overrides` of the work-item / spec markdown. Managed files are listed
 in `.the-loop/manifest.yaml`.
 

@@ -10,8 +10,13 @@ Implement a work item by executing its approved **tasks.md** against **requireme
 and **design.md** — the implementation → review portion of the loop. A slice of
 `/the-loop:work-on`; `work-on` remains the superset.
 
-**Read the `the-loop` skill, `reference/workflow.md` and `reference/tooling.md` first.**
+**Read the `the-loop` skill, `reference/workflow.md`, `reference/context.md` and
+`reference/tooling.md` first.**
 Load `.the-loop/config.yaml`; apply any per-task `overrides` from the spec front-matter.
+
+**Start clean.** Entering implementation crosses a phase boundary: apply
+`contextManagement.phaseBoundary` (default `clear`) so execution runs against the
+locked spec files read from disk, not the drafting conversation (plan-mode style).
 
 ## Steps
 
@@ -23,7 +28,11 @@ Load `.the-loop/config.yaml`; apply any per-task `overrides` from the spec front
    order. **Tick each task in `tasks.md` (`- [ ]` → `- [x]`) as it completes.** Maintain
    `execution-log.md`: append progress and run tests (unit/integration per config) at the
    task checkpoints — self-check as you go. Use the configured tooling; same commands as
-   CI. Keep the ticket phase label in sync.
+   CI. Keep the ticket phase label in sync. **After each completed task, manage the
+   context window: checkpoint first (checkmark, log entry with a concrete Next, WIP
+   committed/noted), then reset per `contextManagement.taskBoundary` (default
+   `compact`). Mid-task, compact only — never clear. Never reset without the
+   checkpoint.** See `reference/context.md`.
 
 3. **Review** (`needs-review`). Run up to `reviews.selfReviewCount` self-reviews then
    `reviews.criticReviewCount` critic reviews (configured critics) BEFORE escalating to a

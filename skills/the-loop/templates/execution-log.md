@@ -10,7 +10,10 @@ status: in-progress          # in-progress | complete
 > Append-only log of progress for the user's visibility. Checked in alongside the spec
 > at `docs/specs/<id>/execution-log.md`. The-loop keeps the work item's phase label in
 > the ticketing system in sync with the `phase` front-matter above, and self-checks
-> (runs tests at logical checkpoints) recording the outcome here.
+> (runs tests at logical checkpoints) recording the outcome here. The log doubles as
+> the **resume anchor for context resets** (`reference/context.md`): every reset (clear
+> or compact) is preceded by a checkpoint entry here, and a fresh window re-enters by
+> reading the latest entry's **Next:** first.
 
 ## Phase transitions
 
@@ -31,6 +34,7 @@ status: in-progress          # in-progress | complete
 - **Did:** what was done
 - **Checkpoint/tests:** commands run and their result (pass/fail + evidence)
 - **Next:** what is next
+- **Context:** *(only when this checkpoint precedes a reset)* cleared | compacted, and why
 - **Blockers:** anything waiting on a human (link the ticket comment)
 
 ## Review cycles

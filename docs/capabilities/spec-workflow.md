@@ -43,10 +43,23 @@ the `/the-loop:work-on` superset command and granular per-step commands
   `security.review.humanSignOffMinTier` (default 4) SHALL wait for a named human
   security sign-off, and an unresolved security finding SHALL block completion at any
   tier.
+- The loop SHALL manage its context window by **checkpoint-then-reset**
+  (`config.contextManagement`): a reset (clear or compact) is always preceded by a
+  checkpoint — `tasks.md` checkmarks current, an execution-log entry with a concrete
+  next step, the phase label in sync, WIP committed or noted.
+- WHEN the phase advances across a locked artifact (most importantly
+  tasks-breakdown → implementation) THEN the loop SHALL reset per
+  `contextManagement.phaseBoundary` (default `clear`) and derive the next phase's work
+  from the checked-in artifacts, not the conversation.
+- WHEN a task in the DAG completes THEN the loop SHALL checkpoint and reset per
+  `contextManagement.taskBoundary` (default `compact`); mid-task only compaction is
+  permitted (`midTask`), never clearing. Headless sessions reset by ending at the
+  boundary and resuming fresh via the execution log.
 
 ## Design
 
 [`reference/workflow.md`](../../skills/the-loop/reference/workflow.md) ·
+[`reference/context.md`](../../skills/the-loop/reference/context.md) ·
 [`reference/security.md`](../../skills/the-loop/reference/security.md) ·
 [`SKILL.md`](../../skills/the-loop/SKILL.md) ·
 [architecture § the loop](../architecture/architecture.md)
@@ -55,6 +68,7 @@ the `/the-loop:work-on` superset command and granular per-step commands
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-48 | Added checkpoint-then-reset context-window management (clear at phase boundaries, compact at task boundaries, `contextManagement` config) | [spec](../specs/issue-48/), [decision-027](../decisions/decision-027.md) |
 | issue-47 | Security became a gated concern of every phase: threat-model-lite in requirements, Security design section, security-review gate item, risk-tiered human sign-off (`config.security`) | [spec](../specs/issue-47/), [decision-026](../decisions/decision-026.md) |
 | issue-25 | Added the capability-docs fold-in as a ready-to-ship gate item | [spec](../specs/issue-25/), [decision-020](../decisions/decision-020.md) |
 | issue-18 | Design phase gained first-class UI/UX design artifacts | [spec](../specs/issue-18/), [decision-018](../decisions/decision-018.md) |
