@@ -32,8 +32,11 @@ Python SDKs. The core has **zero runtime dependencies** (stdlib only).
   - `the-loop gh-webhook start [--host --port --path --pidfile --secret-env --route]`
   - `the-loop gh-webhook stop [--pidfile]`
   - Verifies the GitHub `X-Hub-Signature-256` HMAC (secret from an env var), exposes
-    `GET /health`, and logs deliveries. Defaults come from `webhooks.ghWebhook` in
-    `.the-loop/config.yaml`.
+    `GET /health`, and logs deliveries. Defaults come from `webhooks.ghWebhook` in the
+    user/machine-level **CLI** config (`$XDG_CONFIG_HOME/the-loop/config.yaml`, override
+    `$THE_LOOP_CLI_CONFIG`) — separate from the per-repo plugin config, since the CLI
+    spans repos (`docs/decisions/decision-021.md`); a legacy `webhooks:` block in
+    `.the-loop/config.yaml` is still read with a deprecation warning.
 - **Webhook → session routing** (`--route`; `webhooks.ghWebhook.routing`): a received
   event (PR/issue comment, `workflow_run` result, …) is matched to the registered
   session working that item and delivered by *resuming* that session through its

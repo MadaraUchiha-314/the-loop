@@ -1,0 +1,41 @@
+# the-loop CLI config — USER/MACHINE-LEVEL, not a per-repo file.
+#
+# The `the-loop` CLI (webhook receiver + event routing) works across many repos and is
+# not tied to any single one, so its config lives OUTSIDE a repo. Copy this file to:
+#
+#   $XDG_CONFIG_HOME/the-loop/config.yaml   (defaults to ~/.config/the-loop/config.yaml)
+#
+# or point the CLI at any path with the $THE_LOOP_CLI_CONFIG environment variable.
+#
+# Validated against .the-loop/cli-config.schema.json. Requires PyYAML at read time
+# (`pip install "the-loopy-one[config]"`); without it the CLI falls back to built-in
+# defaults. CLI flags always override values from this file.
+#
+# The per-repo plugin config (.the-loop/config.yaml) is a SEPARATE thing and does NOT
+# carry these keys. See docs/decisions/decision-021.md.
+
+version: "0.1.0"
+
+webhooks:
+  ghWebhook:
+    host: 127.0.0.1
+    port: 8787
+    path: /gh-webhook
+    secretEnv: THE_LOOP_GH_WEBHOOK_SECRET   # env var holding the secret (never stored here)
+    pidfile: .the-loop/gh-webhook.pid
+    events: []   # e.g. [issues, issue_comment, pull_request, workflow_run]; empty = all
+    routing:
+      enabled: false                # route events to registered harness sessions
+      registryDir: .the-loop/sessions
+      defaultHarness: claude        # claude | cursor
+      spawnOnUnmatched: labeled     # never | always | labeled
+      autoExecuteLabel: "the-loop: auto-execute"   # label that opts an issue/PR into autonomous execution
+      spawnWorkdir: "."
+      maxConcurrentDispatches: 4
+      dedupCacheSize: 1024
+      dispatchTimeoutSeconds: 1800
+      promptTemplate: .the-loop/templates/webhook-event-prompt.md
+      spawnPromptTemplate: .the-loop/templates/webhook-autoexecute-prompt.md
+      harnessArgs:
+        claude: []                  # e.g. [--permission-mode, acceptEdits]
+        cursor: []                  # e.g. [--force]

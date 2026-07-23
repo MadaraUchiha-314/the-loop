@@ -143,14 +143,17 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
 
 ## Configuration
 
-Behaviour is driven by `.the-loop/config.yaml`, validated against
-`.the-loop/config.schema.json`. Sections: `ticketing`, `repository`, `workflow`,
+Behaviour is driven by the per-repo **plugin** config `.the-loop/config.yaml`, validated
+against `.the-loop/config.schema.json`. Sections: `ticketing`, `repository`, `workflow`,
 `tooling`, `testing`, `apiSpecs`, `localOrchestration`, `hooks`, `observability`,
 `reviews`, `autonomy`, `tdd`,
 `minimalism`, `selfImprovement`, `userInteraction`, `personas`, `messaging`,
-`externalTools`, `webhooks`. A subset of keys can be overridden per work item via the
+`externalTools`. A subset of keys can be overridden per work item via the
 YAML front-matter `overrides` of the work-item / spec markdown. Managed files are listed
-in `.the-loop/manifest.yaml`.
+in `.the-loop/manifest.yaml`. The `the-loop` **CLI** (webhook receiver + routing) is
+configured separately, at a user/machine level, in
+`$XDG_CONFIG_HOME/the-loop/config.yaml` (schema `.the-loop/cli-config.schema.json`) —
+because the CLI spans repos (see `docs/decisions/decision-021.md`).
 
 ## Commands
 

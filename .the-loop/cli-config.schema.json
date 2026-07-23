@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/MadaraUchiha-314/the-loop/.the-loop/cli-config.schema.json",
+  "title": "the-loop CLI configuration",
+  "description": "Schema for the the-loop CLI's user/machine-level config (default $XDG_CONFIG_HOME/the-loop/config.yaml, override with $THE_LOOP_CLI_CONFIG). This config is deliberately NOT tied to a single repository: the CLI (webhook receiver, session routing) works across many repos, so its settings live outside any one repo's .the-loop/config.yaml (the per-repo plugin config). See docs/decisions/decision-021.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Schema version of this CLI config file.",
+      "examples": ["0.1.0"]
+    },
+    "webhooks": {
+      "type": "object",
+      "description": "Config for the the-loop CLI webhook receiver(s) (e.g. `the-loop gh-webhook start`).",
+      "additionalProperties": false,
+      "properties": {
+        "ghWebhook": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "host": { "type": "string", "default": "127.0.0.1" },
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535, "default": 8787 },
+            "path": { "type": "string", "default": "/gh-webhook" },
+            "secretEnv": {
+              "type": "string",
+              "default": "THE_LOOP_GH_WEBHOOK_SECRET",
+              "description": "Env var holding the GitHub webhook secret for HMAC verification (never stored in config)."
+            },
+            "pidfile": { "type": "string", "default": ".the-loop/gh-webhook.pid" },
+            "events": {
+              "type": "array",
+              "description": "GitHub event names of interest, e.g. pull_request_review_comment, workflow_run. Empty = accept all event types.",
+              "items": { "type": "string" }
+            },
+            "routing": {
+              "type": "object",
+              "description": "Route received events to registered harness sessions via the session registry (docs/specs/issue-15/design.md, decision-016).",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Default for `gh-webhook start --route/--no-route`."
+                },
+                "registryDir": {
+                  "type": "string",
+                  "default": ".the-loop/sessions",
+                  "description": "Directory of per-session registry JSON files (git-ignored)."
+                },
+                "defaultHarness": {
+                  "type": "string",
+                  "enum": ["claude", "cursor"],
+                  "default": "claude",
+                  "description": "Harness used when spawning a session for an unmatched event."
+                },
+                "spawnOnUnmatched": {
+                  "type": "string",
+                  "enum": ["never", "always", "labeled"],
+                  "default": "never",
+                  "description": "Policy for events matching no registered session: 'never' log-and-drop; 'always' spawn+register a new session; 'labeled' spawn only when the issue/PR carries autoExecuteLabel."
+                },
+                "autoExecuteLabel": {
+                  "type": "string",
+                  "default": "the-loop: auto-execute",
+                  "description": "Issue/PR label that opts a work item into autonomous execution (spawnOnUnmatched: labeled). Read from the webhook payload, no API call."
+                },
+                "spawnWorkdir": {
+                  "type": "string",
+                  "default": ".",
+                  "description": "Working directory for sessions spawned on unmatched events."
+                },
+                "maxConcurrentDispatches": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "default": 4,
+                  "description": "Cap on harness dispatches running in parallel (per-session dispatch is always serialized)."
+                },
+                "dedupCacheSize": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "default": 1024,
+                  "description": "Bounded LRU of X-GitHub-Delivery ids for at-most-once processing."
+                },
+                "dispatchTimeoutSeconds": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "default": 1800,
+                  "description": "Timeout for a single harness resume/spawn subprocess."
+                },
+                "promptTemplate": {
+                  "type": "string",
+                  "default": ".the-loop/templates/webhook-event-prompt.md",
+                  "description": "string.Template rendered into the prompt that resumes a session."
+                },
+                "spawnPromptTemplate": {
+                  "type": "string",
+                  "default": ".the-loop/templates/webhook-autoexecute-prompt.md",
+                  "description": "string.Template rendered into the prompt for a newly spawned (auto-execute) session — kicks off the-loop's work-on flow."
+                },
+                "harnessArgs": {
+                  "type": "object",
+                  "description": "Extra CLI args per harness (e.g. permission flags). The dispatcher never widens permissions itself.",
+                  "additionalProperties": false,
+                  "properties": {
+                    "claude": { "type": "array", "items": { "type": "string" } },
+                    "cursor": { "type": "array", "items": { "type": "string" } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

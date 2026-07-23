@@ -52,8 +52,14 @@ plugin's root directory; in Cursor, resolve it to the plugin's install directory
      not clobber**: diff and *suggest* the change (or apply only with explicit consent);
    - **present & up to date** → skip.
    Create the following where missing (never overwrite user-owned files):
-   - `.the-loop/config.yaml` — from the template, with detected defaults applied.
-   - `.the-loop/config.schema.json` — copy of the schema.
+   - `.the-loop/config.yaml` — the per-repo **plugin** config, from the template, with
+     detected defaults applied.
+   - `.the-loop/config.schema.json` — copy of the plugin schema.
+   - `.the-loop/cli-config.schema.json` — copy of the **CLI** config schema. (The CLI
+     config itself is user/machine-level — `$XDG_CONFIG_HOME/the-loop/config.yaml` — and
+     is NOT scaffolded into the repo; point the user at
+     `.the-loop/templates/cli-config.yaml` if they run the `the-loop` CLI. See
+     `docs/decisions/decision-021.md`.)
    - `.the-loop/manifest.yaml` — the manifest.
    - `.the-loop/external-tools.md` and `.the-loop/collaborators.yaml` — from templates (user-owned).
    - `.the-loop/templates/` — the work-item & process templates.

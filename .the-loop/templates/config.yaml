@@ -158,26 +158,8 @@ messaging:
 externalTools:
   referenceFile: .the-loop/external-tools.md
 
-webhooks:
-  ghWebhook:
-    host: 127.0.0.1
-    port: 8787
-    path: /gh-webhook
-    secretEnv: THE_LOOP_GH_WEBHOOK_SECRET   # env var holding the secret (not stored here)
-    pidfile: .the-loop/gh-webhook.pid
-    events: []   # e.g. [issues, issue_comment, pull_request, workflow_run]; empty = all
-    routing:
-      enabled: false                # route events to registered harness sessions
-      registryDir: .the-loop/sessions
-      defaultHarness: claude        # claude | cursor
-      spawnOnUnmatched: labeled     # never | always | labeled
-      autoExecuteLabel: "the-loop: auto-execute"   # label that opts an issue/PR into autonomous execution
-      spawnWorkdir: "."
-      maxConcurrentDispatches: 4
-      dedupCacheSize: 1024
-      dispatchTimeoutSeconds: 1800
-      promptTemplate: .the-loop/templates/webhook-event-prompt.md
-      spawnPromptTemplate: .the-loop/templates/webhook-autoexecute-prompt.md
-      harnessArgs:
-        claude: []                  # e.g. [--permission-mode, acceptEdits]
-        cursor: []                  # e.g. [--force]
+# CLI settings (webhook receiver + event routing) are intentionally NOT here.
+# The the-loop CLI works across many repos, so its config is user/machine-level:
+#   $XDG_CONFIG_HOME/the-loop/config.yaml   (override with $THE_LOOP_CLI_CONFIG)
+# Scaffold it from .the-loop/templates/cli-config.yaml (schema: cli-config.schema.json).
+# See docs/decisions/decision-021.md.

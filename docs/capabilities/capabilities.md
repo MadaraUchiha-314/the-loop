@@ -11,6 +11,7 @@ PR** as the work item that changes behaviour (a ready-to-ship gate item).
 |------------|----------------|
 | [spec-workflow](spec-workflow.md) | The (brainstorm →) requirements → design → tasks → implementation loop, phase state machine, commands. |
 | [capability-docs](capability-docs.md) | This layer itself: the organized view of specs and its fold-in gate. |
+| [configuration](configuration.md) | The two config files: per-repo plugin config and user-level CLI config. |
 | [distribution](distribution.md) | Shipping the-loop as a Claude Code and Cursor plugin from one repo. |
 | [cli](cli.md) | The `the-loop` Python CLI companion and its commands. |
 | [webhook-triggers](webhook-triggers.md) | GitHub webhook receiver and event → session routing. |

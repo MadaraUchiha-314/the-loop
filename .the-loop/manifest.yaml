@@ -14,6 +14,9 @@ meta:
   - path: .the-loop/config.schema.json
     role: config-schema
     managed: true
+  - path: .the-loop/cli-config.schema.json
+    role: cli-config-schema        # schema for the user/machine-level CLI config (issue-63)
+    managed: true
   - path: .the-loop/manifest.yaml
     role: manifest
     managed: true
@@ -38,6 +41,7 @@ templates:
   - path: .the-loop/templates/decision.md
   - path: .the-loop/templates/learning.md
   - path: .the-loop/templates/config.yaml
+  - path: .the-loop/templates/cli-config.yaml
   - path: .the-loop/templates/collaborators.yaml
   - path: .the-loop/templates/conflicts.md
   - path: .the-loop/templates/pr-briefing.md

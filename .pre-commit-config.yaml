@@ -52,7 +52,7 @@ repos:
         entry: uv run python scripts/validate_config.py
         language: system
         pass_filenames: false
-        files: '^\.the-loop/(config\.ya?ml|config\.schema\.json)$|^scripts/validate_config\.py$'
+        files: '^\.the-loop/(config\.ya?ml|config\.schema\.json|cli-config\.schema\.json|templates/(config|cli-config)\.ya?ml)$|^scripts/validate_config\.py$'
 
       # Conventional Commits via commitizen (popular, well-maintained) rather than a
       # custom validator, run through `uv run` so the pinned `cz` from uv.lock is used

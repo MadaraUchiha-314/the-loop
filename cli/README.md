@@ -11,7 +11,7 @@ import package and CLI keep the natural `the_loop`/`the-loop`):
 
 ```bash
 pip install the-loopy-one            # or: uv pip install the-loopy-one
-pip install "the-loopy-one[config]"  # + PyYAML, for reading .the-loop/config.yaml defaults
+pip install "the-loopy-one[config]"  # + PyYAML, for reading the CLI config
 the-loop --help
 ```
 
@@ -54,8 +54,14 @@ the-loop gh-webhook stop  [--pidfile .the-loop/gh-webhook.pid]
   (export `THE_LOOP_GH_WEBHOOK_SECRET=...`). The secret is read from the environment,
   never a flag, so it doesn't leak into process listings.
 - `GET /health` returns `200 ok`.
-- Defaults can come from `.the-loop/config.yaml` (`webhooks.ghWebhook`) when PyYAML is
-  installed; flags always override.
+- Defaults come from the **CLI config** (`webhooks.ghWebhook` in
+  `$XDG_CONFIG_HOME/the-loop/config.yaml`; override the path with `$THE_LOOP_CLI_CONFIG`)
+  when PyYAML is installed; flags always override. This is a user/machine-level file,
+  **separate** from a repo's `.the-loop/config.yaml` plugin config — the CLI works across
+  many repos (see `docs/decisions/decision-021.md`). Scaffold it from
+  `.the-loop/templates/cli-config.yaml`. For backward compatibility the CLI still reads a
+  legacy `webhooks:` block from `.the-loop/config.yaml` (with a deprecation warning) when
+  no CLI config is present.
 - **`--route`** (default from `webhooks.ghWebhook.routing.enabled`) routes each verified
   event to the registered harness session working that item: the router extracts the
   work item(s) from the payload (issue/PR number, PR head-branch `issue-<n>` convention,
@@ -103,8 +109,9 @@ the-loop scenarios [--root .] [--glob PATTERN ...] [--format table|markdown|json
   `requirements.md`) and presents them as a table — so a coding-agent harness can answer
   "what scenarios are tested?" without running anything.
 - Language-agnostic: Python docstrings, JS/TS block comments and Go comments all work.
-- Globs come from `--glob` (repeatable), else `testing.integrationTestGlobs` in
-  `.the-loop/config.yaml` (when PyYAML is installed), else built-in defaults covering
+- Globs come from `--glob` (repeatable), else `testing.integrationTestGlobs` in the repo's
+  `.the-loop/config.yaml` **plugin** config (this is per-repo data, so it stays in the
+  plugin config — not the CLI config; PyYAML required), else built-in defaults covering
   common layouts.
 - `--format markdown` emits a GitHub-flavoured table (for PR briefings); `--format json`
   is machine-readable (includes each scenario's steps and `file:line`).

@@ -1,8 +1,9 @@
 """``the-loop gh-webhook start|stop`` — manage the GitHub webhook receiver.
 
 Primary CLI: ``the-loop``; sub-command: ``gh-webhook``; actions: ``start`` / ``stop``.
-Defaults can come from ``.the-loop/config.yaml`` (``webhooks.ghWebhook``) when PyYAML
-is available; CLI flags always win. The secret is read from an env var (never a flag)
+Defaults come from the user/machine-level CLI config (``webhooks.ghWebhook`` in
+``$XDG_CONFIG_HOME/the-loop/config.yaml``; see ``the_loop.config``) when PyYAML is
+available; CLI flags always win. The secret is read from an env var (never a flag)
 so it doesn't leak into process listings.
 """
 
@@ -16,6 +17,7 @@ import sys
 from pathlib import Path
 
 from .base import Command, register
+from ..config import load_gh_webhook_config
 from ..webhook import serve
 
 logger = logging.getLogger("the-loop.gh-webhook")
@@ -30,25 +32,14 @@ _DEFAULTS = {
 
 
 def _load_config_defaults() -> dict:
-    """Best-effort read of webhooks.ghWebhook from .the-loop/config.yaml.
+    """Best-effort read of ``webhooks.ghWebhook`` from the CLI config.
 
-    Returns ``{}`` if the file or PyYAML is unavailable — the CLI must work with
-    zero runtime dependencies.
+    Delegates to :func:`the_loop.config.load_gh_webhook_config`, which reads the
+    user/machine-level CLI config and falls back to the legacy per-repo location.
+    Returns ``{}`` if nothing is available — the CLI must work with zero runtime
+    dependencies.
     """
-    cfg_path = Path(".the-loop/config.yaml")
-    if not cfg_path.is_file():
-        return {}
-    try:
-        import yaml  # optional dependency
-    except ImportError:
-        logger.debug("pyyaml not installed; skipping config-file defaults")
-        return {}
-    try:
-        data = yaml.safe_load(cfg_path.read_text()) or {}
-    except Exception:  # noqa: BLE001
-        logger.warning("could not parse %s; using built-in defaults", cfg_path)
-        return {}
-    return ((data.get("webhooks") or {}).get("ghWebhook")) or {}
+    return load_gh_webhook_config()
 
 
 def _build_routing(gh_webhook_config: dict):

@@ -87,9 +87,20 @@ Granular commands run the same flow one step at a time:
 
 ## How it works
 
-- **Configuration** lives in [`.the-loop/config.yaml`](.the-loop/templates/config.yaml),
-  validated against [`.the-loop/config.schema.json`](.the-loop/config.schema.json). A
-  subset of keys can be overridden per work item via the markdown front-matter.
+- **Configuration is split in two** (see
+  [decision-021](docs/decisions/decision-021.md)):
+  - **Plugin config** — the per-repo
+    [`.the-loop/config.yaml`](.the-loop/templates/config.yaml), validated against
+    [`.the-loop/config.schema.json`](.the-loop/config.schema.json), checked in with the
+    repo. It governs how the-loop drives the PDLC in *this* repo. A subset of keys can be
+    overridden per work item via the markdown front-matter.
+  - **CLI config** — a user/machine-level file
+    (`$XDG_CONFIG_HOME/the-loop/config.yaml`, override with `$THE_LOOP_CLI_CONFIG`),
+    validated against
+    [`.the-loop/cli-config.schema.json`](.the-loop/cli-config.schema.json), scaffolded
+    from [`.the-loop/templates/cli-config.yaml`](.the-loop/templates/cli-config.yaml). The
+    CLI (webhook receiver + event routing) works across many repos, so its config is
+    deliberately *not* tied to any one of them.
 - **Everything the-loop manages** is tracked in
   [`.the-loop/manifest.yaml`](.the-loop/manifest.yaml).
 - **Templates** for epics, stories, bugs, the optional `brainstorm` root artifact and the

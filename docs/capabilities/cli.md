@@ -14,7 +14,8 @@ self-learning/ML capabilities.
 - The CLI SHALL have zero runtime dependencies (stdlib only) and register commands via
   an extensible registry (`the_loop.commands`).
 - `the-loop gh-webhook start|stop` SHALL run/stop the HMAC-verified GitHub webhook
-  receiver (see [webhook-triggers](webhook-triggers.md)).
+  receiver (see [webhook-triggers](webhook-triggers.md)), reading its defaults from the
+  user/machine-level CLI config (see [configuration](configuration.md)).
 - `the-loop sessions register|list|close` SHALL manage the work-item ↔ harness-session
   registry used for webhook routing.
 - `the-loop scenarios` SHALL output the table of every Gherkin scenario covered by the
@@ -33,6 +34,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-63 | CLI reads webhook defaults from a user-level CLI config (`the_loop.config`), split out of the per-repo plugin config | [spec](../specs/issue-63/), [decision-021](../decisions/decision-021.md) |
 | issue-21 | Published to PyPI as `the-loopy-one` with automatic semantic releases | [spec](../specs/issue-21/), [decision-019](../decisions/decision-019.md) |
 | issue-15 | Added `sessions` registry commands and webhook `--route` dispatch | [spec](../specs/issue-15/), [decision-016](../decisions/decision-016.md) |
 | issue-11 | Added `scenarios` (queryable integration-test scenario table) | [spec](../specs/issue-11/), [decision-014](../decisions/decision-014.md) |
