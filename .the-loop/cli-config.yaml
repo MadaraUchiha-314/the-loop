@@ -34,7 +34,16 @@ webhooks:
       # empty here means nothing human-authored is actioned (fail closed).
       # Set this explicitly, e.g. ["MadaraUchiha-314"], to actually route events.
       authorizedUsers: []
-      spawnWorkdir: "."
+      spawnWorkdir: "."             # used only when workspace.root is unset (below)
+      # Clone-and-worktree workspace (issue-76): set `root` to clone each event's repo
+      # under <root>/<host>/<owner>/<repo> and run the spawned session in a per-work-item
+      # git worktree, cleaned up on PR merge/close. Empty = legacy spawnWorkdir behaviour.
+      workspace:
+        root: ""                    # e.g. ~/.the-loop/workspace (empty = disabled)
+        cloneProtocol: https        # https | ssh
+        defaultHost: github.com     # host dir when the payload has no html_url (set to your GHE domain)
+        keepWorktreeOnClose: false  # keep a worktree after PR close (for post-mortem)
+        gitBinary: git
       runner: process             # process (headless) | tmux (attachable interactive TUI — issue-32)
       webTerminal:                # ttyd browser terminal onto tmux sessions (runner: tmux)
         enabled: false            # access control is environmental: localhost/VPN/provider (decision-021)

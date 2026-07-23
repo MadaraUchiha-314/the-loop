@@ -50,6 +50,20 @@ Python SDKs. The core has **zero runtime dependencies** (stdlib only).
   `/the-loop:work-on` on it; the item's later activity (and its linked PR's) resumes that
   session; a merged/closed PR auto-closes it. An unlabelled new issue is received and
   ignored. Label presence is read from the webhook payload (no extra API call).
+- **Cloned workspace with per-work-item worktrees** (`routing.workspace`, issue-76):
+  the CLI daemon runs independent of any repo, so a spawned session needs a checkout of
+  the repo an event concerns. Set `routing.workspace.root` and the dispatcher clones
+  each event's repo once under `<root>/<host>/<owner>/<repo>` (`host` = `github.com` or
+  an enterprise domain) and runs the session in a **git worktree per work item**
+  (quarantined under `<root>/.worktrees/…`) — so N concurrent work items on one repo
+  share objects instead of paying for N full clones. The primary clone stays on the
+  default branch and is `git fetch`ed to stay fresh; a fresh issue gets a detached
+  worktree (the harness makes its own branch) while a PR event seeds the worktree from
+  its head branch. When the PR merges/closes the worktree is removed (set
+  `keepWorktreeOnClose: true` to keep it for post-mortem; the primary clone is always
+  kept). Auth is your own git credentials (e.g. `gh auth setup-git`). Leave `root`
+  empty to keep the legacy behaviour (sessions run in the static `spawnWorkdir`).
+  Design: `docs/specs/issue-76/design.md`, decision: `docs/decisions/decision-034.md`.
 - **The label works on PRs directly — the ticketing system need not be GitHub.** A PR
   carrying the auto-execute label is routed as its own work item
   (`github:OWNER/REPO#<pr-number>`) even when it is linked to no GitHub issue. This is

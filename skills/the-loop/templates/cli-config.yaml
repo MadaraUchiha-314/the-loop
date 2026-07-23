@@ -36,7 +36,18 @@ webhooks:
       # empty means human-authored events are all ignored (fail closed). Run your own
       # instance for your own login(s).
       authorizedUsers: []           # e.g. ["your-github-login"]
-      spawnWorkdir: "."
+      spawnWorkdir: "."             # used only when workspace.root is unset (below)
+      # Clone-and-worktree workspace (issue-76): when `root` is set, each event's
+      # repo is cloned under <root>/<host>/<owner>/<repo> and the spawned session
+      # runs in a per-work-item git worktree (worktrees under <root>/.worktrees/…),
+      # cleaned up when the PR merges/closes. Empty root => legacy spawnWorkdir.
+      # Auth is your own git credentials (e.g. `gh auth setup-git`).
+      workspace:
+        root: ""                    # e.g. ~/.the-loop/workspace (empty = disabled)
+        cloneProtocol: https        # https | ssh
+        defaultHost: github.com     # host dir when the payload has no html_url (set to your GHE domain)
+        keepWorktreeOnClose: false  # keep a worktree after PR close (for post-mortem)
+        gitBinary: git
       maxConcurrentDispatches: 4
       dedupCacheSize: 1024
       dispatchTimeoutSeconds: 1800

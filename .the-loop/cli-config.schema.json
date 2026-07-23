@@ -75,7 +75,40 @@
                 "spawnWorkdir": {
                   "type": "string",
                   "default": ".",
-                  "description": "Working directory for sessions spawned on unmatched events."
+                  "description": "Working directory for sessions spawned on unmatched events. Used only when routing.workspace.root is unset; when a workspace root is configured, spawned sessions run in a per-work-item git worktree instead (issue-76, decision-034)."
+                },
+                "workspace": {
+                  "type": "object",
+                  "description": "Clone-and-worktree workspace for spawned sessions (issue-76, decision-034). When `root` is set, the dispatcher clones each event's repo under `<root>/<host>/<owner>/<repo>` and runs the spawned session in a per-work-item git worktree (worktrees quarantined under `<root>/.worktrees/…`), instead of the static spawnWorkdir. Auth is the operator's own git credentials (e.g. `gh auth setup-git`).",
+                  "additionalProperties": false,
+                  "properties": {
+                    "root": {
+                      "type": "string",
+                      "default": "",
+                      "description": "Absolute path to the workspace root where repos are cloned (e.g. ~/.the-loop/workspace). Empty (the default) disables cloning: spawned sessions fall back to spawnWorkdir."
+                    },
+                    "cloneProtocol": {
+                      "type": "string",
+                      "enum": ["https", "ssh"],
+                      "default": "https",
+                      "description": "Preferred clone URL scheme. 'https' uses the payload's clone_url (or https://<host>/<owner>/<repo>.git); 'ssh' uses ssh_url (or git@<host>:<owner>/<repo>.git)."
+                    },
+                    "defaultHost": {
+                      "type": "string",
+                      "default": "github.com",
+                      "description": "Host directory used when the event payload carries no html_url to infer it from (e.g. the poller's leaner payloads). Set to your enterprise domain for a GHE deployment."
+                    },
+                    "keepWorktreeOnClose": {
+                      "type": "boolean",
+                      "default": false,
+                      "description": "Keep a work item's git worktree after its PR is merged/closed (for post-mortem) instead of removing it. The primary clone is always kept regardless."
+                    },
+                    "gitBinary": {
+                      "type": "string",
+                      "default": "git",
+                      "description": "Path/name of the git binary used for clone/worktree operations."
+                    }
+                  }
                 },
                 "runner": {
                   "type": "string",

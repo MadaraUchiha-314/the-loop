@@ -114,6 +114,13 @@ EVENT_TYPES: Dict[str, str] = {
         "A session was auto-closed because its PR was merged/closed "
         "(work_item, merged)."
     ),
+    "workspace.prepared": (
+        "A repo was cloned (if needed) and a per-work-item git worktree made "
+        "ready for a spawned session (work_item, repo_dir, worktree, branch)."
+    ),
+    "workspace.cleaned": (
+        "A work item's git worktree was removed after its PR merged/closed (work_item)."
+    ),
     # -- poller (source: poll) ------------------------------------------------
     "poll.cycle": (
         "One poll cycle finished (items_seen, spawns, comments_forwarded, errors)."

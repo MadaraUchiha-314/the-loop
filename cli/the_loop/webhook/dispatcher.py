@@ -24,6 +24,7 @@ from .. import eventlog
 from ..harness.base import HarnessAdapter
 from ..runner import TmuxRunner
 from ..sessions import Session, SessionRegistry, WorkItemRef
+from ..workspace import RepoTarget, Workspace, WorkspaceError, repo_target_from_payload
 from .router import Deduper, RoutedEvent
 
 logger = logging.getLogger("the-loop.gh-webhook")
@@ -112,6 +113,39 @@ class WebTerminalConfig:
 
 
 @dataclass
+class WorkspaceConfig:
+    """Mirror of ``routing.workspace`` — clone-and-worktree layout (issue-76).
+
+    ``root`` empty (the default) keeps the legacy behaviour: spawned sessions
+    run in ``spawnWorkdir`` and nothing is cloned. Set ``root`` to opt in — the
+    dispatcher then clones each event's repo under
+    ``<root>/<host>/<owner>/<repo>`` and runs the session in a per-work-item
+    git worktree.
+    """
+
+    root: str = ""
+    clone_protocol: str = "https"  # https | ssh
+    default_host: str = "github.com"
+    keep_worktree_on_close: bool = False
+    git_binary: str = "git"
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.root)
+
+    @classmethod
+    def from_mapping(cls, data: dict) -> "WorkspaceConfig":
+        data = data or {}
+        return cls(
+            root=str(data.get("root", "")),
+            clone_protocol=str(data.get("cloneProtocol", "https")),
+            default_host=str(data.get("defaultHost", "github.com")),
+            keep_worktree_on_close=bool(data.get("keepWorktreeOnClose", False)),
+            git_binary=str(data.get("gitBinary", "git")),
+        )
+
+
+@dataclass
 class RoutingConfig:
     """Python-side mirror of ``webhooks.ghWebhook.routing`` (see config schema)."""
 
@@ -123,6 +157,7 @@ class RoutingConfig:
     spawn_on_unmatched: str = "never"  # never | always | labeled
     auto_execute_label: str = "the-loop: auto-execute"
     spawn_workdir: str = "."
+    workspace: WorkspaceConfig = field(default_factory=WorkspaceConfig)
     max_concurrent_dispatches: int = 4
     dedup_cache_size: int = 1024
     dispatch_timeout_seconds: float = 1800
@@ -147,6 +182,7 @@ class RoutingConfig:
                 data.get("autoExecuteLabel", "the-loop: auto-execute")
             ),
             spawn_workdir=str(data.get("spawnWorkdir", ".")),
+            workspace=WorkspaceConfig.from_mapping(data.get("workspace") or {}),
             max_concurrent_dispatches=int(data.get("maxConcurrentDispatches", 4)),
             dedup_cache_size=int(data.get("dedupCacheSize", 1024)),
             dispatch_timeout_seconds=float(data.get("dispatchTimeoutSeconds", 1800)),
@@ -162,6 +198,18 @@ class RoutingConfig:
 def _is_pr_close(routed: RoutedEvent) -> bool:
     """True for a ``pull_request`` event whose action is ``closed`` (merge or close)."""
     return routed.event == "pull_request" and routed.action == "closed"
+
+
+def _pr_head_ref(routed: RoutedEvent) -> Optional[str]:
+    """The PR head branch this event carries, if any (used to seed the worktree).
+
+    Only a PR payload names a concrete branch; an issue event has none, so the
+    worktree starts detached at the default branch and the harness makes its own.
+    """
+    if not routed.event.startswith("pull_request"):
+        return None
+    ref = ((routed.payload.get("pull_request") or {}).get("head") or {}).get("ref")
+    return ref or None
 
 
 def _log_usage(usage, harness: str, ref: str) -> None:
@@ -204,6 +252,7 @@ class Dispatcher:
         config: Optional[RoutingConfig] = None,
         deduper: Optional[Deduper] = None,
         tmux_runner: Optional[TmuxRunner] = None,
+        workspace: Optional[Workspace] = None,
     ):
         self.registry = registry
         self.adapters = adapters
@@ -211,6 +260,10 @@ class Dispatcher:
         # Built unconditionally: a registry may hold tmux-mode sessions even
         # when config.runner is "process" (the session's recorded runner wins).
         self.tmux = tmux_runner if tmux_runner is not None else TmuxRunner()
+        # A caller-supplied workspace (tests / embedding) wins and survives
+        # reloads; otherwise it tracks routing.workspace across hot-reloads.
+        self._workspace_override = workspace is not None
+        self.workspace = workspace or self._build_workspace(self.config)
         self.deduper = (
             deduper
             if deduper is not None
@@ -229,6 +282,14 @@ class Dispatcher:
         self._workers: Dict[str, threading.Thread] = {}
         self._lock = threading.Lock()
 
+    @staticmethod
+    def _build_workspace(config: RoutingConfig) -> Optional[Workspace]:
+        """A Workspace when ``routing.workspace.root`` is set, else None (legacy)."""
+        ws = config.workspace
+        if not ws.enabled:
+            return None
+        return Workspace(ws.root, git_binary=ws.git_binary)
+
     def _load_template(self, path_str: str, default: str) -> Template:
         path = Path(path_str)
         if path.is_file():
@@ -240,9 +301,11 @@ class Dispatcher:
         """Hot-swap the *soft* routing policy without disturbing running work.
 
         Live-reloaded: spawn policy, default harness, runner, spawn workdir,
-        dispatch timeout, per-harness args (adapters rebuilt) and the prompt
-        templates. Each is read from ``self.config`` (or the swapped dict) at
-        dispatch time, so a plain reassignment takes effect on the next event.
+        the clone-and-worktree workspace (issue-76), dispatch timeout,
+        per-harness args (adapters rebuilt) and the prompt templates. Each is
+        read from ``self.config`` (or the swapped dict) at dispatch time, so a
+        plain reassignment takes effect on the next event. A caller-supplied
+        workspace override is preserved across reloads.
 
         Deliberately NOT reloaded (they own live state — change needs a
         restart): the session registry (``registryDir``), the dedup cache
@@ -255,6 +318,8 @@ class Dispatcher:
 
         self.config = config
         self.adapters = build_adapters(config.harness_args)
+        if not self._workspace_override:
+            self.workspace = self._build_workspace(config)
         self._event_template = self._load_template(
             config.prompt_template, DEFAULT_PROMPT_TEMPLATE
         )
@@ -316,6 +381,7 @@ class Dispatcher:
                             session.tmux_target,
                             result.error,
                         )
+                self._cleanup_workspace(session, routed)
                 logger.info(
                     "auto-closed session %s (PR %s)",
                     session.work_item.ref,
@@ -519,13 +585,28 @@ class Dispatcher:
             )
             return
         prompt = self._render_prompt(routed, work_item, self._spawn_template)
+        try:
+            cwd = self._prepare_workspace(work_item, routed)
+        except WorkspaceError as exc:
+            logger.error("workspace prep for %s failed: %s", work_item.ref, exc)
+            eventlog.emit(
+                "session.spawn_failed",
+                level="error",
+                work_item=work_item.ref,
+                harness=self.config.default_harness,
+                error=f"workspace: {exc}",
+                will_retry=bool(routed.delivery_id),
+            )
+            if routed.delivery_id:
+                self.deduper.discard(routed.delivery_id)
+            return
         if self.config.runner == "tmux":
-            self._spawn_tmux(work_item, routed, adapter, prompt)
+            self._spawn_tmux(work_item, routed, adapter, prompt, cwd)
             return
         result = adapter.spawn(
             work_item,
             prompt,
-            cwd=self.config.spawn_workdir,
+            cwd=cwd,
             timeout=self.config.dispatch_timeout_seconds,
         )
         if not result.ok:
@@ -546,7 +627,7 @@ class Dispatcher:
             work_item=work_item,
             harness=self.config.default_harness,
             harness_session_id=result.session_id,
-            cwd=self.config.spawn_workdir,
+            cwd=cwd,
         )
         self.registry.register(session, force=True)
         self.registry.touch(work_item, delivery_id=routed.delivery_id or None)
@@ -573,6 +654,7 @@ class Dispatcher:
         routed: RoutedEvent,
         adapter: HarnessAdapter,
         prompt: str,
+        cwd: str,
     ) -> None:
         """Spawn the harness TUI in a tmux session with a pre-assigned id (R1/R2)."""
         if not adapter.is_available():
@@ -602,7 +684,7 @@ class Dispatcher:
             work_item,
             adapter,
             prompt,
-            cwd=self.config.spawn_workdir,
+            cwd=cwd,
             session_id=session_id,
             timeout=self.config.dispatch_timeout_seconds,
         )
@@ -623,7 +705,7 @@ class Dispatcher:
             work_item=work_item,
             harness=self.config.default_harness,
             harness_session_id=session_id,
-            cwd=self.config.spawn_workdir,
+            cwd=cwd,
             runner="tmux",
             tmux_target=self.tmux.target_for(work_item),
         )
@@ -648,6 +730,74 @@ class Dispatcher:
             action=routed.action or None,
             delivery_id=routed.delivery_id or None,
         )
+
+    # -- workspace (clone + worktree, issue-76) ---------------------------------
+
+    def _repo_target(self, routed: RoutedEvent) -> Optional[RepoTarget]:
+        ws = self.config.workspace
+        return repo_target_from_payload(
+            routed.payload,
+            protocol=ws.clone_protocol,
+            default_host=ws.default_host,
+        )
+
+    def _prepare_workspace(self, work_item: WorkItemRef, routed: RoutedEvent) -> str:
+        """Resolve the cwd a spawned session runs in.
+
+        Legacy (no ``routing.workspace.root``): the static ``spawnWorkdir``.
+        Enabled: clone the event's repo under the workspace root and hand back a
+        per-work-item git worktree. Raises :class:`WorkspaceError` on a git
+        failure so the caller can fail the spawn and let redelivery retry.
+        """
+        if self.workspace is None:
+            return self.config.spawn_workdir
+        target = self._repo_target(routed)
+        if target is None:
+            logger.warning(
+                "workspace enabled but %s carries no repository; using spawnWorkdir",
+                work_item.ref,
+            )
+            return self.config.spawn_workdir
+        branch = _pr_head_ref(routed)
+        worktree = self.workspace.ensure_worktree(
+            target,
+            work_item.slug,
+            branch=branch,
+            timeout=self.config.dispatch_timeout_seconds,
+        )
+        eventlog.emit(
+            "workspace.prepared",
+            work_item=work_item.ref,
+            repo_dir=str(self.workspace.repo_dir(target)),
+            worktree=str(worktree),
+            branch=branch or None,
+        )
+        return str(worktree)
+
+    def _cleanup_workspace(self, session: Session, routed: RoutedEvent) -> None:
+        """Remove a work item's worktree on PR merge/close (best-effort)."""
+        if self.workspace is None or self.config.workspace.keep_worktree_on_close:
+            return
+        target = self._repo_target(routed)
+        if target is None:
+            return
+        try:
+            removed = self.workspace.remove_worktree(
+                target,
+                session.work_item.slug,
+                timeout=self.config.dispatch_timeout_seconds,
+            )
+        except WorkspaceError as exc:  # cleanup is advisory — never break close
+            logger.warning(
+                "worktree cleanup for %s failed: %s", session.work_item.ref, exc
+            )
+            return
+        if removed:
+            logger.info("removed worktree for %s", session.work_item.ref)
+            eventlog.emit(
+                "workspace.cleaned",
+                work_item=session.work_item.ref,
+            )
 
     def _render_prompt(
         self, routed: RoutedEvent, work_item: WorkItemRef, template: Template
