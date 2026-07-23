@@ -1,20 +1,25 @@
 """Clone-and-worktree workspace for webhook/poll-spawned sessions (issue-76).
 
 The CLI daemon runs independent of any one repo, but the harness it spawns
-needs a checkout of the repo an event concerns. This module owns that checkout:
+needs a checkout of the repo an event concerns. This module owns that checkout,
+in one of two configurable **strategies** (``routing.workspace.strategy``,
+decision-034):
 
-* one **clone per repo**, laid out under a configurable workspace root as
-  ``<root>/<host>/<owner>/<repo>`` (``host`` is ``github.com`` or an
-  enterprise domain), kept fresh with ``git fetch`` — never worked in directly;
-* one **git worktree per work item**, so N concurrent work items on the same
-  repo share objects instead of paying for N full clones (decision-034). The
-  primary clone stays on the default branch; each worktree is where a session
-  actually runs.
+* ``worktree`` (default) — one **clone per repo** under
+  ``<root>/<host>/<owner>/<repo>`` (kept fresh with ``git fetch``, never worked
+  in directly), plus one **git worktree per work item** under
+  ``<root>/.worktrees/<host>/<owner>/<repo>/<slug>``. N concurrent work items on
+  one repo share objects instead of paying for N full clones; the checkout tree
+  ``<host>/<owner>/<repo>`` stays a clean mirror of the remote.
+* ``clone`` — one **folder per work item** under ``<root>/.work-items/<slug>/``,
+  into which each repo the work item touches is cloned at
+  ``<root>/.work-items/<slug>/<host>/<owner>/<repo>``. No shared clone, no
+  cross-repo worktree bookkeeping: a work item that spans several repos is one
+  self-contained directory, and cleanup is a single ``rmtree`` of that folder.
+  Costs a full clone per work item — the trade the operator opts into.
 
-Worktrees live under ``<root>/.worktrees/<host>/<owner>/<repo>/<slug>`` — a
-sibling of the human-facing checkout tree, so ``<host>/<owner>/<repo>`` stays a
-clean mirror of the remote and runtime state is quarantined in one place that
-is trivially cleaned up when a PR is merged/closed.
+Both strategies key runtime state off the work-item slug and clean it up when
+the work item's PR is merged/closed.
 
 Git-only and provider-neutral: it shells out to ``git`` (the one native dep,
 verified by ``is_available``) and derives the clone URL/host from the webhook
@@ -114,16 +119,17 @@ def repo_target_from_payload(
 
 
 class Workspace:
-    """Clone repos and manage per-work-item worktrees under ``root``."""
+    """Provision per-work-item checkouts under ``root`` (worktree or clone)."""
 
-    def __init__(self, root, *, git_binary: str = "git"):
+    def __init__(self, root, *, strategy: str = "worktree", git_binary: str = "git"):
         self.root = Path(root).expanduser()
+        self.strategy = strategy if strategy in ("worktree", "clone") else "worktree"
         self.git = git_binary
 
     # -- layout -----------------------------------------------------------------
 
     def repo_dir(self, target: RepoTarget) -> Path:
-        """The primary clone: ``<root>/<host>/<owner>/<repo>`` (issue-76 layout)."""
+        """The primary shared clone (worktree strategy): ``<root>/<host>/<owner>/<repo>``."""
         return self.root / target.rel_path
 
     def worktree_dir(self, target: RepoTarget, slug: str) -> Path:
@@ -131,6 +137,14 @@ class Workspace:
         return (
             self.root / ".worktrees" / target.rel_path / _safe_component(slug, "slug")
         )
+
+    def workitem_dir(self, slug: str) -> Path:
+        """A work item's own folder (clone strategy): ``<root>/.work-items/<slug>``."""
+        return self.root / ".work-items" / _safe_component(slug, "slug")
+
+    def clone_dir(self, target: RepoTarget, slug: str) -> Path:
+        """A repo cloned inside a work item's folder (clone strategy)."""
+        return self.workitem_dir(slug) / target.rel_path
 
     def is_available(self) -> bool:
         return shutil.which(self.git) is not None
@@ -173,6 +187,39 @@ class Workspace:
 
     def _is_clone(self, repo_dir: Path) -> bool:
         return (repo_dir / ".git").exists()
+
+    # -- strategy dispatch ------------------------------------------------------
+
+    def prepare(
+        self,
+        target: RepoTarget,
+        slug: str,
+        *,
+        branch: Optional[str] = None,
+        timeout: Optional[float] = None,
+    ) -> Path:
+        """Provide a ready checkout for one work item, per the configured strategy.
+
+        Returns the directory the session should run in. Raises
+        :class:`WorkspaceError` on a git failure so the caller can fail+retry.
+        """
+        if self.strategy == "clone":
+            return self.ensure_workitem_clone(
+                target, slug, branch=branch, timeout=timeout
+            )
+        return self.ensure_worktree(target, slug, branch=branch, timeout=timeout)
+
+    def cleanup(
+        self, target: RepoTarget, slug: str, *, timeout: Optional[float] = None
+    ) -> bool:
+        """Remove a work item's runtime checkout (best-effort). True if it existed.
+
+        ``worktree``: unregister+delete the worktree, keep the shared clone.
+        ``clone``: delete the whole per-work-item folder (every repo it cloned).
+        """
+        if self.strategy == "clone":
+            return self.remove_workitem_clone(slug)
+        return self.remove_worktree(target, slug, timeout=timeout)
 
     # -- clone / worktree lifecycle ---------------------------------------------
 
@@ -294,3 +341,53 @@ class Workspace:
             shutil.rmtree(worktree, ignore_errors=True)
             existed = True
         return existed
+
+    def ensure_workitem_clone(
+        self,
+        target: RepoTarget,
+        slug: str,
+        *,
+        branch: Optional[str] = None,
+        timeout: Optional[float] = None,
+    ) -> Path:
+        """Clone ``target`` into the work item's own folder (clone strategy).
+
+        Independent full clone (no shared object store), so — unlike a worktree —
+        the default branch can be checked out directly and a PR head branch is
+        checked out in place. Idempotent: an existing clone is reused (fetched).
+        """
+        dest = self.clone_dir(target, slug)
+        if (dest / ".git").exists():
+            try:  # a network blip on refresh must not block dispatch
+                self._git(["fetch", "--prune", "origin"], cwd=dest, timeout=timeout)
+            except WorkspaceError as exc:
+                logger.warning("fetch of %s failed (using cached clone): %s", dest, exc)
+            return dest
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        logger.info("cloning %s -> %s (work-item folder)", target.clone_url, dest)
+        self._git(["clone", target.clone_url, str(dest)], timeout=timeout)
+        if branch:
+            try:
+                self._git(["fetch", "origin", branch], cwd=dest, timeout=timeout)
+                self._git(
+                    ["checkout", "-B", branch, f"origin/{branch}"],
+                    cwd=dest,
+                    timeout=timeout,
+                )
+            except WorkspaceError as exc:
+                # PR head origin doesn't have yet (or a fork ref) — keep the
+                # default branch the clone already checked out; don't fail spawn.
+                logger.warning(
+                    "checkout of branch %r failed (%s); staying on default branch",
+                    branch,
+                    exc,
+                )
+        return dest
+
+    def remove_workitem_clone(self, slug: str) -> bool:
+        """Delete a work item's whole folder — every repo it cloned (clone strategy)."""
+        folder = self.workitem_dir(slug)
+        if not folder.exists():
+            return False
+        shutil.rmtree(folder, ignore_errors=True)
+        return True

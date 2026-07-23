@@ -115,11 +115,12 @@ EVENT_TYPES: Dict[str, str] = {
         "(work_item, merged)."
     ),
     "workspace.prepared": (
-        "A repo was cloned (if needed) and a per-work-item git worktree made "
-        "ready for a spawned session (work_item, repo_dir, worktree, branch)."
+        "A per-work-item checkout was made ready for a spawned session "
+        "(work_item, strategy: worktree | clone, checkout, branch)."
     ),
     "workspace.cleaned": (
-        "A work item's git worktree was removed after its PR merged/closed (work_item)."
+        "A work item's checkout was removed after its PR merged/closed "
+        "(work_item, strategy)."
     ),
     # -- poller (source: poll) ------------------------------------------------
     "poll.cycle": (

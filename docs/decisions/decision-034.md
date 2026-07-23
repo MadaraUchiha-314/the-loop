@@ -1,8 +1,8 @@
-# Decision 034: clone each event's repo into a per-work-item git worktree under a configurable workspace root
+# Decision 034: give each work item its own checkout under a configurable workspace root — via a shared-clone git worktree (default) or a full per-work-item clone
 
 - **Status:** accepted
 - **Date:** 2026-07-23
-- **Deciders:** @MadaraUchiha-314 (issue #76)
+- **Deciders:** @MadaraUchiha-314 (issue #76, PR #77 review)
 - **Work item:** issue-76
 - **Spec:** `docs/specs/issue-76/`
 
@@ -27,10 +27,13 @@ merged."
 
 ## Decision
 
-Add an opt-in **clone-and-worktree workspace**, owned by a new provider-neutral
+Add an opt-in **per-work-item checkout workspace**, owned by a new provider-neutral
 `the_loop.workspace` module and wired into the dispatcher's spawn/close paths. Configured
 under `webhooks.ghWebhook.routing.workspace` (reused by the poller, like the rest of
-`routing`):
+`routing`). A `strategy` knob (PR #77 review) picks the checkout layout — `worktree`
+(default) or `clone`:
+
+### Strategy `worktree` (default)
 
 - **One clone per repo**, at `<root>/<host>/<owner>/<repo>` exactly as the issue
   specifies (`host` is `github.com` or the enterprise domain, parsed from the payload's
@@ -50,18 +53,37 @@ under `webhooks.ghWebhook.routing.workspace` (reused by the poller, like the res
   seeds the worktree from the PR's head ref (`git worktree add -B <ref>`), falling back
   to a detached default-branch worktree if origin doesn't have that ref yet (e.g. a fork
   PR) rather than failing the spawn.
-- **Cleanup on PR merge/close.** The dispatcher already auto-closes a session when its
-  PR closes (decision-016); it now also `git worktree remove --force`s that work item's
-  worktree and prunes. The primary clone and any local branch are left intact — cleanup
-  is cheap and non-destructive. `keepWorktreeOnClose: true` keeps the worktree for
-  post-mortem.
-- **Opt-in and backward compatible.** `workspace.root` empty (the default) preserves the
-  legacy behaviour exactly: sessions run in `spawnWorkdir`, nothing is cloned. Set a root
-  to turn cloning on.
+- **Cleanup on PR merge/close** removes the worktree (`git worktree remove --force` +
+  prune); the shared per-repo clone and any local branch are left intact.
 
-The session registry records each worktree as the session's `cwd`, so resumes
-(decision-016) land in the same worktree with no further work — the existing
-resume-in-`cwd` contract already carries this.
+### Strategy `clone`
+
+- **One folder per work item.** Each work item gets `<root>/.work-items/<slug>/`, into
+  which every repo it touches is cloned at
+  `<root>/.work-items/<slug>/<host>/<owner>/<repo>` — a full, independent clone (no
+  shared object store). The session runs in that folder. Chosen for the case PR #77
+  review raised: a **work item that spans multiple repos**, where a set of worktrees
+  keyed by slug scattered across several per-repo trees is awkward to track, and one
+  self-contained folder is far easier to reason about.
+- **No shared clone, so no detached-HEAD dance.** The independent clone checks out the
+  default branch in place (or the PR head ref directly); the harness makes its own
+  feature branch as usual.
+- **Cleanup on PR merge/close** is a single `rmtree` of `<root>/.work-items/<slug>/` —
+  dropping every repo the work item cloned in one shot. This is the simplicity the
+  multi-repo case wants.
+
+### Both strategies
+
+- **Opt-in and backward compatible.** `workspace.root` empty (the default) preserves the
+  legacy behaviour exactly: sessions run in `spawnWorkdir`, nothing is checked out. Set a
+  root to turn the workspace on; `strategy` defaults to `worktree`.
+- **Cleanup gating.** The dispatcher already auto-closes a session when its PR closes
+  (decision-016); it now also removes the work item's checkout unless
+  `keepCheckoutOnClose: true` (kept for post-mortem). Best-effort — cleanup never breaks
+  session close.
+- **Resume is free.** The session registry records the checkout (worktree dir or
+  work-item folder) as the session's `cwd`, so resumes (decision-016) land back in the
+  same place with no extra work — the existing resume-in-`cwd` contract carries it.
 
 Consequences:
 
@@ -86,10 +108,15 @@ Consequences:
 
 ## Alternatives considered
 
-- **A fresh full clone per work item** — the issue calls this out as "overkill," and it
-  is: every concurrent issue/PR on a repo would re-download the entire history, multiplying
-  disk and network for no isolation benefit a worktree doesn't already give. Worktrees
-  share one object store; rejected.
+- **A fresh full clone per work item as the *only* / default strategy** — the issue calls
+  this out as "overkill" for the common single-repo case, and it is: every concurrent
+  issue/PR on a repo would re-download the entire history for no isolation benefit a
+  worktree doesn't already give. So `worktree` is the default. But PR #77 review surfaced
+  a case where a full clone is the *better* shape — a work item spanning multiple repos,
+  where scattered per-repo worktrees keyed by slug are awkward and one self-contained
+  per-work-item folder is simpler to reason about and clean up. Rather than pick one
+  globally, the full-clone layout is offered as the opt-in `clone` strategy alongside the
+  default `worktree`.
 - **Work directly in the primary clone (no worktrees), switching branches per event** —
   breaks the moment two work items on the same repo are active at once (one checkout,
   one HEAD): event B would clobber event A's working tree. Worktrees exist precisely to

@@ -231,6 +231,91 @@ def test_is_available_reflects_git_binary(tmp_path):
     assert Workspace(tmp_path, git_binary="definitely-not-git").is_available() is False
 
 
+# -- clone strategy (folder per work item) ------------------------------------
+
+
+def test_clone_strategy_layout_is_work_item_centric(tmp_path):
+    ws = Workspace(tmp_path / "root", strategy="clone")
+    target = target_for(tmp_path / "x.git", host="github.com", owner="octo", repo="r")
+    assert ws.workitem_dir("s-1") == tmp_path / "root" / ".work-items" / "s-1"
+    assert ws.clone_dir(target, "s-1") == (
+        tmp_path / "root" / ".work-items" / "s-1" / "github.com" / "octo" / "r"
+    )
+
+
+def test_clone_strategy_prepare_full_clone_on_default_branch(tmp_path):
+    bare = make_origin(tmp_path)
+    ws = Workspace(tmp_path / "root", strategy="clone")
+    target = target_for(bare)
+    dest = ws.prepare(target, "github-octo-repo-15")
+    assert dest == ws.clone_dir(target, "github-octo-repo-15")
+    assert (dest / ".git").is_dir() and (dest / "README.md").is_file()
+    # Independent clone → default branch checked out in place (not detached).
+    head = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=str(dest),
+        capture_output=True,
+        text=True,
+    )
+    assert head.stdout.strip() == "main"
+    # No shared per-repo clone is created in clone strategy.
+    assert not ws.repo_dir(target).exists()
+
+
+def test_clone_strategy_prepare_checks_out_pr_branch(tmp_path):
+    bare = make_origin(tmp_path)
+    work = tmp_path / "pusher"
+    _git(["clone", str(bare), str(work)], tmp_path)
+    _git(["checkout", "-b", "feature/y"], work)
+    (work / "y.txt").write_text("y\n")
+    _git(["add", "-A"], work)
+    _git(["commit", "-m", "y"], work)
+    _git(["push", "origin", "feature/y"], work)
+
+    ws = Workspace(tmp_path / "root", strategy="clone")
+    target = target_for(bare)
+    dest = ws.prepare(target, "s-7", branch="feature/y")
+    assert (dest / "y.txt").is_file()
+    head = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=str(dest),
+        capture_output=True,
+        text=True,
+    )
+    assert head.stdout.strip() == "feature/y"
+
+
+def test_clone_strategy_prepare_is_idempotent(tmp_path):
+    bare = make_origin(tmp_path)
+    ws = Workspace(tmp_path / "root", strategy="clone")
+    target = target_for(bare)
+    first = ws.prepare(target, "s-1")
+    again = ws.prepare(target, "s-1")
+    assert first == again and (again / "README.md").is_file()
+
+
+def test_clone_strategy_cleanup_removes_whole_work_item_folder(tmp_path):
+    bare = make_origin(tmp_path)
+    ws = Workspace(tmp_path / "root", strategy="clone")
+    # Two repos cloned into the same work item's folder (multi-repo work item).
+    t1 = target_for(bare, repo="repo")
+    t2 = target_for(make_origin(tmp_path, name="other"), owner="octo", repo="other")
+    ws.prepare(t1, "s-1")
+    ws.prepare(t2, "s-1")
+    folder = ws.workitem_dir("s-1")
+    assert (folder / "github.com" / "octo" / "repo" / ".git").is_dir()
+    assert (folder / "github.com" / "octo" / "other" / ".git").is_dir()
+    # cleanup drops the entire folder (every repo) in one shot.
+    assert ws.cleanup(t1, "s-1") is True
+    assert not folder.exists()
+    assert ws.cleanup(t1, "s-1") is False
+
+
+def test_unknown_strategy_falls_back_to_worktree(tmp_path):
+    ws = Workspace(tmp_path / "root", strategy="bogus")
+    assert ws.strategy == "worktree"
+
+
 # -- config parsing -----------------------------------------------------------
 
 
@@ -239,8 +324,9 @@ def test_workspace_config_defaults_disabled():
 
     ws = RoutingConfig.from_mapping({}).workspace
     assert ws.root == "" and ws.enabled is False
+    assert ws.strategy == "worktree"
     assert ws.clone_protocol == "https" and ws.default_host == "github.com"
-    assert ws.keep_worktree_on_close is False and ws.git_binary == "git"
+    assert ws.keep_checkout_on_close is False and ws.git_binary == "git"
 
 
 def test_workspace_config_parses_overrides():
@@ -250,16 +336,18 @@ def test_workspace_config_parses_overrides():
         {
             "workspace": {
                 "root": "~/loop-workspace",
+                "strategy": "clone",
                 "cloneProtocol": "ssh",
                 "defaultHost": "ghe.corp",
-                "keepWorktreeOnClose": True,
+                "keepCheckoutOnClose": True,
                 "gitBinary": "/usr/bin/git",
             }
         }
     ).workspace
     assert ws.enabled is True and ws.root == "~/loop-workspace"
+    assert ws.strategy == "clone"
     assert ws.clone_protocol == "ssh" and ws.default_host == "ghe.corp"
-    assert ws.keep_worktree_on_close is True and ws.git_binary == "/usr/bin/git"
+    assert ws.keep_checkout_on_close is True and ws.git_binary == "/usr/bin/git"
 
 
 # -- dispatcher integration (clone + worktree wired into spawn/close) ----------
@@ -410,7 +498,7 @@ def test_dispatcher_pr_close_keeps_worktree_when_configured(tmp_path):
     bare = make_origin(tmp_path)
     adapter = _RecordingAdapter()
     registry, dispatcher = _dispatcher(
-        tmp_path, bare, adapter, keep_worktree_on_close=True
+        tmp_path, bare, adapter, keep_checkout_on_close=True
     )
     item = WorkItemRef.parse("github:octo/repo#15")
     ws = Workspace(tmp_path / "root")
@@ -427,6 +515,46 @@ def test_dispatcher_pr_close_keeps_worktree_when_configured(tmp_path):
     dispatcher.handle(_pr_close_event(bare))
     dispatcher.stop()
     assert worktree.exists()  # kept for post-mortem when configured
+
+
+def test_dispatcher_clone_strategy_spawns_into_work_item_folder(tmp_path):
+    bare = make_origin(tmp_path)
+    adapter = _RecordingAdapter()
+    registry, dispatcher = _dispatcher(tmp_path, bare, adapter, strategy="clone")
+    dispatcher.handle(_issue_event(bare))
+    assert _wait(lambda: len(adapter.spawns) == 1)
+    dispatcher.stop()
+    _, cwd = adapter.spawns[0]
+    item = WorkItemRef.parse("github:octo/repo#15")
+    ws = Workspace(tmp_path / "root", strategy="clone")
+    target = target_for(bare)
+    assert Path(cwd) == ws.clone_dir(target, item.slug)
+    assert (Path(cwd) / "README.md").is_file()
+    # clone strategy makes no shared per-repo clone.
+    assert not ws.repo_dir(target).exists()
+
+
+def test_dispatcher_clone_strategy_pr_close_removes_work_item_folder(tmp_path):
+    bare = make_origin(tmp_path)
+    adapter = _RecordingAdapter()
+    registry, dispatcher = _dispatcher(tmp_path, bare, adapter, strategy="clone")
+    item = WorkItemRef.parse("github:octo/repo#15")
+    ws = Workspace(tmp_path / "root", strategy="clone")
+    target = target_for(bare)
+    checkout = ws.prepare(target, item.slug)
+    registry.register(
+        Session(
+            work_item=item,
+            harness="claude",
+            harness_session_id="s-1",
+            cwd=str(checkout),
+        )
+    )
+    assert ws.workitem_dir(item.slug).exists()
+    dispatcher.handle(_pr_close_event(bare))
+    dispatcher.stop()
+    assert registry.find_by_work_item(item) is None
+    assert not ws.workitem_dir(item.slug).exists()  # whole folder removed
 
 
 def test_dispatcher_without_workspace_uses_spawn_workdir(tmp_path):

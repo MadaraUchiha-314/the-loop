@@ -117,16 +117,18 @@ class WorkspaceConfig:
     """Mirror of ``routing.workspace`` — clone-and-worktree layout (issue-76).
 
     ``root`` empty (the default) keeps the legacy behaviour: spawned sessions
-    run in ``spawnWorkdir`` and nothing is cloned. Set ``root`` to opt in — the
-    dispatcher then clones each event's repo under
-    ``<root>/<host>/<owner>/<repo>`` and runs the session in a per-work-item
-    git worktree.
+    run in ``spawnWorkdir`` and nothing is cloned. Set ``root`` to opt in. The
+    ``strategy`` then decides the checkout layout: ``worktree`` (default) shares
+    one clone per repo across per-work-item git worktrees; ``clone`` gives each
+    work item its own folder with a full clone of every repo it touches (easier
+    for multi-repo work items). See :class:`the_loop.workspace.Workspace`.
     """
 
     root: str = ""
+    strategy: str = "worktree"  # worktree | clone
     clone_protocol: str = "https"  # https | ssh
     default_host: str = "github.com"
-    keep_worktree_on_close: bool = False
+    keep_checkout_on_close: bool = False
     git_binary: str = "git"
 
     @property
@@ -138,9 +140,10 @@ class WorkspaceConfig:
         data = data or {}
         return cls(
             root=str(data.get("root", "")),
+            strategy=str(data.get("strategy", "worktree")),
             clone_protocol=str(data.get("cloneProtocol", "https")),
             default_host=str(data.get("defaultHost", "github.com")),
-            keep_worktree_on_close=bool(data.get("keepWorktreeOnClose", False)),
+            keep_checkout_on_close=bool(data.get("keepCheckoutOnClose", False)),
             git_binary=str(data.get("gitBinary", "git")),
         )
 
@@ -288,7 +291,7 @@ class Dispatcher:
         ws = config.workspace
         if not ws.enabled:
             return None
-        return Workspace(ws.root, git_binary=ws.git_binary)
+        return Workspace(ws.root, strategy=ws.strategy, git_binary=ws.git_binary)
 
     def _load_template(self, path_str: str, default: str) -> Template:
         path = Path(path_str)
@@ -759,7 +762,7 @@ class Dispatcher:
             )
             return self.config.spawn_workdir
         branch = _pr_head_ref(routed)
-        worktree = self.workspace.ensure_worktree(
+        checkout = self.workspace.prepare(
             target,
             work_item.slug,
             branch=branch,
@@ -768,35 +771,36 @@ class Dispatcher:
         eventlog.emit(
             "workspace.prepared",
             work_item=work_item.ref,
-            repo_dir=str(self.workspace.repo_dir(target)),
-            worktree=str(worktree),
+            strategy=self.workspace.strategy,
+            checkout=str(checkout),
             branch=branch or None,
         )
-        return str(worktree)
+        return str(checkout)
 
     def _cleanup_workspace(self, session: Session, routed: RoutedEvent) -> None:
         """Remove a work item's worktree on PR merge/close (best-effort)."""
-        if self.workspace is None or self.config.workspace.keep_worktree_on_close:
+        if self.workspace is None or self.config.workspace.keep_checkout_on_close:
             return
         target = self._repo_target(routed)
         if target is None:
             return
         try:
-            removed = self.workspace.remove_worktree(
+            removed = self.workspace.cleanup(
                 target,
                 session.work_item.slug,
                 timeout=self.config.dispatch_timeout_seconds,
             )
         except WorkspaceError as exc:  # cleanup is advisory — never break close
             logger.warning(
-                "worktree cleanup for %s failed: %s", session.work_item.ref, exc
+                "workspace cleanup for %s failed: %s", session.work_item.ref, exc
             )
             return
         if removed:
-            logger.info("removed worktree for %s", session.work_item.ref)
+            logger.info("cleaned workspace for %s", session.work_item.ref)
             eventlog.emit(
                 "workspace.cleaned",
                 work_item=session.work_item.ref,
+                strategy=self.workspace.strategy,
             )
 
     def _render_prompt(

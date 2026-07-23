@@ -51,29 +51,37 @@ can find and reuse checkouts across work items.
 - **R2.4** Cloning SHALL use the operator's own git credentials; the daemon SHALL NOT
   store or handle secrets. `cloneProtocol` SHALL select https or ssh clone URLs.
 
-### Requirement 3 — Per-work-item worktree
+### Requirement 3 — Per-work-item checkout, with a configurable strategy
 
-**User story:** As an operator, I want each work item worked in its own worktree, so that
-concurrent work items on one repo don't collide and don't each pay for a full clone.
+**User story:** As an operator, I want each work item worked in its own checkout, so that
+concurrent work items don't collide; and I want to choose the layout so multi-repo work
+items stay easy to manage.
 
-- **R3.1** For each spawned work item the daemon SHALL provide a git worktree of the
-  repo and run the session there, recording it as the session's `cwd`.
-- **R3.2** A work item with no known branch (a fresh issue) SHALL get a worktree detached
-  at the default branch; a PR-triggered work item SHALL seed its worktree from the PR
-  head branch, falling back to detached-default if that ref is unavailable.
-- **R3.3** Worktree provisioning SHALL be idempotent across restarts/redeliveries (reuse
-  an existing worktree rather than failing or duplicating).
+- **R3.1** For each spawned work item the daemon SHALL provide a checkout of the repo and
+  run the session there, recording it as the session's `cwd`.
+- **R3.2** A `workspace.strategy` option SHALL select the layout:
+  - **`worktree`** (default) — a shared clone per repo plus a git worktree per work item,
+    so concurrent work items on one repo share objects.
+  - **`clone`** — a folder per work item (`<root>/.work-items/<slug>/`) holding a full
+    clone of each repo the work item touches, self-contained for multi-repo work items.
+- **R3.3** A work item with no known branch (a fresh issue) SHALL get its checkout on the
+  default branch (detached, in `worktree`; checked out in place, in `clone`); a
+  PR-triggered work item SHALL seed from the PR head branch, falling back to the default
+  branch if that ref is unavailable.
+- **R3.4** Checkout provisioning SHALL be idempotent across restarts/redeliveries (reuse
+  an existing checkout rather than failing or duplicating).
 
 ### Requirement 4 — Cleanup on PR merge/close
 
-**User story:** As an operator, I want a work item's worktree cleaned up when it's done,
+**User story:** As an operator, I want a work item's checkout cleaned up when it's done,
 so the workspace doesn't accumulate stale checkouts.
 
 - **R4.1** WHEN a work item's PR is merged/closed (the event that already auto-closes its
-  session), the daemon SHALL remove that work item's worktree.
-- **R4.2** Cleanup SHALL be best-effort (never break session close) and SHALL leave the
-  primary clone intact.
-- **R4.3** A `keepWorktreeOnClose` option SHALL let an operator retain worktrees for
+  session), the daemon SHALL remove that work item's checkout — the worktree
+  (`worktree`) or the whole per-work-item folder (`clone`).
+- **R4.2** Cleanup SHALL be best-effort (never break session close); in `worktree`
+  strategy it SHALL leave the shared per-repo clone intact.
+- **R4.3** A `keepCheckoutOnClose` option SHALL let an operator retain checkouts for
   post-mortem.
 
 ### Requirement 5 — Robustness & observability

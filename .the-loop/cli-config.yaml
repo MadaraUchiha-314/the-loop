@@ -35,14 +35,16 @@ webhooks:
       # Set this explicitly, e.g. ["MadaraUchiha-314"], to actually route events.
       authorizedUsers: []
       spawnWorkdir: "."             # used only when workspace.root is unset (below)
-      # Clone-and-worktree workspace (issue-76): set `root` to clone each event's repo
-      # under <root>/<host>/<owner>/<repo> and run the spawned session in a per-work-item
-      # git worktree, cleaned up on PR merge/close. Empty = legacy spawnWorkdir behaviour.
+      # Per-work-item checkout workspace (issue-76): set `root` to check out each event's
+      # repo under it and run the spawned session there, cleaned up on PR merge/close.
+      # Empty = legacy spawnWorkdir. strategy: worktree (shared clone + per-item worktree)
+      # or clone (one folder per work item, full clone of each repo it touches).
       workspace:
         root: ""                    # e.g. ~/.the-loop/workspace (empty = disabled)
+        strategy: worktree          # worktree | clone
         cloneProtocol: https        # https | ssh
         defaultHost: github.com     # host dir when the payload has no html_url (set to your GHE domain)
-        keepWorktreeOnClose: false  # keep a worktree after PR close (for post-mortem)
+        keepCheckoutOnClose: false  # keep the work item's checkout after PR close (for post-mortem)
         gitBinary: git
       runner: process             # process (headless) | tmux (attachable interactive TUI — issue-32)
       webTerminal:                # ttyd browser terminal onto tmux sessions (runner: tmux)
