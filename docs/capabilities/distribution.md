@@ -21,6 +21,9 @@ the projects the-loop is run on.
   `~/.cursor/plugins/local/`.
 - Both plugins SHALL reuse the SAME `skills/` (Agent Skills standard) and `commands/`;
   nothing is forked per harness.
+- Plugin and marketplace manifest `version` fields SHALL carry the released version:
+  `cz bump` rewrites them in lockstep on every release (see
+  [release-publishing](release-publishing.md), decision-028).
 - WHERE Claude Code uses the SessionStart hook (`hooks/hooks.json`) the Cursor package
   SHALL use the always-applied rule `rules/the-loop.mdc` instead.
 - Work-item and process templates SHALL be internal to the plugin, shipped under
@@ -50,6 +53,7 @@ the projects the-loop is run on.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-46 | Plugin/marketplace manifest versions bumped by the release engine (were frozen at 0.1.0) | [spec](../specs/issue-46/), [decision-028](../decisions/decision-028.md) |
 | issue-49 | Guided, schema-driven config onboarding in `/init` (x-onboarding groups, ask levels, `--defaults` mode, examples on gap-prone keys) | [spec](../specs/issue-49/), [decision-024](../decisions/decision-024.md) |
 | issue-36 | Templates made internal to the plugin (`skills/the-loop/templates/`); init no longer copies them into projects, and upgrade cleans up the deprecated `.the-loop/templates/` folder | [spec](../specs/issue-36/) |
 | issue-12 | Added Cursor packaging (`.cursor-plugin/`, `rules/the-loop.mdc`) reusing the same skills/commands | [spec](../specs/issue-12/), [decision-015](../decisions/decision-015.md) |
