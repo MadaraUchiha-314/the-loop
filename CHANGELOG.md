@@ -1,3 +1,9 @@
+## v0.12.1 (2026-07-23)
+
+### Fix
+
+- **poll**: launch and stop ttyd for the web terminal (issue #65) (#67)
+
 ## v0.12.0 (2026-07-23)
 
 ### Feat
