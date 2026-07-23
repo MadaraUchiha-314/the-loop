@@ -54,10 +54,13 @@ requirements.
 
    **Stay monitorable (auto-execute label + session registration).** So the-loop's CLI
    (webhook receiver / poller) can route the item's later activity back to this session:
-   - **GitHub ticketing:** add `webhooks.ghWebhook.routing.autoExecuteLabel` (default
-     `the-loop: auto-execute`; create the label if missing) to the issue, and register
-     the session (`the-loop sessions register --work-item github:OWNER/REPO#N …`, see
-     the skill's `reference/automation.md`).
+   - **GitHub ticketing:** add the auto-execute label to the issue (create it if missing)
+     and register the session (`the-loop sessions register --work-item
+     github:OWNER/REPO#N …`, see the skill's `reference/automation.md`). The label's
+     value is `webhooks.ghWebhook.routing.autoExecuteLabel` in the operator's **CLI
+     config** (`cli-config.yaml` — resolved via `--config`/env/cwd/home, independent of
+     this repo's plugin config, decision-032); read it there when reachable, otherwise
+     use the documented default `the-loop: auto-execute`.
    - **Jira / other ticketing providers:** the ticket itself is not a GitHub object, but
      the **PR still is** — as soon as the PR exists, **automatically add the same
      auto-execute label to the PR directly** and register the session against the PR's

@@ -37,7 +37,11 @@ command reconciles them.
 4. **Migrate schema.** If `.the-loop/config.schema.json` changed, update the project's
    copy and migrate `.the-loop/config.yaml` to the new shape (add new keys with
    defaults, flag removed/renamed keys for the user — e.g. template paths that used to
-   point under `.the-loop/templates/`). Validate the result.
+   point under `.the-loop/templates/`). Validate the result. If the project also
+   scaffolded `.the-loop/cli-config.yaml` (the operator opted into a repo-local CLI
+   config at init time — decision-032), migrate its schema copy the same way; never
+   scaffold it now if the project never had one (that's the operator's `/init`-time
+   choice, not upgrade's to make).
 
 5. **Update manifest.** Bump `theLoopVersion`/`manifestVersion` to match the plugin.
 

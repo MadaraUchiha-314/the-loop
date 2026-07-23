@@ -37,6 +37,11 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   is posted under the operator's own credentials and is otherwise indistinguishable by
   author) SHALL be dropped before dispatch, so the-loop never resumes a session on its
   own reply (`the_loop.authz.is_self_authored`; same check in `the-loop poll`).
+- All `webhooks.*` keys above live in the **CLI config** (`cli-config.yaml`, resolved
+  via `--config`/env/cwd/home — see `cli/README.md`), independent of any repo's
+  `.the-loop/config.yaml` (the plugin config) — the daemon is not tied to a single repo
+  (decision-032). `routing.authorizedUsers` still falls back to `ticketing.github.owner`
+  in the plugin config when the daemon runs from within the repo it watches.
 
 ## Design
 
@@ -47,6 +52,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-63 | `webhooks.*` moved out of the per-repo plugin config into an independent, repo-agnostic CLI config | [spec](../specs/issue-63/), [decision-032](../decisions/decision-032.md) |
 | issue-64 | Added the self-reply marker guard (drops the-loop's own comments/reviews before dispatch, on both trigger paths, so it never resumes a session on its own reply) | [decision-031](../decisions/decision-031.md) |
 | issue-32 | Added the tmux runner option for spawned sessions (dispatch via paste-injection; PR-close kills the tmux session) | [spec](../specs/issue-32/), [decision-021](../decisions/decision-021.md) |
 | issue-15 | Added session registry, event→session routing and harness resume (receiver shipped in v0 gained `--route`) | [spec](../specs/issue-15/), [decision-016](../decisions/decision-016.md) |

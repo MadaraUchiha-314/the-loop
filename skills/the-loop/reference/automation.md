@@ -32,8 +32,10 @@ Python SDKs. The core has **zero runtime dependencies** (stdlib only).
   - `the-loop gh-webhook start [--host --port --path --pidfile --secret-env --route]`
   - `the-loop gh-webhook stop [--pidfile]`
   - Verifies the GitHub `X-Hub-Signature-256` HMAC (secret from an env var), exposes
-    `GET /health`, and logs deliveries. Defaults come from `webhooks.ghWebhook` in
-    `.the-loop/config.yaml`.
+    `GET /health`, and logs deliveries. Defaults come from `webhooks.ghWebhook` in the
+    **CLI config** (`cli-config.yaml` — resolved via `--config`/env/cwd/home; see
+    `cli/README.md`) — not this project's `.the-loop/config.yaml`; the daemon is not
+    tied to any one repo (decision-032).
 - **Webhook → session routing** (`--route`; `webhooks.ghWebhook.routing`): a received
   event (PR/issue comment, `workflow_run` result, …) is matched to the registered
   session working that item and delivered by *resuming* that session through its

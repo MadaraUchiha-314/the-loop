@@ -45,6 +45,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Iterator, Optional, Sequence, Union
 
+from . import cli_config
+
 logger = logging.getLogger("the-loop.eventlog")
 
 DEFAULT_PATH = ".the-loop/logs/events.jsonl"
@@ -210,7 +212,7 @@ def configure(
 
 
 def configure_from_file(source: str) -> EventLog:
-    """:func:`configure` from ``observability.eventLog`` in the config file."""
+    """:func:`configure` from ``eventLog`` in the CLI config."""
     cfg = load_config()
     return configure(
         source,
@@ -219,9 +221,20 @@ def configure_from_file(source: str) -> EventLog:
     )
 
 
-def load_config(config_path: Union[str, Path] = ".the-loop/config.yaml") -> dict:
-    """Best-effort read of ``observability.eventLog`` (``{}`` without PyYAML)."""
-    path = Path(config_path)
+def load_config(config_path: Optional[Union[str, Path]] = None) -> dict:
+    """Best-effort read of ``eventLog`` from the CLI config (``{}`` without PyYAML).
+
+    Defaults to the CLI config's resolved path (``cli_config.default_cli_config_path()``
+    — ``--config``, then ``$THE_LOOP_CLI_CONFIG``, then ``./.the-loop/cli-config.yaml``,
+    then ``~/.the-loop/cli-config.yaml``, decision-032). ``eventLog`` is top-level in the
+    CLI config, unlike the PLUGIN config's
+    ``observability.devLevel``/``runtimeLevel``/``browserLogging``.
+    """
+    path = (
+        Path(config_path)
+        if config_path is not None
+        else cli_config.default_cli_config_path()
+    )
     if not path.is_file():
         return {}
     try:
@@ -232,7 +245,7 @@ def load_config(config_path: Union[str, Path] = ".the-loop/config.yaml") -> dict
         data = yaml.safe_load(path.read_text()) or {}
     except Exception:  # noqa: BLE001 - a broken config must not break ingress
         return {}
-    return ((data.get("observability") or {}).get("eventLog")) or {}
+    return data.get("eventLog") or {}
 
 
 def emit(event: str, level: str = "info", **fields) -> None:

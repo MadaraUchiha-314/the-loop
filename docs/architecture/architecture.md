@@ -26,8 +26,12 @@ agent harness delivers a work item end-to-end, escalating to humans only for dec
 ### 2. Project footprint (`.the-loop/`)
 
 Everything the-loop creates/maintains is tracked in `.the-loop/manifest.yaml`.
-- `config.yaml` (+ `config.schema.json`) — per-project configuration; per-task
-  overrides via work-item front-matter.
+- `config.yaml` (+ `config.schema.json`) — per-project **plugin** configuration; per-task
+  overrides via work-item front-matter. The CLI daemon's own `cli-config.yaml`
+  (`webhooks`, `polling`, `eventLog`; `cli-config.schema.json`) is independent and NOT
+  required to be per-project — `--config`/`-c`, else `$THE_LOOP_CLI_CONFIG`, else
+  `./.the-loop/cli-config.yaml`, else `~/.the-loop/cli-config.yaml`, so the daemon is
+  not tied to a single repo (decision-032).
 - `collaborators.yaml` — user-owned registry (external tools now live inline in
   `config.externalTools`, issue-37).
 

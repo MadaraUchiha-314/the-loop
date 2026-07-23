@@ -25,6 +25,12 @@ self-learning/ML capabilities.
 - The package SHALL be installable from PyPI as **`the-loopy-one`** (import package
   `the_loop` and the `the-loop` script unchanged; see
   [release-publishing](release-publishing.md)).
+- `gh-webhook`/`poll`/`sessions`/`events` SHALL read their defaults from a **CLI
+  config** (`cli-config.yaml`) independent of any repo's `.the-loop/config.yaml` (the
+  plugin config) — resolved via `--config`/`-c`, else `$THE_LOOP_CLI_CONFIG`, else
+  `./.the-loop/cli-config.yaml` (repo-relative, so an operator can track it in a
+  chosen repo), else `~/.the-loop/cli-config.yaml`, so the CLI is not tied to a single
+  repo (`cli/README.md`, decision-032).
 
 ## Design
 
@@ -35,6 +41,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-63 | Split the CLI daemon's config (`webhooks`/`polling`/`eventLog`) out of the per-repo plugin config into an independent, repo-agnostic CLI config | [spec](../specs/issue-63/), [decision-032](../decisions/decision-032.md) |
 | issue-50 | Added the structured event log and the `events` query command | [spec](../specs/issue-50/), [decision-025](../decisions/decision-025.md) |
 | issue-21 | Published to PyPI as `the-loopy-one` with automatic semantic releases | [spec](../specs/issue-21/), [decision-019](../decisions/decision-019.md) |
 | issue-15 | Added `sessions` registry commands and webhook `--route` dispatch | [spec](../specs/issue-15/), [decision-016](../decisions/decision-016.md) |

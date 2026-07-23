@@ -20,6 +20,14 @@ meta:
   - path: .the-loop/collaborators.yaml
     role: collaborators
     managed: false
+  - path: .the-loop/cli-config.yaml
+    role: cli-config
+    managed: true
+    optional: true   # only scaffolded if the operator opts in at /init time (decision-031)
+  - path: .the-loop/cli-config.schema.json
+    role: cli-config-schema
+    managed: true
+    optional: true   # ships alongside cli-config.yaml, never on its own
 
 # Templates are INTERNAL to the-loop and are NOT copied into a project. They ship with
 # the plugin under `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/` and the-loop's

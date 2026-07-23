@@ -12,6 +12,7 @@ Spec: docs/specs/issue-34/design.md (poller shares the webhook routing stack).
 
 from the_loop import runner as runner_mod
 from the_loop.cli import build_parser
+from the_loop.commands import gh_webhook, poll
 from the_loop.poller import github as gh_mod
 
 CONFIG = """
@@ -73,7 +74,12 @@ def _configure(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     config_dir = tmp_path / ".the-loop"
     config_dir.mkdir()
-    (config_dir / "config.yaml").write_text(CONFIG)
+    # webhooks/polling live in the CLI config (issue-63, decision-032), not the
+    # repo-local plugin config.
+    cli_config_path = config_dir / "cli-config.yaml"
+    cli_config_path.write_text(CONFIG)
+    monkeypatch.setattr(gh_webhook, "_CONFIG_PATH", cli_config_path)
+    monkeypatch.setattr(poll, "_CONFIG_PATH", cli_config_path)
 
     FakePopen.instances = []
     monkeypatch.setattr(runner_mod.subprocess, "Popen", FakePopen)

@@ -1,9 +1,12 @@
 """``the-loop gh-webhook start|stop`` — manage the GitHub webhook receiver.
 
 Primary CLI: ``the-loop``; sub-command: ``gh-webhook``; actions: ``start`` / ``stop``.
-Defaults can come from ``.the-loop/config.yaml`` (``webhooks.ghWebhook``) when PyYAML
-is available; CLI flags always win. The secret is read from an env var (never a flag)
-so it doesn't leak into process listings.
+Defaults can come from the CLI config (``webhooks.ghWebhook``; see
+``the_loop.cli_config`` for the ``cli-config.yaml`` resolution order — ``--config``,
+then ``$THE_LOOP_CLI_CONFIG``, then ``./.the-loop/cli-config.yaml``, then
+``~/.the-loop/cli-config.yaml``, decision-032) when PyYAML is available; CLI flags
+always win. The secret is read from an env var (never a flag) so it doesn't leak
+into process listings.
 """
 
 from __future__ import annotations
@@ -18,12 +21,18 @@ from pathlib import Path
 from typing import Optional
 
 from .base import Command, register
-from .. import eventlog
+from .. import cli_config, eventlog
 from ..webhook import serve
 
 logger = logging.getLogger("the-loop.gh-webhook")
 
-_CONFIG_PATH = Path(".the-loop/config.yaml")
+# The CLI config (webhooks/polling/eventLog) — not the PLUGIN config below.
+_CONFIG_PATH = cli_config.default_cli_config_path()
+
+# The repo-local PLUGIN config (.the-loop/config.yaml), read only as a
+# convenience fallback (ticketing.github.owner) when the daemon happens to be
+# started from within the one repo it watches.
+_PLUGIN_CONFIG_PATH = Path(".the-loop/config.yaml")
 
 _DEFAULTS = {
     "host": "127.0.0.1",
@@ -35,7 +44,7 @@ _DEFAULTS = {
 
 
 def _read_gh_webhook_config(strict: bool = False) -> dict:
-    """Read ``webhooks.ghWebhook`` from ``.the-loop/config.yaml``.
+    """Read ``webhooks.ghWebhook`` from the CLI config (``_CONFIG_PATH``).
 
     ``strict=False`` (defaults path): returns ``{}`` when the file or PyYAML is
     unavailable or unparseable — the CLI must work with zero runtime deps.
@@ -43,26 +52,7 @@ def _read_gh_webhook_config(strict: bool = False) -> dict:
     / parse error, so the :class:`Reloader` keeps the previously loaded config
     instead of resetting to defaults on a transient broken save.
     """
-    if not _CONFIG_PATH.is_file():
-        if strict:
-            raise FileNotFoundError(f"{_CONFIG_PATH} not found")
-        return {}
-    try:
-        import yaml  # optional dependency
-    except ImportError:
-        if strict:
-            raise
-        logger.debug("pyyaml not installed; skipping config-file defaults")
-        return {}
-    text = _CONFIG_PATH.read_text()
-    if strict:
-        data = yaml.safe_load(text) or {}  # let a YAMLError propagate
-    else:
-        try:
-            data = yaml.safe_load(text) or {}
-        except Exception:  # noqa: BLE001
-            logger.warning("could not parse %s; using built-in defaults", _CONFIG_PATH)
-            return {}
+    data = cli_config.load_cli_config(_CONFIG_PATH, strict=strict)
     return ((data.get("webhooks") or {}).get("ghWebhook")) or {}
 
 
@@ -72,17 +62,9 @@ def _load_config_defaults() -> dict:
 
 
 def _ticketing_owner() -> Optional[str]:
-    """``ticketing.github.owner`` — the fallback authorized user (or ``None``)."""
-    if not _CONFIG_PATH.is_file():
-        return None
-    try:
-        import yaml  # optional dependency
-    except ImportError:
-        return None
-    try:
-        data = yaml.safe_load(_CONFIG_PATH.read_text()) or {}
-    except Exception:  # noqa: BLE001
-        return None
+    """``ticketing.github.owner`` from the PLUGIN config — the fallback
+    authorized user (or ``None``) when run from within a repo that has one."""
+    data = cli_config.load_cli_config(_PLUGIN_CONFIG_PATH, strict=False)
     owner = ((data.get("ticketing") or {}).get("github") or {}).get("owner")
     return str(owner) if owner else None
 

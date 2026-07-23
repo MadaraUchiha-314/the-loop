@@ -11,7 +11,7 @@ import package and CLI keep the natural `the_loop`/`the-loop`):
 
 ```bash
 pip install the-loopy-one            # or: uv pip install the-loopy-one
-pip install "the-loopy-one[config]"  # + PyYAML, for reading .the-loop/config.yaml defaults
+pip install "the-loopy-one[config]"  # + PyYAML, for reading config-file defaults
 the-loop --help
 ```
 
@@ -27,7 +27,7 @@ Or install this package on its own with any PEP 517 installer:
 
 ```bash
 uv pip install -e .            # or: pip install -e .
-uv pip install -e ".[config]"  # PyYAML, for reading .the-loop/config.yaml defaults
+uv pip install -e ".[config]"  # PyYAML, for reading config-file defaults
 uv pip install -e ".[dev]"     # pytest + commitizen
 ```
 
@@ -37,6 +37,38 @@ Conventional Commits / PR titles since the last tag (`feat` → minor, `fix` →
 `BREAKING CHANGE` → major), tags it, and publishes to PyPI via Trusted Publishing (OIDC —
 no stored token). Merges with no `feat`/`fix`/breaking change publish nothing. See
 `docs/decisions/decision-019.md`.
+
+## Two independent config files (decision-032)
+
+The-loop's config is split into two files that never overlap keys:
+
+- **Plugin config** — `.the-loop/config.yaml`, installed **per repo** (Claude/Cursor
+  plugin), read by `/the-loop:*` commands and the skill: `ticketing`, `workflow`,
+  `tooling`, `reviews`, `autonomy`, `security`, `personas`, … Validated against
+  `.the-loop/config.schema.json`.
+- **CLI config** (`cli-config.yaml`) — read only by this CLI's daemon commands below
+  (`gh-webhook`, `poll`, `sessions`, `events`): `webhooks`, `polling`, `eventLog`. The
+  CLI is expected to work across multiple repos, so it isn't required to live in any
+  one of them — resolved in priority order:
+
+  1. **`--config`/`-c`** — an explicit flag, e.g. `the-loop --config path/to/cli-config.yaml gh-webhook start` (must precede the subcommand).
+  2. **`$THE_LOOP_CLI_CONFIG`** — an explicit env var, same priority as `--config`
+     (handy for containers/systemd units where a flag is less convenient).
+  3. **`./.the-loop/cli-config.yaml`** (repo-relative) — an operator can choose to
+     track their CLI config in a specific repo (e.g. a "dev box" repo, checked in and
+     versioned) instead of their home directory; picked up automatically when
+     `the-loop <command>` runs from that checkout.
+  4. **`~/.the-loop/cli-config.yaml`** — the always-available fallback, not tied to
+     any repo.
+
+  Validated against `.the-loop/cli-config.schema.json`; a commented starting point
+  ships at `skills/the-loop/templates/cli-config.yaml`.
+
+Each command's defaults below note which file they come from. A repo's plugin config is
+still consulted for one thing: `ticketing.github.owner`/`repo` is the convenience
+fallback for `routing.authorizedUsers` and a GitHub poll source's `repos` when the
+daemon happens to be started from within the one repo it watches — configure those
+explicitly in the CLI config for a daemon watching several repos.
 
 ## Commands
 
@@ -54,8 +86,9 @@ the-loop gh-webhook stop  [--pidfile .the-loop/gh-webhook.pid]
   (export `THE_LOOP_GH_WEBHOOK_SECRET=...`). The secret is read from the environment,
   never a flag, so it doesn't leak into process listings.
 - `GET /health` returns `200 ok`.
-- Defaults can come from `.the-loop/config.yaml` (`webhooks.ghWebhook`) when PyYAML is
-  installed; flags always override.
+- Defaults can come from the **CLI config** (`webhooks.ghWebhook`, see
+  "Two independent config files" above for the `--config`/env/cwd/home resolution
+  order) when PyYAML is installed; flags always override.
 - **`--route`** (default from `webhooks.ghWebhook.routing.enabled`) routes each verified
   event to the registered harness session working that item: the router extracts the
   work item(s) from the payload (issue/PR number, PR head-branch `issue-<n>` convention,
@@ -76,8 +109,9 @@ the-loop gh-webhook stop  [--pidfile .the-loop/gh-webhook.pid]
   actions by logins in `routing.authorizedUsers` — comments/reviews and issue/PR
   labels/opens from anyone else are dropped before dispatch (CI/system events, which carry
   no human instructions, still pass; a PR-close still auto-closes the session). Empty ⇒
-  falls back to `ticketing.github.owner`, else fails closed with a warning. Each operator
-  runs their own instance for their own login(s). See `docs/decisions/decision-023.md`.
+  falls back to `ticketing.github.owner` in the plugin config, else fails closed with a
+  warning. Each operator runs their own instance for their own login(s). See
+  `docs/decisions/decision-023.md`.
 - **Self-reply guard (loop prevention):** the harness posts its own replies under the
   operator's own credentials, so authorship alone can't tell them apart from a human
   comment. Every comment/review/reply the-loop posts carries an embedded marker
@@ -137,16 +171,16 @@ spawning, one-session-per-work-item, the `tmux` runner, harness adapters and pro
 templates are all reused unchanged.
 
 - **Provider-agnostic:** the poller core and CLI carry no GitHub knobs. Which systems
-  are polled is defined purely by `polling.sources` in `.the-loop/config.yaml` — each
-  entry names a `provider` (GitHub ships; the seam admits others). GitHub is reached
-  *only* through a configured source:
+  are polled is defined purely by `polling.sources` in the **CLI config** — each entry
+  names a `provider` (GitHub ships; the seam admits others). GitHub is reached *only*
+  through a configured source:
 
   ```yaml
   polling:
     intervalSeconds: 60
     sources:
       - provider: github
-        repos: [octo/repo]         # empty = fall back to ticketing.github
+        repos: [octo/repo]         # empty = fall back to the plugin config's ticketing.github
         monitor: { issues: true, pullRequests: true }
         label: ""                  # empty = reuse routing.autoExecuteLabel
   ```
@@ -162,16 +196,16 @@ templates are all reused unchanged.
 - **New comments** are forwarded to the item's session exactly once, deduped across
   polls **and restarts** via `--state-file` (git-ignored runtime state). The pre-existing
   thread is baselined on first sight, not replayed.
-- **Config:** ingress defaults come from `polling` in `.the-loop/config.yaml` (when
-  PyYAML is installed); dispatch behaviour is reused from `webhooks.ghWebhook.routing`.
-  Flags cover only the run loop.
+- **Config:** ingress defaults come from `polling` in the **CLI config** (when PyYAML is
+  installed); dispatch behaviour is reused from `webhooks.ghWebhook.routing` (same
+  file). Flags cover only the run loop.
 - **Hot reload:** edit `polling.sources` / `intervalSeconds` while it runs and the change
   is picked up on the next cycle — no restart. An invalid edit is logged and the previous
   config kept. (The shared dispatch config still needs a restart.)
 - **Authorized-actor guard (prompt-injection remediation):** the poller spawns only for
   items authored by a login in `routing.authorizedUsers`, and forwards only comments from
   authorized authors — everything else is ignored. Empty ⇒ falls back to
-  `ticketing.github.owner`, else fails closed with a warning. See
+  `ticketing.github.owner` in the plugin config, else fails closed with a warning. See
   `docs/decisions/decision-023.md`.
 - **Self-reply guard (loop prevention):** same marker check as the receiver — a comment
   the-loop itself posted is excluded from "new comments" (and can't retrigger a spawn),
@@ -200,7 +234,7 @@ webhook accepted/rejected (and why), event routed/dropped (with a machine-readab
 `reason` like `unauthorized-actor` or `duplicate-delivery`), session spawned/resumed
 (naming the triggering event and delivery id), dispatch failed (with the error and
 whether redelivery/the next poll cycle retries it), session closed/auto-closed — as one
-JSON object per line to `observability.eventLog.path` (default
+JSON object per line to `eventLog.path` in the **CLI config** (default
 `.the-loop/logs/events.jsonl`, git-ignored). This command is the query surface:
 
 - `--work-item` shows one item's full history ("which events triggered this
@@ -215,7 +249,7 @@ JSON object per line to `observability.eventLog.path` (default
 Every record carries `ts`/`source`/`event`/`level`/`pid` plus documented per-type
 fields; the catalog (`the-loop events --types`) is enforced against the emitted types
 by a unit test. Writes are append-only and multi-process safe, a broken log never
-breaks ingress, and `observability.eventLog.enabled: false` turns emission off.
+breaks ingress, and `eventLog.enabled: false` (CLI config) turns emission off.
 Schema + agent guidance: `skills/the-loop/reference/observability.md`; storage decision
 (JSONL, not SQLite): `docs/decisions/decision-025.md`.
 

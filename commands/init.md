@@ -67,8 +67,8 @@ plugin's root directory; in Cursor, resolve it to the plugin's install directory
      reviews & autonomy) —
      present the proposal from step 1's detection (falling back to schema defaults)
      and confirm/adjust the whole group in ONE interaction.
-   - `advanced` groups (API contracts, observability, automation ingress) — default
-     silently; offer a full tour only if the user wants it.
+   - `advanced` groups (API contracts, observability, self-improvement & context
+     management) — default silently; offer a full tour only if the user wants it.
    For every group: explain what it does and why it matters (educating the user is
    mandatory); for enum keys show ALL the possibilities with a one-line meaning each;
    for free-form keys show the schema's `examples` so the user never guesses. Pull
@@ -77,6 +77,18 @@ plugin's root directory; in Cursor, resolve it to the plugin's install directory
    gaps to the **needs-user** section of the final report. On a re-run, only raise
    gaps (empty required keys, `# TODO: verify` lines, keys added by an upgrade) —
    never re-ask what is already established.
+
+   **Also ask about the CLI daemon config (one plain question, not a grouped
+   onboarding — decision-032).** The-loop's CLI (`gh-webhook`/`poll`/`sessions`/
+   `events`) reads a separate, independent `cli-config.yaml` — not this repo's
+   `.the-loop/config.yaml` — resolved via `--config`/`$THE_LOOP_CLI_CONFIG`/
+   `./.the-loop/cli-config.yaml`/`~/.the-loop/cli-config.yaml` (see `cli/README.md`).
+   Ask: *"Do you want the CLI daemon's config tracked and versioned in this repo
+   (scaffolds `.the-loop/cli-config.yaml`, picked up automatically when you run
+   `the-loop` from here), or should it default to your home directory
+   (`~/.the-loop/cli-config.yaml`, nothing scaffolded here)?"* Under `--defaults` skip
+   this question and scaffold nothing (home-directory default applies with zero setup).
+   Never assume either answer.
 
 3. **Reconcile against the manifest (idempotent, non-clobbering).** For every managed
    path, classify it and act:
@@ -94,6 +106,10 @@ plugin's root directory; in Cursor, resolve it to the plugin's install directory
    - `.the-loop/manifest.yaml` — the manifest.
    - `.the-loop/collaborators.yaml` — from templates (user-owned). External tools are
      declared inline in `config.externalTools`, not a separate file (issue-37).
+   - **Only if step 2 answered "track it here":** `.the-loop/cli-config.yaml` — from
+     `templates/cli-config.yaml`, and `.the-loop/cli-config.schema.json` (copy of the
+     schema, alongside `config.schema.json`). Never scaffolded on the home-directory
+     answer or under `--defaults`.
    - `docs/architecture/architecture.md`, `docs/decisions/decisions.md`,
      `docs/specs/` (per-work-item Kiro specs + execution logs).
    - `learnings/learnings.md`.
@@ -105,8 +121,9 @@ plugin's root directory; in Cursor, resolve it to the plugin's install directory
    already exist.
 
 5. **Validate** the generated `.the-loop/config.yaml` against
-   `.the-loop/config.schema.json`. Report any gaps the user must fill (e.g. empty
-   `personas`, `ticketing.github.owner`).
+   `.the-loop/config.schema.json` (and, if scaffolded, `.the-loop/cli-config.yaml`
+   against `.the-loop/cli-config.schema.json`). Report any gaps the user must fill
+   (e.g. empty `personas`, `ticketing.github.owner`).
 
 6. **Confirm collaborators & personas.** If `personas`/collaborators are still empty
    after the onboarding (step 2), ask the user (via a ticket comment if a ticket

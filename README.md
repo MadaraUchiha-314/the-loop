@@ -89,7 +89,9 @@ Granular commands run the same flow one step at a time:
 
 - **Configuration** lives in [`.the-loop/config.yaml`](skills/the-loop/templates/config.yaml),
   validated against [`.the-loop/config.schema.json`](.the-loop/config.schema.json). A
-  subset of keys can be overridden per work item via the markdown front-matter.
+  subset of keys can be overridden per work item via the markdown front-matter. The CLI
+  companion's own daemon config (webhook receiver / poller) is independent and not tied
+  to a repo — see [`cli/README.md`](cli/README.md#two-independent-config-files-decision-032).
 - **Everything the-loop manages** is tracked in
   [`.the-loop/manifest.yaml`](.the-loop/manifest.yaml).
 - **Templates** for epics, stories, bugs, the optional `brainstorm` root artifact and the
