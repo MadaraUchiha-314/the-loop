@@ -45,6 +45,13 @@
         "keys": ["tooling"]
       },
       {
+        "id": "instructions",
+        "title": "Custom instructions",
+        "ask": "confirm",
+        "explain": "Per-installation instruction documents (readme/markdown files) the harness reads and honors while working: team conventions, developing/testing/coding styles, house rules the structured config does not model. Candidates are detected from common convention files (CONTRIBUTING.md, docs style guides); supplementary to the external-tools registry.",
+        "keys": ["customInstructions"]
+      },
+      {
         "id": "workflow",
         "title": "Workflow & phases",
         "ask": "confirm",
@@ -282,6 +289,40 @@
             "go": { "type": "string", "default": "go-modules" },
             "containers": { "type": "string", "default": "ghcr" }
           }
+        }
+      }
+    },
+    "customInstructions": {
+      "type": "object",
+      "description": "User-provided instruction documents the harness reads and honors while working this repo/workspace: readme/markdown files carrying team conventions, developing/testing/coding styles and house rules the structured config does not model. Per-installation — each installation of the-loop points at its own docs via configurable paths. Supplementary to externalTools (that registers tools the harness may use; this registers guidance it must follow). Load order, precedence and limits: reference/instructions.md.",
+      "additionalProperties": false,
+      "properties": {
+        "docs": {
+          "type": "array",
+          "default": [],
+          "description": "Ordered list of instruction documents, read in order when starting work on a work item (later docs win over earlier ones where they conflict).",
+          "examples": [[{ "path": "docs/team-conventions.md", "notes": "House TS style, naming, PR etiquette." }]],
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "Path to a markdown/readme instruction file. Repo-relative, or absolute for per-machine docs living outside the repo (e.g. a company-wide conventions file)."
+              },
+              "notes": {
+                "type": "string",
+                "description": "What the doc covers / when it matters, so phase-scoped loading knows when to (re-)read it."
+              }
+            }
+          }
+        },
+        "onMissing": {
+          "type": "string",
+          "enum": ["warn", "error", "ignore"],
+          "default": "warn",
+          "description": "What to do when a configured doc does not exist at its path: warn = note it in the execution log and continue; error = stop and ask the user; ignore = skip silently."
         }
       }
     },

@@ -43,6 +43,13 @@ the `/the-loop:work-on` superset command and granular per-step commands
   `security.review.humanSignOffMinTier` (default 4) SHALL wait for a named human
   security sign-off, and an unresolved security finding SHALL block completion at any
   tier.
+- The loop SHALL read and honor the operator's **custom instruction docs**
+  (`config.customInstructions`): every registered doc is read, in order, immediately
+  after loading the config when work on an item starts (and re-read after a context
+  clear). The structured config wins where both speak; no instruction doc can weaken
+  the loop's gates (security, paper trail, reviews, autonomy) — such instructions are
+  ignored and the conflict logged, fail-closed. A missing doc is handled per
+  `customInstructions.onMissing` (default `warn`).
 - The loop SHALL manage its context window by **checkpoint-then-reset**
   (`config.contextManagement`): a reset (clear or compact) is always preceded by a
   checkpoint — `tasks.md` checkmarks current, an execution-log entry with a concrete
@@ -60,6 +67,7 @@ the `/the-loop:work-on` superset command and granular per-step commands
 
 [`reference/workflow.md`](../../skills/the-loop/reference/workflow.md) ·
 [`reference/context.md`](../../skills/the-loop/reference/context.md) ·
+[`reference/instructions.md`](../../skills/the-loop/reference/instructions.md) ·
 [`reference/security.md`](../../skills/the-loop/reference/security.md) ·
 [`SKILL.md`](../../skills/the-loop/SKILL.md) ·
 [architecture § the loop](../architecture/architecture.md)
@@ -68,6 +76,7 @@ the `/the-loop:work-on` superset command and granular per-step commands
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-59 | Added per-installation custom instruction docs the loop reads and honors (`customInstructions` config, onboarding group, precedence rules) | [spec](../specs/issue-59/), [decision-029](../decisions/decision-029.md) |
 | issue-48 | Added checkpoint-then-reset context-window management (clear at phase boundaries, compact at task boundaries, `contextManagement` config) | [spec](../specs/issue-48/), [decision-027](../decisions/decision-027.md) |
 | issue-47 | Security became a gated concern of every phase: threat-model-lite in requirements, Security design section, security-review gate item, risk-tiered human sign-off (`config.security`) | [spec](../specs/issue-47/), [decision-026](../decisions/decision-026.md) |
 | issue-25 | Added the capability-docs fold-in as a ready-to-ship gate item | [spec](../specs/issue-25/), [decision-020](../decisions/decision-020.md) |

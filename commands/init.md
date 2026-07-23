@@ -44,6 +44,11 @@ plugin's root directory; in Cursor, resolve it to the plugin's install directory
    - cross-check inferred tooling against `.github/workflows/` (or other CI config) —
      the commands CI actually runs are a strong signal.
    - the git remote / owner / repo for ticketing.
+   - candidate **custom instruction docs** for `customInstructions.docs` — existing
+     convention files the team already maintains (`CONTRIBUTING.md`, style/convention
+     guides under `docs/`). Propose them in the onboarding (never auto-register); the
+     user confirms, adjusts, or adds paths — including absolute per-machine paths
+     detection can never see (see the skill's `reference/instructions.md`).
    Where detection is unambiguous, write the detected tool into `tooling.<concern>.<lang>`.
    Where it's ambiguous or no signal exists, fall back to the plugin default but mark
    that line with a trailing `# TODO: verify — no signal found, defaulted` comment, and
@@ -58,7 +63,8 @@ plugin's root directory; in Cursor, resolve it to the plugin's install directory
    interact, clubbed together) and each group's `ask` level:
    - `always` groups (e.g. **Project & ticketing**, **People & communication**) have
      no sensible default — establish them with the user.
-   - `confirm` groups (tooling, workflow, quality gates, reviews & autonomy) —
+   - `confirm` groups (tooling, custom instructions, workflow, quality gates,
+     reviews & autonomy) —
      present the proposal from step 1's detection (falling back to schema defaults)
      and confirm/adjust the whole group in ONE interaction.
    - `advanced` groups (API contracts, observability, automation ingress) — default

@@ -12,7 +12,9 @@ and **design.md** — the implementation → review portion of the loop. A slice
 
 **Read the `the-loop` skill, `reference/workflow.md`, `reference/context.md` and
 `reference/tooling.md` first.**
-Load `.the-loop/config.yaml`; apply any per-task `overrides` from the spec front-matter.
+Load `.the-loop/config.yaml`; read every custom instruction doc it registers
+(`customInstructions.docs`, in order — the operator's conventions and styles,
+`reference/instructions.md`); apply any per-task `overrides` from the spec front-matter.
 
 **Start clean.** Entering implementation crosses a phase boundary: apply
 `contextManagement.phaseBoundary` (default `clear`) so execution runs against the

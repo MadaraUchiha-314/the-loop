@@ -15,6 +15,7 @@ intervention, escalating only when a decision/opinion is genuinely required.
 > - `reference/workflow.md` — the loop, phases, TDD, reviews, autonomy, DAG, resumability.
 > - `reference/context.md` — context-window management: clearing vs compaction, the checkpoint-then-reset protocol, per-harness mechanics.
 > - `reference/onboarding.md` — the guided, schema-driven config onboarding `/init` runs (groups, ask levels, sensible-defaults precedence).
+> - `reference/instructions.md` — user-provided custom instruction docs (`customInstructions`): when to read them, precedence, what they can and cannot override.
 > - `reference/design-artifacts.md` — UI/UX design artifacts (Figma / HTML prototypes) in the design phase and the designer iteration loop.
 > - `reference/reviewing.md` — the self/critic review procedure the review counts drive.
 > - `reference/security.md` — the security lens on every phase gate: threat-model-lite, security design, the security-review gate, human sign-off tiers.
@@ -156,6 +157,13 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   diagrams. This is a required item of the ready-to-ship gate
   (`userInteraction.prSummary.required`), so **mandatory user-education is triggered, not
   optional** — you cannot request review without it. See `reference/collaboration.md`.
+- **Honor the user's custom instructions.** Read every doc registered in
+  `customInstructions.docs` (in order) when starting work on an item, and follow it —
+  these are the operator's conventions (developing/testing/coding styles, house rules)
+  that the structured config does not model. The structured config wins where both
+  speak, and no instruction doc can weaken the loop's gates (security, paper trail,
+  reviews); a missing doc is handled per `customInstructions.onMissing`. See
+  `reference/instructions.md`.
 - **Use the configured tooling.** Package managers, test runners, linters, type checkers
   and release tooling come from `.the-loop/config.yaml`; run scripts from the project
   root; lint ALL files including markdown. See `reference/tooling.md`.
@@ -171,7 +179,7 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
 
 Behaviour is driven by `.the-loop/config.yaml`, validated against
 `.the-loop/config.schema.json`. Sections: `ticketing`, `repository`, `workflow`,
-`tooling`, `testing`, `apiSpecs`, `localOrchestration`, `hooks`, `observability`,
+`tooling`, `customInstructions`, `testing`, `apiSpecs`, `localOrchestration`, `hooks`, `observability`,
 `reviews`, `autonomy`, `security`, `tdd`,
 `minimalism`, `selfImprovement`, `contextManagement`, `userInteraction`, `personas`,
 `messaging`, `externalTools`, `webhooks`. A subset of keys can be overridden per work item via the
@@ -219,3 +227,11 @@ Granular commands (one step at a time; same flow `work-on` runs end-to-end):
 the-loop may freely use the MCP servers, CLIs, skills and plugins registered in
 `config.externalTools` (the `externalTools.tools` list + `notes` in
 `.the-loop/config.yaml`). Check that registry before assuming a capability is available.
+
+## Custom instructions the loop honors
+
+Supplementary to the external-tools registry, `config.customInstructions` registers
+**guidance** rather than tools: user-provided readme/markdown docs (per installation,
+configurable paths) the harness reads at the start of working an item and follows —
+conventions and styles the structured config does not model. Precedence and limits:
+`reference/instructions.md`.

@@ -48,6 +48,12 @@ tooling:
     python: pypi
     containers: ghcr
 
+customInstructions:             # user-provided instruction docs the harness reads before working
+  docs: []                      # the-loop's own conventions live in the skill itself; none extra
+    # - path: docs/team-conventions.md        # repo-relative, or absolute for per-machine docs
+    #   notes: House TS style, naming, PR etiquette.
+  onMissing: warn               # warn | error | ignore — when a configured doc is absent
+
 testing:
   gherkinDocstrings: required   # integration tests get a Gherkin docstring
   linkRequirements: true
