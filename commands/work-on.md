@@ -56,13 +56,19 @@ requirements.
 
 4. **Phase 1 — Requirements** (`requirements-definition`). Create
    `docs/specs/<id>/requirements.md` (or `bugfix.md` for a bug) from the template:
-   introduction, user stories, and EARS acceptance criteria. Post/link it on the ticket
+   introduction, user stories, and EARS acceptance criteria — **including the Security
+   considerations section** (threat-model-lite: untrusted actors, trust boundaries,
+   abuse cases, fail-closed; `security.threatModel.required` — "no new attack surface"
+   is written and justified, see `reference/security.md`). Post/link it on the ticket
    and **request human review**. Do not proceed until approved (record approver →
    paper trail). `requireHumanReviewPerPhase` defaults to true.
 
 5. **Phase 2 — Design** (`design`). Create `docs/specs/<id>/design.md` derived from the
    approved requirements: architecture, components/interfaces, data models, error
-   handling, testing strategy. **If the work item has a user-facing surface**, also
+   handling, testing strategy — **including the Security design section** stating how
+   each requirements-phase trust boundary is enforced (`security.design.required`; a
+   boundary left unenforced fails the gate). **If the work item has a user-facing
+   surface**, also
    produce **UI/UX design artifacts** under `docs/specs/<id>/design/` (self-contained
    HTML+CSS+JS prototypes and/or a linked Figma file), inventory them in `design.md`, and
    iterate them with the **designer** until locked (`reference/design-artifacts.md`).
@@ -84,9 +90,13 @@ requirements.
 
 8. **Review** (`needs-review`). Run up to `reviews.selfReviewCount` self-reviews and
    `reviews.criticReviewCount` critic reviews (configured critics, e.g. a different
-   harness/model) BEFORE escalating to the human reviewer. Record every review as a
-   PR/ticket comment and in the execution log's review table. Notify via configured
-   messaging channels when a human action is pending.
+   harness/model) BEFORE escalating to the human reviewer. Then run the **security
+   review gate** (`security.review`): the built-in security-review skill when
+   available, else the-loop's checklist (`reference/security.md`); a work item at
+   risk tier ≥ `security.review.humanSignOffMinTier` waits for a named human security
+   sign-off. Record every review as a PR/ticket comment and in the execution log's
+   review table (the security round in its Security review section). Notify via
+   configured messaging channels when a human action is pending.
 
 9. **Complete** (`complete`). Present validated evidence that the acceptance criteria
    are met (tests, screenshots, logs) on the PR; record it in the execution log.

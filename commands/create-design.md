@@ -21,7 +21,10 @@ Produce the **design** for a work item from its approved requirements — Phase 
 2. **Write `design.md`** from `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/design.md`
    (`${CLAUDE_PLUGIN_ROOT}` = the installed plugin's root; same in Cursor),
    derived from the requirements: overview, architecture, components/interfaces, data
-   models, error handling, testing strategy. Map each requirement to a component. RULE:
+   models, error handling, testing strategy, plus the **Security design** section —
+   how each trust boundary from the requirements' Security considerations is enforced
+   (`security.design.required`; a boundary left unenforced fails the gate, see
+   `reference/security.md`). Map each requirement to a component. RULE:
    all diagrams are **mermaid** (`config.userInteraction`).
 
 3. **Produce UI/UX design artifacts — if the work item has a user-facing surface.**

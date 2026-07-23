@@ -35,9 +35,17 @@ status: in-progress          # in-progress | complete
 
 ## Review cycles
 
-| Cycle | Type (self/critic) | Reviewer | Outcome | Link |
-|-------|--------------------|----------|---------|------|
-|       |                    |          |         |      |
+| Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
+|-------|-----------------------------|----------|---------|------|
+|       |                             |          |         |      |
+
+## Security review (gate)
+
+> Required before ready-to-ship (`security.review.required`). See `reference/security.md`.
+
+- **Mechanism:** <security-review skill | the-loop checklist> (`security.review.mechanism`)
+- **Outcome:** <pass | findings fixed (link threads) | escalated>
+- **Human sign-off:** <n/a (tier below `security.review.humanSignOffMinTier`) | @handle + link>
 
 ## Final validation evidence
 

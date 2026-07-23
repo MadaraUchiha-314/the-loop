@@ -46,8 +46,16 @@ until the current phase is approved; record the approver (paper trail).
 1. **`requirements.md`** (or **`bugfix.md`** for bugs) — introduction, user stories, and
    acceptance criteria in **EARS** notation
    (`WHEN <event> THEN the system SHALL <response>`). Phase: `requirements-definition`.
+   Includes the **Security considerations** section — a threat-model-lite (untrusted
+   actors, trust boundaries, abuse cases, fail-closed expectations) captured with the
+   requirements (`security.threatModel.required`); an empty section fails the gate,
+   "no new attack surface" is written and justified. See `reference/security.md`.
 2. **`design.md`** — overview, architecture, components/interfaces, data models, error
-   handling, testing strategy. Derived from approved requirements. Phase: `design`. For
+   handling, testing strategy. Derived from approved requirements. Phase: `design`.
+   Includes the **Security design** section — how each requirements-phase trust
+   boundary is enforced (authn/authz, input validation, secrets, least privilege,
+   injection surfaces, fail-closed behaviour) (`security.design.required`); a boundary
+   left unenforced fails the gate. For
    work items with a **user-facing surface**, the design phase also produces **UI/UX design
    artifacts** — Figma links and/or self-contained HTML+CSS+JS prototypes checked in under
    `docs/specs/<id>/design/` (`design.uiArtifacts`) — inventoried in `design.md` and
@@ -109,6 +117,9 @@ copy of its contents. The checked-in file is the single source of truth.
   is a recorded fact, not an assumption.
 - **Keep `tasks.md` checkmarks current**: as each task is completed, tick its `- [ ]` →
   `- [x]` so the ticket/spec always shows what is done vs. outstanding.
+- **Abuse cases are tests.** Security-relevant tasks (touching a trust boundary from
+  `design.md` §Security design) name the negative test proving the boundary holds,
+  red→green like any other task (`reference/security.md`).
 - Maintain `docs/specs/<id>/execution-log.md` (checked in): append progress, and **run
   tests at logical checkpoints** — self-checking as you go.
 - Use the configured tooling (see `tooling.md`); same commands as CI.
@@ -159,6 +170,11 @@ must ALL hold:
 - green checks;
 - **all review threads resolved**;
 - validated evidence recorded;
+- the **security review has passed** (`security.review.required`, default true) — run
+  via the built-in security-review skill or the-loop's checklist
+  (`security.review.mechanism`), recorded in the execution log's Security review
+  section; an unresolved security finding blocks completion regardless of risk tier
+  (`reference/security.md`);
 - the **affected capability docs are updated in the same PR** (or "none affected" is
   recorded in the execution log) — the organized view of specs must not rot; **and**
 - the **R10 reviewer briefing** is posted/updated in the PR — a condensed, prioritized
@@ -178,6 +194,11 @@ Then the loop marks the work item ready and applies **risk-tiered autonomy**
 - `autonomy.tiers` maps each tier to a gate: `autonomous-complete` (finish after the
   review loop), `human-approves-pr`, or `human-approves-spec-and-pr`. Only tiers the
   policy permits complete without a human; the rest wait for the named approval.
+- The security review adds its own tier threshold: an effective tier ≥
+  `security.review.humanSignOffMinTier` (default 4) requires a **named human security
+  sign-off** (paper trail) even where `autonomy.tiers` would otherwise allow
+  autonomous completion; below it the autonomous security review suffices, escalating
+  only when a finding needs a security-relevant *decision* (`reference/security.md`).
 
 This makes autonomy safe-by-construction: a typo fix (low tier) can complete on its own,
 while an auth/payments change (high tier) always waits for a human — one meaningful

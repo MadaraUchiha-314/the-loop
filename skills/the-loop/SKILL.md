@@ -16,6 +16,7 @@ intervention, escalating only when a decision/opinion is genuinely required.
 > - `reference/onboarding.md` — the guided, schema-driven config onboarding `/init` runs (groups, ask levels, sensible-defaults precedence).
 > - `reference/design-artifacts.md` — UI/UX design artifacts (Figma / HTML prototypes) in the design phase and the designer iteration loop.
 > - `reference/reviewing.md` — the self/critic review procedure the review counts drive.
+> - `reference/security.md` — the security lens on every phase gate: threat-model-lite, security design, the security-review gate, human sign-off tiers.
 > - `reference/tooling.md` — repo management, per-language tooling matrix, hooks, CI parity.
 > - `reference/testing.md` — Gherkin scenario docstrings on integration tests, the queryable scenario view, OpenAPI/GraphQL contract conventions.
 > - `reference/minimalism.md` — generation-time decision ladder to counter code bloat.
@@ -94,6 +95,14 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   each, BEFORE reaching out to a human. All reviews are comments. **Follow the defined
   procedure** in `reference/reviewing.md` (attribution prefix, reply-first-then-fix,
   stop on zero new findings, escalate on a repeated finding).
+- **Security is gated, not bolted on** (`config.security`). Every phase gate also asks
+  the security question: requirements carry a **Security considerations**
+  threat-model-lite (untrusted actors, trust boundaries, abuse cases, fail-closed);
+  design carries a **Security design** section enforcing those boundaries; the
+  ready-to-ship gate includes a **security review** (built-in security-review skill or
+  the-loop's checklist), with a named human sign-off at risk tier ≥
+  `security.review.humanSignOffMinTier`. "No new attack surface" is written and
+  justified, never implied. See `reference/security.md`.
 - **Test-first.** `tdd.mode` (default `standard`): no production code without a failing
   test that motivates it; record the red→green transition as evidence.
 - **Scenario-documented integration tests.** Every integration test carries a
@@ -148,7 +157,7 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
 Behaviour is driven by `.the-loop/config.yaml`, validated against
 `.the-loop/config.schema.json`. Sections: `ticketing`, `repository`, `workflow`,
 `tooling`, `testing`, `apiSpecs`, `localOrchestration`, `hooks`, `observability`,
-`reviews`, `autonomy`, `tdd`,
+`reviews`, `autonomy`, `security`, `tdd`,
 `minimalism`, `selfImprovement`, `userInteraction`, `personas`, `messaging`,
 `externalTools`, `webhooks`. A subset of keys can be overridden per work item via the
 YAML front-matter `overrides` of the work-item / spec markdown. Managed files are listed

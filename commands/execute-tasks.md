@@ -27,7 +27,11 @@ Load `.the-loop/config.yaml`; apply any per-task `overrides` from the spec front
 
 3. **Review** (`needs-review`). Run up to `reviews.selfReviewCount` self-reviews then
    `reviews.criticReviewCount` critic reviews (configured critics) BEFORE escalating to a
-   human. Record every review as a PR/ticket comment and in the log's review table.
+   human. Then run the **security review gate** (`security.review` — built-in
+   security-review skill when available, else the-loop's checklist in
+   `reference/security.md`); risk tier ≥ `security.review.humanSignOffMinTier` waits
+   for a named human security sign-off. Record every review as a PR/ticket comment and
+   in the log's review table (the security round in its Security review section).
    Notify via configured messaging channels when a human action is pending.
 
 4. **Evidence + reviewer briefing (required gate).** Present validated evidence that the

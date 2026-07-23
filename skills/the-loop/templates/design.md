@@ -52,6 +52,21 @@ Schemas, types, persistence. (Link `.the-loop/config.schema.json`-style schemas 
 
 Failure modes and how they are surfaced (observability identical at dev-time/runtime).
 
+## Security design
+
+> How each trust boundary from the requirements' **Security considerations** is
+> enforced — mechanisms, not intentions (`security.design.required`, default true).
+> A boundary left unenforced fails this phase's gate. See `reference/security.md`.
+
+- **AuthN/AuthZ:** who is identified how; where authorization is checked.
+- **Input validation & injection surfaces:** every untrusted ingress and its
+  validation/encoding; SQL/command/path/prompt injection surfaces named explicitly.
+- **Secrets handling:** where secrets come from (env/secret store — never repo/logs).
+- **Least privilege:** minimum permissions/scopes each component runs with.
+- **Fail-closed behaviour:** the concrete response when a check cannot be made.
+- **Abuse-case coverage:** each abuse case → the mechanism defeating it → the negative
+  test proving it (feeds the testing strategy below).
+
 ## Testing strategy
 
 How requirements map to unit/integration tests, and what evidence proves acceptance.
