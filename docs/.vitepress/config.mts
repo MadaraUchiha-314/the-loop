@@ -103,6 +103,7 @@ const developerSidebar = [
     items: [
       { text: "Overview", link: "/reports/" },
       { text: "GitHub queries", link: "/reports/gh-queries" },
+      { text: "Status labels & dashboards", link: "/reports/labels-and-dashboards" },
     ],
   },
 ];
