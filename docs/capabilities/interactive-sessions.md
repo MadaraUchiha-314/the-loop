@@ -27,13 +27,16 @@ the same conversation.
 - `the-loop sessions list` SHALL show `Runner`/`Tmux` columns; `the-loop sessions
   attach --work-item <ref> [--read-only]` SHALL attach the caller's terminal to the
   session's tmux session with clear errors for process-mode or dead sessions.
-- WHEN the receiver starts with `--route` THEN the native dependencies (`tmux`; `ttyd`
-  if `routing.webTerminal.enabled`) SHALL be verified with per-platform install
-  guidance — silent when satisfied.
-- WHEN `routing.webTerminal.enabled` THEN the receiver SHALL serve a browser terminal
-  via a ttyd child process bound to `127.0.0.1` by default (a shared `the-loop-hub`
-  tmux session); the-loop implements **no auth** — access control is environmental
-  (localhost / VPN / hosting provider network).
+- WHEN `gh-webhook start --route` or `poll start` runs THEN the native dependencies
+  (`tmux`; `ttyd` if `routing.webTerminal.enabled`) SHALL be verified with
+  per-platform install guidance — silent when satisfied. Both ingress paths drive
+  the same `Dispatcher`/`TmuxRunner`, so the preflight and the web terminal below
+  behave identically regardless of which one is running (issue-65).
+- WHEN `routing.webTerminal.enabled` THEN whichever ingress is running (`gh-webhook
+  start --route` or `poll start`) SHALL serve a browser terminal via a ttyd child
+  process bound to `127.0.0.1` by default (a shared `the-loop-hub` tmux session),
+  stopped on shutdown; the-loop implements **no auth** — access control is
+  environmental (localhost / VPN / hosting provider network).
 - WHEN `routing.runner` is `process` or unset THEN behaviour SHALL be identical to the
   pre-issue-32 receiver; registry files from before issue-32 remain readable, and a
   registry may mix process- and tmux-mode sessions (the session's recorded runner
@@ -49,3 +52,4 @@ the same conversation.
 | Work item | What changed | Links |
 |-----------|--------------|-------|
 | issue-32 | Introduced the tmux runner, `sessions attach`, the ttyd web terminal and dependency preflight | [spec](../specs/issue-32/), [decision-021](../decisions/decision-021.md) |
+| issue-65 | Fixed `poll start` never launching ttyd (it shared the tmux runner but had no web terminal start/stop of its own); factored ttyd lifecycle into a shared `the_loop.runner` helper used by both `gh-webhook start` and `poll start` | [issue](https://github.com/MadaraUchiha-314/the-loop/issues/65) |

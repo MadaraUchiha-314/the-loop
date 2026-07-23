@@ -25,6 +25,7 @@ from .sessions import Session, WorkItemRef
 
 if TYPE_CHECKING:  # pragma: no cover — type-only
     from .harness.base import HarnessAdapter
+    from .webhook.dispatcher import WebTerminalConfig
 
 __all__ = [
     "HUB_SESSION",
@@ -33,6 +34,8 @@ __all__ = [
     "UnsupportedRunnerError",
     "check_dependencies",
     "web_terminal_argv",
+    "start_web_terminal",
+    "stop_web_terminal",
 ]
 
 logger = logging.getLogger("the-loop.runner")
@@ -102,6 +105,33 @@ def web_terminal_argv(host: str, port: int) -> List[str]:
         "-s",
         HUB_SESSION,
     ]
+
+
+def start_web_terminal(web_terminal: "WebTerminalConfig") -> subprocess.Popen:
+    """Launch ttyd serving the shared tmux hub session and log its URL.
+
+    Shared by ``gh-webhook start`` and ``poll start`` (issue-65) so both
+    ingress paths spawn/log/terminate ttyd identically.
+    """
+    proc = subprocess.Popen(web_terminal_argv(web_terminal.host, web_terminal.port))
+    logger.info(
+        "web terminal (ttyd) serving tmux sessions on http://%s:%s "
+        "— access control is environmental (decision-021)",
+        web_terminal.host,
+        web_terminal.port,
+    )
+    return proc
+
+
+def stop_web_terminal(proc: Optional[subprocess.Popen]) -> None:
+    """Stop a ttyd child process, escalating to kill if it ignores SIGTERM."""
+    if proc is None:
+        return
+    proc.terminate()
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        proc.kill()
 
 
 class TmuxRunner:
