@@ -291,6 +291,7 @@ class TestSharedWebTerminalLifecycle:
             {"webTerminal": {"enabled": True}}
         ).web_terminal
         proc = start_web_terminal(web)
+        assert isinstance(proc, FakePopen)
 
         stop_web_terminal(proc)
 

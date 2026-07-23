@@ -82,7 +82,9 @@ def _configure(tmp_path, monkeypatch):
     monkeypatch.setattr(gh_mod, "GhClient", FakeGhClient)
 
 
-def test_poll_start_launches_and_stops_ttyd_like_gh_webhook_start(tmp_path, monkeypatch):
+def test_poll_start_launches_and_stops_ttyd_like_gh_webhook_start(
+    tmp_path, monkeypatch
+):
     """
     Feature: Web terminal parity across ingress paths
     Scenario: `poll start` drives the same ttyd lifecycle as `gh-webhook start`
@@ -114,7 +116,9 @@ def test_poll_start_fails_fast_when_ttyd_missing(tmp_path, monkeypatch):
     """
     _configure(tmp_path, monkeypatch)
     monkeypatch.setattr(
-        runner_mod.shutil, "which", lambda binary: None if binary == "ttyd" else "/usr/bin/x"
+        runner_mod.shutil,
+        "which",
+        lambda binary: None if binary == "ttyd" else "/usr/bin/x",
     )
 
     parser = build_parser()
