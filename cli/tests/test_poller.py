@@ -35,7 +35,12 @@ from the_loop.poller import (
     parse_repos,
     provider_names,
 )
-from the_loop.authz import is_authorized, resolve_authorized_users
+from the_loop.authz import (
+    SELF_COMMENT_MARKER,
+    is_authorized,
+    is_self_authored,
+    resolve_authorized_users,
+)
 from the_loop.poller.poller import PollSummary  # noqa: F401 (re-exported too)
 from the_loop.sessions import Session, SessionRegistry, WorkItemRef
 from the_loop.webhook.router import RoutedEvent
@@ -578,6 +583,75 @@ def test_poller_does_not_spawn_for_unauthorized_item_author(tmp_path):
         SessionRegistry(tmp_path / "sessions"),
         disp,
         PollState(tmp_path / "state.json"),
+        authorized=("me",),
+    ).poll_once()
+    assert summary.spawns == 0 and disp.events == []
+
+
+# -- self-reply guard (issue-64) -----------------------------------------------
+
+
+def test_is_self_authored_rules():
+    assert is_self_authored(None) is False
+    assert is_self_authored("") is False
+    assert is_self_authored("just a normal reply") is False
+    assert is_self_authored(f"will-fix.\n\n{SELF_COMMENT_MARKER}") is True
+
+
+def test_poller_does_not_forward_its_own_marked_reply(tmp_path):
+    # The harness posts as the same (authorized) operator login, so only the
+    # marker — not authorship — can tell its own reply apart from a human one.
+    ref = "github:octo/repo#15"
+    registry = SessionRegistry(tmp_path / "sessions")
+    registry.register(Session(WorkItemRef.parse(ref), "claude", "s", "."))
+    state = PollState(tmp_path / "state.json")
+    state.update(ref, ["IC_1"], "t")
+    provider = FakeProvider(
+        items=[_item(15, author="me")],
+        comments={
+            15: [
+                _comment("IC_1"),
+                _comment(
+                    "IC_self",
+                    f"will-fix, pushed a commit.\n\n{SELF_COMMENT_MARKER}",
+                    author="me",
+                ),
+                _comment("IC_human", "thanks, looks good", author="me"),
+            ]
+        },
+    )
+    disp = RecordingDispatcher()
+    summary = make_poller(
+        provider, registry, disp, state, authorized=("me",)
+    ).poll_once()
+
+    assert summary.comments_forwarded == 1
+    assert [e.delivery_id for e in disp.events] == ["comment-IC_human"]
+    # baselined like any other dropped comment: never re-evaluated later
+    assert "IC_self" in state.seen_comments(ref)
+
+
+def test_poller_does_not_spawn_from_own_self_marked_comment(tmp_path):
+    # No session yet; a stray self-marked comment (e.g. left over from a
+    # session that already ended) must not resurrect one.
+    ref = "github:octo/repo#15"
+    state = PollState(tmp_path / "state.json")
+    state.update(ref, ["IC_1"], "t")  # known, but no session registered
+    provider = FakeProvider(
+        items=[_item(15, author="me")],
+        comments={
+            15: [
+                _comment("IC_1"),
+                _comment("IC_self", SELF_COMMENT_MARKER, author="me"),
+            ]
+        },
+    )
+    disp = RecordingDispatcher()
+    summary = make_poller(
+        provider,
+        SessionRegistry(tmp_path / "sessions"),
+        disp,
+        state,
         authorized=("me",),
     ).poll_once()
     assert summary.spawns == 0 and disp.events == []

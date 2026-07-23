@@ -14,6 +14,10 @@ comments" and "threads" map to GitHub reviews or Jira comments equally.
   `reviews.critics[]` entry (`harness`/`model`/optional `command`).
 - Run `selfReviewCount` self rounds, then `criticReviewCount` critic rounds — these are
   **caps**, not quotas.
+- Every finding **and every reply to one** (below) also carries the-loop's own-comment
+  marker (`reference/collaboration.md` § loop prevention) — reply-first-then-fix posts
+  a lot of comments, and each of them is a candidate for the trigger paths to
+  mis-read as fresh human input if left unmarked.
 
 ## Reply-first-then-fix protocol
 

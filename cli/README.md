@@ -78,6 +78,12 @@ the-loop gh-webhook stop  [--pidfile .the-loop/gh-webhook.pid]
   no human instructions, still pass; a PR-close still auto-closes the session). Empty ⇒
   falls back to `ticketing.github.owner`, else fails closed with a warning. Each operator
   runs their own instance for their own login(s). See `docs/decisions/decision-023.md`.
+- **Self-reply guard (loop prevention):** the harness posts its own replies under the
+  operator's own credentials, so authorship alone can't tell them apart from a human
+  comment. Every comment/review/reply the-loop posts carries an embedded marker
+  (`the_loop.authz.SELF_COMMENT_MARKER`); the receiver drops a marker-carrying event
+  before dispatch, regardless of actor, so the-loop's own reply never resumes the
+  session that wrote it. See `docs/decisions/decision-031.md`.
 - **Structured event log:** every receive/reject/route/dispatch/spawn/close decision is
   appended to `.the-loop/logs/events.jsonl` — query it with `the-loop events` (below).
 
@@ -167,6 +173,10 @@ templates are all reused unchanged.
   authorized authors — everything else is ignored. Empty ⇒ falls back to
   `ticketing.github.owner`, else fails closed with a warning. See
   `docs/decisions/decision-023.md`.
+- **Self-reply guard (loop prevention):** same marker check as the receiver — a comment
+  the-loop itself posted is excluded from "new comments" (and can't retrigger a spawn),
+  even though it was posted under an authorized login. See
+  `docs/decisions/decision-031.md`.
 - **`--once`** runs a single cycle and exits (for a cron/systemd timer); otherwise it
   loops until `poll stop` (or SIGINT/SIGTERM), writing a pidfile like the receiver.
   Design: `docs/specs/issue-34/design.md`, `docs/decisions/decision-022.md`.

@@ -28,6 +28,7 @@ from the_loop.webhook.router import (
     RoutedEvent,
     Router,
     event_actor,
+    event_body,
     event_carries_label,
     extract_work_items,
 )
@@ -272,6 +273,18 @@ def test_event_actor_extraction():
     assert event_actor("workflow_run", {"workflow_run": {}}) is None
 
 
+def test_event_body_extraction():
+    assert event_body("issue_comment", _issue_comment_by("alice")) == "hi"
+    assert (
+        event_body("pull_request_review_comment", {"comment": {"body": "nit: typo"}})
+        == "nit: typo"
+    )
+    assert event_body("pull_request_review", {"review": {"body": "LGTM"}}) == "LGTM"
+    # events with no reply text carry no body to check
+    assert event_body("workflow_run", {"workflow_run": {}}) is None
+    assert event_body("issues", {"issue": {"body": "issue body"}}) is None
+
+
 def test_router_drops_event_from_unauthorized_actor():
     router = Router(events=[], authorized_users=["me"])
     assert router.route("issue_comment", _issue_comment_by("attacker"), "d-1") is None
@@ -309,6 +322,17 @@ def test_router_pr_close_bypasses_authz_for_cleanup():
         "d-1",
     )
     assert routed is not None  # lifecycle auto-close must still fire
+
+
+def test_router_drops_its_own_self_marked_reply():
+    from the_loop.authz import SELF_COMMENT_MARKER
+
+    router = Router(events=[], authorized_users=["me"])
+    own_reply = _issue_comment_by("me")
+    own_reply["comment"]["body"] = f"will-fix, pushed a fix.\n\n{SELF_COMMENT_MARKER}"
+    assert router.route("issue_comment", own_reply, "d-1") is None
+    # a same-author comment with no marker is still routed normally
+    assert router.route("issue_comment", _issue_comment_by("me"), "d-2") is not None
 
 
 def test_router_deduper_is_bounded_lru():

@@ -1,4 +1,4 @@
-"""Authorized-actor guard — the prompt-injection boundary (issue-34 review).
+"""Authorized-actor guard — the prompt-injection *and* self-reply boundary.
 
 the-loop reacts to work items it has been told to orchestrate (via a label), but
 the *content* it then ingests — issue/PR bodies, comments, reviews — is written
@@ -19,6 +19,22 @@ Model (each operator runs their own instance for themselves):
   be forged past the webhook HMAC / the trusted `gh` API.
 * An **empty** allowlist fails closed for human-authored actions (and is warned
   about at startup): nothing human-authored is actioned until it is configured.
+
+## Self-reply guard (issue-64)
+
+The spawned harness (Claude Code / Cursor) posts its own replies through the
+operator's own `gh`/API credentials (decision-023's operating model: no
+separate bot token). That means a reply the-loop itself just posted is, by
+*author*, indistinguishable from one the operator typed — `is_authorized`
+alone would happily let the-loop's own comment re-enter the loop as new input,
+resuming the session, which may reply again, forever.
+
+GitHub's comment/review objects carry no queryable custom metadata field for
+this — the only channel available is the body text itself. The remediation is
+a stable marker embedded in the body of every comment/review/reply the-loop
+posts (`SELF_COMMENT_MARKER`, checked by :func:`is_self_authored`). Both
+trigger paths drop a self-marked comment *before* the authorized-actor check
+even runs — it is dropped regardless of who technically posted it.
 """
 
 from __future__ import annotations
@@ -27,6 +43,24 @@ import logging
 from typing import List, Optional, Sequence
 
 logger = logging.getLogger("the-loop.authz")
+
+# Embedded (as an invisible HTML comment, so it never clutters the rendered
+# issue/PR/review thread) in the body of every comment, review or reply the
+# harness posts on the-loop's behalf. See `reference/collaboration.md` — every
+# such post additionally carries a *visible* human-readable attribution line;
+# this marker is the fixed, exact-match part machine code relies on, so it
+# must never change once shipped (older comments must stay recognizable).
+SELF_COMMENT_MARKER = "<!-- the-loop:agent-comment -->"
+
+
+def is_self_authored(body: Optional[str]) -> bool:
+    """Whether ``body`` carries the-loop's own authorship marker.
+
+    True for any comment/review/reply the-loop itself posted, regardless of
+    which GitHub login posted it — the router/poller use this to drop it
+    before it can re-enter the loop as if a human had written it (issue-64).
+    """
+    return bool(body) and SELF_COMMENT_MARKER in body
 
 
 def resolve_authorized_users(
