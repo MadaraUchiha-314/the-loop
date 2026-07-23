@@ -1,3 +1,9 @@
+## v0.8.0 (2026-07-23)
+
+### Feat
+
+- **token-economy**: brainstorm + config-driven token-reduction levers (issue #37) (#41)
+
 ## v0.7.0 (2026-07-22)
 
 ### Feat
