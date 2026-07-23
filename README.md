@@ -39,7 +39,7 @@ flowchart TD
         I --> C --> E
     end
 
-    T(["🎫 ticket opened\nnot-started"]) --> B
+    T(["ticket opened\nnot-started"]) --> B
     K -->|human review| I
     E --> X(["✅ complete"])
     X --> L[["📚 learn"]]
