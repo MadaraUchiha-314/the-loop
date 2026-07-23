@@ -46,6 +46,10 @@ repos:
         entry: npx --yes markdownlint-cli2@0.18.1
         language: system
         types: [markdown]
+        # pre-commit chunks filenames across parallel processes; concurrent `npx`
+        # installs then race on the shared npx cache (ENOTEMPTY / MODULE_NOT_FOUND
+        # on cold-cache CI runners). One process handles all files fine.
+        require_serial: true
 
       - id: validate-the-loop-config
         name: validate .the-loop config against schema
