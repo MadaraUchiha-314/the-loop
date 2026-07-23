@@ -30,8 +30,17 @@ _SESSION_ID_KEYS = ("session_id", "sessionId", "chat_id", "chatId", "id")
 # Token-usage key aliases across harness JSON outputs (issue-37 telemetry).
 _USAGE_KEYS = ("usage", "token_usage", "tokenUsage")
 _INPUT_TOKEN_KEYS = ("input_tokens", "inputTokens", "prompt_tokens", "promptTokens")
-_OUTPUT_TOKEN_KEYS = ("output_tokens", "outputTokens", "completion_tokens", "completionTokens")
-_CACHE_READ_KEYS = ("cache_read_input_tokens", "cacheReadInputTokens", "cache_read_tokens")
+_OUTPUT_TOKEN_KEYS = (
+    "output_tokens",
+    "outputTokens",
+    "completion_tokens",
+    "completionTokens",
+)
+_CACHE_READ_KEYS = (
+    "cache_read_input_tokens",
+    "cacheReadInputTokens",
+    "cache_read_tokens",
+)
 _CACHE_WRITE_KEYS = (
     "cache_creation_input_tokens",
     "cacheCreationInputTokens",
