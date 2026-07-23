@@ -157,6 +157,27 @@ def _is_pr_close(routed: RoutedEvent) -> bool:
     return routed.event == "pull_request" and routed.action == "closed"
 
 
+def _log_usage(usage, harness: str, ref: str) -> None:
+    """Emit per-dispatch token/cost telemetry when the harness reported any.
+
+    Advisory (issue-37, tokenEconomy.telemetry): stays silent when a harness
+    omits usage, so it never implies a false zero.
+    """
+    if usage is None or not usage.present:
+        return
+    logger.info(
+        "usage %s %s: in=%d out=%d cache_r=%d cache_w=%d total=%d cost=$%.4f",
+        harness,
+        ref,
+        usage.input_tokens,
+        usage.output_tokens,
+        usage.cache_read_tokens,
+        usage.cache_write_tokens,
+        usage.total_tokens,
+        usage.cost_usd,
+    )
+
+
 def payload_excerpt(payload: dict) -> str:
     """The routable subset of the payload, JSON-formatted and size-capped."""
     subset = {k: payload[k] for k in _PAYLOAD_EXCERPT_KEYS if k in payload}
@@ -358,6 +379,8 @@ class Dispatcher:
                 session, prompt, timeout=self.config.dispatch_timeout_seconds
             )
             ok, error, verb = resumed.ok, resumed.error, "resumed"
+            if ok:
+                _log_usage(resumed.usage, session.harness, key)
 
         if ok:
             logger.info("%s %s for %s", verb, session.harness, key)
@@ -392,6 +415,7 @@ class Dispatcher:
             if routed.delivery_id:
                 self.deduper.discard(routed.delivery_id)
             return
+        _log_usage(result.usage, self.config.default_harness, work_item.ref)
         session = Session(
             work_item=work_item,
             harness=self.config.default_harness,

@@ -18,6 +18,7 @@ PR** as the work item that changes behaviour (a ready-to-ship gate item).
 | [testing-and-contracts](testing-and-contracts.md) | Gherkin scenario docstrings, the queryable scenario view, contract-first APIs. |
 | [design-artifacts](design-artifacts.md) | UI/UX design artifacts (Figma / HTML prototypes) in the design phase. |
 | [release-publishing](release-publishing.md) | Automatic semantic releases and PyPI publishing of the CLI. |
+| [token-economy](token-economy.md) | Token/cost-reduction levers (model routing, output verbosity, disclosure, sub-agents, telemetry); advisory, never at the expense of rigor. |
 
 Related views: [`docs/architecture/architecture.md`](../architecture/architecture.md)
 (how it's built) · [`docs/decisions/decisions.md`](../decisions/decisions.md) (why) ·

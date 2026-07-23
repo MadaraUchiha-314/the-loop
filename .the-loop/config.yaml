@@ -109,6 +109,53 @@ minimalism:
   enabled: true
   intensity: standard             # low | standard | high
 
+tokenEconomy:                     # token/cost levers (issue-37) — advisory, never a gate.
+  enabled: true                   # See reference/token-economy.md. Tier→model ids left empty:
+  modelRouting:                   # the-loop dogfoods on whatever model the operator runs.
+    enabled: true
+    tiers:
+      economy:  {}
+      standard: {}
+      frontier: {}
+    stages:
+      brainstorm: frontier
+      requirements: frontier
+      design: frontier
+      tasks: standard
+      implementation: standard
+      self-review: standard
+      critic-review: frontier
+      evidence: economy
+      capability-docs: economy
+      reviewer-briefing: economy
+      status: economy
+      learnings: economy
+    riskTierFloor:
+      "4": standard
+      "5": frontier
+  thinkingEffort:
+    enabled: true
+    stages:
+      design: high
+      critic-review: high
+      implementation: medium
+      capability-docs: low
+      reviewer-briefing: low
+      evidence: none
+      status: none
+  outputVerbosity:
+    mode: concise
+    preserve: [code, commands, diffs, errors, paper-trail-comments, reviewer-briefing, specs, decisions, capability-docs]
+  progressiveDisclosure:
+    enabled: true
+    phaseScoped: true
+  subAgentDelegation:
+    enabled: true
+  compaction:
+    enabled: true
+  telemetry:
+    enabled: true
+
 selfImprovement:
   enabled: true
   maxIndexLines: 200

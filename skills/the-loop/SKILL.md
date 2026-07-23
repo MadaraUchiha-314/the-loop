@@ -18,6 +18,7 @@ intervention, escalating only when a decision/opinion is genuinely required.
 > - `reference/tooling.md` — repo management, per-language tooling matrix, hooks, CI parity.
 > - `reference/testing.md` — Gherkin scenario docstrings on integration tests, the queryable scenario view, OpenAPI/GraphQL contract conventions.
 > - `reference/minimalism.md` — generation-time decision ladder to counter code bloat.
+> - `reference/token-economy.md` — token/cost levers (model routing, verbosity, disclosure, sub-agents, telemetry); advisory, never at the expense of rigor.
 > - `reference/collaboration.md` — personas/roles, paper trail, conflict log, messaging, MCP.
 > - `reference/observability.md` — dev==runtime logging, levels, browser logging.
 > - `reference/automation.md` — distribution, the CLI, webhooks, predictability, learnings lifecycle.
@@ -114,6 +115,12 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
 - **Minimalism.** Apply the `reference/minimalism.md` decision ladder (YAGNI → stdlib →
   native → existing dep → inline → new abstraction); justify every new dependency in
   `design.md`. Never trade away validation/error-handling/security/accessibility.
+- **Token economy.** Apply the `reference/token-economy.md` levers (`config.tokenEconomy`):
+  progressive/phase-scoped disclosure, dense prompts, model routing + thinking-effort by
+  stage/risk tier, narration-only output compression (with its preservation list),
+  sub-agent delegation for verbose work, compaction/filesystem-memory, and per-work-item
+  token telemetry. **Advisory, never a gate** — cheaper never means sloppier; the rigor
+  floor (validation/security/tests/paper-trail/review depth) is untouchable.
 - **Risk-tiered autonomy.** Gate completion by the work item's risk tier
   (`config.autonomy`): low tiers may complete after the review loop; high tiers wait for
   a human. Only complete autonomously once the **ready-to-ship gate** holds (green

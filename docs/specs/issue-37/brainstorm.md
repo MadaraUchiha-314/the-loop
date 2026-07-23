@@ -2,8 +2,8 @@
 type: brainstorm
 phase: brainstorming
 workItem: issue-37
-status: draft                # draft | in-review | approved  (approved == "locked")
-approvedBy: []               # handles/roles who locked this artifact (paper trail)
+status: approved             # draft | in-review | approved  (approved == "locked")
+approvedBy: ["@MadaraUchiha-314 (PR #41 review: \"implement all suggestions in one PR\", 2026-07-23)"]
 collaborators: [product-manager, architect, engineer]
 overrides: {}
 ---
@@ -28,9 +28,15 @@ the-loop is, by construction, a **token-hungry** harness:
   `reference/*.md` files (~8k words total), rich templates, and long checked-in artifacts
   (issue-32's `brainstorm.md` alone is ~1.8k words). Depth is a *feature* — "the essence
   is not lost" — but depth costs input tokens on every turn that pulls it in.
-- **It re-spawns.** Under the webhook receiver (issue-15), each event is a **fresh
-  subprocess** — `claude -p … --resume <id>` — that re-primes the harness. Autonomous runs
-  multiply turns, and every turn resends the growing conversation.
+- **It re-spawns — but only in the default `process` runner.** Under the webhook receiver
+  (issue-15) with `routing.runner: process`, each event is a **fresh subprocess**
+  (`claude -p … --resume <id>`) that re-primes the harness; autonomous runs multiply turns,
+  and every turn resends the growing conversation. In the **`tmux` runner (issue-32)** there
+  is *no* re-spawn: the harness TUI stays resident in the tmux session and each event is
+  **forwarded into the existing session as input** (bracketed-paste + `send-keys`), so the
+  conversation is never re-primed from cold. That makes `runner: tmux` itself a token lever
+  — persistent context beats cold re-priming — and argues for preferring it (or the
+  fresh-context-per-item discipline of Option G) over long chains of `-p --resume` spawns.
 
 The opportunity: cut tokens **without** cutting the rigor that is the-loop's reason to
 exist. Reviewing agent bloat is the human cost the-loop reduces; spending fewer tokens to
@@ -269,26 +275,35 @@ the reviewer briefing. Compression is for the agent's *narration* only.
 
 ## Open questions
 
-Raise as ticket comments (paper trail) and resolve in feedback rounds:
+Resolved by the owner in the PR #41 review (2026-07-23); kept here as the paper trail.
 
-1. **Scope of this work item.** Is issue #37 a *single* delivery, or the **epic** that spawns
-   per-lever work items? Recommendation: land **Option I (telemetry)** + **Option A (corpus
-   tighten)** as the first requirement (cheap, safe, measurable), and split E/F/G/H into
-   follow-up items sequenced by the numbers telemetry produces. *(Owner decision.)*
-2. **ponytail alignment (Opt D).** Credit/align our `minimalism.md` with ponytail explicitly,
-   or keep it a native rung and merely register ponytail in `external-tools.md`? *(Owner.)*
-3. **caveman adoption shape (Opt E).** Native config-gated verbosity guidance (recommended),
-   register-only in `external-tools.md`, or both? And is terser narration acceptable given
-   the "educate the reviewer" mandate (which we'd exempt)? *(Owner / product.)*
-4. **Model routing authority (Opt F).** How prescriptive should the default policy be, given
-   Claude vs. Cursor model-id divergence and that operators pay differently? Advisory
-   defaults keyed to risk tier, overridable? *(Owner / architect.)*
-5. **Telemetry surface (Opt I).** Where do token/cost numbers live — `execution-log.md`
-   line, `work-status` output, `sessions` column, or all three? Do both harnesses' JSON
-   outputs expose usage we can read uniformly? *(Architect.)*
-6. **Targets & guardrails.** Do we commit to a headline reduction target, or explicitly
-   refuse one until telemetry gives a baseline (recommended)? What is the hard floor that
-   rigor/safety must never drop below? *(Owner.)*
+1. **Scope of this work item.** ~~Single delivery or an epic?~~ → **Resolved: one PR**
+   (owner: *"Let's implementing all suggestions in one PR"*). All the levers below land
+   together in the issue-37 PR rather than being split into follow-up work items.
+2. **ponytail alignment (Opt D).** → **Resolved: express natively, register the plugin.**
+   Keep `minimalism.md` as the native rung (add the token rationale) and register ponytail
+   in `external-tools.md` for operators who want the packaged skill — do not vendor it.
+3. **caveman adoption shape (Opt E).** → **Resolved: native config-gated verbosity + register.**
+   Ship an `outputVerbosity` lever with a preservation list, and register caveman in
+   `external-tools.md`. The reviewer briefing and paper-trail comments are exempt from
+   compression, so the "educate the reviewer" mandate is preserved.
+4. **Model routing authority (Opt F).** → **Resolved: per-stage, configurable, advisory.**
+   Owner: *"Can we use different models for different tasks? Can that be configurable? …
+   we don't need [a frontier model] for many stages like evidence, capability doc,
+   reviewer briefing."* Implemented as a harness-agnostic **tier** map
+   (`economy | standard | frontier`) that operators bind to concrete per-harness model ids,
+   with a default **stage → tier** assignment (frontier for design/critic reasoning;
+   economy for evidence, capability-docs, reviewer-briefing, status, learnings) and an
+   optional risk-tier bump. Advisory where a harness cannot honour a model switch.
+5. **Telemetry surface (Opt I).** → **Resolved: execution-log line, from harness JSON.**
+   `DispatchResult` parses usage (input/output/cache tokens + cost) best-effort from each
+   harness's JSON output; per-work-item totals surface in `execution-log.md`. Uniform
+   extraction across `claude`/`cursor-agent` via a key-alias list (same pattern as
+   session-id capture).
+6. **Targets & guardrails.** → **Resolved: no headline target until measured.** Telemetry
+   (Opt I) ships first so later tuning has a baseline; no reduction % is promised. The hard
+   floor is absolute: validation, error handling, security, accessibility, test-first
+   discipline, the paper trail, and review depth are never traded for tokens.
 
 ## Leaning / working hypothesis
 

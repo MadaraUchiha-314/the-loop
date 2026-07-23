@@ -12,7 +12,7 @@ import json
 import logging
 import shutil
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional, Sequence
 
 from ..sessions import Session, WorkItemRef
@@ -27,6 +27,44 @@ class UnsupportedRunnerError(Exception):
 # JSON keys the harness CLIs use for their session/chat id, in match order.
 _SESSION_ID_KEYS = ("session_id", "sessionId", "chat_id", "chatId", "id")
 
+# Token-usage key aliases across harness JSON outputs (issue-37 telemetry).
+_USAGE_KEYS = ("usage", "token_usage", "tokenUsage")
+_INPUT_TOKEN_KEYS = ("input_tokens", "inputTokens", "prompt_tokens", "promptTokens")
+_OUTPUT_TOKEN_KEYS = ("output_tokens", "outputTokens", "completion_tokens", "completionTokens")
+_CACHE_READ_KEYS = ("cache_read_input_tokens", "cacheReadInputTokens", "cache_read_tokens")
+_CACHE_WRITE_KEYS = (
+    "cache_creation_input_tokens",
+    "cacheCreationInputTokens",
+    "cache_creation_tokens",
+)
+_COST_KEYS = ("total_cost_usd", "totalCostUsd", "cost_usd", "costUsd")
+
+
+@dataclass
+class Usage:
+    """Best-effort token/cost accounting parsed from a harness's JSON output.
+
+    Fields default to 0 when a harness omits them, so callers can always sum
+    without None-checks (issue-37 telemetry). ``present`` records whether any
+    usage was actually reported, distinguishing "0 tokens" from "not reported".
+    """
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    cost_usd: float = 0.0
+    present: bool = False
+
+    @property
+    def total_tokens(self) -> int:
+        return (
+            self.input_tokens
+            + self.output_tokens
+            + self.cache_read_tokens
+            + self.cache_write_tokens
+        )
+
 
 @dataclass
 class DispatchResult:
@@ -36,6 +74,7 @@ class DispatchResult:
     session_id: str = ""
     output: str = ""
     error: str = ""
+    usage: Usage = field(default_factory=Usage)
 
 
 class HarnessAdapter:
@@ -137,18 +176,63 @@ class HarnessAdapter:
             ok=True,
             session_id=_session_id_from_output(proc.stdout),
             output=proc.stdout,
+            usage=_usage_from_output(proc.stdout),
         )
 
 
 def _session_id_from_output(stdout: str) -> str:
     """Best-effort session/chat id from the CLI's JSON output."""
+    data = _parse_json_object(stdout)
+    for key in _SESSION_ID_KEYS:
+        value = data.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return ""
+
+
+def _usage_from_output(stdout: str) -> Usage:
+    """Best-effort token/cost accounting from the CLI's JSON output (issue-37).
+
+    Harness-agnostic: reads a top-level ``usage`` object (under any of the
+    aliased keys) for token counts and a top-level cost field, tolerating a
+    harness that reports neither. Never raises — telemetry is advisory.
+    """
+    data = _parse_json_object(stdout)
+    usage = Usage()
+    block = next(
+        (data[k] for k in _USAGE_KEYS if isinstance(data.get(k), dict)),
+        None,
+    )
+    if isinstance(block, dict):
+        usage.input_tokens = _first_int(block, _INPUT_TOKEN_KEYS)
+        usage.output_tokens = _first_int(block, _OUTPUT_TOKEN_KEYS)
+        usage.cache_read_tokens = _first_int(block, _CACHE_READ_KEYS)
+        usage.cache_write_tokens = _first_int(block, _CACHE_WRITE_KEYS)
+        usage.present = usage.present or bool(block)
+    for key in _COST_KEYS:
+        value = data.get(key)
+        if isinstance(value, (int, float)):
+            usage.cost_usd = float(value)
+            usage.present = True
+            break
+    return usage
+
+
+def _parse_json_object(stdout: str) -> dict:
+    """Parse the CLI's stdout as a JSON object, or ``{}`` on any failure."""
     try:
         data = json.loads(stdout.strip() or "{}")
     except json.JSONDecodeError:
-        return ""
-    if isinstance(data, dict):
-        for key in _SESSION_ID_KEYS:
-            value = data.get(key)
-            if isinstance(value, str) and value:
-                return value
-    return ""
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _first_int(block: dict, keys: Sequence[str]) -> int:
+    """First integer-valued key from ``keys`` present in ``block``, else 0."""
+    for key in keys:
+        value = block.get(key)
+        if isinstance(value, bool):  # bool is an int subclass — reject it
+            continue
+        if isinstance(value, int):
+            return value
+    return 0
