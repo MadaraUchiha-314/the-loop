@@ -70,6 +70,91 @@ Each command's defaults below note which file they come from. The CLI daemon rea
 it watches): both are CLI-config-only settings with no plugin-config fallback, set
 them explicitly.
 
+### CLI config reference (`cli-config.yaml`)
+
+Every key the CLI config accepts, its type, default, and meaning. Validated against
+[`.the-loop/cli-config.schema.json`](../.the-loop/cli-config.schema.json); a commented
+starting point ships at
+[`skills/the-loop/templates/cli-config.yaml`](../skills/the-loop/templates/cli-config.yaml).
+(For the separate per-repo **plugin** config — `.the-loop/config.yaml` — see the
+[configuration reference](https://madarauchiha-314.github.io/the-loop/reference/configuration).)
+
+#### Top level
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `version` | string | `0.1.0` | Schema version of this file. |
+| `webhooks` | object | — | Config for the webhook receiver (`the-loop gh-webhook`). |
+| `polling` | object | — | Config for the poller (`the-loop poll`). |
+| `eventLog` | object | — | Config for the structured event log (`the-loop events`). |
+
+#### `webhooks.ghWebhook` — the GitHub webhook receiver
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `host` | string | `127.0.0.1` | Interface/IP the receiver binds. |
+| `port` | integer | `8787` | Listen port (1–65535). |
+| `path` | string | `/gh-webhook` | HTTP path the receiver serves. |
+| `secretEnv` | string | `THE_LOOP_GH_WEBHOOK_SECRET` | Env var holding the webhook secret for HMAC verification (never stored in config). |
+| `pidfile` | string | `.the-loop/gh-webhook.pid` | Pidfile written on `start`, read on `stop`. |
+| `events` | string[] | `[]` (all) | GitHub event names of interest (e.g. `issues`, `pull_request`, `workflow_run`); empty accepts all. |
+| `routing` | object | — | Route received events to registered harness sessions (see below). |
+
+#### `webhooks.ghWebhook.routing` — session routing / auto-execution (also reused by the poller's dispatch)
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | boolean | `false` | Default for `gh-webhook start --route/--no-route`. |
+| `registryDir` | string | `.the-loop/sessions` | Directory of per-session registry JSON files (git-ignored). |
+| `defaultHarness` | `claude` \| `cursor` | `claude` | Harness used when spawning a session for an unmatched event. |
+| `spawnOnUnmatched` | `never` \| `always` \| `labeled` | `never` | Policy for events matching no session: log-and-drop / spawn+register / spawn only when `autoExecuteLabel` is present. |
+| `autoExecuteLabel` | string | `the-loop: auto-execute` | Issue/PR label that opts a work item into autonomous execution (read from the payload, no API call). |
+| `authorizedUsers` | string[] | `[]` | **SECURITY (prompt-injection guard):** GitHub logins whose actions the-loop may act on. **REQUIRED**, no plugin-config fallback; empty fails closed (all human-authored events ignored). |
+| `spawnWorkdir` | string | `.` | Working directory for sessions spawned on unmatched events. |
+| `runner` | `process` \| `tmux` | `process` | How spawned sessions are hosted: headless one-shot subprocess, or an interactive TUI in a named tmux session humans can attach to. |
+| `webTerminal` | object | — | Optional ttyd-served browser terminal onto the tmux sessions (see below). |
+| `maxConcurrentDispatches` | integer | `4` | Cap on harness dispatches running in parallel (per-session dispatch is always serialized). |
+| `dedupCacheSize` | integer | `1024` | Bounded LRU of `X-GitHub-Delivery` ids for at-most-once processing. |
+| `dispatchTimeoutSeconds` | integer | `1800` | Timeout for a single harness resume/spawn subprocess. |
+| `promptTemplate` | string | `skills/the-loop/templates/webhook-event-prompt.md` | `string.Template` for the resume prompt; the dispatcher falls back to a built-in default when the path is absent. |
+| `spawnPromptTemplate` | string | `skills/the-loop/templates/webhook-autoexecute-prompt.md` | `string.Template` for a newly spawned (auto-execute) session; built-in default when absent. |
+| `harnessArgs.claude` | string[] | `[]` | Extra CLI args passed to Claude Code (e.g. `[--permission-mode, acceptEdits]`). |
+| `harnessArgs.cursor` | string[] | `[]` | Extra CLI args passed to `cursor-agent` (e.g. `[--force]`). |
+
+#### `webhooks.ghWebhook.routing.webTerminal` — browser terminal for tmux sessions (`runner: tmux`)
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | boolean | `false` | Serve tmux sessions over HTTP via ttyd (verified at receiver start). |
+| `host` | string | `127.0.0.1` | Interface/IP ttyd binds. Keep `127.0.0.1` unless the network layer protects wider exposure. |
+| `port` | integer | `7681` | ttyd listen port (1–65535). |
+
+#### `polling` — pull-based ingress (`the-loop poll`)
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `intervalSeconds` | integer | `60` | Seconds between poll cycles (all sources). |
+| `stateFile` | string | `.the-loop/poll-state.json` | Durable JSON tracking which comments each item has processed (cross-poll/restart dedup; git-ignored). |
+| `sources` | object[] | `[]` (nothing polled) | Ordered provider-specific poll sources (see below). |
+
+#### `polling.sources[]` — one entry per source (`provider: github` ships today)
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `provider` | `github` | — (**required**) | Which poll provider handles this source. |
+| `label` | string | `""` | Label gating what this source polls. Empty reuses `webhooks.ghWebhook.routing.autoExecuteLabel`. |
+| `repos` | string[] | — (**required**) | *(github)* Repositories to poll as `OWNER/REPO`. No plugin-config fallback; a source with none discovers nothing. |
+| `monitor.issues` | boolean | `true` | *(github)* Poll issues. |
+| `monitor.pullRequests` | boolean | `true` | *(github)* Poll pull requests. |
+| `ghBinary` | string | `gh` | *(github)* Path/name of the `gh` CLI (uses the user's existing `gh auth`). |
+
+#### `eventLog` — structured JSONL o11y trail (`the-loop events`)
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | boolean | `true` | Emit the event log; `false` turns emission off. |
+| `path` | string | `.the-loop/logs/events.jsonl` | Append-only JSONL file (git-ignored runtime state). |
+
 ## Commands
 
 ### `gh-webhook` — GitHub webhook receiver
