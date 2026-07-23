@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
 from .. import eventlog
-from ..authz import is_authorized
+from ..authz import is_authorized, is_self_authored
 from ..reload import Reloader
 from ..sessions import SessionRegistry
 from ..webhook.dispatcher import Dispatcher
@@ -240,12 +240,18 @@ class Poller:
         # authored by an authorized user. A dropped comment is still baselined
         # below, so it is never re-evaluated on later cycles.
         item_authorized = is_authorized(item.author, self.authorized_users)
+        # Self-reply guard (issue-64): the-loop's own replies are posted under
+        # the operator's own gh credentials, so `is_authorized` alone can't
+        # tell them apart from a human comment — excluding marker-carrying
+        # comments here is what stops the harness from resuming on its own
+        # reply. Also baselined below, same as an unauthorized comment.
         new_comments = [
             c
             for c in comments
             if c.id
             and c.id not in seen
             and is_authorized(c.author, self.authorized_users)
+            and not is_self_authored(c.body)
         ]
         if item.author and not item_authorized:
             logger.warning(

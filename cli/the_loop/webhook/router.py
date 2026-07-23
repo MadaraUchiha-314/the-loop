@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Sequence
 
 from .. import eventlog
-from ..authz import is_authorized
+from ..authz import is_authorized, is_self_authored
 from ..sessions import WorkItemRef
 
 logger = logging.getLogger("the-loop.gh-webhook")
@@ -113,6 +113,21 @@ def event_actor(event: str, payload: dict) -> Optional[str]:
         return ((payload.get("review") or {}).get("user") or {}).get("login")
     if event == "issues" or event.startswith("pull_request"):
         return (payload.get("sender") or {}).get("login")
+    return None
+
+
+def event_body(event: str, payload: dict) -> Optional[str]:
+    """The free-form text this event carries, or ``None`` (issue-64).
+
+    Only content-bearing events have a body worth marker-checking; the caller
+    uses this to recognize (and drop) the-loop's own replies before they can
+    re-enter the loop. Pure system events and label/open actions return
+    ``None`` — they carry no reply text to check.
+    """
+    if event in ("issue_comment", "pull_request_review_comment"):
+        return (payload.get("comment") or {}).get("body")
+    if event == "pull_request_review":
+        return (payload.get("review") or {}).get("body")
     return None
 
 
@@ -217,6 +232,22 @@ class Router:
                 gh_event=event,
                 action=action,
                 delivery_id=delivery_id,
+            )
+            return None
+        # Self-reply guard (issue-64): the-loop's own replies are posted under
+        # the operator's own credentials, so they would otherwise pass the
+        # actor check below and re-enter the loop. Checked before authorization
+        # so it applies regardless of who technically posted it.
+        if is_self_authored(event_body(event, payload)):
+            logger.debug("ignoring %s: the-loop's own reply (marker present)", event)
+            eventlog.emit(
+                "routing.dropped",
+                level="debug",
+                reason="self-authored",
+                gh_event=event,
+                action=action,
+                delivery_id=delivery_id,
+                work_items=[w.ref for w in work_items],
             )
             return None
         # Authorization guard (prompt-injection remediation). PR-close is a

@@ -14,6 +14,39 @@ PR.
   **messaging channels** (`messaging.channels`: slack / whatsapp / email) if configured.
   Messaging is for notification only; the decision itself still lands as a comment.
 
+## RULE: mark every comment/reply as the-loop's own (loop prevention)
+
+The webhook/poller trigger paths react to their own repo's activity, but the harness
+posts comments/reviews/replies under **your own credentials** (no separate bot token —
+decision-023's operating model), so by author alone the-loop's own reply is
+indistinguishable from something you typed. Left unmarked, it would re-enter the loop
+as new input on the next poll/webhook cycle, resuming the session that just wrote it —
+which may reply again, forever.
+
+GitHub (and every ticketing system the-loop targets) attaches no queryable custom
+metadata to a comment or review — the body text is the only channel available. So:
+
+- **Every comment, PR review, and reply the-loop posts** (issue comments, PR
+  conversation comments, PR review comments/replies, review submissions — anywhere
+  this session writes a reply, not just review findings) **MUST end with two things**,
+  appended after a blank line:
+  1. The exact, invisible marker `<!-- the-loop:agent-comment -->` — an HTML comment,
+     so it never clutters the rendered thread. This exact string is what
+     `the_loop.authz.is_self_authored` matches on; do not paraphrase or omit it, and
+     do not use it verbatim in a comment that is **not** the-loop's own.
+  2. A short, **visible** attribution line so a human reading the thread also knows —
+     reuse the round's `[<harness>/<model>]` prefix (`reviewing.md`) where one already
+     applies; a plain `🤖 _the-loop, autonomous reply_` otherwise.
+- This applies everywhere GitHub-style credentials post on your behalf — issues, PRs,
+  and (once supported) Jira or any other ticketing system — not only GitHub.
+- **Do not rely on this for anything else.** It identifies authorship for loop
+  prevention; it is not an authorization mechanism and does not replace the
+  authorized-actor guard (`security.md`).
+
+See `docs/decisions/decision-031.md` and `cli/the_loop/authz.py` for the CLI-side
+enforcement (both the webhook router and the poller drop a marker-carrying event before
+dispatch, regardless of who technically posted it).
+
 ## Conflicts & assumptions (keep unattended runs moving)
 
 `docs/decisions/` captures *deliberate* decisions; unattended runs also hit **ambiguities
