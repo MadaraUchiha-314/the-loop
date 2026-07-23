@@ -235,3 +235,10 @@ cli/.pytest_cache/
 
 # the-loop: structured event log (runtime state; `the-loop events`)
 .the-loop/logs/
+
+# docs/ (VitePress) — node deps and the two files synced in from cli/README.md and
+# skills/the-loop/reference/ at build time (docs/scripts/sync-content.mjs)
+node_modules/
+docs/.vitepress/cache/
+docs/cli.md
+docs/operating-model/reference/

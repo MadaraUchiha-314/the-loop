@@ -15,5 +15,15 @@
     "MD025": { "front_matter_title": "" } // don't treat YAML front-matter title: as an H1
 
   },
-  "ignores": ["**/node_modules/**", "cli/node_modules/**", "**/.venv/**"]
+  "ignores": [
+    "**/node_modules/**",
+    "cli/node_modules/**",
+    "**/.venv/**",
+    "docs/.vitepress/dist/**",
+    "docs/.vitepress/cache/**",
+    // synced from cli/README.md and skills/the-loop/reference/ at build time
+    // (docs/scripts/sync-content.mjs) — lint the source, not the copy
+    "docs/cli.md",
+    "docs/operating-model/reference/**"
+  ]
 }

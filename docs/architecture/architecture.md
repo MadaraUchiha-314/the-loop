@@ -101,4 +101,4 @@ publishes. See `docs/specs/issue-21/design.md` and `docs/decisions/decision-019.
 v0 establishes the plugin skeleton, configuration contract, templates, commands,
 skill, and documentation/knowledge structure. Runtime automation (webhooks, remote
 execution, DAG orchestration, language-specific tooling integrations) is future work,
-tracked in `docs/roadmap.md` (kept out of the published skill) and the decision log.
+tracked as GitHub issues and the decision log.
