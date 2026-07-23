@@ -105,6 +105,17 @@ autonomy:
     "4": human-approves-pr
     "5": human-approves-spec-and-pr
 
+security:                         # security woven into the phase gates (reference/security.md)
+  threatModel:
+    required: true                # requirements/bugfix carry a Security considerations section
+    projectDoc: ""                # optional living threat-model doc (empty = per-work-item sections only)
+  design:
+    required: true                # design.md enforces every trust boundary from the requirements
+  review:
+    required: true                # ready-to-ship gate: a security review must pass
+    mechanism: auto               # auto = built-in security-review skill when available, else the checklist | skill | checklist
+    humanSignOffMinTier: 4        # risk tier >= this needs a named human security sign-off (6 = never)
+
 tdd:
   mode: standard                  # standard | tdd-first | off
 

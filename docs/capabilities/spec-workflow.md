@@ -30,13 +30,24 @@ the `/the-loop:work-on` superset command and granular per-step commands
   execution log.
 - `tasks.md` SHALL be a DAG of small verifiable tasks referencing requirements;
   checkmarks are kept current during implementation.
+- **Security SHALL be a gated concern of each phase** (`config.security`):
+  requirements/bugfix carry a Security considerations threat-model-lite (untrusted
+  actors, trust boundaries, abuse cases, fail-closed — "no new attack surface" is
+  written and justified, never implied); design carries a Security design section
+  enforcing every boundary; security-relevant tasks name the negative test proving the
+  boundary holds.
 - Completion SHALL be gated by the ready-to-ship gate (green checks, threads resolved,
-  evidence, PR briefing, capability docs folded in) and risk-tiered autonomy
-  (`config.autonomy`).
+  evidence, **a passed security review** — built-in security-review skill or the-loop's
+  checklist per `security.review.mechanism` — PR briefing, capability docs folded in)
+  and risk-tiered autonomy (`config.autonomy`); an effective risk tier ≥
+  `security.review.humanSignOffMinTier` (default 4) SHALL wait for a named human
+  security sign-off, and an unresolved security finding SHALL block completion at any
+  tier.
 
 ## Design
 
 [`reference/workflow.md`](../../skills/the-loop/reference/workflow.md) ·
+[`reference/security.md`](../../skills/the-loop/reference/security.md) ·
 [`SKILL.md`](../../skills/the-loop/SKILL.md) ·
 [architecture § the loop](../architecture/architecture.md)
 
@@ -44,6 +55,7 @@ the `/the-loop:work-on` superset command and granular per-step commands
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-47 | Security became a gated concern of every phase: threat-model-lite in requirements, Security design section, security-review gate item, risk-tiered human sign-off (`config.security`) | [spec](../specs/issue-47/), [decision-026](../decisions/decision-026.md) |
 | issue-25 | Added the capability-docs fold-in as a ready-to-ship gate item | [spec](../specs/issue-25/), [decision-020](../decisions/decision-020.md) |
 | issue-18 | Design phase gained first-class UI/UX design artifacts | [spec](../specs/issue-18/), [decision-018](../decisions/decision-018.md) |
 | issue-17 | Added the optional brainstorming phase and the iterate-until-locked rule as a first-class principle | [spec](../specs/issue-17/), [decision-017](../decisions/decision-017.md) |

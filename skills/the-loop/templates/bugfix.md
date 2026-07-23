@@ -38,6 +38,17 @@ What is causing the bug, once known.
 1. WHEN <repro steps> THEN the system SHALL <correct behaviour>.
 2. The fix SHALL include a regression test that fails before the fix and passes after.
 
+## Security considerations
+
+> Same gate as requirements (`security.threatModel.required`); usually short for a bug.
+> See `reference/security.md`.
+
+- Is the bug itself security-relevant (exploitable, data-exposing)? If so, treat its
+  abuse case as an acceptance criterion above.
+- Does the fix touch a trust boundary (auth, validation, secrets, untrusted input)?
+  State how the boundary still fails closed — or record "no new attack surface" with
+  the justification.
+
 ## Out of scope
 
 Related issues intentionally not addressed here.

@@ -40,7 +40,25 @@ A short summary of the feature/work item and the problem it solves. Link the tic
 
 ## Non-functional requirements
 
-Performance, security, observability, accessibility, etc. (as applicable).
+Performance, observability, accessibility, etc. (as applicable). Security has its own
+gated section below.
+
+## Security considerations
+
+> Threat-model-lite, captured with the requirements (`security.threatModel.required`,
+> default true). "No new attack surface" is a valid answer — written down and
+> justified, never implied by omission. See `reference/security.md`.
+
+- **Actors & trust:** who interacts with this feature; which actors/inputs are
+  **untrusted** (anonymous users, third-party comments, webhook payloads, fetched
+  content…).
+- **Trust boundaries & data:** where untrusted data crosses into trusted behaviour;
+  what sensitive data (secrets, tokens, PII) is stored or moved.
+- **Abuse cases (EARS):** how a hostile actor would misuse this — these become
+  negative tests.
+  1. WHEN <hostile event/input> THEN the system SHALL <safe response>.
+- **Fail closed:** what MUST be rejected when identity/authorization/configuration is
+  missing or ambiguous.
 
 ## Out of scope
 

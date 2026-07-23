@@ -60,10 +60,10 @@
       },
       {
         "id": "reviews-autonomy",
-        "title": "Reviews & autonomy",
+        "title": "Reviews, security & autonomy",
         "ask": "confirm",
-        "explain": "How many self/critic review rounds run before escalating to a human, and how much a work item may complete without one (risk tiers 1-Trivial … 5-Critical).",
-        "keys": ["reviews", "autonomy"]
+        "explain": "How many self/critic review rounds run before escalating to a human, the security gates woven into the phases (threat model, security design, security review, human sign-off tier), and how much a work item may complete without a human (risk tiers 1-Trivial … 5-Critical).",
+        "keys": ["reviews", "security", "autonomy"]
       },
       {
         "id": "people",
@@ -555,6 +555,68 @@
             "3": { "$ref": "#/$defs/autonomyPolicy" },
             "4": { "$ref": "#/$defs/autonomyPolicy" },
             "5": { "$ref": "#/$defs/autonomyPolicy" }
+          }
+        }
+      }
+    },
+    "security": {
+      "type": "object",
+      "description": "Security as a first-class, gated concern woven into the phase gates (requirements → design → review), not a separate step. See reference/security.md.",
+      "additionalProperties": false,
+      "properties": {
+        "threatModel": {
+          "type": "object",
+          "description": "The threat-model-lite captured in the requirements phase (the Security considerations section of requirements.md / bugfix.md).",
+          "additionalProperties": false,
+          "properties": {
+            "required": {
+              "type": "boolean",
+              "default": true,
+              "description": "Requirements/bugfix MUST carry a filled Security considerations section (untrusted actors, trust boundaries, abuse cases, fail-closed expectations) to pass the phase gate. \"No new attack surface\" is a valid answer when written and justified."
+            },
+            "projectDoc": {
+              "type": "string",
+              "default": "",
+              "description": "Optional path to a living project-level threat-model doc the per-work-item sections link to and delta against. Empty = none; the per-work-item sections are the record.",
+              "examples": ["docs/security/threat-model.md"]
+            }
+          }
+        },
+        "design": {
+          "type": "object",
+          "description": "The Security design section of design.md: how each requirements-phase trust boundary is enforced (authn/authz, input validation, secrets, least privilege, injection surfaces, fail-closed).",
+          "additionalProperties": false,
+          "properties": {
+            "required": {
+              "type": "boolean",
+              "default": true,
+              "description": "design.md MUST state how every trust boundary from the requirements is enforced; a boundary left unenforced fails the design gate."
+            }
+          }
+        },
+        "review": {
+          "type": "object",
+          "description": "The security review — an explicit ready-to-ship gate item run after the self/critic rounds, before a work item can be marked complete.",
+          "additionalProperties": false,
+          "properties": {
+            "required": {
+              "type": "boolean",
+              "default": true,
+              "description": "The ready-to-ship gate includes a passed security review; an unresolved security finding blocks completion regardless of risk tier."
+            },
+            "mechanism": {
+              "type": "string",
+              "enum": ["auto", "skill", "checklist"],
+              "default": "auto",
+              "description": "auto = use the harness's built-in security-review skill when available, else the-loop's checklist in reference/security.md; skill / checklist force one mechanism."
+            },
+            "humanSignOffMinTier": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 6,
+              "default": 4,
+              "description": "Effective risk tier at or above which a NAMED HUMAN must approve the security review (paper trail) — autonomous completion is off the table even if autonomy.tiers allows it. Below the threshold the autonomous review suffices. 6 = never require a human sign-off."
+            }
           }
         }
       }
