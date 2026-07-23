@@ -46,8 +46,11 @@ flowchart LR
     PC -->|"ticketing, workflow, tooling,\nreviews, autonomy, security, …"| SKILL["/the-loop:* commands\n+ skill"]
     RC -->|"webhooks, polling, eventLog\n(cwd tier)"| CLI["the-loop gh-webhook / poll /\nsessions / events"]
     CC -->|"webhooks, polling, eventLog\n(final fallback)"| CLI
-    PC -.->|"ticketing.github.owner/repo\n(convenience fallback, cwd-relative)"| CLI
 ```
+
+Note what's deliberately **not** in this diagram: no edge from the plugin config to the
+CLI daemon. The first cut of this design had one (`ticketing.github.owner`/`repo` as a
+convenience fallback); PR #69 review removed it — see below.
 
 - **Plugin config** (`.the-loop/config.yaml`, unchanged location) — installed per repo;
   read by `commands/init.md`, `work-on.md`, `execute-tasks.md`, `upgrade-the-loop.md`,
@@ -58,13 +61,14 @@ flowchart LR
   "`.the-loop/`" prefix here names where the-loop's *own* schema files live in this
   repo/package — see Data models below for where an operator's resolved copy actually
   lives, which is configurable).
-- **Convenience fallback preserved.** `routing.authorizedUsers` (webhook + poll) and a
-  GitHub poll source's `repos` still fall back to `ticketing.github.owner`/`repo` when
-  unset — now read explicitly from the **plugin** config in the current working
-  directory (unchanged file, unchanged keys), so operators who run the daemon from
-  inside the one repo it watches keep today's zero-config experience. Operators
-  watching several repos configure `routing.authorizedUsers` and
-  `polling.sources[].repos` explicitly instead (Requirement 2).
+- **No plugin-config fallback, anywhere (Requirement 4).** `routing.authorizedUsers`
+  (webhook + poll) and a GitHub poll source's `repos` are read **exclusively** from the
+  CLI config — no fallback to any repo's `ticketing.github.owner`/`repo`. Unset means
+  exactly that: the receiver/poller fail closed (no `authorizedUsers`) or raise clearly
+  (`GitHubPollProvider.list_work_items` on no `repos`) rather than silently borrowing a
+  value from a file whose entire purpose is the Claude/Cursor plugin. An operator who
+  wants the old "zero-config in the repo I'm watching" convenience gets it through the
+  cwd tier instead: put an explicit CLI config at `./.the-loop/cli-config.yaml`.
 
 ## Components & interfaces
 
@@ -126,17 +130,20 @@ in both files.
   `cli.py`'s `_refresh_cli_config_paths()` before `add_arguments()` runs.
 - `_read_gh_webhook_config` → unchanged behaviour, now reads `webhooks.ghWebhook` from
   the CLI config.
-- `_ticketing_owner()` → unchanged code, re-labelled as the plugin-config convenience
-  fallback (still `Path(".the-loop/config.yaml")`, cwd-relative, on purpose — this path
-  is NOT affected by `--config`, which only targets the CLI config).
+- No `_ticketing_owner()`, no `_PLUGIN_CONFIG_PATH` (Requirement 4) — the module has no
+  code path that reads any repo's `.the-loop/config.yaml`. `_build_routing` lost its
+  `owner` parameter; `resolve_authorized_users(config.authorized_users)` takes just the
+  CLI config's list.
 
 ### `poll.py`
 
 - `_CONFIG_PATH` → CLI config path (drives the `Reloader`, so `polling.sources` hot-reload
-  continues to watch the CLI config file, satisfying Requirement 1.3).
-- `_load_full_config()` splits into `_load_cli_config()` (→ `polling` section, CLI file)
-  and `_load_plugin_config()` (→ `ticketing.github`, plugin file — used only by
-  `_repos_from_ticketing()`/`_ticketing_owner()`).
+  continues to watch the CLI config file, satisfying Requirement 1.2).
+- No `_load_plugin_config()`, `_repos_from_ticketing()`, `_ticketing_owner()`, or
+  `_PLUGIN_CONFIG_PATH` (Requirement 4). `build_provider(source, default_label=...)` and
+  `GitHubPollProvider.from_source` lost their `fallback_repos` parameter; a source with
+  no `repos` is empty, not "whatever `ticketing.github` happens to say" — `list_work_items`
+  raises a clear `ProviderError` for it rather than silently discovering nothing.
 
 ### `eventlog.py`
 
@@ -194,10 +201,11 @@ Identical to today, just re-homed:
 
 > Enforcing `requirements.md`'s Security considerations.
 
-- **AuthN/AuthZ:** unchanged mechanism — `routing.authorizedUsers` (CLI config) gates
-  which GitHub actors the receiver/poller act on; `resolve_authorized_users` still falls
-  back to the plugin config's `ticketing.github.owner` when empty, and still fails
-  closed (warns, authorizes nobody) when neither is set (decision-023, unaltered).
+- **AuthN/AuthZ:** `routing.authorizedUsers` (CLI config, exclusively — Requirement 4)
+  gates which GitHub actors the receiver/poller act on; `resolve_authorized_users` now
+  takes only the configured list (no `owner` fallback parameter) and still fails closed
+  (warns, authorizes nobody) when it's empty (decision-023's fail-closed guarantee,
+  strengthened rather than weakened by removing the fallback).
 - **Input validation & injection surfaces:** no new untrusted-input surface for the
   `--config`/`$THE_LOOP_CLI_CONFIG` tiers — both are set by the operator who starts the
   process, same trust level as any other CLI flag/env var. The new cwd tier
@@ -235,10 +243,15 @@ Identical to today, just re-homed:
   no PyYAML / bad YAML (mirrors the existing `_read_gh_webhook_config` coverage, now
   against the shared helper), and `cli.py`'s `--config` pre-scan: a value passed before
   the subcommand changes what `build_parser()` computes as other flags' defaults.
-- **Unit** (existing `test_routing.py`, `test_poller.py`): unaffected in behaviour since
-  they monkeypatch `_CONFIG_PATH` directly; `test_cli_config.py` separately asserts
+- **Unit** (existing `test_routing.py`): unaffected in behaviour since it monkeypatches
+  `_CONFIG_PATH` directly; `test_cli_config.py` separately asserts
   `gh_webhook._CONFIG_PATH`/`poll._CONFIG_PATH` default to
-  `cli_config.default_cli_config_path()` at import time.
+  `cli_config.default_cli_config_path()` at import time and that neither module carries
+  a `_PLUGIN_CONFIG_PATH` attribute (Requirement 4).
+- **Unit** (`test_poller.py`, updated): `resolve_authorized_users`/`build_provider`/
+  `GitHubPollProvider.from_source` calls dropped their `owner`/`fallback_repos`
+  arguments; a new test asserts a source with no `repos` resolves to an empty list (not
+  a borrowed value) and that `list_work_items` raises for it.
 - **Config validation** (`scripts/validate_config.py`, extended): validates
   `.the-loop/cli-config.yaml` (checked in at the exact cwd-tier path) and
   `skills/the-loop/templates/cli-config.yaml` against the new `cli-config.schema.json`,
@@ -282,6 +295,12 @@ Logged as `docs/decisions/decision-032.md`:
 - **`eventLog` flattened out of `observability`** — the CLI config has nothing else to
   put under an `observability` wrapper once `devLevel`/`runtimeLevel`/`browserLogging`
   stay with the plugin, so nesting would be ceremony with no sibling keys.
+- **No plugin-config fallback for `authorizedUsers`/`repos`, full stop** — the first cut
+  kept `ticketing.github.owner`/`repo` as a convenience default. Review: that put the
+  plugin config back in the CLI daemon's read path for exactly the case ("running in
+  the one repo I watch") the split exists to not depend on. Removed entirely
+  (Requirement 4); the cwd tier already covers the same convenience through a file
+  whose purpose actually is the CLI daemon.
 - **A plain yes/no onboarding question, not a full `x-onboarding`-style schema** — the
   CLI config has three top-level keys; the plugin's grouped, ask-level-driven onboarding
   machinery is built for a ~25-property schema and would be disproportionate ceremony

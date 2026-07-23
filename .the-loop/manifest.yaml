@@ -23,7 +23,7 @@ meta:
   - path: .the-loop/cli-config.yaml
     role: cli-config
     managed: true
-    optional: true   # only scaffolded if the operator opts in at /init time (decision-031)
+    optional: true   # only scaffolded if the operator opts in at /init time (decision-032)
   - path: .the-loop/cli-config.schema.json
     role: cli-config-schema
     managed: true

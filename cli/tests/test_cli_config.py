@@ -122,14 +122,15 @@ def test_empty_file_is_empty_mapping(tmp_path):
 
 
 def test_gh_webhook_and_poll_default_to_the_cli_config_path():
-    """gh_webhook._CONFIG_PATH and poll._CONFIG_PATH are the CLI config — not
-    the repo-local PLUGIN config (.the-loop/config.yaml) — at import time."""
+    """gh_webhook._CONFIG_PATH and poll._CONFIG_PATH are the CLI config — the
+    ONLY config either reads (issue-63 review: no plugin-config fallback) —
+    at import time."""
     from the_loop.commands import gh_webhook, poll
 
     assert gh_webhook._CONFIG_PATH == cli_config.default_cli_config_path()
     assert poll._CONFIG_PATH == cli_config.default_cli_config_path()
-    assert gh_webhook._PLUGIN_CONFIG_PATH == Path(".the-loop/config.yaml")
-    assert poll._PLUGIN_CONFIG_PATH == Path(".the-loop/config.yaml")
+    assert not hasattr(gh_webhook, "_PLUGIN_CONFIG_PATH")
+    assert not hasattr(poll, "_PLUGIN_CONFIG_PATH")
 
 
 def test_eventlog_load_config_reads_top_level_event_log_key(tmp_path):

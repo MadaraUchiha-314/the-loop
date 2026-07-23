@@ -18,7 +18,6 @@ import signal
 import sys
 import threading
 from pathlib import Path
-from typing import Optional
 
 from .base import Command, register
 from .. import cli_config, eventlog
@@ -26,13 +25,10 @@ from ..webhook import serve
 
 logger = logging.getLogger("the-loop.gh-webhook")
 
-# The CLI config (webhooks/polling/eventLog) — not the PLUGIN config below.
+# The CLI config (webhooks/polling/eventLog). Deliberately the ONLY config
+# source the receiver reads (issue-63 review): which GitHub logins may
+# trigger it is a CLI-config concern, not the repo-local plugin config's.
 _CONFIG_PATH = cli_config.default_cli_config_path()
-
-# The repo-local PLUGIN config (.the-loop/config.yaml), read only as a
-# convenience fallback (ticketing.github.owner) when the daemon happens to be
-# started from within the one repo it watches.
-_PLUGIN_CONFIG_PATH = Path(".the-loop/config.yaml")
 
 _DEFAULTS = {
     "host": "127.0.0.1",
@@ -61,21 +57,12 @@ def _load_config_defaults() -> dict:
     return _read_gh_webhook_config(strict=False)
 
 
-def _ticketing_owner() -> Optional[str]:
-    """``ticketing.github.owner`` from the PLUGIN config — the fallback
-    authorized user (or ``None``) when run from within a repo that has one."""
-    data = cli_config.load_cli_config(_PLUGIN_CONFIG_PATH, strict=False)
-    owner = ((data.get("ticketing") or {}).get("github") or {}).get("owner")
-    return str(owner) if owner else None
-
-
-def _build_routing(gh_webhook_config: dict, owner: Optional[str] = None):
+def _build_routing(gh_webhook_config: dict):
     """Compose router + dispatcher into the server's on_event callback.
 
     Spec: docs/specs/issue-15/design.md §6. Imported lazily-ish here (module
     level is fine — everything is stdlib) and returned with the dispatcher so
-    `start` can drain it on shutdown. ``owner`` is ``ticketing.github.owner``,
-    the fallback authorized user (prompt-injection guard, issue-34 review).
+    `start` can drain it on shutdown.
     """
     from ..authz import resolve_authorized_users
     from ..harness import build_adapters
@@ -90,12 +77,13 @@ def _build_routing(gh_webhook_config: dict, owner: Optional[str] = None):
         adapters=build_adapters(config.harness_args),
         config=config,
     )
-    authorized = resolve_authorized_users(config.authorized_users, owner)
+    authorized = resolve_authorized_users(config.authorized_users)
     if not authorized:
         logger.warning(
-            "no authorizedUsers configured (and no ticketing.github.owner) — the "
-            "receiver will act on NO human-authored events until you set "
-            "webhooks.ghWebhook.routing.authorizedUsers (prompt-injection guard)"
+            "no authorizedUsers configured — the receiver will act on NO "
+            "human-authored events until you set "
+            "webhooks.ghWebhook.routing.authorizedUsers in the CLI config "
+            "(prompt-injection guard)"
         )
     # The router shares the dispatcher's deduper: the dispatcher marks processed
     # delivery ids, the router drops duplicates before extraction.
@@ -112,7 +100,7 @@ def _build_routing(gh_webhook_config: dict, owner: Optional[str] = None):
         dispatcher.reload(new)
         router.events = list(gh_cfg.get("events") or [])
         router.auto_execute_label = new.auto_execute_label
-        router.authorized_users = resolve_authorized_users(new.authorized_users, owner)
+        router.authorized_users = resolve_authorized_users(new.authorized_users)
         logger.info(
             "hot-reloaded gh-webhook routing: spawnOnUnmatched=%s runner=%s "
             "label=%r events=%d authorizedUsers=%d",
@@ -222,7 +210,7 @@ class GhWebhookCommand(Command):
         on_event = dispatcher = web_proc = None
         if args.route:
             on_event, dispatcher, routing_config = _build_routing(
-                _load_config_defaults(), owner=_ticketing_owner()
+                _load_config_defaults()
             )
             missing = check_dependencies(
                 routing_config.runner, routing_config.web_terminal.enabled

@@ -25,7 +25,7 @@ import signal
 import sys
 import threading
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 from .base import Command, register
 from .gh_webhook import _load_config_defaults
@@ -43,13 +43,10 @@ from ..poller import (
 
 logger = logging.getLogger("the-loop.poll")
 
-# The CLI config (webhooks/polling/eventLog) — not the PLUGIN config below.
+# The CLI config (webhooks/polling/eventLog). Deliberately the ONLY config
+# source the poller reads (issue-63 review): which repos to watch and who may
+# trigger it are CLI-config concerns, not the repo-local plugin config's.
 _CONFIG_PATH = cli_config.default_cli_config_path()
-
-# The repo-local PLUGIN config (.the-loop/config.yaml), read only as a
-# convenience fallback (ticketing.github) when the daemon happens to be
-# started from within the one repo it watches.
-_PLUGIN_CONFIG_PATH = Path(".the-loop/config.yaml")
 
 _DEFAULTS = {
     "intervalSeconds": 60,
@@ -61,24 +58,6 @@ _DEFAULTS = {
 def _load_polling_config() -> dict:
     """Best-effort read of ``polling`` from the CLI config (or ``{}``)."""
     return cli_config.load_cli_config(_CONFIG_PATH, strict=False).get("polling") or {}
-
-
-def _load_plugin_config() -> dict:
-    """Best-effort parse of the repo-local PLUGIN config (or ``{}``)."""
-    return cli_config.load_cli_config(_PLUGIN_CONFIG_PATH, strict=False)
-
-
-def _repos_from_ticketing() -> List[str]:
-    """Fall back to ``ticketing.github`` (owner/repo) for a github source."""
-    gh = (_load_plugin_config().get("ticketing") or {}).get("github") or {}
-    owner, repo = gh.get("owner"), gh.get("repo")
-    return [f"{owner}/{repo}"] if owner and repo else []
-
-
-def _ticketing_owner() -> Optional[str]:
-    gh = (_load_plugin_config().get("ticketing") or {}).get("github") or {}
-    owner = gh.get("owner")
-    return str(owner) if owner else None
 
 
 def _build_dispatcher(routing_map: Optional[dict]):
@@ -152,11 +131,7 @@ class PollCommand(Command):
         def build_plan() -> PollPlan:
             cfg = PollConfig.from_mapping(_load_polling_config())
             providers = [
-                build_provider(
-                    source,
-                    default_label=routing.auto_execute_label,
-                    fallback_repos=_repos_from_ticketing(),
-                )
+                build_provider(source, default_label=routing.auto_execute_label)
                 for source in cfg.sources
             ]
             return PollPlan(providers=providers, interval_seconds=cfg.interval_seconds)
@@ -190,14 +165,12 @@ class PollCommand(Command):
         config = PollConfig.from_mapping(_load_polling_config())
         config.interval_seconds = args.interval  # flag overrides until a config edit
         config.state_file = args.state_file
-        authorized = resolve_authorized_users(
-            routing.authorized_users, _ticketing_owner()
-        )
+        authorized = resolve_authorized_users(routing.authorized_users)
         if not authorized:
             logger.warning(
-                "no authorizedUsers configured (and no ticketing.github.owner) — "
-                "the poller will act on NO items or comments until you set "
-                "webhooks.ghWebhook.routing.authorizedUsers (prompt-injection guard)"
+                "no authorizedUsers configured — the poller will act on NO items "
+                "or comments until you set webhooks.ghWebhook.routing.authorizedUsers "
+                "in the CLI config (prompt-injection guard)"
             )
         poller = Poller(
             providers=plan.providers,

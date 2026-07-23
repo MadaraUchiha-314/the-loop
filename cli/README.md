@@ -64,11 +64,11 @@ The-loop's config is split into two files that never overlap keys:
   Validated against `.the-loop/cli-config.schema.json`; a commented starting point
   ships at `skills/the-loop/templates/cli-config.yaml`.
 
-Each command's defaults below note which file they come from. A repo's plugin config is
-still consulted for one thing: `ticketing.github.owner`/`repo` is the convenience
-fallback for `routing.authorizedUsers` and a GitHub poll source's `repos` when the
-daemon happens to be started from within the one repo it watches — configure those
-explicitly in the CLI config for a daemon watching several repos.
+Each command's defaults below note which file they come from. The CLI daemon reads
+**only** the CLI config — it never reads a repo's plugin config for anything, including
+`routing.authorizedUsers` (who may trigger it) or a GitHub poll source's `repos` (what
+it watches): both are CLI-config-only settings with no plugin-config fallback, set
+them explicitly.
 
 ## Commands
 
@@ -106,12 +106,12 @@ the-loop gh-webhook stop  [--pidfile .the-loop/gh-webhook.pid]
   `registryDir`, `webTerminal`) still need a restart. An invalid edit is logged and the
   previous config kept.
 - **Authorized-actor guard (prompt-injection remediation):** the receiver acts only on
-  actions by logins in `routing.authorizedUsers` — comments/reviews and issue/PR
-  labels/opens from anyone else are dropped before dispatch (CI/system events, which carry
-  no human instructions, still pass; a PR-close still auto-closes the session). Empty ⇒
-  falls back to `ticketing.github.owner` in the plugin config, else fails closed with a
-  warning. Each operator runs their own instance for their own login(s). See
-  `docs/decisions/decision-023.md`.
+  actions by logins in `routing.authorizedUsers` (CLI config — REQUIRED, no fallback to
+  any repo's plugin config) — comments/reviews and issue/PR labels/opens from anyone
+  else are dropped before dispatch (CI/system events, which carry no human
+  instructions, still pass; a PR-close still auto-closes the session). Empty fails
+  closed with a warning. Each operator runs their own instance for their own login(s).
+  See `docs/decisions/decision-023.md`.
 - **Self-reply guard (loop prevention):** the harness posts its own replies under the
   operator's own credentials, so authorship alone can't tell them apart from a human
   comment. Every comment/review/reply the-loop posts carries an embedded marker
@@ -180,7 +180,7 @@ templates are all reused unchanged.
     intervalSeconds: 60
     sources:
       - provider: github
-        repos: [octo/repo]         # empty = fall back to the plugin config's ticketing.github
+        repos: [octo/repo]         # REQUIRED — no fallback to any repo's plugin config
         monitor: { issues: true, pullRequests: true }
         label: ""                  # empty = reuse routing.autoExecuteLabel
   ```
@@ -203,9 +203,9 @@ templates are all reused unchanged.
   is picked up on the next cycle — no restart. An invalid edit is logged and the previous
   config kept. (The shared dispatch config still needs a restart.)
 - **Authorized-actor guard (prompt-injection remediation):** the poller spawns only for
-  items authored by a login in `routing.authorizedUsers`, and forwards only comments from
-  authorized authors — everything else is ignored. Empty ⇒ falls back to
-  `ticketing.github.owner` in the plugin config, else fails closed with a warning. See
+  items authored by a login in `routing.authorizedUsers` (CLI config — REQUIRED, no
+  fallback to any repo's plugin config), and forwards only comments from authorized
+  authors — everything else is ignored. Empty fails closed with a warning. See
   `docs/decisions/decision-023.md`.
 - **Self-reply guard (loop prevention):** same marker check as the receiver — a comment
   the-loop itself posted is excluded from "new comments" (and can't retrigger a spawn),

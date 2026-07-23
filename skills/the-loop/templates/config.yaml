@@ -6,7 +6,7 @@
 # A subset of these keys can be overridden per work-item in the YAML front-matter
 # of the work-item / spec markdown.
 # The CLI daemon (gh-webhook/poll/sessions/events) is configured separately — it is
-# not tied to this repo. See templates/cli-config.yaml and decision-031.
+# not tied to this repo. See templates/cli-config.yaml and decision-032.
 
 version: "0.1.0"
 
@@ -111,7 +111,7 @@ observability:
   devLevel: debug
   runtimeLevel: info
   browserLogging: chrome-devtools-mcp
-  # eventLog lives in the CLI config (templates/cli-config.yaml), not here (decision-031)
+  # eventLog lives in the CLI config (templates/cli-config.yaml), not here (decision-032)
 
 reviews:
   selfReviewCount: 3              # cap; loop stops early on zero new findings
@@ -251,5 +251,5 @@ externalTools:                    # inline registry the harness may freely use (
   notes: ""                       # global free-form: auth, access patterns, constraints
 
 # webhooks / polling / eventLog moved to templates/cli-config.yaml (CLI config,
-# not per-repo — decision-031). See that file for the webhook receiver / poller
+# not per-repo — decision-032). See that file for the webhook receiver / poller
 # settings previously here.

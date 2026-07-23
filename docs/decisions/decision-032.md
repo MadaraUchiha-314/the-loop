@@ -51,13 +51,18 @@ home-directory default — never assumed either way.
 
 Consequences:
 
-- **One convenience fallback survives, explicitly re-scoped.** `routing.authorizedUsers`
-  and a GitHub poll source's `repos` still default from `ticketing.github.owner`/`repo`
-  — now read from the **plugin** config in the current working directory (unaffected by
-  `--config`, which targets only the CLI config). An operator who runs the daemon from
-  inside the one repo it watches keeps zero-config behaviour; an operator watching
-  several repos configures `authorizedUsers`/`sources[].repos` explicitly (already
-  possible — `polling.sources` was always a list).
+- **The plugin config never feeds the CLI daemon — no exceptions.** The original cut of
+  this decision kept one fallback: `routing.authorizedUsers` and a GitHub poll source's
+  `repos` defaulted from the plugin config's `ticketing.github.owner`/`repo` when the
+  daemon happened to be started from within the repo it watches. Follow-up review: this
+  re-introduced exactly the coupling the split was meant to remove — which repos to
+  watch and who may trigger a Claude/Cursor session are CLI-config concerns, full stop;
+  `.the-loop/config.yaml` is *only* for the plugin. Both fallbacks are removed:
+  `authz.resolve_authorized_users` takes just the configured list (no `owner` param);
+  `GitHubPollProvider`/`build_provider` take just the source's own `repos` (no
+  `fallback_repos` param) — an empty/unset value means "nothing configured," not "guess
+  from wherever this process happens to be running," and both fail closed/raise clearly
+  rather than silently borrowing another file's settings.
 - **Runtime state paths are unchanged (deliberately out of scope).** Pidfiles, the
   session registry dir, `poll-state.json`, and the event-log path stay configurable,
   cwd-relative `.the-loop/...` defaults. Only the config *file* moved/became
@@ -107,3 +112,10 @@ Consequences:
   logins per repo) — deferred; `routing.authorizedUsers` stays one flat list shared by
   the receiver and every poll source, as today. Listed as a re-evaluation trigger in the
   design doc.
+- **Keeping the `ticketing.github.owner`/`repos` convenience fallback** (the original cut
+  of this decision) — reverted on review: it kept the plugin config in the CLI daemon's
+  read path for the single-operator-in-one-repo case, undermining "not tied to a single
+  repo" the moment that repo's plugin config happened to be reachable. The cwd tier
+  (`./.the-loop/cli-config.yaml`) already covers the same convenience — an operator who
+  wants zero-config in one repo puts an explicit CLI config there — without reading a
+  file whose *purpose* is the plugin, not the daemon.

@@ -93,16 +93,32 @@ upgrading doesn't silently stop routing my events.
 
 1. WHEN an operator moves their existing `webhooks`/`polling`/`observability.eventLog`
    block from `.the-loop/config.yaml` into the new CLI config file (renaming
-   `observability.eventLog` to the CLI config's top-level `eventLog`) THEN the daemon
-   SHALL behave identically to before the split.
-2. WHILE a repo's plugin config still declares `ticketing.github.owner`/`repo` THEN the
-   webhook receiver and poller SHALL continue to use it as the convenience fallback for
-   `routing.authorizedUsers` and `polling.sources[].repos` when the daemon happens to be
-   started from within that repo's checkout (unchanged behaviour, now sourced from the
-   plugin config specifically rather than "the" config).
-3. WHEN hot-reload is exercised (edit-while-running) THEN the system SHALL keep
+   `observability.eventLog` to the CLI config's top-level `eventLog`, and setting
+   `routing.authorizedUsers` / a poll source's `repos` explicitly — see Requirement 4)
+   THEN the daemon SHALL behave identically to before the split.
+2. WHEN hot-reload is exercised (edit-while-running) THEN the system SHALL keep
    reloading `webhooks.ghWebhook.routing` / `polling.sources` from the CLI config file,
    not the plugin config file.
+
+### Requirement 4 — The plugin config never feeds the CLI daemon
+
+**User story:** As an operator, I want the CLI daemon to never read a repo's plugin
+config for anything — including "convenience" fallbacks — so that `.the-loop/config.yaml`
+stays exactly what it claims to be: settings for the Claude/Cursor plugin, nothing else.
+(Added per PR #69 review, after the first cut of this work kept one fallback.)
+
+#### Acceptance criteria (EARS)
+
+1. WHEN the webhook receiver or poller resolves `routing.authorizedUsers` THEN the
+   system SHALL use exactly the CLI config's configured list — no fallback to any
+   repo's `ticketing.github.owner`. An empty/unset list SHALL fail closed (no
+   human-authored event is acted on), with a warning naming the CLI config key to set.
+2. WHEN a GitHub poll source resolves its `repos` THEN the system SHALL use exactly
+   that source's configured `repos` — no fallback to any repo's `ticketing.github`. A
+   source with no `repos` SHALL raise a clear error when discovery runs, not silently
+   discover zero items or borrow another file's repo.
+3. WHEN reviewing `gh_webhook.py`/`poll.py` THEN neither module SHALL import, resolve,
+   or read a path to any repo's `.the-loop/config.yaml` for any purpose.
 
 ## Non-functional requirements
 
@@ -120,9 +136,10 @@ upgrading doesn't silently stop routing my events.
   only untrusted input; the CLI config file itself is operator-authored, same trust
   level as the plugin config today.
 - **Trust boundaries & data:** `routing.authorizedUsers` (decision-023's prompt-injection
-  guard) still governs which GitHub actors the daemon acts on. Splitting the file does
-  not weaken this: the guard now reads from the CLI config, and the `ticketing.github.owner`
-  fallback continues to require an explicit plugin config in cwd (never assumed).
+  guard) still governs which GitHub actors the daemon acts on. Splitting the file
+  strengthens this, if anything: the guard now reads *only* the CLI config, with no
+  fallback to any repo's plugin config (Requirement 4) — one config surface to reason
+  about, not two.
 - **Abuse cases (EARS):**
   1. WHEN the CLI config file is world-writable or lives on shared infrastructure THEN
      the system SHALL document (README) that `secretEnv` still names an environment
@@ -138,9 +155,9 @@ upgrading doesn't silently stop routing my events.
      `webhooks`/`polling`/`eventLog` keys — never code execution — so the worst a planted
      file can do is misroute/misconfigure the daemon, not compromise the process. Operators
      who do not want cwd auto-discovery pass `--config` explicitly.
-- **Fail closed:** unchanged — no `authorizedUsers` resolvable (from either the CLI
-  config or a plugin-config fallback) SHALL still mean no human-authored event is acted
-  on (decision-023).
+- **Fail closed:** an empty/unset `authorizedUsers` in the CLI config SHALL still mean
+  no human-authored event is acted on (decision-023) — with no plugin-config fallback
+  to silently narrow that exposure instead of the operator setting it explicitly.
 
 ## Out of scope
 
@@ -153,12 +170,14 @@ upgrading doesn't silently stop routing my events.
   per-key detection) matching the plugin's `/init` machinery — out of proportion for a
   3-key schema. `/the-loop:init` instead asks one plain yes/no question (Requirement 2.4)
   and scaffolds from the shipped template on "yes".
-- Multi-repo owner/authz resolution smarter than the existing single fallback (e.g.
-  per-source `authorizedUsers`). `polling.sources[].repos` already supports many repos;
-  `routing.authorizedUsers` already applies globally across all of them.
+- Per-source `authorizedUsers` (so a multi-repo daemon could trust different logins per
+  repo it watches). `routing.authorizedUsers` stays one flat list shared by the
+  receiver and every poll source; `polling.sources[].repos` already supports many
+  repos under that one list.
 
 ## Open questions
 
-None outstanding — @MadaraUchiha-314 confirmed the split (CLI vs. plugin) in issue #63,
-and requested the configurable `--config`/cwd/home resolution order and the `/init`
-onboarding ask in PR #69 review.
+None outstanding — @MadaraUchiha-314 confirmed the split (CLI vs. plugin) in issue #63;
+requested the configurable `--config`/cwd/home resolution order and the `/init`
+onboarding ask, then requested removing the plugin-config fallback entirely, in PR #69
+review.

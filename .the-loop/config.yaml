@@ -2,7 +2,7 @@
 # (installed here as a Claude/Cursor plugin). Validated against
 # .the-loop/config.schema.json. The CLI daemon (gh-webhook/poll/sessions/events)
 # reads a separate, repo-independent file instead — see .the-loop/cli-config.yaml
-# and decision-031.
+# and decision-032.
 
 version: "0.1.0"
 
@@ -85,7 +85,7 @@ observability:
   devLevel: debug
   runtimeLevel: info
   browserLogging: chrome-devtools-mcp
-  # eventLog moved to .the-loop/cli-config.yaml (CLI config, decision-031)
+  # eventLog moved to .the-loop/cli-config.yaml (CLI config, decision-032)
 
 reviews:
   selfReviewCount: 3

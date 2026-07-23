@@ -2,7 +2,7 @@
 # Validated against .the-loop/cli-config.schema.json.
 #
 # Read only by the CLI daemon (`the-loop gh-webhook`/`poll`/`sessions`/`events`),
-# which is expected to work across multiple repos (decision-031). Resolved, in
+# which is expected to work across multiple repos (decision-032). Resolved, in
 # priority order:
 #   1. --config / -c (explicit CLI flag)
 #   2. $THE_LOOP_CLI_CONFIG (explicit env var, same priority as --config)
@@ -32,11 +32,9 @@ webhooks:
       autoExecuteLabel: "the-loop: auto-execute"   # label that opts an issue/PR into autonomous execution
       # SECURITY (prompt-injection guard): only these GitHub logins' actions are acted on
       # by BOTH the webhook receiver and the poller. Comments/reviews/labels/items from
-      # anyone else are ignored. Empty = fall back to ticketing.github.owner in the
-      # PLUGIN config of the repo this daemon happens to be started from, if any; if
-      # that is also unset, human-authored events are all ignored (fail closed). Set
-      # this explicitly for a daemon watching repos other than the one it runs from.
-      # Run your own instance for your own login(s).
+      # anyone else are ignored. REQUIRED: no fallback to any repo's plugin config —
+      # empty means human-authored events are all ignored (fail closed). Run your own
+      # instance for your own login(s).
       authorizedUsers: []           # e.g. ["your-github-login"]
       spawnWorkdir: "."
       maxConcurrentDispatches: 4
@@ -59,8 +57,8 @@ polling:
   stateFile: .the-loop/poll-state.json
   sources: []                       # e.g. the github source below (empty = nothing polled)
     # - provider: github
-    #   repos: []                   # OWNER/REPO list; empty = fall back to ticketing.github
-    #                               # in the PLUGIN config of the repo this daemon runs from
+    #   repos: []                   # REQUIRED: OWNER/REPO list — no fallback to any
+    #                               # repo's plugin config; a source with none discovers nothing
     #   monitor:
     #     issues: true
     #     pullRequests: true

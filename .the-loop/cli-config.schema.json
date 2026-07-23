@@ -69,7 +69,7 @@
                 "authorizedUsers": {
                   "type": "array",
                   "items": { "type": "string" },
-                  "description": "SECURITY (prompt-injection guard): GitHub logins whose actions the-loop may act on. Comments/reviews/labels/items authored by anyone not listed are ignored by BOTH the webhook receiver and the poller. Empty = fall back to ticketing.github.owner in the PLUGIN config (.the-loop/config.yaml) of the repo the daemon happens to be started from, if any; if that is also unset, human-authored events are all ignored (fail closed). Each operator runs their own instance for their own logins.",
+                  "description": "SECURITY (prompt-injection guard): GitHub logins whose actions the-loop may act on. Comments/reviews/labels/items authored by anyone not listed are ignored by BOTH the webhook receiver and the poller. REQUIRED to actually route anything: no fallback to any repo's plugin config (.the-loop/config.yaml) — which logins may trigger the daemon is a CLI-config-only concern (issue-63 review). Empty means human-authored events are all ignored (fail closed). Each operator runs their own instance for their own logins.",
                   "default": []
                 },
                 "spawnWorkdir": {
@@ -185,7 +185,7 @@
               },
               "repos": {
                 "type": "array",
-                "description": "[github] Repositories to poll as OWNER/REPO. Empty = fall back to ticketing.github in the PLUGIN config (.the-loop/config.yaml) of the repo the daemon happens to be started from, if any — set this explicitly for a daemon watching repos other than the one it runs from.",
+                "description": "[github] Repositories to poll as OWNER/REPO. REQUIRED: no fallback to any repo's plugin config (.the-loop/config.yaml) — which repos to watch is a CLI-config-only concern (issue-63 review). A source with no repos discovers nothing (list_work_items raises).",
                 "items": { "type": "string" }
               },
               "monitor": {

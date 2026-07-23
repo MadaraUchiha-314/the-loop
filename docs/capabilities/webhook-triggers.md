@@ -40,8 +40,9 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 - All `webhooks.*` keys above live in the **CLI config** (`cli-config.yaml`, resolved
   via `--config`/env/cwd/home — see `cli/README.md`), independent of any repo's
   `.the-loop/config.yaml` (the plugin config) — the daemon is not tied to a single repo
-  (decision-032). `routing.authorizedUsers` still falls back to `ticketing.github.owner`
-  in the plugin config when the daemon runs from within the repo it watches.
+  and never reads a repo's plugin config for anything (decision-032).
+  `routing.authorizedUsers` has no fallback: it must be set explicitly in the CLI
+  config or the receiver fails closed (acts on no human-authored events).
 
 ## Design
 
