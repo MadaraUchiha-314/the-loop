@@ -70,6 +70,7 @@ def test_target_from_full_webhook_payload_uses_clone_url_and_html_host():
         }
     }
     target = repo_target_from_payload(payload)
+    assert target is not None
     assert target.host == "github.example.com"
     assert target.owner == "octo" and target.repo == "hello"
     assert target.clone_url == "https://github.example.com/octo/hello.git"
@@ -85,6 +86,7 @@ def test_target_ssh_protocol_prefers_ssh_url():
         }
     }
     target = repo_target_from_payload(payload, protocol="ssh")
+    assert target is not None
     assert target.clone_url == "git@github.com:octo/hello.git"
 
 
@@ -92,9 +94,11 @@ def test_target_from_lean_poller_payload_reconstructs_url_and_default_host():
     # The poller synthesises payloads carrying only repository.full_name.
     payload = {"repository": {"full_name": "octo/hello"}}
     target = repo_target_from_payload(payload, default_host="ghe.corp")
+    assert target is not None
     assert target.host == "ghe.corp"
     assert target.clone_url == "https://ghe.corp/octo/hello.git"
     ssh = repo_target_from_payload(payload, protocol="ssh", default_host="ghe.corp")
+    assert ssh is not None
     assert ssh.clone_url == "git@ghe.corp:octo/hello.git"
 
 
@@ -299,16 +303,19 @@ def _wait(pred, timeout=5.0):
     return pred()
 
 
+def _make_dispatcher(registry, adapter, config):
+    # `adapter` is intentionally unannotated so the in-process double satisfies
+    # the HarnessAdapter parameter without a subclass (mirrors test_routing).
+    return Dispatcher(registry=registry, adapters={"claude": adapter}, config=config)
+
+
 def _dispatcher(tmp_path, bare, adapter, **ws_over):
     registry = SessionRegistry(tmp_path / "sessions")
     config = RoutingConfig(
         spawn_on_unmatched="always",
         workspace=WorkspaceConfig(root=str(tmp_path / "root"), **ws_over),
     )
-    dispatcher = Dispatcher(
-        registry=registry, adapters={"claude": adapter}, config=config
-    )
-    return registry, dispatcher
+    return registry, _make_dispatcher(registry, adapter, config)
 
 
 def _issue_event(bare, number=15, delivery="d-1"):
@@ -427,9 +434,7 @@ def test_dispatcher_without_workspace_uses_spawn_workdir(tmp_path):
     adapter = _RecordingAdapter()
     registry = SessionRegistry(tmp_path / "sessions")
     config = RoutingConfig(spawn_on_unmatched="always", spawn_workdir=str(tmp_path))
-    dispatcher = Dispatcher(
-        registry=registry, adapters={"claude": adapter}, config=config
-    )
+    dispatcher = _make_dispatcher(registry, adapter, config)
     assert dispatcher.workspace is None
     dispatcher.handle(_issue_event(tmp_path / "unused.git"))
     assert _wait(lambda: len(adapter.spawns) == 1)
