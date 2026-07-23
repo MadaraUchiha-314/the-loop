@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [027](decision-027.md) | Checkpoint-then-reset context management (clear at phase boundaries, compact at task boundaries) | accepted | 2026-07-23 |
 | [026](decision-026.md) | Security is a gated, per-phase concern of the spec workflow (not a separate step) | accepted | 2026-07-23 |
 | [025](decision-025.md) | JSONL event log as the CLI's observability source of truth (not SQLite) | accepted | 2026-07-22 |
 | [024](decision-024.md) | Schema-driven grouped onboarding for `/init` (x-onboarding annotations) | accepted | 2026-07-22 |

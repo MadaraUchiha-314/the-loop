@@ -90,8 +90,8 @@
         "id": "automation",
         "title": "Automation ingress & self-improvement",
         "ask": "advanced",
-        "explain": "The webhook receiver / poller that route GitHub events into harness sessions, and the learnings lifecycle. Localhost/off by default; configure only when running the-loop's runtime automation.",
-        "keys": ["webhooks", "polling", "selfImprovement"]
+        "explain": "The webhook receiver / poller that route GitHub events into harness sessions, the learnings lifecycle, and the context-window management policy. Sensible defaults; configure only when tuning the-loop's runtime behaviour.",
+        "keys": ["webhooks", "polling", "selfImprovement", "contextManagement"]
       }
     ]
   },
@@ -800,6 +800,36 @@
           "minimum": 1,
           "default": 3,
           "description": "A learning candidate becomes durable only after recurring this many times (rule-of-three); a clearly high-severity one-off may bypass the gate."
+        }
+      }
+    },
+    "contextManagement": {
+      "type": "object",
+      "description": "How the harness manages its context window while working an item: checkpoint durable state (tasks.md checkmarks, execution-log entry with a concrete next step, phase label), THEN reset. Clearing empties the window (only disk state survives); compaction summarizes it in place (lossy). See reference/context.md for the protocol and per-harness mechanics.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "false defers window management entirely to the harness's own automatics (e.g. auto-compaction)."
+        },
+        "phaseBoundary": {
+          "type": "string",
+          "enum": ["clear", "compact", "off"],
+          "default": "clear",
+          "description": "Reset when the phase advances across a locked artifact — most importantly tasks-breakdown → implementation: the approved spec is re-read from disk, so a fresh window (clear) is safe and highest-fidelity (plan-mode style). Headless sessions achieve clear by ending at the boundary and letting resumability start the next session fresh."
+        },
+        "taskBoundary": {
+          "type": "string",
+          "enum": ["clear", "compact", "off"],
+          "default": "compact",
+          "description": "Reset after each completed task in the tasks.md DAG (checkpoint first). compact keeps cross-task working knowledge while dropping the finished task's exploration/diff/test noise; clear is the aggressive option the checked-in execution log makes affordable (good for long DAGs)."
+        },
+        "midTask": {
+          "type": "string",
+          "enum": ["compact", "off"],
+          "default": "compact",
+          "description": "Only compaction is permitted mid-task — never clear inside an unfinished task (it has un-checkpointed intent by definition). Write an interim checkpoint before compacting."
         }
       }
     },

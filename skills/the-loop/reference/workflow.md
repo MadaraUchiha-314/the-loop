@@ -125,6 +125,30 @@ copy of its contents. The checked-in file is the single source of truth.
 - Use the configured tooling (see `tooling.md`); same commands as CI.
 - Apply the **minimalism** ladder (see `minimalism.md`) to avoid generating bloat — least
   code that correctly does the job; justify any new dependency in `design.md`.
+- **Manage the context window at every boundary** (see `context.md`): each task's
+  checkpoint (checkmark + log entry + tests) is also the safe point to reset context —
+  compact after each completed task (`contextManagement.taskBoundary`, default
+  `compact`), compact (never clear) mid-task if the window nears its limit, and run
+  high-volume exploration in subagents so it never enters the main window.
+
+## Context-window management (checkpoint, then reset)
+
+A work item outlives any single context window. The loop manages the window
+**deliberately** rather than letting it grow until the harness's auto-compaction fires
+mid-task (see `context.md` for the full protocol, the clearing-vs-compaction
+distinction and per-harness mechanics):
+
+- **Never reset without a checkpoint** — checkmarks current, an execution-log entry
+  with a concrete **Next:**, phase label in sync, WIP committed or noted.
+- **Phase boundaries clear** (`contextManagement.phaseBoundary`, default `clear`):
+  once `tasks.md` is locked, start implementation on a **fresh window** that re-reads
+  the approved spec from disk — the same separation Claude Code's plan mode makes
+  between planning and execution. Spec→spec transitions derive each artifact from the
+  locked file, not the chat that produced it.
+- **Task boundaries compact** (default): drop the finished task's exploration/diff/test
+  noise, keep cross-task working knowledge.
+- **Headless sessions** end at the boundary instead — resumability (below) starts the
+  next session fresh from the checkpoint.
 
 ## Capability docs — the organized view of specs (fold-in step)
 
@@ -208,7 +232,8 @@ signal instead of a firehose of approvals. Then move to `complete`.
 
 Because the specs and execution log are checked in, the-loop can resume a work item
 exactly where it left off — read the execution log's `phase` and the specs' `status`,
-and continue.
+and continue. Context management (`context.md`) is this same property applied *within*
+a session: the checked-in artifacts are what make clearing the window affordable.
 
 ## DAG orchestration across work items
 

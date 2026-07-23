@@ -208,6 +208,12 @@ selfImprovement:
   maxIndexLines: 200              # cap on the injected learnings index
   writeGateOccurrences: 3         # rule-of-three before a candidate becomes durable
 
+contextManagement:                # checkpoint-then-reset — see reference/context.md
+  enabled: true
+  phaseBoundary: clear            # clear | compact | off — locked spec → fresh window (plan-mode style)
+  taskBoundary: compact           # clear | compact | off — after each completed task, checkpoint then reset
+  midTask: compact                # compact | off — never clear inside an unfinished task
+
 userInteraction:
   diagramFormat: mermaid          # RULE: all diagrams are mermaid
   prSummary:

@@ -175,6 +175,12 @@ selfImprovement:
   maxIndexLines: 200
   writeGateOccurrences: 3
 
+contextManagement:               # checkpoint-then-reset — see reference/context.md
+  enabled: true
+  phaseBoundary: clear           # locked spec → fresh window for implementation (plan-mode style)
+  taskBoundary: compact          # after each completed task: checkpoint, then compact
+  midTask: compact               # never clear mid-task; compact only, after a checkpoint
+
 userInteraction:
   diagramFormat: mermaid          # RULE: all diagrams are mermaid
   prSummary:

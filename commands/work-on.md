@@ -19,8 +19,9 @@ report progress. `work-on` runs them end-to-end; reach for the granular commands
 pre-ticket (or with a brainstorm) or to drive a single phase.
 
 **Before acting, read the `the-loop` skill and its reference files** for the full rules:
-`reference/workflow.md` (phases, reviews, DAG), `reference/tooling.md` (which commands
-to run), `reference/collaboration.md` (who to involve, paper trail),
+`reference/workflow.md` (phases, reviews, DAG), `reference/context.md` (checkpoint-then-
+reset window management), `reference/tooling.md` (which commands to run),
+`reference/collaboration.md` (who to involve, paper trail),
 `reference/observability.md`. The summary below is the procedure; the references are the
 detail — do not lose it.
 
@@ -82,11 +83,17 @@ requirements.
    the checked-in artifact** — single source of truth, not a copy. Later changes to a
    spec doc are made as **edits to that file, not new comments**.
 
-7. **Implementation** (`implementation`). Execute the task DAG autonomously. **Tick each
-   task in `tasks.md` (`- [ ]` → `- [x]`) as it completes.** Maintain
-   `docs/specs/<id>/execution-log.md`: append progress and run tests (unit/integration
-   per config) at logical checkpoints — self-checking as you go. Same tooling as CI;
-   logging/observability identical to runtime.
+7. **Implementation** (`implementation`). Entering implementation crosses the big phase
+   boundary: **reset context per `contextManagement.phaseBoundary` (default `clear`)**
+   and execute against the locked spec files read from disk, not the drafting
+   conversation (plan-mode style; `reference/context.md`). Execute the task DAG
+   autonomously. **Tick each task in `tasks.md` (`- [ ]` → `- [x]`) as it completes.**
+   Maintain `docs/specs/<id>/execution-log.md`: append progress and run tests
+   (unit/integration per config) at logical checkpoints — self-checking as you go.
+   **After each completed task: checkpoint (checkmark, log entry with a concrete Next,
+   WIP committed/noted), then reset per `contextManagement.taskBoundary` (default
+   `compact`); mid-task compact only, never clear; never reset without the
+   checkpoint.** Same tooling as CI; logging/observability identical to runtime.
 
 8. **Review** (`needs-review`). Run up to `reviews.selfReviewCount` self-reviews and
    `reviews.criticReviewCount` critic reviews (configured critics, e.g. a different
