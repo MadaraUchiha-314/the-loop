@@ -1,3 +1,9 @@
+## v0.12.0 (2026-07-23)
+
+### Feat
+
+- **skill**: read user-provided custom instruction docs while working (issue #59) (#61)
+
 ## v0.11.0 (2026-07-23)
 
 ### Feat
