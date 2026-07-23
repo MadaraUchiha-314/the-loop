@@ -22,9 +22,12 @@ Stand up [VitePress](https://vitepress.dev/) with its **source directory set to 
 existing `docs/` folder**. VitePress is a Markdown-first static-site generator (satisfies
 "all content MUST be Markdown" and "good static site like VitePress"), ships a clean
 default theme with light/dark and local search (satisfies "bare minimum good looking, no
-fancy CSS"), and its build is a self-contained npm project scoped to docs only (satisfies
-"don't maintain two toolchains" — the CLI stays Python per `decision-030`; the docs site
-is orthogonal tooling, not a second authoring stack for the same content).
+fancy CSS"), and its build is a self-contained **bun** project scoped to docs only —
+bun is the-loop's declared TS package manager (`tooling.packageManager.ts`) and its
+scripts are TypeScript (`.mts`), so this adds no *new* toolchain (satisfies "don't
+maintain two toolchains" — the CLI stays Python per `decision-030`; the docs site is
+orthogonal tooling on the repo's own TS stack, not a second authoring stack for the same
+content).
 
 The key design tension is Requirement 3 (**reuse, don't duplicate**). VitePress treats
 its `srcDir` as the site; by pointing `srcDir` at `docs/`, the files already in
@@ -78,8 +81,8 @@ flowchart TD
 - `docs/specs/index.md`, `docs/reports/index.md` — overview landing pages for those
   sections.
 
-**Build-time sync** (`docs/scripts/sync-content.mjs`), the *only* copying, limited to
-files that structurally cannot be authored under `docs/`:
+**Build-time sync** (`docs/scripts/sync-content.mts`, TypeScript run by bun), the *only*
+copying, limited to files that structurally cannot be authored under `docs/`:
 
 - `cli/README.md` → `docs/cli.md`. `cli/README.md` is declared as the CLI package's
   readme in `cli/pyproject.toml` (`readme = "README.md"`) and rendered on PyPI, so it
@@ -94,8 +97,9 @@ links in the reference docs (`../../../docs/decisions/` → `/decisions/`) so th
 in the site.
 
 **Deployment** (`.github/workflows/docs.yml`): on push to `main` touching docs sources
-(or `workflow_dispatch`), Node 22 + `npm ci` + `npm run docs:build`, then the first-party
-Pages actions with `pages: write` + `id-token: write` and single-flight `concurrency`.
+(or `workflow_dispatch`), `oven-sh/setup-bun` + `bun install --frozen-lockfile` +
+`bun run docs:build`, then the first-party Pages actions with `pages: write` +
+`id-token: write` and single-flight `concurrency`.
 
 ## Components & interfaces
 
@@ -103,7 +107,7 @@ Pages actions with `pages: write` + `id-token: write` and single-flight `concurr
 |-----------|----------------|-----------|
 | `docs/package.json` | Site toolchain + scripts | `docs:sync`, `docs:dev`, `docs:build`, `docs:preview` |
 | `docs/.vitepress/config.mts` | Nav, sidebar (incl. filesystem-generated specs sidebar), base | VitePress `defineConfig` |
-| `docs/scripts/sync-content.mjs` | Build-time sync of the 2 external sources | Node script, run by `docs:sync` (prepended to dev/build) |
+| `docs/scripts/sync-content.mts` | Build-time sync of the 2 external sources | TypeScript, run by bun via `docs:sync` (prepended to dev/build) |
 | `.github/workflows/docs.yml` | Build + deploy to Pages | GitHub Actions |
 
 ## Data models
@@ -138,12 +142,12 @@ sidebar/nav structure, both typed by `vitepress`'s `defineConfig`.
 This is a docs/site work item; "tests" are build-and-render verifications rather than a
 unit suite (no product code changes):
 
-- `npm run docs:build` completes with 0 errors and renders the expected page set
+- `bun run docs:build` completes with 0 errors and renders the expected page set
   (guide, reference, cli, architecture, capabilities, decisions, operating-model,
   specs, reports, contributing).
 - Every `docs/specs/<id>/` artifact and `docs/reports/gh-queries.md` render as pages;
   the generated specs sidebar lists every work item.
-- `npm run docs:preview` serves the built site; key routes return HTTP 200.
+- `bun run docs:preview` serves the built site; key routes return HTTP 200.
 - `pre-commit run --all-files` stays green (ruff, pyright, pytest, markdownlint, schema).
 
 No Gherkin integration scenarios apply (no runtime behaviour to script); recorded here so
@@ -168,6 +172,12 @@ the absence is deliberate, not an omission.
   now first-class site content. To avoid hand-maintaining nav for ~20 work items × ~5
   artifacts, the specs sidebar is generated from the filesystem, so it self-updates as
   specs are added — the same low-maintenance principle as reading `docs/` in place.
+- **bun + TypeScript, not npm + JS (PR #71 review).** The owner asked for bun as the
+  package manager/runner and TypeScript-only scripts ("NO JS. Only TS."). This aligns the
+  docs site with the-loop's own declared TS tooling (`tooling.packageManager.ts: bun`):
+  the single sync script is `sync-content.mts`, run by `bun run` (Node 22+ / bun both
+  strip types natively, so no build step), the lockfile is `bun.lock`, and CI uses
+  `oven-sh/setup-bun`. No `package-lock.json`, no `.mjs`.
 
 ## Open questions
 

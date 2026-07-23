@@ -29,19 +29,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: docs/package-lock.json
+          bun-version: latest
 
       - name: Install dependencies
         working-directory: docs
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: Build
         working-directory: docs
-        run: npm run docs:build
+        run: bun run docs:build
 
       - uses: actions/configure-pages@v5
 

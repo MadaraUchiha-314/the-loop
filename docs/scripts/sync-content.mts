@@ -3,24 +3,29 @@
 // and skills/the-loop/reference/*.md is read at RUNTIME by the harness from that exact
 // path. Everything else the site needs (architecture/, capabilities/, decisions/,
 // specs/) already lives directly under docs/ and needs no copy. Run automatically
-// before docs:dev / docs:build.
+// before docs:dev / docs:build (Node runs this .mts directly via native type stripping).
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+type Transform = (content: string) => string;
+type FileMapping = readonly [srcRel: string, destRel: string, transform: Transform | null];
+type DirMapping = readonly [srcDirRel: string, destDirRel: string, transform: Transform | null];
+
 const siteRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const repoRoot = dirname(siteRoot);
 
-const FILE_MAPPINGS = [["cli/README.md", "cli.md", null]];
-
-// [sourceDir (repo-relative), destDir (docs-relative), transform?]
-const DIR_MAPPINGS = [["skills/the-loop/reference", "operating-model/reference", rewriteReferenceLinks]];
-
-function rewriteReferenceLinks(content) {
+function rewriteReferenceLinks(content: string): string {
   return content.replaceAll("../../../docs/decisions/", "/decisions/");
 }
 
-function copyFile(srcRel, destRel, transform) {
+const FILE_MAPPINGS: readonly FileMapping[] = [["cli/README.md", "cli.md", null]];
+
+const DIR_MAPPINGS: readonly DirMapping[] = [
+  ["skills/the-loop/reference", "operating-model/reference", rewriteReferenceLinks],
+];
+
+function copyFile(srcRel: string, destRel: string, transform: Transform | null): void {
   const srcPath = join(repoRoot, srcRel);
   const destPath = join(siteRoot, destRel);
   mkdirSync(dirname(destPath), { recursive: true });

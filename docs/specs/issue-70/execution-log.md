@@ -79,12 +79,32 @@ status: in-progress
 - **Next:** push, reply on the review threads.
 - **Blockers:** GitHub Pages enablement (unchanged; owner-only).
 
+### 2026-07-23T19:00Z — PR #71 review round 3: bun + TypeScript-only toolchain
+
+- **Phase:** implementation (rework)
+- **Did:** two related owner points on PR #71:
+  1. *"NO JS. Only TS."* — converted `docs/scripts/sync-content.mjs` →
+     `sync-content.mts` with explicit types; Node 22 / bun both strip types natively, so
+     it runs directly with no build step.
+  2. *"use bun … as the package manager and to run the scripts."* — switched
+     `package.json` scripts to `bun run`, replaced `package-lock.json` with `bun.lock`
+     (`bun install`), and moved `docs.yml` from `setup-node` + `npm ci` to
+     `oven-sh/setup-bun` + `bun install --frozen-lockfile` + `bun run docs:build`. This
+     matches the-loop's own `tooling.packageManager.ts: bun`. Updated `contributing.md`,
+     `decision-033`, and this spec (task 10).
+- **Checkpoint/tests:** `bun install` + `bun run docs:build` clean (141 pages); no `.mjs`
+  / `package-lock.json` / `npm` left in the docs toolchain; `pre-commit run --all-files`
+  green; `uv.lock` churn reverted.
+- **Next:** push, reply on the two review threads.
+- **Blockers:** GitHub Pages enablement (unchanged; owner-only).
+
 ## Review cycles
 
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
 |-------|-----------------------------|----------|---------|------|
 | 1 | human | @MadaraUchiha-314 | 2 changes requested (no-duplicate; backfill spec) | PR #71 |
 | 2 | human | @MadaraUchiha-314 | 3 changes requested (include specs/reports; remove roadmap) | PR #71 |
+| 3 | human | @MadaraUchiha-314 | 2 changes requested (TS-only; bun toolchain) | PR #71 |
 
 ## Security review (gate)
 
@@ -96,9 +116,9 @@ status: in-progress
 
 ## Final validation evidence
 
-- `npm run docs:build` — clean build from `docs/` as srcDir; guide/reference/cli/
-  architecture/capabilities/decisions/operating-model/contributing pages present, plus
-  every `docs/specs/<id>/` artifact and `docs/reports/` page (specs sidebar generated
-  from the filesystem).
+- `bun install` + `bun run docs:build` — clean build from `docs/` as srcDir;
+  guide/reference/cli/architecture/capabilities/decisions/operating-model/contributing
+  pages present, plus every `docs/specs/<id>/` artifact and `docs/reports/` page (specs
+  sidebar generated from the filesystem). Toolchain is bun + TypeScript (`.mts`) only.
 - `pre-commit run --all-files` — ruff, pyright, pytest, markdownlint, schema validation
   all pass.

@@ -22,7 +22,7 @@ overrides: {}
     `docs/.vitepress/config.mts` (base `/the-loop/`, default theme, local search).
   - _Depends on:_ none
   - _Requirements:_ R1, R2
-  - _Test:_ `npm run docs:build` succeeds.
+  - _Test:_ `bun run docs:build` succeeds.
 - [x] 2. Author the hand-written site pages (Markdown)
   - `docs/index.md` (home hero), `docs/guide/*` (what-is/installation/quickstart/
     how-it-works), `docs/reference/*` (commands/configuration),
@@ -31,7 +31,7 @@ overrides: {}
   - _Requirements:_ R1, R2
   - _Test:_ pages render in `dist`; internal links resolve in `docs:preview`.
 - [x] 3. Build-time sync of the two non-relocatable sources
-  - `docs/scripts/sync-content.mjs` copies `cli/README.md` → `docs/cli.md` and
+  - `docs/scripts/sync-content.mts` copies `cli/README.md` → `docs/cli.md` and
     `skills/the-loop/reference/*.md` → `docs/operating-model/reference/`, rewriting
     relative links; wired into `docs:sync` (prepended to dev/build).
   - _Depends on:_ 1
@@ -46,7 +46,7 @@ overrides: {}
   - _Test:_ architecture/decisions/capabilities pages exist in `dist`.
 - [x] 5. GitHub Pages deploy workflow
   - `.github/workflows/docs.yml`: on push to `main` (docs paths) + `workflow_dispatch`,
-    Node 22 + `npm ci` + `docs:build`, first-party Pages actions, single-flight
+    `setup-bun` + `bun install --frozen-lockfile` + `docs:build`, first-party Pages actions, single-flight
     concurrency, OIDC scopes.
   - _Depends on:_ 1
   - _Requirements:_ R4
@@ -82,17 +82,28 @@ overrides: {}
   - _Requirements:_ R3.1, R3.4
   - _Test:_ every spec artifact + report renders in `dist`; specs sidebar lists all work
     items; no `/roadmap` route; `docs:build` clean; `pre-commit run --all-files` green.
+- [x] 10. Move the toolchain to bun + TypeScript (PR #71 review round 3)
+  - Owner: "NO JS. Only TS." and "use bun … as the package manager and to run the
+    scripts." Convert `sync-content.mjs` → `sync-content.mts` (typed), switch
+    `package.json` scripts to `bun run`, replace `package-lock.json` with `bun.lock`,
+    switch `docs.yml` to `oven-sh/setup-bun` + `bun install --frozen-lockfile`, and update
+    references (contributing, decision-033, this spec).
+  - _Depends on:_ 9
+  - _Requirements:_ R4, R5.4
+  - _Test:_ `bun install` + `bun run docs:build` clean; no `.mjs` / `package-lock.json` /
+    `npm` remain in the docs toolchain; `pre-commit run --all-files` green.
 
 ## Dependency graph (DAG)
 
-`1 → {2, 3, 4, 5} → 6 → 7 → 8 → 9`
+`1 → {2, 3, 4, 5} → 6 → 7 → 8 → 9 → 10`
 
 ## Checkpoints
 
-- After tasks 1–6: `npm run docs:build` + `pre-commit run --all-files` (initial PR #71).
+- After tasks 1–6: `bun run docs:build` + `pre-commit run --all-files` (initial PR #71).
 - After task 7: same gates re-run post-restructure.
 - After task 8: markdownlint over the new spec; final `docs:build`.
 - After task 9: `docs:build` renders specs/reports, no `/roadmap`; gates green.
+- After task 10: `bun install` + `bun run docs:build` clean; toolchain is bun + `.mts` only.
 - No security-review escalation: risk tier is low (public static site, no secrets, no
   runtime surface); `security.review` satisfied by the Security design section of
   `design.md`.

@@ -31,7 +31,11 @@ Point VitePress's `srcDir` at the existing **`docs/`** directory. The files alre
 
 - `docs/.vitepress/config.mts` holds the site config (`base: "/the-loop/"`, default
   theme, local search, nav/sidebar). `docs/package.json` + `docs/scripts/` hold the
-  toolchain, scoped to the docs site only (the CLI stays Python — `decision-030`).
+  toolchain, scoped to the docs site only (the CLI stays Python — `decision-030`). The
+  toolchain is **bun** (the-loop's declared TS package manager,
+  `tooling.packageManager.ts`) and all scripts are **TypeScript** (`.mts`, run by bun
+  directly via native type stripping) — no JS, one lockfile (`bun.lock`), matching the
+  repo's own tooling contract.
 - `docs/architecture/`, `docs/capabilities/`, `docs/decisions/`, `docs/specs/` and
   `docs/reports/` render **in place**. New hand-written site pages (`docs/index.md`,
   `docs/guide/*`, `docs/reference/*`, `docs/contributing.md`,
@@ -57,7 +61,7 @@ Point VitePress's `srcDir` at the existing **`docs/`** directory. The files alre
   and it is *both* the repo's decision record and the site page — there is no second copy
   to update.
 - **Residual sync is tiny and justified.** Two mappings, each for a file that genuinely
-  cannot be relocated, documented in `docs/scripts/sync-content.mjs` and
+  cannot be relocated, documented in `docs/scripts/sync-content.mts` and
   `docs/contributing.md`.
 - **`ignoreDeadLinks` stays on.** Canonical `docs/decisions` / `docs/capabilities`
   content links out to `cli/README.md`, `skills/the-loop/SKILL.md`, and into

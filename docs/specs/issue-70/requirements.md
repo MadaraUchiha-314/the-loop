@@ -113,8 +113,9 @@ so that documentation stays current without a manual release step.
    token.
 3. WHILE a deploy is in progress a newer push SHALL supersede it (single-flight
    concurrency), so `main` and the published site do not diverge.
-4. The workflow SHALL reuse the repo's existing CI conventions (Node 22, as CI already
-   uses for markdownlint) to avoid tooling drift.
+4. The workflow SHALL use **bun** (the-loop's declared TS package manager,
+   `tooling.packageManager.ts`) to install and build, so the docs toolchain matches the
+   repo's own TS tooling contract rather than introducing a separate one.
 
 ### Requirement 5 — no local-vs-CI drift, existing gates stay green
 
@@ -127,14 +128,17 @@ that adding it doesn't weaken or bypass the checks the-loop already enforces.
    pytest, markdownlint, schema validation) SHALL pass with the site added.
 2. Build-time synced/generated files SHALL be excluded from markdownlint (the canonical
    source is linted, not the copy) and from version control.
-3. The site SHALL build cleanly (`npm run docs:build`) with no unresolved internal
+3. The site SHALL build cleanly (`bun run docs:build`) with no unresolved internal
    links to site pages.
+4. The site's scripts SHALL be **TypeScript** (`.mts`), not JavaScript, run directly by
+   bun (native type stripping — no compile step). (PR #71 review: "NO JS. Only TS.")
 
 ## Non-functional requirements
 
-- **Minimal footprint:** the site is a self-contained npm project under `docs/`; it
+- **Minimal footprint:** the site is a self-contained bun project under `docs/`; it
   adds no runtime dependency to the CLI or plugin.
-- **Reproducibility:** a committed `package-lock.json` and `npm ci` in CI pin the build.
+- **Reproducibility:** a committed `bun.lock` and `bun install --frozen-lockfile` in CI
+  pin the build.
 - **Accessibility/responsiveness:** inherited from VitePress's default theme (light/dark,
   responsive) — no bespoke work required by the issue.
 
