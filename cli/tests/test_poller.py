@@ -204,13 +204,25 @@ def _gh_client(issues=None, prs=None, comments=None):
 
 def test_provider_from_source_resolves_label_and_repos():
     provider = GitHubPollProvider.from_source(
-        {"provider": "github", "monitor": {"pullRequests": False}},
+        {
+            "provider": "github",
+            "repos": ["octo/repo"],
+            "monitor": {"pullRequests": False},
+        },
         default_label=LABEL,
-        fallback_repos=["octo/repo"],
     )
     assert provider.label == LABEL  # fell back to routing label
-    assert [s.full_name for s in provider.repos] == ["octo/repo"]  # ticketing fallback
+    assert [s.full_name for s in provider.repos] == ["octo/repo"]
     assert provider.monitor_prs is False
+
+
+def test_provider_from_source_with_no_repos_is_empty_not_a_fallback():
+    """No plugin-config (ticketing.github) fallback (issue-63 review): an
+    unconfigured source has zero repos, not whatever the repo happens to be."""
+    provider = GitHubPollProvider.from_source(
+        {"provider": "github"}, default_label=LABEL
+    )
+    assert provider.repos == []
 
 
 def test_provider_lists_issues_and_prs_as_work_items():
@@ -295,16 +307,14 @@ def test_provider_registry_knows_github():
 
 def test_build_provider_rejects_missing_and_unknown_provider():
     with pytest.raises(ProviderError):
-        build_provider({}, default_label=LABEL, fallback_repos=[])
+        build_provider({}, default_label=LABEL)
     with pytest.raises(ProviderError):
-        build_provider({"provider": "gitlab"}, default_label=LABEL, fallback_repos=[])
+        build_provider({"provider": "gitlab"}, default_label=LABEL)
 
 
 def test_build_provider_constructs_github():
     provider = build_provider(
-        {"provider": "github", "repos": ["octo/repo"]},
-        default_label=LABEL,
-        fallback_repos=[],
+        {"provider": "github", "repos": ["octo/repo"]}, default_label=LABEL
     )
     assert isinstance(provider, GitHubPollProvider)
     assert "github octo/repo" == provider.describe()
@@ -541,10 +551,13 @@ def test_is_authorized_rules():
     assert is_authorized("them", ["me"]) is False
 
 
-def test_resolve_authorized_users_falls_back_to_owner():
-    assert resolve_authorized_users(["a", "b"], "owner") == ["a", "b"]
-    assert resolve_authorized_users([], "owner") == ["owner"]
-    assert resolve_authorized_users([], None) == []
+def test_resolve_authorized_users_normalizes_configured_list():
+    """No plugin-config (ticketing.github.owner) fallback (issue-63 review):
+    the effective allowlist is exactly the configured CLI-config list,
+    falsy entries dropped."""
+    assert resolve_authorized_users(["a", "b"]) == ["a", "b"]
+    assert resolve_authorized_users([]) == []
+    assert resolve_authorized_users(["", "a"]) == ["a"]
 
 
 def test_poller_drops_comment_from_unauthorized_author(tmp_path):

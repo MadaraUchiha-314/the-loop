@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [032](decision-032.md) | Split the-loop's config into a per-repo plugin config and an independently-configurable CLI config | accepted | 2026-07-23 |
 | [031](decision-031.md) | Self-reply marker guard — an embedded body marker, not GitHub metadata | accepted | 2026-07-23 |
 | [030](decision-030.md) | Stay on Python for the CLI — a rewrite in Go/Rust/Bun buys nothing measurable | proposed | 2026-07-23 |
 | [029](decision-029.md) | Register user instruction docs inline in config (guidance counterpart of externalTools) | accepted | 2026-07-23 |

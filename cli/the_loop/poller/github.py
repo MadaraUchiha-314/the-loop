@@ -289,12 +289,10 @@ class GitHubPollProvider(PollProvider):
         self.gh = gh or GhClient()
 
     @classmethod
-    def from_source(
-        cls, source: dict, *, default_label: str, fallback_repos: List[str]
-    ) -> "GitHubPollProvider":
+    def from_source(cls, source: dict, *, default_label: str) -> "GitHubPollProvider":
         source = source or {}
         monitor = source.get("monitor") or {}
-        repos = [str(r) for r in (source.get("repos") or [])] or list(fallback_repos)
+        repos = [str(r) for r in (source.get("repos") or [])]
         return cls(
             repos=parse_repos(repos),
             label=str(source.get("label") or "") or default_label,
@@ -315,7 +313,7 @@ class GitHubPollProvider(PollProvider):
         if not self.repos:
             raise ProviderError(
                 "github polling source has no repositories — set the source's "
-                "'repos' (OWNER/REPO) or configure ticketing.github"
+                "'repos' (OWNER/REPO) in the CLI config"
             )
         items: List[WorkItem] = []
         for spec in self.repos:

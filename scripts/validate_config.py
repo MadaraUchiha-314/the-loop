@@ -22,26 +22,41 @@ except ImportError as exc:  # pragma: no cover
     sys.exit(2)
 
 ROOT = Path(__file__).resolve().parent.parent
-SCHEMA = ROOT / ".the-loop" / "config.schema.json"
-TARGETS = [
-    ROOT / ".the-loop" / "config.yaml",
-    # Templates are internal to the-loop and ship with the skill (issue #36).
-    ROOT / "skills" / "the-loop" / "templates" / "config.yaml",
+
+# Two independent config surfaces (issue-63, decision-032): the PLUGIN config
+# (per repo) and the CLI config (webhooks/polling/eventLog, not tied to a repo).
+SCHEMA_TARGETS = [
+    (
+        ROOT / ".the-loop" / "config.schema.json",
+        [
+            ROOT / ".the-loop" / "config.yaml",
+            # Templates are internal to the-loop and ship with the skill (issue #36).
+            ROOT / "skills" / "the-loop" / "templates" / "config.yaml",
+        ],
+    ),
+    (
+        ROOT / ".the-loop" / "cli-config.schema.json",
+        [
+            ROOT / ".the-loop" / "cli-config.yaml",
+            ROOT / "skills" / "the-loop" / "templates" / "cli-config.yaml",
+        ],
+    ),
 ]
 
 
 def main() -> int:
-    schema = json.loads(SCHEMA.read_text())
     ok = True
-    for target in TARGETS:
-        rel = target.relative_to(ROOT)
-        try:
-            jsonschema.validate(yaml.safe_load(target.read_text()), schema)
-        except jsonschema.ValidationError as exc:
-            ok = False
-            print(f"INVALID {rel}: {exc.message}", file=sys.stderr)
-        else:
-            print(f"VALID   {rel}")
+    for schema_path, targets in SCHEMA_TARGETS:
+        schema = json.loads(schema_path.read_text())
+        for target in targets:
+            rel = target.relative_to(ROOT)
+            try:
+                jsonschema.validate(yaml.safe_load(target.read_text()), schema)
+            except jsonschema.ValidationError as exc:
+                ok = False
+                print(f"INVALID {rel}: {exc.message}", file=sys.stderr)
+            else:
+                print(f"VALID   {rel}")
     return 0 if ok else 1
 
 

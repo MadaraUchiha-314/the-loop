@@ -1,5 +1,8 @@
-# .the-loop/config.yaml — configuration for the-loop's own repository.
-# Validated against .the-loop/config.schema.json.
+# .the-loop/config.yaml — PLUGIN configuration for the-loop's own repository
+# (installed here as a Claude/Cursor plugin). Validated against
+# .the-loop/config.schema.json. The CLI daemon (gh-webhook/poll/sessions/events)
+# reads a separate, repo-independent file instead — see .the-loop/cli-config.yaml
+# and decision-032.
 
 version: "0.1.0"
 
@@ -82,9 +85,7 @@ observability:
   devLevel: debug
   runtimeLevel: info
   browserLogging: chrome-devtools-mcp
-  eventLog:                       # structured JSONL o11y trail; `the-loop events`
-    enabled: true
-    path: .the-loop/logs/events.jsonl
+  # eventLog moved to .the-loop/cli-config.yaml (CLI config, decision-032)
 
 reviews:
   selfReviewCount: 3
@@ -234,32 +235,3 @@ externalTools:                    # inline registry — one YAML for easy onboar
     caveman and ponytail are registered, not vendored — the-loop implements
     their techniques natively (tokenEconomy / minimalism) and bundles no runtime
     (decision-005). Register-only: the harness may use them if installed.
-
-webhooks:
-  ghWebhook:
-    host: 127.0.0.1
-    port: 8787
-    path: /gh-webhook
-    secretEnv: THE_LOOP_GH_WEBHOOK_SECRET
-    pidfile: .the-loop/gh-webhook.pid
-    events: [issues, issue_comment, pull_request, pull_request_review, pull_request_review_comment, workflow_run]
-    routing:
-      enabled: false                # flip on to route events to registered sessions
-      registryDir: .the-loop/sessions
-      defaultHarness: claude        # claude | cursor
-      spawnOnUnmatched: labeled     # never | always | labeled
-      autoExecuteLabel: "the-loop: auto-execute"   # label that opts an issue/PR into autonomous execution
-      spawnWorkdir: "."
-      runner: process             # process (headless) | tmux (attachable interactive TUI — issue-32)
-      webTerminal:                # ttyd browser terminal onto tmux sessions (runner: tmux)
-        enabled: false            # access control is environmental: localhost/VPN/provider (decision-021)
-        host: 127.0.0.1
-        port: 7681
-      maxConcurrentDispatches: 4
-      dedupCacheSize: 1024
-      dispatchTimeoutSeconds: 1800
-      promptTemplate: skills/the-loop/templates/webhook-event-prompt.md          # internal template; dispatcher falls back to a built-in default when absent
-      spawnPromptTemplate: skills/the-loop/templates/webhook-autoexecute-prompt.md  # internal template; dispatcher falls back to a built-in default when absent
-      harnessArgs:
-        claude: []                  # e.g. [--permission-mode, acceptEdits]
-        cursor: []                  # e.g. [--force]

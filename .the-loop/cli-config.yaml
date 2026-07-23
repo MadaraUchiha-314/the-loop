@@ -1,0 +1,59 @@
+# .the-loop/cli-config.yaml — the-loop's own CLI-daemon config, checked in for
+# local dev/dogfooding. Validated against .the-loop/cli-config.schema.json.
+#
+# The daemon (gh-webhook / poll / sessions / events) is not tied to any one
+# repo checkout (decision-032), so this file isn't required to live here — but
+# it CAN: an operator may choose to track their CLI config in a specific repo
+# (e.g. this one) instead of their home directory. Resolution order:
+#   1. --config / -c (explicit CLI flag)
+#   2. $THE_LOOP_CLI_CONFIG (explicit env var, same priority as --config)
+#   3. ./.the-loop/cli-config.yaml (repo-relative — this file, picked up
+#      automatically when `the-loop <command>` is run from this checkout)
+#   4. ~/.the-loop/cli-config.yaml (the always-available fallback)
+#
+# See .the-loop/config.yaml for the-loop's own PLUGIN config (ticketing,
+# workflow, tooling, reviews, …).
+
+version: "0.1.0"
+
+webhooks:
+  ghWebhook:
+    host: 127.0.0.1
+    port: 8787
+    path: /gh-webhook
+    secretEnv: THE_LOOP_GH_WEBHOOK_SECRET
+    pidfile: .the-loop/gh-webhook.pid
+    events: [issues, issue_comment, pull_request, pull_request_review, pull_request_review_comment, workflow_run]
+    routing:
+      enabled: false                # flip on to route events to registered sessions
+      registryDir: .the-loop/sessions
+      defaultHarness: claude        # claude | cursor
+      spawnOnUnmatched: labeled     # never | always | labeled
+      autoExecuteLabel: "the-loop: auto-execute"   # label that opts an issue/PR into autonomous execution
+      # SECURITY: no fallback to this repo's plugin config (issue-63 review) —
+      # empty here means nothing human-authored is actioned (fail closed).
+      # Set this explicitly, e.g. ["MadaraUchiha-314"], to actually route events.
+      authorizedUsers: []
+      spawnWorkdir: "."
+      runner: process             # process (headless) | tmux (attachable interactive TUI — issue-32)
+      webTerminal:                # ttyd browser terminal onto tmux sessions (runner: tmux)
+        enabled: false            # access control is environmental: localhost/VPN/provider (decision-021)
+        host: 127.0.0.1
+        port: 7681
+      maxConcurrentDispatches: 4
+      dedupCacheSize: 1024
+      dispatchTimeoutSeconds: 1800
+      promptTemplate: skills/the-loop/templates/webhook-event-prompt.md          # internal template; dispatcher falls back to a built-in default when absent
+      spawnPromptTemplate: skills/the-loop/templates/webhook-autoexecute-prompt.md  # internal template; dispatcher falls back to a built-in default when absent
+      harnessArgs:
+        claude: []                  # e.g. [--permission-mode, acceptEdits]
+        cursor: []                  # e.g. [--force]
+
+polling:
+  intervalSeconds: 60
+  stateFile: .the-loop/poll-state.json
+  sources: []                       # empty = nothing polled; this repo dogfoods webhooks, not poll
+
+eventLog:                           # structured JSONL o11y trail; `the-loop events`
+  enabled: true
+  path: .the-loop/logs/events.jsonl

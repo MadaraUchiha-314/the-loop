@@ -28,7 +28,8 @@ for humans, coding agents and any dashboarding built on top.
   single source of truth for event types (a unit test fails on drift).
 - Writes SHALL be append-only and multi-process safe; a broken log SHALL never break
   ingress; emission SHALL be a no-op in library/test use until a CLI entry point
-  configures it; `observability.eventLog.enabled: false` SHALL disable it.
+  configures it; `eventLog.enabled: false` in the **CLI config** SHALL disable it
+  (independent of any repo's plugin config — decision-032).
 - JSONL SHALL be the source of truth (no SQLite store); query/dashboard layers build on
   top of the file ([decision-025](../decisions/decision-025.md)).
 
@@ -42,4 +43,5 @@ for humans, coding agents and any dashboarding built on top.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-63 | `observability.eventLog` moved into the independent, repo-agnostic CLI config as top-level `eventLog` | [spec](../specs/issue-63/), [decision-032](../decisions/decision-032.md) |
 | issue-50 | Added the structured JSONL event log and `the-loop events` | [spec](../specs/issue-50/), [decision-025](../decisions/decision-025.md) |

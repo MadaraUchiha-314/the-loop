@@ -1,6 +1,8 @@
 # Observability reference
 
-Config: `observability` in `.the-loop/config.yaml`.
+Config: `observability` (`devLevel`/`runtimeLevel`/`browserLogging`) in
+`.the-loop/config.yaml` (the plugin config). The CLI event log below is configured
+separately, in the independent CLI config (`eventLog`; decision-032).
 
 ## Core rule: dev-time == run-time
 
@@ -21,8 +23,10 @@ Use the same logger and the same log lines in both; only the active level differ
 
 ## CLI event log — the audit trail of the-loop's own actions
 
-Config: `observability.eventLog` (`enabled`, default `true`; `path`, default
-`.the-loop/logs/events.jsonl`, git-ignored). Decision:
+Config: `eventLog` in the **CLI config** (`cli-config.yaml`: `enabled`, default `true`;
+`path`, default `.the-loop/logs/events.jsonl`, git-ignored) — independent of any repo's
+plugin config, resolved via `--config`/env/cwd/home (see `cli/README.md`,
+[decision-032](../../../docs/decisions/decision-032.md)). Decision:
 [decision-025](../../../docs/decisions/decision-025.md) — JSONL, not SQLite.
 
 the-loop's CLI processes (`the-loop gh-webhook`, `the-loop poll`, `the-loop sessions`)

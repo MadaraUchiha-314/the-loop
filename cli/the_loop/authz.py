@@ -63,20 +63,16 @@ def is_self_authored(body: Optional[str]) -> bool:
     return bool(body) and SELF_COMMENT_MARKER in body
 
 
-def resolve_authorized_users(
-    configured: Sequence[str], owner: Optional[str]
-) -> List[str]:
-    """The effective allowlist: the explicit config, else the repo owner.
+def resolve_authorized_users(configured: Sequence[str]) -> List[str]:
+    """The effective allowlist: exactly ``webhooks.ghWebhook.routing.authorizedUsers``
+    from the CLI config, normalized (falsy entries dropped, cast to ``str``).
 
-    Falling back to ``ticketing.github.owner`` keeps the common single-operator
-    setup working without extra config (the operator acts on their own items),
-    while still blocking third parties. When neither is available the list is
-    empty and the guards fail closed — callers should warn about that.
+    Deliberately has no fallback to the plugin config's ``ticketing.github.owner``
+    (issue-63 review): who may trigger the daemon is a CLI-config concern, same as
+    which repos it watches — the plugin config is for the Claude/Cursor plugin only.
+    An empty list fails closed — callers should warn about that.
     """
-    users = [str(u) for u in configured if u]
-    if users:
-        return users
-    return [owner] if owner else []
+    return [str(u) for u in configured if u]
 
 
 def is_authorized(actor: Optional[str], authorized: Sequence[str]) -> bool:

@@ -90,7 +90,7 @@ class EventsCommand(Command):
         parser.add_argument(
             "--file",
             default=default_file,
-            help="Event log to read (default: observability.eventLog.path).",
+            help="Event log to read (default: eventLog.path in the CLI config).",
         )
         parser.add_argument(
             "--type",

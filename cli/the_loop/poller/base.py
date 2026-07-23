@@ -73,9 +73,7 @@ class PollProvider:
     name: str = ""
 
     @classmethod
-    def from_source(
-        cls, source: dict, *, default_label: str, fallback_repos: List[str]
-    ) -> "PollProvider":
+    def from_source(cls, source: dict, *, default_label: str) -> "PollProvider":
         """Build a bound provider from one ``polling.sources`` config entry."""
         raise NotImplementedError
 
@@ -128,9 +126,7 @@ def provider_names() -> List[str]:
     return sorted(_PROVIDERS)
 
 
-def build_provider(
-    source: dict, *, default_label: str, fallback_repos: List[str]
-) -> PollProvider:
+def build_provider(source: dict, *, default_label: str) -> PollProvider:
     """Resolve a ``polling.sources`` entry to a bound :class:`PollProvider`."""
     name = str((source or {}).get("provider") or "").strip()
     if not name:
@@ -144,6 +140,4 @@ def build_provider(
             f"unknown polling provider {name!r} "
             f"(known providers: {', '.join(provider_names()) or 'none'})"
         )
-    return cls.from_source(
-        source, default_label=default_label, fallback_repos=fallback_repos
-    )
+    return cls.from_source(source, default_label=default_label)
