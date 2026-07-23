@@ -57,11 +57,34 @@ status: in-progress
 - **Next:** push the revision to PR #71, reply to both review threads.
 - **Blockers:** GitHub Pages enablement (unchanged; owner-only).
 
+### 2026-07-23T18:30Z — PR #71 review round 2: include specs/reports, drop roadmap
+
+- **Phase:** design → implementation (rework)
+- **Did:** three more owner points on PR #71:
+  1. *"why are we excluding docs and reports? we should keep it."* — removed
+     `srcExclude`; `docs/specs/` and `docs/reports/` now render as site pages. Added a
+     **filesystem-generated** specs sidebar (`specSidebarGroups()` in `config.mts`) so
+     each `issue-<n>` group and its artifacts appear automatically, plus
+     `docs/specs/index.md` / `docs/reports/index.md` overview pages and Developer-nav
+     entries.
+  2. *"remove `docs/roadmap.md` — stale and misleading, we'll do a proper one later."* —
+     deleted the file and updated the few active references (guide `how-it-works`,
+     `architecture.md`, `contributing.md`, the sync script comment, and this spec) to
+     point at issues + the decision log instead. Historical specs/decisions that mention
+     it are left as-is (historical record; `ignoreDeadLinks` covers the now-absent file).
+  3. Folded both into `decision-033`, `requirements.md`, `design.md`, `tasks.md` (task 9).
+- **Checkpoint/tests:** `npm run docs:build` clean — every spec artifact + report renders;
+  specs sidebar lists all work items; no `/roadmap` route; `pre-commit run --all-files`
+  green; `uv.lock` churn reverted.
+- **Next:** push, reply on the review threads.
+- **Blockers:** GitHub Pages enablement (unchanged; owner-only).
+
 ## Review cycles
 
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
 |-------|-----------------------------|----------|---------|------|
 | 1 | human | @MadaraUchiha-314 | 2 changes requested (no-duplicate; backfill spec) | PR #71 |
+| 2 | human | @MadaraUchiha-314 | 3 changes requested (include specs/reports; remove roadmap) | PR #71 |
 
 ## Security review (gate)
 
@@ -74,7 +97,8 @@ status: in-progress
 ## Final validation evidence
 
 - `npm run docs:build` — clean build from `docs/` as srcDir; guide/reference/cli/
-  architecture/capabilities/decisions/operating-model/roadmap/contributing pages
-  present; `docs/specs/**` and `docs/reports/**` absent from `dist`.
+  architecture/capabilities/decisions/operating-model/contributing pages present, plus
+  every `docs/specs/<id>/` artifact and `docs/reports/` page (specs sidebar generated
+  from the filesystem).
 - `pre-commit run --all-files` — ruff, pyright, pytest, markdownlint, schema validation
   all pass.

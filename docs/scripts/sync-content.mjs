@@ -2,7 +2,7 @@
 // cli/README.md is also the CLI's PyPI package readme (cli/pyproject.toml readme=),
 // and skills/the-loop/reference/*.md is read at RUNTIME by the harness from that exact
 // path. Everything else the site needs (architecture/, capabilities/, decisions/,
-// roadmap.md) already lives directly under docs/ and needs no copy. Run automatically
+// specs/) already lives directly under docs/ and needs no copy. Run automatically
 // before docs:dev / docs:build.
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";

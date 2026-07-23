@@ -1,11 +1,48 @@
+import { readdirSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitepress";
 
-// docs/specs/<id>/ are per-work-item historical artifacts (brainstorm/requirements/
-// design/tasks/execution-log) and docs/reports/ are internal working notes — real,
-// version-controlled content, but not "documentation" in the product-site sense.
-// Excluded from the built site (still readable directly in the repository); PR #71
-// discussion: https://github.com/MadaraUchiha-314/the-loop/pull/71.
-const srcExclude = ["specs/**", "reports/**"];
+// srcDir is docs/ itself; this file sits in docs/.vitepress/.
+const docsRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+
+// The per-work-item spec artifacts are part of the site too (PR #71 discussion:
+// https://github.com/MadaraUchiha-314/the-loop/pull/71). The sidebar for docs/specs/
+// is generated from the filesystem so new work items appear automatically — no manual
+// nav upkeep. Files are ordered by the loop's own phase order.
+const SPEC_FILE_ORDER = [
+  ["brainstorm", "Brainstorm"],
+  ["requirements", "Requirements"],
+  ["bugfix", "Bugfix"],
+  ["design", "Design"],
+  ["tasks", "Tasks"],
+  ["execution-log", "Execution log"],
+];
+
+function issueNumber(dir: string): number {
+  const m = dir.match(/(\d+)$/);
+  return m ? Number(m[1]) : Number.MAX_SAFE_INTEGER;
+}
+
+function specSidebarGroups() {
+  const specsDir = join(docsRoot, "specs");
+  const dirs = readdirSync(specsDir)
+    .filter((d) => statSync(join(specsDir, d)).isDirectory())
+    .sort((a, b) => issueNumber(a) - issueNumber(b));
+
+  return dirs.map((dir) => {
+    const present = new Set(
+      readdirSync(join(specsDir, dir))
+        .filter((f) => f.endsWith(".md"))
+        .map((f) => f.replace(/\.md$/, "")),
+    );
+    const items = SPEC_FILE_ORDER.filter(([slug]) => present.has(slug)).map(([slug, text]) => ({
+      text,
+      link: `/specs/${dir}/${slug}`,
+    }));
+    return { text: dir, collapsed: true, items };
+  });
+}
 
 const operatingModelItems = [
   { text: "Overview", link: "/operating-model/" },
@@ -45,7 +82,6 @@ const developerSidebar = [
     text: "Developer documentation",
     items: [
       { text: "Architecture", link: "/architecture/architecture" },
-      { text: "Roadmap", link: "/roadmap" },
       { text: "Contributing", link: "/contributing" },
     ],
   },
@@ -56,6 +92,19 @@ const developerSidebar = [
     collapsed: true,
     items: [{ text: "Decision log", link: "/decisions/decisions" }],
   },
+  {
+    text: "Specs",
+    collapsed: true,
+    items: [{ text: "Overview", link: "/specs/" }, ...specSidebarGroups()],
+  },
+  {
+    text: "Reports",
+    collapsed: true,
+    items: [
+      { text: "Overview", link: "/reports/" },
+      { text: "GitHub queries", link: "/reports/gh-queries" },
+    ],
+  },
 ];
 
 export default defineConfig({
@@ -65,14 +114,27 @@ export default defineConfig({
   base: "/the-loop/",
   cleanUrls: true,
   lastUpdated: true,
-  srcExclude,
 
   // docs/decisions and docs/capabilities carry a handful of links out to cli/README.md
-  // and skills/the-loop/SKILL.md — real files, but outside this site's srcDir (docs/),
-  // and links into docs/specs/<id>/ (excluded above). Rather than rewrite the canonical
-  // docs to route around the site's scope, dead-link checking is disabled — those files
-  // remain readable straight from the repository either way.
+  // and skills/the-loop/SKILL.md — real files, but outside this site's srcDir (docs/).
+  // Rather than rewrite the canonical docs to route around the site's scope, dead-link
+  // checking is disabled — those files remain readable straight from the repository
+  // either way.
   ignoreDeadLinks: true,
+
+  markdown: {
+    // The docs (especially docs/specs/**) are written for GitHub-flavoured Markdown and
+    // are full of angle-bracket PLACEHOLDER tokens in prose — `<session-id>`, `<slug>`,
+    // `<phase>`, `<id>` — not real HTML (markdownlint's MD033 is off for the same
+    // reason). VitePress compiles Markdown as a Vue template, which is far stricter than
+    // GitHub's renderer and treats a bare `<session-id>` as an unclosed HTML tag,
+    // breaking the build. Disabling raw-HTML passthrough makes markdown-it escape those
+    // tokens to literal text (exactly how GitHub renders them). No page authors genuine
+    // inline HTML in prose — real diagrams use ```mermaid fences, which are unaffected —
+    // so nothing is lost, and future specs can't break the docs deploy with a stray
+    // `<placeholder>`.
+    html: false,
+  },
 
   themeConfig: {
     nav: [
@@ -86,7 +148,8 @@ export default defineConfig({
           { text: "Capabilities", link: "/capabilities/capabilities" },
           { text: "Decisions", link: "/decisions/decisions" },
           { text: "Operating model", link: "/operating-model/" },
-          { text: "Roadmap", link: "/roadmap" },
+          { text: "Specs", link: "/specs/" },
+          { text: "Reports", link: "/reports/" },
           { text: "Contributing", link: "/contributing" },
         ],
       },
@@ -119,7 +182,8 @@ export default defineConfig({
       "/capabilities/": developerSidebar,
       "/decisions/": developerSidebar,
       "/operating-model/": developerSidebar,
-      "/roadmap": developerSidebar,
+      "/specs/": developerSidebar,
+      "/reports/": developerSidebar,
       "/contributing": developerSidebar,
     },
 

@@ -28,18 +28,17 @@ is orthogonal tooling, not a second authoring stack for the same content).
 
 The key design tension is Requirement 3 (**reuse, don't duplicate**). VitePress treats
 its `srcDir` as the site; by pointing `srcDir` at `docs/`, the files already in
-`docs/architecture/`, `docs/capabilities/`, `docs/decisions/`, and `docs/roadmap.md`
-**are** the site's pages — no copy exists. Only content that *cannot* live under `docs/`
-for a functional reason is synced in at build time.
+`docs/architecture/`, `docs/capabilities/`, `docs/decisions/`, `docs/specs/` and
+`docs/reports/` **are** the site's pages — no copy exists. Only content that *cannot*
+live under `docs/` for a functional reason is synced in at build time.
 
 ```mermaid
 flowchart TD
   subgraph repo["repository (single source of truth)"]
-    A["docs/architecture, docs/capabilities,\ndocs/decisions, docs/roadmap.md"]
+    A["docs/architecture, docs/capabilities,\ndocs/decisions, docs/specs, docs/reports"]
     G["docs/guide, docs/reference,\ndocs/index.md, docs/contributing.md\n(new hand-written site pages)"]
     C["cli/README.md\n(also PyPI package readme)"]
     R["skills/the-loop/reference/*.md\n(read at runtime by the harness)"]
-    S["docs/specs/**, docs/reports/**\n(historical / internal)"]
   end
   C -- "build-time sync (git-ignored)" --> X["docs/cli.md"]
   R -- "build-time sync (git-ignored)" --> Y["docs/operating-model/reference/**"]
@@ -47,7 +46,6 @@ flowchart TD
   G -- "rendered in place" --> V
   X --> V
   Y --> V
-  S -- "srcExclude" --x V
   V --> D["docs/.vitepress/dist"]
   D --> P["GitHub Pages (Actions/OIDC)"]
 ```
@@ -57,13 +55,17 @@ flowchart TD
 **Site root = `docs/`.** VitePress config at `docs/.vitepress/config.mts`:
 
 - `base: "/the-loop/"` — project Pages URL is `https://<owner>.github.io/the-loop/`.
-- `srcExclude: ["specs/**", "reports/**"]` — historical work-item artifacts and internal
-  notes stay in the repo but are not built into the product site (Requirement 3.4).
+- **`docs/specs/` and `docs/reports/` are included** (PR #71 review). The `docs/specs/`
+  sidebar is **generated from the filesystem** in `config.mts` (`specSidebarGroups()`):
+  each `issue-<n>/` becomes a collapsed group whose items are its artifacts ordered by
+  the loop's phase order (brainstorm → requirements → bugfix → design → tasks →
+  execution-log), sorted by issue number. New work items appear with no manual nav
+  upkeep. `docs/reports/` gets a small static group.
 - `ignoreDeadLinks: true` — the canonical `docs/decisions` and `docs/capabilities`
-  content links out to `cli/README.md`, `skills/the-loop/SKILL.md`, and into
-  `docs/specs/<id>/` (all outside the built site's scope). Rather than rewrite canonical
-  docs to route around the site, dead-link checking is off; those files remain readable
-  in the repo regardless. (Trade-off discussed below.)
+  content links out to `cli/README.md` and `skills/the-loop/SKILL.md` (outside the
+  site's srcDir). Rather than rewrite canonical docs to route around the site, dead-link
+  checking is off; those files remain readable in the repo regardless. (Trade-off
+  discussed below.)
 - Default theme; `search: { provider: "local" }`. No custom CSS/animations.
 
 **New hand-written site pages** (committed under `docs/`, Markdown):
@@ -73,6 +75,8 @@ flowchart TD
 - `docs/reference/` — `commands`, `configuration`.
 - `docs/contributing.md` — contributor + docs-site instructions.
 - `docs/operating-model/index.md` — landing page that indexes the synced reference set.
+- `docs/specs/index.md`, `docs/reports/index.md` — overview landing pages for those
+  sections.
 
 **Build-time sync** (`docs/scripts/sync-content.mjs`), the *only* copying, limited to
 files that structurally cannot be authored under `docs/`:
@@ -98,7 +102,7 @@ Pages actions with `pages: write` + `id-token: write` and single-flight `concurr
 | Component | Responsibility | Interface |
 |-----------|----------------|-----------|
 | `docs/package.json` | Site toolchain + scripts | `docs:sync`, `docs:dev`, `docs:build`, `docs:preview` |
-| `docs/.vitepress/config.mts` | Nav, sidebar, srcExclude, base | VitePress `defineConfig` |
+| `docs/.vitepress/config.mts` | Nav, sidebar (incl. filesystem-generated specs sidebar), base | VitePress `defineConfig` |
 | `docs/scripts/sync-content.mjs` | Build-time sync of the 2 external sources | Node script, run by `docs:sync` (prepended to dev/build) |
 | `.github/workflows/docs.yml` | Build + deploy to Pages | GitHub Actions |
 
@@ -136,8 +140,9 @@ unit suite (no product code changes):
 
 - `npm run docs:build` completes with 0 errors and renders the expected page set
   (guide, reference, cli, architecture, capabilities, decisions, operating-model,
-  roadmap, contributing).
-- `docs/specs/**` and `docs/reports/**` produce **no** HTML in `dist` (srcExclude works).
+  specs, reports, contributing).
+- Every `docs/specs/<id>/` artifact and `docs/reports/gh-queries.md` render as pages;
+  the generated specs sidebar lists every work item.
 - `npm run docs:preview` serves the built site; key routes return HTTP 200.
 - `pre-commit run --all-files` stays green (ruff, pyright, pytest, markdownlint, schema).
 
@@ -157,9 +162,12 @@ the absence is deliberate, not an omission.
   content changes. Disabling dead-link checking keeps the canonical docs authoritative;
   the cost is the build won't catch a genuinely broken *site* link. Mitigated by keeping
   hand-written pages' internal links consistent and preview-checked.
-- **`srcExclude` for specs/reports vs. rendering them.** They are real, versioned content
-  but are historical/internal, not product documentation; excluding them keeps the site's
-  IA clean (the vite.dev/guide shape) without deleting anything.
+- **Include specs/reports, with a generated sidebar (PR #71 review).** An earlier cut
+  excluded them via `srcExclude` to keep the vite.dev/guide-style IA clean; the owner
+  wanted them kept ("why are we excluding docs and reports … we should keep it"). They're
+  now first-class site content. To avoid hand-maintaining nav for ~20 work items × ~5
+  artifacts, the specs sidebar is generated from the filesystem, so it self-updates as
+  specs are added — the same low-maintenance principle as reading `docs/` in place.
 
 ## Open questions
 

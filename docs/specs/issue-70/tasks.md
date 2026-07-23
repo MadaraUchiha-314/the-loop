@@ -39,12 +39,11 @@ overrides: {}
   - _Test:_ after `docs:sync`, both destinations exist and render; git status shows them
     ignored.
 - [x] 4. Render the existing `docs/` tree in place (no duplication)
-  - Nav + sidebar point at `docs/architecture/`, `docs/capabilities/`, `docs/decisions/`,
-    `docs/roadmap.md` directly; `srcExclude` drops `specs/**` and `reports/**`.
+  - Nav + sidebar point at `docs/architecture/`, `docs/capabilities/`, `docs/decisions/`
+    directly.
   - _Depends on:_ 1
-  - _Requirements:_ R3.1, R3.3, R3.4
-  - _Test:_ architecture/decisions/capabilities/roadmap pages exist in `dist`; no
-    `specs`/`reports` HTML in `dist`.
+  - _Requirements:_ R3.1, R3.3
+  - _Test:_ architecture/decisions/capabilities pages exist in `dist`.
 - [x] 5. GitHub Pages deploy workflow
   - `.github/workflows/docs.yml`: on push to `main` (docs paths) + `workflow_dispatch`,
     Node 22 + `npm ci` + `docs:build`, first-party Pages actions, single-flight
@@ -73,16 +72,27 @@ overrides: {}
   - _Depends on:_ 7
   - _Requirements:_ process conformance
   - _Test:_ four artifacts present under `docs/specs/issue-70/`; markdownlint green.
+- [x] 9. Include specs & reports; remove stale roadmap (PR #71 review round 2)
+  - Drop `srcExclude`; generate the `docs/specs/` sidebar from the filesystem
+    (`specSidebarGroups()`); add `docs/specs/index.md` + `docs/reports/index.md` overview
+    pages and Developer-nav entries. Delete `docs/roadmap.md` (owner: stale/misleading)
+    and update the few active references (guide, architecture, contributing, sync script,
+    this spec).
+  - _Depends on:_ 8
+  - _Requirements:_ R3.1, R3.4
+  - _Test:_ every spec artifact + report renders in `dist`; specs sidebar lists all work
+    items; no `/roadmap` route; `docs:build` clean; `pre-commit run --all-files` green.
 
 ## Dependency graph (DAG)
 
-`1 → {2, 3, 4, 5} → 6 → 7 → 8`
+`1 → {2, 3, 4, 5} → 6 → 7 → 8 → 9`
 
 ## Checkpoints
 
 - After tasks 1–6: `npm run docs:build` + `pre-commit run --all-files` (initial PR #71).
 - After task 7: same gates re-run post-restructure.
 - After task 8: markdownlint over the new spec; final `docs:build`.
+- After task 9: `docs:build` renders specs/reports, no `/roadmap`; gates green.
 - No security-review escalation: risk tier is low (public static site, no secrets, no
   runtime surface); `security.review` satisfied by the Security design section of
   `design.md`.

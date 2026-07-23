@@ -53,7 +53,8 @@ Gates: **ruff** (lint+format) and **pyright** for `cli/`, **pytest** for the CLI
 runs the very same pre-commit hooks — no local-vs-CI drift. See
 [decision-006](/decisions/decision-006).
 
-## Roadmap
+## What's deferred
 
-Deferred work and open questions from the founding issue live in the
-[roadmap](/roadmap).
+Forward-looking work is tracked as GitHub issues and in the
+[decision log](/decisions/decisions); the per-work-item history lives under
+[specs](/specs/).

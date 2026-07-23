@@ -32,10 +32,11 @@ Point VitePress's `srcDir` at the existing **`docs/`** directory. The files alre
 - `docs/.vitepress/config.mts` holds the site config (`base: "/the-loop/"`, default
   theme, local search, nav/sidebar). `docs/package.json` + `docs/scripts/` hold the
   toolchain, scoped to the docs site only (the CLI stays Python — `decision-030`).
-- `docs/architecture/`, `docs/capabilities/`, `docs/decisions/`, `docs/roadmap.md` render
-  **in place**. New hand-written site pages (`docs/index.md`, `docs/guide/*`,
-  `docs/reference/*`, `docs/contributing.md`, `docs/operating-model/index.md`) live under
-  `docs/` like any other doc.
+- `docs/architecture/`, `docs/capabilities/`, `docs/decisions/`, `docs/specs/` and
+  `docs/reports/` render **in place**. New hand-written site pages (`docs/index.md`,
+  `docs/guide/*`, `docs/reference/*`, `docs/contributing.md`,
+  `docs/operating-model/index.md`, `docs/specs/index.md`, `docs/reports/index.md`) live
+  under `docs/` like any other doc.
 - **The only** build-time sync that remains is the two sources that structurally cannot
   live under `docs/`:
   - `cli/README.md` → `docs/cli.md` — `cli/README.md` is the CLI package's PyPI readme
@@ -45,9 +46,10 @@ Point VitePress's `srcDir` at the existing **`docs/`** directory. The files alre
     cannot move.
   Both synced destinations are git-ignored and markdownlint-ignored: the canonical file
   is the one linted and versioned; the copy exists only inside a build.
-- `docs/specs/**` (per-work-item historical artifacts) and `docs/reports/**` (internal
-  working notes) are excluded from the built site via `srcExclude`. They remain in the
-  repository, unchanged; they are simply not part of the polished product-doc navigation.
+- `docs/specs/<id>/` (per-work-item artifacts) and `docs/reports/` **are** part of the
+  built site (PR #71 review: "why are we excluding docs and reports … we should keep
+  it"). The `docs/specs/` sidebar is generated from the filesystem in `config.mts`, so
+  new work items appear without manual nav upkeep.
 
 ## Consequences
 
@@ -66,8 +68,13 @@ Point VitePress's `srcDir` at the existing **`docs/`** directory. The files alre
   mitigated by keeping hand-written pages' links consistent and preview-checked.
 - **`docs/` now mixes "site" scaffolding with content.** `docs/.vitepress/`,
   `docs/package.json`, `docs/scripts/` sit alongside the Markdown. Accepted as the cost of
-  no duplication; `srcExclude` and the VitePress conventions keep them out of the built
-  output.
+  no duplication; VitePress conventions (the `.vitepress/` dir, `node_modules/`) keep them
+  out of the built output.
+- **The specs sidebar is generated, not hand-listed.** Including ~20 work items × ~5
+  artifacts each as a static nav would drift the moment a spec is added. `config.mts`
+  enumerates `docs/specs/*/` at build time and orders each item by the loop's own phase
+  order, so the nav self-updates — the same low-maintenance principle as reading `docs/`
+  in place.
 
 ## Alternatives considered
 
@@ -79,9 +86,10 @@ Point VitePress's `srcDir` at the existing **`docs/`** directory. The files alre
   last sync. Rejected: `cli/README.md` must stay put for the PyPI package readme, and the
   reference docs are read at runtime by the harness from `skills/the-loop/reference/` —
   relocating either breaks a functional contract for a cosmetic gain.
-- **Render `docs/specs/` and `docs/reports/` as site pages** rather than excluding them.
-  Rejected: they are historical/internal, not product documentation; including them
-  clutters the vite.dev/guide-style IA the issue asked for. Excluding via `srcExclude`
-  keeps them in the repo without putting them in the product site.
+- **Excluding `docs/specs/` and `docs/reports/` via `srcExclude`** (the first cut of this
+  decision). The reasoning was that they're historical/internal and would clutter the
+  vite.dev/guide-style IA. Reverted on review — the owner wanted them kept ("why are we
+  excluding docs and reports … we should keep it"). They're now included; the generated
+  specs sidebar keeps them navigable without hand-maintained nav.
 - **Rewrite canonical cross-links instead of `ignoreDeadLinks`.** Rejected: it edits the
   historical record to serve the site and is fragile against future content changes.

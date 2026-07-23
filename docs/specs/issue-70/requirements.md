@@ -23,7 +23,7 @@ overrides: {}
 ## Introduction
 
 the-loop has accumulated substantial documentation (`README.md`, `cli/README.md`,
-`docs/architecture/`, `docs/capabilities/`, `docs/decisions/`, `docs/roadmap.md`, and
+`docs/architecture/`, `docs/capabilities/`, `docs/decisions/`, `docs/specs/`, and
 the operating-model reference under `skills/the-loop/reference/`), but no browsable
 product-documentation **site** — a reader has to navigate the repo tree. This work item
 stands up a static documentation site (installation, quickstart, reference, a CLI page,
@@ -85,8 +85,8 @@ duplicated-and-drifting copy.
 #### Acceptance criteria (EARS)
 
 1. The site's source directory SHALL be the existing `docs/` tree; `docs/architecture/`,
-   `docs/capabilities/`, `docs/decisions/` and `docs/roadmap.md` SHALL be rendered
-   **in place** as site pages, not copied to a second location.
+   `docs/capabilities/`, `docs/decisions/`, `docs/specs/` and `docs/reports/` SHALL be
+   rendered **in place** as site pages, not copied to a second location.
 2. WHEN a canonical doc must physically live outside `docs/` for a functional reason
    (`cli/README.md` is the CLI's PyPI package readme; `skills/the-loop/reference/*.md`
    is read at runtime by the harness from that path) THEN it MAY be synced into the
@@ -94,9 +94,10 @@ duplicated-and-drifting copy.
    git-ignored (the canonical file remains the single source of truth).
 3. The site SHALL NOT introduce a parallel top-level folder that re-hosts a copy of the
    `docs/` content. (PR #71 review requirement.)
-4. Per-work-item historical artifacts (`docs/specs/<id>/`) and internal working notes
-   (`docs/reports/`) SHALL be excluded from the built product site while remaining in
-   the repository.
+4. Per-work-item spec artifacts (`docs/specs/<id>/`) and reports (`docs/reports/`) SHALL
+   be included in the built site with navigation; the `docs/specs/` sidebar SHALL be
+   generated from the filesystem so new work items appear without manual nav upkeep.
+   (PR #71 review: "why are we excluding docs and reports … we should keep it.")
 
 ### Requirement 4 — automated deployment to GitHub Pages
 

@@ -40,7 +40,7 @@ commits on `main` drive the CLI's automatic semantic release to PyPI — see
 ## This documentation site
 
 The site is [VitePress](https://vitepress.dev/) reading `docs/` directly as its source
-— `docs/architecture/`, `docs/capabilities/`, `docs/decisions/` and `docs/roadmap.md`
+— `docs/architecture/`, `docs/capabilities/`, `docs/decisions/` and `docs/specs/`
 are the site's pages, not a copy of them. The only synced content is the two sources
 that must physically live elsewhere for functional reasons: `cli/README.md` (also the
 CLI's PyPI package readme) and `skills/the-loop/reference/*.md` (read at runtime by the
