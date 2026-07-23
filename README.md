@@ -11,6 +11,9 @@ escalating to humans only when a decision is genuinely needed.
 > DAG orchestration, language-specific tooling) is tracked as follow-up work. See
 > [`docs/decisions/decision-003.md`](docs/decisions/decision-003.md).
 
+**[Read the full documentation](https://madarauchiha-314.github.io/the-loop/)** —
+installation, quickstart, CLI reference, and developer docs.
+
 ## The loop, in one line
 
 `(brainstorm) → requirements → design → tasks (each iterated until locked + human-reviewed) → implement (+self-check) → self/critic review → evidence → complete → learn`
