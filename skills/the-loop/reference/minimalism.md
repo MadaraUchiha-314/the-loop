@@ -35,3 +35,12 @@ Correctness and safety win over brevity every time.
 
 `intensity` tunes how aggressively the ladder is applied (`low` / `standard` / `high`);
 `enabled: false` turns the pass off entirely.
+
+## Also a token lever
+
+Not generating gratuitous code is **also** a token-economy lever (issue-37): code never
+written is tokens never emitted *and* never resent on later turns *and* never reviewed. The
+ladder is the generation-side rung of `reference/token-economy.md`; the same guardrail binds
+both — minimalism/token economy never remove *necessary* code or rigor. This ladder is
+ponytail's "lazy senior developer" ladder expressed natively; ponytail is registered in
+`config.externalTools` for operators who prefer the packaged skill.

@@ -99,7 +99,7 @@ dropping, so how the-loop communicates is a first-class concern. Driven by
 ## Working with other tools (MCP / CLIs / plugins)
 
 the-loop is allowed to freely interact with the MCP tools, skills and plugins available
-in the harness. The user declares which ones to be aware of in
-`.the-loop/external-tools.md` (free-form) or `config.externalTools.notes`. Examples:
+in the harness. The user declares which ones to be aware of in `config.externalTools`
+(the `externalTools.tools` list + `notes` in `.the-loop/config.yaml`). Examples:
 Jira via MCP, GitHub via `gh`, plugins such as ponytail or superpowers. Always check
 this registry before assuming a capability is or isn't available.

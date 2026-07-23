@@ -136,6 +136,62 @@ minimalism:
   enabled: true                   # advisory generation-time bloat guard
   intensity: standard             # low | standard | high
 
+tokenEconomy:                     # token/cost levers (issue-37) — ADVISORY, never a gate;
+  enabled: true                   #   cheaper never means sloppier. See reference/token-economy.md
+  modelRouting:                   # cheap work shouldn't pay frontier-model prices
+    enabled: true
+    tiers:                        # bind abstract tiers to concrete per-harness model ids
+      economy:  {}                #   e.g. {claude: <fast/cheap model>, cursor: <cheap model>}
+      standard: {}                #   e.g. {claude: <balanced model>}
+      frontier: {}                #   e.g. {claude: <most capable model>}  (empty = harness default)
+    stages:                       # stage → tier (reasoning-heavy = frontier; mechanical = economy)
+      brainstorm: frontier
+      requirements: frontier
+      design: frontier
+      tasks: standard
+      implementation: standard
+      self-review: standard
+      critic-review: frontier
+      evidence: economy
+      capability-docs: economy
+      reviewer-briefing: economy
+      status: economy
+      learnings: economy
+    riskTierFloor:                # high-risk work never drops below this tier
+      "4": standard
+      "5": frontier
+  thinkingEffort:                 # don't burn reasoning tokens on mechanical steps
+    enabled: true
+    stages:
+      design: high
+      critic-review: high
+      implementation: medium
+      capability-docs: low
+      reviewer-briefing: low
+      evidence: none
+      status: none
+  outputVerbosity:                # caveman-style: compress the agent's NARRATION only
+    mode: concise                 # concise | standard
+    preserve:                     # never compressed — contracts & paper trail
+      - code
+      - commands
+      - diffs
+      - errors
+      - paper-trail-comments
+      - reviewer-briefing
+      - specs
+      - decisions
+      - capability-docs
+  progressiveDisclosure:          # load only the reference doc a step needs
+    enabled: true
+    phaseScoped: true
+  subAgentDelegation:             # verbose reads (tests/docs/logs) run in a fresh-context sub-agent
+    enabled: true
+  compaction:                     # checkpoint to disk, then compact preserving spec + open threads
+    enabled: true
+  telemetry:                      # record per-work-item token/cost so levers tune against a baseline
+    enabled: true
+
 selfImprovement:
   enabled: true
   maxIndexLines: 200              # cap on the injected learnings index
@@ -161,8 +217,15 @@ messaging:
   # - type: slack
   #   target: "#the-loop"
 
-externalTools:
-  referenceFile: .the-loop/external-tools.md
+externalTools:                    # inline registry the harness may freely use (one YAML)
+  tools:                          # add MCPs / CLIs / skills / plugins the-loop should know about
+    - name: github               # e.g. GitHub issues/PRs/Actions via MCP
+      kind: mcp
+    # - name: gh                 # kind: mcp | cli | skill | plugin | other
+    #   kind: cli
+    #   url: https://cli.github.com
+    #   notes: auth via GH_TOKEN; read-only in CI.
+  notes: ""                       # global free-form: auth, access patterns, constraints
 
 webhooks:
   ghWebhook:

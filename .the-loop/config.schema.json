@@ -11,6 +11,15 @@
       "type": "string",
       "enum": ["autonomous-complete", "human-approves-pr", "human-approves-spec-and-pr"],
       "description": "What a risk tier requires before completion: finish autonomously after the review loop, or require a human to approve the PR (and optionally the spec)."
+    },
+    "modelTier": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A model-routing tier bound to a concrete model id per harness. Empty/omitted = use that harness's default model for the tier.",
+      "properties": {
+        "claude": { "type": "string", "description": "Model id passed to the claude CLI for this tier (e.g. --model)." },
+        "cursor": { "type": "string", "description": "Model id passed to cursor-agent for this tier." }
+      }
     }
   },
   "x-onboarding": {
@@ -576,6 +585,142 @@
         }
       }
     },
+    "tokenEconomy": {
+      "type": "object",
+      "description": "Token/cost-reduction levers for the loop (issue-37). ADVISORY, never a merge gate: no lever may trade away validation, error handling, security, accessibility, test-first discipline, the paper trail, or review depth — cheaper never means sloppier. See reference/token-economy.md.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Master switch for the token-economy levers."
+        },
+        "modelRouting": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Route different pipeline stages to different model tiers so cheap work does not pay frontier-model prices (issue-37). Harness-agnostic: operators bind abstract tiers to concrete per-harness model ids; advisory where a harness cannot switch models programmatically.",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "tiers": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Abstract cost tiers → concrete model id per harness. Leave a mapping empty to let the harness use its default model for that tier.",
+              "properties": {
+                "economy": { "$ref": "#/$defs/modelTier" },
+                "standard": { "$ref": "#/$defs/modelTier" },
+                "frontier": { "$ref": "#/$defs/modelTier" }
+              }
+            },
+            "stages": {
+              "type": "object",
+              "additionalProperties": { "type": "string", "enum": ["economy", "standard", "frontier"] },
+              "description": "Stage → tier assignment. Keys are pipeline stages (brainstorm, requirements, design, tasks, implementation, self-review, critic-review, evidence, capability-docs, reviewer-briefing, status, learnings). Reasoning-heavy stages default to frontier; mechanical/formatting stages to economy.",
+              "default": {
+                "brainstorm": "frontier",
+                "requirements": "frontier",
+                "design": "frontier",
+                "tasks": "standard",
+                "implementation": "standard",
+                "self-review": "standard",
+                "critic-review": "frontier",
+                "evidence": "economy",
+                "capability-docs": "economy",
+                "reviewer-briefing": "economy",
+                "status": "economy",
+                "learnings": "economy"
+              }
+            },
+            "riskTierFloor": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Optional minimum tier by work-item risk tier (1–5): high-risk work never runs below the named tier even on an otherwise-economy stage.",
+              "properties": {
+                "4": { "type": "string", "enum": ["economy", "standard", "frontier"] },
+                "5": { "type": "string", "enum": ["economy", "standard", "frontier"] }
+              }
+            }
+          }
+        },
+        "thinkingEffort": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Cap extended-thinking effort by stage so mechanical steps do not burn reasoning tokens (thinking bills as output). Advisory where a harness cannot set effort.",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "stages": {
+              "type": "object",
+              "additionalProperties": { "type": "string", "enum": ["none", "low", "medium", "high"] },
+              "description": "Stage → thinking-effort budget. Design/critic-review default high; status/evidence/formatting default none/low.",
+              "default": {
+                "design": "high",
+                "critic-review": "high",
+                "implementation": "medium",
+                "evidence": "none",
+                "capability-docs": "low",
+                "reviewer-briefing": "low",
+                "status": "none"
+              }
+            }
+          }
+        },
+        "outputVerbosity": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "caveman-style narration compression (issue-37): drop conversational filler in the agent's own prose. NEVER touches the items in `preserve`.",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": ["standard", "concise"],
+              "default": "concise",
+              "description": "concise = fragments over sentences, no filler, in the agent's narration only; standard = no compression."
+            },
+            "preserve": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Content classes compression must never touch — these are contracts and paper trail.",
+              "default": ["code", "commands", "diffs", "errors", "paper-trail-comments", "reviewer-briefing", "specs", "decisions", "capability-docs"]
+            }
+          }
+        },
+        "progressiveDisclosure": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Just-in-time loading of skill reference docs: a step loads only the reference file(s) its phase needs, not the whole corpus (issue-37, deepens the SKILL.md → reference/ split).",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "phaseScoped": {
+              "type": "boolean",
+              "default": true,
+              "description": "Load reference docs scoped to the active phase (see the loading map in reference/token-economy.md)."
+            }
+          }
+        },
+        "subAgentDelegation": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Delegate verbose work (running tests, fetching docs, scanning large files/logs) to a fresh-context sub-agent so the raw output stays in its window and only a summary returns to the controller (issue-37). Guidance where a harness lacks sub-agents.",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true }
+          }
+        },
+        "compaction": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Long-run hygiene: checkpoint durable state to the execution log, then compact/reset the window preserving the spec + open threads (issue-37). Leans on the-loop's existing filesystem-as-memory (why resumability works).",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true }
+          }
+        },
+        "telemetry": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Measure token/cost per work item so later levers are tuned against a real baseline, not vendor claims (issue-37). Usage is parsed best-effort from each harness's JSON output; totals surface in execution-log.md.",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true }
+          }
+        }
+      }
+    },
     "selfImprovement": {
       "type": "object",
       "description": "Lifecycle for learnings: capture → write-gate → consolidate → inject. See reference/automation.md.",
@@ -690,15 +835,30 @@
     },
     "externalTools": {
       "type": "object",
-      "description": "Tools/skills/MCPs/plugins the-loop should be aware of. Free-form, fully user-configurable.",
+      "description": "Tools/skills/MCPs/plugins the-loop may freely use, declared inline so the whole config lives in one YAML — no separate registry file (issue-37 PR feedback). The harness checks this registry before assuming a capability is available.",
       "additionalProperties": false,
       "properties": {
-        "referenceFile": {
-          "type": "string",
-          "default": ".the-loop/external-tools.md",
-          "description": "Path to a free-form markdown file describing available tools/MCPs/plugins."
+        "tools": {
+          "type": "array",
+          "description": "Registered tools the harness is aware of and may use.",
+          "default": [],
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string", "description": "Tool/skill/MCP/plugin name, e.g. `github`, `gh`, `ponytail`." },
+              "kind": {
+                "type": "string",
+                "enum": ["mcp", "cli", "skill", "plugin", "other"],
+                "description": "What kind of tool this is."
+              },
+              "url": { "type": "string", "description": "Optional homepage/repository URL." },
+              "notes": { "type": "string", "description": "Access patterns, auth, constraints, or why it is registered." }
+            }
+          }
         },
-        "notes": { "type": "string", "description": "Inline free-form description (alternative to referenceFile)." }
+        "notes": { "type": "string", "description": "Global free-form notes (auth, access patterns, constraints) spanning tools." }
       }
     },
     "webhooks": {
