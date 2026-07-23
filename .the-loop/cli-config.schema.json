@@ -75,7 +75,46 @@
                 "spawnWorkdir": {
                   "type": "string",
                   "default": ".",
-                  "description": "Working directory for sessions spawned on unmatched events."
+                  "description": "Working directory for sessions spawned on unmatched events. Used only when routing.workspace.root is unset; when a workspace root is configured, spawned sessions run in a per-work-item git worktree instead (issue-76, decision-034)."
+                },
+                "workspace": {
+                  "type": "object",
+                  "description": "Per-work-item checkout workspace for spawned sessions (issue-76, decision-034). When `root` is set, the dispatcher checks out each event's repo under the workspace root (layout depends on `strategy`) and runs the spawned session there, instead of the static spawnWorkdir. Auth is the operator's own git credentials (e.g. `gh auth setup-git`).",
+                  "additionalProperties": false,
+                  "properties": {
+                    "root": {
+                      "type": "string",
+                      "default": "",
+                      "description": "Absolute path to the workspace root where repos are checked out (e.g. ~/.the-loop/workspace). Empty (the default) disables the workspace: spawned sessions fall back to spawnWorkdir."
+                    },
+                    "strategy": {
+                      "type": "string",
+                      "enum": ["worktree", "clone"],
+                      "default": "worktree",
+                      "description": "Checkout layout. 'worktree': one shared clone per repo at <root>/<host>/<owner>/<repo> plus one git worktree per work item under <root>/.worktrees/… — concurrent work items on a repo share objects (cheap). 'clone': one folder per work item at <root>/.work-items/<slug>/ with a full clone of each repo it touches — self-contained and simpler to reason about/clean up when a work item spans multiple repos, at the cost of a full clone per work item."
+                    },
+                    "cloneProtocol": {
+                      "type": "string",
+                      "enum": ["https", "ssh"],
+                      "default": "https",
+                      "description": "Preferred clone URL scheme. 'https' uses the payload's clone_url (or https://<host>/<owner>/<repo>.git); 'ssh' uses ssh_url (or git@<host>:<owner>/<repo>.git)."
+                    },
+                    "defaultHost": {
+                      "type": "string",
+                      "default": "github.com",
+                      "description": "Host directory used when the event payload carries no html_url to infer it from (e.g. the poller's leaner payloads). Set to your enterprise domain for a GHE deployment."
+                    },
+                    "keepCheckoutOnClose": {
+                      "type": "boolean",
+                      "default": false,
+                      "description": "Keep a work item's checkout after its PR is merged/closed (for post-mortem) instead of removing it — the worktree (worktree strategy) or the work-item folder (clone strategy). In worktree strategy the shared per-repo clone is always kept regardless."
+                    },
+                    "gitBinary": {
+                      "type": "string",
+                      "default": "git",
+                      "description": "Path/name of the git binary used for clone/worktree operations."
+                    }
+                  }
                 },
                 "runner": {
                   "type": "string",

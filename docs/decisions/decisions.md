@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [034](decision-034.md) | Clone each event's repo into a per-work-item git worktree under a configurable workspace root | accepted | 2026-07-23 |
 | [033](decision-033.md) | Documentation site reads `docs/` in place; no duplicated `docs-site/` mirror | accepted | 2026-07-23 |
 | [032](decision-032.md) | Split the-loop's config into a per-repo plugin config and an independently-configurable CLI config | accepted | 2026-07-23 |
 | [031](decision-031.md) | Self-reply marker guard — an embedded body marker, not GitHub metadata | accepted | 2026-07-23 |

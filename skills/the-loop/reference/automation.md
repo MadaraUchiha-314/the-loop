@@ -50,6 +50,27 @@ Python SDKs. The core has **zero runtime dependencies** (stdlib only).
   `/the-loop:work-on` on it; the item's later activity (and its linked PR's) resumes that
   session; a merged/closed PR auto-closes it. An unlabelled new issue is received and
   ignored. Label presence is read from the webhook payload (no extra API call).
+- **Per-work-item checkout workspace** (`routing.workspace`, issue-76): the CLI daemon
+  runs independent of any repo, so a spawned session needs a checkout of the repo an
+  event concerns. Set `routing.workspace.root` to turn it on (leave empty to keep the
+  legacy static `spawnWorkdir`), then pick a `strategy`:
+  - **`worktree`** (default) — one shared clone per repo under
+    `<root>/<host>/<owner>/<repo>` (`host` = `github.com` or an enterprise domain), plus
+    a **git worktree per work item** (quarantined under `<root>/.worktrees/…`), so N
+    concurrent work items on one repo share objects instead of paying for N full clones.
+    The shared clone stays on the default branch and is `git fetch`ed to stay fresh; a
+    fresh issue gets a detached worktree (the harness makes its own branch), a PR event
+    seeds the worktree from its head branch.
+  - **`clone`** — one **folder per work item** under `<root>/.work-items/<slug>/`, with a
+    full clone of each repo it touches. Self-contained and simpler to reason about/clean
+    up when a **work item spans multiple repos**, at the cost of a full clone per work
+    item.
+
+  When the PR merges/closes the work item's checkout is removed (set
+  `keepCheckoutOnClose: true` to keep it for post-mortem; in `worktree` strategy the
+  shared clone is always kept). Auth is your own git credentials (e.g. `gh auth
+  setup-git`). Design: `docs/specs/issue-76/design.md`, decision:
+  `docs/decisions/decision-034.md`.
 - **The label works on PRs directly — the ticketing system need not be GitHub.** A PR
   carrying the auto-execute label is routed as its own work item
   (`github:OWNER/REPO#<pr-number>`) even when it is linked to no GitHub issue. This is

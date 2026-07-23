@@ -114,6 +114,14 @@ EVENT_TYPES: Dict[str, str] = {
         "A session was auto-closed because its PR was merged/closed "
         "(work_item, merged)."
     ),
+    "workspace.prepared": (
+        "A per-work-item checkout was made ready for a spawned session "
+        "(work_item, strategy: worktree | clone, checkout, branch)."
+    ),
+    "workspace.cleaned": (
+        "A work item's checkout was removed after its PR merged/closed "
+        "(work_item, strategy)."
+    ),
     # -- poller (source: poll) ------------------------------------------------
     "poll.cycle": (
         "One poll cycle finished (items_seen, spawns, comments_forwarded, errors)."
