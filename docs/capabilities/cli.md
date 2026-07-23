@@ -13,6 +13,9 @@ self-learning/ML capabilities.
 
 - The CLI SHALL have zero runtime dependencies (stdlib only) and register commands via
   an extensible registry (`the_loop.commands`).
+- `the-loop --version` SHALL report the installed package version, derived from package
+  metadata (`importlib.metadata.version("the-loopy-one")`) rather than a hardcoded string,
+  so it always tracks the actually-installed release (issue-78).
 - `the-loop gh-webhook start|stop` SHALL run/stop the HMAC-verified GitHub webhook
   receiver (see [webhook-triggers](webhook-triggers.md)).
 - `the-loop sessions register|list|close` SHALL manage the work-item ↔ harness-session
@@ -41,6 +44,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-78 | `--version` derives from package metadata instead of a hardcoded string that had frozen at 0.1.0 | [spec](../specs/issue-78/) |
 | issue-63 | Split the CLI daemon's config (`webhooks`/`polling`/`eventLog`) out of the per-repo plugin config into an independent, repo-agnostic CLI config | [spec](../specs/issue-63/), [decision-032](../decisions/decision-032.md) |
 | issue-50 | Added the structured event log and the `events` query command | [spec](../specs/issue-50/), [decision-025](../decisions/decision-025.md) |
 | issue-21 | Published to PyPI as `the-loopy-one` with automatic semantic releases | [spec](../specs/issue-21/), [decision-019](../decisions/decision-019.md) |

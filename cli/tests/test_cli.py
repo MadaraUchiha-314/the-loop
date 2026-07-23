@@ -36,6 +36,29 @@ def test_version_exits_zero():
     assert exc.value.code == 0
 
 
+def test_version_matches_installed_package_metadata():
+    """Regression for issue #78: `--version` must report the installed package
+    version derived from metadata, not a hardcoded string that silently froze
+    at 0.1.0 while releases advanced."""
+    from importlib.metadata import version
+
+    import the_loop
+
+    assert the_loop.__version__ == version("the-loopy-one")
+    assert the_loop.__version__ != "0.1.0"
+
+
+def test_version_output_carries_package_version(capsys):
+    """The `--version` flag prints `the-loop <version>` using the derived
+    version, so the reported string tracks the installed package."""
+    import the_loop
+
+    with pytest.raises(SystemExit):
+        main(["--version"])
+    out = capsys.readouterr().out
+    assert out.strip() == f"the-loop {the_loop.__version__}"
+
+
 def test_missing_command_errors():
     with pytest.raises(SystemExit) as exc:
         main([])
