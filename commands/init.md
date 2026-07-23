@@ -86,7 +86,8 @@ plugin's root directory; in Cursor, resolve it to the plugin's install directory
      answers established in step 2 applied.
    - `.the-loop/config.schema.json` — copy of the schema.
    - `.the-loop/manifest.yaml` — the manifest.
-   - `.the-loop/external-tools.md` and `.the-loop/collaborators.yaml` — from templates (user-owned).
+   - `.the-loop/collaborators.yaml` — from templates (user-owned). External tools are
+     declared inline in `config.externalTools`, not a separate file (issue-37).
    - `docs/architecture/architecture.md`, `docs/decisions/decisions.md`,
      `docs/specs/` (per-work-item Kiro specs + execution logs).
    - `learnings/learnings.md`.

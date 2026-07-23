@@ -28,7 +28,8 @@ agent harness delivers a work item end-to-end, escalating to humans only for dec
 Everything the-loop creates/maintains is tracked in `.the-loop/manifest.yaml`.
 - `config.yaml` (+ `config.schema.json`) — per-project configuration; per-task
   overrides via work-item front-matter.
-- `external-tools.md`, `collaborators.yaml` — user-owned registries.
+- `collaborators.yaml` — user-owned registry (external tools now live inline in
+  `config.externalTools`, issue-37).
 
 ### 3. The loop (runtime workflow)
 

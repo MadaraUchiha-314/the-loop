@@ -217,8 +217,15 @@ messaging:
   # - type: slack
   #   target: "#the-loop"
 
-externalTools:
-  referenceFile: .the-loop/external-tools.md
+externalTools:                    # inline registry the harness may freely use (one YAML)
+  tools:                          # add MCPs / CLIs / skills / plugins the-loop should know about
+    - name: github               # e.g. GitHub issues/PRs/Actions via MCP
+      kind: mcp
+    # - name: gh                 # kind: mcp | cli | skill | plugin | other
+    #   kind: cli
+    #   url: https://cli.github.com
+    #   notes: auth via GH_TOKEN; read-only in CI.
+  notes: ""                       # global free-form: auth, access patterns, constraints
 
 webhooks:
   ghWebhook:

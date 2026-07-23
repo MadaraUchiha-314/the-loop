@@ -43,4 +43,4 @@ written is tokens never emitted *and* never resent on later turns *and* never re
 ladder is the generation-side rung of `reference/token-economy.md`; the same guardrail binds
 both — minimalism/token economy never remove *necessary* code or rigor. This ladder is
 ponytail's "lazy senior developer" ladder expressed natively; ponytail is registered in
-`.the-loop/external-tools.md` for operators who prefer the packaged skill.
+`config.externalTools` for operators who prefer the packaged skill.

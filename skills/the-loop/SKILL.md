@@ -200,5 +200,5 @@ Granular commands (one step at a time; same flow `work-on` runs end-to-end):
 ## Interacting with other tools
 
 the-loop may freely use the MCP servers, CLIs, skills and plugins registered in
-`.the-loop/external-tools.md` (or `externalTools.notes`). Check that registry before
-assuming a capability is available.
+`config.externalTools` (the `externalTools.tools` list + `notes` in
+`.the-loop/config.yaml`). Check that registry before assuming a capability is available.

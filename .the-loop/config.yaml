@@ -182,8 +182,35 @@ personas:
 messaging:
   channels: []
 
-externalTools:
-  referenceFile: .the-loop/external-tools.md
+externalTools:                    # inline registry — one YAML for easy onboarding (issue-37)
+  tools:
+    - name: github
+      kind: mcp
+      notes: GitHub issues/PRs/Actions via MCP.
+    - name: the-loop
+      kind: plugin
+      notes: This plugin.
+    - name: caveman
+      kind: skill
+      url: https://github.com/JuliusBrussee/caveman
+      notes: >-
+        Output-token compression (drops narration filler; never touches
+        code/commands/errors). the-loop expresses this natively via
+        tokenEconomy.outputVerbosity — install if you prefer the packaged skill.
+        Its preservation rules must not compress the reviewer briefing or
+        paper-trail comments. (issue-37)
+    - name: ponytail
+      kind: skill
+      url: https://github.com/DietrichGebert/ponytail
+      notes: >-
+        Generation-minimalism decision ladder (YAGNI → reuse → stdlib → native →
+        dep → one-liner). the-loop expresses this natively via
+        reference/minimalism.md / config.minimalism — install if you prefer the
+        packaged skill. (issue-37)
+  notes: >-
+    caveman and ponytail are registered, not vendored — the-loop implements
+    their techniques natively (tokenEconomy / minimalism) and bundles no runtime
+    (decision-005). Register-only: the harness may use them if installed.
 
 webhooks:
   ghWebhook:

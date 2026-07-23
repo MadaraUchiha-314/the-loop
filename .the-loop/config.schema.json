@@ -835,15 +835,30 @@
     },
     "externalTools": {
       "type": "object",
-      "description": "Tools/skills/MCPs/plugins the-loop should be aware of. Free-form, fully user-configurable.",
+      "description": "Tools/skills/MCPs/plugins the-loop may freely use, declared inline so the whole config lives in one YAML — no separate registry file (issue-37 PR feedback). The harness checks this registry before assuming a capability is available.",
       "additionalProperties": false,
       "properties": {
-        "referenceFile": {
-          "type": "string",
-          "default": ".the-loop/external-tools.md",
-          "description": "Path to a free-form markdown file describing available tools/MCPs/plugins."
+        "tools": {
+          "type": "array",
+          "description": "Registered tools the harness is aware of and may use.",
+          "default": [],
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string", "description": "Tool/skill/MCP/plugin name, e.g. `github`, `gh`, `ponytail`." },
+              "kind": {
+                "type": "string",
+                "enum": ["mcp", "cli", "skill", "plugin", "other"],
+                "description": "What kind of tool this is."
+              },
+              "url": { "type": "string", "description": "Optional homepage/repository URL." },
+              "notes": { "type": "string", "description": "Access patterns, auth, constraints, or why it is registered." }
+            }
+          }
         },
-        "notes": { "type": "string", "description": "Inline free-form description (alternative to referenceFile)." }
+        "notes": { "type": "string", "description": "Global free-form notes (auth, access patterns, constraints) spanning tools." }
       }
     },
     "webhooks": {

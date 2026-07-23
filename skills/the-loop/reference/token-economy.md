@@ -55,7 +55,7 @@ intact.
 The YAGNI → stdlib → native → existing-dep → inline → new-abstraction ladder is **also** a
 token lever: code never generated is tokens never spent (and never reviewed). This is
 ponytail's "lazy senior developer" ladder expressed natively; ponytail itself is registered
-in `.the-loop/external-tools.md` for operators who want the packaged skill.
+in `config.externalTools` for operators who want the packaged skill.
 
 ### 5. Output-verbosity compression (`tokenEconomy.outputVerbosity`)
 
@@ -64,7 +64,7 @@ only**. NEVER compress anything in `outputVerbosity.preserve`: code, commands, d
 errors, paper-trail comments, the **reviewer briefing**, specs, decisions, capability docs.
 Because the reviewer briefing and ticket/PR comments are exempt, the *educate-the-reviewer*
 mandate (`userInteraction.prSummary`) is fully preserved. This is caveman's preservation
-rule; caveman is registered in `external-tools.md`.
+rule; caveman is registered in `config.externalTools`.
 
 ### 6. Model routing (`tokenEconomy.modelRouting`)
 
@@ -145,4 +145,4 @@ one.
 - Anthropic — *Effective context engineering for AI agents*; *Agent Skills*.
 - Claude Code docs — *Manage costs effectively*.
 - External plugins (registered, not vendored): caveman (output compression),
-  ponytail (generation minimalism) — see `.the-loop/external-tools.md`.
+  ponytail (generation minimalism) — see `config.externalTools` in `.the-loop/config.yaml`.

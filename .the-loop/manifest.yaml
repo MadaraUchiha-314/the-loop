@@ -17,9 +17,6 @@ meta:
   - path: .the-loop/manifest.yaml
     role: manifest
     managed: true
-  - path: .the-loop/external-tools.md
-    role: external-tools-registry
-    managed: false   # user-owned free-form content
   - path: .the-loop/collaborators.yaml
     role: collaborators
     managed: false

@@ -53,7 +53,7 @@ discipline, the paper trail, review depth — is never traded for tokens.
   reduction target** until it has measured one.
 - **External plugins:** the loop SHALL express caveman's (output compression) and ponytail's
   (generation minimalism) techniques **natively** and **register** — not vendor — those
-  plugins in `.the-loop/external-tools.md` (decision-005: no bundled runtime).
+  plugins in `config.externalTools` (decision-005: no bundled runtime).
 
 ## Design
 
