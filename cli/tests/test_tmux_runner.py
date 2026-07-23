@@ -18,6 +18,8 @@ from the_loop.runner import (
     TmuxRunner,
     UnsupportedRunnerError,
     check_dependencies,
+    start_web_terminal,
+    stop_web_terminal,
     web_terminal_argv,
 )
 from the_loop.sessions import Session, WorkItemRef
@@ -239,6 +241,65 @@ class TestReceiverPreflight:
         assert argv[argv.index("-p") + 1] == "7681"
         assert argv[argv.index("-i") + 1] == "127.0.0.1"
         assert argv[-5:] == ["tmux", "new-session", "-A", "-s", "the-loop-hub"]
+
+
+class FakePopen:
+    """Stand-in for subprocess.Popen recording argv, no real process spawned."""
+
+    instances = []
+
+    def __init__(self, argv):
+        self.argv = argv
+        self.terminated = False
+        self.killed = False
+        FakePopen.instances.append(self)
+
+    def terminate(self):
+        self.terminated = True
+
+    def wait(self, timeout=None):
+        pass
+
+    def kill(self):
+        self.killed = True
+
+
+class TestSharedWebTerminalLifecycle:
+    """The ttyd start/stop helper both `gh-webhook start` and `poll start` share
+    (issue-65: poll never launched ttyd because it had no equivalent code)."""
+
+    def setup_method(self):
+        FakePopen.instances = []
+
+    def test_start_web_terminal_spawns_ttyd_and_logs_url(self, monkeypatch, caplog):
+        monkeypatch.setattr(runner_mod.subprocess, "Popen", FakePopen)
+        web = RoutingConfig.from_mapping(
+            {"webTerminal": {"enabled": True, "host": "10.0.0.5", "port": 9000}}
+        ).web_terminal
+
+        with caplog.at_level("INFO", logger="the-loop.runner"):
+            proc = start_web_terminal(web)
+
+        assert isinstance(proc, FakePopen)
+        assert proc.argv[0] == "ttyd"
+        assert "10.0.0.5" in "".join(caplog.messages)
+        assert "9000" in "".join(caplog.messages)
+
+    def test_stop_web_terminal_terminates_the_process(self, monkeypatch):
+        monkeypatch.setattr(runner_mod.subprocess, "Popen", FakePopen)
+        web = RoutingConfig.from_mapping(
+            {"webTerminal": {"enabled": True}}
+        ).web_terminal
+        proc = start_web_terminal(web)
+        assert isinstance(proc, FakePopen)
+
+        stop_web_terminal(proc)
+
+        assert proc.terminated is True
+        assert proc.killed is False
+
+    def test_stop_web_terminal_is_a_noop_on_none(self):
+        stop_web_terminal(None)  # no ttyd was started — must not raise
 
 
 class TestSessionsCli:

@@ -175,11 +175,18 @@ class PollCommand(Command):
             )
             return 1
 
+        from ..runner import check_dependencies, start_web_terminal, stop_web_terminal
+
         missing = [line for p in plan.providers for line in p.check_dependencies()]
+        missing += check_dependencies(routing.runner, routing.web_terminal.enabled)
         if missing:
             for line in missing:
                 logger.error(line)
             return 1
+
+        web_proc = None
+        if routing.web_terminal.enabled:
+            web_proc = start_web_terminal(routing.web_terminal)
 
         config = PollConfig.from_mapping(_load_polling_config())
         config.interval_seconds = args.interval  # flag overrides until a config edit
@@ -234,6 +241,7 @@ class PollCommand(Command):
             poller.run(once=args.once, stop_event=stop_event)
         finally:
             dispatcher.stop()
+            stop_web_terminal(web_proc)
             eventlog.emit("poller.stopped")
             if not args.once:
                 try:

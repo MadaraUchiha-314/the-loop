@@ -12,7 +12,6 @@ import argparse
 import logging
 import os
 import signal
-import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -86,17 +85,6 @@ def _ticketing_owner() -> Optional[str]:
         return None
     owner = ((data.get("ticketing") or {}).get("github") or {}).get("owner")
     return str(owner) if owner else None
-
-
-def _terminate(proc) -> None:
-    """Stop a child process (ttyd), escalating to kill if it ignores SIGTERM."""
-    if proc is None:
-        return
-    proc.terminate()
-    try:
-        proc.wait(timeout=10)
-    except subprocess.TimeoutExpired:
-        proc.kill()
 
 
 def _build_routing(gh_webhook_config: dict, owner: Optional[str] = None):
@@ -247,10 +235,10 @@ class GhWebhookCommand(Command):
                 args.secret_env,
             )
 
+        from ..runner import check_dependencies, start_web_terminal, stop_web_terminal
+
         on_event = dispatcher = web_proc = None
         if args.route:
-            from ..runner import check_dependencies, web_terminal_argv
-
             on_event, dispatcher, routing_config = _build_routing(
                 _load_config_defaults(), owner=_ticketing_owner()
             )
@@ -262,14 +250,7 @@ class GhWebhookCommand(Command):
                     logger.error(line)
                 return 1
             if routing_config.web_terminal.enabled:
-                web = routing_config.web_terminal
-                web_proc = subprocess.Popen(web_terminal_argv(web.host, web.port))
-                logger.info(
-                    "web terminal (ttyd) serving tmux sessions on http://%s:%s "
-                    "— access control is environmental (decision-021)",
-                    web.host,
-                    web.port,
-                )
+                web_proc = start_web_terminal(routing_config.web_terminal)
 
         try:
             httpd = serve(
@@ -281,7 +262,7 @@ class GhWebhookCommand(Command):
             )
         except OSError as exc:
             logger.error("could not bind %s:%s — %s", args.host, args.port, exc)
-            _terminate(web_proc)
+            stop_web_terminal(web_proc)
             return 1
 
         pidfile = Path(args.pidfile)
@@ -316,7 +297,7 @@ class GhWebhookCommand(Command):
             httpd.server_close()
             if dispatcher is not None:
                 dispatcher.stop()
-            _terminate(web_proc)
+            stop_web_terminal(web_proc)
             eventlog.emit("server.stopped", host=args.host, port=args.port)
             try:
                 pidfile.unlink()
