@@ -13,10 +13,11 @@
   **auto-execute label** (`the-loop: auto-execute`). They are real labels in this repo,
   created by `/the-loop:init`, but they are **not applied to any issue or PR today**, and
   they carry no colour or description, so they are invisible on a board.
-- Phase labels answer *where in the loop* an item is (in progress / needs review /
-  complete). They do **not** answer *is it stuck* — "blocked" and "needs the user's
-  input" are **orthogonal signals**, not phases, and have **no label yet**. This report
-  recommends adding two signal labels to close that gap.
+- Phase labels answer *where in the loop* an item is. The "what needs my input / what's
+  blocked" bucket the issue asks for is **already `loop:needs-review`** — the phase where
+  automated reviews are done and the item is waiting on a human. No new label is needed;
+  "blocked" collapses into the same "waiting on a human" meaning
+  ([PR #75 discussion](https://github.com/MadaraUchiha-314/the-loop/pull/75)).
 - **You do not need to build a separate dashboard.** GitHub's native features cover the
   ask completely: saved **label filters** for a zero-setup view, and a **GitHub Project
   (v2)** board when you want a kanban with columns, insights and automation. A bespoke
@@ -83,34 +84,40 @@ labels colour + description so they're legible, and (b) actually applying them �
 what the workflow commands do the moment a real item is driven through `/the-loop:work-on`
 rather than merged as a plain PR (as most work in this repo has been so far).
 
-## The gap: phase ≠ status
+## The four buckets map onto the phases as-is
 
 The issue asks for four buckets — *being worked on*, *needs the user's input*,
-*completed*, *blocked*. The phase labels cover the first and third directly, and
-`needs-review` is close to the second. But **"blocked" and "needs input" are orthogonal to
-phase**: an item can be *blocked while in design* or *waiting on the user during
-implementation*. Encoding them as phases would break the linear state machine. They belong
-on a **second, orthogonal axis** — signal labels that layer on top of whatever phase the
-item is in.
+*completed*, *blocked*. All four are already answered by the phase labels; no new label is
+needed:
 
-Recommended additions (same `loop:` namespace, distinct colours):
+| Bucket the issue asks for | Answered by |
+|---|---|
+| What's being worked on | any of `loop:requirements-definition` … `loop:implementation` |
+| What needs the user's input | `loop:needs-review` |
+| What's blocked | `loop:needs-review` — see below |
+| What's completed | `loop:complete` |
 
-| Label | Colour | Means | Cleared when |
-|---|---|---|---|
-| `loop:blocked` | red (`d73a4a`) | Cannot progress — external dependency, upstream bug, missing decision. | The blocker is resolved. |
-| `loop:needs-input` | yellow (`fbca04`) | Waiting on a human — an approval, an answer, a decision. | The human responds. |
+**"Needs input" and "blocked" are the same thing: the item is waiting on a human.**
+`loop:needs-review` already carries that meaning — it is the phase where the harness has
+finished its self/critic reviews and can't advance without a person (a review, an approval,
+an answer). A separate `loop:blocked` label would only restate it, so it is deliberately
+**not** added ([PR #75 discussion](https://github.com/MadaraUchiha-314/the-loop/pull/75)).
 
-These are **advisory**, applied by the harness when it escalates (`reference/reviewing.md`
-"review before escalating") and removed when work resumes — never a gate, mirroring the
-existing `needs-review` semantics. Because `workflow.phases` is a schema-validated enum
-([a sensitive path](../../.the-loop/config.yaml)), wiring signal labels into config proper
-should go through the normal spec flow rather than being bolted on here; this report
-records the design so that work item can pick it up.
+The one thing `loop:needs-review` does *not* capture is a human question raised *before* the
+review gate — e.g. a clarification needed mid-`design`. the-loop already handles that
+without a label: the harness posts the question as a **ticket comment and notifies** via the
+configured messaging channel (the paper-trail + escalation rules in
+[`reference/reviewing.md`](../../skills/the-loop/reference/reviewing.md)). That is a
+transient conversation, not a durable status — so it stays a comment, not a phase. If a
+durable "waiting on a human at any phase" signal is ever wanted, the right shape is an
+**orthogonal flag** that coexists with the phase (a phase can't sit mid-`design`), added
+through the normal spec flow — but YAGNI until a real board proves the gap.
 
 ## Recommended label set (colours + descriptions)
 
-Legible labels are what make a board readable. Colour by axis — one hue ramp for the phase
-progression, distinct alert colours for the signals, a neutral for the control label:
+Legible labels are what make a board readable. Colour by role — a hue ramp for the phase
+progression (the `loop:needs-review` gate flagged in alert-yellow since it's the
+"waiting on you" bucket), and a neutral for the control label:
 
 ```bash
 # Phase labels — cool ramp, not-started → complete
@@ -120,12 +127,8 @@ gh label create "loop:requirements-definition" -c bfdadc -d "the-loop: requireme
 gh label create "loop:design"                  -c 5319e7 -d "the-loop: design being locked"                    -f
 gh label create "loop:tasks-breakdown"         -c 1d76db -d "the-loop: task DAG being built"                   -f
 gh label create "loop:implementation"          -c 0e8a16 -d "the-loop: tasks being executed"                   -f
-gh label create "loop:needs-review"            -c fbca04 -d "the-loop: self/critic + human review pending"     -f
+gh label create "loop:needs-review"            -c fbca04 -d "the-loop: waiting on a human (review/approval/answer)" -f
 gh label create "loop:complete"                -c 0e4429 -d "the-loop: shipped and closed"                      -f
-
-# Signal labels — orthogonal to phase (recommended addition)
-gh label create "loop:blocked"                 -c d73a4a -d "the-loop: blocked on an external dependency"       -f
-gh label create "loop:needs-input"             -c fbca04 -d "the-loop: waiting on a human decision/answer"      -f
 
 # Control label — CLI auto-execution gate
 gh label create "the-loop: auto-execute"       -c 5319e7 -d "the-loop: opt this item into autonomous execution" -f
@@ -145,10 +148,8 @@ the field a board wants. There are two levels, pick by appetite:
 The phase labels *are* a dashboard on their own. Saved searches give you each bucket:
 
 ```text
-is:open  label:loop:implementation                # what's being worked on
-is:open  label:loop:needs-review                   # what needs review
-is:open  label:loop:needs-input                    # what needs the user's input
-is:open  label:loop:blocked                        # what's blocked
+is:open  label:loop:implementation                 # what's being worked on
+is:open  label:loop:needs-review                   # what needs the user's input / is blocked
 is:issue label:loop:complete                        # what's done
 ```
 
