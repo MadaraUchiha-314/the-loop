@@ -78,10 +78,16 @@ Consequences:
   module global (reset every `main()` call, including to `None` so it never leaks
   across repeated calls e.g. under test) fits this codebase's existing style
   (`eventlog._log` is the same shape).
-- **Migration is mechanical.** Existing operators cut their `webhooks`/`polling` block
-  out of `.the-loop/config.yaml`, paste it into whichever of the four resolved
-  locations suits them, and rename `observability.eventLog` → top-level `eventLog`. No
-  behavioural change beyond the file it lives in.
+- **Migration is mechanical, and `/the-loop:upgrade-the-loop` performs it, not just
+  documents it (PR #69 review).** The initial cut of this decision described the move
+  ("existing operators cut the block out and paste it") as something an operator would
+  do by hand; review asked whether the upgrade command actually handles it. It didn't —
+  fixed: `/the-loop:upgrade-the-loop`'s schema-migration step now names this case
+  explicitly (extract `webhooks`/`polling`/`observability.eventLog`, rename `eventLog`,
+  ask where the CLI config should live, validate both resulting files, flag an empty
+  `authorizedUsers`/`repos` under needs-user since Requirement 4 removed their
+  fallback, report the migration as its own line). Verified mechanically against this
+  repo's own pre-split config (design doc's Testing strategy).
 
 ## Alternatives considered
 

@@ -83,20 +83,34 @@ CLI config checked in and versioned in their own dev-box repo.)
    (`.the-loop/cli-config.yaml`, from the shipped template) for this repo, or to rely on
    `~/.the-loop/cli-config.yaml` — never assume one or the other.
 
-### Requirement 3 — No loss of existing behaviour
+### Requirement 3 — `/the-loop:upgrade-the-loop` migrates existing installations, not just documents the move
 
 **User story:** As an existing operator with a working `.the-loop/config.yaml`
-`webhooks`/`polling` block, I want a documented, mechanical migration, so that
-upgrading doesn't silently stop routing my events.
+`webhooks`/`polling` block, I want `/the-loop:upgrade-the-loop` to migrate it for me,
+so that upgrading past this change doesn't silently stop routing my events or leave me
+to reverse-engineer where the settings went. (Sharpened per PR #69 review: a documented
+manual move is not the same as an upgrade path the command actually performs.)
 
 #### Acceptance criteria (EARS)
 
-1. WHEN an operator moves their existing `webhooks`/`polling`/`observability.eventLog`
-   block from `.the-loop/config.yaml` into the new CLI config file (renaming
-   `observability.eventLog` to the CLI config's top-level `eventLog`, and setting
-   `routing.authorizedUsers` / a poll source's `repos` explicitly — see Requirement 4)
-   THEN the daemon SHALL behave identically to before the split.
-2. WHEN hot-reload is exercised (edit-while-running) THEN the system SHALL keep
+1. WHEN `/the-loop:upgrade-the-loop` runs on a project whose `.the-loop/config.yaml`
+   still carries `webhooks` and/or `polling` and/or `observability.eventLog` (the
+   pre-split shape) THEN the command SHALL extract that block, rename
+   `observability.eventLog` to the CLI config's top-level `eventLog`, and either
+   scaffold `.the-loop/cli-config.yaml` with it (asking the same yes/no question
+   `/the-loop:init` asks, Requirement 2.4) or print the extracted block for the operator
+   to place at `~/.the-loop/cli-config.yaml` — never silently discard it.
+2. WHEN that migration runs THEN the command SHALL then strip `webhooks`/`polling`/
+   `observability.eventLog` from `.the-loop/config.yaml` and validate BOTH files against
+   their (now separate) schemas before reporting success.
+3. WHEN the extracted block's `routing.authorizedUsers` is empty, or a poll source's
+   `repos` is empty, THEN the command SHALL flag it under **needs-user** — those
+   previously relied on the now-removed `ticketing.github` fallback (Requirement 4) and
+   need an explicit value or the daemon fails closed / raises on discovery.
+4. WHEN the migration performs any of the above THEN the final report SHALL name it
+   explicitly (e.g. a **migrated** line: "webhooks/polling extracted to
+   .the-loop/cli-config.yaml") — never folded silently into a generic "drifted" line.
+5. WHEN hot-reload is exercised (edit-while-running) THEN the system SHALL keep
    reloading `webhooks.ghWebhook.routing` / `polling.sources` from the CLI config file,
    not the plugin config file.
 

@@ -43,6 +43,13 @@ the projects the-loop is run on.
 - WHERE `--defaults` is passed init SHALL apply sensible defaults without interaction
   and report the remaining gaps under **needs-user**; WHEN init re-runs it SHALL
   raise only gaps, never re-asking established answers.
+- WHEN `/the-loop:upgrade-the-loop` finds a removed schema key that still carries live
+  operational settings (not just a stale default) THEN it SHALL migrate the data, not
+  merely flag and drop it — e.g. a pre-decision-032 `.the-loop/config.yaml` still
+  carrying `webhooks`/`polling`/`observability.eventLog` SHALL have that block
+  extracted, `eventLog`-renamed, and written to a CLI config (asking the same yes/no
+  location question `/init` asks), both resulting files validated, and the migration
+  reported as its own line — never silently dropped.
 
 ## Design
 
@@ -53,6 +60,7 @@ the projects the-loop is run on.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-63 | `/upgrade` migrates (not just flags) removed schema keys with live data — the `webhooks`/`polling`/`observability.eventLog` → CLI config extraction | [spec](../specs/issue-63/), [decision-032](../decisions/decision-032.md) |
 | issue-46 | Plugin/marketplace manifest versions bumped by the release engine (were frozen at 0.1.0) | [spec](../specs/issue-46/), [decision-028](../decisions/decision-028.md) |
 | issue-49 | Guided, schema-driven config onboarding in `/init` (x-onboarding groups, ask levels, `--defaults` mode, examples on gap-prone keys) | [spec](../specs/issue-49/), [decision-024](../decisions/decision-024.md) |
 | issue-36 | Templates made internal to the plugin (`skills/the-loop/templates/`); init no longer copies them into projects, and upgrade cleans up the deprecated `.the-loop/templates/` folder | [spec](../specs/issue-36/) |

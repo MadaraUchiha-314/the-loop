@@ -160,6 +160,19 @@ in both files.
 No change: `_default_registry_dir()` already goes through
 `gh_webhook._load_config_defaults()`, which now transparently points at the CLI config.
 
+### `commands/upgrade-the-loop.md` (instruction-level, no code)
+
+`/the-loop:upgrade-the-loop` is a markdown-instruction command an agent follows, not a
+Python module — but Requirement 3 makes it responsible for actually performing the
+`webhooks`/`polling`/`observability.eventLog` → CLI config migration on an existing
+project, not just documenting that the move is possible. Its step 4 now names the
+migration explicitly: detect the pre-split shape in `.the-loop/config.yaml`, extract
+and rename (`observability.eventLog` → `eventLog`), ask the init-style yes/no question
+about where the CLI config should live, validate both resulting files against their
+own schemas, flag an empty `authorizedUsers`/`repos` under needs-user (Requirement 4
+removed their fallback), and report the migration as its own line — never silently
+folded into a generic "drifted" report line or, worse, dropped.
+
 ## Data models
 
 Two schema files ship in this repo (and in the published plugin/package), same tree,
@@ -261,6 +274,15 @@ Identical to today, just re-homed:
   via the cwd tier, no flag or env var needed) and again with an explicit `--config`
   pointed at a different file, confirming the override wins and hot-reload still fires
   on an edit to whichever file was actually resolved.
+- **Manual evidence (Requirement 3, the `/upgrade` migration):** this repo's own
+  pre-split `.the-loop/config.yaml` (`git show f619a4d:.the-loop/config.yaml`, the last
+  commit before this PR) run through the extraction step 4 now describes — pop
+  `webhooks`/`polling`/`observability.eventLog`, rename `eventLog`, validate both
+  halves — both resulting documents pass `jsonschema.validate` against the split
+  schemas with no manual fixup. The extraction also surfaced that this repo's own
+  `webhooks.ghWebhook.routing.authorizedUsers` was empty pre-split, i.e. exactly the
+  needs-user case Requirement 3.3 flags — confirmed consistent with the `[]` already
+  checked in at `.the-loop/cli-config.yaml`.
 
 ## Trade-offs & decisions
 

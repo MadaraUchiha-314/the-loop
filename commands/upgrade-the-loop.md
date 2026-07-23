@@ -35,13 +35,31 @@ command reconciles them.
    the report and confirm before deleting rather than removing silently.
 
 4. **Migrate schema.** If `.the-loop/config.schema.json` changed, update the project's
-   copy and migrate `.the-loop/config.yaml` to the new shape (add new keys with
-   defaults, flag removed/renamed keys for the user — e.g. template paths that used to
-   point under `.the-loop/templates/`). Validate the result. If the project also
-   scaffolded `.the-loop/cli-config.yaml` (the operator opted into a repo-local CLI
-   config at init time — decision-032), migrate its schema copy the same way; never
-   scaffold it now if the project never had one (that's the operator's `/init`-time
-   choice, not upgrade's to make).
+   copy and migrate `.the-loop/config.yaml` to the new shape:
+   - Add new keys with defaults.
+   - For a removed/renamed key whose data has no real operational value (e.g. a stale
+     template path that used to point under `.the-loop/templates/`), flag it for the
+     user with a `# TODO: verify` comment and move on.
+   - For a removed key that carries live operational settings, **migrate the data, do
+     not just flag and drop it.** Concretely (decision-032, issue-63): if
+     `.the-loop/config.yaml` still carries `webhooks` and/or `polling` and/or
+     `observability.eventLog` (the pre-split shape), that block configures the running
+     webhook receiver/poller and losing it silently would break routing. Extract it,
+     rename `observability.eventLog` → the CLI config's top-level `eventLog`, and ask
+     the same yes/no question `/the-loop:init` asks (Requirement 2.4): scaffold it at
+     `.the-loop/cli-config.yaml` (repo-tracked) or print the extracted block for the
+     operator to place at `~/.the-loop/cli-config.yaml` themselves. Either way, validate
+     it against `.the-loop/cli-config.schema.json`, THEN strip `webhooks`/`polling`/
+     `observability.eventLog` from `.the-loop/config.yaml` and re-validate it against
+     the trimmed `.the-loop/config.schema.json`. Report this migration explicitly (not
+     folded into a generic "drifted" line) so the operator sees exactly what moved
+     where. Also flag `routing.authorizedUsers` / any poll source's `repos` if they were
+     empty and relying on the now-removed `ticketing.github` fallback (Requirement 4) —
+     those need an explicit value in the new CLI config or the daemon fails closed.
+   Validate the result. If the project already had a `.the-loop/cli-config.yaml`
+   (scaffolded at a previous init/upgrade), migrate its schema copy the same way; never
+   scaffold one now if the project never had one and step above didn't just create it
+   (that's the operator's choice, not upgrade's to make unprompted).
 
 5. **Update manifest.** Bump `theLoopVersion`/`manifestVersion` to match the plugin.
 
