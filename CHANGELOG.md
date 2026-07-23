@@ -1,3 +1,9 @@
+## v0.13.0 (2026-07-23)
+
+### Feat
+
+- **config**: split CLI daemon config out of the per-repo plugin config (issue #63) (#69)
+
 ## v0.12.2 (2026-07-23)
 
 ### Fix

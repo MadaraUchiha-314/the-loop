@@ -6,7 +6,7 @@
 # `the-loopy-one`; the import package and CLI keep the natural `the_loop`/`the-loop`.
 [project]
 name = "the-loopy-one"
-version = "0.12.2"
+version = "0.13.0"
 description = "Lightweight, extensible CLI for the-loop — quality-of-life commands the the-loop plugin can use (e.g. a GitHub webhook receiver)."
 readme = "README.md"
 requires-python = ">=3.9"
