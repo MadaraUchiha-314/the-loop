@@ -34,9 +34,19 @@ command reconciles them.
    If a user has clearly added their own files under a deprecated path, surface them in
    the report and confirm before deleting rather than removing silently.
 
-4. **Migrate schema.** If `.the-loop/config.schema.json` changed, update the project's
-   copy and migrate `.the-loop/config.yaml` to the new shape:
-   - Add new keys with defaults.
+4. **Migrate schemas.** the-loop has **two** independent config schemas — the per-repo
+   **plugin** config (`.the-loop/config.schema.json` ↔ `.the-loop/config.yaml`) and the
+   **CLI daemon** config (`.the-loop/cli-config.schema.json` ↔ `.the-loop/cli-config.yaml`,
+   decision-032). Check each one **independently**: a release may change only one of them
+   (e.g. a new `webhooks.ghWebhook.routing.*` key touches only the CLI schema), so never
+   gate the CLI-config migration on the plugin schema having changed.
+
+   For **either** schema, when it changed, update the project's copy of that schema file
+   and migrate the corresponding config file to the new shape:
+   - **Add new keys with defaults.** This is the common case and covers purely additive,
+     opt-in keys — e.g. `routing.workspace` (issue-76): add it with `root: ""` (disabled)
+     so nothing changes for an operator who doesn't set it, and `spawnWorkdir` keeps its
+     existing meaning.
    - For a removed/renamed key whose data has no real operational value (e.g. a stale
      template path that used to point under `.the-loop/templates/`), flag it for the
      user with a `# TODO: verify` comment and move on.
@@ -56,10 +66,12 @@ command reconciles them.
      where. Also flag `routing.authorizedUsers` / any poll source's `repos` if they were
      empty and relying on the now-removed `ticketing.github` fallback (Requirement 4) —
      those need an explicit value in the new CLI config or the daemon fails closed.
-   Validate the result. If the project already had a `.the-loop/cli-config.yaml`
-   (scaffolded at a previous init/upgrade), migrate its schema copy the same way; never
-   scaffold one now if the project never had one and step above didn't just create it
-   (that's the operator's choice, not upgrade's to make unprompted).
+
+   Validate each migrated file against its schema. The CLI config is opt-in: only migrate
+   `.the-loop/cli-config.yaml` if the project already had one (scaffolded at a previous
+   init/upgrade). Never scaffold one now if the project never had one and step 4's data
+   migration didn't just create it (that's the operator's choice, not upgrade's to make
+   unprompted).
 
 5. **Update manifest.** Bump `theLoopVersion`/`manifestVersion` to match the plugin.
 
