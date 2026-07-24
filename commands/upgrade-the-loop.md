@@ -28,11 +28,16 @@ command reconciles them.
      (`manifest.templatesDir`) rather than creating a `.the-loop/templates/` folder.
 
 3. **Clean up deprecated paths.** For each entry under `manifest.deprecated`, if the path
-   is present in the project, remove it — this is how projects initialized by older
+   is present in the project, act on it — this is how projects initialized by older
    versions shed the duplicated, internal-only artifacts (notably
    `.the-loop/templates/`, superseded by the plugin's own skill templates in issue #36).
-   If a user has clearly added their own files under a deprecated path, surface them in
-   the report and confirm before deleting rather than removing silently.
+   **Read the entry's `reason` first:** an entry whose reason describes a MIGRATION
+   (e.g. `.the-loop/config.yaml` / `.the-loop/config.schema.json`, renamed in
+   issue-82) is **never deleted here** — it is handled by step 4's rename migration,
+   which preserves the data; only remove a path whose reason marks it as
+   safe-to-delete. If a user has clearly added their own files under a deprecated
+   path, surface them in the report and confirm before deleting rather than removing
+   silently.
 
 4. **Migrate schemas.** the-loop has **three** independent config schemas — the per-repo
    **harness (plugin)** config (`.the-loop/harness-config.schema.json` ↔ `.the-loop/harness-config.yaml`),
@@ -57,8 +62,8 @@ command reconciles them.
    files. Report this migration explicitly so the operator sees exactly what moved
    where.
 
-   For **either** schema, when it changed, update the project's copy of that schema file
-   and migrate the corresponding config file to the new shape:
+   For **any** of the three schemas, when it changed, update the project's copy of that
+   schema file and migrate the corresponding config file to the new shape:
    - **Add new keys with defaults.** This is the common case and covers purely additive,
      opt-in keys — e.g. `routing.workspace` (issue-76): add it with `root: ""` (disabled)
      so nothing changes for an operator who doesn't set it, and `spawnWorkdir` keeps its
