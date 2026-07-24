@@ -1,3 +1,9 @@
+## v0.15.0 (2026-07-24)
+
+### Feat
+
+- **config**: single-source notification config in collaborators.yaml; rename plugin config to harness-config.yaml (#83)
+
 ## v0.14.2 (2026-07-24)
 
 ### Fix

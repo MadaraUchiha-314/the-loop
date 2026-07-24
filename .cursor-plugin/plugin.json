@@ -1,7 +1,7 @@
 {
   "name": "the-loop",
   "displayName": "the-loop",
-  "version": "0.14.2",
+  "version": "0.15.0",
   "description": "An opinionated product-development-lifecycle harness that lets coding agents deliver work items end-to-end, with minimal human intervention, through a predictable loop of plan, execute, self-review, critic-review and escalate.",
   "author": {
     "name": "MadaraUchiha-314",
