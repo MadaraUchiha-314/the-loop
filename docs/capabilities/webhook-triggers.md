@@ -51,7 +51,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   own reply (`the_loop.authz.is_self_authored`; same check in `the-loop poll`).
 - All `webhooks.*` keys above live in the **CLI config** (`cli-config.yaml`, resolved
   via `--config`/env/cwd/home — see `cli/README.md`), independent of any repo's
-  `.the-loop/config.yaml` (the plugin config) — the daemon is not tied to a single repo
+  `.the-loop/harness-config.yaml` (the plugin config) — the daemon is not tied to a single repo
   and never reads a repo's plugin config for anything (decision-032).
   `routing.authorizedUsers` has no fallback: it must be set explicitly in the CLI
   config or the receiver fails closed (acts on no human-authored events).

@@ -8,7 +8,7 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Task
 
 Drive a single work item end-to-end with minimal/no human intervention, following the
 Kiro-style 3-phase spec workflow (https://kiro.dev/docs/specs/). Load
-`.the-loop/config.yaml` first, then **read every custom instruction doc it registers**
+`.the-loop/harness-config.yaml` first, then **read every custom instruction doc it registers**
 (`customInstructions.docs`, in order; missing docs per `customInstructions.onMissing`)
 and honor them throughout — they carry the operator's conventions and styles
 (`reference/instructions.md`). Apply any per-task `overrides` from the work item's
@@ -121,8 +121,9 @@ requirements.
    available, else the-loop's checklist (`reference/security.md`); a work item at
    risk tier ≥ `security.review.humanSignOffMinTier` waits for a named human security
    sign-off. Record every review as a PR/ticket comment and in the execution log's
-   review table (the security round in its Security review section). Notify via
-   configured messaging channels when a human action is pending.
+   review table (the security round in its Security review section). Notify per the
+   `notifications.events` filters (harness-config.yaml), resolving recipients by role
+   from `.the-loop/collaborators.yaml`, when a human action is pending.
 
 9. **Complete** (`complete`). Present validated evidence that the acceptance criteria
    are met (tests, screenshots, logs) on the PR; record it in the execution log.

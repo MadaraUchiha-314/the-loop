@@ -7,7 +7,8 @@ configured integration-test globs, extracts those scenarios and presents them as
 scenarios are tested?" without running anything.
 
 Globs come from ``--glob`` (repeatable) or, failing that, ``testing.integrationTestGlobs``
-in ``.the-loop/config.yaml`` (when PyYAML is available), else a built-in default set.
+in ``.the-loop/harness-config.yaml`` (when PyYAML is available; the pre-rename
+``config.yaml`` is still honored — issue-82), else a built-in default set.
 """
 
 from __future__ import annotations
@@ -25,13 +26,19 @@ logger = logging.getLogger("the-loop.scenarios")
 
 
 def _load_config_globs(root: Path) -> List[str]:
-    """Best-effort read of testing.integrationTestGlobs from .the-loop/config.yaml.
+    """Best-effort read of testing.integrationTestGlobs from the harness config.
 
-    Returns ``[]`` if the file or PyYAML is unavailable — the CLI must work with zero
-    runtime dependencies.
+    Reads ``.the-loop/harness-config.yaml``, falling back to the pre-rename
+    ``.the-loop/config.yaml`` (issue-82, decision-035) so repos that have not run
+    /the-loop:upgrade-the-loop keep working. Returns ``[]`` if no file or PyYAML
+    is unavailable — the CLI must work with zero runtime dependencies.
     """
-    cfg_path = root / ".the-loop" / "config.yaml"
-    if not cfg_path.is_file():
+    candidates = [
+        root / ".the-loop" / "harness-config.yaml",
+        root / ".the-loop" / "config.yaml",  # pre-rename fallback
+    ]
+    cfg_path = next((p for p in candidates if p.is_file()), None)
+    if cfg_path is None:
         return []
     try:
         import yaml  # optional dependency

@@ -1,7 +1,7 @@
 # How it works
 
-- **Configuration** lives in `.the-loop/config.yaml`, validated against
-  `.the-loop/config.schema.json`. A subset of keys can be overridden per work item via
+- **Configuration** lives in `.the-loop/harness-config.yaml`, validated against
+  `.the-loop/harness-config.schema.json`. A subset of keys can be overridden per work item via
   the markdown front-matter. The CLI companion's own daemon config (webhook receiver /
   poller) is independent and not tied to a repo — see the
   [CLI reference](/cli#two-independent-config-files-decision-032).

@@ -1,6 +1,6 @@
 # UI/UX design artifacts reference
 
-Config: `design.uiArtifacts` in `.the-loop/config.yaml`. This file codifies how **visual**
+Config: `design.uiArtifacts` in `.the-loop/harness-config.yaml`. This file codifies how **visual**
 UI/UX design is captured, tracked and iterated in the **design phase** (issue #18), so the
 essence is not lost.
 

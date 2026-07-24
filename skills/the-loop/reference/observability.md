@@ -1,7 +1,7 @@
 # Observability reference
 
 Config: `observability` (`devLevel`/`runtimeLevel`/`browserLogging`) in
-`.the-loop/config.yaml` (the plugin config). The CLI event log below is configured
+`.the-loop/harness-config.yaml` (the plugin config). The CLI event log below is configured
 separately, in the independent CLI config (`eventLog`; decision-032).
 
 ## Core rule: dev-time == run-time

@@ -117,8 +117,8 @@ Granular commands run the same flow one step at a time:
 
 ## How it works
 
-- **Configuration** lives in [`.the-loop/config.yaml`](skills/the-loop/templates/config.yaml),
-  validated against [`.the-loop/config.schema.json`](.the-loop/config.schema.json). A
+- **Configuration** lives in [`.the-loop/harness-config.yaml`](skills/the-loop/templates/harness-config.yaml),
+  validated against [`.the-loop/harness-config.schema.json`](.the-loop/harness-config.schema.json). A
   subset of keys can be overridden per work item via the markdown front-matter. The CLI
   companion's own daemon config (webhook receiver / poller) is independent and not tied
   to a repo — see [`cli/README.md`](cli/README.md#two-independent-config-files-decision-032).

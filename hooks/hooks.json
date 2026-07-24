@@ -8,7 +8,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "test -f .the-loop/config.yaml && echo 'the-loop is initialized in this repo. Operating rules: plan→execute→self/critic-review→escalate. See .the-loop/config.yaml and the the-loop skill.' || true"
+            "command": "test -f .the-loop/harness-config.yaml && echo 'the-loop is initialized in this repo. Operating rules: plan→execute→self/critic-review→escalate. See .the-loop/harness-config.yaml and the the-loop skill.' || true"
           }
         ]
       }

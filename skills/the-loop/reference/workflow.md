@@ -248,7 +248,7 @@ using dependency relationships:
 the-loop may freely use other MCP tools, skills and plugins available in the harness
 (e.g. Jira via MCP, GitHub via `gh`, plugins like ponytail/superpowers). The user
 registers what to be aware of in `config.externalTools` (the `externalTools.tools` list
-in `.the-loop/config.yaml`). See `collaboration.md`.
+in `.the-loop/harness-config.yaml`). See `collaboration.md`.
 
 ## Predictability & guarantees (open design question)
 

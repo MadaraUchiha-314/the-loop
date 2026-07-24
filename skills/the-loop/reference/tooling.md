@@ -1,6 +1,6 @@
 # Tooling reference
 
-The harness must use exactly the tooling declared in `.the-loop/config.yaml`
+The harness must use exactly the tooling declared in `.the-loop/harness-config.yaml`
 (`repository`, `tooling`, `localOrchestration`, `hooks` sections). This file explains
 the rules and the per-language matrix so the essence is not lost.
 

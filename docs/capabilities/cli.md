@@ -29,7 +29,7 @@ self-learning/ML capabilities.
   `the_loop` and the `the-loop` script unchanged; see
   [release-publishing](release-publishing.md)).
 - `gh-webhook`/`poll`/`sessions`/`events` SHALL read their defaults from a **CLI
-  config** (`cli-config.yaml`) independent of any repo's `.the-loop/config.yaml` (the
+  config** (`cli-config.yaml`) independent of any repo's `.the-loop/harness-config.yaml` (the
   plugin config) — resolved via `--config`/`-c`, else `$THE_LOOP_CLI_CONFIG`, else
   `./.the-loop/cli-config.yaml` (repo-relative, so an operator can track it in a
   chosen repo), else `~/.the-loop/cli-config.yaml`, so the CLI is not tied to a single
@@ -44,6 +44,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-82 | Plugin config renamed `config.yaml` → `harness-config.yaml` (`scenarios` reads the new name with a pre-rename fallback); CLI config gained operator-declared `collaborators` + daemon-side `notifications` event filters | [decision-035](../decisions/decision-035.md) |
 | issue-78 | `--version` derives from package metadata instead of a hardcoded string that had frozen at 0.1.0 | [spec](../specs/issue-78/) |
 | issue-63 | Split the CLI daemon's config (`webhooks`/`polling`/`eventLog`) out of the per-repo plugin config into an independent, repo-agnostic CLI config | [spec](../specs/issue-63/), [decision-032](../decisions/decision-032.md) |
 | issue-50 | Added the structured event log and the `events` query command | [spec](../specs/issue-50/), [decision-025](../decisions/decision-025.md) |

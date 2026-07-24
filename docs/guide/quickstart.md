@@ -8,8 +8,8 @@ This walks through taking a single GitHub issue through the whole loop.
 /the-loop:init
 ```
 
-A guided, schema-driven onboarding writes `.the-loop/config.yaml` (validated against
-`.the-loop/config.schema.json`) with sensible defaults. Idempotent — safe to re-run.
+A guided, schema-driven onboarding writes `.the-loop/harness-config.yaml` (validated against
+`.the-loop/harness-config.schema.json`) with sensible defaults. Idempotent — safe to re-run.
 Pass `--defaults` to skip the interactive walkthrough.
 
 ## 2. Run the whole spec workflow on a ticket

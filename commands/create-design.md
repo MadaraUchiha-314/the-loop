@@ -10,7 +10,7 @@ Produce the **design** for a work item from its approved requirements — Phase 
 3-phase spec workflow. A slice of `/the-loop:work-on`; `work-on` remains the superset.
 
 **Read the `the-loop` skill and `reference/workflow.md` first.** Load
-`.the-loop/config.yaml`.
+`.the-loop/harness-config.yaml`.
 
 ## Steps
 

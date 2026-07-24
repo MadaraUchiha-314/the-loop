@@ -46,7 +46,7 @@ For each component: responsibility, inputs/outputs, public interface/contract.
 
 ## Data models
 
-Schemas, types, persistence. (Link `.the-loop/config.schema.json`-style schemas if any.)
+Schemas, types, persistence. (Link `.the-loop/harness-config.schema.json`-style schemas if any.)
 
 ## Error handling
 

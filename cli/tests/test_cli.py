@@ -168,3 +168,27 @@ def test_scenarios_command_table_output(capsys):
     out = capsys.readouterr().out
     assert "Feature" in out and "Scenario" in out
     assert "Checkout pricing" in out
+
+
+def test_load_config_globs_prefers_harness_config_with_config_yaml_fallback(tmp_path):
+    """harness-config.yaml wins; the pre-rename config.yaml is still honored
+    (issue-82, decision-035) so un-upgraded repos keep working."""
+    from the_loop.commands.scenarios import _load_config_globs
+
+    cfg_dir = tmp_path / ".the-loop"
+    cfg_dir.mkdir()
+
+    # nothing configured -> []
+    assert _load_config_globs(tmp_path) == []
+
+    # only the pre-rename file -> its globs are used
+    (cfg_dir / "config.yaml").write_text(
+        "testing:\n  integrationTestGlobs: [old/**/*.py]\n"
+    )
+    assert _load_config_globs(tmp_path) == ["old/**/*.py"]
+
+    # harness-config.yaml present -> it wins over config.yaml
+    (cfg_dir / "harness-config.yaml").write_text(
+        "testing:\n  integrationTestGlobs: [new/**/*.py]\n"
+    )
+    assert _load_config_globs(tmp_path) == ["new/**/*.py"]

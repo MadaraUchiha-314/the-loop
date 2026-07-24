@@ -10,9 +10,11 @@ PR.
   ticketing system** (GitHub issue / Jira), not resolved silently in files.
 - **PR reviews** → happen **on the PR** as comments and replies.
 - **Self & critic reviews** → also as PR/ticket comments.
-- **Notifications/escalations** when a human action is pending → sent through configured
-  **messaging channels** (`messaging.channels`: slack / whatsapp / email) if configured.
-  Messaging is for notification only; the decision itself still lands as a comment.
+- **Notifications/escalations** when a human action is pending → driven by the
+  `notifications.events` filters in `harness-config.yaml` (event → roles), with
+  recipients resolved by role from `.the-loop/collaborators.yaml` and delivered on each
+  recipient's enabled channels (issue-82, decision-035). Notification only; the
+  decision itself still lands as a comment.
 
 ## RULE: mark every comment/reply as the-loop's own (loop prevention)
 
@@ -58,7 +60,7 @@ vanish. Rule:
   the append-only conflict log and keep going; do not stall the whole run on one
   low-stakes ambiguity.
 - **Genuinely blocked → log, escalate once, move on.** Record the conflict, escalate once
-  via the paper trail (ticket/PR comment + configured messaging), and proceed to the next
+  via the paper trail (ticket/PR comment + a `conflict-escalated` notification), and proceed to the next
   available work rather than spinning.
 
 The log is `docs/decisions/conflicts.md` (append-only). Each entry is one line:
@@ -68,12 +70,25 @@ behalf.
 
 ## Personas, roles and groups
 
-- The full list of available collaborators is defined up-front in the repo:
-  `.the-loop/collaborators.yaml` and/or `config.personas`.
+- The full list of available collaborators is defined up-front in the repo, in
+  **`.the-loop/collaborators.yaml`** — the SINGLE source of truth for people and their
+  notification config, validated against `.the-loop/collaborators.schema.json`
+  (issue-82, decision-035; the former `config.personas`/`config.messaging` keys are
+  retired). CODEOWNERS-like: these are the stewards of the repository.
 - A collaborator may be an **individual** or a **group** (e.g. a GitHub team
   `@org/team`). A single user may hold **multiple roles**.
 - Supported roles: `product-manager`, `architect`, `designer`, `engineer`, `qa`,
   `reviewer`, `approver`.
+- Each collaborator declares their **notification channels** — the primary way the
+  harness notifies them that an action is pending (never where decisions land). Per
+  user: `notifications.enabled`. Per channel: `enabled`, a `type` (only `slack` for
+  now), `via` (how to interact with the channel — `mcp`/`cli`/`api`, the same
+  primitives as `externalTools.kind`), and channel-specific `config` (slack:
+  `channel-list`). Which events notify which roles is the harness config's
+  `notifications.events`.
+- The CLI daemon never reads this file (decision-032): the operator declares their own
+  recipients, in the same collaborator structure, in `cli-config.yaml` — see
+  `reference/automation.md`.
 
 ## RULE: identify collaborators up-front
 

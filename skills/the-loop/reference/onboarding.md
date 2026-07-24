@@ -9,21 +9,21 @@ they know what they configured and why. This file is the procedure that drives i
 Every key gets a proposed value before the user is ever asked. Resolve it in this
 order — first hit wins:
 
-1. **Existing answer** — the value already in the project's `.the-loop/config.yaml`
+1. **Existing answer** — the value already in the project's `.the-loop/harness-config.yaml`
    (re-runs never re-ask or overwrite what was already established).
 2. **Detected signal** — what init's project detection found (lock files, manifests,
    CI config, git remote — see `commands/init.md` step 1 and
    `reference/tooling.md` → "Tooling detection").
-3. **Schema default** — the `default` in `.the-loop/config.schema.json` (the config
+3. **Schema default** — the `default` in `.the-loop/harness-config.schema.json` (the config
    template mirrors these).
 
 The user is only *asked* where the answer genuinely needs them: keys with no
-default and no signal (e.g. `personas`), or groups whose proposal they should
-confirm before the harness relies on it.
+default and no signal (e.g. the collaborators in `.the-loop/collaborators.yaml`),
+or groups whose proposal they should confirm before the harness relies on it.
 
 ## The schema drives everything
 
-The single source of truth for the walkthrough is `config.schema.json`:
+The single source of truth for the walkthrough is `harness-config.schema.json`:
 
 - **`x-onboarding.groups`** — the ordered list of config groups: which top-level keys
   are clubbed together (because they interact and should be decided together), the
@@ -90,13 +90,13 @@ the grouping encodes.
 ## Re-runs (idempotence)
 
 Onboarding is as idempotent as the rest of init. On a re-run, only **gaps** are
-raised: required keys still empty (e.g. `personas: []`), lines still carrying a
+raised: required keys still empty (e.g. `collaborators: []`), lines still carrying a
 `# TODO: verify` marker, and keys newly added by a schema upgrade. Everything already
 established is left untouched and never re-asked.
 
 ## After the walkthrough
 
-Validate the resulting `.the-loop/config.yaml` against `config.schema.json` and fold
+Validate the resulting `.the-loop/harness-config.yaml` against `harness-config.schema.json` and fold
 the outcome into init's final report: answered keys under **created/updated**,
 untouched ones under **skipped**, and anything still unresolved under **needs-user**
 with a pointer to the exact key and an example value.

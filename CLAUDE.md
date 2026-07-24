@@ -19,7 +19,7 @@ labels sit unused precisely because past work bypassed the loop.)
 
 ## What to do
 
-1. **Read the operating model first.** [`.the-loop/config.yaml`](.the-loop/config.yaml)
+1. **Read the operating model first.** [`.the-loop/harness-config.yaml`](.the-loop/harness-config.yaml)
    (this project's config) and the bundled skill
    [`skills/the-loop/SKILL.md`](skills/the-loop/SKILL.md) are the source of truth for how
    work is done here; [`skills/the-loop/reference/workflow.md`](skills/the-loop/reference/workflow.md)

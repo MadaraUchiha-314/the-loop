@@ -5,7 +5,7 @@ workItem: ""                 # ticket id (or draft-<slug> when no ticket exists 
 status: draft                # draft | in-review | approved  (approved == "locked")
 approvedBy: []               # handles/roles who locked this artifact (paper trail)
 collaborators: []            # roles pulled in to brainstorm, e.g. [product-manager, architect]
-overrides: {}                # per-work-item overrides of .the-loop/config.yaml
+overrides: {}                # per-work-item overrides of .the-loop/harness-config.yaml
 ---
 
 # Brainstorm: <work item title>

@@ -10,7 +10,7 @@ Turn an already-drafted `requirements.md` into a tracked work item. RULE: everyt
 harness works on must have a ticket — this command creates it and wires the spec to it.
 
 **Read the `the-loop` skill, `reference/collaboration.md` and `reference/workflow.md`.**
-Load `.the-loop/config.yaml` for `ticketing` (github | jira).
+Load `.the-loop/harness-config.yaml` for `ticketing` (github | jira).
 
 ## Steps
 

@@ -3,7 +3,7 @@
 the-loop iterates, is verbose by design, and (in the default `process` runner) re-primes
 the harness on every webhook event — so it is inherently token-hungry (issue-37). This
 reference is the loop's **opinion on token economy**: a set of config-driven levers
-(`tokenEconomy` in `.the-loop/config.yaml`) plus the guidance that makes them real.
+(`tokenEconomy` in `.the-loop/harness-config.yaml`) plus the guidance that makes them real.
 
 ## The one guardrail (absolute)
 
@@ -145,4 +145,4 @@ one.
 - Anthropic — *Effective context engineering for AI agents*; *Agent Skills*.
 - Claude Code docs — *Manage costs effectively*.
 - External plugins (registered, not vendored): caveman (output compression),
-  ponytail (generation minimalism) — see `config.externalTools` in `.the-loop/config.yaml`.
+  ponytail (generation minimalism) — see `config.externalTools` in `.the-loop/harness-config.yaml`.

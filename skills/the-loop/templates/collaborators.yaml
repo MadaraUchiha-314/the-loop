@@ -1,14 +1,28 @@
 # .the-loop/collaborators.yaml
-# The complete list of collaborators available for this project, defined up-front.
-# Collaborators may be individuals or groups. A user can hold multiple roles.
-# All collaboration happens through ticket/PR comments; notifications/escalations
-# go through configured messaging channels.
+# Validated against .the-loop/collaborators.schema.json.
+#
+# The stewards of the repository (CODEOWNERS-like) and the SINGLE source of truth
+# for who collaborates on this project and how they are notified (issue-82,
+# decision-035). Collaborators may be individuals or groups; a user can hold
+# multiple roles. All collaboration happens through ticket/PR comments (the paper
+# trail); the channels below are the primary way the agent harness NOTIFIES a
+# collaborator that their action is pending — never where decisions land.
+#
+# Which events notify which roles is configured in harness-config.yaml
+# (notifications.events). The CLI daemon never reads this file: the operator
+# declares their own recipients, in this same structure, in cli-config.yaml.
 
-collaborators:
+version: "0.1.0"
+
+collaborators: []
   # - handle: "@MadaraUchiha-314"
-  #   kind: individual            # individual | group
+  #   kind: individual              # individual | group
   #   roles: [product-manager, architect, engineer, approver]
-  #   notify: [slack]             # channels (must exist in config.messaging)
-  # - handle: "@org/design"
-  #   kind: group
-  #   roles: [designer]
+  #   notifications:
+  #     enabled: true               # per-user master switch
+  #     channels:
+  #       - type: slack             # only supported type for now
+  #         enabled: true           # per-channel switch
+  #         via: mcp                # mcp | cli | api — same primitives as externalTools.kind
+  #         config:                 # channel-type-specific config
+  #           channel-list: []      # slack: channels to notify, e.g. ["#the-loop"]

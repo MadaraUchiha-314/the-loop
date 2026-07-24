@@ -42,10 +42,10 @@ no stored token). Merges with no `feat`/`fix`/breaking change publish nothing. S
 
 The-loop's config is split into two files that never overlap keys:
 
-- **Plugin config** — `.the-loop/config.yaml`, installed **per repo** (Claude/Cursor
+- **Plugin config** — `.the-loop/harness-config.yaml`, installed **per repo** (Claude/Cursor
   plugin), read by `/the-loop:*` commands and the skill: `ticketing`, `workflow`,
   `tooling`, `reviews`, `autonomy`, `security`, `personas`, … Validated against
-  `.the-loop/config.schema.json`.
+  `.the-loop/harness-config.schema.json`.
 - **CLI config** (`cli-config.yaml`) — read only by this CLI's daemon commands below
   (`gh-webhook`, `poll`, `sessions`, `events`): `webhooks`, `polling`, `eventLog`. The
   CLI is expected to work across multiple repos, so it isn't required to live in any
@@ -76,7 +76,7 @@ Every key the CLI config accepts, its type, default, and meaning. Validated agai
 [`.the-loop/cli-config.schema.json`](../.the-loop/cli-config.schema.json); a commented
 starting point ships at
 [`skills/the-loop/templates/cli-config.yaml`](../skills/the-loop/templates/cli-config.yaml).
-(For the separate per-repo **plugin** config — `.the-loop/config.yaml` — see the
+(For the separate per-repo **plugin** config — `.the-loop/harness-config.yaml` — see the
 [configuration reference](https://madarauchiha-314.github.io/the-loop/reference/configuration).)
 
 #### Top level
@@ -87,6 +87,8 @@ starting point ships at
 | `webhooks` | object | — | Config for the webhook receiver (`the-loop gh-webhook`). |
 | `polling` | object | — | Config for the poller (`the-loop poll`). |
 | `eventLog` | object | — | Config for the structured event log (`the-loop events`). |
+| `collaborators` | object[] | `[]` | The operator's own notification recipients — same structure as `.the-loop/collaborators.schema.json` (see below). |
+| `notifications` | object | — | Which daemon-side events notify which roles from `collaborators` (see below). |
 
 #### `webhooks.ghWebhook` — the GitHub webhook receiver
 
@@ -154,6 +156,35 @@ starting point ships at
 |-----|------|---------|-------------|
 | `enabled` | boolean | `true` | Emit the event log; `false` turns emission off. |
 | `path` | string | `.the-loop/logs/events.jsonl` | Append-only JSONL file (git-ignored runtime state). |
+
+#### `collaborators` — the operator's own notification recipients (issue-82, decision-035)
+
+The same collaborator structure as the per-repo `.the-loop/collaborators.schema.json`,
+**declared** here rather than looked up: the daemon never reads any repo's
+`collaborators.yaml`. Typically just the operator themself.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `handle` | string | — (**required**) | GitHub handle or group, e.g. `@octocat`. |
+| `kind` | `individual` \| `group` | `individual` | What the handle names. |
+| `roles` | string[] | — (**required**) | Roles held (`engineer`, `approver`, …) — `notifications.events` targets roles. |
+| `notifications.enabled` | boolean | `true` | Per-user master switch. |
+| `notifications.channels` | object[] | `[]` | Channels: each with `type` (`slack` only for now), `enabled`, `via` (`mcp` \| `cli` \| `api`) and `config.channel-list` (slack channels to notify). |
+
+#### `notifications` — daemon-side event filters (issue-82, decision-035)
+
+Disjoint from the harness-side taxonomy in `harness-config.yaml` (decision pending,
+PR review, … — raised by the harness inside a repo checkout); these concern the daemon
+itself. Each event maps to the roles (from `collaborators` above) to notify; an
+omitted event notifies nobody.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | boolean | `true` | Master switch for daemon-raised notifications. |
+| `events.work-item-spawned` | string[] (roles) | — | A session was spawned for a work item. |
+| `events.dispatch-failed` | string[] (roles) | — | A harness dispatch failed terminally (after `polling.maxRetries`). |
+| `events.session-died` | string[] (roles) | — | A registered tmux session was found dead (respawned when possible). |
+| `events.event-dropped-unauthorized` | string[] (roles) | — | An event was dropped by the authorized-actor guard. |
 
 ## Commands
 
@@ -350,7 +381,7 @@ the-loop scenarios [--root .] [--glob PATTERN ...] [--format table|markdown|json
   "what scenarios are tested?" without running anything.
 - Language-agnostic: Python docstrings, JS/TS block comments and Go comments all work.
 - Globs come from `--glob` (repeatable), else `testing.integrationTestGlobs` in
-  `.the-loop/config.yaml` (when PyYAML is installed), else built-in defaults covering
+  `.the-loop/harness-config.yaml` (when PyYAML is installed), else built-in defaults covering
   common layouts.
 - `--format markdown` emits a GitHub-flavoured table (for PR briefings); `--format json`
   is machine-readable (includes each scenario's steps and `file:line`).

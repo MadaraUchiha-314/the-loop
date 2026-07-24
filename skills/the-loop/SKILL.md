@@ -23,7 +23,7 @@ intervention, escalating only when a decision/opinion is genuinely required.
 > - `reference/testing.md` — Gherkin scenario docstrings on integration tests, the queryable scenario view, OpenAPI/GraphQL contract conventions.
 > - `reference/minimalism.md` — generation-time decision ladder to counter code bloat.
 > - `reference/token-economy.md` — token/cost levers (model routing, verbosity, disclosure, sub-agents, telemetry); advisory, never at the expense of rigor.
-> - `reference/collaboration.md` — personas/roles, paper trail, conflict log, messaging, MCP.
+> - `reference/collaboration.md` — collaborators/roles, paper trail, conflict log, notifications, MCP.
 > - `reference/observability.md` — dev==runtime logging, levels, browser logging.
 > - `reference/automation.md` — distribution, the CLI, webhooks, predictability, learnings lifecycle.
 
@@ -165,7 +165,7 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   reviews); a missing doc is handled per `customInstructions.onMissing`. See
   `reference/instructions.md`.
 - **Use the configured tooling.** Package managers, test runners, linters, type checkers
-  and release tooling come from `.the-loop/config.yaml`; run scripts from the project
+  and release tooling come from `.the-loop/harness-config.yaml`; run scripts from the project
   root; lint ALL files including markdown. See `reference/tooling.md`.
 - **Same tooling everywhere.** Pre-commit/pre-push hooks and CI run the SAME commands —
   no last-minute build surprises.
@@ -177,12 +177,16 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
 
 ## Configuration
 
-Behaviour is driven by `.the-loop/config.yaml` (this repo's **plugin config**),
-validated against `.the-loop/config.schema.json`. Sections: `ticketing`, `repository`,
+Behaviour is driven by `.the-loop/harness-config.yaml` (this repo's **harness/plugin
+config**, formerly `config.yaml` — issue-82, decision-035), validated against
+`.the-loop/harness-config.schema.json`. Sections: `ticketing`, `repository`,
 `workflow`, `tooling`, `customInstructions`, `testing`, `apiSpecs`, `design`,
 `localOrchestration`, `hooks`, `observability`, `reviews`, `autonomy`, `security`, `tdd`,
 `minimalism`, `tokenEconomy`, `selfImprovement`, `contextManagement`, `userInteraction`,
-`personas`, `messaging`, `externalTools`. A subset of keys can be overridden per work
+`notifications`, `externalTools`. People (collaborators + their notification channels)
+live in `.the-loop/collaborators.yaml` (validated against
+`.the-loop/collaborators.schema.json`) — the single source of truth; `notifications`
+references roles only. A subset of keys can be overridden per work
 item via the YAML front-matter `overrides` of the work-item / spec markdown. Managed
 files are listed in `.the-loop/manifest.yaml`.
 
@@ -230,7 +234,7 @@ Granular commands (one step at a time; same flow `work-on` runs end-to-end):
 
 the-loop may freely use the MCP servers, CLIs, skills and plugins registered in
 `config.externalTools` (the `externalTools.tools` list + `notes` in
-`.the-loop/config.yaml`). Check that registry before assuming a capability is available.
+`.the-loop/harness-config.yaml`). Check that registry before assuming a capability is available.
 
 ## Custom instructions the loop honors
 

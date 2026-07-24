@@ -1,0 +1,21 @@
+# .the-loop/collaborators.yaml — collaborators for the-loop's own repository.
+# Validated against .the-loop/collaborators.schema.json. The single source of
+# truth for who collaborates on this project and how they are notified
+# (issue-82, decision-035); migrated from harness-config.yaml's retired
+# `personas`/`messaging` keys. Which events notify which roles is configured in
+# harness-config.yaml (notifications.events).
+
+version: "0.1.0"
+
+collaborators:
+  - handle: "@MadaraUchiha-314"
+    kind: individual
+    roles: [product-manager, architect, engineer, approver]
+    notifications:
+      enabled: false              # flip on once a slack channel-list is filled in
+      channels:
+        - type: slack
+          enabled: true
+          via: mcp                # mcp | cli | api
+          config:
+            channel-list: []      # e.g. ["#the-loop"]

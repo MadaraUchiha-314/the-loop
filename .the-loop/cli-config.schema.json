@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/MadaraUchiha-314/the-loop/.the-loop/cli-config.schema.json",
   "title": "the-loop CLI configuration",
-  "description": "Schema for the-loop's CLI config (cli-config.yaml: webhooks/polling/eventLog), read by `the-loop gh-webhook`/`poll`/`sessions`/`events`. Independent of .the-loop/config.schema.json (the per-repo PLUGIN config): the CLI is expected to work across multiple repos, so its config resolves in priority order: --config/-c flag, $THE_LOOP_CLI_CONFIG env var, ./.the-loop/cli-config.yaml (repo-relative — an operator may choose to track it in a specific repo), else ~/.the-loop/cli-config.yaml. See decision-032.",
+  "description": "Schema for the-loop's CLI config (cli-config.yaml: webhooks/polling/eventLog/collaborators/notifications), read by `the-loop gh-webhook`/`poll`/`sessions`/`events`. Independent of .the-loop/harness-config.schema.json (the per-repo HARNESS/plugin config): the CLI is expected to work across multiple repos, so its config resolves in priority order: --config/-c flag, $THE_LOOP_CLI_CONFIG env var, ./.the-loop/cli-config.yaml (repo-relative — an operator may choose to track it in a specific repo), else ~/.the-loop/cli-config.yaml. See decision-032. The operator's own notification recipients are DECLARED here (collaborators, same structure as collaborators.schema.json), never looked up from any repo's collaborators.yaml (issue-82, decision-035).",
   "type": "object",
   "additionalProperties": false,
   "properties": {
@@ -69,7 +69,7 @@
                 "authorizedUsers": {
                   "type": "array",
                   "items": { "type": "string" },
-                  "description": "SECURITY (prompt-injection guard): GitHub logins whose actions the-loop may act on. Comments/reviews/labels/items authored by anyone not listed are ignored by BOTH the webhook receiver and the poller. REQUIRED to actually route anything: no fallback to any repo's plugin config (.the-loop/config.yaml) — which logins may trigger the daemon is a CLI-config-only concern (issue-63 review). Empty means human-authored events are all ignored (fail closed). Each operator runs their own instance for their own logins.",
+                  "description": "SECURITY (prompt-injection guard): GitHub logins whose actions the-loop may act on. Comments/reviews/labels/items authored by anyone not listed are ignored by BOTH the webhook receiver and the poller. REQUIRED to actually route anything: no fallback to any repo's harness (plugin) config (.the-loop/harness-config.yaml) — which logins may trigger the daemon is a CLI-config-only concern (issue-63 review). Empty means human-authored events are all ignored (fail closed). Each operator runs their own instance for their own logins.",
                   "default": []
                 },
                 "spawnWorkdir": {
@@ -230,7 +230,7 @@
               },
               "repos": {
                 "type": "array",
-                "description": "[github] Repositories to poll as OWNER/REPO. REQUIRED: no fallback to any repo's plugin config (.the-loop/config.yaml) — which repos to watch is a CLI-config-only concern (issue-63 review). A source with no repos discovers nothing (list_work_items raises).",
+                "description": "[github] Repositories to poll as OWNER/REPO. REQUIRED: no fallback to any repo's harness (plugin) config (.the-loop/harness-config.yaml) — which repos to watch is a CLI-config-only concern (issue-63 review). A source with no repos discovers nothing (list_work_items raises).",
                 "items": { "type": "string" }
               },
               "monitor": {
@@ -252,9 +252,54 @@
         }
       }
     },
+    "collaborators": {
+      "type": "array",
+      "description": "The OPERATOR'S own notification recipients — the same collaborator structure as .the-loop/collaborators.schema.json ($defs/collaborator), declared here rather than looked up: the CLI daemon never reads any repo's collaborators.yaml (issue-82, decision-035). Typically just the operator themself; roles are used by notifications.events to pick recipients.",
+      "default": [],
+      "items": { "$ref": "collaborators.schema.json#/$defs/collaborator" }
+    },
+    "notifications": {
+      "type": "object",
+      "description": "Which DAEMON-side events notify which roles from the operator's `collaborators` above (issue-82, decision-035). Disjoint from the harness-side taxonomy in harness-config.yaml (decision pending, PR review, …) — those are raised by the harness inside a repo checkout; these concern the daemon itself.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Master switch for daemon-raised notifications."
+        },
+        "events": {
+          "type": "object",
+          "description": "Event → roles to notify. Omitting an event means nobody is notified for it.",
+          "additionalProperties": false,
+          "properties": {
+            "work-item-spawned": {
+              "type": "array",
+              "items": { "type": "string", "enum": ["product-manager", "architect", "designer", "engineer", "qa", "reviewer", "approver"] },
+              "description": "A session was spawned for a work item (auto-execute label or spawnOnUnmatched: always)."
+            },
+            "dispatch-failed": {
+              "type": "array",
+              "items": { "type": "string", "enum": ["product-manager", "architect", "designer", "engineer", "qa", "reviewer", "approver"] },
+              "description": "A harness dispatch failed terminally (poll.spawn_failed / poll.comment_failed after maxRetries, or a webhook dispatch error)."
+            },
+            "session-died": {
+              "type": "array",
+              "items": { "type": "string", "enum": ["product-manager", "architect", "designer", "engineer", "qa", "reviewer", "approver"] },
+              "description": "A registered tmux session was found dead (and respawned when possible — issue-80)."
+            },
+            "event-dropped-unauthorized": {
+              "type": "array",
+              "items": { "type": "string", "enum": ["product-manager", "architect", "designer", "engineer", "qa", "reviewer", "approver"] },
+              "description": "An event was dropped by the authorized-actor guard (routing.authorizedUsers)."
+            }
+          }
+        }
+      }
+    },
     "eventLog": {
       "type": "object",
-      "description": "Structured JSONL event log of every routing/dispatch/session decision made by the-loop's CLI processes (gh-webhook, poll, sessions). Queried with `the-loop events`; schema in skills/the-loop/reference/observability.md (decision-025). Top-level here (not nested under an `observability` key) — the CLI config has no dev/runtime log-level concept, that stays with the PLUGIN config's `observability.devLevel`/`runtimeLevel`/`browserLogging`.",
+      "description": "Structured JSONL event log of every routing/dispatch/session decision made by the-loop's CLI processes (gh-webhook, poll, sessions). Queried with `the-loop events`; schema in skills/the-loop/reference/observability.md (decision-025). Top-level here (not nested under an `observability` key) — the CLI config has no dev/runtime log-level concept, that stays with the HARNESS config's `observability.devLevel`/`runtimeLevel`/`browserLogging`.",
       "additionalProperties": false,
       "properties": {
         "enabled": { "type": "boolean", "default": true },
