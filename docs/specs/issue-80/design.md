@@ -147,7 +147,7 @@ flowchart TD
 ### Config
 
 `polling.maxRetries` (integer, default 3, minimum 1) in `cli-config.schema.json`
-+ `cli-config.yaml`; mirrored on `PollConfig` and a `--max-retries` flag
+and `cli-config.yaml`; mirrored on `PollConfig` and a `--max-retries` flag
 (parity with `--interval`). Read once at poller construction (like the other
 dispatch knobs a reload doesn't touch).
 
@@ -170,8 +170,8 @@ dispatch knobs a reload doesn't touch).
 - **Restart mid-flight** — the in-memory dedup cache is empty, so an interrupted
   delivery reads `unhandled` and is retried; a delivery that had succeeded reads
   `done` from durable `recent_deliveries`. Both correct.
-- **Respawn/spawn cannot proceed** — behaves exactly like today (fail + release
-  + failure record); recovery resumes when the binary/host returns.
+- **Respawn/spawn cannot proceed** — behaves exactly like today (fail, release,
+  and emit a failure record); recovery resumes when the binary/host returns.
 
 ## Alternatives considered
 

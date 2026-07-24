@@ -80,7 +80,7 @@ or the comment — the item is stuck with no session.
 
 ## Acceptance criteria (EARS)
 
-**Configurable retry budget (poll path)**
+### Configurable retry budget (poll path)
 
 1. The system SHALL expose a configurable per-event retry budget
    (`polling.maxRetries`, default **3**).
@@ -102,25 +102,25 @@ or the comment — the item is stuck with no session.
    SHALL be processed with its own fresh retry budget, and SHALL re-arm a spawn
    that had previously been given up (a new comment retriggers the item).
 
-**Respawn a dead tmux session (delivery path)**
+### Respawn a dead tmux session (delivery path)
 
-7. WHEN a routed event is delivered to a tmux-mode session AND that session's
+1. WHEN a routed event is delivered to a tmux-mode session AND that session's
    tmux session is not found (crashed or killed) THEN the system SHALL respawn
    the harness in a fresh tmux session for the same work item and deliver the
    pending event into it (as its boot prompt), so the event is not dropped and
-   the next delivery/retry can land.
-8. WHEN delivery fails for a reason **other** than a missing session (tmux
+   the next delivery/retry can land. (AC7)
+2. WHEN delivery fails for a reason **other** than a missing session (tmux
    unavailable, a paste sub-command errors while the session still exists) THEN
    the system SHALL keep the existing behaviour: fail the dispatch and release
-   for retry, NOT respawn.
-9. WHEN a respawn cannot proceed (harness CLI missing, `tmux new-session` fails)
+   for retry, NOT respawn. (AC8)
+3. WHEN a respawn cannot proceed (harness CLI missing, `tmux new-session` fails)
    THEN the system SHALL fail the dispatch and release for retry, emitting an
-   observable failure record rather than silently dropping the event.
+   observable failure record rather than silently dropping the event. (AC9)
 
-**Observability**
+### Observability
 
-10. Respawns and terminal give-ups SHALL be observable via dedicated event-log
-    types distinct from a first-time spawn / a transient error.
+1. Respawns and terminal give-ups SHALL be observable via dedicated event-log
+   types distinct from a first-time spawn / a transient error. (AC10)
 
 ## Out of scope
 
