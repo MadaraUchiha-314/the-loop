@@ -207,14 +207,20 @@ class SessionRegistry:
         return session
 
     def find_by_work_item(
-        self, work_item: Union[str, WorkItemRef]
+        self, work_item: Union[str, WorkItemRef], include_closed: bool = False
     ) -> Optional[Session]:
-        """Return the ``active`` session for the work item, if any."""
+        """Return the ``active`` session for the work item, if any.
+
+        ``include_closed`` also returns a closed record — used by
+        ``sessions attach`` to reach a tmux session retained after the work
+        completed (issue-86). Dispatch never passes it: a closed session is
+        not a routing target.
+        """
         path = self._path_for(_as_ref(work_item))
         if not path.is_file():
             return None
         session = self._read(path)
-        if session is None or session.status != "active":
+        if session is None or (session.status != "active" and not include_closed):
             return None
         return session
 

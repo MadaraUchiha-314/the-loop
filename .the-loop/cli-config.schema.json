@@ -122,6 +122,23 @@
                   "default": "process",
                   "description": "How spawned sessions are hosted (receiver-global): 'process' = headless one-shot subprocess; 'tmux' = interactive harness TUI in a named tmux session (loop-<slug>) humans can attach to (issue-32, decision-021)."
                 },
+                "tmux": {
+                  "type": "object",
+                  "description": "Lifetime of the tmux-hosted sessions (runner: tmux) — issue-86. Both defaults keep a finished session readable: a human most wants the transcript of what the agent did exactly when the work item completes.",
+                  "additionalProperties": false,
+                  "properties": {
+                    "keepSessionOnClose": {
+                      "type": "boolean",
+                      "default": true,
+                      "description": "Leave the tmux session running when the work item's session is closed (PR merged/closed, or `the-loop sessions close`), so the transcript stays attachable; the registry entry is closed either way. false restores the pre-issue-86 kill-on-close. Retained sessions accumulate until the host reboots or you kill them — `the-loop sessions list --status closed` shows them, and a new spawn for the same work item reclaims the deterministic `loop-<slug>` name."
+                    },
+                    "remainOnExit": {
+                      "type": "boolean",
+                      "default": true,
+                      "description": "Set tmux's `remain-on-exit` on spawned sessions so the pane and its scrollback survive the harness process exiting (best-effort: an older tmux that rejects it only warns). Events delivered to a session whose pane has died still trigger the issue-80 respawn — a dead pane never silently swallows an event."
+                    }
+                  }
+                },
                 "webTerminal": {
                   "type": "object",
                   "description": "Optional ttyd-served browser terminal onto the tmux sessions (runner: tmux). No auth of its own — access control is environmental: localhost, VPN, or the hosting provider's network (decision-021).",
@@ -215,6 +232,23 @@
                       "type": "string",
                       "default": "gh",
                       "description": "Path/name of the gh CLI used to post reactions (uses the operator's existing gh auth, like the poller's reads)."
+                    }
+                  }
+                },
+                "announce": {
+                  "type": "object",
+                  "description": "Announce a spawned interactive session on its work item (issue-86): when a tmux-mode session is spawned (or respawned after being found dead), the-loop posts a comment carrying the tmux session name and the `tmux attach -t loop-<slug>` command, so a human reading the ticket can watch it work without digging through daemon logs. Best-effort via the operator's own `gh` CLI: a failure never affects the dispatch, and a missing `gh`, a non-GitHub work item, or a process-runner session is a no-op. The body is built only from registry fields (work-item ref, tmux target, harness) — never from event payloads, and it carries no paths, session ids or hostnames.",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean",
+                      "default": true,
+                      "description": "Default true (the point of issue-86 is that the attach command reaches the human; matches the `reactions` precedent). This posts TEXT to GitHub with the operator's own gh credentials — set false to opt out."
+                    },
+                    "ghBinary": {
+                      "type": "string",
+                      "default": "gh",
+                      "description": "Path/name of the gh CLI used to post the announcement (uses the operator's existing gh auth, like the poller's reads)."
                     }
                   }
                 }

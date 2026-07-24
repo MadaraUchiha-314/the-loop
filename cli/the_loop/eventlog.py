@@ -124,7 +124,21 @@ EVENT_TYPES: Dict[str, str] = {
         "(work_item, harness, harness_session_id, runner, tmux_target, "
         "gh_event, delivery_id)."
     ),
+    "session.announced": (
+        "A comment announcing a spawned/respawned tmux session (and how to "
+        "attach to it) was posted on the work item (work_item, tmux_target, "
+        "respawned)."
+    ),
+    "session.announce_failed": (
+        "Posting the tmux-session announcement comment failed (work_item, "
+        "tmux_target, error) — best-effort, the dispatch is unaffected."
+    ),
     "session.closed": "A session was closed in the registry (work_item).",
+    "session.retained": (
+        "A closed work item's tmux session was left running so its transcript "
+        "stays readable (work_item, tmux_target); "
+        "routing.tmux.keepSessionOnClose: false kills it instead."
+    ),
     "session.autoclosed": (
         "A session was auto-closed because its PR was merged/closed "
         "(work_item, merged)."

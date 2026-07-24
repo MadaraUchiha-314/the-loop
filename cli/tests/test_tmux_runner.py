@@ -44,24 +44,31 @@ class FakeRun:
     """Capture subprocess.run calls inside the runner module.
 
     ``per_verb`` overrides the exit code for specific tmux sub-commands
-    (e.g. ``{"has-session": 1}`` = "no such session").
+    (e.g. ``{"has-session": 1}`` = "no such session"); ``stdout_per_verb``
+    does the same for stdout (e.g. ``list-panes`` pane-dead flags).
     """
 
-    def __init__(self, returncode=0, per_verb=None):
+    def __init__(self, returncode=0, per_verb=None, stdout_per_verb=None):
         self.calls = []
         self.returncode = returncode
         self.per_verb = per_verb or {}
+        self.stdout_per_verb = stdout_per_verb or {}
 
     def __call__(self, cmd, **kwargs):
         self.calls.append(list(cmd))
         rc = self.per_verb.get(cmd[1], self.returncode)
+        out = self.stdout_per_verb.get(cmd[1], "")
 
         class Proc:
             returncode = rc
-            stdout = ""
+            stdout = out
             stderr = ""
 
         return Proc()
+
+    @property
+    def verbs(self):
+        return [call[1] for call in self.calls]
 
 
 class TestSessionRunnerFields:
@@ -122,7 +129,7 @@ class TestTmuxRunner:
             session_id="uuid-1",
         )
         assert result.ok, result.error
-        cmd = fake.calls[-1]
+        cmd = next(c for c in fake.calls if c[1] == "new-session")
         assert cmd[:2] == ["tmux", "new-session"]
         assert "-d" in cmd
         assert cmd[cmd.index("-s") + 1] == "loop-github-octo-repo-15"
@@ -142,10 +149,11 @@ class TestTmuxRunner:
             session_id="uuid-1",
         )
         assert result.ok, result.error
-        assert [c[1] for c in fake.calls] == [
+        assert fake.verbs == [
             "has-session",
             "kill-session",
             "new-session",
+            "set-option",  # remain-on-exit (issue-86)
         ]
 
     def test_spawn_fails_without_tmux(self, monkeypatch):
@@ -167,13 +175,19 @@ class TestTmuxRunner:
         session = make_session(runner="tmux", tmux_target="loop-github-octo-repo-15")
         result = TmuxRunner().deliver(session, "event prompt")
         assert result.ok, result.error
-        # has-session, load-buffer, paste-buffer -p, send-keys Enter — in order.
-        verbs = [call[1] for call in fake.calls]
-        assert verbs == ["has-session", "load-buffer", "paste-buffer", "send-keys"]
-        paste = fake.calls[2]
+        # liveness (has-session + list-panes), then load-buffer, paste-buffer
+        # -p, send-keys Enter — in order.
+        assert fake.verbs == [
+            "has-session",
+            "list-panes",
+            "load-buffer",
+            "paste-buffer",
+            "send-keys",
+        ]
+        paste = fake.calls[3]
         assert "-p" in paste
         assert paste[paste.index("-t") + 1] == "loop-github-octo-repo-15"
-        assert fake.calls[3][-1] == "Enter"
+        assert fake.calls[4][-1] == "Enter"
 
     def test_deliver_fails_when_session_is_gone(self, monkeypatch):
         fake = FakeRun(returncode=1)  # has-session exits non-zero
@@ -187,6 +201,50 @@ class TestTmuxRunner:
         # is the terminal fault it recovers from.
         assert result.session_missing is True
 
+    def test_spawn_sets_remain_on_exit(self, monkeypatch):
+        fake = FakeRun(per_verb={"has-session": 1})
+        monkeypatch.setattr(runner_mod.subprocess, "run", fake)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        TmuxRunner().spawn(
+            work_item=WorkItemRef.parse(REF),
+            adapter=ClaudeCodeAdapter(),
+            prompt="p",
+            cwd="/work",
+            session_id="uuid-1",
+        )
+        opt = next(c for c in fake.calls if c[1] == "set-option")
+        assert opt[opt.index("-t") + 1] == "loop-github-octo-repo-15"
+        # remain-on-exit is a *window* option in tmux >= 3.0.
+        assert "-w" in opt
+        assert opt[-2:] == ["remain-on-exit", "on"]
+
+    def test_spawn_skips_remain_on_exit_when_disabled(self, monkeypatch):
+        fake = FakeRun(per_verb={"has-session": 1})
+        monkeypatch.setattr(runner_mod.subprocess, "run", fake)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        TmuxRunner(remain_on_exit=False).spawn(
+            work_item=WorkItemRef.parse(REF),
+            adapter=ClaudeCodeAdapter(),
+            prompt="p",
+            cwd="/work",
+            session_id="uuid-1",
+        )
+        assert "set-option" not in fake.verbs
+
+    def test_spawn_survives_a_tmux_that_rejects_remain_on_exit(self, monkeypatch):
+        # An older tmux may refuse the option — the session is usable anyway.
+        fake = FakeRun(per_verb={"has-session": 1, "set-option": 1})
+        monkeypatch.setattr(runner_mod.subprocess, "run", fake)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        result = TmuxRunner().spawn(
+            work_item=WorkItemRef.parse(REF),
+            adapter=ClaudeCodeAdapter(),
+            prompt="p",
+            cwd="/work",
+            session_id="uuid-1",
+        )
+        assert result.ok, result.error
+
     def test_deliver_paste_failure_is_not_session_missing(self, monkeypatch):
         # has-session succeeds (session is alive) but a paste sub-command errors:
         # NOT a missing-session case, so the dispatcher must not respawn.
@@ -198,6 +256,19 @@ class TestTmuxRunner:
         assert not result.ok
         assert result.session_missing is False
 
+    def test_deliver_treats_a_dead_pane_as_a_missing_session(self, monkeypatch):
+        # With remain-on-exit the session outlives its harness (issue-86), so
+        # has-session alone is no longer proof there is anything to talk to —
+        # a dead pane must take the issue-80 respawn path, not swallow events.
+        fake = FakeRun(stdout_per_verb={"list-panes": "1\n"})
+        monkeypatch.setattr(runner_mod.subprocess, "run", fake)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        session = make_session(runner="tmux", tmux_target="loop-retained")
+        result = TmuxRunner().deliver(session, "event prompt")
+        assert not result.ok
+        assert result.session_missing is True
+        assert "paste-buffer" not in fake.verbs
+
     def test_kill_targets_the_session(self, monkeypatch):
         fake = FakeRun()
         monkeypatch.setattr(runner_mod.subprocess, "run", fake)
@@ -207,6 +278,46 @@ class TestTmuxRunner:
         (cmd,) = fake.calls
         assert cmd[1] == "kill-session"
         assert cmd[cmd.index("-t") + 1] == "loop-x"
+
+
+class TestPaneLiveness:
+    """``has_live_session`` — "the session exists" vs "its harness is running"."""
+
+    @staticmethod
+    def _runner(monkeypatch, **kwargs):
+        fake = FakeRun(**kwargs)
+        monkeypatch.setattr(runner_mod.subprocess, "run", fake)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        return TmuxRunner(), fake
+
+    def test_live_pane(self, monkeypatch):
+        runner, _ = self._runner(monkeypatch, stdout_per_verb={"list-panes": "0\n"})
+        assert runner.has_live_session("loop-x") is True
+
+    def test_dead_pane(self, monkeypatch):
+        runner, _ = self._runner(monkeypatch, stdout_per_verb={"list-panes": "1\n"})
+        assert runner.has_live_session("loop-x") is False
+
+    def test_one_live_pane_among_dead_ones_counts_as_live(self, monkeypatch):
+        runner, _ = self._runner(
+            monkeypatch, stdout_per_verb={"list-panes": "1\n0\n1\n"}
+        )
+        assert runner.has_live_session("loop-x") is True
+
+    def test_missing_session_is_not_live(self, monkeypatch):
+        runner, fake = self._runner(monkeypatch, per_verb={"has-session": 1})
+        assert runner.has_live_session("loop-x") is False
+        assert "list-panes" not in fake.verbs
+
+    def test_unreadable_output_degrades_to_live(self, monkeypatch):
+        # A tmux too old to know #{pane_dead}: never declare a healthy session
+        # dead — fall back to the pre-issue-86 has-session behaviour.
+        runner, _ = self._runner(monkeypatch, stdout_per_verb={"list-panes": "  \n"})
+        assert runner.has_live_session("loop-x") is True
+
+    def test_failing_list_panes_degrades_to_live(self, monkeypatch):
+        runner, _ = self._runner(monkeypatch, per_verb={"list-panes": 1})
+        assert runner.has_live_session("loop-x") is True
 
 
 class TestCheckDependencies:
@@ -233,6 +344,16 @@ class TestRoutingConfigRunner:
         assert config.web_terminal.enabled is False
         assert config.web_terminal.host == "127.0.0.1"
         assert config.web_terminal.port == 7681
+        # issue-86: a finished session stays readable out of the box.
+        assert config.tmux.keep_session_on_close is True
+        assert config.tmux.remain_on_exit is True
+
+    def test_parses_tmux_lifetime(self):
+        config = RoutingConfig.from_mapping(
+            {"tmux": {"keepSessionOnClose": False, "remainOnExit": False}}
+        )
+        assert config.tmux.keep_session_on_close is False
+        assert config.tmux.remain_on_exit is False
 
     def test_parses_runner_and_web_terminal(self):
         config = RoutingConfig.from_mapping(
@@ -377,6 +498,65 @@ class TestSessionsCli:
         )
         assert code == 1
         assert "sessions list" in capsys.readouterr().err
+
+    def test_attach_reaches_a_retained_session_of_a_closed_work_item(
+        self, tmp_path, capsys, monkeypatch
+    ):
+        # issue-86: reading back what the agent did is exactly why the session
+        # is kept, so a closed work item must still be attachable.
+        from the_loop.sessions import SessionRegistry
+
+        registry = SessionRegistry(tmp_path)
+        registry.register(make_session(runner="tmux", tmux_target="loop-x"))
+        registry.close(REF)
+        monkeypatch.setattr(TmuxRunner, "is_available", lambda self: True)
+        monkeypatch.setattr(TmuxRunner, "has_session", lambda self, target: True)
+        execs = []
+        code = sessions_cmd.attach_session(
+            registry, REF, read_only=True, execvp=lambda f, a: execs.append((f, a))
+        )
+        assert code == 0
+        assert execs and execs[0][1][-1] == "loop-x"
+        assert "closed" in capsys.readouterr().err
+
+    def test_close_keeps_the_tmux_session_by_default(
+        self, tmp_path, capsys, monkeypatch
+    ):
+        import argparse
+
+        from the_loop.sessions import SessionRegistry
+
+        registry = SessionRegistry(tmp_path)
+        registry.register(make_session(runner="tmux", tmux_target="loop-x"))
+        monkeypatch.setattr(sessions_cmd, "_default_keep_tmux", lambda: True)
+        killed = []
+        monkeypatch.setattr(
+            TmuxRunner, "kill", lambda self, s, timeout=None: killed.append(s)
+        )
+        args = argparse.Namespace(
+            work_item=REF, registry_dir=str(tmp_path), keep_tmux=None
+        )
+        assert sessions_cmd.SessionsCommand()._close(args) == 0
+        assert killed == []
+        assert "tmux attach -t loop-x" in capsys.readouterr().out
+
+    def test_close_kill_tmux_flag_overrides_the_config_default(
+        self, tmp_path, capsys, monkeypatch
+    ):
+        import argparse
+
+        from the_loop.sessions import SessionRegistry
+
+        registry = SessionRegistry(tmp_path)
+        registry.register(make_session(runner="tmux", tmux_target="loop-x"))
+        monkeypatch.setattr(sessions_cmd, "_default_keep_tmux", lambda: True)
+        monkeypatch.setattr(runner_mod.subprocess, "run", FakeRun())
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        args = argparse.Namespace(
+            work_item=REF, registry_dir=str(tmp_path), keep_tmux=False
+        )
+        assert sessions_cmd.SessionsCommand()._close(args) == 0
+        assert "killed tmux session loop-x" in capsys.readouterr().out
 
     def test_list_shows_runner_and_tmux_columns(self, tmp_path, capsys):
         import argparse

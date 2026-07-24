@@ -72,6 +72,24 @@ webhooks:
         completed: hooray           # 🎉 dispatch succeeded
         error: confused             # 😕 dispatch failed / worker crashed
         ghBinary: gh
+      # Lifetime of tmux-hosted sessions (issue-86; applies when routing.runner: tmux).
+      # A finished session stays readable: keepSessionOnClose leaves the tmux session
+      # running when the work item closes, remainOnExit keeps the pane + scrollback
+      # when the harness process exits. Retained sessions accumulate until you kill
+      # them (`the-loop sessions list --status closed`); a new spawn for the same work
+      # item reclaims the loop-<slug> name. Set either to false for the old behaviour.
+      tmux:
+        keepSessionOnClose: true
+        remainOnExit: true
+      # Session announcement comment (issue-86): when a tmux-mode session is spawned
+      # (or respawned after being found dead), post the tmux session name and the
+      # `tmux attach -t …` command on the work item, so a human on the ticket can
+      # watch it work. Best-effort via YOUR gh CLI; no-op for process-runner sessions,
+      # non-GitHub work items, or a missing gh. The body carries no paths, session ids
+      # or hostnames.
+      announce:
+        enabled: true
+        ghBinary: gh
 
 # Pull-based, provider-agnostic ingress for hosts a webhook cannot reach
 # (`the-loop poll start`). Each `sources` entry selects a provider the system

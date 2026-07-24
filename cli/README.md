@@ -114,6 +114,7 @@ starting point ships at
 | `authorizedUsers` | string[] | `[]` | **SECURITY (prompt-injection guard):** GitHub logins whose actions the-loop may act on. **REQUIRED**, no plugin-config fallback; empty fails closed (all human-authored events ignored). |
 | `spawnWorkdir` | string | `.` | Working directory for sessions spawned on unmatched events. |
 | `runner` | `process` \| `tmux` | `process` | How spawned sessions are hosted: headless one-shot subprocess, or an interactive TUI in a named tmux session humans can attach to. |
+| `tmux` | object | — | Lifetime of the tmux-hosted sessions — how long a finished session stays readable (see below). |
 | `webTerminal` | object | — | Optional ttyd-served browser terminal onto the tmux sessions (see below). |
 | `maxConcurrentDispatches` | integer | `4` | Cap on harness dispatches running in parallel (per-session dispatch is always serialized). |
 | `dedupCacheSize` | integer | `1024` | Bounded LRU of `X-GitHub-Delivery` ids for at-most-once processing. |
@@ -123,6 +124,45 @@ starting point ships at
 | `harnessArgs.claude` | string[] | `[]` | Extra CLI args passed to Claude Code (e.g. `[--permission-mode, acceptEdits]`). |
 | `harnessArgs.cursor` | string[] | `[]` | Extra CLI args passed to `cursor-agent` (e.g. `[--force]`). |
 | `reactions` | object | — | Dispatch-lifecycle emoji reactions on the triggering GitHub entity (see below). |
+| `announce` | object | — | Comment on the work item announcing a spawned tmux session and how to attach (see below). |
+
+#### `webhooks.ghWebhook.routing.tmux` — how long a tmux session outlives the work (`runner: tmux`)
+
+A tmux session is your window onto what the agent actually did — and it used to close
+exactly when you most wanted it. Both defaults keep a finished session readable
+(issue-86):
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `keepSessionOnClose` | boolean | `true` | Leave the tmux session running when the work item's session is closed (PR merged/closed, or `the-loop sessions close`); the registry entry closes either way. `false` restores the old kill-on-close. |
+| `remainOnExit` | boolean | `true` | Set tmux's `remain-on-exit` on spawned sessions, so the pane and its scrollback survive the harness process exiting. Best-effort: an older tmux that rejects it only warns. |
+
+Attach to a retained session with `tmux attach -t loop-<slug>` or `the-loop sessions
+attach --work-item <ref> --read-only` — which works after the work item is closed too.
+Two consequences worth knowing: retained sessions **accumulate** until you kill them
+(`the-loop sessions list --status closed` finds them, `sessions close --kill-tmux` ends
+one), and a new spawn for the same work item **reclaims** the deterministic
+`loop-<slug>` name, clearing whatever was retained under it. Events delivered to a
+session whose pane has died still trigger the issue-80 respawn — a dead pane never
+silently swallows an event.
+
+#### `webhooks.ghWebhook.routing.announce` — "here is your session" comment
+
+When a tmux-mode session is spawned (or respawned after being found dead), the-loop
+comments on the work item with the tmux session name and the `tmux attach -t
+loop-<slug>` command, so the humans reading the ticket can watch it work without
+digging through daemon logs.
+
+Best-effort via your own `gh` CLI, like reactions: a failure never affects the
+dispatch, and a process-runner session, a non-GitHub work item or a missing `gh` is a
+no-op. The body is built only from registry fields (work-item ref, tmux target,
+harness) — never from event payloads — and carries no filesystem paths, harness
+session ids or hostnames.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | boolean | `true` | On by default (getting the attach command to a human is the point). This posts **text** to GitHub with your own `gh` auth — set `false` to opt out. |
+| `ghBinary` | string | `gh` | Path/name of the gh CLI used to post the announcement. |
 
 #### `webhooks.ghWebhook.routing.reactions` — dispatch-lifecycle emoji acknowledgements
 
@@ -267,7 +307,8 @@ the-loop gh-webhook stop  [--pidfile .the-loop/gh-webhook.pid]
 the-loop sessions register --work-item github:OWNER/REPO#N --harness claude \
     --harness-session-id "$CLAUDE_SESSION_ID" [--cwd .] [--force]
 the-loop sessions list  [--status active|closed] [--format table|json]
-the-loop sessions close --work-item github:OWNER/REPO#N
+the-loop sessions attach --work-item github:OWNER/REPO#N [--read-only]
+the-loop sessions close --work-item github:OWNER/REPO#N [--keep-tmux|--kill-tmux]
 ```
 
 - The registry lives in `webhooks.ghWebhook.routing.registryDir` (default
@@ -278,7 +319,10 @@ the-loop sessions close --work-item github:OWNER/REPO#N
   with the chat id they were launched with (non-interactive `cursor-agent ls` is
   unreliable for id discovery, so the id is captured at registration time).
 - When a work item's PR is merged or closed, the receiver **auto-closes** the session
-  (on the `pull_request` `closed` event) — no manual `sessions close` needed.
+  (on the `pull_request` `closed` event) — no manual `sessions close` needed. A
+  tmux-hosted session is **kept running** so you can read back what happened
+  (`routing.tmux.keepSessionOnClose`); `sessions attach` reaches it even once the work
+  item is closed, and `sessions close --kill-tmux` ends it for good.
 
 **Label-gated auto-execution** (`spawnOnUnmatched: labeled`): give an issue/PR the
 configurable `routing.autoExecuteLabel` (default `the-loop: auto-execute`) and the

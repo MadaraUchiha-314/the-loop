@@ -39,6 +39,12 @@ def _default_registry_dir() -> str:
     return str(routing.get("registryDir", ".the-loop/sessions"))
 
 
+def _default_keep_tmux() -> bool:
+    """``routing.tmux.keepSessionOnClose`` — retain the session on close (issue-86)."""
+    routing = _load_config_defaults().get("routing") or {}
+    return bool((routing.get("tmux") or {}).get("keepSessionOnClose", True))
+
+
 def _attach_argv(session: Session, read_only: bool) -> List[str]:
     argv = ["tmux", "attach-session"]
     if read_only:
@@ -62,10 +68,18 @@ def attach_session(
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
-    session = registry.find_by_work_item(ref)
+    session = registry.find_by_work_item(ref, include_closed=True)
     if session is None:
-        print(f"error: no active session for {ref.ref}", file=sys.stderr)
+        print(f"error: no session recorded for {ref.ref}", file=sys.stderr)
         return 1
+    if session.status != "active":
+        # The work item finished but its tmux session was retained (issue-86):
+        # attaching is exactly how a human reads back what happened.
+        print(
+            f"note: the session for {ref.ref} is closed; attaching to its "
+            "retained tmux session",
+            file=sys.stderr,
+        )
     if session.runner != "tmux":
         print(
             f"error: the session for {ref.ref} is a headless process session "
@@ -151,6 +165,23 @@ class SessionsCommand(Command):
         close = actions.add_parser("close", help="Close a work item's session")
         close.add_argument("--work-item", required=True)
         close.add_argument("--registry-dir", default=registry_dir)
+        tmux_fate = close.add_mutually_exclusive_group()
+        tmux_fate.add_argument(
+            "--keep-tmux",
+            dest="keep_tmux",
+            action="store_true",
+            default=None,
+            help=(
+                "Leave the tmux session running so its transcript stays "
+                "readable (default: routing.tmux.keepSessionOnClose)."
+            ),
+        )
+        tmux_fate.add_argument(
+            "--kill-tmux",
+            dest="keep_tmux",
+            action="store_false",
+            help="Kill the tmux session along with the registry entry.",
+        )
         close.set_defaults(_action=self._close)
 
     def run(self, args: argparse.Namespace) -> int:
@@ -243,10 +274,18 @@ class SessionsCommand(Command):
             print(f"no active session for {work_item.ref}", file=sys.stderr)
             return 1
         if session is not None and session.runner == "tmux":
-            result = TmuxRunner().kill(session)  # best-effort (R7.2/R7.3)
-            if result.ok:
-                print(f"killed tmux session {session.tmux_target}")
+            keep = _default_keep_tmux() if args.keep_tmux is None else args.keep_tmux
+            if keep:
+                print(
+                    f"kept tmux session {session.tmux_target} — attach: "
+                    f"tmux attach -t {session.tmux_target} (pass --kill-tmux to "
+                    "end it)"
+                )
             else:
-                print(f"note: tmux session {session.tmux_target} was already gone")
+                result = TmuxRunner().kill(session)  # best-effort (R7.2/R7.3)
+                if result.ok:
+                    print(f"killed tmux session {session.tmux_target}")
+                else:
+                    print(f"note: tmux session {session.tmux_target} was already gone")
         print(f"closed session for {work_item.ref}")
         return 0
