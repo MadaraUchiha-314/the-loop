@@ -1,3 +1,9 @@
+## v0.16.0 (2026-07-24)
+
+### Feat
+
+- **cli**: dispatch-lifecycle emoji reactions on the triggering entity (issue #84) (#85)
+
 ## v0.15.0 (2026-07-24)
 
 ### Feat
