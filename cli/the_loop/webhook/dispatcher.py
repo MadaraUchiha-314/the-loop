@@ -930,7 +930,9 @@ class Dispatcher:
             action=routed.action or None,
             delivery_id=routed.delivery_id or None,
         )
-        self.announcer.announce(respawned, respawned=True)
+        # No announcement here (owner decision, PR #87): a respawn reuses the
+        # same loop-<slug> name, so the attach command already on the ticket is
+        # still correct and a second comment would only add noise.
         return True
 
     def delivery_status(

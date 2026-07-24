@@ -148,10 +148,11 @@ silently swallows an event.
 
 #### `webhooks.ghWebhook.routing.announce` — "here is your session" comment
 
-When a tmux-mode session is spawned (or respawned after being found dead), the-loop
-comments on the work item with the tmux session name and the `tmux attach -t
-loop-<slug>` command, so the humans reading the ticket can watch it work without
-digging through daemon logs.
+When a tmux-mode session is spawned for a work item, the-loop comments on it with the
+tmux session name and the `tmux attach -t loop-<slug>` command, so the humans reading
+the ticket can watch it work without digging through daemon logs. A **respawn** posts
+nothing further — it reuses the same session name, so the comment already there stays
+correct and a flapping session can't bury the thread.
 
 Best-effort via your own `gh` CLI, like reactions: a failure never affects the
 dispatch, and a process-runner session, a non-GitHub work item or a missing `gh` is a

@@ -22,7 +22,7 @@ class _NoopAnnouncer:
     def __init__(self, *args, **kwargs):
         pass
 
-    def announce(self, session, respawned=False):
+    def announce(self, session):
         return False
 
 

@@ -33,9 +33,9 @@ overrides: {}
   `keepSessionOnClose: false`. *(AC1.1, AC1.2, AC1.4, AC1.6, AC4.1)* — depends
   on T1.
 - [x] **T5 — Dispatcher announcement.** Optional `announcer` ctor param
-  (override survives `reload`); `_spawn_tmux` / `_respawn_tmux` announce after
-  registration without affecting their return value. *(AC3.1–3.4)* — depends
-  on T3, T4.
+  (override survives `reload`); `_spawn_tmux` announces after registration
+  without affecting its return value; `_respawn_tmux` deliberately does not
+  (first spawn only). *(AC3.1–3.4)* — depends on T3, T4.
 - [x] **T6 — `sessions close` / `sessions attach`.** `close` honours
   `keepSessionOnClose` with `--keep-tmux` / `--kill-tmux` overrides; `attach`
   falls back to a **closed** work item's retained session (with a note) and
@@ -50,8 +50,8 @@ overrides: {}
 - [x] **T9 — Unit tests.** `test_announce.py` plus the `test_tmux_runner.py`
   additions per the design's testing strategy. — depends on T1–T3.
 - [x] **T10 — Integration + CLI tests.** Retention / kill-on-close, respawn
-  through a dead retained pane, announce-on-spawn/respawn, no-announce for
-  process mode, announcer failure is inert; `sessions close --keep/--kill-tmux`
+  through a dead retained pane, announce-on-spawn, no re-announce on respawn,
+  no-announce for process mode, announcer failure is inert; `sessions close --keep/--kill-tmux`
   and `sessions attach` to a closed-but-retained session. — depends on T5, T6.
 - [x] **T11 — Docs.** `cli/README.md` config tables + `sessions` command notes;
   `docs/capabilities/interactive-sessions.md` behaviour bullets and history

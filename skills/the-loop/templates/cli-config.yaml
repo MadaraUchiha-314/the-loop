@@ -82,11 +82,11 @@ webhooks:
         keepSessionOnClose: true
         remainOnExit: true
       # Session announcement comment (issue-86): when a tmux-mode session is spawned
-      # (or respawned after being found dead), post the tmux session name and the
-      # `tmux attach -t …` command on the work item, so a human on the ticket can
-      # watch it work. Best-effort via YOUR gh CLI; no-op for process-runner sessions,
-      # non-GitHub work items, or a missing gh. The body carries no paths, session ids
-      # or hostnames.
+      # for a work item, post the tmux session name and the `tmux attach -t …`
+      # command on the work item, so a human on the ticket can watch it work. A
+      # respawn posts nothing further (same name, same command). Best-effort via YOUR
+      # gh CLI; no-op for process-runner sessions, non-GitHub work items, or a missing
+      # gh. The body carries no paths, session ids or hostnames.
       announce:
         enabled: true
         ghBinary: gh

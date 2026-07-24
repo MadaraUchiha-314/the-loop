@@ -4,7 +4,9 @@ When the dispatcher hosts a work item in a tmux session, the only place that
 said so was the daemon's log — the human reading the GitHub issue never learned
 the session existed, let alone how to attach to it. This module posts that
 information where the human already is: a comment on the issue/PR carrying the
-tmux session name and the ``tmux attach -t loop-<slug>`` command.
+tmux session name and the ``tmux attach -t loop-<slug>`` command. Posted on the
+work item's **first spawn** only — a respawn reuses the same session name, so
+re-announcing would just be noise on the ticket (owner decision, PR #87).
 
 Built in the mould of :mod:`the_loop.reactions`: it shells the operator's own
 ``gh`` CLI (no token of the-loop's own), and everything is best-effort — an
@@ -58,7 +60,7 @@ class AnnounceConfig:
         )
 
 
-def announcement_body(session: Session, respawned: bool = False) -> str:
+def announcement_body(session: Session) -> str:
     """The markdown comment announcing ``session`` and how to attach to it.
 
     Pure and payload-free (see the module docstring): every value comes from
@@ -66,20 +68,13 @@ def announcement_body(session: Session, respawned: bool = False) -> str:
     """
     target = session.tmux_target
     ref = session.work_item.ref
-    headline = (
-        "respawned its interactive session for"
-        if respawned
-        else "started an interactive session for"
-    )
     note = (
-        "The previous session was found dead, so this one picked the work up "
-        "from the pending event."
-        if respawned
-        else "The session is kept after the work completes, so this transcript "
-        "stays readable."
+        "The session is kept after the work completes, so this transcript "
+        "stays readable. A respawn reuses this same tmux session name, so "
+        "these commands keep working."
     )
     return (
-        f"🖥️ **the-loop** {headline} `{ref}`.\n"
+        f"🖥️ **the-loop** started an interactive session for `{ref}`.\n"
         "\n"
         "| | |\n"
         "|---|---|\n"
@@ -117,8 +112,13 @@ class SessionAnnouncer:
         self.timeout = timeout
         self._warned_missing_gh = False
 
-    def announce(self, session: Session, respawned: bool = False) -> bool:
-        """Comment on ``session``'s work item with its tmux attach details."""
+    def announce(self, session: Session) -> bool:
+        """Comment on ``session``'s work item with its tmux attach details.
+
+        Called on **first spawn only** (owner decision, PR #87): a respawn
+        reuses the same ``loop-<slug>`` name, so the attach command already on
+        the ticket stays correct and a second comment would be noise.
+        """
         config = self.config
         if not config.enabled:
             return False
@@ -145,7 +145,7 @@ class SessionAnnouncer:
                 )
             return False
 
-        cmd = [config.gh_binary] + self._argv(session, respawned)
+        cmd = [config.gh_binary] + self._argv(session)
         try:
             proc = self._runner(
                 cmd, capture_output=True, text=True, timeout=self.timeout
@@ -160,12 +160,11 @@ class SessionAnnouncer:
             "session.announced",
             work_item=item.ref,
             tmux_target=session.tmux_target,
-            respawned=respawned or None,
         )
         return True
 
     @staticmethod
-    def _argv(session: Session, respawned: bool) -> list:
+    def _argv(session: Session) -> list:
         item = session.work_item
         # The issues endpoint serves PR conversations too (as in reactions.py).
         return [
@@ -174,7 +173,7 @@ class SessionAnnouncer:
             "POST",
             f"repos/{item.owner}/{item.repo}/issues/{item.number}/comments",
             "-f",
-            f"body={announcement_body(session, respawned)}",
+            f"body={announcement_body(session)}",
         ]
 
     def _failed(self, session: Session, error: str) -> bool:

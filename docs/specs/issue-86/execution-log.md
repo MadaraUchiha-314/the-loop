@@ -74,6 +74,24 @@ status: in-progress
 - **Next:** open PR with the reviewer briefing; request review.
 - **Blockers:** none.
 
+### 2026-07-24 — owner decisions on PR #87
+
+- **Decision 1 — retention default.** The owner confirmed
+  `keepSessionOnClose: true` as the default ("Make it true by default"), which
+  is what shipped; no code change.
+- **Decision 2 — announce on first spawn only.** The owner answered the
+  briefing's second open question ("Keep it to first spawn only"). Paper trail:
+  the owner's comment on PR #87.
+- **Did:** dropped the `_respawn_tmux` announcement and the now-dead
+  `respawned` parameter from `SessionAnnouncer.announce` /
+  `announcement_body` / the `session.announced` record; the body now says the
+  attach commands survive a respawn (the name is reused, so the first comment
+  stays correct). Updated the spec (AC3.2, AC4.2, security section, design
+  overview/diagram/decisions/tasks), the schema and both cli-config yamls, the
+  README, the capability doc, and the tests — the respawn scenario now asserts
+  a respawn happens **and** posts nothing.
+- **Checkpoint/tests:** `make check` green again (315 passed).
+
 ## Review cycles
 
 | Cycle | Type (self/critic) | Reviewer | Outcome | Link |

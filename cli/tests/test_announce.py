@@ -86,10 +86,10 @@ def test_body_leaks_no_paths_or_session_ids():
     assert "9f1c-secret-session-id" not in body
 
 
-def test_respawn_body_says_so():
-    body = announcement_body(make_session(), respawned=True)
-    assert "respawned" in body
-    assert f"tmux attach -t {TARGET}" in body
+def test_body_explains_the_commands_survive_a_respawn():
+    # A respawn reuses the same loop-<slug> name and posts no second comment
+    # (owner decision, PR #87), so the body says the commands keep working.
+    assert "respawn" in announcement_body(make_session())
 
 
 # -- the no-op ladder -----------------------------------------------------------

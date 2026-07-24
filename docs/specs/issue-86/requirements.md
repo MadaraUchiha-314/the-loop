@@ -100,7 +100,12 @@ work without reading the daemon's logs.
    the tmux session name and the `tmux attach -t <name>` command, plus the
    equivalent `the-loop sessions attach --work-item <ref>` invocation.
 2. WHEN a dead tmux session is **respawned** (issue-80) THEN the system SHALL
-   post the same announcement, worded as a respawn.
+   post **no** further comment: the respawn reuses the same `loop-<slug>`
+   name, so the announcement already on the ticket stays correct, and a
+   session that flaps would otherwise bury the thread. *(Drafted as
+   announce-on-respawn-too; changed on the owner's explicit call at [PR
+   #87](https://github.com/MadaraUchiha-314/the-loop/pull/87) — "Keep it to
+   first spawn only".)*
 3. WHEN the spawned session is **process**-mode THEN no comment SHALL be
    posted — there is no terminal to attach.
 4. Announcing SHALL be **best-effort**: a failure SHALL NOT fail, retry, delay
@@ -112,7 +117,8 @@ work without reading the daemon's logs.
    `webhooks.ghWebhook.routing.announce` (`enabled`, `ghBinary`), hot-reloading
    with the rest of the soft routing policy. `enabled` defaults to **true**,
    matching the `reactions` precedent (PR #85: out-of-box visibility is the
-   point) — this is what the issue asks for.
+   point) — this is what the issue asks for, and the owner confirmed it at
+   [PR #87](https://github.com/MadaraUchiha-314/the-loop/pull/87).
 6. The comment SHALL carry only coordinates that are already public or
    operator-visible: the tmux session name (derived from the work-item ref),
    the attach commands and the harness name. It SHALL NOT include filesystem
@@ -129,7 +135,7 @@ story.
 1. WHEN a tmux session is retained on close THEN the system SHALL emit
    `session.retained` (work_item, tmux_target).
 2. WHEN an announcement comment is posted THEN the system SHALL emit
-   `session.announced` (work_item, tmux_target, respawned).
+   `session.announced` (work_item, tmux_target).
 3. WHEN posting it fails THEN the system SHALL emit `session.announce_failed`
    (warning level) and carry on.
 
@@ -149,7 +155,8 @@ story.
   lists their own login (the account `gh` posts as) must be aware the
   announcement is self-authored. Announcements are emitted only on
   spawn/respawn — never in response to a comment — so even if it did route,
-  it cannot recurse.
+  it cannot recurse. Restricting announcements to the first spawn (AC3.2)
+  bounds the write further: at most one comment per work item per spawn.
 - **Retained sessions hold state.** A kept tmux session keeps the harness's
   scrollback (and, if the pane is alive, a running agent with the operator's
   credentials) on the operator's own machine, for as long as tmux lives. This

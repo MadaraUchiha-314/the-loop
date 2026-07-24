@@ -237,7 +237,7 @@
                 },
                 "announce": {
                   "type": "object",
-                  "description": "Announce a spawned interactive session on its work item (issue-86): when a tmux-mode session is spawned (or respawned after being found dead), the-loop posts a comment carrying the tmux session name and the `tmux attach -t loop-<slug>` command, so a human reading the ticket can watch it work without digging through daemon logs. Best-effort via the operator's own `gh` CLI: a failure never affects the dispatch, and a missing `gh`, a non-GitHub work item, or a process-runner session is a no-op. The body is built only from registry fields (work-item ref, tmux target, harness) — never from event payloads, and it carries no paths, session ids or hostnames.",
+                  "description": "Announce a spawned interactive session on its work item (issue-86): when a tmux-mode session is first spawned for a work item, the-loop posts a comment carrying the tmux session name and the `tmux attach -t loop-<slug>` command, so a human reading the ticket can watch it work without digging through daemon logs. Best-effort via the operator's own `gh` CLI: a failure never affects the dispatch, and a missing `gh`, a non-GitHub work item, or a process-runner session is a no-op. The body is built only from registry fields (work-item ref, tmux target, harness) — never from event payloads, and it carries no paths, session ids or hostnames. A respawn (issue-80) posts nothing further: it reuses the same loop-<slug> name, so the comment already on the ticket stays correct.",
                   "additionalProperties": false,
                   "properties": {
                     "enabled": {

@@ -125,9 +125,9 @@ EVENT_TYPES: Dict[str, str] = {
         "gh_event, delivery_id)."
     ),
     "session.announced": (
-        "A comment announcing a spawned/respawned tmux session (and how to "
-        "attach to it) was posted on the work item (work_item, tmux_target, "
-        "respawned)."
+        "A comment announcing a newly spawned tmux session (and how to attach "
+        "to it) was posted on the work item (work_item, tmux_target); a respawn "
+        "reuses the name and posts nothing further."
     ),
     "session.announce_failed": (
         "Posting the tmux-session announcement comment failed (work_item, "

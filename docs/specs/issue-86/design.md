@@ -23,7 +23,7 @@ Three seams, each small:
    sessions whose harness is dead, and the issue-80 respawn path would never
    fire again.
 2. **`dispatcher.py`** — the PR-close branch keeps (rather than kills) the tmux
-   session by default, and spawn/respawn announce on the ticket.
+   session by default, and a first spawn announces on the ticket.
 3. **`announce.py`** (new) — a `gh`-shelling, best-effort comment poster, built
    in the mould of `reactions.py` (issue-84).
 
@@ -36,13 +36,13 @@ sequenceDiagram
 
     GH->>D: event → spawn (runner: tmux)
     D->>T: new-session -d -s loop-<slug> … ; set remain-on-exit
-    D->>A: announce(session, respawned=false)
+    D->>A: announce(session)
     A->>GH: 💬 "tmux attach -t loop-<slug>"
     Note over T: harness exits → pane dead, session + scrollback kept
     GH->>D: later event for the same work item
     D->>T: has_live_session? (pane_dead=1 → no)
     D->>T: respawn (issue-80) → clears the dead session, fresh TUI
-    D->>A: announce(session, respawned=true)
+    Note over D,A: no re-announcement — same name, same attach command
     GH->>D: pull_request closed/merged
     D->>D: registry.close(...)
     alt keepSessionOnClose (default)
@@ -87,10 +87,12 @@ sequenceDiagram
 - PR-close branch in `handle()`: when `tmux.keep_session_on_close` (default),
   skip the `kill` and instead log the attach command + emit `session.retained`;
   otherwise kill exactly as before.
-- `_spawn_tmux()` / `_respawn_tmux()`: after `registry.register(...)` and the
-  existing `session.spawned` / `session.respawned` emission, call
-  `self.announcer.announce(session, respawned=…)`. Placed **after** the state is
-  durable and never in a way that can change the returned bool (AC3.4).
+- `_spawn_tmux()`: after `registry.register(...)` and the existing
+  `session.spawned` emission, call `self.announcer.announce(session)`. Placed
+  **after** the state is durable and never in a way that can change the
+  returned bool (AC3.4). `_respawn_tmux()` deliberately does **not** announce
+  (AC3.2, owner decision at PR #87) — the respawn reuses the same
+  `loop-<slug>` name, so the comment already on the ticket is still accurate.
 
 ## 3. `announce.py` — the comment poster
 
@@ -99,11 +101,11 @@ best-effort contract, same injectable `runner`/`timeout` for hermetic tests):
 
 - `AnnounceConfig` — `enabled: bool = True`, `gh_binary: str = "gh"`, with
   `from_mapping`.
-- `announcement_body(session, respawned) -> str` — **pure**, unit-testable,
-  builds the markdown from the session's own recorded fields only (work-item
-  ref, `tmux_target`, harness name). No payload data, no cwd, no harness
+- `announcement_body(session) -> str` — **pure**, unit-testable, builds the
+  markdown from the session's own recorded fields only (work-item ref,
+  `tmux_target`, harness name). No payload data, no cwd, no harness
   session id (AC3.6).
-- `SessionAnnouncer.announce(session, respawned=False) -> bool` — short-circuit
+- `SessionAnnouncer.announce(session) -> bool` — short-circuit
   ladder: disabled → `runner != "tmux"` → non-`github` provider → owner/repo
   failing the defensive `[A-Za-z0-9._-]+` check → `gh` missing (warn **once**).
   Then `gh api --method POST repos/<owner>/<repo>/issues/<number>/comments -f
@@ -129,7 +131,8 @@ Attach from the machine running the-loop:
     the-loop sessions attach --work-item github:owner/repo#86 --read-only
 
 The session is kept after the work completes, so this transcript stays
-readable.
+readable. A respawn reuses this same tmux session name, so these commands
+keep working.
 ```
 
 ## Decisions
@@ -137,7 +140,13 @@ readable.
 - **Default to keeping.** The issue asks for retention as the behaviour, not as
   an opt-in; `keepSessionOnClose: false` restores the old kill. The cost
   (sessions accumulate) is bounded by the deterministic name and is the
-  operator's own machine.
+  operator's own machine. Confirmed by the owner at PR #87.
+- **First spawn only (owner decision, PR #87).** Drafted to announce on
+  respawn as well; the owner asked to keep tickets quiet. A respawn reuses
+  `loop-<slug>`, so the existing comment stays correct — which also removes
+  the flapping-session comment storm. The body says so explicitly, and
+  `announce()` lost its `respawned` parameter rather than carrying a dead
+  branch.
 - **Keep the name, don't rename on close.** Renaming a retained session to
   `loop-<slug>-done` would preserve it across a re-spawn but would break every
   attach command already posted on the ticket and every muscle-memory
@@ -177,7 +186,7 @@ is a logged no-op. Dispatch outcome, dedup and retry semantics are unchanged.
   `test_webhook_routing_integration.py` style): PR-close keeps the tmux session
   and emits `session.retained` by default and kills it when configured off; a
   delivery into a retained dead session respawns (issue-80 path intact); spawn
-  and respawn each announce once, process-mode spawns do not; a failing
+  announces once while a respawn stays quiet, process-mode spawns do not; a failing
   announcer never changes the dispatch outcome.
 - **CLI** (`cli/tests/test_cli.py`): `sessions close --keep-tmux` / `--kill-tmux`
   behaviour, and `sessions attach` reaching a retained session of a *closed*

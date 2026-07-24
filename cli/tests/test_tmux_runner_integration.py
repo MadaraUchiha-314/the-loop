@@ -48,8 +48,8 @@ class RecordingAnnouncer:
         self.calls = []
         self.ok = ok
 
-    def announce(self, session, respawned=False):
-        self.calls.append((session.work_item.ref, session.tmux_target, respawned))
+    def announce(self, session):
+        self.calls.append((session.work_item.ref, session.tmux_target))
         return self.ok
 
 
@@ -321,16 +321,17 @@ def test_spawn_announces_the_session_on_the_work_item(pipeline_factory):
     deliver("issues", issue_payload(), "d-announce-1")
     assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
     assert wait_until(lambda: announcer.calls)
-    assert announcer.calls == [(REF, "loop-github-octo-repo-15", False)]
+    assert announcer.calls == [(REF, "loop-github-octo-repo-15")]
 
 
-def test_respawn_announces_as_a_respawn(pipeline_factory, monkeypatch):
+def test_respawn_does_not_re_announce(pipeline_factory, monkeypatch):
     """
     Feature: tmux-hosted interactive sessions
-    Scenario: a respawned session is announced too, worded as a respawn
+    Scenario: a respawn stays quiet on the ticket
       Given a registered tmux-mode session whose tmux session is gone
       When an issue_comment event for that work item arrives
-      Then the respawn is announced on the work item with respawned=true
+      Then the session is respawned under the same loop-<slug> name
+      And no second announcement comment is posted (the first one still applies)
     Requirement: docs/specs/issue-86/requirements.md#R3
     """
     announcer = RecordingAnnouncer()
@@ -338,8 +339,10 @@ def test_respawn_announces_as_a_respawn(pipeline_factory, monkeypatch):
     register_tmux_session(registry)
     monkeypatch.setenv("STUB_TMUX_FAIL", "has-session")
     deliver("issue_comment", issue_payload(action="created"), "d-announce-2")
-    assert wait_until(lambda: announcer.calls)
-    assert announcer.calls == [(REF, "loop-github-octo-repo-15", True)]
+    assert wait_until(
+        lambda: registry.find_by_work_item(REF).harness_session_id != "uuid-1"
+    )
+    assert announcer.calls == []
 
 
 def test_a_failed_announcement_does_not_change_the_dispatch(pipeline_factory):

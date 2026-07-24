@@ -82,10 +82,11 @@ webhooks:
         error: confused             # 😕 dispatch failed / worker crashed
         ghBinary: gh
       # Session announcement comment (issue-86): when a tmux-mode session is
-      # spawned/respawned, post the tmux session name + `tmux attach -t …` on the
-      # work item so a human can watch it work. Best-effort via your gh CLI; no-op
-      # for process-runner sessions, non-GitHub work items, or a missing gh. The
-      # body carries no paths, session ids or hostnames.
+      # spawned, post the tmux session name + `tmux attach -t …` on the work item
+      # so a human can watch it work. A respawn posts nothing further (same name,
+      # same command). Best-effort via your gh CLI; no-op for process-runner
+      # sessions, non-GitHub work items, or a missing gh. The body carries no
+      # paths, session ids or hostnames.
       announce:
         enabled: true
         ghBinary: gh
