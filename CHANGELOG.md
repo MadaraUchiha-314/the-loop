@@ -1,3 +1,9 @@
+## v0.17.0 (2026-07-24)
+
+### Feat
+
+- **cli**: retain tmux sessions after completion + announce attach on the ticket (issue #86) (#87)
+
 ## v0.16.0 (2026-07-24)
 
 ### Feat
