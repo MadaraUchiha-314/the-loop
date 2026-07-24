@@ -45,6 +45,19 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   (`Dispatcher.delivery_status`: done/inflight/unhandled) rather than assuming success at
   enqueue time. (The webhook path relies on GitHub redelivery, repaired for dead tmux
   sessions by the respawn above — see [interactive-sessions](interactive-sessions.md).)
+- WHEN `routing.reactions.enabled` is on (default **off** — opt-in, it is the daemon's
+  first write surface to GitHub) THEN the dispatcher SHALL acknowledge each event it
+  processes with emoji reactions on the triggering entity: the `started` reaction
+  (default 👀 `eyes`) when the event is dequeued for delivery/spawn, then `completed`
+  (default 🎉 `hooray`) or `error` (default 😕 `confused`) from the dispatch outcome —
+  on the triggering **comment** when the event carries one, else on the **issue/PR**
+  itself. Shared by the webhook receiver and the poller; best-effort via the operator's
+  own `gh` CLI (a reaction failure never affects the dispatch; a missing `gh`, a
+  non-GitHub provider, or an event with no reactable target is a silent no-op — so
+  work-item platforms without reactions degrade cleanly). GitHub's palette is fixed
+  (`+1 -1 laugh confused heart hooray rocket eyes`; ✅/⁉️ don't exist), and each
+  state's emoji is configurable (`""` skips a state). Outcomes are logged as
+  `reaction.added` / `reaction.failed`.
 - A comment/review the-loop itself posted (identified by an embedded marker, since it
   is posted under the operator's own credentials and is otherwise indistinguishable by
   author) SHALL be dropped before dispatch, so the-loop never resumes a session on its
@@ -65,6 +78,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-84 | Dispatch-lifecycle emoji reactions (`routing.reactions`, opt-in): 👀 started / 🎉 completed / 😕 error on the triggering comment or issue/PR, best-effort via `gh`, no-op where unsupported | [spec](../specs/issue-84/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/84) |
 | issue-63 | `webhooks.*` moved out of the per-repo plugin config into an independent, repo-agnostic CLI config | [spec](../specs/issue-63/), [decision-032](../decisions/decision-032.md) |
 | issue-64 | Added the self-reply marker guard (drops the-loop's own comments/reviews before dispatch, on both trigger paths, so it never resumes a session on its own reply) | [decision-031](../decisions/decision-031.md) |
 | issue-80 | Bounded per-event retry policy on the poll path (`polling.maxRetries`, default 3): stop baselining failed spawns/comments as processed, retry each cycle, then log `poll.spawn_failed`/`poll.comment_failed` and ignore; a new comment retriggers | [spec](../specs/issue-80/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/80) |

@@ -22,6 +22,13 @@ from typing import Dict, List, Optional
 
 from .. import eventlog
 from ..harness.base import HarnessAdapter
+from ..reactions import (
+    STATE_COMPLETED,
+    STATE_ERROR,
+    STATE_STARTED,
+    GitHubReactor,
+    ReactionConfig,
+)
 from ..runner import TmuxRunner
 from ..sessions import Session, SessionRegistry, WorkItemRef
 from ..workspace import RepoTarget, Workspace, WorkspaceError, repo_target_from_payload
@@ -170,6 +177,8 @@ class RoutingConfig:
     # GitHub logins whose actions the-loop may act on (prompt-injection guard,
     # issue-34 review). Empty => fail closed for human-authored actions.
     authorized_users: List[str] = field(default_factory=list)
+    # Dispatch-lifecycle emoji reactions on the triggering entity (issue-84).
+    reactions: ReactionConfig = field(default_factory=ReactionConfig)
 
     @classmethod
     def from_mapping(cls, data: dict) -> "RoutingConfig":
@@ -195,6 +204,7 @@ class RoutingConfig:
             ),
             harness_args=dict(data.get("harnessArgs") or {}),
             authorized_users=[str(u) for u in (data.get("authorizedUsers") or [])],
+            reactions=ReactionConfig.from_mapping(data.get("reactions") or {}),
         )
 
 
@@ -256,6 +266,7 @@ class Dispatcher:
         deduper: Optional[Deduper] = None,
         tmux_runner: Optional[TmuxRunner] = None,
         workspace: Optional[Workspace] = None,
+        reactor: Optional[GitHubReactor] = None,
     ):
         self.registry = registry
         self.adapters = adapters
@@ -267,6 +278,10 @@ class Dispatcher:
         # reloads; otherwise it tracks routing.workspace across hot-reloads.
         self._workspace_override = workspace is not None
         self.workspace = workspace or self._build_workspace(self.config)
+        # A caller-supplied reactor (tests / embedding) wins and survives
+        # reloads; otherwise it tracks routing.reactions across hot-reloads.
+        self._reactor_override = reactor is not None
+        self.reactor = reactor or GitHubReactor(self.config.reactions)
         self.deduper = (
             deduper
             if deduper is not None
@@ -323,6 +338,8 @@ class Dispatcher:
         self.adapters = build_adapters(config.harness_args)
         if not self._workspace_override:
             self.workspace = self._build_workspace(config)
+        if not self._reactor_override:
+            self.reactor = GitHubReactor(config.reactions)
         self._event_template = self._load_template(
             config.prompt_template, DEFAULT_PROMPT_TEMPLATE
         )
@@ -476,8 +493,12 @@ class Dispatcher:
                 return
             routed, spawn = item
             with self._semaphore:
+                # Acknowledge on the triggering entity (issue-84): 👀 when the
+                # event is picked up, then 🎉/😕 from the dispatch outcome.
+                # Best-effort decoration — never affects the dispatch itself.
+                self.reactor.react(routed, STATE_STARTED)
                 try:
-                    self._dispatch_one(key, routed, spawn)
+                    ok = self._dispatch_one(key, routed, spawn)
                 except Exception as exc:
                     logger.exception("dispatch failed for %s", key)
                     eventlog.emit(
@@ -491,22 +512,25 @@ class Dispatcher:
                     )
                     if routed.delivery_id:
                         self.deduper.discard(routed.delivery_id)
+                    self.reactor.react(routed, STATE_ERROR)
+                else:
+                    self.reactor.react(routed, STATE_COMPLETED if ok else STATE_ERROR)
 
-    def _dispatch_one(self, key: str, routed: RoutedEvent, spawn: bool) -> None:
+    def _dispatch_one(self, key: str, routed: RoutedEvent, spawn: bool) -> bool:
+        """Deliver/spawn for one dequeued event; True on success (issue-84)."""
         session = self.registry.find_by_work_item(key)
         if session is None:
             if spawn:
-                self._spawn_for(WorkItemRef.parse(key), routed)
-            else:
-                logger.info("session %s vanished before dispatch; dropping", key)
-                eventlog.emit(
-                    "dispatch.dropped",
-                    reason="session-vanished",
-                    work_item=key,
-                    gh_event=routed.event,
-                    delivery_id=routed.delivery_id or None,
-                )
-            return
+                return self._spawn_for(WorkItemRef.parse(key), routed)
+            logger.info("session %s vanished before dispatch; dropping", key)
+            eventlog.emit(
+                "dispatch.dropped",
+                reason="session-vanished",
+                work_item=key,
+                gh_event=routed.event,
+                delivery_id=routed.delivery_id or None,
+            )
+            return False
 
         prompt = self._render_prompt(routed, session.work_item, self._event_template)
         if session.runner == "tmux":
@@ -519,8 +543,7 @@ class Dispatcher:
                 # that session. Respawn a fresh one and deliver this event into
                 # it, instead of releasing for a redelivery that would hit the
                 # same missing session forever (issue-80).
-                self._respawn_tmux(session, routed, prompt)
-                return
+                return self._respawn_tmux(session, routed, prompt)
             ok, error, verb = result.ok, result.error, "delivered into tmux session"
         else:
             adapter = self.adapters.get(session.harness)
@@ -541,7 +564,7 @@ class Dispatcher:
                 )
                 if routed.delivery_id:
                     self.deduper.discard(routed.delivery_id)
-                return
+                return False
             resumed = adapter.resume(
                 session, prompt, timeout=self.config.dispatch_timeout_seconds
             )
@@ -560,25 +583,24 @@ class Dispatcher:
                 delivery_id=routed.delivery_id or None,
             )
             self.registry.touch(key, delivery_id=routed.delivery_id or None)
-        else:
-            logger.error(
-                "%s of %s for %s failed: %s", verb, session.harness, key, error
-            )
-            eventlog.emit(
-                "dispatch.failed",
-                level="error",
-                work_item=key,
-                harness=session.harness,
-                via=session.runner,
-                gh_event=routed.event,
-                delivery_id=routed.delivery_id or None,
-                error=error,
-                will_retry=bool(routed.delivery_id),
-            )
-            if routed.delivery_id:
-                self.deduper.discard(routed.delivery_id)
+            return True
+        logger.error("%s of %s for %s failed: %s", verb, session.harness, key, error)
+        eventlog.emit(
+            "dispatch.failed",
+            level="error",
+            work_item=key,
+            harness=session.harness,
+            via=session.runner,
+            gh_event=routed.event,
+            delivery_id=routed.delivery_id or None,
+            error=error,
+            will_retry=bool(routed.delivery_id),
+        )
+        if routed.delivery_id:
+            self.deduper.discard(routed.delivery_id)
+        return False
 
-    def _spawn_for(self, work_item: WorkItemRef, routed: RoutedEvent) -> None:
+    def _spawn_for(self, work_item: WorkItemRef, routed: RoutedEvent) -> bool:
         adapter = self.adapters.get(self.config.default_harness)
         if adapter is None:
             logger.error(
@@ -593,7 +615,7 @@ class Dispatcher:
                 error="no adapter for defaultHarness",
                 will_retry=False,
             )
-            return
+            return False
         prompt = self._render_prompt(routed, work_item, self._spawn_template)
         try:
             cwd = self._prepare_workspace(work_item, routed)
@@ -609,10 +631,9 @@ class Dispatcher:
             )
             if routed.delivery_id:
                 self.deduper.discard(routed.delivery_id)
-            return
+            return False
         if self.config.runner == "tmux":
-            self._spawn_tmux(work_item, routed, adapter, prompt, cwd)
-            return
+            return self._spawn_tmux(work_item, routed, adapter, prompt, cwd)
         result = adapter.spawn(
             work_item,
             prompt,
@@ -631,7 +652,7 @@ class Dispatcher:
             )
             if routed.delivery_id:
                 self.deduper.discard(routed.delivery_id)
-            return
+            return False
         _log_usage(result.usage, self.config.default_harness, work_item.ref)
         session = Session(
             work_item=work_item,
@@ -657,6 +678,7 @@ class Dispatcher:
             action=routed.action or None,
             delivery_id=routed.delivery_id or None,
         )
+        return True
 
     def _spawn_tmux(
         self,
@@ -665,7 +687,7 @@ class Dispatcher:
         adapter: HarnessAdapter,
         prompt: str,
         cwd: str,
-    ) -> None:
+    ) -> bool:
         """Spawn the harness TUI in a tmux session with a pre-assigned id (R1/R2)."""
         if not adapter.is_available():
             # tmux new-session would "succeed" (the pane exists briefly) and
@@ -688,7 +710,7 @@ class Dispatcher:
             )
             if routed.delivery_id:
                 self.deduper.discard(routed.delivery_id)
-            return
+            return False
         session_id = str(uuid.uuid4())
         result = self.tmux.spawn(
             work_item,
@@ -710,7 +732,7 @@ class Dispatcher:
             )
             if routed.delivery_id:
                 self.deduper.discard(routed.delivery_id)
-            return
+            return False
         session = Session(
             work_item=work_item,
             harness=self.config.default_harness,
@@ -740,8 +762,9 @@ class Dispatcher:
             action=routed.action or None,
             delivery_id=routed.delivery_id or None,
         )
+        return True
 
-    def _respawn_tmux(self, session: Session, routed: RoutedEvent, prompt: str) -> None:
+    def _respawn_tmux(self, session: Session, routed: RoutedEvent, prompt: str) -> bool:
         """Respawn a crashed/killed tmux session and deliver the pending event.
 
         Reuses the dead session's own recorded fields (harness, cwd, tmux
@@ -777,7 +800,7 @@ class Dispatcher:
             )
             if routed.delivery_id:
                 self.deduper.discard(routed.delivery_id)
-            return
+            return False
         session_id = str(uuid.uuid4())
         result = self.tmux.spawn(
             work_item,
@@ -806,7 +829,7 @@ class Dispatcher:
             )
             if routed.delivery_id:
                 self.deduper.discard(routed.delivery_id)
-            return
+            return False
         respawned = Session(
             work_item=work_item,
             harness=session.harness,
@@ -841,6 +864,7 @@ class Dispatcher:
             action=routed.action or None,
             delivery_id=routed.delivery_id or None,
         )
+        return True
 
     def delivery_status(
         self, delivery_id: Optional[str], refs: List[WorkItemRef]
