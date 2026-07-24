@@ -1312,7 +1312,7 @@ wheels = [
 
 [[package]]
 name = "the-loopy-one"
-version = "0.13.0"
+version = "0.14.0"
 source = { editable = "cli" }
 
 [package.optional-dependencies]

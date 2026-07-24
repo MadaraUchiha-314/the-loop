@@ -1,3 +1,9 @@
+## v0.14.1 (2026-07-24)
+
+### Fix
+
+- **cli**: derive --version from package metadata (issue #78) (#79)
+
 ## v0.14.0 (2026-07-23)
 
 ### Feat
