@@ -1,3 +1,9 @@
+## v0.14.2 (2026-07-24)
+
+### Fix
+
+- **cli**: bounded per-event retry policy + respawn dead tmux sessions (issue #80) (#81)
+
 ## v0.14.1 (2026-07-24)
 
 ### Fix
