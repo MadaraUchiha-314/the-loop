@@ -324,17 +324,26 @@ def test_build_provider_constructs_github():
 
 
 def test_poll_config_from_mapping_defaults_and_overrides():
-    assert PollConfig.from_mapping(None).interval_seconds == 60
+    defaults = PollConfig.from_mapping(None)
+    assert defaults.interval_seconds == 60
+    assert defaults.max_retries == 3  # issue-80 default
     cfg = PollConfig.from_mapping(
         {
             "intervalSeconds": 5,
             "stateFile": ".x/state.json",
+            "maxRetries": 5,
             "sources": [{"provider": "github", "repos": ["a/b"]}],
         }
     )
     assert cfg.interval_seconds == 5
     assert cfg.state_file == ".x/state.json"
+    assert cfg.max_retries == 5
     assert cfg.sources == [{"provider": "github", "repos": ["a/b"]}]
+
+
+def test_poll_config_max_retries_floored_at_one():
+    assert PollConfig.from_mapping({"maxRetries": 0}).max_retries == 1
+    assert PollConfig.from_mapping({"maxRetries": -3}).max_retries == 1
 
 
 # -- durable dedup state ------------------------------------------------------
@@ -345,7 +354,7 @@ def test_poll_state_roundtrips_and_dedups(tmp_path):
     state = PollState(path)
     ref = "github:octo/repo#15"
     assert state.is_known(ref) is False
-    state.update(ref, ["IC_1", "IC_2"], "2026-07-20T00:00:00Z")
+    state.baseline_comments(ref, ["IC_1", "IC_2"], "2026-07-20T00:00:00Z")
     state.save()
     reloaded = PollState(path)  # restart-surviving dedup
     assert reloaded.is_known(ref) is True
@@ -410,13 +419,23 @@ class FakeProvider(PollProvider):
 
 
 class RecordingDispatcher:
-    """Captures RoutedEvents instead of dispatching (deterministic, no threads)."""
+    """Captures RoutedEvents instead of dispatching (deterministic, no threads).
 
-    def __init__(self):
+    ``status_map`` lets a test simulate the async dispatch outcome the poller
+    reads back via :meth:`delivery_status` (delivery id -> done/inflight);
+    anything unmapped is ``unhandled`` (failed / never sent), the default that
+    makes a single-cycle forward look like a fresh first attempt.
+    """
+
+    def __init__(self, status_map=None):
         self.events = []
+        self.status_map = dict(status_map or {})
 
     def handle(self, routed):
         self.events.append(routed)
+
+    def delivery_status(self, delivery_id, refs):
+        return self.status_map.get(delivery_id, "unhandled")
 
     def stop(self, timeout=None):
         pass
@@ -433,7 +452,13 @@ def _comment(cid, body="hello", author="octocat"):
 
 
 def make_poller(
-    provider, registry, dispatcher, state, reloader=None, authorized=("octocat",)
+    provider,
+    registry,
+    dispatcher,
+    state,
+    reloader=None,
+    authorized=("octocat",),
+    max_retries=3,
 ):
     # provider/dispatcher/reloader intentionally unannotated so the in-process
     # doubles satisfy the typed Poller params without casts (see test_routing).
@@ -443,7 +468,7 @@ def make_poller(
         providers=[provider],
         registry=registry,
         dispatcher=dispatcher,
-        config=PollConfig(),
+        config=PollConfig(max_retries=max_retries),
         state=state,
         reloader=reloader,
         authorized_users=list(authorized),
@@ -467,7 +492,7 @@ def test_existing_session_skips_presence_and_forwards_new_comment(tmp_path):
     registry = SessionRegistry(tmp_path / "sessions")
     registry.register(Session(WorkItemRef.parse(ref), "claude", "sess-1", "."))
     state = PollState(tmp_path / "state.json")
-    state.update(ref, ["IC_1"], "t")
+    state.baseline_comments(ref, ["IC_1"], "t")
     provider = FakeProvider(
         items=[_item(15)], comments={15: [_comment("IC_1"), _comment("IC_2")]}
     )
@@ -482,7 +507,7 @@ def test_existing_session_skips_presence_and_forwards_new_comment(tmp_path):
 def test_new_activity_without_session_retries_spawn_and_forwards(tmp_path):
     ref = "github:octo/repo#15"
     state = PollState(tmp_path / "state.json")
-    state.update(ref, ["IC_1"], "t")  # known, but no session registered
+    state.baseline_comments(ref, ["IC_1"], "t")  # known, but no session registered
     provider = FakeProvider(
         items=[_item(15)], comments={15: [_comment("IC_1"), _comment("IC_2")]}
     )
@@ -541,6 +566,202 @@ def test_provider_error_is_captured_not_raised(tmp_path):
     assert disp.events == []
 
 
+# -- retry policy (issue-80) ---------------------------------------------------
+
+
+def test_poll_state_comment_retry_ledger(tmp_path):
+    state = PollState(tmp_path / "state.json")
+    ref = "github:octo/repo#15"
+    assert state.comment_attempts(ref, "IC_1") == 0
+    assert state.note_comment_attempt(ref, "IC_1") == 1
+    assert state.note_comment_attempt(ref, "IC_1") == 2
+    assert state.comment_attempts(ref, "IC_1") == 2
+    # resolving baselines the comment and drops its counter
+    state.resolve_comment(ref, "IC_1")
+    assert state.comment_attempts(ref, "IC_1") == 0
+    assert "IC_1" in state.seen_comments(ref)
+
+
+def test_poll_state_spawn_retry_ledger(tmp_path):
+    state = PollState(tmp_path / "state.json")
+    ref = "github:octo/repo#15"
+    assert state.spawn_attempts(ref) == 0 and state.spawn_gave_up(ref) is False
+    assert state.note_spawn_attempt(ref, "d-1") == 1
+    assert state.spawn_delivery_id(ref) == "d-1"
+    state.mark_spawn_gave_up(ref)
+    assert state.spawn_gave_up(ref) is True
+    state.reset_spawn(ref)  # new activity re-arms
+    assert state.spawn_attempts(ref) == 0 and state.spawn_gave_up(ref) is False
+
+
+def test_poll_state_finalize_prunes_to_live_thread(tmp_path):
+    state = PollState(tmp_path / "state.json")
+    ref = "github:octo/repo#15"
+    state.resolve_comment(ref, "IC_old")  # seen
+    state.note_comment_attempt(ref, "IC_gone")  # pending
+    state.note_comment_attempt(ref, "IC_live")  # pending
+    state.finalize(ref, ["IC_live"], "t")  # IC_old + IC_gone vanished upstream
+    assert state.seen_comments(ref) == set()
+    assert state.comment_attempts(ref, "IC_gone") == 0
+    assert state.comment_attempts(ref, "IC_live") == 1
+
+
+def _with_session(tmp_path, ref="github:octo/repo#15"):
+    registry = SessionRegistry(tmp_path / "sessions")
+    registry.register(Session(WorkItemRef.parse(ref), "claude", "s", "."))
+    return registry
+
+
+def test_failed_comment_is_retried_then_given_up(tmp_path):
+    """A comment whose dispatch keeps failing is re-forwarded each cycle up to
+    maxRetries, then given up (poll.comment_failed) and ignored thereafter."""
+    ref = "github:octo/repo#15"
+    registry = _with_session(tmp_path)
+    state = PollState(tmp_path / "state.json")
+    state.baseline_comments(ref, ["IC_0"], "t")  # known item
+    provider = FakeProvider(
+        items=[_item(15)], comments={15: [_comment("IC_0"), _comment("IC_1")]}
+    )
+    disp = RecordingDispatcher()  # every delivery stays "unhandled" (fails)
+    poller = make_poller(provider, registry, disp, state, max_retries=2)
+
+    poller.poll_once()  # attempt 1
+    poller.poll_once()  # attempt 2
+    assert [e.delivery_id for e in disp.events] == ["comment-IC_1", "comment-IC_1"]
+    assert state.comment_attempts(ref, "IC_1") == 2
+    assert "IC_1" not in state.seen_comments(ref)
+
+    summary = poller.poll_once()  # budget exhausted -> give up
+    assert summary.failures == 1
+    assert summary.comments_forwarded == 0
+    assert "IC_1" in state.seen_comments(ref)  # baselined -> ignored henceforth
+    assert [e.delivery_id for e in disp.events] == ["comment-IC_1", "comment-IC_1"]
+
+
+def test_inflight_comment_is_not_counted_a_failure(tmp_path):
+    """A still-processing dispatch (a long resume) is neither retried nor given
+    up — the poller waits for it to finish (AC5)."""
+    ref = "github:octo/repo#15"
+    registry = _with_session(tmp_path)
+    state = PollState(tmp_path / "state.json")
+    state.baseline_comments(ref, [], "t")
+    provider = FakeProvider(items=[_item(15)], comments={15: [_comment("IC_1")]})
+    disp = RecordingDispatcher(status_map={"comment-IC_1": "inflight"})
+    poller = make_poller(provider, registry, disp, state, max_retries=1)
+
+    for _ in range(5):
+        poller.poll_once()
+    assert disp.events == []  # never (re)forwarded while in flight
+    assert state.comment_attempts(ref, "IC_1") == 0
+    assert "IC_1" not in state.seen_comments(ref)  # not given up
+
+
+def test_delivered_comment_is_baselined_not_resent(tmp_path):
+    """Once a comment shows up in the session's durable delivery record, the
+    poller baselines it and never resends it."""
+    ref = "github:octo/repo#15"
+    registry = _with_session(tmp_path)
+    state = PollState(tmp_path / "state.json")
+    state.baseline_comments(ref, [], "t")
+    state.note_comment_attempt(ref, "IC_1")  # already forwarded once
+    provider = FakeProvider(items=[_item(15)], comments={15: [_comment("IC_1")]})
+    disp = RecordingDispatcher(status_map={"comment-IC_1": "done"})
+    summary = make_poller(provider, registry, disp, state).poll_once()
+
+    assert summary.comments_forwarded == 0 and disp.events == []
+    assert "IC_1" in state.seen_comments(ref)
+    assert state.comment_attempts(ref, "IC_1") == 0
+
+
+def test_new_comment_retriggers_after_a_giveup(tmp_path):
+    """A brand-new comment gets its own fresh budget even after an earlier
+    comment was given up (issue comment 2)."""
+    ref = "github:octo/repo#15"
+    registry = _with_session(tmp_path)
+    state = PollState(tmp_path / "state.json")
+    state.baseline_comments(ref, [], "t")
+    comments = [_comment("IC_1")]
+    provider = FakeProvider(items=[_item(15)], comments={15: comments})
+    disp = RecordingDispatcher()
+    poller = make_poller(provider, registry, disp, state, max_retries=1)
+
+    poller.poll_once()  # IC_1 attempt 1
+    poller.poll_once()  # IC_1 budget exhausted -> given up
+    assert "IC_1" in state.seen_comments(ref)
+    forwarded_for_ic1 = [e for e in disp.events if e.delivery_id == "comment-IC_1"]
+    assert len(forwarded_for_ic1) == 1
+
+    comments.append(_comment("IC_2"))  # a NEW comment arrives
+    summary = poller.poll_once()
+    assert summary.comments_forwarded == 1
+    assert disp.events[-1].delivery_id == "comment-IC_2"
+
+
+def test_failed_spawn_is_retried_then_given_up_and_rearms(tmp_path):
+    """A spawn that never yields a session is retried up to maxRetries, then
+    given up (poll.spawn_failed); a new comment re-arms it (AC3, AC6)."""
+    ref = "github:octo/repo#15"
+    registry = SessionRegistry(tmp_path / "sessions")  # no session ever appears
+    state = PollState(tmp_path / "state.json")
+    comments = []
+    provider = FakeProvider(items=[_item(15)], comments={15: comments})
+    disp = RecordingDispatcher()
+    poller = make_poller(provider, registry, disp, state, max_retries=2)
+
+    poller.poll_once()  # first sight -> spawn attempt 1
+    poller.poll_once()  # retry -> attempt 2
+    assert len([e for e in disp.events if e.event == "issues"]) == 2
+    assert state.spawn_attempts(ref) == 2
+
+    summary = poller.poll_once()  # budget exhausted -> give up
+    assert summary.failures == 1 and state.spawn_gave_up(ref) is True
+    poller.poll_once()  # stays given up: no more presence events
+    assert len([e for e in disp.events if e.event == "issues"]) == 2
+
+    comments.append(_comment("IC_1"))  # new activity re-arms the spawn
+    poller.poll_once()
+    assert state.spawn_gave_up(ref) is False
+    assert len([e for e in disp.events if e.event == "issues"]) == 3
+
+
+def test_dormant_known_item_without_session_does_not_spawn(tmp_path):
+    """A known item with no session, no new activity and no spawn in progress
+    must not spontaneously start spawning."""
+    ref = "github:octo/repo#15"
+    state = PollState(tmp_path / "state.json")
+    state.baseline_comments(ref, ["IC_1"], "t")  # known, spawn never armed
+    provider = FakeProvider(items=[_item(15)], comments={15: [_comment("IC_1")]})
+    disp = RecordingDispatcher()
+    summary = make_poller(
+        provider, SessionRegistry(tmp_path / "sessions"), disp, state
+    ).poll_once()
+    assert summary.spawns == 0 and disp.events == []
+
+
+def test_giveup_emits_terminal_events(tmp_path):
+    """poll.comment_failed / poll.spawn_failed land in the event log with
+    will_retry=False when a budget is exhausted."""
+    from the_loop import eventlog
+
+    log_path = tmp_path / "events.jsonl"
+    eventlog.configure("poll", path=log_path, enabled=True)
+    try:
+        ref = "github:octo/repo#15"
+        registry = _with_session(tmp_path)
+        state = PollState(tmp_path / "state.json")
+        state.baseline_comments(ref, [], "t")
+        provider = FakeProvider(items=[_item(15)], comments={15: [_comment("IC_1")]})
+        disp = RecordingDispatcher()
+        poller = make_poller(provider, registry, disp, state, max_retries=1)
+        poller.poll_once()  # attempt 1
+        poller.poll_once()  # give up
+        failed = list(eventlog.read_events(log_path, types=["poll.comment_failed"]))
+        assert failed and failed[0]["work_item"] == ref
+        assert failed[0]["will_retry"] is False
+    finally:
+        eventlog.reset()
+
+
 # -- authorization guard (prompt-injection remediation) -----------------------
 
 
@@ -565,7 +786,7 @@ def test_poller_drops_comment_from_unauthorized_author(tmp_path):
     registry = SessionRegistry(tmp_path / "sessions")
     registry.register(Session(WorkItemRef.parse(ref), "claude", "s", "."))
     state = PollState(tmp_path / "state.json")
-    state.update(ref, ["IC_1"], "t")
+    state.baseline_comments(ref, ["IC_1"], "t")
     provider = FakeProvider(
         items=[_item(15, author="me")],
         comments={
@@ -618,7 +839,7 @@ def test_poller_does_not_forward_its_own_marked_reply(tmp_path):
     registry = SessionRegistry(tmp_path / "sessions")
     registry.register(Session(WorkItemRef.parse(ref), "claude", "s", "."))
     state = PollState(tmp_path / "state.json")
-    state.update(ref, ["IC_1"], "t")
+    state.baseline_comments(ref, ["IC_1"], "t")
     provider = FakeProvider(
         items=[_item(15, author="me")],
         comments={
@@ -649,7 +870,7 @@ def test_poller_does_not_spawn_from_own_self_marked_comment(tmp_path):
     # session that already ended) must not resurrect one.
     ref = "github:octo/repo#15"
     state = PollState(tmp_path / "state.json")
-    state.update(ref, ["IC_1"], "t")  # known, but no session registered
+    state.baseline_comments(ref, ["IC_1"], "t")  # known, but no session registered
     provider = FakeProvider(
         items=[_item(15, author="me")],
         comments={

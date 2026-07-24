@@ -699,6 +699,29 @@ def test_dispatcher_still_resumes_on_pr_events_that_are_not_close(tmp_path):
     assert registry.find_by_work_item(REF) is not None  # not closed
 
 
+# -- delivery status for poll-path retry accounting (issue-80) ----------------
+
+
+def test_delivery_status_done_inflight_unhandled(tmp_path):
+    adapter = FakeAdapter()
+    registry, dispatcher = make_dispatcher(tmp_path, adapter)
+    registry.register(make_session())
+    refs = [WorkItemRef.parse(REF)]
+
+    # never sent / no id
+    assert dispatcher.delivery_status("nope", refs) == "unhandled"
+    assert dispatcher.delivery_status("", refs) == "unhandled"
+
+    # in the in-memory dedup cache (enqueued/processing) -> inflight
+    dispatcher.deduper.add("d-flight")
+    assert dispatcher.delivery_status("d-flight", refs) == "inflight"
+
+    # recorded in the session's durable recent_deliveries -> done (wins over cache)
+    registry.touch(REF, delivery_id="d-done")
+    dispatcher.deduper.add("d-done")
+    assert dispatcher.delivery_status("d-done", refs) == "done"
+
+
 # -- `the-loop sessions` command (R2.2) ----------------------------------------
 
 

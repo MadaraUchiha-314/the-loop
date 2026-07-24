@@ -64,6 +64,10 @@ class TmuxResult:
 
     ok: bool
     error: str = ""
+    # Set only when a delivery failed because the target tmux session is gone
+    # (crashed/killed) — the *terminal* fault the dispatcher recovers from by
+    # respawning, as opposed to a transient tmux error (issue-80).
+    session_missing: bool = False
 
 
 def check_dependencies(runner: str, web_enabled: bool) -> List[str]:
@@ -220,9 +224,10 @@ class TmuxRunner:
         if not self.has_session(target):
             return TmuxResult(
                 ok=False,
+                session_missing=True,
                 error=(
                     f"tmux session {target} not found (crashed or was killed); "
-                    "GitHub redelivery will retry this event"
+                    "respawning a fresh session and delivering this event into it"
                 ),
             )
         fd, path = tempfile.mkstemp(prefix="the-loop-evt-")
