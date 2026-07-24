@@ -45,8 +45,9 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   (`Dispatcher.delivery_status`: done/inflight/unhandled) rather than assuming success at
   enqueue time. (The webhook path relies on GitHub redelivery, repaired for dead tmux
   sessions by the respawn above — see [interactive-sessions](interactive-sessions.md).)
-- WHEN `routing.reactions.enabled` is on (default **off** — opt-in, it is the daemon's
-  first write surface to GitHub) THEN the dispatcher SHALL acknowledge each event it
+- WHEN `routing.reactions.enabled` is on (default **on** — owner decision at PR #85
+  review; `enabled: false` opts out of the daemon's one write surface to GitHub) THEN
+  the dispatcher SHALL acknowledge each event it
   processes with emoji reactions on the triggering entity: the `started` reaction
   (default 👀 `eyes`) when the event is dequeued for delivery/spawn, then `completed`
   (default 🎉 `hooray`) or `error` (default 😕 `confused`) from the dispatch outcome —

@@ -64,8 +64,8 @@ webhooks:
       # processing an event. GitHub's palette is fixed (+1 -1 laugh confused heart
       # hooray rocket eyes) — ✅/⁉️ don't exist, so defaults are the closest match.
       # Best-effort via the operator's gh CLI; no-op when gh is absent, a state is
-      # "", or the event has no reactable GitHub target. Default false (opt-in:
-      # this posts with YOUR gh auth) — enabled here to dogfood.
+      # "", or the event has no reactable GitHub target. Default true (owner
+      # decision, PR #85); posts with YOUR gh auth — set enabled: false to opt out.
       reactions:
         enabled: true
         started: eyes               # 👀 event dequeued for delivery/spawn

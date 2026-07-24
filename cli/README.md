@@ -141,7 +141,7 @@ rocket eyes`) — ✅/⁉️ don't exist, so the defaults are the closest suppor
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `enabled` | boolean | `false` | Opt-in: reacting is the daemon's first **write** to GitHub, posted with your own `gh` auth — never turned on silently. |
+| `enabled` | boolean | `true` | On by default (owner decision, PR #85): reacting is the daemon's one **write** to GitHub, posted with your own `gh` auth, reaction-only, and a silent no-op without `gh`. Set `false` to opt out. |
 | `started` | palette name \| `""` | `eyes` | Reaction added when the event is dequeued for delivery/spawn. `""` skips this state. |
 | `completed` | palette name \| `""` | `hooray` | Reaction added when the dispatch succeeds. `""` skips this state. |
 | `error` | palette name \| `""` | `confused` | Reaction added when the dispatch fails or the worker crashes. `""` skips this state. |

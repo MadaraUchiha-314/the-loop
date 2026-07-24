@@ -46,7 +46,7 @@ sequenceDiagram
 
 ### `ReactionConfig`
 
-Dataclass mirror of `routing.reactions` (`enabled` default **False**,
+Dataclass mirror of `routing.reactions` (`enabled` default **True**,
 `started="eyes"`, `completed="hooray"`, `error="confused"`, `gh_binary="gh"`),
 with `from_mapping` following the existing `*Config.from_mapping` idiom and a
 `content_for(state)` accessor. The state names are module constants
@@ -138,8 +138,12 @@ at warning level and returns `False` — never raises (AC1.5).
 - **Completed ≠ removing 👀.** The started reaction stays — reactions are an
   append-only visible trail (👀 then 🎉), and removal would need reaction-id
   bookkeeping for no user value.
-- **Default off.** First GitHub write surface of the daemon → opt-in, matching
-  the CLI's fail-closed philosophy (see requirements security section).
+- **Default on (owner decision).** Drafted default-off (first daemon write
+  surface → conservative opt-in); the owner explicitly chose default-on at
+  PR #85 review — visibility out of the box is the feature's point, and the
+  write is reaction-only, best-effort, and a no-op without `gh`. Tests stay
+  hermetic via a conftest autouse fixture that stubs the dispatcher's default
+  reactor (reaction tests inject their own).
 
 ## Error handling
 

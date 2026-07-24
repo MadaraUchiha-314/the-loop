@@ -57,6 +57,20 @@ status: in-progress
 - **Next:** open PR with the reviewer briefing; request review.
 - **Blockers:** none.
 
+### 2026-07-24 — owner decision on PR #85: default-on
+
+- **Decision:** the owner answered the briefing's open question — reactions
+  default to **enabled: true** (was drafted default-off as the conservative
+  posture for the daemon's first GitHub write). Paper trail: the owner's
+  comment on PR #85 ("default should be on").
+- **Did:** flipped the default in `ReactionConfig` (+ `from_mapping`), the
+  config schema, both `cli-config.yaml`s (repo + template), README, capability
+  doc and this spec (AC2.3, security section, design decision). Added a
+  conftest autouse fixture stubbing the dispatcher's default reactor so the
+  suite stays hermetic now that a bare `RoutingConfig()` enables reactions;
+  updated the default-asserting tests.
+- **Checkpoint/tests:** `make check` green again.
+
 ## Review cycles
 
 | Cycle | Type (self/critic) | Reviewer | Outcome | Link |

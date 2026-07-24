@@ -10,8 +10,9 @@ succeeds, and *error* (default 😕 ``confused``) when it fails.
 GitHub's reaction palette is fixed (``+1 -1 laugh confused heart hooray rocket
 eyes``) — ✅/⁉️ from the original ask do not exist, so the defaults map each
 state to the closest supported emoji and the mapping is operator-configurable
-(``webhooks.ghWebhook.routing.reactions`` in the CLI config; disabled by
-default — this is the daemon's first write surface to GitHub).
+(``webhooks.ghWebhook.routing.reactions`` in the CLI config). Enabled by
+default (owner decision on PR #85 — visibility out of the box is the point);
+set ``enabled: false`` to opt out of the daemon's one write surface to GitHub.
 
 Everything is best-effort by design: a reaction must never fail, delay or drop
 the dispatch itself, so every failure inside this module degrades to a logged
@@ -71,7 +72,7 @@ _NODE_ID_RE = re.compile(r"^[A-Za-z0-9_=+/-]+$")  # GraphQL node ids
 class ReactionConfig:
     """Mirror of ``webhooks.ghWebhook.routing.reactions`` (see config schema)."""
 
-    enabled: bool = False
+    enabled: bool = True
     started: str = "eyes"
     completed: str = "hooray"
     error: str = "confused"
@@ -81,7 +82,7 @@ class ReactionConfig:
     def from_mapping(cls, data: dict) -> "ReactionConfig":
         data = data or {}
         return cls(
-            enabled=bool(data.get("enabled", False)),
+            enabled=bool(data.get("enabled", True)),
             started=str(data.get("started", "eyes")),
             completed=str(data.get("completed", "hooray")),
             error=str(data.get("error", "confused")),

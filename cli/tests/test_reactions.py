@@ -43,9 +43,9 @@ def comment_payload(comment, event_repo="octo/repo"):
 # -- ReactionConfig -------------------------------------------------------------
 
 
-def test_reaction_config_defaults_are_off_and_closest_palette():
+def test_reaction_config_defaults_are_on_with_closest_palette():
     config = ReactionConfig.from_mapping({})
-    assert config.enabled is False  # opt-in: the daemon's first GitHub write
+    assert config.enabled is True  # default-on: owner decision, PR #85
     assert (config.started, config.completed, config.error) == (
         "eyes",
         "hooray",

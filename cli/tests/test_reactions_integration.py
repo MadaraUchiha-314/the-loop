@@ -229,7 +229,7 @@ def test_unprocessed_events_get_no_reaction(tmp_path, monkeypatch):
 def test_reactions_disabled_posts_nothing(tmp_path, monkeypatch):
     """
     Feature: Dispatch-lifecycle emoji reactions
-    Scenario: The feature is disabled (the default)
+    Scenario: The operator opts out
       Given routing.reactions.enabled is false
       When a comment event is dispatched successfully
       Then no gh invocation happens at all
@@ -240,7 +240,7 @@ def test_reactions_disabled_posts_nothing(tmp_path, monkeypatch):
         tmp_path,
         adapter,
         monkeypatch,
-        reactions=ReactionConfig(),  # default: disabled
+        reactions=ReactionConfig(enabled=False),
     )
     dispatcher.registry.register(make_session())
     dispatcher.handle(routed_comment())

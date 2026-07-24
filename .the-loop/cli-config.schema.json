@@ -190,8 +190,8 @@
                   "properties": {
                     "enabled": {
                       "type": "boolean",
-                      "default": false,
-                      "description": "Opt-in (default false): reacting is the daemon's first WRITE to GitHub and posts with the operator's own gh credentials, so it is never turned on silently."
+                      "default": true,
+                      "description": "Default true (owner decision, PR #85 — out-of-box visibility is the feature's point). Reacting is the daemon's one WRITE to GitHub, posted with the operator's own gh credentials and reaction-only (no text); it degrades to a silent no-op when gh is absent. Set false to opt out."
                     },
                     "started": {
                       "type": "string",

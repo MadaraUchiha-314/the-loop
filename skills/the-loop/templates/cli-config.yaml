@@ -63,10 +63,11 @@ webhooks:
       # comment (or the issue/PR itself) that the-loop started / completed / failed
       # processing an event. GitHub's palette is fixed (+1 -1 laugh confused heart
       # hooray rocket eyes) — ✅/⁉️ don't exist, so defaults are the closest match.
-      # Best-effort via YOUR gh CLI (opt-in — this posts with your gh auth); no-op
-      # when gh is absent, a state is "", or the event has no reactable target.
+      # Best-effort via YOUR gh CLI (posts with your gh auth; default on — set
+      # enabled: false to opt out); no-op when gh is absent, a state is "", or
+      # the event has no reactable target.
       reactions:
-        enabled: false
+        enabled: true
         started: eyes               # 👀 event dequeued for delivery/spawn
         completed: hooray           # 🎉 dispatch succeeded
         error: confused             # 😕 dispatch failed / worker crashed

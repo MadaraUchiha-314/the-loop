@@ -81,11 +81,13 @@ the feature off) in `cli-config.yaml`, so the acknowledgement style is mine.
 2. Each state SHALL accept one of GitHub's supported reaction names
    (`+1 -1 laugh confused heart hooray rocket eyes`) or `""` (skip that state),
    enforced by `cli-config.schema.json`.
-3. `enabled` SHALL default to **false** (opt-in): reacting posts to GitHub with
-   the operator's own `gh` credentials, and the daemon previously never wrote
-   to GitHub — turning that on silently on upgrade would violate the CLI's
-   fail-closed philosophy. (the-loop's own checked-in `cli-config.yaml`
-   enables it — dogfooding.)
+3. `enabled` SHALL default to **true** (owner decision, [PR #85 review
+   comment](https://github.com/MadaraUchiha-314/the-loop/pull/85)): out-of-box
+   visibility is the feature's point, the write is reaction-only (no text),
+   and it degrades to a silent no-op when `gh` is absent. `enabled: false`
+   opts out. *(Originally drafted default-off as the conservative posture for
+   the daemon's first GitHub write; flipped on the owner's explicit call —
+   the paper trail is the PR comment.)*
 4. WHEN the CLI config file is edited while the receiver/poller runs THEN the
    reactions config SHALL hot-reload with the rest of the soft routing policy.
 
@@ -136,9 +138,10 @@ outcomes in the event log, so `the-loop events` shows the full story.
 - **Config injection:** the reaction content is operator-controlled config,
   validated against the fixed palette (schema + runtime check); an unknown
   value is skipped with a warning, never passed through.
-- **Fail closed:** disabled by default; any doubt (no target, non-GitHub
-  provider, missing gh, invalid content) resolves to a no-op, never to a
-  blocked or altered dispatch.
+- **Fail closed on doubt:** any doubt (no target, non-GitHub provider,
+  missing gh, invalid content) resolves to a no-op, never to a blocked or
+  altered dispatch. Default-on is an explicit owner decision (PR #85): the
+  write surface is reaction-only, posts no text, and no-ops without `gh`.
 - **Abuse case — reaction spam:** a retried event re-adds the same reaction;
   GitHub treats a duplicate reaction by the same user as idempotent, so
   retries cannot accumulate spam.
