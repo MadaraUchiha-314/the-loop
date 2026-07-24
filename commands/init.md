@@ -59,7 +59,7 @@ plugin's root directory; in Cursor, resolve it to the plugin's install directory
 2. **Onboard the config with the user (guided, grouped, schema-driven).** Do not dump
    a config file and walk away — establish it together, following the skill's
    `reference/onboarding.md` procedure exactly. The schema's `x-onboarding.groups`
-   (in `config.schema.json`) defines the ordered config groups (related keys that
+   (in `harness-config.schema.json`) defines the ordered config groups (related keys that
    interact, clubbed together) and each group's `ask` level:
    - `always` groups (e.g. **Project & ticketing**, **People & communication**) have
      no sensible default — establish them with the user.
@@ -81,7 +81,7 @@ plugin's root directory; in Cursor, resolve it to the plugin's install directory
    **Also ask about the CLI daemon config (one plain question, not a grouped
    onboarding — decision-032).** The-loop's CLI (`gh-webhook`/`poll`/`sessions`/
    `events`) reads a separate, independent `cli-config.yaml` — not this repo's
-   `.the-loop/config.yaml` — resolved via `--config`/`$THE_LOOP_CLI_CONFIG`/
+   `.the-loop/harness-config.yaml` — resolved via `--config`/`$THE_LOOP_CLI_CONFIG`/
    `./.the-loop/cli-config.yaml`/`~/.the-loop/cli-config.yaml` (see `cli/README.md`).
    Ask: *"Do you want the CLI daemon's config tracked and versioned in this repo
    (scaffolds `.the-loop/cli-config.yaml`, picked up automatically when you run
@@ -100,15 +100,15 @@ plugin's root directory; in Cursor, resolve it to the plugin's install directory
    Create the following where missing (never overwrite user-owned files). Scaffold each
    from its template under `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/` — **do not**
    copy the templates directory itself into the project (templates are internal to the-loop):
-   - `.the-loop/config.yaml` — from the template, with the detected defaults and the
+   - `.the-loop/harness-config.yaml` — from the template, with the detected defaults and the
      answers established in step 2 applied.
-   - `.the-loop/config.schema.json` — copy of the schema.
+   - `.the-loop/harness-config.schema.json` — copy of the schema.
    - `.the-loop/manifest.yaml` — the manifest.
    - `.the-loop/collaborators.yaml` — from templates (user-owned). External tools are
      declared inline in `config.externalTools`, not a separate file (issue-37).
    - **Only if step 2 answered "track it here":** `.the-loop/cli-config.yaml` — from
      `templates/cli-config.yaml`, and `.the-loop/cli-config.schema.json` (copy of the
-     schema, alongside `config.schema.json`). Never scaffolded on the home-directory
+     schema, alongside `harness-config.schema.json`). Never scaffolded on the home-directory
      answer or under `--defaults`.
    - `docs/architecture/architecture.md`, `docs/decisions/decisions.md`,
      `docs/specs/` (per-work-item Kiro specs + execution logs).
@@ -120,15 +120,17 @@ plugin's root directory; in Cursor, resolve it to the plugin's install directory
    create issue labels; on Jira create the equivalent statuses/labels. Skip any that
    already exist.
 
-5. **Validate** the generated `.the-loop/config.yaml` against
-   `.the-loop/config.schema.json` (and, if scaffolded, `.the-loop/cli-config.yaml`
+5. **Validate** the generated `.the-loop/harness-config.yaml` against
+   `.the-loop/harness-config.schema.json` and `.the-loop/collaborators.yaml` against
+   `.the-loop/collaborators.schema.json` (and, if scaffolded, `.the-loop/cli-config.yaml`
    against `.the-loop/cli-config.schema.json`). Report any gaps the user must fill
-   (e.g. empty `personas`, `ticketing.github.owner`).
+   (e.g. empty `collaborators`, `ticketing.github.owner`).
 
-6. **Confirm collaborators & personas.** If `personas`/collaborators are still empty
-   after the onboarding (step 2), ask the user (via a ticket comment if a ticket
-   exists, otherwise interactively) to define at least one approver. RULE: every
-   decision needs a paper trail.
+6. **Confirm collaborators.** If `.the-loop/collaborators.yaml` is still empty after
+   the onboarding (step 2), ask the user (via a ticket comment if a ticket exists,
+   otherwise interactively) to define at least one collaborator holding the approver
+   role — collaborators.yaml is the single source for people and their notification
+   channels (issue-82, decision-035). RULE: every decision needs a paper trail.
 
 7. **Wire local hooks & CI parity.** Set up pre-commit / pre-push hooks that run the
    `hooks.preCommit` / `hooks.prePush` steps (lint, typecheck, unit-test) using the

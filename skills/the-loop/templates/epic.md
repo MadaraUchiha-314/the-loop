@@ -4,7 +4,7 @@ id: ""                       # ticket id, e.g. issue-12 or PROJ-12
 title: ""
 status: draft                # draft | ready | in-progress | in-review | done
 collaborators: []            # roles/handles required up-front, e.g. [product-manager, architect]
-# --- per-task overrides of .the-loop/config.yaml (optional) ---
+# --- per-task overrides of .the-loop/harness-config.yaml (optional) ---
 overrides: {}
   # reviews:
   #   selfReviewCount: 1

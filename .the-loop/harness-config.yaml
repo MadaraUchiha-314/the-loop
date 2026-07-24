@@ -1,10 +1,13 @@
-# .the-loop/config.yaml — PLUGIN configuration for the-loop's own repository
-# (installed here as a Claude/Cursor plugin). Validated against
-# .the-loop/config.schema.json. The CLI daemon (gh-webhook/poll/sessions/events)
-# reads a separate, repo-independent file instead — see .the-loop/cli-config.yaml
-# and decision-032.
+# .the-loop/harness-config.yaml — HARNESS (plugin) configuration for the-loop's
+# own repository (installed here as a Claude/Cursor plugin). Formerly config.yaml
+# (renamed in issue-82, decision-035). Validated against
+# .the-loop/harness-config.schema.json. People live in .the-loop/collaborators.yaml
+# (the single source for collaborators + their notification channels); this file
+# references roles only. The CLI daemon (gh-webhook/poll/sessions/events) reads a
+# separate, repo-independent file instead — see .the-loop/cli-config.yaml and
+# decision-032.
 
-version: "0.1.0"
+version: "0.2.0"
 
 ticketing:
   system: github
@@ -103,7 +106,7 @@ autonomy:
   inferFromChange: true
   sensitivePaths:
     - "**/*schema*"
-    - ".the-loop/config.schema.json"
+    - ".the-loop/harness-config.schema.json"
     - ".github/workflows/**"
   tiers:
     "1": autonomous-complete
@@ -198,13 +201,18 @@ userInteraction:
     documentInsightsAndDecisions: true
   educateUser: true               # mandatory, not optional
 
-personas:
-  - handle: "@MadaraUchiha-314"
-    kind: individual
-    roles: [product-manager, architect, engineer, approver]
-
-messaging:
-  channels: []
+# People (formerly `personas`/`messaging`) live in .the-loop/collaborators.yaml —
+# the single source for collaborators and their notification channels (issue-82,
+# decision-035). Here: which harness-raised events notify which ROLES.
+notifications:
+  enabled: true
+  events:
+    decision-pending: [approver]
+    phase-approval-pending: [approver]
+    pr-review-pending: [reviewer, approver]
+    security-sign-off-pending: [approver]
+    conflict-escalated: [approver]
+    # work-item-complete: []      # omitted = nobody notified
 
 externalTools:                    # inline registry — one YAML for easy onboarding (issue-37)
   tools:

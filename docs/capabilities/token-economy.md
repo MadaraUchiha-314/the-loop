@@ -61,8 +61,8 @@ Pointers, not copies:
 
 - Levers & loading map: [`skills/the-loop/reference/token-economy.md`](../../skills/the-loop/reference/token-economy.md).
 - Generation-side rung: [`skills/the-loop/reference/minimalism.md`](../../skills/the-loop/reference/minimalism.md).
-- Config contract: `.the-loop/config.schema.json` (`tokenEconomy`, `$defs.modelTier`) and
-  the annotated `.the-loop/templates/config.yaml`.
+- Config contract: `.the-loop/harness-config.schema.json` (`tokenEconomy`, `$defs.modelTier`) and
+  the annotated `.the-loop/templates/harness-config.yaml`.
 - Telemetry parsing: `cli/the_loop/harness/base.py` (`Usage`, `_usage_from_output`) with
   per-dispatch logging in `cli/the_loop/webhook/dispatcher.py`.
 - Runner interplay (resident tmux vs. cold `-p --resume` re-priming):

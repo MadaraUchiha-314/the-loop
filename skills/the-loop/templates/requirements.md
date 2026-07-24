@@ -5,7 +5,7 @@ workItem: ""                 # ticket id this spec delivers
 status: draft                # draft | in-review | approved
 approvedBy: []               # handles/roles who approved this phase (paper trail)
 collaborators: []            # roles required up-front, e.g. [product-manager, architect]
-overrides: {}                # per-task overrides of .the-loop/config.yaml
+overrides: {}                # per-task overrides of .the-loop/harness-config.yaml
 ---
 
 # Requirements: <work item title>

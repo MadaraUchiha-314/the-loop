@@ -3,7 +3,7 @@
 The CLI daemon (``gh-webhook``/``poll``/``sessions``/``events``) is expected to
 work across multiple repos and is not tied to a single one (issue-63,
 decision-032), so its settings (``webhooks``/``polling``/``eventLog``) do not
-live in a repo's ``.the-loop/config.yaml`` — that is the PLUGIN config
+live in a repo's ``.the-loop/harness-config.yaml`` — that is the HARNESS (plugin) config
 ``/the-loop:*`` commands and the skill read. The CLI config file is named
 ``cli-config.yaml`` everywhere it's resolved, in priority order:
 

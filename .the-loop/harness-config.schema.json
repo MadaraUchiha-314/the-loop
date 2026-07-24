@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/MadaraUchiha-314/the-loop/.the-loop/config.schema.json",
+  "$id": "https://github.com/MadaraUchiha-314/the-loop/.the-loop/harness-config.schema.json",
   "title": "the-loop plugin configuration",
-  "description": "Schema for .the-loop/config.yaml — the PLUGIN config, installed per repo (Claude/Cursor plugin) and read by /the-loop:* commands and the skill working that repo. A subset of these keys may be overridden per work-item via the YAML front-matter of the work-item / spec markdown. The CLI daemon (gh-webhook/poll/sessions/events) reads a separate, repo-independent CLI config instead — see .the-loop/cli-config.schema.json (decision-032).",
+  "description": "Schema for .the-loop/harness-config.yaml (formerly config.yaml — renamed in issue-82, decision-035) — the HARNESS (plugin) config, installed per repo (Claude/Cursor plugin) and read by /the-loop:* commands and the skill working that repo. A subset of these keys may be overridden per work-item via the YAML front-matter of the work-item / spec markdown. People live elsewhere: collaborators and their notification channels are defined in .the-loop/collaborators.yaml (collaborators.schema.json) — this file references ROLES only (notifications.events). The CLI daemon (gh-webhook/poll/sessions/events) reads a separate, repo-independent CLI config instead — see .the-loop/cli-config.schema.json (decision-032).",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "ticketing", "repository", "reviews"],
@@ -76,8 +76,8 @@
         "id": "people",
         "title": "People & communication",
         "ask": "always",
-        "explain": "Who approves work (personas/roles — every decision needs a paper trail), optional notification channels, and how the harness presents work to and educates humans.",
-        "keys": ["personas", "messaging", "userInteraction"]
+        "explain": "Who approves work and how they are reached: collaborators (people, roles, notification channels) live in .the-loop/collaborators.yaml (collaborators.schema.json) — init establishes that file in this group. Here the group covers which events notify which ROLES (notifications) and how the harness presents work to and educates humans (userInteraction). Every decision needs a paper trail, so at least one collaborator must hold the approver role.",
+        "keys": ["notifications", "userInteraction"]
       },
       {
         "id": "contracts-design",
@@ -911,43 +911,50 @@
         }
       }
     },
-    "personas": {
-      "type": "array",
-      "description": "People and groups available to collaborate. A user can hold multiple roles. RULE: every decision needs a paper trail, so at least one approver must be defined.",
-      "examples": [[{ "handle": "@MadaraUchiha-314", "kind": "individual", "roles": ["product-manager", "architect", "engineer", "approver"] }]],
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["handle", "roles"],
-        "properties": {
-          "handle": { "type": "string", "description": "GitHub handle or group, e.g. @octocat or @org/team." },
-          "kind": { "type": "string", "enum": ["individual", "group"], "default": "individual" },
-          "roles": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-              "type": "string",
-              "enum": ["product-manager", "architect", "designer", "engineer", "qa", "reviewer", "approver"]
-            }
-          }
-        }
-      }
-    },
-    "messaging": {
+    "notifications": {
       "type": "object",
-      "description": "Optional channels for notifying/escalating to humans when a decision is pending.",
+      "description": "Which harness-raised events notify which ROLES (issue-82, decision-035). Recipients are resolved from .the-loop/collaborators.yaml: for each listed role, every collaborator holding it whose notifications are enabled is notified on their enabled channels. Notification-only — the decision itself always lands as a ticket/PR comment (the paper trail). Replaces the retired global `messaging`/`personas` keys: people and their channels now live ONLY in collaborators.yaml. Daemon-side events (dispatch failures, session crashes, …) are filtered separately in cli-config.yaml.",
       "additionalProperties": false,
       "properties": {
-        "channels": {
-          "type": "array",
-          "examples": [[{ "type": "slack", "target": "#the-loop" }]],
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["type"],
-            "properties": {
-              "type": { "type": "string", "enum": ["slack", "whatsapp", "email"] },
-              "target": { "type": "string" }
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Master switch for harness-raised notifications."
+        },
+        "events": {
+          "type": "object",
+          "description": "Event → roles to notify. Omitting an event means nobody is notified for it. The event names are the canonical harness-side taxonomy; each value lists the roles whose holders (from collaborators.yaml) get pinged.",
+          "additionalProperties": false,
+          "properties": {
+            "decision-pending": {
+              "type": "array",
+              "items": { "type": "string", "enum": ["product-manager", "architect", "designer", "engineer", "qa", "reviewer", "approver"] },
+              "description": "A planning/design question or opinion awaits a human (asked as a ticket comment)."
+            },
+            "phase-approval-pending": {
+              "type": "array",
+              "items": { "type": "string", "enum": ["product-manager", "architect", "designer", "engineer", "qa", "reviewer", "approver"] },
+              "description": "A spec phase gate (requirements/design/tasks) awaits human review/approval."
+            },
+            "pr-review-pending": {
+              "type": "array",
+              "items": { "type": "string", "enum": ["product-manager", "architect", "designer", "engineer", "qa", "reviewer", "approver"] },
+              "description": "A PR is ready for human review (reviewer briefing posted)."
+            },
+            "security-sign-off-pending": {
+              "type": "array",
+              "items": { "type": "string", "enum": ["product-manager", "architect", "designer", "engineer", "qa", "reviewer", "approver"] },
+              "description": "A security review at or above security.review.humanSignOffMinTier needs a named human sign-off."
+            },
+            "conflict-escalated": {
+              "type": "array",
+              "items": { "type": "string", "enum": ["product-manager", "architect", "designer", "engineer", "qa", "reviewer", "approver"] },
+              "description": "A blocked conflict/ambiguity was escalated (logged in docs/decisions/conflicts.md)."
+            },
+            "work-item-complete": {
+              "type": "array",
+              "items": { "type": "string", "enum": ["product-manager", "architect", "designer", "engineer", "qa", "reviewer", "approver"] },
+              "description": "A work item reached the complete phase."
             }
           }
         }

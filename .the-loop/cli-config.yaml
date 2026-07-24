@@ -69,3 +69,29 @@ polling:
 eventLog:                           # structured JSONL o11y trail; `the-loop events`
   enabled: true
   path: .the-loop/logs/events.jsonl
+
+# The operator's own notification recipients (issue-82, decision-035) — the same
+# collaborator structure as .the-loop/collaborators.schema.json, DECLARED here:
+# the CLI daemon never reads any repo's collaborators.yaml.
+collaborators: []
+  # - handle: "@MadaraUchiha-314"
+  #   kind: individual
+  #   roles: [engineer, approver]
+  #   notifications:
+  #     enabled: true
+  #     channels:
+  #       - type: slack             # only supported type for now
+  #         enabled: true
+  #         via: mcp                # mcp | cli | api
+  #         config:
+  #           channel-list: []      # e.g. ["#the-loop-daemon"]
+
+# Which DAEMON-side events notify which roles from `collaborators` above.
+# Disjoint from the harness-side taxonomy in harness-config.yaml.
+notifications:
+  enabled: true
+  events: {}                        # event → roles; omitted event = nobody notified
+    # work-item-spawned: [engineer]
+    # dispatch-failed: [engineer]
+    # session-died: [engineer]
+    # event-dropped-unauthorized: [engineer]

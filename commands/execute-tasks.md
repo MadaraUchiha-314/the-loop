@@ -12,7 +12,7 @@ and **design.md** — the implementation → review portion of the loop. A slice
 
 **Read the `the-loop` skill, `reference/workflow.md`, `reference/context.md` and
 `reference/tooling.md` first.**
-Load `.the-loop/config.yaml`; read every custom instruction doc it registers
+Load `.the-loop/harness-config.yaml`; read every custom instruction doc it registers
 (`customInstructions.docs`, in order — the operator's conventions and styles,
 `reference/instructions.md`); apply any per-task `overrides` from the spec front-matter.
 
@@ -51,7 +51,9 @@ locked spec files read from disk, not the drafting conversation (plan-mode style
    `reference/security.md`); risk tier ≥ `security.review.humanSignOffMinTier` waits
    for a named human security sign-off. Record every review as a PR/ticket comment and
    in the log's review table (the security round in its Security review section).
-   Notify via configured messaging channels when a human action is pending.
+   Notify per the `notifications.events` filters (harness-config.yaml), resolving
+   recipients by role from `.the-loop/collaborators.yaml`, when a human action is
+   pending.
 
 4. **Evidence + reviewer briefing (required gate).** Present validated evidence that the
    acceptance criteria are met (tests, screenshots, logs). BEFORE requesting human

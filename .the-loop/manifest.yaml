@@ -8,10 +8,10 @@ theLoopVersion: "0.1.0"
 
 # Files internal to the-loop (meta). These live under .the-loop/.
 meta:
-  - path: .the-loop/config.yaml
+  - path: .the-loop/harness-config.yaml
     role: project-config
     managed: true
-  - path: .the-loop/config.schema.json
+  - path: .the-loop/harness-config.schema.json
     role: config-schema
     managed: true
   - path: .the-loop/manifest.yaml
@@ -19,7 +19,10 @@ meta:
     managed: true
   - path: .the-loop/collaborators.yaml
     role: collaborators
-    managed: false
+    managed: true   # single source for people + notification channels (issue-82, decision-035)
+  - path: .the-loop/collaborators.schema.json
+    role: collaborators-schema
+    managed: true
   - path: .the-loop/cli-config.yaml
     role: cli-config
     managed: true
@@ -46,6 +49,21 @@ deprecated:
       Templates are now internal to the-loop (issue #36) and live with the plugin's skill
       under skills/the-loop/templates/; they are no longer copied into each project.
     removeIn: "0.5.0"
+  - path: .the-loop/config.yaml
+    role: project-config
+    reason: >-
+      Renamed to .the-loop/harness-config.yaml (issue #82, decision-035). Upgrade
+      MIGRATES rather than deletes: rename the file preserving user values, move the
+      retired `personas`/`messaging` keys into .the-loop/collaborators.yaml (the single
+      source for people + notification channels), and add the `notifications` event
+      filters from the template's defaults.
+    removeIn: "1.0.0"
+  - path: .the-loop/config.schema.json
+    role: config-schema
+    reason: >-
+      Renamed to .the-loop/harness-config.schema.json (issue #82, decision-035).
+      Upgrade replaces it with the current schema under the new name.
+    removeIn: "1.0.0"
 
 # Per-work-item artifacts: an optional brainstorm scratchpad, the Kiro-style 3-phase spec,
 # plus the execution log. <id> is the ticket id (e.g. issue-1, PROJ-42) — before a ticket

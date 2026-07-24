@@ -1,6 +1,6 @@
 # Testing & API-spec reference
 
-Config: `testing` and `apiSpecs` in `.the-loop/config.yaml`. This file codifies the
+Config: `testing` and `apiSpecs` in `.the-loop/harness-config.yaml`. This file codifies the
 integration-test scenario conventions and the API-contract conventions (issue #11) so
 the essence is not lost.
 

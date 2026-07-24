@@ -9,7 +9,7 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 Wrap up a work item once **all tasks are complete and reviewed**. This is the cleanup step
 of the loop; the cleanup set is intentionally **extensible** (more may be added later).
 
-**Read the `the-loop` skill and `reference/workflow.md`.** Load `.the-loop/config.yaml`.
+**Read the `the-loop` skill and `reference/workflow.md`.** Load `.the-loop/harness-config.yaml`.
 
 ## Steps
 

@@ -34,7 +34,7 @@ the projects the-loop is run on.
   `.the-loop/templates/` folder into THEN it SHALL remove that folder (per
   `manifest.deprecated`), confirming first only if the user has added their own files
   under it.
-- WHEN `/the-loop:init` scaffolds `.the-loop/config.yaml` THEN it SHALL establish the
+- WHEN `/the-loop:init` scaffolds `.the-loop/harness-config.yaml` THEN it SHALL establish the
   config with the user via a guided onboarding driven by the schema's `x-onboarding`
   groups: related keys clubbed and decided together, each group explained, enum keys
   presented with ALL possibilities, free-form keys with schema `examples`, and
@@ -45,7 +45,7 @@ the projects the-loop is run on.
   raise only gaps, never re-asking established answers.
 - WHEN `/the-loop:upgrade-the-loop` finds a removed schema key that still carries live
   operational settings (not just a stale default) THEN it SHALL migrate the data, not
-  merely flag and drop it — e.g. a pre-decision-032 `.the-loop/config.yaml` still
+  merely flag and drop it — e.g. a pre-decision-032 `.the-loop/harness-config.yaml` still
   carrying `webhooks`/`polling`/`observability.eventLog` SHALL have that block
   extracted, `eventLog`-renamed, and written to a CLI config (asking the same yes/no
   location question `/init` asks), both resulting files validated, and the migration

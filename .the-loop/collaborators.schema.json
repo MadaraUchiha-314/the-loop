@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/MadaraUchiha-314/the-loop/.the-loop/collaborators.schema.json",
+  "title": "the-loop collaborators",
+  "description": "Schema for .the-loop/collaborators.yaml — the stewards of the repository (CODEOWNERS-like) and the SINGLE source of truth for who collaborates on this project and how they are notified (issue-82, decision-035). Every recipient of a harness-raised notification is resolved from this file by role; the harness config (harness-config.yaml) references roles, never people. The CLI daemon never reads this file (decision-032/decision-035): the operator declares their own recipients, with this same collaborator structure, in cli-config.yaml.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["collaborators"],
+  "$defs": {
+    "role": {
+      "type": "string",
+      "enum": ["product-manager", "architect", "designer", "engineer", "qa", "reviewer", "approver"]
+    },
+    "notificationChannel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "description": "One communication channel a collaborator can be notified on. Notification-only: the decision itself always lands as a ticket/PR comment (the paper trail).",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["slack"],
+          "description": "Channel type. Only slack is supported for now; the enum grows as more types ship."
+        },
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Per-channel switch — a disabled channel is never used even when the collaborator's notifications are enabled."
+        },
+        "via": {
+          "type": "string",
+          "enum": ["mcp", "cli", "api"],
+          "default": "mcp",
+          "description": "How the harness interacts with the channel — the same primitives as externalTools.kind. E.g. slack via a Slack MCP server (mcp), the slack CLI (cli), or a webhook/Web API call (api)."
+        },
+        "config": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Channel-type-specific configuration. For type: slack the only key is channel-list.",
+          "properties": {
+            "channel-list": {
+              "type": "array",
+              "default": [],
+              "description": "[slack] Slack channels to notify, e.g. [\"#the-loop\", \"#eng-alerts\"]. Empty = the channel entry is declared but routes nowhere yet.",
+              "items": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "collaborator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["handle", "roles"],
+      "description": "One collaborator: an individual or a group, the roles they hold, and how to notify them. Reused verbatim by cli-config.yaml's operator-declared collaborators (same structure, declared not looked up).",
+      "properties": {
+        "handle": {
+          "type": "string",
+          "description": "GitHub handle or group, e.g. @octocat or @org/team."
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["individual", "group"],
+          "default": "individual"
+        },
+        "roles": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/role" },
+          "description": "Roles this collaborator holds. Notification event filters (harness-config.yaml notifications.events / cli-config.yaml notifications.events) target roles; recipients are resolved from this list."
+        },
+        "notifications": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "How this collaborator is notified. Absent = no notifications for them (equivalent to enabled: false).",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true,
+              "description": "Per-user master switch — false silences every channel below."
+            },
+            "channels": {
+              "type": "array",
+              "default": [],
+              "items": { "$ref": "#/$defs/notificationChannel" }
+            }
+          }
+        }
+      }
+    }
+  },
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Schema version of this file. Used by /upgrade-the-loop to reconcile.",
+      "examples": ["0.1.0"]
+    },
+    "collaborators": {
+      "type": "array",
+      "description": "The complete list of collaborators for this project, defined up-front. RULE: every decision needs a paper trail, so at least one collaborator must hold the approver role.",
+      "items": { "$ref": "#/$defs/collaborator" }
+    }
+  }
+}
