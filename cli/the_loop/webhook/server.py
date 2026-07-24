@@ -16,7 +16,7 @@ import logging
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable, Optional
 
-from .. import eventlog
+from .. import __version__, eventlog
 
 logger = logging.getLogger("the-loop.gh-webhook")
 
@@ -47,7 +47,7 @@ def make_handler(path: str, secret: Optional[str], on_event: Optional[OnEvent] =
     """Build a ``BaseHTTPRequestHandler`` subclass bound to the given config."""
 
     class _Handler(BaseHTTPRequestHandler):
-        server_version = "the-loop-gh-webhook/0.1.0"
+        server_version = f"the-loop-gh-webhook/{__version__}"
 
         def _send(self, code: int, message: str) -> None:
             payload = json.dumps({"status": message}).encode("utf-8")
