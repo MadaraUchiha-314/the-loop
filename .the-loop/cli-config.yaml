@@ -63,6 +63,7 @@ webhooks:
 polling:
   intervalSeconds: 60
   stateFile: .the-loop/poll-state.json
+  maxRetries: 3                     # per-event delivery attempts before giving up (issue-80): a failing spawn/comment is retried each cycle up to this many times, then logged (poll.*_failed) and ignored until new activity re-arms it
   sources: []                       # empty = nothing polled; this repo dogfoods webhooks, not poll
 
 eventLog:                           # structured JSONL o11y trail; `the-loop events`

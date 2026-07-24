@@ -19,8 +19,16 @@ the same conversation.
   it fail with a clear error.
 - WHEN a routed event matches a tmux-mode session THEN the rendered prompt SHALL be
   **bracketed-pasted** into the TUI (`load-buffer` → `paste-buffer -p` → `send-keys
-  Enter`), FIFO per session; failed deliveries discard the delivery id so GitHub
-  redelivery retries.
+  Enter`), FIFO per session; a delivery that fails while the session is alive discards
+  the delivery id so the next redelivery/poll retries.
+- WHEN a delivery finds the target tmux session **gone** (crashed or killed, i.e.
+  `has-session` fails) THEN the dispatcher SHALL **respawn** the harness on a fresh
+  `loop-<slug>` session — reusing the recorded harness/cwd/tmux-target — and deliver
+  the pending event as its boot prompt, re-registering the session (a new harness id,
+  preserving the processed-delivery history) and emitting `session.respawned`; a
+  respawn that cannot proceed (harness CLI missing, `tmux new-session` fails) fails the
+  dispatch and releases for retry. This is what stops a redelivery loop into a session
+  that no longer exists (issue-80).
 - WHEN a work item's PR is merged/closed (or `the-loop sessions close` runs) THEN the
   tmux session SHALL be terminated along with the registry close (best-effort when
   already gone).
@@ -53,3 +61,4 @@ the same conversation.
 |-----------|--------------|-------|
 | issue-32 | Introduced the tmux runner, `sessions attach`, the ttyd web terminal and dependency preflight | [spec](../specs/issue-32/), [decision-021](../decisions/decision-021.md) |
 | issue-65 | Fixed `poll start` never launching ttyd (it shared the tmux runner but had no web terminal start/stop of its own); factored ttyd lifecycle into a shared `the_loop.runner` helper used by both `gh-webhook start` and `poll start` | [issue](https://github.com/MadaraUchiha-314/the-loop/issues/65) |
+| issue-80 | Respawn a crashed/killed tmux session on delivery (deliver the pending event as the fresh TUI's boot prompt) instead of looping redeliveries into a session that no longer exists | [spec](../specs/issue-80/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/80) |

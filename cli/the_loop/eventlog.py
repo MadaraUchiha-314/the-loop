@@ -109,6 +109,12 @@ EVENT_TYPES: Dict[str, str] = {
     "session.spawn_failed": (
         "Spawning a session failed (work_item, harness, error; will_retry)."
     ),
+    "session.respawned": (
+        "A tmux-mode session found dead on delivery was respawned on a fresh "
+        "tmux session, and the pending event delivered as its boot prompt "
+        "(work_item, harness, harness_session_id, runner, tmux_target, "
+        "gh_event, delivery_id)."
+    ),
     "session.closed": "A session was closed in the registry (work_item).",
     "session.autoclosed": (
         "A session was auto-closed because its PR was merged/closed "
@@ -140,7 +146,17 @@ EVENT_TYPES: Dict[str, str] = {
     ),
     "poll.comment_forwarded": (
         "A new authorized comment was forwarded to the item's session "
-        "(work_item, comment_id, actor)."
+        "(work_item, comment_id, actor, attempt: which retry this was)."
+    ),
+    "poll.spawn_failed": (
+        "The poller gave up spawning a session for an item after exhausting the "
+        "retry budget (polling.maxRetries); later polls ignore it until new "
+        "activity re-arms it (work_item, attempts, will_retry=False)."
+    ),
+    "poll.comment_failed": (
+        "The poller gave up forwarding a comment after exhausting the retry "
+        "budget (polling.maxRetries); later polls ignore it (work_item, "
+        "comment_id, actor, attempts, will_retry=False)."
     ),
     # -- process lifecycle (source: gh-webhook or poll) -----------------------
     "server.started": "The webhook receiver started (host, port, path, routing).",

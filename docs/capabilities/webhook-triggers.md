@@ -33,6 +33,18 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   interactive tmux sessions and events pasted into them — see
   [interactive-sessions](interactive-sessions.md).
 - Duplicate deliveries SHALL be dropped via a dedup cache (`dedupCacheSize`).
+- On the **poll** (pull) path the-loop drives its own retries, bounded by
+  `polling.maxRetries` (default 3): WHEN a spawn or a comment forward does not succeed
+  THEN it SHALL be retried on later cycles up to the budget (a failed event is no longer
+  baselined as "processed" after one attempt), and WHEN the budget is exhausted THEN the
+  poller SHALL log a terminal failure (`poll.spawn_failed` / `poll.comment_failed`,
+  `will_retry=false`) and ignore that event on later polls until new activity re-arms it.
+  A still-processing (in-flight) dispatch SHALL NOT be counted a failed attempt, and a
+  **new** comment on a work item SHALL retrigger it with a fresh budget. The poller reads
+  the async dispatch outcome via the dispatcher's durable delivery record
+  (`Dispatcher.delivery_status`: done/inflight/unhandled) rather than assuming success at
+  enqueue time. (The webhook path relies on GitHub redelivery, repaired for dead tmux
+  sessions by the respawn above — see [interactive-sessions](interactive-sessions.md).)
 - A comment/review the-loop itself posted (identified by an embedded marker, since it
   is posted under the operator's own credentials and is otherwise indistinguishable by
   author) SHALL be dropped before dispatch, so the-loop never resumes a session on its
@@ -55,6 +67,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 |-----------|--------------|-------|
 | issue-63 | `webhooks.*` moved out of the per-repo plugin config into an independent, repo-agnostic CLI config | [spec](../specs/issue-63/), [decision-032](../decisions/decision-032.md) |
 | issue-64 | Added the self-reply marker guard (drops the-loop's own comments/reviews before dispatch, on both trigger paths, so it never resumes a session on its own reply) | [decision-031](../decisions/decision-031.md) |
+| issue-80 | Bounded per-event retry policy on the poll path (`polling.maxRetries`, default 3): stop baselining failed spawns/comments as processed, retry each cycle, then log `poll.spawn_failed`/`poll.comment_failed` and ignore; a new comment retriggers | [spec](../specs/issue-80/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/80) |
 | issue-32 | Added the tmux runner option for spawned sessions (dispatch via paste-injection; PR-close kills the tmux session) | [spec](../specs/issue-32/), [decision-021](../decisions/decision-021.md) |
 | issue-15 | Added session registry, event→session routing and harness resume (receiver shipped in v0 gained `--route`) | [spec](../specs/issue-15/), [decision-016](../decisions/decision-016.md) |
 | issue-1 | Shipped the HMAC-verified `gh-webhook` receiver (v0) | [spec](../specs/issue-1/), [decision-005](../decisions/decision-005.md) |

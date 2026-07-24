@@ -51,6 +51,7 @@ _CONFIG_PATH = cli_config.default_cli_config_path()
 _DEFAULTS = {
     "intervalSeconds": 60,
     "stateFile": ".the-loop/poll-state.json",
+    "maxRetries": 3,
     "pidfile": ".the-loop/poll.pid",
 }
 
@@ -101,6 +102,15 @@ class PollCommand(Command):
             "--state-file",
             default=str(defaults["stateFile"]),
             help="Durable cross-poll comment-dedup state.",
+        )
+        start.add_argument(
+            "--max-retries",
+            type=int,
+            default=int(defaults["maxRetries"]),
+            help=(
+                "Per-event delivery attempts before giving up "
+                "(default: polling.maxRetries)."
+            ),
         )
         start.add_argument(
             "--pidfile",
@@ -165,6 +175,7 @@ class PollCommand(Command):
         config = PollConfig.from_mapping(_load_polling_config())
         config.interval_seconds = args.interval  # flag overrides until a config edit
         config.state_file = args.state_file
+        config.max_retries = max(1, int(args.max_retries))
         authorized = resolve_authorized_users(routing.authorized_users)
         if not authorized:
             logger.warning(

@@ -514,6 +514,13 @@ class Dispatcher:
             result = self.tmux.deliver(
                 session, prompt, timeout=self.config.dispatch_timeout_seconds
             )
+            if not result.ok and result.session_missing:
+                # The tmux session crashed/was killed — a *terminal* fault for
+                # that session. Respawn a fresh one and deliver this event into
+                # it, instead of releasing for a redelivery that would hit the
+                # same missing session forever (issue-80).
+                self._respawn_tmux(session, routed, prompt)
+                return
             ok, error, verb = result.ok, result.error, "delivered into tmux session"
         else:
             adapter = self.adapters.get(session.harness)
@@ -733,6 +740,130 @@ class Dispatcher:
             action=routed.action or None,
             delivery_id=routed.delivery_id or None,
         )
+
+    def _respawn_tmux(self, session: Session, routed: RoutedEvent, prompt: str) -> None:
+        """Respawn a crashed/killed tmux session and deliver the pending event.
+
+        Reuses the dead session's own recorded fields (harness, cwd, tmux
+        target) — nothing new is derived from the untrusted payload. The event
+        ``prompt`` becomes the fresh TUI's boot prompt, so the event that found
+        the session dead is delivered rather than dropped (issue-80). Fails
+        closed (release the delivery for retry, emit a failure record) when a
+        respawn cannot proceed.
+        """
+        work_item = session.work_item
+        adapter = self.adapters.get(session.harness)
+        if adapter is None or not adapter.is_available():
+            detail = (
+                f"no adapter for harness {session.harness!r}"
+                if adapter is None
+                else f"harness CLI {adapter.binary!r} not found on PATH"
+            )
+            logger.error(
+                "cannot respawn tmux session for %s: %s; releasing for retry",
+                work_item.ref,
+                detail,
+            )
+            eventlog.emit(
+                "dispatch.failed",
+                level="error",
+                work_item=work_item.ref,
+                harness=session.harness,
+                via="tmux",
+                gh_event=routed.event,
+                delivery_id=routed.delivery_id or None,
+                error=f"respawn: {detail}",
+                will_retry=bool(routed.delivery_id),
+            )
+            if routed.delivery_id:
+                self.deduper.discard(routed.delivery_id)
+            return
+        session_id = str(uuid.uuid4())
+        result = self.tmux.spawn(
+            work_item,
+            adapter,
+            prompt,
+            cwd=session.cwd,
+            session_id=session_id,
+            timeout=self.config.dispatch_timeout_seconds,
+        )
+        if not result.ok:
+            logger.error(
+                "respawn of tmux session for %s failed: %s",
+                work_item.ref,
+                result.error,
+            )
+            eventlog.emit(
+                "dispatch.failed",
+                level="error",
+                work_item=work_item.ref,
+                harness=session.harness,
+                via="tmux",
+                gh_event=routed.event,
+                delivery_id=routed.delivery_id or None,
+                error=f"respawn: {result.error}",
+                will_retry=bool(routed.delivery_id),
+            )
+            if routed.delivery_id:
+                self.deduper.discard(routed.delivery_id)
+            return
+        respawned = Session(
+            work_item=work_item,
+            harness=session.harness,
+            harness_session_id=session_id,
+            cwd=session.cwd,
+            runner="tmux",
+            tmux_target=self.tmux.target_for(work_item),
+            # Carry the processed-delivery history so restart-surviving dedup
+            # still holds after a respawn.
+            recent_deliveries=list(session.recent_deliveries),
+        )
+        self.registry.register(respawned, force=True)
+        self.registry.touch(work_item, delivery_id=routed.delivery_id or None)
+        logger.info(
+            "respawned tmux session %s (%s %s) for %s after it was found dead; "
+            "delivered the pending event as its boot prompt — attach: "
+            "tmux attach -t %s",
+            respawned.tmux_target,
+            session.harness,
+            session_id,
+            work_item.ref,
+            respawned.tmux_target,
+        )
+        eventlog.emit(
+            "session.respawned",
+            work_item=work_item.ref,
+            harness=session.harness,
+            harness_session_id=session_id,
+            runner="tmux",
+            tmux_target=respawned.tmux_target,
+            gh_event=routed.event,
+            action=routed.action or None,
+            delivery_id=routed.delivery_id or None,
+        )
+
+    def delivery_status(
+        self, delivery_id: Optional[str], refs: List[WorkItemRef]
+    ) -> str:
+        """Outcome of a delivery id for poll-path retry accounting (issue-80).
+
+        Reuses the existing at-most-once machinery rather than a parallel
+        channel: ``"done"`` when the id is in a matched session's durable
+        ``recent_deliveries`` (written only on a successful dispatch),
+        ``"inflight"`` when it is still in the in-memory dedup cache (enqueued
+        or processing — a long resume can outlast several poll cycles, so it
+        must not be counted a failure), else ``"unhandled"`` (the dispatch
+        failed and discarded the id, or it was never sent).
+        """
+        if not delivery_id:
+            return "unhandled"
+        for ref in refs:
+            existing = self.registry.find_by_work_item(ref)
+            if existing is not None and delivery_id in existing.recent_deliveries:
+                return "done"
+        if delivery_id in self.deduper:
+            return "inflight"
+        return "unhandled"
 
     # -- workspace (clone + worktree, issue-76) ---------------------------------
 

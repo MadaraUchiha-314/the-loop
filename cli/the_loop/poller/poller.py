@@ -36,9 +36,9 @@ from typing import Dict, List, Optional, Sequence
 from .. import eventlog
 from ..authz import is_authorized, is_self_authored
 from ..reload import Reloader
-from ..sessions import SessionRegistry
+from ..sessions import SessionRegistry, WorkItemRef
 from ..webhook.dispatcher import Dispatcher
-from .base import PollProvider, ProviderError, WorkItem
+from .base import Comment, PollProvider, ProviderError, WorkItem
 
 logger = logging.getLogger("the-loop.poll")
 
@@ -59,6 +59,7 @@ class PollConfig:
 
     interval_seconds: int = 60
     state_file: str = ".the-loop/poll-state.json"
+    max_retries: int = 3
     sources: List[dict] = field(default_factory=list)
 
     @classmethod
@@ -67,16 +68,27 @@ class PollConfig:
         return cls(
             interval_seconds=int(data.get("intervalSeconds", 60)),
             state_file=str(data.get("stateFile", ".the-loop/poll-state.json")),
+            max_retries=max(1, int(data.get("maxRetries", 3))),
             sources=[dict(s) for s in (data.get("sources") or []) if s],
         )
 
 
 class PollState:
-    """Durable, atomic-write record of which comments each item has processed.
+    """Durable, atomic-write per-item retry ledger for the poller (issue-80).
 
     One JSON file keyed by work-item ref. It exists so the poller is idempotent
-    across cycles *and* restarts (there is no webhook redelivery to lean on) —
-    the very guarantee that keeps a comment from re-triggering the harness.
+    across cycles *and* restarts (there is no webhook redelivery to lean on),
+    and so a *failed* spawn/forward is retried a bounded number of times instead
+    of being baselined as "processed" on the first attempt. Per ref it tracks:
+
+    - ``seenComments`` — **resolved** comment ids (delivered *or* given up after
+      the retry budget), the baseline the poller ignores. Pruned to the live
+      thread each cycle so it stays bounded.
+    - ``commentAttempts`` — ``{comment_id: attempts}`` for comments still in
+      flight (forwarded but not yet confirmed delivered).
+    - ``spawn`` — ``{attempts, gaveUp, deliveryId}`` for the presence/spawn
+      retry (the presence delivery id is stored so the poller can tell an
+      in-flight spawn from a failed one across cycles).
     """
 
     def __init__(self, path):
@@ -94,16 +106,112 @@ class PollState:
             return
         self._items = dict((data or {}).get("items") or {})
 
+    def _item(self, ref: str) -> dict:
+        return self._items.setdefault(ref, {})
+
     def is_known(self, ref: str) -> bool:
         return ref in self._items
 
     def seen_comments(self, ref: str) -> set:
         return set((self._items.get(ref) or {}).get("seenComments") or [])
 
-    def update(self, ref: str, comment_ids: Sequence[str], polled_at: str) -> None:
-        # Keep the most-recent ids (list order from providers is oldest-first).
+    # -- comment retry ledger ---------------------------------------------------
+
+    def comment_attempts(self, ref: str, comment_id: str) -> int:
+        item = self._items.get(ref) or {}
+        return int((item.get("commentAttempts") or {}).get(comment_id, 0))
+
+    def note_comment_attempt(self, ref: str, comment_id: str) -> int:
+        """Record one delivery attempt for a comment; return the new count."""
+        item = self._item(ref)
+        attempts = dict(item.get("commentAttempts") or {})
+        attempts[comment_id] = attempts.get(comment_id, 0) + 1
+        item["commentAttempts"] = attempts
+        return attempts[comment_id]
+
+    def resolve_comment(self, ref: str, comment_id: str) -> None:
+        """Mark a comment done (delivered or given up): baseline it, drop its
+        in-flight counter so it is ignored on later polls."""
+        item = self._item(ref)
+        seen = list(item.get("seenComments") or [])
+        if comment_id not in seen:
+            seen.append(comment_id)
+        item["seenComments"] = seen[-_SEEN_COMMENTS_CAP:]
+        attempts = dict(item.get("commentAttempts") or {})
+        attempts.pop(comment_id, None)
+        item["commentAttempts"] = attempts
+
+    def baseline_comments(
+        self, ref: str, comment_ids: Sequence[str], polled_at: str
+    ) -> None:
+        """First-sight baseline: mark the whole existing thread seen (the
+        spawned session reads it itself), with no attempts pending."""
         ids = list(dict.fromkeys(comment_ids))[-_SEEN_COMMENTS_CAP:]
-        self._items[ref] = {"seenComments": ids, "lastPolledAt": polled_at}
+        self._items[ref] = {
+            "seenComments": ids,
+            "commentAttempts": {},
+            "spawn": (self._items.get(ref) or {}).get("spawn") or {},
+            "lastPolledAt": polled_at,
+        }
+
+    # -- spawn retry ledger -----------------------------------------------------
+
+    def _spawn(self, ref: str) -> dict:
+        return (self._items.get(ref) or {}).get("spawn") or {}
+
+    def spawn_attempts(self, ref: str) -> int:
+        return int(self._spawn(ref).get("attempts", 0))
+
+    def spawn_gave_up(self, ref: str) -> bool:
+        return bool(self._spawn(ref).get("gaveUp", False))
+
+    def spawn_delivery_id(self, ref: str) -> str:
+        return str(self._spawn(ref).get("deliveryId") or "")
+
+    def note_spawn_attempt(self, ref: str, delivery_id: str) -> int:
+        item = self._item(ref)
+        spawn = dict(item.get("spawn") or {})
+        spawn["attempts"] = int(spawn.get("attempts", 0)) + 1
+        spawn["deliveryId"] = delivery_id
+        spawn["gaveUp"] = False
+        item["spawn"] = spawn
+        return spawn["attempts"]
+
+    def mark_spawn_gave_up(self, ref: str) -> None:
+        item = self._item(ref)
+        spawn = dict(item.get("spawn") or {})
+        spawn["gaveUp"] = True
+        item["spawn"] = spawn
+
+    def reset_spawn(self, ref: str) -> None:
+        """Clear spawn retry state — a session came up, or new activity re-arms
+        a spawn that had been given up (issue-80, AC6)."""
+        item = self._item(ref)
+        item["spawn"] = {}
+
+    # -- end of cycle -----------------------------------------------------------
+
+    def finalize(
+        self, ref: str, live_comment_ids: Sequence[str], polled_at: str
+    ) -> None:
+        """Prune the ledger to the live thread and stamp the poll time.
+
+        Comment ids no longer present upstream are dropped from both
+        ``seenComments`` and ``commentAttempts`` (they can never reappear),
+        keeping the record bounded — the same windowing the old flat baseline
+        did, extended to the attempt counters.
+        """
+        live = set(live_comment_ids)
+        item = self._item(ref)
+        seen = [c for c in (item.get("seenComments") or []) if c in live]
+        item["seenComments"] = seen[-_SEEN_COMMENTS_CAP:]
+        attempts = {
+            cid: n
+            for cid, n in (item.get("commentAttempts") or {}).items()
+            if cid in live
+        }
+        item["commentAttempts"] = attempts
+        item["lastPolledAt"] = polled_at
 
     def save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -128,6 +236,7 @@ class PollSummary:
     items_seen: int = 0
     spawns: int = 0
     comments_forwarded: int = 0
+    failures: int = 0  # events given up after exhausting the retry budget (issue-80)
     errors: List[str] = field(default_factory=list)
 
 
@@ -168,6 +277,9 @@ class Poller:
         self.config = config
         self.state = state
         self.reloader = reloader
+        # Per-event delivery attempts before the poller gives up (issue-80).
+        # Read once here — like the dispatch knobs a hot reload doesn't touch.
+        self.max_retries = max(1, int(config.max_retries))
         # Prompt-injection guard: only these logins' items/comments are acted on
         # (empty => fail closed for human-authored input). See the_loop.authz.
         self.authorized_users = list(authorized_users)
@@ -181,10 +293,11 @@ class Poller:
             self._poll_provider(provider, summary)
         self.state.save()
         logger.info(
-            "poll cycle: %d item(s), %d spawn(s), %d comment(s) forwarded%s",
+            "poll cycle: %d item(s), %d spawn(s), %d comment(s) forwarded%s%s",
             summary.items_seen,
             summary.spawns,
             summary.comments_forwarded,
+            f", {summary.failures} gave up" if summary.failures else "",
             f", {len(summary.errors)} error(s)" if summary.errors else "",
         )
         eventlog.emit(
@@ -192,6 +305,7 @@ class Poller:
             items_seen=summary.items_seen,
             spawns=summary.spawns,
             comments_forwarded=summary.comments_forwarded,
+            failures=summary.failures or None,
             errors=summary.errors or None,
         )
         return summary
@@ -234,25 +348,11 @@ class Poller:
         ref = item.ref
 
         comments = provider.list_comments(item)
+        live_ids = [c.id for c in comments if c.id]
         first_sight = not self.state.is_known(ref)
-        seen = self.state.seen_comments(ref)
         # Authorization guard (prompt-injection remediation): only act on input
-        # authored by an authorized user. A dropped comment is still baselined
-        # below, so it is never re-evaluated on later cycles.
+        # authored by an authorized user.
         item_authorized = is_authorized(item.author, self.authorized_users)
-        # Self-reply guard (issue-64): the-loop's own replies are posted under
-        # the operator's own gh credentials, so `is_authorized` alone can't
-        # tell them apart from a human comment — excluding marker-carrying
-        # comments here is what stops the harness from resuming on its own
-        # reply. Also baselined below, same as an unauthorized comment.
-        new_comments = [
-            c
-            for c in comments
-            if c.id
-            and c.id not in seen
-            and is_authorized(c.author, self.authorized_users)
-            and not is_self_authored(c.body)
-        ]
         if item.author and not item_authorized:
             logger.warning(
                 "ignoring %s from unauthorized author %r (not in authorizedUsers)",
@@ -269,31 +369,162 @@ class Poller:
             self.registry.find_by_work_item(wi) is not None for wi in refs
         )
 
-        # Spawn a session for a labelled item that has none — on first sight, or
-        # when fresh activity arrives after a prior session ended. The registry
-        # (one active session per work item) is the source of truth, so a failed
-        # spawn simply retries next cycle and a live session is never doubled.
-        # Only spawn for items an authorized user authored (the input we'd feed
-        # to /the-loop:work-on is that item's own body).
-        if item_authorized and not has_session and (first_sight or new_comments):
-            self.dispatcher.handle(provider.presence_event(item, refs))
-            summary.spawns += 1
+        # First sight: baseline the existing thread (the spawned session reads it
+        # itself, matching webhook "only events going forward"), arm the spawn,
+        # and stop. Only spawn for items an authorized user authored (the input
+        # fed to /the-loop:work-on is that item's own body).
+        if first_sight:
+            if item_authorized and not has_session:
+                self._try_spawn(provider, item, refs, summary)
+            self.state.baseline_comments(ref, live_ids, _utcnow())
+            return
 
-        # Forward only genuinely new, authorized comments; on first sight the
-        # existing thread is the baseline (the spawned session reads it itself),
-        # matching webhook semantics where you only receive events going forward.
-        if not first_sight:
-            for comment in new_comments:
-                self.dispatcher.handle(provider.comment_event(item, comment, refs))
-                eventlog.emit(
-                    "poll.comment_forwarded",
-                    work_item=ref,
-                    comment_id=comment.id,
-                    actor=comment.author,
-                )
-                summary.comments_forwarded += 1
+        # Known item. Sort unresolved comments into candidates (authorized,
+        # non-self) to forward, and dropped ones (unauthorized, or issue-64
+        # self-marked replies) which are baselined so they are never
+        # re-evaluated — matching the old unconditional baseline for those.
+        seen = self.state.seen_comments(ref)
+        candidates = []
+        for comment in comments:
+            if not comment.id or comment.id in seen:
+                continue
+            if not is_authorized(
+                comment.author, self.authorized_users
+            ) or is_self_authored(comment.body):
+                self.state.resolve_comment(ref, comment.id)
+                continue
+            candidates.append(comment)
+        # A genuinely-new comment (never attempted) re-arms a spawn that had been
+        # given up — a new comment retriggers the item (issue-80, AC6).
+        genuinely_new = any(
+            self.state.comment_attempts(ref, c.id) == 0 for c in candidates
+        )
 
-        self.state.update(ref, [c.id for c in comments if c.id], _utcnow())
+        # Spawn only when there is a reason to: genuinely new activity, or a spawn
+        # already in progress (attempts recorded). A dormant known item with no
+        # session and no new activity must not spontaneously spawn.
+        if item_authorized and not has_session:
+            if genuinely_new:
+                self.state.reset_spawn(ref)
+            if genuinely_new or self.state.spawn_attempts(ref) > 0:
+                self._try_spawn(provider, item, refs, summary)
+        elif has_session:
+            self.state.reset_spawn(ref)
+
+        if item_authorized:
+            for comment in candidates:
+                self._process_comment(provider, item, comment, refs, summary)
+
+        self.state.finalize(ref, live_ids, _utcnow())
+
+    def _try_spawn(
+        self,
+        provider: PollProvider,
+        item: WorkItem,
+        refs: List[WorkItemRef],
+        summary: PollSummary,
+    ) -> None:
+        """Spawn a session for a labelled item, bounded by the retry budget.
+
+        Called once the spawn is *armed* (first sight, new activity, or a spawn
+        already in progress). Unlike the old ``first_sight or new_comments``
+        guard, a failed spawn no longer suppresses later attempts: the poller
+        retries each cycle until a session exists or the budget is spent, then
+        logs a terminal failure and gives up until new activity re-arms it
+        (issue-80).
+        """
+        ref = item.ref
+        if self.state.spawn_gave_up(ref):
+            return
+        # A prior presence still enqueued/processing? Wait — don't pile a second
+        # spawn behind it, and don't count it a failure (a process-runner spawn
+        # runs the whole task and can outlast a poll cycle).
+        last_did = self.state.spawn_delivery_id(ref)
+        if last_did:
+            status = self.dispatcher.delivery_status(last_did, refs)
+            if status == "inflight":
+                return
+            if status == "done":  # session came up — belt and suspenders
+                self.state.reset_spawn(ref)
+                return
+        attempts = self.state.spawn_attempts(ref)
+        if attempts >= self.max_retries:
+            logger.error(
+                "giving up spawning a session for %s after %d attempt(s); "
+                "further polls ignore it until new activity arrives",
+                ref,
+                attempts,
+            )
+            eventlog.emit(
+                "poll.spawn_failed",
+                level="error",
+                work_item=ref,
+                attempts=attempts,
+                will_retry=False,
+            )
+            self.state.mark_spawn_gave_up(ref)
+            summary.failures += 1
+            return
+        event = provider.presence_event(item, refs)
+        self.dispatcher.handle(event)
+        self.state.note_spawn_attempt(ref, event.delivery_id)
+        summary.spawns += 1
+
+    def _process_comment(
+        self,
+        provider: PollProvider,
+        item: WorkItem,
+        comment: Comment,
+        refs: List[WorkItemRef],
+        summary: PollSummary,
+    ) -> None:
+        """Forward a comment to its session with bounded retries (issue-80).
+
+        Observes the async dispatch outcome via the dispatcher's durable dedup
+        state instead of guessing at enqueue time: a delivered comment is
+        baselined, an in-flight one is left to finish, and only a genuinely
+        failed one spends a retry — giving up (with an audit log) after the
+        budget is exhausted so later polls ignore it.
+        """
+        ref = item.ref
+        event = provider.comment_event(item, comment, refs)
+        status = self.dispatcher.delivery_status(event.delivery_id, refs)
+        if status == "done":
+            self.state.resolve_comment(ref, comment.id)
+            return
+        if status == "inflight":
+            return
+        attempts = self.state.comment_attempts(ref, comment.id)
+        if attempts >= self.max_retries:
+            logger.error(
+                "giving up forwarding comment %s on %s after %d attempt(s); "
+                "further polls ignore it",
+                comment.id,
+                ref,
+                attempts,
+            )
+            eventlog.emit(
+                "poll.comment_failed",
+                level="error",
+                work_item=ref,
+                comment_id=comment.id,
+                actor=comment.author,
+                attempts=attempts,
+                will_retry=False,
+            )
+            self.state.resolve_comment(ref, comment.id)
+            summary.failures += 1
+            return
+        self.dispatcher.handle(event)
+        attempt = self.state.note_comment_attempt(ref, comment.id)
+        eventlog.emit(
+            "poll.comment_forwarded",
+            work_item=ref,
+            comment_id=comment.id,
+            actor=comment.author,
+            attempt=attempt,
+        )
+        summary.comments_forwarded += 1
 
     # -- hot reload -------------------------------------------------------------
 

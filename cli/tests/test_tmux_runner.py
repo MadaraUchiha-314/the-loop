@@ -183,6 +183,20 @@ class TestTmuxRunner:
         result = TmuxRunner().deliver(session, "event prompt")
         assert not result.ok
         assert "loop-gone" in result.error
+        # The dispatcher keys respawn on this flag (issue-80): a missing session
+        # is the terminal fault it recovers from.
+        assert result.session_missing is True
+
+    def test_deliver_paste_failure_is_not_session_missing(self, monkeypatch):
+        # has-session succeeds (session is alive) but a paste sub-command errors:
+        # NOT a missing-session case, so the dispatcher must not respawn.
+        fake = FakeRun(per_verb={"paste-buffer": 1})
+        monkeypatch.setattr(runner_mod.subprocess, "run", fake)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        session = make_session(runner="tmux", tmux_target="loop-alive")
+        result = TmuxRunner().deliver(session, "event prompt")
+        assert not result.ok
+        assert result.session_missing is False
 
     def test_kill_targets_the_session(self, monkeypatch):
         fake = FakeRun()

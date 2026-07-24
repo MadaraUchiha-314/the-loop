@@ -205,6 +205,12 @@
           "default": ".the-loop/poll-state.json",
           "description": "Durable JSON tracking which comments each item has processed (cross-poll/restart dedup). Git-ignored runtime state."
         },
+        "maxRetries": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 3,
+          "description": "Per-event delivery attempts before the poller gives up (issue-80). A spawn or comment forward whose dispatch keeps failing is retried each cycle up to this many attempts; after that the poller logs a terminal failure (poll.spawn_failed / poll.comment_failed) and ignores the event on later polls until new activity re-arms it. An in-flight (still-processing) dispatch is not counted as a failed attempt."
+        },
         "sources": {
           "type": "array",
           "description": "Ordered list of provider-specific poll sources. Each entry MUST name a `provider`; the remaining keys are that provider's own config (unknown to the core).",
