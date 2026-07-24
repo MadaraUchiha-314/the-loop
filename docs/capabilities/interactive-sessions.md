@@ -29,12 +29,31 @@ the same conversation.
   respawn that cannot proceed (harness CLI missing, `tmux new-session` fails) fails the
   dispatch and releases for retry. This is what stops a redelivery loop into a session
   that no longer exists (issue-80).
+- WHEN a tmux session is spawned THEN tmux's `remain-on-exit` SHALL be set on it
+  (`routing.tmux.remainOnExit`, best-effort — an older tmux that rejects it only
+  warns), so the pane and its scrollback survive the harness process exiting. A
+  delivery therefore probes **liveness** (`has-session` **and** a non-dead pane), not
+  mere existence: a retained-but-dead session takes the respawn path above instead of
+  swallowing the event.
 - WHEN a work item's PR is merged/closed (or `the-loop sessions close` runs) THEN the
-  tmux session SHALL be terminated along with the registry close (best-effort when
-  already gone).
+  registry session SHALL be closed AND the tmux session SHALL be **kept running** so
+  its transcript stays readable (`session.retained`); `routing.tmux.keepSessionOnClose:
+  false` — or `sessions close --kill-tmux` — SHALL terminate it instead (best-effort
+  when already gone). Retained sessions accumulate until killed, and a new spawn for
+  the same work item reclaims the deterministic `loop-<slug>` name.
+- WHEN a tmux-mode session is spawned THEN the-loop SHALL comment on the work item
+  with the tmux session name and the `tmux attach -t loop-<slug>` command
+  (`routing.announce`, default on), so the attach details reach the humans on the
+  ticket. A **respawn** SHALL post nothing further — it reuses the same name, so the
+  existing comment stays correct and a flapping session cannot bury the thread.
+  Best-effort through the operator's own `gh` CLI: a failure never affects the
+  dispatch, and a process-runner session, a non-GitHub work item or a missing `gh` is
+  a no-op. The body is built only from registry fields — never from event payloads —
+  and carries no filesystem paths, harness session ids or hostnames.
 - `the-loop sessions list` SHALL show `Runner`/`Tmux` columns; `the-loop sessions
   attach --work-item <ref> [--read-only]` SHALL attach the caller's terminal to the
-  session's tmux session with clear errors for process-mode or dead sessions.
+  session's tmux session — including one **retained after the work item closed** (with
+  a note) — with clear errors for process-mode or genuinely absent sessions.
 - WHEN `gh-webhook start --route` or `poll start` runs THEN the native dependencies
   (`tmux`; `ttyd` if `routing.webTerminal.enabled`) SHALL be verified with
   per-platform install guidance — silent when satisfied. Both ingress paths drive
@@ -62,3 +81,4 @@ the same conversation.
 | issue-32 | Introduced the tmux runner, `sessions attach`, the ttyd web terminal and dependency preflight | [spec](../specs/issue-32/), [decision-021](../decisions/decision-021.md) |
 | issue-65 | Fixed `poll start` never launching ttyd (it shared the tmux runner but had no web terminal start/stop of its own); factored ttyd lifecycle into a shared `the_loop.runner` helper used by both `gh-webhook start` and `poll start` | [issue](https://github.com/MadaraUchiha-314/the-loop/issues/65) |
 | issue-80 | Respawn a crashed/killed tmux session on delivery (deliver the pending event as the fresh TUI's boot prompt) instead of looping redeliveries into a session that no longer exists | [spec](../specs/issue-80/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/80) |
+| issue-86 | Keep a finished work item's tmux session (and, via `remain-on-exit`, its pane) instead of killing it, guarded by a pane-liveness check so the respawn path still fires; announce a first-spawned session's attach command as a comment on the work item | [spec](../specs/issue-86/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/86) |

@@ -21,6 +21,7 @@ from string import Template
 from typing import Dict, List, Optional
 
 from .. import eventlog
+from ..announce import AnnounceConfig, SessionAnnouncer
 from ..harness.base import HarnessAdapter
 from ..reactions import (
     STATE_COMPLETED,
@@ -120,6 +121,27 @@ class WebTerminalConfig:
 
 
 @dataclass
+class TmuxConfig:
+    """Mirror of ``routing.tmux`` — lifetime of the hosted sessions (issue-86).
+
+    Both defaults keep a finished session readable: the tmux session outlives
+    the work item's PR being merged/closed, and the pane outlives the harness
+    process exiting.
+    """
+
+    keep_session_on_close: bool = True
+    remain_on_exit: bool = True
+
+    @classmethod
+    def from_mapping(cls, data: dict) -> "TmuxConfig":
+        data = data or {}
+        return cls(
+            keep_session_on_close=bool(data.get("keepSessionOnClose", True)),
+            remain_on_exit=bool(data.get("remainOnExit", True)),
+        )
+
+
+@dataclass
 class WorkspaceConfig:
     """Mirror of ``routing.workspace`` — clone-and-worktree layout (issue-76).
 
@@ -163,6 +185,7 @@ class RoutingConfig:
     registry_dir: str = ".the-loop/sessions"
     default_harness: str = "claude"
     runner: str = "process"  # process | tmux (issue-32, decision-021)
+    tmux: TmuxConfig = field(default_factory=TmuxConfig)
     web_terminal: WebTerminalConfig = field(default_factory=WebTerminalConfig)
     spawn_on_unmatched: str = "never"  # never | always | labeled
     auto_execute_label: str = "the-loop: auto-execute"
@@ -179,6 +202,8 @@ class RoutingConfig:
     authorized_users: List[str] = field(default_factory=list)
     # Dispatch-lifecycle emoji reactions on the triggering entity (issue-84).
     reactions: ReactionConfig = field(default_factory=ReactionConfig)
+    # "Here is your tmux session" comment on spawn/respawn (issue-86).
+    announce: AnnounceConfig = field(default_factory=AnnounceConfig)
 
     @classmethod
     def from_mapping(cls, data: dict) -> "RoutingConfig":
@@ -188,6 +213,7 @@ class RoutingConfig:
             registry_dir=str(data.get("registryDir", ".the-loop/sessions")),
             default_harness=str(data.get("defaultHarness", "claude")),
             runner=str(data.get("runner", "process")),
+            tmux=TmuxConfig.from_mapping(data.get("tmux") or {}),
             web_terminal=WebTerminalConfig.from_mapping(data.get("webTerminal") or {}),
             spawn_on_unmatched=str(data.get("spawnOnUnmatched", "never")),
             auto_execute_label=str(
@@ -205,6 +231,7 @@ class RoutingConfig:
             harness_args=dict(data.get("harnessArgs") or {}),
             authorized_users=[str(u) for u in (data.get("authorizedUsers") or [])],
             reactions=ReactionConfig.from_mapping(data.get("reactions") or {}),
+            announce=AnnounceConfig.from_mapping(data.get("announce") or {}),
         )
 
 
@@ -267,13 +294,19 @@ class Dispatcher:
         tmux_runner: Optional[TmuxRunner] = None,
         workspace: Optional[Workspace] = None,
         reactor: Optional[GitHubReactor] = None,
+        announcer: Optional[SessionAnnouncer] = None,
     ):
         self.registry = registry
         self.adapters = adapters
         self.config = config or RoutingConfig()
         # Built unconditionally: a registry may hold tmux-mode sessions even
         # when config.runner is "process" (the session's recorded runner wins).
-        self.tmux = tmux_runner if tmux_runner is not None else TmuxRunner()
+        self._tmux_override = tmux_runner is not None
+        self.tmux = (
+            tmux_runner
+            if tmux_runner is not None
+            else TmuxRunner(remain_on_exit=self.config.tmux.remain_on_exit)
+        )
         # A caller-supplied workspace (tests / embedding) wins and survives
         # reloads; otherwise it tracks routing.workspace across hot-reloads.
         self._workspace_override = workspace is not None
@@ -282,6 +315,9 @@ class Dispatcher:
         # reloads; otherwise it tracks routing.reactions across hot-reloads.
         self._reactor_override = reactor is not None
         self.reactor = reactor or GitHubReactor(self.config.reactions)
+        # Same override-survives-reload pattern for the session announcer.
+        self._announcer_override = announcer is not None
+        self.announcer = announcer or SessionAnnouncer(self.config.announce)
         self.deduper = (
             deduper
             if deduper is not None
@@ -319,7 +355,8 @@ class Dispatcher:
         """Hot-swap the *soft* routing policy without disturbing running work.
 
         Live-reloaded: spawn policy, default harness, runner, spawn workdir,
-        the clone-and-worktree workspace (issue-76), dispatch timeout,
+        the clone-and-worktree workspace (issue-76), the tmux session lifetime
+        and announcement policy (issue-86), dispatch timeout,
         per-harness args (adapters rebuilt) and the prompt templates. Each is
         read from ``self.config`` (or the swapped dict) at dispatch time, so a
         plain reassignment takes effect on the next event. A caller-supplied
@@ -340,6 +377,10 @@ class Dispatcher:
             self.workspace = self._build_workspace(config)
         if not self._reactor_override:
             self.reactor = GitHubReactor(config.reactions)
+        if not self._announcer_override:
+            self.announcer = SessionAnnouncer(config.announce)
+        if not self._tmux_override:
+            self.tmux.remain_on_exit = config.tmux.remain_on_exit
         self._event_template = self._load_template(
             config.prompt_template, DEFAULT_PROMPT_TEMPLATE
         )
@@ -392,15 +433,7 @@ class Dispatcher:
             for session in matched:
                 self.registry.close(session.work_item)
                 if session.runner == "tmux":
-                    result = self.tmux.kill(
-                        session, timeout=self.config.dispatch_timeout_seconds
-                    )
-                    if not result.ok:  # already gone — best-effort (R7.3)
-                        logger.info(
-                            "tmux session %s already gone: %s",
-                            session.tmux_target,
-                            result.error,
-                        )
+                    self._close_tmux(session)
                 self._cleanup_workspace(session, routed)
                 logger.info(
                     "auto-closed session %s (PR %s)",
@@ -442,6 +475,36 @@ class Dispatcher:
                 session.work_item.ref,
             )
             self._enqueue(session.work_item.ref, routed)
+
+    def _close_tmux(self, session: Session) -> None:
+        """Retain (default) or kill a tmux session whose work item is closing.
+
+        Retaining is the point of issue-86: the transcript of what the agent
+        did is most wanted exactly when the PR merges. The registry entry is
+        closed either way — only the tmux session's fate differs.
+        """
+        if self.config.tmux.keep_session_on_close:
+            logger.info(
+                "keeping tmux session %s after closing %s — attach: "
+                "tmux attach -t %s (set routing.tmux.keepSessionOnClose: false "
+                "to kill it instead)",
+                session.tmux_target,
+                session.work_item.ref,
+                session.tmux_target,
+            )
+            eventlog.emit(
+                "session.retained",
+                work_item=session.work_item.ref,
+                tmux_target=session.tmux_target,
+            )
+            return
+        result = self.tmux.kill(session, timeout=self.config.dispatch_timeout_seconds)
+        if not result.ok:  # already gone — best-effort (R7.3)
+            logger.info(
+                "tmux session %s already gone: %s",
+                session.tmux_target,
+                result.error,
+            )
 
     def _on_unmatched(self, routed: RoutedEvent) -> None:
         refs = ", ".join(item.ref for item in routed.work_items)
@@ -762,6 +825,9 @@ class Dispatcher:
             action=routed.action or None,
             delivery_id=routed.delivery_id or None,
         )
+        # Tell the humans on the ticket that the session exists and how to
+        # attach (issue-86). Best-effort: never affects the dispatch outcome.
+        self.announcer.announce(session)
         return True
 
     def _respawn_tmux(self, session: Session, routed: RoutedEvent, prompt: str) -> bool:
@@ -864,6 +930,9 @@ class Dispatcher:
             action=routed.action or None,
             delivery_id=routed.delivery_id or None,
         )
+        # No announcement here (owner decision, PR #87): a respawn reuses the
+        # same loop-<slug> name, so the attach command already on the ticket is
+        # still correct and a second comment would only add noise.
         return True
 
     def delivery_status(

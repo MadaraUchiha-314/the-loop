@@ -26,15 +26,31 @@ AUTO_LABEL = "the-loop: auto-execute"
 
 # Records argv as JSON lines; everything succeeds unless its tmux sub-command is
 # listed in $STUB_TMUX_FAIL (comma-separated) — e.g. `has-session` to simulate a
-# crashed/killed session (issue-80).
+# crashed/killed session (issue-80). $STUB_TMUX_PANE_DEAD makes `list-panes`
+# report a dead pane, i.e. a session retained after its harness exited
+# (issue-86).
 STUB_TMUX = """#!/usr/bin/env python3
 import json, os, sys
 argv = sys.argv[1:]
 with open(os.environ["STUB_TMUX_RECORD"], "a") as f:
     f.write(json.dumps(argv) + "\\n")
+if argv and argv[0] == "list-panes":
+    print("1" if os.environ.get("STUB_TMUX_PANE_DEAD") else "0")
 fail = set(v for v in os.environ.get("STUB_TMUX_FAIL", "").split(",") if v)
 sys.exit(1 if argv and argv[0] in fail else 0)
 """
+
+
+class RecordingAnnouncer:
+    """Stand-in for SessionAnnouncer capturing what would be commented."""
+
+    def __init__(self, ok=True):
+        self.calls = []
+        self.ok = ok
+
+    def announce(self, session):
+        self.calls.append((session.work_item.ref, session.tmux_target))
+        return self.ok
 
 
 def wait_until(predicate, timeout=5.0, interval=0.02):
@@ -63,8 +79,8 @@ def stub_tmux(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def pipeline(tmp_path, stub_tmux):
-    """Router + Dispatcher wired for tmux mode over the stub binary."""
+def pipeline_factory(tmp_path, stub_tmux):
+    """Build a Router + Dispatcher wired for tmux mode over the stub binary."""
     binary, calls = stub_tmux
     # The dispatcher refuses to spawn when the harness CLI is absent, so give
     # the adapter a stub `claude` too (never executed — the stub tmux records
@@ -72,29 +88,47 @@ def pipeline(tmp_path, stub_tmux):
     claude = tmp_path / "claude"
     claude.write_text("#!/usr/bin/env python3\n")
     claude.chmod(claude.stat().st_mode | stat.S_IXUSR)
-    registry = SessionRegistry(tmp_path / "sessions")
-    config = RoutingConfig.from_mapping(
-        {"runner": "tmux", "spawnOnUnmatched": "labeled", "spawnWorkdir": str(tmp_path)}
-    )
-    dispatcher = Dispatcher(
-        registry=registry,
-        adapters={"claude": ClaudeCodeAdapter(binary=str(claude))},
-        config=config,
-        tmux_runner=TmuxRunner(binary=binary),
-    )
-    router = Router(
-        events=["issues", "issue_comment", "pull_request"],
-        deduper=dispatcher.deduper,
-        auto_execute_label=config.auto_execute_label,
-    )
+    dispatchers = []
 
-    def deliver(event, payload, delivery_id):
-        routed = router.route(event, payload, delivery_id)
-        assert routed is not None
-        dispatcher.handle(routed)
+    def build(overrides=None, announcer=None):
+        registry = SessionRegistry(tmp_path / "sessions")
+        config = RoutingConfig.from_mapping(
+            {
+                "runner": "tmux",
+                "spawnOnUnmatched": "labeled",
+                "spawnWorkdir": str(tmp_path),
+                **(overrides or {}),
+            }
+        )
+        dispatcher = Dispatcher(
+            registry=registry,
+            adapters={"claude": ClaudeCodeAdapter(binary=str(claude))},
+            config=config,
+            tmux_runner=TmuxRunner(binary=binary),
+            announcer=announcer,
+        )
+        dispatchers.append(dispatcher)
+        router = Router(
+            events=["issues", "issue_comment", "pull_request"],
+            deduper=dispatcher.deduper,
+            auto_execute_label=config.auto_execute_label,
+        )
 
-    yield deliver, registry, calls
-    dispatcher.stop()
+        def deliver(event, payload, delivery_id):
+            routed = router.route(event, payload, delivery_id)
+            assert routed is not None
+            dispatcher.handle(routed)
+
+        return deliver, registry, calls
+
+    yield build
+    for dispatcher in dispatchers:
+        dispatcher.stop()
+
+
+@pytest.fixture
+def pipeline(pipeline_factory):
+    return pipeline_factory()
 
 
 def issue_payload(action="labeled", labels=(AUTO_LABEL,)):
@@ -173,34 +207,21 @@ def test_followup_event_is_pasted_into_the_running_session(pipeline):
     )
 
     verbs = [c[0] for c in calls()]
-    assert verbs == ["has-session", "load-buffer", "paste-buffer", "send-keys"]
-    paste = calls()[2]
+    # has-session + list-panes = the liveness probe (issue-86).
+    assert verbs == [
+        "has-session",
+        "list-panes",
+        "load-buffer",
+        "paste-buffer",
+        "send-keys",
+    ]
+    paste = calls()[3]
     assert "-p" in paste
     assert paste[paste.index("-t") + 1] == "loop-github-octo-repo-15"
 
 
-def test_pr_close_kills_the_tmux_session(pipeline):
-    """
-    Feature: tmux-hosted interactive sessions
-    Scenario: closing the work item's PR terminates its tmux session
-      Given a registered tmux-mode session for the work item
-      When the pull_request closed event for its PR arrives
-      Then the registry session is closed
-      And tmux is asked to kill-session the session's target
-    Requirement: docs/specs/issue-32/requirements.md#R7
-    """
-    deliver, registry, calls = pipeline
-    registry.register(
-        Session(
-            work_item=WorkItemRef.parse(REF),
-            harness="claude",
-            harness_session_id="uuid-1",
-            cwd=".",
-            runner="tmux",
-            tmux_target="loop-github-octo-repo-15",
-        )
-    )
-    payload = {
+def pr_close_payload():
+    return {
         "action": "closed",
         "repository": {"full_name": "octo/repo"},
         "pull_request": {
@@ -210,10 +231,138 @@ def test_pr_close_kills_the_tmux_session(pipeline):
             "body": "Closes #15",
         },
     }
-    deliver("pull_request", payload, "d-close-1")
+
+
+def register_tmux_session(registry, harness_session_id="uuid-1"):
+    registry.register(
+        Session(
+            work_item=WorkItemRef.parse(REF),
+            harness="claude",
+            harness_session_id=harness_session_id,
+            cwd=".",
+            runner="tmux",
+            tmux_target="loop-github-octo-repo-15",
+        ),
+        force=True,
+    )
+
+
+def test_pr_close_keeps_the_tmux_session_by_default(pipeline):
+    """
+    Feature: tmux-hosted interactive sessions
+    Scenario: a completed work item's tmux session survives for post-mortem
+      Given a registered tmux-mode session for the work item
+      And routing.tmux.keepSessionOnClose is left at its default
+      When the pull_request closed event for its PR arrives
+      Then the registry session is closed
+      And tmux is NOT asked to kill the session, so its transcript stays readable
+    Requirement: docs/specs/issue-86/requirements.md#R1
+    """
+    deliver, registry, calls = pipeline
+    register_tmux_session(registry)
+    deliver("pull_request", pr_close_payload(), "d-close-1")
+    assert wait_until(lambda: registry.find_by_work_item(REF) is None)
+    assert [c for c in calls() if c[0] == "kill-session"] == []
+
+
+def test_pr_close_kills_the_tmux_session_when_configured_off(pipeline_factory):
+    """
+    Feature: tmux-hosted interactive sessions
+    Scenario: an operator opts back into killing the session on close
+      Given a registered tmux-mode session for the work item
+      And routing.tmux.keepSessionOnClose is false
+      When the pull_request closed event for its PR arrives
+      Then the registry session is closed
+      And tmux is asked to kill-session the session's target
+    Requirement: docs/specs/issue-86/requirements.md#R1
+    """
+    deliver, registry, calls = pipeline_factory({"tmux": {"keepSessionOnClose": False}})
+    register_tmux_session(registry)
+    deliver("pull_request", pr_close_payload(), "d-close-2")
     assert wait_until(lambda: registry.find_by_work_item(REF) is None)
     kills = [c for c in calls() if c[0] == "kill-session"]
     assert kills and kills[0][kills[0].index("-t") + 1] == "loop-github-octo-repo-15"
+
+
+def test_retained_session_with_a_dead_pane_is_respawned(pipeline, monkeypatch):
+    """
+    Feature: tmux-hosted interactive sessions
+    Scenario: an event for a retained session whose harness exited respawns it
+      Given a registered tmux-mode session that still exists in tmux
+      But whose pane is dead (kept by remain-on-exit)
+      When an issue_comment event for that work item arrives
+      Then the event is not pasted into the dead pane
+      And a fresh session is spawned with the event as its boot prompt
+    Requirement: docs/specs/issue-86/requirements.md#R2
+    """
+    deliver, registry, calls = pipeline
+    register_tmux_session(registry)
+    monkeypatch.setenv("STUB_TMUX_PANE_DEAD", "1")
+    deliver("issue_comment", issue_payload(action="created"), "d-dead-pane-1")
+
+    assert wait_until(
+        lambda: registry.find_by_work_item(REF).harness_session_id != "uuid-1"
+    )
+    assert any(c[0] == "new-session" for c in calls())
+    assert [c for c in calls() if c[0] == "paste-buffer"] == []
+
+
+def test_spawn_announces_the_session_on_the_work_item(pipeline_factory):
+    """
+    Feature: tmux-hosted interactive sessions
+    Scenario: the attach command reaches the humans on the ticket
+      Given routing runs with runner=tmux and announcements enabled
+      When a labeled issues event spawns a tmux-hosted session
+      Then a comment announcing the tmux session is posted on the work item
+    Requirement: docs/specs/issue-86/requirements.md#R3
+    """
+    announcer = RecordingAnnouncer()
+    deliver, registry, _ = pipeline_factory(announcer=announcer)
+    deliver("issues", issue_payload(), "d-announce-1")
+    assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
+    assert wait_until(lambda: announcer.calls)
+    assert announcer.calls == [(REF, "loop-github-octo-repo-15")]
+
+
+def test_respawn_does_not_re_announce(pipeline_factory, monkeypatch):
+    """
+    Feature: tmux-hosted interactive sessions
+    Scenario: a respawn stays quiet on the ticket
+      Given a registered tmux-mode session whose tmux session is gone
+      When an issue_comment event for that work item arrives
+      Then the session is respawned under the same loop-<slug> name
+      And no second announcement comment is posted (the first one still applies)
+    Requirement: docs/specs/issue-86/requirements.md#R3
+    """
+    announcer = RecordingAnnouncer()
+    deliver, registry, _ = pipeline_factory(announcer=announcer)
+    register_tmux_session(registry)
+    monkeypatch.setenv("STUB_TMUX_FAIL", "has-session")
+    deliver("issue_comment", issue_payload(action="created"), "d-announce-2")
+    assert wait_until(
+        lambda: registry.find_by_work_item(REF).harness_session_id != "uuid-1"
+    )
+    assert announcer.calls == []
+
+
+def test_a_failed_announcement_does_not_change_the_dispatch(pipeline_factory):
+    """
+    Feature: tmux-hosted interactive sessions
+    Scenario: announcing is best-effort
+      Given an announcer that cannot post (e.g. gh is unauthenticated)
+      When a labeled issues event spawns a tmux-hosted session
+      Then the session is still registered and the delivery still marked processed
+    Requirement: docs/specs/issue-86/requirements.md#R3
+    """
+    announcer = RecordingAnnouncer(ok=False)
+    deliver, registry, _ = pipeline_factory(announcer=announcer)
+    deliver("issues", issue_payload(), "d-announce-3")
+    assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
+    session = registry.find_by_work_item(REF)
+    assert session.runner == "tmux"
+    assert wait_until(
+        lambda: "d-announce-3" in registry.find_by_work_item(REF).recent_deliveries
+    )
 
 
 def test_dead_session_is_respawned_with_the_event_as_boot_prompt(pipeline, monkeypatch):

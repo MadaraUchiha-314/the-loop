@@ -65,9 +65,13 @@ class TmuxResult:
     ok: bool
     error: str = ""
     # Set only when a delivery failed because the target tmux session is gone
-    # (crashed/killed) — the *terminal* fault the dispatcher recovers from by
-    # respawning, as opposed to a transient tmux error (issue-80).
+    # (crashed/killed) or its pane is dead — the *terminal* fault the dispatcher
+    # recovers from by respawning, as opposed to a transient tmux error
+    # (issue-80).
     session_missing: bool = False
+    # stdout of the invocation, for the queries that read tmux back
+    # (``has_live_session``); empty for the fire-and-forget commands.
+    output: str = ""
 
 
 def check_dependencies(runner: str, web_enabled: bool) -> List[str]:
@@ -139,10 +143,16 @@ def stop_web_terminal(proc: Optional[subprocess.Popen]) -> None:
 
 
 class TmuxRunner:
-    """Spawn / deliver-to / kill harness TUIs hosted in named tmux sessions."""
+    """Spawn / deliver-to / kill harness TUIs hosted in named tmux sessions.
 
-    def __init__(self, binary: str = "tmux"):
+    ``remain_on_exit`` keeps a spawned session's pane — and with it the whole
+    scrollback — after the harness process exits, so a finished session stays
+    readable instead of tmux tearing the window down (issue-86).
+    """
+
+    def __init__(self, binary: str = "tmux", remain_on_exit: bool = True):
         self.binary = binary
+        self.remain_on_exit = remain_on_exit
 
     def is_available(self) -> bool:
         return shutil.which(self.binary) is not None
@@ -179,7 +189,7 @@ class TmuxRunner:
                     f"{proc.stderr.strip() or proc.stdout.strip()}"
                 ),
             )
-        return TmuxResult(ok=True)
+        return TmuxResult(ok=True, output=proc.stdout or "")
 
     def spawn(
         self,
@@ -203,14 +213,56 @@ class TmuxRunner:
             # leftover is dead weight — clear it.
             logger.info("clearing stale tmux session %s before spawn", target)
             self._run(["kill-session", "-t", target], timeout)
-        return self._run(
+        result = self._run(
             ["new-session", "-d", "-s", target, "-c", cwd, "--", adapter.binary]
             + harness_argv,
             timeout,
         )
+        if result.ok and self.remain_on_exit:
+            self._set_remain_on_exit(target, timeout)
+        return result
+
+    def _set_remain_on_exit(self, target: str, timeout: Optional[float]) -> None:
+        """Keep the pane (and its scrollback) after the harness exits (issue-86).
+
+        Best-effort: ``remain-on-exit`` is a *window* option (hence ``-w``) and
+        older tmux builds may reject the invocation — the session is perfectly
+        usable without it, so a failure is a warning, never a failed spawn.
+        """
+        result = self._run(
+            ["set-option", "-t", target, "-w", "remain-on-exit", "on"], timeout
+        )
+        if not result.ok:
+            logger.warning(
+                "could not set remain-on-exit on %s (%s) — the pane will close "
+                "when the harness exits, losing its scrollback",
+                target,
+                result.error,
+            )
 
     def has_session(self, target: str) -> bool:
         return self._run(["has-session", "-t", target], timeout=10).ok
+
+    def has_live_session(self, target: str) -> bool:
+        """True when the session exists AND at least one pane is still running.
+
+        With ``remain-on-exit`` a session outlives its harness process, so
+        ``has-session`` alone no longer means "there is something to talk to".
+        Anything unreadable (a tmux too old to know ``#{pane_dead}``, empty
+        output) is treated as **live** — degrading to the pre-issue-86
+        behaviour rather than declaring healthy sessions dead.
+        """
+        if not self.has_session(target):
+            return False
+        result = self._run(
+            ["list-panes", "-t", target, "-F", "#{pane_dead}"], timeout=10
+        )
+        if not result.ok:
+            return True
+        flags = [line.strip() for line in result.output.splitlines() if line.strip()]
+        if not flags:
+            return True
+        return any(flag != "1" for flag in flags)
 
     def deliver(
         self, session: Session, prompt: str, timeout: Optional[float] = None
@@ -221,13 +273,14 @@ class TmuxRunner:
         non-issues; -p pastes bracketed so the TUI treats it as one message.
         """
         target = session.tmux_target
-        if not self.has_session(target):
+        if not self.has_live_session(target):
             return TmuxResult(
                 ok=False,
                 session_missing=True,
                 error=(
-                    f"tmux session {target} not found (crashed or was killed); "
-                    "respawning a fresh session and delivering this event into it"
+                    f"tmux session {target} not found or its harness has exited "
+                    "(crashed, killed, or a retained dead pane); respawning a "
+                    "fresh session and delivering this event into it"
                 ),
             )
         fd, path = tempfile.mkstemp(prefix="the-loop-evt-")

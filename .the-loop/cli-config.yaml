@@ -47,6 +47,15 @@ webhooks:
         keepCheckoutOnClose: false  # keep the work item's checkout after PR close (for post-mortem)
         gitBinary: git
       runner: process             # process (headless) | tmux (attachable interactive TUI — issue-32)
+      # Lifetime of the tmux-hosted sessions (issue-86): a finished session stays
+      # readable. keepSessionOnClose leaves the tmux session running when the work
+      # item closes (PR merged/closed or `sessions close`); remainOnExit keeps the
+      # pane + scrollback when the harness process itself exits. Retained sessions
+      # accumulate — `the-loop sessions list --status closed` shows them, and a new
+      # spawn for the same work item reclaims the loop-<slug> name.
+      tmux:
+        keepSessionOnClose: true
+        remainOnExit: true
       webTerminal:                # ttyd browser terminal onto tmux sessions (runner: tmux)
         enabled: false            # access control is environmental: localhost/VPN/provider (decision-021)
         host: 127.0.0.1
@@ -71,6 +80,15 @@ webhooks:
         started: eyes               # 👀 event dequeued for delivery/spawn
         completed: hooray           # 🎉 dispatch succeeded
         error: confused             # 😕 dispatch failed / worker crashed
+        ghBinary: gh
+      # Session announcement comment (issue-86): when a tmux-mode session is
+      # spawned, post the tmux session name + `tmux attach -t …` on the work item
+      # so a human can watch it work. A respawn posts nothing further (same name,
+      # same command). Best-effort via your gh CLI; no-op for process-runner
+      # sessions, non-GitHub work items, or a missing gh. The body carries no
+      # paths, session ids or hostnames.
+      announce:
+        enabled: true
         ghBinary: gh
 
 polling:

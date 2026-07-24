@@ -16,16 +16,28 @@ class _NoopReactor:
         return False
 
 
+class _NoopAnnouncer:
+    """Stand-in for SessionAnnouncer that never shells out."""
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def announce(self, session):
+        return False
+
+
 @pytest.fixture(autouse=True)
 def _hermetic_reactor(monkeypatch):
-    """Dispatchers built without an injected reactor must not shell out to gh.
+    """Dispatchers built without injected gh-writers must not shell out to gh.
 
-    ``routing.reactions`` defaults to enabled (issue-84, owner decision), so a
-    bare ``RoutingConfig()`` would give every dispatcher test a real
-    ``GitHubReactor`` — and CI runners ship a real ``gh``. Stub the class the
-    dispatcher instantiates; reaction tests inject their own reactor/runner.
+    ``routing.reactions`` (issue-84) and ``routing.announce`` (issue-86) both
+    default to enabled, so a bare ``RoutingConfig()`` would give every
+    dispatcher test a real ``GitHubReactor``/``SessionAnnouncer`` — and CI
+    runners ship a real ``gh``. Stub the classes the dispatcher instantiates;
+    the reaction/announcement tests inject their own.
     """
     monkeypatch.setattr(dispatcher_mod, "GitHubReactor", _NoopReactor)
+    monkeypatch.setattr(dispatcher_mod, "SessionAnnouncer", _NoopAnnouncer)
 
 
 @pytest.fixture(autouse=True)
