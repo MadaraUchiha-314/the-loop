@@ -122,6 +122,30 @@ starting point ships at
 | `spawnPromptTemplate` | string | `skills/the-loop/templates/webhook-autoexecute-prompt.md` | `string.Template` for a newly spawned (auto-execute) session; built-in default when absent. |
 | `harnessArgs.claude` | string[] | `[]` | Extra CLI args passed to Claude Code (e.g. `[--permission-mode, acceptEdits]`). |
 | `harnessArgs.cursor` | string[] | `[]` | Extra CLI args passed to `cursor-agent` (e.g. `[--force]`). |
+| `reactions` | object | — | Dispatch-lifecycle emoji reactions on the triggering GitHub entity (see below). |
+
+#### `webhooks.ghWebhook.routing.reactions` — dispatch-lifecycle emoji acknowledgements
+
+When the dispatcher picks an event up it reacts with `started` (default 👀 `eyes`) on
+the comment that triggered it — or on the issue/PR itself for presence/label/review
+events — then adds `completed` (default 🎉 `hooray`) or `error` (default 😕
+`confused`) from the dispatch outcome, so a human watching the thread can see the-loop
+working before any reply comment exists. Shared by the webhook receiver **and** the
+poller, and hot-reloaded with the rest of `routing`.
+
+Best-effort by design: reactions post through your own `gh` CLI (like the poller's
+reads — the daemon holds no token); a reaction failure never affects the dispatch, and
+a missing `gh`, a non-GitHub provider, or an event with no reactable target is a
+silent no-op. GitHub's reaction palette is fixed (`+1 -1 laugh confused heart hooray
+rocket eyes`) — ✅/⁉️ don't exist, so the defaults are the closest supported match.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | boolean | `true` | On by default (owner decision, PR #85): reacting is the daemon's one **write** to GitHub, posted with your own `gh` auth, reaction-only, and a silent no-op without `gh`. Set `false` to opt out. |
+| `started` | palette name \| `""` | `eyes` | Reaction added when the event is dequeued for delivery/spawn. `""` skips this state. |
+| `completed` | palette name \| `""` | `hooray` | Reaction added when the dispatch succeeds. `""` skips this state. |
+| `error` | palette name \| `""` | `confused` | Reaction added when the dispatch fails or the worker crashes. `""` skips this state. |
+| `ghBinary` | string | `gh` | Path/name of the gh CLI used to post reactions. |
 
 #### `webhooks.ghWebhook.routing.webTerminal` — browser terminal for tmux sessions (`runner: tmux`)
 

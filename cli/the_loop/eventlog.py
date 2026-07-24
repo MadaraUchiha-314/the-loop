@@ -96,6 +96,15 @@ EVENT_TYPES: Dict[str, str] = {
     "dispatch.error": (
         "A dispatch worker crashed on an event (work_item, error; will_retry)."
     ),
+    "reaction.added": (
+        "A dispatch-lifecycle emoji reaction was added to the triggering "
+        "comment/issue/PR (work_item, state: started | completed | error, "
+        "content, target) — issue-84, routing.reactions."
+    ),
+    "reaction.failed": (
+        "Adding a dispatch-lifecycle reaction failed; the dispatch itself is "
+        "unaffected (work_item, state, content, error)."
+    ),
     # -- session lifecycle (source: any) --------------------------------------
     "session.registered": (
         "A work item ↔ harness session link was recorded in the registry "

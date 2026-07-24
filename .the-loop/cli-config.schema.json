@@ -182,6 +182,41 @@
                     "claude": { "type": "array", "items": { "type": "string" } },
                     "cursor": { "type": "array", "items": { "type": "string" } }
                   }
+                },
+                "reactions": {
+                  "type": "object",
+                  "description": "Dispatch-lifecycle emoji reactions on the triggering GitHub entity (issue-84): when the dispatcher picks an event up it reacts with `started` on the comment that triggered it (or the issue/PR itself for presence/label/review events), then `completed` or `error` from the dispatch outcome. Shared by the webhook receiver AND the poller (like the rest of `routing`). Best-effort via the operator's own `gh` CLI: a reaction failure never affects the dispatch, and a missing `gh`, a non-GitHub provider, or an event with no reactable target is a silent no-op. GitHub's reaction palette is fixed (+1 -1 laugh confused heart hooray rocket eyes) — ✅/⁉️ do not exist, so the defaults map each state to the closest supported emoji.",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean",
+                      "default": true,
+                      "description": "Default true (owner decision, PR #85 — out-of-box visibility is the feature's point). Reacting is the daemon's one WRITE to GitHub, posted with the operator's own gh credentials and reaction-only (no text); it degrades to a silent no-op when gh is absent. Set false to opt out."
+                    },
+                    "started": {
+                      "type": "string",
+                      "enum": ["+1", "-1", "laugh", "confused", "heart", "hooray", "rocket", "eyes", ""],
+                      "default": "eyes",
+                      "description": "Reaction added when the event is dequeued for delivery/spawn (👀 by default). Empty string skips this state."
+                    },
+                    "completed": {
+                      "type": "string",
+                      "enum": ["+1", "-1", "laugh", "confused", "heart", "hooray", "rocket", "eyes", ""],
+                      "default": "hooray",
+                      "description": "Reaction added when the dispatch succeeds (🎉 by default — GitHub has no ✅ reaction). Empty string skips this state."
+                    },
+                    "error": {
+                      "type": "string",
+                      "enum": ["+1", "-1", "laugh", "confused", "heart", "hooray", "rocket", "eyes", ""],
+                      "default": "confused",
+                      "description": "Reaction added when the dispatch fails or the worker crashes (😕 by default — GitHub has no ⁉️ reaction). Empty string skips this state."
+                    },
+                    "ghBinary": {
+                      "type": "string",
+                      "default": "gh",
+                      "description": "Path/name of the gh CLI used to post reactions (uses the operator's existing gh auth, like the poller's reads)."
+                    }
+                  }
                 }
               }
             }

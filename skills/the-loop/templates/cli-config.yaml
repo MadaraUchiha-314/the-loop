@@ -59,6 +59,19 @@ webhooks:
       harnessArgs:
         claude: []                  # e.g. [--permission-mode, acceptEdits]
         cursor: []                  # e.g. [--force]
+      # Dispatch-lifecycle emoji reactions (issue-84): acknowledge on the triggering
+      # comment (or the issue/PR itself) that the-loop started / completed / failed
+      # processing an event. GitHub's palette is fixed (+1 -1 laugh confused heart
+      # hooray rocket eyes) — ✅/⁉️ don't exist, so defaults are the closest match.
+      # Best-effort via YOUR gh CLI (posts with your gh auth; default on — set
+      # enabled: false to opt out); no-op when gh is absent, a state is "", or
+      # the event has no reactable target.
+      reactions:
+        enabled: true
+        started: eyes               # 👀 event dequeued for delivery/spawn
+        completed: hooray           # 🎉 dispatch succeeded
+        error: confused             # 😕 dispatch failed / worker crashed
+        ghBinary: gh
 
 # Pull-based, provider-agnostic ingress for hosts a webhook cannot reach
 # (`the-loop poll start`). Each `sources` entry selects a provider the system
