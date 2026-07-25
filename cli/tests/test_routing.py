@@ -402,6 +402,42 @@ def test_router_pr_close_bypasses_authz_for_cleanup():
     assert routed is not None  # lifecycle auto-close must still fire
 
 
+def test_router_issue_close_bypasses_authz_for_cleanup():
+    # issue-94: closing the ticket ends the session, so it is the same kind of
+    # lifecycle signal PR-close already is — it injects no text and can only
+    # close the-loop's own session.
+    router = Router(events=[], authorized_users=["me"])
+    routed = router.route(
+        "issues",
+        {
+            "action": "closed",
+            "repository": {"full_name": "octo/repo"},
+            "sender": {"login": "attacker"},
+            "issue": {"number": 15},
+        },
+        "d-1",
+    )
+    assert routed is not None
+
+
+def test_router_still_guards_non_close_issue_events():
+    # the exemption is narrow: only action == closed
+    router = Router(events=[], authorized_users=["me"])
+    assert (
+        router.route(
+            "issues",
+            {
+                "action": "labeled",
+                "repository": {"full_name": "octo/repo"},
+                "sender": {"login": "attacker"},
+                "issue": {"number": 15},
+            },
+            "d-2",
+        )
+        is None
+    )
+
+
 def test_router_drops_its_own_self_marked_reply():
     from the_loop.authz import SELF_COMMENT_MARKER
 
@@ -775,6 +811,73 @@ def test_dispatcher_still_resumes_on_pr_events_that_are_not_close(tmp_path):
     assert wait_until(lambda: len(adapter.calls) == 1)
     dispatcher.stop()
     assert registry.find_by_work_item(REF) is not None  # not closed
+
+
+def routed_issue_closed(delivery="ic-1", number=15):
+    payload = {
+        "action": "closed",
+        "repository": {"full_name": "octo/repo"},
+        "issue": {"number": number, "state_reason": "completed"},
+    }
+    return RoutedEvent(
+        event="issues",
+        action="closed",
+        delivery_id=delivery,
+        work_items=extract_work_items("issues", payload),
+        payload=payload,
+    )
+
+
+def test_dispatcher_auto_closes_session_on_issue_close(tmp_path):
+    # issue-94: a closed ticket ends the session instead of waking the agent.
+    adapter = FakeAdapter()
+    registry, dispatcher = make_dispatcher(tmp_path, adapter)
+    registry.register(make_session())
+    dispatcher.handle(routed_issue_closed())
+    dispatcher.stop()
+    assert registry.find_by_work_item(REF) is None  # auto-closed
+    assert registry.list_sessions(status="closed")
+    assert adapter.calls == []  # never delivered into the conversation
+
+
+def test_dispatcher_issue_close_never_spawns(tmp_path):
+    adapter = FakeAdapter()
+    registry, dispatcher = make_dispatcher(
+        tmp_path, adapter, spawn_on_unmatched="always"
+    )
+    dispatcher.handle(routed_issue_closed())
+    dispatcher.stop()
+    assert adapter.spawns == []
+
+
+def test_dispatcher_still_resumes_on_issue_events_that_are_not_close(tmp_path):
+    adapter = FakeAdapter()
+    registry, dispatcher = make_dispatcher(tmp_path, adapter)
+    registry.register(make_session())
+    reopened = routed_issue_closed(delivery="ic-2")
+    reopened.action = "reopened"
+    dispatcher.handle(reopened)
+    assert wait_until(lambda: len(adapter.calls) == 1)
+    dispatcher.stop()
+    assert registry.find_by_work_item(REF) is not None
+
+
+@pytest.mark.parametrize(
+    "event,merged,expected",
+    [
+        ("issues", None, "issue-closed"),
+        ("pull_request", True, "pr-merged"),
+        ("pull_request", False, "pr-closed"),
+    ],
+)
+def test_close_reason_names_why_the_work_item_ended(event, merged, expected):
+    from the_loop.webhook.dispatcher import _close_reason, _is_close_event
+
+    routed = (
+        routed_issue_closed() if event == "issues" else routed_pr_closed(merged=merged)
+    )
+    assert _is_close_event(routed)
+    assert _close_reason(routed) == expected
 
 
 # -- delivery status for poll-path retry accounting (issue-80) ----------------

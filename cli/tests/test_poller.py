@@ -17,6 +17,7 @@ import subprocess
 import pytest
 
 from the_loop.poller import (
+    Closure,
     Comment,
     GhClient,
     GhComment,
@@ -370,6 +371,86 @@ def test_provider_comment_event_carries_body_and_is_unlabeled():
     assert ev.payload["comment"]["body"] == "the build is red"
 
 
+def _state_client(payload):
+    """A GhClient answering ``gh api repos/…/issues/<n>`` with ``payload``."""
+
+    def runner(cmd, **kwargs):
+        assert cmd[1] == "api" and cmd[2].startswith("repos/")
+        return subprocess.CompletedProcess(cmd, 0, json.dumps(payload), "")
+
+    return GhClient(runner=runner)
+
+
+def _provider(gh):
+    return GitHubPollProvider(parse_repos(["octo/repo"]), LABEL, gh=gh)
+
+
+@pytest.mark.parametrize(
+    "payload,expected",
+    [
+        ({"number": 15, "state": "open"}, None),
+        ({"number": 15, "state": "closed"}, ("closed", "issue")),
+        (
+            {"number": 16, "state": "closed", "pull_request": {"merged_at": None}},
+            ("closed", "pull-request"),
+        ),
+        (
+            {"number": 16, "state": "closed", "pull_request": {"merged_at": "2026"}},
+            ("merged", "pull-request"),
+        ),
+    ],
+)
+def test_provider_closure_reads_state_for_issues_and_prs(payload, expected):
+    # issue-94: one REST endpoint answers for both kinds — the registry ref
+    # records only a number, and `gh issue view` refuses PR numbers.
+    ref = WorkItemRef.parse(f"github:octo/repo#{payload['number']}")
+    closure = _provider(_state_client(payload)).closure(ref)
+    if expected is None:
+        assert closure is None
+    else:
+        assert closure is not None and (closure.state, closure.kind) == expected
+
+
+def test_provider_closure_propagates_a_gh_failure():
+    def runner(cmd, **kwargs):
+        return subprocess.CompletedProcess(cmd, 1, "", "HTTP 502")
+
+    provider = _provider(GhClient(runner=runner))
+    with pytest.raises(ProviderError):
+        provider.closure(WorkItemRef.parse("github:octo/repo#15"))
+
+
+@pytest.mark.parametrize(
+    "ref,owned",
+    [
+        ("github:octo/repo#15", True),
+        ("github:OCTO/Repo#15", True),  # GitHub is case-insensitive
+        ("github:other/repo#15", False),
+        ("jira:octo/repo#15", False),
+    ],
+)
+def test_provider_owns_only_its_configured_scope(ref, owned):
+    assert _provider(_gh_client()).owns(WorkItemRef.parse(ref)) is owned
+
+
+def test_provider_closure_event_mirrors_the_webhook_shape():
+    provider = _provider(_gh_client())
+    ref = WorkItemRef.parse("github:octo/repo#16")
+    ev = provider.closure_event(
+        ref, Closure(state="merged", kind="pull-request", title="t", url="u")
+    )
+    assert (ev.event, ev.action, ev.labeled) == ("pull_request", "closed", False)
+    assert ev.payload["pull_request"]["merged"] is True
+    assert ev.payload["repository"]["full_name"] == "octo/repo"
+    assert [w.ref for w in ev.work_items] == [ref.ref]
+    assert ev.delivery_id == "poll-close-github:octo/repo#16-merged"  # stable
+
+    issue = provider.closure_event(
+        WorkItemRef.parse("github:octo/repo#15"), Closure(state="closed", kind="issue")
+    )
+    assert issue.event == "issues" and issue.payload["issue"]["number"] == 15
+
+
 def test_provider_without_repos_raises_on_list():
     provider = GitHubPollProvider([], LABEL, gh=_gh_client())
     with pytest.raises(ProviderError):
@@ -456,10 +537,16 @@ class FakeProvider(PollProvider):
 
     name = "fake"
 
-    def __init__(self, items=(), comments=None, linked=None):
+    def __init__(self, items=(), comments=None, linked=None, closures=None, owned=None):
         self._items = list(items)
         self._comments = comments or {}
         self._linked = linked or {}  # ref -> extra linked WorkItemRefs
+        # issue-94 closure reconciliation, opt-in per test: ref -> Closure |
+        # None (still open) | an Exception to raise. ``owned`` overrides which
+        # refs this source claims (default: all, once closures are configured).
+        self._closures = dict(closures or {})
+        self._owned = owned
+        self.closure_asks = []
 
     def describe(self):
         return "fake"
@@ -492,6 +579,30 @@ class FakeProvider(PollProvider):
             delivery_id=f"comment-{comment.id}",
             work_items=refs,
             payload={"comment": {"id": comment.id}},
+            labeled=False,
+        )
+
+    # -- closure reconciliation (issue-94) --------------------------------------
+
+    def owns(self, ref):
+        if self._owned is not None:
+            return ref.ref in self._owned
+        return bool(self._closures)
+
+    def closure(self, ref):
+        self.closure_asks.append(ref.ref)
+        answer = self._closures.get(ref.ref)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    def closure_event(self, ref, closure):
+        return RoutedEvent(
+            event="issues",
+            action="closed",
+            delivery_id=f"close-{ref.ref}-{closure.state}",
+            work_items=[ref],
+            payload={"issue": {"number": ref.number}},
             labeled=False,
         )
 
@@ -1051,3 +1162,139 @@ def test_poller_hot_reloads_providers_and_interval(tmp_path):
     assert poller.providers == [reloaded_provider]  # swapped in live
     assert poller.config.interval_seconds == 7  # interval reloaded too
     assert [e.event for e in disp.events] == ["issues"]  # the new source was polled
+
+
+# -- closure reconciliation (issue-94) ----------------------------------------
+
+
+REF15 = f"github:{OWNER}/{REPO}#15"
+
+
+def _active_session(registry, ref=REF15):
+    registry.register(Session(WorkItemRef.parse(ref), "claude", "sess-1", "."))
+
+
+def test_a_closed_item_closes_its_session(tmp_path):
+    # The listing only ever carries OPEN items, so a closed issue simply
+    # vanishes from it; the poller must notice from the registry side.
+    registry = SessionRegistry(tmp_path / "sessions")
+    _active_session(registry)
+    provider = FakeProvider(items=[], closures={REF15: Closure(state="closed")})
+    disp = RecordingDispatcher()
+    state = PollState(tmp_path / "state.json")
+    state.baseline_comments(REF15, ["IC_1"], "t")
+
+    summary = make_poller(provider, registry, disp, state).poll_once()
+
+    assert summary.closures == 1
+    assert [(e.event, e.action) for e in disp.events] == [("issues", "closed")]
+    # the ledger is dropped so a REOPENED item is first-sight again
+    assert state.is_known(REF15) is False
+
+
+def test_a_merged_pr_closes_its_session(tmp_path):
+    registry = SessionRegistry(tmp_path / "sessions")
+    _active_session(registry)
+    provider = FakeProvider(
+        items=[], closures={REF15: Closure(state="merged", kind="pull-request")}
+    )
+    disp = RecordingDispatcher()
+    summary = make_poller(
+        provider, registry, disp, PollState(tmp_path / "state.json")
+    ).poll_once()
+    assert summary.closures == 1
+    assert disp.events[0].delivery_id.endswith("merged")
+
+
+def test_a_still_open_item_keeps_its_session(tmp_path):
+    # e.g. the auto-execute label was removed: still open, still routed.
+    registry = SessionRegistry(tmp_path / "sessions")
+    _active_session(registry)
+    provider = FakeProvider(items=[], closures={REF15: None})
+    disp = RecordingDispatcher()
+    summary = make_poller(
+        provider, registry, disp, PollState(tmp_path / "state.json")
+    ).poll_once()
+    assert summary.closures == 0 and disp.events == []
+    assert registry.find_by_work_item(REF15) is not None
+
+
+def test_an_unanswerable_closure_leaves_the_session_running(tmp_path):
+    registry = SessionRegistry(tmp_path / "sessions")
+    _active_session(registry)
+    provider = FakeProvider(items=[], closures={REF15: ProviderError("502")})
+    disp = RecordingDispatcher()
+    summary = make_poller(
+        provider, registry, disp, PollState(tmp_path / "state.json")
+    ).poll_once()
+    assert summary.closures == 0 and disp.events == []
+    assert summary.errors and "502" in summary.errors[0]
+    assert registry.find_by_work_item(REF15) is not None  # never close on doubt
+
+
+def test_a_failed_listing_never_reconciles(tmp_path):
+    # A partial/failed listing must not be read as "everything closed".
+    class Boom(FakeProvider):
+        def list_work_items(self):
+            raise ProviderError("gh exploded")
+
+    registry = SessionRegistry(tmp_path / "sessions")
+    _active_session(registry)
+    provider = Boom(items=[], closures={REF15: Closure(state="closed")})
+    disp = RecordingDispatcher()
+    summary = make_poller(
+        provider, registry, disp, PollState(tmp_path / "state.json")
+    ).poll_once()
+    assert provider.closure_asks == [] and summary.closures == 0
+    assert registry.find_by_work_item(REF15) is not None
+
+
+def test_a_session_outside_the_sources_scope_is_untouched(tmp_path):
+    registry = SessionRegistry(tmp_path / "sessions")
+    _active_session(registry)
+    provider = FakeProvider(items=[], closures={REF15: Closure("closed")}, owned=[])
+    disp = RecordingDispatcher()
+    summary = make_poller(
+        provider, registry, disp, PollState(tmp_path / "state.json")
+    ).poll_once()
+    assert provider.closure_asks == [] and summary.closures == 0
+
+
+def test_a_listed_items_linked_ref_is_not_reconciled(tmp_path):
+    # A session registered against the issue stays live while its PR is open.
+    registry = SessionRegistry(tmp_path / "sessions")
+    _active_session(registry)
+    pr = WorkItem("github", OWNER, REPO, 16, "pull-request", labels=[LABEL])
+    provider = FakeProvider(
+        items=[pr],
+        comments={16: []},
+        linked={pr.ref: [REF15]},
+        closures={REF15: Closure("closed")},
+    )
+    disp = RecordingDispatcher()
+    summary = make_poller(
+        provider, registry, disp, PollState(tmp_path / "state.json")
+    ).poll_once()
+    assert provider.closure_asks == [] and summary.closures == 0
+
+
+def test_an_already_closed_session_is_not_reconciled_again(tmp_path):
+    registry = SessionRegistry(tmp_path / "sessions")
+    _active_session(registry)
+    registry.close(REF15)
+    provider = FakeProvider(items=[], closures={REF15: Closure("closed")})
+    disp = RecordingDispatcher()
+    summary = make_poller(
+        provider, registry, disp, PollState(tmp_path / "state.json")
+    ).poll_once()
+    assert provider.closure_asks == [] and summary.closures == 0
+
+
+def test_poll_state_forget_drops_the_whole_ledger(tmp_path):
+    state = PollState(tmp_path / "state.json")
+    state.baseline_comments(REF15, ["IC_1"], "t")
+    state.note_spawn_attempt(REF15, "d-1")
+    state.forget(REF15)
+    assert state.is_known(REF15) is False
+    assert state.seen_comments(REF15) == set()
+    assert state.spawn_attempts(REF15) == 0

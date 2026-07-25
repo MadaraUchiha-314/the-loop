@@ -31,7 +31,8 @@
             "pidfile": { "type": "string", "default": ".the-loop/gh-webhook.pid" },
             "events": {
               "type": "array",
-              "description": "GitHub event names of interest, e.g. pull_request_review_comment, workflow_run. Empty = accept all event types.",
+              "default": ["issues", "issue_comment", "pull_request", "pull_request_review", "pull_request_review_comment", "workflow_run", "check_run", "check_suite", "status"],
+              "description": "GitHub event names of interest. Omitted or empty = the-loop's default set (shown above): every event it can map to a work item, so nothing routable is missed. Setting an explicit list narrows it — keep `issues` and `pull_request` in it, or a closed issue / merged PR never reaches the receiver and its session (plus its tmux session) is never closed; the receiver warns at startup if they are missing (issue-94).",
               "items": { "type": "string" }
             },
             "routing": {
@@ -141,6 +142,17 @@
                       "type": "boolean",
                       "default": true,
                       "description": "When a dead tmux session is respawned (issue-80/issue-89), continue the SAME harness conversation — `claude --resume <recorded session id>` — instead of booting a blank one, so the agent keeps everything it knew about the work item. The registry keeps that session id, so repeated crashes converge on one conversation. The respawn is verified (see resumeProbeSeconds) and falls back to a fresh conversation whenever it cannot be: the harness has no interactive resume (anything but Claude Code today), the recorded id is malformed or absent, tmux failed, or the resumed harness exited immediately. false restores the pre-issue-89 behaviour (always a fresh conversation)."
+                    },
+                    "killHarnessOnClose": {
+                      "type": "boolean",
+                      "default": true,
+                      "description": "When a work item closes (issue closed, PR merged/closed, or `the-loop sessions close`) and its tmux session is KEPT, end the harness process running inside it — so the retained pane is a readable record of what happened and not a live, writable claude/cursor TUI a stray keystroke or paste could resume (issue-94). SIGTERM, escalating to SIGKILL after harnessKillGraceSeconds; `remain-on-exit` is re-set first so the pane and its scrollback survive the process. Best-effort: a missing session or an already-dead pane never blocks the close. false restores the pre-issue-94 behaviour (a retained session keeps its harness running). Irrelevant when keepSessionOnClose is false — killing the tmux session ends the harness with it."
+                    },
+                    "harnessKillGraceSeconds": {
+                      "type": "number",
+                      "minimum": 0,
+                      "default": 5,
+                      "description": "How long killHarnessOnClose gives the harness to exit after SIGTERM before sending SIGKILL. 0 escalates immediately."
                     },
                     "resumeProbeSeconds": {
                       "type": "number",

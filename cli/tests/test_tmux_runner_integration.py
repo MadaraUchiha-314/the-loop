@@ -10,12 +10,14 @@ Requirement: docs/specs/issue-32/requirements.md#R1 #R2 #R3 #R7
 """
 
 import json
+import signal
 import stat
 import time
 
 import pytest
 
 from the_loop import eventlog
+from the_loop import runner as runner_mod
 from the_loop.harness import ClaudeCodeAdapter
 from the_loop.runner import TmuxRunner
 from the_loop.sessions import Session, SessionRegistry, WorkItemRef
@@ -31,7 +33,11 @@ AUTO_LABEL = "the-loop: auto-execute"
 # report a dead pane, i.e. a session retained after its harness exited
 # (issue-86); $STUB_TMUX_PANE_DEAD_ONCE reports one dead pane and then live
 # ones, which is a session that died and was successfully respawned — the
-# resume-on-respawn happy path (issue-89).
+# resume-on-respawn happy path (issue-89). `list-panes` answers whichever
+# format was asked for, so the pid-carrying query `terminate_harness` uses
+# (issue-94) gets $STUB_TMUX_PANE_PID; once $STUB_TMUX_KILLED_FLAG exists the
+# pane reports dead — that file is how a test's fake `os.kill` says the harness
+# took the signal.
 STUB_TMUX = """#!/usr/bin/env python3
 import json, os, sys
 argv = sys.argv[1:]
@@ -43,7 +49,12 @@ if argv and argv[0] == "list-panes":
     if os.environ.get("STUB_TMUX_PANE_DEAD_ONCE"):
         seen = sum(1 for line in open(record) if json.loads(line)[0] == "list-panes")
         dead = seen <= 1
-    print("1" if dead else "0")
+    killed = os.environ.get("STUB_TMUX_KILLED_FLAG")
+    if killed and os.path.exists(killed):
+        dead = True
+    flag = "1" if dead else "0"
+    pid = os.environ.get("STUB_TMUX_PANE_PID", "4242")
+    print(pid + " " + flag if "pane_pid" in argv[-1] else flag)
 fail = set(v for v in os.environ.get("STUB_TMUX_FAIL", "").split(",") if v)
 sys.exit(1 if argv and argv[0] in fail else 0)
 """
@@ -293,6 +304,78 @@ def test_pr_close_kills_the_tmux_session_when_configured_off(pipeline_factory):
     assert wait_until(lambda: registry.find_by_work_item(REF) is None)
     kills = [c for c in calls() if c[0] == "kill-session"]
     assert kills and kills[0][kills[0].index("-t") + 1] == "loop-github-octo-repo-15"
+
+
+def issue_close_payload():
+    return {
+        "action": "closed",
+        "repository": {"full_name": "octo/repo"},
+        "issue": {"number": 15, "state_reason": "completed"},
+    }
+
+
+@pytest.fixture
+def fake_kill(tmp_path, monkeypatch):
+    """Record signals and let the stub tmux see the pane die (issue-94)."""
+    flag = tmp_path / "harness-killed"
+    monkeypatch.setenv("STUB_TMUX_KILLED_FLAG", str(flag))
+    signals = []
+
+    def killer(pid, sig):
+        signals.append((pid, sig))
+        flag.write_text("dead")
+
+    monkeypatch.setattr(runner_mod.os, "kill", killer)
+    return signals
+
+
+@pytest.mark.parametrize(
+    "event,payload_fn",
+    [("pull_request", pr_close_payload), ("issues", issue_close_payload)],
+)
+def test_closing_a_work_item_ends_the_harness_but_keeps_the_session(
+    pipeline, fake_kill, event, payload_fn
+):
+    """
+    Feature: tmux-hosted interactive sessions
+    Scenario: a closed work item's harness is ended, its transcript retained
+      Given a registered tmux-mode session for the work item
+      And routing.tmux.keepSessionOnClose and killHarnessOnClose are at their defaults
+      When the work item is closed (its PR merged, or the issue closed)
+      Then the harness process in the session's pane is sent SIGTERM
+      And remain-on-exit is set so the pane and its scrollback survive it
+      And tmux is NOT asked to kill the session
+    Requirement: docs/specs/issue-94/requirements.md#R3
+    """
+    deliver, registry, calls = pipeline
+    register_tmux_session(registry)
+    deliver(event, payload_fn(), f"d-term-{event}")
+    assert wait_until(lambda: registry.find_by_work_item(REF) is None)
+    assert wait_until(lambda: fake_kill == [(4242, signal.SIGTERM)])
+    assert [c for c in calls() if c[0] == "kill-session"] == []
+    assert [
+        c
+        for c in calls()
+        if c[0] == "set-option" and c[-2:] == ["remain-on-exit", "on"]
+    ]
+
+
+def test_ending_the_harness_on_close_can_be_switched_off(pipeline_factory, fake_kill):
+    """
+    Feature: tmux-hosted interactive sessions
+    Scenario: an operator keeps the pre-issue-94 behaviour
+      Given routing.tmux.killHarnessOnClose is false
+      When the work item's PR is merged
+      Then the registry session is closed
+      And the harness inside the retained tmux session is left running
+    Requirement: docs/specs/issue-94/requirements.md#R3
+    """
+    deliver, registry, calls = pipeline_factory({"tmux": {"killHarnessOnClose": False}})
+    register_tmux_session(registry)
+    deliver("pull_request", pr_close_payload(), "d-noterm-1")
+    assert wait_until(lambda: registry.find_by_work_item(REF) is None)
+    time.sleep(0.1)
+    assert fake_kill == []
 
 
 def test_retained_session_with_a_dead_pane_is_respawned(pipeline, monkeypatch):

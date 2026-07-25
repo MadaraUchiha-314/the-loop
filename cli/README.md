@@ -99,7 +99,7 @@ starting point ships at
 | `path` | string | `/gh-webhook` | HTTP path the receiver serves. |
 | `secretEnv` | string | `THE_LOOP_GH_WEBHOOK_SECRET` | Env var holding the webhook secret for HMAC verification (never stored in config). |
 | `pidfile` | string | `.the-loop/gh-webhook.pid` | Pidfile written on `start`, read on `stop`. |
-| `events` | string[] | `[]` (all) | GitHub event names of interest (e.g. `issues`, `pull_request`, `workflow_run`); empty accepts all. |
+| `events` | string[] | the routable set | GitHub event names of interest. Omitted/empty = the-loop's default set — `issues`, `issue_comment`, `pull_request`, `pull_request_review`, `pull_request_review_comment`, `workflow_run`, `check_run`, `check_suite`, `status` (everything it can map to a work item). An explicit list narrows it; keep `issues` and `pull_request` or a closed issue / merged PR never arrives and its session is never closed — the receiver warns at startup when they are missing. |
 | `routing` | object | — | Route received events to registered harness sessions (see below). |
 
 #### `webhooks.ghWebhook.routing` — session routing / auto-execution (also reused by the poller's dispatch)
@@ -138,9 +138,12 @@ exactly when you most wanted it. The defaults keep a finished session readable
 | `remainOnExit` | boolean | `true` | Set tmux's `remain-on-exit` on spawned sessions, so the pane and its scrollback survive the harness process exiting. Best-effort: an older tmux that rejects it only warns. |
 | `resumeOnRespawn` | boolean | `true` | When a dead tmux session is respawned, continue the **same** harness conversation (`claude --resume <recorded id>`) instead of booting a blank one, so the agent keeps what it knew about the work item. `false` restores the pre-issue-89 fresh-conversation respawn. |
 | `resumeProbeSeconds` | number | `2` | How long a resume waits before checking the harness is still running. `tmux new-session -d` succeeds the moment the pane forks, while a harness that can't resume exits in a fraction of a second — without the probe such a respawn would report success while the event went nowhere. `0` checks immediately. |
+| `killHarnessOnClose` | boolean | `true` | When the work item closes and its tmux session is **kept**, end the harness process inside it (SIGTERM, then SIGKILL) — so the retained pane is a *record* of what happened, not a live TUI a stray keystroke or paste could resume. `remain-on-exit` is re-set first, so the scrollback survives the process. `false` restores the pre-issue-94 behaviour. |
+| `harnessKillGraceSeconds` | number | `5` | How long the harness gets to exit after SIGTERM before SIGKILL. `0` escalates immediately. |
 
-Attach to a retained session with `tmux attach -t loop-<slug>` or `the-loop sessions
-attach --work-item <ref> --read-only` — which works after the work item is closed too.
+Attach to a retained session with `tmux attach -r -t loop-<slug>` or `the-loop sessions
+attach --work-item <ref>` — which works after the work item is closed too (and is then
+always read-only: a finished session takes no input).
 Two consequences worth knowing: retained sessions **accumulate** until you kill them
 (`the-loop sessions list --status closed` finds them, `sessions close --kill-tmux` ends
 one), and a new spawn for the same work item **reclaims** the deterministic
@@ -330,11 +333,15 @@ the-loop sessions close --work-item github:OWNER/REPO#N [--keep-tmux|--kill-tmux
 - Claude Code sessions register with `$CLAUDE_SESSION_ID`; Cursor sessions register
   with the chat id they were launched with (non-interactive `cursor-agent ls` is
   unreliable for id discovery, so the id is captured at registration time).
-- When a work item's PR is merged or closed, the receiver **auto-closes** the session
-  (on the `pull_request` `closed` event) — no manual `sessions close` needed. A
-  tmux-hosted session is **kept running** so you can read back what happened
-  (`routing.tmux.keepSessionOnClose`); `sessions attach` reaches it even once the work
-  item is closed, and `sessions close --kill-tmux` ends it for good.
+- When a work item **ends** — its issue closed, or its PR merged/closed — the session is
+  **auto-closed**; no manual `sessions close` needed. Both ingress paths do it: the
+  receiver on the `issues`/`pull_request` `closed` event, and the poller by noticing
+  (each cycle) that an active session's item is no longer in the open listing and
+  confirming upstream that it really ended. A tmux-hosted session is **kept** so you can
+  read back what happened (`routing.tmux.keepSessionOnClose`), but the harness inside it
+  is ended (`routing.tmux.killHarnessOnClose`) so nothing can be typed into a finished
+  work item; `sessions attach` reaches the retained session read-only, and
+  `sessions close --kill-tmux` ends it for good.
 
 **Label-gated auto-execution** (`spawnOnUnmatched: labeled`): give an issue/PR the
 configurable `routing.autoExecuteLabel` (default `the-loop: auto-execute`) and the
@@ -392,6 +399,15 @@ templates are all reused unchanged.
 - **New comments** are forwarded to the item's session exactly once, deduped across
   polls **and restarts** via `--state-file` (git-ignored runtime state). The pre-existing
   thread is baselined on first sight, not replayed.
+- **Finished work items are closed.** A listing only ever carries *open* items, so a
+  closed issue or merged PR simply vanishes from it. After each successful listing the
+  poller reconciles the **registry** against it: an active session whose item is no
+  longer listed is checked once upstream (`gh api repos/…/issues/<n>`), and a genuinely
+  closed/merged item is closed through the same path a `closed` webhook takes — registry
+  entry closed, tmux handled per `routing.tmux`, workspace cleaned. It never closes on
+  doubt: a failed listing skips reconciliation entirely, and an unanswerable state query
+  leaves the session running for the next cycle. Reopening an item makes it first-sight
+  again, so work restarts (issue-94).
 - **Config:** ingress defaults come from `polling` in the **CLI config** (when PyYAML is
   installed); dispatch behaviour is reused from `webhooks.ghWebhook.routing` (same
   file). Flags cover only the run loop.

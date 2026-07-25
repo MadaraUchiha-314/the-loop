@@ -81,18 +81,37 @@ class GhState:
         self.comments = []
         self.prs = []
         self.pr_comments = []
+        # `gh api repos/…/issues/<n>` — the closure question (issue-94).
+        self.item_state = {"number": 15, "state": "open"}
+        self.list_fails = False
+        self.state_fails = False
+        self.api_calls = []
 
     def runner(self, cmd, **kwargs):
+        if cmd[1] == "api":
+            self.api_calls.append(cmd[2])
+            if self.state_fails:
+                return subprocess.CompletedProcess(cmd, 1, "", "HTTP 502")
+            return subprocess.CompletedProcess(cmd, 0, json.dumps(self.item_state), "")
         sub = (cmd[1], cmd[2])
-        if sub == ("issue", "list"):
-            out = json.dumps(self.issues)
-        elif sub == ("pr", "list"):
-            out = json.dumps(self.prs)
+        if sub in (("issue", "list"), ("pr", "list")):
+            if self.list_fails:
+                return subprocess.CompletedProcess(cmd, 1, "", "gh exploded")
+            out = json.dumps(self.issues if sub[0] == "issue" else self.prs)
         elif sub == ("pr", "view"):
             out = json.dumps({"comments": self.pr_comments})
         else:  # issue view --json comments
             out = json.dumps({"comments": self.comments})
         return subprocess.CompletedProcess(cmd, 0, out, "")
+
+    def close_issue(self, merged=None):
+        """Close issue #15 upstream: it leaves the listing and reports closed."""
+        self.issues = []
+        self.item_state = {"number": 15, "state": "closed"}
+        if merged is not None:
+            self.item_state["pull_request"] = {
+                "merged_at": "2026-07-25T00:00:00Z" if merged else None
+            }
 
 
 def _comment(cid, body):
@@ -262,3 +281,131 @@ def test_run_once_stops_after_a_single_cycle(tmp_path):
     poller.run(once=True, stop_event=threading.Event())
     assert wait_until(lambda: len(adapter.spawns) == 1)
     dispatcher.stop()
+
+
+# -- closure reconciliation (issue-94) ----------------------------------------
+
+
+def test_a_closed_issue_closes_its_session(tmp_path):
+    """
+    Feature: Poll GitHub and close finished work items
+    Scenario: A closed issue ends the session the poller spawned for it
+        Given a labelled issue with a spawned, registered session
+        When the issue is closed upstream and the next poll cycle runs
+        Then the session is closed in the registry
+        And the harness is never resumed for the closure
+    Requirement: docs/specs/issue-94/requirements.md#R1
+    """
+    gh = GhState()
+    registry, adapter, dispatcher, poller = _make(tmp_path, gh)
+    poller.poll_once()
+    assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
+
+    gh.close_issue()
+    summary = poller.poll_once()
+    dispatcher.stop()
+
+    assert summary.closures == 1
+    assert registry.find_by_work_item(REF) is None  # closed
+    assert registry.list_sessions(status="closed")  # …and persisted as such
+    assert adapter.resumes == []  # never delivered into the conversation
+
+
+def test_a_merged_pr_closes_its_session(tmp_path):
+    """
+    Feature: Poll GitHub and close finished work items
+    Scenario: A merged pull request ends its session
+        Given a work item with a spawned, registered session
+        When the item is merged upstream and the next poll cycle runs
+        Then the session is closed in the registry
+    Requirement: docs/specs/issue-94/requirements.md#R1
+    """
+    gh = GhState()
+    registry, adapter, dispatcher, poller = _make(tmp_path, gh)
+    poller.poll_once()
+    assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
+
+    gh.close_issue(merged=True)
+    assert poller.poll_once().closures == 1
+    dispatcher.stop()
+    assert registry.find_by_work_item(REF) is None
+
+
+def test_a_still_open_item_that_left_the_listing_keeps_its_session(tmp_path):
+    """
+    Feature: Poll GitHub and close finished work items
+    Scenario: Removing the auto-execute label does not close the session
+        Given a work item with a registered session
+        When the item leaves the listing but is still open upstream
+        Then its session stays active
+    Requirement: docs/specs/issue-94/requirements.md#R1
+    """
+    gh = GhState()
+    registry, adapter, dispatcher, poller = _make(tmp_path, gh)
+    poller.poll_once()
+    assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
+
+    gh.issues = []  # label removed — gone from the listing, still open
+    assert poller.poll_once().closures == 0
+    dispatcher.stop()
+    assert registry.find_by_work_item(REF) is not None
+
+
+def test_an_unreachable_github_never_closes_a_session(tmp_path):
+    """
+    Feature: Poll GitHub and close finished work items
+    Scenario: A failing listing or state query leaves sessions alone
+        Given a work item with a registered session
+        When the listing fails, and then the closure query fails
+        Then no closure is dispatched and the session stays active
+    Requirement: docs/specs/issue-94/requirements.md#R1
+    """
+    gh = GhState()
+    registry, adapter, dispatcher, poller = _make(tmp_path, gh)
+    poller.poll_once()
+    assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
+
+    gh.list_fails = True
+    assert poller.poll_once().closures == 0
+    assert gh.api_calls == []  # a failed listing is never read as "all closed"
+
+    gh.list_fails = False
+    gh.issues = []
+    gh.state_fails = True
+    summary = poller.poll_once()
+    dispatcher.stop()
+    assert summary.closures == 0 and summary.errors
+    assert gh.api_calls  # it did ask…
+    assert registry.find_by_work_item(REF) is not None  # …and kept the session
+
+
+def test_a_reopened_item_spawns_a_fresh_session(tmp_path):
+    """
+    Feature: Poll GitHub and close finished work items
+    Scenario: Reopening a closed work item starts work again
+        Given a work item whose session was closed by a poll cycle
+        When the item is reopened and labelled again
+        Then the next cycle spawns a new session for it
+    Requirement: docs/specs/issue-94/requirements.md#R1
+    """
+    gh = GhState()
+    registry, adapter, dispatcher, poller = _make(tmp_path, gh)
+    poller.poll_once()
+    assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
+    gh.close_issue()
+    assert poller.poll_once().closures == 1
+
+    gh.issues = [
+        {
+            "number": 15,
+            "title": "i",
+            "labels": [{"name": LABEL}],
+            "url": "u",
+            "author": {"login": "octocat"},
+        }
+    ]
+    gh.item_state = {"number": 15, "state": "open"}
+    poller.poll_once()
+    assert wait_until(lambda: len(adapter.spawns) == 2)
+    dispatcher.stop()
+    assert registry.find_by_work_item(REF) is not None

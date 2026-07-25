@@ -147,8 +147,14 @@ EVENT_TYPES: Dict[str, str] = {
         "routing.tmux.keepSessionOnClose: false kills it instead."
     ),
     "session.autoclosed": (
-        "A session was auto-closed because its PR was merged/closed "
-        "(work_item, merged)."
+        "A session was auto-closed because its work item ended (work_item, "
+        "reason: issue-closed | pr-merged | pr-closed; merged)."
+    ),
+    "session.harness_terminated": (
+        "The harness process inside a retained tmux session was ended when the "
+        "work item closed, so the pane stays readable but can no longer be "
+        "typed into (work_item, harness, tmux_target, ok, error) — "
+        "routing.tmux.killHarnessOnClose: false skips it."
     ),
     "workspace.prepared": (
         "A per-work-item checkout was made ready for a spawned session "
@@ -160,7 +166,14 @@ EVENT_TYPES: Dict[str, str] = {
     ),
     # -- poller (source: poll) ------------------------------------------------
     "poll.cycle": (
-        "One poll cycle finished (items_seen, spawns, comments_forwarded, errors)."
+        "One poll cycle finished (items_seen, spawns, comments_forwarded, "
+        "closures, errors)."
+    ),
+    "poll.closure_detected": (
+        "A poll cycle found that an active session's work item had ended "
+        "upstream and closed it (work_item, state: closed | merged, kind); "
+        "only ever after a successful listing, and never on an unanswerable "
+        "state."
     ),
     "poll.provider_error": (
         "Asking a provider for its work items failed; retried next cycle "

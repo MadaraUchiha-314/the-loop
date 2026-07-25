@@ -14,9 +14,14 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 - `the-loop gh-webhook start` SHALL run an HTTP receiver (default `127.0.0.1:8787`,
   path `/gh-webhook`) that verifies `X-Hub-Signature-256` HMAC using
   `THE_LOOP_GH_WEBHOOK_SECRET`, exposes `GET /health`, and logs events.
-- Supported events SHALL include `issues`, `issue_comment`, `pull_request`,
-  `pull_request_review`, `pull_request_review_comment`, `workflow_run`
-  (`webhooks.ghWebhook.events`).
+- WHEN `webhooks.ghWebhook.events` is omitted or empty THEN the receiver SHALL
+  accept the-loop's **default event set** — `issues`, `issue_comment`,
+  `pull_request`, `pull_request_review`, `pull_request_review_comment`,
+  `workflow_run`, `check_run`, `check_suite`, `status`, i.e. every event it can map
+  to a work item. An explicit list narrows it, and WHEN that list omits `issues` or
+  `pull_request` THEN the receiver SHALL **warn at startup and on hot reload**: a
+  work item that ends would never be seen, so its session (and tmux session) would
+  leak. A warning, not an error — narrowing is the operator's call.
 - WHEN routing is enabled (`webhooks.ghWebhook.routing.enabled`) THEN a verified event
   SHALL be matched to a registered session (`.the-loop/sessions/*.json`, managed by
   `the-loop sessions`) and the harness SHALL be resumed via its official CLI
@@ -45,6 +50,26 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 - WHEN `routing.runner` is `tmux` THEN spawned sessions SHALL be hosted as attachable
   interactive tmux sessions and events pasted into them — see
   [interactive-sessions](interactive-sessions.md).
+- WHEN a work item **ends** — an `issues` event with action `closed`, or a
+  `pull_request` `closed` (merged or not) — THEN its matched session(s) SHALL be
+  **auto-closed** rather than resumed: registry entry closed, tmux session handled per
+  `routing.tmux` (see [interactive-sessions](interactive-sessions.md)), workspace
+  cleaned, `session.autoclosed` recording the reason (`issue-closed` | `pr-merged` |
+  `pr-closed`). A close event SHALL never spawn a session, whatever `spawnOnUnmatched`
+  says, and SHALL never be rendered into a harness prompt. Because it is a lifecycle
+  signal that carries no free-form text and can only end the-loop's *own* session, it
+  bypasses the authorized-actor guard (as PR-close always has) — narrowly: only the
+  `closed` action.
+- On the **poll** path the same closure is discovered by reconciliation, since a poll
+  listing only ever carries *open* items: after each **successful** listing the poller
+  checks every active session that source owns whose item is no longer listed, asks the
+  provider whether it really ended (`poll.closure_detected`), and closes it through the
+  dispatcher's identical close path. It never closes on doubt — a failed listing skips
+  reconciliation, and an unanswerable state query leaves the session running for a later
+  cycle — and forgetting the item's poll state means a **reopened** work item is
+  first-sight again and spawns afresh. The closure query lives behind the provider
+  contract (`owns`/`closure`/`closure_event`), so a provider that does not implement it
+  is simply never reconciled (issue-94).
 - Duplicate deliveries SHALL be dropped via a dedup cache (`dedupCacheSize`).
 - On the **poll** (pull) path the-loop drives its own retries, bounded by
   `polling.maxRetries` (default 3): WHEN a spawn or a comment forward does not succeed
@@ -97,6 +122,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-94 | A finished work item now ends its session on **both** ingress paths: the poller reconciles active sessions against each successful listing and closes the ones whose item is closed/merged upstream; the receiver treats `issues`/`closed` like `pull_request`/`closed` instead of delivering it into the conversation | [spec](../specs/issue-94/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/94) |
 | issue-93 | An event on a PR resolves the PR's **linked issues first** (`closingIssuesReferences` + branch/keyword conventions, incl. PR conversation comments delivered as `issue_comment`), so PR activity reuses the linked issue's session instead of spawning a second one | [spec](../specs/issue-93/), [decision-036](../decisions/decision-036.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/93) |
 | issue-84 | Dispatch-lifecycle emoji reactions (`routing.reactions`, opt-in): 👀 started / 🎉 completed / 😕 error on the triggering comment or issue/PR, best-effort via `gh`, no-op where unsupported | [spec](../specs/issue-84/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/84) |
 | issue-63 | `webhooks.*` moved out of the per-repo plugin config into an independent, repo-agnostic CLI config | [spec](../specs/issue-63/), [decision-032](../decisions/decision-032.md) |

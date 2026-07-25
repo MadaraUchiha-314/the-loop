@@ -23,7 +23,10 @@ webhooks:
     path: /gh-webhook
     secretEnv: THE_LOOP_GH_WEBHOOK_SECRET   # env var holding the secret (not stored here)
     pidfile: .the-loop/gh-webhook.pid
-    events: []   # e.g. [issues, issue_comment, pull_request, workflow_run]; empty = all
+    # Empty = the-loop's default set (every event it can route). If you narrow it,
+    # keep `issues` and `pull_request`: without them a closed issue / merged PR
+    # never arrives and its session is never closed — the receiver warns if so.
+    events: []
     routing:
       enabled: false                # route events to registered harness sessions
       registryDir: .the-loop/sessions
@@ -83,11 +86,17 @@ webhooks:
       # what it knew about the work item, instead of booting a blank one. The
       # respawn is probed for resumeProbeSeconds (0 = check immediately) and falls
       # back to a fresh conversation when the harness could not resume.
+      # killHarnessOnClose (issue-94): when the work item closes and its tmux
+      # session is KEPT, end the harness process inside it — the pane stays
+      # readable, but is no longer a live TUI a stray keystroke/paste could
+      # resume. SIGTERM, then SIGKILL after harnessKillGraceSeconds.
       tmux:
         keepSessionOnClose: true
         remainOnExit: true
         resumeOnRespawn: true
         resumeProbeSeconds: 2
+        killHarnessOnClose: true
+        harnessKillGraceSeconds: 5
       # Session announcement comment (issue-86): when a tmux-mode session is spawned
       # for a work item, post the tmux session name and the `tmux attach -t …`
       # command on the work item, so a human on the ticket can watch it work. A

@@ -38,6 +38,49 @@ _DEFAULTS = {
     "pidfile": ".the-loop/gh-webhook.pid",
 }
 
+# The events the-loop can actually map to a work item (``extract_work_items``),
+# used when ``events`` is unset. Anything outside this set can never resolve to
+# one, so naming them is the previous "empty = accept all" behaviour said out
+# loud — with the difference that matters: `issues` and `pull_request` are in
+# the default, so a work item ending always reaches the receiver (issue-94).
+DEFAULT_EVENTS = [
+    "issues",
+    "issue_comment",
+    "pull_request",
+    "pull_request_review",
+    "pull_request_review_comment",
+    "workflow_run",
+    "check_run",
+    "check_suite",
+    "status",
+]
+
+# Without these, a closed issue or a merged/closed PR never reaches the receiver
+# and its session is never auto-closed — the leak issue-94 fixed. An explicit
+# `events` list that drops them is almost always an oversight, so say so.
+_LIFECYCLE_EVENTS = ("issues", "pull_request")
+
+
+def resolve_events(gh_webhook_config: dict) -> list:
+    """The event filter to run with: the configured list, else the default set."""
+    configured = [str(e) for e in (gh_webhook_config.get("events") or []) if e]
+    return configured or list(DEFAULT_EVENTS)
+
+
+def warn_on_missing_lifecycle_events(events) -> list:
+    """Warn when the event filter cannot see a work item ending. Returns the missing."""
+    missing = [event for event in _LIFECYCLE_EVENTS if event not in events]
+    if missing:
+        logger.warning(
+            "webhooks.ghWebhook.events omits %s — a closed issue / merged PR will "
+            "never reach the receiver, so its session stays open (and its tmux "
+            "session with it). Add %s to the list, or drop the list entirely to "
+            "use the default set.",
+            ", ".join(missing),
+            ", ".join(missing),
+        )
+    return missing
+
 
 def _read_gh_webhook_config(strict: bool = False) -> dict:
     """Read ``webhooks.ghWebhook`` from the CLI config (``_CONFIG_PATH``).
@@ -87,8 +130,10 @@ def _build_routing(gh_webhook_config: dict):
         )
     # The router shares the dispatcher's deduper: the dispatcher marks processed
     # delivery ids, the router drops duplicates before extraction.
+    events = resolve_events(gh_webhook_config)
+    warn_on_missing_lifecycle_events(events)
     router = Router(
-        events=gh_webhook_config.get("events") or [],
+        events=events,
         deduper=dispatcher.deduper,
         auto_execute_label=config.auto_execute_label,
         authorized_users=authorized,
@@ -98,7 +143,8 @@ def _build_routing(gh_webhook_config: dict):
         """Hot-swap the soft routing policy from a freshly read config."""
         new = RoutingConfig.from_mapping(gh_cfg.get("routing") or {})
         dispatcher.reload(new)
-        router.events = list(gh_cfg.get("events") or [])
+        router.events = resolve_events(gh_cfg)
+        warn_on_missing_lifecycle_events(router.events)
         router.auto_execute_label = new.auto_execute_label
         router.authorized_users = resolve_authorized_users(new.authorized_users)
         logger.info(

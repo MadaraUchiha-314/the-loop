@@ -3,6 +3,7 @@
 Run with: pytest (from the cli/ directory).
 """
 
+import logging
 from pathlib import Path
 
 import pytest
@@ -185,3 +186,42 @@ def test_no_config_flag_leaves_resolution_at_cwd_or_home(monkeypatch, isolated_c
     with pytest.raises(SystemExit):
         main(["--version"])
     assert cli_config._override is None
+
+
+# -- webhook event filter defaults + lifecycle warning (issue-94) --------------
+
+
+def test_events_defaults_to_the_routable_set_including_lifecycle_events():
+    from the_loop.commands.gh_webhook import DEFAULT_EVENTS, resolve_events
+
+    for config in ({}, {"events": []}, {"events": None}):
+        events = resolve_events(config)
+        assert events == DEFAULT_EVENTS
+        # the two that make a finished work item close its session
+        assert "issues" in events and "pull_request" in events
+
+
+def test_an_explicit_events_list_still_wins():
+    from the_loop.commands.gh_webhook import resolve_events
+
+    assert resolve_events({"events": ["issues"]}) == ["issues"]
+
+
+def test_an_events_list_without_the_lifecycle_events_warns(caplog):
+    from the_loop.commands.gh_webhook import warn_on_missing_lifecycle_events
+
+    with caplog.at_level(logging.WARNING, logger="the-loop.gh-webhook"):
+        missing = warn_on_missing_lifecycle_events(["issue_comment", "workflow_run"])
+    assert missing == ["issues", "pull_request"]
+    assert "never reach the receiver" in caplog.text
+
+
+def test_the_default_set_warns_about_nothing(caplog):
+    from the_loop.commands.gh_webhook import (
+        DEFAULT_EVENTS,
+        warn_on_missing_lifecycle_events,
+    )
+
+    with caplog.at_level(logging.WARNING, logger="the-loop.gh-webhook"):
+        assert warn_on_missing_lifecycle_events(DEFAULT_EVENTS) == []
+    assert caplog.text == ""
