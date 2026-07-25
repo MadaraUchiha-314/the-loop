@@ -48,6 +48,32 @@ def test_version_matches_installed_package_metadata():
     assert the_loop.__version__ != "0.1.0"
 
 
+def test_pyyaml_is_a_required_runtime_dependency():
+    """Regression for issue #97: PyYAML must be a REQUIRED dependency, not the
+    `[config]` extra it used to be. As an extra, a plain `pip install
+    the-loopy-one` produced a CLI whose every YAML read degraded to empty with
+    the *cause* logged at debug or not at all, so `poll` exited with "no polling
+    sources configured" pointing at a file that listed sources. See decision-038.
+
+    The `config` extra is kept as a deprecated no-op so a pinned
+    `pip install "the-loopy-one[config]"` does not start warning; it must not be
+    what pulls PyYAML in.
+    """
+    from importlib.metadata import distribution, requires
+
+    pyyaml = [r for r in (requires("the-loopy-one") or []) if r.startswith("pyyaml")]
+    assert pyyaml, "the-loopy-one must declare a pyyaml requirement"
+    assert len(pyyaml) == 1, f"pyyaml declared more than once: {pyyaml}"
+    assert "extra ==" not in pyyaml[0], (
+        f"pyyaml is still gated behind an extra: {pyyaml[0]!r}"
+    )
+    assert ">=6" in pyyaml[0], f"the pyyaml floor moved unintentionally: {pyyaml[0]!r}"
+    # The extra survives (so the old install line keeps working) but is empty.
+    assert "config" in (
+        distribution("the-loopy-one").metadata.get_all("Provides-Extra") or []
+    )
+
+
 def test_version_output_carries_package_version(capsys):
     """The `--version` flag prints `the-loop <version>` using the derived
     version, so the reported string tracks the installed package."""

@@ -1,8 +1,10 @@
 # the-loop CLI
 
 A lightweight, **extensible** command-line companion to the the-loop plugin, written in
-Python (stdlib-only core — zero runtime dependencies). Python is intentional: it leaves
-room to add self-learning / ML capabilities later (mostly exposed as Python SDKs).
+Python. It has exactly **one runtime dependency**, PyYAML — its whole configuration is
+YAML, so reading it is not optional (issue-97, `docs/decisions/decision-038.md`) — and is
+stdlib otherwise. Python is intentional: it leaves room to add self-learning / ML
+capabilities later (mostly exposed as Python SDKs).
 
 ## Install
 
@@ -10,10 +12,13 @@ From PyPI (published as **`the-loopy-one`** — the base name `the-loop` was tak
 import package and CLI keep the natural `the_loop`/`the-loop`):
 
 ```bash
-pip install the-loopy-one            # or: uv pip install the-loopy-one
-pip install "the-loopy-one[config]"  # + PyYAML, for reading config-file defaults
+pip install the-loopy-one   # PyYAML comes with it — nothing else to add
 the-loop --help
 ```
+
+> The `[config]` extra that used to carry PyYAML is now an empty, deprecated no-op:
+> `pip install "the-loopy-one[config]"` still works so pinned scripts don't break, but
+> it adds nothing.
 
 For local development the-loop uses **uv** (its declared Python package manager). From the
 repo root:
@@ -26,9 +31,8 @@ uv run the-loop --help      # run the CLI
 Or install this package on its own with any PEP 517 installer:
 
 ```bash
-uv pip install -e .            # or: pip install -e .
-uv pip install -e ".[config]"  # PyYAML, for reading config-file defaults
-uv pip install -e ".[dev]"     # pytest + commitizen
+uv pip install -e .         # or: pip install -e .
+uv pip install -e ".[dev]"  # + pytest and commitizen
 ```
 
 This exposes the primary CLI: `the-loop`. Releases are **automatic**: on merge to `main`,
@@ -339,7 +343,7 @@ the-loop gh-webhook stop  [--pidfile .the-loop/gh-webhook.pid]
 - `GET /health` returns `200 ok`.
 - Defaults can come from the **CLI config** (`webhooks.ghWebhook`, see
   "Two independent config files" above for the `--config`/env/cwd/home resolution
-  order) when PyYAML is installed; flags always override.
+  order); flags always override.
 - **`--route`** (default from `webhooks.ghWebhook.routing.enabled`) routes each verified
   event to the registered harness session working that item: the router extracts the
   work item(s) from the payload (issue/PR number, PR head-branch `issue-<n>` convention,
@@ -464,9 +468,9 @@ templates are all reused unchanged.
   doubt: a failed listing skips reconciliation entirely, and an unanswerable state query
   leaves the session running for the next cycle. Reopening an item makes it first-sight
   again, so work restarts (issue-94).
-- **Config:** ingress defaults come from `polling` in the **CLI config** (when PyYAML is
-  installed); dispatch behaviour is reused from `webhooks.ghWebhook.routing` (same
-  file). Flags cover only the run loop.
+- **Config:** ingress defaults come from `polling` in the **CLI config**; dispatch
+  behaviour is reused from `webhooks.ghWebhook.routing` (same file). Flags cover only
+  the run loop.
 - **Hot reload:** edit `polling.sources` / `intervalSeconds` while it runs and the change
   is picked up on the next cycle — no restart. An invalid edit is logged and the previous
   config kept. (The shared dispatch config still needs a restart.)
@@ -533,8 +537,7 @@ the-loop scenarios [--root .] [--glob PATTERN ...] [--format table|markdown|json
   "what scenarios are tested?" without running anything.
 - Language-agnostic: Python docstrings, JS/TS block comments and Go comments all work.
 - Globs come from `--glob` (repeatable), else `testing.integrationTestGlobs` in
-  `.the-loop/harness-config.yaml` (when PyYAML is installed), else built-in defaults covering
-  common layouts.
+  `.the-loop/harness-config.yaml`, else built-in defaults covering common layouts.
 - `--format markdown` emits a GitHub-flavoured table (for PR briefings); `--format json`
   is machine-readable (includes each scenario's steps and `file:line`).
 

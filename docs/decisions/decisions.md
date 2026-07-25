@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [038](decision-038.md) | PyYAML is a required runtime dependency; the zero-runtime-dependency guarantee is retired | proposed | 2026-07-25 |
 | [036](decision-036.md) | An event on a PR routes to the PR's linked issue first (one session per work item) | accepted | 2026-07-25 |
 | [037](decision-037.md) | Pre-seed the harness's own config before spawning (trust the workspace root, configurable; accept the bypass disclaimer only when already requested) | proposed | 2026-07-25 |
 | [035](decision-035.md) | collaborators.yaml is the single source for people + notification config; plugin config renamed harness-config.yaml | accepted | 2026-07-24 |

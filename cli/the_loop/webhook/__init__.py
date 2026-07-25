@@ -1,4 +1,4 @@
-"""GitHub webhook receiver (stdlib-only, no runtime dependencies)."""
+"""GitHub webhook receiver (stdlib-only: HMAC, JSON and ``http.server``)."""
 
 from .server import verify_signature, make_handler, serve
 
