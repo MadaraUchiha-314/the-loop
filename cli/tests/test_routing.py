@@ -943,7 +943,9 @@ def test_sessions_command_register_list_close_roundtrip(tmp_path, capsys):
     assert rc == 0
     out = capsys.readouterr().out
     payload = json.loads(out.splitlines()[-1])
-    assert payload[0]["workItem"]["ref"] == REF
+    # Since issue-98 a row is the joined view (registry + poll state + pauses),
+    # so the ref is top level rather than nested under a session object.
+    assert payload[0]["ref"] == REF
     assert payload[0]["status"] == "active"
     rc = run_cli(
         ["sessions", "close", "--work-item", REF, "--registry-dir", registry_dir]

@@ -1,11 +1,23 @@
-"""``the-loop sessions register|list|close`` — manage the session registry.
+"""``the-loop sessions`` — see and manage everything the-loop is tracking.
 
-Links a work item (``github:<owner>/<repo>#<number>``) to a harness session so
-the webhook receiver can route events to it. Harnesses register themselves
-when they start working a ticket (Claude Code: ``$CLAUDE_SESSION_ID``; Cursor:
-the chat id the agent was launched with) and close on finish.
+Registration (issue-15) links a work item (``github:<owner>/<repo>#<number>``)
+to a harness session so webhook/poll events route to it; harnesses register when
+they start working a ticket (Claude Code: ``$CLAUDE_SESSION_ID``; Cursor: the
+chat id) and close on finish.
 
-Spec: docs/specs/issue-15/design.md §5 (requirement R2.2).
+Since issue-98 this is also the **operator's** surface over the daemon:
+
+* ``list`` — one table of every tracked work item, joining the session registry,
+  the poller's ledger and live tmux state, with links onward (ticket, terminal,
+  PR);
+* ``show`` — everything known about one work item;
+* ``pause`` / ``resume`` — stop and restart the-loop acting on one work item,
+  without ending its session; mirrored to the ``the-loop: paused`` GitHub label
+  so the same control works from the browser;
+* ``prune`` — drop session *records* the daemon has finished with.
+
+Spec: docs/specs/issue-15/design.md §5 (requirement R2.2);
+docs/specs/issue-98/design.md §6.
 """
 
 from __future__ import annotations
@@ -17,14 +29,29 @@ import os
 import shutil
 import sys
 from pathlib import Path
-from typing import Callable, List
+from typing import Callable, List, Optional
 
 from .base import Command, register
 from .gh_webhook import _load_config_defaults
-from .. import eventlog
+from .. import cli_config, eventlog
 from ..harness import ClaudeCodeAdapter, CursorAgentAdapter
+from ..labels import GitHubLabeler
 from ..runner import TmuxRunner
-from ..sessions import RegistryError, Session, SessionRegistry, WorkItemRef
+from ..sessions import (
+    DEFAULT_PAUSE_FILE,
+    DEFAULT_PAUSED_LABEL,
+    PauseStore,
+    RegistryError,
+    Session,
+    SessionRegistry,
+    WorkItemRef,
+)
+from ..sessions.overview import (
+    STATUSES,
+    build_rows,
+    render_detail,
+    render_table,
+)
 from ..webhook.dispatcher import TmuxConfig
 
 logger = logging.getLogger("the-loop.sessions")
@@ -35,15 +62,53 @@ _HARNESS_BINARIES = {
 }
 
 
+def _routing() -> dict:
+    return _load_config_defaults().get("routing") or {}
+
+
 def _default_registry_dir() -> str:
-    routing = _load_config_defaults().get("routing") or {}
-    return str(routing.get("registryDir", ".the-loop/sessions"))
+    return str(_routing().get("registryDir", ".the-loop/sessions"))
+
+
+def _default_pause_file() -> str:
+    return str(_routing().get("pauseFile", DEFAULT_PAUSE_FILE))
+
+
+def _default_paused_label() -> str:
+    return str(_routing().get("pausedLabel", DEFAULT_PAUSED_LABEL))
+
+
+def _default_poll_state_file() -> str:
+    """``polling.stateFile`` — the poller's ledger, joined into ``list``."""
+    polling = (
+        cli_config.load_cli_config(
+            cli_config.default_cli_config_path(), strict=False
+        ).get("polling")
+        or {}
+    )
+    return str(polling.get("stateFile", ".the-loop/poll-state.json"))
 
 
 def _tmux_config() -> TmuxConfig:
     """``routing.tmux`` — retention/termination policy (issue-86, issue-94)."""
-    routing = _load_config_defaults().get("routing") or {}
-    return TmuxConfig.from_mapping(routing.get("tmux") or {})
+    return TmuxConfig.from_mapping(_routing().get("tmux") or {})
+
+
+def _poll_state(path: str):
+    """The poller's ledger, or ``None`` when there isn't one (never polled)."""
+    from ..poller import PollState
+
+    if not Path(path).is_file():
+        return None
+    return PollState(path)
+
+
+def _parse_ref(value: str) -> Optional[WorkItemRef]:
+    try:
+        return WorkItemRef.parse(value)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return None
 
 
 def _attach_argv(session: Session, read_only: bool) -> List[str]:
@@ -64,10 +129,8 @@ def attach_session(
 
     ``execvp`` replaces this process with tmux on success (injectable for tests).
     """
-    try:
-        ref = WorkItemRef.parse(work_item)
-    except ValueError as exc:
-        print(f"error: {exc}", file=sys.stderr)
+    ref = _parse_ref(work_item)
+    if ref is None:
         return 2
     session = registry.find_by_work_item(ref, include_closed=True)
     if session is None:
@@ -114,10 +177,12 @@ def attach_session(
 @register
 class SessionsCommand(Command):
     name = "sessions"
-    help = "Manage work-item ↔ harness-session registrations (webhook routing)"
+    help = "See and manage the work items the-loop is tracking (and their sessions)"
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         registry_dir = _default_registry_dir()
+        pause_file = _default_pause_file()
+        poll_state_file = _default_poll_state_file()
         actions = parser.add_subparsers(dest="action", metavar="<action>")
         actions.required = True
 
@@ -148,11 +213,52 @@ class SessionsCommand(Command):
         reg.add_argument("--registry-dir", default=registry_dir)
         reg.set_defaults(_action=self._register)
 
-        lst = actions.add_parser("list", help="List registered sessions")
-        lst.add_argument("--status", choices=["active", "closed"])
+        lst = actions.add_parser(
+            "list", help="Table of every tracked work item and its session"
+        )
+        lst.add_argument(
+            "--status",
+            choices=sorted(STATUSES),
+            help="Show only rows in this state.",
+        )
+        lst.add_argument("--work-item", default="", help="Show only this work item.")
         lst.add_argument("--format", choices=["table", "json"], default="table")
         lst.add_argument("--registry-dir", default=registry_dir)
+        lst.add_argument("--pause-file", default=pause_file)
+        lst.add_argument(
+            "--poll-state-file",
+            default=poll_state_file,
+            help="The poller's ledger, joined in so tracked-but-unspawned items show.",
+        )
         lst.set_defaults(_action=self._list)
+
+        show = actions.add_parser("show", help="Everything known about one work item")
+        show.add_argument("--work-item", required=True)
+        show.add_argument("--format", choices=["text", "json"], default="text")
+        show.add_argument("--registry-dir", default=registry_dir)
+        show.add_argument("--pause-file", default=pause_file)
+        show.add_argument("--poll-state-file", default=poll_state_file)
+        show.set_defaults(_action=self._show)
+
+        pause = actions.add_parser(
+            "pause",
+            help="Stop the-loop acting on a work item (session and tmux untouched)",
+        )
+        pause.add_argument("--work-item", required=True)
+        pause.add_argument(
+            "--reason", default="", help="Recorded with the pause, shown in `show`."
+        )
+        pause.add_argument("--pause-file", default=pause_file)
+        self._add_label_flags(pause)
+        pause.set_defaults(_action=self._pause)
+
+        resume = actions.add_parser(
+            "resume", help="Undo a pause — the-loop picks the work item back up"
+        )
+        resume.add_argument("--work-item", required=True)
+        resume.add_argument("--pause-file", default=pause_file)
+        self._add_label_flags(resume)
+        resume.set_defaults(_action=self._resume)
 
         attach = actions.add_parser(
             "attach", help="Attach this terminal to a tmux-mode session"
@@ -190,6 +296,35 @@ class SessionsCommand(Command):
         )
         close.set_defaults(_action=self._close)
 
+        prune = actions.add_parser(
+            "prune", help="Remove finished session records (never kills anything)"
+        )
+        prune.add_argument(
+            "--include-retained",
+            action="store_true",
+            help=(
+                "Also remove closed records whose tmux session is still up "
+                "(that session is the retained transcript — it is NOT killed)."
+            ),
+        )
+        prune.add_argument("--dry-run", action="store_true")
+        prune.add_argument("--registry-dir", default=registry_dir)
+        prune.set_defaults(_action=self._prune)
+
+    @staticmethod
+    def _add_label_flags(parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--no-label",
+            dest="label",
+            action="store_false",
+            default=True,
+            help=(
+                "Keep the change local — do not add/remove the "
+                f"{_default_paused_label()!r} label on GitHub."
+            ),
+        )
+        parser.add_argument("--gh-binary", default="gh")
+
     def run(self, args: argparse.Namespace) -> int:
         # register/close write session-lifecycle events via the registry.
         eventlog.configure_from_file("sessions")
@@ -198,10 +333,8 @@ class SessionsCommand(Command):
     # -- actions -----------------------------------------------------------------
 
     def _register(self, args: argparse.Namespace) -> int:
-        try:
-            work_item = WorkItemRef.parse(args.work_item)
-        except ValueError as exc:
-            print(f"error: {exc}", file=sys.stderr)
+        work_item = _parse_ref(args.work_item)
+        if work_item is None:
             return 2
         binary = _HARNESS_BINARIES[args.harness]
         if shutil.which(binary) is None:
@@ -226,39 +359,115 @@ class SessionsCommand(Command):
         print(f"registered {work_item.ref} -> {args.harness}:{args.harness_session_id}")
         return 0
 
+    def _rows(self, args: argparse.Namespace, work_item: str = ""):
+        # getattr defaults: the row builder is also called from embeddings/tests
+        # that hand in only the fields they care about.
+        pause_file = getattr(args, "pause_file", "") or _default_pause_file()
+        poll_state_file = (
+            getattr(args, "poll_state_file", "") or _default_poll_state_file()
+        )
+        return build_rows(
+            SessionRegistry(args.registry_dir),
+            PauseStore(pause_file, paused_label=_default_paused_label()),
+            poll_state=_poll_state(poll_state_file),
+            status=getattr(args, "status", None),
+            work_item=work_item or getattr(args, "work_item", ""),
+        )
+
     def _list(self, args: argparse.Namespace) -> int:
-        sessions = SessionRegistry(args.registry_dir).list_sessions(status=args.status)
+        rows = self._rows(args)
         if args.format == "json":
-            print(json.dumps([s.to_dict() for s in sessions]))
+            print(json.dumps([row.to_dict() for row in rows]))
             return 0
-        rows = [
-            (
-                "Work item",
-                "Harness",
-                "Session id",
-                "Runner",
-                "Tmux",
-                "Status",
-                "Last event",
+        print(render_table(rows))
+        if not rows:
+            print(
+                "(nothing tracked — no registered sessions and no polled work items)",
+                file=sys.stderr,
             )
-        ]
-        for s in sessions:
-            rows.append(
-                (
-                    s.work_item.ref,
-                    s.harness,
-                    s.harness_session_id,
-                    s.runner,
-                    s.tmux_target or "-",
-                    s.status,
-                    s.last_event_at or "-",
-                )
+        return 0
+
+    def _show(self, args: argparse.Namespace) -> int:
+        ref = _parse_ref(args.work_item)
+        if ref is None:
+            return 2
+        rows = self._rows(args, work_item=ref.ref)
+        if not rows:
+            print(
+                f"error: nothing recorded for {ref.ref} — it has no session, is "
+                "not in the poller's ledger, and is not paused",
+                file=sys.stderr,
             )
-        widths = [max(len(row[i]) for row in rows) for i in range(len(rows[0]))]
-        for row in rows:
-            print("  ".join(cell.ljust(widths[i]) for i, cell in enumerate(row)))
-        if not sessions:
-            print("(no registered sessions)", file=sys.stderr)
+            return 1
+        row = rows[0]
+        if args.format == "json":
+            print(json.dumps(row.to_dict(), indent=2))
+            return 0
+        print(render_detail(row))
+        if not row.pause_sources:
+            print(
+                f"\nnote: a {_default_paused_label()!r} label on the ticket also "
+                "pauses it; this view reads the local ledger only.",
+                file=sys.stderr,
+            )
+        return 0
+
+    def _pause(self, args: argparse.Namespace) -> int:
+        work_item = _parse_ref(args.work_item)
+        if work_item is None:
+            return 2
+        store = PauseStore(args.pause_file, paused_label=_default_paused_label())
+        if store.pause(work_item, reason=args.reason):
+            print(
+                f"paused {work_item.ref}"
+                + (f" ({args.reason})" if args.reason else "")
+                + " — its session, tmux transcript and checkout are untouched"
+            )
+            eventlog.emit(
+                "session.paused", work_item=work_item.ref, reason=args.reason or None
+            )
+        else:
+            print(f"{work_item.ref} was already paused")
+        return self._sync_label(args, work_item, remove=False)
+
+    def _resume(self, args: argparse.Namespace) -> int:
+        work_item = _parse_ref(args.work_item)
+        if work_item is None:
+            return 2
+        store = PauseStore(args.pause_file, paused_label=_default_paused_label())
+        if store.resume(work_item):
+            print(f"resumed {work_item.ref} — the-loop will act on it again")
+            eventlog.emit("session.resumed", work_item=work_item.ref)
+        else:
+            print(f"{work_item.ref} was not paused")
+        return self._sync_label(args, work_item, remove=True)
+
+    def _sync_label(
+        self, args: argparse.Namespace, work_item: WorkItemRef, remove: bool
+    ) -> int:
+        """Mirror the local pause onto the ticket. Never fails the command (R5.4)."""
+        if not args.label:
+            return 0
+        labeler = GitHubLabeler(gh_binary=args.gh_binary)
+        label = _default_paused_label()
+        result = (
+            labeler.remove(work_item, label)
+            if remove
+            else labeler.add(work_item, label)
+        )
+        verb = "removed" if remove else "added"
+        if result.ok:
+            if result.changed:
+                print(f"{verb} the {label!r} label on {work_item.ref}")
+        else:
+            gh_cmd = "--remove-label" if remove else "--add-label"
+            print(
+                f"note: could not {('remove' if remove else 'add')} the {label!r} "
+                f"label on {work_item.ref} ({result.error}). The local pause "
+                f"stands; set it by hand with: gh issue edit {work_item.number} "
+                f"--repo {work_item.owner}/{work_item.repo} {gh_cmd} '{label}'",
+                file=sys.stderr,
+            )
         return 0
 
     def _attach(self, args: argparse.Namespace) -> int:
@@ -268,11 +477,43 @@ class SessionsCommand(Command):
             read_only=args.read_only,
         )
 
+    def _prune(self, args: argparse.Namespace) -> int:
+        """Remove closed session *records*; never signal a process (R7.4)."""
+        registry = SessionRegistry(args.registry_dir)
+        tmux = TmuxRunner()
+        tmux_ready = tmux.is_available()
+        removed = kept = 0
+        for session in registry.list_sessions():
+            if session.status == "active":
+                continue
+            retained = (
+                session.runner == "tmux"
+                and session.tmux_target
+                and tmux_ready
+                and tmux.has_session(session.tmux_target)
+            )
+            if retained and not args.include_retained:
+                kept += 1
+                print(
+                    f"kept {session.work_item.ref} — its tmux session "
+                    f"{session.tmux_target} is still up (retained transcript; "
+                    "pass --include-retained to drop the record anyway)"
+                )
+                continue
+            if args.dry_run:
+                print(f"would remove {session.work_item.ref}")
+                removed += 1
+                continue
+            if registry.remove(session.work_item):
+                print(f"removed {session.work_item.ref}")
+                removed += 1
+        verb = "would remove" if args.dry_run else "removed"
+        print(f"{verb} {removed} record(s); kept {kept} retained")
+        return 0
+
     def _close(self, args: argparse.Namespace) -> int:
-        try:
-            work_item = WorkItemRef.parse(args.work_item)
-        except ValueError as exc:
-            print(f"error: {exc}", file=sys.stderr)
+        work_item = _parse_ref(args.work_item)
+        if work_item is None:
             return 2
         registry = SessionRegistry(args.registry_dir)
         session = registry.find_by_work_item(work_item)

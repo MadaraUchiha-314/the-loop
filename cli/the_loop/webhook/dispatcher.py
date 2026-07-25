@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import queue
 import re
 import threading
@@ -32,10 +33,17 @@ from ..reactions import (
     ReactionConfig,
 )
 from ..runner import TmuxRunner
-from ..sessions import Session, SessionRegistry, WorkItemRef
+from ..sessions import (
+    DEFAULT_PAUSE_FILE,
+    DEFAULT_PAUSED_LABEL,
+    PauseStore,
+    Session,
+    SessionRegistry,
+    WorkItemRef,
+)
 from ..trust import TrustConfig, TrustResult, is_too_broad
 from ..workspace import RepoTarget, Workspace, WorkspaceError, repo_target_from_payload
-from .router import Deduper, RoutedEvent
+from .router import Deduper, RoutedEvent, event_carries_label
 
 logger = logging.getLogger("the-loop.gh-webhook")
 
@@ -214,6 +222,11 @@ class RoutingConfig:
     web_terminal: WebTerminalConfig = field(default_factory=WebTerminalConfig)
     spawn_on_unmatched: str = "never"  # never | always | labeled
     auto_execute_label: str = "the-loop: auto-execute"
+    # Per-work-item pause (issue-98): the label whose presence stops the-loop
+    # acting on an item, and the durable ledger `sessions pause` writes. Both
+    # ingress paths (webhook + poll) read them, and they compose as OR.
+    paused_label: str = DEFAULT_PAUSED_LABEL
+    pause_file: str = DEFAULT_PAUSE_FILE
     spawn_workdir: str = "."
     workspace: WorkspaceConfig = field(default_factory=WorkspaceConfig)
     max_concurrent_dispatches: int = 4
@@ -247,6 +260,8 @@ class RoutingConfig:
             auto_execute_label=str(
                 data.get("autoExecuteLabel", "the-loop: auto-execute")
             ),
+            paused_label=str(data.get("pausedLabel", DEFAULT_PAUSED_LABEL)),
+            pause_file=str(data.get("pauseFile", DEFAULT_PAUSE_FILE)),
             spawn_workdir=str(data.get("spawnWorkdir", ".")),
             workspace=WorkspaceConfig.from_mapping(data.get("workspace") or {}),
             max_concurrent_dispatches=int(data.get("maxConcurrentDispatches", 4)),
@@ -337,6 +352,7 @@ class Dispatcher:
         workspace: Optional[Workspace] = None,
         reactor: Optional[GitHubReactor] = None,
         announcer: Optional[SessionAnnouncer] = None,
+        pauses: Optional[PauseStore] = None,
     ):
         self.registry = registry
         self.adapters = adapters
@@ -360,6 +376,11 @@ class Dispatcher:
         # Same override-survives-reload pattern for the session announcer.
         self._announcer_override = announcer is not None
         self.announcer = announcer or SessionAnnouncer(self.config.announce)
+        # Per-work-item pause ledger (issue-98). Re-reads itself when the file
+        # changes, so `sessions pause` in another terminal takes effect on the
+        # next event with no daemon restart.
+        self._pauses_override = pauses is not None
+        self.pauses = pauses or self._build_pauses(self.config)
         self.deduper = (
             deduper
             if deduper is not None
@@ -385,6 +406,13 @@ class Dispatcher:
         if not ws.enabled:
             return None
         return Workspace(ws.root, strategy=ws.strategy, git_binary=ws.git_binary)
+
+    @staticmethod
+    def _build_pauses(config: RoutingConfig) -> PauseStore:
+        return PauseStore(
+            config.pause_file or DEFAULT_PAUSE_FILE,
+            paused_label=config.paused_label,
+        )
 
     def _load_template(self, path_str: str, default: str) -> Template:
         path = Path(path_str)
@@ -422,6 +450,8 @@ class Dispatcher:
             self.reactor = GitHubReactor(config.reactions)
         if not self._announcer_override:
             self.announcer = SessionAnnouncer(config.announce)
+        if not self._pauses_override:
+            self.pauses = self._build_pauses(config)
         if not self._tmux_override:
             self.tmux.remain_on_exit = config.tmux.remain_on_exit
         self._event_template = self._load_template(
@@ -493,6 +523,34 @@ class Dispatcher:
                 logger.debug("close event matched no active session; nothing to close")
             return
 
+        # Deliberately AFTER the close branch (issue-98, R3.6): a pause stops
+        # the-loop *working* an item, never cleaning up after one. A paused item
+        # that is closed upstream still ends its session.
+        paused_ref, sources = self._pause_state(routed)
+        if paused_ref:
+            logger.info(
+                "%s is paused (%s); dropping %s",
+                paused_ref,
+                "+".join(sources),
+                routed.event,
+            )
+            eventlog.emit(
+                "dispatch.dropped",
+                reason="paused",
+                work_item=paused_ref,
+                gh_event=routed.event,
+                delivery_id=routed.delivery_id or None,
+                pause_sources=sources,
+            )
+            # Release the id: a paused drop is "not handled", not "in flight" —
+            # `delivery_status()` reads this cache, and the poller must be free
+            # to deliver the event again once the item is resumed.
+            if routed.delivery_id:
+                self.deduper.discard(routed.delivery_id)
+            return
+
+        self._record_pr(routed, matched)
+
         if not matched:
             self._on_unmatched(routed)
             return
@@ -518,6 +576,45 @@ class Dispatcher:
                 session.work_item.ref,
             )
             self._enqueue(session.work_item.ref, routed)
+
+    def _pause_state(self, routed: RoutedEvent) -> tuple:
+        """``(paused_ref, sources)`` for this event — ``("", [])`` when live.
+
+        The label is read straight from the payload (the same no-API-call helper
+        auto-execute gating uses) and OR-ed with the local ledger, so either
+        mechanism alone pauses the item (issue-98, R5.3).
+        """
+        labels = (
+            [self.config.paused_label]
+            if event_carries_label(routed.payload, self.config.paused_label)
+            else []
+        )
+        for item in routed.work_items:
+            state = self.pauses.state(item, labels)
+            if state.paused:
+                return item.ref, state.sources
+        return "", []
+
+    def _record_pr(self, routed: RoutedEvent, matched: List[Session]) -> None:
+        """Note the PR this event carries against the session(s) it reached.
+
+        Observation, not inference: issue-93's linkage already decided which
+        session a PR's events belong to; this only writes down which PR that
+        was, so ``sessions list`` can link work item → PR (issue-98, R2.4).
+        """
+        pull_request = routed.payload.get("pull_request")
+        if not isinstance(pull_request, dict):
+            return
+        number = pull_request.get("number")
+        repo = str((routed.payload.get("repository") or {}).get("full_name") or "")
+        if not isinstance(number, int) or "/" not in repo:
+            return
+        pr_ref = f"github:{repo}#{number}"
+        pr_url = str(pull_request.get("html_url") or "")
+        for session in matched:
+            if session.work_item.ref == pr_ref:
+                continue  # the work item IS the PR — nothing to link
+            self.registry.link_pr(session.work_item, pr_ref, pr_url)
 
     def _close_tmux(self, session: Session) -> None:
         """Retain (default) or kill a tmux session whose work item is closing.
@@ -806,6 +903,9 @@ class Dispatcher:
             harness=self.config.default_harness,
             harness_session_id=result.session_id,
             cwd=cwd,
+            # The daemon hosting it: a print-mode harness leaves no long-lived
+            # process of its own, so this is the pid `sessions list` shows.
+            owner_pid=os.getpid(),
         )
         self.registry.register(session, force=True)
         self.registry.touch(work_item, delivery_id=routed.delivery_id or None)
@@ -887,6 +987,7 @@ class Dispatcher:
             cwd=cwd,
             runner="tmux",
             tmux_target=self.tmux.target_for(work_item),
+            owner_pid=os.getpid(),
         )
         self.registry.register(session, force=True)
         self.registry.touch(work_item, delivery_id=routed.delivery_id or None)
@@ -998,9 +1099,12 @@ class Dispatcher:
             cwd=session.cwd,
             runner="tmux",
             tmux_target=self.tmux.target_for(work_item),
+            owner_pid=os.getpid(),
             # Carry the processed-delivery history so restart-surviving dedup
-            # still holds after a respawn.
+            # still holds after a respawn — and the PR already observed for it.
             recent_deliveries=list(session.recent_deliveries),
+            pr_ref=session.pr_ref,
+            pr_url=session.pr_url,
         )
         self.registry.register(respawned, force=True)
         self.registry.touch(work_item, delivery_id=routed.delivery_id or None)

@@ -82,7 +82,8 @@ EVENT_TYPES: Dict[str, str] = {
     ),
     "dispatch.dropped": (
         "A routed event was discarded at dispatch (reason: duplicate-delivery "
-        "| already-processed | spawn-policy | session-vanished | no-adapter)."
+        "| already-processed | spawn-policy | session-vanished | no-adapter | "
+        "paused — the work item is paused, with pause_sources: local | label)."
     ),
     "dispatch.succeeded": (
         "An event was delivered to its harness session (work_item, harness, "
@@ -141,6 +142,14 @@ EVENT_TYPES: Dict[str, str] = {
         "tmux_target, error) — best-effort, the dispatch is unaffected."
     ),
     "session.closed": "A session was closed in the registry (work_item).",
+    "session.paused": (
+        "An operator paused a work item (work_item, reason) — the-loop stops "
+        "spawning for it and delivering its activity until it is resumed; its "
+        "session, tmux transcript and checkout are untouched (issue-98)."
+    ),
+    "session.resumed": (
+        "A paused work item was resumed (work_item); the-loop acts on it again."
+    ),
     "session.retained": (
         "A closed work item's tmux session was left running so its transcript "
         "stays readable (work_item, tmux_target); "

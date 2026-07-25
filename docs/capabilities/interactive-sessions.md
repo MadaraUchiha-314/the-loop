@@ -56,6 +56,12 @@ the same conversation.
   delivery therefore probes **liveness** (`has-session` **and** a non-dead pane), not
   mere existence: a retained-but-dead session takes the respawn path above instead of
   swallowing the event.
+- WHEN a work item is **paused** (`the-loop sessions pause`, or the
+  `routing.pausedLabel` label on the ticket) THEN no event SHALL be delivered into its
+  tmux session and no session SHALL be spawned for it, while the tmux session itself —
+  and the harness conversation inside it — SHALL be left running and attachable; a
+  pause is "leave it alone", not "end it" (issue-98). A **closure** SHALL still take
+  the normal close path while paused.
 - WHEN a work item ends — its issue closed, its PR merged/closed, or `the-loop sessions
   close` run — THEN the registry session SHALL be closed AND the tmux session SHALL be
   **kept** so its transcript stays readable (`session.retained`);
@@ -85,7 +91,11 @@ the same conversation.
   dispatch, and a process-runner session, a non-GitHub work item or a missing `gh` is
   a no-op. The body is built only from registry fields — never from event payloads —
   and carries no filesystem paths, harness session ids or hostnames.
-- `the-loop sessions list` SHALL show `Runner`/`Tmux` columns; `the-loop sessions
+- `the-loop sessions list` SHALL show each session's host in a `Where` column — for a
+  tmux session its target, a live pane pid and whether it is live/dead, and for a
+  `runner: process` session the owning daemon's pid and liveness (issue-98) — and
+  `the-loop sessions show` SHALL print the ready-to-paste attach command;
+  `the-loop sessions
   attach --work-item <ref> [--read-only]` SHALL attach the caller's terminal to the
   session's tmux session — including one **retained after the work item closed**, which
   SHALL always be attached **read-only** (with a note) whether or not `--read-only` was
@@ -136,6 +146,7 @@ the same conversation.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-98 | Pausing a work item leaves its tmux session and conversation alone; `sessions list`/`show` link to the tmux target, pane pid and attach command | [spec](../specs/issue-98/) |
 | issue-32 | Introduced the tmux runner, `sessions attach`, the ttyd web terminal and dependency preflight | [spec](../specs/issue-32/), [decision-021](../decisions/decision-021.md) |
 | issue-65 | Fixed `poll start` never launching ttyd (it shared the tmux runner but had no web terminal start/stop of its own); factored ttyd lifecycle into a shared `the_loop.runner` helper used by both `gh-webhook start` and `poll start` | [issue](https://github.com/MadaraUchiha-314/the-loop/issues/65) |
 | issue-80 | Respawn a crashed/killed tmux session on delivery (deliver the pending event as the fresh TUI's boot prompt) instead of looping redeliveries into a session that no longer exists | [spec](../specs/issue-80/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/80) |

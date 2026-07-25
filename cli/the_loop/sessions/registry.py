@@ -96,6 +96,16 @@ class Session:
     runner: str = "process"  # process | tmux (issue-32)
     tmux_target: str = ""  # tmux session name when runner == "tmux"
     recent_deliveries: List[str] = field(default_factory=list)
+    # PID of the daemon (poll / gh-webhook) that spawned this session (issue-98).
+    # A `runner: process` session has no long-lived process of its own — the
+    # harness runs in print mode for the duration of one dispatch — so the
+    # owning daemon is the process an operator can actually point at.
+    owner_pid: int = 0
+    # The pull request observed for this work item, once one has been (issue-98).
+    # Recorded from routed events, never inferred: issue-93's PR→issue linkage
+    # has already decided which session a PR belongs to.
+    pr_ref: str = ""
+    pr_url: str = ""
 
     def to_dict(self) -> dict:
         item = self.work_item
@@ -116,6 +126,9 @@ class Session:
             "runner": self.runner,
             "tmuxTarget": self.tmux_target,
             "recentDeliveries": self.recent_deliveries,
+            "ownerPid": self.owner_pid,
+            "prRef": self.pr_ref,
+            "prUrl": self.pr_url,
         }
 
     @classmethod
@@ -131,6 +144,11 @@ class Session:
             runner=data.get("runner", "process"),
             tmux_target=data.get("tmuxTarget", ""),
             recent_deliveries=list(data.get("recentDeliveries") or []),
+            # Optional since issue-98 — a registry file written by an older
+            # the-loop simply has no PR/pid recorded yet.
+            owner_pid=int(data.get("ownerPid") or 0),
+            pr_ref=str(data.get("prRef") or ""),
+            pr_url=str(data.get("prUrl") or ""),
         )
 
 
@@ -247,6 +265,42 @@ class SessionRegistry:
             harness=session.harness,
             harness_session_id=session.harness_session_id,
         )
+        return True
+
+    def link_pr(
+        self,
+        work_item: Union[str, WorkItemRef],
+        pr_ref: str,
+        pr_url: str = "",
+    ) -> bool:
+        """Record the PR observed for a work item (issue-98). False = no change.
+
+        Costs a read (not a write) once the PR is already recorded, so it is
+        safe to call on every routed event.
+        """
+        session = self.find_by_work_item(work_item)
+        if session is None or not pr_ref:
+            return False
+        if session.pr_ref == pr_ref and session.pr_url == pr_url:
+            return False
+        session.pr_ref = pr_ref
+        session.pr_url = pr_url
+        self._write(session)
+        logger.debug("linked %s to PR %s", session.work_item.ref, pr_ref)
+        return True
+
+    def remove(self, work_item: Union[str, WorkItemRef]) -> bool:
+        """Delete a session **record** (``sessions prune``). False = nothing there.
+
+        Records only: this never signals a process or touches a tmux session —
+        ending things stays ``sessions close``'s job (issue-98, R7.4).
+        """
+        path = self._path_for(_as_ref(work_item))
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            return False
+        logger.info("removed session record %s", _as_ref(work_item).ref)
         return True
 
     def touch(

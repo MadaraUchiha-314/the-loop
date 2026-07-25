@@ -191,6 +191,8 @@ class PollCommand(Command):
             state=PollState(config.state_file),
             reloader=Reloader(_CONFIG_PATH, build_plan),
             authorized_users=authorized,
+            # One pause ledger for both ingress paths (issue-98).
+            pauses=dispatcher.pauses,
         )
         providers = plan.providers
 

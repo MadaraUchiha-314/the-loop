@@ -111,6 +111,8 @@ starting point ships at
 | `defaultHarness` | `claude` \| `cursor` | `claude` | Harness used when spawning a session for an unmatched event. |
 | `spawnOnUnmatched` | `never` \| `always` \| `labeled` | `never` | Policy for events matching no session: log-and-drop / spawn+register / spawn only when `autoExecuteLabel` is present. |
 | `autoExecuteLabel` | string | `the-loop: auto-execute` | Issue/PR label that opts a work item into autonomous execution (read from the payload, no API call). |
+| `pausedLabel` | string | `the-loop: paused` | Issue/PR label that **pauses** the-loop on a work item: while present, neither ingress path spawns for it or delivers its activity. Removing it resumes. Read from the payload / poll listing, no API call. |
+| `pauseFile` | string | `.the-loop/paused.json` | Durable pause ledger written by `sessions pause` and read by both ingress paths. Composes as OR with `pausedLabel`; a missing/unreadable file means nothing is paused. |
 | `authorizedUsers` | string[] | `[]` | **SECURITY (prompt-injection guard):** GitHub logins whose actions the-loop may act on. **REQUIRED**, no plugin-config fallback; empty fails closed (all human-authored events ignored). |
 | `spawnWorkdir` | string | `.` | Working directory for sessions spawned on unmatched events. |
 | `runner` | `process` \| `tmux` | `process` | How spawned sessions are hosted: headless one-shot subprocess, or an interactive TUI in a named tmux session humans can attach to. |
@@ -372,15 +374,54 @@ the-loop gh-webhook stop  [--pidfile .the-loop/gh-webhook.pid]
 - **Structured event log:** every receive/reject/route/dispatch/spawn/close decision is
   appended to `.the-loop/logs/events.jsonl` — query it with `the-loop events` (below).
 
-### `sessions` — link work items to harness sessions (webhook routing)
+### `sessions` — see and manage the work items the-loop is tracking
 
 ```bash
+the-loop sessions list   [--status active|paused|tracked|spawn-failed|closed] \
+                         [--work-item github:OWNER/REPO#N] [--format table|json]
+the-loop sessions show   --work-item github:OWNER/REPO#N [--format text|json]
+the-loop sessions pause  --work-item github:OWNER/REPO#N [--reason "…"] [--no-label]
+the-loop sessions resume --work-item github:OWNER/REPO#N [--no-label]
+the-loop sessions attach --work-item github:OWNER/REPO#N [--read-only]
+the-loop sessions close  --work-item github:OWNER/REPO#N [--keep-tmux|--kill-tmux]
+the-loop sessions prune  [--include-retained] [--dry-run]
 the-loop sessions register --work-item github:OWNER/REPO#N --harness claude \
     --harness-session-id "$CLAUDE_SESSION_ID" [--cwd .] [--force]
-the-loop sessions list  [--status active|closed] [--format table|json]
-the-loop sessions attach --work-item github:OWNER/REPO#N [--read-only]
-the-loop sessions close --work-item github:OWNER/REPO#N [--keep-tmux|--kill-tmux]
 ```
+
+`list` is the daemon's dashboard — one row per tracked work item, joining the
+session registry, the **poller's ledger** (so an item being tracked *without* a
+session shows up too) and live tmux state:
+
+```text
+Work item             Status   Harness  Runner   Where                              PR                    Last event
+github:octo/repo#15   active   claude   tmux     tmux:loop-github-octo-repo-15 …    github:octo/repo#20   2026-07-25T10:04:11Z
+github:octo/repo#16   paused   claude   process  process:8123 (live)                -                     2026-07-25T09:12:03Z
+github:octo/repo#17   tracked  -        -        -                                  -                     2026-07-25T10:05:00Z
+github:octo/repo#18   spawn-failed  -   -        -                                  -                     2026-07-25T10:05:00Z
+```
+
+- **Status** — `active` (session working it) · `paused` (see below) · `tracked`
+  (the poller sees it, no session yet) · `spawn-failed` (the poller gave up
+  spawning after `polling.maxRetries`; new activity re-arms it) · `closed`.
+- **Where** — a tmux row shows `tmux:<target> pid <n>` plus `(live)`/`(dead)`,
+  and `sessions show` prints the ready-to-paste `tmux attach` command. A
+  `runner: process` session has no long-lived process of its own (the harness
+  runs in print mode for one dispatch), so it shows the **daemon** that owns it,
+  `process:<pid>`, with its liveness. `(?)` means "unknown" — e.g. tmux isn't
+  installed here.
+- **PR** — the pull request observed for the work item, once one has been.
+- `--format json` emits the same fields per row, for scripting. There is no TUI
+  by design: `watch the-loop sessions list` is the live view.
+
+`show` prints everything known about one item — ticket URL, PR, harness/session
+id, runner and host, attach command, working directory, pause state and reason,
+timestamps, and the poller's tracking state.
+
+`prune` removes **records**, never processes: closed session records go, an
+`active` one is refused, and a closed record whose tmux session is still up (the
+retained transcript) is kept unless you pass `--include-retained`. Killing
+things stays `sessions close`'s job.
 
 - The registry lives in `webhooks.ghWebhook.routing.registryDir` (default
   `.the-loop/sessions/`, git-ignored) as one human-inspectable JSON file per session;
@@ -406,12 +447,51 @@ later activity (comments, reviews, CI, its linked PR) to the same session, and
 auto-closes on PR merge. Label presence is read straight from the webhook payload (no
 extra API call). A new issue *without* the label is received and ignored.
 
+**Pause a work item without ending it.** `sessions close` *ends* a session (and,
+since issue-94, the harness conversation inside it). When you just want the-loop
+to leave a ticket alone for a while — it's noisy, it's not ready, you want to
+take it over by hand — pause it:
+
+```bash
+the-loop sessions pause  --work-item github:OWNER/REPO#15 --reason "waiting on the design review"
+the-loop sessions resume --work-item github:OWNER/REPO#15
+```
+
+While an item is paused, **neither** ingress path spawns a session for it or
+delivers its activity (dropped with `reason=paused` in `the-loop events`). Its
+session, its tmux transcript and its checkout are left exactly as they are, and
+a **closure still closes it** — pause stops work, never cleanup. The poller keeps
+the item's comment baseline current while paused, so resuming does not replay
+everything said in the meantime.
+
+The same control is a **label**: put `routing.pausedLabel` (default
+`the-loop: paused`) on the issue/PR and it is paused; take it off and it is
+resumed — no shell access needed. The two compose as **OR**, so neither can
+silently override the other, and `sessions pause`/`resume` mirror the label onto
+the ticket for you (`--no-label` keeps the change local; a failed label write
+never fails the local pause). Create the label with `the-loop labels ensure`
+(below) — `/the-loop:init` does it during onboarding.
+
 The label applies to **PRs directly** too — a labelled PR with no linked issue is routed
 as its own work item (`github:OWNER/REPO#<pr-number>`). That makes PRs monitorable even
 when the ticketing system is **Jira or another provider**: the ticket can't be routed,
 but the PR delivering it can. `/the-loop:work-on <jira-id>` adds the label to the PR it
 opens and registers its session against the PR's ref automatically, so PR activity
 resumes the session and merge/close ends it — same as a GitHub-ticketed item.
+
+### `labels` — create the labels the-loop reacts to
+
+```bash
+the-loop labels ensure --repo OWNER/REPO [--repo OTHER/REPO] [--dry-run]
+```
+
+Creates the **operational** labels the daemon reads — `routing.autoExecuteLabel`
+and `routing.pausedLabel` — with a description and colour, skipping any that
+already exist (idempotent, safe to re-run). Names come from your CLI config, so a
+renamed label is created under the name the daemon actually watches for. Runs
+through your own `gh`; a missing or unauthenticated `gh` is a hard error rather
+than a silent no-op. `/the-loop:init` runs this during onboarding, alongside the
+`loop:<phase>` labels it creates for the workflow state machine.
 
 ### `poll` — pull ingress (provider-agnostic) when a webhook can't reach you
 

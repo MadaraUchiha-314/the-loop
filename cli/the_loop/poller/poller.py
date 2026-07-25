@@ -39,7 +39,7 @@ from typing import Dict, List, Optional, Sequence
 from .. import eventlog
 from ..authz import is_authorized, is_self_authored
 from ..reload import Reloader
-from ..sessions import SessionRegistry, WorkItemRef
+from ..sessions import PauseStore, SessionRegistry, WorkItemRef
 from ..webhook.dispatcher import Dispatcher
 from .base import Comment, PollProvider, ProviderError, WorkItem
 
@@ -114,6 +114,19 @@ class PollState:
 
     def is_known(self, ref: str) -> bool:
         return ref in self._items
+
+    def tracked_refs(self) -> List[str]:
+        """Every work item this poller has seen — what ``sessions list`` joins on.
+
+        An entry here with no registry session is an item the poller *is*
+        tracking but has not (yet, or ever) spawned for: a spawn mid-retry, or
+        one given up on. Those are exactly the rows an operator looks for when
+        "nothing is happening" (issue-98, R1.1/R1.3).
+        """
+        return sorted(self._items)
+
+    def last_polled_at(self, ref: str) -> str:
+        return str((self._items.get(ref) or {}).get("lastPolledAt") or "")
 
     def seen_comments(self, ref: str) -> set:
         return set((self._items.get(ref) or {}).get("seenComments") or [])
@@ -250,6 +263,7 @@ class PollSummary:
     comments_forwarded: int = 0
     closures: int = 0  # sessions closed because their item ended (issue-94)
     failures: int = 0  # events given up after exhausting the retry budget (issue-80)
+    paused: int = 0  # items skipped because they are paused (issue-98)
     errors: List[str] = field(default_factory=list)
 
 
@@ -283,6 +297,7 @@ class Poller:
         state: PollState,
         reloader: Optional[Reloader] = None,
         authorized_users: Sequence[str] = (),
+        pauses: Optional[PauseStore] = None,
     ):
         self.providers = list(providers)
         self.registry = registry
@@ -290,6 +305,13 @@ class Poller:
         self.config = config
         self.state = state
         self.reloader = reloader
+        # Per-work-item pause (issue-98). Defaults to the dispatcher's own
+        # ledger so both ingress paths read one file and one label.
+        self.pauses = (
+            pauses
+            if pauses is not None
+            else getattr(dispatcher, "pauses", None) or PauseStore()
+        )
         # Per-event delivery attempts before the poller gives up (issue-80).
         # Read once here — like the dispatch knobs a hot reload doesn't touch.
         self.max_retries = max(1, int(config.max_retries))
@@ -306,10 +328,11 @@ class Poller:
             self._poll_provider(provider, summary)
         self.state.save()
         logger.info(
-            "poll cycle: %d item(s), %d spawn(s), %d comment(s) forwarded%s%s%s",
+            "poll cycle: %d item(s), %d spawn(s), %d comment(s) forwarded%s%s%s%s",
             summary.items_seen,
             summary.spawns,
             summary.comments_forwarded,
+            f", {summary.paused} paused" if summary.paused else "",
             f", {summary.closures} closed" if summary.closures else "",
             f", {summary.failures} gave up" if summary.failures else "",
             f", {len(summary.errors)} error(s)" if summary.errors else "",
@@ -319,6 +342,7 @@ class Poller:
             items_seen=summary.items_seen,
             spawns=summary.spawns,
             comments_forwarded=summary.comments_forwarded,
+            paused=summary.paused or None,
             closures=summary.closures or None,
             failures=summary.failures or None,
             errors=summary.errors or None,
@@ -425,6 +449,30 @@ class Poller:
 
         comments = provider.list_comments(item)
         live_ids = [c.id for c in comments if c.id]
+
+        # Paused (issue-98): keep watching, act on nothing. The baseline is
+        # still advanced so a resume does not replay everything said during the
+        # pause — the same "only events going forward" contract the webhook path
+        # has. Closure reconciliation is deliberately NOT gated (see
+        # _reconcile_closures): a pause stops work, never cleanup.
+        pause = self.pauses.state(ref, item.labels)
+        if pause.paused:
+            logger.debug(
+                "%s is paused (%s); not dispatching",
+                ref,
+                "+".join(pause.sources),
+            )
+            if self.state.is_known(ref):
+                # Already tracked: keep the baseline current so a resume does not
+                # replay everything said during the pause.
+                self.state.baseline_comments(ref, live_ids, _utcnow())
+            # Never seen before: leave NO trace, so the item is still first-sight
+            # when it is resumed and gets its session then. Baselining here would
+            # make it a "known, dormant" item that only new activity could ever
+            # wake — a pause would silently become permanent.
+            summary.paused += 1
+            return
+
         first_sight = not self.state.is_known(ref)
         # Authorization guard (prompt-injection remediation): only act on input
         # authored by an authorized user.

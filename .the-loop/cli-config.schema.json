@@ -67,6 +67,16 @@
                   "default": "the-loop: auto-execute",
                   "description": "Issue/PR label that opts a work item into autonomous execution (spawnOnUnmatched: labeled). Read from the webhook payload, no API call."
                 },
+                "pausedLabel": {
+                  "type": "string",
+                  "default": "the-loop: paused",
+                  "description": "Issue/PR label that PAUSES the-loop on a work item (issue-98): while present, neither the webhook path nor the poller spawns for it or delivers its activity — the session, its tmux transcript and its checkout are left untouched. Removing the label resumes. Read from the payload / poll listing, no API call. Composes as OR with the local ledger in pauseFile."
+                },
+                "pauseFile": {
+                  "type": "string",
+                  "default": ".the-loop/paused.json",
+                  "description": "Durable per-work-item pause ledger written by `the-loop sessions pause` and read by both ingress paths (issue-98). A missing or unreadable file means nothing is paused."
+                },
                 "authorizedUsers": {
                   "type": "array",
                   "items": { "type": "string" },

@@ -120,6 +120,13 @@ plugin's root directory; in Cursor, resolve it to the plugin's install directory
    create issue labels; on Jira create the equivalent statuses/labels. Skip any that
    already exist.
 
+   Also create the **operational** labels the CLI daemon reacts to — the auto-execute
+   label and the paused label (`the-loop sessions pause`'s label equivalent) — which is
+   exactly what `the-loop labels ensure --repo OWNER/REPO` does (idempotent, supports
+   `--dry-run`; it reads their configured names from the CLI config). Without them the
+   label-driven controls silently do nothing. Skip on a non-GitHub ticketing system, or
+   when the CLI is not installed — say so in the final report.
+
 5. **Validate** the generated `.the-loop/harness-config.yaml` against
    `.the-loop/harness-config.schema.json` and `.the-loop/collaborators.yaml` against
    `.the-loop/collaborators.schema.json` (and, if scaffolded, `.the-loop/cli-config.yaml`

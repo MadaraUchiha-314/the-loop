@@ -18,8 +18,27 @@ self-learning/ML capabilities.
   so it always tracks the actually-installed release (issue-78).
 - `the-loop gh-webhook start|stop` SHALL run/stop the HMAC-verified GitHub webhook
   receiver (see [webhook-triggers](webhook-triggers.md)).
-- `the-loop sessions register|list|close` SHALL manage the work-item ↔ harness-session
-  registry used for webhook routing.
+- `the-loop sessions register|list|show|pause|resume|attach|close|prune` SHALL be the
+  operator's surface over the daemon: it manages the work-item ↔ harness-session
+  registry used for webhook routing, and `list` SHALL print one table of every tracked
+  work item — joining the registry, the poller's ledger (so an item tracked *without* a
+  session, or one whose spawn was given up on, is visible) and live tmux state — with
+  each row linking onward to the ticket, the tmux session (target, pane pid, liveness,
+  attach command) or the owning daemon process for a `runner: process` session, and the
+  PR observed for the item. Output SHALL be plain column-aligned stdio (no TUI) with
+  `--format json` for scripting (issue-98).
+- `the-loop sessions pause|resume <ref>` SHALL stop and restart the-loop acting on ONE
+  work item — no spawn, no event delivery, on **either** ingress path — while leaving
+  its session, tmux transcript and checkout untouched; a work item that **ends** while
+  paused SHALL still have its session closed (pause stops work, never cleanup). The
+  same control SHALL be available as the `routing.pausedLabel` GitHub label (default
+  `the-loop: paused`), read from data the daemon already holds, composing with the
+  local ledger (`routing.pauseFile`) as **OR**; `pause`/`resume` SHALL mirror the label
+  onto the ticket best-effort (`--no-label` to skip), and a failed label write SHALL
+  never fail the local pause (issue-98).
+- `the-loop labels ensure --repo OWNER/REPO` SHALL create the operational labels the
+  daemon reads (auto-execute, paused) under their configured names, idempotently, with
+  `--dry-run`; `/the-loop:init` runs it during onboarding (issue-98).
 - `the-loop scenarios` SHALL output the table of every Gherkin scenario covered by the
   integration tests (`--format table|markdown|json`; see
   [testing-and-contracts](testing-and-contracts.md)).
@@ -44,6 +63,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-98 | `sessions` became the operator surface: joined `list` table, `show`, `pause`/`resume` (CLI + `the-loop: paused` label), `prune`; new `labels ensure` command | [spec](../specs/issue-98/) |
 | issue-82 | Plugin config renamed `config.yaml` → `harness-config.yaml` (`scenarios` reads the new name with a pre-rename fallback); CLI config gained operator-declared `collaborators` + daemon-side `notifications` event filters | [decision-035](../decisions/decision-035.md) |
 | issue-78 | `--version` derives from package metadata instead of a hardcoded string that had frozen at 0.1.0 | [spec](../specs/issue-78/) |
 | issue-63 | Split the CLI daemon's config (`webhooks`/`polling`/`eventLog`) out of the per-repo plugin config into an independent, repo-agnostic CLI config | [spec](../specs/issue-63/), [decision-032](../decisions/decision-032.md) |

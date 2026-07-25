@@ -33,6 +33,14 @@ webhooks:
       defaultHarness: claude        # claude | cursor
       spawnOnUnmatched: labeled     # never | always | labeled
       autoExecuteLabel: "the-loop: auto-execute"   # label that opts an issue/PR into autonomous execution
+      # Per-work-item pause (issue-98). While an item is paused — the label below
+      # is on it, OR `the-loop sessions pause` recorded it in pauseFile — neither
+      # the webhook path nor the poller spawns for it or delivers its activity.
+      # Its session, tmux transcript and checkout are untouched; a closure still
+      # closes the session (pause stops work, never cleanup). Create the label
+      # with `the-loop labels ensure --repo OWNER/REPO`.
+      pausedLabel: "the-loop: paused"
+      pauseFile: .the-loop/paused.json
       # SECURITY (prompt-injection guard): only these GitHub logins' actions are acted on
       # by BOTH the webhook receiver and the poller. Comments/reviews/labels/items from
       # anyone else are ignored. REQUIRED: no fallback to any repo's plugin config —
