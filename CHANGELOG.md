@@ -1,3 +1,9 @@
+## v0.21.0 (2026-07-25)
+
+### Feat
+
+- **cli**: make PyYAML a required runtime dependency (issue #97) (#99)
+
 ## v0.20.0 (2026-07-25)
 
 ### Feat
