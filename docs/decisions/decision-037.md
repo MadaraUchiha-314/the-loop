@@ -1,4 +1,4 @@
-# Decision 037: pre-seed the harness's own config before spawning — trust the exact checkout, and accept the bypass disclaimer only when it was already requested
+# Decision 037: pre-seed the harness's own config before spawning — trust the workspace root (configurable), and accept the bypass disclaimer only when it was already requested
 
 - **Status:** proposed
 - **Date:** 2026-07-25

@@ -6,7 +6,7 @@ record (`decision-<nnn>.md`). Newest first.
 | # | Title | Status | Date |
 |---|-------|--------|------|
 | [036](decision-036.md) | An event on a PR routes to the PR's linked issue first (one session per work item) | accepted | 2026-07-25 |
-| [037](decision-037.md) | Pre-seed the harness's own config before spawning (trust the exact checkout; accept the bypass disclaimer only when already requested) | proposed | 2026-07-25 |
+| [037](decision-037.md) | Pre-seed the harness's own config before spawning (trust the workspace root, configurable; accept the bypass disclaimer only when already requested) | proposed | 2026-07-25 |
 | [035](decision-035.md) | collaborators.yaml is the single source for people + notification config; plugin config renamed harness-config.yaml | accepted | 2026-07-24 |
 | [034](decision-034.md) | Clone each event's repo into a per-work-item git worktree under a configurable workspace root | accepted | 2026-07-23 |
 | [033](decision-033.md) | Documentation site reads `docs/` in place; no duplicated `docs-site/` mirror | accepted | 2026-07-23 |

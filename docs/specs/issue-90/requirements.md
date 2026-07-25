@@ -86,7 +86,7 @@ working instead of waiting on a trust dialog nobody is there to answer.
 **User story:** As an operator, I want a workspace I dedicated to the-loop to be
 trusted as a whole, so that folders the daemon did not create — a repo I cloned
 there by hand, a nested repo the agent walks into — do not each stop on a
-dialog. *(Added by the owner's decision on PR #92; see decision-036.)*
+dialog. *(Added by the owner's decision on PR #92; see decision-037.)*
 
 #### Acceptance criteria (EARS)
 
@@ -217,7 +217,7 @@ Nothing about this feature is driven by payload text directly.
   offers), so it removes the bypass-mode confirmation from the operator's
   **interactive** sessions too, not only the-loop's spawned ones. Not
   remotely exploitable, but a scope the operator must consciously accept — so
-  it is stated outright in the schema, `cli/README.md`, decision-036 and the
+  it is stated outright in the schema, `cli/README.md`, decision-037 and the
   reviewer briefing rather than left to be discovered. `never` plus a narrower
   `--permission-mode acceptEdits` in `harnessArgs` avoids it entirely.
 - *Trusting a checkout that contains hostile `.claude/` hooks.* Trust is what

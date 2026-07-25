@@ -115,7 +115,7 @@ status: in-progress
   should be trust all folders within the workspace root. if claude needs
   additional permissions per repo, then what we are doing in this PR should
   still be kept."* This reverses the least-privilege default this PR shipped
-  with; recorded as such in decision-036 ("Scope: the owner's call") rather than
+  with; recorded as such in decision-037 ("Scope: the owner's call") rather than
   quietly restated, because the original position was argued in the spec.
 - **The finding that shaped the implementation:** checked the shipped CLI before
   writing anything, and the two project keys are **not** read the same way.
@@ -139,5 +139,29 @@ status: in-progress
   `scope: directory`, too-broad root, `is_within`/`is_too_broad` units, config
   mapping); `ruff` + `pyright` + `markdownlint` clean, config validation VALID,
   `pytest` **377 passed**.
+- **Next:** awaiting the owner's review and the tier-4 security sign-off.
+- **Blockers:** none.
+
+### 2026-07-25 — rebased onto main again; decision renumbered 036 → 037
+
+- **Phase:** needs-review
+- **Did:** `main` gained #95 (issue-93: route an event on a PR to its linked
+  issue first), which **claimed `decision-036` too** — an add/add collision, two
+  different decisions with the same number. Since #95 is merged and this PR is
+  not, theirs keeps 036 and this work item's decision is renumbered to
+  **037**, with every reference updated (spec, tasks, execution log,
+  `trust.py`'s module docstring, the decisions index, both capability docs and
+  `reference/automation.md`).
+- **Also refreshed the decision's title**, which still read "trust the exact
+  checkout" from before the owner's scope decision — it now says "trust the
+  workspace root (configurable)", matching what actually shipped.
+- **Conflicts** were all "both added a row/section" in shared docs (the
+  decisions index, `automation.md`, both capability docs) — resolved by keeping
+  both entries. The two later commits also patched `decision-036.md` by name, so
+  their hunks were redirected into `decision-037.md` rather than resolved in
+  place.
+- **Evidence:** `ruff` + `pyright` + `markdownlint` clean, config validation
+  VALID, `pytest` **394 passed** (the count rose because #95 brought its own
+  tests along with the rebase).
 - **Next:** awaiting the owner's review and the tier-4 security sign-off.
 - **Blockers:** none.

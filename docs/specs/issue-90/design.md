@@ -94,7 +94,7 @@ names are the harness's own). Default `enabled: true` follows the
 `reactions`/`announce` precedent — the daemon's job is to run unattended, and an
 operator who does not want the-loop touching their config flips one boolean.
 `scope` defaults to `workspace-root` per the owner's decision on PR #92
-(decision-036): the workspace root exists *for* the-loop, so trusting it once
+(decision-037): the workspace root exists *for* the-loop, so trusting it once
 covers every checkout under it — including folders the-loop never spawned into.
 An unknown value degrades to the default rather than to something accidentally
 wider or narrower.
@@ -360,7 +360,7 @@ Integration (`cli/tests/test_trust_integration.py`, Gherkin docstrings per
 | Write `.claude/settings.local.json` inside the checkout | **Rejected.** Workspace settings are *ignored until the workspace is trusted* — chicken-and-egg — and it dirties a git worktree the agent then has to avoid committing. |
 | Tell operators to run `claude` once per workspace root by hand | **Rejected.** Worktree/clone paths are created per work item; there is no stable directory to pre-trust, which is the whole bug. |
 | A generic "merge this JSON into the harness config" config block | **Rejected (YAGNI).** Two well-understood keys beat an open-ended footgun. |
-| Trust the **workspace root** once instead of each checkout | **Now the default** (`scope: workspace-root`, owner decision on PR #92 — decision-036). Originally rejected here on least-privilege grounds; the owner's counter is that the workspace root exists *for* the-loop, so every path under it is a checkout the daemon made. Exact-directory survives as `scope: directory`. The surviving technical point — root trust does not cover `spawnWorkdir`-only setups, which have no root — is handled by falling back to per-directory trust when no root is configured. |
+| Trust the **workspace root** once instead of each checkout | **Now the default** (`scope: workspace-root`, owner decision on PR #92 — decision-037). Originally rejected here on least-privilege grounds; the owner's counter is that the workspace root exists *for* the-loop, so every path under it is a checkout the daemon made. Exact-directory survives as `scope: directory`. The surviving technical point — root trust does not cover `spawnWorkdir`-only setups, which have no root — is handled by falling back to per-directory trust when no root is configured. |
 | Trust the root **instead of** any per-directory write | **Rejected on the facts.** `hasCompletedProjectOnboarding` is read from the exact project key with no ancestor walk, so a root-only write leaves the onboarding screen in front of every fresh checkout. It is written per spawn directory under both scopes. |
 
 ## 9. Documentation touched in this PR

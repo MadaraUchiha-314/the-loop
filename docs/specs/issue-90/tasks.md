@@ -110,5 +110,5 @@ flowchart LR
   `ClaudeTrustStore.trust(cwd, root)` writing the trust key on the root and the
   onboarding key per directory; `is_within` / `is_too_broad` guard rails and
   `Dispatcher._trust_root()`; schema + both yamls + README + capability docs +
-  decision-036's "Scope: the owner's call" section; 10 new tests.
+  decision-037's "Scope: the owner's call" section; 10 new tests.
   *(R1a.1–R1a.6)*
