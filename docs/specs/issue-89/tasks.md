@@ -50,5 +50,5 @@ overrides: {}
 - [x] **T9 — docs.** `cli/README.md` config table rows;
   `docs/capabilities/interactive-sessions.md` behaviour bullet + history row.
   — depends on T4, T6.
-- [ ] **T10 — gates.** `make check` fully green; evidence in `execution-log.md`;
+- [x] **T10 — gates.** `make check` fully green; evidence in `execution-log.md`;
   PR + reviewer briefing. — depends on T1–T9.

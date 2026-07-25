@@ -18,7 +18,7 @@ status: in-progress
 | design | 2026-07-25 |  | Adapter `interactive_resume_argv` + `TmuxRunner.spawn(resume=…)`/`survived()` + dispatcher try-resume-verify-fall-back. |
 | tasks-breakdown | 2026-07-25 |  | 10-task DAG |
 | implementation | 2026-07-25 |  | Implemented on `claude/github-issue-89-4rc7k6` |
-| needs-review | 2026-07-25 |  | PR opened; awaiting human review (tier-3, `human-approves-pr`) |
+| needs-review | 2026-07-25 |  | [PR #91](https://github.com/MadaraUchiha-314/the-loop/pull/91) opened with the reviewer briefing; CI green; awaiting human review (tier-3, `human-approves-pr`) |
 | complete |  |  |  |
 
 ## Progress entries
@@ -58,7 +58,7 @@ status: in-progress
   - `webhook/dispatcher.py`: `TmuxConfig.resume_on_respawn` /
     `resume_probe_seconds` (hot-reloaded with the rest of the routing policy);
     `_try_resume` returning the recorded id or `None`, with every doubt (opt-out,
-    no id, `[A-Za-z0-9._-]{1,128}` shape check, unsupported harness, tmux
+    no id, `[A-Za-z0-9][A-Za-z0-9._-]{0,127}` shape check, unsupported harness, tmux
     failure, dead pane) landing on `None` + `session.resume_failed`;
     `_respawn_tmux` spawning fresh only when the resume was abandoned, keeping
     the resumed id in the registry and tagging `session.respawned` with
@@ -69,17 +69,18 @@ status: in-progress
     `.the-loop/cli-config.schema.json` and both cli-config yamls (dogfood +
     packaged template).
   - Tests: adapter/runner/config unit tests (resume argv, unsupported harness,
-    `survived` live/dead/no-wait, `TmuxConfig` parsing) and four stub-tmux
+    `survived` live/dead/no-wait, `TmuxConfig` parsing) and five stub-tmux
     integration scenarios (respawn resumes the recorded id and stays quiet on
     the ticket; an unresumable conversation falls back to a fresh session with
     the event still as its boot prompt, asserting the `session.resume_failed` /
-    `resumed: false` trail; `resumeOnRespawn: false` respawns fresh). The
+    `resumed: false` trail; a flag-shaped id is never handed to the CLI;
+    `resumeOnRespawn: false` respawns fresh). The
     stub tmux grew a `STUB_TMUX_PANE_DEAD_ONCE` mode so a dead-then-respawned
     session is expressible.
   - Docs: `cli/README.md` (`routing.tmux` table + the resume paragraph) and
     `docs/capabilities/interactive-sessions.md` (behaviour bullet + history row).
 - **Checkpoint/tests:** `make check` green — ruff, markdownlint (210 files),
-  ruff format, pyright 0 errors, `validate_config.py` VALID, pytest 327 passed.
+  ruff format, pyright 0 errors, `validate_config.py` VALID, pytest 328 passed.
 - **Next:** open the PR with the reviewer briefing; request review.
 - **Blockers:** none.
 
@@ -94,9 +95,10 @@ status: in-progress
 
 ## Final validation evidence
 
+CI on [PR #91](https://github.com/MadaraUchiha-314/the-loop/pull/91) green (the `checks` job: `uv sync` + the same pre-commit hooks run locally).
 Local gate (`make check`) green in full: ruff clean, markdownlint 0 errors over
 210 files, `ruff format --check` clean, pyright 0 errors, all six config files
-VALID, pytest **327 passed**.
+VALID, pytest **328 passed**.
 
 Acceptance criteria are demonstrated by:
 
