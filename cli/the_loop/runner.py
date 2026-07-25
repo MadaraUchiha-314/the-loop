@@ -17,8 +17,9 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Callable, List, Optional
 
 from .harness.base import UnsupportedRunnerError
 from .sessions import Session, WorkItemRef
@@ -199,10 +200,21 @@ class TmuxRunner:
         cwd: str,
         session_id: str,
         timeout: Optional[float] = None,
+        resume: bool = False,
     ) -> TmuxResult:
-        """Start the harness TUI detached in ``loop-<slug>`` with a pre-assigned id."""
+        """Start the harness TUI detached in ``loop-<slug>`` with a pre-assigned id.
+
+        With ``resume`` the TUI is asked to **continue** the conversation
+        ``session_id`` names instead of starting a new one (issue-89) — the
+        respawn path's way of not losing everything the agent knew about the
+        work item.
+        """
         try:
-            harness_argv = adapter.interactive_argv(prompt, session_id)
+            harness_argv = (
+                adapter.interactive_resume_argv(prompt, session_id)
+                if resume
+                else adapter.interactive_argv(prompt, session_id)
+            )
         except UnsupportedRunnerError as exc:
             return TmuxResult(ok=False, error=str(exc))
         target = self.target_for(work_item)
@@ -263,6 +275,26 @@ class TmuxRunner:
         if not flags:
             return True
         return any(flag != "1" for flag in flags)
+
+    def survived(
+        self,
+        target: str,
+        delay: float,
+        sleeper: Callable[[float], None] = time.sleep,
+    ) -> bool:
+        """True when ``target``'s pane is still running ``delay`` seconds on.
+
+        ``tmux new-session -d`` returns as soon as tmux forks the pane, so a
+        harness that refuses to start (``claude --resume <unknown-id>`` exits 1
+        in well under a second) still looks like a successful spawn. This
+        short grace period turns that into an answerable question — used by the
+        resume-on-respawn path to fall back to a fresh session instead of
+        registering a corpse (issue-89). ``delay <= 0`` reads the pane state
+        immediately; ``sleeper`` is injectable so tests never wait.
+        """
+        if delay > 0:
+            sleeper(delay)
+        return self.has_live_session(target)
 
     def deliver(
         self, session: Session, prompt: str, timeout: Optional[float] = None

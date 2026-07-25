@@ -123,6 +123,20 @@ class HarnessAdapter:
             "runner (no pre-assignable session id in interactive mode)"
         )
 
+    def interactive_resume_argv(self, prompt: str, session_id: str) -> List[str]:
+        """Argv **resuming** an existing conversation in this harness's TUI.
+
+        Used when a dead tmux session is respawned, so the fresh TUI continues
+        the conversation the work item was already in rather than starting
+        blank (issue-89). Adapters that cannot resume interactively keep this
+        raising; the dispatcher reads that as "spawn a fresh session instead",
+        never as a failure.
+        """
+        raise UnsupportedRunnerError(
+            f"the {self.name or self.binary} harness cannot resume a "
+            "conversation in interactive mode"
+        )
+
     def resume(
         self, session: Session, prompt: str, timeout: Optional[float] = None
     ) -> DispatchResult:

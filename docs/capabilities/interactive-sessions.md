@@ -24,11 +24,27 @@ the same conversation.
 - WHEN a delivery finds the target tmux session **gone** (crashed or killed, i.e.
   `has-session` fails) THEN the dispatcher SHALL **respawn** the harness on a fresh
   `loop-<slug>` session — reusing the recorded harness/cwd/tmux-target — and deliver
-  the pending event as its boot prompt, re-registering the session (a new harness id,
-  preserving the processed-delivery history) and emitting `session.respawned`; a
-  respawn that cannot proceed (harness CLI missing, `tmux new-session` fails) fails the
-  dispatch and releases for retry. This is what stops a redelivery loop into a session
-  that no longer exists (issue-80).
+  the pending event as its boot prompt, re-registering the session (preserving the
+  processed-delivery history) and emitting `session.respawned`; a respawn that cannot
+  proceed (harness CLI missing, `tmux new-session` fails) fails the dispatch and
+  releases for retry. This is what stops a redelivery loop into a session that no
+  longer exists (issue-80).
+- WHEN a session is respawned AND `routing.tmux.resumeOnRespawn` is `true` (the
+  default) THEN the respawned TUI SHALL **resume the recorded harness conversation**
+  (`claude --resume <harnessSessionId>`, in the session's recorded cwd) rather than
+  start a blank one, and the registry SHALL keep that same session id so repeated
+  crashes converge on one conversation (`session.respawned` carries `resumed: true`).
+  The respawn SHALL be verified live after `routing.tmux.resumeProbeSeconds`
+  (default 2, `0` = check immediately) — `tmux new-session -d` succeeds the moment the
+  pane forks, while a harness that cannot resume exits at once. WHEN the resume is
+  opted out, unsupported by the harness (anything but Claude Code today — cursor-agent
+  cannot be tmux-hosted at all), impossible (no recorded id, or one failing a
+  conservative `[A-Za-z0-9][A-Za-z0-9._-]{0,127}` check before it reaches an
+  argv, so a flag can never masquerade as a session id) or unverified
+  (tmux failed, or the pane came up dead) THEN the respawn SHALL fall back to a fresh
+  conversation with a newly minted id, emitting `session.resume_failed` and
+  `resumed: false` — never a silently-successful dispatch into a dead pane
+  (issue-89). The `process` runner already resumed on every event and is unchanged.
 - WHEN a tmux session is spawned THEN tmux's `remain-on-exit` SHALL be set on it
   (`routing.tmux.remainOnExit`, best-effort — an older tmux that rejects it only
   warns), so the pane and its scrollback survive the harness process exiting. A
@@ -82,3 +98,4 @@ the same conversation.
 | issue-65 | Fixed `poll start` never launching ttyd (it shared the tmux runner but had no web terminal start/stop of its own); factored ttyd lifecycle into a shared `the_loop.runner` helper used by both `gh-webhook start` and `poll start` | [issue](https://github.com/MadaraUchiha-314/the-loop/issues/65) |
 | issue-80 | Respawn a crashed/killed tmux session on delivery (deliver the pending event as the fresh TUI's boot prompt) instead of looping redeliveries into a session that no longer exists | [spec](../specs/issue-80/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/80) |
 | issue-86 | Keep a finished work item's tmux session (and, via `remain-on-exit`, its pane) instead of killing it, guarded by a pane-liveness check so the respawn path still fires; announce a first-spawned session's attach command as a comment on the work item | [spec](../specs/issue-86/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/86) |
+| issue-89 | Respawn now **resumes** the dead session's harness conversation (`claude --resume`, id kept in the registry) instead of booting a blank one, verified by a liveness probe with a fresh-conversation fallback (`resumeOnRespawn` / `resumeProbeSeconds`, `session.resume_failed`) | [spec](../specs/issue-89/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/89) |

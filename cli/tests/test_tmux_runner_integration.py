@@ -15,6 +15,7 @@ import time
 
 import pytest
 
+from the_loop import eventlog
 from the_loop.harness import ClaudeCodeAdapter
 from the_loop.runner import TmuxRunner
 from the_loop.sessions import Session, SessionRegistry, WorkItemRef
@@ -28,14 +29,21 @@ AUTO_LABEL = "the-loop: auto-execute"
 # listed in $STUB_TMUX_FAIL (comma-separated) — e.g. `has-session` to simulate a
 # crashed/killed session (issue-80). $STUB_TMUX_PANE_DEAD makes `list-panes`
 # report a dead pane, i.e. a session retained after its harness exited
-# (issue-86).
+# (issue-86); $STUB_TMUX_PANE_DEAD_ONCE reports one dead pane and then live
+# ones, which is a session that died and was successfully respawned — the
+# resume-on-respawn happy path (issue-89).
 STUB_TMUX = """#!/usr/bin/env python3
 import json, os, sys
 argv = sys.argv[1:]
-with open(os.environ["STUB_TMUX_RECORD"], "a") as f:
+record = os.environ["STUB_TMUX_RECORD"]
+with open(record, "a") as f:
     f.write(json.dumps(argv) + "\\n")
 if argv and argv[0] == "list-panes":
-    print("1" if os.environ.get("STUB_TMUX_PANE_DEAD") else "0")
+    dead = bool(os.environ.get("STUB_TMUX_PANE_DEAD"))
+    if os.environ.get("STUB_TMUX_PANE_DEAD_ONCE"):
+        seen = sum(1 for line in open(record) if json.loads(line)[0] == "list-panes")
+        dead = seen <= 1
+    print("1" if dead else "0")
 fail = set(v for v in os.environ.get("STUB_TMUX_FAIL", "").split(",") if v)
 sys.exit(1 if argv and argv[0] in fail else 0)
 """
@@ -97,6 +105,9 @@ def pipeline_factory(tmp_path, stub_tmux):
                 "runner": "tmux",
                 "spawnOnUnmatched": "labeled",
                 "spawnWorkdir": str(tmp_path),
+                # Never wait out the resume probe in tests (issue-89); the stub
+                # tmux answers `list-panes` instantly either way.
+                "tmux": {"resumeProbeSeconds": 0},
                 **(overrides or {}),
             }
         )
@@ -406,11 +417,144 @@ def test_dead_session_is_respawned_with_the_event_as_boot_prompt(pipeline, monke
     assert respawned.tmux_target == "loop-github-octo-repo-15"
     assert "d-dead-1" in respawned.recent_deliveries  # marked processed
 
-    (spawn,) = [c for c in calls() if c[0] == "new-session"]
+    # Every has-session probe fails here, so the resume attempt (issue-89)
+    # cannot be verified and the respawn falls back to a fresh conversation —
+    # the session the registry ends up pointing at.
+    spawn = [c for c in calls() if c[0] == "new-session"][-1]
     tail = spawn[spawn.index("--") + 1 :]
     assert tail[0].endswith("claude")
     assert tail[1] == "--session-id" and tail[2] == respawned.harness_session_id
     assert "issue_comment" in tail[-1]  # the event delivered as the boot prompt
+
+
+def test_respawn_resumes_the_dead_sessions_conversation(pipeline_factory, monkeypatch):
+    """
+    Feature: tmux-hosted interactive sessions
+    Scenario: a respawned session continues the same harness conversation
+      Given a registered tmux-mode session whose pane has died
+      When an issue_comment event for that work item arrives
+      Then the harness TUI is respawned with --resume <the recorded session id>
+      And the registry keeps that same harness session id
+      And no second announcement comment is posted
+    Requirement: docs/specs/issue-89/requirements.md#R1
+    """
+    announcer = RecordingAnnouncer()
+    deliver, registry, calls = pipeline_factory(announcer=announcer)
+    register_tmux_session(registry)
+    # Dead when the event is delivered, alive once respawned: a resume that took.
+    monkeypatch.setenv("STUB_TMUX_PANE_DEAD_ONCE", "1")
+    deliver("issue_comment", issue_payload(action="created"), "d-resume-1")
+
+    assert wait_until(
+        lambda: "d-resume-1" in registry.find_by_work_item(REF).recent_deliveries
+    )
+    resumed = registry.find_by_work_item(REF)
+    assert resumed.harness_session_id == "uuid-1"  # same conversation (R1.2)
+    assert resumed.tmux_target == "loop-github-octo-repo-15"
+
+    (spawn,) = [c for c in calls() if c[0] == "new-session"]  # no fallback spawn
+    tail = spawn[spawn.index("--") + 1 :]
+    assert tail[0].endswith("claude")
+    assert tail[1] == "--resume" and tail[2] == "uuid-1"
+    assert "issue_comment" in tail[-1]  # the event is still the boot prompt
+    assert announcer.calls == []  # same loop-<slug> name, no new comment
+
+
+def test_an_unresumable_conversation_falls_back_to_a_fresh_session(
+    pipeline, monkeypatch, tmp_path
+):
+    """
+    Feature: tmux-hosted interactive sessions
+    Scenario: a resume that cannot start does not swallow the event
+      Given a registered tmux-mode session whose recorded conversation is gone
+      When an issue_comment event for that work item arrives
+      And the resumed harness exits immediately (its pane comes up dead)
+      Then a fresh session is spawned with a new pre-assigned id
+      And the pending event is still delivered as that session's boot prompt
+      And the delivery is marked processed rather than left to loop
+      And the event log says the resume was abandoned
+    Requirement: docs/specs/issue-89/requirements.md#R2 #R3
+    """
+    deliver, registry, calls = pipeline
+    log_path = tmp_path / "events.jsonl"
+    eventlog.configure("test", path=log_path)
+    register_tmux_session(registry)
+    # Every pane reads dead: the resume attempt never comes up.
+    monkeypatch.setenv("STUB_TMUX_PANE_DEAD", "1")
+    deliver("issue_comment", issue_payload(action="created"), "d-resume-2")
+
+    assert wait_until(
+        lambda: registry.find_by_work_item(REF).harness_session_id != "uuid-1"
+    )
+    fresh = registry.find_by_work_item(REF)
+    assert wait_until(
+        lambda: "d-resume-2" in registry.find_by_work_item(REF).recent_deliveries
+    )
+
+    attempt, fallback = [c for c in calls() if c[0] == "new-session"]
+    assert attempt[attempt.index("--") + 1 :][1:3] == ["--resume", "uuid-1"]
+    tail = fallback[fallback.index("--") + 1 :]
+    assert tail[1] == "--session-id" and tail[2] == fresh.harness_session_id
+    assert "issue_comment" in tail[-1]
+
+    records = [json.loads(line) for line in log_path.read_text().splitlines()]
+    (abandoned,) = [r for r in records if r["event"] == "session.resume_failed"]
+    assert abandoned["level"] == "warning"
+    assert abandoned["harness_session_id"] == "uuid-1"
+    (respawned,) = [r for r in records if r["event"] == "session.respawned"]
+    assert respawned["resumed"] is False
+
+
+def test_a_flag_shaped_session_id_is_never_passed_to_the_harness(pipeline, monkeypatch):
+    """
+    Feature: tmux-hosted interactive sessions
+    Scenario: a registry id that is not shaped like one the-loop wrote
+      Given a registered tmux-mode session whose recorded harness id is flag-shaped
+      When an issue_comment event finds that session dead
+      Then the id is never handed to the harness CLI
+      And the respawn starts a fresh conversation instead
+    Requirement: docs/specs/issue-89/requirements.md#R1
+    """
+    deliver, registry, calls = pipeline
+    register_tmux_session(registry, harness_session_id="--dangerously-skip-permissions")
+    monkeypatch.setenv("STUB_TMUX_PANE_DEAD_ONCE", "1")
+    deliver("issue_comment", issue_payload(action="created"), "d-resume-4")
+
+    assert wait_until(
+        lambda: "d-resume-4" in registry.find_by_work_item(REF).recent_deliveries
+    )
+    (spawn,) = [c for c in calls() if c[0] == "new-session"]
+    assert "--resume" not in spawn
+    assert "--dangerously-skip-permissions" not in spawn
+    tail = spawn[spawn.index("--") + 1 :]
+    assert tail[1] == "--session-id"
+    assert tail[2] == registry.find_by_work_item(REF).harness_session_id
+
+
+def test_resume_on_respawn_can_be_switched_off(pipeline_factory, monkeypatch):
+    """
+    Feature: tmux-hosted interactive sessions
+    Scenario: the pre-issue-89 behaviour stays available
+      Given routing.tmux.resumeOnRespawn is false
+      And a registered tmux-mode session whose pane has died
+      When an issue_comment event for that work item arrives
+      Then the respawn starts a fresh conversation without attempting a resume
+    Requirement: docs/specs/issue-89/requirements.md#R1
+    """
+    deliver, registry, calls = pipeline_factory(
+        overrides={"tmux": {"resumeOnRespawn": False, "resumeProbeSeconds": 0}}
+    )
+    register_tmux_session(registry)
+    monkeypatch.setenv("STUB_TMUX_PANE_DEAD_ONCE", "1")
+    deliver("issue_comment", issue_payload(action="created"), "d-resume-3")
+
+    assert wait_until(
+        lambda: registry.find_by_work_item(REF).harness_session_id != "uuid-1"
+    )
+    (spawn,) = [c for c in calls() if c[0] == "new-session"]
+    assert "--resume" not in spawn
+    tail = spawn[spawn.index("--") + 1 :]
+    assert tail[1] == "--session-id"
 
 
 def test_non_missing_delivery_failure_does_not_respawn(pipeline, monkeypatch):

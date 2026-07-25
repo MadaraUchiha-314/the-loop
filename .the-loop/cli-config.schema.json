@@ -136,6 +136,17 @@
                       "type": "boolean",
                       "default": true,
                       "description": "Set tmux's `remain-on-exit` on spawned sessions so the pane and its scrollback survive the harness process exiting (best-effort: an older tmux that rejects it only warns). Events delivered to a session whose pane has died still trigger the issue-80 respawn — a dead pane never silently swallows an event."
+                    },
+                    "resumeOnRespawn": {
+                      "type": "boolean",
+                      "default": true,
+                      "description": "When a dead tmux session is respawned (issue-80/issue-89), continue the SAME harness conversation — `claude --resume <recorded session id>` — instead of booting a blank one, so the agent keeps everything it knew about the work item. The registry keeps that session id, so repeated crashes converge on one conversation. The respawn is verified (see resumeProbeSeconds) and falls back to a fresh conversation whenever it cannot be: the harness has no interactive resume (anything but Claude Code today), the recorded id is malformed or absent, tmux failed, or the resumed harness exited immediately. false restores the pre-issue-89 behaviour (always a fresh conversation)."
+                    },
+                    "resumeProbeSeconds": {
+                      "type": "number",
+                      "minimum": 0,
+                      "default": 2,
+                      "description": "How long a resume-on-respawn waits before checking that the harness is still running. `tmux new-session -d` succeeds as soon as the pane forks, while a harness that cannot resume (e.g. `claude --resume <unknown-id>`) exits within a fraction of a second — without this probe such a respawn would report success forever while events went nowhere. 0 checks immediately without waiting."
                     }
                   }
                 },

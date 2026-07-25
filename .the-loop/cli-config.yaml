@@ -53,9 +53,15 @@ webhooks:
       # pane + scrollback when the harness process itself exits. Retained sessions
       # accumulate — `the-loop sessions list --status closed` shows them, and a new
       # spawn for the same work item reclaims the loop-<slug> name.
+      # resumeOnRespawn (issue-89) makes a respawn of a dead session continue the
+      # SAME harness conversation (claude --resume <id>) instead of booting blank;
+      # the spawn is probed for resumeProbeSeconds and falls back to a fresh
+      # conversation if the harness could not resume (0 = probe immediately).
       tmux:
         keepSessionOnClose: true
         remainOnExit: true
+        resumeOnRespawn: true
+        resumeProbeSeconds: 2
       webTerminal:                # ttyd browser terminal onto tmux sessions (runner: tmux)
         enabled: false            # access control is environmental: localhost/VPN/provider (decision-021)
         host: 127.0.0.1

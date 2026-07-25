@@ -122,7 +122,14 @@ EVENT_TYPES: Dict[str, str] = {
         "A tmux-mode session found dead on delivery was respawned on a fresh "
         "tmux session, and the pending event delivered as its boot prompt "
         "(work_item, harness, harness_session_id, runner, tmux_target, "
-        "gh_event, delivery_id)."
+        "resumed: whether the previous conversation was resumed or a fresh one "
+        "started, gh_event, delivery_id)."
+    ),
+    "session.resume_failed": (
+        "A respawn could not resume the dead session's conversation and fell "
+        "back to a fresh one (work_item, harness, harness_session_id, error) — "
+        "e.g. an unresumable id or a harness without interactive resume. Not "
+        "emitted when resuming is simply off (routing.tmux.resumeOnRespawn)."
     ),
     "session.announced": (
         "A comment announcing a newly spawned tmux session (and how to attach "

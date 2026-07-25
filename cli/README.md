@@ -126,16 +126,18 @@ starting point ships at
 | `reactions` | object | — | Dispatch-lifecycle emoji reactions on the triggering GitHub entity (see below). |
 | `announce` | object | — | Comment on the work item announcing a spawned tmux session and how to attach (see below). |
 
-#### `webhooks.ghWebhook.routing.tmux` — how long a tmux session outlives the work (`runner: tmux`)
+#### `webhooks.ghWebhook.routing.tmux` — how long a tmux session (and its conversation) outlives trouble (`runner: tmux`)
 
 A tmux session is your window onto what the agent actually did — and it used to close
-exactly when you most wanted it. Both defaults keep a finished session readable
-(issue-86):
+exactly when you most wanted it. The defaults keep a finished session readable
+(issue-86) and keep a *crashed* one's conversation alive (issue-89):
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `keepSessionOnClose` | boolean | `true` | Leave the tmux session running when the work item's session is closed (PR merged/closed, or `the-loop sessions close`); the registry entry closes either way. `false` restores the old kill-on-close. |
 | `remainOnExit` | boolean | `true` | Set tmux's `remain-on-exit` on spawned sessions, so the pane and its scrollback survive the harness process exiting. Best-effort: an older tmux that rejects it only warns. |
+| `resumeOnRespawn` | boolean | `true` | When a dead tmux session is respawned, continue the **same** harness conversation (`claude --resume <recorded id>`) instead of booting a blank one, so the agent keeps what it knew about the work item. `false` restores the pre-issue-89 fresh-conversation respawn. |
+| `resumeProbeSeconds` | number | `2` | How long a resume waits before checking the harness is still running. `tmux new-session -d` succeeds the moment the pane forks, while a harness that can't resume exits in a fraction of a second — without the probe such a respawn would report success while the event went nowhere. `0` checks immediately. |
 
 Attach to a retained session with `tmux attach -t loop-<slug>` or `the-loop sessions
 attach --work-item <ref> --read-only` — which works after the work item is closed too.
@@ -145,6 +147,15 @@ one), and a new spawn for the same work item **reclaims** the deterministic
 `loop-<slug>` name, clearing whatever was retained under it. Events delivered to a
 session whose pane has died still trigger the issue-80 respawn — a dead pane never
 silently swallows an event.
+
+That respawn now **resumes** rather than restarts: it re-runs the harness against the
+session id the registry already holds, and the registry keeps that id, so repeated
+crashes converge on one conversation. Anything doubtful falls back to a fresh
+conversation and says so (`session.resume_failed` in `the-loop events`, plus
+`resumed: false` on `session.respawned`): the harness has no interactive resume
+(anything but Claude Code today), the recorded id is missing or malformed, tmux
+failed, or the resumed harness exited immediately — which is what an unresumable id
+looks like.
 
 #### `webhooks.ghWebhook.routing.announce` — "here is your session" comment
 
