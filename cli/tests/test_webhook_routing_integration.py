@@ -414,32 +414,69 @@ def test_disabled_event_type_is_not_routed(server_factory, tmp_path):
     assert calls() == []
 
 
-def test_pr_close_auto_closes_session(server_factory, tmp_path):
-    """
-    Feature: Webhook event routing
-    Scenario: A session auto-closes when its PR is merged/closed
-        Given a session registered for github:octo/repo#15
-        When a signed pull_request 'closed' webhook (merged) for the linked PR arrives
-        Then the session is closed in the registry
-        And the harness is not resumed for the close event
-    Requirement: docs/specs/issue-15/requirements.md#R3 (session lifecycle)
-    """
-    port, registry, calls = server_factory(events=["pull_request"])
-    register(registry, tmp_path)
-    payload = {
+def pr_close_payload(number=16, branch="claude/github-issue-15-x"):
+    return {
         "action": "closed",
         "repository": {"full_name": "octo/repo"},
         "pull_request": {
-            "number": 16,
-            "head": {"ref": "claude/github-issue-15-x"},
+            "number": number,
+            "head": {"ref": branch},
             "body": "Closes #15",
             "merged": True,
         },
     }
-    assert post_webhook(port, "pull_request", payload, "close-1") == 202
-    assert wait_until(lambda: registry.find_by_work_item(REF) is None)
+
+
+def test_pr_close_auto_closes_the_prs_own_session(server_factory, tmp_path):
+    """
+    Feature: Webhook event routing
+    Scenario: A session registered against a PR auto-closes when that PR merges
+        Given a session registered for github:octo/repo#16 (the PR is the work item)
+        When a signed pull_request 'closed' webhook (merged) for PR 16 arrives
+        Then the session is closed in the registry
+        And the harness is not resumed for the close event
+    Requirement: docs/specs/issue-101/requirements.md#AC4
+    """
+    port, registry, calls = server_factory(events=["pull_request"])
+    pr_ref = "github:octo/repo#16"
+    register(registry, tmp_path, ref=pr_ref)
+    assert post_webhook(port, "pull_request", pr_close_payload(), "close-1") == 202
+    assert wait_until(lambda: registry.find_by_work_item(pr_ref) is None)
     time.sleep(0.2)
     assert calls() == []  # auto-closed, harness never resumed
+
+
+def test_the_work_items_session_survives_its_first_pr_merging(server_factory, tmp_path):
+    """
+    Feature: Webhook event routing
+    Scenario: The work item's session survives one of its PRs merging
+        Given a session registered for github:octo/repo#15
+        And PR 16, one of several PRs delivering that work item
+        When a signed pull_request 'closed' (merged) webhook for PR 16 arrives
+        Then the session for issue 15 is still active
+        And the harness is not resumed for the close event
+        When a signed issues 'closed' webhook for issue 15 arrives
+        Then the session is closed in the registry
+    Requirement: docs/specs/issue-101/requirements.md#AC1
+    """
+    port, registry, calls = server_factory(events=["pull_request", "issues"])
+    register(registry, tmp_path)
+
+    assert post_webhook(port, "pull_request", pr_close_payload(), "close-pr-1") == 202
+    time.sleep(0.3)
+    session = registry.find_by_work_item(REF)
+    assert session is not None and session.status == "active"  # work item is open
+    assert calls() == []  # a close is never delivered into the conversation
+
+    issue_closed = {
+        "action": "closed",
+        "repository": {"full_name": "octo/repo"},
+        "issue": {"number": 15, "state_reason": "completed"},
+        "sender": {"login": "octocat"},
+    }
+    assert post_webhook(port, "issues", issue_closed, "close-issue-1") == 202
+    assert wait_until(lambda: registry.find_by_work_item(REF) is None)
+    assert calls() == []
 
 
 def test_issue_close_auto_closes_session(server_factory, tmp_path):

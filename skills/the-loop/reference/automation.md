@@ -52,9 +52,10 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
 - **Label-gated auto-execution** (`spawnOnUnmatched: labeled`): a configurable label
   (`routing.autoExecuteLabel`, default `the-loop: auto-execute`) opts a work item into
   autonomous execution. Labelling an issue/PR spawns a session that runs
-  `/the-loop:work-on` on it; the item's later activity (and its linked PR's) resumes that
-  session; a merged/closed PR auto-closes it. An unlabelled new issue is received and
-  ignored. Label presence is read from the webhook payload (no extra API call).
+  `/the-loop:work-on` on it; the item's later activity (and that of **every** PR linked
+  to it) resumes that session; the item being **closed** auto-closes it. An unlabelled
+  new issue is received and ignored. Label presence is read from the webhook payload (no
+  extra API call).
 - **Per-work-item checkout workspace** (`routing.workspace`, issue-76): the CLI daemon
   runs independent of any repo, so a spawned session needs a checkout of the repo an
   event concerns. Set `routing.workspace.root` to turn it on (leave empty to keep the
@@ -71,9 +72,10 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
     up when a **work item spans multiple repos**, at the cost of a full clone per work
     item.
 
-  When the PR merges/closes the work item's checkout is removed (set
-  `keepCheckoutOnClose: true` to keep it for post-mortem; in `worktree` strategy the
-  shared clone is always kept). Auth is your own git credentials (e.g. `gh auth
+  When the **work item** ends the checkout is removed (set `keepCheckoutOnClose: true`
+  to keep it for post-mortem; in `worktree` strategy the shared clone is always kept).
+  One of the item's PRs merging does not remove it — the next PR in the series is
+  written from the same checkout (issue-101). Auth is your own git credentials (e.g. `gh auth
   setup-git`). Design: `docs/specs/issue-76/design.md`, decision:
   `docs/decisions/decision-034.md`.
 - **An event on a PR resolves the PR's linked issue first.** A PR is the vehicle for a
@@ -108,8 +110,19 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
   itself can't be routed, but the PR delivering it is still monitorable by the-loop's
   CLI. `/the-loop:work-on <jira-id>` applies this automatically — once the PR is opened
   it adds the label to the PR and registers the session against the PR's ref, so PR
-  comments/reviews/CI resume the session and PR merge/close auto-closes it, identical
-  to the GitHub-ticketed flow.
+  comments/reviews/CI resume the session and **that** PR's merge/close auto-closes it,
+  identical to the GitHub-ticketed flow.
+- **One work item, many PRs.** A work item is frequently delivered by more than one PR
+  (a spec PR then an implementation PR, a stacked series, a follow-up after review, one
+  PR per repository). Every one of them is labelled and routes back to the **same**
+  session, and — because a PR is a delivery vehicle, not the work item — **a PR closing
+  or merging ends only the session registered against that PR itself**. A session
+  registered against the *issue* the PR is linked to is left running; the issue's own
+  `closed` event (or the poller's closure reconciliation) is what ends it. The
+  operational consequence: a PR that merges **without** closing its ticket leaves the
+  session active until the ticket closes — `/the-loop:finish-tasks` closes the ticket,
+  and `the-loop sessions close` is the manual escape hatch. Decision:
+  `docs/decisions/decision-039.md` (issue-101).
 - **Session registration is a workflow step.** When the harness starts executing a
   work item (execute-tasks / work-on), it registers itself so events can find it —
   and closes the registration in finish-tasks. `N` is the GitHub issue number — or,
@@ -128,9 +141,10 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
   ```
 
   Registration is best-effort: if it fails, routing degrades to log-and-drop (or
-  spawn), never blocking the session's own work. When the work item's PR is merged or
-  closed, the receiver **auto-closes** the session (a `pull_request` `closed` event), so
-  a finished work item never leaves a dangling `active` session.
+  spawn), never blocking the session's own work. When the **registered work item** is
+  closed — the issue (`issues` `closed`), or the PR itself when the PR *is* the work
+  item (`pull_request` `closed`) — the receiver **auto-closes** the session, so a
+  finished work item never leaves a dangling `active` session.
 
 ## Predictability & execution guarantees
 

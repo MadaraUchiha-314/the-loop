@@ -60,6 +60,19 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   signal that carries no free-form text and can only end the-loop's *own* session, it
   bypasses the authorized-actor guard (as PR-close always has) — narrowly: only the
   `closed` action.
+- **One work item may be delivered by several PRs, and only the object that closed is
+  ended.** WHEN a `pull_request` `closed` event is dispatched THEN the system SHALL
+  auto-close only the session registered against **that PR's own ref**, and SHALL leave
+  a session registered against an issue the PR is merely *linked* to **active**
+  (logged as `session.kept_open`) — a spec PR, a stacked series or a follow-up fix all
+  deliver one work item, so one of them merging is not the item ending. Consequently
+  the work item's **checkout is not removed** while it is open, and the item's session
+  ends on its **own** close: the `issues` `closed` event, or the poll path's closure
+  reconciliation. The decision is made from the event payload alone (no API call, no
+  credentials); a payload that names no closing number closes nothing. The operational
+  consequence: a PR merged **without** closing its ticket leaves the session active
+  until the ticket closes (`the-loop sessions close` is the manual escape hatch)
+  — issue-101, decision-039.
 - On the **poll** path the same closure is discovered by reconciliation, since a poll
   listing only ever carries *open* items: after each **successful** listing the poller
   checks every active session that source owns whose item is no longer listed, asks the
@@ -135,6 +148,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-101 | A work item may be delivered by **several** PRs: a `pull_request` `closed` event now ends only the session registered against that PR itself, leaving a linked issue's session (and its checkout) running until the issue's own close | [spec](../specs/issue-101/), [decision-039](../decisions/decision-039.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/101) |
 | issue-94 | A finished work item now ends its session on **both** ingress paths: the poller reconciles active sessions against each successful listing and closes the ones whose item is closed/merged upstream; the receiver treats `issues`/`closed` like `pull_request`/`closed` instead of delivering it into the conversation | [spec](../specs/issue-94/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/94) |
 | issue-93 | An event on a PR resolves the PR's **linked issues first** (`closingIssuesReferences` + branch/keyword conventions, incl. PR conversation comments delivered as `issue_comment`), so PR activity reuses the linked issue's session instead of spawning a second one | [spec](../specs/issue-93/), [decision-036](../decisions/decision-036.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/93) |
 | issue-90 | Pre-seed the harness config before spawning (`routing.harnessTrust`) so spawned sessions stop stalling on the workspace-trust dialog / bypass-permissions disclaimer | [spec](../specs/issue-90/), [decision-037](../decisions/decision-037.md) |

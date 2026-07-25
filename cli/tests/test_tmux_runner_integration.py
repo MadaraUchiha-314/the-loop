@@ -242,17 +242,27 @@ def test_followup_event_is_pasted_into_the_running_session(pipeline):
     assert paste[paste.index("-t") + 1] == "loop-github-octo-repo-15"
 
 
-def pr_close_payload():
+def pr_close_payload(number=15):
+    """A merged PR that **is** the work item (the non-GitHub-ticketing path).
+
+    Only the closing object's own session ends (issue-101), so this is the PR
+    payload that closes ``REF``; :func:`linked_pr_close_payload` is the other
+    case — a PR merely *linked* to the work item, which leaves it running.
+    """
     return {
         "action": "closed",
         "repository": {"full_name": "octo/repo"},
         "pull_request": {
-            "number": 99,
+            "number": number,
             "merged": True,
             "head": {"ref": "claude/github-issue-15-x"},
             "body": "Closes #15",
         },
     }
+
+
+def linked_pr_close_payload():
+    return pr_close_payload(number=99)
 
 
 def register_tmux_session(registry, harness_session_id="uuid-1"):
@@ -304,6 +314,26 @@ def test_pr_close_kills_the_tmux_session_when_configured_off(pipeline_factory):
     assert wait_until(lambda: registry.find_by_work_item(REF) is None)
     kills = [c for c in calls() if c[0] == "kill-session"]
     assert kills and kills[0][kills[0].index("-t") + 1] == "loop-github-octo-repo-15"
+
+
+def test_a_linked_prs_close_leaves_the_tmux_session_running(pipeline_factory):
+    """
+    Feature: tmux-hosted interactive sessions
+    Scenario: one PR of a multi-PR work item merging leaves the session alone
+      Given a registered tmux-mode session for work item 15
+      And routing.tmux.keepSessionOnClose is false (so a close WOULD kill it)
+      When the pull_request closed event for PR 99, linked to issue 15, arrives
+      Then the registry session stays active
+      And tmux is not asked to kill the session — the work item is still open
+    Requirement: docs/specs/issue-101/requirements.md#AC1
+    """
+    deliver, registry, calls = pipeline_factory({"tmux": {"keepSessionOnClose": False}})
+    register_tmux_session(registry)
+    deliver("pull_request", linked_pr_close_payload(), "d-close-linked")
+    time.sleep(0.2)
+    session = registry.find_by_work_item(REF)
+    assert session is not None and session.status == "active"
+    assert [c for c in calls() if c[0] == "kill-session"] == []
 
 
 def issue_close_payload():
