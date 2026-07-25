@@ -188,6 +188,84 @@ def test_router_extracts_pr_number_branch_issue_and_closing_keyword():
     assert refs == {"github:octo/repo#16", REF}
 
 
+# -- PR → linked issue resolution (issue-93) ----------------------------------
+
+
+def payload_pr_conversation_comment(number=16, body="Closes #15", labels=()):
+    """An ``issue_comment`` on a PR — GitHub's shape for a PR conversation
+    comment: ``issue`` carries a ``pull_request`` key and the PR's body/labels."""
+    return {
+        "action": "created",
+        "repository": {"full_name": "octo/repo"},
+        "issue": {
+            "number": number,
+            "body": body,
+            "labels": [{"name": name} for name in labels],
+            "pull_request": {"html_url": "https://github.com/octo/repo/pull/16"},
+        },
+        "comment": {"body": "please rerun CI", "user": {"login": "octocat"}},
+    }
+
+
+def test_router_puts_linked_issue_before_the_pr_for_pr_events():
+    payload = payload_pull_request(body="Closes #15")
+    refs = [r.ref for r in extract_work_items("pull_request", payload)]
+    # Linked issue first: it decides which session an unmatched event spawns for.
+    assert refs == [REF, "github:octo/repo#16"]
+
+
+def test_router_resolves_linked_issue_for_a_pr_conversation_comment():
+    refs = [
+        r.ref
+        for r in extract_work_items("issue_comment", payload_pr_conversation_comment())
+    ]
+    assert refs == [REF, "github:octo/repo#16"]
+
+
+def test_router_pr_conversation_comment_without_a_link_stays_its_own_item():
+    payload = payload_pr_conversation_comment(body="no link here")
+    refs = [r.ref for r in extract_work_items("issue_comment", payload)]
+    assert refs == ["github:octo/repo#16"]
+
+
+def test_router_honours_github_closing_issue_references():
+    payload = payload_pr_conversation_comment(body="no keyword in the body")
+    payload["issue"]["closingIssuesReferences"] = [{"number": 15}, {"number": None}]
+    refs = [r.ref for r in extract_work_items("issue_comment", payload)]
+    assert refs == [REF, "github:octo/repo#16"]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "Fixes: #15",
+        "Closes octo/repo#15",
+        "Resolved GH-15",
+        "fix https://github.com/octo/repo/issues/15",
+    ],
+)
+def test_router_accepts_every_closing_keyword_form(body):
+    payload = payload_pull_request(branch="feature/no-number", body=body)
+    refs = [r.ref for r in extract_work_items("pull_request", payload)]
+    assert refs == [REF, "github:octo/repo#16"]
+
+
+@pytest.mark.parametrize(
+    "body",
+    ["Closes other/repo#15", "Closes https://github.com/other/repo/issues/15"],
+)
+def test_router_ignores_closing_references_to_another_repository(body):
+    payload = payload_pull_request(branch="feature/no-number", body=body)
+    refs = [r.ref for r in extract_work_items("pull_request", payload)]
+    assert refs == ["github:octo/repo#16"]
+
+
+def test_router_ignores_a_pr_closing_reference_to_itself():
+    payload = payload_pull_request(number=16, branch="feature/x", body="Closes #16")
+    refs = [r.ref for r in extract_work_items("pull_request", payload)]
+    assert refs == ["github:octo/repo#16"]
+
+
 def test_router_extracts_workflow_run_prs_and_branch_issue():
     refs = {r.ref for r in extract_work_items("workflow_run", payload_workflow_run())}
     assert refs == {"github:octo/repo#16", REF}

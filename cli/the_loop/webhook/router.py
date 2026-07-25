@@ -24,9 +24,20 @@ logger = logging.getLogger("the-loop.gh-webhook")
 # claude/github-issue-15-zkhlhh or feature/issue-15.
 _BRANCH_ISSUE_RE = re.compile(r"issue[-/](\d+)", re.IGNORECASE)
 
-# GitHub closing keywords in a PR body: "Closes #15", "fixes #7", "resolved #9".
+# GitHub closing keywords in a PR body, in every form GitHub itself accepts
+# (issue-93): "Closes #15", "Fixes: #15", "Closes octo/repo#15", "Resolved
+# GH-15", "fix https://github.com/octo/repo/issues/15". The URL alternative
+# comes first so a full link is not half-matched by the "#" one. A qualified
+# reference (``url_repo``/``repo``) naming another repository is dropped by
+# :func:`linked_issue_numbers` rather than read as this repo's issue number.
 _CLOSING_KEYWORD_RE = re.compile(
-    r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)", re.IGNORECASE
+    r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b\s*:?\s+"
+    r"(?:"
+    r"https?://[^\s/]+/(?P<url_repo>[\w.-]+/[\w.-]+)/issues/(?P<url_number>\d+)"
+    r"|(?P<repo>[\w.-]+/[\w.-]+)?#(?P<number>\d+)"
+    r"|GH-(?P<gh>\d+)"
+    r")",
+    re.IGNORECASE,
 )
 
 
@@ -79,6 +90,61 @@ def _repo_parts(payload: dict) -> Optional[tuple]:
 def _issue_from_branch(branch: str) -> Optional[int]:
     match = _BRANCH_ISSUE_RE.search(branch or "")
     return int(match.group(1)) if match else None
+
+
+def _pr_entity(event: str, payload: dict) -> Optional[dict]:
+    """The pull-request-shaped entity this event concerns, or ``None`` (issue-93).
+
+    GitHub delivers a PR **conversation comment** as ``issue_comment`` whose
+    ``issue`` object carries a ``pull_request`` key — so an event naming an
+    "issue" is not necessarily about an issue. That entity still carries the
+    PR's ``number``, ``body`` (the PR description) and ``labels``, which is what
+    linked-issue resolution needs; only ``head`` is absent there.
+    """
+    if event.startswith("pull_request"):
+        return payload.get("pull_request") or None
+    if event in ("issues", "issue_comment"):
+        issue = payload.get("issue") or {}
+        if issue.get("pull_request"):
+            return issue
+    return None
+
+
+def linked_issue_numbers(entity: dict, owner: str, repo: str) -> List[int]:
+    """Issues a PR-shaped ``entity`` is linked to, most authoritative first.
+
+    Three sources, deduplicated in order (issue-93):
+
+    1. ``closingIssuesReferences`` — GitHub's *own* linkage (the Development
+       panel as well as the keywords it parses). Present on the poll path, which
+       asks ``gh`` for it; absent from webhook payloads, hence 2 and 3.
+    2. the head branch's ``issue-<n>`` convention (the-loop's own branches);
+    3. closing keywords in the PR body, in every form GitHub accepts.
+
+    A qualified reference naming a **different** repository is ignored, as is a
+    reference to the entity itself.
+    """
+    numbers: List[int] = []
+    this_repo = f"{owner}/{repo}".lower()
+    own_number = entity.get("number")
+
+    def add(number: Optional[int]) -> None:
+        if number is None or number == own_number or number in numbers:
+            return
+        numbers.append(number)
+
+    for reference in entity.get("closingIssuesReferences") or []:
+        number = (reference or {}).get("number")
+        if isinstance(number, int):
+            add(number)
+    add(_issue_from_branch((entity.get("head") or {}).get("ref") or ""))
+    for match in _CLOSING_KEYWORD_RE.finditer(entity.get("body") or ""):
+        qualifier = match.group("url_repo") or match.group("repo")
+        if qualifier and qualifier.lower() != this_repo:
+            continue  # a closing reference to another repository is not ours
+        raw = match.group("url_number") or match.group("number") or match.group("gh")
+        add(int(raw))
+    return numbers
 
 
 def event_carries_label(payload: dict, label: str) -> bool:
@@ -134,8 +200,11 @@ def event_body(event: str, payload: dict) -> Optional[str]:
 def extract_work_items(event: str, payload: dict) -> List[WorkItemRef]:
     """Map a GitHub event payload to the work item(s) it concerns (R3.1).
 
-    A PR event also yields the issue its head branch / closing keywords point
-    at, so a session registered against the *issue* receives its PR's events.
+    A PR event yields the issue(s) the PR is **linked** to *before* the PR's own
+    number (issue-93): the linked issue is the work item the PR delivers, so a
+    session registered against it is the one that must receive the event, and an
+    unmatched event spawns against it rather than against the PR. A PR linked to
+    no issue still routes as its own work item (non-GitHub ticketing).
     """
     parts = _repo_parts(payload)
     if parts is None:
@@ -147,14 +216,13 @@ def extract_work_items(event: str, payload: dict) -> List[WorkItemRef]:
         if number is not None and number not in numbers:
             numbers.append(number)
 
-    if event in ("issues", "issue_comment"):
-        add((payload.get("issue") or {}).get("number"))
-    elif event.startswith("pull_request"):
-        pr = payload.get("pull_request") or {}
+    pr = _pr_entity(event, payload)
+    if pr is not None:
+        for number in linked_issue_numbers(pr, owner, repo):
+            add(number)
         add(pr.get("number"))
-        add(_issue_from_branch((pr.get("head") or {}).get("ref") or ""))
-        for match in _CLOSING_KEYWORD_RE.finditer(pr.get("body") or ""):
-            add(int(match.group(1)))
+    elif event in ("issues", "issue_comment"):
+        add((payload.get("issue") or {}).get("number"))
     elif event in ("workflow_run", "check_run", "check_suite", "status"):
         if event == "workflow_run":
             run = payload.get("workflow_run") or {}

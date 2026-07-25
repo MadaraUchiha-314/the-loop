@@ -75,9 +75,20 @@ Python SDKs. The core has **zero runtime dependencies** (stdlib only).
   shared clone is always kept). Auth is your own git credentials (e.g. `gh auth
   setup-git`). Design: `docs/specs/issue-76/design.md`, decision:
   `docs/decisions/decision-034.md`.
+- **An event on a PR resolves the PR's linked issue first.** A PR is the vehicle for a
+  work item, not the work item itself, so any event on it (comment — including a PR
+  *conversation* comment, which GitHub delivers as `issue_comment` — review, CI result)
+  is routed to the issue(s) the PR is linked to **before** the PR's own number. The
+  linkage is read from GitHub's own `closingIssuesReferences` (the Development panel),
+  the `issue-<n>` head-branch convention, and closing keywords in the PR body
+  (`Closes #N`, `Fixes: #N`, `Closes OWNER/REPO#N`, `GH-N`, an issue URL; a reference to
+  another repository is ignored). So the PR's activity reuses the **existing session for
+  the issue** — the same tmux session, keeping continuity — and an unmatched event spawns
+  against the issue's ref, never a second session for the same work. Decision:
+  `docs/decisions/decision-036.md` (issue-93).
 - **The label works on PRs directly — the ticketing system need not be GitHub.** A PR
   carrying the auto-execute label is routed as its own work item
-  (`github:OWNER/REPO#<pr-number>`) even when it is linked to no GitHub issue. This is
+  (`github:OWNER/REPO#<pr-number>`) when it is linked to no GitHub issue. This is
   the supported path when work items live in **Jira or another provider**: the ticket
   itself can't be routed, but the PR delivering it is still monitorable by the-loop's
   CLI. `/the-loop:work-on <jira-id>` applies this automatically — once the PR is opened

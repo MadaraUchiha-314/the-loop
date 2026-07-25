@@ -17,6 +17,11 @@ the same conversation.
   session id** (`claude --session-id <uuid>`), recorded in the registry as
   `runner`/`tmuxTarget`; cursor-agent has no pre-assignable id, so tmux-mode spawns for
   it fail with a clear error.
+- WHEN an event concerns a **PR that is linked to a GitHub issue** THEN it SHALL be
+  delivered into the tmux session of that **issue** (one tmux session per work item, not
+  one per GitHub object), and a from-scratch spawn SHALL be keyed to the issue's slug —
+  see [webhook-triggers](webhook-triggers.md) for how the linkage is resolved
+  (issue-93, [decision-036](../decisions/decision-036.md)).
 - WHEN a routed event matches a tmux-mode session THEN the rendered prompt SHALL be
   **bracketed-pasted** into the TUI (`load-buffer` → `paste-buffer -p` → `send-keys
   Enter`), FIFO per session; a delivery that fails while the session is alive discards
@@ -97,5 +102,6 @@ the same conversation.
 | issue-32 | Introduced the tmux runner, `sessions attach`, the ttyd web terminal and dependency preflight | [spec](../specs/issue-32/), [decision-021](../decisions/decision-021.md) |
 | issue-65 | Fixed `poll start` never launching ttyd (it shared the tmux runner but had no web terminal start/stop of its own); factored ttyd lifecycle into a shared `the_loop.runner` helper used by both `gh-webhook start` and `poll start` | [issue](https://github.com/MadaraUchiha-314/the-loop/issues/65) |
 | issue-80 | Respawn a crashed/killed tmux session on delivery (deliver the pending event as the fresh TUI's boot prompt) instead of looping redeliveries into a session that no longer exists | [spec](../specs/issue-80/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/80) |
+| issue-93 | Events on a PR linked to a GitHub issue reuse that issue's tmux session instead of spawning a second one for the PR's own ref | [spec](../specs/issue-93/), [decision-036](../decisions/decision-036.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/93) |
 | issue-86 | Keep a finished work item's tmux session (and, via `remain-on-exit`, its pane) instead of killing it, guarded by a pane-liveness check so the respawn path still fires; announce a first-spawned session's attach command as a comment on the work item | [spec](../specs/issue-86/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/86) |
 | issue-89 | Respawn now **resumes** the dead session's harness conversation (`claude --resume`, id kept in the registry) instead of booting a blank one, verified by a liveness probe with a fresh-conversation fallback (`resumeOnRespawn` / `resumeProbeSeconds`, `session.resume_failed`) | [spec](../specs/issue-89/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/89) |
