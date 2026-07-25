@@ -1,3 +1,9 @@
+## v0.19.0 (2026-07-25)
+
+### Feat
+
+- **cli**: close the harness session when its work item is closed or merged (issue #94) (#96)
+
 ## v0.18.1 (2026-07-25)
 
 ### Fix
