@@ -1,3 +1,9 @@
+## v0.18.1 (2026-07-25)
+
+### Fix
+
+- **cli**: route an event on a PR to its linked issue first (issue #93) (#95)
+
 ## v0.18.0 (2026-07-25)
 
 ### Feat
