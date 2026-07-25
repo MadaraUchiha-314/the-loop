@@ -84,6 +84,15 @@ Consequences:
   what the daemon touches, and the reason this work item was raised a risk tier and
   carries a named human security sign-off. The bounds above (which keys, which
   directory, merge-not-replace, refuse-on-unparseable) are the whole of it.
+- **The two writes have different blast radii, and the asymmetry is forced.** Trust is
+  recorded **per directory**, so it reaches exactly the checkout the work item runs in.
+  The bypass acceptance is a **user-global** setting — the only form the harness offers —
+  so accepting it removes the bypass-mode confirmation from every Claude Code session on
+  that account, interactive ones included. That is why it is gated on the operator having
+  already asked for bypass mode rather than bundled into the trust write, and why the
+  schema, the README and the reviewer briefing all state it outright instead of leaving
+  the operator to discover it. `never` plus a narrower `--permission-mode acceptEdits`
+  avoids the acceptance entirely.
 - **Trusting a checkout means the repo's `.claude/` hooks and settings load** in the
   spawned session. That is already the operating assumption of auto-execute — the agent
   runs the repo's code, tests and scripts — and the actual gate against hostile repos is

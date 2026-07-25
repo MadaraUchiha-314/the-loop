@@ -144,6 +144,15 @@ So before each spawn/respawn the-loop writes what the harness is about to ask fo
 - `skipDangerousModePermissionPrompt` in your user settings — **only** when
   `harnessArgs` for that harness already ask for bypass mode.
 
+⚠️ Note the asymmetry, because it's the one thing worth deciding consciously: the trust
+key is **per directory**, but `skipDangerousModePermissionPrompt` is a **user-global**
+setting. Accepting it removes the bypass-mode confirmation from *every* Claude Code
+session on that account, including interactive ones you start by hand — not just the
+ones the-loop spawns. That is the only way the harness exposes the acceptance, so if
+you'd rather keep the confirmation on your own sessions, set
+`acceptBypassPermissions: never` and drop `--dangerously-skip-permissions` from
+`harnessArgs` (a narrower `--permission-mode acceptEdits` needs no acceptance at all).
+
 It is your config, so the writes are deliberately narrow: those keys only, merged into
 what's already there, temp file + atomic rename, `0600` on files it creates, **nothing
 written at all** when the value is already correct, and a file that doesn't parse as

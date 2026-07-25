@@ -176,6 +176,23 @@ Nothing about this feature is driven by payload text directly.
   operator never asked for bypass mode would be the-loop widening permissions on
   its own. Forbidden by R2.3, gated by `acceptBypassPermissions`, and asserted
   by a test.
+- *Blast-radius asymmetry between the two writes.* Trust is **per directory**;
+  the bypass acceptance is a **user-global** setting (the only form the harness
+  offers), so it removes the bypass-mode confirmation from the operator's
+  **interactive** sessions too, not only the-loop's spawned ones. Not
+  remotely exploitable, but a scope the operator must consciously accept — so
+  it is stated outright in the schema, `cli/README.md`, decision-036 and the
+  reviewer briefing rather than left to be discovered. `never` plus a narrower
+  `--permission-mode acceptEdits` in `harnessArgs` avoids it entirely.
+- *Trusting a checkout that contains hostile `.claude/` hooks.* Trust is what
+  makes the harness load a repo's own settings/hooks/skills. Reachable only
+  from content already on the checked-out tree, which is the **default branch**
+  (a fork PR's head ref is not on origin, so `ensure_worktree` falls back to a
+  detached default-branch worktree rather than checking it out) — i.e. it takes
+  merge rights, on a repo the operator points the daemon at, past
+  `routing.authorizedUsers`. Not a new path so much as the same one
+  auto-execute already walks by running the repo's code and tests; recorded
+  under trust boundaries above rather than treated as newly opened.
 
 **Fail-closed / fail-open.** Deliberately mixed, and each direction is
 justified: the *bypass acceptance* fails **closed** (not requested ⇒ not
