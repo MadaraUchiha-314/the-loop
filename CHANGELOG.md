@@ -1,3 +1,9 @@
+## v0.18.0 (2026-07-25)
+
+### Feat
+
+- **cli**: resume the harness conversation when a dead tmux session is respawned (issue #89) (#91)
+
 ## v0.17.0 (2026-07-24)
 
 ### Feat
