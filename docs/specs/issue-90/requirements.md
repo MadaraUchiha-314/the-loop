@@ -73,7 +73,10 @@ working instead of waiting on a trust dialog nobody is there to answer.
    trust holds however the harness canonicalises the path.
 4. WHEN a tmux-mode session is **respawned** after being found dead (issue-80)
    THEN the same preparation SHALL run for the respawned session's working
-   directory — a respawn must not be the one path that stalls on a dialog.
+   directory — a respawn must not be the one path that stalls on a dialog. A
+   respawn may start the harness more than once (issue-89 first attempts to
+   *resume* the dead conversation, then falls back to a fresh one); the
+   preparation SHALL precede **all** of those starts, not only the last.
 5. WHEN the working directory is already marked trusted THEN the system SHALL
    make **no write at all**, so the common case cannot race with the harness's
    own writes to the same file.

@@ -18,7 +18,7 @@ status: in-progress
 | design | 2026-07-25 |  | Three seams: new `trust.py` (config layout + safe read-merge-write), a `prepare_environment()` hook on the adapter contract, and dispatcher calls on both spawn paths. |
 | tasks-breakdown | 2026-07-25 |  | 12-task DAG |
 | implementation | 2026-07-25 |  | Implemented on `claude/github-issue-90-y6uqhg` |
-| needs-review | 2026-07-25 |  | PR opened; awaiting human review + the tier-4 named security sign-off |
+| needs-review | 2026-07-25 |  | PR #92 opened; rebased onto #91 (issue-89); awaiting human review + the tier-4 named security sign-off |
 | complete |  |  |  |
 
 ## Progress entries
@@ -79,4 +79,31 @@ status: in-progress
   `markdownlint` 0 errors, `validate_config.py` all VALID, `pytest` **352
   passed** (37 of them new).
 - **Next:** self/critic review, then open the PR with the briefing.
+- **Blockers:** none.
+
+### 2026-07-25 — rebased onto main (issue-89 landed in between)
+
+- **Phase:** needs-review
+- **Did:** Owner asked for a rebase on PR #92. `main` had gained #91 (issue-89:
+  resume the harness conversation when a dead tmux session is respawned), which
+  rewrote the exact function this work item also touches. Two conflicts:
+  - `cli/README.md` — a heading #91 reworded, adjacent to the new
+    `harnessTrust` section. Textual; took both.
+  - `webhook/dispatcher.py::_respawn_tmux` — the substantive one. issue-89
+    split the respawn into a **conversation-resume attempt** followed by a
+    fresh-conversation fallback, and `_try_resume()` starts a harness process
+    of its own. Resolving the conflict "where the lines used to be" would have
+    put the trust write *between* the two starts, leaving the resume path — the
+    common case — still stalling on the dialog. Moved the
+    `_prepare_environment` call **above** `_try_resume` so it precedes every
+    harness start.
+- **Test follow-through:** `TmuxRunner.spawn` gained a `resume` kwarg, so the
+  `DeadTmux` double needed it; and the respawn now calls `spawn` twice, which
+  broke an assertion that assumed exactly one call. Rather than relax it,
+  strengthened it: the test now asserts the directory was trusted at **every**
+  recorded harness start, which is the property that actually matters and would
+  have caught the naive conflict resolution.
+- **Evidence:** `ruff` + `pyright` + `markdownlint` clean, config validation all
+  VALID, `pytest` **367 passed**.
+- **Next:** awaiting the owner's review and the tier-4 security sign-off.
 - **Blockers:** none.

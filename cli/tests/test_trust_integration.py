@@ -97,7 +97,13 @@ class DeadTmux(TmuxRunner):
     def deliver(self, session, prompt, timeout=None):
         return TmuxResult(ok=False, session_missing=True, error="gone")
 
-    def spawn(self, work_item, adapter, prompt, cwd, session_id, timeout=None):
+    def spawn(
+        self, work_item, adapter, prompt, cwd, session_id, timeout=None, resume=False
+    ):
+        # `resume` (issue-89): a respawn first tries to CONTINUE the dead
+        # session's conversation, and that resume attempt starts a harness
+        # process too — so the snapshot has to be taken here either way, which
+        # is what pins the trust write ahead of both respawn paths.
         self.spawns.append(cwd)
         self.trusted_at_spawn.append(trusted_dirs(self._config_path))
         return TmuxResult(ok=True)
@@ -177,6 +183,9 @@ def test_respawned_tmux_session_workspace_is_trusted_too(tmp_path, fake_home, wo
       Given a registered tmux-mode session whose tmux session is gone
       When an event is delivered to it and the dispatcher respawns it
       Then the respawned session's working directory is trusted first
+      And that holds for EVERY harness start the respawn makes — both the
+        issue-89 conversation-resume attempt and the fresh-conversation
+        fallback it degrades to
     Requirement: docs/specs/issue-90/requirements.md#requirement-1
     """
 
@@ -200,10 +209,14 @@ def test_respawned_tmux_session_workspace_is_trusted_too(tmp_path, fake_home, wo
     )
 
     dispatcher.handle(routed_labeled_issue(delivery="r-1"))
-    assert wait_until(lambda: len(tmux.spawns) == 1)
-    dispatcher.stop()
+    assert wait_until(lambda: len(tmux.spawns) >= 1)
+    dispatcher.stop()  # drains the worker, so every spawn is recorded below
 
-    assert tmux.trusted_at_spawn == [[str(workdir)]]
+    # A respawn starts the harness once to try resuming the conversation and,
+    # if that fails, again for a fresh one. Assert on ALL of them: a regression
+    # that trusted only before the fallback would still stall the resume path.
+    assert tmux.spawns and set(tmux.spawns) == {str(workdir)}
+    assert tmux.trusted_at_spawn == [[str(workdir)]] * len(tmux.spawns)
 
 
 def test_bypass_disclaimer_is_accepted_when_the_operator_configured_it(

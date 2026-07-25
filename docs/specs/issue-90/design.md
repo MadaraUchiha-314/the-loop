@@ -199,7 +199,14 @@ either runner starts anything:
 self._prepare_environment(adapter, work_item, cwd)
 ```
 
-`_respawn_tmux()` — same call with `session.cwd` (R1.4).
+`_respawn_tmux()` — same call with `session.cwd` (R1.4), placed **before
+`_try_resume()`**, not merely before the fresh-spawn fallback. Since issue-89 a
+respawn starts the harness up to twice: once asking it to *resume* the dead
+session's conversation, and again for a fresh one if that resume is doubtful.
+Both are real harness starts in `session.cwd`, so trusting between them would
+leave the resume path — the common case — still stalling on the dialog. The
+integration test asserts the invariant over *every* recorded start, not the last
+one.
 
 `_prepare_environment` is a small private method that logs and event-logs:
 

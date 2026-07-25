@@ -85,8 +85,10 @@ the same conversation.
   process bound to `127.0.0.1` by default (a shared `the-loop-hub` tmux session),
   stopped on shutdown; the-loop implements **no auth** — access control is
   environmental (localhost / VPN / hosting provider network).
-- WHEN a session is spawned **or respawned** THEN — before either runner starts the
-  harness — the harness's own user config SHALL be pre-seeded so the session does not
+- WHEN a session is spawned **or respawned** THEN — before **any** harness start,
+  meaning either runner and both halves of a respawn (the conversation-resume attempt
+  above as well as the fresh-conversation fallback) — the harness's own user config
+  SHALL be pre-seeded so the session does not
   open on an interactive dialog (`routing.harnessTrust`, default on). For Claude Code
   that means marking the **exact** spawn directory trusted
   (`projects[<dir>].hasTrustDialogAccepted` + `hasCompletedProjectOnboarding`,
