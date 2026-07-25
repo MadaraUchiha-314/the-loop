@@ -8,6 +8,7 @@ Spec: docs/specs/issue-32/design.md.
 """
 
 import os
+import signal
 
 import pytest
 
@@ -15,6 +16,7 @@ from the_loop import runner as runner_mod
 from the_loop.commands import sessions_cmd
 from the_loop.harness import ClaudeCodeAdapter, CursorAgentAdapter
 from the_loop.runner import (
+    TmuxResult,
     TmuxRunner,
     UnsupportedRunnerError,
     check_dependencies,
@@ -23,7 +25,7 @@ from the_loop.runner import (
     web_terminal_argv,
 )
 from the_loop.sessions import Session, WorkItemRef
-from the_loop.webhook.dispatcher import RoutingConfig
+from the_loop.webhook.dispatcher import RoutingConfig, TmuxConfig
 
 REF = "github:octo/repo#15"
 
@@ -407,6 +409,193 @@ class TestSurvivedProbe:
         assert slept == []
 
 
+class FakeTmuxServer:
+    """A one-session tmux double whose pane dies when it is signalled.
+
+    Enough shape for ``terminate_harness``: ``has-session`` answers existence,
+    ``list-panes`` answers the requested format (``#{pane_pid} #{pane_dead}``
+    or just ``#{pane_dead}``), and ``killer`` records signals, marking the pane
+    dead when the signal it is configured to obey arrives (issue-94).
+    """
+
+    def __init__(
+        self,
+        pids=(4242,),
+        exists=True,
+        alive=True,
+        dies_on: "signal.Signals | None" = signal.SIGTERM,
+    ):
+        self.pids = list(pids)
+        self.exists = exists
+        self.alive = alive
+        self.dies_on = dies_on
+        self.calls = []
+        self.signals = []
+
+    def run(self, cmd, **kwargs):
+        import subprocess
+
+        argv = list(cmd[1:])
+        self.calls.append(argv)
+        if argv[0] == "has-session":
+            return subprocess.CompletedProcess(cmd, 0 if self.exists else 1, "", "")
+        if argv[0] == "list-panes":
+            flag = "0" if self.alive else "1"
+            with_pid = "pane_pid" in argv[-1]
+            out = "".join(
+                f"{pid} {flag}\n" if with_pid else f"{flag}\n" for pid in self.pids
+            )
+            return subprocess.CompletedProcess(cmd, 0, out, "")
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    def killer(self, pid, sig):
+        self.signals.append((pid, sig))
+        if sig == self.dies_on:
+            self.alive = False
+
+    @property
+    def verbs(self):
+        return [argv[0] for argv in self.calls]
+
+
+class TestTerminateHarness:
+    """``terminate_harness`` — a retained session is a record, not a live TUI."""
+
+    @staticmethod
+    def _runner(monkeypatch, server):
+        monkeypatch.setattr(runner_mod.subprocess, "run", server.run)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        return TmuxRunner()
+
+    def test_sigterm_ends_the_harness_and_keeps_the_pane(self, monkeypatch):
+        server = FakeTmuxServer()
+        runner = self._runner(monkeypatch, server)
+        result = runner.terminate_harness(
+            make_session(tmux_target="loop-x"), killer=server.killer
+        )
+        assert result.ok and not result.session_missing
+        assert server.signals == [(4242, signal.SIGTERM)]
+        # remain-on-exit is (re-)set so the scrollback survives the process…
+        assert ["set-option", "-t", "loop-x", "-w", "remain-on-exit", "on"] in (
+            server.calls
+        )
+        # …and the session itself is never killed — that would destroy it.
+        assert "kill-session" not in server.verbs
+
+    def test_escalates_to_sigkill_when_sigterm_is_ignored(self, monkeypatch):
+        server = FakeTmuxServer(dies_on=signal.SIGKILL)
+        runner = self._runner(monkeypatch, server)
+        slept = []
+        result = runner.terminate_harness(
+            make_session(tmux_target="loop-x"),
+            grace=0.4,
+            sleeper=slept.append,
+            killer=server.killer,
+        )
+        assert result.ok
+        assert server.signals == [(4242, signal.SIGTERM), (4242, signal.SIGKILL)]
+        assert slept  # the grace period was actually waited out
+
+    def test_zero_grace_escalates_without_waiting(self, monkeypatch):
+        server = FakeTmuxServer(dies_on=signal.SIGKILL)
+        runner = self._runner(monkeypatch, server)
+        slept = []
+        runner.terminate_harness(
+            make_session(tmux_target="loop-x"),
+            grace=0,
+            sleeper=slept.append,
+            killer=server.killer,
+        )
+        assert slept == []
+        assert (4242, signal.SIGKILL) in server.signals
+
+    def test_a_harness_that_survives_sigkill_is_reported_not_raised(self, monkeypatch):
+        server = FakeTmuxServer(dies_on=None)
+        runner = self._runner(monkeypatch, server)
+        result = runner.terminate_harness(
+            make_session(tmux_target="loop-x"),
+            grace=0,
+            sleeper=lambda _: None,
+            killer=server.killer,
+        )
+        assert result.ok is False and "still running" in result.error
+
+    def test_already_dead_pane_signals_nothing(self, monkeypatch):
+        server = FakeTmuxServer(alive=False)
+        runner = self._runner(monkeypatch, server)
+        assert runner.terminate_harness(
+            make_session(tmux_target="loop-x"), killer=server.killer
+        ).ok
+        assert server.signals == []
+
+    def test_missing_session_is_not_a_failure(self, monkeypatch):
+        server = FakeTmuxServer(exists=False)
+        runner = self._runner(monkeypatch, server)
+        result = runner.terminate_harness(
+            make_session(tmux_target="loop-x"), killer=server.killer
+        )
+        assert result.ok and result.session_missing
+        assert server.signals == []
+
+    def test_an_already_exited_process_is_not_a_failure(self, monkeypatch):
+        server = FakeTmuxServer()
+
+        def killer(pid, sig):
+            server.alive = False
+            raise ProcessLookupError(pid)
+
+        runner = self._runner(monkeypatch, server)
+        assert runner.terminate_harness(
+            make_session(tmux_target="loop-x"), killer=killer
+        ).ok
+
+    def test_a_session_with_no_tmux_target_is_a_no_op(self, monkeypatch):
+        server = FakeTmuxServer()
+        runner = self._runner(monkeypatch, server)
+        assert runner.terminate_harness(make_session(), killer=server.killer).ok
+        assert server.calls == []
+
+    @pytest.mark.parametrize("target", ["my-work", "loop", "loop-x;rm", "0"])
+    def test_only_the_loops_own_sessions_are_ever_signalled(self, monkeypatch, target):
+        # A corrupted/hand-edited registry must not be able to aim a SIGTERM at
+        # some other tmux session's processes.
+        server = FakeTmuxServer()
+        runner = self._runner(monkeypatch, server)
+        result = runner.terminate_harness(
+            make_session(tmux_target=target), killer=server.killer
+        )
+        assert result.ok is False and "the-loop tmux session" in result.error
+        assert server.signals == [] and server.calls == []
+
+
+class TestLivePanePids:
+    @staticmethod
+    def _runner(monkeypatch, stdout):
+        fake = FakeRun(stdout_per_verb={"list-panes": stdout})
+        monkeypatch.setattr(runner_mod.subprocess, "run", fake)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        return TmuxRunner()
+
+    def test_reads_live_panes_and_skips_dead_ones(self, monkeypatch):
+        runner = self._runner(monkeypatch, "4242 0\n77 1\n99 0\n")
+        assert runner.live_pane_pids("loop-x") == [4242, 99]
+
+    @pytest.mark.parametrize("line", ["0 0\n", "-1 0\n", "nonsense 0\n", "\n"])
+    def test_never_returns_a_pid_that_would_signal_a_process_group(
+        self, monkeypatch, line
+    ):
+        # os.kill(0/-n, …) signals a whole process group — the one pid value
+        # that must never leave this helper.
+        runner = self._runner(monkeypatch, line)
+        assert runner.live_pane_pids("loop-x") == []
+
+    def test_unreadable_pane_list_signals_nothing(self, monkeypatch):
+        fake = FakeRun(per_verb={"list-panes": 1})
+        monkeypatch.setattr(runner_mod.subprocess, "run", fake)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        assert TmuxRunner().live_pane_pids("loop-x") == []
+
+
 class TestCheckDependencies:
     def test_silent_when_satisfied(self, monkeypatch):
         monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/x")
@@ -437,6 +626,9 @@ class TestRoutingConfigRunner:
         # issue-89: a respawn continues the conversation out of the box.
         assert config.tmux.resume_on_respawn is True
         assert config.tmux.resume_probe_seconds == 2.0
+        # issue-94: a closed work item's harness is ended out of the box.
+        assert config.tmux.kill_harness_on_close is True
+        assert config.tmux.harness_kill_grace_seconds == 5.0
 
     def test_parses_tmux_lifetime(self):
         config = RoutingConfig.from_mapping(
@@ -446,6 +638,8 @@ class TestRoutingConfigRunner:
                     "remainOnExit": False,
                     "resumeOnRespawn": False,
                     "resumeProbeSeconds": 0,
+                    "killHarnessOnClose": False,
+                    "harnessKillGraceSeconds": 0,
                 }
             }
         )
@@ -453,6 +647,8 @@ class TestRoutingConfigRunner:
         assert config.tmux.remain_on_exit is False
         assert config.tmux.resume_on_respawn is False
         assert config.tmux.resume_probe_seconds == 0.0
+        assert config.tmux.kill_harness_on_close is False
+        assert config.tmux.harness_kill_grace_seconds == 0.0
 
     def test_parses_runner_and_web_terminal(self):
         config = RoutingConfig.from_mapping(
@@ -618,6 +814,40 @@ class TestSessionsCli:
         assert execs and execs[0][1][-1] == "loop-x"
         assert "closed" in capsys.readouterr().err
 
+    def test_attach_to_a_closed_session_is_always_read_only(
+        self, tmp_path, capsys, monkeypatch
+    ):
+        # issue-94: a finished work item's terminal must not take input, even
+        # when the caller forgot --read-only.
+        from the_loop.sessions import SessionRegistry
+
+        registry = SessionRegistry(tmp_path)
+        registry.register(make_session(runner="tmux", tmux_target="loop-x"))
+        registry.close(REF)
+        monkeypatch.setattr(TmuxRunner, "is_available", lambda self: True)
+        monkeypatch.setattr(TmuxRunner, "has_session", lambda self, target: True)
+        execs = []
+        sessions_cmd.attach_session(
+            registry, REF, read_only=False, execvp=lambda f, a: execs.append((f, a))
+        )
+        assert "-r" in execs[0][1]
+        assert "read-only" in capsys.readouterr().err
+
+    def test_attach_to_an_active_session_keeps_read_only_opt_in(
+        self, tmp_path, monkeypatch
+    ):
+        from the_loop.sessions import SessionRegistry
+
+        registry = SessionRegistry(tmp_path)
+        registry.register(make_session(runner="tmux", tmux_target="loop-x"))
+        monkeypatch.setattr(TmuxRunner, "is_available", lambda self: True)
+        monkeypatch.setattr(TmuxRunner, "has_session", lambda self, target: True)
+        execs = []
+        sessions_cmd.attach_session(
+            registry, REF, read_only=False, execvp=lambda f, a: execs.append((f, a))
+        )
+        assert "-r" not in execs[0][1]
+
     def test_close_keeps_the_tmux_session_by_default(
         self, tmp_path, capsys, monkeypatch
     ):
@@ -627,17 +857,51 @@ class TestSessionsCli:
 
         registry = SessionRegistry(tmp_path)
         registry.register(make_session(runner="tmux", tmux_target="loop-x"))
-        monkeypatch.setattr(sessions_cmd, "_default_keep_tmux", lambda: True)
+        monkeypatch.setattr(sessions_cmd, "_tmux_config", TmuxConfig)
         killed = []
         monkeypatch.setattr(
             TmuxRunner, "kill", lambda self, s, timeout=None: killed.append(s)
+        )
+        # issue-94: keeping the session still ends the harness inside it.
+        ended = []
+        monkeypatch.setattr(
+            TmuxRunner,
+            "terminate_harness",
+            lambda self, s, **kw: ended.append((s.tmux_target, kw)) or TmuxResult(True),
         )
         args = argparse.Namespace(
             work_item=REF, registry_dir=str(tmp_path), keep_tmux=None
         )
         assert sessions_cmd.SessionsCommand()._close(args) == 0
         assert killed == []
-        assert "tmux attach -t loop-x" in capsys.readouterr().out
+        assert ended and ended[0][0] == "loop-x"
+        assert ended[0][1]["grace"] == 5.0
+        assert "tmux attach -r -t loop-x" in capsys.readouterr().out
+
+    def test_close_can_leave_the_harness_running(self, tmp_path, capsys, monkeypatch):
+        # routing.tmux.killHarnessOnClose: false — the pre-issue-94 behaviour.
+        import argparse
+
+        from the_loop.sessions import SessionRegistry
+
+        registry = SessionRegistry(tmp_path)
+        registry.register(make_session(runner="tmux", tmux_target="loop-x"))
+        monkeypatch.setattr(
+            sessions_cmd,
+            "_tmux_config",
+            lambda: TmuxConfig(kill_harness_on_close=False),
+        )
+        ended = []
+        monkeypatch.setattr(
+            TmuxRunner,
+            "terminate_harness",
+            lambda self, s, **kw: ended.append(s) or TmuxResult(True),
+        )
+        args = argparse.Namespace(
+            work_item=REF, registry_dir=str(tmp_path), keep_tmux=None
+        )
+        assert sessions_cmd.SessionsCommand()._close(args) == 0
+        assert ended == []
 
     def test_close_kill_tmux_flag_overrides_the_config_default(
         self, tmp_path, capsys, monkeypatch
@@ -648,7 +912,7 @@ class TestSessionsCli:
 
         registry = SessionRegistry(tmp_path)
         registry.register(make_session(runner="tmux", tmux_target="loop-x"))
-        monkeypatch.setattr(sessions_cmd, "_default_keep_tmux", lambda: True)
+        monkeypatch.setattr(sessions_cmd, "_tmux_config", TmuxConfig)
         monkeypatch.setattr(runner_mod.subprocess, "run", FakeRun())
         monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
         args = argparse.Namespace(

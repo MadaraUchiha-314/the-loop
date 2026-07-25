@@ -25,6 +25,7 @@ from .. import eventlog
 from ..harness import ClaudeCodeAdapter, CursorAgentAdapter
 from ..runner import TmuxRunner
 from ..sessions import RegistryError, Session, SessionRegistry, WorkItemRef
+from ..webhook.dispatcher import TmuxConfig
 
 logger = logging.getLogger("the-loop.sessions")
 
@@ -39,10 +40,10 @@ def _default_registry_dir() -> str:
     return str(routing.get("registryDir", ".the-loop/sessions"))
 
 
-def _default_keep_tmux() -> bool:
-    """``routing.tmux.keepSessionOnClose`` — retain the session on close (issue-86)."""
+def _tmux_config() -> TmuxConfig:
+    """``routing.tmux`` — retention/termination policy (issue-86, issue-94)."""
     routing = _load_config_defaults().get("routing") or {}
-    return bool((routing.get("tmux") or {}).get("keepSessionOnClose", True))
+    return TmuxConfig.from_mapping(routing.get("tmux") or {})
 
 
 def _attach_argv(session: Session, read_only: bool) -> List[str]:
@@ -74,10 +75,13 @@ def attach_session(
         return 1
     if session.status != "active":
         # The work item finished but its tmux session was retained (issue-86):
-        # attaching is exactly how a human reads back what happened.
+        # attaching is exactly how a human reads back what happened. It is a
+        # *record*, so it is always attached read-only — a closed work item's
+        # terminal must not take input (issue-94).
+        read_only = True
         print(
-            f"note: the session for {ref.ref} is closed; attaching to its "
-            "retained tmux session",
+            f"note: the session for {ref.ref} is closed; attaching read-only to "
+            "its retained tmux session",
             file=sys.stderr,
         )
     if session.runner != "tmux":
@@ -172,8 +176,10 @@ class SessionsCommand(Command):
             action="store_true",
             default=None,
             help=(
-                "Leave the tmux session running so its transcript stays "
-                "readable (default: routing.tmux.keepSessionOnClose)."
+                "Keep the tmux session so its transcript stays readable; the "
+                "harness inside it is still ended unless "
+                "routing.tmux.killHarnessOnClose is false "
+                "(default: routing.tmux.keepSessionOnClose)."
             ),
         )
         tmux_fate.add_argument(
@@ -274,11 +280,26 @@ class SessionsCommand(Command):
             print(f"no active session for {work_item.ref}", file=sys.stderr)
             return 1
         if session is not None and session.runner == "tmux":
-            keep = _default_keep_tmux() if args.keep_tmux is None else args.keep_tmux
+            tmux = _tmux_config()
+            keep = (
+                tmux.keep_session_on_close if args.keep_tmux is None else args.keep_tmux
+            )
             if keep:
+                # Same rule as an auto-close: retain the transcript, end the
+                # conversation, so nothing can be typed into it (issue-94).
+                if tmux.kill_harness_on_close:
+                    result = TmuxRunner().terminate_harness(
+                        session, grace=tmux.harness_kill_grace_seconds
+                    )
+                    if result.ok and not result.session_missing:
+                        print(
+                            f"ended the harness in tmux session {session.tmux_target}"
+                        )
+                    elif not result.ok:
+                        print(f"note: {result.error}", file=sys.stderr)
                 print(
                     f"kept tmux session {session.tmux_target} — attach: "
-                    f"tmux attach -t {session.tmux_target} (pass --kill-tmux to "
+                    f"tmux attach -r -t {session.tmux_target} (pass --kill-tmux to "
                     "end it)"
                 )
             else:

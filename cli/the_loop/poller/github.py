@@ -32,6 +32,7 @@ from typing import Callable, List, Optional, Sequence
 from ..sessions import WorkItemRef
 from ..webhook.router import RoutedEvent, event_carries_label, extract_work_items
 from .base import (
+    Closure,
     Comment,
     PollProvider,
     ProviderError,
@@ -78,6 +79,27 @@ class GhComment:
     author: str
     created_at: str
     url: str
+
+
+@dataclass(frozen=True)
+class GhItemState:
+    """The lifecycle state of one issue/PR (``/issues/{n}`` REST shape).
+
+    One endpoint answers for both kinds: on GitHub's REST API a pull request
+    *is* an issue, and the response carries a ``pull_request`` object whose
+    ``merged_at`` separates a merged PR from a closed one.
+    """
+
+    number: int
+    state: str  # "open" | "closed"
+    is_pr: bool = False
+    merged: bool = False
+    title: str = ""
+    url: str = ""
+
+    @property
+    def open(self) -> bool:
+        return self.state == "open"
 
 
 @dataclass(frozen=True)
@@ -236,6 +258,28 @@ class GhClient:
         )
         comments = (data or {}).get("comments") or []
         return [self._comment_from_json(c) for c in comments]
+
+    def fetch_item_state(self, owner: str, repo: str, number: int) -> GhItemState:
+        """Lifecycle state of one issue/PR — the closure question (issue-94).
+
+        Uses the REST ``issues`` endpoint deliberately: the session registry
+        records a bare ``#<number>`` with no kind, and ``gh issue view`` refuses
+        PR numbers (and vice-versa), while this one endpoint answers for both.
+        """
+        data = self._run_json(["api", f"repos/{owner}/{repo}/issues/{number}"])
+        if not isinstance(data, dict) or not data:
+            raise GhError(
+                f"gh api repos/{owner}/{repo}/issues/{number} returned no object"
+            )
+        pull_request = data.get("pull_request")
+        return GhItemState(
+            number=int(data.get("number") or number),
+            state=str(data.get("state") or ""),
+            is_pr=isinstance(pull_request, dict),
+            merged=bool((pull_request or {}).get("merged_at")),
+            title=str(data.get("title") or ""),
+            url=str(data.get("html_url") or ""),
+        )
 
     # -- parsing ---------------------------------------------------------------
 
@@ -430,6 +474,61 @@ class GitHubPollProvider(PollProvider):
             action="created",
             delivery_id=f"poll-comment-{comment.id}",
             work_items=refs,
+            payload=payload,
+            labeled=False,
+        )
+
+    # -- closure reconciliation (issue-94) -------------------------------------
+
+    def owns(self, ref: WorkItemRef) -> bool:
+        """True when ``ref`` is a GitHub item in one of this source's repos."""
+        if ref.provider != self.name:
+            return False
+        full_name = f"{ref.owner}/{ref.repo}".lower()
+        return any(spec.full_name.lower() == full_name for spec in self.repos)
+
+    def closure(self, ref: WorkItemRef) -> Optional[Closure]:
+        """Whether ``ref`` has ended, and how (``None`` while it is still open)."""
+        state = self.gh.fetch_item_state(ref.owner, ref.repo, ref.number)
+        if state.open or not state.state:
+            return None
+        return Closure(
+            state="merged" if state.merged else "closed",
+            kind=_KIND_PR if state.is_pr else _KIND_ISSUE,
+            title=state.title,
+            url=state.url,
+        )
+
+    def closure_event(self, ref: WorkItemRef, closure: Closure) -> RoutedEvent:
+        """The webhook-shaped ``closed`` event the dispatcher already handles.
+
+        Deliberately the same shape a real webhook carries, so a polled closure
+        and a pushed one take one identical close path (registry, tmux,
+        workspace, event log). The delivery id is stable per (item, state) so a
+        repeat inside the dedup window is a no-op.
+        """
+        entity: dict = {
+            "number": ref.number,
+            "title": closure.title,
+            "html_url": closure.url,
+            "labels": [],
+        }
+        payload: dict = {
+            "action": "closed",
+            "repository": {"full_name": f"{ref.owner}/{ref.repo}"},
+        }
+        if closure.kind == _KIND_PR:
+            event = "pull_request"
+            entity["merged"] = closure.merged
+            payload["pull_request"] = entity
+        else:
+            event = "issues"
+            payload["issue"] = entity
+        return RoutedEvent(
+            event=event,
+            action="closed",
+            delivery_id=f"poll-close-{ref.ref}-{closure.state}",
+            work_items=[ref],
             payload=payload,
             labeled=False,
         )

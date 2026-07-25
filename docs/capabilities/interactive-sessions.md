@@ -56,12 +56,26 @@ the same conversation.
   delivery therefore probes **liveness** (`has-session` **and** a non-dead pane), not
   mere existence: a retained-but-dead session takes the respawn path above instead of
   swallowing the event.
-- WHEN a work item's PR is merged/closed (or `the-loop sessions close` runs) THEN the
-  registry session SHALL be closed AND the tmux session SHALL be **kept running** so
-  its transcript stays readable (`session.retained`); `routing.tmux.keepSessionOnClose:
-  false` — or `sessions close --kill-tmux` — SHALL terminate it instead (best-effort
-  when already gone). Retained sessions accumulate until killed, and a new spawn for
-  the same work item reclaims the deterministic `loop-<slug>` name.
+- WHEN a work item ends — its issue closed, its PR merged/closed, or `the-loop sessions
+  close` run — THEN the registry session SHALL be closed AND the tmux session SHALL be
+  **kept** so its transcript stays readable (`session.retained`);
+  `routing.tmux.keepSessionOnClose: false` — or `sessions close --kill-tmux` — SHALL
+  terminate it instead (best-effort when already gone). Retained sessions accumulate
+  until killed, and a new spawn for the same work item reclaims the deterministic
+  `loop-<slug>` name.
+- WHEN a tmux session is **kept** on close AND `routing.tmux.killHarnessOnClose` is
+  `true` (the default) THEN the harness process running in its pane SHALL be ended —
+  `SIGTERM`, escalating to `SIGKILL` after `routing.tmux.harnessKillGraceSeconds`
+  (default 5, `0` = immediately) — so a finished work item leaves a *record*, not a
+  live TUI a stray keystroke, paste or `send-keys` could resume (issue-94).
+  `remain-on-exit` SHALL be re-set first so the pane and its scrollback survive the
+  process. Only pids tmux reports for **that session's own panes** are ever signalled —
+  a recorded `tmuxTarget` that is not a `loop-<slug>` name is refused before any pane is
+  listed, and a non-positive pid is never passed to `os.kill` — and the whole step is
+  best-effort: a missing session, an already-dead pane, an exited
+  process or a refused signal is logged (`session.harness_terminated`) and the close
+  completes regardless. `killHarnessOnClose: false` keeps the pre-issue-94 behaviour
+  (a retained session keeps its harness running).
 - WHEN a tmux-mode session is spawned THEN the-loop SHALL comment on the work item
   with the tmux session name and the `tmux attach -t loop-<slug>` command
   (`routing.announce`, default on), so the attach details reach the humans on the
@@ -73,8 +87,9 @@ the same conversation.
   and carries no filesystem paths, harness session ids or hostnames.
 - `the-loop sessions list` SHALL show `Runner`/`Tmux` columns; `the-loop sessions
   attach --work-item <ref> [--read-only]` SHALL attach the caller's terminal to the
-  session's tmux session — including one **retained after the work item closed** (with
-  a note) — with clear errors for process-mode or genuinely absent sessions.
+  session's tmux session — including one **retained after the work item closed**, which
+  SHALL always be attached **read-only** (with a note) whether or not `--read-only` was
+  passed — with clear errors for process-mode or genuinely absent sessions.
 - WHEN `gh-webhook start --route` or `poll start` runs THEN the native dependencies
   (`tmux`; `ttyd` if `routing.webTerminal.enabled`) SHALL be verified with
   per-platform install guidance — silent when satisfied. Both ingress paths drive
@@ -104,4 +119,5 @@ the same conversation.
 | issue-80 | Respawn a crashed/killed tmux session on delivery (deliver the pending event as the fresh TUI's boot prompt) instead of looping redeliveries into a session that no longer exists | [spec](../specs/issue-80/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/80) |
 | issue-93 | Events on a PR linked to a GitHub issue reuse that issue's tmux session instead of spawning a second one for the PR's own ref | [spec](../specs/issue-93/), [decision-036](../decisions/decision-036.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/93) |
 | issue-86 | Keep a finished work item's tmux session (and, via `remain-on-exit`, its pane) instead of killing it, guarded by a pane-liveness check so the respawn path still fires; announce a first-spawned session's attach command as a comment on the work item | [spec](../specs/issue-86/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/86) |
+| issue-94 | A retained session is now a **record, not a live agent**: closing the work item ends the harness in its pane (SIGTERM→SIGKILL, `killHarnessOnClose` / `harnessKillGraceSeconds`) with `remain-on-exit` re-set so the scrollback survives, and `sessions attach` forces read-only for a closed session | [spec](../specs/issue-94/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/94) |
 | issue-89 | Respawn now **resumes** the dead session's harness conversation (`claude --resume`, id kept in the registry) instead of booting a blank one, verified by a liveness probe with a fresh-conversation fallback (`resumeOnRespawn` / `resumeProbeSeconds`, `session.resume_failed`) | [spec](../specs/issue-89/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/89) |

@@ -442,6 +442,30 @@ def test_pr_close_auto_closes_session(server_factory, tmp_path):
     assert calls() == []  # auto-closed, harness never resumed
 
 
+def test_issue_close_auto_closes_session(server_factory, tmp_path):
+    """
+    Feature: Webhook event routing
+    Scenario: A session auto-closes when its issue is closed
+        Given a session registered for github:octo/repo#15
+        When a signed issues 'closed' webhook for that issue arrives
+        Then the session is closed in the registry
+        And the harness is not resumed for the close event
+    Requirement: docs/specs/issue-94/requirements.md#R2
+    """
+    port, registry, calls = server_factory(events=["issues"])
+    register(registry, tmp_path)
+    payload = {
+        "action": "closed",
+        "repository": {"full_name": "octo/repo"},
+        "issue": {"number": 15, "state_reason": "completed"},
+        "sender": {"login": "octocat"},
+    }
+    assert post_webhook(port, "issues", payload, "iclose-1") == 202
+    assert wait_until(lambda: registry.find_by_work_item(REF) is None)
+    time.sleep(0.2)
+    assert calls() == []  # closed, never delivered into the conversation
+
+
 AUTO_LABEL = "the-loop: auto-execute"
 
 

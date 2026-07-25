@@ -83,11 +83,17 @@ webhooks:
       # what it knew about the work item, instead of booting a blank one. The
       # respawn is probed for resumeProbeSeconds (0 = check immediately) and falls
       # back to a fresh conversation when the harness could not resume.
+      # killHarnessOnClose (issue-94): when the work item closes and its tmux
+      # session is KEPT, end the harness process inside it — the pane stays
+      # readable, but is no longer a live TUI a stray keystroke/paste could
+      # resume. SIGTERM, then SIGKILL after harnessKillGraceSeconds.
       tmux:
         keepSessionOnClose: true
         remainOnExit: true
         resumeOnRespawn: true
         resumeProbeSeconds: 2
+        killHarnessOnClose: true
+        harnessKillGraceSeconds: 5
       # Session announcement comment (issue-86): when a tmux-mode session is spawned
       # for a work item, post the tmux session name and the `tmux attach -t …`
       # command on the work item, so a human on the ticket can watch it work. A

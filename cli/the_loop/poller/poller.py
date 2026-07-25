@@ -17,9 +17,12 @@ responsibilities are ingress-agnostic:
   dispatcher's ``spawnOnUnmatched`` policy) — retried each cycle until it
   exists, so a session is never spawned twice for the same item;
 * **forward** genuinely new comments to the matched session, deduped across
-  polls/restarts by a durable :class:`PollState`.
+  polls/restarts by a durable :class:`PollState`;
+* **close** a session whose work item has ended — a listing only ever contains
+  *open* items, so the poller reconciles the registry against it and asks the
+  provider about anything that disappeared (issue-94).
 
-Spec: docs/specs/issue-34/design.md.
+Spec: docs/specs/issue-34/design.md; docs/specs/issue-94/design.md.
 """
 
 from __future__ import annotations
@@ -189,6 +192,15 @@ class PollState:
         item = self._item(ref)
         item["spawn"] = {}
 
+    def forget(self, ref: str) -> None:
+        """Drop an item's whole ledger — it ended (issue-94).
+
+        A **reopened** work item is then first-sight again: its thread is
+        re-baselined and a fresh session spawned, instead of the item being
+        skipped forever as already-known.
+        """
+        self._items.pop(ref, None)
+
     # -- end of cycle -----------------------------------------------------------
 
     def finalize(
@@ -236,6 +248,7 @@ class PollSummary:
     items_seen: int = 0
     spawns: int = 0
     comments_forwarded: int = 0
+    closures: int = 0  # sessions closed because their item ended (issue-94)
     failures: int = 0  # events given up after exhausting the retry budget (issue-80)
     errors: List[str] = field(default_factory=list)
 
@@ -293,10 +306,11 @@ class Poller:
             self._poll_provider(provider, summary)
         self.state.save()
         logger.info(
-            "poll cycle: %d item(s), %d spawn(s), %d comment(s) forwarded%s%s",
+            "poll cycle: %d item(s), %d spawn(s), %d comment(s) forwarded%s%s%s",
             summary.items_seen,
             summary.spawns,
             summary.comments_forwarded,
+            f", {summary.closures} closed" if summary.closures else "",
             f", {summary.failures} gave up" if summary.failures else "",
             f", {len(summary.errors)} error(s)" if summary.errors else "",
         )
@@ -305,6 +319,7 @@ class Poller:
             items_seen=summary.items_seen,
             spawns=summary.spawns,
             comments_forwarded=summary.comments_forwarded,
+            closures=summary.closures or None,
             failures=summary.failures or None,
             errors=summary.errors or None,
         )
@@ -324,8 +339,12 @@ class Poller:
             )
             summary.errors.append(f"{provider.describe()}: {exc}")
             return
+        open_refs = set()
         for item in items:
             summary.items_seen += 1
+            # An item's *linked* refs, not just its own: a session registered
+            # against an issue is still live while its PR is open and labelled.
+            open_refs.update(ref.ref for ref in provider.refs(item))
             try:
                 self._process_item(provider, item, summary)
             except ProviderError as exc:
@@ -338,6 +357,63 @@ class Poller:
                     will_retry=True,
                 )
                 summary.errors.append(f"{item.ref}: {exc}")
+        # Only ever reached on a SUCCESSFUL listing (the ProviderError path
+        # above returns first), so a failed or partial listing can never be read
+        # as "everything closed" (issue-94).
+        self._reconcile_closures(provider, open_refs, summary)
+
+    def _reconcile_closures(
+        self, provider: PollProvider, open_refs: set, summary: PollSummary
+    ) -> None:
+        """Close sessions whose work item has ended (issue-94).
+
+        A poll source lists only *open* items, so an issue that is closed or a
+        PR that is merged simply disappears — nothing in the per-item loop can
+        notice it. This walks the other way round, from the **registry**: every
+        active session this source owns whose item is no longer in the listing
+        is checked once against the provider, and a genuinely ended item is
+        closed through the dispatcher's normal close path.
+
+        Registry-driven rather than diffing successive listings, so it also
+        catches items that ended while the poller was down — there is no memory
+        to lose across restarts. Under any doubt (still open, or the provider
+        could not answer) the session is left running.
+        """
+        for session in self.registry.list_sessions(status="active"):
+            ref = session.work_item
+            if ref.ref in open_refs or not provider.owns(ref):
+                continue
+            try:
+                closure = provider.closure(ref)
+            except ProviderError as exc:
+                logger.warning(
+                    "could not check whether %s is still open: %s", ref.ref, exc
+                )
+                eventlog.emit(
+                    "poll.item_error",
+                    level="warning",
+                    work_item=ref.ref,
+                    error=str(exc),
+                    will_retry=True,
+                )
+                summary.errors.append(f"{ref.ref}: {exc}")
+                continue
+            if closure is None:
+                continue  # still open (e.g. the label was removed) — leave it
+            logger.info(
+                "%s is %s upstream; closing its session",
+                ref.ref,
+                closure.state,
+            )
+            eventlog.emit(
+                "poll.closure_detected",
+                work_item=ref.ref,
+                state=closure.state,
+                kind=closure.kind or None,
+            )
+            self.dispatcher.handle(provider.closure_event(ref, closure))
+            self.state.forget(ref.ref)
+            summary.closures += 1
 
     def _process_item(
         self, provider: PollProvider, item: WorkItem, summary: PollSummary

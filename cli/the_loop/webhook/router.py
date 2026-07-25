@@ -318,14 +318,16 @@ class Router:
                 work_items=[w.ref for w in work_items],
             )
             return None
-        # Authorization guard (prompt-injection remediation). PR-close is a
-        # lifecycle signal (it only auto-closes the-loop's own session, injects
-        # nothing), so it bypasses the actor check to keep cleanup working.
-        is_pr_close = event == "pull_request" and (
+        # Authorization guard (prompt-injection remediation). Closing the work
+        # item (a merged/closed PR, or — issue-94 — a closed issue) is a
+        # lifecycle signal: it only auto-closes the-loop's own session and
+        # injects nothing, so it bypasses the actor check to keep cleanup
+        # working. The reverse direction stays guarded: a close can never spawn.
+        is_lifecycle_close = event in ("issues", "pull_request") and (
             str(payload.get("action") or "") == "closed"
         )
         actor = event_actor(event, payload)
-        if not is_pr_close and not is_authorized(actor, self.authorized_users):
+        if not is_lifecycle_close and not is_authorized(actor, self.authorized_users):
             logger.warning(
                 "ignoring %s for %s from unauthorized actor %r "
                 "(not in routing.authorizedUsers)",

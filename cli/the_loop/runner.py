@@ -14,12 +14,14 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shutil
+import signal
 import subprocess
 import tempfile
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable, List, Optional
+from typing import TYPE_CHECKING, Callable, List, Optional, Sequence
 
 from .harness.base import UnsupportedRunnerError
 from .sessions import Session, WorkItemRef
@@ -46,6 +48,15 @@ _EVENT_BUFFER = "the-loop-evt"
 # Shared hub session the web terminal (ttyd) drops browser clients into; the
 # loop-* sessions are one `switch-client`/`choose-tree` away from it.
 HUB_SESSION = "the-loop-hub"
+# How often `terminate_harness` re-reads pane liveness while waiting out its
+# SIGTERM grace period. Stepped (not wall-clock) so an injected sleeper in tests
+# cannot spin.
+_TERMINATE_POLL_SECONDS = 0.2
+# Shape a tmux target must have before the-loop will signal the processes inside
+# it: the `loop-<slug>` names `target_for` mints. The registry is a plain file,
+# and terminating reaches OS processes — so a corrupted/hand-edited `tmuxTarget`
+# must not be able to aim a SIGTERM at some other tmux session's panes.
+_LOOP_TARGET_RE = re.compile(r"^loop-[A-Za-z0-9._-]+$")
 
 _INSTALL_HINTS = {
     "tmux": (
@@ -295,6 +306,119 @@ class TmuxRunner:
         if delay > 0:
             sleeper(delay)
         return self.has_live_session(target)
+
+    def live_pane_pids(self, target: str) -> List[int]:
+        """Pids of ``target``'s still-running panes (empty when none/unreadable).
+
+        The only source of a pid the-loop ever signals: tmux's own view of the
+        panes of a session the-loop itself spawned. A dead pane's pid is skipped
+        — it names a process that has already exited (issue-94, R3.6).
+        """
+        result = self._run(
+            ["list-panes", "-t", target, "-F", "#{pane_pid} #{pane_dead}"], timeout=10
+        )
+        if not result.ok:
+            return []
+        pids: List[int] = []
+        for line in result.output.splitlines():
+            parts = line.split()
+            if not parts:
+                continue
+            dead = parts[1] if len(parts) > 1 else "0"
+            if dead == "1":
+                continue
+            try:
+                pid = int(parts[0])
+            except ValueError:  # a tmux too old for the format: nothing to signal
+                continue
+            # Hard guard: os.kill treats 0/negative as "my whole process group"
+            # / "that group". Only a real, positive pid is ever signalled.
+            if pid > 0:
+                pids.append(pid)
+        return pids
+
+    def _signal(
+        self,
+        pids: Sequence[int],
+        sig: int,
+        killer: Optional[Callable[[int, int], None]] = None,
+    ) -> None:
+        """Best-effort signal delivery — an unsignalable pid never raises."""
+        send = killer or os.kill  # resolved per call, so it stays injectable
+        for pid in pids:
+            try:
+                send(pid, sig)
+            except ProcessLookupError:
+                logger.debug("process %s already gone", pid)
+            except (PermissionError, OSError) as exc:
+                logger.warning("could not signal process %s: %s", pid, exc)
+
+    def terminate_harness(
+        self,
+        session: Session,
+        grace: float = 5.0,
+        timeout: Optional[float] = None,
+        sleeper: Callable[[float], None] = time.sleep,
+        killer: Optional[Callable[[int, int], None]] = None,
+    ) -> TmuxResult:
+        """End the harness running in a *retained* session's pane (issue-94).
+
+        Retention (issue-86) keeps the tmux session so its scrollback stays
+        readable — but until now it also kept the harness **running**, so a
+        finished work item left a writable `claude` TUI anyone could paste into.
+        This ends the conversation while keeping the transcript: `remain-on-exit`
+        is (re-)set first so the pane survives its process, then the pane's own
+        pids get SIGTERM, escalating to SIGKILL if they outlive ``grace``.
+
+        Best-effort throughout: a missing session, an unreadable pane list, an
+        already-exited process or a refused signal are reported, never raised —
+        closing the work item must not depend on it.
+        """
+        target = session.tmux_target
+        if not target:
+            return TmuxResult(ok=True)
+        if not _LOOP_TARGET_RE.match(target):
+            logger.warning(
+                "refusing to terminate processes in tmux target %r for %s: not a "
+                "the-loop `loop-<slug>` session",
+                target,
+                session.work_item.ref,
+            )
+            return TmuxResult(
+                ok=False, error=f"{target!r} is not a the-loop tmux session name"
+            )
+        if not self.has_session(target):
+            return TmuxResult(
+                ok=True,
+                session_missing=True,
+                error=f"tmux session {target} is already gone",
+            )
+        # Without this the pane closes with its process — taking the window, the
+        # session and the transcript the retention exists for.
+        self._set_remain_on_exit(target, timeout)
+        pids = self.live_pane_pids(target)
+        if not pids:
+            return TmuxResult(ok=True)  # nothing running in there any more
+        logger.info("terminating harness in %s (pid(s) %s)", target, pids)
+        self._signal(pids, signal.SIGTERM, killer)
+        for _ in range(int(max(0.0, grace) / _TERMINATE_POLL_SECONDS)):
+            if not self.has_live_session(target):
+                return TmuxResult(ok=True)
+            sleeper(_TERMINATE_POLL_SECONDS)
+        if not self.has_live_session(target):
+            return TmuxResult(ok=True)
+        logger.warning(
+            "harness in %s survived SIGTERM after %ss; sending SIGKILL",
+            target,
+            grace,
+        )
+        self._signal(self.live_pane_pids(target), signal.SIGKILL, killer)
+        if self.has_live_session(target):
+            return TmuxResult(
+                ok=False,
+                error=f"harness in {target} is still running after SIGKILL",
+            )
+        return TmuxResult(ok=True)
 
     def deliver(
         self, session: Session, prompt: str, timeout: Optional[float] = None

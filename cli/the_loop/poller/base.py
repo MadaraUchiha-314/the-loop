@@ -14,7 +14,7 @@ Spec: docs/specs/issue-34/design.md §2.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Type, TypeVar
+from typing import Dict, List, Optional, Type, TypeVar
 
 from ..sessions import WorkItemRef
 from ..webhook.router import RoutedEvent
@@ -33,6 +33,26 @@ class Comment:
     author: str
     created_at: str
     url: str
+
+
+@dataclass(frozen=True)
+class Closure:
+    """Why a work item is no longer open — provider-neutral (issue-94).
+
+    A poll source lists only *open* work items, so an item that ends simply
+    vanishes from the listing. This is the answer to the follow-up question the
+    poller then asks about a session whose item disappeared: has it actually
+    ended, and how?
+    """
+
+    state: str  # "closed" | "merged"
+    kind: str = ""  # provider vocabulary, e.g. "issue" | "pull-request"
+    title: str = ""
+    url: str = ""
+
+    @property
+    def merged(self) -> bool:
+        return self.state == "merged"
 
 
 @dataclass
@@ -105,6 +125,31 @@ class PollProvider:
         self, item: WorkItem, comment: Comment, refs: List[WorkItemRef]
     ) -> RoutedEvent:
         """A ``labeled=False`` event routing ``comment`` to ``item``'s session."""
+        raise NotImplementedError
+
+    # -- closure reconciliation (issue-94, opt-in) -----------------------------
+    #
+    # A provider opts into "did this work item end?" by implementing all three.
+    # The defaults say "I don't answer closure questions", and ``owns``
+    # returning False is what makes the poller skip reconciliation entirely for
+    # such a provider — no other core change needed.
+
+    def owns(self, ref: WorkItemRef) -> bool:
+        """Whether ``ref`` falls inside this source's configured scope."""
+        return False
+
+    def closure(self, ref: WorkItemRef) -> Optional[Closure]:
+        """Ask the backing system whether ``ref`` has ended.
+
+        ``None`` means "still open" (or "this provider does not answer"), and is
+        the only safe answer under doubt — the poller never closes a session on
+        an unknown state. Raise :class:`ProviderError` when the backing system
+        could not be reached, so the caller can retry on a later cycle.
+        """
+        return None
+
+    def closure_event(self, ref: WorkItemRef, closure: Closure) -> RoutedEvent:
+        """A close event for ``ref``, shaped like the webhook one it mirrors."""
         raise NotImplementedError
 
 

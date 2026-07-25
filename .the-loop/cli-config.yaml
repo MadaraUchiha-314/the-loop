@@ -57,11 +57,17 @@ webhooks:
       # SAME harness conversation (claude --resume <id>) instead of booting blank;
       # the spawn is probed for resumeProbeSeconds and falls back to a fresh
       # conversation if the harness could not resume (0 = probe immediately).
+      # killHarnessOnClose (issue-94) ends the harness process inside a RETAINED
+      # session when the work item closes, so the pane stays readable but is no
+      # longer a live TUI stray input could resume (SIGTERM, then SIGKILL after
+      # harnessKillGraceSeconds).
       tmux:
         keepSessionOnClose: true
         remainOnExit: true
         resumeOnRespawn: true
         resumeProbeSeconds: 2
+        killHarnessOnClose: true
+        harnessKillGraceSeconds: 5
       webTerminal:                # ttyd browser terminal onto tmux sessions (runner: tmux)
         enabled: false            # access control is environmental: localhost/VPN/provider (decision-021)
         host: 127.0.0.1
