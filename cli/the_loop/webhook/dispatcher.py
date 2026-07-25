@@ -33,6 +33,7 @@ from ..reactions import (
 )
 from ..runner import TmuxRunner
 from ..sessions import Session, SessionRegistry, WorkItemRef
+from ..trust import TrustConfig, TrustResult, is_too_broad
 from ..workspace import RepoTarget, Workspace, WorkspaceError, repo_target_from_payload
 from .router import Deduper, RoutedEvent
 
@@ -221,6 +222,9 @@ class RoutingConfig:
     prompt_template: str = _DEFAULT_EVENT_PROMPT
     spawn_prompt_template: str = _DEFAULT_SPAWN_PROMPT
     harness_args: Dict[str, list] = field(default_factory=dict)
+    # Pre-seed the harness's own config before a spawn so the session does not
+    # stall on a trust dialog nobody is there to answer (issue-90).
+    harness_trust: TrustConfig = field(default_factory=TrustConfig)
     # GitHub logins whose actions the-loop may act on (prompt-injection guard,
     # issue-34 review). Empty => fail closed for human-authored actions.
     authorized_users: List[str] = field(default_factory=list)
@@ -253,6 +257,7 @@ class RoutingConfig:
                 data.get("spawnPromptTemplate", _DEFAULT_SPAWN_PROMPT)
             ),
             harness_args=dict(data.get("harnessArgs") or {}),
+            harness_trust=TrustConfig.from_mapping(data.get("harnessTrust") or {}),
             authorized_users=[str(u) for u in (data.get("authorizedUsers") or [])],
             reactions=ReactionConfig.from_mapping(data.get("reactions") or {}),
             announce=AnnounceConfig.from_mapping(data.get("announce") or {}),
@@ -393,8 +398,9 @@ class Dispatcher:
 
         Live-reloaded: spawn policy, default harness, runner, spawn workdir,
         the clone-and-worktree workspace (issue-76), the tmux session lifetime
-        and announcement policy (issue-86), dispatch timeout,
-        per-harness args (adapters rebuilt) and the prompt templates. Each is
+        and announcement policy (issue-86), dispatch timeout, per-harness args
+        and the pre-spawn trust policy (issue-90 — one adapter rebuild carries
+        both) and the prompt templates. Each is
         read from ``self.config`` (or the swapped dict) at dispatch time, so a
         plain reassignment takes effect on the next event. A caller-supplied
         workspace override is preserved across reloads.
@@ -409,7 +415,7 @@ class Dispatcher:
         from ..harness import build_adapters
 
         self.config = config
-        self.adapters = build_adapters(config.harness_args)
+        self.adapters = build_adapters(config.harness_args, config.harness_trust)
         if not self._workspace_override:
             self.workspace = self._build_workspace(config)
         if not self._reactor_override:
@@ -770,6 +776,9 @@ class Dispatcher:
             if routed.delivery_id:
                 self.deduper.discard(routed.delivery_id)
             return False
+        # Before ANY runner starts the harness: make sure the harness will not
+        # open on a trust dialog nobody is there to answer (issue-90).
+        self._prepare_environment(adapter, work_item, cwd)
         if self.config.runner == "tmux":
             return self._spawn_tmux(work_item, routed, adapter, prompt, cwd)
         result = adapter.spawn(
@@ -946,6 +955,11 @@ class Dispatcher:
             if routed.delivery_id:
                 self.deduper.discard(routed.delivery_id)
             return False
+        # Before EITHER respawn path starts a harness process — the resume
+        # attempt below included — give it the same pre-flight a first spawn
+        # gets, so the one path that recovers a dead session is not the one
+        # that stalls on a dialog (issue-90).
+        self._prepare_environment(adapter, work_item, session.cwd)
         resumed_id = self._try_resume(session, adapter, prompt)
         session_id = resumed_id or str(uuid.uuid4())
         if resumed_id is None:
@@ -1116,6 +1130,92 @@ class Dispatcher:
         if delivery_id in self.deduper:
             return "inflight"
         return "unhandled"
+
+    # -- pre-spawn harness preparation (issue-90) -------------------------------
+
+    def _trust_root(self) -> Optional[str]:
+        """The workspace root to trust wholesale, or None for per-directory trust.
+
+        ``scope: workspace-root`` (the default, owner decision on PR #92) trusts
+        the root the operator already dedicated to the-loop, so every checkout
+        under it is covered — including folders the-loop never spawned into.
+        Returns None, i.e. falls back to trusting just the spawn directory, when:
+
+        * the scope is ``directory``;
+        * no workspace root is configured (legacy ``spawnWorkdir`` setups have
+          no root to speak of — the spawn directory *is* the scope);
+        * the root is broad enough to be meaningless (``/`` or the home
+          directory itself), which would blanket-trust the whole machine.
+
+        The store additionally ignores a root that does not contain the spawn
+        directory, so a misconfigured root can never trust an unrelated tree.
+        """
+        if not self.config.harness_trust.roots_allowed or self.workspace is None:
+            return None
+        root = str(self.workspace.root)
+        if is_too_broad(root):
+            logger.warning(
+                "routing.workspace.root (%s) is too broad to trust wholesale; "
+                "falling back to per-directory trust for this spawn (set "
+                "routing.harnessTrust.scope: directory to silence this)",
+                root,
+            )
+            return None
+        return root
+
+    def _prepare_environment(
+        self, adapter: HarnessAdapter, work_item: WorkItemRef, cwd: str
+    ) -> None:
+        """Let the adapter pre-seed its harness's config for ``cwd``.
+
+        Best-effort by design (like reactions/announce): a config-write hiccup
+        must not fail the dispatch, because a failed dispatch is retried
+        forever and buries the work item — while an open failure degrades to
+        exactly the pre-issue-90 behaviour and is loud in both logs and the
+        event log. Never raises.
+        """
+        harness = adapter.name or adapter.binary
+        try:
+            result = adapter.prepare_environment(cwd, self._trust_root())
+        except Exception as exc:  # an adapter bug must not wedge a work item
+            result = TrustResult(ok=False, error=str(exc))
+        if not result.ok:
+            logger.warning(
+                "could not prepare the %s environment for %s: %s — the session "
+                "may stop on an interactive dialog",
+                harness,
+                work_item.ref,
+                result.error,
+            )
+            eventlog.emit(
+                "workspace.trust_failed",
+                level="warning",
+                work_item=work_item.ref,
+                harness=harness,
+                cwd=cwd,
+                error=result.error,
+            )
+            return
+        if not result.applied:
+            logger.debug(
+                "%s environment for %s already prepared; nothing written",
+                harness,
+                work_item.ref,
+            )
+            return
+        logger.info(
+            "prepared the %s environment for %s: %s",
+            harness,
+            work_item.ref,
+            "; ".join(result.applied),
+        )
+        eventlog.emit(
+            "workspace.trusted",
+            work_item=work_item.ref,
+            harness=harness,
+            cwd=cwd,
+            applied=result.applied,
+        )
 
     # -- workspace (clone + worktree, issue-76) ---------------------------------
 

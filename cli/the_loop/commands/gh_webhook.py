@@ -117,7 +117,7 @@ def _build_routing(gh_webhook_config: dict):
     config = RoutingConfig.from_mapping(gh_webhook_config.get("routing") or {})
     dispatcher = Dispatcher(
         registry=SessionRegistry(config.registry_dir),
-        adapters=build_adapters(config.harness_args),
+        adapters=build_adapters(config.harness_args, config.harness_trust),
         config=config,
     )
     authorized = resolve_authorized_users(config.authorized_users)

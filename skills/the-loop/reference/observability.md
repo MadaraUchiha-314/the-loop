@@ -43,7 +43,13 @@ answer to:
   `spawn-policy`);
 - **what failed, and will it retry?** — `dispatch.failed`, `session.spawn_failed`,
   `poll.provider_error` carry `error` and `will_retry` (whether GitHub redelivery /
-  the next poll cycle heals it).
+  the next poll cycle heals it);
+- **what has the daemon changed on this machine?** — `workspace.prepared` /
+  `workspace.cleaned` name every checkout it created and removed, and
+  `workspace.trusted` / `workspace.trust_failed` name every directory it marked
+  trusted in the harness's own config before a spawn (issue-90). Those two are
+  the audit trail for the one thing the-loop writes outside its own state:
+  `the-loop events --type 'workspace.trust*'`.
 
 ### Record shape
 

@@ -86,6 +86,20 @@ Python SDKs. The core has **zero runtime dependencies** (stdlib only).
   the issue** — the same tmux session, keeping continuity — and an unmatched event spawns
   against the issue's ref, never a second session for the same work. Decision:
   `docs/decisions/decision-036.md` (issue-93).
+- **Pre-spawn harness preparation** (`routing.harnessTrust`, issue-90): a brand-new
+  checkout is a directory the harness has never seen, and Claude Code's
+  **workspace-trust dialog** — plus the one-time **bypass-permissions disclaimer** —
+  are not permission rules, so no CLI flag (`--dangerously-skip-permissions`
+  included) silences them. An unattended session therefore used to sit on a modal
+  forever. Before every spawn/respawn the dispatcher marks that exact directory
+  trusted in the harness's own user config (honouring `CLAUDE_CONFIG_DIR`), and —
+  only when your `harnessArgs` already ask for bypass mode — records the disclaimer
+  acceptance too. Writes are narrow and non-destructive (those keys only, merged,
+  atomic, skipped when already set, never applied to a file that does not parse),
+  scoped to the spawn directory and never a parent, audited as
+  `workspace.trusted`, and best-effort: a failure warns and still spawns. Opt out
+  with `harnessTrust.enabled: false`. Design: `docs/specs/issue-90/design.md`,
+  decision: `docs/decisions/decision-037.md`.
 - **The label works on PRs directly — the ticketing system need not be GitHub.** A PR
   carrying the auto-execute label is routed as its own work item
   (`github:OWNER/REPO#<pr-number>`) when it is linked to no GitHub issue. This is

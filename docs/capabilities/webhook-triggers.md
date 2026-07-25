@@ -102,6 +102,19 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   (`+1 -1 laugh confused heart hooray rocket eyes`; ✅/⁉️ don't exist), and each
   state's emoji is configurable (`""` skips a state). Outcomes are logged as
   `reaction.added` / `reaction.failed`.
+- WHEN the dispatcher spawns (or respawns) a session THEN it SHALL first pre-seed the
+  harness's own user config for that session's working directory
+  (`routing.harnessTrust`, default **on**), so an unattended session cannot stall on
+  Claude Code's workspace-trust dialog or its bypass-permissions disclaimer — neither
+  of which is a permission rule, hence neither is silenced by
+  `--dangerously-skip-permissions`. Scoped by `harnessTrust.scope` — the workspace
+  root by default (one entry covering every checkout under it) or the exact spawn
+  directory — non-destructive (named keys only, merged, atomic, skipped when already
+  correct, refused on an unparseable file), and permission-neutral: the bypass
+  disclaimer is accepted only when this harness's `harnessArgs` already ask for bypass
+  mode. Best-effort — a failure warns, emits `workspace.trust_failed` and still spawns.
+  Audited as `workspace.trusted`; `harnessTrust.enabled: false` opts out. See
+  [interactive-sessions](interactive-sessions.md).
 - A comment/review the-loop itself posted (identified by an embedded marker, since it
   is posted under the operator's own credentials and is otherwise indistinguishable by
   author) SHALL be dropped before dispatch, so the-loop never resumes a session on its
@@ -124,6 +137,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 |-----------|--------------|-------|
 | issue-94 | A finished work item now ends its session on **both** ingress paths: the poller reconciles active sessions against each successful listing and closes the ones whose item is closed/merged upstream; the receiver treats `issues`/`closed` like `pull_request`/`closed` instead of delivering it into the conversation | [spec](../specs/issue-94/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/94) |
 | issue-93 | An event on a PR resolves the PR's **linked issues first** (`closingIssuesReferences` + branch/keyword conventions, incl. PR conversation comments delivered as `issue_comment`), so PR activity reuses the linked issue's session instead of spawning a second one | [spec](../specs/issue-93/), [decision-036](../decisions/decision-036.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/93) |
+| issue-90 | Pre-seed the harness config before spawning (`routing.harnessTrust`) so spawned sessions stop stalling on the workspace-trust dialog / bypass-permissions disclaimer | [spec](../specs/issue-90/), [decision-037](../decisions/decision-037.md) |
 | issue-84 | Dispatch-lifecycle emoji reactions (`routing.reactions`, opt-in): 👀 started / 🎉 completed / 😕 error on the triggering comment or issue/PR, best-effort via `gh`, no-op where unsupported | [spec](../specs/issue-84/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/84) |
 | issue-63 | `webhooks.*` moved out of the per-repo plugin config into an independent, repo-agnostic CLI config | [spec](../specs/issue-63/), [decision-032](../decisions/decision-032.md) |
 | issue-64 | Added the self-reply marker guard (drops the-loop's own comments/reviews before dispatch, on both trigger paths, so it never resumes a session on its own reply) | [decision-031](../decisions/decision-031.md) |

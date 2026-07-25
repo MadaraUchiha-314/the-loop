@@ -100,6 +100,28 @@ the same conversation.
   process bound to `127.0.0.1` by default (a shared `the-loop-hub` tmux session),
   stopped on shutdown; the-loop implements **no auth** — access control is
   environmental (localhost / VPN / hosting provider network).
+- WHEN a session is spawned **or respawned** THEN — before **any** harness start,
+  meaning either runner and both halves of a respawn (the conversation-resume attempt
+  above as well as the fresh-conversation fallback) — the harness's own user config
+  SHALL be pre-seeded so the session does not
+  open on an interactive dialog (`routing.harnessTrust`, default on). For Claude Code
+  that means writing `hasTrustDialogAccepted` — on the **workspace root** under the
+  default `scope: workspace-root`, so every checkout beneath it is covered by the
+  harness's ancestor walk, or on the exact spawn directory under `scope: directory`
+  (least privilege) — plus `hasCompletedProjectOnboarding` on the **spawn directory**
+  under either scope, since that key has no ancestor walk and root trust alone would
+  just reveal the onboarding screen. A root that does not contain the spawn directory,
+  or one as broad as `/` or the home directory, degrades to per-directory trust.
+  All honouring `CLAUDE_CONFIG_DIR`. And, **only** when this harness's
+  `harnessArgs` already ask for bypass mode, recording the bypass-permissions
+  disclaimer acceptance (`acceptBypassPermissions: auto`; `always`/`never` decide
+  explicitly). Neither dialog is a permission rule, so no CLI flag —
+  `--dangerously-skip-permissions` included — silences them. Writes touch only those
+  keys, merge into what is already there, go through a temp file + atomic replace, are
+  **skipped entirely** when the value is already correct, and are never applied to a
+  file that does not parse as JSON. Applied changes emit `workspace.trusted`; a
+  failure warns, emits `workspace.trust_failed` and still spawns. A harness with no
+  such config surface (cursor-agent) is a silent no-op.
 - WHEN `routing.runner` is `process` or unset THEN behaviour SHALL be identical to the
   pre-issue-32 receiver; registry files from before issue-32 remain readable, and a
   registry may mix process- and tmux-mode sessions (the session's recorded runner
@@ -118,6 +140,7 @@ the same conversation.
 | issue-65 | Fixed `poll start` never launching ttyd (it shared the tmux runner but had no web terminal start/stop of its own); factored ttyd lifecycle into a shared `the_loop.runner` helper used by both `gh-webhook start` and `poll start` | [issue](https://github.com/MadaraUchiha-314/the-loop/issues/65) |
 | issue-80 | Respawn a crashed/killed tmux session on delivery (deliver the pending event as the fresh TUI's boot prompt) instead of looping redeliveries into a session that no longer exists | [spec](../specs/issue-80/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/80) |
 | issue-93 | Events on a PR linked to a GitHub issue reuse that issue's tmux session instead of spawning a second one for the PR's own ref | [spec](../specs/issue-93/), [decision-036](../decisions/decision-036.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/93) |
+| issue-90 | Pre-seed the harness's own config before every spawn/respawn so a session starts working instead of stalling on the workspace-trust dialog (and, when bypass mode is already configured, its disclaimer) | [spec](../specs/issue-90/), [decision-037](../decisions/decision-037.md) |
 | issue-86 | Keep a finished work item's tmux session (and, via `remain-on-exit`, its pane) instead of killing it, guarded by a pane-liveness check so the respawn path still fires; announce a first-spawned session's attach command as a comment on the work item | [spec](../specs/issue-86/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/86) |
 | issue-94 | A retained session is now a **record, not a live agent**: closing the work item ends the harness in its pane (SIGTERM→SIGKILL, `killHarnessOnClose` / `harnessKillGraceSeconds`) with `remain-on-exit` re-set so the scrollback survives, and `sessions attach` forces read-only for a closed session | [spec](../specs/issue-94/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/94) |
 | issue-89 | Respawn now **resumes** the dead session's harness conversation (`claude --resume`, id kept in the registry) instead of booting a blank one, verified by a liveness probe with a fresh-conversation fallback (`resumeOnRespawn` / `resumeProbeSeconds`, `session.resume_failed`) | [spec](../specs/issue-89/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/89) |

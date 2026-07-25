@@ -123,8 +123,64 @@ starting point ships at
 | `spawnPromptTemplate` | string | `skills/the-loop/templates/webhook-autoexecute-prompt.md` | `string.Template` for a newly spawned (auto-execute) session; built-in default when absent. |
 | `harnessArgs.claude` | string[] | `[]` | Extra CLI args passed to Claude Code (e.g. `[--permission-mode, acceptEdits]`). |
 | `harnessArgs.cursor` | string[] | `[]` | Extra CLI args passed to `cursor-agent` (e.g. `[--force]`). |
+| `harnessTrust` | object | — | Pre-seed the harness's own config before a spawn so the session doesn't stall on a trust dialog (see below). |
 | `reactions` | object | — | Dispatch-lifecycle emoji reactions on the triggering GitHub entity (see below). |
 | `announce` | object | — | Comment on the work item announcing a spawned tmux session and how to attach (see below). |
+
+#### `webhooks.ghWebhook.routing.harnessTrust` — why sessions used to stall on a dialog
+
+Claude Code's **workspace-trust** dialog ("Do you trust the files in this folder?") and
+its one-time **bypass-permissions disclaimer** are not permission *rules* — which is
+why no CLI flag, `--dangerously-skip-permissions` very much included, silences them.
+And since every work item gets its own checkout (`routing.workspace`), every spawn
+lands in a directory the harness has never seen. The result was a daemon that looked
+healthy — `session.spawned` logged, prompt pasted — while the TUI sat on a modal
+nobody was there to answer (issue-90).
+
+So before each spawn/respawn the-loop writes what the harness is about to ask for:
+
+- `hasTrustDialogAccepted` on your **workspace root** (`scope: workspace-root`, the
+  default) or on the exact spawn directory (`scope: directory`), in your Claude Code
+  user config (`$CLAUDE_CONFIG_DIR` honoured);
+- `hasCompletedProjectOnboarding` on the **spawn directory**, always;
+- `skipDangerousModePermissionPrompt` in your user settings — **only** when
+  `harnessArgs` for that harness already ask for bypass mode.
+
+The two project keys scope differently because the harness *reads* them differently.
+Trust is looked up by walking **up** from the cwd, so one entry on the workspace root
+covers everything beneath it — including folders the-loop never spawned into (a repo
+you clone there by hand, a nested repo the agent walks into). Onboarding has **no**
+ancestor walk — it's read from the exact project key — so it's written per spawn
+directory under either scope. Without that, root trust would remove the trust dialog
+and leave the onboarding screen behind it in every fresh checkout.
+
+⚠️ Note the asymmetry, because it's the one thing worth deciding consciously: the trust
+key is **per directory**, but `skipDangerousModePermissionPrompt` is a **user-global**
+setting. Accepting it removes the bypass-mode confirmation from *every* Claude Code
+session on that account, including interactive ones you start by hand — not just the
+ones the-loop spawns. That is the only way the harness exposes the acceptance, so if
+you'd rather keep the confirmation on your own sessions, set
+`acceptBypassPermissions: never` and drop `--dangerously-skip-permissions` from
+`harnessArgs` (a narrower `--permission-mode acceptEdits` needs no acceptance at all).
+
+It is your config, so the writes are deliberately narrow: those keys only, merged into
+what's already there, temp file + atomic rename, `0600` on files it creates, **nothing
+written at all** when the value is already correct, and a file that doesn't parse as
+JSON is reported and left alone. Widening beyond the spawn directory only ever happens
+via `scope`, never implicitly — and even then a root that doesn't actually contain the
+spawn directory is ignored, and one broad enough to be meaningless (`/`, or your home
+directory itself) degrades to per-directory trust with a warning. Every applied change
+is auditable: `the-loop events --type 'workspace.trust*'`.
+
+Failures are best-effort: you get a warning and a `workspace.trust_failed` record, and
+the spawn still happens (failing it would just retry into the same unwritable file
+forever). `cursor-agent` has no such config surface, so it's a silent no-op.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | boolean | `true` | On by default — an unattended daemon can't answer a trust dialog, so this is what makes auto-execute actually run. `false` leaves your harness config untouched. |
+| `scope` | `workspace-root` \| `directory` | `workspace-root` | How wide the trust entry goes. `workspace-root` trusts `routing.workspace.root` once, covering every checkout under it (including folders the-loop never spawned into). `directory` trusts only the exact spawn directory — least privilege; use it when the root holds more than the-loop's own checkouts. With no workspace root configured, the two behave identically. |
+| `acceptBypassPermissions` | string | `auto` | `auto` records the bypass disclaimer only when `harnessArgs` already ask for bypass mode (the-loop never widens permissions you didn't request); `always` always records it; `never` never does. |
 
 #### `webhooks.ghWebhook.routing.tmux` — how long a tmux session (and its conversation) outlives trouble (`runner: tmux`)
 
