@@ -26,7 +26,7 @@ import logging
 import shutil
 import subprocess
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Sequence
 
 from ..sessions import WorkItemRef
@@ -53,6 +53,16 @@ _LIST_LIMIT = 200
 # Item kinds this provider emits (provider-local vocabulary).
 _KIND_ISSUE = "issue"
 _KIND_PR = "pull-request"
+
+# JSON fields the PR listing asks for. ``closingIssuesReferences`` is GitHub's
+# own PR→issue linkage (the Development panel as well as the closing keywords it
+# parses); asking for it here keeps the linkage free — it rides the listing call
+# the poller already makes each cycle (issue-93). It is a relatively recent
+# ``gh`` field, so an older binary rejects it and the listing degrades to
+# ``_PR_FIELDS_LEGACY`` (branch/keyword conventions only).
+_PR_LINK_FIELD = "closingIssuesReferences"
+_PR_FIELDS_LEGACY = "number,title,labels,updatedAt,url,headRefName,body,author"
+_PR_FIELDS = f"{_PR_FIELDS_LEGACY},{_PR_LINK_FIELD}"
 
 
 class GhError(ProviderError):
@@ -83,6 +93,8 @@ class GhItem:
     author: str = ""  # login that opened the issue/PR (authorization guard)
     head_ref: str = ""  # PRs only (links a PR to its issue-<n> branch)
     body: str = ""  # PRs only (closing keywords live here)
+    # PRs only: issue numbers GitHub itself reports the PR as closing (issue-93)
+    linked_issues: List[int] = field(default_factory=list)
 
 
 def check_gh_dependency(binary: str = "gh") -> List[str]:
@@ -104,6 +116,9 @@ class GhClient:
         self.binary = binary
         self._runner = runner
         self.timeout = timeout
+        # Latched once an old gh rejects _PR_LINK_FIELD, so later cycles skip
+        # the attempt that is known to fail (issue-93).
+        self._no_link_field = False
 
     def is_available(self) -> bool:
         return shutil.which(self.binary) is not None
@@ -155,8 +170,34 @@ class GhClient:
         return [self._item_from_json(row, is_pr=False) for row in data or []]
 
     def list_labeled_prs(self, owner: str, repo: str, label: str) -> List[GhItem]:
-        """Open PRs in ``owner/repo`` carrying ``label``."""
-        data = self._run_json(
+        """Open PRs in ``owner/repo`` carrying ``label``, with their linked issues.
+
+        Degrades (once, then latched) to the legacy field list when the installed
+        ``gh`` does not know ``closingIssuesReferences`` — routing then falls back
+        to the head-branch/closing-keyword conventions, exactly as before
+        issue-93. Any other ``gh`` failure still propagates: a downgrade must not
+        mask an auth or network fault.
+        """
+        fields = _PR_FIELDS_LEGACY if self._no_link_field else _PR_FIELDS
+        try:
+            data = self._list_prs(owner, repo, label, fields)
+        except GhError as exc:
+            if self._no_link_field or _PR_LINK_FIELD.lower() not in str(exc).lower():
+                raise
+            logger.warning(
+                "this gh does not support the '%s' JSON field, so a PR linked to "
+                "an issue only through GitHub's Development panel cannot be "
+                "matched to that issue's session; upgrade gh to restore it (%s). "
+                "Falling back to head-branch / closing-keyword conventions.",
+                _PR_LINK_FIELD,
+                _GH_INSTALL_HINT,
+            )
+            self._no_link_field = True
+            data = self._list_prs(owner, repo, label, _PR_FIELDS_LEGACY)
+        return [self._item_from_json(row, is_pr=True) for row in data or []]
+
+    def _list_prs(self, owner: str, repo: str, label: str, fields: str):
+        return self._run_json(
             [
                 "pr",
                 "list",
@@ -169,10 +210,9 @@ class GhClient:
                 "--limit",
                 str(_LIST_LIMIT),
                 "--json",
-                "number,title,labels,updatedAt,url,headRefName,body,author",
+                fields,
             ]
         )
-        return [self._item_from_json(row, is_pr=True) for row in data or []]
 
     def list_comments(
         self, owner: str, repo: str, number: int, is_pr: bool
@@ -216,6 +256,13 @@ class GhClient:
             author=str((row.get("author") or {}).get("login") or ""),
             head_ref=str(row.get("headRefName") or ""),
             body=str(row.get("body") or ""),
+            linked_issues=[
+                number
+                for number in (
+                    (ref or {}).get("number") for ref in (row.get(_PR_LINK_FIELD) or [])
+                )
+                if isinstance(number, int)
+            ],
         )
 
     @staticmethod
@@ -401,7 +448,11 @@ class GitHubPollProvider(PollProvider):
             url=gh_item.url,
             author=gh_item.author,
             labels=list(gh_item.labels),
-            raw={"headRef": gh_item.head_ref, "body": gh_item.body},
+            raw={
+                "headRef": gh_item.head_ref,
+                "body": gh_item.body,
+                "linkedIssues": list(gh_item.linked_issues),
+            },
         )
 
     @staticmethod
@@ -425,6 +476,11 @@ class GitHubPollProvider(PollProvider):
         if item.kind == _KIND_PR:
             entity["head"] = {"ref": item.raw.get("headRef", "")}
             entity["body"] = item.raw.get("body", "")
+            # Same shape a real webhook payload would carry, so the router reads
+            # GitHub's own PR→issue linkage through one code path (issue-93).
+            entity["closingIssuesReferences"] = [
+                {"number": n} for n in item.raw.get("linkedIssues") or []
+            ]
             payload["pull_request"] = entity
         else:
             payload["issue"] = entity

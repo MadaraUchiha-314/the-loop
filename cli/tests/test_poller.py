@@ -117,6 +117,84 @@ def test_gh_list_labeled_prs_carries_head_ref_and_body():
     assert prs[0].body == "Closes #15"
 
 
+def test_gh_list_labeled_prs_requests_and_parses_linked_issues():
+    """The PR listing carries GitHub's own linkage (issue-93) — no extra call."""
+    payload = json.dumps(
+        [
+            {
+                "number": 42,
+                "title": "PR",
+                "labels": [{"name": LABEL}],
+                "url": "u",
+                "headRefName": "feature/no-number",
+                "body": "",
+                "closingIssuesReferences": [{"number": 15}, {"number": None}],
+            }
+        ]
+    )
+    run = FakeRun(stdout=payload)
+    prs = GhClient(runner=run).list_labeled_prs(OWNER, REPO, LABEL)
+    assert prs[0].linked_issues == [15]
+    fields = run.calls[0][run.calls[0].index("--json") + 1]
+    assert "closingIssuesReferences" in fields
+
+
+def test_gh_list_labeled_prs_downgrades_once_on_unsupported_field(caplog):
+    """An old gh that lacks the field degrades to the legacy fields, once."""
+
+    class Downgrading(FakeRun):
+        def __call__(self, cmd, **kwargs):
+            self.calls.append(list(cmd))
+            fields = cmd[cmd.index("--json") + 1]
+            if "closingIssuesReferences" in fields:
+                return subprocess.CompletedProcess(
+                    args=cmd,
+                    returncode=1,
+                    stdout="",
+                    stderr='unknown JSON field: "closingIssuesReferences"',
+                )
+            return subprocess.CompletedProcess(
+                args=cmd, returncode=0, stdout="[]", stderr=""
+            )
+
+    run = Downgrading()
+    client = GhClient(runner=run)
+    assert client.list_labeled_prs(OWNER, REPO, LABEL) == []
+    assert len(run.calls) == 2  # attempt + downgraded retry
+    # The doomed attempt is not repeated on later cycles.
+    assert client.list_labeled_prs(OWNER, REPO, LABEL) == []
+    assert len(run.calls) == 3
+
+
+def test_gh_list_labeled_prs_propagates_unrelated_errors():
+    """A real failure must surface, not be masked by the field downgrade."""
+    run = FakeRun(returncode=1, stderr="HTTP 401: Bad credentials")
+    with pytest.raises(ProviderError) as exc:
+        GhClient(runner=run).list_labeled_prs(OWNER, REPO, LABEL)
+    assert "Bad credentials" in str(exc.value)
+    assert len(run.calls) == 1  # no retry
+
+
+def test_provider_refs_put_the_linked_issue_before_the_pr():
+    provider = GitHubPollProvider(repos=parse_repos([f"{OWNER}/{REPO}"]), label=LABEL)
+    item = WorkItem(
+        provider="github",
+        owner=OWNER,
+        repo=REPO,
+        number=42,
+        kind="pull-request",
+        title="PR",
+        url="u",
+        author="octocat",
+        labels=[LABEL],
+        raw={"headRef": "feature/no-number", "body": "", "linkedIssues": [15]},
+    )
+    assert [r.ref for r in provider.refs(item)] == [
+        f"github:{OWNER}/{REPO}#15",
+        f"github:{OWNER}/{REPO}#42",
+    ]
+
+
 @pytest.mark.parametrize("is_pr,sub", [(False, "issue"), (True, "pr")])
 def test_gh_list_comments_uses_kind_subcommand(is_pr, sub):
     payload = json.dumps(

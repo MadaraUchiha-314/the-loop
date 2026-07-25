@@ -24,7 +24,7 @@ from the_loop.poller import (
     PollState,
     parse_repos,
 )
-from the_loop.sessions import SessionRegistry
+from the_loop.sessions import Session, SessionRegistry, WorkItemRef
 from the_loop.webhook.dispatcher import Dispatcher, RoutingConfig
 
 LABEL = "the-loop: auto-execute"
@@ -79,13 +79,17 @@ class GhState:
             }
         ]
         self.comments = []
+        self.prs = []
+        self.pr_comments = []
 
     def runner(self, cmd, **kwargs):
         sub = (cmd[1], cmd[2])
         if sub == ("issue", "list"):
             out = json.dumps(self.issues)
         elif sub == ("pr", "list"):
-            out = json.dumps([])
+            out = json.dumps(self.prs)
+        elif sub == ("pr", "view"):
+            out = json.dumps({"comments": self.pr_comments})
         else:  # issue view --json comments
             out = json.dumps({"comments": self.comments})
         return subprocess.CompletedProcess(cmd, 0, out, "")
@@ -107,7 +111,7 @@ def _dispatcher(registry, adapter, config):
     return Dispatcher(registry=registry, adapters={"claude": adapter}, config=config)
 
 
-def _make(tmp_path, gh_state):
+def _make(tmp_path, gh_state, monitor_issues=True, monitor_prs=False):
     registry = SessionRegistry(tmp_path / "sessions")
     adapter = FakeAdapter()
     dispatcher = _dispatcher(
@@ -116,7 +120,8 @@ def _make(tmp_path, gh_state):
     provider = GitHubPollProvider(
         parse_repos(["octo/repo"]),
         LABEL,
-        monitor_prs=False,
+        monitor_issues=monitor_issues,
+        monitor_prs=monitor_prs,
         gh=GhClient(runner=gh_state.runner),
     )
     poller = Poller(
@@ -199,6 +204,57 @@ def test_comment_not_reforwarded_across_cycles(tmp_path):
     dispatcher.stop()
 
     assert len(adapter.resumes) == 1  # IC_2 delivered exactly once
+
+
+def test_pr_comment_reuses_the_linked_issues_session(tmp_path):
+    """Scenario: a labelled PR's comment reaches its linked issue's session.
+
+    Given a labelled PR 16 that GitHub reports as closing issue 15
+    And an active session already registered for issue 15
+    When poll cycles run and a new comment appears on the PR
+    Then the comment resumes the issue's session
+    And no second session is spawned for the PR's own ref
+
+    Requirement: docs/specs/issue-93/bugfix.md#AC4
+    """
+    gh = GhState()
+    gh.prs = [
+        {
+            "number": 16,
+            "title": "pr",
+            "labels": [{"name": LABEL}],
+            "url": "u",
+            "author": {"login": "octocat"},
+            "headRefName": "feature/no-number-here",  # convention can't help
+            "body": "see the linked issue",  # nor can a closing keyword
+            "closingIssuesReferences": [{"number": 15}],
+        }
+    ]
+    registry, adapter, dispatcher, poller = _make(
+        tmp_path, gh, monitor_issues=False, monitor_prs=True
+    )
+    # The issue's session already exists — this is the reporter's scenario.
+    registry.register(
+        Session(
+            work_item=WorkItemRef.parse(REF),
+            harness="claude",
+            harness_session_id="sess-15",
+            cwd=str(tmp_path),
+        )
+    )
+
+    poller.poll_once()  # first sight: must NOT spawn, the issue has a session
+    gh.pr_comments = [_comment("IC_9", "the build is red")]
+    poller.poll_once()
+    assert wait_until(lambda: len(adapter.resumes) == 1)
+    time.sleep(0.1)
+    dispatcher.stop()
+
+    assert adapter.spawns == []
+    assert registry.find_by_work_item("github:octo/repo#16") is None
+    ref, prompt = adapter.resumes[0]
+    assert ref == REF
+    assert "the build is red" in prompt
 
 
 def test_run_once_stops_after_a_single_cycle(tmp_path):

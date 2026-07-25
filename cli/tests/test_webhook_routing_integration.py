@@ -477,6 +477,57 @@ def test_auto_execute_label_spawns_a_session(server_factory):
     assert session is not None and session.harness_session_id == "spawned-1"
 
 
+def pr_conversation_comment_payload(pr_number=16, body="Closes #15"):
+    """A PR conversation comment — GitHub delivers these as ``issue_comment``
+    with a ``pull_request`` key on the issue object and the PR's own labels."""
+    return {
+        "action": "created",
+        "repository": {"full_name": "octo/repo"},
+        "issue": {
+            "number": pr_number,
+            "body": body,
+            "labels": [{"name": AUTO_LABEL}],
+            "pull_request": {"html_url": "https://github.com/octo/repo/pull/16"},
+        },
+        "comment": {"body": "please rerun CI"},
+        "sender": {"login": "octocat"},
+    }
+
+
+def test_pr_comment_reuses_the_linked_issues_session(server_factory, tmp_path):
+    """
+    Feature: Webhook event routing
+    Scenario: A comment on a labelled PR reaches the linked issue's session
+        Given a session registered for github:octo/repo#15
+        And a labelled PR 16 whose body closes issue 15
+        And spawnOnUnmatched: labeled (so an unmatched PR event would spawn)
+        When a conversation comment is posted on PR 16
+        Then the existing session for issue 15 is resumed
+        And no second session is registered for the PR's own ref
+    Requirement: docs/specs/issue-93/bugfix.md#AC4
+    """
+    port, registry, calls = server_factory(
+        spawn_on_unmatched="labeled", auto_execute_label=AUTO_LABEL
+    )
+    register(registry, tmp_path)
+
+    assert (
+        post_webhook(port, "issue_comment", pr_conversation_comment_payload(), "pr-c-1")
+        == 202
+    )
+
+    def delivery_recorded():
+        found = registry.find_by_work_item(REF)
+        return found is not None and "pr-c-1" in found.recent_deliveries
+
+    assert wait_until(delivery_recorded)
+    (call,) = calls()  # exactly one dispatch — a resume, not a spawn
+    argv = call["argv"]
+    assert argv[argv.index("--resume") + 1] == "sess-1"
+    assert "please rerun CI" in prompt_of(call)
+    assert registry.find_by_work_item("github:octo/repo#16") is None
+
+
 def test_new_issue_without_label_does_nothing(server_factory):
     """
     Feature: Webhook event routing

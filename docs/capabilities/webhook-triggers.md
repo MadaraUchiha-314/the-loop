@@ -25,6 +25,19 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 - WHEN no session matches THEN the router SHALL spawn a new session per
   `spawnOnUnmatched` (`never | always | labeled`, default `labeled` — opt-in via the
   `the-loop: auto-execute` label) using the configured prompt templates.
+- **An event on a PR resolves the PR's linked issue(s) first.** WHEN an event concerns a
+  pull request — `pull_request*`, **or** an `issues`/`issue_comment` event whose `issue`
+  carries a `pull_request` key (GitHub's shape for a **PR conversation comment**) — THEN
+  the router SHALL emit the issue(s) the PR is linked to **before** the PR's own number.
+  Linked issues come from three sources, most authoritative first: GitHub's own
+  `closingIssuesReferences` (the Development panel), the `issue-<n>` head-branch
+  convention, and closing keywords in the PR body in every form GitHub accepts
+  (`Closes #N`, `Fixes: #N`, `Closes OWNER/REPO#N`, `GH-N`, a full issue URL); a
+  qualified reference naming a **different** repository SHALL be ignored. Consequently a
+  PR comment/review/CI result SHALL be delivered into the **existing session for the
+  linked issue** (reusing its tmux session) rather than spawning a second one, and WHEN
+  nothing matches and the spawn policy allows it THEN the session SHALL be spawned
+  against the **issue's** ref, not the PR's (issue-93, decision-036).
 - The auto-execute label SHALL work on **PRs directly**: a labelled PR linked to no
   GitHub issue is routed as its own work item (`github:OWNER/REPO#<pr-number>`), so PRs
   stay monitorable when the ticketing system is not GitHub (Jira, …) — `work-on` adds
@@ -45,6 +58,11 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   (`Dispatcher.delivery_status`: done/inflight/unhandled) rather than assuming success at
   enqueue time. (The webhook path relies on GitHub redelivery, repaired for dead tmux
   sessions by the respawn above — see [interactive-sessions](interactive-sessions.md).)
+- On the poll path the linked issues of a labelled PR SHALL be read from GitHub inside the
+  PR listing the poller already performs (`gh pr list --json …,closingIssuesReferences` —
+  no extra API round-trip per cycle), and WHEN the installed `gh` predates that field THEN
+  the poller SHALL warn once and fall back to the head-branch / closing-keyword
+  conventions rather than failing the cycle.
 - WHEN `routing.reactions.enabled` is on (default **on** — owner decision at PR #85
   review; `enabled: false` opts out of the daemon's one write surface to GitHub) THEN
   the dispatcher SHALL acknowledge each event it
@@ -79,6 +97,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-93 | An event on a PR resolves the PR's **linked issues first** (`closingIssuesReferences` + branch/keyword conventions, incl. PR conversation comments delivered as `issue_comment`), so PR activity reuses the linked issue's session instead of spawning a second one | [spec](../specs/issue-93/), [decision-036](../decisions/decision-036.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/93) |
 | issue-84 | Dispatch-lifecycle emoji reactions (`routing.reactions`, opt-in): 👀 started / 🎉 completed / 😕 error on the triggering comment or issue/PR, best-effort via `gh`, no-op where unsupported | [spec](../specs/issue-84/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/84) |
 | issue-63 | `webhooks.*` moved out of the per-repo plugin config into an independent, repo-agnostic CLI config | [spec](../specs/issue-63/), [decision-032](../decisions/decision-032.md) |
 | issue-64 | Added the self-reply marker guard (drops the-loop's own comments/reviews before dispatch, on both trigger paths, so it never resumes a session on its own reply) | [decision-031](../decisions/decision-031.md) |
