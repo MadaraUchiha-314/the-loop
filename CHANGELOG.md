@@ -1,3 +1,9 @@
+## v0.20.0 (2026-07-25)
+
+### Feat
+
+- **cli**: pre-seed the harness config before spawning so sessions don't stall on the trust dialog (issue #90) (#92)
+
 ## v0.19.0 (2026-07-25)
 
 ### Feat
