@@ -211,6 +211,24 @@
                     "cursor": { "type": "array", "items": { "type": "string" } }
                   }
                 },
+                "harnessTrust": {
+                  "type": "object",
+                  "description": "Pre-seed the harness's own config before spawning a session, so it starts working instead of stopping on an interactive dialog (issue-90, decision-036). Claude Code's workspace-trust dialog and bypass-permissions disclaimer are not permission rules, so no CLI flag — `--dangerously-skip-permissions` included — silences them, and every per-work-item checkout is a brand-new directory that trips the trust dialog. Before each spawn/respawn the dispatcher marks that directory trusted in the harness's user config (`projects[<dir>].hasTrustDialogAccepted` + `hasCompletedProjectOnboarding`), honouring `CLAUDE_CONFIG_DIR`. Writes are narrow and non-destructive: only those keys, merged into what is already there, via a temp file + atomic replace, skipped entirely when the value is already correct, and never applied to a file that does not parse as JSON. Trust is recorded for the exact spawn directory (and its realpath), never a parent. A failure logs a warning and emits `workspace.trust_failed` but never fails the dispatch. A harness with no such config surface (cursor-agent) is a silent no-op.",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean",
+                      "default": true,
+                      "description": "Default true — an unattended daemon cannot answer a trust dialog, so this is what makes auto-execute actually run. Set false to leave your harness config untouched and keep the pre-issue-90 behaviour."
+                    },
+                    "acceptBypassPermissions": {
+                      "type": "string",
+                      "enum": ["auto", "always", "never"],
+                      "default": "auto",
+                      "description": "Whether to also record the one-time bypass-permissions disclaimer acceptance (`skipDangerousModePermissionPrompt` in the user settings file, plus the legacy `bypassPermissionsModeAccepted` for older builds) — without it, a session configured for bypass mode is prompted or silently downgraded to `default`. `auto` (default) records it ONLY when this harness's `harnessArgs` already ask for bypass mode (`--dangerously-skip-permissions` or `--permission-mode bypassPermissions`), so the-loop never widens permissions you did not request; `always` records it regardless; `never` never does."
+                    }
+                  }
+                },
                 "reactions": {
                   "type": "object",
                   "description": "Dispatch-lifecycle emoji reactions on the triggering GitHub entity (issue-84): when the dispatcher picks an event up it reacts with `started` on the comment that triggered it (or the issue/PR itself for presence/label/review events), then `completed` or `error` from the dispatch outcome. Shared by the webhook receiver AND the poller (like the rest of `routing`). Best-effort via the operator's own `gh` CLI: a reaction failure never affects the dispatch, and a missing `gh`, a non-GitHub provider, or an event with no reactable target is a silent no-op. GitHub's reaction palette is fixed (+1 -1 laugh confused heart hooray rocket eyes) — ✅/⁉️ do not exist, so the defaults map each state to the closest supported emoji.",

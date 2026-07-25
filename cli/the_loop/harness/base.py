@@ -4,6 +4,11 @@ Every adapter shells out to its harness's official CLI in non-interactive
 print mode with JSON output, run in the session's recorded working directory
 (resume lookup is scoped to the project directory). Extra args come from
 ``routing.harnessArgs`` — the dispatcher never widens permissions itself.
+
+An adapter also owns what its harness needs *on disk* to start unattended in a
+given directory (``prepare_environment``, issue-90) — the same kind of
+harness-specific knowledge as its argv, and for the same reason: the routing
+core stays harness-agnostic.
 """
 
 from __future__ import annotations
@@ -16,6 +21,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Sequence
 
 from ..sessions import Session, WorkItemRef
+from ..trust import TrustConfig, TrustResult
 
 logger = logging.getLogger("the-loop.harness")
 
@@ -101,12 +107,23 @@ class HarnessAdapter:
         self,
         binary: Optional[str] = None,
         extra_args: Optional[Sequence[str]] = None,
+        trust: Optional[TrustConfig] = None,
     ):
         self.binary = binary or self.default_binary
         self.extra_args = list(extra_args or [])
+        self.trust = trust or TrustConfig()
 
     def is_available(self) -> bool:
         return shutil.which(self.binary) is not None
+
+    def prepare_environment(self, cwd: str) -> TrustResult:
+        """Put whatever this harness needs on disk to start unattended in ``cwd``.
+
+        Called by the dispatcher before every spawn/respawn (issue-90). The
+        default is a no-op — a harness with no such configuration surface
+        (cursor-agent today) is not an error, it simply has nothing to prepare.
+        """
+        return TrustResult()
 
     def _resume_argv(self, session: Session, prompt: str) -> List[str]:
         raise NotImplementedError

@@ -70,7 +70,7 @@ def _build_dispatcher(routing_map: Optional[dict]):
     routing = RoutingConfig.from_mapping(routing_map or {})
     dispatcher = Dispatcher(
         registry=SessionRegistry(routing.registry_dir),
-        adapters=build_adapters(routing.harness_args),
+        adapters=build_adapters(routing.harness_args, routing.harness_trust),
         config=routing,
     )
     return dispatcher, routing

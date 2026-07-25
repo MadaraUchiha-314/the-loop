@@ -59,6 +59,19 @@ webhooks:
       harnessArgs:
         claude: []                  # e.g. [--permission-mode, acceptEdits]
         cursor: []                  # e.g. [--force]
+      # Pre-spawn harness preparation (issue-90). Claude Code's workspace-trust
+      # dialog and bypass-permissions disclaimer are NOT permission rules, so no
+      # flag (--dangerously-skip-permissions included) silences them — and every
+      # per-work-item checkout is a new directory, so an unattended session used
+      # to sit on a modal forever. Before each spawn the-loop marks that exact
+      # directory trusted in your harness config (honouring CLAUDE_CONFIG_DIR),
+      # merging into what's already there and writing nothing when it's already
+      # set. acceptBypassPermissions: auto records the bypass disclaimer ONLY
+      # when harnessArgs above already ask for bypass mode — the-loop never
+      # widens permissions you didn't request. Set enabled: false to opt out.
+      harnessTrust:
+        enabled: true
+        acceptBypassPermissions: auto   # auto | always | never
       # Dispatch-lifecycle emoji reactions (issue-84): acknowledge on the triggering
       # comment (or the issue/PR itself) that the-loop started / completed / failed
       # processing an event. GitHub's palette is fixed (+1 -1 laugh confused heart

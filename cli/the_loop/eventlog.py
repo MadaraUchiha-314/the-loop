@@ -158,6 +158,17 @@ EVENT_TYPES: Dict[str, str] = {
         "A work item's checkout was removed after its PR merged/closed "
         "(work_item, strategy)."
     ),
+    "workspace.trusted": (
+        "A spawned session's working directory was pre-seeded in the harness's "
+        "own config so it starts unattended — workspace trust, and the "
+        "bypass-permissions disclaimer when that mode is configured "
+        "(work_item, harness, cwd, applied) — issue-90, routing.harnessTrust."
+    ),
+    "workspace.trust_failed": (
+        "Pre-seeding the harness's config failed (work_item, harness, cwd, "
+        "error); the spawn still proceeds, but the session may stop on an "
+        "interactive dialog."
+    ),
     # -- poller (source: poll) ------------------------------------------------
     "poll.cycle": (
         "One poll cycle finished (items_seen, spawns, comments_forwarded, errors)."
