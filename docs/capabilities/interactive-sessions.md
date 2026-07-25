@@ -90,9 +90,14 @@ the same conversation.
   above as well as the fresh-conversation fallback) — the harness's own user config
   SHALL be pre-seeded so the session does not
   open on an interactive dialog (`routing.harnessTrust`, default on). For Claude Code
-  that means marking the **exact** spawn directory trusted
-  (`projects[<dir>].hasTrustDialogAccepted` + `hasCompletedProjectOnboarding`,
-  honouring `CLAUDE_CONFIG_DIR`) — never a parent — and, **only** when this harness's
+  that means writing `hasTrustDialogAccepted` — on the **workspace root** under the
+  default `scope: workspace-root`, so every checkout beneath it is covered by the
+  harness's ancestor walk, or on the exact spawn directory under `scope: directory`
+  (least privilege) — plus `hasCompletedProjectOnboarding` on the **spawn directory**
+  under either scope, since that key has no ancestor walk and root trust alone would
+  just reveal the onboarding screen. A root that does not contain the spawn directory,
+  or one as broad as `/` or the home directory, degrades to per-directory trust.
+  All honouring `CLAUDE_CONFIG_DIR`. And, **only** when this harness's
   `harnessArgs` already ask for bypass mode, recording the bypass-permissions
   disclaimer acceptance (`acceptBypassPermissions: auto`; `always`/`never` decide
   explicitly). Neither dialog is a permission rule, so no CLI flag —

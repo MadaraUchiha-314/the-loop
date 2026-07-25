@@ -116,12 +116,14 @@ class HarnessAdapter:
     def is_available(self) -> bool:
         return shutil.which(self.binary) is not None
 
-    def prepare_environment(self, cwd: str) -> TrustResult:
+    def prepare_environment(self, cwd: str, root: Optional[str] = None) -> TrustResult:
         """Put whatever this harness needs on disk to start unattended in ``cwd``.
 
-        Called by the dispatcher before every spawn/respawn (issue-90). The
-        default is a no-op — a harness with no such configuration surface
-        (cursor-agent today) is not an error, it simply has nothing to prepare.
+        Called by the dispatcher before every spawn/respawn (issue-90). ``root``
+        is the workspace root the dispatcher resolved for ``scope:
+        workspace-root``, or None to scope everything to ``cwd``. The default is
+        a no-op — a harness with no such configuration surface (cursor-agent
+        today) is not an error, it simply has nothing to prepare.
         """
         return TrustResult()
 

@@ -33,7 +33,7 @@ from ..reactions import (
 )
 from ..runner import TmuxRunner
 from ..sessions import Session, SessionRegistry, WorkItemRef
-from ..trust import TrustConfig, TrustResult
+from ..trust import TrustConfig, TrustResult, is_too_broad
 from ..workspace import RepoTarget, Workspace, WorkspaceError, repo_target_from_payload
 from .router import Deduper, RoutedEvent
 
@@ -1074,6 +1074,36 @@ class Dispatcher:
 
     # -- pre-spawn harness preparation (issue-90) -------------------------------
 
+    def _trust_root(self) -> Optional[str]:
+        """The workspace root to trust wholesale, or None for per-directory trust.
+
+        ``scope: workspace-root`` (the default, owner decision on PR #92) trusts
+        the root the operator already dedicated to the-loop, so every checkout
+        under it is covered — including folders the-loop never spawned into.
+        Returns None, i.e. falls back to trusting just the spawn directory, when:
+
+        * the scope is ``directory``;
+        * no workspace root is configured (legacy ``spawnWorkdir`` setups have
+          no root to speak of — the spawn directory *is* the scope);
+        * the root is broad enough to be meaningless (``/`` or the home
+          directory itself), which would blanket-trust the whole machine.
+
+        The store additionally ignores a root that does not contain the spawn
+        directory, so a misconfigured root can never trust an unrelated tree.
+        """
+        if not self.config.harness_trust.roots_allowed or self.workspace is None:
+            return None
+        root = str(self.workspace.root)
+        if is_too_broad(root):
+            logger.warning(
+                "routing.workspace.root (%s) is too broad to trust wholesale; "
+                "falling back to per-directory trust for this spawn (set "
+                "routing.harnessTrust.scope: directory to silence this)",
+                root,
+            )
+            return None
+        return root
+
     def _prepare_environment(
         self, adapter: HarnessAdapter, work_item: WorkItemRef, cwd: str
     ) -> None:
@@ -1087,7 +1117,7 @@ class Dispatcher:
         """
         harness = adapter.name or adapter.binary
         try:
-            result = adapter.prepare_environment(cwd)
+            result = adapter.prepare_environment(cwd, self._trust_root())
         except Exception as exc:  # an adapter bug must not wedge a work item
             result = TrustResult(ok=False, error=str(exc))
         if not result.ok:

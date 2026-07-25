@@ -65,7 +65,7 @@ working instead of waiting on a trust dialog nobody is there to answer.
    working directory as trusted in the harness's own user-level configuration.
 2. WHEN the harness is Claude Code THEN "marked as trusted" SHALL mean
    `projects[<path>].hasTrustDialogAccepted: true` in Claude Code's user config
-   file, and the same entry SHALL also carry
+   file, and the spawn directory's own entry SHALL also carry
    `hasCompletedProjectOnboarding: true` so the first-run onboarding screen does
    not replace the dialog it removes.
 3. WHEN the working directory's real path differs from its resolved path (a
@@ -80,6 +80,34 @@ working instead of waiting on a trust dialog nobody is there to answer.
 5. WHEN the working directory is already marked trusted THEN the system SHALL
    make **no write at all**, so the common case cannot race with the harness's
    own writes to the same file.
+
+### Requirement 1a — how wide the trust goes is the operator's choice
+
+**User story:** As an operator, I want a workspace I dedicated to the-loop to be
+trusted as a whole, so that folders the daemon did not create — a repo I cloned
+there by hand, a nested repo the agent walks into — do not each stop on a
+dialog. *(Added by the owner's decision on PR #92; see decision-036.)*
+
+#### Acceptance criteria (EARS)
+
+1. WHEN `routing.harnessTrust.scope` is `workspace-root` (the **default**) AND a
+   workspace root is configured THEN the system SHALL write the trust key on the
+   **workspace root**, so the harness's ancestor walk covers every directory
+   beneath it — including ones the-loop never spawned into.
+2. WHEN `routing.harnessTrust.scope` is `directory` THEN the system SHALL write
+   the trust key on the exact spawn directory only.
+3. WHEN no workspace root is configured (a legacy `spawnWorkdir` setup) THEN
+   both scopes SHALL behave identically — the spawn directory is the scope.
+4. WHEN either scope is in force THEN `hasCompletedProjectOnboarding` SHALL
+   still be written on the **spawn directory**, because the harness reads it
+   from the exact project key with no ancestor walk; root trust alone would
+   silence the trust dialog and leave the onboarding screen behind it.
+5. WHEN the configured root does not actually contain the spawn directory THEN
+   the system SHALL ignore it and trust the spawn directory instead — a
+   misconfigured root SHALL never trust an unrelated tree.
+6. WHEN the configured root is broad enough to be meaningless (the filesystem
+   root, or the home directory itself) THEN the system SHALL NOT blanket-trust
+   it: it SHALL warn and fall back to per-directory trust.
 
 ### Requirement 2 — bypass-permissions mode is usable without an interactive acceptance
 
@@ -154,7 +182,9 @@ Nothing about this feature is driven by payload text directly.
   replace with atomic rename, (c) no write when the value is already correct,
   (d) refusing to touch a file that does not parse.
 - *Trust scope.* Marking a directory trusted is what makes Claude Code honour
-  `.claude/settings.json`, hooks and skills **from inside that checkout**. Since
+  `.claude/settings.json`, hooks and skills **from inside that checkout** — and
+  under the default `workspace-root` scope, from inside anything under the
+  workspace root. Since
   the checkout is a clone of the repo the event came from, trusting it means:
   a contributor who can land a `.claude/` hook in that repo gets it executed by
   the spawned agent. That is *already* the operating assumption of auto-execute
@@ -166,10 +196,13 @@ Nothing about this feature is driven by payload text directly.
 
 **Abuse cases.**
 
-- *Trust creep.* A bug that wrote an **ancestor** key (e.g. the workspace root,
-  or `/`) would trust far more than intended. Mitigated by writing only the
-  exact spawn directory (and its realpath), never a parent — and asserted by a
-  test.
+- *Trust creep.* Ancestor trust is now **intentional** at the workspace root
+  (R1a, owner decision on PR #92) — so the guard is that it never happens
+  *implicitly* or beyond what was configured: `project_keys()` never expands to
+  a parent on its own, a root that does not contain the spawn directory is
+  ignored, and a root as broad as `/` or `$HOME` degrades to per-directory trust
+  with a warning. Each is asserted by a test, including the original
+  "no ancestor key without an explicit root".
 - *Config clobbering.* A concurrent write from a live Claude Code process could
   be lost by a naive read-modify-write. Mitigated by the no-write-when-unchanged
   rule (R1.5) — the window shrinks to the first spawn into a given directory —

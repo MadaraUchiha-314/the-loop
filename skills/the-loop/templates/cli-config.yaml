@@ -71,6 +71,15 @@ webhooks:
       # widens permissions you didn't request. Set enabled: false to opt out.
       harnessTrust:
         enabled: true
+        # scope: workspace-root (default) writes ONE trust entry on
+        # workspace.root — the harness walks up from the cwd, so every checkout
+        # beneath it is covered, including folders the-loop never spawned into.
+        # directory trusts only the exact spawn dir (least privilege) — use it
+        # when the root holds more than the-loop's checkouts. Either way the
+        # per-directory write stays: the onboarding key is NOT ancestor-
+        # inherited. A root that doesn't contain the spawn dir, or one as broad
+        # as / or $HOME, degrades to per-directory trust.
+        scope: workspace-root           # workspace-root | directory
         acceptBypassPermissions: auto   # auto | always | never
       # Dispatch-lifecycle emoji reactions (issue-84): acknowledge on the triggering
       # comment (or the issue/PR itself) that the-loop started / completed / failed

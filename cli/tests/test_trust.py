@@ -19,6 +19,8 @@ from the_loop.trust import (
     TrustConfig,
     TrustResult,
     args_request_bypass,
+    is_too_broad,
+    is_within,
 )
 
 
@@ -84,8 +86,13 @@ def test_symlinked_directory_records_both_keys(tmp_path, fake_home):
     assert keys == [str(link), str(real)]
 
 
-def test_no_ancestor_key_is_ever_written(tmp_path, fake_home):
-    """Trust-creep guard: trusting a checkout must not trust its siblings."""
+def test_without_a_root_no_ancestor_key_is_ever_written(tmp_path, fake_home):
+    """Trust-creep guard: widening to a parent must be an explicit `root`.
+
+    Under `scope: directory` (and any setup with no workspace root) trusting a
+    checkout must not trust its siblings — the caller opts into ancestor trust
+    by passing a root, it never happens implicitly.
+    """
     workdir = tmp_path / "workspace" / "worktrees" / "repo" / "slug"
     workdir.mkdir(parents=True)
     store = store_for(fake_home)
@@ -95,6 +102,76 @@ def test_no_ancestor_key_is_ever_written(tmp_path, fake_home):
     assert list(projects) == [str(workdir)]
     for parent in Path(workdir).parents:
         assert str(parent) not in projects
+
+
+# -- scope: workspace-root -----------------------------------------------------
+
+
+def test_root_scope_trusts_the_root_and_onboards_the_checkout(tmp_path, fake_home):
+    """The two keys scope differently — trust inherits, onboarding does not."""
+    root = tmp_path / "workspace"
+    workdir = root / ".worktrees" / "github.com" / "octo" / "repo" / "slug"
+    workdir.mkdir(parents=True)
+    store = store_for(fake_home)
+
+    assert store.trust(str(workdir), str(root)).ok
+
+    projects = read_json(store.config_path())["projects"]
+    # trust on the root: the harness walks up, so every checkout beneath is covered
+    assert projects[str(root)]["hasTrustDialogAccepted"] is True
+    assert "hasCompletedProjectOnboarding" not in projects[str(root)]
+    # onboarding is read from the exact project key, so it lands on the checkout
+    assert projects[str(workdir)]["hasCompletedProjectOnboarding"] is True
+    assert "hasTrustDialogAccepted" not in projects[str(workdir)]
+
+
+def test_root_scope_is_idempotent_across_sibling_checkouts(tmp_path, fake_home):
+    """The second work item under the same root re-uses its trust entry."""
+    root = tmp_path / "workspace"
+    first = root / "a"
+    second = root / "b"
+    first.mkdir(parents=True)
+    second.mkdir(parents=True)
+    store = store_for(fake_home)
+    store.trust(str(first), str(root))
+
+    assert store.trust(str(second), str(root)).ok
+
+    projects = read_json(store.config_path())["projects"]
+    assert projects[str(root)]["hasTrustDialogAccepted"] is True
+    # only the per-checkout onboarding key was added the second time
+    assert projects[str(second)]["hasCompletedProjectOnboarding"] is True
+    assert "hasTrustDialogAccepted" not in projects[str(second)]
+
+
+def test_a_root_that_does_not_contain_the_cwd_is_ignored(tmp_path, fake_home):
+    """A misconfigured root must never trust an unrelated tree."""
+    root = tmp_path / "workspace"
+    root.mkdir()
+    elsewhere = tmp_path / "somewhere-else"
+    elsewhere.mkdir()
+    store = store_for(fake_home)
+
+    assert store.trust(str(elsewhere), str(root)).ok
+
+    projects = read_json(store.config_path())["projects"]
+    assert str(root) not in projects
+    assert projects[str(elsewhere)]["hasTrustDialogAccepted"] is True
+
+
+def test_is_within_compares_components_not_string_prefixes(tmp_path):
+    assert is_within("/ws", "/ws/a/b") is True
+    assert is_within("/ws", "/ws") is True
+    assert is_within("/ws", "/ws-other/a") is False
+    assert is_within("/ws/a", "/ws") is False
+
+
+def test_is_too_broad_rejects_root_and_home_only(tmp_path):
+    home = tmp_path / "home"
+    assert is_too_broad("/", home=str(home)) is True
+    assert is_too_broad(str(home), home=str(home)) is True
+    # a directory *under* home is a perfectly normal workspace root
+    assert is_too_broad(str(home / "the-loop" / "workspace"), home=str(home)) is False
 
 
 # -- trust writes --------------------------------------------------------------
@@ -338,10 +415,41 @@ def test_build_adapters_threads_the_trust_policy_through():
 # -- config mapping ------------------------------------------------------------
 
 
+def test_directory_scope_makes_the_adapter_drop_the_root(tmp_path, fake_home):
+    """`scope: directory` ignores a root even when the dispatcher offers one."""
+    root = tmp_path / "workspace"
+    workdir = root / "wt"
+    workdir.mkdir(parents=True)
+    adapter = ClaudeCodeAdapter(trust=TrustConfig(scope="directory"))
+
+    assert adapter.prepare_environment(str(workdir), str(root)).ok
+
+    projects = read_json(store_for(fake_home).config_path())["projects"]
+    assert str(root) not in projects
+    assert projects[str(workdir)]["hasTrustDialogAccepted"] is True
+
+
+def test_root_scope_is_the_adapter_default(tmp_path, fake_home):
+    root = tmp_path / "workspace"
+    workdir = root / "wt"
+    workdir.mkdir(parents=True)
+
+    assert ClaudeCodeAdapter().prepare_environment(str(workdir), str(root)).ok
+
+    projects = read_json(store_for(fake_home).config_path())["projects"]
+    assert projects[str(root)]["hasTrustDialogAccepted"] is True
+
+
 def test_trust_config_defaults_and_mapping():
     assert TrustConfig.from_mapping({}) == TrustConfig(
-        enabled=True, accept_bypass_permissions="auto"
+        enabled=True, scope="workspace-root", accept_bypass_permissions="auto"
     )
+    assert TrustConfig.from_mapping({"scope": "directory"}).scope == "directory"
+    # an unknown scope degrades to the documented default, never to something
+    # narrower-or-wider by accident
+    assert TrustConfig.from_mapping({"scope": "yolo"}).scope == "workspace-root"
+    assert TrustConfig(scope="workspace-root").roots_allowed is True
+    assert TrustConfig(scope="directory").roots_allowed is False
     parsed = TrustConfig.from_mapping(
         {"enabled": False, "acceptBypassPermissions": "never"}
     )

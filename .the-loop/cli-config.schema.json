@@ -221,6 +221,12 @@
                       "default": true,
                       "description": "Default true — an unattended daemon cannot answer a trust dialog, so this is what makes auto-execute actually run. Set false to leave your harness config untouched and keep the pre-issue-90 behaviour."
                     },
+                    "scope": {
+                      "type": "string",
+                      "enum": ["workspace-root", "directory"],
+                      "default": "workspace-root",
+                      "description": "How wide the trust entry goes. `workspace-root` (default, owner decision on PR #92) writes ONE trust entry on `routing.workspace.root`: the harness's trust lookup walks up from the cwd, so every checkout beneath the root is covered — including folders the-loop never spawned into (a repo you clone there by hand, a nested repo the agent walks into). `directory` writes trust on the exact spawn directory only — least privilege, one entry per work item; use it when the workspace root holds more than the-loop's own checkouts. NOTE the per-directory machinery is kept under both: `hasCompletedProjectOnboarding` is read from the exact project key with NO ancestor walk, so it is always written per spawn directory — otherwise root trust would silence the trust dialog and leave the onboarding screen behind it. Safety rails on `workspace-root`: a root that does not actually contain the spawn directory is ignored, and a root broad enough to be meaningless (`/`, or the home directory itself) degrades to per-directory trust with a warning. With no workspace root configured (legacy `spawnWorkdir`) both scopes behave identically."
+                    },
                     "acceptBypassPermissions": {
                       "type": "string",
                       "enum": ["auto", "always", "never"],

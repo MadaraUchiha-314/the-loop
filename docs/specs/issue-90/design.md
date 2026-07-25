@@ -19,7 +19,7 @@ CLI, not guessed):
 | Dialog | Where the "already answered" state lives | Notes |
 |---|---|---|
 | Workspace trust | `projects["<normalised path>"].hasTrustDialogAccepted: true` in the **user config file** | The lookup tries the canonical (git-root) key first, then walks **up** from the resolved cwd — so an ancestor's entry also grants trust |
-| First-run onboarding | `projects["<path>"].hasCompletedProjectOnboarding: true`, same file | Project-scoped, alongside the trust key |
+| First-run onboarding | `projects["<path>"].hasCompletedProjectOnboarding: true`, same file | Read from the **exact** project key (`xd()` → `projects[<canonical cwd>]`) with **no** ancestor walk — unlike trust. This asymmetry drives the scope design in §3.3 |
 | Bypass-permissions disclaimer | `skipDangerousModePermissionPrompt: true` in the **user settings file**; legacy `bypassPermissionsModeAccepted: true` at the top level of the user config file | Current builds migrate the legacy key into the settings one, so writing both is forward- and backward-compatible |
 
 Path resolution, same source:
@@ -82,16 +82,22 @@ cursor-agent equivalent.
 @dataclass
 class TrustConfig:
     enabled: bool = True                      # master switch
+    scope: str = "workspace-root"             # workspace-root | directory
     accept_bypass_permissions: str = "auto"   # auto | always | never
 
     @classmethod
     def from_mapping(cls, data: dict) -> "TrustConfig": ...
 ```
 
-Two knobs only (minimalism ladder: the config dir already has an env var, the
-file names are the harness's own). Default `enabled: true` follows the
+Three knobs (minimalism ladder: the config dir already has an env var, the file
+names are the harness's own). Default `enabled: true` follows the
 `reactions`/`announce` precedent — the daemon's job is to run unattended, and an
 operator who does not want the-loop touching their config flips one boolean.
+`scope` defaults to `workspace-root` per the owner's decision on PR #92
+(decision-036): the workspace root exists *for* the-loop, so trusting it once
+covers every checkout under it — including folders the-loop never spawned into.
+An unknown value degrades to the default rather than to something accidentally
+wider or narrower.
 
 ### 3.2 `TrustResult`
 
@@ -116,15 +122,29 @@ class ClaudeTrustStore:
     def config_dir(self) -> Path                    # $CLAUDE_CONFIG_DIR or ~/.claude
     def config_path(self) -> Path                   # <dir>/.config.json if present else ~/.claude.json
     def settings_path(self) -> Path                 # <dir>/settings.json
-    def project_keys(self, cwd: str) -> List[str]   # abspath-normalised (+ realpath if different)
-    def trust(self, cwd: str) -> TrustResult
+    def project_keys(self, path: str) -> List[str]  # abspath-normalised (+ realpath if different)
+    def trust(self, cwd: str, root: Optional[str] = None) -> TrustResult
     def accept_bypass_permissions(self) -> TrustResult
 ```
 
-`project_keys()` returns the **exact** directory, never a parent — the
-trust-creep guard from the requirements' abuse cases, asserted by a test.
-Trailing separators are stripped and the path is `os.path.normpath`-ed so the
-key matches the harness's `path.normalize` form.
+`project_keys()` always returns the **exact** directory, never a parent:
+widening is a decision the *caller* makes by passing a `root`, never something
+this function does silently. Trailing separators are stripped and the path is
+`os.path.normpath`-ed so the key matches the harness's `path.normalize` form.
+
+`trust()` writes the two project keys with **different scoping**, because §1
+shows the harness reads them differently:
+
+| Key | Written on | Why |
+|---|---|---|
+| `hasTrustDialogAccepted` | `root` when given, else `cwd` | The lookup walks up, so one root entry covers every checkout beneath it |
+| `hasCompletedProjectOnboarding` | always `cwd` | No ancestor walk — root trust alone would just reveal the onboarding screen |
+
+Guard rails, so a root can never mean more than the operator meant: a `root`
+that does not contain `cwd` (`is_within`, compared component-wise so `/ws` does
+not "contain" `/ws-other`) is ignored, and the dispatcher refuses a root broad
+enough to be meaningless (`is_too_broad`: `/`, or the home directory itself),
+falling back to per-directory trust with a warning.
 
 ### 3.4 The safe write
 
@@ -160,7 +180,7 @@ complexity here (YAGNI); the trade is recorded in `decision-037`.
 class HarnessAdapter:
     def __init__(self, binary=None, extra_args=None, trust: Optional[TrustConfig] = None): ...
 
-    def prepare_environment(self, cwd: str) -> TrustResult:
+    def prepare_environment(self, cwd: str, root: Optional[str] = None) -> TrustResult:
         """Put whatever this harness needs on disk to start unattended in ``cwd``."""
         return TrustResult()          # no-op by default (cursor-agent)
 ```
@@ -168,11 +188,11 @@ class HarnessAdapter:
 ```python
 # harness/claude_code.py
 class ClaudeCodeAdapter(HarnessAdapter):
-    def prepare_environment(self, cwd: str) -> TrustResult:
+    def prepare_environment(self, cwd: str, root: Optional[str] = None) -> TrustResult:
         if not self.trust.enabled:
             return TrustResult()
         store = ClaudeTrustStore()
-        result = store.trust(cwd)
+        result = store.trust(cwd, root if self.trust.roots_allowed else None)
         if self._wants_bypass():
             result = result.merge(store.accept_bypass_permissions())
         return result
@@ -196,8 +216,14 @@ the caller sees every note and the first error.
 either runner starts anything:
 
 ```python
-self._prepare_environment(adapter, work_item, cwd)
+self._prepare_environment(adapter, work_item, cwd)   # resolves the root itself
 ```
+
+`_trust_root()` supplies the root: None under `scope: directory`, None when no
+workspace is configured (a `spawnWorkdir` setup has no root — the spawn
+directory *is* the scope, so both scopes behave identically), None with a
+warning when the configured root is `/` or the home directory, else the
+workspace root.
 
 `_respawn_tmux()` — same call with `session.cwd` (R1.4), placed **before
 `_try_resume()`**, not merely before the fresh-spawn fallback. Since issue-89 a
@@ -291,6 +317,11 @@ ever touches a real `~/.claude.json`:
 
 - path resolution: default, `CLAUDE_CONFIG_DIR` override, `.config.json`
   preference when that file exists
+- scope: root trust + per-directory onboarding under `workspace-root`; a root
+  that does not contain the cwd is ignored; a sibling checkout under the same
+  root reuses the root entry; `scope: directory` drops a root the dispatcher
+  offers; `is_within` compares components (`/ws` vs `/ws-other`); `is_too_broad`
+  is true for `/` and `$HOME` but false for a directory under `$HOME`
 - trust write: fresh file created (`0600`), existing unrelated keys preserved,
   existing `projects` entry merged not replaced
 - idempotence: second call writes nothing (assert mtime/inode unchanged)
@@ -310,7 +341,13 @@ Integration (`cli/tests/test_trust_integration.py`, Gherkin docstrings per
   drive `Dispatcher._spawn_for` with a fake adapter/registry and a fake HOME,
   assert the trust key exists **and** that it was written before the spawn call
   (ordering assertion via a recording adapter).
-- *Scenario: a respawned tmux session's workspace is trusted too*.
+- *Scenario: a respawned tmux session's workspace is trusted too* — asserted
+  over **every** harness start the respawn makes (the issue-89 resume attempt
+  and the fresh-conversation fallback), not just the last.
+- *Scenario: a configured workspace root is trusted wholesale* — the root
+  carries the trust key, the checkout carries the onboarding key.
+- *Scenario: `scope: directory` keeps trust on the checkout alone*.
+- *Scenario: a too-broad workspace root (`$HOME`) degrades to the checkout*.
 - *Scenario: a failing preparation does not fail the dispatch* — unparseable
   config file ⇒ spawn still succeeds, `workspace.trust_failed` emitted.
 - *Scenario: trust preparation is skipped when disabled*.
@@ -323,7 +360,8 @@ Integration (`cli/tests/test_trust_integration.py`, Gherkin docstrings per
 | Write `.claude/settings.local.json` inside the checkout | **Rejected.** Workspace settings are *ignored until the workspace is trusted* — chicken-and-egg — and it dirties a git worktree the agent then has to avoid committing. |
 | Tell operators to run `claude` once per workspace root by hand | **Rejected.** Worktree/clone paths are created per work item; there is no stable directory to pre-trust, which is the whole bug. |
 | A generic "merge this JSON into the harness config" config block | **Rejected (YAGNI).** Two well-understood keys beat an open-ended footgun. |
-| Trust the **workspace root** once instead of each checkout | **Rejected.** Ancestor trust does work, but it silently grants trust to every future checkout under the root — broader than needed, and it would not cover `spawnWorkdir` setups. Exact-directory is the least-privilege choice. |
+| Trust the **workspace root** once instead of each checkout | **Now the default** (`scope: workspace-root`, owner decision on PR #92 — decision-036). Originally rejected here on least-privilege grounds; the owner's counter is that the workspace root exists *for* the-loop, so every path under it is a checkout the daemon made. Exact-directory survives as `scope: directory`. The surviving technical point — root trust does not cover `spawnWorkdir`-only setups, which have no root — is handled by falling back to per-directory trust when no root is configured. |
+| Trust the root **instead of** any per-directory write | **Rejected on the facts.** `hasCompletedProjectOnboarding` is read from the exact project key with no ancestor walk, so a root-only write leaves the onboarding screen in front of every fresh checkout. It is written per spawn directory under both scopes. |
 
 ## 9. Documentation touched in this PR
 

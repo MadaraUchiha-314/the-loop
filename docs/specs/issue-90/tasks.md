@@ -97,3 +97,18 @@ flowchart LR
 
 - [x] **T12 — PR + reviewer briefing**, explicitly requesting the tier-4 named
   human **security sign-off** (`security.review.humanSignOffMinTier: 4`).
+
+## Review follow-ups (added after PR #92 feedback)
+
+- [x] **T13 — rebase onto #91 (issue-89).** Resolve the `_respawn_tmux` conflict
+  by placing `_prepare_environment` above `_try_resume`, so it precedes *every*
+  harness start rather than only the fresh-spawn fallback; strengthen the
+  respawn assertion to cover all recorded starts. *(R1.4)*
+
+- [x] **T14 — configurable trust scope, defaulting to the workspace root**
+  (owner decision on PR #92). `harnessTrust.scope: workspace-root | directory`;
+  `ClaudeTrustStore.trust(cwd, root)` writing the trust key on the root and the
+  onboarding key per directory; `is_within` / `is_too_broad` guard rails and
+  `Dispatcher._trust_root()`; schema + both yamls + README + capability docs +
+  decision-036's "Scope: the owner's call" section; 10 new tests.
+  *(R1a.1–R1a.6)*

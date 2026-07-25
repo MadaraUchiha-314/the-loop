@@ -52,10 +52,18 @@ For Claude Code it writes, into the harness's own user-level files (honouring
 
 Four properties make this safe enough to default to **on**:
 
-- **Exact-directory trust, never a parent.** The harness's own lookup walks *up* from the
-  cwd, so an ancestor key would silently trust every sibling checkout under the workspace
-  root. Only the spawn directory (and its realpath, for symlinked roots) is written, and
-  a dedicated test asserts no ancestor key appears.
+- **Trust scope is configurable, defaulting to the workspace root** (`harnessTrust.scope`,
+  owner decision on PR #92 — see "Scope: the owner's call" below). `workspace-root` writes
+  one `hasTrustDialogAccepted` entry on `routing.workspace.root`, which the harness's
+  upward lookup extends to every directory beneath it; `directory` keeps it on the exact
+  spawn directory. Widening never happens implicitly — it takes an explicit root, that
+  root must actually contain the spawn directory, and a root as broad as `/` or `$HOME`
+  degrades to per-directory trust with a warning.
+- **`hasCompletedProjectOnboarding` is always per-directory**, under both scopes, because
+  the harness reads it from the exact project key with **no** ancestor walk (verified in
+  the shipped CLI: `xd()` → `projects[<canonical cwd>]`). Root trust alone would silence
+  the trust dialog and leave the onboarding screen behind it in every fresh checkout —
+  which is why the per-directory machinery stays regardless of scope.
 - **No unrequested permission widening.** `acceptBypassPermissions: auto` (the default)
   follows `harnessArgs`. the-loop refuses to accept a safety disclaimer for a session
   that was not already configured to run that way — the standing "the dispatcher never
@@ -105,6 +113,30 @@ Consequences:
   directory; cross-process locking on a file we do not own is not worth the complexity
   (YAGNI). Recorded here rather than hidden.
 
+## Scope: the owner's call (PR #92 review)
+
+This PR originally shipped **exact-directory trust only**, argued from least privilege:
+an ancestor entry grants trust to every future checkout under the root, including repos
+the operator has not started watching. The owner overrode that:
+
+> this should be configurable. and default should be trust all folders within the
+> workspace root. if claude needs additional permissions per repo, then what we are doing
+> in this PR should still be kept.
+
+Recorded because it is a deliberate reversal, and the reasoning is sound: the workspace
+root is a directory the operator **created for the-loop to work in**. Every path under it
+is by construction a checkout the daemon made, so "trust the workspace" is a truer
+statement of intent than "trust each of the N directories the daemon happens to have
+created so far" — and it covers the cases per-directory trust misses entirely: a repo the
+operator clones into the workspace by hand, a nested repo the agent walks into, a
+directory a session `cd`s to. Least privilege remains one config line away
+(`scope: directory`) for an operator whose workspace root holds more than the-loop's own
+checkouts.
+
+The "should still be kept" half is load-bearing rather than a courtesy: per-directory
+writing is not merely retained as an option, it is **required under both scopes** for the
+onboarding key, which is not ancestor-inherited.
+
 ## Alternatives considered
 
 - **Set `CLAUDE_CODE_SANDBOXED=1` in the spawned environment** — the CLI does
@@ -118,10 +150,16 @@ Consequences:
   has to remember not to commit. Rejected.
 - **Tell operators to run `claude` once per workspace by hand** — there is no stable
   directory to pre-trust: decision-034 mints a new one per work item. That is the bug.
-- **Trust the workspace *root* once instead of each checkout** — ancestor trust does
-  work, and is one write instead of N. Rejected as least-privilege: it grants trust to
-  every future checkout under the root, including repos the operator has not started
-  watching yet, and it would not cover `spawnWorkdir` setups at all.
+- **Trust the workspace *root* once instead of each checkout** — originally rejected here
+  on least-privilege grounds. **Superseded by the owner's decision on PR #92**: this is
+  now the default (`scope: workspace-root`), with exact-directory trust kept as
+  `scope: directory`. See "Scope: the owner's call" above. The one technical objection
+  that survives — that root trust does not cover `spawnWorkdir`-only setups, which have
+  no root — is handled by falling back to per-directory trust when no root is configured,
+  so the two scopes behave identically there.
+- **Trusting the root *instead of* writing anything per directory** — rejected on the
+  facts, not on taste: `hasCompletedProjectOnboarding` is not ancestor-inherited, so a
+  root-only write leaves the onboarding screen in front of every fresh checkout.
 - **A generic "merge this JSON blob into the harness config" config block** — maximally
   flexible, and an open-ended footgun pointed at the operator's own configuration.
   Rejected on the minimalism ladder: two well-understood keys, named in the schema, beat

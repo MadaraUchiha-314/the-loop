@@ -139,10 +139,20 @@ nobody was there to answer (issue-90).
 
 So before each spawn/respawn the-loop writes what the harness is about to ask for:
 
-- `projects["<spawn dir>"].hasTrustDialogAccepted` and `hasCompletedProjectOnboarding`
-  in your Claude Code user config (`$CLAUDE_CONFIG_DIR` honoured);
+- `hasTrustDialogAccepted` on your **workspace root** (`scope: workspace-root`, the
+  default) or on the exact spawn directory (`scope: directory`), in your Claude Code
+  user config (`$CLAUDE_CONFIG_DIR` honoured);
+- `hasCompletedProjectOnboarding` on the **spawn directory**, always;
 - `skipDangerousModePermissionPrompt` in your user settings — **only** when
   `harnessArgs` for that harness already ask for bypass mode.
+
+The two project keys scope differently because the harness *reads* them differently.
+Trust is looked up by walking **up** from the cwd, so one entry on the workspace root
+covers everything beneath it — including folders the-loop never spawned into (a repo
+you clone there by hand, a nested repo the agent walks into). Onboarding has **no**
+ancestor walk — it's read from the exact project key — so it's written per spawn
+directory under either scope. Without that, root trust would remove the trust dialog
+and leave the onboarding screen behind it in every fresh checkout.
 
 ⚠️ Note the asymmetry, because it's the one thing worth deciding consciously: the trust
 key is **per directory**, but `skipDangerousModePermissionPrompt` is a **user-global**
@@ -156,9 +166,11 @@ you'd rather keep the confirmation on your own sessions, set
 It is your config, so the writes are deliberately narrow: those keys only, merged into
 what's already there, temp file + atomic rename, `0600` on files it creates, **nothing
 written at all** when the value is already correct, and a file that doesn't parse as
-JSON is reported and left alone. Trust goes on the **exact** spawn directory (and its
-realpath) — never a parent, which would quietly trust every sibling checkout. Every
-applied change is auditable: `the-loop events --type 'workspace.trust*'`.
+JSON is reported and left alone. Widening beyond the spawn directory only ever happens
+via `scope`, never implicitly — and even then a root that doesn't actually contain the
+spawn directory is ignored, and one broad enough to be meaningless (`/`, or your home
+directory itself) degrades to per-directory trust with a warning. Every applied change
+is auditable: `the-loop events --type 'workspace.trust*'`.
 
 Failures are best-effort: you get a warning and a `workspace.trust_failed` record, and
 the spawn still happens (failing it would just retry into the same unwritable file
@@ -167,6 +179,7 @@ forever). `cursor-agent` has no such config surface, so it's a silent no-op.
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `enabled` | boolean | `true` | On by default — an unattended daemon can't answer a trust dialog, so this is what makes auto-execute actually run. `false` leaves your harness config untouched. |
+| `scope` | `workspace-root` \| `directory` | `workspace-root` | How wide the trust entry goes. `workspace-root` trusts `routing.workspace.root` once, covering every checkout under it (including folders the-loop never spawned into). `directory` trusts only the exact spawn directory — least privilege; use it when the root holds more than the-loop's own checkouts. With no workspace root configured, the two behave identically. |
 | `acceptBypassPermissions` | string | `auto` | `auto` records the bypass disclaimer only when `harnessArgs` already ask for bypass mode (the-loop never widens permissions you didn't request); `always` always records it; `never` never does. |
 
 #### `webhooks.ghWebhook.routing.tmux` — how long a tmux session (and its conversation) outlives trouble (`runner: tmux`)

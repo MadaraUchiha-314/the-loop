@@ -12,7 +12,7 @@ on them (issue-90). See :mod:`the_loop.trust`.
 
 from __future__ import annotations
 
-from typing import List
+from typing import List, Optional
 
 from .base import HarnessAdapter
 from ..sessions import Session
@@ -23,12 +23,17 @@ class ClaudeCodeAdapter(HarnessAdapter):
     name = "claude"
     default_binary = "claude"
 
-    def prepare_environment(self, cwd: str) -> TrustResult:
-        """Pre-trust ``cwd`` (and accept the bypass disclaimer when configured)."""
+    def prepare_environment(self, cwd: str, root: Optional[str] = None) -> TrustResult:
+        """Pre-trust ``cwd`` (and accept the bypass disclaimer when configured).
+
+        ``root`` widens the trust entry to the workspace root — the dispatcher
+        only passes one under ``scope: workspace-root``, and the store ignores a
+        root that does not contain ``cwd``.
+        """
         if not self.trust.enabled:
             return TrustResult()
         store = ClaudeTrustStore()
-        result = store.trust(cwd)
+        result = store.trust(cwd, root if self.trust.roots_allowed else None)
         if self._wants_bypass():
             # Independent files: a failed trust write must not skip this one.
             result = result.merge(store.accept_bypass_permissions())

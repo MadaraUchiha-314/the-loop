@@ -82,8 +82,9 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   (`routing.harnessTrust`, default **on**), so an unattended session cannot stall on
   Claude Code's workspace-trust dialog or its bypass-permissions disclaimer — neither
   of which is a permission rule, hence neither is silenced by
-  `--dangerously-skip-permissions`. Scoped to the exact spawn directory (never a
-  parent), non-destructive (named keys only, merged, atomic, skipped when already
+  `--dangerously-skip-permissions`. Scoped by `harnessTrust.scope` — the workspace
+  root by default (one entry covering every checkout under it) or the exact spawn
+  directory — non-destructive (named keys only, merged, atomic, skipped when already
   correct, refused on an unparseable file), and permission-neutral: the bypass
   disclaimer is accepted only when this harness's `harnessArgs` already ask for bypass
   mode. Best-effort — a failure warns, emits `workspace.trust_failed` and still spawns.

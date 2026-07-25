@@ -26,9 +26,24 @@ Written narrowly and non-destructively, because this is the operator's own
 configuration: only the keys above, merged into whatever is already there,
 via a temp file + atomic replace, and **not written at all** when the value is
 already correct. A file that does not parse is reported, never overwritten.
-Trust is recorded for the **exact** spawn directory (and its realpath) and never
-for a parent — the harness's own lookup walks up from the cwd, so an ancestor
-key would silently trust far more than the work item needs.
+
+**Scope** (`routing.harnessTrust.scope`, owner decision on PR #92) is the one
+real choice here, and it hinges on the two keys being read differently:
+
+* the harness's trust lookup walks **up** from the cwd, so a single entry on the
+  **workspace root** covers every checkout beneath it — including folders
+  the-loop never spawned into. That is the default (``workspace-root``): a
+  workspace the operator already dedicated to the-loop is trusted once.
+* ``hasCompletedProjectOnboarding`` has **no** ancestor walk (the harness reads
+  it from the exact project key), so it is written per spawn directory
+  regardless of scope. Root trust alone would silence the trust dialog and leave
+  the onboarding screen behind it.
+
+``scope: directory`` keeps trust on the exact spawn directory only — least
+privilege, one entry per work item, and the right choice when the workspace root
+holds more than the-loop's own checkouts. Either way a root that does not
+contain the spawn directory, or one broad enough to be meaningless (``/``, the
+home directory itself), degrades to per-directory trust.
 
 Spec: docs/specs/issue-90/design.md (decision-037).
 """
@@ -51,10 +66,10 @@ __all__ = [
     "TrustConfig",
     "TrustResult",
     "args_request_bypass",
+    "is_too_broad",
+    "is_within",
 ]
 
-# Project-scoped keys we set on a directory's entry in the user config file.
-_PROJECT_KEYS = ("hasTrustDialogAccepted", "hasCompletedProjectOnboarding")
 # Current home of the bypass-permissions acceptance (user settings file)…
 _BYPASS_SETTING = "skipDangerousModePermissionPrompt"
 # …and the legacy top-level key older builds still read from the config file.
@@ -85,16 +100,31 @@ class TrustConfig:
     """Mirror of ``webhooks.ghWebhook.routing.harnessTrust`` (see config schema)."""
 
     enabled: bool = True
+    # workspace-root (default, owner decision on PR #92): trust the workspace
+    # root once, so every checkout under it — including folders the-loop never
+    # spawned into — is covered by the harness's ancestor walk. `directory`
+    # trusts only the exact spawn directory (least privilege, one entry per
+    # work item). Both keep the same per-directory machinery underneath.
+    scope: str = "workspace-root"
     # auto: only when the configured harnessArgs ask for bypass mode (the-loop
     # never widens permissions the operator did not request) | always | never.
     accept_bypass_permissions: str = "auto"
+
+    @property
+    def roots_allowed(self) -> bool:
+        """Whether a caller may hand :meth:`ClaudeTrustStore.trust` a root."""
+        return self.scope == "workspace-root"
 
     @classmethod
     def from_mapping(cls, data: dict) -> "TrustConfig":
         data = data or {}
         mode = str(data.get("acceptBypassPermissions", "auto"))
+        scope = str(data.get("scope", "workspace-root"))
         return cls(
             enabled=bool(data.get("enabled", True)),
+            scope=scope
+            if scope in ("workspace-root", "directory")
+            else "workspace-root",
             accept_bypass_permissions=(
                 mode if mode in ("auto", "always", "never") else "auto"
             ),
@@ -121,6 +151,50 @@ class TrustResult:
             applied=self.applied + other.applied,
             error=self.error or other.error,
         )
+
+
+def _set_flag(projects: dict, key: str, name: str) -> bool:
+    """Set ``projects[key][name] = True``; True when that changed anything."""
+    entry = projects.get(key)
+    if not isinstance(entry, dict):
+        entry = {}
+        projects[key] = entry
+    if entry.get(name) is True:
+        return False
+    entry[name] = True
+    return True
+
+
+def _normalised(path: str) -> str:
+    """``path`` in the form the harness stores project keys in."""
+    return os.path.normpath(os.path.abspath(path))
+
+
+def is_within(root: str, path: str) -> bool:
+    """True when ``path`` is ``root`` or lives underneath it.
+
+    Component-wise (not a string prefix), so ``/ws`` does not "contain"
+    ``/ws-other``.
+    """
+    root_parts = Path(_normalised(root)).parts
+    path_parts = Path(_normalised(path)).parts
+    return path_parts[: len(root_parts)] == root_parts
+
+
+def is_too_broad(root: str, home: Optional[str] = None) -> bool:
+    """True for a root nobody should blanket-trust: ``/`` or the home dir itself.
+
+    A workspace root is operator-configured, so this is a guard rail rather
+    than a boundary — but trusting ``$HOME`` or ``/`` would silently cover every
+    repo and dotfile on the machine, which is never what "trust my workspace"
+    is meant to mean. Such a root degrades to per-directory trust with a warning
+    rather than failing the spawn.
+    """
+    resolved = Path(_normalised(root))
+    if resolved.parent == resolved:  # filesystem root
+        return True
+    home_dir = home if home is not None else os.path.expanduser("~")
+    return bool(home_dir) and resolved == Path(_normalised(home_dir))
 
 
 def args_request_bypass(args) -> bool:
@@ -270,29 +344,51 @@ class ClaudeTrustStore:
         return self.config_dir() / "settings.json"
 
     @staticmethod
-    def project_keys(cwd: str) -> List[str]:
-        """The ``projects`` keys standing for ``cwd`` — and only ``cwd``.
+    def project_keys(path: str) -> List[str]:
+        """The ``projects`` keys standing for ``path`` — and only ``path``.
 
-        Always the exact directory, normalised the way the harness normalises a
-        POSIX path; plus its realpath when a symlink makes that differ, so trust
-        holds however the harness canonicalises it. **Never a parent**: the
-        harness's own lookup walks up from the cwd, so an ancestor entry would
-        trust every sibling checkout too.
+        The exact directory, normalised the way the harness normalises a POSIX
+        path, plus its realpath when a symlink makes that differ, so an entry
+        holds however the harness canonicalises it. Never expands to a parent:
+        widening to an ancestor is a decision the *caller* makes by passing a
+        ``root`` to :meth:`trust`, never something this function does silently.
         """
-        resolved = os.path.normpath(os.path.abspath(cwd))
+        resolved = _normalised(path)
         keys = [resolved]
-        real = os.path.normpath(os.path.realpath(cwd))
+        real = os.path.normpath(os.path.realpath(path))
         if real != resolved:
             keys.append(real)
         return keys
 
     # -- writes -----------------------------------------------------------------
 
-    def trust(self, cwd: str) -> TrustResult:
-        """Mark ``cwd`` trusted (and onboarded) in the user config file."""
+    def trust(self, cwd: str, root: Optional[str] = None) -> TrustResult:
+        """Mark ``cwd`` usable by the harness without an interactive dialog.
+
+        Two keys, with **different scoping rules**, because the harness reads
+        them differently:
+
+        * ``hasTrustDialogAccepted`` — the harness's trust lookup walks *up*
+          from the cwd, so an entry on ``root`` covers every directory beneath
+          it, including checkouts the-loop never spawned into. Written on
+          ``root`` when one is given (``scope: workspace-root``), else on
+          ``cwd``.
+        * ``hasCompletedProjectOnboarding`` — read from the **exact** project
+          key with no ancestor walk, so it is always written on ``cwd``.
+          Otherwise removing the trust dialog would just reveal the onboarding
+          screen behind it in every fresh checkout.
+
+        A ``root`` that does not actually contain ``cwd`` is ignored (falling
+        back to ``cwd``): trusting an unrelated tree is never what the caller
+        meant.
+        """
         if not str(cwd or "").strip():
             return TrustResult(ok=False, error="no working directory to trust")
-        keys = self.project_keys(cwd)
+        onboarding_keys = self.project_keys(cwd)
+        if root and str(root).strip() and is_within(root, cwd):
+            trust_keys = self.project_keys(str(root))
+        else:
+            trust_keys = onboarding_keys
 
         def mutate(data: dict) -> bool:
             projects = data.get("projects")
@@ -300,20 +396,20 @@ class ClaudeTrustStore:
                 projects = {}
                 data["projects"] = projects
             changed = False
-            for key in keys:
-                entry = projects.get(key)
-                if not isinstance(entry, dict):
-                    entry = {}
-                    projects[key] = entry
-                for name in _PROJECT_KEYS:
-                    if entry.get(name) is not True:
-                        entry[name] = True
-                        changed = True
+            for key in trust_keys:
+                changed |= _set_flag(projects, key, "hasTrustDialogAccepted")
+            for key in onboarding_keys:
+                changed |= _set_flag(projects, key, "hasCompletedProjectOnboarding")
             return changed
 
         result = _update_json(self.config_path(), mutate)
         if result.applied:
-            result = TrustResult(applied=[f"trusted {keys[0]} in {self.config_path()}"])
+            scope = (
+                f"{trust_keys[0]} (and everything under it)"
+                if trust_keys is not onboarding_keys
+                else trust_keys[0]
+            )
+            result = TrustResult(applied=[f"trusted {scope} in {self.config_path()}"])
         return result
 
     def accept_bypass_permissions(self) -> TrustResult:

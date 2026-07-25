@@ -21,6 +21,7 @@ from the_loop.harness.claude_code import ClaudeCodeAdapter
 from the_loop.runner import TmuxResult, TmuxRunner
 from the_loop.sessions import Session, SessionRegistry, WorkItemRef
 from the_loop.trust import TrustConfig
+from the_loop.workspace import Workspace
 from the_loop.webhook.dispatcher import Dispatcher, RoutingConfig
 from the_loop.webhook.router import RoutedEvent, extract_work_items
 
@@ -124,12 +125,28 @@ def trusted_dirs(config_path):
     ]
 
 
-def make_dispatcher(tmp_path, adapter, **config_overrides):
+class StubWorkspace(Workspace):
+    """A real workspace root, without the clone — `prepare` hands back `checkout`.
+
+    `_trust_root()` reads `self.workspace.root`, so the root has to be genuine;
+    the git work behind it is issue-76's and already covered by its own tests.
+    """
+
+    def __init__(self, root, checkout):
+        super().__init__(root)
+        self._checkout = checkout
+
+    def prepare(self, target, slug, *, branch=None, timeout=None):
+        return self._checkout
+
+
+def make_dispatcher(tmp_path, adapter, workspace=None, **config_overrides):
     config = RoutingConfig(spawn_on_unmatched="labeled", **config_overrides)
     return Dispatcher(
         registry=SessionRegistry(tmp_path / "sessions"),
         adapters={"claude": adapter},
         config=config,
+        workspace=workspace,
     )
 
 
@@ -272,6 +289,102 @@ def test_a_failing_preparation_does_not_fail_the_dispatch(tmp_path, fake_home, w
     assert (fake_home / ".claude.json").read_text() == "{ not json"
 
 
+def test_workspace_root_scope_trusts_the_root_covering_every_checkout(
+    tmp_path, fake_home, workdir
+):
+    """
+    Feature: Pre-trust a spawned session's workspace
+    Scenario: A workspace root is configured and the scope is the default
+      Given routing.workspace.root is set and contains the spawn directory
+      And routing.harnessTrust.scope is workspace-root (the default)
+      When a labeled issues event spawns a session
+      Then the workspace ROOT is marked trusted, covering every checkout under
+        it — including folders the-loop never spawned into
+      And the spawn directory still gets its own onboarding key, which the
+        harness does not inherit from an ancestor
+    Requirement: docs/specs/issue-90/requirements.md#requirement-1
+    """
+    root = tmp_path / "workspace"
+    adapter = RecordingClaudeAdapter(fake_home / ".claude.json")
+    dispatcher = make_dispatcher(
+        tmp_path,
+        adapter,
+        spawn_workdir=str(workdir),
+        workspace=StubWorkspace(root, workdir),
+    )
+
+    dispatcher.handle(routed_labeled_issue())
+    assert wait_until(lambda: len(adapter.spawns) == 1)
+    dispatcher.stop()
+
+    projects = json.loads((fake_home / ".claude.json").read_text())["projects"]
+    assert projects[str(root)]["hasTrustDialogAccepted"] is True
+    assert projects[str(workdir)]["hasCompletedProjectOnboarding"] is True
+    # a sibling checkout the-loop never spawned into is covered by the root
+    assert str(root) in trusted_dirs(fake_home / ".claude.json")
+
+
+def test_directory_scope_keeps_trust_on_the_checkout_alone(
+    tmp_path, fake_home, workdir
+):
+    """
+    Feature: Pre-trust a spawned session's workspace
+    Scenario: The operator opts into least-privilege trust
+      Given a workspace root is configured
+      And routing.harnessTrust.scope is directory
+      When a labeled issues event spawns a session
+      Then only the exact spawn directory is trusted, not the root
+    Requirement: docs/specs/issue-90/requirements.md#requirement-1
+    """
+    root = tmp_path / "workspace"
+    adapter = RecordingClaudeAdapter(
+        fake_home / ".claude.json", trust=TrustConfig(scope="directory")
+    )
+    dispatcher = make_dispatcher(
+        tmp_path,
+        adapter,
+        spawn_workdir=str(workdir),
+        workspace=StubWorkspace(root, workdir),
+        harness_trust=TrustConfig(scope="directory"),
+    )
+
+    dispatcher.handle(routed_labeled_issue())
+    assert wait_until(lambda: len(adapter.spawns) == 1)
+    dispatcher.stop()
+
+    assert trusted_dirs(fake_home / ".claude.json") == [str(workdir)]
+
+
+def test_a_too_broad_workspace_root_degrades_to_the_checkout(
+    tmp_path, fake_home, workdir
+):
+    """
+    Feature: Pre-trust a spawned session's workspace
+    Scenario: The configured workspace root is the home directory itself
+      Given routing.workspace.root is $HOME
+      And the scope is workspace-root
+      When a labeled issues event spawns a session
+      Then the home directory is NOT blanket-trusted
+      And trust falls back to the exact spawn directory
+    Requirement: docs/specs/issue-90/requirements.md#requirement-1
+    """
+    adapter = RecordingClaudeAdapter(fake_home / ".claude.json")
+    dispatcher = make_dispatcher(
+        tmp_path,
+        adapter,
+        spawn_workdir=str(workdir),
+        workspace=StubWorkspace(fake_home, workdir),
+    )
+
+    dispatcher.handle(routed_labeled_issue())
+    assert wait_until(lambda: len(adapter.spawns) == 1)
+    dispatcher.stop()
+
+    trusted = trusted_dirs(fake_home / ".claude.json")
+    assert str(fake_home) not in trusted
+    assert trusted == [str(workdir)]
+
+
 def test_an_exploding_adapter_hook_does_not_wedge_the_work_item(
     tmp_path, fake_home, workdir
 ):
@@ -286,7 +399,7 @@ def test_an_exploding_adapter_hook_does_not_wedge_the_work_item(
     """
 
     class ExplodingAdapter(RecordingClaudeAdapter):
-        def prepare_environment(self, cwd):
+        def prepare_environment(self, cwd, root=None):
             raise RuntimeError("kaboom")
 
     log = tmp_path / "events.jsonl"

@@ -107,3 +107,37 @@ status: in-progress
   VALID, `pytest` **367 passed**.
 - **Next:** awaiting the owner's review and the tier-4 security sign-off.
 - **Blockers:** none.
+
+### 2026-07-25 — trust scope made configurable, defaulting to the workspace root
+
+- **Phase:** needs-review
+- **Did:** Owner's call on PR #92 — *"this should be configurable. and default
+  should be trust all folders within the workspace root. if claude needs
+  additional permissions per repo, then what we are doing in this PR should
+  still be kept."* This reverses the least-privilege default this PR shipped
+  with; recorded as such in decision-036 ("Scope: the owner's call") rather than
+  quietly restated, because the original position was argued in the spec.
+- **The finding that shaped the implementation:** checked the shipped CLI before
+  writing anything, and the two project keys are **not** read the same way.
+  `hasTrustDialogAccepted` is resolved by walking *up* from the cwd (so one root
+  entry does cover everything beneath it — the owner's ask works), but
+  `hasCompletedProjectOnboarding` is read from the exact project key
+  (`xd()` → `projects[<canonical cwd>]`) with **no** ancestor walk. A root-only
+  write would therefore have removed the trust dialog and left the onboarding
+  screen in front of every fresh checkout. So the two keys scope differently:
+  trust on the root, onboarding always per spawn directory. That is also the
+  concrete sense in which the owner's "what we are doing in this PR should still
+  be kept" is load-bearing rather than a courtesy.
+- **Guard rails** (kept narrow, so the wider default cannot mean more than
+  intended): `project_keys()` still never widens on its own — it takes an
+  explicit `root`; a root that does not contain the spawn directory is ignored
+  (`is_within`, component-wise so `/ws` does not "contain" `/ws-other`); and a
+  root as broad as `/` or `$HOME` degrades to per-directory trust with a warning
+  (`is_too_broad`). With no workspace root configured, both scopes behave
+  identically.
+- **Evidence:** 10 new tests (root scope, sibling reuse, root-outside-cwd,
+  `scope: directory`, too-broad root, `is_within`/`is_too_broad` units, config
+  mapping); `ruff` + `pyright` + `markdownlint` clean, config validation VALID,
+  `pytest` **377 passed**.
+- **Next:** awaiting the owner's review and the tier-4 security sign-off.
+- **Blockers:** none.
