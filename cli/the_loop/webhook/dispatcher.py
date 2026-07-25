@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import queue
+import re
 import threading
 import uuid
 from dataclasses import dataclass, field
@@ -22,7 +23,7 @@ from typing import Dict, List, Optional
 
 from .. import eventlog
 from ..announce import AnnounceConfig, SessionAnnouncer
-from ..harness.base import HarnessAdapter
+from ..harness.base import HarnessAdapter, UnsupportedRunnerError
 from ..reactions import (
     STATE_COMPLETED,
     STATE_ERROR,
@@ -49,6 +50,14 @@ _PAYLOAD_EXCERPT_KEYS = (
     "check_suite",
 )
 _PAYLOAD_EXCERPT_MAX_CHARS = 4000
+
+# Conservative shape a recorded harness session id must have before it is passed
+# to the harness CLI on a resume (issue-89). the-loop writes uuid4s; anything
+# else in the registry file is refused rather than handed to an argv. The first
+# character must be alphanumeric: a leading dash would otherwise let a corrupted
+# registry file smuggle a *flag* (`--dangerously-skip-permissions`) into the
+# harness invocation, which is exactly what validating here is meant to stop.
+_SESSION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 # Fallback when routing.promptTemplate does not exist. Templates are internal to
 # the-loop and ship with the plugin, not the project repo (issue #36), so this
@@ -124,13 +133,18 @@ class WebTerminalConfig:
 class TmuxConfig:
     """Mirror of ``routing.tmux`` — lifetime of the hosted sessions (issue-86).
 
-    Both defaults keep a finished session readable: the tmux session outlives
-    the work item's PR being merged/closed, and the pane outlives the harness
-    process exiting.
+    The retention defaults keep a finished session readable: the tmux session
+    outlives the work item's PR being merged/closed, and the pane outlives the
+    harness process exiting. ``resume_on_respawn`` (issue-89) keeps the
+    *conversation* alive across a session that died: a respawn continues the
+    recorded harness session instead of booting a blank one, verified by a
+    ``resume_probe_seconds`` liveness probe before it is trusted.
     """
 
     keep_session_on_close: bool = True
     remain_on_exit: bool = True
+    resume_on_respawn: bool = True
+    resume_probe_seconds: float = 2.0
 
     @classmethod
     def from_mapping(cls, data: dict) -> "TmuxConfig":
@@ -138,6 +152,8 @@ class TmuxConfig:
         return cls(
             keep_session_on_close=bool(data.get("keepSessionOnClose", True)),
             remain_on_exit=bool(data.get("remainOnExit", True)),
+            resume_on_respawn=bool(data.get("resumeOnRespawn", True)),
+            resume_probe_seconds=float(data.get("resumeProbeSeconds", 2.0)),
         )
 
 
@@ -835,10 +851,14 @@ class Dispatcher:
 
         Reuses the dead session's own recorded fields (harness, cwd, tmux
         target) — nothing new is derived from the untrusted payload. The event
-        ``prompt`` becomes the fresh TUI's boot prompt, so the event that found
-        the session dead is delivered rather than dropped (issue-80). Fails
-        closed (release the delivery for retry, emit a failure record) when a
-        respawn cannot proceed.
+        ``prompt`` becomes the new TUI's boot prompt, so the event that found
+        the session dead is delivered rather than dropped (issue-80).
+
+        The respawn first tries to **resume** the dead session's conversation
+        (issue-89) so the agent keeps everything it knew about the work item;
+        anything doubtful about that resume falls back to a fresh conversation,
+        which is exactly the pre-issue-89 behaviour. Fails closed (release the
+        delivery for retry, emit a failure record) when no respawn can proceed.
         """
         work_item = session.work_item
         adapter = self.adapters.get(session.harness)
@@ -867,35 +887,37 @@ class Dispatcher:
             if routed.delivery_id:
                 self.deduper.discard(routed.delivery_id)
             return False
-        session_id = str(uuid.uuid4())
-        result = self.tmux.spawn(
-            work_item,
-            adapter,
-            prompt,
-            cwd=session.cwd,
-            session_id=session_id,
-            timeout=self.config.dispatch_timeout_seconds,
-        )
-        if not result.ok:
-            logger.error(
-                "respawn of tmux session for %s failed: %s",
-                work_item.ref,
-                result.error,
+        resumed_id = self._try_resume(session, adapter, prompt)
+        session_id = resumed_id or str(uuid.uuid4())
+        if resumed_id is None:
+            result = self.tmux.spawn(
+                work_item,
+                adapter,
+                prompt,
+                cwd=session.cwd,
+                session_id=session_id,
+                timeout=self.config.dispatch_timeout_seconds,
             )
-            eventlog.emit(
-                "dispatch.failed",
-                level="error",
-                work_item=work_item.ref,
-                harness=session.harness,
-                via="tmux",
-                gh_event=routed.event,
-                delivery_id=routed.delivery_id or None,
-                error=f"respawn: {result.error}",
-                will_retry=bool(routed.delivery_id),
-            )
-            if routed.delivery_id:
-                self.deduper.discard(routed.delivery_id)
-            return False
+            if not result.ok:
+                logger.error(
+                    "respawn of tmux session for %s failed: %s",
+                    work_item.ref,
+                    result.error,
+                )
+                eventlog.emit(
+                    "dispatch.failed",
+                    level="error",
+                    work_item=work_item.ref,
+                    harness=session.harness,
+                    via="tmux",
+                    gh_event=routed.event,
+                    delivery_id=routed.delivery_id or None,
+                    error=f"respawn: {result.error}",
+                    will_retry=bool(routed.delivery_id),
+                )
+                if routed.delivery_id:
+                    self.deduper.discard(routed.delivery_id)
+                return False
         respawned = Session(
             work_item=work_item,
             harness=session.harness,
@@ -911,12 +933,17 @@ class Dispatcher:
         self.registry.touch(work_item, delivery_id=routed.delivery_id or None)
         logger.info(
             "respawned tmux session %s (%s %s) for %s after it was found dead; "
-            "delivered the pending event as its boot prompt — attach: "
+            "%s and delivered the pending event as its boot prompt — attach: "
             "tmux attach -t %s",
             respawned.tmux_target,
             session.harness,
             session_id,
             work_item.ref,
+            (
+                "resumed the existing conversation"
+                if resumed_id
+                else "started a fresh conversation"
+            ),
             respawned.tmux_target,
         )
         eventlog.emit(
@@ -926,6 +953,7 @@ class Dispatcher:
             harness_session_id=session_id,
             runner="tmux",
             tmux_target=respawned.tmux_target,
+            resumed=resumed_id is not None,
             gh_event=routed.event,
             action=routed.action or None,
             delivery_id=routed.delivery_id or None,
@@ -934,6 +962,78 @@ class Dispatcher:
         # same loop-<slug> name, so the attach command already on the ticket is
         # still correct and a second comment would only add noise.
         return True
+
+    def _try_resume(
+        self, session: Session, adapter: HarnessAdapter, prompt: str
+    ) -> Optional[str]:
+        """Respawn ``session`` **resuming** its conversation; the id, or None.
+
+        None means "spawn a fresh session instead" — the caller's fallback, and
+        the pre-issue-89 behaviour. Every doubt lands there rather than in an
+        exception or a half-registered session: the operator opted out, there is
+        no recorded id, the id is not shaped like one the-loop wrote, the
+        harness cannot resume interactively (anything but Claude Code today),
+        tmux refused, or the resumed TUI died on the spot — which is what an
+        unresumable id looks like (``claude --resume <unknown>`` exits 1
+        immediately), and the reason the spawn is probed rather than trusted.
+        """
+        if not self.config.tmux.resume_on_respawn:
+            return None
+        session_id = session.harness_session_id
+        if not session_id:
+            return None
+        if not _SESSION_ID_RE.match(session_id):
+            # Registry files are local state the-loop wrote (a uuid4), but the
+            # id lands in an argv — validate before use, as announce.py does.
+            return self._resume_failed(
+                session, session_id, "the recorded harness session id is malformed"
+            )
+        try:
+            adapter.interactive_resume_argv(prompt, session_id)
+        except UnsupportedRunnerError as exc:
+            return self._resume_failed(session, session_id, str(exc))
+        result = self.tmux.spawn(
+            session.work_item,
+            adapter,
+            prompt,
+            cwd=session.cwd,
+            session_id=session_id,
+            timeout=self.config.dispatch_timeout_seconds,
+            resume=True,
+        )
+        if not result.ok:
+            return self._resume_failed(session, session_id, result.error)
+        if not self.tmux.survived(
+            self.tmux.target_for(session.work_item),
+            self.config.tmux.resume_probe_seconds,
+        ):
+            return self._resume_failed(
+                session,
+                session_id,
+                "the resumed harness exited immediately — the conversation "
+                "could not be resumed (no transcript for that session id?)",
+            )
+        return session_id
+
+    def _resume_failed(self, session: Session, session_id: str, reason: str) -> None:
+        """Log/record an abandoned resume attempt; the caller spawns fresh."""
+        logger.warning(
+            "could not resume %s session %s for %s (%s); respawning a fresh "
+            "conversation instead",
+            session.harness,
+            session_id,
+            session.work_item.ref,
+            reason,
+        )
+        eventlog.emit(
+            "session.resume_failed",
+            level="warning",
+            work_item=session.work_item.ref,
+            harness=session.harness,
+            harness_session_id=session_id,
+            error=reason,
+        )
+        return None
 
     def delivery_status(
         self, delivery_id: Optional[str], refs: List[WorkItemRef]

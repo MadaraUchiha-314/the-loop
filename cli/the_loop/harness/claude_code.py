@@ -34,3 +34,11 @@ class ClaudeCodeAdapter(HarnessAdapter):
         # Flags first, positional prompt last — parsers that stop option
         # processing at the first positional must still see extra_args.
         return ["--session-id", session_id] + self.extra_args + [prompt]
+
+    def interactive_resume_argv(self, prompt: str, session_id: str) -> List[str]:
+        # `--resume <id>` without `-p` keeps Claude Code in its TUI and
+        # continues the recorded conversation; the positional prompt is
+        # submitted into it (issue-89). Same flags-first ordering as above.
+        # Resume lookup is scoped to the project directory, hence the tmux
+        # session being spawned in the registry's recorded cwd.
+        return ["--resume", session_id] + self.extra_args + [prompt]

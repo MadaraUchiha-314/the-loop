@@ -112,6 +112,25 @@ class TestInteractiveArgv:
             CursorAgentAdapter().interactive_argv("p", "id")
 
 
+class TestInteractiveResumeArgv:
+    """Respawning a dead session continues its conversation (issue-89)."""
+
+    def test_claude_resumes_the_recorded_session_id(self):
+        argv = ClaudeCodeAdapter().interactive_resume_argv("do the thing", "uuid-1")
+        assert argv == ["--resume", "uuid-1", "do the thing"]
+
+    def test_claude_puts_extra_args_before_the_positional_prompt(self):
+        adapter = ClaudeCodeAdapter(extra_args=["--permission-mode", "acceptEdits"])
+        argv = adapter.interactive_resume_argv("p", "id")
+        assert argv == ["--resume", "id", "--permission-mode", "acceptEdits", "p"]
+
+    def test_cursor_cannot_resume_interactively(self):
+        # cursor-agent cannot be tmux-hosted at all, so there is no interactive
+        # conversation to resume — the dispatcher reads this as "spawn fresh".
+        with pytest.raises(UnsupportedRunnerError):
+            CursorAgentAdapter().interactive_resume_argv("p", "id")
+
+
 class TestTmuxRunner:
     def test_target_is_slug_derived(self):
         target = TmuxRunner().target_for(WorkItemRef.parse(REF))
@@ -269,6 +288,41 @@ class TestTmuxRunner:
         assert result.session_missing is True
         assert "paste-buffer" not in fake.verbs
 
+    def test_spawn_with_resume_continues_the_recorded_conversation(self, monkeypatch):
+        fake = FakeRun(per_verb={"has-session": 1})
+        monkeypatch.setattr(runner_mod.subprocess, "run", fake)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        result = TmuxRunner().spawn(
+            work_item=WorkItemRef.parse(REF),
+            adapter=ClaudeCodeAdapter(),
+            prompt="event prompt",
+            cwd="/work",
+            session_id="uuid-1",
+            resume=True,
+        )
+        assert result.ok, result.error
+        cmd = next(c for c in fake.calls if c[1] == "new-session")
+        tail = cmd[cmd.index("--") + 1 :]
+        assert tail == ["claude", "--resume", "uuid-1", "event prompt"]
+
+    def test_spawn_with_resume_fails_for_a_harness_that_cannot_resume(
+        self, monkeypatch
+    ):
+        fake = FakeRun(per_verb={"has-session": 1})
+        monkeypatch.setattr(runner_mod.subprocess, "run", fake)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        result = TmuxRunner().spawn(
+            work_item=WorkItemRef.parse(REF),
+            adapter=CursorAgentAdapter(),
+            prompt="p",
+            cwd="/work",
+            session_id="uuid-1",
+            resume=True,
+        )
+        assert not result.ok
+        assert "resume" in result.error
+        assert "new-session" not in fake.verbs
+
     def test_kill_targets_the_session(self, monkeypatch):
         fake = FakeRun()
         monkeypatch.setattr(runner_mod.subprocess, "run", fake)
@@ -320,6 +374,39 @@ class TestPaneLiveness:
         assert runner.has_live_session("loop-x") is True
 
 
+class TestSurvivedProbe:
+    """``survived`` — did the harness we just started stay up? (issue-89)"""
+
+    @staticmethod
+    def _runner(monkeypatch, **kwargs):
+        fake = FakeRun(**kwargs)
+        monkeypatch.setattr(runner_mod.subprocess, "run", fake)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        return TmuxRunner(), fake
+
+    def test_live_pane_after_the_grace_period(self, monkeypatch):
+        runner, _ = self._runner(monkeypatch, stdout_per_verb={"list-panes": "0\n"})
+        slept = []
+        assert runner.survived("loop-x", 2.0, sleeper=slept.append) is True
+        assert slept == [2.0]
+
+    def test_dead_pane_means_the_harness_refused_to_start(self, monkeypatch):
+        # What `claude --resume <unknown-id>` looks like: tmux started, the
+        # harness exited 1 immediately.
+        runner, _ = self._runner(monkeypatch, stdout_per_verb={"list-panes": "1\n"})
+        assert runner.survived("loop-x", 2.0, sleeper=lambda _: None) is False
+
+    def test_missing_session_did_not_survive(self, monkeypatch):
+        runner, _ = self._runner(monkeypatch, per_verb={"has-session": 1})
+        assert runner.survived("loop-x", 0, sleeper=lambda _: None) is False
+
+    def test_zero_delay_does_not_wait(self, monkeypatch):
+        runner, _ = self._runner(monkeypatch, stdout_per_verb={"list-panes": "0\n"})
+        slept = []
+        assert runner.survived("loop-x", 0, sleeper=slept.append) is True
+        assert slept == []
+
+
 class TestCheckDependencies:
     def test_silent_when_satisfied(self, monkeypatch):
         monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/x")
@@ -347,13 +434,25 @@ class TestRoutingConfigRunner:
         # issue-86: a finished session stays readable out of the box.
         assert config.tmux.keep_session_on_close is True
         assert config.tmux.remain_on_exit is True
+        # issue-89: a respawn continues the conversation out of the box.
+        assert config.tmux.resume_on_respawn is True
+        assert config.tmux.resume_probe_seconds == 2.0
 
     def test_parses_tmux_lifetime(self):
         config = RoutingConfig.from_mapping(
-            {"tmux": {"keepSessionOnClose": False, "remainOnExit": False}}
+            {
+                "tmux": {
+                    "keepSessionOnClose": False,
+                    "remainOnExit": False,
+                    "resumeOnRespawn": False,
+                    "resumeProbeSeconds": 0,
+                }
+            }
         )
         assert config.tmux.keep_session_on_close is False
         assert config.tmux.remain_on_exit is False
+        assert config.tmux.resume_on_respawn is False
+        assert config.tmux.resume_probe_seconds == 0.0
 
     def test_parses_runner_and_web_terminal(self):
         config = RoutingConfig.from_mapping(
