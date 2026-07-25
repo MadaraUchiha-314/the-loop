@@ -141,4 +141,7 @@ requirements.
    `docs/decisions/`.
 
 All questions and decisions go through ticket/PR comments (paper trail). The checked-in
-specs + execution log are the single record of the work.
+specs + execution log are the single record of the work. Every such comment/reply MUST
+carry the loop-prevention marker (`reference/collaboration.md` § loop prevention) —
+you post under the operator's own credentials, so an unmarked reply can resume your
+own session forever.
