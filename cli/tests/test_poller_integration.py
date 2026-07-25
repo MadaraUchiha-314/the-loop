@@ -331,6 +331,49 @@ def test_a_merged_pr_closes_its_session(tmp_path):
     assert registry.find_by_work_item(REF) is None
 
 
+def test_a_merged_pr_does_not_close_its_still_open_work_item(tmp_path):
+    """
+    Feature: Poll GitHub and close finished work items
+    Scenario: One PR merging does not end a work item that has more to come
+        Given issue 15 with an active session and a labelled PR 16 linked to it
+        When PR 16 is merged and leaves the listing while issue 15 is still listed
+        Then reconciliation closes nothing and the issue's session stays active
+    Requirement: docs/specs/issue-101/requirements.md#AC1
+    """
+    gh = GhState()
+    gh.prs = [
+        {
+            "number": 16,
+            "title": "pr",
+            "labels": [{"name": LABEL}],
+            "url": "u",
+            "author": {"login": "octocat"},
+            "headRefName": "claude/github-issue-15-x",
+            "body": "Closes #15",
+            "closingIssuesReferences": [{"number": 15}],
+        }
+    ]
+    registry, adapter, dispatcher, poller = _make(tmp_path, gh, monitor_prs=True)
+    registry.register(
+        Session(
+            work_item=WorkItemRef.parse(REF),
+            harness="claude",
+            harness_session_id="sess-15",
+            cwd=str(tmp_path),
+        )
+    )
+    poller.poll_once()
+
+    gh.prs = []  # PR 16 merged; issue 15 is still open and still listed
+    summary = poller.poll_once()
+    dispatcher.stop()
+
+    assert summary.closures == 0
+    session = registry.find_by_work_item(REF)
+    assert session is not None and session.status == "active"
+    assert adapter.spawns == [] and adapter.resumes == []
+
+
 def test_a_still_open_item_that_left_the_listing_keeps_its_session(tmp_path):
     """
     Feature: Poll GitHub and close finished work items

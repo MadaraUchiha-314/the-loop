@@ -65,8 +65,14 @@ requirements.
      the **PR still is** — as soon as the PR exists, **automatically add the same
      auto-execute label to the PR directly** and register the session against the PR's
      own ref (`github:OWNER/REPO#<pr-number>`). PR comments, reviews and CI results then
-     resume this session exactly as for a GitHub-ticketed item, and PR merge/close
-     auto-closes it.
+     resume this session exactly as for a GitHub-ticketed item, and that PR's
+     merge/close auto-closes it.
+   - **A work item may be delivered by several PRs** (a spec PR then an implementation
+     PR, a stacked series, a follow-up after review, one PR per repository). Label
+     **every** PR you open for the item, record **all** of them in the execution log's
+     **Pull requests** table, and keep working the item in the same session: with GitHub
+     ticketing each PR routes back to the issue's session, and one PR merging does
+     **not** end the work item — closing the **ticket** does.
 
 3. **Phase 0 — Brainstorm (optional)** (`brainstorming`). When the work starts as a fuzzy
    idea, create `docs/specs/<id>/brainstorm.md` (the **root artifact**) from the template:

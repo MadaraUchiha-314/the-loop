@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [039](decision-039.md) | A PR closing ends only its own session — a work item may be delivered by several PRs | proposed | 2026-07-25 |
 | [038](decision-038.md) | PyYAML is a required runtime dependency; the zero-runtime-dependency guarantee is retired | proposed | 2026-07-25 |
 | [036](decision-036.md) | An event on a PR routes to the PR's linked issue first (one session per work item) | accepted | 2026-07-25 |
 | [037](decision-037.md) | Pre-seed the harness's own config before spawning (trust the workspace root, configurable; accept the bypass disclaimer only when already requested) | proposed | 2026-07-25 |

@@ -780,15 +780,51 @@ def routed_pr_closed(
     )
 
 
-def test_dispatcher_auto_closes_session_on_pr_close(tmp_path):
+def test_pr_close_leaves_the_linked_issues_session_active(tmp_path):
+    # issue-101: a work item can be delivered by several PRs, so one of them
+    # merging is not the work item ending — only the item's own close is.
     adapter = FakeAdapter()
     registry, dispatcher = make_dispatcher(tmp_path, adapter)
     registry.register(make_session())  # session for the issue #15
     dispatcher.handle(routed_pr_closed())  # PR #16 closes, links issue #15
     dispatcher.stop()
-    assert registry.find_by_work_item(REF) is None  # auto-closed
+    session = registry.find_by_work_item(REF)
+    assert session is not None and session.status == "active"  # still working
+    assert adapter.calls == []  # a close is never delivered into the conversation
+
+
+def test_pr_close_closes_a_session_registered_against_the_pr_itself(tmp_path):
+    # The non-GitHub-ticketing path (Jira, …): the PR *is* the work item.
+    adapter = FakeAdapter()
+    registry, dispatcher = make_dispatcher(tmp_path, adapter)
+    registry.register(make_session(ref="github:octo/repo#16", session_id="pr-sess"))
+    dispatcher.handle(routed_pr_closed())
+    dispatcher.stop()
+    assert registry.find_by_work_item("github:octo/repo#16") is None  # auto-closed
     assert registry.list_sessions(status="closed")  # persisted as closed
-    assert adapter.calls == []  # closed, not resumed
+    assert adapter.calls == []
+
+
+def test_a_second_pr_closing_ends_nothing_while_the_work_item_is_open(tmp_path):
+    adapter = FakeAdapter()
+    registry, dispatcher = make_dispatcher(tmp_path, adapter)
+    registry.register(make_session())  # one session for the work item #15
+    dispatcher.handle(routed_pr_closed(delivery="c-1", number=16))  # first PR
+    dispatcher.handle(routed_pr_closed(delivery="c-2", number=17))  # second PR
+    dispatcher.stop()
+    assert registry.find_by_work_item(REF) is not None  # #15 is still being worked
+    assert registry.list_sessions(status="closed") == []
+
+
+def test_a_malformed_close_payload_closes_nothing(tmp_path):
+    adapter = FakeAdapter()
+    registry, dispatcher = make_dispatcher(tmp_path, adapter)
+    registry.register(make_session())
+    broken = routed_pr_closed()
+    broken.payload["pull_request"].pop("number")  # nothing names what closed
+    dispatcher.handle(broken)
+    dispatcher.stop()
+    assert registry.find_by_work_item(REF) is not None  # keep state under doubt
 
 
 def test_dispatcher_pr_close_never_spawns(tmp_path):

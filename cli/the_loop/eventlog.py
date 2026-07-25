@@ -152,6 +152,12 @@ EVENT_TYPES: Dict[str, str] = {
         "A session was auto-closed because its work item ended (work_item, "
         "reason: issue-closed | pr-merged | pr-closed; merged)."
     ),
+    "session.kept_open": (
+        "A close event matched a session only through linkage — one of the "
+        "work item's PRs closed, the work item itself did not — so the session "
+        "was left active (work_item, reason, closed_ref, delivery_id); a work "
+        "item may be delivered by several PRs (issue-101)."
+    ),
     "session.harness_terminated": (
         "The harness process inside a retained tmux session was ended when the "
         "work item closed, so the pane stays readable but can no longer be "

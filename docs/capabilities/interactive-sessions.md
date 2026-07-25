@@ -56,8 +56,9 @@ the same conversation.
   delivery therefore probes **liveness** (`has-session` **and** a non-dead pane), not
   mere existence: a retained-but-dead session takes the respawn path above instead of
   swallowing the event.
-- WHEN a work item ends — its issue closed, its PR merged/closed, or `the-loop sessions
-  close` run — THEN the registry session SHALL be closed AND the tmux session SHALL be
+- WHEN a work item ends — the registered item itself closed or merged (one of its
+  *linked* PRs closing does not end it, issue-101), or `the-loop sessions close` run —
+  THEN the registry session SHALL be closed AND the tmux session SHALL be
   **kept** so its transcript stays readable (`session.retained`);
   `routing.tmux.keepSessionOnClose: false` — or `sessions close --kill-tmux` — SHALL
   terminate it instead (best-effort when already gone). Retained sessions accumulate

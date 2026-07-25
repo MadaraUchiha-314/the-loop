@@ -42,7 +42,9 @@ locked spec files read from disk, not the drafting conversation (plan-mode style
    object: once the PR exists, **add the `routing.autoExecuteLabel` (from the operator's
    CLI config, decision-032; default `the-loop: auto-execute`) to the PR directly** and
    register against the PR's own ref (`github:OWNER/REPO#<pr-number>`), so PR activity
-   still resumes this session.
+   still resumes this session. **If the item takes more than one PR**, label **every**
+   one of them and list them all in the execution log's **Pull requests** table — one
+   PR merging does not end the work item.
 
 3. **Review** (`needs-review`). Run up to `reviews.selfReviewCount` self-reviews then
    `reviews.criticReviewCount` critic reviews (configured critics) BEFORE escalating to a

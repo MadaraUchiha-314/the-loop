@@ -62,6 +62,12 @@ the `/the-loop:work-on` superset command and granular per-step commands
   `contextManagement.taskBoundary` (default `compact`); mid-task only compaction is
   permitted (`midTask`), never clearing. Headless sessions reset by ending at the
   boundary and resuming fresh via the execution log.
+- **A work item may be delivered by several PRs.** WHEN more than one PR delivers a
+  work item (a spec PR then an implementation PR, a stacked series, a follow-up after
+  review, one PR per repository) THEN the loop SHALL label **each** of them for routing
+  and list **all** of them in the execution log's **Pull requests** table, and
+  `finish-tasks` SHALL require every listed PR to be merged or closed before the work
+  item is marked complete — one PR merging is not the work item ending (issue-101).
 
 ## Design
 
@@ -76,6 +82,7 @@ the `/the-loop:work-on` superset command and granular per-step commands
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-101 | The execution log tracks a **list** of the PRs delivering a work item; each is labelled for routing and all must be merged/closed before `finish-tasks` completes the item | [spec](../specs/issue-101/), [decision-039](../decisions/decision-039.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/101) |
 | issue-59 | Added per-installation custom instruction docs the loop reads and honors (`customInstructions` config, onboarding group, precedence rules) | [spec](../specs/issue-59/), [decision-029](../decisions/decision-029.md) |
 | issue-48 | Added checkpoint-then-reset context-window management (clear at phase boundaries, compact at task boundaries, `contextManagement` config) | [spec](../specs/issue-48/), [decision-027](../decisions/decision-027.md) |
 | issue-47 | Security became a gated concern of every phase: threat-model-lite in requirements, Security design section, security-review gate item, risk-tiered human sign-off (`config.security`) | [spec](../specs/issue-47/), [decision-026](../decisions/decision-026.md) |

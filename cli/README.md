@@ -364,7 +364,7 @@ the-loop gh-webhook stop  [--pidfile .the-loop/gh-webhook.pid]
   actions by logins in `routing.authorizedUsers` (CLI config — REQUIRED, no fallback to
   any repo's plugin config) — comments/reviews and issue/PR labels/opens from anyone
   else are dropped before dispatch (CI/system events, which carry no human
-  instructions, still pass; a PR-close still auto-closes the session). Empty fails
+  instructions, still pass; a close still auto-closes that item's own session). Empty fails
   closed with a warning. Each operator runs their own instance for their own login(s).
   See `docs/decisions/decision-023.md`.
 - **Self-reply guard (loop prevention):** the harness posts its own replies under the
@@ -393,9 +393,12 @@ the-loop sessions close --work-item github:OWNER/REPO#N [--keep-tmux|--kill-tmux
 - Claude Code sessions register with `$CLAUDE_SESSION_ID`; Cursor sessions register
   with the chat id they were launched with (non-interactive `cursor-agent ls` is
   unreliable for id discovery, so the id is captured at registration time).
-- When a work item **ends** — its issue closed, or its PR merged/closed — the session is
-  **auto-closed**; no manual `sessions close` needed. Both ingress paths do it: the
-  receiver on the `issues`/`pull_request` `closed` event, and the poller by noticing
+- When a work item **ends** — the issue closed, or, when the PR *is* the work item, that
+  PR merged/closed — the session is **auto-closed**; no manual `sessions close` needed.
+  A PR merely *linked* to the work item closing leaves the session running: one item is
+  often delivered by several PRs, so only the item's own close ends it (issue-101). Both
+  ingress paths do it: the receiver on the `issues`/`pull_request` `closed` event of the
+  registered item, and the poller by noticing
   (each cycle) that an active session's item is no longer in the open listing and
   confirming upstream that it really ended. A tmux-hosted session is **kept** so you can
   read back what happened (`routing.tmux.keepSessionOnClose`), but the harness inside it
@@ -406,16 +409,18 @@ the-loop sessions close --work-item github:OWNER/REPO#N [--keep-tmux|--kill-tmux
 **Label-gated auto-execution** (`spawnOnUnmatched: labeled`): give an issue/PR the
 configurable `routing.autoExecuteLabel` (default `the-loop: auto-execute`) and the
 receiver spawns a session and starts `/the-loop:work-on` on it — then routes that item's
-later activity (comments, reviews, CI, its linked PR) to the same session, and
-auto-closes on PR merge. Label presence is read straight from the webhook payload (no
-extra API call). A new issue *without* the label is received and ignored.
+later activity (comments, reviews, CI, and **every** PR linked to it) to the same
+session, and auto-closes when the item itself closes. Label presence is read straight
+from the webhook payload (no extra API call). A new issue *without* the label is
+received and ignored.
 
 The label applies to **PRs directly** too — a labelled PR with no linked issue is routed
 as its own work item (`github:OWNER/REPO#<pr-number>`). That makes PRs monitorable even
 when the ticketing system is **Jira or another provider**: the ticket can't be routed,
 but the PR delivering it can. `/the-loop:work-on <jira-id>` adds the label to the PR it
 opens and registers its session against the PR's ref automatically, so PR activity
-resumes the session and merge/close ends it — same as a GitHub-ticketed item.
+resumes the session and **that** PR's merge/close ends it — same as a GitHub-ticketed
+item.
 
 ### `poll` — pull ingress (provider-agnostic) when a webhook can't reach you
 
