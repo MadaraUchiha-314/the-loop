@@ -23,7 +23,7 @@ intervention, escalating only when a decision/opinion is genuinely required.
 > - `reference/testing.md` — Gherkin scenario docstrings on integration tests, the queryable scenario view, OpenAPI/GraphQL contract conventions.
 > - `reference/minimalism.md` — generation-time decision ladder to counter code bloat.
 > - `reference/token-economy.md` — token/cost levers (model routing, verbosity, disclosure, sub-agents, telemetry); advisory, never at the expense of rigor.
-> - `reference/collaboration.md` — collaborators/roles, paper trail, conflict log, notifications, MCP.
+> - `reference/collaboration.md` — collaborators/roles, paper trail, **the self-comment loop-prevention marker (every reply MUST carry it)**, conflict log, notifications, MCP.
 > - `reference/observability.md` — dev==runtime logging, levels, browser logging.
 > - `reference/automation.md` — distribution, the CLI, webhooks, predictability, learnings lifecycle.
 
@@ -91,6 +91,13 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
 - **Paper trail.** Every human decision/opinion is captured on the ticket or PR.
   Planning questions → ticket comments. PR & all reviews → PR/ticket comments.
   Notify via configured messaging channels when a human action is pending.
+- **RULE: mark every comment/reply as your own (loop prevention).** You post as the
+  operator's own credentials, so an unmarked reply is indistinguishable from a human
+  one and can resume your own session forever. Before posting **any** comment, PR
+  review, or reply — not just review findings — append `<!-- the-loop:agent-comment -->`
+  (exact string, invisible) plus a short visible attribution line. This applies at
+  every point above that posts a comment (paper trail, reviews, escalations, the PR
+  briefing). See `reference/collaboration.md` § loop prevention.
 - **Self-check continuously.** Maintain `docs/specs/<id>/execution-log.md`; keep the
   phase label in sync; run tests at logical checkpoints; log progress for visibility.
 - **Manage the context window deliberately (checkpoint, then reset).** Never reset
