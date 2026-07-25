@@ -45,6 +45,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Iterator, Optional, Sequence, Union
 
+import yaml
+
 from . import cli_config
 
 logger = logging.getLogger("the-loop.eventlog")
@@ -300,7 +302,7 @@ def configure_from_file(source: str) -> EventLog:
 
 
 def load_config(config_path: Optional[Union[str, Path]] = None) -> dict:
-    """Best-effort read of ``eventLog`` from the CLI config (``{}`` without PyYAML).
+    """Best-effort read of ``eventLog`` from the CLI config (``{}`` if unreadable).
 
     Defaults to the CLI config's resolved path (``cli_config.default_cli_config_path()``
     — ``--config``, then ``$THE_LOOP_CLI_CONFIG``, then ``./.the-loop/cli-config.yaml``,
@@ -314,10 +316,6 @@ def load_config(config_path: Optional[Union[str, Path]] = None) -> dict:
         else cli_config.default_cli_config_path()
     )
     if not path.is_file():
-        return {}
-    try:
-        import yaml  # optional dependency
-    except ImportError:
         return {}
     try:
         data = yaml.safe_load(path.read_text()) or {}

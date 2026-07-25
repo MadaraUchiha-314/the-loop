@@ -24,7 +24,8 @@ This describes what the-loop *does* today, in your project.
 the-loop is primarily a plugin, but it ALSO ships a lightweight, extensible **Python
 CLI** (`cli/`, package `the_loop`) for quality-of-life commands the plugin itself can
 use. Python is deliberate — future self-learning/ML capabilities are mostly exposed as
-Python SDKs. The core has **zero runtime dependencies** (stdlib only).
+Python SDKs. The core has **exactly one runtime dependency** — PyYAML, because the
+CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
 
 - Primary CLI: **`the-loop`**. Add a command by subclassing `Command`, `@register`-ing
   it, and dropping the module under `the_loop/commands/`.

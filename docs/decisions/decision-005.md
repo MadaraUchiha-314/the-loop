@@ -1,6 +1,11 @@
 # Decision 005: Provide a lightweight, extensible Python CLI (`the-loop`)
 
-- **Status:** accepted
+- **Status:** accepted — **superseded in part by
+  [decision-038](decision-038.md)**: the "zero runtime dependencies / PyYAML is an
+  optional extra" clause below no longer holds (PyYAML is required as of issue-97).
+  Everything else — Python, the extensible command registry, the stdlib-first
+  posture — stands. The clause is left as written; it records why the guarantee was
+  made, which is what made retiring it a decision worth recording.
 - **Date:** 2026-06-30
 - **Deciders:** @MadaraUchiha-314 (via issue #1 update)
 - **Work item:** issue-1
