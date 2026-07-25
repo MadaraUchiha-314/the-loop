@@ -159,3 +159,29 @@ VALID, pytest **385 passed**.
   ruff/markdownlint/pyright/config validation clean.
 - **Next:** await review on PR #96.
 - **Blockers:** none.
+
+### 2026-07-25 — rebased onto main (issue-93 landed)
+
+- **Phase:** needs-review
+- **Did:** Rebased `claude/github-issue-94-g0u10y` onto `origin/main` at
+  `497d241`, which had picked up [#95](https://github.com/MadaraUchiha-314/the-loop/pull/95)
+  (issue-93: an event on a PR resolves the PR's **linked issues first**). Two
+  conflicts, both additive and resolved by keeping both sides: `GhState` in
+  `test_poller_integration.py` (issue-93's `prs`/`pr_comments` canned responses
+  alongside issue-94's `gh api` closure state and failure switches — the `gh`
+  router now serves `pr list` from `self.prs` *and* honours `list_fails`), and
+  the `webhook-triggers.md` history table (both rows, issue-94 first).
+- **Checked the semantics, not just the merge:** issue-93 made
+  `extract_work_items` emit a PR's linked issue **before** the PR's own number,
+  which feeds `provider.refs(item)` — the source of the reconciliation's
+  `open_refs`. That strengthens the intended behaviour rather than breaking it:
+  a session registered against an issue is now *more* reliably seen as live
+  while its linked PR is open and labelled. The closure query itself
+  (`gh api repos/…/issues/<n>`) is independent of that resolution, and the
+  close path matches on `routed.work_items`, so a `pull_request closed` that
+  resolves to both refs closes whichever of them has a session.
+- **Checkpoint/tests:** `make check` green on the rebased branch — pytest
+  **406 passed** (issue-93's suite included), ruff/markdownlint/pyright/config
+  validation clean.
+- **Next:** await review on PR #96.
+- **Blockers:** none.
