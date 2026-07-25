@@ -60,5 +60,11 @@ overrides: {}
   `docs/capabilities/webhook-triggers.md` behaviour bullets + history rows;
   the webhook event prompt template's parenthetical. *(AC5.3)* — depends on
   T1–T9.
+- [x] **T14 — reviewer request (PR #96): the event filter can see a close.**
+  `commands/gh_webhook.py`: `DEFAULT_EVENTS` + `resolve_events` (omitted/empty →
+  the routable set) and `warn_on_missing_lifecycle_events`, wired into both the
+  initial build and the hot-reload `apply`; schema `default` + description, the
+  packaged template comment, `cli/README.md` row, and four unit tests.
+  *(AC2.5, AC2.6)* — depends on T4.
 - [x] **T13 — gates.** `make check` fully green; evidence in
   `execution-log.md`; PR + reviewer briefing. — depends on T1–T12.

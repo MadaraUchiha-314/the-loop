@@ -99,7 +99,7 @@ starting point ships at
 | `path` | string | `/gh-webhook` | HTTP path the receiver serves. |
 | `secretEnv` | string | `THE_LOOP_GH_WEBHOOK_SECRET` | Env var holding the webhook secret for HMAC verification (never stored in config). |
 | `pidfile` | string | `.the-loop/gh-webhook.pid` | Pidfile written on `start`, read on `stop`. |
-| `events` | string[] | `[]` (all) | GitHub event names of interest (e.g. `issues`, `pull_request`, `workflow_run`); empty accepts all. |
+| `events` | string[] | the routable set | GitHub event names of interest. Omitted/empty = the-loop's default set — `issues`, `issue_comment`, `pull_request`, `pull_request_review`, `pull_request_review_comment`, `workflow_run`, `check_run`, `check_suite`, `status` (everything it can map to a work item). An explicit list narrows it; keep `issues` and `pull_request` or a closed issue / merged PR never arrives and its session is never closed — the receiver warns at startup when they are missing. |
 | `routing` | object | — | Route received events to registered harness sessions (see below). |
 
 #### `webhooks.ghWebhook.routing` — session routing / auto-execution (also reused by the poller's dispatch)

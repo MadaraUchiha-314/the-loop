@@ -239,6 +239,33 @@ false) and report it; `--kill-tmux` ⇒ today's `kill`. `attach_session` forces
 `read_only=True` when `session.status != "active"` and says so in the existing
 note (R4.1).
 
+### 3.4 The event filter must be able to *see* a close
+
+A close only reaches the receiver if `webhooks.ghWebhook.events` lets it
+through, and nothing enforced that (PR #96 review). Two small changes in
+`commands/gh_webhook.py`:
+
+```python
+DEFAULT_EVENTS = ["issues", "issue_comment", "pull_request",
+                  "pull_request_review", "pull_request_review_comment",
+                  "workflow_run", "check_run", "check_suite", "status"]
+_LIFECYCLE_EVENTS = ("issues", "pull_request")
+
+def resolve_events(cfg):            # omitted/empty -> the default set
+    return [str(e) for e in (cfg.get("events") or []) if e] or list(DEFAULT_EVENTS)
+
+def warn_on_missing_lifecycle_events(events):   # explicit list dropped a close
+    ...
+```
+
+`DEFAULT_EVENTS` is exactly the set `extract_work_items` can resolve, so
+replacing the old "empty = accept anything" with it changes no outcome —
+anything outside the set could only ever be dropped as `no-work-item` — while
+making `issues`/`pull_request` present by construction. Resolution stays in the
+command layer: `Router(events=[])` keeps its "no filter" meaning for embedders.
+Both the initial build and the hot-reload path (`apply`) run the check, so an
+edit that drops a lifecycle event warns without a restart.
+
 ## 4. Configuration
 
 Two additive keys under `routing.tmux`, defaulted to the behaviour the issue

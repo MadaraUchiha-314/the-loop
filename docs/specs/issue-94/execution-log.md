@@ -134,3 +134,28 @@ VALID, pytest **385 passed**.
 | R5.1 | `TestRoutingConfigRunner` defaults/parsing + `make validate` over the schema and both cli-config YAMLs |
 | R5.2 | `eventlog.EVENT_TYPES` entries (`the-loop events --types` lists them) |
 | R5.3 | `docs/capabilities/interactive-sessions.md`, `docs/capabilities/webhook-triggers.md` updated in this PR |
+
+### 2026-07-25 — reviewer feedback on PR #96 (T14)
+
+- **Phase:** needs-review (no phase change — feedback addressed in place)
+- **Did:** Owner answered the briefing's three open questions.
+  - Q1 (`killHarnessOnClose: true` as the default) — **confirmed**, no change.
+  - Q3 (the webhook `events` filter must contain `issues`) — asked for "a
+    sensible default and also a warn". Implemented as T14: `DEFAULT_EVENTS` (the
+    nine events `extract_work_items` can resolve) now backs an omitted/empty
+    `events`, and an explicit list missing `issues`/`pull_request` warns at
+    startup **and** on hot reload. Choosing the routable set rather than a
+    hand-picked one keeps it behaviour-neutral: anything outside it could only
+    ever be dropped as `no-work-item`, so the only real change is that the
+    lifecycle events are present by construction. Schema `default` +
+    description, packaged template comment, README row, four unit tests.
+  - Q2 (re-setting `remain-on-exit` at close time even when `remainOnExit:
+    false`) — asked for an explanation; answered on the PR. No code change: the
+    reviewer has not asked for the opt-out to be honoured, and honouring it
+    would mean a `keepSessionOnClose: true` + `remainOnExit: false` operator
+    loses the whole session (and its transcript) the moment the harness is
+    killed — the opposite of what retention is for.
+- **Checkpoint/tests:** `make check` green — pytest **389 passed** (4 new),
+  ruff/markdownlint/pyright/config validation clean.
+- **Next:** await review on PR #96.
+- **Blockers:** none.

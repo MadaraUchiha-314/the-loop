@@ -112,6 +112,15 @@ finished ticket never wakes its agent again.
 4. **2.4** WHEN a session is auto-closed THEN `session.autoclosed` SHALL record
    **why** (`issue-closed` | `pr-merged` | `pr-closed`) alongside the existing
    `merged` flag.
+5. **2.5** WHEN `webhooks.ghWebhook.events` is omitted or empty THEN the receiver
+   SHALL use the-loop's **default event set** — every event it can map to a work
+   item, `issues` and `pull_request` among them — so a work item ending always
+   reaches it. *(Reviewer request on PR #96.)*
+6. **2.6** WHEN an explicit `events` list omits `issues` or `pull_request` THEN
+   the receiver SHALL **warn at startup** (and on hot reload) naming what is
+   missing and what it costs — a work item that ends is never noticed and its
+   session leaks. It SHALL remain a warning, not an error: narrowing the filter
+   is the operator's call. *(Reviewer request on PR #96.)*
 
 ### Requirement 3 — closing a session definitely ends the harness conversation
 

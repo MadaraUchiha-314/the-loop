@@ -23,7 +23,10 @@ webhooks:
     path: /gh-webhook
     secretEnv: THE_LOOP_GH_WEBHOOK_SECRET   # env var holding the secret (not stored here)
     pidfile: .the-loop/gh-webhook.pid
-    events: []   # e.g. [issues, issue_comment, pull_request, workflow_run]; empty = all
+    # Empty = the-loop's default set (every event it can route). If you narrow it,
+    # keep `issues` and `pull_request`: without them a closed issue / merged PR
+    # never arrives and its session is never closed — the receiver warns if so.
+    events: []
     routing:
       enabled: false                # route events to registered harness sessions
       registryDir: .the-loop/sessions

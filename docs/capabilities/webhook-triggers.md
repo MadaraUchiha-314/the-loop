@@ -14,9 +14,14 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 - `the-loop gh-webhook start` SHALL run an HTTP receiver (default `127.0.0.1:8787`,
   path `/gh-webhook`) that verifies `X-Hub-Signature-256` HMAC using
   `THE_LOOP_GH_WEBHOOK_SECRET`, exposes `GET /health`, and logs events.
-- Supported events SHALL include `issues`, `issue_comment`, `pull_request`,
-  `pull_request_review`, `pull_request_review_comment`, `workflow_run`
-  (`webhooks.ghWebhook.events`).
+- WHEN `webhooks.ghWebhook.events` is omitted or empty THEN the receiver SHALL
+  accept the-loop's **default event set** — `issues`, `issue_comment`,
+  `pull_request`, `pull_request_review`, `pull_request_review_comment`,
+  `workflow_run`, `check_run`, `check_suite`, `status`, i.e. every event it can map
+  to a work item. An explicit list narrows it, and WHEN that list omits `issues` or
+  `pull_request` THEN the receiver SHALL **warn at startup and on hot reload**: a
+  work item that ends would never be seen, so its session (and tmux session) would
+  leak. A warning, not an error — narrowing is the operator's call.
 - WHEN routing is enabled (`webhooks.ghWebhook.routing.enabled`) THEN a verified event
   SHALL be matched to a registered session (`.the-loop/sessions/*.json`, managed by
   `the-loop sessions`) and the harness SHALL be resumed via its official CLI
