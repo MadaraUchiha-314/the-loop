@@ -1,3 +1,9 @@
+## v0.22.0 (2026-07-25)
+
+### Feat
+
+- **cli**: a PR closing ends only its own session — a work item may have several PRs (issue #101) (#102)
+
 ## v0.21.0 (2026-07-25)
 
 ### Feat
