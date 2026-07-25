@@ -138,8 +138,8 @@ Granular commands run the same flow one step at a time:
 ## CLI companion (`the-loop`)
 
 Besides the plugin, the-loop ships a lightweight, **extensible Python CLI** (in
-[`cli/`](cli/), package `the_loop`, zero runtime deps) for quality-of-life commands the
-plugin can use. Python is intentional — it leaves room for future self-learning/ML
+[`cli/`](cli/), package `the_loop`, one runtime dependency — PyYAML, since its config
+is YAML) for quality-of-life commands the plugin can use. Python is intentional — it leaves room for future self-learning/ML
 capabilities (mostly Python SDKs). First command is a GitHub webhook receiver:
 
 ```bash

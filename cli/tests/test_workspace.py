@@ -473,7 +473,7 @@ def test_dispatcher_pr_close_removes_worktree(tmp_path):
     bare = make_origin(tmp_path)
     adapter = _RecordingAdapter()
     registry, dispatcher = _dispatcher(tmp_path, bare, adapter)
-    item = WorkItemRef.parse("github:octo/repo#15")
+    item = WorkItemRef.parse("github:octo/repo#16")  # the PR is the work item
     ws = Workspace(tmp_path / "root")
     target = target_for(bare)
     # Pre-create a session + its worktree, as a prior spawn would have.
@@ -494,13 +494,38 @@ def test_dispatcher_pr_close_removes_worktree(tmp_path):
     assert (ws.repo_dir(target) / ".git").is_dir()  # primary clone kept
 
 
+def test_dispatcher_pr_close_keeps_the_linked_work_items_worktree(tmp_path):
+    # issue-101: the work item may have further PRs, so its checkout must
+    # outlive any one of them closing.
+    bare = make_origin(tmp_path)
+    adapter = _RecordingAdapter()
+    registry, dispatcher = _dispatcher(tmp_path, bare, adapter)
+    item = WorkItemRef.parse("github:octo/repo#15")  # the issue PR #16 links
+    ws = Workspace(tmp_path / "root")
+    target = target_for(bare)
+    worktree = ws.ensure_worktree(target, item.slug)
+    registry.register(
+        Session(
+            work_item=item,
+            harness="claude",
+            harness_session_id="s-1",
+            cwd=str(worktree),
+        )
+    )
+    dispatcher.handle(_pr_close_event(bare))
+    dispatcher.stop()
+    session = registry.find_by_work_item(item)
+    assert session is not None and session.status == "active"
+    assert worktree.exists()  # the next PR is written from this checkout
+
+
 def test_dispatcher_pr_close_keeps_worktree_when_configured(tmp_path):
     bare = make_origin(tmp_path)
     adapter = _RecordingAdapter()
     registry, dispatcher = _dispatcher(
         tmp_path, bare, adapter, keep_checkout_on_close=True
     )
-    item = WorkItemRef.parse("github:octo/repo#15")
+    item = WorkItemRef.parse("github:octo/repo#16")
     ws = Workspace(tmp_path / "root")
     target = target_for(bare)
     worktree = ws.ensure_worktree(target, item.slug)
@@ -538,7 +563,7 @@ def test_dispatcher_clone_strategy_pr_close_removes_work_item_folder(tmp_path):
     bare = make_origin(tmp_path)
     adapter = _RecordingAdapter()
     registry, dispatcher = _dispatcher(tmp_path, bare, adapter, strategy="clone")
-    item = WorkItemRef.parse("github:octo/repo#15")
+    item = WorkItemRef.parse("github:octo/repo#16")  # the PR is the work item
     ws = Workspace(tmp_path / "root", strategy="clone")
     target = target_for(bare)
     checkout = ws.prepare(target, item.slug)

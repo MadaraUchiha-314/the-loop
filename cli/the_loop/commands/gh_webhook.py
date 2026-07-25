@@ -4,9 +4,8 @@ Primary CLI: ``the-loop``; sub-command: ``gh-webhook``; actions: ``start`` / ``s
 Defaults can come from the CLI config (``webhooks.ghWebhook``; see
 ``the_loop.cli_config`` for the ``cli-config.yaml`` resolution order — ``--config``,
 then ``$THE_LOOP_CLI_CONFIG``, then ``./.the-loop/cli-config.yaml``, then
-``~/.the-loop/cli-config.yaml``, decision-032) when PyYAML is available; CLI flags
-always win. The secret is read from an env var (never a flag) so it doesn't leak
-into process listings.
+``~/.the-loop/cli-config.yaml``, decision-032); CLI flags always win. The secret is
+read from an env var (never a flag) so it doesn't leak into process listings.
 """
 
 from __future__ import annotations
@@ -85,11 +84,11 @@ def warn_on_missing_lifecycle_events(events) -> list:
 def _read_gh_webhook_config(strict: bool = False) -> dict:
     """Read ``webhooks.ghWebhook`` from the CLI config (``_CONFIG_PATH``).
 
-    ``strict=False`` (defaults path): returns ``{}`` when the file or PyYAML is
-    unavailable or unparseable — the CLI must work with zero runtime deps.
-    ``strict=True`` (hot-reload path): raises on a missing file / missing PyYAML
-    / parse error, so the :class:`Reloader` keeps the previously loaded config
-    instead of resetting to defaults on a transient broken save.
+    ``strict=False`` (defaults path): returns ``{}`` when the file is missing or
+    unparseable, so a half-saved hand edit never breaks ingress.
+    ``strict=True`` (hot-reload path): raises on a missing file / parse error, so
+    the :class:`Reloader` keeps the previously loaded config instead of resetting
+    to defaults on a transient broken save.
     """
     data = cli_config.load_cli_config(_CONFIG_PATH, strict=strict)
     return ((data.get("webhooks") or {}).get("ghWebhook")) or {}

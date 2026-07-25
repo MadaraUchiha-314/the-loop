@@ -17,9 +17,11 @@ live in a repo's ``.the-loop/harness-config.yaml`` — that is the HARNESS (plug
 4. ``~/.the-loop/cli-config.yaml`` — the final, always-available fallback, not
    tied to any repo.
 
-Best-effort by design: the CLI has zero required runtime deps, so a missing
-file or missing PyYAML degrades to ``{}`` (callers fall back to their own
-built-in defaults) rather than failing to start.
+Best-effort about the *file*: a missing (or, leniently, unparseable) config
+degrades to ``{}`` — callers fall back to their own built-in defaults — rather
+than failing to start. The *parser* is not best-effort: PyYAML is a required
+runtime dependency (issue-97, decision-038), because a CLI that cannot read its
+own YAML config has nothing to fall back to but silence.
 """
 
 from __future__ import annotations
@@ -28,6 +30,8 @@ import logging
 import os
 from pathlib import Path
 from typing import Optional, Union
+
+import yaml
 
 logger = logging.getLogger("the-loop.cli-config")
 
@@ -64,23 +68,15 @@ def default_cli_config_path() -> Path:
 def load_cli_config(path: Path, strict: bool = False) -> dict:
     """Parse the whole CLI config file at ``path``.
 
-    ``strict=False`` (defaults path): returns ``{}`` when the file or PyYAML is
-    unavailable or unparseable — the CLI must work with zero runtime deps.
-    ``strict=True`` (hot-reload path): raises on a missing file / missing
-    PyYAML / parse error, so a :class:`the_loop.reload.Reloader` keeps the
-    previously loaded config instead of resetting to defaults on a transient
-    broken save.
+    ``strict=False`` (defaults path): returns ``{}`` when the file is missing or
+    unparseable, so a half-saved hand edit never breaks ingress.
+    ``strict=True`` (hot-reload path): raises on a missing file / parse error, so
+    a :class:`the_loop.reload.Reloader` keeps the previously loaded config
+    instead of resetting to defaults on a transient broken save.
     """
     if not path.is_file():
         if strict:
             raise FileNotFoundError(f"{path} not found")
-        return {}
-    try:
-        import yaml  # optional dependency
-    except ImportError:
-        if strict:
-            raise
-        logger.debug("pyyaml not installed; skipping config-file defaults")
         return {}
     text = path.read_text()
     if strict:

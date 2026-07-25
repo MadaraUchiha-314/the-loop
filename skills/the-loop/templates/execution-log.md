@@ -26,6 +26,18 @@ status: in-progress          # in-progress | complete
 | needs-review |  |  |  |
 | complete |  |  |  |
 
+## Pull requests
+
+> A work item may be delivered by **several** PRs (a spec PR then an implementation
+> PR, a stacked series, a follow-up after review, or one PR per repository) — list
+> every one of them here, not just the latest. Each PR carries the auto-execute
+> label so its activity routes back to this work item's session, and the work item
+> is complete only once **all** of them are merged or closed (`finish-tasks`).
+
+| PR | Scope / tasks | Status |
+|----|---------------|--------|
+|    |               | open \| merged \| closed |
+
 ## Progress entries
 
 ### <timestamp> — <short summary>

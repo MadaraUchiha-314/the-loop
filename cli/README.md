@@ -1,8 +1,10 @@
 # the-loop CLI
 
 A lightweight, **extensible** command-line companion to the the-loop plugin, written in
-Python (stdlib-only core — zero runtime dependencies). Python is intentional: it leaves
-room to add self-learning / ML capabilities later (mostly exposed as Python SDKs).
+Python. It has exactly **one runtime dependency**, PyYAML — its whole configuration is
+YAML, so reading it is not optional (issue-97, `docs/decisions/decision-038.md`) — and is
+stdlib otherwise. Python is intentional: it leaves room to add self-learning / ML
+capabilities later (mostly exposed as Python SDKs).
 
 ## Install
 
@@ -10,10 +12,13 @@ From PyPI (published as **`the-loopy-one`** — the base name `the-loop` was tak
 import package and CLI keep the natural `the_loop`/`the-loop`):
 
 ```bash
-pip install the-loopy-one            # or: uv pip install the-loopy-one
-pip install "the-loopy-one[config]"  # + PyYAML, for reading config-file defaults
+pip install the-loopy-one   # PyYAML comes with it — nothing else to add
 the-loop --help
 ```
+
+> The `[config]` extra that used to carry PyYAML is now an empty, deprecated no-op:
+> `pip install "the-loopy-one[config]"` still works so pinned scripts don't break, but
+> it adds nothing.
 
 For local development the-loop uses **uv** (its declared Python package manager). From the
 repo root:
@@ -26,9 +31,8 @@ uv run the-loop --help      # run the CLI
 Or install this package on its own with any PEP 517 installer:
 
 ```bash
-uv pip install -e .            # or: pip install -e .
-uv pip install -e ".[config]"  # PyYAML, for reading config-file defaults
-uv pip install -e ".[dev]"     # pytest + commitizen
+uv pip install -e .         # or: pip install -e .
+uv pip install -e ".[dev]"  # + pytest and commitizen
 ```
 
 This exposes the primary CLI: `the-loop`. Releases are **automatic**: on merge to `main`,
@@ -341,7 +345,7 @@ the-loop gh-webhook stop  [--pidfile .the-loop/gh-webhook.pid]
 - `GET /health` returns `200 ok`.
 - Defaults can come from the **CLI config** (`webhooks.ghWebhook`, see
   "Two independent config files" above for the `--config`/env/cwd/home resolution
-  order) when PyYAML is installed; flags always override.
+  order); flags always override.
 - **`--route`** (default from `webhooks.ghWebhook.routing.enabled`) routes each verified
   event to the registered harness session working that item: the router extracts the
   work item(s) from the payload (issue/PR number, PR head-branch `issue-<n>` convention,
@@ -362,7 +366,7 @@ the-loop gh-webhook stop  [--pidfile .the-loop/gh-webhook.pid]
   actions by logins in `routing.authorizedUsers` (CLI config — REQUIRED, no fallback to
   any repo's plugin config) — comments/reviews and issue/PR labels/opens from anyone
   else are dropped before dispatch (CI/system events, which carry no human
-  instructions, still pass; a PR-close still auto-closes the session). Empty fails
+  instructions, still pass; a close still auto-closes that item's own session). Empty fails
   closed with a warning. Each operator runs their own instance for their own login(s).
   See `docs/decisions/decision-023.md`.
 - **Self-reply guard (loop prevention):** the harness posts its own replies under the
@@ -430,9 +434,12 @@ things stays `sessions close`'s job.
 - Claude Code sessions register with `$CLAUDE_SESSION_ID`; Cursor sessions register
   with the chat id they were launched with (non-interactive `cursor-agent ls` is
   unreliable for id discovery, so the id is captured at registration time).
-- When a work item **ends** — its issue closed, or its PR merged/closed — the session is
-  **auto-closed**; no manual `sessions close` needed. Both ingress paths do it: the
-  receiver on the `issues`/`pull_request` `closed` event, and the poller by noticing
+- When a work item **ends** — the issue closed, or, when the PR *is* the work item, that
+  PR merged/closed — the session is **auto-closed**; no manual `sessions close` needed.
+  A PR merely *linked* to the work item closing leaves the session running: one item is
+  often delivered by several PRs, so only the item's own close ends it (issue-101). Both
+  ingress paths do it: the receiver on the `issues`/`pull_request` `closed` event of the
+  registered item, and the poller by noticing
   (each cycle) that an active session's item is no longer in the open listing and
   confirming upstream that it really ended. A tmux-hosted session is **kept** so you can
   read back what happened (`routing.tmux.keepSessionOnClose`), but the harness inside it
@@ -443,9 +450,10 @@ things stays `sessions close`'s job.
 **Label-gated auto-execution** (`spawnOnUnmatched: labeled`): give an issue/PR the
 configurable `routing.autoExecuteLabel` (default `the-loop: auto-execute`) and the
 receiver spawns a session and starts `/the-loop:work-on` on it — then routes that item's
-later activity (comments, reviews, CI, its linked PR) to the same session, and
-auto-closes on PR merge. Label presence is read straight from the webhook payload (no
-extra API call). A new issue *without* the label is received and ignored.
+later activity (comments, reviews, CI, and **every** PR linked to it) to the same
+session, and auto-closes when the item itself closes. Label presence is read straight
+from the webhook payload (no extra API call). A new issue *without* the label is
+received and ignored.
 
 **Pause a work item without ending it.** `sessions close` *ends* a session (and,
 since issue-94, the harness conversation inside it). When you just want the-loop
@@ -477,7 +485,8 @@ as its own work item (`github:OWNER/REPO#<pr-number>`). That makes PRs monitorab
 when the ticketing system is **Jira or another provider**: the ticket can't be routed,
 but the PR delivering it can. `/the-loop:work-on <jira-id>` adds the label to the PR it
 opens and registers its session against the PR's ref automatically, so PR activity
-resumes the session and merge/close ends it — same as a GitHub-ticketed item.
+resumes the session and **that** PR's merge/close ends it — same as a GitHub-ticketed
+item.
 
 ### `labels` — create the labels the-loop reacts to
 
@@ -544,9 +553,9 @@ templates are all reused unchanged.
   doubt: a failed listing skips reconciliation entirely, and an unanswerable state query
   leaves the session running for the next cycle. Reopening an item makes it first-sight
   again, so work restarts (issue-94).
-- **Config:** ingress defaults come from `polling` in the **CLI config** (when PyYAML is
-  installed); dispatch behaviour is reused from `webhooks.ghWebhook.routing` (same
-  file). Flags cover only the run loop.
+- **Config:** ingress defaults come from `polling` in the **CLI config**; dispatch
+  behaviour is reused from `webhooks.ghWebhook.routing` (same file). Flags cover only
+  the run loop.
 - **Hot reload:** edit `polling.sources` / `intervalSeconds` while it runs and the change
   is picked up on the next cycle — no restart. An invalid edit is logged and the previous
   config kept. (The shared dispatch config still needs a restart.)
@@ -613,8 +622,7 @@ the-loop scenarios [--root .] [--glob PATTERN ...] [--format table|markdown|json
   "what scenarios are tested?" without running anything.
 - Language-agnostic: Python docstrings, JS/TS block comments and Go comments all work.
 - Globs come from `--glob` (repeatable), else `testing.integrationTestGlobs` in
-  `.the-loop/harness-config.yaml` (when PyYAML is installed), else built-in defaults covering
-  common layouts.
+  `.the-loop/harness-config.yaml`, else built-in defaults covering common layouts.
 - `--format markdown` emits a GitHub-flavoured table (for PR briefings); `--format json`
   is machine-readable (includes each scenario's steps and `file:line`).
 

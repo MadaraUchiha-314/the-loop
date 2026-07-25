@@ -7,8 +7,8 @@ configured integration-test globs, extracts those scenarios and presents them as
 scenarios are tested?" without running anything.
 
 Globs come from ``--glob`` (repeatable) or, failing that, ``testing.integrationTestGlobs``
-in ``.the-loop/harness-config.yaml`` (when PyYAML is available; the pre-rename
-``config.yaml`` is still honored — issue-82), else a built-in default set.
+in ``.the-loop/harness-config.yaml`` (the pre-rename ``config.yaml`` is still honored —
+issue-82), else a built-in default set.
 """
 
 from __future__ import annotations
@@ -18,6 +18,8 @@ import json
 import logging
 from pathlib import Path
 from typing import List, Sequence
+
+import yaml
 
 from .base import Command, register
 from ..scenarios import DEFAULT_GLOBS, Scenario, collect_scenarios
@@ -30,8 +32,8 @@ def _load_config_globs(root: Path) -> List[str]:
 
     Reads ``.the-loop/harness-config.yaml``, falling back to the pre-rename
     ``.the-loop/config.yaml`` (issue-82, decision-035) so repos that have not run
-    /the-loop:upgrade-the-loop keep working. Returns ``[]`` if no file or PyYAML
-    is unavailable — the CLI must work with zero runtime dependencies.
+    /the-loop:upgrade-the-loop keep working. Returns ``[]`` when there is no such
+    file, or it does not parse — the command still has its built-in globs.
     """
     candidates = [
         root / ".the-loop" / "harness-config.yaml",
@@ -39,11 +41,6 @@ def _load_config_globs(root: Path) -> List[str]:
     ]
     cfg_path = next((p for p in candidates if p.is_file()), None)
     if cfg_path is None:
-        return []
-    try:
-        import yaml  # optional dependency
-    except ImportError:
-        logger.debug("pyyaml not installed; skipping config-file globs")
         return []
     try:
         data = yaml.safe_load(cfg_path.read_text()) or {}

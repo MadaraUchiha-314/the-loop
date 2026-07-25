@@ -5,6 +5,10 @@
 - **Deciders:** @MadaraUchiha-314 (issue #57)
 - **Work item:** issue-57
 - **Revisits:** [decision-005](decision-005.md) (Python CLI), which this reaffirms
+- **Superseded in part by** [decision-038](decision-038.md): the "zero runtime
+  dependencies, PyYAML optional" description in § Context was accurate when written
+  and is no longer — PyYAML became required in issue-97. The recommendation
+  (stay on Python) and the whole analysis behind it are unaffected.
 
 ## Context
 

@@ -67,8 +67,9 @@ as commands/skills today; hooks add predictability where a step must always run.
 ### 6. CLI companion (`the-loop`, Python)
 
 A lightweight, extensible Python CLI under `cli/` (package `the_loop`) for
-quality-of-life commands the plugin itself can use. Zero runtime deps (stdlib only);
-Python is chosen to leave room for future self-learning/ML SDKs. Extensible command
+quality-of-life commands the plugin itself can use. One runtime dependency — PyYAML,
+because the CLI's whole configuration is YAML (issue-97, decision-038) — and stdlib
+otherwise; Python is chosen to leave room for future self-learning/ML SDKs. Extensible command
 registry. Commands: `gh-webhook start|stop` (HMAC-verified GitHub webhook receiver
 with `--route`), `sessions register|list|close` (work item ↔ session registry), and
 `scenarios` (queryable integration-test scenario table). See

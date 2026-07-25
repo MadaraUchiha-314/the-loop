@@ -1,6 +1,6 @@
 # Capability: cli
 
-> The `the-loop` Python CLI companion — lightweight, stdlib-only, extensible
+> The `the-loop` Python CLI companion — lightweight, one-dependency, extensible
 > quality-of-life commands the plugin (and users) can call.
 
 ## What it is
@@ -11,8 +11,15 @@ self-learning/ML capabilities.
 
 ## Current behaviour
 
-- The CLI SHALL have zero runtime dependencies (stdlib only) and register commands via
-  an extensible registry (`the_loop.commands`).
+- The CLI SHALL register commands via an extensible registry (`the_loop.commands`).
+- The CLI SHALL have **exactly one** runtime dependency, `pyyaml>=6`, and be stdlib
+  otherwise. PyYAML is REQUIRED, not an extra: the CLI config, the harness config and
+  every default the daemons read are YAML, so a missing parser used to degrade each
+  read to empty, with the cause logged at `debug` or not at all — leaving `poll` to
+  exit with "no polling sources configured" against a file that listed sources
+  (issue-97, decision-038).
+  The `[config]` extra that once carried it SHALL be retained as an empty, deprecated
+  no-op so pinned install lines keep resolving.
 - `the-loop --version` SHALL report the installed package version, derived from package
   metadata (`importlib.metadata.version("the-loopy-one")`) rather than a hardcoded string,
   so it always tracks the actually-installed release (issue-78).
@@ -64,6 +71,7 @@ self-learning/ML capabilities.
 | Work item | What changed | Links |
 |-----------|--------------|-------|
 | issue-98 | `sessions` became the operator surface: joined `list` table, `show`, `pause`/`resume` (CLI + `the-loop: paused` label), `prune`; new `labels ensure` command | [spec](../specs/issue-98/) |
+| issue-97 | PyYAML promoted from the `[config]` extra to a required runtime dependency; the three silent `ImportError` fallbacks removed and the zero-runtime-dependency guarantee retired | [spec](../specs/issue-97/), [decision-038](../decisions/decision-038.md) |
 | issue-82 | Plugin config renamed `config.yaml` → `harness-config.yaml` (`scenarios` reads the new name with a pre-rename fallback); CLI config gained operator-declared `collaborators` + daemon-side `notifications` event filters | [decision-035](../decisions/decision-035.md) |
 | issue-78 | `--version` derives from package metadata instead of a hardcoded string that had frozen at 0.1.0 | [spec](../specs/issue-78/) |
 | issue-63 | Split the CLI daemon's config (`webhooks`/`polling`/`eventLog`) out of the per-repo plugin config into an independent, repo-agnostic CLI config | [spec](../specs/issue-63/), [decision-032](../decisions/decision-032.md) |

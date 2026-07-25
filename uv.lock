@@ -1312,13 +1312,13 @@ wheels = [
 
 [[package]]
 name = "the-loopy-one"
-version = "0.20.0"
+version = "0.21.0"
 source = { editable = "cli" }
-
-[package.optional-dependencies]
-config = [
+dependencies = [
     { name = "pyyaml" },
 ]
+
+[package.optional-dependencies]
 dev = [
     { name = "commitizen", version = "4.10.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "commitizen", version = "4.16.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
@@ -1330,7 +1330,7 @@ dev = [
 requires-dist = [
     { name = "commitizen", marker = "extra == 'dev'", specifier = ">=3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
-    { name = "pyyaml", marker = "extra == 'config'", specifier = ">=6" },
+    { name = "pyyaml", specifier = ">=6" },
 ]
 provides-extras = ["config", "dev"]
 

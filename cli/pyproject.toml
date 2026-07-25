@@ -6,7 +6,7 @@
 # `the-loopy-one`; the import package and CLI keep the natural `the_loop`/`the-loop`.
 [project]
 name = "the-loopy-one"
-version = "0.20.0"
+version = "0.22.0"
 description = "Lightweight, extensible CLI for the-loop — quality-of-life commands the the-loop plugin can use (e.g. a GitHub webhook receiver)."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -23,12 +23,17 @@ classifiers = [
     "Programming Language :: Python :: 3 :: Only",
     "Topic :: Software Development :: Build Tools",
 ]
-# Core CLI has ZERO runtime dependencies (stdlib only) to stay very lightweight.
-dependencies = []
+# PyYAML is the CLI's ONE runtime dependency: its whole configuration (the CLI
+# config and the harness config) is YAML, so reading it is not optional — it used
+# to be a `[config]` extra whose absence silently degraded every read to empty
+# (issue-97, decision-038). Everything else stays stdlib to keep this lightweight.
+dependencies = ["pyyaml>=6"]
 
 [project.optional-dependencies]
-# Optional: richer config-file parsing. The CLI works without it (flags + env).
-config = ["pyyaml>=6"]
+# Deprecated no-op, kept so the previously documented
+# `pip install "the-loopy-one[config]"` keeps working without pip's "does not
+# provide the extra" warning. PyYAML is a required dependency now (issue-97).
+config = []
 dev = ["pytest>=8", "commitizen>=3"]
 
 [project.scripts]
