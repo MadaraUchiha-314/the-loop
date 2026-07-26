@@ -134,6 +134,15 @@ class PollProvider:
     # returning False is what makes the poller skip reconciliation entirely for
     # such a provider — no other core change needed.
 
+    def label_actor(self, item: WorkItem, label: str, action: str) -> Optional[str]:
+        """Who last added (``labeled``) / removed (``unlabeled``) ``label``.
+
+        ``None`` = cannot tell, which callers must treat as unauthorized: a
+        control gated on *who* acted may never act on an unidentified actor.
+        Providers that cannot answer inherit this default (issue-98 review).
+        """
+        return None
+
     def owns(self, ref: WorkItemRef) -> bool:
         """Whether ``ref`` falls inside this source's configured scope."""
         return False

@@ -62,9 +62,12 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
   with `reason=paused`) — while its session, tmux transcript and checkout are left
   untouched; `resume` picks it back up. A work item that **ends** while paused is still
   closed normally: a pause stops work, never cleanup. The same control is a label
-  (`the-loop: paused`, default) so it works from the GitHub UI with no shell access;
-  label and local ledger compose as OR, and `pause`/`resume` mirror the label onto the
-  ticket best-effort (`--no-label` to skip). `the-loop labels ensure --repo OWNER/REPO`
+  (`the-loop: paused`, default) so it works from the GitHub UI with no shell access —
+  **but only for a login in `routing.authorizedUsers`**: an authorized add/remove
+  writes/clears the pause record, an unauthorized or unidentifiable one changes
+  nothing, so nobody outside the allow-list can resume a parked agent by deleting a
+  label (decision-041). `pause`/`resume` mirror the label onto the ticket best-effort
+  (`--no-label` to skip). `the-loop labels ensure --repo OWNER/REPO`
   creates this label and the auto-execute one (run during `/the-loop:init`).
   `the-loop sessions list` is the operator's table of everything being tracked — the
   session registry joined with the poller's ledger and live tmux state, each row

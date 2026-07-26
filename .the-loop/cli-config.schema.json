@@ -70,7 +70,7 @@
                 "pausedLabel": {
                   "type": "string",
                   "default": "the-loop: paused",
-                  "description": "Issue/PR label that PAUSES the-loop on a work item (issue-98): while present, neither the webhook path nor the poller spawns for it or delivers its activity — the session, its tmux transcript and its checkout are left untouched. Removing the label resumes. Read from the payload / poll listing, no API call. Composes as OR with the local ledger in pauseFile."
+                  "description": "Issue/PR label that PAUSES the-loop on a work item (issue-98, decision-041). It is a CONTROL, not a state: adding it pauses and removing it resumes, but ONLY when the actor is in authorizedUsers — an unauthorized or unidentifiable actor changes nothing, so nobody outside the allow-list can resume a parked agent by deleting the label. The pause itself lives in pauseFile, which is the only thing the gate reads. The actor comes from the labeled/unlabeled webhook payload, or (poll path, only when label and ledger disagree) from the issue-events API."
                 },
                 "pauseFile": {
                   "type": "string",

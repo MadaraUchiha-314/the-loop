@@ -39,8 +39,13 @@ self-learning/ML capabilities.
   its session, tmux transcript and checkout untouched; a work item that **ends** while
   paused SHALL still have its session closed (pause stops work, never cleanup). The
   same control SHALL be available as the `routing.pausedLabel` GitHub label (default
-  `the-loop: paused`), read from data the daemon already holds, composing with the
-  local ledger (`routing.pauseFile`) as **OR**; `pause`/`resume` SHALL mirror the label
+  `the-loop: paused`) — but ONLY for a person in `routing.authorizedUsers`: an
+  authorized add/remove writes/clears the pause record, while an unauthorized or
+  unidentifiable actor changes nothing, so a label *removal* by someone unapproved
+  cannot resume the-loop (decision-041). The gate SHALL read the ledger
+  (`routing.pauseFile`) alone, never raw label presence. The actor SHALL come from the
+  `labeled`/`unlabeled` webhook payload, or — on the poll path, only when label and
+  ledger disagree — from the issue-events API. `pause`/`resume` SHALL mirror the label
   onto the ticket best-effort (`--no-label` to skip), and a failed label write SHALL
   never fail the local pause (issue-98).
 - `the-loop labels ensure --repo OWNER/REPO` SHALL create the operational labels the

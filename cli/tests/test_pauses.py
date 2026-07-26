@@ -44,29 +44,32 @@ def test_accepts_a_work_item_ref_object(tmp_path):
     assert paused.state(WorkItemRef.parse(REF)).paused is True
 
 
-def test_label_alone_pauses_and_records_its_source(tmp_path):
-    state = store(tmp_path).state(REF, labels=["bug", LABEL])
+def test_a_label_pause_records_who_did_it(tmp_path):
+    """The label writes the ledger (decision-041) — it is never read as state."""
+    paused = store(tmp_path)
+    paused.pause(REF, reason="label added by @octocat", source="label", by="octocat")
+    state = paused.state(REF)
     assert state.paused is True
     assert state.sources == ["label"]
-    assert state.reason == ""
+    assert state.by == "octocat"
+    assert "octocat" in state.reason
 
 
-def test_local_and_label_compose_as_or(tmp_path):
+def test_the_ledger_is_the_only_thing_state_consults(tmp_path):
+    """Raw label presence is NOT a pause: an unauthorized labeller changes
+    nothing, and an unauthorized label *removal* cannot resume a paused item."""
+    paused = store(tmp_path)
+    assert paused.state(REF).paused is False  # label on the ticket, no record
+
+    paused.pause(REF, source="label", by="octocat")
+    assert paused.state(REF).paused is True  # label deleted upstream: still paused
+
+
+def test_a_cli_pause_records_the_local_source(tmp_path):
     paused = store(tmp_path)
     paused.pause(REF, reason="parked")
-    both = paused.state(REF, labels=[LABEL])
-    assert both.paused is True
-    assert both.sources == ["local", "label"]
-    # Removing the label leaves the local pause standing (neither overrides).
-    assert paused.state(REF, labels=[]).sources == ["local"]
-
-
-def test_unrelated_labels_do_not_pause(tmp_path):
-    assert store(tmp_path).state(REF, labels=["the-loop: auto-execute"]).paused is False
-
-
-def test_empty_label_config_never_matches(tmp_path):
-    assert store(tmp_path, label="").state(REF, labels=[""]).paused is False
+    assert paused.state(REF).sources == ["local"]
+    assert paused.state(REF).by == ""
 
 
 def test_corrupt_ledger_degrades_to_nothing_paused(tmp_path, caplog):

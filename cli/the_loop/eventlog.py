@@ -146,9 +146,16 @@ EVENT_TYPES: Dict[str, str] = {
     ),
     "session.closed": "A session was closed in the registry (work_item).",
     "session.paused": (
-        "An operator paused a work item (work_item, reason) — the-loop stops "
+        "A work item was paused (work_item, reason, source: local | label, "
+        "actor for a label) — the-loop stops "
         "spawning for it and delivering its activity until it is resumed; its "
         "session, tmux transcript and checkout are untouched (issue-98)."
+    ),
+    "pause.unauthorized": (
+        "Someone who is not in routing.authorizedUsers added or removed the "
+        "paused label (work_item, actor, action: labeled | unlabeled); the "
+        "pause state was left unchanged — the label is a control, and only "
+        "authorized logins may use it (issue-98, decision-041)."
     ),
     "session.resumed": (
         "A paused work item was resumed (work_item); the-loop acts on it again."

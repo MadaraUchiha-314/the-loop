@@ -83,8 +83,9 @@ class PauseStore:
     def list_paused(self) -> List[PauseRecord]
 ```
 
-`PauseState` carries `paused: bool` and `sources: List[str]` (`"local"`,
-`"label"`), which is what R5.5 renders.
+`PauseState` carries `paused: bool` plus the record's `source` (`"local"` |
+`"label"`) and `by` (the labeller's login), which is what R5.8 renders. Since
+the review, `state()` takes no labels — see §12.
 
 **Freshness.** The daemon is long-lived and the CLI writes the file
 out-of-process, so the store re-reads when the file's `(st_mtime_ns, st_size)`
@@ -93,12 +94,8 @@ changes — checked on each query, one `stat` per poll cycle. **Failure mode
 unreadable/corrupt one logs a warning once and is treated as empty. Never
 "everything paused", never an exception into the poll loop.
 
-**Label side (R5.1/R5.2).** `PauseStore.state()` takes the labels the caller
-already has:
-
-- dispatcher — `event_carries_label(payload, paused_label)` from
-  `webhook/router.py`, the exact helper auto-execute gating uses (no API call);
-- poller — `item.labels`, already fetched by the listing each cycle.
+**Label side.** Superseded by §12: the label no longer feeds `state()` at all —
+it writes the ledger through an authorization check, in both directions.
 
 ## 3. Enforcing the pause
 
@@ -301,6 +298,44 @@ Integration (`cli/tests/test_*_integration.py`, Gherkin docstrings per
   resume → next comment is dispatched);
   *Scenario: the paused label alone stops webhook dispatch*;
   *Scenario: a paused work item that is closed upstream still closes its session*.
+
+## 12. The label as an authorized control (added in review)
+
+PR #100 review: *"I want the github label addition and removal only to be
+affected if the person is listed as approved set of people."* Reading label
+*presence* could not do that — see
+[decision-041](../../decisions/decision-041.md) — so the label became a
+**trigger that writes the ledger**, and `PauseStore.state()` reads the ledger
+alone.
+
+```mermaid
+flowchart TD
+  ADD["paused label added/removed"] --> WHO{"actor in<br/>authorizedUsers?"}
+  WHO -- "no / unknown" --> DROP["pause.unauthorized<br/>state unchanged"]
+  WHO -- yes --> LEDGER["pause ledger<br/>(source: label, by: @login)"]
+  CLI["sessions pause/resume"] --> LEDGER
+  LEDGER --> GATE["pause gate (dispatcher + poller)"]
+```
+
+**Where the actor comes from.**
+
+| Path | Source | Cost |
+|---|---|---|
+| Webhook `labeled`/`unlabeled` | `sender.login` in the payload (`event_actor()`) | free |
+| Poll | `GET /issues/{n}/events` → newest matching `labeled`/`unlabeled` entry's `actor.login` | one call, **only on a disagreement** |
+
+`Dispatcher._apply_label_control()` runs before the pause gate, so the labelling
+event itself is honoured. `Poller._reconcile_label_pause()` compares the listing
+to the ledger and only then asks `PollProvider.label_actor()` (a new contract
+method; non-GitHub providers inherit `None`, i.e. "cannot tell"). A refusal is
+cached per ref so a stuck disagreement is not re-queried every cycle, and an
+**unidentifiable actor counts as unauthorized** — a control gated on who acted
+must never act on an unnamed actor.
+
+The consequence worth stating plainly: an unauthorized *removal* leaves the item
+paused with no label on the ticket. The ledger is right and the UI is stale;
+`sessions show` reports it and `pause.unauthorized` records it. The daemon
+deliberately does not re-assert the label (write-loop risk).
 
 ## 11. Runtime-state layout (`state.py`, added in review)
 

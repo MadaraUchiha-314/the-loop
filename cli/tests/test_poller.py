@@ -72,6 +72,78 @@ class FakeRun:
         )
 
 
+# -- who moved the paused label (issue-98 review, decision-041) ----------------
+
+
+class _EventsGh:
+    """Canned `gh api .../issues/N/events` responses."""
+
+    def __init__(self, rows, code=0):
+        self.rows = rows
+        self.code = code
+        self.calls = []
+
+    def __call__(self, cmd, **kwargs):
+        import json as _json
+        import subprocess as _sp
+
+        self.calls.append(cmd)
+        return _sp.CompletedProcess(cmd, self.code, _json.dumps(self.rows), "")
+
+
+def _label_row(action, actor, label="the-loop: paused"):
+    return {"event": action, "actor": {"login": actor}, "label": {"name": label}}
+
+
+def test_label_actor_returns_the_most_recent_matching_transition():
+    from the_loop.poller import GhClient
+
+    gh = GhClient(
+        runner=_EventsGh(
+            [
+                _label_row("labeled", "first"),
+                _label_row("unlabeled", "someone-else"),
+                _label_row("labeled", "latest"),
+            ]
+        )
+    )
+    assert gh.label_actor("octo", "repo", 15, "the-loop: paused", "labeled") == "latest"
+    assert (
+        gh.label_actor("octo", "repo", 15, "the-loop: paused", "unlabeled")
+        == "someone-else"
+    )
+
+
+def test_label_actor_ignores_other_labels_and_other_events():
+    from the_loop.poller import GhClient
+
+    gh = GhClient(
+        runner=_EventsGh(
+            [
+                _label_row("labeled", "someone", label="bug"),
+                {"event": "closed", "actor": {"login": "someone"}},
+            ]
+        )
+    )
+    assert gh.label_actor("octo", "repo", 15, "the-loop: paused", "labeled") is None
+
+
+def test_label_actor_is_none_when_the_actor_is_missing():
+    from the_loop.poller import GhClient
+
+    gh = GhClient(
+        runner=_EventsGh([{"event": "labeled", "label": {"name": "the-loop: paused"}}])
+    )
+    assert gh.label_actor("octo", "repo", 15, "the-loop: paused", "labeled") is None
+
+
+def test_label_actor_is_none_when_the_response_is_not_a_list():
+    from the_loop.poller import GhClient
+
+    gh = GhClient(runner=_EventsGh({"message": "Not Found"}))
+    assert gh.label_actor("octo", "repo", 15, "the-loop: paused", "labeled") is None
+
+
 def test_gh_list_labeled_issues_parses_and_builds_argv():
     payload = json.dumps(
         [

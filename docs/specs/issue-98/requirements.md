@@ -171,31 +171,47 @@ the work item back up.
 3. **4.3** Resuming a work item that is not paused SHALL be a no-op reported as
    such, exiting `0`.
 
-### Requirement 5 — the same pause/resume from a GitHub label
+### Requirement 5 — the same pause/resume from a GitHub label, for authorized people only
 
 **User story:** As someone who lives in the GitHub UI, I want to pause the-loop
-on a ticket by putting a label on it, so that I do not need shell access to the
-daemon host.
+on a ticket by putting a label on it — and I want that control to work only for
+the people I have approved, in both directions.
+
+*(Rewritten during PR review: "I want the github label addition and removal only
+to be affected if the person is listed as approved set of people in the
+cli-config.yaml" — [PR #100](https://github.com/MadaraUchiha-314/the-loop/pull/100),
+[decision-041](../../decisions/decision-041.md). The original R5 read raw label
+*presence* as a pause, which cannot authorize removals: deleting the label is
+indistinguishable from never having paused.)*
 
 #### Acceptance criteria
 
-1. **5.1** A configurable label (`routing.pausedLabel`, default
-   `the-loop: paused`) on an issue/PR SHALL have exactly the effect of a CLI
-   pause for that work item (R3.2–R3.6), and removing it SHALL have exactly the
-   effect of a resume.
-2. **5.2** The label SHALL be read from data the daemon already has — the
-   webhook payload's labels and the poll listing's labels — with no extra API
-   call per event.
-3. **5.3** The two mechanisms SHALL compose as **OR**: an item is paused when
-   the label is present **or** a pause record exists, so neither can silently
-   override the other.
-4. **5.4** `sessions pause`/`resume` SHALL also apply/remove the label on GitHub
-   (best-effort, through the operator's own `gh` CLI) so that the state is
-   visible on the ticket, with `--no-label` to skip it. A label failure SHALL
-   NOT fail the local pause/resume, and SHALL be reported.
-5. **5.5** WHEN a paused item's label state is what pauses it THEN `sessions
-   list`/`show` SHALL show the pause and where it came from (`label`, `local`,
-   or both), so the operator knows which one to remove.
+1. **5.1** WHEN a person in `routing.authorizedUsers` **adds** the configured
+   label (`routing.pausedLabel`, default `the-loop: paused`) to an issue/PR THEN
+   that work item SHALL be paused exactly as a CLI pause pauses it (R3.2–R3.6),
+   and the pause record SHALL note the source (`label`) and their login.
+2. **5.2** WHEN a person in `routing.authorizedUsers` **removes** that label THEN
+   the work item SHALL be resumed.
+3. **5.3** WHEN the label is added by someone NOT in `routing.authorizedUsers`,
+   or by an actor the-loop cannot identify, THEN nothing SHALL be paused, and the
+   refusal SHALL be recorded (`pause.unauthorized`).
+4. **5.4** WHEN the label is removed by someone NOT in `routing.authorizedUsers`,
+   or by an unidentifiable actor, THEN the work item SHALL **remain paused** —
+   an unauthorized actor must not be able to resume the-loop by deleting a label.
+5. **5.5** The pause gate SHALL read the ledger and nothing else: raw label
+   presence SHALL NOT pause a work item, so the label's effect always passes
+   through the authorization check above.
+6. **5.6** The actor SHALL be resolved without cost where the data already
+   exists — the `labeled`/`unlabeled` webhook payload's `sender` — and on the
+   poll path SHALL be looked up (issue-events API) **only** when the label and
+   the ledger disagree, with a refusal remembered so it is not re-queried every
+   cycle.
+7. **5.7** `sessions pause`/`resume` SHALL also apply/remove the label on GitHub
+   (best-effort, through the operator's own `gh` CLI) so the ticket shows the
+   state, with `--no-label` to skip it. A label failure SHALL NOT fail the local
+   pause/resume, and SHALL be reported.
+8. **5.8** `sessions list`/`show` SHALL show what paused an item (`local` or
+   `label`) and, for a label, who.
 
 ### Requirement 6 — the labels exist without hand-crafting them
 

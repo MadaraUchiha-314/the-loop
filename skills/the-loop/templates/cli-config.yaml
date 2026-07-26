@@ -33,12 +33,17 @@ webhooks:
       defaultHarness: claude        # claude | cursor
       spawnOnUnmatched: labeled     # never | always | labeled
       autoExecuteLabel: "the-loop: auto-execute"   # label that opts an issue/PR into autonomous execution
-      # Per-work-item pause (issue-98). While an item is paused — the label below
-      # is on it, OR `the-loop sessions pause` recorded it in pauseFile — neither
-      # the webhook path nor the poller spawns for it or delivers its activity.
-      # Its session, tmux transcript and checkout are untouched; a closure still
-      # closes the session (pause stops work, never cleanup). Create the label
-      # with `the-loop labels ensure --repo OWNER/REPO`.
+      # Per-work-item pause (issue-98). While an item is paused, neither the
+      # webhook path nor the poller spawns for it or delivers its activity; its
+      # session, tmux transcript and checkout are untouched, and a closure still
+      # closes the session (pause stops work, never cleanup).
+      # Two controls write the ledger in pauseFile — `the-loop sessions pause`,
+      # and the label below. The LABEL IS AUTHORIZED-ONLY (decision-041): adding
+      # it pauses and removing it resumes only when the actor is in
+      # authorizedUsers above; an unauthorized or unidentifiable actor changes
+      # nothing, so deleting the label cannot resume a parked agent. The gate
+      # reads pauseFile alone, never raw label presence. Create the label with
+      # `the-loop labels ensure --repo OWNER/REPO`.
       pausedLabel: "the-loop: paused"
       pauseFile: .the-loop/state/paused.json
       # SECURITY (prompt-injection guard): only these GitHub logins' actions are acted on

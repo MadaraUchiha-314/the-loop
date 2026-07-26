@@ -111,6 +111,44 @@ status: in-progress
 - **Next:** await re-review.
 - **Blockers:** none.
 
+### 2026-07-26 — human review round 2 (PR #100): the label becomes an authorized control
+
+- **Phase:** needs-review
+- **Did:** answered *"do we get to know who added/removed a label? I want it to
+  only be affected if the person is approved in cli-config.yaml"* — researched
+  first, then (on the owner's call) implemented it here rather than as a
+  follow-up.
+  - **Research:** the actor is free on the webhook path (`labeled`/`unlabeled`
+    carry `label.name` + `sender.login`), absent from any other payload and from
+    the poll listing, and recoverable on demand from
+    `GET /issues/{n}/events` (`actor.login` + `label.name`, PRs included).
+  - **The semantics had to change to satisfy it.** Reading label *presence*
+    cannot authorize a **removal**: "the label is gone" is indistinguishable
+    from "nobody paused it", so anyone with triage rights could resume a parked
+    agent. The label is now a **trigger that writes the ledger**, and the gate
+    reads the ledger alone (decision-041).
+  - Ledger records gained `source` (`local` | `label`) and `by`;
+    `PauseStore.state()` no longer takes labels; `Dispatcher._apply_label_control`
+    (sender-based, no API call); `Poller._reconcile_label_pause` +
+    `PollProvider.label_actor` / `GhClient.label_actor` (one API call, only when
+    label and ledger disagree, refusals cached); `pause.unauthorized` event;
+    an unidentifiable actor counts as unauthorized.
+  - R5 rewritten (R5.1–R5.8), design §12, decision-041, README/capability/skill
+    docs, schema + both config files.
+- **Checkpoint/tests:** ruff + `format --check` clean, pyright 0 errors, configs
+  VALID, markdownlint 0 errors, **556 passed** — the two old "label presence
+  pauses" scenarios replaced by four: authorized add pauses (webhook), an
+  unauthorized labeller can neither pause nor resume, the poller honours only an
+  authorized labeller, and an unauthorized *removal* leaves the item paused;
+  plus `label_actor` parsing units (newest transition wins, other labels/events
+  ignored, missing actor and non-list responses ⇒ `None`).
+- **Known trade-off (documented, not hidden):** an unauthorized removal leaves
+  the item paused with no label on the ticket — the ledger is right, the UI is
+  stale. `sessions show` reports it; the daemon does not re-assert the label
+  (write-loop risk).
+- **Next:** await re-review.
+- **Blockers:** none.
+
 ## Review cycles
 
 | Round | Type | Findings | Resolution |
@@ -120,3 +158,5 @@ status: in-progress
 | 3 | self-review | `sessions list --format json` changed shape (row objects, not raw session dicts) | Deliberate (R1.4) and documented in `cli/README.md`; the existing round-trip test was updated with a comment explaining the change |
 | 4 | human (PR #100) | `commands/sessions_cmd.py` — why the `_cmd` suffix? | Renamed to `commands/sessions.py`; no collision existed |
 | 5 | human (PR #100) | Runtime-state files are scattered across `.the-loop/` and this PR adds another | All state consolidated under `.the-loop/state/` with a pre-move fallback and `the-loop state migrate` ([decision-040](../../decisions/decision-040.md), R9) |
+| 6 | human (PR #100) | The paused label should only work for people in `authorizedUsers` — and reading label *presence* could not authorize a removal | The label became an authorized-only control that writes the ledger; the gate reads the ledger alone ([decision-041](../../decisions/decision-041.md), R5 rewritten) |
+| 7 | human (PR #100) | "What's the migration plan? how do existing sessions migrate?" | Already built in round 5: pre-move paths keep being read, `the-loop state migrate` consolidates when the operator is ready, registry entries are path-independent so nothing is rewritten |

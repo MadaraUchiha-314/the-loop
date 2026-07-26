@@ -59,5 +59,12 @@ overrides: {}
       `the-loop state paths|migrate` command, six defaults repointed, schema +
       template + repo config + `.gitignore`, `test_state.py`, decision-040.
       _(R9)_
+- [x] **T15 — Review follow-up: the paused label is an authorized-only control.**
+      Ledger records gain `source`/`by`; `state()` stops reading labels;
+      `Dispatcher._apply_label_control` (sender-based, free);
+      `Poller._reconcile_label_pause` + `PollProvider.label_actor` /
+      `GhClient.label_actor` (issue-events API, only on a disagreement, refusals
+      cached); `pause.unauthorized` event; R5 rewritten; decision-041.
+      _(R5.1–R5.8)_
 - [x] **T12 — Gates.** `ruff`, `pyright`, `pytest` green; execution log updated;
       PR briefing posted. _(process)_

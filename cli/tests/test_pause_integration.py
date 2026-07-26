@@ -72,6 +72,13 @@ class GhState:
         self.labels = [{"name": LABEL}]
         self.comments = []
         self.item_state = {"number": 15, "state": "open"}
+        # `/issues/N/events` — who added/removed which label (issue-98 review).
+        self.label_events = []
+
+    def label_event(self, action, actor, label=PAUSED_LABEL):
+        self.label_events.append(
+            {"event": action, "actor": {"login": actor}, "label": {"name": label}}
+        )
 
     @property
     def issues(self):
@@ -87,6 +94,11 @@ class GhState:
 
     def runner(self, cmd, **kwargs):
         if cmd[1] == "api":
+            path = cmd[-1]
+            if path.endswith("/events"):
+                return subprocess.CompletedProcess(
+                    cmd, 0, json.dumps(self.label_events), ""
+                )
             return subprocess.CompletedProcess(cmd, 0, json.dumps(self.item_state), "")
         sub = (cmd[1], cmd[2])
         if sub == ("issue", "list"):
@@ -137,6 +149,9 @@ def _make(tmp_path, gh_state):
             spawn_on_unmatched="labeled",
             paused_label=PAUSED_LABEL,
             pause_file=str(tmp_path / "paused.json"),
+            # The dispatcher gates the label control on this list too — an empty
+            # one fails closed, exactly like every other authz check.
+            authorized_users=["octocat"],
         ),
         pauses,
     )
@@ -245,41 +260,93 @@ def test_pausing_a_worked_item_stops_delivery_without_closing_it(tmp_path):
     assert session is not None and session.status == "active"
 
 
-def test_the_paused_label_alone_stops_the_poller(tmp_path):
-    """Scenario: the paused label pauses an item with no local record
+def test_only_an_authorized_labeller_can_pause_the_poller(tmp_path):
+    """Scenario: the paused label pauses only when an authorized person added it
 
     Given a labelled issue that also carries the paused label
-    When a poll cycle runs
-    Then no session is spawned
-    And removing the label lets the next cycle spawn one
-    Requirement: docs/specs/issue-98/requirements.md#R5 (R5.1, R5.2)
+    When an unauthorized user added that label
+    Then the item is not paused and a session is still spawned
+    And when an authorized user adds it, the next cycle pauses the item
+    Requirement: docs/specs/issue-98/requirements.md#R5 (R5.1, R5.6)
     """
     gh = GhState()
     gh.labels = [{"name": LABEL}, {"name": PAUSED_LABEL}]
+    gh.label_event("labeled", "a-stranger")
     registry, adapter, dispatcher, poller, pauses = _make(tmp_path, gh)
 
     poller.poll_once()
-    time.sleep(0.1)
-    assert adapter.spawns == []
-    assert pauses.is_paused(REF) is False  # no local record — the label did it
+    assert wait_until(lambda: len(adapter.spawns) == 1)  # label ignored
+    assert pauses.is_paused(REF) is False
 
-    gh.labels = [{"name": LABEL}]
+    # The same label, now attributed to an authorized login, does pause it.
+    gh.label_event("labeled", "octocat")
+    poller._label_denials.clear()  # a fresh transition, not the refused one
     poller.poll_once()
-    assert wait_until(lambda: len(adapter.spawns) == 1)
+    assert pauses.is_paused(REF) is True
+    record = pauses.record(REF)
+    assert record is not None and record.by == "octocat"
+
+    gh.comments = [_comment("IC_1", "while paused")]
+    poller.poll_once()
+    time.sleep(0.1)
+    dispatcher.stop()
+    assert adapter.resumes == []
+
+
+def test_an_unauthorized_label_removal_cannot_resume_the_poller(tmp_path):
+    """Scenario: taking the label off without authorization leaves it paused
+
+    Given an item paused because an authorized user added the label
+    When an unauthorized user removes the label
+    Then the item stays paused
+    And an authorized removal resumes it
+    Requirement: docs/specs/issue-98/requirements.md#R5 (R5.4)
+    """
+    gh = GhState()
+    registry, adapter, dispatcher, poller, pauses = _make(tmp_path, gh)
+    pauses.pause(REF, source="label", by="octocat")
+
+    gh.labels = [{"name": LABEL}]  # label gone from the ticket
+    gh.label_event("unlabeled", "a-stranger")
+    poller.poll_once()
+    assert pauses.is_paused(REF) is True  # unauthorized removal changes nothing
+
+    gh.label_event("unlabeled", "octocat")
+    poller._label_denials.clear()
+    poller.poll_once()
+    assert pauses.is_paused(REF) is False
+    assert wait_until(lambda: len(adapter.spawns) == 1)  # picked back up
     dispatcher.stop()
 
 
-def test_the_paused_label_alone_stops_webhook_dispatch(tmp_path):
-    """Scenario: a webhook event for a label-paused item is dropped
+def _label_event(action, actor, delivery, label=PAUSED_LABEL):
+    """An `issues` labeled/unlabeled webhook — the shape GitHub sends."""
+    return RoutedEvent(
+        event="issues",
+        action=action,
+        delivery_id=delivery,
+        work_items=[WorkItemRef.parse(REF)],
+        payload={
+            "action": action,
+            "repository": {"full_name": "octo/repo"},
+            "issue": {"number": 15, "title": "i", "html_url": "u", "labels": []},
+            "label": {"name": label},
+            "sender": {"login": actor},
+        },
+        labeled=False,
+    )
+
+
+def test_an_authorized_label_add_pauses_the_webhook_path(tmp_path):
+    """Scenario: labelling an item pauses it — for an authorized labeller
 
     Given an active session for a work item
-    When an issue_comment event arrives whose issue carries the paused label
-    Then it is not delivered to the session
-    And an event without the label is delivered
+    When an authorized user adds the paused label
+    Then the work item is paused and later events are not delivered
     Requirement: docs/specs/issue-98/requirements.md#R5 (R5.1, R5.2)
     """
     gh = GhState()
-    registry, adapter, dispatcher, _poller, _pauses = _make(tmp_path, gh)
+    registry, adapter, dispatcher, _poller, pauses = _make(tmp_path, gh)
     registry.register(
         Session(
             work_item=WorkItemRef.parse(REF),
@@ -289,20 +356,53 @@ def test_the_paused_label_alone_stops_webhook_dispatch(tmp_path):
         )
     )
 
-    dispatcher.handle(
-        _issue_comment_event(
-            body="ignored",
-            delivery="d-paused",
-            labels=[{"name": LABEL}, {"name": PAUSED_LABEL}],
-        )
-    )
+    dispatcher.handle(_label_event("labeled", "octocat", "d-label"))
+    assert pauses.is_paused(REF) is True
+    record = pauses.record(REF)
+    assert record is not None and record.by == "octocat"
+
+    dispatcher.handle(_issue_comment_event(body="ignored", delivery="d-after"))
     time.sleep(0.1)
+    dispatcher.stop()
     assert adapter.resumes == []
 
+
+def test_an_unauthorized_labeller_cannot_pause_or_resume(tmp_path):
+    """Scenario: the label is a control, and only authorized logins hold it
+
+    Given an active session for a work item
+    When an unauthorized user adds the paused label
+    Then nothing is paused and its events are still delivered
+    And when an unauthorized user removes an authorized pause, it stays paused
+    Requirement: docs/specs/issue-98/requirements.md#R5 (R5.3, R5.4)
+    """
+    gh = GhState()
+    registry, adapter, dispatcher, _poller, pauses = _make(tmp_path, gh)
+    registry.register(
+        Session(
+            work_item=WorkItemRef.parse(REF),
+            harness="claude",
+            harness_session_id="uuid-1",
+            cwd=".",
+        )
+    )
+
+    dispatcher.handle(_label_event("labeled", "a-stranger", "d-bad-label"))
+    assert pauses.is_paused(REF) is False
     dispatcher.handle(_issue_comment_event(body="delivered", delivery="d-live"))
-    assert wait_until(lambda: len(adapter.resumes) == 1)
+    # The refused label event is still an ordinary event for the session, so
+    # assert on the comment reaching it rather than on a resume count.
+    assert wait_until(lambda: any("delivered" in p for _, p in adapter.resumes))
+
+    # An authorized pause, then an unauthorized attempt to lift it.
+    dispatcher.handle(_label_event("labeled", "octocat", "d-good-label"))
+    assert pauses.is_paused(REF) is True
+    dispatcher.handle(_label_event("unlabeled", "a-stranger", "d-bad-unlabel"))
+    assert pauses.is_paused(REF) is True  # the removal changed nothing
+
+    dispatcher.handle(_label_event("unlabeled", "octocat", "d-good-unlabel"))
+    assert pauses.is_paused(REF) is False
     dispatcher.stop()
-    assert "delivered" in adapter.resumes[0][1]
 
 
 def test_a_locally_paused_item_drops_webhook_events(tmp_path):

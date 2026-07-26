@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [041](decision-041.md) | The paused label is an authorized-only control that writes the pause ledger; raw label presence is never read as state | proposed | 2026-07-26 |
 | [040](decision-040.md) | All daemon runtime state lives under `.the-loop/state/`, with the pre-move paths still honoured | proposed | 2026-07-26 |
 | [039](decision-039.md) | A PR closing ends only its own session — a work item may be delivered by several PRs | proposed | 2026-07-25 |
 | [038](decision-038.md) | PyYAML is a required runtime dependency; the zero-runtime-dependency guarantee is retired | proposed | 2026-07-25 |

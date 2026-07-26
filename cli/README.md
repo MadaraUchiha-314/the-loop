@@ -474,11 +474,32 @@ everything said in the meantime.
 
 The same control is a **label**: put `routing.pausedLabel` (default
 `the-loop: paused`) on the issue/PR and it is paused; take it off and it is
-resumed — no shell access needed. The two compose as **OR**, so neither can
-silently override the other, and `sessions pause`/`resume` mirror the label onto
+resumed — no shell access needed. `sessions pause`/`resume` mirror the label onto
 the ticket for you (`--no-label` keeps the change local; a failed label write
 never fails the local pause). Create the label with `the-loop labels ensure`
 (below) — `/the-loop:init` does it during onboarding.
+
+**Only people in `routing.authorizedUsers` can drive that label**
+([decision-041](../docs/decisions/decision-041.md)). The label is a *trigger*,
+not a state: an authorized add writes a pause record, an authorized removal
+clears it, and the gate reads only the record.
+
+| Who moved the label | Added | Removed |
+|---|---|---|
+| in `authorizedUsers` | paused (recorded with their login) | resumed |
+| anyone else, or unidentifiable | nothing — `pause.unauthorized` logged | nothing: **the item stays paused** |
+
+That asymmetry is the point. If presence were read directly, anyone with triage
+rights could resume a parked agent just by deleting the label. The cost is that
+the ticket can disagree with the truth — paused with no label after an
+unauthorized removal — which `sessions show` reports and `the-loop events`
+records; the daemon deliberately does not re-apply the label (write-loop risk).
+
+The actor comes free from the `labeled`/`unlabeled` webhook (`sender`). The
+poller has no such signal, so when the label and the ledger disagree it spends
+one `issues/{n}/events` API call to ask who moved it, caches a refusal, and
+treats an actor it cannot identify as unauthorized. With `authorizedUsers` empty
+the label control is off entirely — same fail-closed rule as every other guard.
 
 The label applies to **PRs directly** too — a labelled PR with no linked issue is routed
 as its own work item (`github:OWNER/REPO#<pr-number>`). That makes PRs monitorable even
