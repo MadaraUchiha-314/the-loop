@@ -449,6 +449,27 @@ def test_router_drops_its_own_self_marked_reply():
     assert router.route("issue_comment", _issue_comment_by("me"), "d-2") is not None
 
 
+def test_router_drops_the_daemons_own_session_announcement():
+    # issue-104: the announcement is posted with the operator's own credentials,
+    # so the authorized-actor guard passes it — only the marker can stop it from
+    # being dispatched back into the session it announces.
+    from the_loop.announce import announcement_body
+    from the_loop.sessions import Session, WorkItemRef
+
+    session = Session(
+        work_item=WorkItemRef.parse("github:octo/repo#15"),
+        harness="claude",
+        harness_session_id="s-1",
+        cwd=".",
+        runner="tmux",
+        tmux_target="loop-github-octo-repo-15",
+    )
+    router = Router(events=[], authorized_users=["me"])
+    event = _issue_comment_by("me")
+    event["comment"]["body"] = announcement_body(session)
+    assert router.route("issue_comment", event, "d-1") is None
+
+
 def test_router_deduper_is_bounded_lru():
     deduper = Deduper(maxsize=2)
     deduper.add("a")

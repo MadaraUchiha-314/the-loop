@@ -37,9 +37,11 @@ from the_loop.poller import (
     provider_names,
 )
 from the_loop.authz import (
+    SELF_COMMENT_ATTRIBUTION,
     SELF_COMMENT_MARKER,
     is_authorized,
     is_self_authored,
+    mark_self_authored,
     resolve_authorized_users,
 )
 from the_loop.poller.poller import PollSummary  # noqa: F401 (re-exported too)
@@ -1019,6 +1021,24 @@ def test_is_self_authored_rules():
     assert is_self_authored("") is False
     assert is_self_authored("just a normal reply") is False
     assert is_self_authored(f"will-fix.\n\n{SELF_COMMENT_MARKER}") is True
+
+
+def test_mark_self_authored_stamps_attribution_and_marker():
+    # issue-104: the producer half of the marker contract. A human reading the
+    # thread gets the visible line; the trigger paths match on the marker.
+    marked = mark_self_authored("🖥️ started an interactive session.")
+
+    assert "🖥️ started an interactive session." in marked
+    assert SELF_COMMENT_ATTRIBUTION in marked
+    assert marked.rstrip().endswith(SELF_COMMENT_MARKER)
+    assert is_self_authored(marked) is True
+
+
+def test_mark_self_authored_is_idempotent():
+    # A caller that marks defensively must not emit the marker twice.
+    once = mark_self_authored("already mine")
+    assert mark_self_authored(once) == once
+    assert once.count(SELF_COMMENT_MARKER) == 1
 
 
 def test_poller_does_not_forward_its_own_marked_reply(tmp_path):

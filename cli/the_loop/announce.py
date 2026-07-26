@@ -19,7 +19,12 @@ work-item ref, the tmux target and the harness name. No event-payload data
 reaches it (so nobody can inject text into what the-loop posts) and no
 filesystem path, harness session id or hostname does either.
 
-Spec: docs/specs/issue-86/design.md.
+Like every comment the-loop posts, the body carries the loop-prevention marker
+(``authz.mark_self_authored``). Without it the announcement — posted with the
+operator's own credentials, hence authorized — came back on the next poll cycle
+and was pasted into the very session it announced (issue-104).
+
+Spec: docs/specs/issue-86/design.md, docs/specs/issue-104/design.md.
 """
 
 from __future__ import annotations
@@ -32,6 +37,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 from . import eventlog
+from .authz import mark_self_authored
 from .sessions import Session
 
 logger = logging.getLogger("the-loop.announce")
@@ -64,7 +70,9 @@ def announcement_body(session: Session) -> str:
     """The markdown comment announcing ``session`` and how to attach to it.
 
     Pure and payload-free (see the module docstring): every value comes from
-    the session's own registry record.
+    the session's own registry record — which is also why marking it as
+    the-loop's own is safe here (:func:`mark_self_authored` must never be
+    applied to foreign text).
     """
     target = session.tmux_target
     ref = session.work_item.ref
@@ -73,7 +81,7 @@ def announcement_body(session: Session) -> str:
         "stays readable. A respawn reuses this same tmux session name, so "
         "these commands keep working."
     )
-    return (
+    return mark_self_authored(
         f"🖥️ **the-loop** started an interactive session for `{ref}`.\n"
         "\n"
         "| | |\n"
