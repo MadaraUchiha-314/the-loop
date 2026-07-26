@@ -15,6 +15,7 @@ import subprocess
 import threading
 import time
 
+from the_loop.control import ControlConfig
 from the_loop.announce import announcement_body
 from the_loop.harness import DispatchResult
 from the_loop.poller import (
@@ -135,7 +136,13 @@ def _make(tmp_path, gh_state, monitor_issues=True, monitor_prs=False):
     registry = SessionRegistry(tmp_path / "sessions")
     adapter = FakeAdapter()
     dispatcher = _dispatcher(
-        registry, adapter, RoutingConfig(spawn_on_unmatched="labeled")
+        registry,
+        adapter,
+        RoutingConfig(
+            spawn_on_unmatched="labeled",
+            # Pre-issue-106: the label alone spawns (the start gate has its own tests).
+            control=ControlConfig(require_start_command=False),
+        ),
     )
     provider = GitHubPollProvider(
         parse_repos(["octo/repo"]),

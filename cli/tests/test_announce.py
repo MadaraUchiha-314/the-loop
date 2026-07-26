@@ -9,7 +9,7 @@ import subprocess
 
 import pytest
 
-from the_loop import announce as announce_mod
+from the_loop import comments as comments_mod
 from the_loop.announce import AnnounceConfig, SessionAnnouncer, announcement_body
 from the_loop.authz import SELF_COMMENT_ATTRIBUTION, is_self_authored
 from the_loop.sessions import Session, WorkItemRef
@@ -51,7 +51,7 @@ class FakeRun:
 
 @pytest.fixture
 def gh_present(monkeypatch):
-    monkeypatch.setattr(announce_mod.shutil, "which", lambda _: "/usr/bin/gh")
+    monkeypatch.setattr(comments_mod.shutil, "which", lambda _: "/usr/bin/gh")
 
 
 # -- AnnounceConfig -------------------------------------------------------------
@@ -143,7 +143,7 @@ def test_malformed_repo_coordinates_are_a_noop(gh_present):
 
 
 def test_missing_gh_warns_once(monkeypatch, caplog):
-    monkeypatch.setattr(announce_mod.shutil, "which", lambda _: None)
+    monkeypatch.setattr(comments_mod.shutil, "which", lambda _: None)
     fake = FakeRun()
     announcer = SessionAnnouncer(AnnounceConfig(), runner=fake)
     with caplog.at_level("WARNING", logger="the-loop.announce"):

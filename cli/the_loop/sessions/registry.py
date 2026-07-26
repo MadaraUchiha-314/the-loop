@@ -29,6 +29,11 @@ _RECENT_DELIVERIES_CAP = 50
 
 _REF_RE = re.compile(r"^(?P<provider>[a-z][a-z0-9-]*):(?P<path>[^#]+)#(?P<number>\d+)$")
 
+# Statuses that mean "this work item still has a session". A paused session
+# (issue-106) is deliberately one of them: it is suppressed, not gone, so
+# nothing may spawn a second session for the same work item while it exists.
+LIVE_STATUSES = ("active", "paused")
+
 
 class RegistryError(Exception):
     """A registry invariant was violated (e.g. duplicate active session)."""
@@ -90,7 +95,7 @@ class Session:
     harness: str  # "claude" | "cursor"
     harness_session_id: str  # claude session_id | cursor chat id
     cwd: str  # where resume must run (worktree-aware)
-    status: str = "active"  # active | closed
+    status: str = "active"  # active | paused (issue-106) | closed
     created_at: str = ""
     last_event_at: Optional[str] = None
     runner: str = "process"  # process | tmux (issue-32)
@@ -132,6 +137,15 @@ class Session:
             tmux_target=data.get("tmuxTarget", ""),
             recent_deliveries=list(data.get("recentDeliveries") or []),
         )
+
+    @property
+    def is_live(self) -> bool:
+        """Whether this session still owns its work item (active or paused)."""
+        return self.status in LIVE_STATUSES
+
+    @property
+    def is_paused(self) -> bool:
+        return self.status == "paused"
 
 
 def _as_ref(work_item: Union[str, WorkItemRef]) -> WorkItemRef:
@@ -209,7 +223,13 @@ class SessionRegistry:
     def find_by_work_item(
         self, work_item: Union[str, WorkItemRef], include_closed: bool = False
     ) -> Optional[Session]:
-        """Return the ``active`` session for the work item, if any.
+        """Return the **live** session for the work item, if any.
+
+        Live is ``active`` *or* ``paused`` (issue-106): a paused session is
+        suppressed, not gone, so every caller asking "does this work item have a
+        session?" — the duplicate-registration guard, dispatch matching, the
+        poller — correctly counts it as one. The few callers that must tell them
+        apart read :attr:`Session.is_paused`.
 
         ``include_closed`` also returns a closed record — used by
         ``sessions attach`` to reach a tmux session retained after the work
@@ -220,7 +240,7 @@ class SessionRegistry:
         if not path.is_file():
             return None
         session = self._read(path)
-        if session is None or (session.status != "active" and not include_closed):
+        if session is None or not (session.is_live or include_closed):
             return None
         return session
 
@@ -233,8 +253,54 @@ class SessionRegistry:
                     sessions.append(session)
         return sessions
 
+    def pause(self, work_item: Union[str, WorkItemRef]) -> Optional[Session]:
+        """Suppress delivery to this work item's session (issue-106).
+
+        Returns the paused session, or ``None`` when there was no live session
+        (or it was already paused) — the caller reports that as a no-op rather
+        than an error: pausing something that is not running is not a failure.
+        """
+        session = self.find_by_work_item(work_item)
+        if session is None or session.is_paused:
+            return None
+        session.status = "paused"
+        self._write(session)
+        logger.info("paused session %s", session.work_item.ref)
+        eventlog.emit(
+            "session.paused",
+            work_item=session.work_item.ref,
+            harness=session.harness,
+            harness_session_id=session.harness_session_id,
+        )
+        return session
+
+    def resume(self, work_item: Union[str, WorkItemRef]) -> Optional[Session]:
+        """Return a paused session to ``active``; ``None`` when none was paused.
+
+        Nothing is replayed: events suppressed while paused are not queued up
+        (the harness re-reads the thread itself, as it does for anything that
+        happened before its session existed).
+        """
+        session = self.find_by_work_item(work_item)
+        if session is None or not session.is_paused:
+            return None
+        session.status = "active"
+        self._write(session)
+        logger.info("resumed session %s", session.work_item.ref)
+        eventlog.emit(
+            "session.resumed",
+            work_item=session.work_item.ref,
+            harness=session.harness,
+            harness_session_id=session.harness_session_id,
+        )
+        return session
+
     def close(self, work_item: Union[str, WorkItemRef]) -> bool:
-        """Mark the session closed. Returns False when nothing was active."""
+        """Mark the session closed. Returns False when nothing was live.
+
+        Closes a ``paused`` session as readily as an ``active`` one — pausing
+        must never leak an agent past the end of its work item.
+        """
         session = self.find_by_work_item(work_item)
         if session is None:
             return False

@@ -50,12 +50,25 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
   follow `routing.spawnOnUnmatched`. Design: `docs/specs/issue-15/design.md`,
   decision: `docs/decisions/decision-016.md`.
 - **Label-gated auto-execution** (`spawnOnUnmatched: labeled`): a configurable label
-  (`routing.autoExecuteLabel`, default `the-loop: auto-execute`) opts a work item into
-  autonomous execution. Labelling an issue/PR spawns a session that runs
-  `/the-loop:work-on` on it; the item's later activity (and that of **every** PR linked
-  to it) resumes that session; the item being **closed** auto-closes it. An unlabelled
+  (`routing.autoExecuteLabel`, default `the-loop: auto-execute`) **arms** a work item
+  for autonomous execution. The item's later activity (and that of **every** PR linked
+  to it) resumes its session; the item being **closed** auto-closes it. An unlabelled
   new issue is received and ignored. Label presence is read from the webhook payload (no
   extra API call).
+- **Execution control — the label is necessary, not sufficient** (`routing.control`,
+  issue-106). Four declared keywords, usable by an **authorized** user
+  (`routing.authorizedUsers`) in a comment on the work item or its PR, are interpreted
+  by the-loop instead of being forwarded to the agent: `the-loop:start-execution`,
+  `the-loop:stop-execution`, `the-loop:pause-execution`, `the-loop:resume-execution`.
+  With `control.requireStartCommand` (default **on**) an armed work item spawns only
+  once someone has started it — the request is durable across restarts, and a
+  stop/pause disarms it again. `pause` holds delivery without discarding the
+  conversation; `stop` closes the session through the normal close path. The same four
+  are available to an operator with shell access as `the-loop sessions start|pause|
+  resume|stop`, which post the same keyword back to the ticket (marked as the-loop's
+  own, so the daemon never reads its own action back). A comment carrying two different
+  keywords executes nothing and forwards nothing. Decision:
+  `docs/decisions/decision-040.md`.
 - **Per-work-item checkout workspace** (`routing.workspace`, issue-76): the CLI daemon
   runs independent of any repo, so a spawned session needs a checkout of the repo an
   event concerns. Set `routing.workspace.root` to turn it on (leave empty to keep the
@@ -138,6 +151,8 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
       --harness cursor --harness-session-id "<chat-id>"
   # on completion
   the-loop sessions close --work-item github:OWNER/REPO#N
+  # execution control (issue-106) — the CLI half of the comment keywords
+  the-loop sessions start|pause|resume|stop --work-item github:OWNER/REPO#N
   ```
 
   Registration is best-effort: if it fails, routing degrades to log-and-drop (or

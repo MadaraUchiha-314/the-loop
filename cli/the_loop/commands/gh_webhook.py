@@ -20,6 +20,7 @@ from pathlib import Path
 
 from .base import Command, register
 from .. import cli_config, eventlog
+from ..state import StateLayout, layout_from_config
 from ..webhook import serve
 
 logger = logging.getLogger("the-loop.gh-webhook")
@@ -29,12 +30,17 @@ logger = logging.getLogger("the-loop.gh-webhook")
 # trigger it is a CLI-config concern, not the repo-local plugin config's.
 _CONFIG_PATH = cli_config.default_cli_config_path()
 
+
+def _state_layout() -> StateLayout:
+    """``state.root`` from the CLI config — the root of everything generated."""
+    return layout_from_config(cli_config.load_cli_config(_CONFIG_PATH))
+
+
 _DEFAULTS = {
     "host": "127.0.0.1",
     "port": 8787,
     "path": "/gh-webhook",
     "secretEnv": "THE_LOOP_GH_WEBHOOK_SECRET",
-    "pidfile": ".the-loop/gh-webhook.pid",
 }
 
 # The events the-loop can actually map to a work item (``extract_work_items``),
@@ -113,7 +119,8 @@ def _build_routing(gh_webhook_config: dict):
     from ..webhook.dispatcher import Dispatcher, RoutingConfig
     from ..webhook.router import Router
 
-    config = RoutingConfig.from_mapping(gh_webhook_config.get("routing") or {})
+    layout = _state_layout()
+    config = RoutingConfig.from_mapping(gh_webhook_config.get("routing") or {}, layout)
     dispatcher = Dispatcher(
         registry=SessionRegistry(config.registry_dir),
         adapters=build_adapters(config.harness_args, config.harness_trust),
@@ -140,7 +147,7 @@ def _build_routing(gh_webhook_config: dict):
 
     def apply(gh_cfg: dict) -> None:
         """Hot-swap the soft routing policy from a freshly read config."""
-        new = RoutingConfig.from_mapping(gh_cfg.get("routing") or {})
+        new = RoutingConfig.from_mapping(gh_cfg.get("routing") or {}, layout)
         dispatcher.reload(new)
         router.events = resolve_events(gh_cfg)
         warn_on_missing_lifecycle_events(router.events)
@@ -186,12 +193,21 @@ def _build_routing(gh_webhook_config: dict):
 
     logger.info(
         "routing enabled: registry=%s defaultHarness=%s spawnOnUnmatched=%s runner=%s "
-        "(routing config hot-reloads on change)",
+        "requireStartCommand=%s (routing config hot-reloads on change)",
         config.registry_dir,
         config.default_harness,
         config.spawn_on_unmatched,
         config.runner,
+        config.control.require_start_command and config.control.enabled,
     )
+    if config.control.enabled and config.control.require_start_command:
+        logger.info(
+            "the auto-execute label arms a work item; an authorized user starts "
+            "it by commenting %r (or running `the-loop sessions start`) — set "
+            "routing.control.requireStartCommand: false for the pre-issue-106 "
+            "label-alone behaviour",
+            config.control.keyword("start"),
+        )
     return on_event, dispatcher, config
 
 
@@ -201,7 +217,13 @@ class GhWebhookCommand(Command):
     help = "Manage the GitHub webhook receiver server (start/stop)"
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
-        defaults = {**_DEFAULTS, **_load_config_defaults()}
+        # The pidfile default comes from `state.root` (issue-106) and is computed
+        # here, not at import: `--config` is resolved just before this runs.
+        defaults = {
+            **_DEFAULTS,
+            "pidfile": _state_layout().pidfile,
+            **_load_config_defaults(),
+        }
         actions = parser.add_subparsers(dest="action", metavar="<action>")
         actions.required = True
 

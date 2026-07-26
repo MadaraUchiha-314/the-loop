@@ -29,7 +29,41 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   parallel across sessions (`maxConcurrentDispatches`).
 - WHEN no session matches THEN the router SHALL spawn a new session per
   `spawnOnUnmatched` (`never | always | labeled`, default `labeled` — opt-in via the
-  `the-loop: auto-execute` label) using the configured prompt templates.
+  `the-loop: auto-execute` label) using the configured prompt templates — **and, since
+  issue-106, only once an authorized user has explicitly started the work item** (see
+  *Execution control* below).
+- **Execution control: the label is necessary, not sufficient** (issue-106,
+  `routing.control`). The label says *which* items may run and `authorizedUsers` says
+  *who* may be an input; four declared keywords say *when*:
+  `the-loop:start-execution`, `the-loop:stop-execution`, `the-loop:pause-execution`,
+  `the-loop:resume-execution` (all configurable).
+  - WHEN an **authorized** user's comment on the work item or its PR carries one of
+    them THEN the-loop SHALL execute that command and SHALL NOT forward the comment to
+    the harness; keywords match as whole tokens, case-insensitively, and a comment
+    carrying **two different** ones SHALL execute nothing and forward nothing
+    (`control.ambiguous`).
+  - WHEN `routing.control.requireStartCommand` is true (**the default**) THEN a labelled
+    work item SHALL NOT spawn until the **start** command has been issued for it — on
+    either ingress path, and under `spawnOnUnmatched: always` too ("always" widens which
+    items may spawn, never who may start them). The request is **durable** (it survives
+    a restart, so a failed spawn retries without a new comment) and a later
+    `stop`/`pause` disarms the item again. `requireStartCommand: false` restores the
+    pre-issue-106 label-alone behaviour.
+  - **pause** SHALL suspend delivery for a work item's session while keeping its
+    conversation (`session.paused`; suppressed events are recorded as
+    `dispatch.dropped`/`session-paused` and are **not** replayed on **resume**);
+    **stop** SHALL end the session through the same close path a merge takes (registry
+    entry, harness process, workspace). A paused session still owns its work item, so
+    nothing spawns a second one; a work item closing closes a paused session as readily
+    as an active one.
+  - Control parsing runs **after** the self-comment marker check and the
+    `authorizedUsers` guard, so it never becomes a second, weaker way in: it adds a
+    condition, and an empty `authorizedUsers` still fails closed. The parser recognises
+    the fixed configured vocabulary and yields one of four commands — no text from a
+    comment reaches an argv, a path, a prompt or a work-item ref.
+  - Every command is recorded (`control.command` with actor, source and effect;
+    `control.rejected` when a work item is not armed), and the last command per work
+    item is kept beside its session (`<registryDir>/control/`).
 - **An event on a PR resolves the PR's linked issue(s) first.** WHEN an event concerns a
   pull request — `pull_request*`, **or** an `issues`/`issue_comment` event whose `issue`
   carries a `pull_request` key (GitHub's shape for a **PR conversation comment**) — THEN
@@ -140,6 +174,14 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   is authorized — it is posted with the operator's own credentials — so the marker is
   the only thing preventing it from being delivered into the session it describes
   (issue-104).
+- Everything the CLI **generates** lives under one configured root (`state.root`,
+  default `.the-loop`): the session registry and the control records under
+  `<root>/sessions/`, the poll state at `<root>/sessions/poll-state.json`, the event log
+  under `<root>/logs/`, the receiver pidfile at `<root>/gh-webhook.pid`. The root
+  supplies **defaults only** — an explicitly configured path is still used verbatim —
+  and a pre-issue-106 `.the-loop/poll-state.json` that still exists keeps being used
+  (with a warning), so an upgrade never re-baselines and re-forwards every watched
+  thread.
 - All `webhooks.*` keys above live in the **CLI config** (`cli-config.yaml`, resolved
   via `--config`/env/cwd/home — see `cli/README.md`), independent of any repo's
   `.the-loop/harness-config.yaml` (the plugin config) — the daemon is not tied to a single repo
@@ -156,6 +198,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-106 | Execution control: four declared keywords (`the-loop:start-execution`, …) an **authorized** user steers with, the auto-execute label demoted to *necessary but not sufficient* (`routing.control.requireStartCommand`, default on), `paused` sessions, CLI parity with the same paper trail, and one `state.root` for everything the CLI generates | [spec](../specs/issue-106/), [decision-040](../decisions/decision-040.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/106) |
 | issue-104 | The loop-prevention marker gained a producer-side helper (`mark_self_authored`) applied to the daemon's own comments — the session announcement no longer re-enters the session it announces | [spec](../specs/issue-104/), [decision-031](../decisions/decision-031.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/104) |
 | issue-101 | A work item may be delivered by **several** PRs: a `pull_request` `closed` event now ends only the session registered against that PR itself, leaving a linked issue's session (and its checkout) running until the issue's own close | [spec](../specs/issue-101/), [decision-039](../decisions/decision-039.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/101) |
 | issue-94 | A finished work item now ends its session on **both** ingress paths: the poller reconciles active sessions against each successful listing and closes the ones whose item is closed/merged upstream; the receiver treats `issues`/`closed` like `pull_request`/`closed` instead of delivering it into the conversation | [spec](../specs/issue-94/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/94) |

@@ -11,6 +11,18 @@
       "description": "Schema version of this file.",
       "examples": ["0.1.0"]
     },
+    "state": {
+      "type": "object",
+      "description": "Where everything the-loop's CLI GENERATES lives (issue-106). One root to back up, relocate or wipe, instead of four independent path defaults. It supplies DEFAULTS only: an explicitly configured path (routing.registryDir, polling.stateFile, eventLog.path, webhooks.ghWebhook.pidfile) is still used verbatim, so an existing config behaves identically.",
+      "additionalProperties": false,
+      "properties": {
+        "root": {
+          "type": "string",
+          "default": ".the-loop",
+          "description": "Root directory for generated state. Defaults derived from it: session registry `<root>/sessions/`, control records `<root>/sessions/control/`, poll state `<root>/sessions/poll-state.json`, event log `<root>/logs/events.jsonl`, receiver pidfile `<root>/gh-webhook.pid`. With the default root only the poll state moves (it was `.the-loop/poll-state.json`); the poller keeps using a legacy file that still exists and warns once, so an upgrade never re-baselines — and re-forwards — every watched thread."
+        }
+      }
+    },
     "webhooks": {
       "type": "object",
       "description": "Config for the the-loop CLI webhook receiver(s) (e.g. `the-loop gh-webhook start`).",
@@ -47,8 +59,8 @@
                 },
                 "registryDir": {
                   "type": "string",
-                  "default": ".the-loop/sessions",
-                  "description": "Directory of per-session registry JSON files (git-ignored)."
+                  "default": "<state.root>/sessions",
+                  "description": "Directory of per-session registry JSON files (git-ignored), and the parent of the control records the-loop keeps beside them (<registryDir>/control/, issue-106). Unset resolves to `<state.root>/sessions` — with the default root, the pre-issue-106 `.the-loop/sessions` verbatim."
                 },
                 "defaultHarness": {
                   "type": "string",
@@ -66,6 +78,39 @@
                   "type": "string",
                   "default": "the-loop: auto-execute",
                   "description": "Issue/PR label that opts a work item into autonomous execution (spawnOnUnmatched: labeled). Read from the webhook payload, no API call."
+                },
+                "control": {
+                  "type": "object",
+                  "description": "Execution control: the keywords an AUTHORIZED user steers the-loop with, in a comment on the work item or its PR (issue-106). Before this, `authorizedUsers` said WHO may be an input and `autoExecuteLabel` said WHICH items may run — nothing said WHEN, so labelling an issue was itself an irreversible trigger. A comment carrying a declared keyword is interpreted by the-loop and NOT forwarded to the harness; the same four commands are available as `the-loop sessions start|pause|resume|stop`, which post the same keyword back to the ticket (marked as the-loop's own so it is never read back). Control parsing runs strictly AFTER the existing guards — the self-comment marker and authorizedUsers — so it never becomes a second, weaker way in; the parser recognises the fixed vocabulary only and yields one of four commands, never text from the comment.",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean",
+                      "default": true,
+                      "description": "Recognise control keywords in comments. false forwards every comment to the harness as before issue-106 (and, with requireStartCommand, disables the start requirement with it)."
+                    },
+                    "requireStartCommand": {
+                      "type": "boolean",
+                      "default": true,
+                      "description": "BEHAVIOUR CHANGE (issue-106): the auto-execute label becomes NECESSARY BUT NOT SUFFICIENT. With the default true, a labelled work item is *armed*, and a session spawns only once an authorized user has issued the start command for it (by comment, or `the-loop sessions start`) — the request is durable, so it survives a daemon restart, and a later stop/pause disarms it again. This applies to `spawnOnUnmatched: always` too: 'always' widens which items may spawn, never who may start them. Set false to restore the pre-issue-106 behaviour where the label alone starts a session."
+                    },
+                    "keywords": {
+                      "type": "object",
+                      "description": "The declared vocabulary. Matched as whole tokens, case-insensitively, anywhere in a comment body. Setting one to an empty string disables that command; a comment carrying two DIFFERENT commands is refused outright (nothing executed, nothing forwarded).",
+                      "additionalProperties": false,
+                      "properties": {
+                        "start": { "type": "string", "default": "the-loop:start-execution" },
+                        "stop": { "type": "string", "default": "the-loop:stop-execution" },
+                        "pause": { "type": "string", "default": "the-loop:pause-execution" },
+                        "resume": { "type": "string", "default": "the-loop:resume-execution" }
+                      }
+                    },
+                    "ghBinary": {
+                      "type": "string",
+                      "default": "gh",
+                      "description": "Path/name of the gh CLI used to post the paper-trail comment for a CLI-issued control action (uses the operator's existing gh auth, like reactions and announcements)."
+                    }
+                  }
                 },
                 "authorizedUsers": {
                   "type": "array",
@@ -318,8 +363,8 @@
         },
         "stateFile": {
           "type": "string",
-          "default": ".the-loop/poll-state.json",
-          "description": "Durable JSON tracking which comments each item has processed (cross-poll/restart dedup). Git-ignored runtime state."
+          "default": "<state.root>/sessions/poll-state.json",
+          "description": "Durable JSON tracking which comments each item has processed (cross-poll/restart dedup). Git-ignored runtime state. Unset resolves under `state.root` with the rest of the session tracking (issue-106); a pre-issue-106 `.the-loop/poll-state.json` that still exists keeps being used, with a warning, rather than silently re-baselining every watched thread."
         },
         "maxRetries": {
           "type": "integer",
@@ -421,8 +466,8 @@
         "enabled": { "type": "boolean", "default": true },
         "path": {
           "type": "string",
-          "default": ".the-loop/logs/events.jsonl",
-          "description": "Append-only JSONL file (git-ignored runtime state)."
+          "default": "<state.root>/logs/events.jsonl",
+          "description": "Append-only JSONL file (git-ignored runtime state). Unset resolves under `state.root` (issue-106) — `.the-loop/logs/events.jsonl` with the default root."
         }
       }
     }

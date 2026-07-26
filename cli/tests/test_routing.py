@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from the_loop.control import ControlConfig
 from the_loop.harness import (
     ClaudeCodeAdapter,
     CursorAgentAdapter,
@@ -138,6 +139,61 @@ def test_registry_skips_corrupt_file(tmp_path, caplog):
     registry.register(make_session())
     (tmp_path / "garbage.json").write_text("{not json")
     assert len(registry.list_sessions()) == 1  # corrupt entry skipped, no crash
+
+
+# -- paused sessions (issue-106) ----------------------------------------------
+
+
+def test_registry_pause_and_resume_round_trip(tmp_path):
+    registry = SessionRegistry(tmp_path)
+    registry.register(make_session())
+    paused = registry.pause(REF)
+    assert paused is not None and paused.is_paused
+    # Persisted, so a daemon restart still sees it suspended.
+    reread = SessionRegistry(tmp_path).find_by_work_item(REF)
+    assert reread is not None and reread.status == "paused"
+    assert registry.resume(REF) is not None
+    resumed = registry.find_by_work_item(REF)
+    assert resumed is not None and resumed.status == "active"
+
+
+def test_registry_pause_is_a_no_op_when_there_is_nothing_running(tmp_path):
+    registry = SessionRegistry(tmp_path)
+    assert registry.pause(REF) is None  # no session at all
+    registry.register(make_session())
+    registry.pause(REF)
+    assert registry.pause(REF) is None  # already paused
+    assert registry.resume(REF) is not None
+    assert registry.resume(REF) is None  # already active
+
+
+def test_a_paused_session_still_owns_its_work_item(tmp_path):
+    # Nothing may spawn a second session for a work item that has a paused one.
+    registry = SessionRegistry(tmp_path)
+    registry.register(make_session())
+    registry.pause(REF)
+    assert registry.find_by_work_item(REF) is not None
+    with pytest.raises(RegistryError):
+        registry.register(make_session(session_id="second"))
+
+
+def test_a_paused_session_can_be_closed(tmp_path):
+    # A pause must never outlive its work item.
+    registry = SessionRegistry(tmp_path)
+    registry.register(make_session())
+    registry.pause(REF)
+    assert registry.close(REF) is True
+    assert registry.find_by_work_item(REF) is None
+    closed = registry.find_by_work_item(REF, include_closed=True)
+    assert closed is not None and closed.status == "closed"
+
+
+def test_paused_sessions_are_listable(tmp_path):
+    registry = SessionRegistry(tmp_path)
+    registry.register(make_session())
+    registry.pause(REF)
+    assert [s.status for s in registry.list_sessions(status="paused")] == ["paused"]
+    assert registry.list_sessions(status="active") == []
 
 
 # -- event router (R3) --------------------------------------------------------
@@ -623,6 +679,9 @@ class FakeAdapter:
 
 def make_dispatcher(tmp_path, adapter, **config_overrides):
     registry = SessionRegistry(tmp_path / "sessions")
+    # Pre-issue-106 spawn behaviour by default: these cover the spawn mechanics,
+    # while the start-command gate has its own tests below.
+    config_overrides.setdefault("control", ControlConfig(require_start_command=False))
     config = RoutingConfig(**config_overrides)
     dispatcher = Dispatcher(
         registry=registry, adapters={"claude": adapter}, config=config
@@ -1085,13 +1144,14 @@ def test_dispatcher_reload_swaps_policy_and_templates_keeps_dedup(tmp_path):
             spawn_on_unmatched="always",
             registry_dir="ignored-on-reload",
             prompt_template=str(tmpl),
+            control=ControlConfig(require_start_command=False),
         )
     )
     dispatcher.stop()
 
     # soft policy took effect
     assert dispatcher.config.spawn_on_unmatched == "always"
-    assert dispatcher._should_spawn(routed_labeled_issue(labeled=False)) is True
+    assert dispatcher._spawn_refusal(routed_labeled_issue(labeled=False)) == ""
     # prompt template reloaded
     rendered = dispatcher._render_prompt(
         routed_issue_comment(), WorkItemRef.parse(REF), dispatcher._event_template

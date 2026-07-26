@@ -14,8 +14,12 @@ Spec: docs/specs/issue-34/design.md.
 import json
 import subprocess
 
+import tempfile
+
 import pytest
 
+from the_loop.control import ControlConfig, ControlStore
+from the_loop.webhook.dispatcher import RoutingConfig
 from the_loop.poller import (
     Closure,
     Comment,
@@ -618,9 +622,18 @@ class RecordingDispatcher:
     makes a single-cycle forward look like a fresh first attempt.
     """
 
-    def __init__(self, status_map=None):
+    def __init__(self, status_map=None, control=None, control_store=None):
         self.events = []
         self.status_map = dict(status_map or {})
+        # The poller reads its control policy off the dispatcher it drives
+        # (issue-106). These tests cover the poll loop itself, so they default
+        # to the pre-issue-106 arming: presence spawns on the label alone.
+        self.config = RoutingConfig(
+            control=control or ControlConfig(require_start_command=False)
+        )
+        self.control_store = control_store or ControlStore(
+            tempfile.mkdtemp(prefix="the-loop-control-")
+        )
 
     def handle(self, routed):
         self.events.append(routed)

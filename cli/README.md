@@ -88,11 +88,36 @@ starting point ships at
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `version` | string | `0.1.0` | Schema version of this file. |
+| `state` | object | — | Where everything the CLI **generates** lives — one root instead of four independent path defaults (issue-106). See below. |
 | `webhooks` | object | — | Config for the webhook receiver (`the-loop gh-webhook`). |
 | `polling` | object | — | Config for the poller (`the-loop poll`). |
 | `eventLog` | object | — | Config for the structured event log (`the-loop events`). |
 | `collaborators` | object[] | `[]` | The operator's own notification recipients — same structure as `.the-loop/collaborators.schema.json` (see below). |
 | `notifications` | object | — | Which daemon-side events notify which roles from `collaborators` (see below). |
+
+#### `state` — one root for generated files
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `root` | string | `.the-loop` | Root directory for everything the CLI writes. |
+
+The root supplies the **defaults** of every generated path, so one value moves them all:
+
+| What | Default under `state.root` |
+|------|----------------------------|
+| session registry | `<root>/sessions/` |
+| control records (issue-106) | `<root>/sessions/control/` |
+| poll state | `<root>/sessions/poll-state.json` |
+| event log | `<root>/logs/events.jsonl` |
+| receiver pidfile | `<root>/gh-webhook.pid` |
+
+A path you set **explicitly** (`routing.registryDir`, `polling.stateFile`,
+`eventLog.path`, `webhooks.ghWebhook.pidfile`) is still used verbatim — the root only
+fills in what you left out, so an existing config behaves identically. With the default
+root, only the poll state moves (it was `.the-loop/poll-state.json`); if that file still
+exists and the new one does not, the poller keeps using it and warns once, because
+adopting an empty state file would make every watched thread first-sight again and
+re-forward its whole comment history.
 
 #### `webhooks.ghWebhook` — the GitHub webhook receiver
 
@@ -111,10 +136,11 @@ starting point ships at
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `enabled` | boolean | `false` | Default for `gh-webhook start --route/--no-route`. |
-| `registryDir` | string | `.the-loop/sessions` | Directory of per-session registry JSON files (git-ignored). |
+| `registryDir` | string | `<state.root>/sessions` | Directory of per-session registry JSON files (git-ignored), and the parent of the control records kept beside them (`<registryDir>/control/`). |
 | `defaultHarness` | `claude` \| `cursor` | `claude` | Harness used when spawning a session for an unmatched event. |
 | `spawnOnUnmatched` | `never` \| `always` \| `labeled` | `never` | Policy for events matching no session: log-and-drop / spawn+register / spawn only when `autoExecuteLabel` is present. |
-| `autoExecuteLabel` | string | `the-loop: auto-execute` | Issue/PR label that opts a work item into autonomous execution (read from the payload, no API call). |
+| `autoExecuteLabel` | string | `the-loop: auto-execute` | Issue/PR label that **arms** a work item for autonomous execution (read from the payload, no API call). Necessary, not sufficient — see `control` below. |
+| `control` | object | — | The start/stop/pause/resume keywords an authorized user steers with, and whether a start is required before anything spawns (see below). |
 | `authorizedUsers` | string[] | `[]` | **SECURITY (prompt-injection guard):** GitHub logins whose actions the-loop may act on. **REQUIRED**, no plugin-config fallback; empty fails closed (all human-authored events ignored). |
 | `spawnWorkdir` | string | `.` | Working directory for sessions spawned on unmatched events. |
 | `runner` | `process` \| `tmux` | `process` | How spawned sessions are hosted: headless one-shot subprocess, or an interactive TUI in a named tmux session humans can attach to. |
@@ -130,6 +156,44 @@ starting point ships at
 | `harnessTrust` | object | — | Pre-seed the harness's own config before a spawn so the session doesn't stall on a trust dialog (see below). |
 | `reactions` | object | — | Dispatch-lifecycle emoji reactions on the triggering GitHub entity (see below). |
 | `announce` | object | — | Comment on the work item announcing a spawned tmux session and how to attach (see below). |
+
+#### `webhooks.ghWebhook.routing.control` — who starts a run, and when (issue-106)
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | boolean | `true` | Recognise control keywords in comments. `false` forwards every comment to the harness as before issue-106. |
+| `requireStartCommand` | boolean | `true` | **The label is necessary, not sufficient**: a labelled work item waits for an authorized user's explicit start before a session spawns. |
+| `keywords.start` | string | `the-loop:start-execution` | Start (or resume) execution for the work item. |
+| `keywords.stop` | string | `the-loop:stop-execution` | Close the session and end its harness. |
+| `keywords.pause` | string | `the-loop:pause-execution` | Hold events; the session keeps its conversation. |
+| `keywords.resume` | string | `the-loop:resume-execution` | Deliver events again. |
+| `ghBinary` | string | `gh` | gh CLI used to post the paper-trail comment for a CLI-issued control action. |
+
+`authorizedUsers` says **who** may be an input and `autoExecuteLabel` says **which**
+items may run; these keywords say **when**. A comment carrying one is interpreted by
+the-loop and **not** forwarded to the agent:
+
+```text
+the-loop:start-execution
+```
+
+- Only an **authorized** user's comment counts: control parsing happens after the
+  self-comment marker check and after `authorizedUsers`, so it never becomes a second,
+  weaker way in. An empty `authorizedUsers` still fails closed.
+- Keywords match as whole tokens, case-insensitively, anywhere in the body. A comment
+  carrying **two different** keywords is refused outright — nothing runs, nothing is
+  forwarded.
+- A start request is **durable**: it survives a daemon restart, and a later `stop`/
+  `pause` disarms the item again, so a stopped work item does not re-spawn on the next
+  event.
+- The same four commands are available as `the-loop sessions start|pause|resume|stop`,
+  which post the same keyword back to the ticket (marked as the-loop's own, so the
+  daemon never reads it back).
+
+> **Upgrading from ≤ 0.22:** with the default `requireStartCommand: true`, labelling an
+> issue no longer starts a session on its own — comment `the-loop:start-execution` (or
+> run `the-loop sessions start`). Set `requireStartCommand: false` to keep the old
+> behaviour.
 
 #### `webhooks.ghWebhook.routing.harnessTrust` — why sessions used to stall on a dialog
 
@@ -275,7 +339,7 @@ rocket eyes`) — ✅/⁉️ don't exist, so the defaults are the closest suppor
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `intervalSeconds` | integer | `60` | Seconds between poll cycles (all sources). |
-| `stateFile` | string | `.the-loop/poll-state.json` | Durable JSON tracking which comments each item has processed (cross-poll/restart dedup; git-ignored). |
+| `stateFile` | string | `<state.root>/sessions/poll-state.json` | Durable JSON tracking which comments each item has processed (cross-poll/restart dedup; git-ignored). |
 | `sources` | object[] | `[]` (nothing polled) | Ordered provider-specific poll sources (see below). |
 
 #### `polling.sources[]` — one entry per source (`provider: github` ships today)
@@ -381,9 +445,15 @@ the-loop gh-webhook stop  [--pidfile .the-loop/gh-webhook.pid]
 ```bash
 the-loop sessions register --work-item github:OWNER/REPO#N --harness claude \
     --harness-session-id "$CLAUDE_SESSION_ID" [--cwd .] [--force]
-the-loop sessions list  [--status active|closed] [--format table|json]
+the-loop sessions list  [--status active|paused|closed] [--format table|json]
 the-loop sessions attach --work-item github:OWNER/REPO#N [--read-only]
 the-loop sessions close --work-item github:OWNER/REPO#N [--keep-tmux|--kill-tmux]
+
+# execution control (issue-106) — the same four commands as the comment keywords
+the-loop sessions start  --work-item github:OWNER/REPO#N [--no-comment]
+the-loop sessions pause  --work-item github:OWNER/REPO#N [--no-comment]
+the-loop sessions resume --work-item github:OWNER/REPO#N [--no-comment]
+the-loop sessions stop   --work-item github:OWNER/REPO#N [--no-comment]
 ```
 
 - The registry lives in `webhooks.ghWebhook.routing.registryDir` (default
@@ -406,9 +476,21 @@ the-loop sessions close --work-item github:OWNER/REPO#N [--keep-tmux|--kill-tmux
   work item; `sessions attach` reaches the retained session read-only, and
   `sessions close --kill-tmux` ends it for good.
 
+**Execution control from the CLI** (issue-106): `start`/`pause`/`resume`/`stop` apply
+exactly what the corresponding comment keyword applies — `start` spawns through the same
+dispatcher the daemon uses (workspace checkout, harness trust, runner, announcement) or
+resumes a paused session; `stop` takes the normal close path. Each one records the
+command beside the session (`<registryDir>/control/`) and posts the same keyword back to
+the work item so the ticket stays the full record of who asked for what; that comment
+carries the loop-prevention marker, so the daemon never reads its own action back.
+`--no-comment` skips it, and a missing/failing `gh` only warns — it never undoes the
+local action. `sessions list` shows the session status (`paused` included) and the last
+control command.
+
 **Label-gated auto-execution** (`spawnOnUnmatched: labeled`): give an issue/PR the
-configurable `routing.autoExecuteLabel` (default `the-loop: auto-execute`) and the
-receiver spawns a session and starts `/the-loop:work-on` on it — then routes that item's
+configurable `routing.autoExecuteLabel` (default `the-loop: auto-execute`), have an
+authorized user comment `the-loop:start-execution` (or run `the-loop sessions start`),
+and the receiver spawns a session and starts `/the-loop:work-on` on it — then routes that item's
 later activity (comments, reviews, CI, and **every** PR linked to it) to the same
 session, and auto-closes when the item itself closes. Label presence is read straight
 from the webhook payload (no extra API call). A new issue *without* the label is

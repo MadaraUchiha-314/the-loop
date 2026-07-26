@@ -227,10 +227,13 @@ cli/.pytest_cache/
 # the-loop: not-yet-durable learning candidates (write-gate queue)
 .the-loop/learnings-pending/
 
-# the-loop: webhook->session routing registry (runtime state)
+# the-loop: session-related runtime state under the default state.root —
+# the routing registry, the control records (sessions/control/) and, since
+# issue-106, the poller's cross-poll dedup state (sessions/poll-state.json)
 .the-loop/sessions/
 
-# the-loop: poller cross-poll dedup state (runtime state)
+# the-loop: the poller's pre-issue-106 dedup-state location (still honoured
+# when it exists, so an upgrade does not re-forward every watched thread)
 .the-loop/poll-state.json
 
 # the-loop: structured event log (runtime state; `the-loop events`)

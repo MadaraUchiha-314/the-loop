@@ -15,6 +15,7 @@ import time
 
 import pytest
 
+from the_loop.control import ControlConfig
 from the_loop import eventlog
 from the_loop.harness.base import DispatchResult
 from the_loop.harness.claude_code import ClaudeCodeAdapter
@@ -141,6 +142,8 @@ class StubWorkspace(Workspace):
 
 
 def make_dispatcher(tmp_path, adapter, workspace=None, **config_overrides):
+    # Pre-issue-106 spawn behaviour (the start gate has its own tests).
+    config_overrides.setdefault("control", ControlConfig(require_start_command=False))
     config = RoutingConfig(spawn_on_unmatched="labeled", **config_overrides)
     return Dispatcher(
         registry=SessionRegistry(tmp_path / "sessions"),
@@ -211,7 +214,9 @@ def test_respawned_tmux_session_workspace_is_trusted_too(tmp_path, fake_home, wo
     dispatcher = Dispatcher(
         registry=SessionRegistry(tmp_path / "sessions"),
         adapters={"claude": adapter},
-        config=RoutingConfig(runner="tmux"),
+        config=RoutingConfig(
+            runner="tmux", control=ControlConfig(require_start_command=False)
+        ),
         tmux_runner=tmux,
     )
     dispatcher.registry.register(

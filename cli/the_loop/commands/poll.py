@@ -40,6 +40,7 @@ from ..poller import (
     Reloader,
     build_provider,
 )
+from ..state import StateLayout, layout_from_config, resolve_poll_state_path
 
 logger = logging.getLogger("the-loop.poll")
 
@@ -50,9 +51,7 @@ _CONFIG_PATH = cli_config.default_cli_config_path()
 
 _DEFAULTS = {
     "intervalSeconds": 60,
-    "stateFile": ".the-loop/poll-state.json",
     "maxRetries": 3,
-    "pidfile": ".the-loop/poll.pid",
 }
 
 
@@ -61,13 +60,20 @@ def _load_polling_config() -> dict:
     return cli_config.load_cli_config(_CONFIG_PATH, strict=False).get("polling") or {}
 
 
-def _build_dispatcher(routing_map: Optional[dict]):
+def _state_layout() -> StateLayout:
+    """``state.root`` from the CLI config — the root of everything generated."""
+    return layout_from_config(cli_config.load_cli_config(_CONFIG_PATH))
+
+
+def _build_dispatcher(
+    routing_map: Optional[dict], layout: Optional[StateLayout] = None
+):
     """Compose the same registry + adapters + dispatcher the receiver uses."""
     from ..harness import build_adapters
     from ..sessions import SessionRegistry
     from ..webhook.dispatcher import Dispatcher, RoutingConfig
 
-    routing = RoutingConfig.from_mapping(routing_map or {})
+    routing = RoutingConfig.from_mapping(routing_map or {}, layout or _state_layout())
     dispatcher = Dispatcher(
         registry=SessionRegistry(routing.registry_dir),
         adapters=build_adapters(routing.harness_args, routing.harness_trust),
@@ -82,7 +88,17 @@ class PollCommand(Command):
     help = "Poll configured ticketing/PR sources and spawn/route harness sessions"
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
-        defaults = {**_DEFAULTS, **_load_polling_config()}
+        # Path defaults come from `state.root` (issue-106) and are computed here,
+        # not at import: `--config` is resolved just before this runs. The poll
+        # state keeps its pre-issue-106 location when that is the only one on
+        # disk — adopting an empty new file would re-forward every thread.
+        layout = _state_layout()
+        defaults = {
+            **_DEFAULTS,
+            "stateFile": resolve_poll_state_path("", layout),
+            "pidfile": str(Path(layout.root) / "poll.pid"),
+            **_load_polling_config(),
+        }
         actions = parser.add_subparsers(dest="action", metavar="<action>")
         actions.required = True
 
@@ -208,12 +224,21 @@ class PollCommand(Command):
             pidfile.parent.mkdir(parents=True, exist_ok=True)
             pidfile.write_text(str(os.getpid()))
         logger.info(
-            "poll: %s every %ss (runner=%s, spawnOnUnmatched=%s)",
+            "poll: %s every %ss (runner=%s, spawnOnUnmatched=%s, state=%s)",
             "; ".join(p.describe() for p in providers),
             config.interval_seconds,
             routing.runner,
             routing.spawn_on_unmatched,
+            config.state_file,
         )
+        if routing.control.enabled and routing.control.require_start_command:
+            logger.info(
+                "a labelled work item is armed, not started: an authorized user "
+                "starts it by commenting %r (or running `the-loop sessions "
+                "start`) — set routing.control.requireStartCommand: false for "
+                "the pre-issue-106 label-alone behaviour",
+                routing.control.keyword("start"),
+            )
         eventlog.emit(
             "poller.started",
             interval_seconds=config.interval_seconds,

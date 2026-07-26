@@ -21,6 +21,7 @@ import urllib.request
 
 import pytest
 
+from the_loop.control import ControlConfig
 from the_loop import eventlog
 from the_loop.cli import main
 from the_loop.harness import ClaudeCodeAdapter
@@ -75,7 +76,11 @@ def stack(tmp_path):
         config = RoutingConfig(
             dispatch_timeout_seconds=30,
             spawn_workdir=str(tmp_path),
-            **routing_overrides,
+            # Pre-issue-106 spawn behaviour (the start gate has its own tests).
+            **{
+                "control": ControlConfig(require_start_command=False),
+                **routing_overrides,
+            },
         )
         dispatcher = Dispatcher(
             registry=registry,
