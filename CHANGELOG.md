@@ -1,3 +1,16 @@
+## v1.0.0 (2026-07-26)
+
+### BREAKING CHANGE
+
+- with routing.control.requireStartCommand at its default true,
+labelling a work item no longer starts a session on its own — comment
+`the-loop:start-execution` or run `the-loop sessions start`. Set it to false to
+keep the previous behaviour.
+
+### Feat
+
+- **cli**: authorized execution control (start/stop/pause/resume) + one state root (issue #106) (#107)
+
 ## v0.22.1 (2026-07-26)
 
 ### Fix
