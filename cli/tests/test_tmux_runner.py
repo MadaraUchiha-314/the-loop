@@ -13,7 +13,7 @@ import signal
 import pytest
 
 from the_loop import runner as runner_mod
-from the_loop.commands import sessions_cmd
+from the_loop.commands import sessions as sessions_cmd
 from the_loop.harness import ClaudeCodeAdapter, CursorAgentAdapter
 from the_loop.runner import (
     TmuxResult,

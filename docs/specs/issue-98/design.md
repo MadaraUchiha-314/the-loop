@@ -49,7 +49,7 @@ Four pieces of new code:
 
 and four touched: `sessions/registry.py` (three new recorded fields),
 `webhook/dispatcher.py` (pause gate + PR linkage + owner pid),
-`poller/poller.py` (pause gate), `commands/sessions_cmd.py` (new subcommands).
+`poller/poller.py` (pause gate), `commands/sessions.py` (new subcommands).
 
 ## 2. The pause ledger (`sessions/pauses.py`)
 
@@ -216,7 +216,7 @@ values (R1.5).
 The URL is derived from the ref (`https://github.com/OWNER/REPO/issues/N`) for
 `provider == "github"` only; other providers render `-` (R2.1).
 
-## 6. CLI surface (`commands/sessions_cmd.py`)
+## 6. CLI surface (`commands/sessions.py`)
 
 | Command | Behaviour |
 |---|---|

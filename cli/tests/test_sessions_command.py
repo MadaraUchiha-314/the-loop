@@ -9,7 +9,7 @@ import json
 import pytest
 
 from the_loop.cli import main
-from the_loop.commands import iter_commands, sessions_cmd
+from the_loop.commands import iter_commands, sessions as sessions_cmd
 from the_loop.labels import LabelResult
 from the_loop.sessions import PauseStore, Session, SessionRegistry, WorkItemRef
 
