@@ -115,8 +115,9 @@ What is already true, so we build on it rather than past it:
     is prompt/skill/config shaped, harness-native hooks, or thin Python in the existing
     CLI — never a reimplementation of an agent loop.
   - **Two harnesses, one source.** A lever that only works in Claude Code is half a lever.
-    Hook coverage is *not* symmetric today (see below), so cross-harness parity is a
-    design constraint, not an afterthought.
+    Both harnesses expose a hook set covering the enforcement points this issue needs,
+    but with **different dialects and different continuation semantics** (see below), so
+    the shared piece must be the checker and the divergence must live in a thin wrapper.
   - **The human gates are the point, not friction.** `requireHumanReviewPerPhase` and the
     risk-tiered autonomy gates must survive any orchestration; determinism must make the
     wait states *explicit*, never optimize them away.
@@ -165,13 +166,29 @@ This is the sharpest question in the ticket, and it has a two-part answer.
 | `claude -p --output-format json` | process exit + terminal result JSON (`is_error`, `session_id`, usage) | *cannot happen* — headless never blocks on a human; it just ends |
 | `--output-format stream-json` | terminal `result` event on the stream | — (same) |
 | tmux TUI (resident) | `Stop` hook fires when Claude finishes responding; `Notification` with matcher `agent_completed` | `Notification` with matcher `agent_needs_input`, `permission_prompt`, or `idle_prompt` |
-| `cursor-agent` TUI | `stop` hook exists in Cursor's hook set, **but CLI hook coverage is reported as partial** (community reports only shell-execution events firing in `cursor-agent`) — verify before designing on it | — (same caveat) |
+| `cursor-agent` TUI | `stop` hook fires at the end of **each agent turn** (not at chat close) | — (Cursor exposes no documented needs-input notification; the gate predicate covers it) |
 
 So the distinction the ticket asks about is **already a first-class, documented signal in
 Claude Code**: `Notification`'s matchers separate `agent_needs_input` / `permission_prompt`
 / `idle_prompt` from `agent_completed`, and `Stop` fires on turn end. In headless mode the
 question dissolves entirely — the process exits, and a step that *should* wait for a human
 ends by writing its artifact as `status: in-review` and parking the work item.
+
+**Both harnesses can also be made to *continue* — by different mechanisms with the same
+effect.** This matters more than detection, because it is what turns a gate from a report
+into an enforcement point:
+
+| Harness | Continuation mechanism | Runaway protection |
+|---|---|---|
+| Claude Code | `Stop` hook exit 2 / `decision: "block"` — **prevents** the stop and the reason goes back to the model; `hookSpecificOutput.additionalContext` continues non-blockingly | **none built in** — the-loop must impose the attempt cap |
+| Cursor | `stop` hook **cannot block**, but returns `followup_message`, which Cursor auto-submits as the next user turn | **built in** — a configurable `loop_limit`, capped by Cursor at 5 auto-followups |
+
+Either way the loop closes the same: the agent finishes a turn → the hook runs
+`the-loop check` → an unmet predicate goes back to the agent as its next input → the agent
+repairs. Neither harness needs the-loop to parse a single sentence of prose. The one
+asymmetry worth designing around is the *runaway* case, and it points the opposite way
+from the obvious guess: Cursor caps auto-followups natively, so it is **Claude Code** that
+needs the-loop to enforce the attempt cap itself.
 
 **Part 2 — and it does not matter as much as it looks, because "stopped" ≠ "done".**
 
@@ -284,11 +301,23 @@ Wire the checker into lifecycle points the model does not control:
 - **`PreToolUse`** on `git push` / PR creation — the last cheap moment before work becomes
   externally visible.
 
-*Pro:* enforcement at the exact moment of deviation; uses documented harness features; no
-new runtime. *Con:* **asymmetric across harnesses** — Claude Code's hook set is rich and
-documented, while `cursor-agent`'s CLI hook coverage is reported as partial. Cursor must
-degrade gracefully to Option D + prompt-level rules. A blocking `Stop` hook is also
-genuinely dangerous without the cap; treat it as a safety-critical detail, not a footnote.
+**This is a cross-harness lever, not a Claude-only one.** Cursor's hook set covers the same
+ground (session lifecycle, tool/shell/MCP surrounds, file read and edit, prompt submission,
+compaction, and `stop`), so the same `the-loop check` invocation sits at the same places.
+The mechanisms differ where the previous section describes — Claude blocks the stop, Cursor
+returns a `followup_message` Cursor auto-submits — but the enforcement loop is identical.
+
+*Pro:* enforcement at the exact moment of deviation; uses documented harness features on
+**both** harnesses; no new runtime. *Con:* two hook dialects to keep in step (a shared
+`the-loop check --format json` keeps the divergence to the wrapper, not the logic); the
+harnesses' hook *bodies* differ in schema, so a shared checker with per-harness adapters is
+the shape to aim for; and the runaway risk is real and asymmetric — Cursor caps
+auto-followups at 5, Claude Code caps nothing, so the-loop must impose the attempt cap on
+the Claude path. Treat that cap as a safety-critical detail, not a footnote. The one thing
+still to **verify empirically**: that `stop` is delivered in the `cursor-agent` **CLI**
+surface (which is what the-loop drives) and not only in the IDE — reports on this conflict
+and are of different vintages, so it is a five-minute experiment rather than a literature
+search.
 
 ### Option D — Enforce at the boundary that is harness-agnostic: pre-push + CI ✅
 
@@ -370,7 +399,7 @@ flowchart TD
     B --> D["Opt D — pre-push + CI<br/>harness-agnostic hard gate"]
     B --> E["Opt E — `the-loop run`<br/>deterministic step orchestrator"]
     B --> F["Opt F — verified checkpoint<br/>`the-loop step done`"]
-    C -.->|"Claude today;<br/>Cursor degrades to D"| D
+    C -.->|"in-session (both harnesses);<br/>D is the harness-agnostic backstop"| D
     E -.->|reuses| R["existing: registry ·<br/>ControlStore · worktrees · eventlog"]
     F -.->|bridge for| G["Opt G — resident tmux session"]
 ```
@@ -408,10 +437,14 @@ are answered.
 2. **How hard should the gate be?** Warn-only, block-on-push, or block-the-turn
    (`Stop` hook exit 2)? Per risk tier, or uniform? A blocking gate is the whole point —
    and also the thing that can wedge an autonomous run.
-3. **Is a Claude-first enforcement path acceptable?** Claude Code's hook set supports
-   Option C fully; `cursor-agent`'s CLI hook coverage appears partial and needs verifying.
-   Proposal: hooks where available, `the-loop check` in pre-push/CI everywhere — but this
-   does mean the two harnesses are not equally protected in-session.
+3. **How do we hold the two hook dialects together?** Both harnesses support the
+   enforcement loop (Claude blocks the stop; Cursor auto-submits a `followup_message`), so
+   Option C is cross-harness — but the config format, event names and hook-body schemas
+   differ. Proposal: one `the-loop check --format json` as the shared core, with a thin
+   per-harness wrapper shipped in `hooks/` and `.cursor/hooks.json`. Two things to settle:
+   is that split acceptable, and **does `stop` fire in the `cursor-agent` CLI** (what
+   the-loop actually drives) or only in the IDE? The second is an experiment, not a
+   discussion — worth running before requirements lock.
 4. **Orchestration or verification?** Does the-loop *drive* the steps (`the-loop run`,
    Option E) or stay event-driven and merely *verify* (Options B–D)? These are genuinely
    different products; verification is strictly cheaper and composes with the existing
@@ -469,9 +502,11 @@ model (Option A) as the foundation; **`the-loop check`** (Option B) as the first
 increment with its drift-report mode; the **two enforcement points** (harness hooks with a
 mandatory attempt cap; pre-push/CI as the harness-agnostic gate); the **failure-mode →
 recovery table** as the basis for error-handling acceptance criteria; the **completion-signal
-matrix** (exit code / terminal result JSON / `Stop` + `Notification` matchers — never prose)
-as a hard interface constraint; and the **measure-before-orchestrating** sequencing for
-`the-loop run`.
+matrix** (exit code / terminal result JSON / `Stop` + `Notification` matchers / Cursor's
+`stop` — never prose) and the **continuation matrix** (Claude blocks the stop; Cursor
+auto-submits a `followup_message`) as hard interface constraints, with the attempt cap
+required on the Claude path because Cursor caps natively; and the
+**measure-before-orchestrating** sequencing for `the-loop run`.
 
 The gating open questions requirements must resolve first: **scope** (epic vs one PR),
 **gate hardness**, **verification-vs-orchestration**, and the **retrofit policy** for the
@@ -488,13 +523,20 @@ was considered and why it was dropped.
   events; exit-2 blocking semantics; the `agent_needs_input` / `permission_prompt` /
   `idle_prompt` / `agent_completed` notification matchers this issue's completion question
   turns on.
-- Cursor 1.7 hooks — lifecycle events (`beforeShellExecution`, `beforeMCPExecution`,
-  `beforeReadFile`, `afterFileEdit`, `stop`) and the JSON-over-stdio contract
-  ([InfoQ](https://www.infoq.com/news/2025/10/cursor-hooks/),
-  [deep dive](https://blog.gitbutler.com/cursor-hooks-deep-dive)); note the community
-  report that `cursor-agent` delivers only the shell-execution events
-  ([forum](https://forum.cursor.com/t/cursor-cli-doesnt-send-all-events-defined-in-hooks/148316))
-  — **verify before designing on it**.
+- Cursor — *Hooks* (<https://cursor.com/docs/hooks#hook-categories>): the hook categories
+  (session lifecycle, generic tool hooks, shell/MCP surrounds, file read and edit, prompt
+  submission, compaction, `stop`) and the JSON-over-stdio contract, configured in
+  `.cursor/hooks.json` / `~/.cursor/hooks.json`. The `stop` hook fires at the end of **each
+  agent turn**; it cannot block completion, but its `followup_message` is auto-submitted as
+  the next user turn — bounded by a configurable `loop_limit` and Cursor's own maximum of 5
+  auto-followups. Background:
+  [InfoQ](https://www.infoq.com/news/2025/10/cursor-hooks/),
+  [deep dive](https://blog.gitbutler.com/cursor-hooks-deep-dive),
+  [stop-hook walkthrough](https://lirantal.com/blog/cursor-stop-hook-lint-build-verification).
+  **Open, and empirically checkable:** whether `stop` is delivered in the `cursor-agent`
+  **CLI** surface or only in the IDE — reports conflict
+  ([Jan-2026 request](https://forum.cursor.com/t/cursor-cli-hooks/148511),
+  [earlier report](https://forum.cursor.com/t/cursor-cli-doesnt-send-all-events-defined-in-hooks/148316)).
 - In-repo: `skills/the-loop/reference/workflow.md` (the phase state machine and gates),
   `reference/context.md` (checkpoint-then-reset), `docs/specs/issue-37/brainstorm.md`
   (token levers; runner economics), `docs/decisions/decision-005.md` (no bundled runtime),
