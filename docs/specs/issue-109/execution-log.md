@@ -51,8 +51,9 @@ status: in-progress           # in-progress | complete
     alternatives and *why*, two mermaid sketches, seven open questions, and a
     verify-first-orchestrate-second working hypothesis.
 - **Checkpoint/tests:** documentation-only change — no code touched. Markdown lint is the
-  applicable gate (`tooling.lint.markdown`); no unit/integration surface exists for this
-  phase.
+  applicable gate (`tooling.lint.markdown`): `npx markdownlint-cli2@0.18.1
+  "docs/specs/issue-109/*.md"` → 0 errors. CI (`checks`) green on PR #110. No
+  unit/integration surface exists for this phase.
 - **Next:** owner feedback on the seven open questions (scope, gate hardness, Claude-first
   enforcement, verification-vs-orchestration, resident-vs-per-step sessions, strictness of
   "no extra steps", retrofit policy). When answered, set `status: approved` + `approvedBy`
