@@ -38,6 +38,7 @@ from typing import Dict, List, Optional, Sequence
 
 from .. import eventlog
 from ..authz import is_authorized, is_self_authored
+from ..control import ControlConfig, ControlStore
 from ..reload import Reloader
 from ..sessions import SessionRegistry, WorkItemRef
 from ..webhook.dispatcher import Dispatcher
@@ -283,6 +284,8 @@ class Poller:
         state: PollState,
         reloader: Optional[Reloader] = None,
         authorized_users: Sequence[str] = (),
+        control: Optional[ControlConfig] = None,
+        control_store: Optional[ControlStore] = None,
     ):
         self.providers = list(providers)
         self.registry = registry
@@ -296,6 +299,28 @@ class Poller:
         # Prompt-injection guard: only these logins' items/comments are acted on
         # (empty => fail closed for human-authored input). See the_loop.authz.
         self.authorized_users = list(authorized_users)
+        # Execution control (issue-106). The dispatcher owns *executing* the
+        # commands; the poller only needs to know whether a work item has been
+        # started, so it does not keep offering presence events the dispatcher
+        # is bound to refuse (and spend the issue-80 retry budget on). Both
+        # default to the dispatcher's, read per cycle rather than snapshotted,
+        # so a hot-reloaded control policy is honoured without a restart.
+        self._control = control
+        self._control_store = control_store
+
+    @property
+    def control(self) -> ControlConfig:
+        return (
+            self._control
+            if self._control is not None
+            else self.dispatcher.config.control
+        )
+
+    @property
+    def control_store(self) -> ControlStore:
+        if self._control_store is not None:
+            return self._control_store
+        return self.dispatcher.control_store
 
     # -- one cycle --------------------------------------------------------------
 
@@ -512,6 +537,8 @@ class Poller:
         ref = item.ref
         if self.state.spawn_gave_up(ref):
             return
+        if self._awaiting_start(item):
+            return
         # A prior presence still enqueued/processing? Wait — don't pile a second
         # spawn behind it, and don't count it a failure (a process-runner spawn
         # runs the whole task and can outlast a poll cycle).
@@ -545,6 +572,32 @@ class Poller:
         self.dispatcher.handle(event)
         self.state.note_spawn_attempt(ref, event.delivery_id)
         summary.spawns += 1
+
+    def _awaiting_start(self, item: WorkItem) -> bool:
+        """Whether this item is labelled but nobody has started it (issue-106).
+
+        A presence event for such an item would be refused by the dispatcher —
+        correctly — but the poller has no way to tell a *refusal* from a
+        *failure*, so it would retry it every cycle until the issue-80 budget is
+        spent and then log a terminal `poll.spawn_failed`. Every labelled,
+        unstarted item in the operator's repos would produce that noise.
+
+        So the poller simply does not arm presence while a start is missing. The
+        start command still gets through: it arrives as an ordinary comment
+        event, which the dispatcher executes (and spawns from) on its own path.
+        """
+        control = self.control
+        if not (control.enabled and control.require_start_command):
+            return False
+        if self.control_store.start_requested(item.ref):
+            return False
+        logger.debug(
+            "%s is labelled but not started; not arming a spawn (comment %r on "
+            "it, or run `the-loop sessions start`, to begin)",
+            item.ref,
+            control.keyword("start"),
+        )
+        return True
 
     def _process_comment(
         self,

@@ -84,7 +84,8 @@ EVENT_TYPES: Dict[str, str] = {
     ),
     "dispatch.dropped": (
         "A routed event was discarded at dispatch (reason: duplicate-delivery "
-        "| already-processed | spawn-policy | session-vanished | no-adapter)."
+        "| already-processed | spawn-policy | awaiting-start | session-paused "
+        "| session-vanished | no-adapter)."
     ),
     "dispatch.succeeded": (
         "An event was delivered to its harness session (work_item, harness, "
@@ -106,6 +107,32 @@ EVENT_TYPES: Dict[str, str] = {
     "reaction.failed": (
         "Adding a dispatch-lifecycle reaction failed; the dispatch itself is "
         "unaffected (work_item, state, content, error)."
+    ),
+    # -- execution control (source: any; issue-106) ---------------------------
+    "control.command": (
+        "A control command was recognised and applied (work_item, command: "
+        "start | stop | pause | resume, source: comment | cli, actor, effect: "
+        "spawned | resumed | paused | stopped | noop) — the record of who asked "
+        "for a run to start or stop."
+    ),
+    "control.rejected": (
+        "A control command was recognised but refused (work_items, command, "
+        "source, actor, reason: spawn-policy | awaiting-start | "
+        "nothing-to-resume | unauthorized-actor) — e.g. a start for a work item "
+        "that is not armed for autonomous execution (which is refused without "
+        "being remembered), or a command with no named authorized actor."
+    ),
+    "control.ambiguous": (
+        "A comment carried two or more different control keywords, so nothing "
+        "was executed and nothing was forwarded (work_items, actor, commands)."
+    ),
+    "control.announced": (
+        "A CLI control action was mirrored to the work item as a comment "
+        "carrying the same keyword (work_item, command)."
+    ),
+    "control.announce_failed": (
+        "Mirroring a CLI control action to the work item failed (work_item, "
+        "command, error) — best-effort; the command was still applied locally."
     ),
     # -- session lifecycle (source: any) --------------------------------------
     "session.registered": (
@@ -143,6 +170,16 @@ EVENT_TYPES: Dict[str, str] = {
         "tmux_target, error) — best-effort, the dispatch is unaffected."
     ),
     "session.closed": "A session was closed in the registry (work_item).",
+    "session.paused": (
+        "A session was paused, so events for its work item are held rather "
+        "than delivered (work_item, harness, harness_session_id) — issue-106, "
+        "the pause command."
+    ),
+    "session.resumed": (
+        "A paused session returned to active and delivery resumed (work_item, "
+        "harness, harness_session_id); events suppressed while paused are not "
+        "replayed."
+    ),
     "session.retained": (
         "A closed work item's tmux session was left running so its transcript "
         "stays readable (work_item, tmux_target); "
@@ -298,11 +335,18 @@ def configure(
 
 
 def configure_from_file(source: str) -> EventLog:
-    """:func:`configure` from ``eventLog`` in the CLI config."""
-    cfg = load_config()
+    """:func:`configure` from ``eventLog`` in the CLI config.
+
+    An unset ``path`` resolves under ``state.root`` (issue-106) — the same
+    ``<root>/logs/events.jsonl`` :data:`DEFAULT_PATH` names for the default root.
+    """
+    from .state import layout_from_config
+
+    data = cli_config.load_cli_config(cli_config.default_cli_config_path())
+    cfg = data.get("eventLog") or {}
     return configure(
         source,
-        path=str(cfg.get("path", DEFAULT_PATH)),
+        path=str(cfg.get("path") or layout_from_config(data).event_log),
         enabled=bool(cfg.get("enabled", True)),
     )
 

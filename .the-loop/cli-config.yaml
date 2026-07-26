@@ -16,6 +16,13 @@
 
 version: "0.1.0"
 
+# Everything the CLI GENERATES lives under this root (issue-106): the session
+# registry (sessions/), the control records (sessions/control/), the poll state
+# (sessions/poll-state.json), the event log (logs/) and the receiver pidfile.
+# It supplies DEFAULTS only — a path set explicitly below is used verbatim.
+state:
+  root: .the-loop
+
 webhooks:
   ghWebhook:
     host: 127.0.0.1
@@ -29,7 +36,22 @@ webhooks:
       registryDir: .the-loop/sessions
       defaultHarness: claude        # claude | cursor
       spawnOnUnmatched: labeled     # never | always | labeled
-      autoExecuteLabel: "the-loop: auto-execute"   # label that opts an issue/PR into autonomous execution
+      autoExecuteLabel: "the-loop: auto-execute"   # label that ARMS an issue/PR for autonomous execution
+      # Execution control (issue-106): the label is necessary, not sufficient.
+      # An authorized user starts/stops/pauses/resumes a work item by commenting
+      # one of these keywords (or with `the-loop sessions start|stop|pause|
+      # resume`, which posts the same keyword back to the ticket). A comment
+      # carrying a keyword is executed by the-loop, never forwarded to the agent.
+      # Set requireStartCommand: false for the pre-issue-106 label-alone spawn.
+      control:
+        enabled: true
+        requireStartCommand: true
+        keywords:
+          start: "the-loop:start-execution"
+          stop: "the-loop:stop-execution"
+          pause: "the-loop:pause-execution"
+          resume: "the-loop:resume-execution"
+        ghBinary: gh
       # SECURITY: no fallback to this repo's plugin config (issue-63 review) —
       # empty here means nothing human-authored is actioned (fail closed).
       # Set this explicitly, e.g. ["MadaraUchiha-314"], to actually route events.
@@ -127,7 +149,7 @@ webhooks:
 
 polling:
   intervalSeconds: 60
-  stateFile: .the-loop/poll-state.json
+  stateFile: .the-loop/sessions/poll-state.json   # session tracking, under state.root
   maxRetries: 3                     # per-event delivery attempts before giving up (issue-80): a failing spawn/comment is retried each cycle up to this many times, then logged (poll.*_failed) and ignored until new activity re-arms it
   sources: []                       # empty = nothing polled; this repo dogfoods webhooks, not poll
 

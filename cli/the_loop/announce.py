@@ -30,24 +30,18 @@ Spec: docs/specs/issue-86/design.md, docs/specs/issue-104/design.md.
 from __future__ import annotations
 
 import logging
-import re
-import shutil
 import subprocess
 from dataclasses import dataclass
 from typing import Callable, Optional
 
 from . import eventlog
 from .authz import mark_self_authored
+from .comments import post_issue_comment
 from .sessions import Session
 
 logger = logging.getLogger("the-loop.announce")
 
 __all__ = ["AnnounceConfig", "SessionAnnouncer", "announcement_body"]
-
-# Defensive validation of the API coordinates, mirroring reactions.py. These
-# come from the registry (already parsed by WorkItemRef) rather than a payload,
-# but they still end up in a `gh` argv.
-_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 @dataclass
@@ -134,35 +128,29 @@ class SessionAnnouncer:
             # A headless process session has no terminal to attach to.
             return False
         item = session.work_item
-        if item.provider != "github":
-            logger.debug(
-                "work item %s is not a GitHub one; skipping the session announcement",
-                item.ref,
-            )
-            return False
-        if not _NAME_RE.match(item.owner) or not _NAME_RE.match(item.repo):
-            logger.debug("unusable repo coordinates in %s; skipping", item.ref)
-            return False
-        if shutil.which(config.gh_binary) is None:
-            if not self._warned_missing_gh:
-                self._warned_missing_gh = True
-                logger.warning(
-                    "gh CLI %r not found on PATH — session announcements are a "
-                    "no-op (install gh or set routing.announce.enabled: false)",
-                    config.gh_binary,
-                )
-            return False
-
-        cmd = [config.gh_binary] + self._argv(session)
-        try:
-            proc = self._runner(
-                cmd, capture_output=True, text=True, timeout=self.timeout
-            )
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            return self._failed(session, str(exc))
-        if proc.returncode != 0:
-            detail = (proc.stderr or proc.stdout or "").strip()
-            return self._failed(session, f"gh exited {proc.returncode}: {detail}")
+        ok, error = post_issue_comment(
+            item,
+            announcement_body(session),
+            gh_binary=config.gh_binary,
+            runner=self._runner,
+            timeout=self.timeout,
+        )
+        if not ok:
+            if error.endswith("not found on PATH"):
+                # One warning per process, then silence: a machine without `gh`
+                # would otherwise log this on every spawn.
+                if not self._warned_missing_gh:
+                    self._warned_missing_gh = True
+                    logger.warning(
+                        "%s — session announcements are a no-op (install gh or "
+                        "set routing.announce.enabled: false)",
+                        error,
+                    )
+                return False
+            if "is not a GitHub one" in error or "unusable repo coordinates" in error:
+                logger.debug("%s; skipping the session announcement", error)
+                return False
+            return self._failed(session, error)
         logger.info("announced tmux session %s on %s", session.tmux_target, item.ref)
         eventlog.emit(
             "session.announced",
@@ -170,19 +158,6 @@ class SessionAnnouncer:
             tmux_target=session.tmux_target,
         )
         return True
-
-    @staticmethod
-    def _argv(session: Session) -> list:
-        item = session.work_item
-        # The issues endpoint serves PR conversations too (as in reactions.py).
-        return [
-            "api",
-            "--method",
-            "POST",
-            f"repos/{item.owner}/{item.repo}/issues/{item.number}/comments",
-            "-f",
-            f"body={announcement_body(session)}",
-        ]
 
     def _failed(self, session: Session, error: str) -> bool:
         logger.warning(

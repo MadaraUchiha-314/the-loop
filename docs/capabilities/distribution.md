@@ -50,6 +50,19 @@ the projects the-loop is run on.
   extracted, `eventLog`-renamed, and written to a CLI config (asking the same yes/no
   location question `/init` asks), both resulting files validated, and the migration
   reported as its own line — never silently dropped.
+- WHEN a release adds a config key whose **default changes runtime behaviour** THEN
+  upgrade SHALL surface it under **needs-user** rather than adding it silently — the
+  add-with-defaults rule covers opt-in keys, not behaviour flips. The first instance is
+  `routing.control.requireStartCommand` (issue-106): its default demotes the
+  auto-execute label to *necessary but not sufficient*, so upgrade asks whether to keep
+  the previous behaviour (`false`) or adopt the gate (`true`). Related state moves are
+  offered, never performed silently: a pre-issue-106 `.the-loop/poll-state.json` may be
+  moved under `<state.root>/sessions/`, but the daemon keeps using a legacy file that
+  exists, because an empty state file would re-forward every watched thread.
+- A CLI config that lives in the operator's **home directory** is outside upgrade's
+  reach (it reconciles project files). Upgrade SHALL say so and print what to paste,
+  and the runtime SHALL stay correct for an un-migrated config — every key added this
+  way is optional and falls back to the same defaults.
 
 ## Design
 
@@ -60,6 +73,7 @@ the projects the-loop is run on.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-106 | A key whose default changes behaviour (`routing.control.requireStartCommand`) is reported as **needs-user**, not silently added; the `state`/`control` blocks are added with defaults and the poll-state move is offered, not forced | [spec](../specs/issue-106/), [decision-040](../decisions/decision-040.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/106) |
 | issue-63 | `/upgrade` migrates (not just flags) removed schema keys with live data — the `webhooks`/`polling`/`observability.eventLog` → CLI config extraction | [spec](../specs/issue-63/), [decision-032](../decisions/decision-032.md) |
 | issue-46 | Plugin/marketplace manifest versions bumped by the release engine (were frozen at 0.1.0) | [spec](../specs/issue-46/), [decision-028](../decisions/decision-028.md) |
 | issue-49 | Guided, schema-driven config onboarding in `/init` (x-onboarding groups, ask levels, `--defaults` mode, examples on gap-prone keys) | [spec](../specs/issue-49/), [decision-024](../decisions/decision-024.md) |

@@ -16,6 +16,13 @@
 
 version: "0.1.0"
 
+# Everything the CLI GENERATES lives under this root (issue-106): the session
+# registry (sessions/), the control records (sessions/control/), the poll state
+# (sessions/poll-state.json), the event log (logs/) and the receiver pidfile.
+# It supplies DEFAULTS only — a path set explicitly below is used verbatim.
+state:
+  root: .the-loop
+
 webhooks:
   ghWebhook:
     host: 127.0.0.1
@@ -32,7 +39,22 @@ webhooks:
       registryDir: .the-loop/sessions
       defaultHarness: claude        # claude | cursor
       spawnOnUnmatched: labeled     # never | always | labeled
-      autoExecuteLabel: "the-loop: auto-execute"   # label that opts an issue/PR into autonomous execution
+      autoExecuteLabel: "the-loop: auto-execute"   # label that ARMS an issue/PR for autonomous execution
+      # Execution control (issue-106): the label is necessary, NOT sufficient.
+      # An authorized user starts/stops/pauses/resumes a work item by commenting
+      # one of these keywords (or with `the-loop sessions start|stop|pause|
+      # resume`, which posts the same keyword back to the ticket). A comment
+      # carrying a keyword is executed by the-loop, never forwarded to the agent.
+      # Set requireStartCommand: false for the pre-issue-106 label-alone spawn.
+      control:
+        enabled: true
+        requireStartCommand: true
+        keywords:
+          start: "the-loop:start-execution"
+          stop: "the-loop:stop-execution"
+          pause: "the-loop:pause-execution"
+          resume: "the-loop:resume-execution"
+        ghBinary: gh
       # SECURITY (prompt-injection guard): only these GitHub logins' actions are acted on
       # by BOTH the webhook receiver and the poller. Comments/reviews/labels/items from
       # anyone else are ignored. REQUIRED: no fallback to any repo's plugin config —
@@ -137,7 +159,7 @@ webhooks:
 # provider-specific knobs; provider settings live under the source entry.
 polling:
   intervalSeconds: 60               # seconds between poll cycles (all sources)
-  stateFile: .the-loop/poll-state.json
+  stateFile: .the-loop/sessions/poll-state.json   # session tracking, under state.root
   sources: []                       # e.g. the github source below (empty = nothing polled)
     # - provider: github
     #   repos: []                   # REQUIRED: OWNER/REPO list — no fallback to any

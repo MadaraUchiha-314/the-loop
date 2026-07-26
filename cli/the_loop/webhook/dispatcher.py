@@ -23,6 +23,9 @@ from typing import Dict, List, Optional, Set
 
 from .. import eventlog
 from ..announce import AnnounceConfig, SessionAnnouncer
+from ..authz import is_authorized
+from ..control import PAUSE, RESUME, START, STOP, ControlConfig, ControlStore
+from ..control import parse_command as parse_control_command
 from ..harness.base import HarnessAdapter, UnsupportedRunnerError
 from ..reactions import (
     STATE_COMPLETED,
@@ -33,9 +36,10 @@ from ..reactions import (
 )
 from ..runner import TmuxRunner
 from ..sessions import Session, SessionRegistry, WorkItemRef
+from ..state import StateLayout, control_dir_for
 from ..trust import TrustConfig, TrustResult, is_too_broad
 from ..workspace import RepoTarget, Workspace, WorkspaceError, repo_target_from_payload
-from .router import Deduper, RoutedEvent
+from .router import Deduper, RoutedEvent, event_actor, event_body, event_carries_label
 
 logger = logging.getLogger("the-loop.gh-webhook")
 
@@ -233,13 +237,24 @@ class RoutingConfig:
     reactions: ReactionConfig = field(default_factory=ReactionConfig)
     # "Here is your tmux session" comment on spawn/respawn (issue-86).
     announce: AnnounceConfig = field(default_factory=AnnounceConfig)
+    # The start/stop/pause/resume vocabulary an authorized user steers with, and
+    # whether a start is REQUIRED before anything spawns (issue-106).
+    control: ControlConfig = field(default_factory=ControlConfig)
 
     @classmethod
-    def from_mapping(cls, data: dict) -> "RoutingConfig":
+    def from_mapping(
+        cls, data: dict, layout: Optional[StateLayout] = None
+    ) -> "RoutingConfig":
+        """Build from the ``routing`` mapping; ``layout`` supplies path defaults.
+
+        ``registryDir`` unset falls back to ``<state.root>/sessions`` (issue-106),
+        which with the default root is the pre-issue-106 default verbatim.
+        """
         data = data or {}
+        layout = layout or StateLayout()
         return cls(
             enabled=bool(data.get("enabled", False)),
-            registry_dir=str(data.get("registryDir", ".the-loop/sessions")),
+            registry_dir=str(data.get("registryDir") or layout.sessions_dir),
             default_harness=str(data.get("defaultHarness", "claude")),
             runner=str(data.get("runner", "process")),
             tmux=TmuxConfig.from_mapping(data.get("tmux") or {}),
@@ -262,6 +277,7 @@ class RoutingConfig:
             authorized_users=[str(u) for u in (data.get("authorizedUsers") or [])],
             reactions=ReactionConfig.from_mapping(data.get("reactions") or {}),
             announce=AnnounceConfig.from_mapping(data.get("announce") or {}),
+            control=ControlConfig.from_mapping(data.get("control") or {}),
         )
 
 
@@ -339,6 +355,18 @@ def _log_usage(usage, harness: str, ref: str) -> None:
     )
 
 
+def _repo_payload(session: Session) -> dict:
+    """The minimal payload naming a session's repository.
+
+    Enough for :func:`the_loop.workspace.repo_target_from_payload` (which
+    reconstructs the clone URL from ``full_name`` + the configured default host),
+    so a close that has no triggering event — ``the-loop sessions stop`` — can
+    still clean the work item's checkout.
+    """
+    item = session.work_item
+    return {"repository": {"full_name": f"{item.owner}/{item.repo}"}}
+
+
 def payload_excerpt(payload: dict) -> str:
     """The routable subset of the payload, JSON-formatted and size-capped."""
     subset = {k: payload[k] for k in _PAYLOAD_EXCERPT_KEYS if k in payload}
@@ -361,10 +389,16 @@ class Dispatcher:
         workspace: Optional[Workspace] = None,
         reactor: Optional[GitHubReactor] = None,
         announcer: Optional[SessionAnnouncer] = None,
+        control_store: Optional[ControlStore] = None,
     ):
         self.registry = registry
         self.adapters = adapters
         self.config = config or RoutingConfig()
+        # Control records live beside the sessions they steer — derived from the
+        # registry's own root, so a relocated registry takes them with it.
+        self.control_store = control_store or ControlStore(
+            control_dir_for(str(registry.root))
+        )
         # Built unconditionally: a registry may hold tmux-mode sessions even
         # when config.runner is "process" (the session's recorded runner wins).
         self._tmux_override = tmux_runner is not None
@@ -455,14 +489,50 @@ class Dispatcher:
             config.spawn_prompt_template, DEFAULT_SPAWN_TEMPLATE
         )
 
-    def _should_spawn(self, routed: RoutedEvent) -> bool:
-        """Whether an unmatched event should spawn a session (R3.3)."""
+    def _is_armed(self, routed: RoutedEvent) -> bool:
+        """Whether the spawn policy alone would let this event spawn (R3.3).
+
+        The label check is recomputed from the payload rather than trusted from
+        ``routed.labeled``: the router sets that flag for webhook events, but the
+        poller hard-codes it ``False`` on **comment** events — and since
+        issue-106 a comment (the start command) is exactly the event that must
+        be able to spawn. Both paths carry the item's labels in the payload, so
+        reading them here makes the gate ingress-agnostic.
+        """
         mode = self.config.spawn_on_unmatched
         if mode == "always":
             return True
         if mode == "labeled":
-            return routed.labeled
+            return routed.labeled or event_carries_label(
+                routed.payload, self.config.auto_execute_label
+            )
         return False
+
+    def _spawn_refusal(self, routed: RoutedEvent, control_command: str = "") -> str:
+        """``""`` when an unmatched event may spawn, else why it may not.
+
+        Two conditions, in the order issue-106 states them: the work item must be
+        armed (label / spawn policy) — necessary — and an authorized user must
+        have asked for it to run — the part the label alone never said.
+
+        The armed check comes **first** so a start command on an unarmed item is
+        refused as ``spawn-policy``, never recorded, and therefore leaves nothing
+        standing (owner decision on PR #107). ``control_command`` is the command
+        *this* event carries: a start satisfies the requirement directly, so the
+        durable record is only ever consulted for **later** events — the poller's
+        presence retry, or a redelivery after a failed spawn.
+        """
+        if not self._is_armed(routed):
+            return "spawn-policy"
+        control = self.config.control
+        if (
+            control.enabled
+            and control.require_start_command
+            and control_command != START
+            and not self.control_store.start_requested(routed.work_items[0])
+        ):
+            return "awaiting-start"
+        return ""
 
     # -- intake -----------------------------------------------------------------
 
@@ -484,6 +554,47 @@ class Dispatcher:
             # Mark at enqueue so an in-flight duplicate can't double-dispatch;
             # a failed dispatch discards the id so GitHub redelivery retries it.
             self.deduper.add(routed.delivery_id)
+
+        # Execution control (issue-106): a declared keyword from an authorized
+        # user is an instruction to *the-loop*, so it is executed here and never
+        # forwarded to the harness. Both guards that make this safe already ran
+        # upstream (self-marker, then authorizedUsers) — see the_loop.control.
+        control = parse_control_command(
+            event_body(routed.event, routed.payload), self.config.control
+        )
+        if control.ambiguous:
+            logger.warning(
+                "ignoring a comment on %s carrying conflicting control keywords "
+                "(%s); re-state the one you meant",
+                ", ".join(item.ref for item in routed.work_items),
+                ", ".join(control.matched),
+            )
+            eventlog.emit(
+                "control.ambiguous",
+                level="warning",
+                work_items=[item.ref for item in routed.work_items],
+                actor=event_actor(routed.event, routed.payload),
+                commands=control.matched,
+                delivery_id=routed.delivery_id or None,
+            )
+            return
+        if control.command:
+            # A command needs a NAMED, allowlisted human — stricter than the
+            # ingress guard, on purpose. `is_authorized` deliberately allows an
+            # actor-less action (a CI event carries status, not instructions),
+            # and a content event can reach here without one: on the poll path a
+            # comment by a deleted account has an empty author. Harmless while a
+            # comment could only become agent *input*; not harmless now that it
+            # can start or stop a session. So the control path re-checks, and
+            # fails closed.
+            actor = event_actor(routed.event, routed.payload)
+            if not actor or not is_authorized(actor, self.config.authorized_users):
+                self._reject_control(
+                    control.command, routed, actor or "", "unauthorized-actor"
+                )
+                return
+            self._apply_control(control.command, routed)
+            return
 
         matched = []
         for item in routed.work_items:
@@ -518,10 +629,11 @@ class Dispatcher:
                         delivery_id=routed.delivery_id or None,
                     )
                     continue
-                self.registry.close(session.work_item)
-                if session.runner == "tmux":
-                    self._close_tmux(session)
-                self._cleanup_workspace(session, routed)
+                self.close_session(session, routed)
+                # The work item ended: forget what it was last told to do, so a
+                # reopened item starts from a clean slate rather than inheriting
+                # a stale start/stop request.
+                self.control_store.clear(session.work_item)
                 logger.info(
                     "auto-closed session %s (%s)", session.work_item.ref, reason
                 )
@@ -540,6 +652,25 @@ class Dispatcher:
             self._on_unmatched(routed)
             return
         for session in matched:
+            if session.is_paused:
+                # Suppressed on purpose (issue-106), not a transient failure —
+                # so the delivery id stays marked: neither a redelivery nor the
+                # next poll cycle should try again. Nothing is replayed on
+                # resume; the harness re-reads the thread itself.
+                logger.info(
+                    "session %s is paused; not delivering %s (resume with the "
+                    "resume keyword or `the-loop sessions resume`)",
+                    session.work_item.ref,
+                    routed.event,
+                )
+                eventlog.emit(
+                    "dispatch.dropped",
+                    reason="session-paused",
+                    work_item=session.work_item.ref,
+                    gh_event=routed.event,
+                    delivery_id=routed.delivery_id or None,
+                )
+                continue
             if routed.delivery_id in session.recent_deliveries:
                 logger.info(
                     "delivery %s already processed by %s (restart-surviving dedup)",
@@ -561,6 +692,144 @@ class Dispatcher:
                 session.work_item.ref,
             )
             self._enqueue(session.work_item.ref, routed)
+
+    # -- execution control (issue-106) ------------------------------------------
+
+    def _live_session_for(self, routed: RoutedEvent) -> Optional[Session]:
+        """The first live (active or paused) session among the event's items."""
+        for item in routed.work_items:
+            session = self.registry.find_by_work_item(item)
+            if session is not None:
+                return session
+        return None
+
+    def _apply_control(self, command: str, routed: RoutedEvent) -> None:
+        """Execute a control command carried by an authorized user's comment.
+
+        The command itself is one of four constants (never text from the body),
+        and the work item it acts on is the router's own extraction — so nothing
+        payload-derived reaches a session, a path or a harness invocation.
+        """
+        actor = event_actor(routed.event, routed.payload) or ""
+        session = self._live_session_for(routed)
+        target = session.work_item if session is not None else routed.work_items[0]
+        note = str((routed.payload.get("comment") or {}).get("html_url") or "")
+
+        def record() -> None:
+            self.control_store.record(
+                target, command, source="comment", actor=actor, note=note
+            )
+
+        # An **arming** command (start/resume) is recorded only when it can act
+        # now; a **disarming** one (pause/stop) is recorded whether or not there
+        # was anything to act on. The asymmetry is the point (owner decision on
+        # PR #107): a start on a work item that is not armed must leave *no*
+        # standing request, or labelling the item later would start it — which
+        # is exactly the "labelling is the trigger" behaviour issue-106 removes.
+        # Disarming, by contrast, must persist: a stopped item must not
+        # re-spawn on the next event.
+        if command == START:
+            if session is None:
+                refusal = self._spawn_refusal(routed, control_command=command)
+                if refusal:
+                    self._reject_control(command, routed, actor, refusal)
+                    return
+                record()
+                self._on_unmatched(routed, control_command=command)
+                return
+            record()
+            effect = "resumed" if self.registry.resume(target) is not None else "noop"
+        elif command == RESUME:
+            if self.registry.resume(target) is None:
+                # Nothing paused to resume. Deliberately NOT recorded: resume is
+                # an arming command, and an unarmed item must not be left armed.
+                self._reject_control(command, routed, actor, "nothing-to-resume")
+                return
+            record()
+            effect = "resumed"
+        elif command == PAUSE:
+            record()
+            effect = "paused" if self.registry.pause(target) is not None else "noop"
+        elif command == STOP:
+            record()
+            if session is None:
+                effect = "noop"
+            else:
+                self.close_session(session, routed, reason="stopped")
+                effect = "stopped"
+        else:  # unreachable: parse_command only yields the four commands
+            record()
+            effect = "noop"
+
+        logger.info(
+            "control command %s from %s on %s: %s",
+            command,
+            actor or "(unknown)",
+            target.ref,
+            effect,
+        )
+        eventlog.emit(
+            "control.command",
+            work_item=target.ref,
+            command=command,
+            source="comment",
+            actor=actor or None,
+            effect=effect,
+            delivery_id=routed.delivery_id or None,
+        )
+
+    def _reject_control(
+        self, command: str, routed: RoutedEvent, actor: str, reason: str
+    ) -> None:
+        """Record a recognised command that could not be honoured (nothing runs)."""
+        refs = [item.ref for item in routed.work_items]
+        logger.warning(
+            "refusing the %s command on %s: %s",
+            command,
+            ", ".join(refs),
+            (
+                "the work item is not armed for autonomous execution "
+                f"(spawnOnUnmatched={self.config.spawn_on_unmatched!r}, "
+                f"label {self.config.auto_execute_label!r})"
+                if reason == "spawn-policy"
+                else reason
+            ),
+        )
+        eventlog.emit(
+            "control.rejected",
+            level="warning",
+            work_items=refs,
+            command=command,
+            source="comment",
+            actor=actor or None,
+            reason=reason,
+            delivery_id=routed.delivery_id or None,
+        )
+
+    def close_session(
+        self,
+        session: Session,
+        routed: Optional[RoutedEvent] = None,
+        reason: str = "",
+    ) -> None:
+        """End a session: registry entry, tmux/harness, workspace checkout.
+
+        The one close path, shared by the work item's own closure (issue-94), by
+        an explicit stop from a comment and by ``the-loop sessions stop``
+        (issue-106) — so however execution is stopped, exactly as little is left
+        behind as a merge leaves.
+
+        ``routed`` is the event that caused it, when there is one; without it the
+        repository is taken from the session's own work-item ref, which is all
+        the workspace cleanup needs.
+        """
+        self.registry.close(session.work_item)
+        if session.runner == "tmux":
+            self._close_tmux(session)
+        payload = routed.payload if routed is not None else _repo_payload(session)
+        self._cleanup_workspace(session, payload)
+        if reason:
+            logger.info("closed session %s (%s)", session.work_item.ref, reason)
 
     def _close_tmux(self, session: Session) -> None:
         """Retain (default) or kill a tmux session whose work item is closing.
@@ -630,22 +899,58 @@ class Dispatcher:
             error=result.error or None,
         )
 
-    def _on_unmatched(self, routed: RoutedEvent) -> None:
+    def _on_unmatched(self, routed: RoutedEvent, control_command: str = "") -> None:
         refs = ", ".join(item.ref for item in routed.work_items)
-        if not self._should_spawn(routed):
-            logger.info("no active session for %s; dropping %s", refs, routed.event)
-            eventlog.emit(
-                "dispatch.dropped",
-                reason="spawn-policy",
-                work_items=[item.ref for item in routed.work_items],
-                gh_event=routed.event,
-                delivery_id=routed.delivery_id or None,
-            )
-            if routed.delivery_id:
+        refusal = self._spawn_refusal(routed, control_command=control_command)
+        if refusal:
+            if control_command:
+                # An explicit request that cannot be honoured is worth saying out
+                # loud — the operator asked and deserves to know why not. (A
+                # start is normally refused earlier, in _apply_control, so that
+                # nothing is recorded for it; this is the belt-and-braces path.)
+                self._reject_control(
+                    control_command,
+                    routed,
+                    event_actor(routed.event, routed.payload) or "",
+                    refusal,
+                )
+            else:
+                if refusal == "awaiting-start":
+                    logger.info(
+                        "no session for %s and no start requested; dropping %s "
+                        "(comment %r on the work item, or run `the-loop sessions "
+                        "start`, to begin)",
+                        refs,
+                        routed.event,
+                        self.config.control.keyword(START),
+                    )
+                else:
+                    logger.info(
+                        "no active session for %s; dropping %s", refs, routed.event
+                    )
+                eventlog.emit(
+                    "dispatch.dropped",
+                    reason=refusal,
+                    work_items=[item.ref for item in routed.work_items],
+                    gh_event=routed.event,
+                    delivery_id=routed.delivery_id or None,
+                )
+            # Only a *policy* drop releases the delivery id for a retry (the
+            # pre-issue-106 behaviour). "Awaiting a start" is a deliberate
+            # refusal, not a transient failure: releasing it would have GitHub
+            # redeliver — and the poller re-forward, every cycle until its retry
+            # budget is spent and it logs a terminal failure — every comment on
+            # every labelled work item nobody has started yet.
+            if routed.delivery_id and refusal == "spawn-policy" and not control_command:
                 self.deduper.discard(routed.delivery_id)
             return
         work_item = routed.work_items[0]
-        reason = "labeled" if self.config.spawn_on_unmatched == "labeled" else "policy"
+        if control_command:
+            reason = "start requested"
+        else:
+            reason = (
+                "labeled" if self.config.spawn_on_unmatched == "labeled" else "policy"
+            )
         logger.info("no active session for %s; spawning (%s)", work_item.ref, reason)
         self._enqueue(work_item.ref, routed, spawn=True)
 
@@ -718,6 +1023,22 @@ class Dispatcher:
                 delivery_id=routed.delivery_id or None,
             )
             return False
+        if session.is_paused:
+            # Paused between enqueue and dequeue (issue-106). Not an error — the
+            # suppression is deliberate — so this reports success having done
+            # nothing, rather than painting the event as a failed dispatch.
+            logger.info(
+                "session %s was paused before this event was dispatched; skipping",
+                key,
+            )
+            eventlog.emit(
+                "dispatch.dropped",
+                reason="session-paused",
+                work_item=key,
+                gh_event=routed.event,
+                delivery_id=routed.delivery_id or None,
+            )
+            return True
 
         prompt = self._render_prompt(routed, session.work_item, self._event_template)
         if session.runner == "tmux":
@@ -1262,10 +1583,10 @@ class Dispatcher:
 
     # -- workspace (clone + worktree, issue-76) ---------------------------------
 
-    def _repo_target(self, routed: RoutedEvent) -> Optional[RepoTarget]:
+    def _repo_target(self, payload: dict) -> Optional[RepoTarget]:
         ws = self.config.workspace
         return repo_target_from_payload(
-            routed.payload,
+            payload,
             protocol=ws.clone_protocol,
             default_host=ws.default_host,
         )
@@ -1280,7 +1601,7 @@ class Dispatcher:
         """
         if self.workspace is None:
             return self.config.spawn_workdir
-        target = self._repo_target(routed)
+        target = self._repo_target(routed.payload)
         if target is None:
             logger.warning(
                 "workspace enabled but %s carries no repository; using spawnWorkdir",
@@ -1303,11 +1624,11 @@ class Dispatcher:
         )
         return str(checkout)
 
-    def _cleanup_workspace(self, session: Session, routed: RoutedEvent) -> None:
-        """Remove a work item's worktree on PR merge/close (best-effort)."""
+    def _cleanup_workspace(self, session: Session, payload: dict) -> None:
+        """Remove a work item's worktree when its session ends (best-effort)."""
         if self.workspace is None or self.config.workspace.keep_checkout_on_close:
             return
-        target = self._repo_target(routed)
+        target = self._repo_target(payload)
         if target is None:
             return
         try:

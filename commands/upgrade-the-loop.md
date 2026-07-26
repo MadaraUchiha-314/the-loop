@@ -88,6 +88,32 @@ command reconciles them.
      empty and relying on the now-removed `ticketing.github` fallback (Requirement 4) —
      those need an explicit value in the new CLI config or the daemon fails closed.
 
+   **Execution control + one state root (issue-106, decision-040).** Two purely
+   additive CLI-config blocks — `state` and `webhooks.ghWebhook.routing.control` —
+   but one of them **changes runtime behaviour by default**, so this one is not the
+   ordinary add-with-defaults case:
+   - Add `state.root: .the-loop` and the `control` block (with the four default
+     keywords) from `templates/cli-config.yaml`. Leave every existing explicit path
+     (`routing.registryDir`, `polling.stateFile`, `eventLog.path`,
+     `webhooks.ghWebhook.pidfile`) **exactly as it is** — the root only supplies
+     defaults, so a config that names its paths keeps behaving identically.
+   - **Report `control.requireStartCommand` as `needs-user`, never as a silent
+     add.** Its default (`true`) means the auto-execute label alone no longer starts
+     a session: an authorized user must comment `the-loop:start-execution` (or run
+     `the-loop sessions start`). Ask which the operator wants — keep the pre-issue-106
+     behaviour (write `requireStartCommand: false`) or adopt the new gate (`true`) —
+     and say what each means. Do not decide it for them.
+   - If `polling.stateFile` is **unset** and a pre-issue-106 `.the-loop/poll-state.json`
+     exists, *offer* to move it to `<state.root>/sessions/poll-state.json` (its new
+     default home). Never move it silently, and never just delete it: the daemon keeps
+     using a legacy file that exists (warning once), and an empty state file would
+     re-baseline every watched thread and re-forward its whole comment history.
+   - Note in the report that a **home-directory** CLI config (`~/.the-loop/cli-config.yaml`)
+     is outside this command's reach: print the two blocks for the operator to paste, and
+     say that leaving the file untouched is safe — both blocks are optional and the daemon
+     falls back to the same defaults, `requireStartCommand: true` included (which is
+     precisely why the decision above must be surfaced, not assumed).
+
    Validate each migrated file against its schema. The CLI config is opt-in: only migrate
    `.the-loop/cli-config.yaml` if the project already had one (scaffolded at a previous
    init/upgrade). Never scaffold one now if the project never had one and step 4's data

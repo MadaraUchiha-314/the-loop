@@ -40,7 +40,11 @@ answer to:
 - **which events were rejected / accepted, and why?** — `webhook.rejected`,
   `routing.dropped` and `dispatch.dropped` carry a machine-readable `reason`
   (e.g. `invalid-signature`, `unauthorized-actor`, `duplicate-delivery`,
-  `spawn-policy`);
+  `spawn-policy`, `awaiting-start`, `session-paused`);
+- **who started (or stopped) this autonomous run?** — `control.command` records the
+  command, its `source` (`comment` | `cli`), the `actor` and the `effect`
+  (`spawned`/`resumed`/`paused`/`stopped`/`noop`); `control.rejected` and
+  `control.ambiguous` record the requests that were refused (issue-106);
 - **what failed, and will it retry?** — `dispatch.failed`, `session.spawn_failed`,
   `poll.provider_error` carry `error` and `will_retry` (whether GitHub redelivery /
   the next poll cycle heals it);

@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from the_loop.control import ControlConfig
 from the_loop.workspace import (
     RepoTarget,
     Workspace,
@@ -402,6 +403,8 @@ def _dispatcher(tmp_path, bare, adapter, **ws_over):
     config = RoutingConfig(
         spawn_on_unmatched="always",
         workspace=WorkspaceConfig(root=str(tmp_path / "root"), **ws_over),
+        # Pre-issue-106 spawn behaviour (the start gate has its own tests).
+        control=ControlConfig(require_start_command=False),
     )
     return registry, _make_dispatcher(registry, adapter, config)
 
@@ -586,7 +589,11 @@ def test_dispatcher_without_workspace_uses_spawn_workdir(tmp_path):
     # Legacy behaviour preserved: no workspace.root => static spawnWorkdir.
     adapter = _RecordingAdapter()
     registry = SessionRegistry(tmp_path / "sessions")
-    config = RoutingConfig(spawn_on_unmatched="always", spawn_workdir=str(tmp_path))
+    config = RoutingConfig(
+        spawn_on_unmatched="always",
+        spawn_workdir=str(tmp_path),
+        control=ControlConfig(require_start_command=False),
+    )
     dispatcher = _make_dispatcher(registry, adapter, config)
     assert dispatcher.workspace is None
     dispatcher.handle(_issue_event(tmp_path / "unused.git"))

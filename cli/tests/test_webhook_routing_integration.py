@@ -20,6 +20,7 @@ import urllib.request
 
 import pytest
 
+from the_loop.control import ControlConfig
 from the_loop.harness import ClaudeCodeAdapter
 from the_loop.sessions import Session, SessionRegistry, WorkItemRef
 from the_loop.webhook import serve
@@ -92,7 +93,11 @@ class ServerFactory:
         config = RoutingConfig(
             dispatch_timeout_seconds=30,
             spawn_workdir=str(self._tmp_path),
-            **routing_overrides,
+            # Pre-issue-106 spawn behaviour (the start gate has its own tests).
+            **{
+                "control": ControlConfig(require_start_command=False),
+                **routing_overrides,
+            },
         )
         dispatcher = Dispatcher(
             registry=registry,

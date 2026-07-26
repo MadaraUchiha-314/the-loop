@@ -12,6 +12,7 @@ GitHub entity, for each dispatch outcome.
 import subprocess
 import time
 
+from the_loop.control import ControlConfig
 from the_loop import reactions as reactions_mod
 from the_loop.harness.base import DispatchResult
 from the_loop.reactions import GitHubReactor, ReactionConfig
@@ -70,6 +71,11 @@ class RecordingRunner:
 def make_dispatcher(tmp_path, adapter, monkeypatch, reactions=None, **config_overrides):
     monkeypatch.setattr(reactions_mod.shutil, "which", lambda _: "/usr/bin/gh")
     runner = RecordingRunner()
+    config_overrides.setdefault(
+        # Pre-issue-106 spawn behaviour (the start gate has its own tests).
+        "control",
+        ControlConfig(require_start_command=False),
+    )
     config = RoutingConfig(
         reactions=reactions or ReactionConfig(enabled=True), **config_overrides
     )

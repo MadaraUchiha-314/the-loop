@@ -119,6 +119,9 @@ def pipeline_factory(tmp_path, stub_tmux):
                 # Never wait out the resume probe in tests (issue-89); the stub
                 # tmux answers `list-panes` instantly either way.
                 "tmux": {"resumeProbeSeconds": 0},
+                # Pre-issue-106 spawn behaviour: these cover the tmux runner,
+                # not the start-command gate (which has its own tests).
+                "control": {"requireStartCommand": False},
                 **(overrides or {}),
             }
         )

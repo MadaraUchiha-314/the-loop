@@ -56,8 +56,14 @@ the same conversation.
   delivery therefore probes **liveness** (`has-session` **and** a non-dead pane), not
   mere existence: a retained-but-dead session takes the respawn path above instead of
   swallowing the event.
+- WHEN a session is **paused** (issue-106 — the pause keyword, or
+  `the-loop sessions pause`) THEN its tmux session SHALL be left exactly as it is:
+  pausing suppresses *delivery*, it does not touch the hosted TUI, so the conversation
+  is intact when the work item is resumed. Attaching to a paused session still works
+  (and is still writable — a human at the terminal is not what a pause holds off).
 - WHEN a work item ends — the registered item itself closed or merged (one of its
-  *linked* PRs closing does not end it, issue-101), or `the-loop sessions close` run —
+  *linked* PRs closing does not end it, issue-101), or `the-loop sessions stop` /
+  `the-loop sessions close` run —
   THEN the registry session SHALL be closed AND the tmux session SHALL be
   **kept** so its transcript stays readable (`session.retained`);
   `routing.tmux.keepSessionOnClose: false` — or `sessions close --kill-tmux` — SHALL
@@ -140,6 +146,7 @@ the same conversation.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-106 | `paused` sessions (delivery suppressed, tmux session and conversation untouched) and `sessions stop`, which ends a session through the same close path a merge takes | [spec](../specs/issue-106/), [decision-040](../decisions/decision-040.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/106) |
 | issue-104 | The session-announcement comment is now marked as the-loop's own, so the poller stops pasting "the-loop started an interactive session for …" into that very session | [spec](../specs/issue-104/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/104) |
 | issue-32 | Introduced the tmux runner, `sessions attach`, the ttyd web terminal and dependency preflight | [spec](../specs/issue-32/), [decision-021](../decisions/decision-021.md) |
 | issue-65 | Fixed `poll start` never launching ttyd (it shared the tmux runner but had no web terminal start/stop of its own); factored ttyd lifecycle into a shared `the_loop.runner` helper used by both `gh-webhook start` and `poll start` | [issue](https://github.com/MadaraUchiha-314/the-loop/issues/65) |
