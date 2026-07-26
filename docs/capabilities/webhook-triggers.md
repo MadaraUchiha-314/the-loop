@@ -23,7 +23,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   work item that ends would never be seen, so its session (and tmux session) would
   leak. A warning, not an error — narrowing is the operator's call.
 - WHEN routing is enabled (`webhooks.ghWebhook.routing.enabled`) THEN a verified event
-  SHALL be matched to a registered session (`.the-loop/sessions/*.json`, managed by
+  SHALL be matched to a registered session (`.the-loop/state/sessions/*.json`, managed by
   `the-loop sessions`) and the harness SHALL be resumed via its official CLI
   (`claude -p --resume` / `cursor-agent -p --resume`), serialized per session and
   parallel across sessions (`maxConcurrentDispatches`).

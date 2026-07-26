@@ -29,9 +29,10 @@ from typing import Optional
 
 from .base import Command, register
 from .gh_webhook import _load_config_defaults
-from .. import cli_config, eventlog
+from .. import cli_config, eventlog, state
 from ..authz import resolve_authorized_users
 from ..poller import (
+    DEFAULT_POLL_STATE,
     PollConfig,
     Poller,
     PollPlan,
@@ -50,9 +51,9 @@ _CONFIG_PATH = cli_config.default_cli_config_path()
 
 _DEFAULTS = {
     "intervalSeconds": 60,
-    "stateFile": ".the-loop/poll-state.json",
+    "stateFile": DEFAULT_POLL_STATE,
     "maxRetries": 3,
-    "pidfile": ".the-loop/poll.pid",
+    "pidfile": f"{state.STATE_DIR}/poll.pid",
 }
 
 

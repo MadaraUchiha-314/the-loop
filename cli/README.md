@@ -102,7 +102,7 @@ starting point ships at
 | `port` | integer | `8787` | Listen port (1–65535). |
 | `path` | string | `/gh-webhook` | HTTP path the receiver serves. |
 | `secretEnv` | string | `THE_LOOP_GH_WEBHOOK_SECRET` | Env var holding the webhook secret for HMAC verification (never stored in config). |
-| `pidfile` | string | `.the-loop/gh-webhook.pid` | Pidfile written on `start`, read on `stop`. |
+| `pidfile` | string | `.the-loop/state/gh-webhook.pid` | Pidfile written on `start`, read on `stop`. |
 | `events` | string[] | the routable set | GitHub event names of interest. Omitted/empty = the-loop's default set — `issues`, `issue_comment`, `pull_request`, `pull_request_review`, `pull_request_review_comment`, `workflow_run`, `check_run`, `check_suite`, `status` (everything it can map to a work item). An explicit list narrows it; keep `issues` and `pull_request` or a closed issue / merged PR never arrives and its session is never closed — the receiver warns at startup when they are missing. |
 | `routing` | object | — | Route received events to registered harness sessions (see below). |
 
@@ -111,12 +111,12 @@ starting point ships at
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `enabled` | boolean | `false` | Default for `gh-webhook start --route/--no-route`. |
-| `registryDir` | string | `.the-loop/sessions` | Directory of per-session registry JSON files (git-ignored). |
+| `registryDir` | string | `.the-loop/state/sessions` | Directory of per-session registry JSON files (git-ignored). |
 | `defaultHarness` | `claude` \| `cursor` | `claude` | Harness used when spawning a session for an unmatched event. |
 | `spawnOnUnmatched` | `never` \| `always` \| `labeled` | `never` | Policy for events matching no session: log-and-drop / spawn+register / spawn only when `autoExecuteLabel` is present. |
 | `autoExecuteLabel` | string | `the-loop: auto-execute` | Issue/PR label that opts a work item into autonomous execution (read from the payload, no API call). |
 | `pausedLabel` | string | `the-loop: paused` | Issue/PR label that **pauses** the-loop on a work item: while present, neither ingress path spawns for it or delivers its activity. Removing it resumes. Read from the payload / poll listing, no API call. |
-| `pauseFile` | string | `.the-loop/paused.json` | Durable pause ledger written by `sessions pause` and read by both ingress paths. Composes as OR with `pausedLabel`; a missing/unreadable file means nothing is paused. |
+| `pauseFile` | string | `.the-loop/state/paused.json` | Durable pause ledger written by `sessions pause` and read by both ingress paths. Composes as OR with `pausedLabel`; a missing/unreadable file means nothing is paused. |
 | `authorizedUsers` | string[] | `[]` | **SECURITY (prompt-injection guard):** GitHub logins whose actions the-loop may act on. **REQUIRED**, no plugin-config fallback; empty fails closed (all human-authored events ignored). |
 | `spawnWorkdir` | string | `.` | Working directory for sessions spawned on unmatched events. |
 | `runner` | `process` \| `tmux` | `process` | How spawned sessions are hosted: headless one-shot subprocess, or an interactive TUI in a named tmux session humans can attach to. |
@@ -277,7 +277,7 @@ rocket eyes`) — ✅/⁉️ don't exist, so the defaults are the closest suppor
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `intervalSeconds` | integer | `60` | Seconds between poll cycles (all sources). |
-| `stateFile` | string | `.the-loop/poll-state.json` | Durable JSON tracking which comments each item has processed (cross-poll/restart dedup; git-ignored). |
+| `stateFile` | string | `.the-loop/state/poll-state.json` | Durable JSON tracking which comments each item has processed (cross-poll/restart dedup; git-ignored). |
 | `sources` | object[] | `[]` (nothing polled) | Ordered provider-specific poll sources (see below). |
 
 #### `polling.sources[]` — one entry per source (`provider: github` ships today)
@@ -296,7 +296,7 @@ rocket eyes`) — ✅/⁉️ don't exist, so the defaults are the closest suppor
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `enabled` | boolean | `true` | Emit the event log; `false` turns emission off. |
-| `path` | string | `.the-loop/logs/events.jsonl` | Append-only JSONL file (git-ignored runtime state). |
+| `path` | string | `.the-loop/state/logs/events.jsonl` | Append-only JSONL file (git-ignored runtime state). |
 
 #### `collaborators` — the operator's own notification recipients (issue-82, decision-035)
 
@@ -333,10 +333,10 @@ omitted event notifies nobody.
 
 ```bash
 the-loop gh-webhook start [--host 127.0.0.1] [--port 8787] [--path /gh-webhook] \
-                          [--pidfile .the-loop/gh-webhook.pid] \
+                          [--pidfile .the-loop/state/gh-webhook.pid] \
                           [--secret-env THE_LOOP_GH_WEBHOOK_SECRET] \
                           [--route | --no-route]
-the-loop gh-webhook stop  [--pidfile .the-loop/gh-webhook.pid]
+the-loop gh-webhook stop  [--pidfile .the-loop/state/gh-webhook.pid]
 ```
 
 - Verifies the GitHub `X-Hub-Signature-256` HMAC when the secret env var is set
@@ -376,7 +376,7 @@ the-loop gh-webhook stop  [--pidfile .the-loop/gh-webhook.pid]
   before dispatch, regardless of actor, so the-loop's own reply never resumes the
   session that wrote it. See `docs/decisions/decision-031.md`.
 - **Structured event log:** every receive/reject/route/dispatch/spawn/close decision is
-  appended to `.the-loop/logs/events.jsonl` — query it with `the-loop events` (below).
+  appended to `.the-loop/state/logs/events.jsonl` — query it with `the-loop events` (below).
 
 ### `sessions` — see and manage the work items the-loop is tracking
 
@@ -428,7 +428,7 @@ retained transcript) is kept unless you pass `--include-retained`. Killing
 things stays `sessions close`'s job.
 
 - The registry lives in `webhooks.ghWebhook.routing.registryDir` (default
-  `.the-loop/sessions/`, git-ignored) as one human-inspectable JSON file per session;
+  `.the-loop/state/sessions/`, git-ignored) as one human-inspectable JSON file per session;
   writes are atomic, so concurrent sessions on the same machine are safe.
 - One work item ↔ one active session; `--force` replaces a stale registration.
 - Claude Code sessions register with `$CLAUDE_SESSION_ID`; Cursor sessions register
@@ -488,6 +488,43 @@ opens and registers its session against the PR's ref automatically, so PR activi
 resumes the session and **that** PR's merge/close ends it — same as a GitHub-ticketed
 item.
 
+### `state` — where the daemon keeps its runtime state
+
+```bash
+the-loop state paths
+the-loop state migrate [--dry-run] [--force]
+```
+
+Everything the daemon writes lives under **`.the-loop/state/`** — one directory,
+one `.gitignore` rule, cleanly separated from the config you edit
+([decision-040](../docs/decisions/decision-040.md)):
+
+```text
+.the-loop/
+  cli-config.yaml              # config — yours
+  state/                       # runtime state — the daemon's
+    sessions/<slug>.json       # routing.registryDir
+    paused.json                # routing.pauseFile
+    poll-state.json            # polling.stateFile
+    poll.pid  gh-webhook.pid   # polling.pidfile / webhooks.ghWebhook.pidfile
+    logs/events.jsonl          # eventLog.path
+```
+
+**Upgrading breaks nothing.** Each of those paths keeps reading its pre-move
+location (`.the-loop/sessions/`, `.the-loop/poll-state.json`, …) for as long as
+that is the one that exists — your session registry, dedup ledger and pidfiles
+stay put until you say otherwise, and the daemon logs which layout it picked. A
+path you set explicitly in the config always wins and is never reinterpreted.
+
+- `state paths` — every runtime-state path, which layout it is on, whether it
+  exists.
+- `state migrate` — moves pre-move state into `.the-loop/state/`. Idempotent;
+  skips (never overwrites) an entry that exists in both layouts; supports
+  `--dry-run`. It **refuses while a daemon pidfile looks alive** — moving a live
+  registry can leave two daemons believing they own the same work item — so stop
+  the daemons first, or pass `--force` if you know better. Nothing is ever
+  migrated automatically on start-up.
+
 ### `labels` — create the labels the-loop reacts to
 
 ```bash
@@ -506,9 +543,9 @@ than a silent no-op. `/the-loop:init` runs this during onboarding, alongside the
 
 ```bash
 the-loop poll start [--interval 60] [--once] \
-                    [--state-file .the-loop/poll-state.json] \
-                    [--pidfile .the-loop/poll.pid]
-the-loop poll stop  [--pidfile .the-loop/poll.pid]
+                    [--state-file .the-loop/state/poll-state.json] \
+                    [--pidfile .the-loop/state/poll.pid]
+the-loop poll stop  [--pidfile .the-loop/state/poll.pid]
 ```
 
 A **pull-based** alternative to `gh-webhook` for hosts a webhook cannot reach (behind
@@ -578,7 +615,7 @@ templates are all reused unchanged.
 ### `events` — query the structured event log (end-to-end o11y)
 
 ```bash
-the-loop events [--file .the-loop/logs/events.jsonl] [--type PATTERN ...] \
+the-loop events [--file .the-loop/state/logs/events.jsonl] [--type PATTERN ...] \
                 [--work-item github:OWNER/REPO#N] [--delivery-id ID] \
                 [--source gh-webhook|poll|sessions] [--level warning] \
                 [--since 2h|2026-07-22T10:00:00Z] [--limit 50] \
@@ -592,7 +629,7 @@ webhook accepted/rejected (and why), event routed/dropped (with a machine-readab
 (naming the triggering event and delivery id), dispatch failed (with the error and
 whether redelivery/the next poll cycle retries it), session closed/auto-closed — as one
 JSON object per line to `eventLog.path` in the **CLI config** (default
-`.the-loop/logs/events.jsonl`, git-ignored). This command is the query surface:
+`.the-loop/state/logs/events.jsonl`, git-ignored). This command is the query surface:
 
 - `--work-item` shows one item's full history ("which events triggered this
   session?"); `--delivery-id` follows a single GitHub delivery end to end.

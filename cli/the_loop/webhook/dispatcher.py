@@ -22,7 +22,7 @@ from pathlib import Path
 from string import Template
 from typing import Dict, List, Optional, Set
 
-from .. import eventlog
+from .. import eventlog, state
 from ..announce import AnnounceConfig, SessionAnnouncer
 from ..harness.base import HarnessAdapter, UnsupportedRunnerError
 from ..reactions import (
@@ -46,6 +46,10 @@ from ..workspace import RepoTarget, Workspace, WorkspaceError, repo_target_from_
 from .router import Deduper, RoutedEvent, event_carries_label
 
 logger = logging.getLogger("the-loop.gh-webhook")
+
+# All daemon runtime state lives under one directory (issue-98 review,
+# decision-039); `state.resolve` keeps reading a pre-move path that exists.
+DEFAULT_REGISTRY_DIR = f"{state.STATE_DIR}/sessions"
 
 _PAYLOAD_EXCERPT_KEYS = (
     "action",
@@ -216,7 +220,7 @@ class RoutingConfig:
     """Python-side mirror of ``webhooks.ghWebhook.routing`` (see config schema)."""
 
     enabled: bool = False
-    registry_dir: str = ".the-loop/sessions"
+    registry_dir: str = DEFAULT_REGISTRY_DIR
     default_harness: str = "claude"
     runner: str = "process"  # process | tmux (issue-32, decision-021)
     tmux: TmuxConfig = field(default_factory=TmuxConfig)
@@ -252,7 +256,7 @@ class RoutingConfig:
         data = data or {}
         return cls(
             enabled=bool(data.get("enabled", False)),
-            registry_dir=str(data.get("registryDir", ".the-loop/sessions")),
+            registry_dir=state.resolve(DEFAULT_REGISTRY_DIR, data.get("registryDir")),
             default_harness=str(data.get("defaultHarness", "claude")),
             runner=str(data.get("runner", "process")),
             tmux=TmuxConfig.from_mapping(data.get("tmux") or {}),
@@ -262,7 +266,7 @@ class RoutingConfig:
                 data.get("autoExecuteLabel", "the-loop: auto-execute")
             ),
             paused_label=str(data.get("pausedLabel", DEFAULT_PAUSED_LABEL)),
-            pause_file=str(data.get("pauseFile", DEFAULT_PAUSE_FILE)),
+            pause_file=state.resolve(DEFAULT_PAUSE_FILE, data.get("pauseFile")),
             spawn_workdir=str(data.get("spawnWorkdir", ".")),
             workspace=WorkspaceConfig.from_mapping(data.get("workspace") or {}),
             max_concurrent_dispatches=int(data.get("maxConcurrentDispatches", 4)),

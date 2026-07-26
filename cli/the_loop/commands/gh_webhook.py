@@ -19,7 +19,7 @@ import threading
 from pathlib import Path
 
 from .base import Command, register
-from .. import cli_config, eventlog
+from .. import cli_config, eventlog, state
 from ..webhook import serve
 
 logger = logging.getLogger("the-loop.gh-webhook")
@@ -34,7 +34,7 @@ _DEFAULTS = {
     "port": 8787,
     "path": "/gh-webhook",
     "secretEnv": "THE_LOOP_GH_WEBHOOK_SECRET",
-    "pidfile": ".the-loop/gh-webhook.pid",
+    "pidfile": f"{state.STATE_DIR}/gh-webhook.pid",
 }
 
 # The events the-loop can actually map to a work item (``extract_work_items``),

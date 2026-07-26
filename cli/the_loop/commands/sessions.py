@@ -33,7 +33,7 @@ from typing import Callable, List, Optional
 
 from .base import Command, register
 from .gh_webhook import _load_config_defaults
-from .. import cli_config, eventlog
+from .. import cli_config, eventlog, state
 from ..harness import ClaudeCodeAdapter, CursorAgentAdapter
 from ..labels import GitHubLabeler
 from ..runner import TmuxRunner
@@ -52,7 +52,8 @@ from ..sessions.overview import (
     render_detail,
     render_table,
 )
-from ..webhook.dispatcher import TmuxConfig
+from ..poller import DEFAULT_POLL_STATE
+from ..webhook.dispatcher import DEFAULT_REGISTRY_DIR, TmuxConfig
 
 logger = logging.getLogger("the-loop.sessions")
 
@@ -67,11 +68,11 @@ def _routing() -> dict:
 
 
 def _default_registry_dir() -> str:
-    return str(_routing().get("registryDir", ".the-loop/sessions"))
+    return state.resolve(DEFAULT_REGISTRY_DIR, _routing().get("registryDir"))
 
 
 def _default_pause_file() -> str:
-    return str(_routing().get("pauseFile", DEFAULT_PAUSE_FILE))
+    return state.resolve(DEFAULT_PAUSE_FILE, _routing().get("pauseFile"))
 
 
 def _default_paused_label() -> str:
@@ -86,7 +87,7 @@ def _default_poll_state_file() -> str:
         ).get("polling")
         or {}
     )
-    return str(polling.get("stateFile", ".the-loop/poll-state.json"))
+    return state.resolve(DEFAULT_POLL_STATE, polling.get("stateFile"))
 
 
 def _tmux_config() -> TmuxConfig:

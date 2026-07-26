@@ -28,7 +28,7 @@
               "default": "THE_LOOP_GH_WEBHOOK_SECRET",
               "description": "Env var holding the GitHub webhook secret for HMAC verification (never stored in config)."
             },
-            "pidfile": { "type": "string", "default": ".the-loop/gh-webhook.pid" },
+            "pidfile": { "type": "string", "default": ".the-loop/state/gh-webhook.pid" },
             "events": {
               "type": "array",
               "default": ["issues", "issue_comment", "pull_request", "pull_request_review", "pull_request_review_comment", "workflow_run", "check_run", "check_suite", "status"],
@@ -47,7 +47,7 @@
                 },
                 "registryDir": {
                   "type": "string",
-                  "default": ".the-loop/sessions",
+                  "default": ".the-loop/state/sessions",
                   "description": "Directory of per-session registry JSON files (git-ignored)."
                 },
                 "defaultHarness": {
@@ -74,7 +74,7 @@
                 },
                 "pauseFile": {
                   "type": "string",
-                  "default": ".the-loop/paused.json",
+                  "default": ".the-loop/state/paused.json",
                   "description": "Durable per-work-item pause ledger written by `the-loop sessions pause` and read by both ingress paths (issue-98). A missing or unreadable file means nothing is paused."
                 },
                 "authorizedUsers": {
@@ -328,8 +328,13 @@
         },
         "stateFile": {
           "type": "string",
-          "default": ".the-loop/poll-state.json",
+          "default": ".the-loop/state/poll-state.json",
           "description": "Durable JSON tracking which comments each item has processed (cross-poll/restart dedup). Git-ignored runtime state."
+        },
+        "pidfile": {
+          "type": "string",
+          "default": ".the-loop/state/poll.pid",
+          "description": "Where `poll start` records its PID so `poll stop` can signal it. Runtime state — lives under .the-loop/state/ with everything else (decision-039)."
         },
         "maxRetries": {
           "type": "integer",
@@ -431,7 +436,7 @@
         "enabled": { "type": "boolean", "default": true },
         "path": {
           "type": "string",
-          "default": ".the-loop/logs/events.jsonl",
+          "default": ".the-loop/state/logs/events.jsonl",
           "description": "Append-only JSONL file (git-ignored runtime state)."
         }
       }

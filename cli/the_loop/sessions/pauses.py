@@ -16,7 +16,7 @@ override the other):
   ``the-loop: paused``) — read from labels the daemon already has in hand (the
   webhook payload, the poll listing), so it costs no API call.
 
-The ledger is ONE JSON file (default ``.the-loop/paused.json``), unlike the
+The ledger is ONE JSON file (default ``.the-loop/state/paused.json``), unlike the
 file-per-session registry: a pause is a tiny record, the whole set is read every
 poll cycle, and writes come from human-driven CLI invocations rather than from
 racing daemons. Writes are atomic (tempfile + ``os.replace``); the daemon
@@ -41,6 +41,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Sequence, Union
 
+from ..state import STATE_DIR
 from .registry import WorkItemRef
 
 logger = logging.getLogger("the-loop.sessions")
@@ -50,7 +51,7 @@ logger = logging.getLogger("the-loop.sessions")
 SOURCE_LOCAL = "local"
 SOURCE_LABEL = "label"
 
-DEFAULT_PAUSE_FILE = ".the-loop/paused.json"
+DEFAULT_PAUSE_FILE = f"{STATE_DIR}/paused.json"
 DEFAULT_PAUSED_LABEL = "the-loop: paused"
 
 

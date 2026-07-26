@@ -30,6 +30,7 @@ from .github import (  # noqa: F401
 )
 from ..reload import Reloader  # noqa: F401
 from .poller import (  # noqa: F401
+    DEFAULT_POLL_STATE,
     PollConfig,
     Poller,
     PollPlan,
@@ -39,6 +40,7 @@ from .poller import (  # noqa: F401
 
 __all__ = [
     "Closure",
+    "DEFAULT_POLL_STATE",
     "Comment",
     "GhClient",
     "GhComment",

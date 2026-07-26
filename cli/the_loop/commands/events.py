@@ -1,7 +1,7 @@
 """``the-loop events`` — query the structured JSONL event log (issue-50).
 
 The webhook receiver, the poller and the sessions CLI append every routing /
-dispatch / session-lifecycle decision to ``.the-loop/logs/events.jsonl``
+dispatch / session-lifecycle decision to ``.the-loop/state/logs/events.jsonl``
 (see ``the_loop.eventlog``). This command is the query surface over that
 file for humans and coding agents: filter by type/work-item/delivery/source/
 level/time, tail it live, or dump the catalog of event types.

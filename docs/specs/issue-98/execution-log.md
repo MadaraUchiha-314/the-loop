@@ -82,6 +82,35 @@ status: in-progress
 - **Next:** PR + human approval (tier 3 — spec and code approved together).
 - **Blockers:** none.
 
+### 2026-07-26 — human review round 1 (PR #100)
+
+- **Phase:** needs-review
+- **Did:** two review comments from @MadaraUchiha-314, both acted on.
+  1. *"why is the file not just called `sessions.py`"* — renamed
+     `commands/sessions_cmd.py` → `commands/sessions.py` (and its test). The
+     `_cmd` suffix was avoiding a collision that does not exist: the command
+     module is `the_loop.commands.sessions`, the registry package is
+     `the_loop.sessions`, and relative imports resolve them unambiguously.
+  2. *"we have all these files we're tracking now … can we consolidate?"* —
+     yes. All daemon runtime state moved under **`.the-loop/state/`**
+     (registry, pause ledger, poll ledger, both pidfiles, event log), with
+     `the_loop/state.py` owning the path table, the **pre-move fallback** (a path
+     that still exists keeps being read, logged once) and `migrate`; a new
+     `the-loop state paths|migrate` command; six defaults, the schema, the
+     shipped template, this repo's config and `.gitignore` updated;
+     `decision-040` records it. Requirements gained R9, design gained §11.
+  I offered three options on the PR and asked before reshuffling live paths;
+  the owner chose the full move in this PR.
+- **Checkpoint/tests:** `ruff` + `format --check` clean, `pyright` 0 errors,
+  configs VALID, markdownlint 0 errors, **551 passed** (20 new in
+  `test_state.py`: resolution, one-time warning, explicit-path override, plan,
+  migrate incl. dry-run/idempotency/conflict-refusal, the running-daemon guard,
+  and the CLI surface). Manual end-to-end check of an un-migrated checkout:
+  `state paths` labelled three entries `pre-move`, `migrate --dry-run` listed
+  them, `migrate` moved them, re-run reported nothing to do.
+- **Next:** await re-review.
+- **Blockers:** none.
+
 ## Review cycles
 
 | Round | Type | Findings | Resolution |
@@ -89,3 +118,5 @@ status: in-progress
 | 1 | self-review | Pause gate initially sat *before* the close branch, which would have leaked a live session for a paused item that got merged | Moved after the close branch; `test_a_paused_item_that_ends_still_closes_its_session` locks it in |
 | 2 | self-review | A paused drop left the delivery id in the dedup cache, so a resumed item would treat the same delivery as already handled | Discard the id on a paused drop; covered by `test_a_locally_paused_item_drops_webhook_events` |
 | 3 | self-review | `sessions list --format json` changed shape (row objects, not raw session dicts) | Deliberate (R1.4) and documented in `cli/README.md`; the existing round-trip test was updated with a comment explaining the change |
+| 4 | human (PR #100) | `commands/sessions_cmd.py` — why the `_cmd` suffix? | Renamed to `commands/sessions.py`; no collision existed |
+| 5 | human (PR #100) | Runtime-state files are scattered across `.the-loop/` and this PR adds another | All state consolidated under `.the-loop/state/` with a pre-move fallback and `the-loop state migrate` ([decision-040](../../decisions/decision-040.md), R9) |

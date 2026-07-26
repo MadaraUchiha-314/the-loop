@@ -21,11 +21,11 @@ stores and never joined:
 ```mermaid
 flowchart LR
   subgraph Existing state
-    REG[".the-loop/sessions/*.json<br/>SessionRegistry (issue-15)"]
-    POLL[".the-loop/poll-state.json<br/>PollState (issue-80)"]
+    REG[".the-loop/state/sessions/*.json<br/>SessionRegistry (issue-15)"]
+    POLL[".the-loop/state/poll-state.json<br/>PollState (issue-80)"]
     TMUX["tmux server<br/>TmuxRunner (issue-32)"]
   end
-  NEW[".the-loop/paused.json<br/>PauseStore (NEW)"]
+  NEW[".the-loop/state/paused.json<br/>PauseStore (NEW)"]
   OV["sessions/overview.py<br/>build_rows() (NEW)"]
   REG --> OV
   POLL --> OV
@@ -53,7 +53,7 @@ and four touched: `sessions/registry.py` (three new recorded fields),
 
 ## 2. The pause ledger (`sessions/pauses.py`)
 
-One JSON file, default `.the-loop/paused.json` (`routing.pauseFile`), atomic
+One JSON file, default `.the-loop/state/paused.json` (`routing.pauseFile`), atomic
 write via tempfile + `os.replace` — the same pattern as `SessionRegistry._write`
 and `PollState.save`:
 
@@ -272,7 +272,7 @@ step 4 of `commands/init.md` gains: create the operational labels too (R6.4).
 | Key | Default | Meaning |
 |---|---|---|
 | `pausedLabel` | `the-loop: paused` | Label whose presence pauses a work item. |
-| `pauseFile` | `.the-loop/paused.json` | The pause ledger's path. |
+| `pauseFile` | `.the-loop/state/paused.json` | The pause ledger's path (§11). |
 
 Added to `.the-loop/cli-config.schema.json`, `templates/cli-config.yaml` and
 this repo's `.the-loop/cli-config.yaml`. Defaults preserve today's behaviour
@@ -301,6 +301,48 @@ Integration (`cli/tests/test_*_integration.py`, Gherkin docstrings per
   resume → next comment is dispatched);
   *Scenario: the paused label alone stops webhook dispatch*;
   *Scenario: a paused work item that is closed upstream still closes its session*.
+
+## 11. Runtime-state layout (`state.py`, added in review)
+
+PR #100 review: *"we have all these files we're tracking now — `poll-state.json`,
+`poll.pid`, everything in `sessions/` — and now another one. Can we
+consolidate?"* Yes: `.the-loop/` was mixing **config** an operator writes with
+**state** the daemon writes, and the state half had grown a top-level path (and a
+`.gitignore` line) per feature. See [decision-040](../../decisions/decision-040.md).
+
+```text
+.the-loop/
+  cli-config.yaml              # config — yours
+  state/                       # runtime state — the daemon's, one ignore rule
+    sessions/<slug>.json       # routing.registryDir
+    paused.json                # routing.pauseFile
+    poll-state.json            # polling.stateFile
+    poll.pid  gh-webhook.pid   # polling.pidfile / webhooks.ghWebhook.pidfile
+    logs/events.jsonl          # eventLog.path
+```
+
+`the_loop/state.py` owns the table (`PATHS`: current path, pre-move path, the
+config key that overrides it) and three behaviours:
+
+```python
+resolve(default, configured)   # configured wins; else new path, unless only the
+                               # pre-move one exists (logged once)
+plan() / migrate(dry_run)      # move pre-move state over, idempotent, never
+                               # clobbering a target that already exists
+running_daemons()              # live pidfiles in either layout — migrate's guard
+```
+
+Every default site calls `resolve()`: `RoutingConfig.registry_dir`/`pause_file`,
+`PollConfig.state_file`, both commands' pidfile defaults, `eventlog.DEFAULT_PATH`,
+and the `sessions` command's own defaults. So an operator who upgrades and edits
+nothing keeps their registry, their dedup ledger and their pidfiles exactly where
+they are (R9.2), and one who set an explicit path is never second-guessed (R9.3).
+
+**Migration is a command, not a start-up side effect** (R9.6). Moving a live
+registry or pidfile out from under a running daemon is how two daemons end up
+believing they own the same work item — so `the-loop state migrate` refuses while
+a pidfile looks alive (`--force` overrides), and `the-loop state paths` shows
+which layout each entry is on.
 
 ## 10. Alternatives considered
 

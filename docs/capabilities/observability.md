@@ -6,7 +6,7 @@
 
 ## What it is
 
-A structured JSONL event log (`.the-loop/logs/events.jsonl` by default, git-ignored)
+A structured JSONL event log (`.the-loop/state/logs/events.jsonl` by default, git-ignored)
 that the webhook receiver, the poller and the sessions CLI append every decision to,
 plus the `the-loop events` query command over it. It answers "which events triggered
 this session?", "what was rejected, and why?" and "what failed, and will it retry?" —

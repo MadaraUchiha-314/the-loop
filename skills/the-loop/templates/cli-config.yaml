@@ -22,14 +22,14 @@ webhooks:
     port: 8787
     path: /gh-webhook
     secretEnv: THE_LOOP_GH_WEBHOOK_SECRET   # env var holding the secret (not stored here)
-    pidfile: .the-loop/gh-webhook.pid
+    pidfile: .the-loop/state/gh-webhook.pid
     # Empty = the-loop's default set (every event it can route). If you narrow it,
     # keep `issues` and `pull_request`: without them a closed issue / merged PR
     # never arrives and its session is never closed — the receiver warns if so.
     events: []
     routing:
       enabled: false                # route events to registered harness sessions
-      registryDir: .the-loop/sessions
+      registryDir: .the-loop/state/sessions
       defaultHarness: claude        # claude | cursor
       spawnOnUnmatched: labeled     # never | always | labeled
       autoExecuteLabel: "the-loop: auto-execute"   # label that opts an issue/PR into autonomous execution
@@ -40,7 +40,7 @@ webhooks:
       # closes the session (pause stops work, never cleanup). Create the label
       # with `the-loop labels ensure --repo OWNER/REPO`.
       pausedLabel: "the-loop: paused"
-      pauseFile: .the-loop/paused.json
+      pauseFile: .the-loop/state/paused.json
       # SECURITY (prompt-injection guard): only these GitHub logins' actions are acted on
       # by BOTH the webhook receiver and the poller. Comments/reviews/labels/items from
       # anyone else are ignored. REQUIRED: no fallback to any repo's plugin config —
@@ -145,7 +145,7 @@ webhooks:
 # provider-specific knobs; provider settings live under the source entry.
 polling:
   intervalSeconds: 60               # seconds between poll cycles (all sources)
-  stateFile: .the-loop/poll-state.json
+  stateFile: .the-loop/state/poll-state.json
   sources: []                       # e.g. the github source below (empty = nothing polled)
     # - provider: github
     #   repos: []                   # REQUIRED: OWNER/REPO list — no fallback to any
@@ -158,7 +158,7 @@ polling:
 
 eventLog:                           # structured JSONL o11y trail; `the-loop events`
   enabled: true
-  path: .the-loop/logs/events.jsonl
+  path: .the-loop/state/logs/events.jsonl
 
 # The operator's own notification recipients (issue-82, decision-035) — the same
 # collaborator structure as .the-loop/collaborators.schema.json, DECLARED here:

@@ -24,7 +24,7 @@ Use the same logger and the same log lines in both; only the active level differ
 ## CLI event log — the audit trail of the-loop's own actions
 
 Config: `eventLog` in the **CLI config** (`cli-config.yaml`: `enabled`, default `true`;
-`path`, default `.the-loop/logs/events.jsonl`, git-ignored) — independent of any repo's
+`path`, default `.the-loop/state/logs/events.jsonl`, git-ignored) — independent of any repo's
 plugin config, resolved via `--config`/env/cwd/home (see `cli/README.md`,
 [decision-032](../../../docs/decisions/decision-032.md)). Decision:
 [decision-025](../../../docs/decisions/decision-025.md) — JSONL, not SQLite.
@@ -78,7 +78,7 @@ the-loop events --types                            # documented event catalog
 
 The file itself is plain JSONL — `grep`, `jq`, `tail -f` and any dashboard/DB
 ingestion work directly on it (e.g.
-`jq 'select(.event=="session.spawned")' .the-loop/logs/events.jsonl`). Agents asked to
+`jq 'select(.event=="session.spawned")' .the-loop/state/logs/events.jsonl`). Agents asked to
 "dig through the events" should start with `the-loop events --types`, then filter with
 the flags above (or read the file directly when unavailable).
 

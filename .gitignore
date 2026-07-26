@@ -217,27 +217,26 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# the-loop CLI runtime artifacts
+# the-loop: ALL daemon runtime state — session registry, pause ledger, poller
+# ledger, pidfiles, event log (decision-039). `the-loop state paths` shows it.
+.the-loop/state/
+
+# the-loop: the pre-move locations of that same state, still read when they
+# exist so an upgrade loses nothing (`the-loop state migrate` consolidates).
 .the-loop/*.pid
-cli/build/
-cli/dist/
-cli/*.egg-info/
-cli/.pytest_cache/
+.the-loop/sessions/
+.the-loop/poll-state.json
+.the-loop/paused.json
+.the-loop/logs/
 
 # the-loop: not-yet-durable learning candidates (write-gate queue)
 .the-loop/learnings-pending/
 
-# the-loop: webhook->session routing registry (runtime state)
-.the-loop/sessions/
-
-# the-loop: poller cross-poll dedup state (runtime state)
-.the-loop/poll-state.json
-
-# the-loop: per-work-item pause ledger (runtime state; `the-loop sessions pause`)
-.the-loop/paused.json
-
-# the-loop: structured event log (runtime state; `the-loop events`)
-.the-loop/logs/
+# the-loop CLI build artifacts
+cli/build/
+cli/dist/
+cli/*.egg-info/
+cli/.pytest_cache/
 
 # docs/ (VitePress) — node deps and the two files synced in from cli/README.md and
 # skills/the-loop/reference/ at build time (docs/scripts/sync-content.mjs)

@@ -52,5 +52,12 @@ overrides: {}
       table), `docs/capabilities/cli.md`, `docs/capabilities/interactive-sessions.md`,
       `skills/the-loop/reference/automation.md`, `commands/init.md` step 4.
       _(R6.4, R8.1, R8.2)_
+- [x] **T13 — Review follow-up: `commands/sessions_cmd.py` → `commands/sessions.py`**
+      (+ `tests/test_sessions_cmd.py` → `tests/test_sessions_command.py`). _(review)_
+- [x] **T14 — Review follow-up: consolidate runtime state under `.the-loop/state/`.**
+      `the_loop/state.py` (path table, pre-move fallback, `migrate`), new
+      `the-loop state paths|migrate` command, six defaults repointed, schema +
+      template + repo config + `.gitignore`, `test_state.py`, decision-040.
+      _(R9)_
 - [x] **T12 — Gates.** `ruff`, `pyright`, `pytest` green; execution log updated;
       PR briefing posted. _(process)_

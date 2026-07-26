@@ -251,6 +251,40 @@ finished with, so that the table stays about live work.
    `.the-loop/cli-config.yaml`, with defaults that keep existing behaviour
    unchanged for an operator who edits nothing.
 
+### Requirement 9 — the daemon's runtime state lives in one place
+
+*(Added during PR review: "we have all these files we're tracking now —
+`poll-state.json`, `poll.pid`, everything in `sessions/` — and now another one.
+Can we consolidate?" — [PR #100](https://github.com/MadaraUchiha-314/the-loop/pull/100),
+[decision-040](../../decisions/decision-040.md).)*
+
+**User story:** As an operator, I want everything the daemon writes in one
+directory, so that I can tell my files from its files, ignore them with one
+rule, and reset cleanly.
+
+#### Acceptance criteria
+
+1. **9.1** Every runtime-state path the daemon writes — session registry, pause
+   ledger, poller ledger, both pidfiles, event log — SHALL default to a location
+   under a single `.the-loop/state/` directory.
+2. **9.2** WHEN a pre-move path exists AND its new-layout counterpart does not
+   THEN the pre-move path SHALL still be used, so an operator who upgrades and
+   changes nothing loses no session registry, no dedup ledger and no pidfile;
+   the fact SHALL be logged once, naming the command that consolidates.
+3. **9.3** WHEN a path is explicitly configured THEN it SHALL be used verbatim —
+   never re-interpreted, never migrated.
+4. **9.4** `the-loop state paths` SHALL print every runtime-state path, which
+   layout each is on, and whether it exists.
+5. **9.5** `the-loop state migrate [--dry-run] [--force]` SHALL move pre-move
+   state into the new layout, SHALL be idempotent, SHALL refuse to overwrite an
+   entry that exists in both layouts, and SHALL refuse to run at all while a
+   daemon pidfile looks alive (moving a live registry could leave two daemons
+   owning one work item) unless `--force` is passed.
+6. **9.6** Migration SHALL NOT happen automatically on daemon start.
+7. **9.7** `.gitignore`, the config schema, the shipped template and this repo's
+   own CLI config SHALL reflect the new layout, with the pre-move paths kept
+   ignored so an un-migrated checkout cannot commit its state.
+
 ## Non-goals
 
 - **No TUI.** No curses/rich/live-refresh view; `watch the-loop sessions list`

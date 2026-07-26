@@ -22,11 +22,11 @@ webhooks:
     port: 8787
     path: /gh-webhook
     secretEnv: THE_LOOP_GH_WEBHOOK_SECRET
-    pidfile: .the-loop/gh-webhook.pid
+    pidfile: .the-loop/state/gh-webhook.pid
     events: [issues, issue_comment, pull_request, pull_request_review, pull_request_review_comment, workflow_run]
     routing:
       enabled: false                # flip on to route events to registered sessions
-      registryDir: .the-loop/sessions
+      registryDir: .the-loop/state/sessions
       defaultHarness: claude        # claude | cursor
       spawnOnUnmatched: labeled     # never | always | labeled
       autoExecuteLabel: "the-loop: auto-execute"   # label that opts an issue/PR into autonomous execution
@@ -37,7 +37,7 @@ webhooks:
       # closes the session (pause stops work, never cleanup). Create the label
       # with `the-loop labels ensure --repo OWNER/REPO`.
       pausedLabel: "the-loop: paused"
-      pauseFile: .the-loop/paused.json
+      pauseFile: .the-loop/state/paused.json
       # SECURITY: no fallback to this repo's plugin config (issue-63 review) —
       # empty here means nothing human-authored is actioned (fail closed).
       # Set this explicitly, e.g. ["MadaraUchiha-314"], to actually route events.
@@ -135,13 +135,13 @@ webhooks:
 
 polling:
   intervalSeconds: 60
-  stateFile: .the-loop/poll-state.json
+  stateFile: .the-loop/state/poll-state.json
   maxRetries: 3                     # per-event delivery attempts before giving up (issue-80): a failing spawn/comment is retried each cycle up to this many times, then logged (poll.*_failed) and ignored until new activity re-arms it
   sources: []                       # empty = nothing polled; this repo dogfoods webhooks, not poll
 
 eventLog:                           # structured JSONL o11y trail; `the-loop events`
   enabled: true
-  path: .the-loop/logs/events.jsonl
+  path: .the-loop/state/logs/events.jsonl
 
 # The operator's own notification recipients (issue-82, decision-035) — the same
 # collaborator structure as .the-loop/collaborators.schema.json, DECLARED here:

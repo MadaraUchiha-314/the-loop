@@ -46,6 +46,16 @@ self-learning/ML capabilities.
 - `the-loop labels ensure --repo OWNER/REPO` SHALL create the operational labels the
   daemon reads (auto-execute, paused) under their configured names, idempotently, with
   `--dry-run`; `/the-loop:init` runs it during onboarding (issue-98).
+- All **runtime state** the daemon writes — session registry, pause ledger, poller
+  ledger, both pidfiles, the event log — SHALL live under a single
+  `.the-loop/state/` directory, separated from the config an operator edits
+  (decision-040). A **pre-move path that still exists SHALL keep being read**, so
+  an upgrade loses no registry, ledger or pidfile, and an explicitly configured
+  path SHALL be used verbatim. `the-loop state paths` SHALL show every path and
+  which layout it is on; `the-loop state migrate [--dry-run] [--force]` SHALL
+  consolidate the pre-move ones — idempotent, never overwriting an entry present
+  in both layouts, and refusing to run while a daemon pidfile looks alive. State
+  SHALL NOT be migrated automatically on daemon start (issue-98).
 - `the-loop scenarios` SHALL output the table of every Gherkin scenario covered by the
   integration tests (`--format table|markdown|json`; see
   [testing-and-contracts](testing-and-contracts.md)).
@@ -70,7 +80,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
-| issue-98 | `sessions` became the operator surface: joined `list` table, `show`, `pause`/`resume` (CLI + `the-loop: paused` label), `prune`; new `labels ensure` command | [spec](../specs/issue-98/) |
+| issue-98 | `sessions` became the operator surface: joined `list` table, `show`, `pause`/`resume` (CLI + `the-loop: paused` label), `prune`; new `labels ensure` and `state paths\|migrate` commands; all runtime state consolidated under `.the-loop/state/` | [spec](../specs/issue-98/), [decision-040](../decisions/decision-040.md) |
 | issue-97 | PyYAML promoted from the `[config]` extra to a required runtime dependency; the three silent `ImportError` fallbacks removed and the zero-runtime-dependency guarantee retired | [spec](../specs/issue-97/), [decision-038](../decisions/decision-038.md) |
 | issue-82 | Plugin config renamed `config.yaml` → `harness-config.yaml` (`scenarios` reads the new name with a pre-rename fallback); CLI config gained operator-declared `collaborators` + daemon-side `notifications` event filters | [decision-035](../decisions/decision-035.md) |
 | issue-78 | `--version` derives from package metadata instead of a hardcoded string that had frozen at 0.1.0 | [spec](../specs/issue-78/) |

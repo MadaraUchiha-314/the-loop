@@ -1,7 +1,7 @@
 """Durable, concurrency-safe registry linking work items to harness sessions.
 
 One JSON file per session under the registry directory (default
-``.the-loop/sessions/``, git-ignored) so entries are human-inspectable and
+``.the-loop/state/sessions/``, git-ignored) so entries are human-inspectable and
 concurrent sessions never contend on a shared file. Writes are atomic
 (tempfile + ``os.replace``). Stdlib only.
 

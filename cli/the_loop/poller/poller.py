@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
 from .. import eventlog
+from .. import state as state_paths
 from ..authz import is_authorized, is_self_authored
 from ..reload import Reloader
 from ..sessions import PauseStore, SessionRegistry, WorkItemRef
@@ -44,6 +45,9 @@ from ..webhook.dispatcher import Dispatcher
 from .base import Comment, PollProvider, ProviderError, WorkItem
 
 logger = logging.getLogger("the-loop.poll")
+
+# One state directory for every runtime file (decision-039).
+DEFAULT_POLL_STATE = f"{state_paths.STATE_DIR}/poll-state.json"
 
 # Per item, how many comment ids we remember across polls. The set is re-seeded
 # from the live comment list every cycle, so this only caps a single very
@@ -61,7 +65,7 @@ class PollConfig:
     """
 
     interval_seconds: int = 60
-    state_file: str = ".the-loop/poll-state.json"
+    state_file: str = DEFAULT_POLL_STATE
     max_retries: int = 3
     sources: List[dict] = field(default_factory=list)
 
@@ -70,7 +74,7 @@ class PollConfig:
         data = data or {}
         return cls(
             interval_seconds=int(data.get("intervalSeconds", 60)),
-            state_file=str(data.get("stateFile", ".the-loop/poll-state.json")),
+            state_file=state_paths.resolve(DEFAULT_POLL_STATE, data.get("stateFile")),
             max_retries=max(1, int(data.get("maxRetries", 3))),
             sources=[dict(s) for s in (data.get("sources") or []) if s],
         )

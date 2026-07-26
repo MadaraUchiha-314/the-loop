@@ -3,7 +3,7 @@
 Every accept/reject/dispatch/spawn/retry/close decision the webhook receiver,
 the poller and the session registry make is appended as one JSON object per
 line to a single machine-queryable file (default
-``.the-loop/logs/events.jsonl``, git-ignored). The file is the system's audit
+``.the-loop/state/logs/events.jsonl``, git-ignored). The file is the system's audit
 trail: it answers "which events triggered this session?", "what was rejected,
 and why?", and "what failed, and was it retried?" — for humans (``the-loop
 events``, grep/jq) and for coding agents alike. JSONL over SQLite is
@@ -48,10 +48,11 @@ from typing import Dict, Iterator, Optional, Sequence, Union
 import yaml
 
 from . import cli_config
+from .state import STATE_DIR
 
 logger = logging.getLogger("the-loop.eventlog")
 
-DEFAULT_PATH = ".the-loop/logs/events.jsonl"
+DEFAULT_PATH = f"{STATE_DIR}/logs/events.jsonl"
 
 LEVELS = ("debug", "info", "warning", "error")
 
