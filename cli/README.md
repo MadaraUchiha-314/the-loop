@@ -183,9 +183,12 @@ the-loop:start-execution
 - Keywords match as whole tokens, case-insensitively, anywhere in the body. A comment
   carrying **two different** keywords is refused outright — nothing runs, nothing is
   forwarded.
-- A start request is **durable**: it survives a daemon restart, and a later `stop`/
-  `pause` disarms the item again, so a stopped work item does not re-spawn on the next
-  event.
+- An **accepted** start is **durable**: it survives a daemon restart, and a later
+  `stop`/`pause` disarms the item again, so a stopped work item does not re-spawn on
+  the next event. A start on a work item that is **not** armed is refused and remembers
+  nothing — labelling it afterwards will not start it; only a start issued while the
+  item is armed does. (Arming commands are remembered when they act; disarming ones
+  always.)
 - The same four commands are available as `the-loop sessions start|pause|resume|stop`,
   which post the same keyword back to the ticket (marked as the-loop's own, so the
   daemon never reads it back).

@@ -57,3 +57,22 @@ status: in-progress
   explicitly (`control=ControlConfig(require_start_command=False)`) — the documented
   behaviour change is asserted by the new integration tests instead.
 - **Next:** reviewer briefing on the PR; tier-4 → human approves.
+
+### 2026-07-26 — review round 1 (owner, PR #107)
+
+- **Phase:** needs-review
+- **Feedback:** open question 3 answered — a start on a work item that is *not*
+  armed must leave nothing standing: `start` (unlabelled) → label added → nothing
+  should happen; only a start issued *while* the item is armed starts it.
+  Also confirmed: everything here is for **commands** only; an ordinary comment
+  from an authorized user keeps being auto-forwarded to a running harness.
+- **Did:** Made the record asymmetric — an **arming** command (`start`/`resume`)
+  is recorded only when it actually acts, a **disarming** one (`pause`/`stop`)
+  always. A start is now refused *before* anything is written (the armed check
+  moved ahead of the record), a resume with nothing to resume records nothing,
+  and a CLI start whose spawn fails clears its own record. The gate learned to
+  accept a start carried by *this* event, so the durable record is only ever
+  consulted for later events (poll retry, redelivery). Requirements 2.4/2.5/3.6
+  updated, plus the design, capability doc, README and event catalog.
+- **Tests:** the owner's exact three-step sequence, the resume variant, the
+  disarming counter-case, and the CLI equivalent.

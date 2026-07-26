@@ -46,8 +46,8 @@ flowchart TD
     PC -- "2+ keywords" --> AMB["control.ambiguous — nothing runs"]
     PC -- "1 keyword" --> EX["execute the command"]
     EX --> ST["start"] --> ARM{"armed?<br/>label + spawn policy"}
-    ARM -- no --> REJ["control.rejected"]
-    ARM -- yes --> SP["spawn (or resume a paused session)"]
+    ARM -- no --> REJ["control.rejected<br/>(nothing recorded — a later<br/>label must not start it)"]
+    ARM -- yes --> SP["record, then spawn<br/>(or resume a paused session)"]
     EX --> PA["pause → registry.pause()"]
     EX --> RE["resume → registry.resume()"]
     EX --> SO["stop → the close path<br/>(registry + tmux + workspace)"]
@@ -132,6 +132,15 @@ command land on a work item that has no session yet (R3.6).
 `resume`; `stop`/`pause` clear the arming. So a stop is durable too: a labelled
 item that was stopped does not re-spawn on the next event.
 
+**Arming commands are recorded only when they act** (owner decision on PR #107).
+A `start` on a work item that is not armed is refused *before* anything is
+written, so labelling it afterwards does not start it — otherwise the label
+would still be the trigger, one event later. The same holds for a `resume` with
+nothing to resume, and for a CLI `start` whose spawn fails (the record is
+cleared again). Disarming commands are the mirror image: `pause`/`stop` are
+recorded whether or not there was anything to act on, because forgetting them is
+the unsafe direction.
+
 ## 2. Registry: `paused` is a live status
 
 ```python
@@ -183,10 +192,11 @@ uses — so both ingress paths are covered by construction (the poller's
 
 `_apply_control` is a small table:
 
-- **start** → record it; if a live session exists, `resume` it (R3.5) or no-op
-  when already active; else run the *normal* unmatched path (`_on_unmatched`),
-  which applies the spawn policy and label gate and therefore refuses politely
-  with `control.rejected` when the item is not armed (R2.4).
+- **start** → if a live session exists, `resume` it (R3.5) or no-op when already
+  active; else check the spawn policy and label gate **first** and refuse with
+  `control.rejected` when the item is not armed (R2.4) — recording nothing — and
+  only then record the request and run the normal unmatched path
+  (`_on_unmatched`).
 - **pause** → `registry.pause()`; nothing to pause is a recorded no-op (R3.6).
 - **resume** → `registry.resume()`.
 - **stop** → the existing close path, factored out of the close-event branch
@@ -206,7 +216,9 @@ def _should_spawn(self, routed) -> bool:
         return False
     if not self.config.control.require_start_command:
         return True                            # pre-#106 behaviour (R2.6)
-    return routed.control == "start" or self.store.start_requested(ref)
+    # a start carried by THIS event satisfies the requirement directly; the
+    # durable record is only consulted for later events (poll retry, redelivery)
+    return control_command == START or self.store.start_requested(ref)
 ```
 
 Two refinements fall out of it:

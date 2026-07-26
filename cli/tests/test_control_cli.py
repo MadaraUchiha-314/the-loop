@@ -98,6 +98,12 @@ def test_resuming_something_that_is_not_paused_reports_it(tmp_path, registry, po
     assert session is not None and session.status == "active"
 
 
+def test_resuming_nothing_does_not_arm_the_work_item(tmp_path, registry, posted):
+    # Arming commands are recorded only when they act (owner decision, PR #107).
+    assert run("resume", tmp_path) == 1
+    assert store_for(tmp_path).get(REF) is None
+
+
 def test_pausing_a_work_item_with_no_session_still_records_the_intent(
     tmp_path, registry, posted
 ):

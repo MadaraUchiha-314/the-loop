@@ -396,13 +396,17 @@ class SessionsCommand(Command):
             return 2
         store = ControlStore(control_dir_for(args.registry_dir))
         actor = _local_actor()
-        # Recorded before the effect: it is what arms the work item, so a start
-        # whose spawn fails is still a standing request the daemon can retry —
-        # including a start on a work item that is not armed yet, which stays
-        # standing until the label lands (or a stop/pause clears it).
-        store.record(work_item, command, source="cli", actor=actor)
+        # A **disarming** command (pause/stop) is recorded whether or not there
+        # was anything to act on — a stopped work item must not re-spawn on the
+        # next event. An **arming** one (start/resume) is recorded only when it
+        # actually acted, so a start that could not run leaves nothing standing
+        # (owner decision on PR #107): the same rule the comment path follows.
+        if command in (PAUSE, STOP):
+            store.record(work_item, command, source="cli", actor=actor)
 
         effect, code = self._apply_control(command, work_item, args)
+        if command in (START, RESUME) and effect in ("resumed", "running"):
+            store.record(work_item, command, source="cli", actor=actor)
         eventlog.emit(
             "control.command",
             work_item=work_item.ref,
@@ -433,14 +437,14 @@ class SessionsCommand(Command):
                 return "noop", 1
             if session is not None:
                 print(f"{work_item.ref} is already running ({session.harness})")
-                return "noop", 0
+                return "running", 0
             return self._spawn_for_start(work_item, args)
 
         if command == PAUSE:
             if registry.pause(work_item) is None:
                 print(
                     f"no running session for {work_item.ref} to pause; recorded "
-                    "the request, so a later start honours it",
+                    "the pause, so it will not spawn on its own",
                     file=sys.stderr,
                 )
                 return "noop", 1
@@ -477,10 +481,14 @@ class SessionsCommand(Command):
         The synthesised event is marked ``labeled=True``: shell access to the
         machine running the-loop is a strictly higher privilege than commenting
         on an issue, so the CLI does not additionally require the auto-execute
-        label (which it cannot see without an API call anyway). The start
-        requirement itself is still satisfied the same way — by the control
-        record written just before this.
+        label (which it cannot see without an API call anyway).
+
+        The start requirement is satisfied by recording the request first — that
+        is what the dispatcher's gate reads — and the record is **cleared again
+        if no session came up**, so a start that could not run leaves nothing
+        standing to be picked up by a later event (owner decision on PR #107).
         """
+        store = ControlStore(control_dir_for(args.registry_dir))
         dispatcher, routing = _dispatcher_for(args)
         if routing.spawn_on_unmatched == "never":
             print(
@@ -490,6 +498,7 @@ class SessionsCommand(Command):
             )
             dispatcher.stop(timeout=5)
             return "rejected", 1
+        store.record(work_item, START, source="cli", actor=_local_actor())
         payload = {
             "action": "control-start",
             "repository": {"full_name": f"{work_item.owner}/{work_item.repo}"},
@@ -512,6 +521,9 @@ class SessionsCommand(Command):
             dispatcher.stop(timeout=routing.dispatch_timeout_seconds)
         session = SessionRegistry(args.registry_dir).find_by_work_item(work_item)
         if session is None:
+            # Nothing came up, so leave nothing armed: the operator re-runs the
+            # command rather than the work item starting itself on a later event.
+            store.clear(work_item)
             print(
                 f"error: could not start a session for {work_item.ref} — see the "
                 "log above (and `the-loop events --work-item …`) for why",

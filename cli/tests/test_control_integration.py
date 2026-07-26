@@ -213,11 +213,74 @@ def test_a_start_on_an_unlabelled_item_is_refused(setup):
         Then no session is spawned
     Requirement: docs/specs/issue-106/requirements.md AC2.4
     """
-    dispatcher, registry, adapter, _ = setup
+    dispatcher, registry, adapter, store = setup
     dispatcher.handle(comment_event(START_KEYWORD, labels=()))
     assert _wait(lambda: True, 0.2)
     assert adapter.spawns == []
     assert registry.find_by_work_item(REF) is None
+    assert store.get(REF) is None  # and nothing is left armed
+
+
+def test_a_start_on_an_unarmed_item_leaves_nothing_standing(setup):
+    """
+    Feature: authorized execution control
+      Scenario: labelling after a refused start does not start the work item
+        Given an authorized user commented the start keyword on an unlabelled item
+        And nothing was started
+        When the auto-execute label is added afterwards
+        Then still nothing is started
+        And only a start command issued *after* the label starts it
+    Requirement: docs/specs/issue-106/requirements.md AC2.4
+    """
+    # Owner decision on PR #107: a refused start must not be remembered, or
+    # labelling later would start the item — which is the very "labelling is the
+    # trigger" behaviour issue-106 removes.
+    dispatcher, registry, adapter, store = setup
+
+    # 1. start, with no label
+    dispatcher.handle(comment_event(START_KEYWORD, delivery="d-1", labels=()))
+    assert store.get(REF) is None
+    assert adapter.spawns == []
+
+    # 2. the label is added
+    dispatcher.handle(labeled_event(delivery="l-1"))
+    assert _wait(lambda: True, 0.2)
+    assert adapter.spawns == []
+    assert registry.find_by_work_item(REF) is None
+
+    # 3. and only now does a start actually start it
+    dispatcher.handle(comment_event(START_KEYWORD, delivery="d-2"))
+    assert _wait(lambda: len(adapter.spawns) == 1)
+
+
+def test_a_resume_with_nothing_to_resume_does_not_arm_the_item(setup):
+    """
+    Feature: authorized execution control
+      Scenario: resume is an arming command, so it too leaves nothing standing
+    Requirement: docs/specs/issue-106/requirements.md AC3.6
+    """
+    dispatcher, registry, adapter, store = setup
+    dispatcher.handle(comment_event(RESUME_KEYWORD, delivery="d-r"))
+    assert store.get(REF) is None
+    dispatcher.handle(labeled_event(delivery="l-r"))
+    assert _wait(lambda: True, 0.2)
+    assert adapter.spawns == []
+
+
+def test_a_stop_is_remembered_even_with_no_session(setup):
+    """
+    Feature: authorized execution control
+      Scenario: disarming persists — a stopped work item does not re-spawn
+    Requirement: docs/specs/issue-106/requirements.md AC3.6
+    """
+    dispatcher, registry, adapter, store = setup
+    store.record(REF, "start", source="cli", actor="operator")
+    dispatcher.handle(comment_event(STOP_KEYWORD, delivery="d-s"))
+    record = store.get(REF)
+    assert record is not None and record.command == "stop"
+    dispatcher.handle(labeled_event(delivery="l-s"))
+    assert _wait(lambda: True, 0.2)
+    assert adapter.spawns == []
 
 
 def test_the_pre_106_behaviour_is_one_config_flag_away(tmp_path):

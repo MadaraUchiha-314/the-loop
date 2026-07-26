@@ -45,10 +45,15 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   - WHEN `routing.control.requireStartCommand` is true (**the default**) THEN a labelled
     work item SHALL NOT spawn until the **start** command has been issued for it — on
     either ingress path, and under `spawnOnUnmatched: always` too ("always" widens which
-    items may spawn, never who may start them). The request is **durable** (it survives
-    a restart, so a failed spawn retries without a new comment) and a later
-    `stop`/`pause` disarms the item again. `requireStartCommand: false` restores the
-    pre-issue-106 label-alone behaviour.
+    items may spawn, never who may start them). An **accepted** start is **durable**
+    (it survives a restart, so a failed spawn retries without a new comment) and a
+    later `stop`/`pause` disarms the item again. A start on a work item that is
+    **not** armed is refused and leaves *nothing standing*: labelling it afterwards
+    does not start it, because otherwise the label would still be the trigger, one
+    event later — only a start issued while the item is armed starts it. The same
+    asymmetry applies throughout: arming commands (`start`, `resume`) are remembered
+    only when they act, disarming ones (`pause`, `stop`) always.
+    `requireStartCommand: false` restores the pre-issue-106 label-alone behaviour.
   - **pause** SHALL suspend delivery for a work item's session while keeping its
     conversation (`session.paused`; suppressed events are recorded as
     `dispatch.dropped`/`session-paused` and are **not** replayed on **resume**);

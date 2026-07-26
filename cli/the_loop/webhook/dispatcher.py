@@ -508,12 +508,19 @@ class Dispatcher:
             )
         return False
 
-    def _spawn_refusal(self, routed: RoutedEvent) -> str:
+    def _spawn_refusal(self, routed: RoutedEvent, control_command: str = "") -> str:
         """``""`` when an unmatched event may spawn, else why it may not.
 
         Two conditions, in the order issue-106 states them: the work item must be
         armed (label / spawn policy) — necessary — and an authorized user must
         have asked for it to run — the part the label alone never said.
+
+        The armed check comes **first** so a start command on an unarmed item is
+        refused as ``spawn-policy``, never recorded, and therefore leaves nothing
+        standing (owner decision on PR #107). ``control_command`` is the command
+        *this* event carries: a start satisfies the requirement directly, so the
+        durable record is only ever consulted for **later** events — the poller's
+        presence retry, or a redelivery after a failed spawn.
         """
         if not self._is_armed(routed):
             return "spawn-policy"
@@ -521,6 +528,7 @@ class Dispatcher:
         if (
             control.enabled
             and control.require_start_command
+            and control_command != START
             and not self.control_store.start_requested(routed.work_items[0])
         ):
             return "awaiting-start"
@@ -581,21 +589,8 @@ class Dispatcher:
             # fails closed.
             actor = event_actor(routed.event, routed.payload)
             if not actor or not is_authorized(actor, self.config.authorized_users):
-                logger.warning(
-                    "refusing the %s command on %s: no authorized actor (%r)",
-                    control.command,
-                    ", ".join(item.ref for item in routed.work_items),
-                    actor,
-                )
-                eventlog.emit(
-                    "control.rejected",
-                    level="warning",
-                    work_items=[item.ref for item in routed.work_items],
-                    command=control.command,
-                    source="comment",
-                    actor=actor,
-                    reason="unauthorized-actor",
-                    delivery_id=routed.delivery_id or None,
+                self._reject_control(
+                    control.command, routed, actor or "", "unauthorized-actor"
                 )
                 return
             self._apply_control(control.command, routed)
@@ -719,32 +714,51 @@ class Dispatcher:
         session = self._live_session_for(routed)
         target = session.work_item if session is not None else routed.work_items[0]
         note = str((routed.payload.get("comment") or {}).get("html_url") or "")
-        # Record BEFORE acting: the record is what makes a start survive a
-        # restart and a failed spawn retryable, and what durably disarms an item
-        # on stop/pause.
-        self.control_store.record(
-            target, command, source="comment", actor=actor, note=note
-        )
 
+        def record() -> None:
+            self.control_store.record(
+                target, command, source="comment", actor=actor, note=note
+            )
+
+        # An **arming** command (start/resume) is recorded only when it can act
+        # now; a **disarming** one (pause/stop) is recorded whether or not there
+        # was anything to act on. The asymmetry is the point (owner decision on
+        # PR #107): a start on a work item that is not armed must leave *no*
+        # standing request, or labelling the item later would start it — which
+        # is exactly the "labelling is the trigger" behaviour issue-106 removes.
+        # Disarming, by contrast, must persist: a stopped item must not
+        # re-spawn on the next event.
         if command == START:
             if session is None:
-                # Straight down the normal unmatched path, so the spawn policy
-                # and the label gate still decide — a start cannot conjure a
-                # session for an item that was never armed (R2.4).
+                refusal = self._spawn_refusal(routed, control_command=command)
+                if refusal:
+                    self._reject_control(command, routed, actor, refusal)
+                    return
+                record()
                 self._on_unmatched(routed, control_command=command)
                 return
+            record()
             effect = "resumed" if self.registry.resume(target) is not None else "noop"
         elif command == RESUME:
-            effect = "resumed" if self.registry.resume(target) is not None else "noop"
+            if self.registry.resume(target) is None:
+                # Nothing paused to resume. Deliberately NOT recorded: resume is
+                # an arming command, and an unarmed item must not be left armed.
+                self._reject_control(command, routed, actor, "nothing-to-resume")
+                return
+            record()
+            effect = "resumed"
         elif command == PAUSE:
+            record()
             effect = "paused" if self.registry.pause(target) is not None else "noop"
         elif command == STOP:
+            record()
             if session is None:
                 effect = "noop"
             else:
                 self.close_session(session, routed, reason="stopped")
                 effect = "stopped"
         else:  # unreachable: parse_command only yields the four commands
+            record()
             effect = "noop"
 
         logger.info(
@@ -761,6 +775,34 @@ class Dispatcher:
             source="comment",
             actor=actor or None,
             effect=effect,
+            delivery_id=routed.delivery_id or None,
+        )
+
+    def _reject_control(
+        self, command: str, routed: RoutedEvent, actor: str, reason: str
+    ) -> None:
+        """Record a recognised command that could not be honoured (nothing runs)."""
+        refs = [item.ref for item in routed.work_items]
+        logger.warning(
+            "refusing the %s command on %s: %s",
+            command,
+            ", ".join(refs),
+            (
+                "the work item is not armed for autonomous execution "
+                f"(spawnOnUnmatched={self.config.spawn_on_unmatched!r}, "
+                f"label {self.config.auto_execute_label!r})"
+                if reason == "spawn-policy"
+                else reason
+            ),
+        )
+        eventlog.emit(
+            "control.rejected",
+            level="warning",
+            work_items=refs,
+            command=command,
+            source="comment",
+            actor=actor or None,
+            reason=reason,
             delivery_id=routed.delivery_id or None,
         )
 
@@ -859,32 +901,18 @@ class Dispatcher:
 
     def _on_unmatched(self, routed: RoutedEvent, control_command: str = "") -> None:
         refs = ", ".join(item.ref for item in routed.work_items)
-        refusal = self._spawn_refusal(routed)
+        refusal = self._spawn_refusal(routed, control_command=control_command)
         if refusal:
             if control_command:
                 # An explicit request that cannot be honoured is worth saying out
-                # loud — the operator asked and deserves to know why not.
-                logger.warning(
-                    "refusing the %s command for %s: %s",
+                # loud — the operator asked and deserves to know why not. (A
+                # start is normally refused earlier, in _apply_control, so that
+                # nothing is recorded for it; this is the belt-and-braces path.)
+                self._reject_control(
                     control_command,
-                    refs,
-                    (
-                        "the work item is not armed for autonomous execution "
-                        f"(spawnOnUnmatched={self.config.spawn_on_unmatched!r}, "
-                        f"label {self.config.auto_execute_label!r})"
-                        if refusal == "spawn-policy"
-                        else refusal
-                    ),
-                )
-                eventlog.emit(
-                    "control.rejected",
-                    level="warning",
-                    work_items=[item.ref for item in routed.work_items],
-                    command=control_command,
-                    source="comment",
-                    actor=event_actor(routed.event, routed.payload),
-                    reason=refusal,
-                    delivery_id=routed.delivery_id or None,
+                    routed,
+                    event_actor(routed.event, routed.payload) or "",
+                    refusal,
                 )
             else:
                 if refusal == "awaiting-start":

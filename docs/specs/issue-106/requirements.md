@@ -119,11 +119,14 @@ authorized human explicitly asked for it.
    a session SHALL be spawned, on either ingress path.
 4. **2.4** WHEN the start command arrives for a work item that is **not** armed
    (no auto-execute label under `spawnOnUnmatched: labeled`, or the policy is
-   `never`) THEN no session SHALL be spawned and the refusal SHALL be recorded
-   with its reason.
-5. **2.5** A start request SHALL be **durable**: once an authorized user has
-   asked for a start, the request survives a daemon restart, so a spawn that
-   failed and is retried later does not need the comment again.
+   `never`) THEN no session SHALL be spawned, the refusal SHALL be recorded with
+   its reason, and **nothing SHALL be left standing**: arming the work item
+   afterwards SHALL NOT start it. Only a start issued *while* the item is armed
+   starts it — otherwise adding the label would still be the trigger, which is
+   what this work item removes. *(Owner decision on PR #107.)*
+5. **2.5** A start request SHALL be **durable** once it is honoured: an accepted
+   start survives a daemon restart, so a spawn that failed and is retried later
+   does not need the comment again. A **refused** start is not retained (2.4).
 6. **2.6** WHEN `requireStartCommand` is false THEN spawning SHALL behave exactly
    as it does today (label/policy alone), so an operator can keep the pre-#106
    behaviour.
@@ -159,8 +162,11 @@ conversation I want to have first) without discarding what it knows.
    it SHALL resume it (start means "execution should be running"), and when
    issued for an already-`active` session it SHALL be a recorded no-op.
 6. **3.6** WHEN pause/resume/stop is issued for a work item with **no** live
-   session THEN it SHALL be recorded as the work item's current control state
-   (so a later start/spawn honours it) and SHALL NOT spawn anything.
+   session THEN nothing SHALL be spawned, and whether it is *remembered* depends
+   on the direction: a **disarming** command (`pause`, `stop`) SHALL be recorded
+   as the work item's control state, so a stopped item does not re-spawn on the
+   next event; an **arming** command (`start`, `resume`) that could not act SHALL
+   NOT be recorded (2.4). *(Owner decision on PR #107.)*
 7. **3.7** A `paused` session SHALL still be found by the registry as a **live**
    session, so nothing spawns a second session for a work item that has a paused
    one.
