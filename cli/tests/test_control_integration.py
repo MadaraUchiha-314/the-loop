@@ -83,6 +83,7 @@ def setup(tmp_path):
         auto_execute_label=LABEL,
         spawn_workdir=str(tmp_path),
         control=ControlConfig(),  # defaults: enabled, requireStartCommand
+        authorized_users=["octocat"],
     )
     dispatcher = _dispatcher(registry, adapter, config)
     store = ControlStore(control_dir_for(str(tmp_path / "sessions")))
@@ -236,6 +237,7 @@ def test_the_pre_106_behaviour_is_one_config_flag_away(tmp_path):
             auto_execute_label=LABEL,
             spawn_workdir=str(tmp_path),
             control=ControlConfig(require_start_command=False),
+            authorized_users=["octocat"],
         ),
     )
     try:
@@ -381,6 +383,39 @@ def test_an_ambiguous_comment_does_nothing_at_all(setup):
     assert store.get(REF) is None
 
 
+def test_a_command_needs_a_named_authorized_actor(setup):
+    """
+    Feature: authorized execution control
+      Scenario: an actor-less comment cannot execute a command
+        Given a comment carrying the stop keyword whose author is unknown
+        When the dispatcher handles it
+        Then no command runs and the session is untouched
+    Requirement: docs/specs/issue-106/requirements.md AC1.6, AC2.7
+    """
+    # `is_authorized` deliberately allows an actor-less *action* (a CI event
+    # carries status, not instructions) — a comment by a deleted account reaches
+    # the dispatcher the same way on the poll path. Harmless as agent input;
+    # not harmless as a command, so the control path re-checks.
+    dispatcher, registry, adapter, store = setup
+    register(registry)
+    dispatcher.handle(comment_event(STOP_KEYWORD, delivery="d-ghost", author=""))
+    assert registry.find_by_work_item(REF) is not None
+    assert store.get(REF) is None
+
+
+def test_a_command_from_a_login_outside_the_allowlist_is_refused(setup):
+    """
+    Feature: authorized execution control
+      Scenario: the control path is gated by the same allowlist as everything else
+    Requirement: docs/specs/issue-106/requirements.md AC1.6
+    """
+    dispatcher, registry, adapter, store = setup
+    register(registry)
+    dispatcher.handle(comment_event(STOP_KEYWORD, delivery="d-x", author="stranger"))
+    assert registry.find_by_work_item(REF) is not None
+    assert store.get(REF) is None
+
+
 def test_an_ordinary_comment_still_reaches_the_session(setup):
     """
     Feature: authorized execution control
@@ -407,6 +442,7 @@ def test_control_disabled_forwards_the_keyword_as_a_plain_comment(tmp_path):
         RoutingConfig(
             registry_dir=str(tmp_path / "sessions"),
             control=ControlConfig(enabled=False),
+            authorized_users=["octocat"],
         ),
     )
     register(registry)

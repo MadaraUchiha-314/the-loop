@@ -91,7 +91,12 @@ the-loop's execution without the daemon guessing my intent from prose.
    guards first: it is not the-loop's own comment (`authz.is_self_authored`) and
    its author is in `routing.authorizedUsers`. An unauthorized author's control
    keyword SHALL be dropped exactly like any other unauthorized input — no
-   command, no forward.
+   command, no forward. The control path SHALL additionally require a **named**
+   actor: `is_authorized` deliberately allows an *actor-less* action (a CI event
+   carries status, not instructions), and a body-bearing event can reach the
+   dispatcher without one (a comment by a deleted account has no author on the
+   poll path) — harmless while a comment could only become agent input, not
+   harmless once it can start or stop a session.
 7. **1.7** WHEN `routing.control.enabled` is false THEN no comment SHALL be
    interpreted as a command and comments SHALL be forwarded as they are today.
 

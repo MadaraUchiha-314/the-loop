@@ -23,6 +23,7 @@ from typing import Dict, List, Optional, Set
 
 from .. import eventlog
 from ..announce import AnnounceConfig, SessionAnnouncer
+from ..authz import is_authorized
 from ..control import PAUSE, RESUME, START, STOP, ControlConfig, ControlStore
 from ..control import parse_command as parse_control_command
 from ..harness.base import HarnessAdapter, UnsupportedRunnerError
@@ -570,6 +571,33 @@ class Dispatcher:
             )
             return
         if control.command:
+            # A command needs a NAMED, allowlisted human — stricter than the
+            # ingress guard, on purpose. `is_authorized` deliberately allows an
+            # actor-less action (a CI event carries status, not instructions),
+            # and a content event can reach here without one: on the poll path a
+            # comment by a deleted account has an empty author. Harmless while a
+            # comment could only become agent *input*; not harmless now that it
+            # can start or stop a session. So the control path re-checks, and
+            # fails closed.
+            actor = event_actor(routed.event, routed.payload)
+            if not actor or not is_authorized(actor, self.config.authorized_users):
+                logger.warning(
+                    "refusing the %s command on %s: no authorized actor (%r)",
+                    control.command,
+                    ", ".join(item.ref for item in routed.work_items),
+                    actor,
+                )
+                eventlog.emit(
+                    "control.rejected",
+                    level="warning",
+                    work_items=[item.ref for item in routed.work_items],
+                    command=control.command,
+                    source="comment",
+                    actor=actor,
+                    reason="unauthorized-actor",
+                    delivery_id=routed.delivery_id or None,
+                )
+                return
             self._apply_control(control.command, routed)
             return
 

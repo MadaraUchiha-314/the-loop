@@ -58,9 +58,14 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
     as an active one.
   - Control parsing runs **after** the self-comment marker check and the
     `authorizedUsers` guard, so it never becomes a second, weaker way in: it adds a
-    condition, and an empty `authorizedUsers` still fails closed. The parser recognises
-    the fixed configured vocabulary and yields one of four commands — no text from a
-    comment reaches an argv, a path, a prompt or a work-item ref.
+    condition, and an empty `authorizedUsers` still fails closed. The command path
+    then re-checks, **more strictly** than the ingress guard: a command requires a
+    **named** login in the allowlist (`control.rejected` / `unauthorized-actor`
+    otherwise), because the ingress guard intentionally allows an *actor-less*
+    action — a CI event, or a comment whose author has been deleted — which must
+    never be able to start or stop a session. The parser recognises the fixed
+    configured vocabulary and yields one of four commands — no text from a comment
+    reaches an argv, a path, a prompt or a work-item ref.
   - Every command is recorded (`control.command` with actor, source and effect;
     `control.rejected` when a work item is not armed), and the last command per work
     item is kept beside its session (`<registryDir>/control/`).

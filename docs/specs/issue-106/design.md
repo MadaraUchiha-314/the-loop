@@ -315,7 +315,15 @@ them:
 2. **`authorizedUsers` unchanged and unbypassed.** Control parsing lives in the
    dispatcher, downstream of the router's/poller's guard, so an unauthorized
    comment never reaches it (R1.6). No new config can widen the allowlist; an
-   empty one still means nothing human-authored is acted on (R2.7).
+   empty one still means nothing human-authored is acted on (R2.7). The control
+   path then re-checks, **more strictly than the ingress guard**: it requires a
+   *named* login in the allowlist, because `is_authorized` intentionally permits
+   an actor-less action (CI events) and a comment can reach the dispatcher
+   without an author — a deleted account's comment on the poll path. That was
+   harmless when a comment could only become agent input; it is not once a
+   comment can start or stop a session, so the control path fails closed and
+   records `control.rejected` / `unauthorized-actor`. *(Found by the security
+   review on this branch.)*
 3. **Fixed vocabulary, enum output.** `parse_command` returns one of four
    constants or nothing. No substring of a comment reaches an argv, a path, a
    prompt template or a work-item ref; the ref acted on is the router's own

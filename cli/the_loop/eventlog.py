@@ -117,8 +117,9 @@ EVENT_TYPES: Dict[str, str] = {
     ),
     "control.rejected": (
         "A control command was recognised but refused (work_items, command, "
-        "source, actor, reason: spawn-policy | awaiting-start) — e.g. a start "
-        "for a work item that is not armed for autonomous execution."
+        "source, actor, reason: spawn-policy | awaiting-start | "
+        "unauthorized-actor) — e.g. a start for a work item that is not armed "
+        "for autonomous execution, or a command with no named authorized actor."
     ),
     "control.ambiguous": (
         "A comment carried two or more different control keywords, so nothing "
