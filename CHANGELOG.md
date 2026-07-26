@@ -1,3 +1,9 @@
+## v0.22.1 (2026-07-26)
+
+### Fix
+
+- **cli**: mark the daemon's own comments so the poller stops feeding them back (issue #104) (#105)
+
 ## v0.22.0 (2026-07-25)
 
 ### Feat
