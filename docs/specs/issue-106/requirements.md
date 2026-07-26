@@ -255,10 +255,21 @@ move.
    nothing to act on) and `control.ambiguous` (two conflicting keywords in one
    comment). Pause/resume of a session SHALL emit `session.paused` /
    `session.resumed`.
-3. **6.3** The affected capability docs
+3. **6.3** Existing installs SHALL have a migration path through
+   `/the-loop:upgrade-the-loop`: it SHALL add `state` and `routing.control` with
+   defaults to a project-tracked `cli-config.yaml`, leave every explicitly
+   configured path untouched, **report `requireStartCommand` under `needs-user`**
+   (its default changes behaviour, so it is a decision, not a silent add), and
+   *offer* — never force — moving a pre-issue-106 poll-state file under
+   `sessions/`. A CLI config in the operator's home directory is outside the
+   command's reach, so the runtime SHALL remain correct with no migration at all:
+   every key added here is optional and falls back to the same defaults.
+   *(Owner question on PR #107.)*
+4. **6.4** The affected capability docs
    (`docs/capabilities/webhook-triggers.md`, `docs/capabilities/cli.md`,
-   `docs/capabilities/interactive-sessions.md`) SHALL be updated in the same PR,
-   and the behaviour change in 2.1 SHALL be called out as an upgrade note.
+   `docs/capabilities/interactive-sessions.md`,
+   `docs/capabilities/distribution.md`) SHALL be updated in the same PR, and the
+   behaviour change in 2.1 SHALL be called out as an upgrade note.
 
 ## Security considerations (threat-model-lite)
 

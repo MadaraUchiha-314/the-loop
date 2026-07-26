@@ -91,3 +91,22 @@ status: in-progress
   `test_an_issue_created_with_the_label_still_waits_for_a_start` and
   `test_a_keyword_in_the_issue_body_is_not_a_command`, and made both explicit in
   AC1.2/AC2.3, the capability doc and the README.
+
+### 2026-07-26 — review round 3 (owner, PR #107)
+
+- **Phase:** needs-review
+- **Question:** what is the migration plan for existing users — can `/upgrade`
+  migrate everyone to the new files?
+- **Answer:** no file migration is *required* (both new blocks are optional and
+  every generated-path default but one is unchanged; the poll state has a runtime
+  legacy fallback). What does need migrating is a **decision**, not a file:
+  `requireStartCommand` defaults to true, so a labelled work item stops
+  auto-starting. `/the-loop:upgrade-the-loop` now carries an explicit issue-106
+  entry that adds `state` + `control` with defaults, leaves configured paths
+  alone, reports `requireStartCommand` under **needs-user** instead of silently
+  adopting it, and *offers* the poll-state move. A home-directory CLI config is
+  outside upgrade's reach, which is why the runtime had to be correct with no
+  migration at all — and is.
+- **Did:** `commands/upgrade-the-loop.md` step 4, a new AC6.3, and
+  `docs/capabilities/distribution.md` (the general rule: a key whose default
+  changes behaviour is needs-user, not an add-with-defaults).
