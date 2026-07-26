@@ -41,7 +41,10 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
     them THEN the-loop SHALL execute that command and SHALL NOT forward the comment to
     the harness; keywords match as whole tokens, case-insensitively, and a comment
     carrying **two different** ones SHALL execute nothing and forward nothing
-    (`control.ambiguous`).
+    (`control.ambiguous`). The control surface is **comments only** — a keyword in the
+    work item's own body or a PR description is not a command.
+  - **Creating** a work item that already carries the label arms it, exactly like
+    labelling an existing one: it still waits for an explicit start.
   - WHEN `routing.control.requireStartCommand` is true (**the default**) THEN a labelled
     work item SHALL NOT spawn until the **start** command has been issued for it — on
     either ingress path, and under `spawnOnUnmatched: always` too ("always" widens which

@@ -188,6 +188,74 @@ def test_a_labelled_work_item_does_not_spawn_until_it_is_started(setup):
     assert session is not None and session.status == "active"
 
 
+def opened_event(delivery="o-1", body="", labels=(LABEL,)):
+    """A brand-new issue, already carrying the label when it was created."""
+    payload = {
+        "action": "opened",
+        "repository": {"full_name": "octo/repo"},
+        "issue": {
+            "number": 15,
+            "body": body,
+            "labels": [{"name": name} for name in labels],
+        },
+        "sender": {"login": "octocat"},
+    }
+    return RoutedEvent(
+        event="issues",
+        action="opened",
+        delivery_id=delivery,
+        work_items=extract_work_items("issues", payload),
+        payload=payload,
+        labeled=True,
+    )
+
+
+def test_an_issue_created_with_the_label_still_waits_for_a_start(setup):
+    """
+    Feature: authorized execution control
+      Scenario: creating a work item pre-labelled is arming, not starting
+        Given an authorized user opens a NEW issue that already carries the label
+        When the opened event reaches the dispatcher
+        Then no session is spawned
+        And an explicit start command afterwards starts it
+    Requirement: docs/specs/issue-106/requirements.md AC2.1, AC2.3
+    """
+    # Creating a work item with the label on it is the same signal as adding the
+    # label to an existing one: it arms, it does not start (owner question on
+    # PR #107). Otherwise "open pre-labelled" would be a way to keep the
+    # label-is-the-trigger behaviour the whole work item removes.
+    dispatcher, registry, adapter, store = setup
+
+    dispatcher.handle(opened_event())
+    assert _wait(lambda: True, 0.2)
+    assert adapter.spawns == []
+    assert registry.find_by_work_item(REF) is None
+    assert store.get(REF) is None
+
+    dispatcher.handle(comment_event(START_KEYWORD, delivery="d-start"))
+    assert _wait(lambda: len(adapter.spawns) == 1)
+
+
+def test_a_keyword_in_the_issue_body_is_not_a_command(setup):
+    """
+    Feature: authorized execution control
+      Scenario: the control surface is comments, not the work item's own body
+        Given a new labelled issue whose BODY contains the start keyword
+        When the opened event reaches the dispatcher
+        Then it is not read as a command and nothing is started
+    Requirement: docs/specs/issue-106/requirements.md AC1.2
+    """
+    # The issue/PR body is the text most rewritten (and most quoted from
+    # elsewhere), and an `edited` action would re-trigger it. Commands live in
+    # comments, where each one is a discrete, attributable, timestamped act.
+    dispatcher, registry, adapter, store = setup
+
+    dispatcher.handle(opened_event(body=f"do the thing. {START_KEYWORD}"))
+    assert _wait(lambda: True, 0.2)
+    assert adapter.spawns == []
+    assert store.get(REF) is None
+
+
 def test_a_start_is_durable_so_a_later_event_can_spawn(setup):
     """
     Feature: authorized execution control

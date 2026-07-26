@@ -75,7 +75,10 @@ the-loop's execution without the daemon guessing my intent from prose.
 2. **1.2** WHEN a comment (issue comment, PR conversation comment, PR review or
    review comment) carries a declared keyword THEN the-loop SHALL interpret it
    as that control command instead of forwarding the comment into the harness
-   conversation.
+   conversation. The control surface is **comments only**: a keyword in the work
+   item's own body (or a PR description) SHALL NOT be a command — a body is
+   rewritten over time and an edit would re-trigger it, whereas each comment is
+   one discrete, attributable, timestamped act.
 3. **1.3** A keyword SHALL match only as a **whole token** — delimited by
    whitespace, a line start/end, or common markdown punctuation — and
    case-insensitively, so `the-loop:start-execution.` and a keyword on its own
@@ -116,7 +119,11 @@ authorized human explicitly asked for it.
    *which items* may spawn, never *who* may start them.
 3. **2.3** WHEN an authorized user issues the start command on a work item that
    is labelled (or whose spawn policy is `always`) AND has no live session THEN
-   a session SHALL be spawned, on either ingress path.
+   a session SHALL be spawned, on either ingress path. **Creating** a work item
+   that already carries the label is arming, not starting: it SHALL require the
+   same explicit start as labelling an existing one, on both the `issues`
+   `opened` event and the poller's first sight of the item. *(Owner question on
+   PR #107.)*
 4. **2.4** WHEN the start command arrives for a work item that is **not** armed
    (no auto-execute label under `spawnOnUnmatched: labeled`, or the policy is
    `never`) THEN no session SHALL be spawned, the refusal SHALL be recorded with

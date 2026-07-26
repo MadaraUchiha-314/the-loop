@@ -76,3 +76,18 @@ status: in-progress
   updated, plus the design, capability doc, README and event catalog.
 - **Tests:** the owner's exact three-step sequence, the resume variant, the
   disarming counter-case, and the CLI equivalent.
+
+### 2026-07-26 — review round 2 (owner, PR #107)
+
+- **Phase:** needs-review
+- **Question:** what happens when an authorized user *creates* a new issue with
+  the label already on it — does that require an explicit start?
+- **Answer (verified, then locked by tests):** yes. Creating a pre-labelled work
+  item arms it exactly as labelling an existing one does; the `issues`/`opened`
+  event and the poller's first sight of the item both wait for a start. Probing
+  it also surfaced the neighbouring boundary worth stating out loud: a keyword in
+  the **issue body** is not a command — the control surface is comments only.
+- **Did:** No behaviour change (it already worked this way). Added
+  `test_an_issue_created_with_the_label_still_waits_for_a_start` and
+  `test_a_keyword_in_the_issue_body_is_not_a_command`, and made both explicit in
+  AC1.2/AC2.3, the capability doc and the README.

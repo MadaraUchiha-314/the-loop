@@ -180,9 +180,12 @@ the-loop:start-execution
 - Only an **authorized** user's comment counts: control parsing happens after the
   self-comment marker check and after `authorizedUsers`, so it never becomes a second,
   weaker way in. An empty `authorizedUsers` still fails closed.
-- Keywords match as whole tokens, case-insensitively, anywhere in the body. A comment
-  carrying **two different** keywords is refused outright — nothing runs, nothing is
-  forwarded.
+- Keywords match as whole tokens, case-insensitively, anywhere in the comment. A
+  comment carrying **two different** keywords is refused outright — nothing runs,
+  nothing is forwarded. Commands live in **comments**: a keyword in the issue's own
+  body or a PR description is not one.
+- **Opening** an issue that already carries the label arms it, just like labelling an
+  existing one — it still waits for an explicit start.
 - An **accepted** start is **durable**: it survives a daemon restart, and a later
   `stop`/`pause` disarms the item again, so a stopped work item does not re-spawn on
   the next event. A start on a work item that is **not** armed is refused and remembers
