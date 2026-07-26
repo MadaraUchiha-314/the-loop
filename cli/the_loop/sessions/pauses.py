@@ -7,22 +7,8 @@ acting on a work item — no spawn, no comment forwarding, no event delivery —
 while its session, its tmux transcript and its checkout stay exactly as they
 are. Resuming picks the item back up.
 
-**This ledger is the single source of truth.** Two things write to it, and
-neither is consulted anywhere else:
-
-* ``the-loop sessions pause`` — provider-agnostic, works with no network and no
-  ``gh`` (``source: local``);
-* the **paused label** on the issue/PR (``routing.pausedLabel``, default
-  ``the-loop: paused``) — but only when the person who added or removed it is in
-  ``routing.authorizedUsers`` (``source: label``, with the login in ``by``).
-
-The label is deliberately a **trigger, not a state** (issue-98 review,
-decision-041). Reading raw label presence could not honour authorization for
-*removals*: an unauthorized user who deletes the label would silently un-pause
-the item, because "the label is gone" is indistinguishable from "nobody ever
-paused it". Writing the ledger on an authorized transition, and reading only the
-ledger, closes that: an unauthorized removal changes nothing, so the item stays
-paused.
+Written by ``the-loop sessions pause`` and read by both ingress paths — the
+webhook dispatcher and the poller — so one lever covers them both.
 
 The ledger is ONE JSON file (default ``.the-loop/state/paused.json``), unlike the
 file-per-session registry: a pause is a tiny record, the whole set is read every
@@ -54,13 +40,12 @@ from .registry import WorkItemRef
 
 logger = logging.getLogger("the-loop.sessions")
 
-# What wrote a pause record — rendered by `sessions show` so the operator knows
-# which control put the item on hold (and, for a label, who).
+# What wrote a pause record — rendered by `sessions show`. Only the CLI writes
+# one today; the value is recorded so a future control (e.g. a GitHub label,
+# deferred out of issue-98) is distinguishable without a migration.
 SOURCE_LOCAL = "local"
-SOURCE_LABEL = "label"
 
 DEFAULT_PAUSE_FILE = f"{STATE_DIR}/paused.json"
-DEFAULT_PAUSED_LABEL = "the-loop: paused"
 
 
 def _utcnow() -> str:
@@ -80,8 +65,7 @@ class PauseRecord:
     ref: str
     reason: str = ""
     paused_at: str = ""
-    source: str = SOURCE_LOCAL  # local (CLI) | label (an authorized labeller)
-    by: str = ""  # the GitHub login, when source is `label`
+    source: str = SOURCE_LOCAL  # what wrote it; only the CLI does today
 
     def to_dict(self) -> dict:
         return {
@@ -89,7 +73,6 @@ class PauseRecord:
             "reason": self.reason,
             "pausedAt": self.paused_at,
             "source": self.source,
-            "by": self.by,
         }
 
 
@@ -105,10 +88,6 @@ class PauseState:
         return [self.record.source] if self.record else []
 
     @property
-    def by(self) -> str:
-        return self.record.by if self.record else ""
-
-    @property
     def reason(self) -> str:
         return self.record.reason if self.record else ""
 
@@ -116,15 +95,8 @@ class PauseState:
 class PauseStore:
     """The pause ledger. Never raises on a bad file; see the module docstring."""
 
-    def __init__(
-        self,
-        path: Union[str, Path] = DEFAULT_PAUSE_FILE,
-        paused_label: str = DEFAULT_PAUSED_LABEL,
-    ):
+    def __init__(self, path: Union[str, Path] = DEFAULT_PAUSE_FILE):
         self.path = Path(path)
-        # Kept for callers that need to know which label drives this ledger
-        # (the dispatcher's label-transition hook, the poller's reconciler).
-        self.paused_label = paused_label
         self._records: dict = {}
         self._stamp: Optional[tuple] = None
         self._warned = False
@@ -196,20 +168,14 @@ class PauseStore:
             reason=str(raw.get("reason") or ""),
             paused_at=str(raw.get("pausedAt") or ""),
             source=str(raw.get("source") or SOURCE_LOCAL),
-            by=str(raw.get("by") or ""),
         )
 
     def is_paused(self, work_item: Union[str, WorkItemRef]) -> bool:
-        """True when a **local** record exists (the label is not consulted here)."""
+        """True when a pause record exists for this work item."""
         return self.record(work_item) is not None
 
     def state(self, work_item: Union[str, WorkItemRef]) -> PauseState:
-        """The gate both ingress paths call — the ledger, and only the ledger.
-
-        Raw label presence is deliberately NOT consulted (decision-041): a label
-        only ever reaches this ledger through an *authorized* add/remove, so an
-        unauthorized labeller can neither pause nor un-pause a work item.
-        """
+        """The gate both ingress paths call."""
         record = self.record(work_item)
         return PauseState(paused=record is not None, record=record)
 
@@ -221,7 +187,6 @@ class PauseStore:
                 reason=str((raw or {}).get("reason") or ""),
                 paused_at=str((raw or {}).get("pausedAt") or ""),
                 source=str((raw or {}).get("source") or SOURCE_LOCAL),
-                by=str((raw or {}).get("by") or ""),
             )
             for ref, raw in sorted(self._records.items())
             if isinstance(raw, dict)
@@ -234,14 +199,8 @@ class PauseStore:
         work_item: Union[str, WorkItemRef],
         reason: str = "",
         source: str = SOURCE_LOCAL,
-        by: str = "",
     ) -> bool:
-        """Pause ``work_item``. False when it was already paused (idempotent).
-
-        ``source``/``by`` record which control did it — the CLI, or an
-        authorized labeller (whose login is kept so ``sessions show`` can name
-        them).
-        """
+        """Pause ``work_item``. False when it was already paused (idempotent)."""
         self._refresh()
         ref = _as_ref(work_item)
         if ref in self._records:
@@ -250,7 +209,6 @@ class PauseStore:
             "reason": reason,
             "pausedAt": _utcnow(),
             "source": source,
-            "by": by,
         }
         self._save()
         logger.info("paused %s%s", ref, f" ({reason})" if reason else "")

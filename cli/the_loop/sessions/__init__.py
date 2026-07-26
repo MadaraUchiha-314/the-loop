@@ -2,8 +2,6 @@
 
 from .pauses import (  # noqa: F401
     DEFAULT_PAUSE_FILE,
-    DEFAULT_PAUSED_LABEL,
-    SOURCE_LABEL,
     SOURCE_LOCAL,
     PauseRecord,
     PauseState,
@@ -17,13 +15,11 @@ from .registry import (  # noqa: F401
 )
 
 __all__ = [
-    "DEFAULT_PAUSED_LABEL",
     "DEFAULT_PAUSE_FILE",
     "PauseRecord",
     "PauseState",
     "PauseStore",
     "RegistryError",
-    "SOURCE_LABEL",
     "SOURCE_LOCAL",
     "Session",
     "SessionRegistry",

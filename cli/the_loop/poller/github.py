@@ -281,34 +281,6 @@ class GhClient:
             url=str(data.get("html_url") or ""),
         )
 
-    def label_actor(
-        self, owner: str, repo: str, number: int, label: str, action: str
-    ) -> Optional[str]:
-        """Who last ``labeled``/``unlabeled`` ``label`` on this item (issue-98).
-
-        A listing says a label is *present*; it never says who put it there. The
-        issue-events endpoint does — its ``labeled``/``unlabeled`` entries carry
-        both ``label.name`` and ``actor.login`` — and it answers for PRs too (a
-        PR is an issue on this endpoint), so one call serves both kinds.
-
-        ``None`` means "cannot tell" (no matching event, or the actor is
-        missing): the caller treats that as unauthorized, because a pause
-        control must never act on an actor it could not identify.
-        """
-        data = self._run_json(
-            ["api", "--paginate", f"repos/{owner}/{repo}/issues/{number}/events"]
-        )
-        if not isinstance(data, list):
-            return None
-        for row in reversed(data):  # newest transition wins
-            if not isinstance(row, dict) or row.get("event") != action:
-                continue
-            if str(((row.get("label") or {}).get("name")) or "") != label:
-                continue
-            login = str(((row.get("actor") or {}).get("login")) or "")
-            return login or None
-        return None
-
     # -- parsing ---------------------------------------------------------------
 
     @staticmethod
@@ -505,10 +477,6 @@ class GitHubPollProvider(PollProvider):
             payload=payload,
             labeled=False,
         )
-
-    def label_actor(self, item: WorkItem, label: str, action: str) -> Optional[str]:
-        """Resolve the labeller through the issue-events endpoint (issue-98)."""
-        return self.gh.label_actor(item.owner, item.repo, item.number, label, action)
 
     # -- closure reconciliation (issue-94) -------------------------------------
 

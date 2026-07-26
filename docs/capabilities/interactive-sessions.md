@@ -56,8 +56,8 @@ the same conversation.
   delivery therefore probes **liveness** (`has-session` **and** a non-dead pane), not
   mere existence: a retained-but-dead session takes the respawn path above instead of
   swallowing the event.
-- WHEN a work item is **paused** (`the-loop sessions pause`, or the
-  `routing.pausedLabel` label on the ticket) THEN no event SHALL be delivered into its
+- WHEN a work item is **paused** (`the-loop sessions pause`) THEN no event SHALL be
+  delivered into its
   tmux session and no session SHALL be spawned for it, while the tmux session itself —
   and the harness conversation inside it — SHALL be left running and attachable; a
   pause is "leave it alone", not "end it" (issue-98). A **closure** SHALL still take

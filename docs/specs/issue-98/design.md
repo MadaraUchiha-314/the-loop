@@ -33,19 +33,16 @@ flowchart LR
   NEW --> OV
   OV --> LIST["the-loop sessions list / show"]
   NEW --> GATE["pause gate"]
-  LAB["the-loop: paused label<br/>(payload / poll listing)"] --> GATE
   GATE --> DISP["Dispatcher.handle"]
   GATE --> POLLER["Poller._process_item"]
 ```
 
-Four pieces of new code:
+Two pieces of new code:
 
 | Module | Role |
 |---|---|
 | `the_loop/sessions/pauses.py` | `PauseStore` — the durable pause ledger + the label/local OR gate. |
 | `the_loop/sessions/overview.py` | `Row` + `build_rows()` + `render_table()` — joins the three stores into the table (pure, unit-testable, no argparse). |
-| `the_loop/labels.py` | `GitHubLabeler` — best-effort label create/add/remove through the operator's `gh`. |
-| `the_loop/commands/labels.py` | `the-loop labels ensure` — creates the operational labels (init/onboarding). |
 
 and four touched: `sessions/registry.py` (three new recorded fields),
 `webhook/dispatcher.py` (pause gate + PR linkage + owner pid),
@@ -83,9 +80,8 @@ class PauseStore:
     def list_paused(self) -> List[PauseRecord]
 ```
 
-`PauseState` carries `paused: bool` plus the record's `source` (`"local"` |
-`"label"`) and `by` (the labeller's login), which is what R5.8 renders. Since
-the review, `state()` takes no labels — see §12.
+`PauseState` carries `paused: bool` plus the record's `source` — only `"local"`
+(the CLI) today, recorded so a future control needs no migration.
 
 **Freshness.** The daemon is long-lived and the CLI writes the file
 out-of-process, so the store re-reads when the file's `(st_mtime_ns, st_size)`
@@ -94,8 +90,8 @@ changes — checked on each query, one `stat` per poll cycle. **Failure mode
 unreadable/corrupt one logs a warning once and is treated as empty. Never
 "everything paused", never an exception into the poll loop.
 
-**Label side.** Superseded by §12: the label no longer feeds `state()` at all —
-it writes the ledger through an authorization check, in both directions.
+**No label side.** The label-driven control issue-98 also asked for is deferred
+to its own work item (see requirements R5) — the gate reads this ledger alone.
 
 ## 3. Enforcing the pause
 
@@ -141,8 +137,8 @@ Two cases, and the difference matters:
 
 `_reconcile_closures` is untouched (R3.6).
 
-The poller reads `routing.pauseFile` / `routing.pausedLabel` from the same
-routing block the dispatcher does, so one config drives both ingress paths.
+The poller reads `routing.pauseFile` from the same routing block the dispatcher
+does, so one config drives both ingress paths.
 
 ### 3.3 What pause does *not* touch
 
@@ -219,8 +215,8 @@ The URL is derived from the ref (`https://github.com/OWNER/REPO/issues/N`) for
 |---|---|
 | `sessions list [--status S] [--format table\|json] [--work-item REF]` | R1/R2 table. Now reads poll state + pauses too. |
 | `sessions show --work-item REF [--format text\|json]` | R2.5 detail block. |
-| `sessions pause --work-item REF [--reason TEXT] [--no-label]` | R3/R5.4. |
-| `sessions resume --work-item REF [--no-label]` | R4/R5.4. |
+| `sessions pause --work-item REF [--reason TEXT]` | R3. |
+| `sessions resume --work-item REF` | R4. |
 | `sessions prune [--dry-run] [--include-retained]` | R7. |
 | `register` / `attach` / `close` | unchanged. |
 
@@ -230,45 +226,10 @@ such thing", `0` for success **and** for idempotent no-ops (R3.7, R4.3).
 `pause`/`resume` print a one-line summary plus, when the label write failed, a
 `note:` on stderr naming the manual `gh` fallback (R5.4).
 
-## 7. Labels (`labels.py` + `commands/labels.py`)
-
-`GitHubLabeler` mirrors `GitHubReactor`: an injectable `runner`, `gh` resolved
-from config, every failure a logged/returned error rather than an exception.
-
-```python
-LABEL_SPECS = [                      # names come from config, not these defaults
-  LabelSpec(key="autoExecute", color="0E8A16",
-            description="the-loop: work this item autonomously"),
-  LabelSpec(key="paused",      color="D93F0B",
-            description="the-loop: pause monitoring for this item"),
-]
-```
-
-- `ensure(owner, repo, specs, dry_run=False)` — `gh api repos/{o}/{r}/labels
-  --paginate` to read existing names, then `gh api --method POST
-  repos/{o}/{r}/labels` for each missing one. Idempotent by construction (R6.1),
-  `--dry-run` lists and writes nothing (R6.2), a missing/unauthenticated `gh`
-  is a hard error with the install hint reused from `check_gh_dependency`
-  (R6.3).
-- `add(ref, label)` / `remove(ref, label)` — `gh api --method POST
-  repos/{o}/{r}/issues/{n}/labels` and `--method DELETE …/labels/{label}`.
-  The **issues** endpoint deliberately: on GitHub a PR *is* an issue, so one
-  path serves both kinds (the same reasoning as `GhClient.fetch_item_state`).
-  A DELETE for a label that is not there returns 404 → reported as "not
-  present", not an error.
-
-Owner/repo/label are validated against an explicit pattern before entering an
-argv (the security note in `requirements.md`); the ref is already
-`WorkItemRef.parse`d.
-
-`the-loop labels ensure --repo OWNER/REPO [--dry-run]` is the command form, and
-step 4 of `commands/init.md` gains: create the operational labels too (R6.4).
-
 ## 8. Config (`routing.*`)
 
 | Key | Default | Meaning |
 |---|---|---|
-| `pausedLabel` | `the-loop: paused` | Label whose presence pauses a work item. |
 | `pauseFile` | `.the-loop/state/paused.json` | The pause ledger's path (§11). |
 
 Added to `.the-loop/cli-config.schema.json`, `templates/cli-config.yaml` and
@@ -283,9 +244,6 @@ Unit (`pytest`):
   file degrades to empty, mtime-based reload picks up an out-of-process write.
 - `test_overview.py` — the join: registry-only, poll-only, both; `spawn-failed`;
   status filter; JSON shape; missing-field rendering; sort order.
-- `test_labels.py` — ensure skips existing, creates missing, dry-run writes
-  nothing, add/remove argv shape, 404 on remove is "not present", bad
-  owner/repo/label rejected before argv.
 - `test_sessions_cmd.py` (extends existing CLI tests) — exit codes, `--no-label`,
   `show` output, `prune` refusals.
 
@@ -296,46 +254,7 @@ Integration (`cli/tests/test_*_integration.py`, Gherkin docstrings per
   *Scenario: a paused work item is ignored by the poller and resumes cleanly*
   (poll → pause → comment arrives → nothing dispatched, baseline advanced →
   resume → next comment is dispatched);
-  *Scenario: the paused label alone stops webhook dispatch*;
   *Scenario: a paused work item that is closed upstream still closes its session*.
-
-## 12. The label as an authorized control (added in review)
-
-PR #100 review: *"I want the github label addition and removal only to be
-affected if the person is listed as approved set of people."* Reading label
-*presence* could not do that — see
-[decision-041](../../decisions/decision-041.md) — so the label became a
-**trigger that writes the ledger**, and `PauseStore.state()` reads the ledger
-alone.
-
-```mermaid
-flowchart TD
-  ADD["paused label added/removed"] --> WHO{"actor in<br/>authorizedUsers?"}
-  WHO -- "no / unknown" --> DROP["pause.unauthorized<br/>state unchanged"]
-  WHO -- yes --> LEDGER["pause ledger<br/>(source: label, by: @login)"]
-  CLI["sessions pause/resume"] --> LEDGER
-  LEDGER --> GATE["pause gate (dispatcher + poller)"]
-```
-
-**Where the actor comes from.**
-
-| Path | Source | Cost |
-|---|---|---|
-| Webhook `labeled`/`unlabeled` | `sender.login` in the payload (`event_actor()`) | free |
-| Poll | `GET /issues/{n}/events` → newest matching `labeled`/`unlabeled` entry's `actor.login` | one call, **only on a disagreement** |
-
-`Dispatcher._apply_label_control()` runs before the pause gate, so the labelling
-event itself is honoured. `Poller._reconcile_label_pause()` compares the listing
-to the ledger and only then asks `PollProvider.label_actor()` (a new contract
-method; non-GitHub providers inherit `None`, i.e. "cannot tell"). A refusal is
-cached per ref so a stuck disagreement is not re-queried every cycle, and an
-**unidentifiable actor counts as unauthorized** — a control gated on who acted
-must never act on an unnamed actor.
-
-The consequence worth stating plainly: an unauthorized *removal* leaves the item
-paused with no label on the ticket. The ledger is right and the UI is stale;
-`sessions show` reports it and `pause.unauthorized` records it. The daemon
-deliberately does not re-assert the label (write-loop risk).
 
 ## 11. Runtime-state layout (`state.py`, added in review)
 

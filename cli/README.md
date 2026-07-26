@@ -115,8 +115,7 @@ starting point ships at
 | `defaultHarness` | `claude` \| `cursor` | `claude` | Harness used when spawning a session for an unmatched event. |
 | `spawnOnUnmatched` | `never` \| `always` \| `labeled` | `never` | Policy for events matching no session: log-and-drop / spawn+register / spawn only when `autoExecuteLabel` is present. |
 | `autoExecuteLabel` | string | `the-loop: auto-execute` | Issue/PR label that opts a work item into autonomous execution (read from the payload, no API call). |
-| `pausedLabel` | string | `the-loop: paused` | Issue/PR label that **pauses** the-loop on a work item: while present, neither ingress path spawns for it or delivers its activity. Removing it resumes. Read from the payload / poll listing, no API call. |
-| `pauseFile` | string | `.the-loop/state/paused.json` | Durable pause ledger written by `sessions pause` and read by both ingress paths. Composes as OR with `pausedLabel`; a missing/unreadable file means nothing is paused. |
+| `pauseFile` | string | `.the-loop/state/paused.json` | Durable pause ledger written by `sessions pause` and read by both ingress paths; a missing/unreadable file means nothing is paused. |
 | `authorizedUsers` | string[] | `[]` | **SECURITY (prompt-injection guard):** GitHub logins whose actions the-loop may act on. **REQUIRED**, no plugin-config fallback; empty fails closed (all human-authored events ignored). |
 | `spawnWorkdir` | string | `.` | Working directory for sessions spawned on unmatched events. |
 | `runner` | `process` \| `tmux` | `process` | How spawned sessions are hosted: headless one-shot subprocess, or an interactive TUI in a named tmux session humans can attach to. |
@@ -472,34 +471,11 @@ a **closure still closes it** — pause stops work, never cleanup. The poller ke
 the item's comment baseline current while paused, so resuming does not replay
 everything said in the meantime.
 
-The same control is a **label**: put `routing.pausedLabel` (default
-`the-loop: paused`) on the issue/PR and it is paused; take it off and it is
-resumed — no shell access needed. `sessions pause`/`resume` mirror the label onto
-the ticket for you (`--no-label` keeps the change local; a failed label write
-never fails the local pause). Create the label with `the-loop labels ensure`
-(below) — `/the-loop:init` does it during onboarding.
-
-**Only people in `routing.authorizedUsers` can drive that label**
-([decision-041](../docs/decisions/decision-041.md)). The label is a *trigger*,
-not a state: an authorized add writes a pause record, an authorized removal
-clears it, and the gate reads only the record.
-
-| Who moved the label | Added | Removed |
-|---|---|---|
-| in `authorizedUsers` | paused (recorded with their login) | resumed |
-| anyone else, or unidentifiable | nothing — `pause.unauthorized` logged | nothing: **the item stays paused** |
-
-That asymmetry is the point. If presence were read directly, anyone with triage
-rights could resume a parked agent just by deleting the label. The cost is that
-the ticket can disagree with the truth — paused with no label after an
-unauthorized removal — which `sessions show` reports and `the-loop events`
-records; the daemon deliberately does not re-apply the label (write-loop risk).
-
-The actor comes free from the `labeled`/`unlabeled` webhook (`sender`). The
-poller has no such signal, so when the label and the ledger disagree it spends
-one `issues/{n}/events` API call to ask who moved it, caches a refusal, and
-treats an actor it cannot identify as unauthorized. With `authorizedUsers` empty
-the label control is off entirely — same fail-closed rule as every other guard.
+Pausing is CLI-only today. Issue #98 also asked for a GitHub label that does
+the same thing from the browser; that is deferred to its own issue, because
+making it safe means deciding *who* may drive it — a label read as state cannot
+authorize a **removal**, so anyone with triage rights could resume a parked
+agent by deleting it.
 
 The label applies to **PRs directly** too — a labelled PR with no linked issue is routed
 as its own work item (`github:OWNER/REPO#<pr-number>`). That makes PRs monitorable even
@@ -545,20 +521,6 @@ path you set explicitly in the config always wins and is never reinterpreted.
   registry can leave two daemons believing they own the same work item — so stop
   the daemons first, or pass `--force` if you know better. Nothing is ever
   migrated automatically on start-up.
-
-### `labels` — create the labels the-loop reacts to
-
-```bash
-the-loop labels ensure --repo OWNER/REPO [--repo OTHER/REPO] [--dry-run]
-```
-
-Creates the **operational** labels the daemon reads — `routing.autoExecuteLabel`
-and `routing.pausedLabel` — with a description and colour, skipping any that
-already exist (idempotent, safe to re-run). Names come from your CLI config, so a
-renamed label is created under the name the daemon actually watches for. Runs
-through your own `gh`; a missing or unauthenticated `gh` is a hard error rather
-than a silent no-op. `/the-loop:init` runs this during onboarding, alongside the
-`loop:<phase>` labels it creates for the workflow state machine.
 
 ### `poll` — pull ingress (provider-agnostic) when a webhook can't reach you
 

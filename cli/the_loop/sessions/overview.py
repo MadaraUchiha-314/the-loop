@@ -104,7 +104,6 @@ class Row:
     pr_url: str = ""
     pause_sources: List[str] = field(default_factory=list)
     pause_reason: str = ""
-    paused_by: str = ""  # the login, when an authorized labeller paused it
     paused_at: str = ""
     created_at: str = ""
     last_event_at: str = ""
@@ -146,7 +145,6 @@ class Row:
             "paused": bool(self.pause_sources),
             "pauseSources": list(self.pause_sources),
             "pauseReason": self.pause_reason,
-            "pausedBy": self.paused_by,
             "pausedAt": self.paused_at,
             "createdAt": self.created_at,
             "lastEventAt": self.last_event_at,
@@ -220,7 +218,6 @@ def _session_row(session: Session, pauses: PauseStore, tmux) -> Row:
         row.pause_sources = [record.source]
         row.pause_reason = record.reason
         row.paused_at = record.paused_at
-        row.paused_by = record.by
         if row.status == STATUS_ACTIVE:
             row.status = STATUS_PAUSED
     return row
@@ -263,7 +260,6 @@ def build_rows(
                     row.pause_sources = [record.source]
                     row.pause_reason = record.reason
                     row.paused_at = record.paused_at
-                    row.paused_by = record.by
                     row.status = STATUS_PAUSED
                 rows[ref] = row
             row.tracked = True
@@ -281,7 +277,6 @@ def build_rows(
         row = Row(ref=record.ref, status=STATUS_PAUSED, pause_sources=[record.source])
         row.pause_reason = record.reason
         row.paused_at = record.paused_at
-        row.paused_by = record.by
         try:
             row.url = work_item_url(WorkItemRef.parse(record.ref))
         except ValueError:
@@ -324,8 +319,7 @@ def render_detail(row: Row) -> str:
     """Everything known about one work item, as labelled ``key: value`` lines."""
     pause = "no"
     if row.pause_sources:
-        pause = f"yes (via {', '.join(row.pause_sources)}"
-        pause += f" by @{row.paused_by})" if row.paused_by else ")"
+        pause = f"yes (via {', '.join(row.pause_sources)})"
         if row.pause_reason:
             pause += f" — {row.pause_reason}"
         if row.paused_at:

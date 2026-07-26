@@ -56,22 +56,17 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
   to it) resumes that session; the item being **closed** auto-closes it. An unlabelled
   new issue is received and ignored. Label presence is read from the webhook payload (no
   extra API call).
-- **Pause / resume one work item** (`routing.pausedLabel` + `routing.pauseFile`,
-  issue-98): `the-loop sessions pause --work-item <ref> [--reason …]` stops the-loop
-  acting on that item on **both** ingress paths — no spawn, no event delivery (dropped
-  with `reason=paused`) — while its session, tmux transcript and checkout are left
-  untouched; `resume` picks it back up. A work item that **ends** while paused is still
-  closed normally: a pause stops work, never cleanup. The same control is a label
-  (`the-loop: paused`, default) so it works from the GitHub UI with no shell access —
-  **but only for a login in `routing.authorizedUsers`**: an authorized add/remove
-  writes/clears the pause record, an unauthorized or unidentifiable one changes
-  nothing, so nobody outside the allow-list can resume a parked agent by deleting a
-  label (decision-041). `pause`/`resume` mirror the label onto the ticket best-effort
-  (`--no-label` to skip). `the-loop labels ensure --repo OWNER/REPO`
-  creates this label and the auto-execute one (run during `/the-loop:init`).
-  `the-loop sessions list` is the operator's table of everything being tracked — the
-  session registry joined with the poller's ledger and live tmux state, each row
-  linking to the ticket, the tmux session or owning process, and the PR.
+- **Pause / resume one work item** (`routing.pauseFile`, issue-98):
+  `the-loop sessions pause --work-item <ref> [--reason …]` stops the-loop acting on
+  that item on **both** ingress paths — no spawn, no event delivery (dropped with
+  `reason=paused`) — while its session, tmux transcript and checkout are left
+  untouched; `resume` picks it back up. A work item that **ends** while paused is
+  still closed normally: a pause stops work, never cleanup. (A GitHub label doing
+  the same from the browser is deferred to its own issue — authorizing *who* may
+  drive it is the open question.) `the-loop sessions list` is the operator's table
+  of everything being tracked — the session registry joined with the poller's
+  ledger and live tmux state, each row linking to the ticket, the tmux session or
+  owning process, and the PR.
 - **Per-work-item checkout workspace** (`routing.workspace`, issue-76): the CLI daemon
   runs independent of any repo, so a spawned session needs a checkout of the repo an
   event concerns. Set `routing.workspace.root` to turn it on (leave empty to keep the

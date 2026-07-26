@@ -316,9 +316,6 @@ class Poller:
             if pauses is not None
             else getattr(dispatcher, "pauses", None) or PauseStore()
         )
-        # refs whose paused-label move was already refused (unauthorized or
-        # unidentifiable), so the next cycle does not re-query the provider.
-        self._label_denials: Dict[str, str] = {}
         # Per-event delivery attempts before the poller gives up (issue-80).
         # Read once here — like the dispatch knobs a hot reload doesn't touch.
         self.max_retries = max(1, int(config.max_retries))
@@ -462,7 +459,7 @@ class Poller:
         # pause — the same "only events going forward" contract the webhook path
         # has. Closure reconciliation is deliberately NOT gated (see
         # _reconcile_closures): a pause stops work, never cleanup.
-        pause = self._reconcile_label_pause(provider, item)
+        pause = self.pauses.state(ref)
         if pause.paused:
             logger.debug(
                 "%s is paused (%s); not dispatching",
@@ -547,68 +544,6 @@ class Poller:
                 self._process_comment(provider, item, comment, refs, summary)
 
         self.state.finalize(ref, live_ids, _utcnow())
-
-    def _reconcile_label_pause(self, provider: PollProvider, item: WorkItem):
-        """Bring the ledger in line with the paused label — if an *authorized*
-        person moved it (issue-98 review, decision-041).
-
-        A listing only says whether the label is *present*, so the poller works
-        by disagreement: label present but not paused (someone added it), or
-        paused-by-label with the label gone (someone removed it). Only then does
-        it spend one API call asking the provider **who** did it, and only an
-        authorized login changes the ledger. An unidentifiable or unauthorized
-        actor is remembered so the next cycle does not re-ask, and the pause
-        state simply does not move — which is what makes an unauthorized *label
-        removal* unable to resume work.
-        """
-        ref = item.ref
-        pauses = self.pauses
-        label = pauses.paused_label
-        state = pauses.state(ref)
-        if not label:
-            return state
-        present = label in (item.labels or [])
-        if present and not state.paused:
-            action = "labeled"
-        elif state.paused and not present and state.sources == ["label"]:
-            action = "unlabeled"
-        else:
-            self._label_denials.pop(ref, None)  # the disagreement is gone
-            return state
-        if self._label_denials.get(ref) == action:
-            return state  # already asked, already refused — don't re-query
-        actor = provider.label_actor(item, label, action)
-        if not actor or not is_authorized(actor, self.authorized_users):
-            self._label_denials[ref] = action
-            logger.warning(
-                "ignoring %s of the %r label on %s by %s; the pause state is "
-                "unchanged (not in authorizedUsers)",
-                action,
-                label,
-                ref,
-                f"unauthorized actor {actor!r}" if actor else "an unidentified actor",
-            )
-            eventlog.emit(
-                "pause.unauthorized",
-                level="warning",
-                work_item=ref,
-                actor=actor,
-                action=action,
-            )
-            return state
-        self._label_denials.pop(ref, None)
-        if action == "labeled":
-            pauses.pause(
-                ref,
-                reason=f"{label!r} label added by @{actor}",
-                source="label",
-                by=actor,
-            )
-            eventlog.emit("session.paused", work_item=ref, actor=actor, source="label")
-        else:
-            pauses.resume(ref)
-            eventlog.emit("session.resumed", work_item=ref, actor=actor, source="label")
-        return pauses.state(ref)
 
     def _try_spawn(
         self,

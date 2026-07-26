@@ -149,6 +149,47 @@ status: in-progress
 - **Next:** await re-review.
 - **Blockers:** none.
 
+### 2026-07-26 — human review round 3 (PR #100): the label surface comes out
+
+- **Phase:** needs-review
+- **Did:** the owner first corrected the premise behind my label reasoning —
+  *"I disagree \[that a label can only make the-loop do less\]. If an
+  unauthorized person creates an issue and an authorized person adds the
+  auto-execute label, the-loop should pick that up and work on it… we shouldn't
+  treat labels as only being reductive."* That is right, and it widens the
+  question past pause: label authorization touches **auto-execute spawning**
+  (today the poller gates spawning on the *item author*, not on who applied the
+  label), which is its own design.
+  Then: *"Let's remove the labeling changes from this PR. Keep it clean and just
+  go with the cli session management related changes."* Confirmed the cut scope
+  with them (all of it) and removed:
+  - `the_loop/labels.py`, `commands/labels.py`, `tests/test_labels.py`,
+    `decision-041`;
+  - the dispatcher's label-transition control and the poller's label
+    reconciler + `PollProvider.label_actor` / `GhClient.label_actor`;
+  - `routing.pausedLabel` (schema, both config files), the label mirroring and
+    `--no-label` on `sessions pause`/`resume`, the `pause.unauthorized` event,
+    the `commands/init.md` label step, and every label paragraph in the README /
+    capability docs / skill reference;
+  - `PauseRecord.by` and the label branches of the ledger — `source` stays
+    (`local` today) so a future control needs no migration.
+  Requirements R5 is now a **deferral note** carrying the research so the
+  follow-up starts from it (actor availability per path, why presence-as-state
+  cannot authorize a removal, and the owner's not-only-reductive point); R6
+  (label creation at init) folded into it.
+- **Checkpoint/tests:** ruff + `format --check` clean, pyright 0 errors, configs
+  VALID, markdownlint 0 errors, **526 passed**. The pause integration suite keeps
+  the CLI-driven scenarios (poller ignores + baselines while paused and resumes
+  cleanly, a live session is untouched, webhook events dropped and delivered
+  after resume, a paused item that ends still closes) and drops the four label
+  ones.
+- **What #100 now contains:** the `sessions` operator surface (`list`/`show`/
+  `pause`/`resume`/`prune`), the pause ledger, PR + owner-pid linkage, and the
+  `.the-loop/state/` consolidation with `the-loop state paths|migrate`.
+- **Next:** open the follow-up issue for label-driven pause + label
+  authorization (incl. the auto-execute point); await re-review of #100.
+- **Blockers:** none.
+
 ## Review cycles
 
 | Round | Type | Findings | Resolution |
@@ -158,5 +199,6 @@ status: in-progress
 | 3 | self-review | `sessions list --format json` changed shape (row objects, not raw session dicts) | Deliberate (R1.4) and documented in `cli/README.md`; the existing round-trip test was updated with a comment explaining the change |
 | 4 | human (PR #100) | `commands/sessions_cmd.py` — why the `_cmd` suffix? | Renamed to `commands/sessions.py`; no collision existed |
 | 5 | human (PR #100) | Runtime-state files are scattered across `.the-loop/` and this PR adds another | All state consolidated under `.the-loop/state/` with a pre-move fallback and `the-loop state migrate` ([decision-040](../../decisions/decision-040.md), R9) |
-| 6 | human (PR #100) | The paused label should only work for people in `authorizedUsers` — and reading label *presence* could not authorize a removal | The label became an authorized-only control that writes the ledger; the gate reads the ledger alone ([decision-041](../../decisions/decision-041.md), R5 rewritten) |
+| 6 | human (PR #100) | The paused label should only work for people in `authorizedUsers` — and reading label *presence* could not authorize a removal | Implemented as an authorized-only control, then **removed with the rest of the label surface** in round 8; the research is preserved in requirements R5 for the follow-up |
 | 7 | human (PR #100) | "What's the migration plan? how do existing sessions migrate?" | Already built in round 5: pre-move paths keep being read, `the-loop state migrate` consolidates when the operator is ready, registry entries are path-independent so nothing is rewritten |
+| 8 | human (PR #100) | "Labels are not only reductive" — an authorized person labelling a stranger's issue should start work; and: remove the labeling changes, keep #100 to CLI session management | Whole label surface removed from #100; R5 became a deferral note carrying the research (incl. the auto-execute authorization point) for a follow-up issue |

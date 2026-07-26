@@ -1,7 +1,7 @@
 """Unit tests for the `the-loop sessions` operator surface (issue-98).
 
 Covers the subcommands added on top of register/attach/close: the joined table,
-`show`, `pause`/`resume` (including the GitHub-label mirror), and `prune`.
+`show`, `pause`/`resume`, and `prune`.
 """
 
 import json
@@ -9,8 +9,7 @@ import json
 import pytest
 
 from the_loop.cli import main
-from the_loop.commands import iter_commands, sessions as sessions_cmd
-from the_loop.labels import LabelResult
+from the_loop.commands import sessions as sessions_cmd
 from the_loop.sessions import PauseStore, Session, SessionRegistry, WorkItemRef
 
 REF = "github:octo/repo#15"
@@ -24,23 +23,6 @@ def paths(tmp_path):
         "pause": str(tmp_path / "paused.json"),
         "poll": str(tmp_path / "poll-state.json"),
     }
-
-
-@pytest.fixture(autouse=True)
-def _no_gh(monkeypatch):
-    """Label writes must not shell out in unit tests unless a test asks."""
-
-    class _Silent:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def add(self, work_item, label):
-            return LabelResult(ok=True, changed=True, detail="label added")
-
-        def remove(self, work_item, label):
-            return LabelResult(ok=True, changed=True, detail="label removed")
-
-    monkeypatch.setattr(sessions_cmd, "GitHubLabeler", _Silent)
 
 
 def register(paths, ref=REF, **kwargs):
@@ -69,10 +51,6 @@ def list_argv(paths, *extra):
         paths["poll"],
         *extra,
     ]
-
-
-def test_labels_command_is_registered():
-    assert "labels" in {c.name for c in iter_commands()}
 
 
 def test_list_is_empty_but_successful_when_nothing_is_tracked(paths, capsys):
@@ -168,55 +146,6 @@ def test_pause_rejects_a_malformed_ref(paths, capsys):
         == 2
     )
     assert "invalid work-item ref" in capsys.readouterr().err
-
-
-def test_pause_mirrors_the_label_unless_no_label(paths, monkeypatch, capsys):
-    seen = []
-
-    class _Recording:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def add(self, work_item, label):
-            seen.append(("add", work_item.ref, label))
-            return LabelResult(ok=True, changed=True)
-
-        def remove(self, work_item, label):
-            seen.append(("remove", work_item.ref, label))
-            return LabelResult(ok=True, changed=True)
-
-    monkeypatch.setattr(sessions_cmd, "GitHubLabeler", _Recording)
-    base = ["--work-item", REF, "--pause-file", paths["pause"]]
-    assert main(["sessions", "pause"] + base) == 0
-    assert seen == [("add", REF, "the-loop: paused")]
-    assert main(["sessions", "resume"] + base) == 0
-    assert seen[-1][0] == "remove"
-
-    seen.clear()
-    assert main(["sessions", "pause"] + base + ["--no-label"]) == 0
-    assert seen == []
-
-
-def test_a_failed_label_write_still_pauses_locally(paths, monkeypatch, capsys):
-    class _Broken:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def add(self, work_item, label):
-            return LabelResult(ok=False, error="HTTP 403")
-
-        def remove(self, work_item, label):
-            return LabelResult(ok=False, error="HTTP 403")
-
-    monkeypatch.setattr(sessions_cmd, "GitHubLabeler", _Broken)
-    assert (
-        main(["sessions", "pause", "--work-item", REF, "--pause-file", paths["pause"]])
-        == 0
-    )
-    captured = capsys.readouterr()
-    assert PauseStore(paths["pause"]).is_paused(REF) is True
-    assert "could not add" in captured.err
-    assert "gh issue edit 15" in captured.err  # the manual fallback
 
 
 def show_argv(paths, ref=REF, *extra):

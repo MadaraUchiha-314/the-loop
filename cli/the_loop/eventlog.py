@@ -86,7 +86,7 @@ EVENT_TYPES: Dict[str, str] = {
     "dispatch.dropped": (
         "A routed event was discarded at dispatch (reason: duplicate-delivery "
         "| already-processed | spawn-policy | session-vanished | no-adapter | "
-        "paused — the work item is paused, with pause_sources: local | label)."
+        "paused — `the-loop sessions pause` put the work item on hold)."
     ),
     "dispatch.succeeded": (
         "An event was delivered to its harness session (work_item, harness, "
@@ -146,16 +146,9 @@ EVENT_TYPES: Dict[str, str] = {
     ),
     "session.closed": "A session was closed in the registry (work_item).",
     "session.paused": (
-        "A work item was paused (work_item, reason, source: local | label, "
-        "actor for a label) — the-loop stops "
+        "A work item was paused (work_item, reason) — the-loop stops "
         "spawning for it and delivering its activity until it is resumed; its "
         "session, tmux transcript and checkout are untouched (issue-98)."
-    ),
-    "pause.unauthorized": (
-        "Someone who is not in routing.authorizedUsers added or removed the "
-        "paused label (work_item, actor, action: labeled | unlabeled); the "
-        "pause state was left unchanged — the label is a control, and only "
-        "authorized logins may use it (issue-98, decision-041)."
     ),
     "session.resumed": (
         "A paused work item was resumed (work_item); the-loop acts on it again."

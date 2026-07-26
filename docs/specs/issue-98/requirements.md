@@ -171,69 +171,40 @@ the work item back up.
 3. **4.3** Resuming a work item that is not paused SHALL be a no-op reported as
    such, exiting `0`.
 
-### Requirement 5 — the same pause/resume from a GitHub label, for authorized people only
+### Requirement 5 — *(deferred out of this work item)* pause/resume from a GitHub label
 
-**User story:** As someone who lives in the GitHub UI, I want to pause the-loop
-on a ticket by putting a label on it — and I want that control to work only for
-the people I have approved, in both directions.
+The issue also asked for the pause/resume controls to be available as a GitHub
+label. That is **deferred to its own work item**, by the owner's call on
+[PR #100](https://github.com/MadaraUchiha-314/the-loop/pull/100): making the
+label safe turns out to be a security design question rather than a wiring one,
+and it does not belong in a session-management change.
 
-*(Rewritten during PR review: "I want the github label addition and removal only
-to be affected if the person is listed as approved set of people in the
-cli-config.yaml" — [PR #100](https://github.com/MadaraUchiha-314/the-loop/pull/100),
-[decision-041](../../decisions/decision-041.md). The original R5 read raw label
-*presence* as a pause, which cannot authorize removals: deleting the label is
-indistinguishable from never having paused.)*
+What the deferred item has to settle (researched here, so the follow-up starts
+with it):
 
-#### Acceptance criteria
+1. **Who may drive the label.** Only logins in `routing.authorizedUsers` should
+   be able to pause or resume with it.
+2. **Why presence-as-state cannot express that.** A gate that asks "is the label
+   on the item right now?" cannot authorize a **removal** — "the label is gone"
+   is indistinguishable from "nobody ever paused it" — so anyone with triage
+   rights could resume a parked agent. The label therefore has to be a *trigger*
+   that writes the pause ledger, with the ledger as the only thing the gate
+   reads.
+3. **Where the actor comes from.** Free on the webhook path (`labeled` /
+   `unlabeled` carry `label.name` + `sender.login`); absent from every other
+   payload and from the poll listing, but recoverable from
+   `GET /repos/{owner}/{repo}/issues/{n}/events` (`actor.login` + `label.name`,
+   PRs included) — worth one call only when the label and the ledger disagree.
+4. **Labels are not only reductive** (owner, PR #100): an authorized person
+   labelling a *stranger's* issue should put it into the loop, with comment
+   filtering continuing to gate what the agent then acts on. So label
+   authorization is a broader question than pause alone — it touches
+   auto-execute too, which is exactly why it wants its own spec.
+5. Creating the operational labels during `init`/onboarding (`labels ensure`)
+   travels with that work item — issue-98 asked for it, and it is only useful
+   once the labels do something.
 
-1. **5.1** WHEN a person in `routing.authorizedUsers` **adds** the configured
-   label (`routing.pausedLabel`, default `the-loop: paused`) to an issue/PR THEN
-   that work item SHALL be paused exactly as a CLI pause pauses it (R3.2–R3.6),
-   and the pause record SHALL note the source (`label`) and their login.
-2. **5.2** WHEN a person in `routing.authorizedUsers` **removes** that label THEN
-   the work item SHALL be resumed.
-3. **5.3** WHEN the label is added by someone NOT in `routing.authorizedUsers`,
-   or by an actor the-loop cannot identify, THEN nothing SHALL be paused, and the
-   refusal SHALL be recorded (`pause.unauthorized`).
-4. **5.4** WHEN the label is removed by someone NOT in `routing.authorizedUsers`,
-   or by an unidentifiable actor, THEN the work item SHALL **remain paused** —
-   an unauthorized actor must not be able to resume the-loop by deleting a label.
-5. **5.5** The pause gate SHALL read the ledger and nothing else: raw label
-   presence SHALL NOT pause a work item, so the label's effect always passes
-   through the authorization check above.
-6. **5.6** The actor SHALL be resolved without cost where the data already
-   exists — the `labeled`/`unlabeled` webhook payload's `sender` — and on the
-   poll path SHALL be looked up (issue-events API) **only** when the label and
-   the ledger disagree, with a refusal remembered so it is not re-queried every
-   cycle.
-7. **5.7** `sessions pause`/`resume` SHALL also apply/remove the label on GitHub
-   (best-effort, through the operator's own `gh` CLI) so the ticket shows the
-   state, with `--no-label` to skip it. A label failure SHALL NOT fail the local
-   pause/resume, and SHALL be reported.
-8. **5.8** `sessions list`/`show` SHALL show what paused an item (`local` or
-   `label`) and, for a label, who.
-
-### Requirement 6 — the labels exist without hand-crafting them
-
-**User story:** As someone onboarding the-loop into a repo, I want the labels the
-daemon reacts to to be created for me, so that the label-driven controls work
-immediately.
-
-#### Acceptance criteria
-
-1. **6.1** `the-loop labels ensure --repo OWNER/REPO` SHALL create the
-   operational labels the daemon reads — the auto-execute label and the paused
-   label, with a description and colour — skipping any that already exist, and
-   SHALL be idempotent.
-2. **6.2** It SHALL support `--dry-run` (print what would be created, write
-   nothing) and SHALL read the label names from the CLI config so a renamed
-   label is created under its configured name.
-3. **6.3** WHEN `gh` is unavailable or unauthenticated THEN the command SHALL
-   fail with an actionable message and a non-zero exit, rather than silently
-   doing nothing.
-4. **6.4** The `/the-loop:init` command's label step SHALL create these
-   operational labels alongside the `loop:<phase>` labels it already creates, and
-   the onboarding documentation SHALL say so.
+The CLI controls (R3, R4) are unaffected and ship here.
 
 ### Requirement 7 — housekeeping from the same command
 
@@ -260,8 +231,7 @@ finished with, so that the table stays about live work.
    with its flags and an example of the output.
 2. **8.2** The capability docs (`docs/capabilities/cli.md`,
    `docs/capabilities/interactive-sessions.md`) and the skill's
-   `reference/automation.md` SHALL describe pause/resume (both mechanisms) in
-   the same PR.
+   `reference/automation.md` SHALL describe pause/resume in the same PR.
 3. **8.3** New config keys SHALL be added to `.the-loop/cli-config.schema.json`,
    the shipped `templates/cli-config.yaml`, and this repo's own
    `.the-loop/cli-config.yaml`, with defaults that keep existing behaviour
@@ -309,30 +279,23 @@ rule, and reset cleanly.
   (`the-loop poll stop` already exists) and not a queue-draining lever.
 - **No new auth or tokens.** GitHub writes keep going through the operator's own
   `gh`, exactly as reactions/announcements do.
-- **No cross-provider label support.** The label mechanism is GitHub-specific;
-  the local pause record is provider-agnostic and works for any ref.
+- **No label mechanism at all** (deferred — see R5). The pause ledger is
+  provider-agnostic and works for any ref.
 - **Not a metrics/history view.** `the-loop events` remains the o11y trail.
 
 ## Security considerations
 
 *(Threat model is required for every work item — `config.security.threatModel`.)*
 
-- **Trust boundary: label-driven control.** The paused label is *external input*
-  and therefore an authorization question: anyone who can label an issue in the
-  repo can stop the-loop working it. This is a **deliberate, fail-safe**
-  direction — the label can only ever cause the-loop to do *less*. Removing the
-  label re-enables work, but re-enabling only returns the item to the existing,
-  already-guarded path: the `authorizedUsers` prompt-injection guard
-  (`the_loop.authz`) still decides whose items and comments are acted on, and
-  the auto-execute label still gates spawning. No new privilege is granted.
+- **No new external trigger.** With the label control deferred (R5), the only
+  thing that pauses a work item is the operator's own CLI writing a local file.
+  Nothing about the existing trust boundaries changes: the `authorizedUsers`
+  prompt-injection guard (`the_loop.authz`) still decides whose items and
+  comments are acted on, and the auto-execute label still gates spawning.
 - **Trust boundary: the pause record is local state.** It is written by the
   operator's own CLI into the daemon's own directory and read back by the
   daemon. It carries a ref and a free-text reason; the reason is **display-only
   data** and MUST NOT be interpolated into any harness prompt or shell argv.
-- **Trust boundary: refs into a `gh` argv.** `pause`/`resume` and `labels
-  ensure` place a work-item ref / owner / repo into a `gh` command line. Those
-  are parsed and validated (`WorkItemRef.parse`, an explicit name pattern)
-  before use, mirroring `reactions.py` and `announce.py`.
 - **No secrets in output.** The table and `show` print refs, URLs, tmux targets,
   pids, and the working directory — never tokens, prompts or payloads.
 - **Availability.** A corrupt or unreadable pause file MUST degrade to "nothing

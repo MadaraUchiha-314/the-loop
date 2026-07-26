@@ -5,11 +5,10 @@ import json
 from the_loop.sessions import PauseStore, WorkItemRef
 
 REF = "github:octo/repo#15"
-LABEL = "the-loop: paused"
 
 
-def store(tmp_path, label=LABEL):
-    return PauseStore(tmp_path / "paused.json", paused_label=label)
+def store(tmp_path):
+    return PauseStore(tmp_path / "paused.json")
 
 
 def test_missing_file_means_nothing_is_paused(tmp_path):
@@ -44,38 +43,16 @@ def test_accepts_a_work_item_ref_object(tmp_path):
     assert paused.state(WorkItemRef.parse(REF)).paused is True
 
 
-def test_a_label_pause_records_who_did_it(tmp_path):
-    """The label writes the ledger (decision-041) — it is never read as state."""
-    paused = store(tmp_path)
-    paused.pause(REF, reason="label added by @octocat", source="label", by="octocat")
-    state = paused.state(REF)
-    assert state.paused is True
-    assert state.sources == ["label"]
-    assert state.by == "octocat"
-    assert "octocat" in state.reason
-
-
-def test_the_ledger_is_the_only_thing_state_consults(tmp_path):
-    """Raw label presence is NOT a pause: an unauthorized labeller changes
-    nothing, and an unauthorized label *removal* cannot resume a paused item."""
-    paused = store(tmp_path)
-    assert paused.state(REF).paused is False  # label on the ticket, no record
-
-    paused.pause(REF, source="label", by="octocat")
-    assert paused.state(REF).paused is True  # label deleted upstream: still paused
-
-
-def test_a_cli_pause_records_the_local_source(tmp_path):
+def test_a_pause_records_its_source(tmp_path):
     paused = store(tmp_path)
     paused.pause(REF, reason="parked")
     assert paused.state(REF).sources == ["local"]
-    assert paused.state(REF).by == ""
 
 
 def test_corrupt_ledger_degrades_to_nothing_paused(tmp_path, caplog):
     path = tmp_path / "paused.json"
     path.write_text("{not json")
-    paused = PauseStore(path, paused_label=LABEL)
+    paused = PauseStore(path)
     assert paused.is_paused(REF) is False
     assert paused.list_paused() == []
     assert any("unreadable pause ledger" in r.message for r in caplog.records)

@@ -5,7 +5,6 @@ from .base import Command, iter_commands, register  # noqa: F401
 # Import command modules for their registration side effects.
 from . import events  # noqa: F401,E402
 from . import gh_webhook  # noqa: F401,E402
-from . import labels  # noqa: F401,E402
 from . import poll  # noqa: F401,E402
 from . import scenarios  # noqa: F401,E402
 from . import sessions  # noqa: F401,E402

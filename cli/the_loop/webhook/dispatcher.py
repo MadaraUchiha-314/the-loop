@@ -35,7 +35,6 @@ from ..reactions import (
 from ..runner import TmuxRunner
 from ..sessions import (
     DEFAULT_PAUSE_FILE,
-    DEFAULT_PAUSED_LABEL,
     PauseStore,
     Session,
     SessionRegistry,
@@ -43,8 +42,7 @@ from ..sessions import (
 )
 from ..trust import TrustConfig, TrustResult, is_too_broad
 from ..workspace import RepoTarget, Workspace, WorkspaceError, repo_target_from_payload
-from ..authz import is_authorized
-from .router import Deduper, RoutedEvent, event_actor
+from .router import Deduper, RoutedEvent
 
 logger = logging.getLogger("the-loop.gh-webhook")
 
@@ -228,10 +226,8 @@ class RoutingConfig:
     web_terminal: WebTerminalConfig = field(default_factory=WebTerminalConfig)
     spawn_on_unmatched: str = "never"  # never | always | labeled
     auto_execute_label: str = "the-loop: auto-execute"
-    # Per-work-item pause (issue-98): the label whose presence stops the-loop
-    # acting on an item, and the durable ledger `sessions pause` writes. Both
-    # ingress paths (webhook + poll) read them, and they compose as OR.
-    paused_label: str = DEFAULT_PAUSED_LABEL
+    # Per-work-item pause (issue-98): the durable ledger `sessions pause`
+    # writes, read by both ingress paths (webhook + poll).
     pause_file: str = DEFAULT_PAUSE_FILE
     spawn_workdir: str = "."
     workspace: WorkspaceConfig = field(default_factory=WorkspaceConfig)
@@ -266,7 +262,6 @@ class RoutingConfig:
             auto_execute_label=str(
                 data.get("autoExecuteLabel", "the-loop: auto-execute")
             ),
-            paused_label=str(data.get("pausedLabel", DEFAULT_PAUSED_LABEL)),
             pause_file=state.resolve(DEFAULT_PAUSE_FILE, data.get("pauseFile")),
             spawn_workdir=str(data.get("spawnWorkdir", ".")),
             workspace=WorkspaceConfig.from_mapping(data.get("workspace") or {}),
@@ -438,10 +433,7 @@ class Dispatcher:
 
     @staticmethod
     def _build_pauses(config: RoutingConfig) -> PauseStore:
-        return PauseStore(
-            config.pause_file or DEFAULT_PAUSE_FILE,
-            paused_label=config.paused_label,
-        )
+        return PauseStore(config.pause_file or DEFAULT_PAUSE_FILE)
 
     def _load_template(self, path_str: str, default: str) -> Template:
         path = Path(path_str)
@@ -571,11 +563,6 @@ class Dispatcher:
                 logger.debug("close event matched no active session; nothing to close")
             return
 
-        # An authorized add/remove of the paused label is a *control*, applied
-        # before the gate below so the labelling event itself is honoured
-        # (issue-98 review, decision-041).
-        self._apply_label_control(routed)
-
         # Deliberately AFTER the close branch (issue-98, R3.6): a pause stops
         # the-loop *working* an item, never cleaning up after one. A paused item
         # that is closed upstream still ends its session.
@@ -630,82 +617,8 @@ class Dispatcher:
             )
             self._enqueue(session.work_item.ref, routed)
 
-    def _label_transition(self, routed: RoutedEvent) -> str:
-        """``"labeled"``/``"unlabeled"`` when THIS event moves the paused label.
-
-        Reads the ``label`` object the webhook carries for those actions — the
-        only place GitHub names which label changed — so a payload that merely
-        *carries* the label among the item's current set is not a transition.
-        """
-        if routed.event not in ("issues", "pull_request"):
-            return ""
-        if routed.action not in ("labeled", "unlabeled"):
-            return ""
-        name = str((routed.payload.get("label") or {}).get("name") or "")
-        if not name or name != self.config.paused_label:
-            return ""
-        return routed.action
-
-    def _apply_label_control(self, routed: RoutedEvent) -> None:
-        """Turn an *authorized* paused-label add/remove into a ledger write.
-
-        The label is a trigger, never a state (decision-041): only a labeller in
-        ``authorizedUsers`` may pause or resume with it, and because the gate
-        reads the ledger alone, an unauthorized removal cannot un-pause an item
-        the way deleting a label from a presence check would.
-        """
-        transition = self._label_transition(routed)
-        if not transition or not routed.work_items:
-            return
-        work_item = routed.work_items[0]
-        actor = event_actor(routed.event, routed.payload)
-        if not is_authorized(actor, self.config.authorized_users):
-            logger.warning(
-                "ignoring %s of the %r label on %s by unauthorized actor %r "
-                "(not in routing.authorizedUsers); the pause state is unchanged",
-                transition,
-                self.config.paused_label,
-                work_item.ref,
-                actor,
-            )
-            eventlog.emit(
-                "pause.unauthorized",
-                level="warning",
-                work_item=work_item.ref,
-                actor=actor,
-                action=transition,
-            )
-            return
-        if transition == "labeled":
-            if self.pauses.pause(
-                work_item,
-                reason=f"{self.config.paused_label!r} label added by @{actor}",
-                source="label",
-                by=str(actor or ""),
-            ):
-                logger.info("paused %s (label added by %s)", work_item.ref, actor)
-                eventlog.emit(
-                    "session.paused",
-                    work_item=work_item.ref,
-                    actor=actor,
-                    source="label",
-                )
-            return
-        if self.pauses.resume(work_item):
-            logger.info("resumed %s (label removed by %s)", work_item.ref, actor)
-            eventlog.emit(
-                "session.resumed",
-                work_item=work_item.ref,
-                actor=actor,
-                source="label",
-            )
-
     def _pause_state(self, routed: RoutedEvent) -> tuple:
-        """``(paused_ref, sources)`` for this event — ``("", [])`` when live.
-
-        The ledger is the only thing consulted; raw label presence is not a
-        pause (decision-041), so an unauthorized labeller changes nothing.
-        """
+        """``(paused_ref, sources)`` for this event — ``("", [])`` when live."""
         for item in routed.work_items:
             state = self.pauses.state(item)
             if state.paused:

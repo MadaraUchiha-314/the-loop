@@ -12,8 +12,7 @@ Since issue-98 this is also the **operator's** surface over the daemon:
   PR);
 * ``show`` — everything known about one work item;
 * ``pause`` / ``resume`` — stop and restart the-loop acting on one work item,
-  without ending its session; mirrored to the ``the-loop: paused`` GitHub label
-  so the same control works from the browser;
+  without ending its session;
 * ``prune`` — drop session *records* the daemon has finished with.
 
 Spec: docs/specs/issue-15/design.md §5 (requirement R2.2);
@@ -35,11 +34,9 @@ from .base import Command, register
 from .gh_webhook import _load_config_defaults
 from .. import cli_config, eventlog, state
 from ..harness import ClaudeCodeAdapter, CursorAgentAdapter
-from ..labels import GitHubLabeler
 from ..runner import TmuxRunner
 from ..sessions import (
     DEFAULT_PAUSE_FILE,
-    DEFAULT_PAUSED_LABEL,
     PauseStore,
     RegistryError,
     Session,
@@ -73,10 +70,6 @@ def _default_registry_dir() -> str:
 
 def _default_pause_file() -> str:
     return state.resolve(DEFAULT_PAUSE_FILE, _routing().get("pauseFile"))
-
-
-def _default_paused_label() -> str:
-    return str(_routing().get("pausedLabel", DEFAULT_PAUSED_LABEL))
 
 
 def _default_poll_state_file() -> str:
@@ -250,7 +243,6 @@ class SessionsCommand(Command):
             "--reason", default="", help="Recorded with the pause, shown in `show`."
         )
         pause.add_argument("--pause-file", default=pause_file)
-        self._add_label_flags(pause)
         pause.set_defaults(_action=self._pause)
 
         resume = actions.add_parser(
@@ -258,7 +250,6 @@ class SessionsCommand(Command):
         )
         resume.add_argument("--work-item", required=True)
         resume.add_argument("--pause-file", default=pause_file)
-        self._add_label_flags(resume)
         resume.set_defaults(_action=self._resume)
 
         attach = actions.add_parser(
@@ -312,20 +303,6 @@ class SessionsCommand(Command):
         prune.add_argument("--registry-dir", default=registry_dir)
         prune.set_defaults(_action=self._prune)
 
-    @staticmethod
-    def _add_label_flags(parser: argparse.ArgumentParser) -> None:
-        parser.add_argument(
-            "--no-label",
-            dest="label",
-            action="store_false",
-            default=True,
-            help=(
-                "Keep the change local — do not add/remove the "
-                f"{_default_paused_label()!r} label on GitHub."
-            ),
-        )
-        parser.add_argument("--gh-binary", default="gh")
-
     def run(self, args: argparse.Namespace) -> int:
         # register/close write session-lifecycle events via the registry.
         eventlog.configure_from_file("sessions")
@@ -369,7 +346,7 @@ class SessionsCommand(Command):
         )
         return build_rows(
             SessionRegistry(args.registry_dir),
-            PauseStore(pause_file, paused_label=_default_paused_label()),
+            PauseStore(pause_file),
             poll_state=_poll_state(poll_state_file),
             status=getattr(args, "status", None),
             work_item=work_item or getattr(args, "work_item", ""),
@@ -405,19 +382,13 @@ class SessionsCommand(Command):
             print(json.dumps(row.to_dict(), indent=2))
             return 0
         print(render_detail(row))
-        if not row.pause_sources:
-            print(
-                f"\nnote: a {_default_paused_label()!r} label on the ticket also "
-                "pauses it; this view reads the local ledger only.",
-                file=sys.stderr,
-            )
         return 0
 
     def _pause(self, args: argparse.Namespace) -> int:
         work_item = _parse_ref(args.work_item)
         if work_item is None:
             return 2
-        store = PauseStore(args.pause_file, paused_label=_default_paused_label())
+        store = PauseStore(args.pause_file)
         if store.pause(work_item, reason=args.reason):
             print(
                 f"paused {work_item.ref}"
@@ -429,46 +400,18 @@ class SessionsCommand(Command):
             )
         else:
             print(f"{work_item.ref} was already paused")
-        return self._sync_label(args, work_item, remove=False)
+        return 0
 
     def _resume(self, args: argparse.Namespace) -> int:
         work_item = _parse_ref(args.work_item)
         if work_item is None:
             return 2
-        store = PauseStore(args.pause_file, paused_label=_default_paused_label())
+        store = PauseStore(args.pause_file)
         if store.resume(work_item):
             print(f"resumed {work_item.ref} — the-loop will act on it again")
             eventlog.emit("session.resumed", work_item=work_item.ref)
         else:
             print(f"{work_item.ref} was not paused")
-        return self._sync_label(args, work_item, remove=True)
-
-    def _sync_label(
-        self, args: argparse.Namespace, work_item: WorkItemRef, remove: bool
-    ) -> int:
-        """Mirror the local pause onto the ticket. Never fails the command (R5.4)."""
-        if not args.label:
-            return 0
-        labeler = GitHubLabeler(gh_binary=args.gh_binary)
-        label = _default_paused_label()
-        result = (
-            labeler.remove(work_item, label)
-            if remove
-            else labeler.add(work_item, label)
-        )
-        verb = "removed" if remove else "added"
-        if result.ok:
-            if result.changed:
-                print(f"{verb} the {label!r} label on {work_item.ref}")
-        else:
-            gh_cmd = "--remove-label" if remove else "--add-label"
-            print(
-                f"note: could not {('remove' if remove else 'add')} the {label!r} "
-                f"label on {work_item.ref} ({result.error}). The local pause "
-                f"stands; set it by hand with: gh issue edit {work_item.number} "
-                f"--repo {work_item.owner}/{work_item.repo} {gh_cmd} '{label}'",
-                file=sys.stderr,
-            )
         return 0
 
     def _attach(self, args: argparse.Namespace) -> int:
