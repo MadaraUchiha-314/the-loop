@@ -35,6 +35,14 @@ a stable marker embedded in the body of every comment/review/reply the-loop
 posts (`SELF_COMMENT_MARKER`, checked by :func:`is_self_authored`). Both
 trigger paths drop a self-marked comment *before* the authorized-actor check
 even runs — it is dropped regardless of who technically posted it.
+
+The **producer** side of that contract is :func:`mark_self_authored`, which
+lives here rather than at the call sites so the string the-loop writes and the
+string it recognises are the same 30 lines of code. It applies to *every*
+producer, not only the spawned harness: the CLI daemon's own comments (the
+interactive-session announcement, `the_loop.announce`) are posted with the same
+credentials and were, until issue-104, fed straight back into the session they
+announced.
 """
 
 from __future__ import annotations
@@ -52,6 +60,11 @@ logger = logging.getLogger("the-loop.authz")
 # must never change once shipped (older comments must stay recognizable).
 SELF_COMMENT_MARKER = "<!-- the-loop:agent-comment -->"
 
+# The *visible* half of the same contract: a short attribution line so a human
+# reading the thread also knows who wrote the comment (the marker itself is an
+# invisible HTML comment). See `reference/collaboration.md`.
+SELF_COMMENT_ATTRIBUTION = "🤖 _the-loop, autonomous comment_"
+
 
 def is_self_authored(body: Optional[str]) -> bool:
     """Whether ``body`` carries the-loop's own authorship marker.
@@ -61,6 +74,23 @@ def is_self_authored(body: Optional[str]) -> bool:
     before it can re-enter the loop as if a human had written it (issue-64).
     """
     return bool(body) and SELF_COMMENT_MARKER in body
+
+
+def mark_self_authored(body: str) -> str:
+    """``body`` stamped as the-loop's own: visible attribution + the marker.
+
+    The **producer** half of the marker contract, deliberately living next to
+    its consumer (:func:`is_self_authored`) so what the-loop writes and what it
+    recognises can never drift apart. Idempotent: a body that already carries
+    the marker is returned unchanged.
+
+    Apply this ONLY to text the-loop itself composed — never to payload-derived
+    text or another author's comment. The marker asserts authorship, and both
+    trigger paths silently drop whatever carries it (issue-104).
+    """
+    if is_self_authored(body):
+        return body
+    return f"{body.rstrip()}\n\n{SELF_COMMENT_ATTRIBUTION}\n{SELF_COMMENT_MARKER}\n"
 
 
 def resolve_authorized_users(configured: Sequence[str]) -> List[str]:

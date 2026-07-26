@@ -132,6 +132,14 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   is posted under the operator's own credentials and is otherwise indistinguishable by
   author) SHALL be dropped before dispatch, so the-loop never resumes a session on its
   own reply (`the_loop.authz.is_self_authored`; same check in `the-loop poll`).
+- WHEN **any** producer writes a comment on the-loop's behalf — the spawned harness or
+  the daemon itself (today: the interactive-session announcement) — THEN the body SHALL
+  be stamped by `the_loop.authz.mark_self_authored`, the producer-side counterpart of
+  that check: a visible attribution line plus the marker, idempotent, and applied only
+  to text the-loop composed (never to payload-derived text). An unmarked daemon comment
+  is authorized — it is posted with the operator's own credentials — so the marker is
+  the only thing preventing it from being delivered into the session it describes
+  (issue-104).
 - All `webhooks.*` keys above live in the **CLI config** (`cli-config.yaml`, resolved
   via `--config`/env/cwd/home — see `cli/README.md`), independent of any repo's
   `.the-loop/harness-config.yaml` (the plugin config) — the daemon is not tied to a single repo
@@ -148,6 +156,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-104 | The loop-prevention marker gained a producer-side helper (`mark_self_authored`) applied to the daemon's own comments — the session announcement no longer re-enters the session it announces | [spec](../specs/issue-104/), [decision-031](../decisions/decision-031.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/104) |
 | issue-101 | A work item may be delivered by **several** PRs: a `pull_request` `closed` event now ends only the session registered against that PR itself, leaving a linked issue's session (and its checkout) running until the issue's own close | [spec](../specs/issue-101/), [decision-039](../decisions/decision-039.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/101) |
 | issue-94 | A finished work item now ends its session on **both** ingress paths: the poller reconciles active sessions against each successful listing and closes the ones whose item is closed/merged upstream; the receiver treats `issues`/`closed` like `pull_request`/`closed` instead of delivering it into the conversation | [spec](../specs/issue-94/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/94) |
 | issue-93 | An event on a PR resolves the PR's **linked issues first** (`closingIssuesReferences` + branch/keyword conventions, incl. PR conversation comments delivered as `issue_comment`), so PR activity reuses the linked issue's session instead of spawning a second one | [spec](../specs/issue-93/), [decision-036](../decisions/decision-036.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/93) |

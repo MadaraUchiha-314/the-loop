@@ -15,6 +15,7 @@ import subprocess
 import threading
 import time
 
+from the_loop.announce import announcement_body
 from the_loop.harness import DispatchResult
 from the_loop.poller import (
     GhClient,
@@ -223,6 +224,39 @@ def test_comment_not_reforwarded_across_cycles(tmp_path):
     dispatcher.stop()
 
     assert len(adapter.resumes) == 1  # IC_2 delivered exactly once
+
+
+def test_the_daemons_own_announcement_is_not_forwarded(tmp_path):
+    """Scenario: the-loop's session announcement never re-enters that session.
+
+    Feature: Poll GitHub and route only human input into a session
+    Given a labelled issue whose session the-loop announced on the ticket
+    When the next poll cycle sees that announcement as a new comment
+    Then it is resolved without being delivered into the session
+
+    Requirement: docs/specs/issue-104/bugfix.md#AC5
+    """
+    gh = GhState()
+    gh.comments = [_comment("IC_1", "old")]
+    registry, adapter, dispatcher, poller = _make(tmp_path, gh)
+
+    poller.poll_once()  # spawn + baseline IC_1
+    assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
+    session = registry.find_by_work_item(REF)
+    assert session is not None
+
+    # What SessionAnnouncer posts on the first spawn — authored by the operator's
+    # own (authorized) login, so only the marker keeps it out of the session.
+    gh.comments = [
+        _comment("IC_1", "old"),
+        _comment("IC_2", announcement_body(session)),
+    ]
+    poller.poll_once()
+    time.sleep(0.1)
+    dispatcher.stop()
+
+    assert adapter.resumes == []
+    assert len(adapter.spawns) == 1
 
 
 def test_pr_comment_reuses_the_linked_issues_session(tmp_path):

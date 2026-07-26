@@ -85,7 +85,10 @@ the same conversation.
   Best-effort through the operator's own `gh` CLI: a failure never affects the
   dispatch, and a process-runner session, a non-GitHub work item or a missing `gh` is
   a no-op. The body is built only from registry fields — never from event payloads —
-  and carries no filesystem paths, harness session ids or hostnames.
+  and carries no filesystem paths, harness session ids or hostnames, and it SHALL carry
+  the loop-prevention marker plus a visible attribution line
+  (`the_loop.authz.mark_self_authored`) so neither trigger path feeds the announcement
+  back into the session it announces (issue-104).
 - `the-loop sessions list` SHALL show `Runner`/`Tmux` columns; `the-loop sessions
   attach --work-item <ref> [--read-only]` SHALL attach the caller's terminal to the
   session's tmux session — including one **retained after the work item closed**, which
@@ -137,6 +140,7 @@ the same conversation.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-104 | The session-announcement comment is now marked as the-loop's own, so the poller stops pasting "the-loop started an interactive session for …" into that very session | [spec](../specs/issue-104/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/104) |
 | issue-32 | Introduced the tmux runner, `sessions attach`, the ttyd web terminal and dependency preflight | [spec](../specs/issue-32/), [decision-021](../decisions/decision-021.md) |
 | issue-65 | Fixed `poll start` never launching ttyd (it shared the tmux runner but had no web terminal start/stop of its own); factored ttyd lifecycle into a shared `the_loop.runner` helper used by both `gh-webhook start` and `poll start` | [issue](https://github.com/MadaraUchiha-314/the-loop/issues/65) |
 | issue-80 | Respawn a crashed/killed tmux session on delivery (deliver the pending event as the fresh TUI's boot prompt) instead of looping redeliveries into a session that no longer exists | [spec](../specs/issue-80/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/80) |

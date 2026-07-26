@@ -41,13 +41,24 @@ metadata to a comment or review — the body text is the only channel available.
      applies; a plain `🤖 _the-loop, autonomous reply_` otherwise.
 - This applies everywhere GitHub-style credentials post on your behalf — issues, PRs,
   and (once supported) Jira or any other ticketing system — not only GitHub.
+- **It applies to both producers, not just this session.** The CLI daemon posts
+  comments of its own (today: the interactive-session announcement,
+  `the_loop.announce`) with the same credentials, so they carry the marker too — via
+  `the_loop.authz.mark_self_authored`, the producer-side counterpart of
+  `is_self_authored`. Any new daemon-side comment MUST go through that helper; an
+  unmarked one is re-ingested on the next cycle and pasted into the session it was
+  about (issue-104).
+- **Only ever mark text the-loop composed.** `mark_self_authored` asserts authorship
+  and the trigger paths silently drop whatever carries the marker — never apply it to
+  payload-derived text or another author's words.
 - **Do not rely on this for anything else.** It identifies authorship for loop
   prevention; it is not an authorization mechanism and does not replace the
   authorized-actor guard (`security.md`).
 
 See `docs/decisions/decision-031.md` and `cli/the_loop/authz.py` for the CLI-side
 enforcement (both the webhook router and the poller drop a marker-carrying event before
-dispatch, regardless of who technically posted it).
+dispatch, regardless of who technically posted it) — the same module now holds the
+marking helper, so what the-loop writes and what it recognises cannot drift apart.
 
 ## Conflicts & assumptions (keep unattended runs moving)
 

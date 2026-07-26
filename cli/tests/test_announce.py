@@ -11,6 +11,7 @@ import pytest
 
 from the_loop import announce as announce_mod
 from the_loop.announce import AnnounceConfig, SessionAnnouncer, announcement_body
+from the_loop.authz import SELF_COMMENT_ATTRIBUTION, is_self_authored
 from the_loop.sessions import Session, WorkItemRef
 
 REF = "github:octo/repo#15"
@@ -84,6 +85,19 @@ def test_body_leaks_no_paths_or_session_ids():
     body = announcement_body(make_session())
     assert "/home/operator" not in body
     assert "9f1c-secret-session-id" not in body
+
+
+def test_body_is_marked_as_the_loops_own():
+    # issue-104: the daemon posts under the operator's own credentials, so an
+    # unmarked announcement is re-ingested on the next poll cycle and pasted
+    # into the very session it announces.
+    body = announcement_body(make_session())
+    assert is_self_authored(body) is True
+    assert SELF_COMMENT_ATTRIBUTION in body
+    # …and the human-readable content is unchanged by the marking.
+    assert f"tmux attach -t {TARGET}" in body
+    assert "`claude`" in body
+    assert "respawn" in body
 
 
 def test_body_explains_the_commands_survive_a_respawn():
