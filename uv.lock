@@ -1312,7 +1312,7 @@ wheels = [
 
 [[package]]
 name = "the-loopy-one"
-version = "0.22.1"
+version = "1.0.0"
 source = { editable = "cli" }
 dependencies = [
     { name = "pyyaml" },
