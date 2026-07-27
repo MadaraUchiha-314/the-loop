@@ -1,7 +1,7 @@
 ---
 type: execution-log
 workItem: issue-109
-phase: brainstorming          # not-started | brainstorming | requirements-definition | design | tasks-breakdown | implementation | needs-review | complete
+phase: design                 # not-started | brainstorming | requirements-definition | design | tasks-breakdown | implementation | needs-review | complete
 status: in-progress           # in-progress | complete
 ---
 
@@ -14,8 +14,10 @@ status: in-progress           # in-progress | complete
 
 | Phase | Entered | Reviewed/approved by | Notes |
 |-------|---------|----------------------|-------|
-| brainstorming | 2026-07-26 | *(pending — owner)* | Phase 0 entered: the ticket is explicitly exploratory ("how do we make these top level workflow more programmatic?"), so the loop starts at the root artifact. `loop:brainstorming` applied to the issue. |
-| requirements-definition |  |  | Blocked on `brainstorm.md` being locked (`status: approved`) — the iterate-until-locked rule. |
+| brainstorming | 2026-07-26 | @MadaraUchiha-314 (PR #110, 2026-07-27) | Phase 0 entered: the ticket is explicitly exploratory, so the loop started at the root artifact. Two review rounds (Cursor hook correction; graph architecture). **Locked** on *"let's go ahead with the requirements and design"*. |
+| requirements-definition | 2026-07-27 | *(pending — this PR)* | `requirements.md` derived from the locked brainstorm. 10 requirements in EARS, threat-model-lite, risk tier **4** (touches `**/*schema*` → `human-approves-pr` + named security sign-off). Seven brainstorm open questions resolved as **stated assumptions** so review can override them. |
+| design | 2026-07-27 | *(pending — this PR)* | `design.md` derived from the requirements. Five-layer architecture, closed gate/edge vocabularies, `graph-state.json` data model, security design per boundary, testing strategy. Decision recorded as `decision-041`. |
+| tasks-breakdown |  |  | Not started — the owner asked for requirements and design only. |
 
 ## Pull requests
 
@@ -129,6 +131,56 @@ status: in-progress           # in-progress | complete
   brainstorm can be locked. Question 4 is now closed.
 - **Blockers:** unchanged — the brainstorm stays `status: draft`.
 
+### 2026-07-27 — brainstorm locked; requirements and design derived
+
+- **Phase:** brainstorming → requirements-definition → design
+- **Did:**
+  - **Locked `brainstorm.md`** (`status: approved`, `approvedBy: @MadaraUchiha-314`) on the
+    owner's *"let's go ahead with the requirements and design"* (PR #110).
+  - **`requirements.md`** — 10 requirements in EARS covering the declared graph (R1),
+    durable graph state (R2), pure gate evaluation (R3), node-lifecycle hooks and
+    notifications (R4), the orchestrated transport (R5), resident/event transports (R6),
+    the repository-boundary hard gate (R7), bounded recovery (R8), backwards compatibility
+    (R9) and observability (R10). Risk tier set to **4**: the change touches
+    `autonomy.sensitivePaths` (`**/*schema*`), so `autonomy.tiers` gives `human-approves-pr`
+    and `security.review.humanSignOffMinTier: 4` additionally requires a **named human
+    security sign-off** before completion.
+  - **Threat-model-lite written, not waved away.** This work item *does* add attack surface.
+    Four boundaries enumerated with six abuse cases: config→process execution (a node
+    carrying free-form argv would be arbitrary command execution), **agent→graph state**
+    (the subject of the gate can write the gate's bookkeeping), gate-result→harness input
+    (prompt-injection surface), and node-events→external channels.
+  - **`design.md`** — the five layers as components (`the_loop/graph/{model,gates,state,
+    runtime,notify}.py` plus two commands and per-harness hook wrappers), closed
+    vocabularies for gate predicates and edge conditions, the `graph-state.json` schema, an
+    error-handling table, a security design mapping every boundary to its mechanism and
+    negative test, and a requirement→scenario testing matrix. UI/UX: N/A (CLI).
+  - **Two design calls worth flagging to the reviewer.** (1) `command` is a **closed enum**,
+    not a string to execute — the runtime builds the argv itself, which closes the largest
+    new attack surface at the data model rather than with validation. (2) **Graph state is a
+    cache, not an authority** — `--recompute` derives completion from artifacts alone and the
+    CI gate always uses it, so an agent editing its own scorecard cannot pass a gate.
+  - **`decision-041`** recorded and indexed: model the process as a graph with node-lifecycle
+    hooks, harness hooks as a clock, implement rather than import. It also closes the "open
+    design question" that has sat unanswered at the end of `reference/workflow.md`.
+  - Seven brainstorm open questions resolved as **explicit assumptions** in a table at the
+    top of `requirements.md`, each stated so this phase's review can override it — rather
+    than silently absorbed (`reference/workflow.md`: keep moving, log the assumption).
+- **Checkpoint/tests:** `npx markdownlint-cli2@0.18.1` over the changed markdown → 0 errors;
+  `uv run python scripts/validate_config.py` → config still valid (no schema change yet —
+  the schema lands with implementation).
+- **Deviation, authorized:** the-loop's rule is that a downstream artifact is derived only
+  from a *locked* upstream one. The owner directed requirements **and** design in one pass,
+  so both are drafted together and reviewed in the same PR. Recorded here and in
+  `design.md`'s header rather than passed over; if the requirements review changes anything
+  material, the design is revised before tasks.
+- **Next:** owner review of `requirements.md` and `design.md`. On approval, set both to
+  `status: approved`, advance to `loop:tasks-breakdown` and derive `tasks.md`. Three open
+  questions want answers first: the closed command vocabulary vs. operator-defined commands,
+  `graph-state.json` vs. execution-log front-matter, and who provides the tier-4 security
+  sign-off.
+- **Blockers:** phase approval for requirements and design (`requireHumanReviewPerPhase`).
+
 ## Review cycles
 
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
@@ -136,6 +188,8 @@ status: in-progress           # in-progress | complete
 | 1 | self | the-loop (Claude Code) | Trimmed speculation not grounded in the repo or the harnesses' documented behaviour; every claim in the evidence table re-derived from the checked-in specs. | this PR |
 | 2 | human | @MadaraUchiha-314 | **Finding accepted and fixed** — the Cursor `stop` hook does exist; the "Cursor degrades to CI-only" framing was wrong. See the 2026-07-26 entry below. | [PR #110 review comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 3 | human | @MadaraUchiha-314 | **Direction accepted** — model the process as a graph of nodes with an orchestration layer determining edges; harness hooks are too fine-grained and phase-blind to be node boundaries. Architecture added; options re-cast as its layers. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
+| 4 | human | @MadaraUchiha-314 | **Brainstorm locked** — *"let's go ahead with the requirements and design"*. Phase advanced; both artifacts derived. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
+| 5 | self | the-loop (Claude Code) | Checked the derived artifacts against the phase gates: EARS throughout, Security considerations non-empty and specific, every requirements-phase trust boundary enforced in `design.md` § Security design, testing strategy mapping every requirement to a named Gherkin scenario. Risk tier raised 3 → 4 on the `**/*schema*` sensitive-path rule rather than left at the default. | this PR |
 
 ## Security review (gate)
 

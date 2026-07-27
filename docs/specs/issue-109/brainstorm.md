@@ -2,8 +2,8 @@
 type: brainstorm
 phase: brainstorming
 workItem: issue-109
-status: draft                # draft | in-review | approved  (approved == "locked")
-approvedBy: []               # handles/roles who locked this artifact (paper trail)
+status: approved             # draft | in-review | approved  (approved == "locked")
+approvedBy: ["@MadaraUchiha-314 (PR #110: \"let's go ahead with the requirements and design\", 2026-07-27)"]
 collaborators: [architect, engineer, product-manager]
 overrides: {}
 ---
