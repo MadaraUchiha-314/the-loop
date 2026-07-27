@@ -86,12 +86,56 @@ status: in-progress           # in-progress | complete
   or only in the IDE? Reports conflict; run it before requirements lock.
 - **Blockers:** unchanged.
 
+### 2026-07-26 — architecture redirected to a graph model (owner direction)
+
+- **Phase:** brainstorming
+- **Did:** @MadaraUchiha-314 named the real defect on PR #110: *"there's no clear
+  definition and hooks around logical 'node' boundaries… the hooks provided by the agent
+  harnesses are too fine grained and lack the appropriate details to figure out which phase
+  of the-loop we are in"* — and asked for a **graph** of the-loop's nodes with an
+  orchestration layer determining the edges (static now, dynamic later), plus an answer on
+  whether this is the literature's "graph engineering".
+  - **Accepted and designed.** Added § *Architecture: the-loop as a graph* — five layers:
+    graph data (nodes/edges with `produces`/`requires`/`gate`/`actor`/`stage`/`notify` and
+    `when` edges, cycles first-class), graph state (checked-in `currentNode` + attempts),
+    **node-lifecycle hooks** (`onEnter`/`onExit`/`onGateFail`/`onAwaitHuman`/`onEscalate`),
+    transports (orchestrated / resident-session tick / event-driven / CI backstop), and
+    bounded dynamic edges (the agent *selects among declared* edges, never invents one).
+  - **Confirmed the critique against this repo's own numbers.** 23 of 26 execution logs
+    sit at `phase: needs-review`, and `needs-review` is a single label covering six
+    distinct nodes (self-review, critic-review, security-review, evidence, capability-docs,
+    reviewer-briefing). The drift is not uniform — **it concentrates exactly where node
+    granularity runs out.** This is now the strongest single piece of evidence in the
+    brainstorm, and it argues the owner's case rather than the earlier draft's.
+  - **Corrected my own framing.** The earlier draft treated a harness `Stop` event as if it
+    were a node boundary. It is not: it fires many times per node and carries no phase.
+    New principle recorded — **harness hooks are a clock, not a state machine**; they say
+    *when* to look, the graph says *what we are looking at*. This rescues the hook work as
+    a transport rather than discarding it.
+  - **Answered the literature question: yes, and the term is current.** The lineage is
+    prompt engineering → **flow engineering** (AlphaCodium, 2024) → **graph engineering**
+    (2026): explicit workflow graphs modelled as state machines, canonical representation
+    being the stateful directed graph with typed nodes, conditional edges and persistent
+    checkpoints, cycles treated as a feature. Recommended adopting the *model and
+    vocabulary* while **implementing rather than importing** — the-loop's nodes are harness
+    CLI subprocesses and its checkpoints are checked-in files, neither of which an
+    in-process graph library serves.
+  - Re-cast options A–G as layers of the architecture (nothing discarded), resolved open
+    question 4 (orchestration, per the owner), and opened questions 8–11 (node granularity,
+    where graph state lives, graph vs `workflow.phases`, bounding dynamic edges).
+- **Checkpoint/tests:** `npx markdownlint-cli2@0.18.1 "docs/specs/issue-109/*.md"` →
+  0 errors.
+- **Next:** owner review of the architecture, then questions 1, 2, 7, 8, 9, 10 before the
+  brainstorm can be locked. Question 4 is now closed.
+- **Blockers:** unchanged — the brainstorm stays `status: draft`.
+
 ## Review cycles
 
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
 |-------|-----------------------------|----------|---------|------|
 | 1 | self | the-loop (Claude Code) | Trimmed speculation not grounded in the repo or the harnesses' documented behaviour; every claim in the evidence table re-derived from the checked-in specs. | this PR |
 | 2 | human | @MadaraUchiha-314 | **Finding accepted and fixed** — the Cursor `stop` hook does exist; the "Cursor degrades to CI-only" framing was wrong. See the 2026-07-26 entry below. | [PR #110 review comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
+| 3 | human | @MadaraUchiha-314 | **Direction accepted** — model the process as a graph of nodes with an orchestration layer determining edges; harness hooks are too fine-grained and phase-blind to be node boundaries. Architecture added; options re-cast as its layers. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 
 ## Security review (gate)
 
