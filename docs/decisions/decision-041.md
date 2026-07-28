@@ -56,12 +56,24 @@ drift concentrates where node granularity runs out.**
 
 ## Decision
 
-1. **Declare the process as a graph.** `workflow.graph` in the per-repo harness config
-   declares **nodes** (each with one `produces` artifact, plus `requires`, `gate`, `actor`,
-   `stage`, `label`, `command`, `notify`, `maxAttempts`) and **edges** (`from`, `to`,
-   `when`). Cycles are first-class — review→fix→review is a transition set, not a modelling
+1. **Declare the process as a graph, owned by the-loop.** The graph ships **with the
+   plugin** (`skills/the-loop/graph/pdlc.yaml`), declaring **nodes** (each with one
+   `produces` artifact, plus `requires`, `gate`, `actor`, `stage`, `label`, `command`,
+   `hooks`, `required`, `maxAttempts`) and **edges** (`from`, `to`, `when`). A repository
+   cannot define or override it; a repo-supplied `workflow.graph` is ignored with a
+   warning. Cycles are first-class — review→fix→review is a transition set, not a modelling
    error. A transition the graph does not declare cannot be taken, which is what makes
    *"no extra steps"* decidable at last.
+
+   *Owner direction, PR #110:* **"Let's make the graph internal to the-loop. Users of
+   the-loop don't get to define and override the graph for now. BUT, let's define the whole
+   graph in a declarative way, so that if repo authors want to define custom graphs, they
+   can do so. A future feature. So this gets rid of the security risks."** That is exactly
+   right, and it is why the graph is declarative rather than hard-coded: the *form* is
+   built for user authorship, the *distribution* withholds it until the safety story is
+   finished. The closed `command` vocabulary and the closed hook-action vocabulary are
+   retained even though nothing untrusted currently reaches them — they are the mechanisms
+   that make the future feature safe, and they cost nothing now.
 2. **Give the-loop its own node-lifecycle hooks** — `onEnter`, `onExit`, `onGateFail`,
    `onAwaitHuman`, `onEscalate` — fired by a small runtime at node boundaries. `onAwaitHuman`
    is the emitter that finally fires `notifications.events`, which has been declared but
@@ -85,8 +97,12 @@ drift concentrates where node granularity runs out.**
 8. **Implement the model; do not import a framework.** Adopt graph engineering's vocabulary
    and shape, write the runtime as thin stdlib Python over the existing
    registry/ControlStore/event log, and take **no new dependency**.
-9. **Agent-selected (dynamic) edges are deferred.** The schema reserves the field; the
-   runtime rejects it. Routing stays fully static in the first increment.
+9. **Dynamic gates are in scope, structured as "the LLM produces facts; CEL routes."** An
+   approval gate cannot be a keyword match — it has to understand whether a human approved
+   or asked for changes. So a node may declare a `decision`: a schema-constrained harness
+   call whose validated result is bound into the CEL context, after which the node's
+   **declared** edges do the routing. The model never selects a destination. See
+   [decision-042](decision-042.md).
 
 ## Consequences
 
@@ -103,14 +119,15 @@ drift concentrates where node granularity runs out.**
 
 **Negative / accepted costs.**
 
-- A new configuration surface and a new checked-in state file per work item — more to
-  validate, version and migrate.
-- A component that spawns harness processes from declared configuration; this is real new
-  attack surface, mitigated by the closed command enum (7) and enumerated in
-  `docs/specs/issue-109/requirements.md` § Security considerations. Risk tier **4**, so
-  completion requires a named human security sign-off.
-- Operators cannot define custom node commands in the first increment (the price of 7);
-  recorded as an open question rather than solved with a general escape hatch.
+- A new checked-in state file per work item — more to validate, version and migrate.
+- **Repositories lose the ability to shape their own process** for now. This is the price of
+  removing the config-to-execution surface, and it is why the declarative form is preserved
+  rather than replaced by hard-coded Python: the future feature must be a distribution
+  change, not a rewrite.
+- The remaining primary risk moves rather than disappearing: dynamic gates read
+  human-authored text, so the risk tier stays **4** and completion still requires a named
+  human security sign-off. Enumerated in `docs/specs/issue-109/requirements.md` §
+  Security considerations.
 - In-session enforcement differs mechanically per harness (Claude Code blocks the stop;
   Cursor auto-submits a `followup_message`), so a thin per-harness wrapper is unavoidable
   even though the checker is shared. Cursor caps auto-followups natively while Claude Code

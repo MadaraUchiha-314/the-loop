@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [042](decision-042.md) | CEL for edge conditions; dynamic gates decide facts, never destinations | proposed | 2026-07-27 |
 | [041](decision-041.md) | Model the-loop's process as an explicit graph with its own node-lifecycle hooks — implemented, not imported | proposed | 2026-07-27 |
 | [040](decision-040.md) | The auto-execute label arms a work item; an authorized user's explicit command starts it | proposed | 2026-07-26 |
 | [039](decision-039.md) | A PR closing ends only its own session — a work item may be delivered by several PRs | proposed | 2026-07-25 |

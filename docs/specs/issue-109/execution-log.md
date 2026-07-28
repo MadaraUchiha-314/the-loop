@@ -181,6 +181,52 @@ status: in-progress           # in-progress | complete
   sign-off.
 - **Blockers:** phase approval for requirements and design (`requireHumanReviewPerPhase`).
 
+### 2026-07-27 — specs revised: internal graph, CEL edges, dynamic gates (owner direction)
+
+- **Phase:** design
+- **Did:** second owner direction on PR #110 — make the graph internal, use CEL for
+  conditional edges, support LLM-decided approval gates, per-work-item tags/skips, YAML
+  lifecycle hooks, and keep tmux as the seat of the work. `requirements.md` and `design.md`
+  rewritten; `decision-041` amended; `decision-042` added.
+  - **The security model inverted, and it's a net win.** Making the graph internal *removes*
+    the largest boundary outright — no repository-supplied declaration can reach an
+    invocation, so config→process execution is gone rather than mitigated. But dynamic gates
+    *add* a new primary boundary: a decision call reads human-authored text, which on a
+    public repository anyone can write. Risk tier stays **4**, now for a better-founded
+    reason. The closed `command` and hook-action vocabularies are **retained anyway** — they
+    cost nothing now and are the mechanisms that will make user-defined graphs safe later.
+  - **Resolved the central tension with "the LLM produces facts; CEL routes."** A dynamic
+    gate never picks the next node. It answers a schema-constrained question; the validated
+    result binds into the CEL context; the node's **declared** edges route. Judgement where
+    judgement is needed, reachable state set still fixed — which is the whole point of #109.
+  - **Verified the harness question from primary sources rather than assuming.** Claude Code
+    supports `-p --output-format json --json-schema '<schema>'`, returning a validated
+    `structured_output` — exactly the mechanism needed. Cursor's CLI has
+    `-p --output-format json` but **no schema enforcement**, so its decisions embed the
+    schema, validate locally and retry within a bound. That asymmetry is a documented open
+    question, not papered over.
+  - **Honoured the tmux constraint as a design rule.** Work nodes run through the normal
+    runner (attachable, take-over-able); decision calls are separate short-lived headless
+    processes — never `--resume` of the work session, never pasted into tmux — so automation
+    never costs the human their intervention surface.
+  - **Bounded per-work-item skipping before it could become the new hole.** `tags`/`skipNodes`
+    come only from checked-in front-matter (never a comment or payload), and nodes marked
+    `required: true` — the security-review gate, mandated human approvals — are unskippable
+    regardless. Skipping is the obvious way to reintroduce step-skipping, so the bound lives
+    in the data model rather than in convention.
+  - **Closed hook-action vocabulary, no shell.** YAML selects and parameterises typed actions;
+    it never supplies a command line. This is what lets the hooks surface eventually be
+    user-authored without becoming remote code execution.
+  - Accepted **one** new runtime dependency (pure-Python CEL) in decision-038's posture,
+    reasoning that adopting a language designed to be embedded beats proving a bespoke
+    evaluator safe ourselves.
+- **Checkpoint/tests:** `npx markdownlint-cli2@0.18.1` over the changed markdown → 0 errors;
+  `uv run python scripts/validate_config.py` → all configs VALID.
+- **Next:** owner review of the revised requirements and design. Four open questions want
+  answers: the tier-4 security sign-off, which CEL implementation, how far `skipNodes` goes
+  beyond the `required` set, and the Cursor decision path. On approval → `loop:tasks-breakdown`.
+- **Blockers:** phase approval for requirements and design.
+
 ## Review cycles
 
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
@@ -189,6 +235,7 @@ status: in-progress           # in-progress | complete
 | 2 | human | @MadaraUchiha-314 | **Finding accepted and fixed** — the Cursor `stop` hook does exist; the "Cursor degrades to CI-only" framing was wrong. See the 2026-07-26 entry below. | [PR #110 review comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 3 | human | @MadaraUchiha-314 | **Direction accepted** — model the process as a graph of nodes with an orchestration layer determining edges; harness hooks are too fine-grained and phase-blind to be node boundaries. Architecture added; options re-cast as its layers. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 4 | human | @MadaraUchiha-314 | **Brainstorm locked** — *"let's go ahead with the requirements and design"*. Phase advanced; both artifacts derived. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
+| 6 | human | @MadaraUchiha-314 | **Direction accepted** — graph internal to the-loop (user-defined graphs a future feature); CEL expressions for conditional edges; LLM-decided approval gates; per-work-item tags/skips; YAML lifecycle hooks; tmux preserved for takeover. Specs rewritten; `decision-042` added. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 5 | self | the-loop (Claude Code) | Checked the derived artifacts against the phase gates: EARS throughout, Security considerations non-empty and specific, every requirements-phase trust boundary enforced in `design.md` § Security design, testing strategy mapping every requirement to a named Gherkin scenario. Risk tier raised 3 → 4 on the `**/*schema*` sensitive-path rule rather than left at the default. | this PR |
 
 ## Security review (gate)
