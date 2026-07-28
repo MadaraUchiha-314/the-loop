@@ -257,58 +257,95 @@ already merged** (`issue-21`, `issue-32`, `issue-86` designs). `diagramFormat: m
 written as a RULE and enforced by nothing. A rule with no hook drifts — which is this work
 item's thesis, demonstrated on a rule nobody thought to check.
 
-## Tool access: the-loop is the caller now
+## Tool access: two call planes, and a configurable transport
 
-The owner's point stands: with the-loop driving rather than the harness, tool access is
-the-loop's choice, and it is not bound by CLI or MCP. One interface, three opinionated
-defaults:
+### The boundary first
+
+Owner direction on PR #110: *"Anything that the LLM uses can be through CLI, MCP or API as
+LLM is free to do whatever it wants."* That draws a line worth making explicit, because the
+two sides have opposite requirements:
+
+| | **Control plane** — the-loop's own calls | **Work plane** — the agent's calls |
+|---|---|---|
+| Who calls | hook implementations in the CLI | the harness, inside a session |
+| Examples | sync a label, post the review request, notify Slack, record feedback | anything the agent decides it needs to read or do |
+| Requirement | deterministic, auditable, credentialed, testable | *unconstrained* |
+| Transport | **configurable** (below) | CLI, MCP, API — whatever the harness has |
+
+**the-loop does not police the work plane.** The agent's MCP servers, its `gh`, its network
+access are the operator's business and the harness's concern. Constraining them would buy
+nothing (the agent is already trusted to write code) and would break the takeover property
+the tmux runner exists for. Everything below is about the **control plane only**.
+
+### Transport is configurable per integration
+
+Owner direction: *"How to interface with external services should be configurable. We should
+support SDK+API and CLI, so people can choose based on what the-loop implements for these
+platforms."* This replaces the earlier draft's single opinionated answer per target, and it
+is better for a reason worth stating: **the-loop already has a working CLI transport.**
+`announce.py`, `comments.py`, `control.py`, `reactions.py` and `poller/github.py` all shell
+out to `gh` today, and `ghBinary` is already a configured value in three places. Making
+transport a choice turns a risky big-bang migration into **keeping what works as one
+provider and adding another beside it**.
+
+```yaml
+# cli-config.yaml — the daemon makes these calls, so they live with the daemon's
+# config (decision-032), not the per-repo harness config.
+integrations:
+  github:
+    transport: auto                 # auto | api | cli
+    api:
+      tokenEnv: [GH_TOKEN, GITHUB_TOKEN]
+      baseUrl: https://api.github.com     # or an enterprise host
+    cli:
+      binary: gh                    # the existing setting, unchanged
+  slack:
+    transport: sdk                  # sdk | webhook
+    urlEnv: THE_LOOP_SLACK_WEBHOOK_URL
+  jira:
+    transport: api                  # api | cli
+    api: {baseUrl: "", tokenEnv: THE_LOOP_JIRA_TOKEN}
+    cli: {binary: jira}
+```
+
+**`auto` resolves in a stated order** and never guesses silently: use `api` when a token is
+present; else `cli` when the binary is on `PATH`; else fail closed, naming *both* fixes
+("set `GH_TOKEN`, or install `gh`"). An explicit `api`/`cli` is honoured verbatim and fails
+rather than falling back — a configured choice that silently degrades is worse than an error.
+
+### What each transport is worth
+
+| Target | `api` | `cli` | `sdk` |
+|---|---|---|---|
+| **GitHub** | stdlib HTTP, no dependency, works in a bare container, needs a token | inherits the operator's `gh auth` (incl. enterprise/SSO), needs `gh` installed — **what the-loop does today** | none exists officially; `githubkit` is the pick if ever wanted |
+| **Slack** | raw webhook POST, no dependency | not meaningful — Slack's CLI is for app development, not posting | **`slack-sdk`**, official, **zero required dependencies**, brings retry/backoff/proxy/SSL |
+| **Jira** | REST + API token | community CLIs exist; supported for parity | none official |
+
+So the earlier recommendations survive as **defaults**, not as the only option: GitHub
+defaults to `auto` (which prefers `api`), Slack defaults to `sdk`, Jira to `api`.
+
+### The part that needs discipline: capabilities
+
+Transports are not equally capable, and pretending otherwise is how this design would rot.
+Every provider **declares the operations it implements**, and the runtime checks that
+declaration **at load time** against the operations the configured graph's hooks actually
+need:
 
 ```python
 class Integration(Protocol):
+    operations: frozenset[str]                     # what this provider can do
     def call(self, op: str, **params) -> dict: ...
 ```
 
-**Starting point (important):** the-loop already calls GitHub today, and it does so through
-the **`gh` CLI** — `announce.py`, `comments.py`, `control.py`, `reactions.py` and
-`poller/github.py` all shell out to it. So this is a **migration**, not a greenfield choice,
-and its cost is real work on existing modules.
+- A graph needing `add-reaction` with a transport that lacks it **fails at startup**, naming
+  the operation, the target and the two ways to fix it — not mid-run, three nodes deep.
+- One **shared contract test suite** runs against every provider for every operation, so
+  `api` and `cli` are verified to behave identically rather than assumed to.
+- The `HookResult` a hook returns is transport-independent by construction, so swapping
+  transports cannot change whether a node advances — only how the side effect was performed.
 
-**The rule: prefer the vendor's official SDK where one exists; where none does, weigh a
-community SDK against the number of endpoints actually used.** Applying it:
-
-| Target | Official SDK? | Decision | Cost |
-|---|---|---|---|
-| **Slack** | **Yes** — `slack-sdk`, maintained by Slack, with `slack_sdk.webhook.WebhookClient` for incoming webhooks | **Adopt it** | **Zero required dependencies.** Free. |
-| **GitHub** | **No.** GitHub's own docs list every Python library as third-party and unmaintained by GitHub; official Octokit exists for JS/Ruby/.NET only | **Thin REST over stdlib HTTP** | see below |
-| **Jira** | **No** — `atlassian-python-api` and `jira` are both community | **Thin REST + API token** | consistent with GitHub |
-
-**Slack: the SDK is not an alternative to the webhook — it is how you call the webhook
-properly.** `WebhookClient` brings retry handling with exponential backoff, proxy support and
-SSL context configuration, all of which the-loop would otherwise hand-roll and get subtly
-wrong. It costs nothing: `slack-sdk` declares **no required runtime dependencies**.
-
-**GitHub: there is no official SDK to adopt, and the community options are expensive for
-what the-loop needs** — roughly ten endpoints (issue comments, labels, reactions, PR reviews,
-linked issues, check runs):
-
-| Option | Required dependencies |
-|---|---|
-| `PyGithub` | `pynacl`, `requests`, `pyjwt[crypto]`, `typing-extensions`, `urllib3` — including a **compiled** crypto extension needed only for secrets encryption, which the-loop never does |
-| `githubkit` | `anyio`, `httpx`, `hishel`, `typing-extensions`, `pydantic`, `githubkit-schemas` |
-| thin REST | none |
-
-the-loop's entire runtime dependency list is currently `pyyaml>=6`. Taking five or six
-transitive dependencies — one of them compiled — to wrap ten endpoints is a poor trade for a
-tool distributed to every consuming project. If a GitHub SDK is wanted anyway, **`githubkit`
-is the better of the two**: typed and generated from GitHub's OpenAPI spec, so it does not
-drift, where PyGithub's lazy object model also issues extra API calls.
-
-Auth stays pragmatic either way: `GH_TOKEN`/`GITHUB_TOKEN` from the environment, falling back
-to a single `gh auth token` invocation **purely as a credential source** when `gh` happens to
-be installed — `gh`'s auth ergonomics without depending on it at call time.
-
-All of these are hooks behind one `Integration.call`. Swapping GitHub for Jira is swapping
-which hooks a node declares, not a code path through the runtime.
+This is the real cost of the flexibility and it should be named: N transports × M operations
+is a matrix, and the contract suite is what keeps it honest.
 
 ### What if MCP is the only available route?
 

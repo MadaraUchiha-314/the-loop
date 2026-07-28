@@ -163,36 +163,49 @@ what I could add are the same kind of thing.
 7. WHEN `notify` runs THEN recipients SHALL resolve only through `notifications.events` →
    roles → `.the-loop/collaborators.yaml`.
 
-### Requirement 6 — Integrations are the-loop's own calls
+### Requirement 6 — Integrations: two call planes, configurable transport
 
-**User story:** As an operator, I want the-loop to talk to GitHub, Slack and Jira directly,
-so behaviour does not depend on which CLI happens to be installed.
+**User story:** As an operator, I want to choose how the-loop reaches GitHub, Slack and Jira
+— and I want the agent left free to reach anything however it likes — so the-loop fits my
+environment instead of dictating it.
 
-1. WHEN an integration target publishes an **official** Python SDK THEN the-loop SHALL use it
-   in preference to hand-rolled HTTP; WHEN none exists THEN the choice between a community
-   SDK and thin REST SHALL be justified against the number of endpoints used and the
-   dependency cost.
-2. WHEN the-loop notifies Slack THEN it SHALL use the official `slack-sdk`
-   (`slack_sdk.webhook.WebhookClient`) with a webhook URL from configuration or environment —
-   Slack publishes an official SDK and it carries **zero required runtime dependencies**.
-3. WHEN the-loop calls GitHub THEN it SHALL use the REST API over stdlib HTTP, not the `gh`
-   CLI and not a community SDK — GitHub publishes no official Python SDK, and the community
-   options cost five or six transitive dependencies to wrap roughly ten endpoints.
-4. WHEN a GitHub token is absent from the environment and `gh` is available THEN the system
-   MAY invoke `gh auth token` **solely as a credential source**.
-5. WHEN the-loop updates Jira THEN it SHALL use the Jira REST API with an API token —
-   Atlassian publishes no official Python SDK either.
-6. WHEN an integration is unavailable except through MCP THEN the system SHALL perform the
-   call by **delegating to the harness** with schema-constrained output, rather than
-   implementing the MCP protocol itself.
-7. WHEN an integration call fails THEN the hook SHALL record the failure and the runtime
-   SHALL continue unless that hook is declared blocking — a channel outage SHALL NOT wedge
-   the graph.
-8. WHEN any integration is configured THEN its credentials SHALL come from environment or a
-   secret store, never from the repository, graph state or logs.
-9. WHEN the GitHub transport changes THEN the five modules that shell out to `gh` today
-   (`announce`, `comments`, `control`, `reactions`, `poller/github`) SHALL be migrated —
-   this is a migration of existing behaviour, not new surface.
+1. WHEN the **agent** reaches an external service from inside its session THEN the-loop SHALL
+   NOT constrain how — CLI, MCP or API are all the harness's and the operator's business.
+   *(Owner: "anything that the LLM uses can be through CLI, MCP or API as LLM is free to do
+   whatever it wants.")* Everything below governs **the-loop's own calls only**.
+2. WHEN the-loop calls an external service THEN the transport SHALL be **configurable per
+   integration** in the CLI config, supporting at least `api` and `cli` where both are
+   meaningful, and `sdk` where an official one exists.
+3. WHEN `transport: auto` is configured THEN resolution SHALL follow a documented order — a
+   configured API token first, then an installed CLI binary — and WHEN neither is available
+   the system SHALL fail closed naming **both** remedies.
+4. WHEN an explicit transport is configured THEN it SHALL be honoured verbatim and SHALL fail
+   rather than silently falling back to another.
+5. WHEN the-loop notifies Slack THEN the default transport SHALL be the official `slack-sdk`,
+   with a dependency-free raw `webhook` transport available as the alternative.
+6. WHEN the-loop calls GitHub THEN both an `api` transport (stdlib HTTP + token) and a `cli`
+   transport (the existing `gh` path, inheriting the operator's `gh auth`, including
+   enterprise/SSO) SHALL be available; `auto` SHALL be the default.
+7. WHEN the-loop updates Jira THEN an `api` transport SHALL be available, with a `cli`
+   transport supported for parity.
+8. WHEN a transport provider is registered THEN it SHALL **declare the operations it
+   implements**.
+9. WHEN the runtime loads THEN it SHALL verify that every operation the configured graph's
+   hooks require is implemented by the configured transport, and SHALL fail **at load time**
+   — naming the operation, the target and how to fix it — rather than failing mid-traversal.
+10. WHEN a transport is swapped THEN the `HookResult` a hook returns SHALL be unchanged —
+    transport SHALL affect how a side effect is performed, never whether a node advances.
+11. WHEN an integration is unavailable except through MCP THEN the-loop SHALL perform the call
+    by **delegating to the harness** with schema-constrained output, rather than implementing
+    the MCP protocol itself.
+12. WHEN an integration call fails THEN the hook SHALL record the failure and the runtime
+    SHALL continue unless that hook is declared blocking — a channel outage SHALL NOT wedge
+    the graph.
+13. WHEN any integration is configured THEN its credentials SHALL come from environment or a
+    secret store, never from the repository, graph state or logs.
+14. WHEN the `cli` transport is used for GitHub THEN it SHALL reuse the existing `gh` code
+    paths (`announce`, `comments`, `control`, `reactions`, `poller/github`) rather than
+    replacing them — configurable transport turns the migration into an addition.
 
 ### Requirement 7 — Sessions
 

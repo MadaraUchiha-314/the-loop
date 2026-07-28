@@ -344,6 +344,42 @@ status: in-progress           # in-progress | complete
   `status: approved`, advance to `loop:tasks-breakdown`, derive `tasks.md`.
 - **Blockers:** phase approval only.
 
+### 2026-07-28 — integration transport made configurable; two call planes named
+
+- **Phase:** design
+- **Did:** owner direction on PR #110 — *"How to interface with external services should be
+  configurable. We should support SDK+API and CLI… Anything that the LLM uses can be through
+  CLI, MCP or API as LLM is free to do whatever it wants."* `requirements.md` R6 rewritten,
+  `design.md` § Tool access rewritten, `decision-042` revised.
+  - **Named the boundary the comment draws.** Two call planes: the-loop's **control plane**
+    (its own hook calls — deterministic, auditable, credentialed, configurable) and the
+    agent's **work plane** (unconstrained — CLI, MCP, API, whatever the harness has). the-loop
+    does not police the work plane: it would buy nothing, since the agent is already trusted
+    to write code, and it would break the session-takeover property the tmux runner exists
+    for. Everything in the integrations design now applies to the control plane only.
+  - **Transport is configurable per integration** (`api` / `cli` / `sdk` in `cli-config.yaml`,
+    since the daemon makes these calls — decision-032). `auto` resolves token → binary and
+    **fails closed naming both remedies**; an explicit transport is honoured verbatim and
+    fails rather than silently degrading, because a configured choice that quietly falls back
+    is worse than an error.
+  - **This fixes the migration story, which is the part I had wrong.** Two rounds ago I
+    proposed replacing `gh` with REST outright. But the-loop already reaches GitHub through
+    `gh` in five modules, with `ghBinary` configured in three places — so a mandated
+    transport meant a risky big-bang rewrite *and* threw away working code. Configurable
+    transport turns it into **keeping `gh` as the `cli` provider and adding `api` beside it**:
+    additive, reversible, and it preserves `gh auth`'s enterprise/SSO inheritance for
+    operators who want it. The earlier recommendations survive as **defaults**, not mandates.
+  - **Added the discipline the flexibility needs.** N transports × M operations is a matrix
+    that would rot silently, so providers **declare the operations they implement** and the
+    runtime verifies at **load time** that the configured graph's hooks are all satisfiable —
+    failing at startup, naming the operation and both fixes, rather than three nodes deep. One
+    shared contract suite runs against every provider so `api` and `cli` are *verified*
+    equivalent, not assumed. And `HookResult` stays transport-independent by construction:
+    swapping transport changes how a side effect happened, never whether a node advances.
+- **Checkpoint/tests:** markdownlint 0 errors; 4/4 mermaid blocks parse.
+- **Next:** phase approval for requirements and design.
+- **Blockers:** phase approval only.
+
 ## Review cycles
 
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
@@ -352,6 +388,7 @@ status: in-progress           # in-progress | complete
 | 2 | human | @MadaraUchiha-314 | **Finding accepted and fixed** — the Cursor `stop` hook does exist; the "Cursor degrades to CI-only" framing was wrong. See the 2026-07-26 entry below. | [PR #110 review comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 3 | human | @MadaraUchiha-314 | **Direction accepted** — model the process as a graph of nodes with an orchestration layer determining edges; harness hooks are too fine-grained and phase-blind to be node boundaries. Architecture added; options re-cast as its layers. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 4 | human | @MadaraUchiha-314 | **Brainstorm locked** — *"let's go ahead with the requirements and design"*. Phase advanced; both artifacts derived. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
+| 9 | human | @MadaraUchiha-314 | **Transport made configurable** — support SDK+API and CLI per integration so operators choose; the agent's own calls left unconstrained (CLI/MCP/API). Turns the `gh` migration into an addition rather than a rewrite. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 8 | human | @MadaraUchiha-314 | **All four open questions resolved** — sign-off explained (not delegated); approve-with-comments recorded as a `## Review comments` section in the artifact; `session: inherit` falls back to fresh; **CEL removed** (zero new dependencies). | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 7 | human | @MadaraUchiha-314 | **Simplification accepted, fresh slate** — collapse to nodes + entry/exit hooks with one `HookResult` contract; everything (validation, labels, Slack, Jira) is a hook; opinionated integrations; MCP question answered. Human gate recommended as a **node**. Specs and both decisions rewritten. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 6 | human | @MadaraUchiha-314 | **Direction accepted** — graph internal to the-loop (user-defined graphs a future feature); CEL expressions for conditional edges; LLM-decided approval gates; per-work-item tags/skips; YAML lifecycle hooks; tmux preserved for takeover. Specs rewritten; `decision-042` added. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
