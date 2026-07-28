@@ -390,10 +390,32 @@ notifications:
     phase-approval-pending: [approver]   # WHAT + WHO; HOW comes from cli-config
 ```
 
-**Migration is non-breaking.** An existing `ghBinary` key keeps working, resolved as an
-override of `integrations.github.cli.binary`, with a deprecation warning naming the
-replacement. Nothing an operator has today stops working on upgrade — the same posture the
-`config.yaml` → `harness-config.yaml` rename took.
+**This is a breaking change, deliberately** (owner decision: *"Let's make breaking changes.
+/upgrade should be able to handle it."*). Carrying `ghBinary` forever as a shadow override
+would preserve exactly the duplication the reconciliation exists to remove, and leave two
+ways to say one thing — so the legacy keys are **removed**, not deprecated.
+
+What makes a breaking change safe here is that the migration is mechanical and the-loop
+already owns the tool for it: `/the-loop:upgrade-the-loop` exists precisely to *"reconcile a
+project's files with the installed plugin version — create missing files and migrate
+schemas"*, is idempotent and non-clobbering, supports `--dry-run`, and has already performed
+a rename migration of this shape (`config.yaml` → `harness-config.yaml`, issue-82).
+
+Four properties the break must have:
+
+1. **Version the schema, don't sniff for keys.** `cli-config.yaml`'s `version` is bumped, so
+   detection is exact — "this config is version *N*, the plugin needs *N+1*" — rather than
+   heuristic key-spotting.
+2. **Fail closed and loudly, never silently ignore.** A config still carrying `ghBinary`
+   makes the runtime **refuse to start**, naming the offending key, its replacement, and the
+   exact command to run. Silently ignoring a value the operator deliberately set would change
+   their behaviour without telling them — much worse than an error.
+3. **The migration is a deterministic key move**, idempotent, previewable with `--dry-run`,
+   and it *reports* every key it moved rather than rewriting the file quietly.
+4. **The migration is tested.** "`/upgrade` handles it" is exactly the sort of claim that
+   drifts into being false — which is this work item's entire thesis — so it gets a fixture:
+   an old config in, the migrated config asserted out, plus a test that the runtime **refuses**
+   an un-migrated config.
 
 ### What if MCP is the only available route?
 

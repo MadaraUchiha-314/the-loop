@@ -423,6 +423,33 @@ status: in-progress           # in-progress | complete
 - **Next:** phase approval for requirements and design.
 - **Blockers:** phase approval only.
 
+### 2026-07-28 — config change made breaking, migrated by /upgrade
+
+- **Phase:** design
+- **Did:** owner overruled my non-breaking proposal — *"Let's make breaking changes. /upgrade
+  should be able to handle it."* Agreed, and it is the better call: carrying `ghBinary` as a
+  shadow override would have preserved exactly the duplication the reconciliation exists to
+  remove, leaving two ways to say one thing. The legacy keys are now **removed**.
+  - **Checked the claim before relying on it.** `/the-loop:upgrade-the-loop` is documented as
+    reconciling files and **migrating schemas**, is idempotent and non-clobbering, supports
+    `--dry-run`, and has **already performed a rename migration of exactly this shape**
+    (`config.yaml` → `harness-config.yaml`, issue-82). So "/upgrade handles it" is a
+    verifiable property of an existing tool, not an aspiration.
+  - **Specified four properties that make the break safe**, since a breaking change is only
+    as good as its migration: version the schema so detection is exact rather than
+    key-sniffing; **fail closed and loudly** — a config still carrying a removed key makes the
+    runtime refuse to start, naming the key, its replacement and the exact command, because
+    silently ignoring a value the operator deliberately set would change their behaviour
+    without telling them; make the migration a deterministic, idempotent, previewable key
+    move that *reports* what it changed; and **test it both ways**.
+  - The test point is the thesis eating its own cooking: *"/upgrade handles it"* is precisely
+    the kind of claim that drifts into being false, so it gets a fixture — old config in,
+    expected config out — plus a test asserting the runtime **refuses** an un-migrated config.
+  - Rewrote R6a (now 8 criteria) and the design's migration paragraph; noted in `decision-042`.
+- **Checkpoint/tests:** markdownlint 0 errors; 5/5 mermaid blocks parse.
+- **Next:** phase approval for requirements and design.
+- **Blockers:** phase approval only.
+
 ## Review cycles
 
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
@@ -431,6 +458,7 @@ status: in-progress           # in-progress | complete
 | 2 | human | @MadaraUchiha-314 | **Finding accepted and fixed** — the Cursor `stop` hook does exist; the "Cursor degrades to CI-only" framing was wrong. See the 2026-07-26 entry below. | [PR #110 review comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 3 | human | @MadaraUchiha-314 | **Direction accepted** — model the process as a graph of nodes with an orchestration layer determining edges; harness hooks are too fine-grained and phase-blind to be node boundaries. Architecture added; options re-cast as its layers. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 4 | human | @MadaraUchiha-314 | **Brainstorm locked** — *"let's go ahead with the requirements and design"*. Phase advanced; both artifacts derived. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
+| 11 | human | @MadaraUchiha-314 | **Make it a breaking change** — remove the legacy per-feature keys rather than shadowing them; `/the-loop:upgrade-the-loop` performs the migration. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 10 | human | @MadaraUchiha-314 | **Runtime + config reconciliation** — specify what compiles and runs the graph (no engine; the existing `Command`/`@register` pattern), and apply the integration pattern across both config files, removing triplicated `ghBinary`. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 9 | human | @MadaraUchiha-314 | **Transport made configurable** — support SDK+API and CLI per integration so operators choose; the agent's own calls left unconstrained (CLI/MCP/API). Turns the `gh` migration into an addition rather than a rewrite. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 8 | human | @MadaraUchiha-314 | **All four open questions resolved** — sign-off explained (not delegated); approve-with-comments recorded as a `## Review comments` section in the artifact; `session: inherit` falls back to fresh; **CEL removed** (zero new dependencies). | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |

@@ -85,6 +85,14 @@ feedback is iterative, may be approval *with* comments, and must be reacted to d
    today in five modules, with `ghBinary` already a configured value in three places. Making
    transport a choice turns a risky big-bang rewrite into **keeping what works as the `cli`
    provider and adding `api` beside it**.
+   *The config change itself is a **breaking** one* (owner: *"Let's make breaking changes.
+   /upgrade should be able to handle it."*): the per-feature `ghBinary` keys are **removed**
+   rather than shadowed, so there is exactly one way to declare transport. The schema version
+   is bumped, the runtime **refuses to start** on a removed key — naming it, its replacement
+   and `/the-loop:upgrade-the-loop` — and the migration is a deterministic, idempotent,
+   `--dry-run`-able key move performed by that command, which has already done a rename
+   migration of this shape (issue-82). It is tested both ways: old config migrates to the
+   expected new one, and the runtime refuses an un-migrated one.
 10. **The rule for defaults: prefer the vendor's official SDK where one exists; where none
     does, weigh a community SDK against the number of endpoints actually used.** Raised by
     the owner (*"github doesn't have python SDK?"*, *"are we using slack python sdk? if not,

@@ -217,12 +217,23 @@ same setting in three places and wondering which one wins.
 2. WHEN a per-repo config names an integration THEN it SHALL reference the provider **by
    name** and SHALL NOT declare how to reach it — intent in `harness-config.yaml`, recipients
    in `collaborators.yaml`, transport and credentials in `cli-config.yaml`.
-3. WHEN a legacy per-feature key is present (today: `ghBinary` under `control`, `reactions`
-   and `announce`) THEN it SHALL continue to work, resolved as an override of the
-   corresponding `integrations` value, and SHALL emit a deprecation warning naming its
-   replacement.
-4. WHEN the configs are reconciled THEN the split established by decision-032 SHALL be
+3. WHEN the configs are reconciled THEN the split established by decision-032 SHALL be
    preserved: per-repo intent in the harness config, daemon mechanics in the CLI config.
+4. **This SHALL be a breaking change**, not a deprecation *(owner decision: "Let's make
+   breaking changes. /upgrade should be able to handle it.")*. The legacy per-feature keys
+   (today `ghBinary` under `control`, `reactions` and `announce`) SHALL be **removed**, so
+   there is exactly one way to declare transport.
+5. WHEN the config schema changes THEN its `version` SHALL be bumped, so an out-of-date
+   config is detected **by version** rather than by sniffing for keys.
+6. IF a config still carries a removed key, or is below the required version, THEN the
+   runtime SHALL **refuse to start**, naming the offending key, its replacement, and
+   `/the-loop:upgrade-the-loop` — it SHALL NOT silently ignore a value the operator set.
+7. WHEN `/the-loop:upgrade-the-loop` runs against an out-of-date config THEN it SHALL perform
+   the migration as a deterministic key move, SHALL be idempotent, SHALL support `--dry-run`,
+   and SHALL report every key it moved rather than rewriting the file silently.
+8. WHEN the migration is implemented THEN it SHALL be covered by tests — an old-config
+   fixture migrating to the expected new config, **and** a test asserting the runtime refuses
+   an un-migrated config.
 
 ### Requirement 6b — The graph runtime
 
