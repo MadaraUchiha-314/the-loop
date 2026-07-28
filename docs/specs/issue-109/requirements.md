@@ -168,20 +168,31 @@ what I could add are the same kind of thing.
 **User story:** As an operator, I want the-loop to talk to GitHub, Slack and Jira directly,
 so behaviour does not depend on which CLI happens to be installed.
 
-1. WHEN the-loop calls GitHub THEN it SHALL use the REST API over HTTP, not the `gh` CLI.
-2. WHEN a GitHub token is absent from the environment and `gh` is available THEN the system
+1. WHEN an integration target publishes an **official** Python SDK THEN the-loop SHALL use it
+   in preference to hand-rolled HTTP; WHEN none exists THEN the choice between a community
+   SDK and thin REST SHALL be justified against the number of endpoints used and the
+   dependency cost.
+2. WHEN the-loop notifies Slack THEN it SHALL use the official `slack-sdk`
+   (`slack_sdk.webhook.WebhookClient`) with a webhook URL from configuration or environment —
+   Slack publishes an official SDK and it carries **zero required runtime dependencies**.
+3. WHEN the-loop calls GitHub THEN it SHALL use the REST API over stdlib HTTP, not the `gh`
+   CLI and not a community SDK — GitHub publishes no official Python SDK, and the community
+   options cost five or six transitive dependencies to wrap roughly ten endpoints.
+4. WHEN a GitHub token is absent from the environment and `gh` is available THEN the system
    MAY invoke `gh auth token` **solely as a credential source**.
-3. WHEN the-loop notifies Slack THEN it SHALL use an incoming webhook URL from configuration
-   or environment.
-4. WHEN the-loop updates Jira THEN it SHALL use the Jira REST API with an API token.
-5. WHEN an integration is unavailable except through MCP THEN the system SHALL perform the
+5. WHEN the-loop updates Jira THEN it SHALL use the Jira REST API with an API token —
+   Atlassian publishes no official Python SDK either.
+6. WHEN an integration is unavailable except through MCP THEN the system SHALL perform the
    call by **delegating to the harness** with schema-constrained output, rather than
    implementing the MCP protocol itself.
-6. WHEN an integration call fails THEN the hook SHALL record the failure and the runtime
+7. WHEN an integration call fails THEN the hook SHALL record the failure and the runtime
    SHALL continue unless that hook is declared blocking — a channel outage SHALL NOT wedge
    the graph.
-7. WHEN any integration is configured THEN its credentials SHALL come from environment or a
+8. WHEN any integration is configured THEN its credentials SHALL come from environment or a
    secret store, never from the repository, graph state or logs.
+9. WHEN the GitHub transport changes THEN the five modules that shell out to `gh` today
+   (`announce`, `comments`, `control`, `reactions`, `poller/github`) SHALL be migrated —
+   this is a migration of existing behaviour, not new surface.
 
 ### Requirement 7 — Sessions
 
@@ -230,9 +241,11 @@ automation never costs me the ability to intervene.
 
 ## Non-functional requirements
 
-- **Dependencies. Zero new runtime dependencies.** Edges route on hook outcomes only — no
-  expression language (owner decision: *"Remove CEL"*) — and HTTP uses the standard library.
-  A condition that would have wanted an expression becomes a named hook.
+- **Dependencies: one, and it is free.** Edges route on hook outcomes only — no expression
+  language (owner decision: *"Remove CEL"*) — and GitHub/Jira HTTP uses the standard library.
+  The single addition is the **official `slack-sdk`**, which declares **zero required runtime
+  dependencies** of its own, so the-loop's installed footprint grows by one package and no
+  transitive tree.
 - **Both harnesses.** Every requirement holds for Claude Code and Cursor, or degrades to the
   repository-boundary check with the difference documented.
 - **`the-loop check` is fast and pure** — it runs on every resident-session turn.

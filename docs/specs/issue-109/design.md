@@ -268,14 +268,47 @@ class Integration(Protocol):
     def call(self, op: str, **params) -> dict: ...
 ```
 
-| Target | Decision | Why |
-|---|---|---|
-| **GitHub** | **REST API over stdlib HTTP** — not `gh` | No binary dependency, no CLI version drift, no shell quoting, structured errors, works in a bare container. Auth from `GH_TOKEN`/`GITHUB_TOKEN`; if absent and `gh` is installed, shell out **once** to `gh auth token` purely as a credential source. Best of both: `gh`'s auth ergonomics without depending on `gh` at call time. |
-| **Slack** | **Incoming webhooks** | A URL in config/env. No OAuth app, no scope negotiation, no token refresh. Exactly the right weight for "post a notification". |
-| **Jira** | **REST API + API token** | Same reasoning as GitHub; no CLI exists worth depending on. |
+**Starting point (important):** the-loop already calls GitHub today, and it does so through
+the **`gh` CLI** — `announce.py`, `comments.py`, `control.py`, `reactions.py` and
+`poller/github.py` all shell out to it. So this is a **migration**, not a greenfield choice,
+and its cost is real work on existing modules.
 
-All three are hooks. Swapping GitHub for Jira is swapping which hooks a node declares — not
-a code path through the runtime.
+**The rule: prefer the vendor's official SDK where one exists; where none does, weigh a
+community SDK against the number of endpoints actually used.** Applying it:
+
+| Target | Official SDK? | Decision | Cost |
+|---|---|---|---|
+| **Slack** | **Yes** — `slack-sdk`, maintained by Slack, with `slack_sdk.webhook.WebhookClient` for incoming webhooks | **Adopt it** | **Zero required dependencies.** Free. |
+| **GitHub** | **No.** GitHub's own docs list every Python library as third-party and unmaintained by GitHub; official Octokit exists for JS/Ruby/.NET only | **Thin REST over stdlib HTTP** | see below |
+| **Jira** | **No** — `atlassian-python-api` and `jira` are both community | **Thin REST + API token** | consistent with GitHub |
+
+**Slack: the SDK is not an alternative to the webhook — it is how you call the webhook
+properly.** `WebhookClient` brings retry handling with exponential backoff, proxy support and
+SSL context configuration, all of which the-loop would otherwise hand-roll and get subtly
+wrong. It costs nothing: `slack-sdk` declares **no required runtime dependencies**.
+
+**GitHub: there is no official SDK to adopt, and the community options are expensive for
+what the-loop needs** — roughly ten endpoints (issue comments, labels, reactions, PR reviews,
+linked issues, check runs):
+
+| Option | Required dependencies |
+|---|---|
+| `PyGithub` | `pynacl`, `requests`, `pyjwt[crypto]`, `typing-extensions`, `urllib3` — including a **compiled** crypto extension needed only for secrets encryption, which the-loop never does |
+| `githubkit` | `anyio`, `httpx`, `hishel`, `typing-extensions`, `pydantic`, `githubkit-schemas` |
+| thin REST | none |
+
+the-loop's entire runtime dependency list is currently `pyyaml>=6`. Taking five or six
+transitive dependencies — one of them compiled — to wrap ten endpoints is a poor trade for a
+tool distributed to every consuming project. If a GitHub SDK is wanted anyway, **`githubkit`
+is the better of the two**: typed and generated from GitHub's OpenAPI spec, so it does not
+drift, where PyGithub's lazy object model also issues extra API calls.
+
+Auth stays pragmatic either way: `GH_TOKEN`/`GITHUB_TOKEN` from the environment, falling back
+to a single `gh auth token` invocation **purely as a credential source** when `gh` happens to
+be installed — `gh`'s auth ergonomics without depending on it at call time.
+
+All of these are hooks behind one `Integration.call`. Swapping GitHub for Jira is swapping
+which hooks a node declares, not a code path through the runtime.
 
 ### What if MCP is the only available route?
 
@@ -465,9 +498,12 @@ payoff of the contract). Integration tests with Gherkin docstrings under
   non-trivial condition; buys one mechanism instead of two, **zero new runtime
   dependencies**, and conditions that are unit-testable like everything else.
   → `decision-042` (revised).
-- **GitHub REST over `gh`, Slack webhooks over an app.** Costs some convenience; buys no
-  binary dependencies and no version drift, with `gh auth token` retained purely as an
-  optional credential source.
+- **Official SDK where one exists; thin REST where none does.** Slack's `slack-sdk` is
+  official and has **zero required dependencies**, so adopting it is free and buys
+  retry/backoff/proxy handling. GitHub has **no** official Python SDK, and the community
+  options cost five or six transitive dependencies (PyGithub even a compiled one) to wrap
+  ~10 endpoints — a poor trade against a current footprint of exactly `pyyaml`. Migrating
+  the five modules that use `gh` today is the real work either way.
 - **MCP by delegation to the harness.** Costs one harness invocation per call; buys not
   owning a protocol implementation and its server lifecycle.
 - **Hooks are registered code, never shell.** Costs operator extensibility today; buys a
