@@ -1,139 +1,144 @@
-# Decision 042: CEL for edge conditions; dynamic gates decide facts, never destinations
+# Decision 042: route on hook outcomes; the-loop owns its integrations; MCP by delegation
 
 - **Status:** proposed
-- **Date:** 2026-07-27
+- **Date:** 2026-07-28 (revised; first drafted 2026-07-27)
 - **Deciders:** @MadaraUchiha-314 (issue #109, PR #110)
 - **Work item:** issue-109
 - **Spec:** `docs/specs/issue-109/`
-- **Extends:** [decision-041](decision-041.md) (the process graph). Accepts one new runtime
-  dependency, in the posture [decision-038](decision-038.md) established when it retired the
-  zero-dependency guarantee.
+- **Extends:** [decision-041](decision-041.md) (nodes and hooks).
 
 ## Context
 
-decision-041 made the-loop's PDLC an explicit graph. Its first draft gave edges a **closed
-keyword vocabulary** (`gate.satisfied`, `gate.failed.retriable`, …). The owner rejected that
-as too weak for the gates that actually matter:
+decision-041 makes the PDLC a graph of nodes with entry/exit hook chains. Three questions
+it does not answer, all raised by the owner on PR #110:
 
-> *"We should at least support CEL based expressions for conditional edges so that one can
-> define dynamic edges for gates. For e.g. the approval gate after every step will need an
-> LLM call to check if the user requested some changes or approved. It can't be static."*
+1. **How do edges decide?** An earlier draft put a CEL expression on every edge. With hooks
+   now returning a typed `HookResult`, most conditions are a *name*, not a formula.
+2. **Who calls GitHub, Slack and Jira?** the-loop is now the orchestrator rather than the
+   harness, so the choice of transport is its own:
 
-Two distinct requirements are hiding in that sentence:
+   > *"Given we are changing the architecture significantly and the-loop is now in control
+   > (as opposed to claude/cursor), we can take an opinionated choice on certain tools…
+   > basically we are not bound by CLI or mcp."*
 
-1. **Expressiveness.** Real conditions combine attempt counts, per-work-item tags, risk
-   tiers and decision outcomes. A fixed keyword set means inventing a keyword per condition
-   forever.
-2. **Semantics.** "Did the human approve?" is a judgement over free-form English. No
-   expression language answers it, no matter how expressive.
+3. **What if MCP is the only route?** The owner's explicit open question.
 
-These pull in opposite directions. Expressiveness wants a richer *evaluator*; semantics wants
-a *model*. The risk is that satisfying (2) hands routing to an LLM and gives back the
-non-determinism issue #109 exists to remove.
-
-There is also a constraint on *how* the model is invoked. The owner:
-
-> *"Triggering claude/cursor through CLI and piping it through a tmux session is important
-> because that lets the user take over and interact whenever required."*
-
-So whatever makes these calls must not disturb the session a human may be watching.
+There is also a semantic problem no transport choice solves: *"did the reviewer approve?"*
+is judgement over free-form English. A gate that keyword-matches `LGTM` pushes process onto
+reviewers instead of meeting them where they write — and the owner was explicit that gate
+feedback is iterative, may be approval *with* comments, and must be reacted to dynamically.
 
 ## Decision
 
-1. **Edge conditions are CEL expressions.** `when` is a CEL expression over a documented,
-   typed context (`gate`, `attempts`, `maxAttempts`, `node`, `workItem.{tags,riskTier,skip}`,
-   `decision.<id>`, `findings`, `approval`). CEL is
-   [non-Turing-complete, side-effect-free and designed to be embedded](https://cel.dev/) —
-   it cannot reach the filesystem, network, subprocesses or environment. That property is
-   why it remains safe when user-defined graphs eventually arrive.
-2. **Every expression is compiled at load time**, not at traversal time. A malformed
-   expression fails before any work item is touched.
-3. **Deterministic selection.** Outgoing edges are evaluated in declaration order and the
-   first true one is taken; the ambiguity is recorded. **No true edge parks and escalates**
-   rather than guessing.
-4. **Dynamic gates: the LLM produces facts; CEL routes on them.** A node may declare a
-   `decision` — a prompt plus a **JSON Schema** whose validated result is recorded in graph
-   state and bound into the CEL context. The model answers a constrained question; the
-   node's **declared** edges decide where that answer leads. *The model never returns a
-   destination.*
-5. **Structured output comes from the harness CLI.** Claude Code supports
-   `claude -p … --output-format json --json-schema '<schema>'`, returning a validated result
-   in `structured_output`. Cursor's CLI has `-p --output-format json` but no schema
-   enforcement today, so its decisions embed the schema in the prompt, validate locally, and
-   retry within a declared bound.
-6. **A decision that cannot be resolved fails closed.** Invalid output after its retries →
-   park and notify. Never assume an outcome.
-7. **Policy outranks the model.** A decision can only *classify* a human response that has
-   actually arrived. It can never satisfy an approval that `autonomy.tiers` or
-   `security.review.humanSignOffMinTier` reserves for a human.
-8. **Only authorized text is read.** A decision that reads human-authored text considers only
-   text authored by a user in `routing.authorizedUsers` (`authz.is_authorized`). Everything
-   else is not carefully handled — it is not read at all.
-9. **Decision calls are side calls.** They run as fresh, short-lived headless processes at
-   the cheapest model tier: never `--resume` of the work session, never pasted into tmux. The
-   work stays in the session a human can attach to and take over; the decisions happen beside
-   it.
-10. **Dependency: a pure-Python CEL implementation** (`cel-python`) over the official
-    wrapped-C++ binding, so wheels stay pure and installation needs no toolchain. Recorded as
-    an open question in case the owner prefers upstream fidelity over install simplicity.
+### Routing
+
+1. **Edges route on hook outcomes.** `on: <outcome>` names a value a hook produced —
+   `pass`, `approved`, `approved-with-comments`, `changes-requested`. This covers the
+   overwhelming majority of transitions.
+2. **An optional `when:` expression handles the compound minority** (conditions over hook
+   `data`, work-item tags and risk tier). Whether this is CEL or a small set of named
+   compound-condition hooks is left open (`requirements.md` open question 4) — the point of
+   this decision is that **it is the minority case**, not the default. Simplifying from
+   "expression on every edge" is the change.
+3. **No matching edge parks and escalates** rather than guessing.
+
+   *On human feedback:*
+
+4. **Classification is a hook that produces a fact, never a destination.**
+   `classify-feedback` asks the harness with a schema-constrained prompt and returns a closed
+   outcome in `data`; the node's **declared** edges do the routing. Judgement where judgement
+   is needed; the reachable state set stays fixed and reviewable in a diff.
+5. **Indecisive feedback keeps the gate open.** A partial review, a question or an ambiguous
+   comment returns `wait`. The gate transitions only on a decisive classification, which is
+   how iterative multi-comment review is served without guessing.
+6. **Approved-with-comments is a first-class outcome.** It advances the work item *and*
+   carries the comments forward as follow-up work — an approval never silently discards a
+   reviewer's suggestions.
+7. **Only authorized authors' text is read at all**, and **policy outranks the model**: a
+   classification can only classify a human response that actually arrived; it can never
+   satisfy an approval that `autonomy.tiers` or `security.review.humanSignOffMinTier`
+   reserves for a human.
+
+   *On integrations:*
+
+8. **GitHub: the REST API over stdlib HTTP, not the `gh` CLI.** No binary dependency, no CLI
+   version drift, no shell quoting, structured errors, and it works in a bare container.
+   Auth from `GH_TOKEN`/`GITHUB_TOKEN`; when absent and `gh` is installed, shell out once to
+   `gh auth token` **purely as a credential source** — `gh`'s auth ergonomics without
+   depending on `gh` at call time.
+9. **Slack: incoming webhooks.** A URL in config or environment. No OAuth app, no scope
+   negotiation, no token refresh — the right weight for posting a notification.
+10. **Jira: REST API with an API token**, for the same reasons as GitHub.
+11. **All integrations are hooks** behind one `Integration.call` interface, so swapping
+    GitHub for Jira is swapping which hooks a node declares, not a code path through the
+    runtime.
+12. **Credentials come from environment or a secret store** — never the repository, graph
+    state or logs. `HookContext` carries handles, not values.
+
+    *On MCP:*
+
+13. **When a capability is only reachable via MCP, delegate to the harness.** MCP is a
+    protocol for *agents* to call tools: it assumes a model-driven client with a session. the-loop
+    already spawns Claude Code / Cursor, both of which are MCP clients with the operator's
+    servers configured. An `mcp-call` hook asks the harness — headless, schema-constrained
+    output — to perform the call and return the result. the-loop never implements the
+    protocol; the harness is the client, which is what it is for.
+14. **Implementing a minimal MCP client in the CLI stays on the shelf.** It is feasible
+    (stdio JSON-RPC is simple) but adds protocol code, server lifecycle management and
+    credential handling to a daemon, for capability reachable via (13). Revisit only if
+    delegation latency ever matters — which for notification-shaped calls it will not.
 
 ## Consequences
 
 **Positive.**
 
-- Gates that are inherently semantic (approval, "were changes requested?") become expressible
-  without a keyword explosion or a regex that pretends English is structured.
-- Determinism is preserved where it matters: the **set of reachable states stays fixed**.
-  Judgement is confined to producing a value inside a closed enum, and every route out of
-  that value is declared in the graph and reviewable in a diff.
-- Per-work-item `tags` and `riskTier` become routing inputs, so one graph serves a typo fix
-  and an auth change (`workItem.tags.exists(t, t == 'docs-only')`).
-- The routing decision is auditable: graph state records the outcome, its inputs, the harness
-  that produced it, and which expression selected the edge.
-- `the-loop check` stays pure and cheap enough to run on every turn, because it reads the
-  *recorded* decision instead of making a new one.
+- Routing reads as a state machine rather than a rules engine: `on: approved` says what it
+  means, and the expression language shrinks to a minority case or disappears entirely.
+- Gates understand real review behaviour — partial, approving-with-comments, rejecting-with-
+  comments — instead of forcing reviewers into a keyword protocol.
+- Determinism is preserved where it matters: judgement is confined to producing a value in a
+  closed enum, and every route out of that value is declared.
+- No dependency on which CLIs happen to be installed; the-loop's outbound behaviour is the
+  same in a developer shell and a bare CI container.
+- The MCP answer costs nothing to build and keeps a protocol implementation out of the
+  daemon.
 
 **Negative / accepted costs.**
 
-- **One new runtime dependency.** Judged worth it: writing a bespoke expression evaluator
-  means proving our own sandbox safe, which is strictly worse than adopting a language
-  designed for exactly this.
-- **A decision call costs a model invocation per dynamic gate.** Mitigated by the economy
-  tier, a tiny prompt, and recording results so they are not recomputed.
-- **Harness asymmetry.** Claude Code enforces the schema; Cursor validates and retries. The
-  Cursor path is measurably weaker and is called out as an open question.
-- **A new trust boundary.** Decisions read human-authored text, which on a public repository
-  is attacker-reachable. This is the boundary that replaces the one decision-041's
-  internal-graph change removed, and it carries the risk tier at **4**.
-- **CEL is another language in the codebase** for maintainers to know.
+- the-loop now makes outbound HTTP calls and holds credentials — new surface, mitigated by
+  (12) and enumerated in `requirements.md` § Security considerations.
+- A model call per gate classification. Mitigated by the cheapest tier, a tiny prompt, and
+  recording the result so it is not recomputed.
+- Harness asymmetry: Claude Code enforces an output schema
+  (`-p --output-format json --json-schema`); Cursor's CLI has `-p --output-format json` but
+  no schema enforcement, so its classifications embed the schema, validate locally and retry
+  within a bound. The Cursor path is measurably weaker and is called out as an open question.
+- MCP delegation means an MCP-only integration costs a harness invocation rather than an
+  HTTP request.
+- Dropping `gh` as the call transport loses its niceties (pagination helpers, auth refresh);
+  the credential-source fallback recovers the part that mattered.
 
 ## Alternatives considered
 
-- **Keep the closed keyword vocabulary.** Rejected by the owner and on merit: every new
-  condition needs a new keyword and a code change, and the approval gate remains impossible.
-- **Let the model choose the next node directly** (return a node id). Rejected: it makes the
-  reachable state set a model output, which is precisely the non-determinism issue #109
-  exists to remove. Returning a *fact* into a declared expression gets the flexibility
-  without the loss.
-- **Keyword-match the approval comment** (`/approve`, `LGTM`). Rejected: brittle, and it
-  pushes process onto reviewers instead of meeting them where they write.
-- **Python expressions (`eval`) for conditions.** Rejected outright: arbitrary code
-  execution, and unsafe the moment graphs become user-authored — which is the stated plan.
-- **A general rules engine.** Rejected as heavier than the problem; CEL is the smallest thing
-  that answers it.
-- **Run decisions inside the resident tmux session.** Rejected on the owner's constraint:
-  it would consume the session's context and interfere with a human mid-takeover.
+- **An expression on every edge.** Rejected as over-general once hook results became typed:
+  most edges are a name.
+- **Letting the model choose the next node** (return a node id). Rejected: it makes the
+  reachable state set a model output, which is the non-determinism issue #109 exists to
+  remove.
+- **Keyword-matching approvals** (`/approve`, `LGTM`). Rejected: brittle, and it pushes
+  process onto reviewers rather than meeting them where they write.
+- **`gh` CLI as the GitHub transport.** Rejected: a binary dependency with version drift and
+  shell quoting, for an HTTP call the standard library makes anyway. Kept only as an optional
+  credential source.
+- **A Slack OAuth app.** Rejected as disproportionate to posting a notification.
+- **Implementing MCP in the CLI.** Deferred, not rejected — see (14).
 
 ## References
 
-- `docs/specs/issue-109/requirements.md` (R2, R5, R6, R7) and `design.md` (§ Data models,
-  § Security design).
-- Claude Code — [CLI reference](https://code.claude.com/docs/en/cli-reference) and
-  [running Claude Code programmatically](https://code.claude.com/docs/en/headless):
-  `--output-format json` with `--json-schema` returns a validated `structured_output`.
+- `docs/specs/issue-109/requirements.md` (R4, R6), `design.md` (§ Tool access, § Edges,
+  § The human gate node).
+- Claude Code — [CLI reference](https://code.claude.com/docs/en/cli-reference),
+  [headless mode](https://code.claude.com/docs/en/headless): `--output-format json` with
+  `--json-schema` returns a validated `structured_output`.
 - Cursor — [CLI output format](https://cursor.com/docs/cli/reference/output-format):
-  `-p --output-format json|stream-json`, no schema enforcement.
-- CEL — [cel-python (pure Python, Cloud
-  Custodian)](https://github.com/cloud-custodian/cel-python); [Google's official
-  CEL-expr-python](https://opensource.googleblog.com/2026/03/announcing-cel-expr-python-the-common-expression-language-in-python-now-open-source.html)
-  (wraps the C++ implementation).
+  `-p --output-format json`, no schema enforcement.

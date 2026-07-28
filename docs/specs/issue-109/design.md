@@ -7,410 +7,450 @@ approvedBy: []
 overrides: {}
 ---
 
-# Design: the process graph — deterministic node boundaries for the-loop
+# Design: the-loop as a graph of nodes with entry/exit hooks
 
-> Phase 2 of 3. Derives from [`requirements.md`](requirements.md). **Revised** after the
-> owner's second direction on PR #110.
+> Phase 2 of 3. Derives from [`requirements.md`](requirements.md).
 >
-> **Sequencing note (paper trail).** the-loop derives a downstream artifact only from a
-> *locked* upstream one. The owner directed requirements **and** design in one pass, so both
-> are produced together and reviewed in the same PR. Deliberate, not overlooked.
+> **Rewritten from a fresh slate** on the owner's direction (PR #110): *"I want to simplify
+> the concepts here… a graph with entry and exit hooks, and then each of these validations
+> that we want are hooks that are chained together… delete any bias that might have crept in
+> till now."* Anchored on that comment and on the original bullets in
+> [issue #109](https://github.com/MadaraUchiha-314/the-loop/issues/109).
+>
+> **Sequencing note.** the-loop derives a downstream artifact only from a *locked* upstream
+> one; the owner directed requirements and design in one pass, so both are reviewed together.
 
 ## Overview
 
-the-loop's PDLC becomes an explicit graph **owned by the-loop and shipped with the plugin**.
-A *node* is one logical unit of work with one durable output artifact; an *edge* carries a
-**CEL** expression evaluated over typed graph state. A small runtime enters nodes, evaluates
-gates at their boundaries, runs declared lifecycle hooks, and advances.
+**There are exactly two runtime concepts, and one contract.**
 
-Three principles carry the design:
+| Concept | What it is |
+|---|---|
+| **Node** | A step of the PDLC. A place the work item *is*. Has `entry` hooks and `exit` hooks. |
+| **Hook** | A unit of work with a fixed signature, chained in order at a node boundary. |
+| **HookResult** | The contract every hook returns. It is what decides whether the work item moves. |
 
-1. **The harness hook is a clock. The graph is the state. The gate is the decision.**
-2. **The LLM produces facts; CEL routes on them.** A dynamic gate never picks the next node.
-   It answers a schema-constrained question, the answer is bound into the CEL context, and
-   the **declared** edges decide. Judgement where judgement is needed; topology stays fixed.
-3. **Work lives in the session the human can take over; decisions are side calls.** Node
-   work runs through the normal runner (tmux included). Decision calls are separate,
-   short-lived, headless processes that never touch the resident session.
+Everything else is an instance of those. Validating that an artifact exists is a hook.
+Linting an artifact is a hook. Updating a GitHub label is a hook. Posting a review request,
+messaging Slack, updating Jira — hooks. There is no separate "action vocabulary", no
+"lifecycle event system", no "gate subsystem". One shape, used everywhere.
+
+This directly answers the ticket's sharpest question — *how does the CLI know a step is
+complete, versus waiting for the user?*
+
+> **A node is complete when its exit hooks all pass. It is waiting when one returns `wait`.
+> It is blocked when one returns `block`.** No prose is parsed, ever.
+
+## The two-concept model
+
+```mermaid
+flowchart LR
+    subgraph N["Node"]
+        EH["entry hooks<br/>(in order)"] --> W["the work<br/>(harness session, or a human)"] --> XH["exit hooks<br/>(in order)"]
+    end
+    XH -->|"all pass"| NEXT["next node"]
+    XH -->|"block + feedback"| W
+    XH -->|"wait"| PARK["stay in this node,<br/>re-run exit hooks on the next event"]
+```
+
+- **Entry hooks** prepare the node: set the phase label, open the execution-log entry, post
+  the "review please" comment, select the model tier, notify.
+- **The work** is either a harness session (agent nodes) or a human (gate nodes).
+- **Exit hooks** decide whether the node is done: artifacts exist, front-matter is locked,
+  markdown lints, diagrams render, review rounds happened, the human approved.
+
+## The hook contract
+
+The owner asked for the signature and the output to be defined. This is the load-bearing
+piece of the whole design.
+
+```python
+def hook(ctx: HookContext) -> HookResult: ...
+```
+
+### `HookContext` (input — everything a hook may see, nothing more)
+
+| Field | Meaning |
+|---|---|
+| `work_item` | ref, id, tags, risk tier, spec directory |
+| `node` | id, phase, actor, the node's own config block |
+| `boundary` | `entry` or `exit` |
+| `repo` | absolute path to the checkout |
+| `artifacts` | resolved paths of the node's declared inputs/outputs |
+| `session` | the harness session bound to this node (id, runner, cwd) — may be `None` |
+| `event` | the event that triggered this evaluation (a comment, a CI result, a tick) |
+| `results` | the `HookResult`s of hooks already run in this chain |
+| `config` | harness config + resolved secrets handles (never raw secrets) |
+
+### `HookResult` (output — the contract)
+
+```python
+@dataclass
+class HookResult:
+    status: Literal["pass", "block", "wait", "skip"]
+    hook: str                      # which hook produced this
+    messages: list[Message]        # human/agent-readable findings, in priority order
+    data: dict                     # structured output other hooks and edges may read
+    retriable: bool = True         # may the harness try again, or is this terminal?
+```
+
+| `status` | Meaning | Effect on the chain |
+|---|---|---|
+| `pass` | this hook is satisfied | continue to the next hook |
+| `block` | a requirement is unmet | **stop the chain**; the node does not advance; `messages` go back to the harness as its next input |
+| `wait` | nothing is wrong, but we cannot proceed yet (a human has not replied) | park the node; re-run the exit chain on the next inbound event |
+| `skip` | this hook does not apply to this work item | continue, recorded |
+
+**Chain semantics.** Hooks run in declared order and the first non-`pass` short-circuits.
+Aggregation of many findings is the *hook's* job, not the chain's: `validate-artifacts`
+returns every unmet requirement in one `HookResult` so the agent gets the complete list in a
+single round rather than discovering them one at a time. This is why `messages` is a list.
+
+**Feedback to the harness.** A `block` is not just a stop — its `messages` are rendered into
+the agent's next input, so the loop is *do → check → repair → check*. The rendering is
+the-loop's own text plus paths and hook names; never untrusted payload text.
+
+```mermaid
+sequenceDiagram
+    participant RT as the-loop runtime
+    participant H as harness session
+    participant HK as exit hook chain
+    RT->>H: run the node
+    H-->>RT: turn ends (exit code, or stop-hook tick)
+    RT->>HK: run exit hooks in order
+    HK-->>RT: block — "design.md has no Security design section"
+    RT->>H: feedback as the next input
+    H-->>RT: turn ends
+    RT->>HK: run exit hooks again
+    HK-->>RT: pass
+    RT->>RT: take the edge, enter the next node
+```
+
+## Is the human gate a node or a hook?
+
+The owner asked directly. **It is a node.** Five reasons, in the order that convinced me:
+
+1. **Duration.** A hook is a function that runs and returns; a human gate is a state you
+   *sit in*, for days. Expressing that as a hook means inventing a suspend-and-resume
+   return — which is a node, with extra steps.
+2. **It receives events.** Comments, reviews and CI results arrive *while in* the gate. A
+   node is a delivery target; hooks fire at boundaries and are gone.
+3. **It has an internal loop.** Approve-with-comments, changes-requested, partial reviews
+   arriving over hours. That is a state machine, and nodes are what the-loop uses for those.
+4. **It produces artifacts** — the review thread, the recorded decision, the execution-log
+   review row. Nodes produce; hooks check.
+5. **Symmetry.** Every other step of the PDLC is a node, and `needs-review` is already a
+   declared phase. A gate-as-hook would be the one special case.
+
+**But the owner's instinct about session binding is exactly right, and it becomes one field
+rather than a new concept.** The feedback at a gate is about the artifacts the *previous*
+node produced, so the gate node declares:
+
+```yaml
+- id: design-approval
+  actor: human
+  session: inherit        # reuse the producing node's harness session
+```
+
+`session: inherit` means the gate does not start a fresh conversation — it reuses the
+session that produced the artifacts, so when the reviewer says *"this section is thin"*, the
+agent that wrote it still has the context to fix it. That is the whole reason the binding
+matters, and it costs one enum value.
+
+### The human gate node, in detail
+
+```mermaid
+stateDiagram-v2
+    [*] --> waiting: entry hooks<br/>(comment asking for review, label, notify)
+    waiting --> waiting: feedback arrives but is not decisive<br/>(partial review, a question, unclear)
+    waiting --> approved: classified approved
+    waiting --> approved_with_comments: classified approved, with follow-ups
+    waiting --> changes_requested: classified changes requested
+    approved --> [*]: advance
+    approved_with_comments --> [*]: advance, carry follow-ups into the next node
+    changes_requested --> [*]: return to the producing node,<br/>feedback becomes its next input
+```
+
+Four behaviours the owner called out, and how each is served:
+
+- **Iterative feedback in parts.** The gate stays in `waiting` and re-runs its exit chain on
+  *every* inbound event. It only transitions when the classification is decisive; an
+  ambiguous or partial comment returns `wait`, not a guess.
+- **Approved with comments.** A distinct outcome from plain approval: the work item advances
+  *and* the comments are carried forward as declared follow-up work, so an approval never
+  silently swallows a reviewer's suggestions.
+- **Rejected/changes-requested with comments.** Returns to the producing node with the
+  comments as that node's next input — which works precisely because of `session: inherit`.
+- **Tied to the previous node's session.** As above.
+
+**Classifying the reply.** "Did they approve?" is judgement over English, so one exit hook
+(`classify-feedback`) asks the harness with a schema-constrained prompt and returns the
+outcome in `data`. Two rules keep this from becoming a hole:
+
+- Only text from an **authorized** author is read at all.
+- The classification is a *fact*, not a destination — edges route on it, and every
+  destination is declared in the graph.
+
+## Edges
+
+Routing is deliberately boring, because the hooks did the work:
+
+```yaml
+edges:
+  - {from: design, to: design-approval, on: pass}
+  - {from: design-approval, to: tasks, on: approved}
+  - {from: design-approval, to: tasks, on: approved-with-comments}
+  - {from: design-approval, to: design, on: changes-requested}
+  - {from: implementation, to: reviewer-briefing,
+     when: "workItem.tags.exists(t, t == 'docs-only')"}   # optional CEL, compound cases only
+```
+
+`on:` names a hook outcome and covers the overwhelming majority of edges. `when:` is an
+optional CEL expression for compound conditions over hook `data`, work-item tags and risk
+tier. This is a deliberate simplification of the earlier draft, where **every** edge carried
+an expression: hook results are now typed enough that most conditions are a name, not a
+formula.
+
+## Default hooks the-loop ships
+
+All three the owner named, plus the validators the PDLC needs. Each is an ordinary hook
+implementing the same signature.
+
+| Hook | Boundary | Purpose |
+|---|---|---|
+| `set-phase-label` | entry | GitHub/Jira label for the current phase |
+| `request-review` | entry (gate nodes) | post the review/approval comment, marked as the-loop's own |
+| `notify` | entry / on wait | Slack (and any configured channel) for the roles in `notifications.events` |
+| `log-entry` | entry, exit | append the execution-log checkpoint |
+| `validate-artifacts` | exit | the node's declared outputs exist, are locked, carry required sections — **all findings in one result** |
+| `lint-artifacts` | exit | markdownlint, and `diagramsRender` (mermaid actually parses) |
+| `verify-tests` | exit | the node's declared test command passed |
+| `classify-feedback` | exit (gate nodes) | schema-constrained classification of an authorized human's reply |
+| `record-decision` | exit (gate nodes) | persist the outcome and its inputs to graph state |
+
+`lint-artifacts` earns `diagramsRender` from an incident in this very PR: a reviewer caught
+a diagram that would not render, and checking the whole repository then found **three more
+already merged** (`issue-21`, `issue-32`, `issue-86` designs). `diagramFormat: mermaid` is
+written as a RULE and enforced by nothing. A rule with no hook drifts — which is this work
+item's thesis, demonstrated on a rule nobody thought to check.
+
+## Tool access: the-loop is the caller now
+
+The owner's point stands: with the-loop driving rather than the harness, tool access is
+the-loop's choice, and it is not bound by CLI or MCP. One interface, three opinionated
+defaults:
+
+```python
+class Integration(Protocol):
+    def call(self, op: str, **params) -> dict: ...
+```
+
+| Target | Decision | Why |
+|---|---|---|
+| **GitHub** | **REST API over stdlib HTTP** — not `gh` | No binary dependency, no CLI version drift, no shell quoting, structured errors, works in a bare container. Auth from `GH_TOKEN`/`GITHUB_TOKEN`; if absent and `gh` is installed, shell out **once** to `gh auth token` purely as a credential source. Best of both: `gh`'s auth ergonomics without depending on `gh` at call time. |
+| **Slack** | **Incoming webhooks** | A URL in config/env. No OAuth app, no scope negotiation, no token refresh. Exactly the right weight for "post a notification". |
+| **Jira** | **REST API + API token** | Same reasoning as GitHub; no CLI exists worth depending on. |
+
+All three are hooks. Swapping GitHub for Jira is swapping which hooks a node declares — not
+a code path through the runtime.
+
+### What if MCP is the only available route?
+
+The owner's open question, and it deserves a straight answer: **MCP is a protocol for
+*agents* to call tools.** It assumes a model-driven client with a session; a daemon
+speaking it is against its grain. Two options:
+
+1. **Delegate through the harness (recommended default).** the-loop already spawns Claude
+   Code / Cursor, and both are MCP clients with the operator's servers already configured.
+   An `mcp-call` hook asks the harness — headless, schema-constrained output — to perform
+   the call and return the result. the-loop never implements the protocol; the harness is
+   the client, which is what it is for.
+2. **Implement a minimal MCP client** (stdio JSON-RPC) in the CLI. Feasible — stdio
+   transport is simple — but it adds protocol code, server lifecycle management and
+   credential handling to a daemon, for capability we can already reach via (1).
+
+**Recommendation: ship (1), keep (2) on the shelf.** Delegation costs one harness
+invocation, reuses machinery that already exists, and keeps the-loop out of a protocol whose
+lifecycle it would otherwise have to own. Revisit if the delegation latency ever matters,
+which for notification-shaped calls it will not.
 
 ## Architecture
 
 ```mermaid
 flowchart TB
-    subgraph plugin["Shipped with the plugin (the-loop's own, reviewed, released)"]
-        PDLC["skills/the-loop/graph/pdlc.yaml<br/>nodes · CEL edges · hooks"]
-        GSCHEMA["graph.schema.json"]
-        PDLC -. validated in the-loop's CI .-> GSCHEMA
+    subgraph plugin["Shipped with the plugin"]
+        PDLC["graph/pdlc.yaml — nodes, hooks, edges"]
+        SCHEMA["graph.schema.json"]
+        PDLC -. validated in CI .-> SCHEMA
     end
 
     subgraph core["the_loop.graph"]
-        MODEL["model.py — load + validate<br/>(compiles every CEL at load)"]
-        CEL["cel.py — expression eval<br/>(pure, sandboxed)"]
-        GATES["gates.py — pure predicates"]
-        GSTATE["state.py — GraphState"]
-        RT["runtime.py — transitions"]
-        HOOKS["hooks.py — closed action vocabulary"]
-        DEC["decide.py — structured-output harness call"]
+        MODEL["model.py — load and validate"]
+        RT["runtime.py — enter node, run chain, take edge"]
+        HOOKS["hooks/ — the registry"]
+        STATE["state.py — graph-state.json"]
         MODEL --> RT
-        CEL --> RT
-        GATES --> RT
-        GSTATE --> RT
-        RT --> HOOKS
-        RT --> DEC
+        HOOKS --> RT
+        STATE --> RT
     end
 
-    subgraph wi["Per work item (in the repository)"]
-        FM["spec front-matter<br/>tags · riskTier · skipNodes"]
-        ART["brainstorm/requirements/design/<br/>tasks/execution-log"]
-        ST["graph-state.json"]
+    subgraph impl["Hook implementations (all one signature)"]
+        VAL["validate-artifacts<br/>lint-artifacts<br/>verify-tests"]
+        GH["set-phase-label<br/>request-review"]
+        SLACK["notify"]
+        CLS["classify-feedback"]
     end
 
-    subgraph transports["Transports"]
-        CHECK["the-loop check — pure, read-only"]
-        RUN["the-loop run — drives nodes"]
-        HOOK["harness stop-hook wrapper (tick)"]
-        CI["pre-push / CI — check --recompute"]
+    subgraph integ["Integrations (the-loop is the caller)"]
+        GHAPI["GitHub REST"]
+        SLACKW["Slack webhook"]
+        JIRA["Jira REST"]
+        MCPD["mcp-call — delegated to the harness"]
+    end
+
+    subgraph sess["Sessions"]
+        WORK["work nodes — harness session,<br/>tmux attachable, human can take over"]
+        GATE["gate nodes — session: inherit"]
     end
 
     PDLC --> MODEL
-    FM --> RT
-    ART --> GATES
-    ST <--> GSTATE
-    RT --> CHECK & RUN & HOOK & CI
-    RUN -->|"work: normal runner,<br/>tmux attachable"| ADPT["harness adapters"]
-    DEC -->|"decision: fresh headless<br/>process, never --resume"| ADPT
-    HOOKS --> NOTIFY["notifications.events →<br/>collaborators.yaml"]
-    RT --> EVT["eventlog (JSONL)"]
+    RT --> HOOKS
+    HOOKS --> impl
+    GH --> GHAPI
+    SLACK --> SLACKW
+    GH --> JIRA
+    CLS --> MCPD
+    RT --> WORK
+    RT --> GATE
+    RT --> EVT["eventlog JSONL"]
 ```
-
-### The approval gate, end to end
-
-This is the owner's worked example. Note that the LLM appears **once**, producing a
-classification — and that every arrow out of it lands on a declared edge.
-
-```mermaid
-sequenceDiagram
-    participant RT as runtime
-    participant GH as ticket/PR
-    participant AZ as authz
-    participant D as decide.py
-    participant H as harness (fresh headless)
-    participant CEL as CEL
-
-    RT->>RT: onAwaitHuman — park + notify approver
-    GH-->>RT: a comment arrives (edge input)
-    RT->>AZ: is the author in routing.authorizedUsers?
-    alt not authorized
-        AZ-->>RT: no → ignore the text entirely, stay parked
-    else authorized
-        RT->>D: classify this reply
-        D->>H: -p --output-format json --json-schema<br/>outcome enum: approved / changes-requested / rejected / unclear
-        H-->>D: structured_output (validated)
-        D->>RT: decision recorded in graph-state
-        RT->>CEL: evaluate outgoing edges with decision bound
-        CEL-->>RT: first true edge
-    end
-    Note over RT,CEL: approved → next node · changes-requested → implementation<br/>rejected → design · unclear → stay parked, re-notify
-```
-
-Fail-closed everywhere: unauthorized author → ignored; invalid result after retries → stay
-parked; no edge true → park and escalate. A decision can **classify** a human's response; it
-can never manufacture one (R5.5).
-
-## Components & interfaces
-
-| Component | Responsibility | Interface |
-|---|---|---|
-| `graph/model.py` | Load the shipped graph, validate against schema, **compile every CEL expression at load** | `load_graph() -> Graph`; raises `GraphConfigError` |
-| `graph/cel.py` | Compile/evaluate CEL over a typed context | `compile(expr) -> Program`; `evaluate(program, ctx) -> bool` |
-| `graph/gates.py` | Evaluate one node's gate against the repo — pure | `evaluate(root, id, node) -> Verdict(satisfied, unmet[])` |
-| `graph/state.py` | Load/save `graph-state.json`; reconstruct from artifacts | `load`, `save` (atomic), `reconstruct` |
-| `graph/decide.py` | Schema-constrained harness call for dynamic gates | `decide(node, inputs) -> DecisionResult \| Unresolved` |
-| `graph/hooks.py` | Execute declared hook actions in order | `fire(event, ctx)` — closed action vocabulary |
-| `graph/runtime.py` | Transitions, attempt accounting, parking | `advance(root, id, transport) -> Outcome` |
-| `commands/check.py` | `the-loop check` | `--format table\|json`, `--all`, `--recompute` |
-| `commands/run.py` | `the-loop run` | `--work-item`, `--harness`, `--max-nodes`, `--dry-run` |
-| `hooks/` + `.cursor/hooks.json` | Per-harness stop-hook wrappers | wrapper → `the-loop check --format json` → harness continuation payload |
-
-Existing machinery is reused unchanged: `HarnessAdapter` (invocation), `SessionRegistry`,
-`ControlStore` (pause/stop), `authz.is_authorized`, `eventlog.emit`.
-
-## UI/UX design
-
-N/A — CLI and markdown artifacts; the-loop has no product UI. Human touchpoints (table
-output, ticket label, notification text, the tmux session) are covered by the testing
-strategy.
 
 ## Data models
 
-### The shipped graph (`skills/the-loop/graph/pdlc.yaml`)
+### A node
 
 ```yaml
-version: 1
-nodes:
-  - id: design
-    produces: {artifact: design.md, locked: true}
-    requires: [requirements]
-    actor: agent
-    stage: design                    # → tokenEconomy.modelRouting.stages
-    label: "loop:design"             # omitted for fine-grained nodes
-    command: create-design           # closed enum of the-loop's own commands
-    gate:
-      - frontMatter: {status: approved}
-      - sections: ["Security design"]
-      - enforcesBoundariesFrom: requirements.md
-    hooks:
-      onAwaitHuman: [{notify: {roles: [approver]}}, {comment: {template: phase-approval}}]
+- id: design
+  phase: design                    # the label hooks sync
+  actor: agent                     # agent | human
+  produces: [design.md]
+  command: create-design           # closed enum of the-loop's own commands
+  stage: design                    # model tier
+  entry: [set-phase-label, log-entry]
+  exit:
+    - {hook: validate-artifacts, with: {locked: true, sections: ["Security design"]}}
+    - {hook: lint-artifacts}
+    - {hook: log-entry}
 
-  - id: human-approval
-    actor: human
-    required: true                   # never skippable
-    decision:
-      id: approval
-      prompt: templates/decide-approval.md
-      schema: schemas/approval.json  # {outcome: enum, reasons: []}
-      inputsFrom: authorized-comments-since-entry
-      stage: economy
-      maxRetries: 2
-
-  - id: security-review
-    required: true                   # never skippable, any tier
-
-edges:
-  - {from: design, to: tasks,          when: "gate.satisfied"}
-  - {from: design, to: design,         when: "!gate.satisfied && attempts < maxAttempts"}
-  - {from: design, to: escalated,      when: "!gate.satisfied && attempts >= maxAttempts"}
-  - {from: human-approval, to: security-review, when: "decision.approval.outcome == 'approved'"}
-  - {from: human-approval, to: implementation,  when: "decision.approval.outcome == 'changes-requested'"}
-  - {from: human-approval, to: design,          when: "decision.approval.outcome == 'rejected'"}
-  - {from: implementation, to: reviewer-briefing,
-     when: "workItem.tags.exists(t, t == 'docs-only')"}
+- id: design-approval
+  actor: human
+  session: inherit                 # the owner's observation, as one field
+  entry: [set-phase-label, request-review, notify]
+  exit:
+    - {hook: classify-feedback, with: {outcomes: [approved, approved-with-comments, changes-requested]}}
+    - {hook: record-decision}
 ```
-
-### The gate predicate vocabulary (closed, each a pure function)
-
-| Predicate | Satisfied when |
-|---|---|
-| `exists` | the node's `produces.artifact` is present |
-| `frontMatter: {k: v}` | the artifact's YAML front-matter matches every pair |
-| `sections: [..]` | each named heading exists **and has a non-empty body** |
-| `checkmarks: complete` | no `- [ ]` remains in the artifact |
-| `reviewRounds: {type, min}` | the execution log's review table has ≥ `min` rows of that type |
-| `enforcesBoundariesFrom: <file>` | every trust boundary named upstream appears downstream |
-| `labelInSync` | the ticket label matches the node's declared `label` |
-| `diagramsRender` | every ```` ```mermaid ```` block in the artifact parses |
-
-`diagramsRender` earns its place from a finding while writing this spec. `userInteraction.diagramFormat: mermaid` is stated as a **RULE**, and a reviewer caught a diagram in
-this PR that did not render (backticks inside a node label). Validating every mermaid block
-in the repository then found **three more already merged** — `docs/specs/issue-21/design.md`,
-`issue-32/design.md` and `issue-86/design.md`. A rule with no evaluator drifted, silently,
-exactly as this work item's thesis predicts. It is also the cheapest possible demonstration
-that gate predicates are worth having: the check is one parser invocation.
-
-### The CEL context (bound, typed, documented)
-
-| Name | Type | Meaning |
-|---|---|---|
-| `gate.satisfied` | bool | the current node's gate verdict |
-| `gate.unmet` | list\<string\> | failing predicate names |
-| `attempts`, `maxAttempts` | int | this node's attempt accounting |
-| `node.id`, `node.actor`, `node.required` | string/bool | the current node |
-| `workItem.id`, `.tags`, `.riskTier`, `.skip` | string / list\<string\> / int / list\<string\> | per-work-item front-matter (R7) |
-| `decision.<id>.outcome`, `.reasons` | enum / list\<string\> | recorded decision results (R5.4) |
-| `findings.new`, `findings.total` | int | review-round accounting |
-| `approval.required`, `.granted` | bool | policy state from `autonomy.tiers` |
-
-CEL is non-Turing-complete with no I/O primitives, so an expression cannot reach the
-filesystem, network, subprocesses or environment (R2.6) — this is *why* expressions are safe
-to evaluate even though the graph will one day be user-supplied.
-
-### Per-work-item configuration (existing front-matter, extended)
-
-```yaml
----
-type: requirements
-workItem: issue-109
-riskTier: 4
-tags: [cli, schema]        # bound as workItem.tags — drives CEL routing
-skipNodes: []              # bound as workItem.skip — refused for required: true nodes
-overrides: {}              # existing per-item config override
----
-```
-
-Read **only** from the work item's own checked-in front-matter (R7.5) — never a comment or a
-payload, so traversal cannot be steered by a drive-by commenter.
 
 ### `graph-state.json`
 
-```json
-{
-  "version": 1,
-  "workItem": "issue-109",
-  "currentNode": "human-approval",
-  "nodes": {"design": {"attempts": 1, "outcome": "satisfied", "exitedAt": "..."}},
-  "decisions": {
-    "approval": {"outcome": "changes-requested", "reasons": ["..."],
-                 "decidedAt": "...", "harness": "claude",
-                 "inputs": ["<comment-url>"], "authorizedAuthor": "MadaraUchiha-314"}
-  },
-  "skipped": [],
-  "parked": {"reason": "awaiting-human", "since": "...", "notified": ["approver"]}
-}
-```
+Per work item, checked in — `currentNode`, per-node attempts and outcomes, recorded hook
+results and decisions, the bound session id, and the parked reason. It is a **cache, not an
+authority**: `the-loop check --recompute` re-runs the validating hooks against the artifacts
+and CI always uses it, so an agent editing its own scorecard cannot pass a gate.
 
-Decisions are **recorded**, so `the-loop check` reads the last outcome instead of re-deciding
-— which is what keeps `check` pure and cheap enough to run on every turn (R4.4).
+## How this answers issue #109's original bullets
 
-### Lifecycle hooks — closed action vocabulary
-
-| Action | Params | Effect |
-|---|---|---|
-| `set-label` | `label` | sync the ticket's phase label |
-| `log-entry` | `template` | append to `execution-log.md` |
-| `notify` | `roles[]` | `notifications.events` → `collaborators.yaml` channels |
-| `comment` | `template` | post a marked ticket/PR comment (carries `<!-- the-loop:agent-comment -->`) |
-| `emit-event` | `name`, `fields` | JSONL event-log record |
-| `record-decision` | `id` | run a declared decision and store the result |
-| `record-conflict` | `reason` | append to `docs/decisions/conflicts.md` |
-
-**There is no `run` / `exec` / `shell` action, by design** (R8.3). Every action is typed code
-in the-loop; YAML selects and parameterises, it never supplies a command line.
+| Original question | Answer |
+|---|---|
+| "make the top level workflow programmatic" | The graph is data; the runtime walks it. |
+| "each step needs a clear output artifact to pass on" | `produces`, checked by `validate-artifacts`. |
+| "how do we make sure each step is not fresh context" | Work nodes bind a session; gate nodes `inherit` it. Fresh context is a per-node choice, not a global mode. |
+| "can the CLI orchestrate deterministically, one or many sessions" | Yes — the runtime owns ordering; sessions are per-node and declared. |
+| "how does session management work" | Existing registry/ControlStore, unchanged; nodes bind to session ids. |
+| "how do we recover from failure modes" | `block` + `messages` → the harness repairs; bounded attempts then escalate. |
+| **"how does the CLI know a step is complete vs waiting for input"** | **Exit hooks: all `pass` = complete; any `wait` = waiting; any `block` = needs repair.** |
+| "will this consume a lot of tokens" | Hooks are code, not model calls — only `classify-feedback` invokes a model, at the economy tier. |
 
 ## Error handling
 
-| Failure | Detection | Response |
-|---|---|---|
-| Graph invalid / a CEL expression uncompilable | load time | refuse to advance anything; report the node/edge and the compiler error (R10.3) |
-| Expression returns a non-boolean | load-time type check | validation failure |
-| Multiple edges true | traversal | take the first declared; record `graph.ambiguous_edges` (R2.4) |
-| No edge true | traversal | park + escalate (R2.5) |
-| Gate predicate unevaluable | `gates.evaluate` | report **unmet** (R4.3) |
-| Decision result invalid after retries | `decide` | fail closed: park + notify (R5.3) |
-| Decision input from an unauthorized author | `authz` | ignore the text; stay parked (R5.6) |
-| `skipNodes` names a `required` node | config read | refuse, report (R7.3) |
-| `graph-state.json` unparseable | `state.load` | reconstruct from artifacts, warn, keep the file (R3.4) |
-| Node invocation exits non-zero | `run` | retry ≤ `maxAttempts` with the error appended |
-| Same predicate twice | attempt counter | escalate (R10.2) |
-| Session died mid-node | existing liveness probe | respawn/resume, **re-enter the same node** (R10.4) |
-| Hook action failed | `hooks.fire` | log, continue remaining actions (R8.4) |
+| Failure | Response |
+|---|---|
+| Graph or hook config invalid | refuse to advance anything; report at load time |
+| Unknown hook name | load-time validation failure |
+| Hook raises | treat as `block`, `retriable=False`, escalate — never as `pass` |
+| Hook times out | `block`, retriable, bounded by the node's attempts |
+| Same `block` message twice consecutively | escalate to a human (mirrors `escalateOnRepeatFinding`) |
+| `classify-feedback` returns invalid output after retries | `wait` — never assume an outcome |
+| Unauthorized author's text | not read; stay `wait` |
+| Graph state unparseable | reconstruct by re-running validators; warn; keep the file |
+| Session died mid-node | existing respawn-and-resume; re-enter the **same** node |
+| Notification hook fails | record and continue — a Slack outage must not wedge the graph |
 
 ## Security design
 
-The owner's "internal graph" direction removed the largest boundary; the dynamic-gate
-direction added a different one. Both are handled here.
-
-- **Removed — config → process execution.** The graph ships with the plugin and a
-  repository's `workflow.graph` is ignored with a warning (R1.1, R1.4), so no
-  repository-supplied declaration reaches an invocation. *The closed `command` enum is
-  retained anyway*, because it is the mechanism that will make user-defined graphs safe when
-  that feature lands — the constraint is cheap now and load-bearing later.
-- **Boundary 1 (new, primary) — untrusted text → gate outcome.** A decision call classifies a
-  human's reply, and on a public repository anyone can write text. *Mechanisms, layered:*
-  1. **Authorization first.** Only text authored by a user in `routing.authorizedUsers` is
-     ever passed to a decision (R5.6), reusing `authz.is_authorized`. Everything else is not
-     "handled carefully" — it is not read.
-  2. **Closed outcome set.** The schema constrains the answer to an enum, so the model cannot
-     return a destination, a command, or free-form instruction.
-  3. **Routing stays declared.** The outcome is only an input to CEL; the destinations are the
-     node's declared edges. An injected "approve and deploy" cannot reach a node the graph
-     does not name.
-  4. **Policy outranks the model.** A decision can never satisfy an approval that
-     `autonomy.tiers` or `security.review.humanSignOffMinTier` reserves for a human (R5.5) —
-     it only classifies a human response that has actually arrived.
-  5. **Prompt hygiene.** Untrusted text is delimited and labelled as data, matching the
-     existing webhook-prompt convention.
-- **Boundary 2 — agent → graph state.** Graph state is a **cache, not an authority**.
-  `--recompute` derives completion from artifacts alone and the repository-boundary gate
-  always uses it (R9.2), so a tampered state file cannot survive review. `reconstruct` is also
-  the corruption-recovery path, so the code runs on the happy path rather than only in
-  emergencies.
-- **Boundary 3 — CEL evaluation.** CEL is non-Turing-complete and has no I/O primitives;
-  the-loop binds a fixed context and exposes no custom functions with side effects. Expression
-  evaluation is not an execution surface (R2.6). Expressions are compiled at **load** time, so
-  a malformed one fails before any work item is touched, not mid-traversal.
-- **Boundary 4 — per-work-item config → traversal.** `tags`/`skipNodes` come only from
-  checked-in front-matter (R7.5), so steering requires a commit that review can see; and
-  `required: true` nodes — the security-review gate, mandated human approvals — are
-  unskippable regardless (R7.3). Skipping is the obvious way to reintroduce the very problem
-  this work item exists to fix, so it is bounded in the data model rather than by convention.
-- **Boundary 5 — node events → external channels.** Recipients resolve only through
-  `notifications.events` → roles → `collaborators.yaml`; no code path leads from a payload, an
-  artifact or a decision to a recipient address. Bodies name the work item, node and reason.
-- **Least privilege.** `check` is read-only, needs no credentials and makes no decision call.
-  Decision calls run with the **cheapest tier** and no elevated tools. `run` inherits exactly
-  the harness permissions already configured in `routing.harnessArgs` and widens nothing.
-- **Secrets.** None introduced; the graph and graph state are checked-in files with no
-  secret-bearing field, and logs carry node ids, predicate names and decision enums only —
-  never the untrusted text itself.
-- **Fail closed** on every ambiguity: uncompilable graph or expression, unknown node,
-  unevaluable predicate, invalid decision, no true edge, unknown skip target, missing
-  collaborator entry.
-- **New attack surface — stated, not implied.** This work item adds: a decision path that
-  reads human-authored text, a new expression evaluator, a new checked-in state file, a new
-  runtime dependency, and hook wrappers running every turn. Risk tier **4**; completion
-  requires a named human security sign-off.
+- **Untrusted text → gate outcome (primary boundary).** Only authorized authors' text is
+  read; the classification schema is a closed enum; the outcome is a fact, not a
+  destination; and policy outranks the model — a classification can never satisfy an
+  approval that `autonomy.tiers` or `security.review.humanSignOffMinTier` reserves for a
+  human. Untrusted text is never echoed into feedback rendered back to the harness.
+- **Hooks are code, not configuration.** YAML names a hook from a registry and passes typed
+  params. There is no shell hook, no `exec`, no argv from configuration — so the graph
+  (shipped with the plugin today, user-authored later) can never become code execution.
+- **Agent → graph state.** State is a cache; `--recompute` re-derives from artifacts and CI
+  always uses it.
+- **Secrets.** Tokens and webhook URLs come from env or a secret store, never the repo,
+  never graph state, never logs. `HookContext` carries handles, not values.
+- **Least privilege.** Validation hooks are read-only. Integration hooks hold only the
+  scopes their operation needs. `the-loop check` makes no network call and no model call.
+- **Fail closed.** Unknown hook, invalid config, unevaluable condition, no matching edge,
+  invalid classification, missing collaborator — all stop advancement and report.
+- **New surface, stated:** outbound HTTP to GitHub/Slack/Jira, a model call for
+  classification, and a new state file. Risk tier **4**; a named human security sign-off is
+  required before completion.
 
 ## Testing strategy
 
-Unit tests (pytest) for every pure part; integration tests with Gherkin docstrings and a
-`Requirement:` link, matching `testing.integrationTestGlobs`
-(`cli/tests/test_*_integration.py`).
+Unit tests for every hook (they are pure functions of `HookContext` — this is the main
+payoff of the contract). Integration tests with Gherkin docstrings under
+`cli/tests/test_*_integration.py`.
 
-| Req | Unit | Integration scenario (`Scenario:`) |
-|---|---|---|
-| R1 | load/validate, cycle acceptance, unknown endpoint | *A repository declaring workflow.graph is ignored with a warning* |
-| R2 | compile, evaluate, non-boolean rejection, context binding | *An edge whose CEL expression fails to compile is rejected at load, before any work item is touched* |
-| R3 | round-trip, atomic write, reconstruct | *A work item with a deleted graph-state file resumes at the node its artifacts imply* |
-| R4 | every gate predicate, satisfied and unmet | *check reports the specific unmet predicate for a design node missing its Security design section* |
-| R5 | schema validation, retry, fail-closed | *An approval decision classifies a reviewer's "changes requested" reply and routes to implementation* |
-| R5.5/R5.6 | policy precedence, authz filter | *A comment from an unauthorized user is not read by the approval decision and the work item stays parked* |
-| R6 | tier selection, session isolation | *A decision call runs as a fresh headless process and leaves the resident tmux session untouched* |
-| R7 | tag binding, skip accounting, required-node refusal | *A skipNodes entry naming the security-review node is refused* |
-| R8 | action dispatch order, unknown-action rejection | *A node whose actor is human parks the work item and notifies the approver role* |
-| R9 | exit codes, baseline exemption | *CI fails a work item whose graph-state claims a node complete that the artifacts contradict* |
-| R10 | escalation on repeat, cap enforcement | *A node failing the same predicate twice escalates instead of retrying* |
-| R11 | label sync for labelled nodes only | *An existing repository keeps its loop: labels when the graph ships* |
-| R12 | event record shape | *Every node transition records which CEL expression selected the edge* |
-
-**Negative tests are first-class** — one per abuse case, red→green like any other task. The
-prompt-injection abuse case (2) gets a fixture of hostile comment text asserting the outcome
-stays within the enum and the route stays within declared edges.
-
-**Evidence:** `make check` green; `the-loop check --all` over this repository's 34 spec
-folders with the drift report attached to the PR; a recorded `the-loop run --dry-run`
-traversal showing the edges taken and the expressions that selected them.
+| Area | Integration scenario |
+|---|---|
+| Chain semantics | *A blocking exit hook stops the chain and its messages reach the harness as the next input* |
+| Aggregation | *validate-artifacts reports every unmet requirement in one result rather than one per round* |
+| Human gate | *A partial review comment leaves the gate waiting rather than advancing* |
+| Approve-with-comments | *An approval carrying suggestions advances the node and carries the follow-ups forward* |
+| Session inheritance | *A changes-requested outcome returns to the producing node in the same harness session* |
+| Authorization | *An unauthorized comment is not read by classify-feedback and the gate stays waiting* |
+| Lint hook | *A design artifact with an unparseable mermaid block blocks the node* |
+| Integrations | *A Slack webhook failure records and continues without wedging the graph* |
+| Recompute | *CI fails a work item whose graph-state claims a node complete that the artifacts contradict* |
 
 ## Trade-offs & decisions
 
-- **The graph is internal (owner direction).** Costs repo-author flexibility; buys the removal
-  of the largest attack surface and a graph that is versioned and reviewed with the code that
-  runs it. It stays fully declarative precisely so user-defined graphs can arrive later
-  without a rewrite. → `decision-041`.
-- **CEL over a closed keyword vocabulary.** Costs one runtime dependency; buys expressive
-  conditions (tags, tiers, attempt counts, decision outcomes) with a language that is
-  non-Turing-complete and side-effect-free by construction — safer than a bespoke mini-parser
-  we would have to prove safe ourselves. Recommend **pure-Python `cel-python`** to keep wheels
-  toolchain-free. → `decision-042`.
-- **The LLM produces facts; CEL routes.** Costs a decision call per dynamic gate; buys
-  semantic gates without letting a model choose a destination. This is the design's answer to
-  "dynamic edges without losing determinism".
-- **Decisions are side calls, never in the resident session.** Costs a cold process per
-  decision (mitigated by the economy tier and a tiny prompt); buys an untouched tmux session
-  the human can take over at any moment — the owner's stated priority.
-- **Graph state is a cache, not an authority.** Costs a recompute path; buys immunity to the
-  agent editing its own scorecard.
-- **`required: true` nodes are unskippable.** Costs configurability; buys the guarantee that
-  per-work-item config cannot reintroduce step-skipping — the problem this work item exists
-  to solve.
-- **Closed hook-action vocabulary, no shell.** Costs extensibility; buys a YAML surface that
-  can eventually be user-authored without becoming remote code execution.
+- **Two concepts, not five.** Costs some expressive precision; buys an architecture that
+  fits on one page and one extension point instead of several. → `decision-041` (revised).
+- **Human gate as a node, not a hook.** Costs the neatness of "everything is a hook"; buys
+  correct modelling of a multi-day, event-receiving, iterative state.
+- **`session: inherit` rather than a new binding concept.** One enum value expresses the
+  owner's observation that gate feedback belongs to the previous node's session.
+- **`on:` for most edges, CEL only for compound conditions.** Simplifies the earlier draft,
+  where every edge carried an expression. → `decision-042` (revised).
+- **GitHub REST over `gh`, Slack webhooks over an app.** Costs some convenience; buys no
+  binary dependencies and no version drift, with `gh auth token` retained purely as an
+  optional credential source.
+- **MCP by delegation to the harness.** Costs one harness invocation per call; buys not
+  owning a protocol implementation and its server lifecycle.
+- **Hooks are registered code, never shell.** Costs operator extensibility today; buys a
+  YAML surface that can safely become user-authored later.
 
 ## Open questions
 
 1. Who provides the tier-4 **named security sign-off**?
-2. **Which CEL implementation** — pure-Python `cel-python`, or the official wrapped-C++
-   binding at the cost of a non-pure wheel?
-3. How far does `skipNodes` go beyond the `required` set — should the reviewer briefing or
-   capability-doc fold-in also be unskippable?
-4. **Cursor has no schema-enforced output mode** (R5.2). Prompt-embedded schema + validation +
-   bounded retry, or route decisions through Claude Code when both are installed?
+2. **Approve-with-comments**: should the carried-forward follow-ups be mandatory work in the
+   next node, or advisory notes? (Mandatory is safer; advisory is faster.)
+3. Should **`session: inherit`** fall back to a fresh session when the inherited one has
+   died, or block? (Recommend: fall back, with the artifacts as context — matches the
+   existing respawn behaviour.)
+4. Confirm **CEL is still wanted** for the compound-edge minority, now that `on:` covers the
+   common case — or drop the dependency entirely and add named compound conditions as hooks.

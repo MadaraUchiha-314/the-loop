@@ -255,6 +255,64 @@ status: in-progress           # in-progress | complete
 - **Next:** unchanged — phase approval for requirements and design.
 - **Blockers:** unchanged.
 
+### 2026-07-28 — architecture simplified to nodes + hooks (owner direction, fresh slate)
+
+- **Phase:** design
+- **Did:** owner asked to *"simplify the concepts… a graph with entry and exit hooks, and
+  then each of these validations that we want are hooks that are chained together"*, and to
+  *"delete any bias that might have crept in till now, start with a fresh slate"*.
+  `requirements.md` and `design.md` rewritten from scratch; `decision-041` and `-042`
+  rewritten to match.
+  - **Collapsed five layers into two concepts + one contract.** Node (a step, with `entry`
+    and `exit` hook chains) and Hook (fixed signature), with `HookResult`
+    (`pass | block | wait | skip`, plus `messages`, `data`, `retriable`) deciding movement.
+    The separate lifecycle-event system, action vocabulary and per-edge expression language
+    are **gone** — each was a subsystem where a hook would do.
+  - **This is what finally answers the ticket's sharpest question cleanly.** A node is
+    complete when its exit hooks all pass; waiting when one returns `wait`; blocked when one
+    returns `block`. The earlier drafts circled this; the hook contract states it in one line.
+  - **Answered the node-vs-hook question the owner asked.** Recommendation: the human gate is
+    a **node**, on five grounds — it lasts days, it *receives* events while open, it has an
+    internal loop (partial review, approve-with-comments), it produces artifacts, and every
+    other PDLC step is a node. A hook is a function that runs and returns; modelling a
+    multi-day event-receiving state as one means inventing suspend-and-resume, which is a
+    node with extra steps. Its behaviour is still all hooks.
+  - **Turned the owner's session observation into one field.** Gate feedback concerns the
+    *previous* node's artifacts, so a gate node declares `session: inherit` and reuses the
+    producing session — the reviewer's "this section is thin" reaches the agent that wrote
+    it, context intact. One enum value rather than a new concept.
+  - **Modelled iterative review properly.** The gate re-runs its exit chain on every inbound
+    event and stays open on indecisive feedback; approve-with-comments is a distinct outcome
+    that advances *and* carries follow-ups forward, so an approval never silently swallows a
+    reviewer's suggestions.
+  - **Made chain semantics do the right thing for feedback quality.** First non-`pass`
+    short-circuits, but aggregation is the *hook's* job — `validate-artifacts` returns every
+    unmet requirement in one result, so the agent gets the full list in one round instead of
+    discovering failures one at a time.
+  - **Took the opinionated tool decisions.** GitHub **REST over stdlib HTTP** rather than the
+    `gh` CLI (no binary dependency, no version drift, no shell quoting, works in a bare
+    container) — with `gh auth token` retained *purely as a credential source*, which keeps
+    `gh`'s auth ergonomics without depending on it at call time. Slack **incoming webhooks**.
+    Jira **REST + token**. All are ordinary hooks behind one interface.
+  - **Answered the MCP open question.** MCP is a protocol for *agents* to call tools — it
+    assumes a model-driven client with a session, so a daemon speaking it is against its
+    grain. Recommendation: **delegate through the harness** (already an MCP client with the
+    operator's servers configured) via an `mcp-call` hook with schema-constrained output;
+    keep a minimal stdio JSON-RPC client on the shelf. Costs one invocation, avoids owning a
+    protocol and its server lifecycle.
+  - **Simplified routing.** `on: <outcome>` covers most edges now that hook results are
+    typed; an optional `when:` handles the compound minority. Whether that is CEL or named
+    compound-condition hooks is now an open question rather than a default — a real
+    reduction from "an expression on every edge".
+  - Carried forward the `diagramsRender` finding as part of `lint-artifacts`.
+- **Checkpoint/tests:** markdownlint 0 errors; all 4 mermaid blocks in the rewritten
+  `design.md` parse (validated with `@mermaid-js/mermaid-cli`).
+- **Next:** owner review of the rewritten requirements and design. Four open questions:
+  the tier-4 security sign-off; whether approve-with-comments follow-ups are mandatory or
+  advisory; `session: inherit` fallback when the session has died; and whether CEL is still
+  wanted for compound edges.
+- **Blockers:** phase approval for requirements and design.
+
 ## Review cycles
 
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
@@ -263,6 +321,7 @@ status: in-progress           # in-progress | complete
 | 2 | human | @MadaraUchiha-314 | **Finding accepted and fixed** — the Cursor `stop` hook does exist; the "Cursor degrades to CI-only" framing was wrong. See the 2026-07-26 entry below. | [PR #110 review comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 3 | human | @MadaraUchiha-314 | **Direction accepted** — model the process as a graph of nodes with an orchestration layer determining edges; harness hooks are too fine-grained and phase-blind to be node boundaries. Architecture added; options re-cast as its layers. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 4 | human | @MadaraUchiha-314 | **Brainstorm locked** — *"let's go ahead with the requirements and design"*. Phase advanced; both artifacts derived. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
+| 7 | human | @MadaraUchiha-314 | **Simplification accepted, fresh slate** — collapse to nodes + entry/exit hooks with one `HookResult` contract; everything (validation, labels, Slack, Jira) is a hook; opinionated integrations; MCP question answered. Human gate recommended as a **node**. Specs and both decisions rewritten. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 6 | human | @MadaraUchiha-314 | **Direction accepted** — graph internal to the-loop (user-defined graphs a future feature); CEL expressions for conditional edges; LLM-decided approval gates; per-work-item tags/skips; YAML lifecycle hooks; tmux preserved for takeover. Specs rewritten; `decision-042` added. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 5 | self | the-loop (Claude Code) | Checked the derived artifacts against the phase gates: EARS throughout, Security considerations non-empty and specific, every requirements-phase trust boundary enforced in `design.md` § Security design, testing strategy mapping every requirement to a named Gherkin scenario. Risk tier raised 3 → 4 on the `**/*schema*` sensitive-path rule rather than left at the default. | this PR |
 
