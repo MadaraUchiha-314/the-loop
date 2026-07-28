@@ -35,10 +35,27 @@ Everything the-loop needs to *do* at a step boundary — validate artifacts, lin
 a label, request a review, notify Slack, update Jira, classify a human's reply — is a hook.
 One shape, used everywhere.
 
-**Risk tier 4.** Gate classification reads human-authored text (attacker-reachable on a
-public repository) and the-loop gains outbound integrations. Per `autonomy.tiers`,
-`human-approves-pr`; per `security.review.humanSignOffMinTier`, a **named human security
-sign-off**.
+### Risk tier 4 — what that actually means here
+
+This work item is **risk tier 4**, because gate classification reads human-authored text
+(attacker-reachable on a public repository) and the-loop gains outbound integrations holding
+credentials. Two rules in this repository's own `.the-loop/harness-config.yaml` then apply,
+and because the jargon is easy to skim past, here is what each one concretely requires:
+
+| Config | Says | In practice, for this work item |
+|---|---|---|
+| `autonomy.tiers: {"4": human-approves-pr}` | tier 4 may not self-complete | the loop can do everything up to "ready", but a human merges the PR |
+| `security.review.humanSignOffMinTier: 4` | at tier ≥ 4 a **named** human approves the security review, recorded on the PR | someone writes, in a comment, that they have read the Security design section and accept it — with their name against it |
+
+**It does not imply a security team.** "Named human sign-off" means the paper trail records
+*who* accepted the security analysis, so the-loop cannot self-certify its own threat model.
+For this repository that person is the owner. The practical deliverable is one comment on
+the PR of the form *"security review read and accepted — @handle, <date>"*, recorded in the
+execution log's Security review section.
+
+The tier also raises the bar on this spec itself: the **Security considerations** section
+below has to be specific and honest about new attack surface rather than asserting "no new
+attack surface".
 
 ## Requirements
 
@@ -111,8 +128,10 @@ requesting changes — to be understood, so the process meets me where I write.
    SHALL remain open.
 4. WHEN feedback is classified `approved` THEN the work item SHALL advance.
 5. WHEN feedback is classified **approved with comments** THEN the work item SHALL advance
-   **and** the comments SHALL be carried forward as declared follow-up work — an approval
-   SHALL NOT silently discard a reviewer's suggestions.
+   **and** the review SHALL be appended to a `## Review comments` section of the artifact the
+   gate approved — an approval SHALL NOT silently discard a reviewer's suggestions.
+   *(Owner decision: the comments live in the generated document, not in a side-channel
+   follow-up list.)*
 6. WHEN feedback is classified **changes requested** THEN the work item SHALL return to the
    producing node with the feedback as that node's next input.
 7. WHEN a gate node declares `session: inherit` THEN it SHALL reuse the harness session of
@@ -129,15 +148,19 @@ what I could add are the same kind of thing.
 
 1. WHEN the-loop ships THEN it SHALL provide at least: `set-phase-label`, `request-review`,
    `notify`, `log-entry`, `validate-artifacts`, `lint-artifacts`, `verify-tests`,
-   `classify-feedback` and `record-decision`.
+   `classify-feedback`, `record-feedback` and `record-decision`.
 2. WHEN `validate-artifacts` runs THEN it SHALL check existence, front-matter lock state and
-   required sections of the node's declared outputs.
-3. WHEN `lint-artifacts` runs THEN it SHALL run the configured markdown linter **and** verify
+   required sections of the node's declared outputs; WHEN the artifact has passed through a
+   gate THEN a non-empty `## Review comments` section SHALL be one of those required
+   sections, so a lost review is a blocking finding rather than a silent omission.
+3. WHEN `record-feedback` runs THEN it SHALL append the review, attributed and dated, to the
+   artifact's `## Review comments` section without rewriting earlier entries.
+4. WHEN `lint-artifacts` runs THEN it SHALL run the configured markdown linter **and** verify
    that every mermaid block parses.
-4. WHEN `set-phase-label` runs THEN it SHALL sync the ticket label for the node's `phase`.
-5. WHEN `request-review` or any other commenting hook posts THEN the comment SHALL carry
+5. WHEN `set-phase-label` runs THEN it SHALL sync the ticket label for the node's `phase`.
+6. WHEN `request-review` or any other commenting hook posts THEN the comment SHALL carry
    the-loop's self-authored marker.
-6. WHEN `notify` runs THEN recipients SHALL resolve only through `notifications.events` →
+7. WHEN `notify` runs THEN recipients SHALL resolve only through `notifications.events` →
    roles → `.the-loop/collaborators.yaml`.
 
 ### Requirement 6 — Integrations are the-loop's own calls
@@ -171,7 +194,9 @@ automation never costs me the ability to intervene.
    artifacts that session produces.
 3. WHEN a node declares `session: inherit` THEN it SHALL bind the previous node's session.
 4. IF an inherited session has died THEN the system SHALL fall back to a fresh session seeded
-   with the artifacts as context, recording the fallback.
+   with the work item's artifacts (`requirements.md`, `design.md`, `execution-log.md`) as
+   context, recording the fallback — it SHALL NOT block. *(Owner decision: those artifacts
+   are enough to restart the session.)*
 5. WHEN a model call is required by a hook THEN it SHALL run as a separate short-lived
    headless process at the cheapest declared tier, and SHALL NOT be injected into the
    resident session.
@@ -205,8 +230,9 @@ automation never costs me the ability to intervene.
 
 ## Non-functional requirements
 
-- **Dependencies.** At most one new runtime dependency, and only if the compound-edge case
-  survives review (see open question 4). HTTP uses the standard library.
+- **Dependencies. Zero new runtime dependencies.** Edges route on hook outcomes only — no
+  expression language (owner decision: *"Remove CEL"*) — and HTTP uses the standard library.
+  A condition that would have wanted an expression becomes a named hook.
 - **Both harnesses.** Every requirement holds for Claude Code and Cursor, or degrades to the
   repository-boundary check with the difference documented.
 - **`the-loop check` is fast and pure** — it runs on every resident-session turn.
@@ -258,10 +284,21 @@ automation never costs me the ability to intervene.
 
 ## Open questions
 
-1. Who provides the tier-4 **named security sign-off**?
-2. **Approve-with-comments** (R4.5): are carried-forward follow-ups *mandatory* work in the
-   next node, or advisory notes? Mandatory is safer; advisory is faster.
-3. **`session: inherit` when the session has died** (R7.4): fall back to fresh with artifacts
-   as context (recommended, matches existing respawn behaviour), or block?
-4. **Is CEL still wanted** for the compound-edge minority, now that `on: <outcome>` covers the
-   common case — or drop the dependency and express compound conditions as named hooks?
+All four earlier questions were **resolved by the owner on PR #110**; kept here as the paper
+trail.
+
+1. ~~Who provides the tier-4 named security sign-off?~~ → **Clarified, not delegated.** It
+   means the paper trail records *who* accepted the security analysis, so the loop cannot
+   self-certify its own threat model; for this repository that is the owner. See § *Risk tier
+   4 — what that actually means here*.
+2. ~~Approve-with-comments: mandatory follow-ups or advisory notes?~~ → **Neither — the
+   comments go into the artifact.** A `## Review comments` section at the bottom of the
+   generated doc (R4.5, R5.3). Better than both options offered: the feedback becomes part of
+   the durable record, travels with the document it concerns, and is reviewable in the diff.
+3. ~~`session: inherit` when the session has died?~~ → **Fall back to fresh**, seeded with
+   `requirements.md` / `design.md` / `execution-log.md` (R7.4). Owner: *"artifacts… should be
+   enough to restart the session."*
+4. ~~Is CEL still wanted?~~ → **Removed.** Every edge routes on a hook outcome; a condition
+   that would have needed an expression becomes a named hook. Zero new runtime dependencies.
+
+Nothing now blocks tasks breakdown except phase approval itself.

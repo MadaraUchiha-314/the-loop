@@ -313,6 +313,37 @@ status: in-progress           # in-progress | complete
   wanted for compound edges.
 - **Blockers:** phase approval for requirements and design.
 
+### 2026-07-28 — four open questions resolved by the owner
+
+- **Phase:** design
+- **Did:** owner answered all four open questions on PR #110; specs and `decision-042`
+  updated. **No open questions remain** — only phase approval stands between this and tasks.
+  - **"Tier-4 named security sign-off — what is this? I don't understand this."** Fair
+    challenge: I had been repeating config jargon. Added § *Risk tier 4 — what that actually
+    means here* to `requirements.md`, spelling out what each of the two config rules
+    concretely requires and, importantly, what it does **not** mean — there is no implied
+    security team. "Named sign-off" means the paper trail records *who* accepted the security
+    analysis, so the loop cannot self-certify its own threat model; here that is the owner,
+    and the deliverable is one attributed comment on the PR.
+  - **Approve-with-comments → the comments go in the artifact.** Owner: *"approval and
+    comments can be a section in the final artifact… a comments section at the bottom of each
+    doc."* This is a better answer than either option I offered (mandatory vs advisory
+    follow-ups): the feedback becomes part of the durable, checked-in record, travels with
+    the document it concerns, and shows up in the PR diff. Added a `record-feedback` hook and
+    made a non-empty `## Review comments` section a required check on any gated artifact, so
+    a lost review blocks rather than passing silently.
+  - **`session: inherit` fallback confirmed** — fall back to a fresh session seeded with
+    `requirements.md` / `design.md` / `execution-log.md`, never block.
+  - **CEL removed.** Every edge now routes on a hook outcome; a condition that would have
+    wanted an expression becomes a named hook (`is-docs-only` → `docs-only | pass`). This
+    lands the architecture on **zero new runtime dependencies** and removes the last place
+    where two mechanisms did one job. Two successive drafts had reached for an expression
+    language; the hook contract already expressed it.
+- **Checkpoint/tests:** markdownlint 0 errors; all 4 mermaid blocks parse; config VALID.
+- **Next:** phase approval for `requirements.md` and `design.md`. On approval → set both
+  `status: approved`, advance to `loop:tasks-breakdown`, derive `tasks.md`.
+- **Blockers:** phase approval only.
+
 ## Review cycles
 
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
@@ -321,6 +352,7 @@ status: in-progress           # in-progress | complete
 | 2 | human | @MadaraUchiha-314 | **Finding accepted and fixed** — the Cursor `stop` hook does exist; the "Cursor degrades to CI-only" framing was wrong. See the 2026-07-26 entry below. | [PR #110 review comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 3 | human | @MadaraUchiha-314 | **Direction accepted** — model the process as a graph of nodes with an orchestration layer determining edges; harness hooks are too fine-grained and phase-blind to be node boundaries. Architecture added; options re-cast as its layers. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 4 | human | @MadaraUchiha-314 | **Brainstorm locked** — *"let's go ahead with the requirements and design"*. Phase advanced; both artifacts derived. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
+| 8 | human | @MadaraUchiha-314 | **All four open questions resolved** — sign-off explained (not delegated); approve-with-comments recorded as a `## Review comments` section in the artifact; `session: inherit` falls back to fresh; **CEL removed** (zero new dependencies). | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 7 | human | @MadaraUchiha-314 | **Simplification accepted, fresh slate** — collapse to nodes + entry/exit hooks with one `HookResult` contract; everything (validation, labels, Slack, Jira) is a hook; opinionated integrations; MCP question answered. Human gate recommended as a **node**. Specs and both decisions rewritten. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 6 | human | @MadaraUchiha-314 | **Direction accepted** — graph internal to the-loop (user-defined graphs a future feature); CEL expressions for conditional edges; LLM-decided approval gates; per-work-item tags/skips; YAML lifecycle hooks; tmux preserved for takeover. Specs rewritten; `decision-042` added. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 5 | self | the-loop (Claude Code) | Checked the derived artifacts against the phase gates: EARS throughout, Security considerations non-empty and specific, every requirements-phase trust boundary enforced in `design.md` § Security design, testing strategy mapping every requirement to a named Gherkin scenario. Risk tier raised 3 → 4 on the `**/*schema*` sensitive-path rule rather than left at the default. | this PR |

@@ -12,8 +12,9 @@
 decision-041 makes the PDLC a graph of nodes with entry/exit hook chains. Three questions
 it does not answer, all raised by the owner on PR #110:
 
-1. **How do edges decide?** An earlier draft put a CEL expression on every edge. With hooks
-   now returning a typed `HookResult`, most conditions are a *name*, not a formula.
+1. **How do edges decide?** An earlier draft put a CEL expression on every edge; a second
+   kept one for a "compound minority". With hooks returning a typed `HookResult`, a condition
+   is a *name*, not a formula.
 2. **Who calls GitHub, Slack and Jira?** the-loop is now the orchestrator rather than the
    harness, so the choice of transport is its own:
 
@@ -35,11 +36,11 @@ feedback is iterative, may be approval *with* comments, and must be reacted to d
 1. **Edges route on hook outcomes.** `on: <outcome>` names a value a hook produced —
    `pass`, `approved`, `approved-with-comments`, `changes-requested`. This covers the
    overwhelming majority of transitions.
-2. **An optional `when:` expression handles the compound minority** (conditions over hook
-   `data`, work-item tags and risk tier). Whether this is CEL or a small set of named
-   compound-condition hooks is left open (`requirements.md` open question 4) — the point of
-   this decision is that **it is the minority case**, not the default. Simplifying from
-   "expression on every edge" is the change.
+2. **There is no expression language.** Owner decision on PR #110: *"Remove CEL."* A
+   condition that would have wanted an expression becomes a **named hook** returning the
+   outcome — `is-docs-only` inspects the work item and returns `docs-only` or `pass`. One
+   mechanism instead of two, **zero new runtime dependencies**, and every condition is
+   unit-testable like any other hook.
 3. **No matching edge parks and escalates** rather than guessing.
 
    *On human feedback:*
@@ -51,9 +52,12 @@ feedback is iterative, may be approval *with* comments, and must be reacted to d
 5. **Indecisive feedback keeps the gate open.** A partial review, a question or an ambiguous
    comment returns `wait`. The gate transitions only on a decisive classification, which is
    how iterative multi-comment review is served without guessing.
-6. **Approved-with-comments is a first-class outcome.** It advances the work item *and*
-   carries the comments forward as follow-up work — an approval never silently discards a
-   reviewer's suggestions.
+6. **Approved-with-comments records the review *in the artifact*.** Owner decision: the
+   comments become a `## Review comments` section at the bottom of the generated document
+   (design, requirements, …), appended by a `record-feedback` hook, and the work item
+   advances. The feedback joins the durable record rather than a side-channel to-do list,
+   travels with the document it concerns, and is reviewable in the diff. `validate-artifacts`
+   then requires that section on any gated artifact, so a lost review blocks.
 7. **Only authorized authors' text is read at all**, and **policy outranks the model**: a
    classification can only classify a human response that actually arrived; it can never
    satisfy an approval that `autonomy.tiers` or `security.review.humanSignOffMinTier`
@@ -93,7 +97,7 @@ feedback is iterative, may be approval *with* comments, and must be reacted to d
 **Positive.**
 
 - Routing reads as a state machine rather than a rules engine: `on: approved` says what it
-  means, and the expression language shrinks to a minority case or disappears entirely.
+  means, and there is no second language to learn, version or sandbox.
 - Gates understand real review behaviour — partial, approving-with-comments, rejecting-with-
   comments — instead of forcing reviewers into a keyword protocol.
 - Determinism is preserved where it matters: judgement is confined to producing a value in a
@@ -120,8 +124,9 @@ feedback is iterative, may be approval *with* comments, and must be reacted to d
 
 ## Alternatives considered
 
-- **An expression on every edge.** Rejected as over-general once hook results became typed:
-  most edges are a name.
+- **An expression language on edges** (CEL, on every edge or on a compound minority).
+  Rejected by the owner and on merit: it is a second mechanism for something the hook
+  contract already expresses, and it would have been the work item's only new dependency.
 - **Letting the model choose the next node** (return a node id). Rejected: it makes the
   reachable state set a model output, which is the non-determinism issue #109 exists to
   remove.

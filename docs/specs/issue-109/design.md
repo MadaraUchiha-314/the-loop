@@ -167,7 +167,7 @@ stateDiagram-v2
     waiting --> approved_with_comments: classified approved, with follow-ups
     waiting --> changes_requested: classified changes requested
     approved --> [*]: advance
-    approved_with_comments --> [*]: advance, carry follow-ups into the next node
+    approved_with_comments --> [*]: advance;<br/>comments recorded in the artifact
     changes_requested --> [*]: return to the producing node,<br/>feedback becomes its next input
 ```
 
@@ -176,12 +176,31 @@ Four behaviours the owner called out, and how each is served:
 - **Iterative feedback in parts.** The gate stays in `waiting` and re-runs its exit chain on
   *every* inbound event. It only transitions when the classification is decisive; an
   ambiguous or partial comment returns `wait`, not a guess.
-- **Approved with comments.** A distinct outcome from plain approval: the work item advances
-  *and* the comments are carried forward as declared follow-up work, so an approval never
-  silently swallows a reviewer's suggestions.
+- **Approved with comments — the comments land *in the artifact*.** Owner decision:
+  *"approval and comments can be a section in the final artifact that's generated… a comments
+  section at the bottom of each doc like design, requirements, etc."* So a
+  `record-feedback` exit hook appends the review to a **`## Review comments`** section of the
+  artifact the gate approved, and the work item advances. This is a better answer than the
+  mandatory-vs-advisory framing the question offered: the feedback becomes part of the
+  durable, checked-in record rather than a side-channel to-do list, it travels with the
+  document it is about, and it is reviewable in the PR diff like everything else. Nothing is
+  silently swallowed, and nothing needs a separate follow-up mechanism to track.
 - **Rejected/changes-requested with comments.** Returns to the producing node with the
   comments as that node's next input — which works precisely because of `session: inherit`.
 - **Tied to the previous node's session.** As above.
+
+The recorded section is append-only and attributed:
+
+```markdown
+## Review comments
+
+### 2026-07-28 — @reviewer — approved with comments
+- The Security design section should name the fail-closed behaviour explicitly.
+- Consider splitting the error-handling table by severity.
+```
+
+`validate-artifacts` treats this section as a required part of any artifact that has passed
+through a gate, so a lost review is a blocking finding rather than a silent omission.
 
 **Classifying the reply.** "Did they approve?" is judgement over English, so one exit hook
 (`classify-feedback`) asks the harness with a schema-constrained prompt and returns the
@@ -201,15 +220,18 @@ edges:
   - {from: design-approval, to: tasks, on: approved}
   - {from: design-approval, to: tasks, on: approved-with-comments}
   - {from: design-approval, to: design, on: changes-requested}
-  - {from: implementation, to: reviewer-briefing,
-     when: "workItem.tags.exists(t, t == 'docs-only')"}   # optional CEL, compound cases only
+  - {from: implementation, to: reviewer-briefing, on: docs-only}   # from a named hook
 ```
 
-`on:` names a hook outcome and covers the overwhelming majority of edges. `when:` is an
-optional CEL expression for compound conditions over hook `data`, work-item tags and risk
-tier. This is a deliberate simplification of the earlier draft, where **every** edge carried
-an expression: hook results are now typed enough that most conditions are a name, not a
-formula.
+**Every edge routes on a hook outcome. There is no expression language** (owner decision:
+*"Remove CEL"*). A condition that would have needed an expression becomes a **named hook**
+that returns the outcome — `is-docs-only` inspects the work item and returns
+`docs-only` or `pass`. That keeps one mechanism instead of two, drops the dependency
+entirely, and makes every condition unit-testable like any other hook.
+
+Two earlier drafts sat on this: the first put an expression on *every* edge, the second kept
+one for a "compound minority". Both were a second language for something the hook contract
+already expresses. The named-hook form is strictly simpler and strictly more testable.
 
 ## Default hooks the-loop ships
 
@@ -226,6 +248,7 @@ implementing the same signature.
 | `lint-artifacts` | exit | markdownlint, and `diagramsRender` (mermaid actually parses) |
 | `verify-tests` | exit | the node's declared test command passed |
 | `classify-feedback` | exit (gate nodes) | schema-constrained classification of an authorized human's reply |
+| `record-feedback` | exit (gate nodes) | append the review to the artifact's `## Review comments` section |
 | `record-decision` | exit (gate nodes) | persist the outcome and its inputs to graph state |
 
 `lint-artifacts` earns `diagramsRender` from an incident in this very PR: a reviewer caught
@@ -348,8 +371,12 @@ flowchart TB
   entry: [set-phase-label, request-review, notify]
   exit:
     - {hook: classify-feedback, with: {outcomes: [approved, approved-with-comments, changes-requested]}}
+    - {hook: record-feedback, with: {into: design.md, section: "Review comments"}}
     - {hook: record-decision}
 ```
+
+The artifact templates gain a `## Review comments` section so the shape exists before the
+first review lands. That is an implementation task, not a runtime concern.
 
 ### `graph-state.json`
 
@@ -434,8 +461,10 @@ payoff of the contract). Integration tests with Gherkin docstrings under
   correct modelling of a multi-day, event-receiving, iterative state.
 - **`session: inherit` rather than a new binding concept.** One enum value expresses the
   owner's observation that gate feedback belongs to the previous node's session.
-- **`on:` for most edges, CEL only for compound conditions.** Simplifies the earlier draft,
-  where every edge carried an expression. → `decision-042` (revised).
+- **Every edge routes on a hook outcome; no expression language.** Costs a hook per
+  non-trivial condition; buys one mechanism instead of two, **zero new runtime
+  dependencies**, and conditions that are unit-testable like everything else.
+  → `decision-042` (revised).
 - **GitHub REST over `gh`, Slack webhooks over an app.** Costs some convenience; buys no
   binary dependencies and no version drift, with `gh auth token` retained purely as an
   optional credential source.
@@ -446,11 +475,10 @@ payoff of the contract). Integration tests with Gherkin docstrings under
 
 ## Open questions
 
-1. Who provides the tier-4 **named security sign-off**?
-2. **Approve-with-comments**: should the carried-forward follow-ups be mandatory work in the
-   next node, or advisory notes? (Mandatory is safer; advisory is faster.)
-3. Should **`session: inherit`** fall back to a fresh session when the inherited one has
-   died, or block? (Recommend: fall back, with the artifacts as context — matches the
-   existing respawn behaviour.)
-4. Confirm **CEL is still wanted** for the compound-edge minority, now that `on:` covers the
-   common case — or drop the dependency entirely and add named compound conditions as hooks.
+**None outstanding.** All four were resolved by the owner on PR #110 and are folded into the
+design above — see `requirements.md` § Open questions for the record of what each was and how
+it was answered: the meaning of the tier-4 sign-off, review comments recorded *in the
+artifact*, `session: inherit` falling back to a fresh session seeded with the artifacts, and
+**CEL removed** in favour of routing on hook outcomes.
+
+The only thing between this design and `tasks.md` is phase approval.
