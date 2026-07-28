@@ -623,7 +623,7 @@ stateDiagram-v2
     note right of self_review
       self_review · critic_review · security_review
       evidence · capability_docs · reviewer_briefing
-      are ALL `loop:needs-review` today — one label,
+      are ALL loop:needs-review today — one label,
       six nodes. 23 of 26 execution logs stop here.
     end note
 ```
@@ -634,12 +634,12 @@ declared phase spec through the same checker):
 ```mermaid
 flowchart TD
     A["Opt A — workflow as DATA<br/>(phases: produces / requires / gate / stage)"]
-    B["Opt B — `the-loop check`<br/>pure predicate over the repo"]
+    B["Opt B — the-loop check<br/>pure predicate over the repo"]
     A --> B
     B --> C["Opt C — harness hooks<br/>Stop · PostToolUse · SessionStart"]
     B --> D["Opt D — pre-push + CI<br/>harness-agnostic hard gate"]
-    B --> E["Opt E — `the-loop run`<br/>deterministic step orchestrator"]
-    B --> F["Opt F — verified checkpoint<br/>`the-loop step done`"]
+    B --> E["Opt E — the-loop run<br/>deterministic step orchestrator"]
+    B --> F["Opt F — verified checkpoint<br/>the-loop step done"]
     C -.->|"in-session (both harnesses);<br/>D is the harness-agnostic backstop"| D
     E -.->|reuses| R["existing: registry ·<br/>ControlStore · worktrees · eventlog"]
     F -.->|bridge for| G["Opt G — resident tmux session"]

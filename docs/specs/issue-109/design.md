@@ -66,10 +66,10 @@ flowchart TB
     end
 
     subgraph transports["Transports"]
-        CHECK["`the-loop check` — pure, read-only"]
-        RUN["`the-loop run` — drives nodes"]
+        CHECK["the-loop check — pure, read-only"]
+        RUN["the-loop run — drives nodes"]
         HOOK["harness stop-hook wrapper (tick)"]
-        CI["pre-push / CI — `check --recompute`"]
+        CI["pre-push / CI — check --recompute"]
     end
 
     PDLC --> MODEL
@@ -104,10 +104,10 @@ sequenceDiagram
         AZ-->>RT: no → ignore the text entirely, stay parked
     else authorized
         RT->>D: classify this reply
-        D->>H: -p --output-format json --json-schema {enum: approved|<br/>changes-requested|rejected|unclear, reasons[]}
+        D->>H: -p --output-format json --json-schema<br/>outcome enum: approved / changes-requested / rejected / unclear
         H-->>D: structured_output (validated)
         D->>RT: decision recorded in graph-state
-        RT->>CEL: evaluate outgoing edges with `decision` bound
+        RT->>CEL: evaluate outgoing edges with decision bound
         CEL-->>RT: first true edge
     end
     Note over RT,CEL: approved → next node · changes-requested → implementation<br/>rejected → design · unclear → stay parked, re-notify
@@ -186,6 +186,26 @@ edges:
   - {from: implementation, to: reviewer-briefing,
      when: "workItem.tags.exists(t, t == 'docs-only')"}
 ```
+
+### The gate predicate vocabulary (closed, each a pure function)
+
+| Predicate | Satisfied when |
+|---|---|
+| `exists` | the node's `produces.artifact` is present |
+| `frontMatter: {k: v}` | the artifact's YAML front-matter matches every pair |
+| `sections: [..]` | each named heading exists **and has a non-empty body** |
+| `checkmarks: complete` | no `- [ ]` remains in the artifact |
+| `reviewRounds: {type, min}` | the execution log's review table has ≥ `min` rows of that type |
+| `enforcesBoundariesFrom: <file>` | every trust boundary named upstream appears downstream |
+| `labelInSync` | the ticket label matches the node's declared `label` |
+| `diagramsRender` | every ```` ```mermaid ```` block in the artifact parses |
+
+`diagramsRender` earns its place from a finding while writing this spec. `userInteraction.diagramFormat: mermaid` is stated as a **RULE**, and a reviewer caught a diagram in
+this PR that did not render (backticks inside a node label). Validating every mermaid block
+in the repository then found **three more already merged** — `docs/specs/issue-21/design.md`,
+`issue-32/design.md` and `issue-86/design.md`. A rule with no evaluator drifted, silently,
+exactly as this work item's thesis predicts. It is also the cheapest possible demonstration
+that gate predicates are worth having: the check is one parser invocation.
 
 ### The CEL context (bound, typed, documented)
 

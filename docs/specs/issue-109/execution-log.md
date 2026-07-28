@@ -227,6 +227,34 @@ status: in-progress           # in-progress | complete
   beyond the `required` set, and the Cursor decision path. On approval → `loop:tasks-breakdown`.
 - **Blockers:** phase approval for requirements and design.
 
+### 2026-07-28 — broken mermaid fixed; a rule-without-an-evaluator found
+
+- **Phase:** design
+- **Did:** @MadaraUchiha-314 reported that the design.md architecture diagram would not
+  render — *"Lexical error on line 31. Unrecognized text."* Reproduced locally: backticks
+  inside mermaid node labels. Fixed every backticked label
+  across `brainstorm.md` and `design.md`, and simplified a sequence-diagram message
+  containing `|`, `{}` and `[]`.
+  - **Built a validator rather than eyeballing it.** Extracted every fenced mermaid block and
+    ran it through the real parser (`@mermaid-js/mermaid-cli`, `--no-sandbox`). All 5 blocks
+    in this work item's artifacts now parse.
+  - **Then ran it over the rest of the repository — and found three already-merged broken
+    diagrams:** `docs/specs/issue-21/design.md`, `issue-32/design.md`,
+    `issue-86/design.md` (42 blocks pass, 3 fail). `userInteraction.diagramFormat: mermaid`
+    is written as a **RULE** and is enforced by nothing, so broken diagrams shipped. That is
+    this work item's thesis reproduced in miniature, on a rule nobody would have guessed was
+    drifting.
+  - **Turned the finding into design.** Added `diagramsRender` to the gate predicate
+    vocabulary in `design.md` — one parser invocation, and the cheapest possible
+    demonstration that a declared rule wants a mechanical evaluator.
+  - **Did not fix the three merged specs.** They belong to closed work items and are outside
+    issue-109's scope; reported to the owner with an offer instead of silently widening this
+    PR.
+- **Checkpoint/tests:** mermaid validation 5/5 blocks OK in this work item's artifacts;
+  markdownlint 0 errors; config validation VALID.
+- **Next:** unchanged — phase approval for requirements and design.
+- **Blockers:** unchanged.
+
 ## Review cycles
 
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
