@@ -9,6 +9,9 @@
   dependencies, PyYAML optional" description in § Context was accurate when written
   and is no longer — PyYAML became required in issue-97. The recommendation
   (stay on Python) and the whole analysis behind it are unaffected.
+- **Re-raised and re-affirmed 2026-07-28** (PR #110, issue-109): *"Since github SDK is
+  available in node js, should we move the whole project to node/bun + typescript?"*
+  Answer unchanged — see § *Re-affirmation (2026-07-28)* at the end of this record.
 
 ## Context
 
@@ -145,3 +148,45 @@ workload cannot use, highest rewrite cost).
 - **Hybrid: rewrite only the webhook server** — rejected: the receiver is the
   *least* loaded component (~0.1 ms CPU per event); a two-language repo for
   that is all cost.
+
+## Re-affirmation (2026-07-28, PR #110 / issue-109)
+
+The question returned in a new setting: issue-109 makes the-loop the **orchestrator**
+(rather than the harness driving), and that raised the transport question — which surfaced
+that GitHub publishes an official SDK for JavaScript but none for Python. Hence: *"should we
+move the whole project to node/bun + typescript?"*
+
+**The answer is unchanged, and the premise was already analysed.** § 3 above lists
+`octokit` as "GitHub's own, best-in-class" for TS/Bun and concludes that **SDK availability
+neither blocks nor motivates any language choice**. Octokit being official is not new
+evidence; it was part of the original comparison.
+
+Two things *have* changed since 2026-07-23, and both point the same way:
+
+- **The rewrite cost has roughly quadrupled.** The CLI was ~4.8k lines when this was
+  decided. It is now **~9.5k lines of source plus ~10.2k lines of tests** — the sessions
+  registry, control store, workspace/worktree layer, trust pre-seeding, reactions, announce
+  and the poller all landed in between. A port now means ~20k lines and the whole Gherkin
+  integration suite.
+- **The thing an SDK would buy has shrunk relative to the whole.** issue-109's integration
+  surface is roughly **ten GitHub endpoints**. Rewriting ~20k lines to obtain an official
+  client for ten endpoints is the tail wagging the dog — especially as the-loop's outbound
+  GitHub work is a *migration off* the `gh` CLI either way, which is the same work in any
+  language.
+
+**Neither revisit trigger has fired.** They are concrete and falsifiable: (a) genuinely
+CPU-bound work at scale, or (b) distribution pain for users who cannot run Python. issue-109
+adds neither — hooks are I/O-bound, and the classification call is a subprocess to a harness
+that is itself minutes-long. "An official SDK exists in another language" is explicitly not
+a trigger.
+
+**The one honest argument on the other side**, worth naming: MCP's reference implementation
+is TypeScript-first, so a native MCP client would be more natural in TS. But
+[decision-042](decision-042.md) deliberately chose **delegation to the harness** over
+implementing MCP, precisely so the-loop never owns that protocol — so the pressure does not
+apply. If that choice is ever reversed, this is the argument to re-open with.
+
+Also unchanged: decision-005's rationale for Python — future self-learning/ML capability,
+whose SDKs remain Python-first. issue-109's architecture does nothing to weaken it; if
+anything, a hook registry of pure functions is a natural place for future model-assisted
+checks to live.

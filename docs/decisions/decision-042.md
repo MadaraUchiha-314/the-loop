@@ -6,6 +6,10 @@
 - **Work item:** issue-109
 - **Spec:** `docs/specs/issue-109/`
 - **Extends:** [decision-041](decision-041.md) (nodes and hooks).
+- **Bounded by:** [decision-030](decision-030.md) — the language stays Python. The
+  observation that GitHub's official SDK exists for JavaScript prompted *"should we move the
+  whole project to node/bun + typescript?"* on PR #110; decision-030 had already analysed
+  exactly that and is re-affirmed there, so this record chooses a transport, not a runtime.
 
 ## Context
 
