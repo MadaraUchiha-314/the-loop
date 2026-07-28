@@ -15,8 +15,8 @@ status: in-progress           # in-progress | complete
 | Phase | Entered | Reviewed/approved by | Notes |
 |-------|---------|----------------------|-------|
 | brainstorming | 2026-07-26 | @MadaraUchiha-314 (PR #110, 2026-07-27) | Phase 0 entered: the ticket is explicitly exploratory, so the loop started at the root artifact. Two review rounds (Cursor hook correction; graph architecture). **Locked** on *"let's go ahead with the requirements and design"*. |
-| requirements-definition | 2026-07-27 | *(pending — this PR)* | `requirements.md` derived from the locked brainstorm. 10 requirements in EARS, threat-model-lite, risk tier **4** (touches `**/*schema*` → `human-approves-pr` + named security sign-off). Seven brainstorm open questions resolved as **stated assumptions** so review can override them. |
-| design | 2026-07-27 | *(pending — this PR)* | `design.md` derived from the requirements. Five-layer architecture, closed gate/edge vocabularies, `graph-state.json` data model, security design per boundary, testing strategy. Decision recorded as `decision-041`. |
+| requirements-definition | 2026-07-27 | *(pending — this PR)* | `requirements.md` derived from the locked brainstorm; **rewritten 2026-07-28** for the nodes+hooks simplification. 9 requirements in EARS, threat-model-lite, risk tier **4** (explained in-doc rather than asserted). All open questions now resolved. |
+| design | 2026-07-27 | *(pending — this PR)* | `design.md` derived from the requirements; **rewritten 2026-07-28** from a fresh slate. Two concepts (node, hook) + one contract (`HookResult`), human gate as a node with `session: inherit`, opinionated integrations, MCP by delegation, no expression language. Decisions `041` and `042`. |
 | tasks-breakdown |  |  | Not started — the owner asked for requirements and design only. |
 
 ## Pull requests
