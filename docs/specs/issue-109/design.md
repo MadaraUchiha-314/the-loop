@@ -347,6 +347,54 @@ class Integration(Protocol):
 This is the real cost of the flexibility and it should be named: N transports × M operations
 is a matrix, and the contract suite is what keeps it honest.
 
+### Reconciling the configs behind one integration pattern
+
+The `integrations:` shape is worth applying backwards, because the duplication it removes
+already exists. `ghBinary: gh` is declared **three separate times** in `cli-config.yaml`
+(under `control`, `reactions` and `announce`) and again inside the poller — every feature
+redeclaring its own transport. That is exactly what one integrations block fixes.
+
+**Three layers, each answering one question, with no overlap:**
+
+| Layer | File | Answers | Example |
+|---|---|---|---|
+| **What** | `harness-config.yaml` (per repo) | which events matter, which ticketing system | `notifications.events`, `ticketing.system: github` |
+| **Who** | `collaborators.yaml` (per repo) | role → person → channel address | `approver: @handle`, their Slack id |
+| **How** | `cli-config.yaml` (daemon) | transport + credentials | `integrations.github.transport: auto` |
+
+This respects [decision-032](../../decisions/decision-032.md) rather than undoing it:
+per-repo *intent* stays in the harness config, daemon *mechanics* stay in the CLI config.
+The change is that intent now **references a provider by name** instead of redeclaring how
+to reach it.
+
+```yaml
+# cli-config.yaml — declared ONCE
+integrations:
+  github: {transport: auto, api: {...}, cli: {binary: gh}}
+  slack:  {transport: sdk, urlEnv: THE_LOOP_SLACK_WEBHOOK_URL}
+
+webhooks:
+  ghWebhook:
+    routing:
+      control:   {}          # no ghBinary — uses integrations.github
+      reactions: {enabled: true, started: eyes, completed: hooray, error: confused}
+      announce:  {enabled: true}
+```
+
+```yaml
+# harness-config.yaml — names providers, never transports
+ticketing:
+  system: github             # already a provider name; now it means one
+notifications:
+  events:
+    phase-approval-pending: [approver]   # WHAT + WHO; HOW comes from cli-config
+```
+
+**Migration is non-breaking.** An existing `ghBinary` key keeps working, resolved as an
+override of `integrations.github.cli.binary`, with a deprecation warning naming the
+replacement. Nothing an operator has today stops working on upgrade — the same posture the
+`config.yaml` → `harness-config.yaml` rename took.
+
 ### What if MCP is the only available route?
 
 The owner's open question, and it deserves a straight answer: **MCP is a protocol for
@@ -417,6 +465,91 @@ flowchart TB
     RT --> GATE
     RT --> EVT["eventlog JSONL"]
 ```
+
+## The orchestrator: what actually runs the graph
+
+The owner asked what technology takes the graph definition, compiles it and runs it. The
+honest answer is **no engine at all** — roughly 600 lines of plain Python — and the more
+useful answer is that **the-loop already has this exact pattern in production**.
+
+### It is the pattern already used for CLI commands
+
+`the_loop/commands/base.py` defines a `Command` base class, a `@register` decorator, a
+module-level `_REGISTRY` and an `iter_commands()` accessor; dropping a module under
+`commands/` makes a new sub-command exist. The hook registry is the same shape:
+
+```python
+# the_loop/graph/hooks/__init__.py — the same idea as commands/base.py
+@hook("validate-artifacts")
+def validate_artifacts(ctx: HookContext) -> HookResult: ...
+```
+
+New behaviour is a new module under `graph/hooks/`, exactly as a new sub-command is a new
+module under `commands/`. Nothing to learn that the codebase does not already teach.
+
+### What "compiling" means here
+
+| Stage | Mechanism | Failure mode |
+|---|---|---|
+| **Parse** | `yaml.safe_load` of the shipped `pdlc.yaml` | malformed YAML → startup error |
+| **Validate** | structural checks against the graph's declared shape | unknown field / missing `id` → startup error |
+| **Resolve** | every hook name looked up in the registry; every edge endpoint looked up in the node table | unknown hook or node → startup error, naming it |
+| **Index** | edges keyed by `(from_node, outcome)`; hook chains frozen into tuples | ambiguous edge → startup warning, first-declared wins |
+| **Freeze** | the result is an immutable `Graph` dataclass | — |
+
+"Compile" therefore means *resolve + validate + index, once, at load*. The point is that
+**every structural failure is a startup failure**, never a surprise three nodes into a
+traversal at 2am.
+
+*On JSON Schema:* `scripts/validate_config.py` already validates against JSON Schema using
+`jsonschema`, but as a **dev/CI dependency** (imported behind a `try/except ImportError`).
+The graph ships with the plugin and is validated in **the-loop's own CI**, so the runtime
+needs only the cheap structural checks above — **no new runtime dependency**. If
+user-authored graphs ever arrive, that is when runtime schema validation earns its cost.
+
+### The runtime is a state machine, not a scheduler
+
+```python
+def advance(repo: Path, work_item: str) -> Outcome:
+    graph  = load_graph()                     # cached; compiled once per process
+    state  = GraphState.load(repo, work_item) # or reconstruct from artifacts
+    node   = graph.node(state.current_node)
+    result = run_chain(node.exit, ctx)        # first non-pass short-circuits
+    state.record(node, result); state.save()  # persist BEFORE the side effect
+    return take_edge(graph, node, result.outcome)
+```
+
+No async, no event loop, no task queue, no database. One work item advances at a time — and
+that is free, because the existing dispatcher already serialises per session with a FIFO
+queue and a concurrency semaphore. Persistence is `json.dump` to a checked-in file.
+
+### Three drivers, one entry point
+
+```mermaid
+flowchart LR
+    RUN["the-loop run<br/>one-shot: advance until wait or done"] --> ADV["advance()"]
+    DAEMON["gh-webhook / poll daemon<br/>event-driven: a comment or CI result arrives"] --> ADV
+    CHECK["the-loop check<br/>pure: evaluate, never advance"] --> EVAL["run_chain() only"]
+    ADV --> EVAL
+    EVAL --> STATE[("graph-state.json")]
+```
+
+All three call the same code, which is what keeps `check` honest: the thing CI runs is the
+thing the runtime runs, not a reimplementation of it.
+
+### What we are deliberately not using
+
+| Not used | Why |
+|---|---|
+| LangGraph / LlamaIndex Workflows | assume in-process Python callables and serialized checkpoints; the-loop's nodes are **subprocess invocations of harness CLIs** and its checkpoints are **checked-in files** |
+| Temporal / Airflow / Prefect | a scheduler, a worker pool and a database for a state machine that advances a handful of times a day, on one operator's repos |
+| A rules/expression engine | removed with CEL — a hook outcome is a name |
+| `asyncio` | every wait is either a subprocess or a human; concurrency is already handled by the dispatcher |
+
+The load-bearing constraint is the one from [decision-030](../../decisions/decision-030.md)
+and [decision-005](../../decisions/decision-005.md): the-loop stays thin Python that
+subprocess-drives official CLIs. A graph runtime that is 600 lines of dataclasses, a
+registry and a `while` loop honours that; one that pulls a workflow engine does not.
 
 ## Data models
 

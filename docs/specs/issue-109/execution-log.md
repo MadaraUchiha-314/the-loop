@@ -380,6 +380,49 @@ status: in-progress           # in-progress | complete
 - **Next:** phase approval for requirements and design.
 - **Blockers:** phase approval only.
 
+### 2026-07-28 — orchestrator runtime specified; configs reconciled
+
+- **Phase:** design
+- **Did:** owner asked two things on PR #110 — *"what technology takes the graph definition,
+  compiles it and runs it? Can we add that detail in the design.md?"* and *"can we reconcile
+  the configs across cli-configs and harness-configs to follow this integration pattern?"*
+  Both were real gaps: the design said "thin Python, no framework" without ever describing the
+  runtime, and the integrations block was designed without applying it backwards.
+  - **Added § The orchestrator: what actually runs the graph.** The answer is no engine —
+    ~600 lines of plain Python — and the more useful half is that **the-loop already has this
+    pattern in production**: `commands/base.py` is `Command` + `@register` + `_REGISTRY` +
+    `iter_commands()`, and the hook registry is the same shape, so a new hook is a new module
+    exactly as a new sub-command is. Specified what "compile" means (parse → validate →
+    resolve hook/edge names → index edges by `(from, outcome)` → freeze), with the point that
+    **every structural failure becomes a startup failure** rather than a surprise three nodes
+    into a traversal. Runtime is a synchronous state machine; three drivers (`run`, the
+    daemon, `check`) all call the same chain code, which is what keeps `check` honest — CI
+    runs the runtime, not a reimplementation.
+  - **Resolved a dependency question honestly.** `scripts/validate_config.py` uses
+    `jsonschema`, but as a dev dependency behind `try/except ImportError`. Since the graph
+    ships with the plugin and is validated in the-loop's own CI, the runtime needs only cheap
+    structural checks — **no new runtime dependency**. Runtime schema validation earns its
+    cost only if user-authored graphs arrive.
+  - **Named what we are deliberately not using and why** — LangGraph (assumes in-process
+    callables and serialized checkpoints; ours are subprocesses and checked-in files),
+    Temporal/Airflow/Prefect (a scheduler, worker pool and database for a machine that
+    advances a few times a day), a rules engine (removed with CEL), `asyncio` (every wait is a
+    subprocess or a human, and the dispatcher already handles concurrency).
+  - **Reconciled the configs, which removes duplication that already exists.** `ghBinary: gh`
+    is declared **three times** in `cli-config.yaml` (`control`, `reactions`, `announce`) plus
+    the poller — every feature redeclaring its transport. Now three layers with no overlap:
+    **what** (harness-config: which events, which ticketing system) · **who**
+    (collaborators.yaml: role → person → address) · **how** (cli-config `integrations`:
+    transport + credentials). This *preserves* decision-032 rather than undoing it — per-repo
+    intent stays in the harness config, daemon mechanics in the CLI config; the change is that
+    intent now references a provider **by name** instead of restating how to reach it.
+    Migration is non-breaking: a legacy `ghBinary` keeps working as an override with a
+    deprecation warning, same posture as the `config.yaml` → `harness-config.yaml` rename.
+  - Added R6a (config reconciliation) and R6b (the graph runtime) to `requirements.md`.
+- **Checkpoint/tests:** markdownlint 0 errors; **5/5** mermaid blocks parse.
+- **Next:** phase approval for requirements and design.
+- **Blockers:** phase approval only.
+
 ## Review cycles
 
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
@@ -388,6 +431,7 @@ status: in-progress           # in-progress | complete
 | 2 | human | @MadaraUchiha-314 | **Finding accepted and fixed** — the Cursor `stop` hook does exist; the "Cursor degrades to CI-only" framing was wrong. See the 2026-07-26 entry below. | [PR #110 review comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 3 | human | @MadaraUchiha-314 | **Direction accepted** — model the process as a graph of nodes with an orchestration layer determining edges; harness hooks are too fine-grained and phase-blind to be node boundaries. Architecture added; options re-cast as its layers. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 4 | human | @MadaraUchiha-314 | **Brainstorm locked** — *"let's go ahead with the requirements and design"*. Phase advanced; both artifacts derived. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
+| 10 | human | @MadaraUchiha-314 | **Runtime + config reconciliation** — specify what compiles and runs the graph (no engine; the existing `Command`/`@register` pattern), and apply the integration pattern across both config files, removing triplicated `ghBinary`. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 9 | human | @MadaraUchiha-314 | **Transport made configurable** — support SDK+API and CLI per integration so operators choose; the agent's own calls left unconstrained (CLI/MCP/API). Turns the `gh` migration into an addition rather than a rewrite. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 8 | human | @MadaraUchiha-314 | **All four open questions resolved** — sign-off explained (not delegated); approve-with-comments recorded as a `## Review comments` section in the artifact; `session: inherit` falls back to fresh; **CEL removed** (zero new dependencies). | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 7 | human | @MadaraUchiha-314 | **Simplification accepted, fresh slate** — collapse to nodes + entry/exit hooks with one `HookResult` contract; everything (validation, labels, Slack, Jira) is a hook; opinionated integrations; MCP question answered. Human gate recommended as a **node**. Specs and both decisions rewritten. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |

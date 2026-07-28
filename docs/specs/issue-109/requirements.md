@@ -207,6 +207,45 @@ environment instead of dictating it.
     paths (`announce`, `comments`, `control`, `reactions`, `poller/github`) rather than
     replacing them — configurable transport turns the migration into an addition.
 
+### Requirement 6a — One integration pattern across both config files
+
+**User story:** As an operator, I want transport declared once, so I am not repeating the
+same setting in three places and wondering which one wins.
+
+1. WHEN transport or credentials are configured THEN they SHALL be declared **once**, in
+   `cli-config.yaml` under `integrations`, and SHALL NOT be redeclared per feature.
+2. WHEN a per-repo config names an integration THEN it SHALL reference the provider **by
+   name** and SHALL NOT declare how to reach it — intent in `harness-config.yaml`, recipients
+   in `collaborators.yaml`, transport and credentials in `cli-config.yaml`.
+3. WHEN a legacy per-feature key is present (today: `ghBinary` under `control`, `reactions`
+   and `announce`) THEN it SHALL continue to work, resolved as an override of the
+   corresponding `integrations` value, and SHALL emit a deprecation warning naming its
+   replacement.
+4. WHEN the configs are reconciled THEN the split established by decision-032 SHALL be
+   preserved: per-repo intent in the harness config, daemon mechanics in the CLI config.
+
+### Requirement 6b — The graph runtime
+
+**User story:** As a maintainer, I want to know exactly what compiles and runs the graph, so
+the orchestrator is reviewable rather than magical.
+
+1. WHEN the graph is loaded THEN parsing, validation, hook-name resolution, edge indexing and
+   freezing SHALL all occur **once at load**, so every structural failure is a **startup**
+   failure naming the offending element.
+2. WHEN a hook is registered THEN it SHALL use the same registry pattern the CLI already uses
+   for sub-commands (`Command` / `@register` / `_REGISTRY` in `commands/base.py`).
+3. WHEN the runtime advances a work item THEN it SHALL do so with a plain synchronous state
+   machine over stdlib data structures — **no workflow engine, scheduler, task queue,
+   database or async runtime**.
+4. WHEN graph state is written THEN it SHALL be persisted **before** the side effect that
+   depends on it.
+5. WHEN `the-loop run`, the daemon, or `the-loop check` evaluates a node THEN all three SHALL
+   call the **same** chain-execution code, so CI runs the runtime rather than a
+   reimplementation of it.
+6. WHEN the runtime validates the shipped graph THEN it SHALL require **no new runtime
+   dependency**; full JSON-Schema validation SHALL run in the-loop's own CI, where
+   `jsonschema` is already a development dependency.
+
 ### Requirement 7 — Sessions
 
 **User story:** As an operator watching a tmux session, I want to take over at any moment, so
