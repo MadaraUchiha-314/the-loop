@@ -105,14 +105,18 @@ status: in-progress          # in-progress | complete
 | 2 | self | `[claude/claude-opus-5]` | New findings (2): the `unavailable` outcome was defined in `reviewing.md` but absent from the execution-log template's review table; `docs/capabilities/token-economy.md` still referenced the pre-promotion `_usage_from_output`. Both fixed. | this log |
 | 3 | self | `[claude/claude-opus-5]` | New finding (1): a non-mapping `env:` was silently dropped, so the critic would run without the environment the operator believed they configured — now rejected with a reason, plus a case in the validation test. Self-round cap (`selfReviewCount: 3`) reached; no finding recurred, so nothing to escalate (`escalateOnRepeatFinding`). | this log |
 | 4 | critic | *none configured* | **unavailable** — this repo's `reviews.critics[]` is `[]` and no second harness CLI is installed in this container (`the-loop critic list` → "No critics configured"; `cursor-agent` not on PATH). Does **not** count toward `criticReviewCount`; stated here and in the PR briefing rather than reported as converged. | this log |
+| 5 | security | built-in security-review skill (`security.review.mechanism: auto`) | Zero findings — *"No high-confidence security findings."* over `origin/main...HEAD`. | § Security review below |
 
 ## Security review (gate)
 
 > Required before ready-to-ship (`security.review.required`). See `reference/security.md`.
 
-- **Mechanism:** the-loop's checklist (`security.review.mechanism: auto`; no built-in
-  security-review skill was invoked for this round).
-- **Outcome:** pass, with the mitigations built in rather than added after:
+- **Mechanism:** `security.review.mechanism: auto` → the harness's built-in
+  **security-review skill**, run over the branch diff (`origin/main...HEAD`), backed by
+  the-loop's own checklist below.
+- **Outcome:** **pass** — the security-review skill reported *no high-confidence security
+  findings*. The checklist pass behind it, with the mitigations built in rather than added
+  after:
   - **Command injection** — the primary surface. Every invocation is an argv *list* with
     `shell=False`; substitution is element-wise, so a value can never introduce a word
     boundary, a redirect or a second command. Proven by
