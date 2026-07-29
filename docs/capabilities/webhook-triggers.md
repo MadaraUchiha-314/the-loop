@@ -198,6 +198,14 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   poll state, so the registry lists only the files it wrote (`<slug>.json`) and ignores
   the rest without comment; the "unreadable registry file" warning means a real session
   record went bad, not that a neighbour is present (issue-111).
+- **Dispatch also drives the process graph** (issue-113, `routing.graph`, default on).
+  A successful spawn enters the work item's start node — which is what runs the entry
+  hooks that write the `loop:<phase>` label — and a successfully delivered event advances
+  the graph one node boundary, carrying the event's comments to the gate's
+  `classify-feedback`. The coupling lives in the dispatcher, so the poller and the
+  receiver behave identically; it honours the same `control.requireStartCommand` gate the
+  spawn path does; and it is best-effort — any failure is logged as `graph.link_failed`
+  and the delivery still counts. See [process-graph](process-graph.md).
 - All `webhooks.*` keys above live in the **CLI config** (`cli-config.yaml`, resolved
   via `--config`/env/cwd/home — see `cli/README.md`), independent of any repo's
   `.the-loop/harness-config.yaml` (the plugin config) — the daemon is not tied to a single repo
@@ -222,6 +230,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 | issue-93 | An event on a PR resolves the PR's **linked issues first** (`closingIssuesReferences` + branch/keyword conventions, incl. PR conversation comments delivered as `issue_comment`), so PR activity reuses the linked issue's session instead of spawning a second one | [spec](../specs/issue-93/), [decision-036](../decisions/decision-036.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/93) |
 | issue-90 | Pre-seed the harness config before spawning (`routing.harnessTrust`) so spawned sessions stop stalling on the workspace-trust dialog / bypass-permissions disclaimer | [spec](../specs/issue-90/), [decision-037](../decisions/decision-037.md) |
 | issue-84 | Dispatch-lifecycle emoji reactions (`routing.reactions`, opt-in): 👀 started / 🎉 completed / 😕 error on the triggering comment or issue/PR, best-effort via `gh`, no-op where unsupported | [spec](../specs/issue-84/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/84) |
+| issue-113 | Dispatch now drives the process graph: a spawn enters the start node (so the phase labels finally get written) and a delivered event advances it with the comments attached; `routing.graph` toggles it | [spec](../specs/issue-113/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/113) |
 | issue-63 | `webhooks.*` moved out of the per-repo plugin config into an independent, repo-agnostic CLI config | [spec](../specs/issue-63/), [decision-032](../decisions/decision-032.md) |
 | issue-64 | Added the self-reply marker guard (drops the-loop's own comments/reviews before dispatch, on both trigger paths, so it never resumes a session on its own reply) | [decision-031](../decisions/decision-031.md) |
 | issue-80 | Bounded per-event retry policy on the poll path (`polling.maxRetries`, default 3): stop baselining failed spawns/comments as processed, retry each cycle, then log `poll.spawn_failed`/`poll.comment_failed` and ignore; a new comment retriggers | [spec](../specs/issue-80/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/80) |

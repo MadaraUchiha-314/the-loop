@@ -141,3 +141,69 @@ def test_force_is_recorded_in_graph_state(runtime, repo):
     assert entry["actor"] == "@someone"
     assert entry["from"] == "design" and entry["to"] == "gate"
     assert entry["at"]
+
+
+# -- Runtime.start (issue-113) ---------------------------------------------------
+
+
+def test_start_enters_the_start_node_and_runs_its_entry_chain(repo):
+    """AC1/AC2 — beginning a work item is an explicit transition, not an inference."""
+    entered = []
+
+    from the_loop.graph.contract import HookResult
+    from the_loop.graph.registry import hook
+
+    @hook("record-entry-113")
+    def _record(ctx):
+        entered.append(ctx.node_id)
+        return HookResult.ok("record-entry-113")
+
+    graph = dict(GRAPH)
+    graph["nodes"] = [
+        {**GRAPH["nodes"][0], "entry": ["record-entry-113"]},
+        *GRAPH["nodes"][1:],
+    ]
+    runtime = Runtime(repo, graph=compile_graph(graph))
+
+    report = runtime.start("issue-1")
+
+    assert report is not None and report.node == "design"
+    assert entered == ["design"], "the start node's entry chain must run"
+    state = GraphState.load(repo / "docs" / "specs" / "issue-1", "issue-1")
+    assert state.current_node == "design"
+
+
+def test_start_is_idempotent_when_a_pointer_already_exists(runtime, repo):
+    """AC3 — starting an already-started work item must never reset it."""
+    _write_design(repo)
+    runtime.advance("issue-1")  # design -> gate
+
+    assert runtime.start("issue-1") is None
+
+    state = GraphState.load(repo / "docs" / "specs" / "issue-1", "issue-1")
+    assert state.current_node == "gate", "start() must not rewind the pointer"
+
+
+def test_start_persists_the_pointer_before_the_entry_chain_runs(repo):
+    """R8.2 — a hook that dies mid-chain must not leave an unrecorded pointer."""
+    seen = {}
+
+    from the_loop.graph.contract import HookResult
+    from the_loop.graph.registry import hook
+
+    @hook("read-state-113")
+    def _read(ctx):
+        path = ctx.work_item.spec_dir / "graph-state.json"
+        seen["on_disk"] = (
+            json.loads(path.read_text())["currentNode"] if path.is_file() else ""
+        )
+        return HookResult.ok("read-state-113")
+
+    graph = dict(GRAPH)
+    graph["nodes"] = [
+        {**GRAPH["nodes"][0], "entry": ["read-state-113"]},
+        *GRAPH["nodes"][1:],
+    ]
+    Runtime(repo, graph=compile_graph(graph)).start("issue-1")
+
+    assert seen["on_disk"] == "design"

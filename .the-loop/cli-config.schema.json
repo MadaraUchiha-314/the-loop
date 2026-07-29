@@ -154,6 +154,23 @@
                     }
                   }
                 },
+                "graph": {
+                  "type": "object",
+                  "description": "Whether dispatch also drives the-loop's process graph (issue-113). Before this, the ingress and the graph never met: spawning a session left the work item's graph unentered (so the `loop:<phase>` labels were never written by the entry hooks), and an arriving comment never reached the human gate waiting for it. With this enabled, a spawn enters the graph's start node and a delivered event advances at most one node boundary, carrying the event's comments to the gate's `classify-feedback`. It is best-effort: a graph failure is logged (`graph.link_failed`) and never costs the delivery. The same block serves the poller, which reuses this routing config.",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean",
+                      "default": true,
+                      "description": "Couple dispatch to the process graph. False restores the pre-issue-113 behaviour (the graph only moves when a human or CI runs `the-loop graph advance`)."
+                    },
+                    "specDir": {
+                      "type": "string",
+                      "default": "docs/specs",
+                      "description": "Where specs live in the session's checkout \u2014 match `workflow.specDir` in the repo's harness config. A work item with no directory here is skipped, which is what makes the coupling inert for repos that keep no specs."
+                    }
+                  }
+                },
                 "authorizedUsers": {
                   "type": "array",
                   "items": {

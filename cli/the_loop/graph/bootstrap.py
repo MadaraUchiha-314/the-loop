@@ -1,0 +1,81 @@
+"""Assembling a :class:`Runtime` from the configs on disk.
+
+Extracted from ``commands/graph_cmd.py`` when the ingress gained a second call
+site (issue-113). It matters that there is only one of these: the runtime's
+``config`` is what carries ``authorizedUsers`` to ``classify-feedback``, and a
+second, subtly different assembly is how a gate ends up reading an empty
+authorized-user list and failing closed forever on one path while working on the
+other.
+
+Both configs are read best-effort — a missing or malformed one yields defaults
+rather than an error, because ``the-loop check`` must work in a repo that has
+never seen the CLI config, and the daemon must work in a checkout that has no
+harness config.
+"""
+
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+from typing import Any, Dict, Optional, Sequence
+
+logger = logging.getLogger("the-loop.graph")
+
+__all__ = ["build_runtime", "load_harness_config"]
+
+
+def load_harness_config(root: Path) -> Dict[str, Any]:
+    """Best-effort read of the per-repo harness config (never fatal)."""
+    import yaml
+
+    for name in ("harness-config.yaml", "config.yaml"):
+        path = root / ".the-loop" / name
+        if path.is_file():
+            try:
+                data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            except Exception:  # noqa: BLE001
+                return {}
+            return data if isinstance(data, dict) else {}
+    return {}
+
+
+def build_runtime(
+    root: Path,
+    spec_root: Optional[str] = None,
+    authorized_users: Optional[Sequence[str]] = None,
+):
+    """A runtime for ``root``, configured from the harness and CLI configs.
+
+    ``spec_root`` and ``authorized_users`` override what the files say. The
+    daemon passes both: it has already parsed its own CLI config (honouring
+    ``--config``), so re-reading the default path could disagree with the
+    config the process is actually running.
+    """
+    from .runtime import Runtime
+
+    harness = load_harness_config(root)
+    workflow = harness.get("workflow") or {}
+    config: Dict[str, Any] = {
+        "phaseLabelPrefix": workflow.get("phaseLabelPrefix", "loop:"),
+        "notifications": harness.get("notifications") or {},
+        "authorizedUsers": list(authorized_users or []),
+        "integrations": {},
+    }
+    try:
+        from .. import cli_config
+
+        cli_cfg = cli_config.load_cli_config(cli_config.default_cli_config_path()) or {}
+    except Exception:  # noqa: BLE001 — the CLI config is optional for `check`
+        cli_cfg = {}
+    if isinstance(cli_cfg, dict):
+        config["integrations"] = cli_cfg.get("integrations") or {}
+        if authorized_users is None:
+            routing = ((cli_cfg.get("webhooks") or {}).get("ghWebhook") or {}).get(
+                "routing"
+            ) or {}
+            config["authorizedUsers"] = routing.get("authorizedUsers") or []
+    return Runtime(
+        root,
+        spec_root=str(spec_root or workflow.get("specDir", "docs/specs")),
+        config=config,
+    )

@@ -97,6 +97,35 @@ There are exactly **two** runtime concepts and **one** contract between them.
   to the harness** (`mcp-call`), because MCP is an agent protocol, not a daemon protocol
   ([decision-042](../decisions/decision-042.md)).
 
+### What drives the graph (issue-113)
+
+- The graph SHALL be driven by the **ingress**, not only by a human at a terminal: the
+  shared dispatcher — which both the webhook receiver and the poller feed — SHALL enter a
+  work item's start node when a session is spawned for it, and SHALL advance it at most
+  one node boundary when an event is delivered to an existing session.
+- Entering the start node SHALL run its **entry chain**, which is what writes the
+  `loop:<phase>` label and the execution-log checkpoint. Before this, no node was ever
+  entered on the automated path, so those side effects never fired and the phase labels
+  stayed unpopulated.
+- An inbound event's comments SHALL be passed to the exit chain as `HookContext.event`,
+  so a human-approval node's `classify-feedback` classifies the reply that just arrived.
+  The link SHALL always pass a comment's **author** alongside its body and SHALL NOT
+  filter by `authorizedUsers` itself — that decision belongs to `classify-feedback`
+  alone, so there is exactly one place where it can be got wrong.
+- The coupling SHALL be **best-effort and non-blocking**: any failure is logged as
+  `graph.link_failed` and the event is still delivered. A hook that raises, hangs on a
+  subprocess or fails an outbound call SHALL never cost a session spawn or a forwarded
+  comment.
+- The coupling SHALL skip — leaving the graph exactly where it is — when it is disabled
+  (`routing.graph.enabled: false`), when the ref has no known spec-id convention, when
+  the work item has no spec directory, or when `control.requireStartCommand` holds and
+  nobody has started the item. **No input can move a work item forward**; inputs can only
+  cause a move not to happen.
+- A chain's routing outcome SHALL come from the last hook that declared one explicitly,
+  whether or not that hook blocked. A gate that classifies a review returns `pass`
+  *carrying* its verdict, so reading the outcome only from a blocking result discarded it
+  and parked every human-approval node with `no_edge`.
+
 ### State, recovery and the escape hatch
 
 - Graph state SHALL be a **cache, not an authority**. `the-loop check --recompute`
@@ -125,4 +154,5 @@ There are exactly **two** runtime concepts and **one** contract between them.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-113 | Wired the ingress to the graph: `Runtime.start()`, the `GraphLink` seam in the shared dispatcher, `HookContext.event` finally written, the `routing.graph` config block, and the chain-outcome fix that lets a passing gate's verdict reach its edges | [spec](../specs/issue-113/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/113) |
 | issue-109 | Established the capability: the two-concept graph (node + hook), the `HookResult` contract, the shipped PDLC graph, ten hooks, configurable integration transports, `the-loop check`/`graph`, and the forced-transition escape hatch | [spec](../specs/issue-109/), [decision-041](../decisions/decision-041.md), [decision-042](../decisions/decision-042.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/109) |

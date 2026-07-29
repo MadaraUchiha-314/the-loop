@@ -39,8 +39,31 @@ class ChainOutcome:
 
     @property
     def outcome(self) -> str:
-        """The value edges route on — the deciding hook's outcome, else ``pass``."""
-        return self.blocking.outcome if self.blocking is not None else PASS
+        """The value edges route on — the deciding hook's outcome, else ``pass``.
+
+        A hook that *blocks* is the deciding one. Otherwise the decision can
+        still have been made by a hook that **passed**: ``classify-feedback``
+        returns ``pass`` carrying ``data["outcome"] = "approved"``, because a
+        classified review is a satisfied gate, not a blocked one. Reading only
+        the blocking result discarded that verdict, so every human-approval node
+        in ``pdlc.yaml`` — whose edges are declared ``on: approved`` /
+        ``on: changes-requested`` — parked with ``no_edge`` however the reviewer
+        replied (issue-113).
+
+        The *last* explicit declaration wins: hooks run in declared order, so a
+        later one has seen the earlier results and is the better-informed
+        verdict. Only an explicit ``data["outcome"]`` counts — a plain
+        ``HookResult.ok`` reports its status as its outcome, and treating that
+        as a declaration would make every passing chain claim the last hook's
+        name for a verdict.
+        """
+        if self.blocking is not None:
+            return self.blocking.outcome
+        for result in reversed(self.results):
+            declared = result.data.get("outcome")
+            if declared:
+                return str(declared)
+        return PASS
 
     @property
     def messages(self) -> List[Message]:

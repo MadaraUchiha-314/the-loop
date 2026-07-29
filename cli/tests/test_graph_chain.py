@@ -138,3 +138,37 @@ def test_feedback_names_the_hook_and_its_findings(ctx):
     outcome = run_chain(["t-two"], ctx)
     rendered = outcome.render()
     assert "t-two" in rendered and "one" in rendered and "two (d.md)" in rendered
+
+
+def test_a_passing_hooks_explicit_outcome_is_what_edges_route_on(ctx):
+    """issue-113 — a human gate's whole job is to emit `approved` /
+    `changes-requested`, and it does so on a **passing** result. Reading the
+    routing value only from a *blocking* result discards it, so every approval
+    node in pdlc.yaml parks with `no_edge` on an approval."""
+
+    @registry.hook("t-classify")
+    def _classify(c):
+        return HookResult(status=PASS, hook="t-classify", data={"outcome": "approved"})
+
+    @registry.hook("t-record")
+    def _record(c):
+        return HookResult.ok("t-record")
+
+    outcome = run_chain(["t-classify", "t-record"], ctx)
+
+    assert outcome.status == PASS
+    assert outcome.outcome == "approved", "the gate's verdict must reach the edges"
+
+
+def test_a_chain_of_plain_passes_still_routes_on_pass(ctx):
+    """The common case is unchanged: no hook declaring an outcome means `pass`."""
+
+    @registry.hook("t-plain-a")
+    def _a(c):
+        return HookResult.ok("t-plain-a")
+
+    @registry.hook("t-plain-b")
+    def _b(c):
+        return HookResult.ok("t-plain-b")
+
+    assert run_chain(["t-plain-a", "t-plain-b"], ctx).outcome == PASS

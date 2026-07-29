@@ -26,6 +26,7 @@ from ..announce import AnnounceConfig, SessionAnnouncer
 from ..authz import is_authorized
 from ..control import PAUSE, RESUME, START, STOP, ControlConfig, ControlStore
 from ..control import parse_command as parse_control_command
+from ..graphlink import GraphLink, GraphLinkConfig
 from ..harness.base import HarnessAdapter, UnsupportedRunnerError
 from ..reactions import (
     STATE_COMPLETED,
@@ -240,6 +241,8 @@ class RoutingConfig:
     # The start/stop/pause/resume vocabulary an authorized user steers with, and
     # whether a start is REQUIRED before anything spawns (issue-106).
     control: ControlConfig = field(default_factory=ControlConfig)
+    # Whether dispatch also drives the process graph (issue-113).
+    graph: GraphLinkConfig = field(default_factory=GraphLinkConfig)
 
     @classmethod
     def from_mapping(
@@ -278,6 +281,7 @@ class RoutingConfig:
             reactions=ReactionConfig.from_mapping(data.get("reactions") or {}),
             announce=AnnounceConfig.from_mapping(data.get("announce") or {}),
             control=ControlConfig.from_mapping(data.get("control") or {}),
+            graph=GraphLinkConfig.from_mapping(data.get("graph") or {}),
         )
 
 
@@ -423,6 +427,12 @@ class Dispatcher:
             if deduper is not None
             else Deduper(maxsize=self.config.dedup_cache_size)
         )
+        self.graphlink = GraphLink(
+            self.config.graph,
+            self.config.control,
+            self.control_store,
+            self.config.authorized_users,
+        )
         self._event_template = self._load_template(
             self.config.prompt_template, DEFAULT_PROMPT_TEMPLATE
         )
@@ -482,6 +492,9 @@ class Dispatcher:
             self.announcer = SessionAnnouncer(config.announce)
         if not self._tmux_override:
             self.tmux.remain_on_exit = config.tmux.remain_on_exit
+        self.graphlink = GraphLink(
+            config.graph, config.control, self.control_store, config.authorized_users
+        )
         self._event_template = self._load_template(
             config.prompt_template, DEFAULT_PROMPT_TEMPLATE
         )
@@ -1091,6 +1104,10 @@ class Dispatcher:
                 delivery_id=routed.delivery_id or None,
             )
             self.registry.touch(key, delivery_id=routed.delivery_id or None)
+            # The session has the event; now let the graph see it too (issue-113).
+            # A comment that answers a human gate is exactly what that gate's
+            # exit chain has been waiting for.
+            self.graphlink.on_event(session.work_item, session.cwd, routed)
             return True
         logger.error("%s of %s for %s failed: %s", verb, session.harness, key, error)
         eventlog.emit(
@@ -1189,6 +1206,10 @@ class Dispatcher:
             action=routed.action or None,
             delivery_id=routed.delivery_id or None,
         )
+        # The work item is now being worked, so it enters the graph (issue-113).
+        # After the spawn succeeded, never before: a failed spawn must not leave
+        # a labelled ticket pointing at a node nobody is standing on.
+        self.graphlink.on_spawn(work_item, cwd)
         return True
 
     def _spawn_tmux(
