@@ -194,7 +194,10 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   supplies **defaults only** — an explicitly configured path is still used verbatim —
   and a pre-issue-106 `.the-loop/poll-state.json` that still exists keeps being used
   (with a warning), so an upgrade never re-baselines and re-forwards every watched
-  thread.
+  thread. `<root>/sessions/` is shared between the registry, the control records and the
+  poll state, so the registry lists only the files it wrote (`<slug>.json`) and ignores
+  the rest without comment; the "unreadable registry file" warning means a real session
+  record went bad, not that a neighbour is present (issue-111).
 - All `webhooks.*` keys above live in the **CLI config** (`cli-config.yaml`, resolved
   via `--config`/env/cwd/home — see `cli/README.md`), independent of any repo's
   `.the-loop/harness-config.yaml` (the plugin config) — the daemon is not tied to a single repo
@@ -211,6 +214,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-111 | The session registry treats `<root>/sessions/` as shared state: listings read only `<slug>.json` files it wrote, keeping the corrupt-entry warning meaningful | [spec](../specs/issue-111/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/111) |
 | issue-106 | Execution control: four declared keywords (`the-loop:start-execution`, …) an **authorized** user steers with, the auto-execute label demoted to *necessary but not sufficient* (`routing.control.requireStartCommand`, default on), `paused` sessions, CLI parity with the same paper trail, and one `state.root` for everything the CLI generates | [spec](../specs/issue-106/), [decision-040](../decisions/decision-040.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/106) |
 | issue-104 | The loop-prevention marker gained a producer-side helper (`mark_self_authored`) applied to the daemon's own comments — the session announcement no longer re-enters the session it announces | [spec](../specs/issue-104/), [decision-031](../decisions/decision-031.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/104) |
 | issue-101 | A work item may be delivered by **several** PRs: a `pull_request` `closed` event now ends only the session registered against that PR itself, leaving a linked issue's session (and its checkout) running until the issue's own close | [spec](../specs/issue-101/), [decision-039](../decisions/decision-039.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/101) |
