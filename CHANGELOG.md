@@ -1,3 +1,9 @@
+## v2.0.1 (2026-07-29)
+
+### Fix
+
+- **cli**: the session registry lists the files it wrote, not the whole directory (issue #111) (#112)
+
 ## v2.0.0 (2026-07-29)
 
 ### BREAKING CHANGE
