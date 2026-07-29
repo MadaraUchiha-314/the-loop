@@ -165,10 +165,20 @@ class Runtime:
 
     # -- evaluation (pure: no network, no subprocess, no mutation) -------------
 
-    def evaluate(self, node_id: str, item: WorkItem) -> ChainOutcome:
-        """Run one node's **exit** chain. This is what ``check`` calls."""
+    def evaluate(
+        self,
+        node_id: str,
+        item: WorkItem,
+        event: Optional[Mapping[str, Any]] = None,
+    ) -> ChainOutcome:
+        """Run one node's **exit** chain. This is what ``check`` calls.
+
+        ``check`` passes no ``event`` — it reports what the artifacts alone say,
+        which is what keeps it honest — so a gate awaiting human feedback reads
+        as ``wait`` there and only resolves when a real event carries the reply.
+        """
         node = self.graph.node(node_id)
-        return run_chain(node.exit, self._context(item, node, "exit"))
+        return run_chain(node.exit, self._context(item, node, "exit", event=event))
 
     def status(self, work_item_id: str, recompute: bool = False) -> StatusReport:
         """Every node's verdict, in declaration order.
@@ -216,14 +226,61 @@ class Runtime:
 
     # -- advancement ----------------------------------------------------------
 
-    def advance(self, work_item_id: str, ref: str = "") -> NodeReport:
-        """Evaluate the current node's exit chain and take the matching edge."""
+    def start(self, work_item_id: str, ref: str = "") -> Optional[NodeReport]:
+        """Enter the start node for a work item that has not begun (issue-113).
+
+        The counterpart ``advance`` never was: ``advance`` evaluates the *current*
+        node's exit chain, so on a work item nobody entered it silently reads the
+        start node as current and gates it. Nothing ever *entered* that node, which
+        is why the entry chain — the phase label, the log checkpoint — never ran on
+        the automated path.
+
+        Deliberately a separate method rather than a branch inside ``advance``:
+        "begin" and "evaluate a gate" are different questions, and folding them
+        together would make a work item's first ``advance`` run an entry chain as a
+        side effect — the kind of implicit step issue-109 exists to remove.
+
+        Idempotent: a work item that already has a pointer returns ``None`` and is
+        left untouched, so a redelivered spawn can never rewind it.
+        """
+        item = self.work_item(work_item_id, ref)
+        state = GraphState.load(item.spec_dir, work_item_id)
+        if state.current_node:
+            return None
+
+        node_id = self.graph.start
+        state.enter(node_id)
+        state.save(item.spec_dir)  # persist BEFORE any dependent side effect (R8.2)
+        node = self.graph.node(node_id)
+        run_chain(node.entry, self._context(item, node, "entry"))
+        eventlog.emit("graph.started", work_item=item.ref, node=node_id)
+        logger.info("%s entered the graph at %s", item.ref, node_id)
+        return NodeReport(
+            node=node_id,
+            status=PASS,
+            outcome=PASS,
+            attempts=state.record(node_id).attempts,
+        )
+
+    def advance(
+        self,
+        work_item_id: str,
+        ref: str = "",
+        event: Optional[Mapping[str, Any]] = None,
+    ) -> NodeReport:
+        """Evaluate the current node's exit chain and take the matching edge.
+
+        ``event`` is the inbound event that prompted this advance, passed to the
+        chain as :attr:`HookContext.event` (issue-113). It is what lets a
+        human-gate hook such as ``classify-feedback`` see the comments that just
+        arrived; without it the gate has nothing to classify and waits forever.
+        """
         item = self.work_item(work_item_id, ref)
         state = GraphState.load(item.spec_dir, work_item_id)
         node_id = state.current_node or self.graph.start
         node = self.graph.node(node_id)
 
-        outcome = self.evaluate(node_id, item)
+        outcome = self.evaluate(node_id, item, event=event)
         report = NodeReport(
             node=node_id,
             status=outcome.status,

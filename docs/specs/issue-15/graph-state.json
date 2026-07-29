@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "workItem": "issue-15",
+  "currentNode": "brainstorming",
+  "nodes": {
+    "brainstorming": {
+      "attempts": 1,
+      "outcome": "skip",
+      "enteredAt": "2026-07-29T06:15:49+00:00",
+      "exitedAt": "2026-07-29T06:23:57+00:00",
+      "lastBlock": "",
+      "forced": false
+    }
+  },
+  "decisions": {},
+  "forced": [],
+  "parked": {
+    "node": "brainstorming",
+    "reason": "no declared edge from brainstorming on 'skip'",
+    "since": "2026-07-29T06:23:57+00:00"
+  },
+  "session": null
+}

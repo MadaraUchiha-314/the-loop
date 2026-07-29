@@ -32,7 +32,7 @@ flowchart TD
   `::test_start_persists_pointer_before_entry_chain`
 - **Green:** add `start()` to `cli/the_loop/graph/runtime.py`; add `graph.started` to
   `eventlog.EVENT_TYPES` (the drift test in `test_eventlog.py` enforces this).
-- [ ] Done
+- [x] Done
 
 ## T2 — `spec_id_for()` — ref → spec-directory id
 
@@ -40,7 +40,7 @@ flowchart TD
 - **Depends on:** —
 - **Red:** `test_graphlink.py::test_spec_id_for_github_ref`, `::test_spec_id_for_other_provider_is_none`
 - **Green:** derive `issue-<int>` from the parsed ref; `None` for non-GitHub providers.
-- [ ] Done
+- [x] Done
 
 ## T3 — `comments_from()` — payload → attributed comments
 
@@ -50,7 +50,7 @@ flowchart TD
   `::test_comment_without_author_is_dropped`, `::test_unrelated_event_yields_no_comments`
 - **Green:** extract `issue_comment` / `pull_request_review_comment` / `pull_request_review`
   bodies with their authors; drop any entry missing an author or a body.
-- [ ] Done
+- [x] Done
 
 ## T4 — `GraphLink` — the seam, with every skip path
 
@@ -61,7 +61,7 @@ flowchart TD
   `::test_runtime_exception_is_swallowed`, `::test_on_event_advances_with_comments`
 - **Green:** `cli/the_loop/graphlink.py` — `GraphLinkConfig`, `GraphLink.on_spawn`,
   `GraphLink.on_event`; add `graph.link_failed` to `eventlog.EVENT_TYPES`.
-- [ ] Done
+- [x] Done
 
 ## T5 — `routing.graph` config block
 
@@ -70,7 +70,7 @@ flowchart TD
 - **Red:** `test_graphlink.py::test_routing_config_parses_graph_block`
 - **Green:** `GraphLinkConfig` field on `RoutingConfig.from_mapping`; document the block
   in `.the-loop/cli-config.schema.json` and `skills/the-loop/templates/cli-config.yaml`.
-- [ ] Done
+- [x] Done
 
 ## T6 — Dispatcher call sites
 
@@ -81,7 +81,7 @@ flowchart TD
 - **Green:** construct `GraphLink` in `Dispatcher.__init__` (and rebuild it in the
   hot-reload path); call `on_spawn` after a successful spawn, `on_event` after a
   successful delivery.
-- [ ] Done
+- [x] Done
 
 ## T7 — Integration tests (Gherkin)
 
@@ -90,7 +90,26 @@ flowchart TD
 - **Red/Green:** `cli/tests/test_graphlink_integration.py` — spawn-starts-graph,
   reviewer-approval-reaches-the-gate (authorized vs unauthorized), failing-hook-does-not-
   cost-the-delivery.
-- [ ] Done
+- [x] Done
+
+## T9 — Let a passing gate's verdict reach its edges
+
+> **Discovered by T7, not planned.** The first integration test to advance a *real*
+> human-approval node parked with `no edge from requirements-approval on 'pass'`.
+> `ChainOutcome.outcome` read the routing value only from a **blocking** result, but
+> `classify-feedback` returns `pass` *carrying* `data["outcome"] = "approved"` — so the
+> verdict was discarded and all three approval nodes in `pdlc.yaml`, whose edges are
+> declared `on: approved` / `on: changes-requested`, could never route. Pre-existing
+> since issue-109 and never caught, because every existing test calls the hook directly
+> rather than through `advance()`. In scope: AC6 cannot hold without it.
+
+- **Requirements:** AC6
+- **Depends on:** T7
+- **Red:** `test_graph_chain.py::test_a_passing_hooks_explicit_outcome_is_what_edges_route_on`,
+  `::test_a_chain_of_plain_passes_still_routes_on_pass`
+- **Green:** `ChainOutcome.outcome` falls back to the last result that declared an
+  explicit `data["outcome"]`; a plain `HookResult.ok` still reports `pass`.
+- [x] Done
 
 ## T8 — Capability docs + spec fold-in
 
@@ -98,4 +117,4 @@ flowchart TD
 - **Depends on:** T7
 - **Green:** update `docs/capabilities/process-graph.md` and `docs/capabilities/cli.md`
   with the coupling and its history row; keep `execution-log.md` current.
-- [ ] Done
+- [x] Done

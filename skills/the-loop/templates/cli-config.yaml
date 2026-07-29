@@ -54,6 +54,16 @@ webhooks:
           stop: "the-loop:stop-execution"
           pause: "the-loop:pause-execution"
           resume: "the-loop:resume-execution"
+      # Drive the-loop's PROCESS GRAPH from ingress events (issue-113). Without this,
+      # the graph only moved when a human ran `the-loop graph advance`: a spawned
+      # session left the work item's graph unentered (so the entry hooks never wrote
+      # the `loop:<phase>` labels), and a reviewer's comment never reached the human
+      # gate that was waiting for it. Best-effort — a graph failure is logged as
+      # `graph.link_failed` and never costs the event delivery. The poller reuses this
+      # same routing block, so both ingresses behave identically.
+      graph:
+        enabled: true               # false = pre-issue-113 behaviour
+        specDir: docs/specs         # match workflow.specDir in the repo's harness config
       # SECURITY (prompt-injection guard): only these GitHub logins' actions are acted on
       # by BOTH the webhook receiver and the poller. Comments/reviews/labels/items from
       # anyone else are ignored. REQUIRED: no fallback to any repo's plugin config —

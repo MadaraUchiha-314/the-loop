@@ -85,7 +85,7 @@ allowed to depend on them (AC11). Both are no-ops when `enabled` is false (AC12)
 
 `advance()` evaluates the *current* node's **exit** chain. There is no API for "this work
 item is beginning" — which is why nothing enters the start node. `start()` is that
-missing counterpart, and the only change to the graph package:
+missing counterpart:
 
 ```python
 def start(self, work_item_id: str, ref: str = "") -> Optional[NodeReport]:
@@ -135,6 +135,21 @@ webhooks:
 `polling` reuses `webhooks.ghWebhook.routing` wholesale (`poll.py:_build_dispatcher`),
 so the poller inherits this with no separate knob — consistent with how every other
 dispatch behaviour is configured.
+
+### Two changes the build added to this plan
+
+**`Runtime.advance(..., event=...)`.** `HookContext.event` needs a writer, and the write
+happens where the context is built — so `advance` and `evaluate` gained an optional
+`event`, threaded into `_context`. `the-loop check` passes none, which is what keeps it
+honest: a gate awaiting human feedback reads as `wait` there and resolves only when a
+real event carries the reply.
+
+**`graph/bootstrap.py`.** The runtime's `config` is what carries `authorizedUsers` to
+`classify-feedback`, and `commands/graph_cmd.py` was assembling it privately. A second
+assembly in the link would have failed closed on every human gate while `check` worked
+fine. The assembly moved to `graph/bootstrap.build_runtime()`, which both call; the
+daemon passes its own already-parsed `authorizedUsers` so a `--config` override is
+honoured.
 
 ## Data model
 

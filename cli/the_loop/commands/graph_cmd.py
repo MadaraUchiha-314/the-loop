@@ -18,47 +18,11 @@ from .base import Command, register
 logger = logging.getLogger("the-loop.graph")
 
 
-def _load_harness_config(root: Path) -> Dict[str, Any]:
-    """Best-effort read of the per-repo harness config (never fatal)."""
-    import yaml
-
-    for name in ("harness-config.yaml", "config.yaml"):
-        path = root / ".the-loop" / name
-        if path.is_file():
-            try:
-                data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-            except Exception:  # noqa: BLE001
-                return {}
-            return data if isinstance(data, dict) else {}
-    return {}
-
-
 def _runtime(root: Path):
-    from ..graph.runtime import Runtime
+    """The runtime `check`/`graph` drive, assembled from the configs on disk."""
+    from ..graph.bootstrap import build_runtime
 
-    harness = _load_harness_config(root)
-    workflow = harness.get("workflow") or {}
-    config: Dict[str, Any] = {
-        "phaseLabelPrefix": workflow.get("phaseLabelPrefix", "loop:"),
-        "notifications": harness.get("notifications") or {},
-    }
-    try:
-        from .. import cli_config
-
-        cli_cfg = cli_config.load_cli_config(cli_config.default_cli_config_path()) or {}
-    except Exception:  # noqa: BLE001 — the CLI config is optional for `check`
-        cli_cfg = {}
-    if isinstance(cli_cfg, dict):
-        config["integrations"] = cli_cfg.get("integrations") or {}
-        routing = ((cli_cfg.get("webhooks") or {}).get("ghWebhook") or {}).get(
-            "routing"
-        ) or {}
-        config["authorizedUsers"] = routing.get("authorizedUsers") or []
-    return Runtime(
-        root,
-        spec_root=str(workflow.get("specDir", "docs/specs")),
-        config=config,
-    )
+    return build_runtime(root)
 
 
 def _discover_work_items(root: Path, spec_root: str) -> List[str]:

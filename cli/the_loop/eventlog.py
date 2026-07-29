@@ -266,6 +266,11 @@ EVENT_TYPES: Dict[str, str] = {
         "A config edit was hot-reloaded into a running process (detail)."
     ),
     # -- process graph (source: any; issue-109) -------------------------------
+    "graph.started": (
+        "A work item entered the graph's start node, running its entry chain "
+        "(work_item, node). Emitted by the ingress coupling on spawn "
+        "(issue-113) and by anything else calling `Runtime.start`."
+    ),
     "graph.advanced": (
         "A work item's exit chain passed and the matching edge was taken "
         "(work_item, node, to, outcome)."
@@ -287,6 +292,11 @@ EVENT_TYPES: Dict[str, str] = {
         "parked rather than guessed at (work_item, node, outcome)."
     ),
     "graph.completed": ("A work item reached a terminal node (work_item, node)."),
+    "graph.link_failed": (
+        "The ingress→graph coupling raised and was swallowed so the event was "
+        "still delivered; the graph did not move (work_item, action, error). "
+        "issue-113."
+    ),
     "graph.forced": (
         "An operator forced a transition regardless of gates — the escape "
         "hatch. The pointer moved; the bypassed gate keeps its real verdict, "
