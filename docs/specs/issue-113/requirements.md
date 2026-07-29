@@ -2,8 +2,8 @@
 type: requirements
 phase: requirements-definition
 workItem: issue-113
-status: in-review            # draft | in-review | approved
-approvedBy: []
+status: approved             # draft | in-review | approved
+approvedBy: ["@MadaraUchiha-314 (PR #114: \"approved\", 2026-07-29)"]
 collaborators: [architect, engineer]
 riskTier: 4                  # untrusted comment text reaches graph hooks; automated side effects
 overrides: {}

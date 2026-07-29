@@ -2,8 +2,8 @@
 type: design
 phase: design
 workItem: issue-113
-status: in-review            # draft | in-review | approved
-approvedBy: []
+status: approved             # draft | in-review | approved
+approvedBy: ["@MadaraUchiha-314 (PR #114: \"approved\", 2026-07-29)"]
 riskTier: 4
 ---
 

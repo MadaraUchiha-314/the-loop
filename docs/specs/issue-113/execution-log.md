@@ -11,11 +11,11 @@ status: in-progress          # in-progress | complete
 
 | Phase | Entered | Reviewed/approved by | Notes |
 |-------|---------|----------------------|-------|
-| requirements-definition | 2026-07-29 | pending | No brainstorm — gap established by code tracing, recorded on the ticket |
-| design | 2026-07-29 | pending | |
-| tasks-breakdown | 2026-07-29 | pending | |
-| implementation | 2026-07-29 | pending | T1–T9 |
-| needs-review | 2026-07-29 | pending | PR opened; tier 4 → human approves PR + security sign-off |
+| requirements-definition | 2026-07-29 | @MadaraUchiha-314 (PR #114: "approved") | No brainstorm — gap established by code tracing, recorded on the ticket |
+| design | 2026-07-29 | @MadaraUchiha-314 (PR #114: "approved") | |
+| tasks-breakdown | 2026-07-29 | @MadaraUchiha-314 (PR #114: "approved") | |
+| implementation | 2026-07-29 | @MadaraUchiha-314 (PR #114: "approved") | T1–T10 |
+| needs-review | 2026-07-29 | @MadaraUchiha-314 (PR #114: "approved") | Tier-4 gates cleared by that comment; completes when #114 merges |
 | complete | | | |
 
 ## Pull requests
@@ -83,15 +83,41 @@ status: in-progress          # in-progress | complete
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
 |-------|-----------------------------|----------|---------|------|
 | 1 | CI gate (the-loop's own) | `the-loop gate` job | Found the cross-repo collision (A6) — fixed in T10 | [run](https://github.com/MadaraUchiha-314/the-loop/actions/runs/30428745582) |
+| 2 | human (PR approval + security sign-off) | @MadaraUchiha-314 | approved | [comment](https://github.com/MadaraUchiha-314/the-loop/pull/114) |
 
 ## Security review (gate)
 
 - **Mechanism:** the-loop checklist (`security.review.mechanism: auto`)
-- **Outcome:** self-reviewed against the threat model in `requirements.md`; the new
+- **Outcome:** pass. Reviewed against the threat model in `requirements.md`. The new
   boundary (untrusted comment text → hook chain) is enforced by `classify-feedback`'s
-  existing filter, which the link deliberately does not duplicate. Awaiting human sign-off.
-- **Human sign-off:** required (riskTier 4 ≥ `security.review.humanSignOffMinTier: 4`) — pending
+  existing `authorizedUsers` + `is_self_authored` filter, which the link deliberately
+  does not duplicate. A6 (cross-repository spec collision) was found by CI during
+  review and closed by the origin-remote check in T10; every abuse case A1–A6 has a
+  negative test. No new dependency, no new credential surface.
+- **Human sign-off:** @MadaraUchiha-314 — PR #114, comment "approved" (2026-07-29).
+  Required because riskTier 4 ≥ `security.review.humanSignOffMinTier: 4`. That comment
+  replied to a PR body naming both open tier-4 gates (`human-approves-pr` and the
+  security sign-off), and is recorded as clearing both.
 
 ## Final validation evidence
 
-Pending.
+- **Test suite:** 758 passed, 1 skipped (741 before this work item; +32 tests).
+- **CI on 7982db3:** `checks` green. `gate` red only on the then-unlocked artifacts.
+- **The-loop's own gate, after locking:** `the-loop check issue-113 --recompute
+  --fail-on block` → **exit 0**, work item at `requirements-approval` in `WAIT`
+  ("no authorized feedback yet"), which is the correct state for an open PR.
+- **AC coverage:** AC1–AC3 `test_graph_runtime.py::test_start_*`; AC4/AC9/AC11/AC12 +
+  A6/AC14 `test_graphlink.py`; AC5/AC6/AC8 `test_graphlink.py::test_on_event_*`,
+  `test_spec_id_for_*`; AC6/AC10 + A1 `test_graphlink_integration.py`; AC7 by
+  `advance()`'s existing wait/block paths; AC13 `test_eventlog.py`'s catalog drift test.
+- **Regression check for A6:** running the full suite leaves `git status` clean — the
+  defect's signature was the suite writing into the repo's own `docs/specs`.
+
+### The feature, demonstrated by this very comment
+
+The owner's `approved` on PR #114 is exactly the input this work item makes reachable:
+before it, `HookContext.event` had no writer, so `classify-feedback` returned
+`waiting("no authorized feedback yet")` no matter what any reviewer wrote — the state
+`--recompute` still shows here, because `check` is pure and passes no event. With a
+running daemon, that same comment now arrives as an `issue_comment` event, the
+dispatcher advances the graph with it attached, and the gate resolves.
