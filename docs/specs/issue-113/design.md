@@ -45,7 +45,9 @@ must swallow every exception without touching dispatch (AC11), and it needs a re
 the dispatcher has no other reason to know about. A named seam makes all three testable
 in isolation.
 
-## Components and interfaces
+## Architecture
+
+### Components and interfaces
 
 ### `cli/the_loop/graphlink.py` (new)
 
@@ -151,7 +153,7 @@ fine. The assembly moved to `graph/bootstrap.build_runtime()`, which both call; 
 daemon passes its own already-parsed `authorizedUsers` so a `--config` override is
 honoured.
 
-## Data model
+### Data model
 
 No new persisted state. The coupling writes only through `GraphState`, whose file
 (`docs/specs/<id>/graph-state.json`) and atomic-write discipline are unchanged.
@@ -168,7 +170,7 @@ wire (A5). The mapping is then validated against an existing directory (AC9) —
 coupling never creates a spec directory, because a work item with no spec is one the loop
 has not started, and inventing a directory would fake that.
 
-## Error handling
+### Error handling
 
 | Condition | Behaviour | AC |
 |---|---|---|

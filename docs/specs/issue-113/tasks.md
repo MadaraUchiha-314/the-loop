@@ -23,7 +23,9 @@ flowchart TD
   T7 --> T8[T8 capability docs]
 ```
 
-## T1 — `Runtime.start()` — enter the start node
+## Task list
+
+### T1 — `Runtime.start()` — enter the start node
 
 - **Requirements:** AC1, AC2, AC3
 - **Depends on:** —
@@ -34,7 +36,7 @@ flowchart TD
   `eventlog.EVENT_TYPES` (the drift test in `test_eventlog.py` enforces this).
 - [x] Done
 
-## T2 — `spec_id_for()` — ref → spec-directory id
+### T2 — `spec_id_for()` — ref → spec-directory id
 
 - **Requirements:** AC8, A5
 - **Depends on:** —
@@ -42,7 +44,7 @@ flowchart TD
 - **Green:** derive `issue-<int>` from the parsed ref; `None` for non-GitHub providers.
 - [x] Done
 
-## T3 — `comments_from()` — payload → attributed comments
+### T3 — `comments_from()` — payload → attributed comments
 
 - **Requirements:** AC5, B1
 - **Depends on:** —
@@ -52,7 +54,7 @@ flowchart TD
   bodies with their authors; drop any entry missing an author or a body.
 - [x] Done
 
-## T4 — `GraphLink` — the seam, with every skip path
+### T4 — `GraphLink` — the seam, with every skip path
 
 - **Requirements:** AC4, AC9, AC11, AC12
 - **Depends on:** T1, T2, T3
@@ -63,7 +65,7 @@ flowchart TD
   `GraphLink.on_event`; add `graph.link_failed` to `eventlog.EVENT_TYPES`.
 - [x] Done
 
-## T5 — `routing.graph` config block
+### T5 — `routing.graph` config block
 
 - **Requirements:** AC12
 - **Depends on:** T4
@@ -72,7 +74,7 @@ flowchart TD
   in `.the-loop/cli-config.schema.json` and `skills/the-loop/templates/cli-config.yaml`.
 - [x] Done
 
-## T6 — Dispatcher call sites
+### T6 — Dispatcher call sites
 
 - **Requirements:** AC1, AC5, AC10, AC11
 - **Depends on:** T5
@@ -83,7 +85,7 @@ flowchart TD
   successful delivery.
 - [x] Done
 
-## T7 — Integration tests (Gherkin)
+### T7 — Integration tests (Gherkin)
 
 - **Requirements:** AC2, AC6, AC10, AC11, A1
 - **Depends on:** T6
@@ -92,7 +94,7 @@ flowchart TD
   cost-the-delivery.
 - [x] Done
 
-## T9 — Let a passing gate's verdict reach its edges
+### T9 — Let a passing gate's verdict reach its edges
 
 > **Discovered by T7, not planned.** The first integration test to advance a *real*
 > human-approval node parked with `no edge from requirements-approval on 'pass'`.
@@ -111,7 +113,7 @@ flowchart TD
   explicit `data["outcome"]`; a plain `HookResult.ok` still reports `pass`.
 - [x] Done
 
-## T8 — Capability docs + spec fold-in
+### T8 — Capability docs + spec fold-in
 
 - **Requirements:** ready-to-ship gate
 - **Depends on:** T7

@@ -74,7 +74,9 @@ not become a way around them.
 **US5 — As a maintainer**, I want a graph failure to never take down event delivery,
 so a bug in a hook cannot cost me a session spawn or a forwarded comment.
 
-## Acceptance criteria (EARS)
+## Requirements
+
+Acceptance criteria in EARS notation.
 
 ### Starting the graph
 
@@ -130,7 +132,7 @@ so a bug in a hook cannot cost me a session spawn or a forwarded comment.
   `graph.*` event-log events SHALL be emitted by the runtime unchanged, and the
   dispatcher SHALL record which work item it coupled.
 
-## Security considerations (threat-model-lite)
+## Security considerations
 
 **Untrusted actors.** Anyone who can comment on a public repository issue or PR;
 anyone who can open an issue carrying a crafted title/body.

@@ -7,7 +7,7 @@
       "attempts": 0,
       "outcome": "skip",
       "enteredAt": "",
-      "exitedAt": "2026-07-29T06:23:55+00:00",
+      "exitedAt": "2026-07-29T06:27:43+00:00",
       "lastBlock": "",
       "forced": false
     }
@@ -17,7 +17,7 @@
   "parked": {
     "node": "brainstorming",
     "reason": "no declared edge from brainstorming on 'skip'",
-    "since": "2026-07-29T06:23:55+00:00"
+    "since": "2026-07-29T06:27:43+00:00"
   },
   "session": null
 }
