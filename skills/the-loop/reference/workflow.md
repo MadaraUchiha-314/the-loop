@@ -255,7 +255,7 @@ in `.the-loop/harness-config.yaml`). See `collaboration.md`.
 Much of this is a fixed PDLC process; the harness should not re-derive it each time.
 **Answered by [decision-041](../../../docs/decisions/decision-041.md) (issue-109): the
 process is a graph, and the graph is executable.** Everything described in this file is
-declared in `skills/the-loop/graph/pdlc.yaml` — each phase is a **node**, and each node
+declared in `cli/the_loop/graph/pdlc.yaml` — each phase is a **node**, and each node
 has entry/exit **hook** chains that decide when it is complete. A node is complete when
 its exit hooks all pass, waiting when one returns `wait`, blocked when one returns
 `block`; declared edges route on those outcomes. No prose is parsed to make the decision.

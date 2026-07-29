@@ -66,7 +66,7 @@ the `/the-loop:work-on` superset command and granular per-step commands
   is a **node** in the shipped process graph, with entry/exit hook chains that decide
   when it is complete and declared edges that route on those decisions
   ([process-graph](process-graph.md), issue-109). The prose in `reference/workflow.md`
-  and the graph in `skills/the-loop/graph/pdlc.yaml` describe the same loop; the graph is
+  and the graph in `cli/the_loop/graph/pdlc.yaml` describe the same loop; the graph is
   the one that runs. `the-loop check <id>` reports where a work item actually stands
   against its checked-in artifacts, and `--recompute` derives that verdict from the
   artifacts alone rather than trusting stored state.

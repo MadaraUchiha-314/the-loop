@@ -441,13 +441,10 @@ which for notification-shaped calls it will not.
 
 ```mermaid
 flowchart TB
-    subgraph plugin["Shipped with the plugin"]
-        PDLC["graph/pdlc.yaml — nodes, hooks, edges"]
+    subgraph core["the_loop.graph — shipped with the CLI"]
+        PDLC["pdlc.yaml — nodes, hooks, edges (package data)"]
         SCHEMA["graph.schema.json"]
         PDLC -. validated in CI .-> SCHEMA
-    end
-
-    subgraph core["the_loop.graph"]
         MODEL["model.py — load and validate"]
         RT["runtime.py — enter node, run chain, take edge"]
         HOOKS["hooks/ — the registry"]
@@ -525,7 +522,7 @@ traversal at 2am.
 
 *On JSON Schema:* `scripts/validate_config.py` already validates against JSON Schema using
 `jsonschema`, but as a **dev/CI dependency** (imported behind a `try/except ImportError`).
-The graph ships with the plugin and is validated in **the-loop's own CI**, so the runtime
+The graph ships with the CLI and is validated in **the-loop's own CI**, so the runtime
 needs only the cheap structural checks above — **no new runtime dependency**. If
 user-authored graphs ever arrive, that is when runtime schema validation earns its cost.
 

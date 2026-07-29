@@ -78,9 +78,13 @@ That is a better architecture, and this record reflects it.
 7. **Hooks are registered code, never shell.** YAML names a hook from a registry and passes
    typed params. No `exec`, no shell, no argv from configuration — which is what will let the
    graph safely become user-authored later.
-8. **The graph ships with the plugin.** Repositories do not define or override it for now; a
-   repo-supplied graph is ignored with a warning. It stays fully declarative precisely so
-   user-defined graphs can arrive as a *distribution* change rather than a rewrite.
+8. **The graph ships with the CLI**, as package data beside the runtime that executes it —
+   *not* with the plugin, which is the harness integration. The graph names hooks that are
+   registered in `the_loop.graph.hooks`, so the two are one unit; separating them meant
+   `pip install the-loopy-one` produced a runtime with no process to run (caught in PR
+   review, 2026-07-29). Repositories do not define or override it for now; a repo-supplied
+   graph is ignored with a warning. It stays fully declarative precisely so user-defined
+   graphs can arrive as a *distribution* change rather than a rewrite.
 9. **Graph state is a cache, not an authority.** `graph-state.json` is checked in per work
    item, but `the-loop check --recompute` re-runs the validating hooks against the artifacts
    and CI always uses it — so an agent editing its own scorecard cannot pass a gate.

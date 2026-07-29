@@ -400,7 +400,7 @@ status: in-progress           # in-progress | complete
     runs the runtime, not a reimplementation.
   - **Resolved a dependency question honestly.** `scripts/validate_config.py` uses
     `jsonschema`, but as a dev dependency behind `try/except ImportError`. Since the graph
-    ships with the plugin and is validated in the-loop's own CI, the runtime needs only cheap
+    ships with the CLI and is validated in the-loop's own CI, the runtime needs only cheap
     structural checks — **no new runtime dependency**. Runtime schema validation earns its
     cost only if user-authored graphs arrive.
   - **Named what we are deliberately not using and why** — LangGraph (assumes in-process
@@ -500,7 +500,7 @@ status: in-progress           # in-progress | complete
     (stdlib HTTP) and `cli` (wrapping the existing `gh` path), Slack `sdk` + `webhook`,
     `auto` resolution failing closed with **both** remedies. The breaking config migration
     and `mcp-call` remain.
-  - **Slice D mostly** — the shipped `skills/the-loop/graph/pdlc.yaml` (16 nodes, 20
+  - **Slice D mostly** — the shipped graph (16 nodes, 20
     edges), side-effect hooks, `classify-feedback` (authorized authors only) and
     `record-feedback` (appends to the artifact's `## Review comments`). `the-loop run`
     remains.
@@ -574,6 +574,50 @@ status: in-progress           # in-progress | complete
   own work item.
 - **Blockers:** none.
 
+### 2026-07-29 — the graph moved from the plugin to the CLI (owner review finding)
+
+- **Phase:** implementation (unchanged)
+- **Finding accepted.** @MadaraUchiha-314 on `skills/the-loop/graph/pdlc.yaml`:
+  *"this file should ship with the CLI not with the harness integration which is the
+  plugin."* Correct, and it was a **packaging bug**, not a placement preference.
+- **Reproduced before fixing.** Built the wheel and installed it into a clean venv:
+
+  ```text
+  $ pip install the_loopy_one-1.0.0-py3-none-any.whl
+  $ the-loop check issue-1 --repo .
+  error: could not locate the shipped graph (skills/the-loop/graph/pdlc.yaml);
+         set CLAUDE_PLUGIN_ROOT to the plugin install directory
+  ```
+
+  The wheel carried all 20 runtime modules and **zero** graph files. `pip install
+  the-loopy-one` produced a runtime with no process to run — and the error told the
+  operator to point an env var at a plugin they had never installed.
+- **Why the CLI is right, beyond packaging mechanics.** Every hook the graph names is
+  registered in `the_loop.graph.hooks`. The graph and its hooks are one unit; the plugin
+  is the *harness integration* — skills, commands, hooks that teach an agent the process —
+  and it is not what executes the graph. R1's own rationale already said the process should
+  be "versioned with the code that runs it", which the old location contradicted.
+- **Did:** `git mv skills/the-loop/graph/pdlc.yaml cli/the_loop/graph/pdlc.yaml`;
+  rewrote `shipped_graph_path()` to resolve package data relative to its own module, so a
+  wheel, an editable install and a repo checkout all behave identically. Dropped the
+  `CLAUDE_PLUGIN_ROOT` branch and the parent-directory walk — both existed only to paper
+  over the split. A missing graph is now reported as *"a packaging fault, not a
+  configuration one"*, because that is what it would be.
+- **One copy, not two.** Leaving a duplicate in the plugin would be the same defect the
+  owner made me fix for `ghBinary` — one setting in three places.
+- **Checkpoint/tests:** red→green. Three new tests in `test_graph_model.py`
+  (`TestTheGraphShipsWithTheCli`): the graph resolves inside the package, it resolves with
+  no `CLAUDE_PLUGIN_ROOT` and no checkout, and the resolved file still compiles. Verified
+  the wheel now contains `the_loop/graph/pdlc.yaml` and re-ran the clean-venv reproduction
+  — `the-loop check` and `the-loop graph show` both work from a pip-only install.
+  `make check` green, **689 tests**. All 5 mermaid blocks in `design.md` re-validated with
+  `@mermaid-js/mermaid-cli` after editing the architecture diagram.
+- **Locked artifacts amended, on the record:** `requirements.md` R1.1 (plus a new R1.1a
+  making the pip-only install an explicit requirement) and `decision-041` §8 both said
+  "ships with the plugin". Both corrected with the review quoted inline rather than edited
+  silently.
+- **Blockers:** none.
+
 ## Review cycles
 
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
@@ -582,6 +626,7 @@ status: in-progress           # in-progress | complete
 | 2 | human | @MadaraUchiha-314 | **Finding accepted and fixed** — the Cursor `stop` hook does exist; the "Cursor degrades to CI-only" framing was wrong. See the 2026-07-26 entry below. | [PR #110 review comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 3 | human | @MadaraUchiha-314 | **Direction accepted** — model the process as a graph of nodes with an orchestration layer determining edges; harness hooks are too fine-grained and phase-blind to be node boundaries. Architecture added; options re-cast as its layers. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 4 | human | @MadaraUchiha-314 | **Brainstorm locked** — *"let's go ahead with the requirements and design"*. Phase advanced; both artifacts derived. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
+| 13 | human | @MadaraUchiha-314 | **Finding accepted and fixed** — the graph shipped with the plugin instead of the CLI, so `pip install the-loopy-one` produced a runtime that could not find its own process. Reproduced in a clean venv, moved to package data, three regression tests. | [PR #110 review comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 12 | human | @MadaraUchiha-314 | **Approved requirements + design; go ahead with implementation.** Also asked for a force/override escape hatch exercisable by the authorized CLI user — specified as R10 before deriving tasks. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 11 | human | @MadaraUchiha-314 | **Make it a breaking change** — remove the legacy per-feature keys rather than shadowing them; `/the-loop:upgrade-the-loop` performs the migration. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 10 | human | @MadaraUchiha-314 | **Runtime + config reconciliation** — specify what compiles and runs the graph (no engine; the existing `Command`/`@register` pattern), and apply the integration pattern across both config files, removing triplicated `ghBinary`. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |

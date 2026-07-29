@@ -5,16 +5,16 @@ that **every structural failure is a startup failure** — an unknown hook, an
 edge pointing at a node that does not exist, a malformed chain entry — rather
 than a surprise three nodes into a traversal at 2am.
 
-The graph ships **with the plugin** (R1.1). A repository cannot define or
-override it; a repo-supplied one is ignored with a warning (R1.4). It stays
-fully declarative so user-authored graphs can arrive later as a distribution
-change rather than a rewrite.
+The graph ships **with the CLI**, as package data beside this module (R1.1) —
+the CLI is what executes it, and every hook it names is registered here. A
+repository cannot define or override it; a repo-supplied one is ignored with a
+warning (R1.4). It stays fully declarative so user-authored graphs can arrive
+later as a distribution change rather than a rewrite.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -22,6 +22,9 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 import yaml
 
 from .registry import hook_names, is_registered
+
+#: The shipped graph, package data beside this module (see shipped_graph_path).
+GRAPH_FILENAME = "pdlc.yaml"
 
 logger = logging.getLogger("the-loop.graph")
 
@@ -111,24 +114,28 @@ class Graph:
 
 
 def shipped_graph_path() -> Path:
-    """The graph that ships with the plugin.
+    """The graph that ships with the CLI, as package data beside this module.
 
-    ``CLAUDE_PLUGIN_ROOT`` when the plugin is installed; otherwise the copy in
-    this repository, which is what makes the-loop able to run its own loop.
+    **It belongs to the CLI, not to the plugin.** The plugin is the harness
+    integration — skills, commands, hooks that teach an agent the process. The
+    graph is *executed*, and the thing that executes it is this package: every
+    hook the graph names is registered in ``the_loop.graph.hooks``. A graph
+    shipped anywhere else is a graph the runtime may not have.
+
+    It previously lived under ``skills/the-loop/graph/``, which meant
+    ``pip install the-loopy-one`` produced a runtime with no process to run —
+    ``the-loop check`` failed, advising the operator to set ``CLAUDE_PLUGIN_ROOT``
+    to a plugin they had never installed. One copy, in the package, resolved
+    relative to this file, so it works identically from a wheel, an editable
+    install and a repository checkout.
     """
-    root = os.environ.get("CLAUDE_PLUGIN_ROOT")
-    if root:
-        candidate = Path(root) / "skills" / "the-loop" / "graph" / "pdlc.yaml"
-        if candidate.is_file():
-            return candidate
-    here = Path(__file__).resolve()
-    for parent in here.parents:
-        candidate = parent / "skills" / "the-loop" / "graph" / "pdlc.yaml"
-        if candidate.is_file():
-            return candidate
+    candidate = Path(__file__).resolve().parent / GRAPH_FILENAME
+    if candidate.is_file():
+        return candidate
     raise GraphConfigError(
-        "could not locate the shipped graph (skills/the-loop/graph/pdlc.yaml); "
-        "set CLAUDE_PLUGIN_ROOT to the plugin install directory"
+        f"the shipped graph is missing from the installed package "
+        f"({candidate}). This is a packaging fault, not a configuration one — "
+        "reinstall the-loopy-one."
     )
 
 
@@ -305,7 +312,7 @@ def _warn_on_repo_graph(repo: Path) -> None:
     ):
         if candidate.is_file():
             logger.warning(
-                "ignoring %s: the-loop's process graph ships with the plugin and "
+                "ignoring %s: the-loop's process graph ships with the CLI and "
                 "cannot be overridden by a repository (user-defined graphs are a "
                 "future feature)",
                 candidate,

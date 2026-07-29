@@ -7,7 +7,7 @@
 ## What it is
 
 The runtime under `cli/the_loop/graph/` plus the shipped graph definition
-(`skills/the-loop/graph/pdlc.yaml`), surfaced as `the-loop check` and `the-loop graph`.
+(`cli/the_loop/graph/pdlc.yaml`), surfaced as `the-loop check` and `the-loop graph`.
 It exists because before it, the PDLC was enforced only by prompts: there was no event
 anywhere in the-loop meaning *"this node of the process completed"*, so there was nowhere
 to hang a gate, a notification, or an advance (issue-109, [decision-041](../decisions/decision-041.md)).
@@ -19,9 +19,10 @@ There are exactly **two** runtime concepts and **one** contract between them.
 ### The graph
 
 - The PDLC SHALL be declared as data — nodes and edges in
-  `skills/the-loop/graph/pdlc.yaml`, versioned and validated against its schema — and the
+  `cli/the_loop/graph/pdlc.yaml`, versioned and validated against its schema — and the
   runtime SHALL execute that declaration rather than re-deriving the process from prose.
-- The graph SHALL be **internal to the-loop**: it ships with the plugin and a consuming
+- The graph SHALL be **internal to the-loop**: it ships as package data inside the CLI —
+  the thing that executes it, and where every hook it names is registered — and a consuming
   repository does not define or override it. A repo-local `.the-loop/graph.yaml` SHALL be
   ignored with a warning, so that user-authored graphs can be enabled later as a deliberate
   feature rather than arriving as an accidental one (R1.5).

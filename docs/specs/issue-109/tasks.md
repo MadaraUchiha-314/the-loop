@@ -165,7 +165,7 @@ motivates it**. Security-relevant tasks name the **negative** test proving the b
 
 ### Slice D — the PDLC graph, side effects and the human gate
 
-- [x] 23. Author the shipped graph `skills/the-loop/graph/pdlc.yaml` + its schema; validate in CI
+- [x] 23. Author the shipped graph `cli/the_loop/graph/pdlc.yaml` + its schema; validate in CI
   - Splits the six nodes currently hiding inside `needs-review`.
   - _Depends on:_ 8
   - _Requirements:_ R1.1, R1.2, R6b.6

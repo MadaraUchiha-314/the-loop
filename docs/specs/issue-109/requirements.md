@@ -62,11 +62,25 @@ attack surface".
 ### Requirement 1 — The graph is declared data, owned by the-loop
 
 **User story:** As a the-loop maintainer, I want the PDLC declared as data shipped with the
-plugin, so the process is versioned with the code that runs it and no repository can
+**CLI**, so the process is versioned with the code that runs it and no repository can
 redefine what executes.
 
-1. WHEN the runtime starts THEN it SHALL load the graph from the installed plugin and SHALL
-   NOT read a graph from the working repository.
+> **Corrected 2026-07-29 after PR review** (@MadaraUchiha-314: *"this file should ship with
+> the CLI not with the harness integration which is the plugin"*). R1.1 originally said
+> "the installed plugin", which contradicted this very requirement's own rationale — the
+> plugin is the harness integration, and it is **not** the code that runs the graph; the
+> CLI is, and every hook the graph names is registered in `the_loop.graph.hooks`. Shipping
+> it with the plugin meant `pip install the-loopy-one` produced a runtime with no process
+> to run. See the execution log entry for the reproduction.
+
+1. WHEN the runtime starts THEN it SHALL load the graph from **the installed CLI package**
+   (package data, resolved relative to the runtime module — so a wheel, an editable
+   install and a repository checkout all behave identically) and SHALL NOT read a graph
+   from the working repository.
+1a. WHEN the CLI is installed from PyPI with no plugin and no repository checkout THEN
+   `the-loop check` SHALL still find its graph. The graph and the hooks it names SHALL be
+   distributed as one unit, because a graph the runtime cannot find is a process nothing
+   can run.
 2. WHEN the graph is loaded THEN it SHALL be validated against a checked-in JSON Schema, and
    the runtime SHALL refuse to run if validation fails.
 3. WHEN a node is declared THEN it SHALL require `id` and SHALL accept `phase`, `actor`,

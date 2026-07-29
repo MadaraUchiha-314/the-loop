@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from the_loop.graph import hooks  # noqa: F401 — register the built-ins
@@ -135,3 +137,43 @@ def test_an_optional_node_is_declared_as_such():
     scope is already clear starts at requirements-definition."""
     graph = load_graph()
     assert graph.node("brainstorming").optional is True
+
+
+class TestTheGraphShipsWithTheCli:
+    """The graph is executed by the CLI, so it must ship *in* the CLI.
+
+    It previously lived under `skills/the-loop/graph/` — the plugin, which is
+    the harness integration. That made `pip install the-loopy-one` produce a
+    runtime with no process to run: every hook the graph names is registered in
+    this package, so a graph the package cannot find is a graph nothing can use.
+    """
+
+    def test_the_graph_lives_inside_the_the_loop_package(self):
+        from the_loop.graph import model
+
+        path = model.shipped_graph_path()
+        package_root = Path(model.__file__).resolve().parent.parent
+        assert package_root in path.resolve().parents, (
+            f"{path} is outside {package_root}; it will not ship in the wheel"
+        )
+
+    def test_it_resolves_without_a_plugin_root_or_a_repo_checkout(self, monkeypatch):
+        """The regression: a pip-only install must still find its graph.
+
+        Neither a `CLAUDE_PLUGIN_ROOT` nor a repository checkout is available to
+        someone who ran `pip install the-loopy-one`, and telling them to set an
+        env var pointing at a plugin they never installed is not a remedy.
+        """
+        from the_loop.graph import model
+
+        monkeypatch.delenv("CLAUDE_PLUGIN_ROOT", raising=False)
+        monkeypatch.chdir(Path(__file__).resolve().parent)
+        path = model.shipped_graph_path()
+        assert path.is_file()
+
+    def test_the_resolved_graph_actually_compiles(self):
+        """Shipping the file is only half of it — it must still load."""
+        from the_loop.graph.model import load_graph, shipped_graph_path
+
+        graph = load_graph(shipped_graph_path())
+        assert graph.start and graph.nodes
