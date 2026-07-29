@@ -22,7 +22,7 @@ status: in-progress          # in-progress | complete
 
 | PR | Scope / tasks | Status |
 |----|---------------|--------|
-| (pending) | T1–T8, spec | open |
+| [#114](https://github.com/MadaraUchiha-314/the-loop/pull/114) | spec + T1–T9 | open |
 
 ## Progress entries
 
