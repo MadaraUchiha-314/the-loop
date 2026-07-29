@@ -5,6 +5,11 @@ One JSON file per session under the registry directory (default
 concurrent sessions never contend on a shared file. Writes are atomic
 (tempfile + ``os.replace``). Stdlib only.
 
+That directory is **shared** session-related state rather than this module's own
+(issue-106 put the poll state and the control records there too), so listing
+recognises the files the registry wrote — ``<slug>.json`` — and leaves the rest
+alone (issue-111).
+
 Spec: docs/specs/issue-15/design.md §1 (requirement R2).
 """
 
@@ -28,6 +33,19 @@ logger = logging.getLogger("the-loop.sessions")
 _RECENT_DELIVERIES_CAP = 50
 
 _REF_RE = re.compile(r"^(?P<provider>[a-z][a-z0-9-]*):(?P<path>[^#]+)#(?P<number>\d+)$")
+
+# The registry directory is shared session-related state, not this class's
+# private space: the poll state sits beside these files by design (issue-106,
+# ``state.StateLayout.poll_state``) and the control records in a subdirectory. So
+# a directory scan must recognise the files the registry itself *wrote* rather
+# than assume every ``*.json`` is a session record — otherwise a healthy
+# neighbour is reported as a corrupt entry on every listing (issue-111).
+# ``_write`` names each file ``<slug>.json`` and :attr:`WorkItemRef.slug` always
+# ends in ``-<number>``, so this is a deliberate *superset* of what the registry
+# produces: a session file can never fail it (the direction that matters — a
+# false negative would hide a live session), while a name-shaped stranger that
+# slips through is simply read and reported like any unparseable file.
+_REGISTRY_FILE_RE = re.compile(r"[A-Za-z0-9._-]+-\d+\.json")
 
 # Statuses that mean "this work item still has a session". A paused session
 # (issue-106) is deliberately one of them: it is suppressed, not gone, so
@@ -245,9 +263,19 @@ class SessionRegistry:
         return session
 
     def list_sessions(self, status: Optional[str] = None) -> List[Session]:
+        """Every session in the registry directory, optionally filtered by status.
+
+        Only the files the registry wrote are considered (``_REGISTRY_FILE_RE``):
+        the directory is shared with other session-related state, and a
+        neighbour is not a corrupt entry.
+        """
         sessions = []
         if self.root.is_dir():
             for path in sorted(self.root.glob("*.json")):
+                if not _REGISTRY_FILE_RE.fullmatch(path.name):
+                    # Someone else's file in a directory we share — not corruption.
+                    logger.debug("ignoring non-registry file %s", path)
+                    continue
                 session = self._read(path)
                 if session is not None and (status is None or session.status == status):
                     sessions.append(session)

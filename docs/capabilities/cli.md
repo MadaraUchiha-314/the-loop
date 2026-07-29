@@ -45,6 +45,13 @@ self-learning/ML capabilities.
   `<root>/sessions/` (registry + control records) and the poll state, event log and
   pidfile derived from the same root. The root supplies **defaults only**: an explicitly
   configured path is used verbatim, so existing configs are unaffected (issue-106).
+  Because `<root>/sessions/` is therefore **shared** session-related state rather than
+  the registry's private directory, a session listing SHALL consider only the files the
+  registry itself wrote (`<slug>.json`, i.e. a name ending in `-<number>`) and SHALL
+  ignore its neighbours silently. The "skipping unreadable registry file" warning SHALL
+  stay reserved for a registry-named file that can no longer be parsed, so genuine
+  corruption remains visible instead of being lost in a per-cycle false positive about
+  `poll-state.json` (issue-111).
 - `the-loop check [<work item>|--all]` SHALL evaluate a work item's nodes against its
   checked-in artifacts and report what is unmet (`--format table|json`). It SHALL be
   **pure** — no network, no subprocess, no mutation — which is what lets the same code run
@@ -91,6 +98,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-111 | Session listings recognise the registry's own files instead of every `*.json` in the shared `<root>/sessions/` directory, so `poll-state.json` no longer reports as a corrupt registry entry on every poll cycle | [spec](../specs/issue-111/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/111) |
 | issue-109 | Added `check` and `graph` (the process-graph runtime), the `integrations` config block with configurable transports, a `version`-gated **breaking** CLI-config migration retiring `ghBinary`, and the `slack` extra | [spec](../specs/issue-109/), [process-graph](process-graph.md), [decision-041](../decisions/decision-041.md), [decision-042](../decisions/decision-042.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/109) |
 | issue-97 | PyYAML promoted from the `[config]` extra to a required runtime dependency; the three silent `ImportError` fallbacks removed and the zero-runtime-dependency guarantee retired | [spec](../specs/issue-97/), [decision-038](../decisions/decision-038.md) |
 | issue-82 | Plugin config renamed `config.yaml` → `harness-config.yaml` (`scenarios` reads the new name with a pre-rename fallback); CLI config gained operator-declared `collaborators` + daemon-side `notifications` event filters | [decision-035](../decisions/decision-035.md) |

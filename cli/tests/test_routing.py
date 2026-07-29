@@ -4,6 +4,7 @@ Spec: docs/specs/issue-15/ (requirements R2–R5).
 """
 
 import json
+import logging
 import stat
 import threading
 import time
@@ -135,10 +136,57 @@ def test_registry_touch_records_event_and_delivery(tmp_path):
 
 
 def test_registry_skips_corrupt_file(tmp_path, caplog):
+    """A file the registry *wrote* but can no longer read stays a loud warning."""
     registry = SessionRegistry(tmp_path)
     registry.register(make_session())
-    (tmp_path / "garbage.json").write_text("{not json")
-    assert len(registry.list_sessions()) == 1  # corrupt entry skipped, no crash
+    # Registry-shaped names (``<slug>.json``), so these reach the corruption path
+    # rather than the not-mine skip added for issue-111.
+    (tmp_path / "github-octo-repo-99.json").write_text("{not json")
+    (tmp_path / "github-octo-repo-98.json").write_text(
+        json.dumps({"harness": "claude"})
+    )
+    with caplog.at_level(logging.WARNING, logger="the-loop.sessions"):
+        assert len(registry.list_sessions()) == 1  # corrupt entries skipped, no crash
+    warnings = [r for r in caplog.records if "unreadable registry file" in r.message]
+    assert len(warnings) == 2
+
+
+def test_registry_ignores_files_it_did_not_write(tmp_path, caplog):
+    """The sessions directory is shared state, not the registry's own (issue-111).
+
+    ``<state.root>/sessions/`` holds the poll state beside the registry files
+    (issue-106), so a listing must recognise its own files instead of reporting
+    everyone else's as corrupt registry entries.
+    """
+    registry = SessionRegistry(tmp_path)
+    registry.register(make_session())
+    (tmp_path / "poll-state.json").write_text(json.dumps({"items": {}}))
+    with caplog.at_level(logging.DEBUG, logger="the-loop.sessions"):
+        sessions = registry.list_sessions()
+    assert [s.work_item.ref for s in sessions] == [REF]
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+@pytest.mark.parametrize(
+    "ref",
+    [
+        "github:octo/repo#15",
+        "github:octo/repo#1234567",
+        "github:Octo-Corp/my.repo-2#3",
+        "jira:some.owner/PROJ_x#42",
+    ],
+)
+def test_registry_lists_every_name_it_can_write(tmp_path, ref):
+    """The not-mine filter is a superset of what ``_write`` produces (issue-111).
+
+    Driven from ``WorkItemRef.slug`` rather than literal filenames so a future
+    change to the naming rule cannot silently hide live sessions from listings.
+    """
+    registry = SessionRegistry(tmp_path)
+    item = WorkItemRef.parse(ref)
+    registry.register(make_session(ref=ref))
+    assert (tmp_path / f"{item.slug}.json").is_file()
+    assert [s.work_item.ref for s in registry.list_sessions()] == [item.ref]
 
 
 # -- paused sessions (issue-106) ----------------------------------------------
