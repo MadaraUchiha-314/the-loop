@@ -250,11 +250,28 @@ the-loop may freely use other MCP tools, skills and plugins available in the har
 registers what to be aware of in `config.externalTools` (the `externalTools.tools` list
 in `.the-loop/harness-config.yaml`). See `collaboration.md`.
 
-## Predictability & guarantees (open design question)
+## Predictability & guarantees
 
 Much of this is a fixed PDLC process; the harness should not re-derive it each time.
-Candidate mechanisms to make steps predictable/guaranteed:
-- **Harness hooks** (this plugin's `hooks/` in Claude Code; the always-applied rule in
-  `rules/` in Cursor) to force steps to run.
-- **Custom code** where hooks are insufficient.
-This is an open question — evaluate and record a decision as it firms up.
+**Answered by [decision-041](../../../docs/decisions/decision-041.md) (issue-109): the
+process is a graph, and the graph is executable.** Everything described in this file is
+declared in `skills/the-loop/graph/pdlc.yaml` — each phase is a **node**, and each node
+has entry/exit **hook** chains that decide when it is complete. A node is complete when
+its exit hooks all pass, waiting when one returns `wait`, blocked when one returns
+`block`; declared edges route on those outcomes. No prose is parsed to make the decision.
+
+The two candidate mechanisms both turned out to be needed, in their proper places:
+- **Custom code** carries the process. `cli/the_loop/graph/` holds the runtime; the
+  shipped hooks do the validating and the side effects; `the-loop check` reports where a
+  work item actually stands, and `--recompute` derives that from the checked-in artifacts
+  rather than trusting stored state.
+- **Harness hooks** are the *clock*, not the boundary. Claude Code's `Stop` hook and
+  Cursor's `stop` hook fire on harness lifecycle — many times per node, carrying no phase
+  — so they cannot themselves be node boundaries. What they can do is run `the-loop check`
+  and surface an unmet gate at a moment the agent is listening.
+
+An authorized operator can override any gate with `the-loop graph force --to <node>
+--reason <why>`. A force moves the pointer; it never forges a verdict — the bypassed gate
+keeps its real result and `the-loop check --recompute` still reports it.
+
+See [`docs/capabilities/process-graph.md`](../../../docs/capabilities/process-graph.md).

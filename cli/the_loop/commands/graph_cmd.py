@@ -68,7 +68,21 @@ def _discover_work_items(root: Path, spec_root: str) -> List[str]:
     return sorted(p.name for p in base.iterdir() if p.is_dir())
 
 
-def _render_table(reports) -> str:
+def _split_at_pointer(nodes, current: str):
+    """Split node reports into those up to the pointer and those beyond it.
+
+    A node the work item has not reached yet is *expected* to be unmet — that is
+    what "not done yet" looks like. Reporting it in the same voice as a genuine
+    blocker is how a status view starts contradicting itself ("ok" printed above
+    a wall of BLOCK lines), so the two are kept visually distinct.
+    """
+    for index, report in enumerate(nodes):
+        if report.node == current:
+            return nodes[: index + 1], nodes[index + 1 :]
+    return list(nodes), []
+
+
+def _render_table(reports, ahead=()) -> str:
     lines = []
     for report in reports:
         mark = {"pass": "ok", "skip": "--", "wait": "wait", "block": "BLOCK"}.get(
@@ -78,6 +92,12 @@ def _render_table(reports) -> str:
         lines.append(f"  {mark:<6} {report.node}{flag}")
         for message in report.messages:
             lines.append(f"         · {message}")
+    pending = [r for r in ahead if r.status not in ("pass", "skip")]
+    if pending:
+        lines.append(
+            f"  ····   {len(pending)} node(s) not reached yet: "
+            + ", ".join(r.node for r in pending)
+        )
     return "\n".join(lines)
 
 
@@ -131,16 +151,27 @@ class CheckCommand(Command):
             for report in payload:
                 state = "ok" if report["ok"] else "UNMET"
                 print(f"{report['workItem']}: {state} (at {report['currentNode']})")
-                if not args.all or not report["ok"]:
-                    unmet = [
-                        r
-                        for r in report["nodes"]
-                        if r["status"] not in ("pass", "skip")
-                    ]
+                # Only nodes at or before the pointer are findings; anything
+                # beyond it is simply not done yet, and saying "BLOCK" about it
+                # would make an ok work item read as a broken one.
+                reached = []
+                for entry in report["nodes"]:
+                    reached.append(entry)
+                    if entry["node"] == report["currentNode"]:
+                        break
+                unmet = [r for r in reached if r["status"] not in ("pass", "skip")]
+                if unmet and (not args.all or not report["ok"]):
                     for entry in unmet[:1] if args.all else unmet:
                         print(f"  {entry['status'].upper():<6} {entry['node']}")
                         for message in entry["messages"]:
                             print(f"         · {message}")
+                ahead = [
+                    r
+                    for r in report["nodes"][len(reached) :]
+                    if r["status"] not in ("pass", "skip")
+                ]
+                if ahead and not args.all:
+                    print(f"  ····   {len(ahead)} node(s) not reached yet")
             if args.all:
                 print(f"\n{len(payload) - failing}/{len(payload)} work items satisfied")
         return 1 if failing else 0
@@ -174,6 +205,20 @@ class GraphCommand(Command):
         forced.add_argument("--reason", required=True, help="why (required)")
         forced.add_argument("--actor", default="", help="who is forcing this")
         forced.add_argument("--ref", default="")
+
+        run = sub.add_parser(
+            "run", help="drive a work item until it waits, escalates or completes"
+        )
+        run.add_argument("work_item")
+        run.add_argument("--ref", default="")
+        run.add_argument(
+            "--max-nodes", type=int, default=20, help="safety bound on advances"
+        )
+        run.add_argument(
+            "--dry-run",
+            action="store_true",
+            help="report what would happen without writing state",
+        )
 
     def run(self, args: argparse.Namespace) -> int:
         root = Path(args.repo).resolve()
@@ -218,8 +263,9 @@ class GraphCommand(Command):
 
         if args.action == "status":
             report = runtime.status(args.work_item)
+            reached, ahead = _split_at_pointer(report.nodes, report.current_node)
             print(f"{report.work_item}: at {report.current_node}")
-            print(_render_table(report.nodes))
+            print(_render_table(reached, ahead))
             return 0 if report.ok else 1
 
         if args.action == "advance":
@@ -228,6 +274,9 @@ class GraphCommand(Command):
             for message in result.messages:
                 print(f"  · {message}")
             return 0 if result.status in ("pass", "wait") else 1
+
+        if args.action == "run":
+            return self._run_loop(runtime, args)
 
         if args.action == "force":
             from ..graph.runtime import force
@@ -255,3 +304,40 @@ class GraphCommand(Command):
             return 0
 
         return 2
+
+    @staticmethod
+    def _run_loop(runtime, args) -> int:
+        """Advance until the work item waits, escalates or reaches a terminal node.
+
+        Bounded by ``--max-nodes`` — a runaway loop is the one failure mode a
+        deterministic driver can still have, so it gets an explicit ceiling
+        rather than trust.
+        """
+        if args.dry_run:
+            report = runtime.status(args.work_item)
+            reached, ahead = _split_at_pointer(report.nodes, report.current_node)
+            print(
+                f"{args.work_item}: at {report.current_node} (dry run — nothing written)"
+            )
+            print(_render_table(reached, ahead))
+            return 0 if report.ok else 1
+
+        seen: List[str] = []
+        for _ in range(max(1, args.max_nodes)):
+            result = runtime.advance(args.work_item, ref=args.ref)
+            print(f"  {result.node}: {result.status}")
+            for message in result.messages:
+                print(f"      · {message}")
+            if result.status in ("wait", "block", "escalated"):
+                print(f"{args.work_item}: stopped at {result.node} ({result.status})")
+                return 0 if result.status == "wait" else 1
+            node = runtime.graph.node(result.node)
+            if node.terminal:
+                print(f"{args.work_item}: complete")
+                return 0
+            seen.append(result.node)
+            if seen.count(result.node) > 2:
+                print(f"{args.work_item}: looping on {result.node}; stopping")
+                return 1
+        print(f"{args.work_item}: hit --max-nodes ({args.max_nodes}); stopping")
+        return 1

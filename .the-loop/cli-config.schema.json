@@ -151,11 +151,6 @@
                           "default": "the-loop:resume-execution"
                         }
                       }
-                    },
-                    "ghBinary": {
-                      "type": "string",
-                      "default": "gh",
-                      "description": "Path/name of the gh CLI used to post the paper-trail comment for a CLI-issued control action (uses the operator's existing gh auth, like reactions and announcements)."
                     }
                   }
                 },
@@ -424,11 +419,6 @@
                       ],
                       "default": "confused",
                       "description": "Reaction added when the dispatch fails or the worker crashes (\ud83d\ude15 by default \u2014 GitHub has no \u2049\ufe0f reaction). Empty string skips this state."
-                    },
-                    "ghBinary": {
-                      "type": "string",
-                      "default": "gh",
-                      "description": "Path/name of the gh CLI used to post reactions (uses the operator's existing gh auth, like the poller's reads)."
                     }
                   }
                 },
@@ -441,11 +431,6 @@
                       "type": "boolean",
                       "default": true,
                       "description": "Default true (the point of issue-86 is that the attach command reaches the human; matches the `reactions` precedent). This posts TEXT to GitHub with the operator's own gh credentials \u2014 set false to opt out."
-                    },
-                    "ghBinary": {
-                      "type": "string",
-                      "default": "gh",
-                      "description": "Path/name of the gh CLI used to post the announcement (uses the operator's existing gh auth, like the poller's reads)."
                     }
                   }
                 }
@@ -519,11 +504,6 @@
                     "default": true
                   }
                 }
-              },
-              "ghBinary": {
-                "type": "string",
-                "default": "gh",
-                "description": "[github] Path/name of the gh CLI (uses the user's existing gh auth)."
               }
             }
           }

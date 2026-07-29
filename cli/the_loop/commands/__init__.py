@@ -6,6 +6,7 @@ from .base import Command, iter_commands, register  # noqa: F401
 from . import events  # noqa: F401,E402
 from . import gh_webhook  # noqa: F401,E402
 from . import graph_cmd  # noqa: F401,E402
+from . import migrate_cmd  # noqa: F401,E402
 from . import poll  # noqa: F401,E402
 from . import scenarios  # noqa: F401,E402
 from . import sessions_cmd  # noqa: F401,E402

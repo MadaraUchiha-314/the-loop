@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from .. import eventlog
 from .chain import ChainOutcome, run_chain
@@ -124,6 +124,33 @@ class Runtime:
             spec_dir=spec_dir,
             tags=tuple(tags),
             risk_tier=tier,
+        )
+
+    def resolve_session(
+        self, node, state: "GraphState"
+    ) -> Tuple[Optional[Dict[str, Any]], str]:
+        """The session a node runs in, and how it was arrived at (R7.3, R7.4).
+
+        ``session: inherit`` reuses the session that produced the artifacts under
+        review, so a reviewer's "this section is thin" reaches the agent that
+        wrote it with its context intact. If that session has died the fallback
+        is a **fresh** one seeded with the work item's artifacts — never a block:
+        requirements.md, design.md and the execution log are enough to restart.
+        """
+        if node.session != "inherit":
+            return None, "new"
+        bound = state.session
+        if bound and bound.get("alive", True):
+            return dict(bound), "inherited"
+        return (
+            {
+                "seed_artifacts": [
+                    "requirements.md",
+                    "design.md",
+                    "execution-log.md",
+                ]
+            },
+            "fresh-with-artifacts",
         )
 
     def _context(self, item: WorkItem, node, boundary: str, **extra) -> HookContext:
@@ -276,6 +303,31 @@ class Runtime:
         return report
 
 
+def _announce_force(runtime: "Runtime", item: WorkItem, record: Dict[str, Any]) -> None:
+    """Post the force to the ticket — the audit record a human actually reads.
+
+    Best-effort: an integration outage must not prevent the operator unblocking
+    their work item. The other three records (graph state, execution log, event
+    log) are already durable, so a failure here degrades the trail rather than
+    losing it.
+    """
+    from ..authz import mark_self_authored
+    from .integrations import IntegrationError, resolve
+
+    warnings = "".join(f"\n- ⚠️ {w}" for w in record.get("warnings") or [])
+    body = mark_self_authored(
+        "🤖 _the-loop_ — **forced transition**\n\n"
+        f"`{record['from']}` → `{record['to']}` by {record['actor']}\n\n"
+        f"**Reason:** {record['reason']}{warnings}\n\n"
+        "This moved the pointer only. The bypassed gate keeps its real verdict, "
+        "so `the-loop check --recompute` will still report it as unmet."
+    )
+    try:
+        resolve("github", runtime.config).call("add-comment", ref=item.ref, body=body)
+    except (IntegrationError, Exception) as exc:  # noqa: BLE001
+        logger.warning("could not post the force audit comment: %s", exc)
+
+
 # -- the escape hatch ---------------------------------------------------------
 
 
@@ -365,6 +417,7 @@ def force(
         record["reason"],
         "".join(f"\n  warning: {w}" for w in warnings),
     )
+    _announce_force(runtime, item, record)
     return ForceResult(
         work_item=item.ref,
         from_node=from_node,

@@ -67,3 +67,10 @@ What this work item explicitly does not cover.
 ## Open questions
 
 Questions for collaborators are raised as ticket comments (paper trail) and linked here.
+
+## Review comments
+
+> Appended by the-loop's `record-feedback` hook when a human gate approves with
+> comments (issue-109). Append-only and attributed: an approval never silently
+> discards a reviewer's suggestions, and the feedback travels with the document
+> it concerns rather than living in a side-channel tracker.

@@ -143,22 +143,22 @@ motivates it**. Security-relevant tasks name the **negative** test proving the b
   - _Requirements:_ R6.5
   - _Test:_ `pytest cli/tests/test_integration_slack.py`; **Scenario:** _A Slack webhook
     failure records and continues without wedging the graph_
-- [ ] 19. Shared integration **contract test suite** — every provider, every operation
+- [x] 19. Shared integration **contract test suite** — every provider, every operation
   - Proves `api` and `cli` behave identically rather than assuming it.
   - _Depends on:_ 16, 17, 18
   - _Requirements:_ R6.10
   - _Test:_ `pytest cli/tests/test_integration_contract.py` parametrized over providers
-- [ ] 20. **Breaking** config migration — remove `ghBinary`, bump `version`, refuse old configs
+- [x] 20. **Breaking** config migration — remove `ghBinary`, bump `version`, refuse old configs
   - Runtime refuses to start naming key, replacement and `/the-loop:upgrade-the-loop` (R6a.6).
   - _Depends on:_ 15
   - _Requirements:_ R6a.1–R6a.6
   - _Test:_ **negative** — `test_runtime_refuses_unmigrated_config` (R6a.8)
-- [ ] 21. Teach `/the-loop:upgrade-the-loop` the migration; update both config templates
+- [x] 21. Teach `/the-loop:upgrade-the-loop` the migration; update both config templates
   - Deterministic key move, idempotent, `--dry-run`, reports what it changed (R6a.7).
   - _Depends on:_ 20
   - _Requirements:_ R6a.7, R6a.8
   - _Test:_ old-config fixture → expected new config; run twice, assert idempotent
-- [ ] 22. `mcp-call` hook — delegate to the harness with schema-constrained output
+- [x] 22. `mcp-call` hook — delegate to the harness with schema-constrained output
   - _Depends on:_ 14
   - _Requirements:_ R6.11
   - _Test:_ `pytest cli/tests/test_hook_mcp_call.py`
@@ -188,7 +188,7 @@ motivates it**. Security-relevant tasks name the **negative** test proving the b
   - _Depends on:_ 3
   - _Requirements:_ R4.5, R5.3
   - _Test:_ `pytest cli/tests/test_hook_record_feedback.py`
-- [ ] 27. Add `## Review comments` to the artifact templates
+- [x] 27. Add `## Review comments` to the artifact templates
   - _Depends on:_ 26
   - _Requirements:_ R5.2
   - _Test:_ `validate-artifacts` requires the section on a gated artifact
@@ -197,12 +197,12 @@ motivates it**. Security-relevant tasks name the **negative** test proving the b
   - _Requirements:_ R4.1–R4.6
   - _Test:_ **Scenario:** _A partial review comment leaves the gate waiting rather than
     advancing_
-- [ ] 29. `session: inherit` + fallback to fresh seeded with the artifacts
+- [x] 29. `session: inherit` + fallback to fresh seeded with the artifacts
   - _Depends on:_ 28
   - _Requirements:_ R4.7, R7.3, R7.4
   - _Test:_ **Scenario:** _A changes-requested outcome returns to the producing node in the
     same harness session_
-- [ ] 30. `the-loop run` — drive nodes; `--dry-run`; respect `ControlStore` pause/stop
+- [x] 30. `the-loop run` — drive nodes; `--dry-run`; respect `ControlStore` pause/stop
   - _Depends on:_ 12, 23
   - _Requirements:_ R7.1, R7.5
   - _Test:_ `pytest cli/tests/test_run_integration.py`
@@ -222,22 +222,22 @@ motivates it**. Security-relevant tasks name the **negative** test proving the b
   - _Test:_ `pytest cli/tests/test_graph_force.py`; **negative:**
     `test_force_does_not_mark_gate_satisfied` — after forcing, `check --recompute` still
     reports the bypassed gate as unmet (R10.4)
-- [ ] 33. Force audit trail — graph state, execution log, event log, marked ticket comment
+- [x] 33. Force audit trail — graph state, execution log, event log, marked ticket comment
   - _Depends on:_ 32, 24
   - _Requirements:_ R10.5
   - _Test:_ asserts all four records exist
-- [ ] 34. Harness stop-hook wrappers — `hooks/` (Claude) and `.cursor/hooks.json` (Cursor)
+- [x] 34. Harness stop-hook wrappers — `hooks/` (Claude) and `.cursor/hooks.json` (Cursor)
   - Claude blocks the stop; Cursor returns `followup_message`. Attempt cap enforced on the
     Claude path (Cursor caps natively).
   - _Depends on:_ 6, 12
   - _Requirements:_ R3.2
   - _Test:_ `pytest cli/tests/test_harness_hook_wrappers.py`
-- [ ] 35. CI + pre-push gate running `the-loop check --recompute`; baseline the existing 34
+- [x] 35. CI + pre-push gate running `the-loop check --recompute`; baseline the existing 34
   - _Depends on:_ 6, 7
   - _Requirements:_ R8.4
   - _Test:_ **Scenario:** _CI fails a work item whose graph-state claims a node complete that
     the artifacts contradict_
-- [ ] 36. Capability docs + `reference/` updates in the same PR as the behaviour
+- [x] 36. Capability docs + `reference/` updates in the same PR as the behaviour
   - `docs/capabilities/spec-workflow.md`, `cli.md`, and the workflow reference's
     "open design question" now answered by `decision-041`.
   - _Depends on:_ 30, 32
@@ -283,21 +283,22 @@ flowchart LR
   end
 ```
 
-## Delivery status (2026-07-28)
+## Delivery status (2026-07-29)
 
-**25 of 36 tasks complete**, in one implementation pass. `make check` green: ruff,
-ruff-format, pyright, markdownlint (250 files), config validation, **658 tests**.
+**36 of 36 tasks complete.** `make check` green: ruff, ruff-format, pyright, markdownlint,
+config validation, **684 tests** (1 skipped — the Slack `sdk` transport, an optional extra).
 
 | Slice | State |
 |---|---|
 | **A** — contract, registry, chain, validators, `check` | **complete**, drift report produced |
 | **B** — model, state, runtime, edges, events | **complete** |
-| **C** — integrations | transports + resolution + capability declaration **complete**; the **breaking config migration (20, 21)** and `mcp-call` (22) outstanding |
-| **D** — shipped graph, hooks, human gate | graph + hooks + gate **complete**; `## Review comments` templates (27), `session: inherit` fallback (29), `the-loop run` (30) outstanding |
-| **E** — escape hatch, enforcement | `graph force` + state/event audit **complete**; ticket-comment audit (33), stop-hook wrappers (34), CI gate (35), capability docs (36) outstanding |
+| **C** — integrations, breaking config migration, `mcp-call` | **complete** |
+| **D** — shipped graph, hooks, human gate, `graph run` | **complete** |
+| **E** — escape hatch, stop-hook wrappers, CI gate, capability docs | **complete** |
 
-Outstanding: **11 tasks** — 20, 21, 22, 27, 29, 30, 33, 34, 35, 36 (and 19's shared
-contract suite, currently covered per-provider rather than parametrized).
+Deliberately **out of scope**: paying down the 35-folder backlog the drift report surfaced.
+The CI gate binds work that touches a spec folder, so new work is covered from here; the
+backlog is a separate work item with its own review.
 
 ## Checkpoints
 

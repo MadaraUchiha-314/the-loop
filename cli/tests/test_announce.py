@@ -64,9 +64,22 @@ def test_announce_config_defaults_are_on():
 
 
 def test_announce_config_reads_camel_case_keys():
-    config = AnnounceConfig.from_mapping({"enabled": False, "ghBinary": "/opt/gh"})
+    config = AnnounceConfig.from_mapping({"enabled": False})
     assert config.enabled is False
-    assert config.gh_binary == "/opt/gh"
+
+
+def test_the_binary_comes_from_the_integrations_block():
+    """issue-109: `ghBinary` retired for one `integrations.github.cli.binary`."""
+    from the_loop.cli_config import apply_integrations
+
+    data = apply_integrations(
+        {
+            "integrations": {"github": {"cli": {"binary": "/opt/gh"}}},
+            "webhooks": {"ghWebhook": {"routing": {"announce": {"enabled": True}}}},
+        }
+    )
+    section = data["webhooks"]["ghWebhook"]["routing"]["announce"]
+    assert AnnounceConfig.from_mapping(section).gh_binary == "/opt/gh"
 
 
 # -- announcement_body ----------------------------------------------------------

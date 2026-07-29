@@ -531,6 +531,49 @@ status: in-progress           # in-progress | complete
   `the-loop run` (30), the harness stop-hook wrappers (34) and the CI gate (35).
 - **Blockers:** none.
 
+### 2026-07-29 — implementation complete: all 36 tasks
+
+- **Phase:** implementation (unchanged)
+- **Did:** owner: *"compact context window and go ahead with full implementation."*
+  The remaining **11 tasks** landed, closing all five slices. `make check` green;
+  **684 tests** pass (1 skipped — the Slack `sdk` transport, an optional extra).
+  - **Slice C closed** — `migrations.py` performs the breaking change: the three
+    `ghBinary` copies become one `integrations.github.cli.binary`, detected by an explicit
+    config `version` rather than by key-sniffing. `the-loop migrate-config` (with
+    `--dry-run`) is the operator surface, and `/the-loop:upgrade-the-loop` now shells out
+    to it rather than hand-editing a file the runtime already knows how to move.
+    `hooks/mcp.py` closed the MCP delegation question in code (task 22).
+  - **Slice D closed** — `the-loop graph run` drives a work item until it waits, escalates
+    or completes, bounded by `--max-nodes` with loop detection; `Runtime.resolve_session()`
+    implements `session: inherit` and its fresh-session fallback; all four artifact
+    templates grew a `## Review comments` section for `record-feedback` to append to.
+  - **Slice E closed** — the force audit trail's fourth record (a marked ticket comment),
+    `hooks/the-loop-gate.sh` wired as a Claude Code `Stop` hook and a Cursor `stop` hook,
+    and `.github/workflows/the-loop-gate.yml` running `the-loop check --recompute` on
+    touched spec folders only — so the gate binds new work without failing the repository
+    over the 35-folder backlog it just made visible.
+  - **Capability docs** — new `docs/capabilities/process-graph.md`; `spec-workflow.md` and
+    `cli.md` updated with the behaviour and history rows; the workflow reference's
+    **"Predictability & guarantees (open design question)"** — dangling since issue-1 — is
+    now answered and closed by `decision-041`.
+- **Two findings from the owner's own principle, applied to my own code:**
+  1. `assert_current()` refused any config **without** a `version` key, which would stop a
+     daemon over a missing bookkeeping field on a minimal hand-written config that has
+     nothing to migrate. Narrowed to the two cases where refusing is right: a removed key
+     is still present (honouring it would silently discard the operator's setting), or the
+     config *declares* a stale version. Migrate broadly, refuse narrowly.
+  2. `migrate-config` reads with the **raw** loader on purpose. `load_cli_config` refuses
+     un-migrated configs — so the migrator using it would be a door whose only key is
+     locked inside. Covered by a test that asserts exactly that asymmetry.
+- **Checkpoint/tests:** `make check` green. Three pre-existing unit tests asserted the
+  retired `ghBinary` contract at the mapping level; each was rewritten to assert the new
+  one (the binary arrives from the `integrations` block) rather than deleted, so the
+  behaviour stays covered across the break.
+- **Next:** review round on PR #110; the drift report's 35-folder backlog is deliberately
+  **not** in scope here — the CI gate covers new work, and paying down the backlog is its
+  own work item.
+- **Blockers:** none.
+
 ## Review cycles
 
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
@@ -560,9 +603,21 @@ status: in-progress           # in-progress | complete
 
 ## Capability docs
 
-None affected. This work item has produced no behaviour change yet; the capability docs
-(`docs/capabilities/spec-workflow.md`, `cli.md`) are updated in the PR that implements
-whatever the locked requirements ask for.
+Folded in **in this PR**, alongside the behaviour they describe:
+
+- **New:** [`docs/capabilities/process-graph.md`](../../capabilities/process-graph.md) —
+  the graph, the hook contract, the human gate, the two call planes, state/recovery and
+  the escape hatch. Registered in the [capabilities index](../../capabilities/capabilities.md).
+- **Updated:** [`spec-workflow.md`](../../capabilities/spec-workflow.md) — the phase state
+  machine is now executable, and the prose and the graph are named as two descriptions of
+  one loop with the graph as the one that runs.
+- **Updated:** [`cli.md`](../../capabilities/cli.md) — `check` and `graph`, the
+  `integrations` block, the version-gated breaking config migration, and the `slack` extra.
+- **Closed:** [`reference/workflow.md`](../../../skills/the-loop/reference/workflow.md)
+  § *Predictability & guarantees* — an open design question since issue-1, answered by
+  `decision-041`. Both candidate mechanisms turned out to be needed, in their proper
+  places: custom code carries the process, and harness hooks are the clock rather than the
+  boundary.
 
 ## Final validation evidence
 

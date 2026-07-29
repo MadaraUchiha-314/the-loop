@@ -1,0 +1,38 @@
+# the-loop's own gate, running against the-loop (issue-109, task 35).
+#
+# `--recompute` is deliberate: it ignores graph state entirely and derives
+# completion from the checked-in artifacts, so a work item whose graph-state
+# claims a node is complete that the artifacts contradict fails here. Graph
+# state is a cache; this job is where that is enforced.
+name: the-loop gate
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Install
+        run: uv sync
+      - name: Validate the shipped process graph
+        run: uv run the-loop graph show --format json > /dev/null
+      - name: Gate the work items touched by this PR
+        run: |
+          # Only the work items this PR actually touches — the existing 34 spec
+          # folders are baselined, not retro-gated (requirements Q7).
+          items=$(git diff --name-only origin/${{ github.base_ref }}...HEAD \
+            | grep -oE 'docs/specs/[^/]+' | sort -u | xargs -n1 basename || true)
+          if [ -z "$items" ]; then
+            echo "no spec folders touched; nothing to gate"; exit 0
+          fi
+          failed=0
+          for item in $items; do
+            echo "::group::$item"
+            uv run the-loop check "$item" --recompute || failed=1
+            echo "::endgroup::"
+          done
+          exit $failed

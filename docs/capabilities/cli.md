@@ -45,6 +45,28 @@ self-learning/ML capabilities.
   `<root>/sessions/` (registry + control records) and the poll state, event log and
   pidfile derived from the same root. The root supplies **defaults only**: an explicitly
   configured path is used verbatim, so existing configs are unaffected (issue-106).
+- `the-loop check [<work item>|--all]` SHALL evaluate a work item's nodes against its
+  checked-in artifacts and report what is unmet (`--format table|json`). It SHALL be
+  **pure** — no network, no subprocess, no mutation — which is what lets the same code run
+  on every harness turn *and* in CI, so the gate is the runtime rather than a
+  reimplementation of it. `--recompute` ignores stored graph state and derives the verdict
+  from the artifacts alone.
+- `the-loop graph show|status|advance|run|force` SHALL inspect and drive the process graph
+  (see [process-graph](process-graph.md)). `run` is bounded by `--max-nodes` and detects
+  loops — a runaway loop is the one failure mode a deterministic driver can still have, so
+  it gets an explicit ceiling rather than trust. `force` is the authorized-operator escape
+  hatch: it requires a reason and moves the pointer without ever forging the bypassed
+  gate's verdict.
+- The CLI config SHALL carry a `version`, and the CLI SHALL **refuse to run** against a
+  config older than the current schema version rather than guessing at the old shape
+  (issue-109). Per-provider settings SHALL live under one `integrations` block —
+  `integrations.github.cli.binary` replaces the `ghBinary` key that was previously
+  duplicated across three consumers. This is a **breaking** change, handled by
+  `/the-loop:upgrade-the-loop`.
+- The CLI SHALL declare a second runtime dependency, `slack-sdk`, only as an **optional
+  extra**: it is Slack's official SDK and has zero required dependencies of its own, but
+  the dependency-free `webhook` transport remains available so the base install stays
+  one-dependency.
 - `the-loop scenarios` SHALL output the table of every Gherkin scenario covered by the
   integration tests (`--format table|markdown|json`; see
   [testing-and-contracts](testing-and-contracts.md)).
@@ -69,6 +91,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-109 | Added `check` and `graph` (the process-graph runtime), the `integrations` config block with configurable transports, a `version`-gated **breaking** CLI-config migration retiring `ghBinary`, and the `slack` extra | [spec](../specs/issue-109/), [process-graph](process-graph.md), [decision-041](../decisions/decision-041.md), [decision-042](../decisions/decision-042.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/109) |
 | issue-97 | PyYAML promoted from the `[config]` extra to a required runtime dependency; the three silent `ImportError` fallbacks removed and the zero-runtime-dependency guarantee retired | [spec](../specs/issue-97/), [decision-038](../decisions/decision-038.md) |
 | issue-82 | Plugin config renamed `config.yaml` → `harness-config.yaml` (`scenarios` reads the new name with a pre-rename fallback); CLI config gained operator-declared `collaborators` + daemon-side `notifications` event filters | [decision-035](../decisions/decision-035.md) |
 | issue-78 | `--version` derives from package metadata instead of a hardcoded string that had frozen at 0.1.0 | [spec](../specs/issue-78/) |

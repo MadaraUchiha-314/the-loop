@@ -14,7 +14,7 @@
 # See .the-loop/config.yaml for the-loop's own PLUGIN config (ticketing,
 # workflow, tooling, reviews, …).
 
-version: "0.1.0"
+version: "0.2.0"
 
 # Everything the CLI GENERATES lives under this root (issue-106): the session
 # registry (sessions/), the control records (sessions/control/), the poll state
@@ -51,7 +51,6 @@ webhooks:
           stop: "the-loop:stop-execution"
           pause: "the-loop:pause-execution"
           resume: "the-loop:resume-execution"
-        ghBinary: gh
       # SECURITY: no fallback to this repo's plugin config (issue-63 review) —
       # empty here means nothing human-authored is actioned (fail closed).
       # Set this explicitly, e.g. ["MadaraUchiha-314"], to actually route events.
@@ -136,7 +135,6 @@ webhooks:
         started: eyes               # 👀 event dequeued for delivery/spawn
         completed: hooray           # 🎉 dispatch succeeded
         error: confused             # 😕 dispatch failed / worker crashed
-        ghBinary: gh
       # Session announcement comment (issue-86): when a tmux-mode session is
       # spawned, post the tmux session name + `tmux attach -t …` on the work item
       # so a human can watch it work. A respawn posts nothing further (same name,
@@ -145,7 +143,6 @@ webhooks:
       # paths, session ids or hostnames.
       announce:
         enabled: true
-        ghBinary: gh
 
 polling:
   intervalSeconds: 60

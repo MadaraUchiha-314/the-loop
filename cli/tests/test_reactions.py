@@ -61,10 +61,9 @@ def test_reaction_config_from_mapping_reads_camel_case_keys():
             "started": "rocket",
             "completed": "+1",
             "error": "",
-            "ghBinary": "/opt/gh",
         }
     )
-    assert config.enabled and config.gh_binary == "/opt/gh"
+    assert config.enabled
     assert config.content_for(STATE_STARTED) == "rocket"
     assert config.content_for(STATE_COMPLETED) == "+1"
     assert config.content_for(STATE_ERROR) == ""  # explicitly skipped
@@ -267,3 +266,17 @@ def test_reactor_unreactable_event_is_a_noop(monkeypatch):
     )
     assert not reactor.react(ci_event, STATE_STARTED)
     assert runner.commands == []
+
+
+def test_the_binary_comes_from_the_integrations_block():
+    """issue-109: `ghBinary` retired for one `integrations.github.cli.binary`."""
+    from the_loop.cli_config import apply_integrations
+
+    data = apply_integrations(
+        {
+            "integrations": {"github": {"cli": {"binary": "/opt/gh"}}},
+            "webhooks": {"ghWebhook": {"routing": {"reactions": {"enabled": True}}}},
+        }
+    )
+    section = data["webhooks"]["ghWebhook"]["routing"]["reactions"]
+    assert ReactionConfig.from_mapping(section).gh_binary == "/opt/gh"

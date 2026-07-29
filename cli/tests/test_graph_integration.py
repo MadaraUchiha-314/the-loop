@@ -251,3 +251,48 @@ def test_graph_force_refuses_a_blank_reason(repo, capsys):
     )
     assert code == 2
     assert "refused" in capsys.readouterr().out
+
+
+def test_a_node_ahead_of_the_pointer_is_not_reported_as_a_blocker():
+    """An unreached node is "not done yet", not a finding.
+
+    Reporting it as BLOCK made `check` print "ok" above a wall of blockers —
+    a status view contradicting itself is one people stop reading.
+    """
+    from the_loop.commands.graph_cmd import _render_table, _split_at_pointer
+
+    class R:
+        def __init__(self, node, status):
+            self.node = node
+            self.status = status
+            self.messages = []
+            self.forced = False
+
+    nodes = [R("a", "pass"), R("b", "wait"), R("c", "block"), R("d", "pass")]
+    reached, ahead = _split_at_pointer(nodes, "b")
+    assert [r.node for r in reached] == ["a", "b"]
+    assert [r.node for r in ahead] == ["c", "d"]
+
+    rendered = _render_table(reached, ahead)
+    assert "wait   b" in rendered
+    # `c` is unmet but unreached: counted, never dressed up as a blocker.
+    assert "BLOCK  c" not in rendered
+    assert "1 node(s) not reached yet: c" in rendered
+    # `d` already passes, so it is not something anyone is waiting on.
+    assert "d" not in rendered.split("not reached yet")[-1].replace("d)", "")
+
+
+def test_a_pointer_that_names_no_known_node_reports_everything():
+    """Fail visible, not silent: an unknown pointer must not hide findings."""
+    from the_loop.commands.graph_cmd import _split_at_pointer
+
+    class R:
+        def __init__(self, node):
+            self.node = node
+            self.status = "block"
+            self.messages = []
+            self.forced = False
+
+    nodes = [R("a"), R("b")]
+    reached, ahead = _split_at_pointer(nodes, "nonexistent")
+    assert len(reached) == 2 and ahead == []

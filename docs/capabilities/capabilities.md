@@ -10,6 +10,7 @@ PR** as the work item that changes behaviour (a ready-to-ship gate item).
 | Capability | What it covers |
 |------------|----------------|
 | [spec-workflow](spec-workflow.md) | The (brainstorm →) requirements → design → tasks → implementation loop, phase state machine, commands. |
+| [process-graph](process-graph.md) | The same loop made executable: nodes, entry/exit hooks, declared edges, the human gate, and the forced-transition escape hatch. |
 | [capability-docs](capability-docs.md) | This layer itself: the organized view of specs and its fold-in gate. |
 | [distribution](distribution.md) | Shipping the-loop as a Claude Code and Cursor plugin from one repo. |
 | [cli](cli.md) | The `the-loop` Python CLI companion and its commands. |
