@@ -1,0 +1,101 @@
+---
+type: tasks
+phase: tasks-breakdown
+workItem: issue-113
+status: in-review            # draft | in-review | approved
+approvedBy: []
+riskTier: 4
+---
+
+# Tasks: wire the ingress to the process graph
+
+> Phase 3 of 3. Derived from [`design.md`](design.md). DAG — a task may start once its
+> dependencies are ticked. `tdd.mode: standard`: each task writes its failing test first.
+
+```mermaid
+flowchart TD
+  T1[T1 Runtime.start] --> T4[T4 GraphLink class]
+  T2[T2 spec_id_for] --> T4
+  T3[T3 comments_from] --> T4
+  T4 --> T5[T5 config block]
+  T5 --> T6[T6 dispatcher call sites]
+  T6 --> T7[T7 integration tests]
+  T7 --> T8[T8 capability docs]
+```
+
+## T1 — `Runtime.start()` — enter the start node
+
+- **Requirements:** AC1, AC2, AC3
+- **Depends on:** —
+- **Red:** `test_graph_runtime.py::test_start_enters_start_node_and_runs_entry_chain`,
+  `::test_start_is_idempotent_when_pointer_exists`,
+  `::test_start_persists_pointer_before_entry_chain`
+- **Green:** add `start()` to `cli/the_loop/graph/runtime.py`; add `graph.started` to
+  `eventlog.EVENT_TYPES` (the drift test in `test_eventlog.py` enforces this).
+- [ ] Done
+
+## T2 — `spec_id_for()` — ref → spec-directory id
+
+- **Requirements:** AC8, A5
+- **Depends on:** —
+- **Red:** `test_graphlink.py::test_spec_id_for_github_ref`, `::test_spec_id_for_other_provider_is_none`
+- **Green:** derive `issue-<int>` from the parsed ref; `None` for non-GitHub providers.
+- [ ] Done
+
+## T3 — `comments_from()` — payload → attributed comments
+
+- **Requirements:** AC5, B1
+- **Depends on:** —
+- **Red:** `test_graphlink.py::test_comments_from_each_event_shape`,
+  `::test_comment_without_author_is_dropped`, `::test_unrelated_event_yields_no_comments`
+- **Green:** extract `issue_comment` / `pull_request_review_comment` / `pull_request_review`
+  bodies with their authors; drop any entry missing an author or a body.
+- [ ] Done
+
+## T4 — `GraphLink` — the seam, with every skip path
+
+- **Requirements:** AC4, AC9, AC11, AC12
+- **Depends on:** T1, T2, T3
+- **Red:** `test_graphlink.py::test_disabled_link_does_nothing`,
+  `::test_missing_spec_dir_is_skipped`, `::test_awaiting_start_is_skipped`,
+  `::test_runtime_exception_is_swallowed`, `::test_on_event_advances_with_comments`
+- **Green:** `cli/the_loop/graphlink.py` — `GraphLinkConfig`, `GraphLink.on_spawn`,
+  `GraphLink.on_event`; add `graph.link_failed` to `eventlog.EVENT_TYPES`.
+- [ ] Done
+
+## T5 — `routing.graph` config block
+
+- **Requirements:** AC12
+- **Depends on:** T4
+- **Red:** `test_graphlink.py::test_routing_config_parses_graph_block`
+- **Green:** `GraphLinkConfig` field on `RoutingConfig.from_mapping`; document the block
+  in `.the-loop/cli-config.schema.json` and `skills/the-loop/templates/cli-config.yaml`.
+- [ ] Done
+
+## T6 — Dispatcher call sites
+
+- **Requirements:** AC1, AC5, AC10, AC11
+- **Depends on:** T5
+- **Red:** `test_graphlink.py::test_dispatcher_starts_graph_on_spawn`,
+  `::test_dispatcher_advances_graph_on_delivery`
+- **Green:** construct `GraphLink` in `Dispatcher.__init__` (and rebuild it in the
+  hot-reload path); call `on_spawn` after a successful spawn, `on_event` after a
+  successful delivery.
+- [ ] Done
+
+## T7 — Integration tests (Gherkin)
+
+- **Requirements:** AC2, AC6, AC10, AC11, A1
+- **Depends on:** T6
+- **Red/Green:** `cli/tests/test_graphlink_integration.py` — spawn-starts-graph,
+  reviewer-approval-reaches-the-gate (authorized vs unauthorized), failing-hook-does-not-
+  cost-the-delivery.
+- [ ] Done
+
+## T8 — Capability docs + spec fold-in
+
+- **Requirements:** ready-to-ship gate
+- **Depends on:** T7
+- **Green:** update `docs/capabilities/process-graph.md` and `docs/capabilities/cli.md`
+  with the coupling and its history row; keep `execution-log.md` current.
+- [ ] Done
