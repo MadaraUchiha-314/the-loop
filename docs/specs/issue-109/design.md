@@ -2,8 +2,8 @@
 type: design
 phase: design
 workItem: issue-109
-status: draft                # draft | in-review | approved
-approvedBy: []
+status: approved             # draft | in-review | approved
+approvedBy: ["@MadaraUchiha-314 (PR #110: \"Go ahead with implementation\", 2026-07-28)"]
 overrides: {}
 ---
 
@@ -572,6 +572,52 @@ The load-bearing constraint is the one from [decision-030](../../decisions/decis
 and [decision-005](../../decisions/decision-005.md): the-loop stays thin Python that
 subprocess-drives official CLIs. A graph runtime that is 600 lines of dataclasses, a
 registry and a `while` loop honours that; one that pulls a workflow engine does not.
+
+## The escape hatch: forcing a transition
+
+Owner requirement: *"There needs to be an escape hatch that's exercisable by the authorized
+user running the-loop's CLI."* Right, and necessary — a determinism harness with no override
+is one wrong gate away from holding your own work item hostage.
+
+```bash
+the-loop graph force --work-item github:OWNER/REPO#109 \
+    --to implementation --reason "gate wrong: security section is in design/, not design.md"
+```
+
+### The design rule that keeps it honest
+
+> **A force moves the pointer. It never forges a verdict.**
+
+The forced transition is recorded as `forced` in graph state, and the bypassed node's gate
+keeps whatever it actually evaluated to. `the-loop check --recompute` therefore still reports
+that gate as **unmet** — so CI, the PR diff, and any reviewer see a forced transition for
+exactly what it is. The operator gets unblocked; nobody gets misled.
+
+That distinction is what lets the escape hatch be genuinely powerful without dissolving the
+architecture around it. An override that also marked the gate satisfied would be a
+verdict-forging tool, and every guarantee in this document would then be worth only as much
+as the operator's discipline.
+
+| Property | Behaviour |
+|---|---|
+| Authorization | **shell access to the machine running the CLI** — deliberately *not* a comment keyword, because comments are attacker-reachable on a public repo and a shell is not |
+| `--reason` | **required**; an unexplained override is refused |
+| Unknown target node | refused, with the valid ids listed — it bypasses *gates*, never the graph's vocabulary |
+| Undeclared transition | performed, with a warning that you are outside the model |
+| `required` gate bypassed (security review, mandated approval) | performed, with an explicit warning naming the guarantee, recorded in the ticket comment |
+| Backwards moves | same command — re-enters the node and re-runs its entry chain |
+| Audit trail | graph state · execution log · JSONL event log · a marked ticket comment |
+
+### Why bypassing a `required` gate is allowed
+
+Refusing would be theatre. An operator with shell access can already edit the artifacts,
+rewrite graph state, commit and push — a refusal buys nothing except a worse workaround that
+leaves *no* trace at all. **The real control is not prevention, it is that the bypass is
+loud and permanent**: four records, a warning naming the specific guarantee waived, and a
+`--recompute` that keeps telling the truth afterwards.
+
+An escape hatch that leaves no trace is how determinism dies quietly. This one cannot be
+used quietly.
 
 ## Data models
 

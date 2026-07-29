@@ -1,7 +1,7 @@
 ---
 type: execution-log
 workItem: issue-109
-phase: design                 # not-started | brainstorming | requirements-definition | design | tasks-breakdown | implementation | needs-review | complete
+phase: tasks-breakdown        # not-started | brainstorming | requirements-definition | design | tasks-breakdown | implementation | needs-review | complete
 status: in-progress           # in-progress | complete
 ---
 
@@ -15,9 +15,9 @@ status: in-progress           # in-progress | complete
 | Phase | Entered | Reviewed/approved by | Notes |
 |-------|---------|----------------------|-------|
 | brainstorming | 2026-07-26 | @MadaraUchiha-314 (PR #110, 2026-07-27) | Phase 0 entered: the ticket is explicitly exploratory, so the loop started at the root artifact. Two review rounds (Cursor hook correction; graph architecture). **Locked** on *"let's go ahead with the requirements and design"*. |
-| requirements-definition | 2026-07-27 | *(pending — this PR)* | `requirements.md` derived from the locked brainstorm; **rewritten 2026-07-28** for the nodes+hooks simplification. 9 requirements in EARS, threat-model-lite, risk tier **4** (explained in-doc rather than asserted). All open questions now resolved. |
-| design | 2026-07-27 | *(pending — this PR)* | `design.md` derived from the requirements; **rewritten 2026-07-28** from a fresh slate. Two concepts (node, hook) + one contract (`HookResult`), human gate as a node with `session: inherit`, opinionated integrations, MCP by delegation, no expression language. Decisions `041` and `042`. |
-| tasks-breakdown |  |  | Not started — the owner asked for requirements and design only. |
+| requirements-definition | 2026-07-27 | @MadaraUchiha-314 (PR #110, 2026-07-28) | `requirements.md` derived from the locked brainstorm; **rewritten 2026-07-28** for the nodes+hooks simplification. 9 requirements in EARS, threat-model-lite, risk tier **4** (explained in-doc rather than asserted). All open questions now resolved. |
+| design | 2026-07-27 | @MadaraUchiha-314 (PR #110, 2026-07-28) | `design.md` derived from the requirements; **rewritten 2026-07-28** from a fresh slate. Two concepts (node, hook) + one contract (`HookResult`), human gate as a node with `session: inherit`, opinionated integrations, MCP by delegation, no expression language. Decisions `041` and `042`. |
+| tasks-breakdown | 2026-07-28 | *(pending — this PR)* | `tasks.md` derived from the locked specs: **36 tasks in five vertical slices**, each independently mergeable. Slice A alone delivers the drift report this work item started from. |
 
 ## Pull requests
 
@@ -450,6 +450,39 @@ status: in-progress           # in-progress | complete
 - **Next:** phase approval for requirements and design.
 - **Blockers:** phase approval only.
 
+### 2026-07-28 — specs locked; escape hatch specified; tasks derived
+
+- **Phase:** design → tasks-breakdown
+- **Did:** owner: *"Go ahead with implementation. One thing I would also focus is how do we
+  add commands that can force the-loop from one step/phase to the other overriding all the
+  checks… an escape hatch exercisable by the authorized user running the-loop's CLI."*
+  - **Locked `requirements.md` and `design.md`** (`status: approved`, `approvedBy`), advanced
+    the phase to `tasks-breakdown`.
+  - **Specified the escape hatch (R10 + design section) before deriving tasks**, because it
+    changes what gets built. `the-loop graph force --work-item X --to <node> --reason "..."`.
+    The design rule that keeps it honest: **a force moves the pointer, it never forges a
+    verdict.** The transition is recorded as `forced` and the bypassed gate keeps its real
+    evaluation, so `check --recompute` still reports it unmet — the operator gets unblocked,
+    nobody gets misled. An override that also marked the gate satisfied would make every
+    guarantee in the design worth only as much as the operator's discipline.
+  - **Authorization is shell access, deliberately not a comment keyword** — comments are
+    attacker-reachable on a public repository, a shell is not. `--reason` is required.
+  - **Bypassing a `required` gate is allowed**, and that is the considered call: an operator
+    with shell access can already edit artifacts, rewrite state and push, so refusing buys
+    nothing except a worse workaround that leaves *no* trace. The real control is that the
+    bypass is **loud and permanent** — four audit records, an explicit warning naming the
+    guarantee waived, and a `--recompute` that keeps telling the truth afterwards.
+  - **Derived `tasks.md`: 36 tasks across five vertical slices**, each independently
+    mergeable and each leaving the repo working. Sequenced so **Slice A alone is useful** —
+    it produces the drift report over the 34 existing spec folders that motivated the whole
+    work item — and so nothing later is wasted if priorities shift. Every task names its
+    dependencies, its requirements and the test that proves it; security-relevant tasks name
+    the **negative** test.
+- **Checkpoint/tests:** markdownlint 0 errors; 6/6 mermaid blocks parse across the specs.
+- **Next:** begin Slice A (hook contract → registry → chain → validators → `check`), TDD per
+  `tdd.mode: standard`.
+- **Blockers:** none.
+
 ## Review cycles
 
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
@@ -458,6 +491,7 @@ status: in-progress           # in-progress | complete
 | 2 | human | @MadaraUchiha-314 | **Finding accepted and fixed** — the Cursor `stop` hook does exist; the "Cursor degrades to CI-only" framing was wrong. See the 2026-07-26 entry below. | [PR #110 review comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 3 | human | @MadaraUchiha-314 | **Direction accepted** — model the process as a graph of nodes with an orchestration layer determining edges; harness hooks are too fine-grained and phase-blind to be node boundaries. Architecture added; options re-cast as its layers. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 4 | human | @MadaraUchiha-314 | **Brainstorm locked** — *"let's go ahead with the requirements and design"*. Phase advanced; both artifacts derived. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
+| 12 | human | @MadaraUchiha-314 | **Approved requirements + design; go ahead with implementation.** Also asked for a force/override escape hatch exercisable by the authorized CLI user — specified as R10 before deriving tasks. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 11 | human | @MadaraUchiha-314 | **Make it a breaking change** — remove the legacy per-feature keys rather than shadowing them; `/the-loop:upgrade-the-loop` performs the migration. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 10 | human | @MadaraUchiha-314 | **Runtime + config reconciliation** — specify what compiles and runs the graph (no engine; the existing `Command`/`@register` pattern), and apply the integration pattern across both config files, removing triplicated `ghBinary`. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 9 | human | @MadaraUchiha-314 | **Transport made configurable** — support SDK+API and CLI per integration so operators choose; the agent's own calls left unconstrained (CLI/MCP/API). Turns the `gh` migration into an addition rather than a rewrite. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |

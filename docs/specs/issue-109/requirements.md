@@ -2,8 +2,8 @@
 type: requirements
 phase: requirements-definition
 workItem: issue-109
-status: draft                # draft | in-review | approved
-approvedBy: []
+status: approved             # draft | in-review | approved
+approvedBy: ["@MadaraUchiha-314 (PR #110: \"Go ahead with implementation\", 2026-07-28)"]
 collaborators: [architect, engineer, product-manager]
 riskTier: 4                  # gate classification reads untrusted text; outbound integrations
 overrides: {}
@@ -301,6 +301,42 @@ automation never costs me the ability to intervene.
    without one SHALL NOT create new labels.
 3. WHEN `workflow.phases` is present THEN the shipped graph SHALL be authoritative and the
    phase list treated as derived, warning on divergence.
+
+### Requirement 10 — The escape hatch: forcing a transition
+
+**User story:** As the authorized operator with shell access, I want to force a work item
+from one node to another regardless of its gates, so a wrong gate, a stuck classification or
+an unforeseen situation never leaves me unable to move my own work item.
+
+1. WHEN an operator runs `the-loop graph force --work-item <ref> --to <node>` THEN the system
+   SHALL move the work item's `currentNode` to the named node **regardless of whether the
+   current node's exit chain passes**.
+2. WHEN the target node is not declared in the graph THEN the system SHALL refuse and list the
+   valid node ids — the escape hatch bypasses **gates**, never the graph's own vocabulary.
+3. WHEN a force is performed THEN `--reason` SHALL be **required**; an unexplained override
+   SHALL be refused.
+4. **A force SHALL move the pointer, never forge a verdict.** The forced transition SHALL be
+   recorded as `forced` in graph state, and the bypassed node's gate SHALL remain recorded as
+   whatever it actually evaluated to. `the-loop check --recompute` SHALL therefore still
+   report that gate as unmet, so CI and any reviewer see a forced transition for what it is.
+5. WHEN a force is performed THEN it SHALL be recorded in **four** places: graph state (with
+   actor, timestamp, from, to, reason), the execution log, the JSONL event log, and a marked
+   comment on the work item — an escape hatch that leaves no trace is how determinism dies
+   quietly.
+6. WHEN a force is attempted THEN authorization SHALL be **shell access to the machine
+   running the CLI**, not a ticket comment keyword. Forcing SHALL NOT be exposed as a comment
+   command, because comments are attacker-reachable on a public repository while shell access
+   is not.
+7. WHEN an operator needs to re-run a completed node THEN the same command SHALL move the
+   work item *backwards*, re-entering that node and re-running its entry chain.
+8. WHEN a force targets a node the graph cannot reach from the current one THEN the system
+   SHALL still perform it, but SHALL warn that the transition is not a declared edge — the
+   operator is deliberately outside the model and should know it.
+9. WHEN a force would bypass a `required` gate (security review, a mandated human approval)
+   THEN the system SHALL perform it, warn explicitly which guarantee was bypassed, and record
+   that in the ticket comment — a human with shell access can already edit artifacts and
+   push, so refusing here would be theatre; **making it loud and permanent is the real
+   control**.
 
 ## Non-functional requirements
 
