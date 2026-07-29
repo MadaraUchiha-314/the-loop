@@ -86,7 +86,7 @@ class ReactionConfig:
             started=str(data.get("started", "eyes")),
             completed=str(data.get("completed", "hooray")),
             error=str(data.get("error", "confused")),
-            gh_binary=str(data.get("ghBinary", "gh")),
+            gh_binary=str(data.get("_ghBinary", "gh")),
         )
 
     def content_for(self, state: str) -> str:

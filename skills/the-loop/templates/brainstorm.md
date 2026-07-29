@@ -51,3 +51,10 @@ assert. Filled in as the brainstorm converges.
 When this is locked, what carries forward into `requirements.md`: the chosen direction,
 the user stories it implies, and the constraints that become acceptance criteria.
 Everything not carried forward stays here as the record of what was considered.
+
+## Review comments
+
+> Appended by the-loop's `record-feedback` hook when a human gate approves with
+> comments (issue-109). Append-only and attributed: an approval never silently
+> discards a reviewer's suggestions, and the feedback travels with the document
+> it concerns rather than living in a side-channel tracker.

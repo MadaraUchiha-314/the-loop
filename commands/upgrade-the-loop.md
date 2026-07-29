@@ -114,6 +114,29 @@ command reconciles them.
      falls back to the same defaults, `requireStartCommand: true` included (which is
      precisely why the decision above must be surfaced, not assumed).
 
+   **Integrations + the first breaking CLI-config change (issue-109, decision-041).**
+   Unlike everything above, this one **removes** keys and the CLI **refuses to start**
+   until it is applied — a config that still declares a removed key is an error, never a
+   silently ignored value (ignoring a setting the operator deliberately made would change
+   their behaviour without telling them). Do not hand-migrate it: run
+   `the-loop migrate-config --path <cli-config.yaml>` (`--dry-run` to preview), which is
+   the same deterministic, idempotent key-move the runtime tests, and paste its report
+   into the **migrated** group.
+   - `webhooks.ghWebhook.routing.{control,reactions,announce}.ghBinary` (three copies of
+     one setting) → **`integrations.github.cli.binary`**, declared once. WHEN the three
+     copies disagree THEN the migration keeps the first and reports the conflict as
+     **needs-user** — pick deliberately rather than inherit an accident.
+   - The config gains a top-level `version` (now `0.2.0`). Detection is by version, not by
+     key-sniffing, so re-running is exact and cheap.
+   - Add the `integrations` block from `templates/cli-config.yaml` if absent. Each provider
+     takes `transport: auto|api|cli|sdk` — `auto` preserves today's behaviour, so an
+     operator who does not care changes nothing. Only the Slack `sdk` transport needs the
+     extra install (`pip install "the-loopy-one[slack]"`); the `webhook` transport is
+     dependency-free.
+   - A **home-directory** CLI config is outside this command's reach as usual — but here
+     that matters more, because the CLI will refuse to start against it. Say so explicitly
+     and print the migrated block for the operator to paste.
+
    Validate each migrated file against its schema. The CLI config is opt-in: only migrate
    `.the-loop/cli-config.yaml` if the project already had one (scaffolded at a previous
    init/upgrade). Never scaffold one now if the project never had one and step 4's data

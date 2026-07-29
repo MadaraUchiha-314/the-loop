@@ -56,7 +56,7 @@ class AnnounceConfig:
         data = data or {}
         return cls(
             enabled=bool(data.get("enabled", True)),
-            gh_binary=str(data.get("ghBinary", "gh")),
+            gh_binary=str(data.get("_ghBinary", "gh")),
         )
 
 

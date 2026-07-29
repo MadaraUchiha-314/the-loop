@@ -62,6 +62,14 @@ the `/the-loop:work-on` superset command and granular per-step commands
   `contextManagement.taskBoundary` (default `compact`); mid-task only compaction is
   permitted (`midTask`), never clearing. Headless sessions reset by ending at the
   boundary and resuming fresh via the execution log.
+- **The phase state machine SHALL be executable, not only described.** Each phase above
+  is a **node** in the shipped process graph, with entry/exit hook chains that decide
+  when it is complete and declared edges that route on those decisions
+  ([process-graph](process-graph.md), issue-109). The prose in `reference/workflow.md`
+  and the graph in `cli/the_loop/graph/pdlc.yaml` describe the same loop; the graph is
+  the one that runs. `the-loop check <id>` reports where a work item actually stands
+  against its checked-in artifacts, and `--recompute` derives that verdict from the
+  artifacts alone rather than trusting stored state.
 - **A work item may be delivered by several PRs.** WHEN more than one PR delivers a
   work item (a spec PR then an implementation PR, a stacked series, a follow-up after
   review, one PR per repository) THEN the loop SHALL label **each** of them for routing
@@ -82,6 +90,7 @@ the `/the-loop:work-on` superset command and granular per-step commands
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-109 | The phase state machine became executable: every phase is a node in the shipped process graph, with hook chains deciding completion and declared edges routing on the outcome | [spec](../specs/issue-109/), [process-graph](process-graph.md), [decision-041](../decisions/decision-041.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/109) |
 | issue-101 | The execution log tracks a **list** of the PRs delivering a work item; each is labelled for routing and all must be merged/closed before `finish-tasks` completes the item | [spec](../specs/issue-101/), [decision-039](../decisions/decision-039.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/101) |
 | issue-59 | Added per-installation custom instruction docs the loop reads and honors (`customInstructions` config, onboarding group, precedence rules) | [spec](../specs/issue-59/), [decision-029](../decisions/decision-029.md) |
 | issue-48 | Added checkpoint-then-reset context-window management (clear at phase boundaries, compact at task boundaries, `contextManagement` config) | [spec](../specs/issue-48/), [decision-027](../decisions/decision-027.md) |

@@ -49,3 +49,10 @@ Record each task's test command and its **red→green** transition as evidence (
 After the last task, the review phase runs the self/critic rounds AND the **security
 review gate** (`security.review`, recorded in the execution log) before the work item
 can be marked ready.
+
+## Review comments
+
+> Appended by the-loop's `record-feedback` hook when a human gate approves with
+> comments (issue-109). Append-only and attributed: an approval never silently
+> discards a reviewer's suggestions, and the feedback travels with the document
+> it concerns rather than living in a side-channel tracker.

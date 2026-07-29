@@ -14,7 +14,7 @@
 # See .the-loop/config.yaml for the-loop's own PLUGIN config (ticketing,
 # workflow, tooling, reviews, …).
 
-version: "0.1.0"
+version: "0.2.0"
 
 # Everything the CLI GENERATES lives under this root (issue-106): the session
 # registry (sessions/), the control records (sessions/control/), the poll state
@@ -51,7 +51,6 @@ webhooks:
           stop: "the-loop:stop-execution"
           pause: "the-loop:pause-execution"
           resume: "the-loop:resume-execution"
-        ghBinary: gh
       # SECURITY: no fallback to this repo's plugin config (issue-63 review) —
       # empty here means nothing human-authored is actioned (fail closed).
       # Set this explicitly, e.g. ["MadaraUchiha-314"], to actually route events.
@@ -136,7 +135,6 @@ webhooks:
         started: eyes               # 👀 event dequeued for delivery/spawn
         completed: hooray           # 🎉 dispatch succeeded
         error: confused             # 😕 dispatch failed / worker crashed
-        ghBinary: gh
       # Session announcement comment (issue-86): when a tmux-mode session is
       # spawned, post the tmux session name + `tmux attach -t …` on the work item
       # so a human can watch it work. A respawn posts nothing further (same name,
@@ -145,7 +143,6 @@ webhooks:
       # paths, session ids or hostnames.
       announce:
         enabled: true
-        ghBinary: gh
 
 polling:
   intervalSeconds: 60
@@ -182,3 +179,23 @@ notifications:
     # dispatch-failed: [engineer]
     # session-died: [engineer]
     # event-dropped-unauthorized: [engineer]
+
+# How the-loop's OWN calls reach external services (issue-109, decision-042).
+# This governs the CONTROL PLANE only: what the AGENT does from inside its
+# session is unconstrained — CLI, MCP, API, whatever the harness has.
+#
+# `auto` resolves in a documented order (a configured token, then an installed
+# binary) and fails closed naming BOTH remedies. An explicit transport is
+# honoured verbatim and fails rather than silently degrading, because a
+# configured choice that quietly falls back is worse than an error.
+integrations:
+  github:
+    transport: auto             # auto | api | cli
+    api:
+      tokenEnv: [GH_TOKEN, GITHUB_TOKEN]
+      baseUrl: https://api.github.com
+    cli:
+      binary: gh                # inherits your `gh auth`, incl. enterprise/SSO
+  slack:
+    transport: sdk              # sdk (official slack-sdk, 0 deps) | webhook (raw POST)
+    urlEnv: THE_LOOP_SLACK_WEBHOOK_URL

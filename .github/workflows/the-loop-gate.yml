@@ -1,0 +1,59 @@
+# the-loop's own gate, running against the-loop (issue-109, task 35).
+#
+# `--recompute` is deliberate: it ignores graph state entirely and derives
+# completion from the checked-in artifacts, so a work item whose graph-state
+# claims a node is complete that the artifacts contradict fails here. Graph
+# state is a cache; this job is where that is enforced.
+name: the-loop gate
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # REQUIRED. The default shallow clone has no `origin/<base>`, so the
+          # diff below failed, produced an empty work-item list, and the job
+          # reported success having gated nothing. A gate that passes because it
+          # could not run is worse than no gate — it is this repository's whole
+          # defect, in the enforcement code for that defect.
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+      - name: Install
+        run: uv sync
+      - name: Validate the shipped process graph
+        run: uv run the-loop graph show --format json > /dev/null
+      - name: Gate the work items touched by this PR
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          # Fail closed. If the diff cannot be computed we do NOT know what this
+          # PR touches, and "I could not tell" must never render as "nothing to
+          # gate" — that is exactly how the silent pass happened.
+          if ! git rev-parse --verify "origin/${BASE_REF}" >/dev/null 2>&1; then
+            echo "::error::cannot resolve origin/${BASE_REF}; refusing to report a pass without gating"
+            exit 1
+          fi
+          changed=$(git diff --name-only "origin/${BASE_REF}...HEAD")
+          items=$(printf '%s\n' "$changed" \
+            | grep -oE 'docs/specs/[^/]+' | sed 's|docs/specs/||' | sort -u || true)
+          if [ -z "$items" ]; then
+            echo "no spec folders touched; nothing to gate"
+            exit 0
+          fi
+          echo "gating: $(echo "$items" | tr '\n' ' ')"
+          failed=0
+          for item in $items; do
+            echo "::group::$item"
+            # `--fail-on block` on purpose: a work item parked at a human
+            # approval node is the normal state of an open PR, and the reviewer
+            # approving *is* the resolution. CI fails on what an agent can fix.
+            uv run the-loop check "$item" --recompute --fail-on block || failed=1
+            echo "::endgroup::"
+          done
+          exit $failed

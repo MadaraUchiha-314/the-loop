@@ -65,7 +65,7 @@ def default_cli_config_path() -> Path:
     return Path.home() / ".the-loop" / CLI_CONFIG_FILENAME
 
 
-def load_cli_config(path: Path, strict: bool = False) -> dict:
+def _load_cli_config_raw(path: Path, strict: bool = False) -> dict:
     """Parse the whole CLI config file at ``path``.
 
     ``strict=False`` (defaults path): returns ``{}`` when the file is missing or
@@ -86,3 +86,44 @@ def load_cli_config(path: Path, strict: bool = False) -> dict:
     except Exception:  # noqa: BLE001 — a broken config must not break ingress
         logger.warning("could not parse %s; using built-in defaults", path)
         return {}
+
+
+def apply_integrations(config: dict) -> dict:
+    """Fan `integrations.github.cli.binary` out to the features that need it.
+
+    issue-109 removed the three per-feature `ghBinary` keys in favour of one
+    `integrations` block. The features still need a binary at call time, so the
+    resolved value is injected here under a private key — declared once by the
+    operator, available everywhere internally.
+    """
+    binary = str(
+        (((config.get("integrations") or {}).get("github") or {}).get("cli") or {}).get(
+            "binary", "gh"
+        )
+    )
+    routing = ((config.get("webhooks") or {}).get("ghWebhook") or {}).get(
+        "routing"
+    ) or {}
+    for feature in ("control", "reactions", "announce"):
+        section = routing.get(feature)
+        if isinstance(section, dict):
+            section["_ghBinary"] = binary
+    return config
+
+
+def load_cli_config(path: Path, strict: bool = False) -> dict:
+    """Load the CLI config, refusing one that predates a breaking change.
+
+    The refusal is deliberate and loud (issue-109, R6a.6): a removed key is
+    never silently ignored, because ignoring a value the operator set would
+    change their behaviour without telling them.
+    """
+    data = _load_cli_config_raw(path, strict=strict)
+    if data:
+        from .migrations import assert_current
+
+        assert_current(data)
+        from .cli_config import apply_integrations as _apply
+
+        _apply(data)
+    return data

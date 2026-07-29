@@ -47,11 +47,36 @@ def test_from_mapping_overrides_one_keyword_and_keeps_the_rest():
 
 def test_from_mapping_reads_the_switches():
     config = ControlConfig.from_mapping(
-        {"enabled": False, "requireStartCommand": False, "ghBinary": "/usr/bin/gh"}
+        {"enabled": False, "requireStartCommand": False}
     )
     assert config.enabled is False
     assert config.require_start_command is False
-    assert config.gh_binary == "/usr/bin/gh"
+
+
+def test_the_binary_now_comes_from_the_integrations_block(tmp_path):
+    """issue-109: `ghBinary` was removed; one `integrations` block replaces it.
+
+    The removed key is not quietly honoured here — a config that still declares
+    it never reaches this code, because `load_cli_config` refuses it outright.
+    """
+    import yaml
+
+    from the_loop import cli_config
+
+    path = tmp_path / "cli-config.yaml"
+    path.write_text(
+        yaml.safe_dump(
+            {
+                "version": "0.2.0",
+                "integrations": {"github": {"cli": {"binary": "/usr/bin/gh"}}},
+                "webhooks": {"ghWebhook": {"routing": {"control": {"enabled": True}}}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    data = cli_config.load_cli_config(path)
+    section = data["webhooks"]["ghWebhook"]["routing"]["control"]
+    assert ControlConfig.from_mapping(section).gh_binary == "/usr/bin/gh"
 
 
 def test_an_empty_keyword_disables_only_that_command():

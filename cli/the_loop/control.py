@@ -133,7 +133,7 @@ class ControlConfig:
             enabled=bool(data.get("enabled", True)),
             require_start_command=bool(data.get("requireStartCommand", True)),
             keywords=keywords,
-            gh_binary=str(data.get("ghBinary", "gh")),
+            gh_binary=str(data.get("_ghBinary", "gh")),
         )
 
     def keyword(self, command: str) -> str:

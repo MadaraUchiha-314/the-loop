@@ -1,0 +1,177 @@
+# the-loop's product-development lifecycle, as an explicit graph (issue-109).
+#
+# This file ships WITH THE PLUGIN and is the-loop's own. A repository cannot
+# define or override it — a repo-supplied graph is ignored with a warning.
+# It is fully declarative precisely so user-authored graphs can arrive later as
+# a distribution change rather than a rewrite.
+#
+# A node is a step: a place the work item IS. It has entry and exit hook chains.
+# A node is complete when its exit hooks all pass, waiting when one returns
+# `wait`, blocked when one returns `block`. No prose is ever parsed.
+#
+# Note the six nodes between `implementation` and `complete`. They were all one
+# `needs-review` label before this graph existed — which is exactly where the
+# measured drift piled up (23 of 26 execution logs stopped there).
+#
+# Spec: docs/specs/issue-109/  ·  Decisions: 041, 042
+
+version: 1
+start: brainstorming
+
+nodes:
+  - id: brainstorming
+    phase: brainstorming
+    actor: agent
+    optional: true          # a work item whose scope is already clear skips it
+    produces: [brainstorm.md]
+    command: brainstorm
+    stage: brainstorm
+    entry: [set-phase-label, log-entry]
+    exit:
+      - {hook: validate-artifacts, with: {locked: true, sections: ["Problem / opportunity", "Open questions"]}}
+      - lint-artifacts
+
+  - id: requirements-definition
+    phase: requirements-definition
+    actor: agent
+    produces: [requirements.md]
+    command: new-requirement
+    stage: requirements
+    entry: [set-phase-label, log-entry]
+    exit:
+      - {hook: validate-artifacts, with: {locked: true, sections: ["Requirements", "Security considerations"]}}
+      - lint-artifacts
+
+  - id: requirements-approval
+    actor: human
+    session: inherit
+    entry: [set-phase-label, request-review, {hook: notify, with: {event: phase-approval-pending}}]
+    exit:
+      - classify-feedback
+      - {hook: record-feedback, with: {into: requirements.md}}
+
+  - id: design
+    phase: design
+    actor: agent
+    produces: [design.md]
+    command: create-design
+    stage: design
+    entry: [set-phase-label, log-entry]
+    exit:
+      - {hook: validate-artifacts, with: {locked: true, sections: ["Architecture", "Security design", "Testing strategy"]}}
+      - {hook: enforces-boundaries-from, with: {upstream: requirements.md, markers: ["trust boundary", "abuse case"]}}
+      - lint-artifacts
+
+  - id: design-approval
+    actor: human
+    session: inherit
+    entry: [set-phase-label, request-review, {hook: notify, with: {event: phase-approval-pending}}]
+    exit:
+      - classify-feedback
+      - {hook: record-feedback, with: {into: design.md}}
+
+  - id: tasks-breakdown
+    phase: tasks-breakdown
+    actor: agent
+    produces: [tasks.md]
+    command: create-tasks-plan
+    stage: tasks
+    entry: [set-phase-label, log-entry]
+    exit:
+      - {hook: validate-artifacts, with: {locked: true, sections: ["Task list"]}}
+      - lint-artifacts
+
+  - id: implementation
+    phase: implementation
+    actor: agent
+    produces: [tasks.md]
+    command: execute-tasks
+    stage: implementation
+    entry: [set-phase-label, log-entry]
+    exit:
+      - {hook: validate-artifacts, with: {checkmarks: complete}}
+      - verify-tests
+
+  # --- everything below was ONE `needs-review` label before this graph -------
+
+  - id: self-review
+    phase: needs-review
+    actor: agent
+    stage: self-review
+    entry: [set-phase-label, log-entry]
+    exit: [{hook: validate-artifacts, with: {sections: ["Review cycles"]}}]
+
+  - id: critic-review
+    actor: agent
+    stage: critic-review
+    entry: [log-entry]
+    exit: [{hook: validate-artifacts, with: {sections: ["Review cycles"]}}]
+
+  - id: security-review
+    actor: agent
+    required: true          # never skippable, at any risk tier
+    stage: security-review
+    entry: [log-entry]
+    exit: [{hook: validate-artifacts, with: {sections: ["Security review (gate)"]}}]
+
+  - id: evidence
+    actor: agent
+    stage: evidence
+    entry: [log-entry]
+    exit: [{hook: validate-artifacts, with: {sections: ["Final validation evidence"]}}]
+
+  - id: capability-docs
+    actor: agent
+    stage: capability-docs
+    entry: [log-entry]
+    exit: [{hook: validate-artifacts, with: {sections: ["Capability docs"]}}]
+
+  - id: reviewer-briefing
+    actor: agent
+    stage: reviewer-briefing
+    entry: [log-entry]
+    exit: [{hook: validate-artifacts, with: {sections: ["Pull requests"]}}]
+
+  - id: human-approval
+    actor: human
+    session: inherit
+    required: true          # the tier-4 gate; bypassable only by an audited force
+    entry: [set-phase-label, request-review, {hook: notify, with: {event: pr-review-pending}}]
+    exit: [classify-feedback]
+
+  - id: complete
+    phase: complete
+    actor: agent
+    command: finish-tasks
+    stage: complete
+    terminal: true
+    entry: [set-phase-label, log-entry]
+    exit: []
+
+  - id: escalated
+    actor: human
+    terminal: true
+    entry: [{hook: notify, with: {event: conflict-escalated}}]
+    exit: []
+
+edges:
+  - {from: brainstorming, to: requirements-definition, on: pass}
+  - {from: requirements-definition, to: requirements-approval, on: pass}
+  - {from: requirements-approval, to: design, on: approved}
+  - {from: requirements-approval, to: design, on: approved-with-comments}
+  - {from: requirements-approval, to: requirements-definition, on: changes-requested}
+  - {from: design, to: design-approval, on: pass}
+  - {from: design-approval, to: tasks-breakdown, on: approved}
+  - {from: design-approval, to: tasks-breakdown, on: approved-with-comments}
+  - {from: design-approval, to: design, on: changes-requested}
+  - {from: tasks-breakdown, to: implementation, on: pass}
+  - {from: implementation, to: self-review, on: pass}
+  - {from: self-review, to: critic-review, on: pass}
+  - {from: critic-review, to: security-review, on: pass}
+  - {from: security-review, to: evidence, on: pass}
+  - {from: evidence, to: capability-docs, on: pass}
+  - {from: capability-docs, to: reviewer-briefing, on: pass}
+  - {from: reviewer-briefing, to: human-approval, on: pass}
+  - {from: human-approval, to: complete, on: approved}
+  - {from: human-approval, to: complete, on: approved-with-comments}
+  - {from: human-approval, to: implementation, on: changes-requested}
