@@ -1,3 +1,9 @@
+## v2.1.0 (2026-07-29)
+
+### Feat
+
+- **issue-113**: drive the process graph from the ingress (#114)
+
 ## v2.0.1 (2026-07-29)
 
 ### Fix
