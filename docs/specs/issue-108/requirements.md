@@ -208,6 +208,11 @@ being improvised per session.
   stays with the harness and `reference/reviewing.md`.
 - Posting the critic's findings to GitHub. The harness posts them, as it does today, so
   the loop-prevention marker and reply-first-then-fix protocol keep one owner.
+  **Deferred, not excluded** (PR #115 review): a critic's findings only ever land when a
+  the-loop harness happens to be driving the round, so a third-party critic's findings land
+  nowhere — the transparency gap the owner raised. the-loop gains a posting surface in
+  **issue-116**. Note this does not reverse decision-043 §6: posting findings is not owning
+  round counts or convergence, so the loop stays with the harness.
 - Parsing a critic's prose into structured findings. Reviewers write review comments; the
   envelope carries their text verbatim.
 - Interactive/TUI critics, and resuming a critic conversation across rounds. Each round is

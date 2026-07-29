@@ -232,8 +232,27 @@ execution log's review table.
 
 ## Security design
 
-- **AuthN/AuthZ:** none introduced. `critic run` is a local command run by whoever already
-  has shell access to the checkout; it grants no new capability to a remote actor.
+- **AuthN/AuthZ:** none introduced **by this work item**. `critic run` is a local command run
+  by whoever already has shell access to the checkout; it grants no new capability to a
+  remote actor, and the findings are posted by the running harness under the operator's own
+  credentials (carrying `SELF_COMMENT_MARKER`, so they are dropped before `is_authorized`
+  ever runs).
+  That claim holds only for *this* shape — a critic as a local subprocess whose output the
+  same harness posts. It does **not** hold once a critic is an entity that speaks on the PR
+  under its **own** identity, which is what makes a third-party critic (one the-loop did not
+  spawn) possible at all. Raised on PR #115 and **decided there: option (a)** — a critic
+  declares `identity: <gh-login>` in `harness-config.yaml` (per repo, committed) and the
+  operator separately allowlists that login in `routing.authorizedUsers`
+  (`cli-config.yaml`, operator-wide). Two files on purpose: deriving authorization from the
+  repo-tracked file would be the coupling [decision-032](../../decisions/decision-032.md)
+  forbids **and** a privilege-escalation path, since a drive-by pull request could then
+  grant an identity the right to steer the-loop.
+  The implementation — the `identity` field, the authz wiring, and the interaction with the
+  self-comment marker (a critic that speaks under its own identity must *not* carry the
+  marker, or its findings are transparent-but-inert; and once unmarked they become
+  actionable agent input, which is precisely the surface `authorizedUsers` exists to close —
+  the critic is trusted-to-speak, never trusted-to-command) — is **issue-116**, stacked on
+  this work item so this tier-4 item's passed security gate is not silently re-opened.
 - **Input validation & injection surfaces:**
   - **Command injection — the primary surface.** `subprocess.run(argv, shell=False)`, an
     argv *list*, always. Placeholder substitution writes into a single argv element and can

@@ -78,6 +78,37 @@ hand — exactly the non-determinism the loop exists to remove.
     to weigh. Findings are posted under the critic's `[<harness>/<model>]` attribution
     prefix, so a reader can always see whose words they are.
 
+## Amendment (PR #115 review, 2026-07-29)
+
+The owner pushed back on the design's *"AuthN/AuthZ: none introduced"* claim: for critic
+reviews to be **transparent** and to **scale to critics the-loop did not trigger**, the
+critiquing entity should be an authorized user, and its comments should land in the PR
+itself. Both accepted; neither changes (6) above, and both land in **issue-116** rather than
+here, so this tier-4 item's passed security gate is not silently re-opened.
+
+- **(11)** **A critic is an entity with an identity, and authorization is declared in two files.**
+  A critic declares `identity: <gh-login>` in `harness-config.yaml` (per repo, committed);
+  the operator separately allowlists that login in `routing.authorizedUsers`
+  (`cli-config.yaml`, operator-wide). Owner decision on PR #115: *"I am good with
+  option-a."*
+  Rejected in the same breath: deriving authorization from the critic list itself
+  (*"any configured critic is implicitly authorized"*). It would make a repo-tracked file
+  grant daemon-side trust — the exact coupling [decision-032](decision-032.md) forbids —
+  and it is a **privilege-escalation path**: a drive-by pull request adding a `critics[]`
+  entry would grant that identity the right to steer the-loop.
+- **(12)** **the-loop posts critic findings to the PR.** Leaving posting to the harness means a
+  critic's findings land only when a the-loop harness happens to be driving the round, so a
+  third-party critic's findings land nowhere — the transparency gap. the-loop gains a
+  posting surface (`critic post` / `--post-to <pr>`). This does **not** reverse (6):
+  posting findings is not owning round counts or convergence.
+- **(13)** **Trusted-to-speak, never trusted-to-command.** The self-comment marker drops what
+  the-loop itself posts *before* `is_authorized` runs, so findings the-loop posts on a
+  critic's behalf are transparent-but-inert; a critic posting under its own unmarked
+  identity is actionable, which is exactly the prompt-injection surface `authorizedUsers`
+  exists to close. The reconciliation is a stated rule rather than an implementation
+  accident: a critic's identity earns its findings a place in the record, never authority
+  over the loop.
+
 ## Consequences
 
 **Positive.**
