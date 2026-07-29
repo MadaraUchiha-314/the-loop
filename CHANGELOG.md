@@ -1,3 +1,18 @@
+## v2.0.0 (2026-07-29)
+
+### BREAKING CHANGE
+
+- the CLI config now carries a `version` (0.2.0) and the three
+`webhooks.ghWebhook.routing.{control,reactions,announce}.ghBinary` keys are
+removed in favour of one `integrations.github.cli.binary`. A config still
+declaring a removed key makes the CLI refuse to start rather than silently
+ignore a value the operator set. `the-loop migrate-config` (and
+`/the-loop:upgrade-the-loop`, which now shells out to it) performs the move.
+
+### Feat
+
+- **issue-109**: the PDLC as an executable graph of nodes with entry/exit hooks (#110)
+
 ## v1.0.0 (2026-07-26)
 
 ### BREAKING CHANGE
