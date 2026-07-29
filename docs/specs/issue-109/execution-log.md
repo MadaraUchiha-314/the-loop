@@ -1,7 +1,7 @@
 ---
 type: execution-log
 workItem: issue-109
-phase: tasks-breakdown        # not-started | brainstorming | requirements-definition | design | tasks-breakdown | implementation | needs-review | complete
+phase: implementation         # not-started | brainstorming | requirements-definition | design | tasks-breakdown | implementation | needs-review | complete
 status: in-progress           # in-progress | complete
 ---
 
@@ -17,7 +17,7 @@ status: in-progress           # in-progress | complete
 | brainstorming | 2026-07-26 | @MadaraUchiha-314 (PR #110, 2026-07-27) | Phase 0 entered: the ticket is explicitly exploratory, so the loop started at the root artifact. Two review rounds (Cursor hook correction; graph architecture). **Locked** on *"let's go ahead with the requirements and design"*. |
 | requirements-definition | 2026-07-27 | @MadaraUchiha-314 (PR #110, 2026-07-28) | `requirements.md` derived from the locked brainstorm; **rewritten 2026-07-28** for the nodes+hooks simplification. 9 requirements in EARS, threat-model-lite, risk tier **4** (explained in-doc rather than asserted). All open questions now resolved. |
 | design | 2026-07-27 | @MadaraUchiha-314 (PR #110, 2026-07-28) | `design.md` derived from the requirements; **rewritten 2026-07-28** from a fresh slate. Two concepts (node, hook) + one contract (`HookResult`), human gate as a node with `session: inherit`, opinionated integrations, MCP by delegation, no expression language. Decisions `041` and `042`. |
-| tasks-breakdown | 2026-07-28 | *(pending — this PR)* | `tasks.md` derived from the locked specs: **36 tasks in five vertical slices**, each independently mergeable. Slice A alone delivers the drift report this work item started from. |
+| tasks-breakdown | 2026-07-28 | @MadaraUchiha-314 (PR #110, 2026-07-28) | `tasks.md` derived from the locked specs: **36 tasks in five vertical slices**, each independently mergeable. Slice A alone delivers the drift report this work item started from. |
 
 ## Pull requests
 
@@ -481,6 +481,54 @@ status: in-progress           # in-progress | complete
 - **Checkpoint/tests:** markdownlint 0 errors; 6/6 mermaid blocks parse across the specs.
 - **Next:** begin Slice A (hook contract → registry → chain → validators → `check`), TDD per
   `tdd.mode: standard`.
+- **Blockers:** none.
+
+### 2026-07-28 — implementation: the graph runtime, end to end
+
+- **Phase:** tasks-breakdown → implementation
+- **Did:** owner: *"let's implement it end to end."* **25 of 36 tasks** landed in one pass;
+  `make check` green (ruff, ruff-format, pyright, markdownlint over 250 files, config
+  validation, **658 tests** — 92 of them new).
+  - **Slice A complete** — `graph/contract.py` (HookContext/HookResult/Message),
+    `registry.py` (`@hook`, mirroring `commands/base.py`'s `@register`), `chain.py`
+    (short-circuit, raising-hook-becomes-block), `hooks/artifacts.py`, `hooks/lint.py`,
+    `hooks/tests.py`, and `the-loop check` with `--all`/`--recompute`/`--format json`.
+  - **Slice B complete** — `model.py` (compile: parse → validate → resolve → index →
+    freeze), `state.py` (atomic write, corrupt file kept), `runtime.py` (advance, attempt
+    accounting, escalate-on-repeat), event-log records.
+  - **Slice C mostly** — `Integration` protocol with declared capabilities, GitHub `api`
+    (stdlib HTTP) and `cli` (wrapping the existing `gh` path), Slack `sdk` + `webhook`,
+    `auto` resolution failing closed with **both** remedies. The breaking config migration
+    and `mcp-call` remain.
+  - **Slice D mostly** — the shipped `skills/the-loop/graph/pdlc.yaml` (16 nodes, 20
+    edges), side-effect hooks, `classify-feedback` (authorized authors only) and
+    `record-feedback` (appends to the artifact's `## Review comments`). `the-loop run`
+    remains.
+  - **Slice E core** — `the-loop graph force` with its audit ledger. The invariant has a
+    test of its own: `test_force_does_not_mark_the_bypassed_gate_satisfied` forces past an
+    unmet gate and asserts `--recompute` **still** reports it unmet.
+  - **Three real defects found by running the thing against this repo**, which is the
+    point of the whole work item:
+    1. `sections()` reported `## Requirements` as *empty* because its body is entirely
+       `###` subsections. A gate that cries wolf on every well-structured document trains
+       people to ignore gates, so a section now owns its subsections.
+    2. The shipped graph made **brainstorming mandatory**, contradicting the workflow
+       reference ("a work item whose scope is already clear starts directly at
+       requirements-definition"). Nodes gained `optional`, and an optional node that
+       produced nothing is a **skip**, not a finding.
+    3. `enforces-boundaries-from` flagged that `design.md` never mapped abuse cases to
+       mechanisms — which the-loop's own design template requires. Fixed the artifact
+       rather than weakening the gate; the design now carries the abuse-case coverage table.
+  - Also hit YAML 1.1's boolean coercion of a bare `on:` key (the GitHub Actions trap).
+    Graph authors should not have to know that, so the loader accepts both forms rather
+    than making a quoted `"on"` a rule discovered by having an edge silently vanish.
+- **Checkpoint/tests:** `make check` green. **Drift report** (`the-loop check --all
+  --recompute`, exit 1) over 35 spec folders: **0/35 satisfied** — 18 `requirements.md`
+  missing a Security considerations section, 15 still `status: draft`, 6 missing entirely.
+  That is the number this work item exists to make visible, now produced mechanically in
+  under a second.
+- **Next:** the 11 outstanding tasks — chiefly the breaking config migration (20, 21),
+  `the-loop run` (30), the harness stop-hook wrappers (34) and the CI gate (35).
 - **Blockers:** none.
 
 ## Review cycles

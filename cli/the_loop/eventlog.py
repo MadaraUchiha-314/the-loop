@@ -265,6 +265,34 @@ EVENT_TYPES: Dict[str, str] = {
     "config.reloaded": (
         "A config edit was hot-reloaded into a running process (detail)."
     ),
+    # -- process graph (source: any; issue-109) -------------------------------
+    "graph.advanced": (
+        "A work item's exit chain passed and the matching edge was taken "
+        "(work_item, node, to, outcome)."
+    ),
+    "graph.blocked": (
+        "A node's exit chain was blocked by a hook; the node did not advance "
+        "and the finding went back to the harness (work_item, node, hook)."
+    ),
+    "graph.parked": (
+        "A node is waiting on a human; its exit chain re-runs on the next "
+        "inbound event (work_item, node)."
+    ),
+    "graph.escalated": (
+        "A node exhausted its attempts, or repeated the same finding, and "
+        "stopped advancing (work_item, node, attempts, repeated)."
+    ),
+    "graph.no_edge": (
+        "No declared edge matched a node's outcome, so the work item was "
+        "parked rather than guessed at (work_item, node, outcome)."
+    ),
+    "graph.completed": ("A work item reached a terminal node (work_item, node)."),
+    "graph.forced": (
+        "An operator forced a transition regardless of gates — the escape "
+        "hatch. The pointer moved; the bypassed gate keeps its real verdict, "
+        "so `check --recompute` still reports it (work_item, from, to, actor, "
+        "reason)."
+    ),
 }
 
 

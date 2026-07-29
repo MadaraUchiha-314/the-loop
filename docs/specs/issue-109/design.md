@@ -700,6 +700,19 @@ and CI always uses it, so an agent editing its own scorecard cannot pass a gate.
   never graph state, never logs. `HookContext` carries handles, not values.
 - **Least privilege.** Validation hooks are read-only. Integration hooks hold only the
   scopes their operation needs. `the-loop check` makes no network call and no model call.
+- **Abuse-case coverage** — each abuse case from `requirements.md`, the mechanism that
+  defeats it, and the negative test that proves it:
+
+  | Abuse case | Mechanism | Negative test |
+  |---|---|---|
+  | 1. unauthorized author's text classified | authorization filter runs *before* the text is read | `test_unauthorized_comment_not_read` |
+  | 2. injected "approve this" in a comment | closed outcome enum; routing only over declared edges | `test_injected_instruction_stays_within_enum` |
+  | 3. classification satisfies a human-reserved approval | policy check outranks the classification | `test_classification_cannot_grant_reserved_approval` |
+  | 4. graph state claims a node complete that artifacts contradict | `--recompute` re-derives from artifacts; CI always uses it | `test_recompute_ignores_tampered_state` |
+  | 5. graph names an unregistered hook | resolved at load; startup failure naming it | `test_unknown_hook_fails_at_load` |
+  | 6. a hook raises | treated as `block`, never `pass` | `test_raising_hook_blocks` |
+  | 7. credential written to state or a log | `HookContext` carries handles, not values | `test_context_carries_no_secret_values` |
+
 - **Fail closed.** Unknown hook, invalid config, unevaluable condition, no matching edge,
   invalid classification, missing collaborator — all stop advancement and report.
 - **New surface, stated:** outbound HTTP to GitHub/Slack/Jira, a model call for

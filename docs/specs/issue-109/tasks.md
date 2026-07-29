@@ -35,43 +35,43 @@ motivates it**. Security-relevant tasks name the **negative** test proving the b
 
 ### Slice A — the contract and the checker
 
-- [ ] 1. `HookContext` / `HookResult` dataclasses and the `Message` type
+- [x] 1. `HookContext` / `HookResult` dataclasses and the `Message` type
   - `cli/the_loop/graph/contract.py`; `status` is `pass|block|wait|skip`; `messages` ordered;
     `data` free-form; `retriable` defaulting true. Secret **handles** only (R2.7).
   - _Depends on:_ none
   - _Requirements:_ R2.1, R2.2, R2.7
   - _Test:_ `pytest cli/tests/test_graph_contract.py` (red→green)
-- [ ] 2. Hook registry — `@hook("name")`, `_REGISTRY`, `get_hook()`, `iter_hooks()`
+- [x] 2. Hook registry — `@hook("name")`, `_REGISTRY`, `get_hook()`, `iter_hooks()`
   - Mirrors `commands/base.py`'s `Command`/`@register` pattern exactly (R6b.2). Duplicate
     name is a `ValueError` at import, as the command registry already does.
   - _Depends on:_ 1
   - _Requirements:_ R6b.2
   - _Test:_ `pytest cli/tests/test_graph_registry.py` — registration, lookup, duplicate refusal
-- [ ] 3. Chain executor — run hooks in order, short-circuit on first non-`pass`
+- [x] 3. Chain executor — run hooks in order, short-circuit on first non-`pass`
   - A raising or timing-out hook becomes `block` with `retriable=False` — **never** `pass`.
   - _Depends on:_ 1, 2
   - _Requirements:_ R2.6, R3.1, R3.2, R3.4
   - _Test:_ `pytest cli/tests/test_graph_chain.py`; **negative:** a hook that raises yields
     `block`, not `pass` (abuse case 6)
-- [ ] 4. `validate-artifacts` hook — existence, front-matter lock, required sections
+- [x] 4. `validate-artifacts` hook — existence, front-matter lock, required sections
   - **Aggregates**: every unmet requirement in one result, not one per round (R3.5).
   - _Depends on:_ 2, 3
   - _Requirements:_ R5.2, R3.5
   - _Test:_ `pytest cli/tests/test_hook_validate_artifacts.py` — asserts a doc missing two
     sections yields **one** result with **two** messages
-- [ ] 5. `lint-artifacts` hook — markdownlint + `diagramsRender`
+- [x] 5. `lint-artifacts` hook — markdownlint + `diagramsRender`
   - Mermaid blocks extracted and parsed; the incident that motivated this is in `design.md`.
   - _Depends on:_ 2, 3
   - _Requirements:_ R5.4
   - _Test:_ `pytest cli/tests/test_hook_lint_artifacts.py` — a fixture with a backticked
     mermaid label blocks
-- [ ] 6. `the-loop check` command — `--format table|json`, `--all`, `--recompute`
+- [x] 6. `the-loop check` command — `--format table|json`, `--all`, `--recompute`
   - Read-only: **no network, no subprocess, no mutation** (R8.8).
   - _Depends on:_ 3, 4, 5
   - _Requirements:_ R8.8, R8.4
   - _Test:_ `pytest cli/tests/test_check_integration.py`; **Scenario:** _check reports the
     specific unmet predicate for a design node missing its Security design section_
-- [ ] 7. Run `the-loop check --all` over this repository and record the drift report
+- [x] 7. Run `the-loop check --all` over this repository and record the drift report
   - This is the evidence the work item promised: the 34 existing spec folders, baselined.
   - _Depends on:_ 6
   - _Requirements:_ R8.4
@@ -79,65 +79,65 @@ motivates it**. Security-relevant tasks name the **negative** test proving the b
 
 ### Slice B — the graph and the runtime
 
-- [ ] 8. Graph model + loader — parse, validate, resolve, index, freeze
+- [x] 8. Graph model + loader — parse, validate, resolve, index, freeze
   - Every structural failure is a **startup** failure naming the offending element (R6b.1).
     Cycles accepted (R1.6).
   - _Depends on:_ 2
   - _Requirements:_ R1.1, R1.2, R1.3, R1.5, R1.6, R6b.1
   - _Test:_ `pytest cli/tests/test_graph_model.py`; **negative:** an edge naming an
     undeclared node fails at load with the id (abuse case 5)
-- [ ] 9. Repo-supplied graph is ignored with a warning
+- [x] 9. Repo-supplied graph is ignored with a warning
   - _Depends on:_ 8
   - _Requirements:_ R1.4
   - _Test:_ **negative** — `test_repo_graph_ignored`; **Scenario:** _A repository declaring
     workflow.graph is ignored with a warning_
-- [ ] 10. `GraphState` — load/save (atomic), `reconstruct()` from artifacts
+- [x] 10. `GraphState` — load/save (atomic), `reconstruct()` from artifacts
   - Persist **before** the dependent side effect (R8.2). Unparseable → reconstruct, warn,
     **keep** the file (R8.3).
   - _Depends on:_ 1
   - _Requirements:_ R8.1, R8.2, R8.3
   - _Test:_ `pytest cli/tests/test_graph_state.py`; **Scenario:** _A work item with a deleted
     graph-state file resumes at the node its artifacts imply_
-- [ ] 11. Edge resolution — `on: <outcome>`, first-declared wins, no-match parks + escalates
+- [x] 11. Edge resolution — `on: <outcome>`, first-declared wins, no-match parks + escalates
   - _Depends on:_ 8, 10
   - _Requirements:_ R1.5
   - _Test:_ `pytest cli/tests/test_graph_edges.py`
-- [ ] 12. Runtime `advance()` + attempt accounting + escalation
+- [x] 12. Runtime `advance()` + attempt accounting + escalation
   - Same predicate twice consecutively, or `maxAttempts`, escalates and stops (R8.5).
   - _Depends on:_ 3, 10, 11
   - _Requirements:_ R8.5, R8.6
   - _Test:_ `pytest cli/tests/test_graph_runtime.py`; **Scenario:** _A node failing the same
     predicate twice escalates instead of retrying_
-- [ ] 13. Event-log records for every transition, hook non-`pass`, and edge taken
+- [x] 13. Event-log records for every transition, hook non-`pass`, and edge taken
   - _Depends on:_ 12
   - _Requirements:_ R8.7
   - _Test:_ `pytest cli/tests/test_graph_eventlog.py`
 
 ### Slice C — integrations and the breaking migration
 
-- [ ] 14. `Integration` protocol + capability declaration + load-time capability check
+- [x] 14. `Integration` protocol + capability declaration + load-time capability check
   - A graph needing an unimplemented op fails **at startup** naming op, target and both
     fixes (R6.9).
   - _Depends on:_ 8
   - _Requirements:_ R6.8, R6.9, R6.10
   - _Test:_ `pytest cli/tests/test_integration_capabilities.py`
-- [ ] 15. `integrations` config block + `auto` resolution + fail-closed
+- [x] 15. `integrations` config block + `auto` resolution + fail-closed
   - `auto` = token → binary → fail naming **both** remedies; explicit transport never
     silently degrades (R6.3, R6.4).
   - _Depends on:_ 14
   - _Requirements:_ R6.2, R6.3, R6.4
   - _Test:_ `pytest cli/tests/test_integration_config.py`
-- [ ] 16. GitHub `cli` transport — wrap the existing `gh` paths as a provider
+- [x] 16. GitHub `cli` transport — wrap the existing `gh` paths as a provider
   - Reuses `announce`/`comments`/`control`/`reactions`/`poller` code rather than replacing
     it (R6.14).
   - _Depends on:_ 15
   - _Requirements:_ R6.6, R6.14
   - _Test:_ shared contract suite (task 19)
-- [ ] 17. GitHub `api` transport — stdlib HTTP + token, `gh auth token` as credential source
+- [x] 17. GitHub `api` transport — stdlib HTTP + token, `gh auth token` as credential source
   - _Depends on:_ 15
   - _Requirements:_ R6.6
   - _Test:_ shared contract suite (task 19)
-- [ ] 18. Slack `sdk` transport (official `slack-sdk`) + dependency-free `webhook` transport
+- [x] 18. Slack `sdk` transport (official `slack-sdk`) + dependency-free `webhook` transport
   - Adds the work item's **only** new runtime dependency; zero transitive.
   - _Depends on:_ 15
   - _Requirements:_ R6.5
@@ -165,25 +165,25 @@ motivates it**. Security-relevant tasks name the **negative** test proving the b
 
 ### Slice D — the PDLC graph, side effects and the human gate
 
-- [ ] 23. Author the shipped graph `skills/the-loop/graph/pdlc.yaml` + its schema; validate in CI
+- [x] 23. Author the shipped graph `skills/the-loop/graph/pdlc.yaml` + its schema; validate in CI
   - Splits the six nodes currently hiding inside `needs-review`.
   - _Depends on:_ 8
   - _Requirements:_ R1.1, R1.2, R6b.6
   - _Test:_ CI validates the shipped graph; `pytest cli/tests/test_shipped_graph.py`
-- [ ] 24. `set-phase-label`, `log-entry`, `notify`, `request-review` hooks
+- [x] 24. `set-phase-label`, `log-entry`, `notify`, `request-review` hooks
   - Comments carry the self-authored marker (R5.6); recipients only from
     `collaborators.yaml` (R5.7).
   - _Depends on:_ 14, 16
   - _Requirements:_ R5.1, R5.5, R5.6, R5.7, R9.2
   - _Test:_ **negative** — a recipient not in `collaborators.yaml` is refused (abuse case 8)
-- [ ] 25. `classify-feedback` hook — schema-constrained, **authorized authors only**
+- [x] 25. `classify-feedback` hook — schema-constrained, **authorized authors only**
   - Claude Code `--json-schema`; Cursor embeds schema + validates + bounded retry. Invalid
     after retries → `wait`, never an assumed outcome.
   - _Depends on:_ 3
   - _Requirements:_ R4.8, R4.9
   - _Test:_ **negative** — `test_unauthorized_comment_not_read` (abuse cases 1–3);
     **Scenario:** _A comment from an unauthorized user is not read and the gate stays waiting_
-- [ ] 26. `record-feedback` hook — append to the artifact's `## Review comments`
+- [x] 26. `record-feedback` hook — append to the artifact's `## Review comments`
   - Append-only, attributed, dated; never rewrites earlier entries.
   - _Depends on:_ 3
   - _Requirements:_ R4.5, R5.3
@@ -192,7 +192,7 @@ motivates it**. Security-relevant tasks name the **negative** test proving the b
   - _Depends on:_ 26
   - _Requirements:_ R5.2
   - _Test:_ `validate-artifacts` requires the section on a gated artifact
-- [ ] 28. Human-gate node behaviour — `wait` on indecisive, three decisive outcomes
+- [x] 28. Human-gate node behaviour — `wait` on indecisive, three decisive outcomes
   - _Depends on:_ 12, 25, 26
   - _Requirements:_ R4.1–R4.6
   - _Test:_ **Scenario:** _A partial review comment leaves the gate waiting rather than
@@ -206,14 +206,14 @@ motivates it**. Security-relevant tasks name the **negative** test proving the b
   - _Depends on:_ 12, 23
   - _Requirements:_ R7.1, R7.5
   - _Test:_ `pytest cli/tests/test_run_integration.py`
-- [ ] 31. `verify-tests` hook
+- [x] 31. `verify-tests` hook
   - _Depends on:_ 3
   - _Requirements:_ R5.1
   - _Test:_ `pytest cli/tests/test_hook_verify_tests.py`
 
 ### Slice E — enforcement and the escape hatch
 
-- [ ] 32. `the-loop graph force` — the escape hatch
+- [x] 32. `the-loop graph force` — the escape hatch
   - **Moves the pointer, never forges a verdict**: records `forced`, leaves the gate's real
     verdict intact so `--recompute` still reports it unmet. `--reason` required. Unknown node
     refused. Undeclared transition warned. `required`-gate bypass warned explicitly.
@@ -282,6 +282,22 @@ flowchart LR
     T30 & T32 --> T36[36 capability docs]
   end
 ```
+
+## Delivery status (2026-07-28)
+
+**25 of 36 tasks complete**, in one implementation pass. `make check` green: ruff,
+ruff-format, pyright, markdownlint (250 files), config validation, **658 tests**.
+
+| Slice | State |
+|---|---|
+| **A** — contract, registry, chain, validators, `check` | **complete**, drift report produced |
+| **B** — model, state, runtime, edges, events | **complete** |
+| **C** — integrations | transports + resolution + capability declaration **complete**; the **breaking config migration (20, 21)** and `mcp-call` (22) outstanding |
+| **D** — shipped graph, hooks, human gate | graph + hooks + gate **complete**; `## Review comments` templates (27), `session: inherit` fallback (29), `the-loop run` (30) outstanding |
+| **E** — escape hatch, enforcement | `graph force` + state/event audit **complete**; ticket-comment audit (33), stop-hook wrappers (34), CI gate (35), capability docs (36) outstanding |
+
+Outstanding: **11 tasks** — 20, 21, 22, 27, 29, 30, 33, 34, 35, 36 (and 19's shared
+contract suite, currently covered per-provider rather than parametrized).
 
 ## Checkpoints
 
