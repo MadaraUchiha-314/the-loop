@@ -12,15 +12,15 @@ install-dev:
 	uv sync
 
 lint:
-	uv run ruff check cli
+	uv run ruff check cli hooks
 	npx --yes markdownlint-cli2@0.18.1 "**/*.md"
 
 format:
-	uv run ruff format cli
+	uv run ruff format cli hooks
 
 # CI parity: pre-commit runs `ruff format`, so `check` must catch format drift too.
 format-check:
-	uv run ruff format --check cli
+	uv run ruff format --check cli hooks
 
 typecheck:
 	uv run pyright cli

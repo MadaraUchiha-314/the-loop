@@ -548,7 +548,7 @@ status: in-progress           # in-progress | complete
     implements `session: inherit` and its fresh-session fallback; all four artifact
     templates grew a `## Review comments` section for `record-feedback` to append to.
   - **Slice E closed** — the force audit trail's fourth record (a marked ticket comment),
-    `hooks/the-loop-gate.sh` wired as a Claude Code `Stop` hook and a Cursor `stop` hook,
+    `hooks/the-loop-gate.py` wired as a Claude Code `Stop` hook and a Cursor `stop` hook,
     and `.github/workflows/the-loop-gate.yml` running `the-loop check --recompute` on
     touched spec folders only — so the gate binds new work without failing the repository
     over the 35-folder backlog it just made visible.
@@ -618,6 +618,45 @@ status: in-progress           # in-progress | complete
   silently.
 - **Blockers:** none.
 
+### 2026-07-29 — the stop-hook gate wrapper ported to Python (owner review finding)
+
+- **Phase:** implementation (unchanged)
+- **Finding accepted.** @MadaraUchiha-314 on `hooks/the-loop-gate.sh`: *"Can this be
+  converted to a python script?"* Yes — and the bash version was already conceding the
+  point, shelling out to `python3` twice to do its JSON work. Bash was the wrapper around
+  Python, not the other way round.
+- **It stays in the plugin, deliberately.** What this file encodes is *harness protocol* —
+  Claude Code's exit-2 contract, Cursor's `followup_message`. That is the harness
+  integration, which is what the plugin is for. The same principle that moved the graph
+  **into** the CLI keeps this one **out** of it: each artifact lives with the thing it
+  belongs to. It imports nothing from `the_loop` and is stdlib-only, so it still no-ops
+  gracefully when the CLI is not installed.
+- **What the port bought, beyond taste:**
+  1. **It runs on Windows.** A `.sh` hook does not run there at all, so the gate simply did
+     not exist for those users.
+  2. **It is testable.** 21 tests now cover the attempt cap, both harness protocols, the
+     counter's reset, and the no-op paths. The bash version had **zero** — pytest cannot
+     reach into a shell script's branches, so every one of those behaviours was asserted by
+     reading it.
+  3. **Fixed a shared-counter bug.** The attempts file was keyed on the work-item id alone
+     under `/tmp`, so two checkouts working on `issue-1` shared one counter and each
+     silently consumed the other's retry budget. Now keyed on a hash of (repo, work item),
+     which also removes any path-traversal question about a ref like `github:o/r#1`.
+- **And a real bug found by actually running it**, which is the part reading it would not
+  have caught. The gate asked `the-loop check` **without** `--recompute`, so it trusted
+  stored graph state. Two consequences: a work item whose pointer had never been advanced
+  sat at the start node reporting `ok` and the gate was **inert** — verified against
+  `issue-97`, which is plainly blocked and which the gate happily let through — and, worse,
+  a gate that trusts the cache is trusting a file the agent being gated can write. Graph
+  state is a cache, not an authority; CI already used `--recompute` for exactly this
+  reason, and the stop hook is the same kind of gate. Fixed, with a test asserting the flag
+  is passed.
+- **Checkpoint/tests:** red→green. `cli/tests/test_harness_gate.py`, 21 tests. Verified end
+  to end by invoking the script the way the harness does, against real repository state:
+  the Claude path exits 2 with both findings on stderr, the Cursor path emits a
+  `followup_message` JSON object. `make check` green.
+- **Blockers:** none.
+
 ## Review cycles
 
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
@@ -626,6 +665,7 @@ status: in-progress           # in-progress | complete
 | 2 | human | @MadaraUchiha-314 | **Finding accepted and fixed** — the Cursor `stop` hook does exist; the "Cursor degrades to CI-only" framing was wrong. See the 2026-07-26 entry below. | [PR #110 review comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 3 | human | @MadaraUchiha-314 | **Direction accepted** — model the process as a graph of nodes with an orchestration layer determining edges; harness hooks are too fine-grained and phase-blind to be node boundaries. Architecture added; options re-cast as its layers. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 4 | human | @MadaraUchiha-314 | **Brainstorm locked** — *"let's go ahead with the requirements and design"*. Phase advanced; both artifacts derived. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
+| 14 | human | @MadaraUchiha-314 | **Finding accepted and fixed** — the stop-hook gate wrapper ported from bash to Python: runs on Windows, gained 21 tests where it had none, fixed a shared attempts-counter bug, and running it surfaced that the gate trusted stored graph state instead of recomputing. | [PR #110 review comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 13 | human | @MadaraUchiha-314 | **Finding accepted and fixed** — the graph shipped with the plugin instead of the CLI, so `pip install the-loopy-one` produced a runtime that could not find its own process. Reproduced in a clean venv, moved to package data, three regression tests. | [PR #110 review comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 12 | human | @MadaraUchiha-314 | **Approved requirements + design; go ahead with implementation.** Also asked for a force/override escape hatch exercisable by the authorized CLI user — specified as R10 before deriving tasks. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 11 | human | @MadaraUchiha-314 | **Make it a breaking change** — remove the legacy per-feature keys rather than shadowing them; `/the-loop:upgrade-the-loop` performs the migration. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |

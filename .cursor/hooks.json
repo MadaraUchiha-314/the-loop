@@ -3,7 +3,7 @@
   "hooks": {
     "stop": [
       {
-        "command": "${CLAUDE_PLUGIN_ROOT:-.}/hooks/the-loop-gate.sh cursor"
+        "command": "python3 \"${CLAUDE_PLUGIN_ROOT:-.}/hooks/the-loop-gate.py\" cursor"
       }
     ]
   }

@@ -226,7 +226,7 @@ motivates it**. Security-relevant tasks name the **negative** test proving the b
   - _Depends on:_ 32, 24
   - _Requirements:_ R10.5
   - _Test:_ asserts all four records exist
-- [x] 34. Harness stop-hook wrappers — `hooks/` (Claude) and `.cursor/hooks.json` (Cursor)
+- [x] 34. Harness stop-hook wrappers — `hooks/the-loop-gate.py` (Claude `Stop`) and `.cursor/hooks.json` (Cursor `stop`)
   - Claude blocks the stop; Cursor returns `followup_message`. Attempt cap enforced on the
     Claude path (Cursor caps natively).
   - _Depends on:_ 6, 12
