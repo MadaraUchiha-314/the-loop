@@ -12,6 +12,7 @@ Requirement: docs/specs/issue-113/requirements.md
 from __future__ import annotations
 
 import json
+import subprocess
 
 import pytest
 
@@ -26,7 +27,24 @@ REVIEWER = "octocat"
 
 @pytest.fixture()
 def checkout(tmp_path):
-    """A repo checkout with a spec folder, as a spawned session would have."""
+    """A checkout of the work item's own repo, with its spec folder.
+
+    A real `git init` + origin, because the link refuses to drive a graph in a
+    checkout that does not belong to the work item (issue-113 A6).
+    """
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(tmp_path),
+            "remote",
+            "add",
+            "origin",
+            "https://github.com/octo/repo.git",
+        ],
+        check=True,
+    )
     spec = tmp_path / "docs" / "specs" / "issue-113"
     spec.mkdir(parents=True)
     (spec / "execution-log.md").write_text("# Execution Log\n")

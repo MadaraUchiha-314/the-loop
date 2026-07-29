@@ -113,6 +113,25 @@ flowchart TD
   explicit `data["outcome"]`; a plain `HookResult.ok` still reports `pass`.
 - [x] Done
 
+### T10 — Refuse a checkout that is not the work item's own repo
+
+> **Found by CI on this PR, not by design review.** The gate reported three work
+> items instead of one: running the suite had written `graph-state.json` into the
+> real `docs/specs/issue-1` and `issue-15`. Cause — the dispatcher tests use
+> `github:octo/repo#15`, which maps to `issue-15`, and their session `cwd` is `.`.
+> That is a production hazard, not test noise: with the default `spawnWorkdir: "."`
+> an event about any repo's issue #15 drives the operator's own `issue-15`.
+
+- **Requirements:** AC14, A6
+- **Depends on:** T4
+- **Red:** `test_graphlink.py::test_a_checkout_of_another_repo_is_never_coupled`,
+  `::test_a_checkout_with_no_origin_is_skipped`,
+  `::test_a_directory_that_is_not_a_checkout_is_skipped`,
+  `::test_the_work_items_own_checkout_is_coupled`
+- **Green:** `_checkout_belongs_to` + `_repo_slug` in `graphlink.py`, failing closed;
+  the test fixtures became real checkouts with an origin.
+- [x] Done
+
 ### T8 — Capability docs + spec fold-in
 
 - **Requirements:** ready-to-ship gate

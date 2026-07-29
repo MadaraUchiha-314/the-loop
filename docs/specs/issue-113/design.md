@@ -164,6 +164,14 @@ daemon's cwd: `session.cwd` for events, and the freshly prepared `cwd` for a spa
 lands in the same tree the agent is working in and gets committed with the rest of the
 spec — which is what makes the state reviewable in a PR diff (state.py's stated intent).
 
+**Repository identity.** The spec id carries the issue *number* only, so it is
+ambiguous across repositories by construction. Before driving anything, the link reads
+the checkout's `origin` remote (`git -C <root> config --get remote.origin.url`, not a
+hand-parse of `.git/config` — a worktree's config is not the file beside its `.git`)
+and requires it to name the work item's `<owner>/<repo>`. Unreadable, absent or
+mismatched all mean *skip*: those are precisely the cases where we cannot tell whose
+work item this is.
+
 **Identity mapping.** `WorkItemRef.number` is an `int` parsed by `WorkItemRef.parse`, so
 `f"issue-{ref.number}"` cannot contain a path separator regardless of what arrived on the
 wire (A5). The mapping is then validated against an existing directory (AC9) — the

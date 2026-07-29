@@ -176,8 +176,3 @@ status: in-progress
   against stub `claude`/`cursor-agent` binaries (argv + cwd asserted); R5 →
   same-session FIFO / cross-session parallelism dispatcher tests; R1 →
   `decision-016` (accepted).
-
-### 2026-07-29 — entry brainstorming
-
-- **Node:** brainstorming
-- **Boundary:** entry

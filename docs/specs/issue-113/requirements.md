@@ -126,6 +126,13 @@ Acceptance criteria in EARS notation.
 - **AC12** — WHERE the graph coupling is disabled by config, WHEN an event is
   delivered, THEN the system SHALL behave exactly as it does today (no graph calls).
 
+### Repository identity
+
+- **AC14** — WHEN the coupling resolves a spec directory in a checkout, THEN it
+  SHALL verify that the checkout is of the work item's **own repository** (its
+  `origin` remote matching `<owner>/<repo>`), and SHALL skip when it is not or when
+  it cannot be determined.
+
 ### Observability
 
 - **AC13** — WHEN the coupling starts or advances a graph, THEN the existing
@@ -164,6 +171,15 @@ anyone who can open an issue carrying a crafted title/body.
 - **A4 — Denial of delivery via hook failure.** A crafted artifact makes a hook raise,
   and event delivery dies with it. *Mitigation:* AC11 — the coupling is best-effort and
   isolated from the dispatch path.
+- **A6 — Cross-repository spec collision.** `issue-15` names a *directory*, not a
+  project, so an event about **any** repository's issue #15 resolves to
+  `docs/specs/issue-15` in whatever checkout the daemon is pointed at. Under the
+  default `spawnWorkdir: "."` that is the operator's own repo, so unrelated inbound
+  events would write graph state and execution-log entries into their work items —
+  and fire those nodes' entry hooks (labels, notifications) against the wrong
+  ticket. *Mitigation:* AC14 — the checkout's `origin` remote must match the work
+  item's `<owner>/<repo>`, failing closed when it cannot be read. Found by the
+  gate on this work item's own PR, which is how it earned a test.
 - **A5 — Path traversal via ref → id mapping.** A crafted repo/owner/number producing
   an id that escapes `docs/specs/`. *Mitigation:* AC8's mapping SHALL derive the id
   from the parsed `WorkItemRef`'s integer `number` only (`issue-<number>`), never from

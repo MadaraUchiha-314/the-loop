@@ -61,11 +61,28 @@ status: in-progress          # in-progress | complete
 - **Next:** human review of the PR (tier 4 gate) + named security sign-off.
 - **Blockers:** the two tier-4 gates below, both awaiting a human.
 
+### 2026-07-29 — CI found a cross-repo collision (T10)
+
+- **Phase:** needs-review
+- **Did:** The gate job reported **three** work items instead of one — running the
+  suite had written `graph-state.json` into the real `docs/specs/issue-1` and
+  `docs/specs/issue-15`, and appended an entry to issue-15's execution log. Not test
+  noise: the dispatcher tests use `github:octo/repo#15` → `issue-15` with session
+  `cwd` `.`, which is exactly the production shape under the default
+  `spawnWorkdir: "."`. The link now requires the checkout's `origin` remote to name
+  the work item's own `<owner>/<repo>`, failing closed when it cannot be read
+  (AC14/A6). Reverted the three polluted files.
+- **Checkpoint/tests:** four red tests first (mismatched origin, no origin, not a
+  checkout, matching origin) → green. Full suite **758 passed, 1 skipped**; running
+  it now leaves `git status` clean, which is the real regression check.
+- **Next:** the two tier-4 human gates.
+- **Blockers:** unchanged — human PR approval and named security sign-off.
+
 ## Review cycles
 
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
 |-------|-----------------------------|----------|---------|------|
-|       |                             |          |         |      |
+| 1 | CI gate (the-loop's own) | `the-loop gate` job | Found the cross-repo collision (A6) — fixed in T10 | [run](https://github.com/MadaraUchiha-314/the-loop/actions/runs/30428745582) |
 
 ## Security review (gate)
 

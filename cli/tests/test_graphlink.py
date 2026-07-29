@@ -39,8 +39,25 @@ class _FakeRuntime:
         return None
 
 
+def _git_repo(path, origin="https://github.com/octo/repo.git"):
+    """A real checkout with an origin remote, as a spawned session runs in."""
+    import subprocess
+
+    subprocess.run(["git", "init", "-q", str(path)], check=True)
+    subprocess.run(
+        ["git", "-C", str(path), "remote", "add", "origin", origin], check=True
+    )
+    return path
+
+
 @pytest.fixture()
 def repo(tmp_path):
+    """A checkout of the work item's OWN repo — what a spawned session runs in.
+
+    The origin remote is not decoration: the link refuses to drive a graph in a
+    checkout that does not belong to the work item (issue-113 A6).
+    """
+    _git_repo(tmp_path)
     (tmp_path / "docs" / "specs" / "issue-113").mkdir(parents=True)
     return tmp_path
 
@@ -293,3 +310,54 @@ def test_a_reload_rebuilds_the_graph_link(tmp_path):
     assert dispatcher.graphlink.config.enabled is True
     dispatcher.reload(RoutingConfig.from_mapping({"graph": {"enabled": False}}, None))
     assert dispatcher.graphlink.config.enabled is False
+
+
+# -- the checkout must belong to the work item's repo (T10) ----------------------
+
+
+def test_a_checkout_of_another_repo_is_never_coupled(tmp_path):
+    """AC14/A6 — `issue-15` names a *directory*, not a repository. Without this
+    check, an event about ANY repo's issue #15 drives docs/specs/issue-15 in
+    whatever checkout the daemon happens to sit in — which with the default
+    `spawnWorkdir: "."` is the operator's own repo."""
+    _git_repo(tmp_path, origin="https://github.com/someone-else/other.git")
+    (tmp_path / "docs" / "specs" / "issue-113").mkdir(parents=True)
+    runtime = _FakeRuntime()
+    link = _link(tmp_path, runtime)
+
+    link.on_spawn(REF, str(tmp_path))
+    link.on_event(REF, str(tmp_path), _comment_event())
+
+    assert runtime.started == [] and runtime.advanced == []
+
+
+def test_the_work_items_own_checkout_is_coupled(tmp_path):
+    _git_repo(tmp_path, origin="git@github.com:octo/repo.git")
+    (tmp_path / "docs" / "specs" / "issue-113").mkdir(parents=True)
+    runtime = _FakeRuntime()
+
+    _link(tmp_path, runtime).on_spawn(REF, str(tmp_path))
+
+    assert runtime.started == [("issue-113", REF.ref)]
+
+
+def test_a_checkout_with_no_origin_is_skipped(tmp_path):
+    """Fail closed: an unverifiable checkout is not a matching one."""
+    import subprocess
+
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    (tmp_path / "docs" / "specs" / "issue-113").mkdir(parents=True)
+    runtime = _FakeRuntime()
+
+    _link(tmp_path, runtime).on_spawn(REF, str(tmp_path))
+
+    assert runtime.started == []
+
+
+def test_a_directory_that_is_not_a_checkout_is_skipped(tmp_path):
+    (tmp_path / "docs" / "specs" / "issue-113").mkdir(parents=True)
+    runtime = _FakeRuntime()
+
+    _link(tmp_path, runtime).on_spawn(REF, str(tmp_path))
+
+    assert runtime.started == []

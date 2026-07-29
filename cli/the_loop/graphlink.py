@@ -96,6 +96,23 @@ def spec_id_for(ref: WorkItemRef) -> Optional[str]:
     return f"issue-{int(ref.number)}"
 
 
+def _repo_slug(remote_url: str) -> str:
+    """``owner/repo`` (lowercased) from any git remote URL form.
+
+    Handles the shapes a real checkout carries — `https://host/o/r.git`,
+    `git@host:o/r.git`, `ssh://git@host/o/r`, and a proxied `http://host/git/o/r`
+    — by taking the last two path components, because that is the part every
+    form agrees on. Anything shorter yields ``""``, which never matches.
+    """
+    trimmed = remote_url.strip().rstrip("/")
+    if trimmed.endswith(".git"):
+        trimmed = trimmed[: -len(".git")]
+    parts = [p for p in trimmed.replace(":", "/").split("/") if p]
+    if len(parts) < 2:
+        return ""
+    return "/".join(parts[-2:]).lower()
+
+
 def comments_from(routed) -> List[Dict[str, str]]:
     """The human-authored comments an event carries, each with its author.
 
@@ -193,6 +210,18 @@ class GraphLink:
                 action,
             )
             return
+        if not self._checkout_belongs_to(root, work_item):
+            logger.warning(
+                "%s is not a checkout of %s/%s, so its %s/%s is a different "
+                "project's work item; not %sing a graph there",
+                root,
+                work_item.owner,
+                work_item.repo,
+                self.config.spec_dir,
+                item_id,
+                action,
+            )
+            return
         try:
             call(self._build_runtime(str(root)), item_id)
         except Exception as exc:  # noqa: BLE001 — a graph fault must not cost a delivery
@@ -219,6 +248,44 @@ class GraphLink:
         if self.control_store is None:
             return True  # fail closed: the policy is on and its record is missing
         return not self.control_store.start_requested(work_item)
+
+    def _checkout_belongs_to(self, root: Path, work_item: WorkItemRef) -> bool:
+        """Whether ``root`` is a checkout of the work item's own repository.
+
+        The spec id is derived from the issue **number** alone — `issue-15` names
+        a directory, not a project — so without this check an event about *any*
+        repository's issue #15 would drive `docs/specs/issue-15` in whatever
+        checkout the daemon is pointed at. Under the default
+        ``spawnWorkdir: "."`` that checkout is the operator's own repo, which
+        means unrelated inbound events would write graph state and execution-log
+        entries into their work items (issue-113, A6).
+
+        Read from the checkout's ``origin`` remote via git itself rather than by
+        parsing ``.git/config``, because the config a worktree uses is not the
+        file next to its ``.git``. **Fails closed:** a directory that is not a
+        checkout, has no origin, or cannot be interrogated is not a match — it
+        is exactly the case where we cannot tell whose work item this is.
+        """
+        url = self._origin_url(root)
+        if not url:
+            return False
+        return _repo_slug(url) == f"{work_item.owner}/{work_item.repo}".lower()
+
+    @staticmethod
+    def _origin_url(root: Path) -> str:
+        import subprocess
+
+        try:
+            proc = subprocess.run(
+                ["git", "-C", str(root), "config", "--get", "remote.origin.url"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            logger.debug("could not read the origin remote of %s: %s", root, exc)
+            return ""
+        return proc.stdout.strip() if proc.returncode == 0 else ""
 
     def _build_runtime(self, cwd: str) -> Any:
         """The graph runtime rooted at the session's checkout.
