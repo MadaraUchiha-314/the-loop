@@ -95,11 +95,21 @@ reviews:
   criticReviewCount: 3
   stopOnNoNewFindings: true       # stop the loop when a round finds nothing new
   escalateOnRepeatFinding: true   # same finding twice in a row -> escalate to a human
+  # Runnable via `the-loop critic run <name> --prompt-file <path>` (issue-108,
+  # decision-043): the entry becomes an argv, spawned without a shell, and its output
+  # comes back as one JSON envelope. Executable config in a committed file — review a
+  # critic entry like code, and never put secrets in `env`.
   critics: []
-  # - name: cursor-gpt
-  #   harness: cursor              # free-form; e.g. claude | cursor | aider | continue
+  # - name: cursor-gpt              # built-in harness: the invocation is derived
+  #   harness: cursor
   #   model: gpt-5.5
-  #   command: "cursor-agent review"   # optional explicit invocation
+  # - name: aider-review            # any other CLI: executable + argv, placeholders
+  #   harness: aider                #   {prompt} {promptFile} {model} {workItem}
+  #   model: gpt-5.5                #   {specDir} {cwd}
+  #   command: aider
+  #   args: ["--message-file", "{promptFile}", "--model", "{model}", "--no-auto-commits"]
+  #   outputFormat: text
+  #   timeoutSeconds: 900
 
 autonomy:
   defaultTier: 3                  # 1-Trivial … 5-Critical
@@ -107,6 +117,7 @@ autonomy:
   sensitivePaths:
     - "**/*schema*"
     - ".the-loop/harness-config.schema.json"
+    - ".the-loop/harness-config.yaml"   # reviews.critics[] entries are executable config
     - ".github/workflows/**"
   tiers:
     "1": autonomous-complete

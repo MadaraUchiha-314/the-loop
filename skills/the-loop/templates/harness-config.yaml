@@ -121,11 +121,27 @@ reviews:
   criticReviewCount: 3
   stopOnNoNewFindings: true       # stop when a round finds nothing new actionable
   escalateOnRepeatFinding: true   # same finding twice in a row -> escalate to a human
+  # Each critic is RUNNABLE: `the-loop critic run <name> --prompt-file <path>` spawns
+  # it (never through a shell) and prints its output as one JSON envelope the running
+  # harness reads. A critic entry is executable config in a committed file — review one
+  # like code, and never put secrets in `env`. See reference/reviewing.md, decision-043.
   critics: []
+  # A harness the-loop has an adapter for needs nothing else — the invocation is derived:
   # - name: cursor-gpt
-  #   harness: cursor              # free-form; e.g. claude | cursor | aider | continue
+  #   harness: cursor              # built-in: claude | cursor (free-form otherwise)
   #   model: gpt-5.5
-  #   command: "cursor-agent review"   # optional explicit invocation
+  #
+  # Any other CLI: spell out the executable and its argv. Placeholders are substituted
+  # element-wise — {prompt} {promptFile} {model} {workItem} {specDir} {cwd} — and the
+  # args MUST carry {prompt} or {promptFile}, or the critic reviews nothing.
+  # - name: aider-review
+  #   harness: aider
+  #   model: gpt-5.5
+  #   command: aider               # argv[0] — NOT a shell line (args go below)
+  #   args: ["--message-file", "{promptFile}", "--model", "{model}", "--no-auto-commits"]
+  #   outputFormat: text           # text | json (json extracts the reviewer's text)
+  #   timeoutSeconds: 900          # a hung critic must not wedge the review loop
+  #   enabled: true
 
 autonomy:                         # risk-tiered autonomy (see reference/workflow.md)
   defaultTier: 3                  # 1-Trivial … 5-Critical (or set riskTier per work item)

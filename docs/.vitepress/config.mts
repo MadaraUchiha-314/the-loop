@@ -65,6 +65,7 @@ const operatingModelItems = [
 const capabilitiesItems = [
   { text: "Overview", link: "/capabilities/capabilities" },
   { text: "Spec workflow", link: "/capabilities/spec-workflow" },
+  { text: "Review loop", link: "/capabilities/review-loop" },
   { text: "Capability docs", link: "/capabilities/capability-docs" },
   { text: "Distribution", link: "/capabilities/distribution" },
   { text: "CLI", link: "/capabilities/cli" },

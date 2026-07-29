@@ -25,7 +25,7 @@ Top-level sections:
 | `design` | UI/UX design-artifact directory/format — see [design-artifacts reference](/operating-model/reference/design-artifacts). |
 | `hooks` | Pre-commit / pre-push gate lists, commit convention. |
 | `observability` | Dev/runtime log levels, browser logging — see [observability reference](/operating-model/reference/observability). |
-| `reviews` | Self/critic review counts and stop conditions — see [reviewing reference](/operating-model/reference/reviewing). |
+| `reviews` | Self/critic review counts, stop conditions, and the **runnable** `critics[]` entries (`harness` or `command`/`args`, `env`, `cwd`, `outputFormat`, `timeoutSeconds`, `enabled`) that `the-loop critic run` spawns — see [reviewing reference](/operating-model/reference/reviewing) and [review-loop](/capabilities/review-loop). |
 | `autonomy` | Risk-tiered autonomy (1–5) and sensitive-path detection. |
 | `security` | Threat-model, design, and review gate requirements — see [security reference](/operating-model/reference/security). |
 | `tdd` | TDD mode: `standard` \| `tdd-first` \| `off`. |

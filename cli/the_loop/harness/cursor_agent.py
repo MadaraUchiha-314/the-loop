@@ -18,6 +18,7 @@ from ..sessions import Session
 class CursorAgentAdapter(HarnessAdapter):
     name = "cursor"
     default_binary = "cursor-agent"
+    model_flag = "-m"
 
     def _resume_argv(self, session: Session, prompt: str) -> List[str]:
         return [
