@@ -35,7 +35,14 @@ def gate():
     return load_gate()
 
 
-def report(ok: bool, current="design", status="block", messages=("missing X",)):
+def report(ok: bool, current="design", status=None, messages=("missing X",)):
+    """A check report. `ok` and the node statuses are kept consistent.
+
+    They cannot disagree in reality, and `blocking_node` reads the per-node
+    statuses rather than the `ok` summary — the facts, not the derived field.
+    """
+    if status is None:
+        status = "pass" if ok else "block"
     return {
         "workItem": "issue-1",
         "currentNode": current,
@@ -75,6 +82,18 @@ class TestBlockingNode:
     @pytest.mark.parametrize("status", ["pass", "skip"])
     def test_skipped_and_passed_nodes_never_block(self, gate, status):
         assert gate.blocking_node(report(ok=False, status=status)) is None
+
+    def test_waiting_on_a_human_does_not_block_the_stop(self, gate):
+        """`wait` means a review has not come back. Nobody is there to answer.
+
+        Blocking the turn would spin the agent against an absent person — the
+        thing the attempt cap exists to contain, not to cause.
+        """
+        assert gate.blocking_node(report(ok=False, status="wait")) is None
+
+    def test_a_genuine_block_still_blocks(self, gate):
+        found = gate.blocking_node(report(ok=False, status="block"))
+        assert found is not None and found["node"] == "design"
 
 
 class TestHarnessProtocols:

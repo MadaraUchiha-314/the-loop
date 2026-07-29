@@ -82,18 +82,22 @@ def run_check(work_item: str) -> dict | None:
 
 
 def blocking_node(report: dict) -> dict | None:
-    """The current node, if it is what is holding the work item up.
+    """The current node, if it is something the agent should not stop on.
 
-    Only the node the work item is actually *at* can block it. A node further
-    along is simply not done yet, and treating that as a blocker would make the
-    gate fire on every turn of every work item forever.
+    Two narrowings, both of which the first version got wrong:
+
+    * Only the node the work item is actually *at* counts. A node further along
+      is not done yet, and treating that as a blocker would fire the gate on
+      every turn of every work item forever.
+    * Only ``block`` counts, not ``wait``. ``wait`` means the node is parked on a
+      human — a review that has not come back. Blocking the agent from ending its
+      turn then would spin it against a person who is not there, which is the one
+      thing an attempt cap exists to contain rather than to cause.
     """
-    if report.get("ok"):
-        return None
     current = report.get("currentNode")
     for node in report.get("nodes") or []:
-        if node.get("node") == current and node.get("status") not in ("pass", "skip"):
-            return node
+        if node.get("node") == current:
+            return node if node.get("status") == "block" else None
     return None
 
 

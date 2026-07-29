@@ -657,6 +657,51 @@ status: in-progress           # in-progress | complete
   `followup_message` JSON object. `make check` green.
 - **Blockers:** none.
 
+### 2026-07-29 — the CI gate was passing without gating anything
+
+- **Phase:** implementation (unchanged)
+- **Found by verifying, not by reading.** After the gate wrapper landed I checked why the
+  `gate` job was green when `the-loop check issue-109 --recompute` exits 1 locally. The CI
+  log:
+
+  ```text
+  fatal: ambiguous argument 'origin/main...HEAD': unknown revision or path not in the working tree.
+  basename: missing operand
+  no spec folders touched; nothing to gate
+  ```
+
+  `actions/checkout` is shallow by default, so `origin/main` does not exist. The diff
+  failed, `|| true` swallowed it, the empty result rendered as *"nothing to gate"*, and the
+  job reported success **having gated nothing**. It had never gated anything, on any PR.
+  That is this work item's entire thesis — a rule enforced by nothing — reproduced inside
+  the enforcement code written to end it.
+- **Two fixes, and the second is the important one:**
+  1. `fetch-depth: 0`, so the base ref resolves.
+  2. **Fail closed.** If the diff cannot be computed, the job now errors. *"I could not
+     tell"* must never render as *"nothing to gate"* — that conversion is what made the
+     failure silent, and it would have re-appeared under any other cause.
+- **A second defect the fix exposed.** With the gate actually running, it would fail this
+  very PR: `issue-109` sits at `requirements-approval` with status `wait` — *"no authorized
+  feedback yet"* — because the review is happening right now. Failing CI for that would
+  make the gate **red by construction on every open PR**, and a gate that is always red is
+  one people learn to merge past.
+  - So `wait` and `block` are now distinguished where it matters. `check` gained
+    `--fail-on {unmet,block}`: `unmet` (default) keeps today's meaning for a human asking
+    where something stands; `block` fails only on what an **agent can actually fix**, which
+    is what an automated gate wants. A reviewer approving *is* the resolution of a `wait`.
+  - `--fail-on block` still fails on a block the pointer has moved *past*, so it cannot
+    become a way to launder one by advancing.
+- **The same distinction was wrong in the stop hook.** `blocking_node()` treated `wait` as
+  blocking, so the agent would have been prevented from ending its turn while parked on an
+  absent human — spinning against a person who is not there, contained only by the attempt
+  cap. Narrowed to `block`.
+- **Checkpoint/tests:** `make check` green, **717 tests**. Verified against real state:
+  `issue-109 --fail-on block` → exit 0 (waiting on review), `issue-97 --fail-on block` →
+  exit 1 (unlocked artifact, missing Security considerations). Simulated the workflow's
+  shell locally — it now extracts `issue-109` from the diff, and the fail-closed branch
+  exits 1 on an unresolvable base ref.
+- **Blockers:** none.
+
 ## Review cycles
 
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
@@ -665,6 +710,7 @@ status: in-progress           # in-progress | complete
 | 2 | human | @MadaraUchiha-314 | **Finding accepted and fixed** — the Cursor `stop` hook does exist; the "Cursor degrades to CI-only" framing was wrong. See the 2026-07-26 entry below. | [PR #110 review comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 3 | human | @MadaraUchiha-314 | **Direction accepted** — model the process as a graph of nodes with an orchestration layer determining edges; harness hooks are too fine-grained and phase-blind to be node boundaries. Architecture added; options re-cast as its layers. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 4 | human | @MadaraUchiha-314 | **Brainstorm locked** — *"let's go ahead with the requirements and design"*. Phase advanced; both artifacts derived. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
+| 15 | self | the-loop (Claude Code) | **Defect found by verification** — the CI gate had been reporting success without gating anything (shallow clone → failed diff → empty list → "nothing to gate"). Fixed with `fetch-depth: 0` and a fail-closed guard; the fix then exposed that `wait` and `block` needed distinguishing, which produced `check --fail-on`. | this PR |
 | 14 | human | @MadaraUchiha-314 | **Finding accepted and fixed** — the stop-hook gate wrapper ported from bash to Python: runs on Windows, gained 21 tests where it had none, fixed a shared attempts-counter bug, and running it surfaced that the gate trusted stored graph state instead of recomputing. | [PR #110 review comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 13 | human | @MadaraUchiha-314 | **Finding accepted and fixed** — the graph shipped with the plugin instead of the CLI, so `pip install the-loopy-one` produced a runtime that could not find its own process. Reproduced in a clean venv, moved to package data, three regression tests. | [PR #110 review comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |
 | 12 | human | @MadaraUchiha-314 | **Approved requirements + design; go ahead with implementation.** Also asked for a force/override escape hatch exercisable by the authorized CLI user — specified as R10 before deriving tasks. | [PR #110 comment](https://github.com/MadaraUchiha-314/the-loop/pull/110) |

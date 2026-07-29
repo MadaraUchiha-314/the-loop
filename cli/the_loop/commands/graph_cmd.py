@@ -82,6 +82,28 @@ def _split_at_pointer(nodes, current: str):
     return list(nodes), []
 
 
+def _fails(report: Dict[str, Any], fail_on: str) -> bool:
+    """Whether this report should make the process exit non-zero.
+
+    ``unmet`` — anything not satisfied, a human-wait included. What you want
+    when you are *asking* where a work item stands.
+
+    ``block`` — only a node an agent can actually fix. What an automated gate
+    wants: a work item parked at a human-approval node is the normal state of an
+    open PR, so failing CI for it would make the gate red by construction, and a
+    gate that is always red is one people learn to merge past.
+    """
+    if fail_on == "unmet":
+        return not report["ok"]
+    current = report.get("currentNode")
+    for node in report.get("nodes") or []:
+        if node.get("node") == current:
+            return node.get("status") == "block"
+        if node.get("status") == "block":
+            return True  # an earlier node is broken; the pointer moved past it
+    return False
+
+
 def _render_table(reports, ahead=()) -> str:
     lines = []
     for report in reports:
@@ -120,6 +142,19 @@ class CheckCommand(Command):
             action="store_true",
             help="ignore graph state; derive completion from the artifacts alone",
         )
+        parser.add_argument(
+            "--fail-on",
+            choices=["unmet", "block"],
+            default="unmet",
+            help=(
+                "what makes this command exit non-zero. 'unmet' (default) is any "
+                "node that is not satisfied, including one waiting on a human — "
+                "what you want when asking where something stands. 'block' is only "
+                "a node an agent can actually fix, which is what an automated gate "
+                "wants: a PR waiting on its reviewer is the normal state of an open "
+                "PR, and failing CI for it would make the gate red by construction."
+            ),
+        )
 
     def run(self, args: argparse.Namespace) -> int:
         root = Path(args.repo).resolve()
@@ -141,8 +176,9 @@ class CheckCommand(Command):
         failing = 0
         for item in items:
             report = runtime.status(item, recompute=args.recompute)
-            payload.append(report.as_dict())
-            if not report.ok:
+            data = report.as_dict()
+            payload.append(data)
+            if _fails(data, args.fail_on):
                 failing += 1
 
         if args.format == "json":

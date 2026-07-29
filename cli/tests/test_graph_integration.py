@@ -296,3 +296,59 @@ def test_a_pointer_that_names_no_known_node_reports_everything():
     nodes = [R("a"), R("b")]
     reached, ahead = _split_at_pointer(nodes, "nonexistent")
     assert len(reached) == 2 and ahead == []
+
+
+class TestFailOn:
+    """`check --fail-on` — what an automated gate treats as failure (issue-109).
+
+    A work item parked at a human-approval node is the *normal* state of an open
+    PR. Failing CI for it would make the gate red by construction, and a gate
+    that is always red is one people learn to merge past.
+    """
+
+    def _report(self, current, statuses):
+        return {
+            "workItem": "issue-1",
+            "currentNode": current,
+            "ok": all(s in ("pass", "skip") for s in statuses.values()),
+            "nodes": [
+                {"node": n, "status": s, "messages": []} for n, s in statuses.items()
+            ],
+        }
+
+    def test_unmet_fails_on_a_human_wait_but_block_does_not(self):
+        from the_loop.commands.graph_cmd import _fails
+
+        report = self._report("approval", {"design": "pass", "approval": "wait"})
+        assert _fails(report, "unmet") is True
+        assert _fails(report, "block") is False
+
+    def test_both_modes_fail_on_a_real_block(self):
+        from the_loop.commands.graph_cmd import _fails
+
+        report = self._report("design", {"design": "block"})
+        assert _fails(report, "unmet") is True
+        assert _fails(report, "block") is True
+
+    def test_neither_mode_fails_a_satisfied_work_item(self):
+        from the_loop.commands.graph_cmd import _fails
+
+        report = self._report("done", {"design": "pass", "done": "pass"})
+        assert _fails(report, "unmet") is False
+        assert _fails(report, "block") is False
+
+    def test_a_block_the_pointer_moved_past_still_fails(self):
+        """A forced transition leaves a real block behind it.
+
+        `--fail-on block` must not become a way to launder one by advancing.
+        """
+        from the_loop.commands.graph_cmd import _fails
+
+        report = self._report("approval", {"design": "block", "approval": "wait"})
+        assert _fails(report, "block") is True
+
+    def test_a_node_ahead_of_the_pointer_does_not_fail_the_gate(self):
+        from the_loop.commands.graph_cmd import _fails
+
+        report = self._report("design", {"design": "pass", "later": "block"})
+        assert _fails(report, "block") is False
