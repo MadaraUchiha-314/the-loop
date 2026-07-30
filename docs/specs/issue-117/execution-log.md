@@ -227,6 +227,41 @@ changes no runtime behaviour — so it is filed separately rather than folded in
   `--fail-on block` was designed to do — fail on the agent's omission, wait on the human's.
 - **Next:** unchanged — human review of the three phase gates and the PR.
 
+### 2026-07-30 — CI green; a pre-existing flake fixed on the way
+
+- **Phase:** needs-review (unchanged)
+- **Did:** The second CI round failed `checks` on
+  `test_an_unresumable_conversation_falls_back_to_a_fresh_session` — tmux respawn, a code
+  path this work item does not touch. Established that it was **not** mine before treating
+  it as such:
+
+  | Check | Result |
+  |---|---|
+  | in isolation on this branch | 8/8 pass |
+  | in isolation on `origin/main` (fresh worktree) | 10/10 pass |
+  | full suite locally | 809 passed |
+  | CI | `1 failed, 808 passed` |
+
+  The race: `session.respawned` is emitted **after** `registry.register()` and
+  `registry.touch()` (`dispatcher.py:1390–1408`), but both of the test's `wait_until`
+  guards are satisfied by those registry writes — so it read the event log before the
+  record existed. The dispatcher wins that race on an idle laptop and loses it on a loaded
+  runner.
+
+  Proved rather than argued: injecting `time.sleep(0.4)` before the emit reproduced the CI
+  failure exactly on the old test — same line 620, same
+  `ValueError: not enough values to unpack (expected 1, got 0)` — and passed with a
+  `wait_until` guard added. The dispatcher change was then reverted; the diff is seven
+  test-only lines.
+
+  Fixed here rather than filed because it is test-only and was blocking this PR; a re-run
+  would only have hidden it until the next contributor hit it. Flagged on the PR as
+  out-of-scope, with an offer to drop the commit if the reviewer would rather it landed
+  separately.
+- **Checkpoint/tests:** both CI checks **green** on `9a952ae` — `gate` success, `checks`
+  success. PR `mergeable_state: clean`.
+- **Next:** unchanged — human review of the three phase gates and the PR.
+
 ## Risk tier
 
 **3** — documentation, navigation and one build-script line; no runtime behaviour change,
