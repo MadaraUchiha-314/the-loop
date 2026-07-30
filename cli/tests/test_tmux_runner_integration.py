@@ -613,6 +613,13 @@ def test_an_unresumable_conversation_falls_back_to_a_fresh_session(
     assert tail[1] == "--session-id" and tail[2] == fresh.harness_session_id
     assert "issue_comment" in tail[-1]
 
+    # Wait for the log, not just the registry. `session.respawned` is emitted
+    # AFTER `registry.register()` and `registry.touch()` (dispatcher.py), so both
+    # waits above can be satisfied while the record is still unwritten — reading
+    # here directly is a race the dispatcher wins on an idle laptop and loses on a
+    # loaded CI runner.
+    assert wait_until(lambda: "session.respawned" in log_path.read_text())
+
     records = [json.loads(line) for line in log_path.read_text().splitlines()]
     (abandoned,) = [r for r in records if r["event"] == "session.resume_failed"]
     assert abandoned["level"] == "warning"
