@@ -35,7 +35,7 @@ status: in-progress
   |---|---|
   | 679-line single page | `wc -l cli/README.md`; `docs/scripts/sync-content.mts` copies it verbatim to `docs/cli.md`; `config.mts` exposes it as one nav entry `{ text: "CLI", link: "/cli" }` |
   | 3 of 9 commands undocumented | `grep 'name = ' cli/the_loop/commands/*.py` → 9 registered (`gh-webhook`, `sessions`, `poll`, `events`, `scenarios`, `critic`, `check`, `graph`, `migrate-config`); `cli/README.md` has `###` sections for 6 |
-  | 4 config blocks undocumented | Walked `.the-loop/cli-config.schema.json` → 81 leaves; `integrations.*`, `routing.workspace.*`, `routing.graph.*`, `polling.maxRetries` appear in none of the README's tables |
+  | 4 config blocks undocumented | Walked `.the-loop/cli-config.schema.json` → 80 leaves; `integrations.*`, `routing.workspace.*`, `routing.graph.*`, `polling.maxRetries` appear in none of the README's tables |
   | `ghBinary` documented but removed | 5 occurrences in `cli/README.md`, `grep -c ghBinary .the-loop/cli-config.schema.json` → **0**. `cli_config.apply_integrations()` fans `integrations.github.cli.binary` out to `control`/`reactions`/`announce` under a private key; `migrations.py` makes the old key a hard refusal (`ConfigTooOld`) |
 
   The finding that shaped the design: **the flat shape is why the content is wrong.** A

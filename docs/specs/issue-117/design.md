@@ -119,12 +119,12 @@ sets `markdown.html: false`).
 | `harness-config.md` | — | `.the-loop/harness-config.yaml` section table (from the retired `reference/configuration.md`) + `.the-loop/collaborators.yaml` + `.the-loop/manifest.yaml`. |
 | `cli/index.md` | *(root)* | Configuring the CLI: the four-position resolution order, the `version` gate and migration, `state.root` and everything it defaults. Options: `version`, `state.root`. |
 | `cli/webhook-options.md` | `webhooks.ghWebhook` | `host`, `port`, `path`, `secretEnv`, `pidfile`, `events`. |
-| `cli/routing-options.md` | `webhooks.ghWebhook.routing` | The 47 routing leaves: the scalars plus `control`, `graph`, `workspace`, `tmux`, `webTerminal`, `harnessArgs`, `harnessTrust`, `reactions`, `announce`. |
+| `cli/routing-options.md` | `webhooks.ghWebhook.routing` | Every routing leaf: the scalars plus `control`, `graph`, `workspace`, `tmux`, `webTerminal`, `harnessArgs`, `harnessTrust`, `reactions`, `announce`. |
 | `cli/polling-options.md` | `polling` | `intervalSeconds`, `stateFile`, `maxRetries`, `sources[]`. |
 | `cli/integrations-options.md` | `integrations` | `github`/`slack`/`jira` transports, token/URL env vars, `github.cli.binary`. |
 | `cli/observability-options.md` | *(root)* | `eventLog.*`, `collaborators`, `notifications.*`. |
 
-Together the six CLI pages cover **all 81 leaf options** in the schema. That total is not
+Together the six CLI pages cover **all 80 leaf options** in the schema. That total is not
 incidental — it is what the parity test asserts (C4).
 
 ### C3 — the per-option format (the contract the test reads)
@@ -327,7 +327,7 @@ integration tests.
    its *prose* ("why sessions used to stall on a dialog", the `skipDangerousModePermissionPrompt`
    asymmetry warning). A generator would either drop it or need the schema to carry
    long-form markdown. Authored pages + a parity test keep the prose and still make drift
-   a red test. **Cost:** writing 81 options by hand once.
+   a red test. **Cost:** writing 80 options by hand once.
 2. **`/reference/configuration` retired, not stubbed.** No redirect mechanism exists here
    (`markdown.html: false` rules out a meta-refresh). The site is recent (#71) and the
    ticket asked for a top-level `/config/`. Flagged as open question 1; reversible.
