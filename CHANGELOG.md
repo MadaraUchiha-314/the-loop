@@ -1,3 +1,9 @@
+## v3.0.1 (2026-07-30)
+
+### Fix
+
+- **issue-119**: honour a control command that predates first sight (#120)
+
 ## v3.0.0 (2026-07-30)
 
 ### BREAKING CHANGE
