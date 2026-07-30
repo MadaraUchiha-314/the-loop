@@ -10,9 +10,11 @@ collaborators: [engineer]
 
 # Design: don't baseline a control command nobody has processed
 
-> Phase 2 of 3. Derived from [`bugfix.md`](bugfix.md) (locked).
+> Phase 2 of 3. Derived from [`requirements.md`](requirements.md) (locked).
 
-## 1. The choice
+## Overview
+
+### The choice
 
 The reporter names two equivalent-sounding fixes. They are not equivalent:
 
@@ -26,7 +28,9 @@ dedup, `_process_comment`'s bounded retries and every existing guard verbatim.
 The only new code is a predicate over comments (`_pending_control_ids`) and a
 fall-through in the first-sight branch (`minimalism`: reuse before invent).
 
-## 2. Where the defect lives, and the one-line statement of the fix
+## Architecture
+
+### Where the defect lives, and the one-line statement of the fix
 
 `baseline_comments()` means *"resolved — the poller will never look at this
 again"*. That is true of ordinary comments on first sight (the spawned session
@@ -52,9 +56,9 @@ flowchart TD
 The dashed half of the old flow — first sight → `_try_spawn` refused → baseline →
 *silence* — is what the fall-through replaces.
 
-## 3. Components and interfaces
+## Components & interfaces
 
-### 3.1 `Poller._pending_control_ids(comments) -> set[str]` (new, private)
+### `Poller._pending_control_ids(ref, comments) -> set[str]` (new, private)
 
 The predicate. For each comment with an id, it is *pending* when **all** hold:
 
@@ -87,11 +91,13 @@ losing the control records would then re-apply the stop and kill a running
 session. So a first sight may **bootstrap** control state and never overwrite it
 — which is exactly the reported defect's shape (there, no record exists at all).
 
-### 3.2 `Poller._process_item` first-sight branch (changed)
+### `Poller._process_item` first-sight branch (changed)
 
 ```python
 if first_sight:
-    pending = self._pending_control_ids(comments) if item_authorized else set()
+    pending = (
+        self._pending_control_ids(ref, comments) if item_authorized else set()
+    )
     self.state.baseline_comments(
         ref, [cid for cid in live_ids if cid not in pending], _utcnow()
     )
@@ -125,7 +131,7 @@ chronological for the GitHub provider (`gh issue view --json comments`). Orderin
 is what makes AC2's `start`-then-`stop` case land disarmed. `state.finalize` then
 prunes and stamps as it does on every known-item cycle.
 
-### 3.3 What the dispatcher does with the forwarded start (unchanged)
+### What the dispatcher does with the forwarded start (unchanged)
 
 `handle` → `parse_command` → named-actor re-check → `_apply_control(START)`:
 no live session, so `_spawn_refusal(routed, control_command=START)` — armed via
@@ -136,7 +142,7 @@ path calls `registry.touch(..., delivery_id=…)`, so the poller's next
 `delivery_status` for that comment reads `done` and resolves it. No new code, and
 the retry accounting closes itself.
 
-## 4. Data model
+## Data models
 
 None added. `poll-state.json` keeps its shape; the only difference is *which*
 ids are in `seenComments` after a first sight. A pending id is simply absent
@@ -145,7 +151,7 @@ so an operator reading the file sees nothing novel, and a daemon rolled **back**
 to the previous version reads the file unchanged (it would just baseline the
 comment on its next cycle — the old behaviour).
 
-## 5. Error handling
+## Error handling
 
 - **Provider/dispatcher failures** — unchanged. A failed forward spends one of
   `polling.maxRetries`; an exhausted budget resolves the comment with
@@ -159,7 +165,7 @@ comment on its next cycle — the old behaviour).
 - **Unreadable/absent state file** — unchanged (`PollState` already degrades to
   "everything is first sight").
 
-## 6. Security design
+## Security design
 
 The trust boundary this touches is *comment text → daemon action*, and the fix
 deliberately does **not** move it: `_pending_control_ids` returns comment ids, and
@@ -179,7 +185,7 @@ vocabulary, arm-check before recording).
 security sign-off is required; the checklist review is recorded in the execution
 log.
 
-## 7. Testing strategy
+## Testing strategy
 
 - **Unit (`cli/tests/test_poller.py`)** — the predicate's behaviour through
   `poll_once` with the in-process doubles: a pre-existing start is *not*
@@ -197,7 +203,9 @@ log.
   with `stop` recorded and no live session.
 - Red→green is recorded per task in the execution log.
 
-## 8. Alternatives rejected
+## Trade-offs & decisions
+
+### Alternatives rejected
 
 - **Baseline by timestamp instead of "all existing"** — e.g. only baseline
   comments older than the label. Needs a label-application time the provider

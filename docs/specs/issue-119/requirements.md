@@ -9,7 +9,7 @@ collaborators: [engineer]
 overrides: {}
 ---
 
-# Bugfix spec: a start command that predates first sight is silenced by its own baseline
+# Bugfix requirements: a start command that predates first sight is silenced by its own baseline
 
 > Phase 1 of 3 for a bug (bugfix → design → tasks). Human approval for this
 > tier-3 change happens at the PR (`autonomy.tiers."3": human-approves-pr`).
@@ -96,7 +96,11 @@ freshly spawned session is exactly what issue-34 avoided. It is wrong about
 **control commands**, which are instructions to the-loop itself rather than agent
 input, and which the spawn gate depends on having read.
 
-## Acceptance criteria (EARS)
+## Requirements
+
+EARS acceptance criteria. A bug spec (`type: bugfix`), so the sections above carry
+the report — reproduction, expected vs actual, confirmed root cause — and these are
+the criteria the fix is accepted against.
 
 ### Read the control commands the thread already carries
 

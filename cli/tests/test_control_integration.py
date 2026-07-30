@@ -724,7 +724,7 @@ def test_a_start_comment_that_predates_first_sight_still_starts_the_item(
         When the poller runs its first cycle over it
         Then the start is recorded and a session is spawned
         And no presence event is emitted for it
-    Requirement: docs/specs/issue-119/bugfix.md AC1, AC3, AC8
+    Requirement: docs/specs/issue-119/requirements.md AC1, AC3, AC8
     """
     dispatcher, registry, adapter, store = setup
     provider = _Provider(comments=[_comment("c1", START_KEYWORD)])
@@ -751,7 +751,7 @@ def test_pre_existing_control_comments_are_applied_in_thread_order(setup, tmp_pa
         And its thread carries the start keyword followed by the stop keyword
         When the poller runs its first cycle over it
         Then both are applied in thread order, so the recorded state is stop
-    Requirement: docs/specs/issue-119/bugfix.md AC2
+    Requirement: docs/specs/issue-119/requirements.md AC2
     """
     dispatcher, registry, adapter, store = setup
     provider = _Provider(
@@ -773,7 +773,7 @@ def test_a_stop_that_predates_first_sight_leaves_the_item_disarmed(setup, tmp_pa
     """
     Feature: authorized execution control
       Scenario: a pre-existing stop is honoured, not discarded
-    Requirement: docs/specs/issue-119/bugfix.md AC2
+    Requirement: docs/specs/issue-119/requirements.md AC2
     """
     dispatcher, registry, adapter, store = setup
     provider = _Provider(comments=[_comment("c1", STOP_KEYWORD)])

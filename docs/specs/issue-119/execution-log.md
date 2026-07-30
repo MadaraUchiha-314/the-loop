@@ -11,7 +11,7 @@ status: in-progress          # in-progress | complete
 
 | Phase | Entered | Reviewed/approved by | Notes |
 |-------|---------|----------------------|-------|
-| requirements-definition | 2026-07-30 | pending (PR) | Bug, so `bugfix.md`; no brainstorm — the reporter's diagnosis was exact and confirmed by tracing |
+| requirements-definition | 2026-07-30 | pending (PR) | Bug, so `requirements.md` carrying the bug report (`type: bugfix`); no brainstorm — the reporter's diagnosis was exact and confirmed by tracing |
 | design | 2026-07-30 | pending (PR) | Two candidate fixes named on the ticket; option B taken, A recorded as rejected |
 | tasks-breakdown | 2026-07-30 | pending (PR) | 6-task DAG |
 | implementation | 2026-07-30 | pending (PR) | T1–T6 |
@@ -36,7 +36,7 @@ status: in-progress          # in-progress | complete
   start comment is never handed to `Dispatcher.handle` — the only place `parse_command`
   runs and the only writer of the `ControlStore`. `start_requested` therefore stays
   False and `_awaiting_start` keeps refusing: a closed loop, `spawns: 0` forever.
-  Wrote `bugfix.md` (11 EARS ACs + threat-model-lite, risk tier 3), `design.md`
+  Wrote `requirements.md` (11 EARS ACs + threat-model-lite, risk tier 3), `design.md`
   (option B: don't baseline what nobody processed), `tasks.md`.
 - **Checkpoint/tests:** none yet — no code written.
 - **Next:** T1 — the integration regression test, red first.
@@ -66,6 +66,33 @@ status: in-progress          # in-progress | complete
   `assert 0 == len(adapter.spawns)` before T2 and pass after; the
   arm-exactly-once unit test failed on `['issues'] != ['issues', 'issue_comment']`.
 - **Next:** human review of the PR (the tier-3 gate).
+- **Blockers:** none.
+
+### 2026-07-30 — CI's own gate rejected the spec's shape
+
+- **Phase:** needs-review
+- **Did:** The `the-loop gate` job failed on PR #120:
+  `BLOCK requirements-definition · required artifact is missing
+  (docs/specs/issue-119/requirements.md)`. Not test noise — a real mismatch in this
+  repository's own process. The skill and `.the-loop/manifest.yaml` both bless
+  **`bugfix.md`** in place of `requirements.md` for a bug (issues 36/78/80/93/104 all
+  used it), but the shipped process graph does not: `pdlc.yaml`'s
+  `requirements-definition` node declares `produces: [requirements.md]` literally, and
+  `validate-artifacts` resolves `produces` with no alternative — so a bugfix-shaped
+  work item can never clear the gate. The graph landed in issue-109, *after* every
+  existing `bugfix.md`, so nothing had exercised the combination until now.
+  Conformed rather than changed the shipped graph inside a poller bugfix: the phase-1
+  artifact is `requirements.md` (front-matter still `type: bugfix`, and it still carries
+  the reproduction / expected-vs-actual / root-cause sections a bug spec needs), with
+  the exact section names the graph's exit hooks require — `Requirements`,
+  `Security considerations` on phase 1; `Architecture`, `Security design`,
+  `Testing strategy` on the design; `Task list` on the tasks. Raised the underlying
+  mismatch on the PR as a follow-up.
+- **Checkpoint/tests:** `uv run the-loop check issue-119 --recompute --fail-on block`
+  → **exit 0**, work item at `requirements-approval` in `WAIT` ("no authorized feedback
+  yet") — the correct state for an open PR, and the same shape issue-117 reports.
+  `make check` still green.
+- **Next:** unchanged — human review of PR #120.
 - **Blockers:** none.
 
 ## Review cycles

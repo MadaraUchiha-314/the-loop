@@ -8,10 +8,10 @@ approvedBy: []
 
 # Tasks: don't baseline a control command nobody has processed
 
-> Phase 3 of 3. Derived from [`bugfix.md`](bugfix.md) and [`design.md`](design.md)
+> Phase 3 of 3. Derived from [`requirements.md`](requirements.md) and [`design.md`](design.md)
 > (both locked). `tdd.mode: standard` — each task writes the failing test first.
 
-## DAG
+## Dependency graph (DAG)
 
 ```mermaid
 flowchart LR
@@ -23,14 +23,14 @@ flowchart LR
     T5 --> T6["T6 make check + evidence"]
 ```
 
-## Tasks
+## Task list
 
 - [x] **T1 — Red: the regression test the bug deserves.** In
   `cli/tests/test_control_integration.py`, drive a real `Dispatcher` +
   `SessionRegistry` + `ControlStore` (`requireStartCommand` on) with a provider
   whose thread **already** carries `the-loop:start-execution` at first sight.
   Assert: one spawn, a recorded `start`, zero presence events. Gherkin docstring
-  with `Requirement: docs/specs/issue-119/bugfix.md AC1, AC3`.
+  with `Requirement: docs/specs/issue-119/requirements.md AC1, AC3`.
   *Requirements: AC1, AC3, AC9.*
 - [x] **T2 — Green: defer unprocessed control comments.** Add
   `Poller._pending_control_ids` and rework the first-sight branch per
