@@ -75,7 +75,66 @@ const capabilitiesItems = [
   { text: "Testing & contracts", link: "/capabilities/testing-and-contracts" },
   { text: "Design artifacts", link: "/capabilities/design-artifacts" },
   { text: "Release & publishing", link: "/capabilities/release-publishing" },
+  { text: "Documentation", link: "/capabilities/documentation" },
   { text: "Token economy", link: "/capabilities/token-economy" },
+];
+
+// The CLI is documented as a product in its own right (issue-117): an onboarding path,
+// then one page per command. Before this it was a single generated page copied from
+// cli/README.md, which is why three shipped commands had no documentation at all.
+const cliSidebar = [
+  {
+    text: "the-loop CLI",
+    items: [
+      { text: "Overview", link: "/cli/" },
+      { text: "Installation", link: "/cli/installation" },
+      { text: "Getting started", link: "/cli/getting-started" },
+      { text: "Concepts", link: "/cli/concepts" },
+    ],
+  },
+  {
+    text: "Commands",
+    items: [
+      { text: "Overview", link: "/cli/commands/" },
+      { text: "gh-webhook", link: "/cli/commands/gh-webhook" },
+      { text: "poll", link: "/cli/commands/poll" },
+      { text: "sessions", link: "/cli/commands/sessions" },
+      { text: "events", link: "/cli/commands/events" },
+      { text: "check", link: "/cli/commands/check" },
+      { text: "graph", link: "/cli/commands/graph" },
+      { text: "critic", link: "/cli/commands/critic" },
+      { text: "scenarios", link: "/cli/commands/scenarios" },
+      { text: "migrate-config", link: "/cli/commands/migrate-config" },
+    ],
+  },
+  {
+    text: "Extending",
+    items: [{ text: "Adding a command", link: "/cli/extending" }],
+  },
+];
+
+// Configuration is a top-level section, split by area — the shape of https://vite.dev/config/
+// that issue-117 asked for. Every option on the CLI pages is checked against
+// .the-loop/cli-config.schema.json by cli/tests/test_docs_parity.py, in both directions.
+const configSidebar = [
+  {
+    text: "Configuration",
+    items: [
+      { text: "Configuring the-loop", link: "/config/" },
+      { text: "Harness config", link: "/config/harness-config" },
+    ],
+  },
+  {
+    text: "CLI config",
+    items: [
+      { text: "Configuring the CLI", link: "/config/cli/" },
+      { text: "Webhook options", link: "/config/cli/webhook-options" },
+      { text: "Routing options", link: "/config/cli/routing-options" },
+      { text: "Polling options", link: "/config/cli/polling-options" },
+      { text: "Integrations options", link: "/config/cli/integrations-options" },
+      { text: "Observability options", link: "/config/cli/observability-options" },
+    ],
+  },
 ];
 
 const developerSidebar = [
@@ -141,8 +200,9 @@ export default defineConfig({
   themeConfig: {
     nav: [
       { text: "Guide", link: "/guide/what-is-the-loop" },
+      { text: "CLI", link: "/cli/", activeMatch: "^/cli/" },
+      { text: "Config", link: "/config/", activeMatch: "^/config/" },
       { text: "Reference", link: "/reference/commands" },
-      { text: "CLI", link: "/cli" },
       {
         text: "Developer",
         items: [
@@ -170,12 +230,16 @@ export default defineConfig({
         },
       ],
 
+      "/cli/": cliSidebar,
+      "/config/": configSidebar,
+
       "/reference/": [
         {
           text: "Reference",
           items: [
-            { text: "Commands", link: "/reference/commands" },
-            { text: "Configuration", link: "/reference/configuration" },
+            { text: "Plugin commands", link: "/reference/commands" },
+            { text: "Configuration", link: "/config/" },
+            { text: "CLI commands", link: "/cli/commands/" },
           ],
         },
       ],

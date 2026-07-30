@@ -223,13 +223,32 @@ there.
 
 ## UI/UX design
 
-N/A as an artifact set — this work item authors documentation pages inside VitePress's
-existing default theme. No new component, layout, stylesheet or theme override is
-introduced, so there is no visual design to prototype or lock: the "design" here is the
-information architecture in §Architecture and the per-option format in C3, both of which
-are reviewable as markdown. `design.uiArtifacts.screenshotEvidence` is satisfied by the
-built-site evidence recorded in the execution log (nav renders, sidebars render, search
-returns per-command results — R6.5).
+No **prototype** artifact: this work item authors pages inside VitePress's existing default
+theme, and introduces no component, layout, stylesheet or theme override. There is nothing
+to mock up — the design here is the information architecture in §Architecture and the
+per-option format in C3, both reviewable as markdown.
+
+The user-facing surface is still real, though, so `design.uiArtifacts.screenshotEvidence`
+is met with screenshots of the **built** site rather than of a mock:
+
+| Artifact | Type | Location | Covers (screen · requirement) | Status |
+|----------|------|----------|-------------------------------|--------|
+| `design/cli-overview.png` | screenshot | `design/cli-overview.png` | `/cli/` — CLI as a top-level nav section with its own sidebar · R1.1, R1.2 | approved |
+| `design/cli-commands.png` | screenshot | `design/cli-commands.png` | `/cli/commands/` — one table, one page per command · R2.2 | approved |
+| `design/config-routing.png` | screenshot | `design/config-routing.png` | `/config/cli/routing-options` — per-option Type/Default/Related, area sidebar, section outline · R3.1–R3.3 | approved |
+
+- **Flows & states:** the two onboarding paths — plugin (`Guide`) and CLI
+  (`/cli/` → installation → getting-started → concepts → commands) — and the reference
+  surfaces they hand off to (`/config/`, `/cli/commands/`).
+- **Design system / tokens:** VitePress default theme, unmodified. Custom containers
+  (`::: tip | warning | danger`) carry severity; `danger` is reserved for the three
+  security statements in §Security design.
+- **Accessibility & responsiveness:** inherited from the theme — no override that could
+  regress either. Every option is a real heading, so the outline and screen-reader
+  landmarks follow the document rather than styling.
+- **Evidence:** the three screenshots above, plus the built-site checks in the execution
+  log (all internal links and anchors resolve; every command and config area is its own
+  search-index document — R6.5).
 
 ## Data models
 

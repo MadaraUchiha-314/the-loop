@@ -16,6 +16,9 @@ hero:
       text: Quickstart
       link: /guide/quickstart
     - theme: alt
+      text: the-loop CLI
+      link: /cli/
+    - theme: alt
       text: View on GitHub
       link: https://github.com/MadaraUchiha-314/the-loop
 
@@ -31,8 +34,11 @@ features:
       harnesses. Install directly from GitHub — no bespoke marketplace.
   - title: A CLI companion
     details: >-
-      A lightweight, extensible Python CLI (the-loop) for webhook-triggered session
-      routing, polling, structured observability, and Gherkin scenario discovery.
+      A lightweight, extensible Python CLI (the-loop) that turns ticket activity into
+      agent runs: webhook and poll ingress, one session per work item, execution control,
+      and a structured event log. Documented as a product of its own.
+    link: /cli/
+    linkText: Explore the CLI
   - title: Gated, reviewed, documented
     details: >-
       Every phase is gated by human review. Every decision leaves a paper trail.
