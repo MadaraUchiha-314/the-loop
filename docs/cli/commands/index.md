@@ -8,8 +8,10 @@ the-loop --config path/to/cli-config.yaml <command>   # must precede the subcomm
 
 ## Daemon commands
 
-Long-running or machine-scoped. They read the [CLI config](/config/cli/) — not any
-repository's harness config.
+Long-running or machine-scoped. Their **own** settings come from the
+[CLI config](/config/cli/) and from nowhere else — no repository configures the daemon
+([decision-044](/decisions/decision-044)). When they act *on* a work item they still read
+that item's own checkout, the same way the repo-scoped commands do.
 
 | Command | What it does |
 |---------|--------------|
@@ -22,7 +24,8 @@ repository's harness config.
 
 Run once, inside a checkout. They read that project's
 [harness config](/config/harness-config) and are no part of the daemon
-([decision-032](/decisions/decision-032)).
+([decision-032](/decisions/decision-032)) — they need no `cli-config.yaml` at all, which
+is what lets [`check`](/cli/commands/check) run as a CI gate in a bare checkout.
 
 | Command | What it does |
 |---------|--------------|

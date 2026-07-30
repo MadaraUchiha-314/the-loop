@@ -58,6 +58,40 @@ you would review code, and never put a secret in `env`. See
 [`the-loop critic`](/cli/commands/critic) for the entry shape and the placeholders it
 accepts.
 
+## What the CLI reads from it
+
+The file's primary reader is the agent — the `/the-loop:*` commands and the operating
+skill. But the [CLI](/cli/) reads five of its keys too, and it is worth being precise
+about which, because "why is the CLI reading my harness config?" is a fair question
+([issue #121](https://github.com/MadaraUchiha-314/the-loop/issues/121)).
+
+The answer is that these five are the **repository's own policy**, and the CLI is
+executing that policy on the repository's behalf. None of them could live in
+`cli-config.yaml`: that is one machine-scoped file for a daemon watching N repositories,
+the skill already reads the same values, and `check`/`scenarios` run in bare CI checkouts
+where no CLI config exists.
+
+| Key | Read by | Why it is the repository's to declare |
+|---|---|---|
+| `workflow.phaseLabelPrefix` | `check`, `graph`, and the daemon's graph coupling | The `loop:<phase>` label namespace is this project's convention. |
+| `workflow.specDir` | `check`, `graph`, and the daemon's graph coupling | Where this project keeps its specs is a fact about its layout. |
+| `notifications` | `check`, `graph`, and the daemon's graph coupling | Recipients resolve against this repository's own `collaborators.yaml`. |
+| `reviews.critics` | `critic` | The review bar is a property of the project — and the skill reads the same entries, so a second source could make the two disagree. |
+| `testing.integrationTestGlobs` | `scenarios` | Where the integration tests live is part of the layout. |
+
+Everything else in this file is read by the agent alone.
+
+::: tip The rule, in one line
+A repository's harness config configures work done **on that repository** — including
+when a daemon is the one doing it. It never configures the daemon itself: no checkout
+supplies `authorizedUsers`, a poll source's `repos`, a port, or anything else about the
+operator's machine. See [decision-044](/decisions/decision-044).
+:::
+
+The table above is enforced: `cli/tests/test_harness_config.py` fails the build if the CLI
+reads a key that is not listed here, if a key listed here is no longer read, or if any
+module other than `the_loop.harness_config` opens the file.
+
 ## Collaborators
 
 `.the-loop/collaborators.yaml` — the single source of truth for who collaborates on the

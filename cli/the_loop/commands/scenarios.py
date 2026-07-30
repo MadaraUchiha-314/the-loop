@@ -7,8 +7,8 @@ configured integration-test globs, extracts those scenarios and presents them as
 scenarios are tested?" without running anything.
 
 Globs come from ``--glob`` (repeatable) or, failing that, ``testing.integrationTestGlobs``
-in ``.the-loop/harness-config.yaml`` (the pre-rename ``config.yaml`` is still honored —
-issue-82), else a built-in default set.
+in the repository's harness config (read through :mod:`the_loop.harness_config`, which
+also honours the pre-rename name — issue-82), else a built-in default set.
 """
 
 from __future__ import annotations
@@ -19,9 +19,8 @@ import logging
 from pathlib import Path
 from typing import List, Sequence
 
-import yaml
-
 from .base import Command, register
+from ..harness_config import load as load_harness_config
 from ..scenarios import DEFAULT_GLOBS, Scenario, collect_scenarios
 
 logger = logging.getLogger("the-loop.scenarios")
@@ -30,23 +29,12 @@ logger = logging.getLogger("the-loop.scenarios")
 def _load_config_globs(root: Path) -> List[str]:
     """Best-effort read of testing.integrationTestGlobs from the harness config.
 
-    Reads ``.the-loop/harness-config.yaml``, falling back to the pre-rename
-    ``.the-loop/config.yaml`` (issue-82, decision-035) so repos that have not run
-    /the-loop:upgrade-the-loop keep working. Returns ``[]`` when there is no such
-    file, or it does not parse — the command still has its built-in globs.
+    Where the integration tests live is a fact about this repository's layout, which is
+    why it is the repository's to declare and not the operator's (decision-044). Returns
+    ``[]`` when there is no config, or it does not parse — the command still has its
+    built-in globs.
     """
-    candidates = [
-        root / ".the-loop" / "harness-config.yaml",
-        root / ".the-loop" / "config.yaml",  # pre-rename fallback
-    ]
-    cfg_path = next((p for p in candidates if p.is_file()), None)
-    if cfg_path is None:
-        return []
-    try:
-        data = yaml.safe_load(cfg_path.read_text()) or {}
-    except Exception:  # noqa: BLE001
-        logger.warning("could not parse %s; using default globs", cfg_path)
-        return []
+    data = load_harness_config(root)
     globs = ((data.get("testing") or {}).get("integrationTestGlobs")) or []
     return [str(g) for g in globs]
 

@@ -43,30 +43,39 @@ registry.
 ## Two halves
 
 Some commands are **daemons**: long-running, machine-scoped, watching several repositories
-at once. Others are **repo-scoped**: they run once, inside a checkout, and read that
-project's harness config. It is worth knowing which is which, because they read different
-configuration files.
+at once. Others are **repo-scoped**: they run once, inside a checkout. Worth knowing which
+is which, because it decides what you have to configure to run them — a daemon needs a
+`cli-config.yaml`, a repo-scoped command needs nothing but the checkout.
 
 ```mermaid
 graph TD
-  subgraph D["Daemon — reads cli-config.yaml"]
+  CFG["cli-config.yaml<br/><i>your machine</i>"]
+  subgraph D["Daemon commands"]
     GW["gh-webhook<br/>push ingress"]
     PO["poll<br/>pull ingress"]
     SE["sessions<br/>registry + control"]
     EV["events<br/>the trail"]
   end
-  subgraph R["Repo-scoped — reads the repo's harness-config.yaml"]
+  subgraph R["Repo-scoped commands"]
     CH["check"]
     GR["graph"]
     CR["critic"]
     SC["scenarios"]
   end
+  HC["the work item's checkout<br/>.the-loop/harness-config.yaml"]
   MC["migrate-config<br/>upgrades cli-config.yaml"]
-  D --- MC
+  CFG --> D
+  CFG --> MC
+  D -->|"phase label, specDir,<br/>notifications"| HC
+  R --> HC
 ```
 
-The split is [decision-032](/decisions/decision-032), and the two configuration files it
-implies are explained in [Configuring the-loop](/config/).
+Note the one arrow people expect to be missing: the daemon reads a **work item's own
+checkout** too, for the values that repository declares about itself. What it never does
+is take its *own* settings from a repository. That direction rule is
+[decision-044](/decisions/decision-044); the split into two files is
+[decision-032](/decisions/decision-032), and both files are explained in
+[Configuring the-loop](/config/).
 
 ## Next
 

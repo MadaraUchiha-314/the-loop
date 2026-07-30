@@ -42,10 +42,15 @@ arrive by webhook or by poll, so switching ingress later changes nothing else.
 `.the-loop/harness-config.yaml` is a repository's, and it describes *how work is done
 there*. They never share a key.
 
-The daemon **never** reads a repository's harness config — including the two settings
-people most expect to be inherited: `authorizedUsers` and a poll source's `repos`. Both are
-CLI-config-only, with no fallback. See [Configuring the-loop](/config/) and
-[decision-032](/decisions/decision-032).
+Which file governs what is a question of **direction**, not of which command is asking
+([decision-044](/decisions/decision-044)): a repository's harness config configures work
+done *on that repository* — including when the daemon is the one doing it, which is how
+the graph coupling learns a repo's `phaseLabelPrefix` and `specDir`. It **never**
+configures the daemon itself. The two settings people most expect to be inherited,
+`authorizedUsers` and a poll source's `repos`, are CLI-config-only with no fallback, and
+fail closed when unset. See [Configuring the-loop](/config/),
+[decision-032](/decisions/decision-032) and
+[decision-044](/decisions/decision-044).
 
 ## Work items and sessions
 

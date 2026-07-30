@@ -11,6 +11,10 @@ Both configs are read best-effort — a missing or malformed one yields defaults
 rather than an error, because ``the-loop check`` must work in a repo that has
 never seen the CLI config, and the daemon must work in a checkout that has no
 harness config.
+
+The harness half is read through :mod:`the_loop.harness_config`, the CLI's only
+reader of that file (issue-121, decision-044). ``load_harness_config`` stays
+exported here because it is this package's established name for it.
 """
 
 from __future__ import annotations
@@ -19,24 +23,11 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
 
+from ..harness_config import load as load_harness_config
+
 logger = logging.getLogger("the-loop.graph")
 
 __all__ = ["build_runtime", "load_harness_config"]
-
-
-def load_harness_config(root: Path) -> Dict[str, Any]:
-    """Best-effort read of the per-repo harness config (never fatal)."""
-    import yaml
-
-    for name in ("harness-config.yaml", "config.yaml"):
-        path = root / ".the-loop" / name
-        if path.is_file():
-            try:
-                data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-            except Exception:  # noqa: BLE001
-                return {}
-            return data if isinstance(data, dict) else {}
-    return {}
 
 
 def build_runtime(

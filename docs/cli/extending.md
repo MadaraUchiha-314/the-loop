@@ -47,9 +47,17 @@ stable help output.
 
 - **Exit codes.** `0` success, `1` ran-but-negative, `2` could-not-run. Consistency is what
   makes the CLI scriptable — see [exit codes](/cli/commands/#exit-codes).
-- **Which config?** A daemon command reads the [CLI config](/config/cli/); a repo-scoped
-  command reads the project's [harness config](/config/harness-config). Do not mix them —
-  that split is [decision-032](/decisions/decision-032).
+- **Which config?** Ask what the setting *describes*, not which command is asking. If it
+  describes the operator's machine — ingress, routing, hosting, logging — it is the
+  [CLI config](/config/cli/), and no repository may supply it. If it describes how work is
+  done in a project, it is that project's [harness config](/config/harness-config), and a
+  daemon command reads it too when it acts on that project. The split is
+  [decision-032](/decisions/decision-032); the direction rule is
+  [decision-044](/decisions/decision-044).
+- **Read the harness config through `the_loop.harness_config`.** It is the only module
+  that opens the file, it handles the pre-rename `config.yaml` fallback, and its `READS`
+  tuple is where a new key gets declared. A test fails the build if a command reads the
+  file itself or reads a key nobody declared.
 - **Compute path defaults inside `add_arguments`, not at import.** `--config` is resolved
   just before `add_arguments` runs, so a default computed at import time would ignore it.
 - **Emit events.** If the command makes decisions worth explaining later, call

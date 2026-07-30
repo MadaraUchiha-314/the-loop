@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [044](decision-044.md) | A repository's harness config configures work on that repository, never the daemon itself | proposed | 2026-07-30 |
 | [043](decision-043.md) | A critic is a declared executable the CLI spawns; the harness keeps the loop | proposed | 2026-07-29 |
 | [042](decision-042.md) | Route on hook outcomes; the-loop owns its integrations; MCP by delegation | proposed | 2026-07-28 |
 | [041](decision-041.md) | Model the-loop's PDLC as a graph of nodes with entry/exit hooks | proposed | 2026-07-28 |

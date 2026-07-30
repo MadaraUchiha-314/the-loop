@@ -18,11 +18,13 @@ mean the same operator maintaining N copies of their own webhook port. Conversel
 project requires three critic rounds" is a property of the project, not of whoever happens
 to be running the daemon today.
 
-::: warning The daemon never reads a repository's harness config
-Not for anything — including the two settings people most expect to be inherited:
+::: warning A repository never configures the daemon
+The rule runs in **one direction** ([decision-044](/decisions/decision-044)): a
+repository's harness config configures work done *on that repository*, and never the
+daemon itself. The two settings people most expect to be inherited —
 `routing.authorizedUsers` (who may trigger it) and a poll source's `repos` (what it
-watches). Both are **CLI-config-only**, with no fallback. Set them explicitly, or the
-daemon fails closed and does nothing.
+watches) — are **CLI-config-only**, with no fallback. Set them explicitly, or the daemon
+fails closed and does nothing.
 :::
 
 ## Which one am I editing?
@@ -36,13 +38,21 @@ graph TD
   C --> C2["copied from<br/>skills/the-loop/templates/cli-config.yaml"]
 ```
 
-There are three exceptions worth memorising, because they look like daemon settings but
-are read from the **repository** the CLI is invoked in — they are repo-scoped commands,
-not daemon commands:
+The picture is not "daemons read one file, other commands read the other" — it is the
+direction. Anything the-loop does **to a repository** is configured by that repository:
 
 - `the-loop check` and `the-loop graph` read the repo's `workflow` and process graph.
 - `the-loop scenarios` reads the repo's `testing.integrationTestGlobs`.
 - `the-loop critic` reads the repo's `reviews.critics[]`.
+- **The daemon does too**, for the work item's *own* checkout: the graph coupling reads
+  `workflow.phaseLabelPrefix`, `workflow.specDir` and `notifications` from there, after
+  proving via the checkout's `origin` remote that it really is that repository's. It has
+  to — the `loop:<phase>` label it writes is named by the repository, and a daemon
+  watching several cannot know the name for each without asking.
+
+What never happens is the reverse: no checkout supplies the daemon's *own* settings. The
+full list of keys the CLI reads from a repository is in
+[the harness config reference](/config/harness-config#what-the-cli-reads-from-it).
 
 ## Reference
 

@@ -94,6 +94,16 @@ self-learning/ML capabilities.
   `./.the-loop/cli-config.yaml` (repo-relative, so an operator can track it in a
   chosen repo), else `~/.the-loop/cli-config.yaml`, so the CLI is not tied to a single
   repo (`cli/README.md`, decision-032).
+- A repository's harness config SHALL configure work done **on that repository** and
+  SHALL NOT configure the daemon itself (decision-044). Concretely: the daemon's graph
+  coupling reads a work item's own checkout for `workflow.phaseLabelPrefix`,
+  `workflow.specDir` and `notifications` — after `graphlink` has proved via the checkout's
+  `origin` remote that it is that repository's — while `authorizedUsers`, a poll source's
+  `repos` and every other ingress setting remain CLI-config-only with no fallback.
+- The CLI SHALL read a repository's harness config in exactly one module
+  (`the_loop.harness_config`), which SHALL declare its complete read surface as data
+  (`READS`); a test SHALL fail the build when a key is read that is not declared, when a
+  declared key is undocumented, or when any other module opens the file.
 
 ## Design
 
@@ -105,6 +115,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-121 | The harness-config read surface stated as a direction rule and pinned: one reader module (`the_loop.harness_config`) with a declared `READS` tuple replacing three duplicated readers, a test asserting it against the schema and the docs, and the four pages that claimed the daemon never reads a repo's harness config corrected — it has, on the `graphlink` path, since issue-113 | [spec](../specs/issue-121/), [decision-044](../decisions/decision-044.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/121) |
 | issue-117 | Documented as a product: an onboarding path plus one page per command under `docs/cli/`, every config option under `docs/config/cli/`, and a parity test that fails when a registered command has no page or a documented key is absent from the schema. `check`, `graph` and `migrate-config` documented for the first time; the `integrations`, `routing.workspace`, `routing.graph` and `polling.maxRetries` blocks written up; the removed `ghBinary` deleted from the docs | [spec](../specs/issue-117/), [documentation](documentation.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/117) |
 | issue-111 | Session listings recognise the registry's own files instead of every `*.json` in the shared `<root>/sessions/` directory, so `poll-state.json` no longer reports as a corrupt registry entry on every poll cycle | [spec](../specs/issue-111/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/111) |
 | issue-109 | Added `check` and `graph` (the process-graph runtime), the `integrations` config block with configurable transports, a `version`-gated **breaking** CLI-config migration retiring `ghBinary`, and the `slack` extra | [spec](../specs/issue-109/), [process-graph](process-graph.md), [decision-041](../decisions/decision-041.md), [decision-042](../decisions/decision-042.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/109) |
