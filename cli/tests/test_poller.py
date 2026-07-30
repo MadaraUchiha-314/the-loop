@@ -1331,3 +1331,175 @@ def test_poll_state_forget_drops_the_whole_ledger(tmp_path):
     assert state.is_known(REF15) is False
     assert state.seen_comments(REF15) == set()
     assert state.spawn_attempts(REF15) == 0
+
+
+# -- a control command that predates first sight (issue-119) -------------------
+#
+# First sight baselines the thread the spawned session can read itself. A
+# control command is not that: it is an instruction to the-loop that nothing has
+# executed, so baselining it silences it forever. These assert which comments are
+# held back — never what they mean, which is the dispatcher's job.
+
+START_KEYWORD = "the-loop:start-execution"
+STOP_KEYWORD = "the-loop:stop-execution"
+
+
+def _started_dispatcher(**kwargs):
+    """A dispatcher double with the shipped control policy (start required)."""
+    return RecordingDispatcher(control=ControlConfig(), **kwargs)
+
+
+def test_first_sight_forwards_a_pre_existing_start_and_baselines_the_rest(tmp_path):
+    provider = FakeProvider(
+        items=[_item(15)],
+        comments={
+            15: [_comment("IC_0", body="hello"), _comment("IC_1", START_KEYWORD)]
+        },
+    )
+    state = PollState(tmp_path / "state.json")
+    disp = _started_dispatcher()
+    summary = make_poller(
+        provider, SessionRegistry(tmp_path / "sessions"), disp, state
+    ).poll_once()
+
+    # The start is forwarded, not baselined; the chat comment is baselined, not
+    # forwarded; and no presence event is emitted (nothing has started it yet).
+    assert summary.comments_forwarded == 1 and summary.spawns == 0
+    assert [e.delivery_id for e in disp.events] == ["comment-IC_1"]
+    assert state.seen_comments(REF15) == {"IC_0"}
+
+
+def test_first_sight_forwards_pre_existing_commands_in_thread_order(tmp_path):
+    provider = FakeProvider(
+        items=[_item(15)],
+        comments={
+            15: [_comment("IC_1", START_KEYWORD), _comment("IC_2", STOP_KEYWORD)]
+        },
+    )
+    disp = _started_dispatcher()
+    make_poller(
+        provider,
+        SessionRegistry(tmp_path / "sessions"),
+        disp,
+        PollState(tmp_path / "state.json"),
+    ).poll_once()
+
+    assert [e.delivery_id for e in disp.events] == ["comment-IC_1", "comment-IC_2"]
+
+
+def test_a_deferring_first_sight_arms_the_spawn_exactly_once(tmp_path):
+    # requireStartCommand off: presence IS armed. The arming decision must still
+    # be taken once — on the comment path — not once per branch.
+    provider = FakeProvider(
+        items=[_item(15)], comments={15: [_comment("IC_1", START_KEYWORD)]}
+    )
+    disp = RecordingDispatcher()  # control enabled, requireStartCommand False
+    summary = make_poller(
+        provider,
+        SessionRegistry(tmp_path / "sessions"),
+        disp,
+        PollState(tmp_path / "state.json"),
+    ).poll_once()
+
+    assert summary.spawns == 1
+    assert [e.event for e in disp.events] == ["issues", "issue_comment"]
+
+
+def test_first_sight_baselines_an_unauthorized_authors_start(tmp_path):
+    provider = FakeProvider(
+        items=[_item(15)],
+        comments={15: [_comment("IC_1", START_KEYWORD, author="stranger")]},
+    )
+    state = PollState(tmp_path / "state.json")
+    disp = _started_dispatcher()
+    summary = make_poller(
+        provider, SessionRegistry(tmp_path / "sessions"), disp, state
+    ).poll_once()
+
+    assert summary.comments_forwarded == 0 and disp.events == []
+    assert state.seen_comments(REF15) == {"IC_1"}
+
+
+def test_first_sight_baselines_the_loops_own_keyword_comment(tmp_path):
+    # `the-loop sessions start` posts the keyword back to the ticket, marked as
+    # its own: it was applied locally already, so reading it back is the very
+    # loop issue-104 closed.
+    provider = FakeProvider(
+        items=[_item(15)],
+        comments={15: [_comment("IC_1", mark_self_authored(START_KEYWORD))]},
+    )
+    state = PollState(tmp_path / "state.json")
+    disp = _started_dispatcher()
+    summary = make_poller(
+        provider, SessionRegistry(tmp_path / "sessions"), disp, state
+    ).poll_once()
+
+    assert summary.comments_forwarded == 0 and disp.events == []
+    assert state.seen_comments(REF15) == {"IC_1"}
+
+
+def test_first_sight_baselines_an_ambiguous_control_comment(tmp_path):
+    # Two conflicting keywords execute nothing, so there is nothing to hold back.
+    provider = FakeProvider(
+        items=[_item(15)],
+        comments={15: [_comment("IC_1", f"{START_KEYWORD} then {STOP_KEYWORD}")]},
+    )
+    state = PollState(tmp_path / "state.json")
+    disp = _started_dispatcher()
+    summary = make_poller(
+        provider, SessionRegistry(tmp_path / "sessions"), disp, state
+    ).poll_once()
+
+    assert summary.comments_forwarded == 0 and disp.events == []
+    assert state.seen_comments(REF15) == {"IC_1"}
+
+
+def test_first_sight_with_control_disabled_is_unchanged(tmp_path):
+    provider = FakeProvider(
+        items=[_item(15)], comments={15: [_comment("IC_1", START_KEYWORD)]}
+    )
+    state = PollState(tmp_path / "state.json")
+    disp = RecordingDispatcher(control=ControlConfig(enabled=False))
+    summary = make_poller(
+        provider, SessionRegistry(tmp_path / "sessions"), disp, state
+    ).poll_once()
+
+    assert summary.spawns == 1 and summary.comments_forwarded == 0
+    assert [e.event for e in disp.events] == ["issues"]
+    assert state.seen_comments(REF15) == {"IC_1"}
+
+
+def test_first_sight_ignores_the_thread_of_an_unauthorized_items_author(tmp_path):
+    provider = FakeProvider(
+        items=[_item(15, author="stranger")],
+        comments={15: [_comment("IC_1", START_KEYWORD)]},
+    )
+    state = PollState(tmp_path / "state.json")
+    disp = _started_dispatcher()
+    summary = make_poller(
+        provider, SessionRegistry(tmp_path / "sessions"), disp, state
+    ).poll_once()
+
+    assert summary.comments_forwarded == 0 and disp.events == []
+    assert state.seen_comments(REF15) == {"IC_1"}
+
+
+def test_first_sight_does_not_replay_a_thread_the_loop_already_acted_on(tmp_path):
+    # A control record is the-loop's own answer to "has this been processed?".
+    # With one present, the thread is baselined as before: a first sight may
+    # bootstrap control state, never overwrite it (e.g. re-applying an old stop
+    # over a start issued from the CLI, whose comment is self-marked).
+    store = ControlStore(tmp_path / "control")
+    store.record(REF15, "start", source="cli", actor="octocat")
+    provider = FakeProvider(
+        items=[_item(15)], comments={15: [_comment("IC_1", STOP_KEYWORD)]}
+    )
+    state = PollState(tmp_path / "state.json")
+    disp = _started_dispatcher(control_store=store)
+    summary = make_poller(
+        provider, SessionRegistry(tmp_path / "sessions"), disp, state
+    ).poll_once()
+
+    assert summary.comments_forwarded == 0
+    assert state.seen_comments(REF15) == {"IC_1"}
+    assert [e.event for e in disp.events] == ["issues"]  # started -> presence armed
