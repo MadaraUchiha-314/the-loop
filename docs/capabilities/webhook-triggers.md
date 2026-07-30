@@ -77,6 +77,23 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   - Every command is recorded (`control.command` with actor, source and effect;
     `control.rejected` when a work item is not armed), and the last command per work
     item is kept beside its session (`<registryDir>/control/`).
+  - **A command already on the thread when the poller first sees the work item still
+    counts** (issue-119). First sight baselines the existing thread as read — the
+    spawned session reads it itself — but a control command is an instruction to
+    the-loop that nothing has executed yet, so baselining it would silence it
+    permanently (the item stays armed-but-never-started, `spawns: 0` every cycle).
+    WHEN a first-sight thread carries **unambiguous** control commands from
+    authorized users THEN those comments SHALL be held back from the baseline and
+    forwarded on that same cycle, in thread order (so the last command wins), while
+    every *other* comment SHALL still be baselined; the arming decision for the cycle
+    is taken once, on that comment path, rather than a presence event being emitted in
+    addition. The poller decides only *which comments are unresolved* — parsing,
+    the named-authorized-actor re-check, execution and recording all stay in the
+    dispatcher — so an unauthorized, self-authored (`<!-- the-loop:agent-comment -->`)
+    or ambiguous keyword comment is baselined exactly as before, and
+    `control.enabled: false` restores the plain first-sight baseline verbatim. A
+    work item that **already has a control record** is skipped too: a first sight may
+    *bootstrap* control state, never replay over state the-loop has already recorded.
 - **An event on a PR resolves the PR's linked issue(s) first.** WHEN an event concerns a
   pull request — `pull_request*`, **or** an `issues`/`issue_comment` event whose `issue`
   carries a `pull_request` key (GitHub's shape for a **PR conversation comment**) — THEN
@@ -222,6 +239,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-119 | The poll path stopped swallowing a control command that predates first sight: unprocessed, authorized, unambiguous keyword comments are held back from the first-sight baseline and forwarded on the same cycle, so a labelled item whose start comment already existed actually starts | [spec](../specs/issue-119/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/119) |
 | issue-111 | The session registry treats `<root>/sessions/` as shared state: listings read only `<slug>.json` files it wrote, keeping the corrupt-entry warning meaningful | [spec](../specs/issue-111/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/111) |
 | issue-106 | Execution control: four declared keywords (`the-loop:start-execution`, …) an **authorized** user steers with, the auto-execute label demoted to *necessary but not sufficient* (`routing.control.requireStartCommand`, default on), `paused` sessions, CLI parity with the same paper trail, and one `state.root` for everything the CLI generates | [spec](../specs/issue-106/), [decision-040](../decisions/decision-040.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/106) |
 | issue-104 | The loop-prevention marker gained a producer-side helper (`mark_self_authored`) applied to the daemon's own comments — the session announcement no longer re-enters the session it announces | [spec](../specs/issue-104/), [decision-031](../decisions/decision-031.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/104) |

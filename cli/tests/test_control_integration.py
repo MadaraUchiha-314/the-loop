@@ -697,3 +697,91 @@ def test_a_start_comment_spawns_through_the_poll_path(setup, tmp_path):
     poller.poll_once()
     assert _wait(lambda: len(adapter.spawns) == 1)
     assert provider.presence_events == 0  # the comment spawned it, not presence
+
+
+# -- a start that predates first sight (issue-119) ------------------------------
+
+
+def _comment(cid, body, author="octocat"):
+    return Comment(
+        id=cid,
+        body=body,
+        author=author,
+        created_at="2026-07-30T16:47:24Z",
+        url=f"https://c/{cid}",
+    )
+
+
+def test_a_start_comment_that_predates_first_sight_still_starts_the_item(
+    setup, tmp_path
+):
+    """
+    Feature: authorized execution control
+      Scenario: the start command is already on the thread the first time the
+                poller sees the work item
+        Given a labelled work item the poller has never seen
+        And its thread already carries an authorized start keyword
+        When the poller runs its first cycle over it
+        Then the start is recorded and a session is spawned
+        And no presence event is emitted for it
+    Requirement: docs/specs/issue-119/bugfix.md AC1, AC3, AC8
+    """
+    dispatcher, registry, adapter, store = setup
+    provider = _Provider(comments=[_comment("c1", START_KEYWORD)])
+    poller = _poller(tmp_path, dispatcher, provider)
+
+    poller.poll_once()
+
+    assert _wait(lambda: len(adapter.spawns) == 1)
+    record = store.get(REF)
+    assert record is not None and record.command == "start"
+    assert provider.presence_events == 0  # the comment started it, not the label
+
+
+def _recorded(store, ref=REF):
+    record = store.get(ref)
+    return record.command if record is not None else ""
+
+
+def test_pre_existing_control_comments_are_applied_in_thread_order(setup, tmp_path):
+    """
+    Feature: authorized execution control
+      Scenario: a first-sight thread carrying start then stop ends disarmed
+        Given a labelled work item the poller has never seen
+        And its thread carries the start keyword followed by the stop keyword
+        When the poller runs its first cycle over it
+        Then both are applied in thread order, so the recorded state is stop
+    Requirement: docs/specs/issue-119/bugfix.md AC2
+    """
+    dispatcher, registry, adapter, store = setup
+    provider = _Provider(
+        comments=[_comment("c1", START_KEYWORD), _comment("c2", STOP_KEYWORD)]
+    )
+    poller = _poller(tmp_path, dispatcher, provider)
+
+    poller.poll_once()
+
+    # The last command on the thread wins — the item is left disarmed, so the
+    # next cycle does not re-arm it. (Whether the in-flight spawn the start
+    # queued lands before the stop is the dispatcher's pre-existing async
+    # behaviour, identical on the webhook path; this asserts the ordering the
+    # poller is responsible for.)
+    assert _recorded(store) == "stop"
+
+
+def test_a_stop_that_predates_first_sight_leaves_the_item_disarmed(setup, tmp_path):
+    """
+    Feature: authorized execution control
+      Scenario: a pre-existing stop is honoured, not discarded
+    Requirement: docs/specs/issue-119/bugfix.md AC2
+    """
+    dispatcher, registry, adapter, store = setup
+    provider = _Provider(comments=[_comment("c1", STOP_KEYWORD)])
+    poller = _poller(tmp_path, dispatcher, provider)
+
+    poller.poll_once()
+
+    assert _recorded(store) == "stop"
+    assert _wait(lambda: True, 0.2)
+    assert adapter.spawns == []
+    assert provider.presence_events == 0

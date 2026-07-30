@@ -38,7 +38,7 @@ from typing import Dict, List, Optional, Sequence
 
 from .. import eventlog
 from ..authz import is_authorized, is_self_authored
-from ..control import ControlConfig, ControlStore
+from ..control import ControlConfig, ControlStore, parse_command
 from ..reload import Reloader
 from ..sessions import SessionRegistry, WorkItemRef
 from ..webhook.dispatcher import Dispatcher
@@ -474,11 +474,35 @@ class Poller:
         # itself, matching webhook "only events going forward"), arm the spawn,
         # and stop. Only spawn for items an authorized user authored (the input
         # fed to /the-loop:work-on is that item's own body).
+        #
+        # Except for control commands nobody has processed yet (issue-119).
+        # Baselining means "resolved, never look at this again" — true of an
+        # ordinary comment, false of an instruction to the-loop that has not run.
+        # Those flow through the ordinary comment path below instead, so a start
+        # posted BEFORE the poller first saw the item behaves exactly like one
+        # posted after it (which is all the webhook path ever sees, label and
+        # comment being two deliveries).
         if first_sight:
-            if item_authorized and not has_session:
-                self._try_spawn(provider, item, refs, summary)
-            self.state.baseline_comments(ref, live_ids, _utcnow())
-            return
+            pending = (
+                self._pending_control_ids(ref, comments) if item_authorized else set()
+            )
+            self.state.baseline_comments(
+                ref, [cid for cid in live_ids if cid not in pending], _utcnow()
+            )
+            if not pending:
+                if item_authorized and not has_session:
+                    self._try_spawn(provider, item, refs, summary)
+                return
+            # Fall through to the known-item path with `pending` unbaselined: it
+            # forwards them (in thread order) and takes the arming decision ONCE,
+            # after they have been applied — so presence and a control-triggered
+            # spawn are never enqueued for the same item on the same cycle.
+            logger.info(
+                "%s: first sight, and %d control comment(s) on it were never "
+                "processed; handling them now instead of baselining them",
+                ref,
+                len(pending),
+            )
 
         # Known item. Sort unresolved comments into candidates (authorized,
         # non-self) to forward, and dropped ones (unauthorized, or issue-64
@@ -573,6 +597,48 @@ class Poller:
         self.state.note_spawn_attempt(ref, event.delivery_id)
         summary.spawns += 1
 
+    def _pending_control_ids(self, ref: str, comments: Sequence[Comment]) -> set:
+        """Ids of comments carrying a control command nobody has processed (issue-119).
+
+        The poller's *only* job here is to decide which comments are still
+        unresolved; what a command means, who may issue it and what it does stay
+        where they belong — :meth:`Dispatcher.handle`, which re-checks for a
+        **named** authorized actor, refuses a start on an unarmed item, and is
+        the single writer of the :class:`ControlStore`. So this returns comment
+        ids and nothing else: no control state is recorded here, no spawn is
+        triggered here, and no text from a body escapes this method.
+
+        A comment qualifies only when it passes the very guards the known-item
+        forward path applies to any candidate — authorized author (an empty
+        allowlist authorizes nobody), not the-loop's own self-marked body — and
+        carries an **unambiguous** command. An ambiguous body (two conflicting
+        keywords) is left to the baseline: the dispatcher executes nothing for
+        it, so forwarding it would only log a warning. ``control.enabled: false``
+        yields no commands at all, i.e. the pre-issue-119 behaviour verbatim.
+
+        A work item that **already has a control record** is skipped entirely:
+        the record is the-loop's own durable answer to "has this been
+        processed?", so re-reading the thread could only replay commands it has
+        already acted on — e.g. re-applying a `stop` that a later
+        `the-loop sessions start` (whose comment is self-marked, hence invisible
+        here) has since superseded. This makes a first sight able to *bootstrap*
+        control state, never to overwrite it.
+        """
+        if self.control_store.get(ref) is not None:
+            return set()
+        control = self.control
+        pending = set()
+        for comment in comments:
+            if not comment.id:
+                continue
+            if not is_authorized(comment.author, self.authorized_users):
+                continue
+            if is_self_authored(comment.body):
+                continue
+            if parse_command(comment.body, control).command:
+                pending.add(comment.id)
+        return pending
+
     def _awaiting_start(self, item: WorkItem) -> bool:
         """Whether this item is labelled but nobody has started it (issue-106).
 
@@ -584,7 +650,10 @@ class Poller:
 
         So the poller simply does not arm presence while a start is missing. The
         start command still gets through: it arrives as an ordinary comment
-        event, which the dispatcher executes (and spawns from) on its own path.
+        event, which the dispatcher executes (and spawns from) on its own path —
+        including a start that was already on the thread the first time the item
+        was seen, which :meth:`_pending_control_ids` keeps out of the first-sight
+        baseline for exactly this reason (issue-119).
         """
         control = self.control
         if not (control.enabled and control.require_start_command):
