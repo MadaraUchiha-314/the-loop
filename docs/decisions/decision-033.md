@@ -45,6 +45,9 @@ Point VitePress's `srcDir` at the existing **`docs/`** directory. The files alre
   live under `docs/`:
   - `cli/README.md` → `docs/cli.md` — `cli/README.md` is the CLI package's PyPI readme
     (`cli/pyproject.toml` `readme = "README.md"`), so it must stay at `cli/README.md`.
+    *(Superseded by issue-117: the CLI is now documented by authored pages under
+    `docs/cli/` and `docs/config/`, and this copy no longer happens. `cli/README.md`
+    remains the package readme. See [documentation](/capabilities/documentation).)*
   - `skills/the-loop/reference/*.md` → `docs/operating-model/reference/` — these are read
     at **runtime** by the harness from that exact path (progressive disclosure), so they
     cannot move.

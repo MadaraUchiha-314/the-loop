@@ -63,5 +63,7 @@ The ticket's phase label moves through `not-started → requirements-definition 
 - [How it works](/guide/how-it-works) — configuration, templates, and where knowledge
   lives.
 - [Command reference](/reference/commands) — every command in one table.
-- [CLI reference](/cli) — the optional `the-loop` companion CLI (webhooks, polling,
-  observability).
+- [the-loop CLI](/cli/) — the optional companion CLI: webhook and poll ingress,
+  sessions, observability. Start at its
+  [getting started](/cli/getting-started) page.
+- [Configuration](/config/) — the harness config and the CLI config, option by option.

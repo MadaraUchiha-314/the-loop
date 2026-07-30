@@ -40,14 +40,21 @@ commits on `main` drive the CLI's automatic semantic release to PyPI — see
 ## This documentation site
 
 The site is [VitePress](https://vitepress.dev/) reading `docs/` directly as its source
-— `docs/architecture/`, `docs/capabilities/`, `docs/decisions/`, `docs/specs/` and
-`docs/reports/` are the site's pages, not a copy of them. The only synced content is the
-two sources that must physically live elsewhere for functional reasons: `cli/README.md`
-(also the CLI's PyPI package readme) and `skills/the-loop/reference/*.md` (read at
-runtime by the harness from that exact path) — `docs/scripts/sync-content.mts` copies
-those two into `docs/cli.md` and `docs/operating-model/reference/` at build time
-(git-ignored). The `docs/specs/` sidebar is generated from the filesystem in
-`docs/.vitepress/config.mts`, so new work items appear automatically.
+— `docs/architecture/`, `docs/capabilities/`, `docs/cli/`, `docs/config/`,
+`docs/decisions/`, `docs/specs/` and `docs/reports/` are the site's pages, not a copy of
+them. The only synced content is the one source that must physically live elsewhere for a
+functional reason: `skills/the-loop/reference/*.md` is read at **runtime** by the harness
+from that exact path, so `docs/scripts/sync-content.mts` copies it into
+`docs/operating-model/reference/` at build time (git-ignored). The `docs/specs/` sidebar is
+generated from the filesystem in `docs/.vitepress/config.mts`, so new work items appear
+automatically.
+
+`cli/README.md` used to be synced in as `docs/cli.md` too. issue-117 replaced that single
+page with authored pages under `docs/cli/` and `docs/config/`, leaving `cli/README.md` to
+be what it also has to be — the CLI's PyPI package readme. Two rules follow, and a test
+enforces both: **a registered CLI command needs a page** under `docs/cli/commands/`, and
+**a CLI-config key needs a documented option** under `docs/config/cli/`. See
+[documentation](/capabilities/documentation).
 
 The site toolchain uses [bun](https://bun.sh/) (the-loop's declared TS package manager,
 `tooling.packageManager.ts`); scripts are TypeScript (`.mts`), run by bun directly.

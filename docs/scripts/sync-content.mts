@@ -1,9 +1,15 @@
-// Pulls the two doc sources that structurally cannot live under docs/ into the site:
-// cli/README.md is also the CLI's PyPI package readme (cli/pyproject.toml readme=),
-// and skills/the-loop/reference/*.md is read at RUNTIME by the harness from that exact
-// path. Everything else the site needs (architecture/, capabilities/, decisions/,
-// specs/) already lives directly under docs/ and needs no copy. Run automatically
-// before docs:dev / docs:build (Node runs this .mts directly via native type stripping).
+// Pulls the doc sources that structurally cannot live under docs/ into the site:
+// skills/the-loop/reference/*.md is read at RUNTIME by the harness from that exact path,
+// so it cannot move. Everything else the site needs (architecture/, capabilities/,
+// decisions/, specs/, cli/, config/) already lives directly under docs/ and needs no copy.
+// Run automatically before docs:dev / docs:build (Node runs this .mts directly via native
+// type stripping).
+//
+// cli/README.md used to be copied here as docs/cli.md — one 679-line page reached from one
+// nav entry. issue-117 replaced that with authored pages under docs/cli/ and docs/config/,
+// leaving cli/README.md to be what it also has to be: the PyPI package readme
+// (cli/pyproject.toml readme=). FILE_MAPPINGS is kept, empty, as the place a future
+// single-file mapping would go — the directory mapping below is the same mechanism.
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,7 +25,7 @@ function rewriteReferenceLinks(content: string): string {
   return content.replaceAll("../../../docs/decisions/", "/decisions/");
 }
 
-const FILE_MAPPINGS: readonly FileMapping[] = [["cli/README.md", "cli.md", null]];
+const FILE_MAPPINGS: readonly FileMapping[] = [];
 
 const DIR_MAPPINGS: readonly DirMapping[] = [
   ["skills/the-loop/reference", "operating-model/reference", rewriteReferenceLinks],
@@ -49,4 +55,4 @@ for (const [srcDirRel, destDirRel, transform] of DIR_MAPPINGS) {
   }
 }
 
-console.log("docs: synced cli/README.md -> docs/cli.md, skills/the-loop/reference/ -> docs/operating-model/reference/");
+console.log("docs: synced skills/the-loop/reference/ -> docs/operating-model/reference/");

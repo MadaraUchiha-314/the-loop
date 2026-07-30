@@ -35,7 +35,7 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
   - Verifies the GitHub `X-Hub-Signature-256` HMAC (secret from an env var), exposes
     `GET /health`, and logs deliveries. Defaults come from `webhooks.ghWebhook` in the
     **CLI config** (`cli-config.yaml` — resolved via `--config`/env/cwd/home; see
-    `cli/README.md`) — not this project's `.the-loop/harness-config.yaml`; the daemon is not
+    `docs/config/cli/`) — not this project's `.the-loop/harness-config.yaml`; the daemon is not
     tied to any one repo (decision-032). The CLI config also carries the operator's
     own notification recipients (`collaborators`, same structure as the per-repo
     `collaborators.yaml` but declared, never looked up) and the daemon-side

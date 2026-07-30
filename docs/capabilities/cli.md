@@ -97,13 +97,15 @@ self-learning/ML capabilities.
 
 ## Design
 
-[`cli/README.md`](../../cli/README.md) ·
+[CLI documentation](https://madarauchiha-314.github.io/the-loop/cli/) (source: [`docs/cli/`](../cli/)) ·
+[`cli/README.md`](../../cli/README.md) (the PyPI package readme) ·
 [architecture § CLI companion](../architecture/architecture.md)
 
 ## History
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-117 | Documented as a product: an onboarding path plus one page per command under `docs/cli/`, every config option under `docs/config/cli/`, and a parity test that fails when a registered command has no page or a documented key is absent from the schema. `check`, `graph` and `migrate-config` documented for the first time; the `integrations`, `routing.workspace`, `routing.graph` and `polling.maxRetries` blocks written up; the removed `ghBinary` deleted from the docs | [spec](../specs/issue-117/), [documentation](documentation.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/117) |
 | issue-111 | Session listings recognise the registry's own files instead of every `*.json` in the shared `<root>/sessions/` directory, so `poll-state.json` no longer reports as a corrupt registry entry on every poll cycle | [spec](../specs/issue-111/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/111) |
 | issue-109 | Added `check` and `graph` (the process-graph runtime), the `integrations` config block with configurable transports, a `version`-gated **breaking** CLI-config migration retiring `ghBinary`, and the `slack` extra | [spec](../specs/issue-109/), [process-graph](process-graph.md), [decision-041](../decisions/decision-041.md), [decision-042](../decisions/decision-042.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/109) |
 | issue-97 | PyYAML promoted from the `[config]` extra to a required runtime dependency; the three silent `ImportError` fallbacks removed and the zero-runtime-dependency guarantee retired | [spec](../specs/issue-97/), [decision-038](../decisions/decision-038.md) |

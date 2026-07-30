@@ -21,9 +21,8 @@
     "**/.venv/**",
     "docs/.vitepress/dist/**",
     "docs/.vitepress/cache/**",
-    // synced from cli/README.md and skills/the-loop/reference/ at build time
-    // (docs/scripts/sync-content.mjs) — lint the source, not the copy
-    "docs/cli.md",
+    // synced from skills/the-loop/reference/ at build time
+    // (docs/scripts/sync-content.mts) — lint the source, not the copy
     "docs/operating-model/reference/**"
   ]
 }

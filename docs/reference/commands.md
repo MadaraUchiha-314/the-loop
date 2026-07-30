@@ -27,5 +27,6 @@ Run the same flow one step at a time:
 | `/the-loop:work-status <id>` | Read-only status from the specs, task checkmarks and execution log. |
 
 See the [operating model](/operating-model/) reference for what happens
-inside each phase, and the [CLI reference](/cli) for the separate `the-loop`
-companion CLI commands (`gh-webhook`, `poll`, `sessions`, `events`, `scenarios`).
+inside each phase, and the [CLI commands](/cli/commands/) for the separate `the-loop`
+companion CLI (`gh-webhook`, `poll`, `sessions`, `events`, `check`, `graph`, `critic`,
+`scenarios`, `migrate-config`).

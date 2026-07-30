@@ -121,7 +121,7 @@ Granular commands run the same flow one step at a time:
   validated against [`.the-loop/harness-config.schema.json`](.the-loop/harness-config.schema.json). A
   subset of keys can be overridden per work item via the markdown front-matter. The CLI
   companion's own daemon config (webhook receiver / poller) is independent and not tied
-  to a repo — see [`cli/README.md`](cli/README.md#two-independent-config-files-decision-032).
+  to a repo — see the [configuration reference](https://madarauchiha-314.github.io/the-loop/config/).
 - **Everything the-loop manages** is tracked in
   [`.the-loop/manifest.yaml`](.the-loop/manifest.yaml).
 - **Templates** for epics, stories, bugs, the optional `brainstorm` root artifact and the
@@ -140,17 +140,26 @@ Granular commands run the same flow one step at a time:
 Besides the plugin, the-loop ships a lightweight, **extensible Python CLI** (in
 [`cli/`](cli/), package `the_loop`, one runtime dependency — PyYAML, since its config
 is YAML) for quality-of-life commands the plugin can use. Python is intentional — it leaves room for future self-learning/ML
-capabilities (mostly Python SDKs). First command is a GitHub webhook receiver:
+capabilities (mostly Python SDKs). It turns ticket activity into agent runs and tells you
+what happened:
 
 ```bash
-the-loop gh-webhook start   # HMAC-verified receiver; GET /health; logs events
-the-loop gh-webhook stop
-the-loop scenarios          # tabular view of every Gherkin scenario the integration tests cover
-the-loop critic list        # the configured critic harnesses, and whether their CLI is installed
+the-loop gh-webhook start   # HMAC-verified GitHub webhook receiver; routes events to sessions
+the-loop poll start         # pull-based ingress, for hosts a webhook can't reach
+the-loop sessions list      # the work-item ↔ harness-session registry
+the-loop events --follow    # the structured trail of every routing/dispatch decision
+the-loop check <work-item>  # evaluate a work item's nodes against its artifacts (pure; CI-safe)
+the-loop graph status <id>  # where a work item sits in the process graph
 the-loop critic run <name> --prompt-file <path>   # one critic round; prints a JSON envelope
+the-loop scenarios          # every Gherkin scenario the integration tests cover
 ```
 
-See [`cli/README.md`](cli/README.md) for install and how to add commands.
+Full documentation: **[the-loop CLI](https://madarauchiha-314.github.io/the-loop/cli/)** — overview,
+[installation](https://madarauchiha-314.github.io/the-loop/cli/installation),
+[getting started](https://madarauchiha-314.github.io/the-loop/cli/getting-started),
+[concepts](https://madarauchiha-314.github.io/the-loop/cli/concepts),
+[every command](https://madarauchiha-314.github.io/the-loop/cli/commands/) and
+[every config option](https://madarauchiha-314.github.io/the-loop/config/cli/).
 
 ## Rules the loop enforces
 

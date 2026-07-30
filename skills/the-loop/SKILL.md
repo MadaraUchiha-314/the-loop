@@ -199,7 +199,8 @@ files are listed in `.the-loop/manifest.yaml`.
 
 The CLI daemon (`gh-webhook`/`poll`/`sessions`/`events`) reads a separate, independent
 **CLI config** instead (`webhooks`, `polling`, `eventLog`) — it is not tied to this
-repo. See `cli/README.md` and `docs/decisions/decision-032.md`.
+repo. See `docs/config/` (the configuration reference) and
+`docs/decisions/decision-032.md`.
 
 ## Commands
 

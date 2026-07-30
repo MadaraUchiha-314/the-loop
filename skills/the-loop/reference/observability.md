@@ -25,7 +25,7 @@ Use the same logger and the same log lines in both; only the active level differ
 
 Config: `eventLog` in the **CLI config** (`cli-config.yaml`: `enabled`, default `true`;
 `path`, default `.the-loop/logs/events.jsonl`, git-ignored) — independent of any repo's
-plugin config, resolved via `--config`/env/cwd/home (see `cli/README.md`,
+plugin config, resolved via `--config`/env/cwd/home (see `docs/config/cli/`,
 [decision-032](../../../docs/decisions/decision-032.md)). Decision:
 [decision-025](../../../docs/decisions/decision-025.md) — JSONL, not SQLite.
 

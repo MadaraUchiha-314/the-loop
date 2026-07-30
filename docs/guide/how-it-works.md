@@ -4,7 +4,7 @@
   `.the-loop/harness-config.schema.json`. A subset of keys can be overridden per work item via
   the markdown front-matter. The CLI companion's own daemon config (webhook receiver /
   poller) is independent and not tied to a repo — see the
-  [CLI reference](/cli#two-independent-config-files-decision-032).
+  [configuration reference](/config/).
 - **Everything the-loop manages** is tracked in `.the-loop/manifest.yaml`.
 - **Templates** for epics, stories, bugs, the optional `brainstorm` root artifact and
   the 3-phase spec artifacts (`requirements`/`bugfix`, `design`, `tasks`,
