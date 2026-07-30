@@ -38,7 +38,7 @@ default:
 version: "0.2.0"
 
 state:
-  root: ~/.the-loop
+  root: .the-loop          # relative to where you run the daemon; `~` is NOT expanded
 
 webhooks:
   ghWebhook:

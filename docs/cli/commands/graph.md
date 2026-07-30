@@ -28,12 +28,22 @@ edges leading out of it.
 
 ```text
 $ the-loop graph show
-graph v1, start: requirements
-  requirements  [required]
+graph v1, start: brainstorming
+  brainstorming
+      --pass--> requirements-definition
+  requirements-definition
+      --pass--> requirements-approval
+  requirements-approval  [human]
       --approved--> design
-      --rejected--> requirements
+      --approved-with-comments--> design
+      --changes-requested--> requirements-definition
+  design
+      --pass--> design-approval
   …
 ```
+
+Note the human-gate shape: `approved-with-comments` takes the **same** edge as `approved`,
+so a reviewer's suggestions never block the phase — they are recorded and carried forward.
 
 | Flag | Default | Meaning |
 |------|---------|---------|

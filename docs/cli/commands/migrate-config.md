@@ -38,9 +38,14 @@ remove.
 ```text
 $ the-loop migrate-config --dry-run
 migrated the CLI config:
-  · webhooks.ghWebhook.routing.control.ghBinary → integrations.github.cli.binary
-  · webhooks.ghWebhook.routing.reactions.ghBinary → integrations.github.cli.binary
-  · webhooks.ghWebhook.routing.announce.ghBinary → integrations.github.cli.binary
+  · webhooks.ghWebhook.routing.control.ghBinary → integrations.github.cli.binary ('gh')
+  · webhooks.ghWebhook.routing.reactions.ghBinary → integrations.github.cli.binary ('gh')
+  · webhooks.ghWebhook.routing.announce.ghBinary → integrations.github.cli.binary ('gh')
+  · version '0.1.0' → '0.2.0'
+
+--- /home/you/.the-loop/cli-config.yaml (preview, not written) ---
+version: 0.2.0
+…
 ```
 
 ## Flags

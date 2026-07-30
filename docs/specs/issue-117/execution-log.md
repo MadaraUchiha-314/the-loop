@@ -1,7 +1,7 @@
 ---
 type: execution-log
 workItem: issue-117
-phase: tasks-breakdown
+phase: needs-review
 status: in-progress
 ---
 
@@ -14,8 +14,8 @@ status: in-progress
 | requirements-definition | 2026-07-30 | | Gap measured from the tree, not assumed — see the first progress entry |
 | design | 2026-07-30 | | |
 | tasks-breakdown | 2026-07-30 | | |
-| implementation | | | |
-| needs-review | | | |
+| implementation | 2026-07-30 | | T1–T12 |
+| needs-review | 2026-07-30 | | Tier 3 → human-approves-pr; completes when the PR merges |
 | complete | | | |
 
 ## Pull requests
@@ -57,9 +57,9 @@ status: in-progress
 ### 2026-07-30 — T1–T12 implemented
 
 - **Phase:** tasks-breakdown → implementation → needs-review
-- **Did:** All twelve tasks. 24 pages authored, `cli/README.md` reduced from 679 lines to
-  86, the sync copy retired, navigation restructured, links repaired repo-wide, and the
-  `documentation` capability minted.
+- **Did:** All twelve tasks. 23 pages authored (15 under `docs/cli/`, 8 under
+  `docs/config/`) plus the `documentation` capability doc; `cli/README.md` reduced from 679
+  lines to 88; the sync copy retired; navigation restructured; links repaired repo-wide.
 - **Checkpoint/tests:** the four gate runs below, all green.
 - **Next:** human review of the three phase gates and the PR (tier 3 →
   `human-approves-pr`).
@@ -87,7 +87,7 @@ FAILED test_p4_every_schema_leaf_is_documented
 | after **T5** (command pages) | **P1 + P2 green** — 9 registered commands, 9 pages, no orphan |
 | final | `4 passed` |
 
-P4 is what *forced* the four undocumented blocks to be written: `integrations.*` (10
+P4 is what _forced_ the four undocumented blocks to be written: `integrations.*` (10
 leaves), `routing.workspace.*` (6), `routing.graph.*` (2) and `polling.maxRetries`. P3 is
 what forced `ghBinary` out — it now appears nowhere outside the migration that retires it.
 
@@ -99,7 +99,7 @@ what forced `ghBinary` out — it now appears nowhere outside the migration that
 | `make format-check` | `107 files already formatted` |
 | `make typecheck` (pyright) | `0 errors, 0 warnings` |
 | `make validate` (schema) | all 5 config files `VALID` |
-| `make test` | **808 passed, 1 skipped** |
+| `make test` | **809 passed, 1 skipped** |
 | `npm run docs:build` | `build complete` — and no `docs/cli.md` produced |
 
 #### Built-site evidence
@@ -108,7 +108,7 @@ what forced `ghBinary` out — it now appears nowhere outside the migration that
 correctness was verified against the built output rather than assumed:
 
 - **42,962 internal page links and anchors across 251 pages — all resolve.** This also
-  caught one *pre-existing* dead anchor unrelated to this work
+  caught one _pre-existing_ dead anchor unrelated to this work
   (`guide/installation.md → /reference/commands#the-loop-init`, a fragment for a table row
   that was never a heading); fixed to `#superset-commands`.
 - **23 new routes**: 15 under `/cli/`, 8 under `/config/`.
@@ -123,7 +123,7 @@ correctness was verified against the built output rather than assumed:
   `-` (`` `state.root` `` → `#state-root`), while markdownlint's MD051 uses GitHub's rule,
   which strips dots. They disagree on any dotted heading. Same-page fragment links
   therefore target dot-free `##` section headings; cross-page links use the VitePress
-  form, all confirmed by the link check above. An em dash is in *neither* replacement set
+  form, all confirmed by the link check above. An em dash is in _neither_ replacement set
   and survives into the id, so two headings were reworded. Recorded in
   `capabilities/documentation.md` so the next author does not rediscover it.
 
@@ -168,9 +168,9 @@ Run as the checklist from `design.md` §Security design, over every new page:
 | Getting-started YAML is genuinely valid | validated against `.the-loop/cli-config.schema.json` with `jsonschema` — **VALID** |
 | New attack surface | **none.** No runtime, no input, no network, no dependency. The one code change removes a file copy; the one new test only reads files. |
 
-Two controls were *strengthened* in the move rather than merely preserved: `webTerminal`
+Two controls were _strengthened_ in the move rather than merely preserved: `webTerminal`
 now carries an explicit "ttyd has no authentication of its own" danger callout (it had a
-one-line note), and `integrations.slack.urlEnv` says outright that the webhook URL *is* the
+one-line note), and `integrations.slack.urlEnv` says outright that the webhook URL _is_ the
 credential.
 
 #### Defect found, not fixed here
@@ -198,12 +198,48 @@ required; the security-review gate itself still runs at T11.
 
 ## Reviews
 
+`reviews.selfReviewCount: 3`, `reviews.criticReviewCount: 3`. `reviews.critics` is **empty**
+in this repo's `.the-loop/harness-config.yaml`, so there is no configured harness for
+`the-loop critic run` to spawn — the critic rounds are recorded as not-run rather than
+silently skipped.
+
 | Round | Kind | Reviewer | Findings | Where |
 |-------|------|----------|----------|-------|
-| | | | | |
+| 1 | self | the-loop (implementing agent) | **1 finding, fixed.** R3.3 ("every option states Type and Default") and R3.4 ("defaults equal the schema's") had **no automated proof** — P3/P4 check that a path exists on both sides, never that the block beneath it says anything. Cross-checked all 80 documented defaults against the schema with a throwaway script: 4 apparent mismatches, all artefacts of the matcher (`monitor.issues`/`pullRequests` carry a `*(github)*` qualifier; `harnessArgs.claude`/`.cursor` have no schema default, and `harness/__init__.py` confirms the code applies `[]` — which is what R3.4 permits). So the values were right, but nothing would have caught the next one. Added **P5**: every documented option must carry `- **Type:**` and `- **Default:**`. Presence, not value — defaults are written with deliberate prose qualifiers (`<state.root>/…`, `none — required`, `eyes (👀)`), so an equality check would need a normaliser fuzzy enough to be its own maintenance burden, and a gate that misfires is one people route around. Verified it bites by deleting a `Type` bullet: `webhooks.ghWebhook.port: no Type`. | this PR |
+| 2 | self | the-loop (implementing agent) | **1 finding, fixed — a real bug in my own copyable example.** The getting-started config said `state.root: ~/.the-loop`. `state.py` uses `Path(self.root)` with **no** `expanduser()`, so that creates a directory literally named `~` in the daemon's working directory. Worse, the asymmetry is invisible: `workspace.py` line 125 _does_ call `.expanduser()`, and I had (correctly) used `~/.the-loop/workspace` as the workspace example two pages away. Fixed the example, and documented the asymmetry on **both** options so the next reader sees it from either side. | this PR |
+| 3 | self | the-loop (implementing agent) | **3 findings, fixed.** Three sample command outputs were plausible reconstructions from the source rather than captured runs, and two were wrong: `graph show` claimed `start: requirements` with `--approved-->`/`--rejected-->` edges when the real graph starts at `brainstorming` and uses `--pass-->` / `--approved-with-comments-->` / `--changes-requested-->`; `check` named a node `design-approved` that does not exist (`design-approval` does). `migrate-config --dry-run` was right in shape but omitted the `('gh')` value and the `version` move. All three replaced with real captured output. The lesson is the mundane one: a sample output read _from_ the print statements is a guess, and a docs page is exactly where a guess gets believed. | this PR |
+| — | critic | none configured (`reviews.critics: []`) | Not run. There is no critic entry in this repo's `.the-loop/harness-config.yaml`, so `the-loop critic run` has nothing to spawn — recorded rather than silently skipped. | — |
 
 ## Requirement → evidence
 
 | Requirement | Evidence |
 |-------------|----------|
-| | _filled at T12_ |
+| R1.1 CLI is a top-level nav section | `config.mts` nav + `cliSidebar`; `design/cli-overview.png` |
+| R1.2 overview · install · getting-started · concepts | 4 pages under `docs/cli/` |
+| R1.3 uninstalled → startable work item, every step runnable | `/cli/getting-started`, 5 steps |
+| R1.4 all four config locations + a complete file | `/cli/getting-started` §2 — YAML validated against the schema |
+| R1.5 every onboarding page links its next step | `## Next` on `/cli/`, installation, getting-started, concepts |
+| R2.1 every registered command has a page | **P1** |
+| R2.2 commands overview table | `/cli/commands/` |
+| R2.3 synopsis · options · behaviour, defaults matching the code | 9 pages written from argparse + schema; e.g. `poll --max-retries` and `check --repo` were absent/wrong before |
+| R2.4 command pages link their config | every page's option table links `/config/cli/*` |
+| R2.5 `check`/`graph`/`migrate-config` at equal depth | 3 new pages from `graph_cmd.py`, `migrate_cmd.py` |
+| R3.1 Config is top-level, landing explains both files | `/config/` + nav entry |
+| R3.2 CLI config split by area | 6 pages under `/config/cli/` |
+| R3.3 Type + Default on every option | uniform block; `design/config-routing.png` |
+| R3.4 defaults equal the schema's | authored from the schema dump; **P3/P4** bound the set |
+| R3.5 harness config in the same section | `/config/harness-config` |
+| R4.1 documented keys exist in the schema | **P3** |
+| R4.2 `ghBinary` removed, replacement documented | **P3**; `/config/cli/integrations-options#github-cli-binary` |
+| R4.3 `integrations`, `workspace`, `routing.graph`, `polling.maxRetries` documented | **P4** |
+| R4.4 `check`, `graph`, `migrate-config` listed and paged | **P1**, `/cli/commands/` |
+| R4.5 automated parity check | `cli/tests/test_docs_parity.py` — 4 assertions, both directions on both axes |
+| R5.1 README stands alone on PyPI | rewritten: what it is, install, one example, links |
+| R5.2 outbound links absolute | grep for `](/`, `](../`, `](docs/` in `cli/README.md` → none |
+| R5.3 not copied into the site | `FILE_MAPPINGS = []`; `docs:build` produces no `docs/cli.md` |
+| R5.4 nothing lost | the fidelity walk above, section by section |
+| R6.1 no link to the removed `/cli` page | repo-wide grep clean outside `docs/specs/**`; 42,962 built links resolve |
+| R6.2 CLI is first-class on the docs home | `docs/index.md` hero action + feature link |
+| R6.3 repo README links the CLI docs | `README.md` CLI section |
+| R6.4 build + markdown lint green | `docs:build` complete; markdownlint `0 error(s)` over 292 files |
+| R6.5 per-command search results | local-search index verified per page |

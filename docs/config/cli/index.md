@@ -100,6 +100,14 @@ again and re-forward its entire comment history.
 
 All of it is git-ignored runtime state.
 
+::: warning `~` is not expanded here
+`state.root` is used as given. `root: ~/.the-loop` creates a directory literally named
+`~` in the process's working directory — write an absolute path, or leave the relative
+default. (This differs from
+[`routing.workspace.root`](/config/cli/routing-options#workspace-root), which **does**
+expand `~`.)
+:::
+
 ## A minimal working config
 
 ```yaml

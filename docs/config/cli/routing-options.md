@@ -196,8 +196,9 @@ own per-work-item checkout instead.
 - **Default:** `""` (workspace disabled)
 - **Related:** [decision-034](/decisions/decision-034)
 
-Absolute path to the workspace root where repositories are checked out, e.g.
-`~/.the-loop/workspace`. When set, the dispatcher checks out each event's repository under
+Path to the workspace root where repositories are checked out, e.g.
+`~/.the-loop/workspace` — `~` **is** expanded here, unlike
+[`state.root`](/config/cli/#state-root). When set, the dispatcher checks out each event's repository under
 this root and runs the spawned session there instead of the static `spawnWorkdir` — so
 concurrent work items never share a working tree. Empty (the default) disables it.
 

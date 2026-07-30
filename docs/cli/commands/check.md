@@ -11,9 +11,18 @@ the-loop check --all       [--repo .] [--format table|json]
 
 ```text
 $ the-loop check issue-117
-issue-117: UNMET (at implementation)
-  WAIT   design-approved
-         · design.md status is 'in-review', not 'approved'
+issue-117: ok (at brainstorming)
+  ····   7 node(s) not reached yet
+```
+
+A work item that has not been driven through the graph sits at the start node with
+everything ahead of it "not reached yet" — which is `ok`, not a failure. When something
+at or before the pointer *is* unsatisfied, it is named with its status and its reasons:
+
+```text
+issue-42: UNMET (at design-approval)
+  WAIT   design-approval
+         · waiting on a human gate
   ····   4 node(s) not reached yet
 ```
 
