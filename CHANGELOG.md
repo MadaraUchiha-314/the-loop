@@ -1,3 +1,16 @@
+## v3.0.0 (2026-07-30)
+
+### BREAKING CHANGE
+
+- `reviews.critics[].command` is now the executable (argv[0]),
+not a free-form invocation phrase; arguments belong in `args`. A value like
+`"cursor-agent review"` is rejected with a diagnostic instead of being silently
+mis-run.
+
+### Feat
+
+- **issue-108**: make the configured critic harness runnable (#115)
+
 ## v2.1.0 (2026-07-29)
 
 ### Feat
