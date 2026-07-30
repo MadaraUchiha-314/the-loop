@@ -528,22 +528,74 @@
         },
         "critics": {
           "type": "array",
-          "description": "Alternate harness/model combos used as critics, e.g. cursor+gpt-5.5 reviewing claude-opus output.",
-          "examples": [[{ "name": "cursor-gpt", "harness": "cursor", "model": "gpt-5.5", "command": "cursor-agent review" }]],
+          "description": "Alternate harness/model combos used as critics, e.g. cursor+gpt-5.5 reviewing claude-opus output. Each entry is RUNNABLE: `the-loop critic run <name>` spawns it and returns its output as one JSON envelope (issue-108, decision-043). An entry is therefore executable configuration in a repo-tracked file — review one like code.",
+          "examples": [
+            [
+              { "name": "cursor-gpt", "harness": "cursor", "model": "gpt-5.5" },
+              {
+                "name": "aider-review",
+                "harness": "aider",
+                "model": "gpt-5.5",
+                "command": "aider",
+                "args": ["--message-file", "{promptFile}", "--model", "{model}", "--no-auto-commits"],
+                "outputFormat": "text",
+                "timeoutSeconds": 900
+              }
+            ]
+          ],
           "items": {
             "type": "object",
             "additionalProperties": false,
             "required": ["name"],
             "properties": {
-              "name": { "type": "string" },
+              "name": {
+                "type": "string",
+                "description": "Unique id for this critic; `the-loop critic run <name>` runs it. Names must be unique across the list."
+              },
               "harness": {
                 "type": "string",
-                "description": "Critic harness/CLI. Free-form so any harness works; known examples: claude, cursor, aider, continue, a local model runner."
+                "description": "Critic harness/CLI. Free-form so any harness works (it is also the `[<harness>/<model>]` attribution prefix on every finding). When it names a harness the-loop has an adapter for (`claude`, `cursor`), the invocation is derived from that adapter and `command`/`args` may be omitted entirely."
               },
-              "model": { "type": "string" },
+              "model": {
+                "type": "string",
+                "description": "Model the critic runs. Passed via the harness's own model flag for a built-in harness, or wherever `{model}` appears in `args`."
+              },
               "command": {
                 "type": "string",
-                "description": "Optional explicit invocation for an arbitrary critic harness (how to run it)."
+                "description": "The EXECUTABLE to spawn (argv[0]) — not a shell line: arguments go in `args`, and nothing is ever run through a shell. Required for a harness the-loop has no adapter for; wins over `harness` when both are set. NOTE (issue-108): this key previously held a free-form invocation phrase (e.g. \"cursor-agent review\"); such a value is now rejected with a diagnostic instead of being silently mis-run."
+              },
+              "args": {
+                "type": "array",
+                "items": { "type": "string" },
+                "default": [],
+                "description": "argv after the executable. Placeholders are substituted element-wise (never via a shell): {prompt}, {promptFile}, {model}, {workItem}, {specDir}, {cwd}. With an explicit `command`, the list MUST carry {prompt} or {promptFile} — otherwise the critic is handed nothing to review. With a built-in `harness`, these are appended as extra flags to the derived invocation."
+              },
+              "env": {
+                "type": "object",
+                "additionalProperties": { "type": "string" },
+                "default": {},
+                "description": "Environment overlaid on the inherited environment for this critic. NEVER put secrets here — this file is committed; a critic CLI's own credentials come from the operator's ambient environment, which the child inherits."
+              },
+              "cwd": {
+                "type": "string",
+                "description": "Directory to run the critic in. Defaults to the project root."
+              },
+              "outputFormat": {
+                "type": "string",
+                "enum": ["text", "json"],
+                "default": "text",
+                "description": "How to read the critic's stdout. `json` extracts the reviewer's text from the payload (falling back to raw stdout when it is not JSON); `text` uses stdout verbatim."
+              },
+              "timeoutSeconds": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "default": 900,
+                "description": "Hard bound on one critic round, so a hung critic CLI cannot wedge the review loop."
+              },
+              "enabled": {
+                "type": "boolean",
+                "default": true,
+                "description": "Set false to keep the entry but refuse to run it."
               }
             }
           }

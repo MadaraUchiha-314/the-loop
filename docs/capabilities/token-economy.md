@@ -63,7 +63,7 @@ Pointers, not copies:
 - Generation-side rung: [`skills/the-loop/reference/minimalism.md`](../../skills/the-loop/reference/minimalism.md).
 - Config contract: `.the-loop/harness-config.schema.json` (`tokenEconomy`, `$defs.modelTier`) and
   the annotated `.the-loop/templates/harness-config.yaml`.
-- Telemetry parsing: `cli/the_loop/harness/base.py` (`Usage`, `_usage_from_output`) with
+- Telemetry parsing: `cli/the_loop/harness/base.py` (`Usage`, `usage_from_output`) with
   per-dispatch logging in `cli/the_loop/webhook/dispatcher.py`.
 - Runner interplay (resident tmux vs. cold `-p --resume` re-priming):
   [`interactive-sessions`](interactive-sessions.md) and `docs/specs/issue-32/`.

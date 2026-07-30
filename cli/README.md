@@ -634,6 +634,35 @@ the-loop scenarios [--root .] [--glob PATTERN ...] [--format table|markdown|json
 - `--format markdown` emits a GitHub-flavoured table (for PR briefings); `--format json`
   is machine-readable (includes each scenario's steps and `file:line`).
 
+### `critic` — run a critic-review round with another harness
+
+```bash
+the-loop critic list [--root .] [--format table|json]
+the-loop critic run <name> (--prompt TEXT | --prompt-file PATH)
+                    [--root .] [--cwd DIR] [--work-item ID] [--spec-dir PATH]
+                    [--timeout SECONDS] [--output-file PATH]
+```
+
+- The seam by which the harness doing the work hands it to a **different** harness for a
+  critic round and reads back what it said (issue-108, `docs/decisions/decision-043.md`).
+- Which critic, and how to run it, comes from `reviews.critics[]` in
+  `.the-loop/harness-config.yaml`: either a `harness` the-loop has an adapter for
+  (`claude`, `cursor` — the invocation is derived) or an explicit `command` (argv[0]) plus
+  `args`, with element-wise placeholders `{prompt} {promptFile} {model} {workItem}
+  {specDir} {cwd}`. `env` overlays the inherited environment (**never** secrets — the file
+  is committed), and `outputFormat`/`timeoutSeconds`/`cwd`/`enabled` complete the entry.
+- `run` spawns **one** named critic as an argv list, never through a shell, under its
+  timeout — so untrusted review material can be data but never a command. There is
+  deliberately no run-all mode.
+- stdout is exactly **one JSON envelope** (`critic`, `harness`, `model`, `attribution`,
+  `ok`, `exitCode`, `durationSeconds`, `output`, `error`, `usage`); diagnostics go to the
+  log stream. Exit `0` = the round ran, `1` = the round failed (absent CLI, non-zero exit,
+  timeout — the envelope is still printed), `2` = misconfigured (nothing was spawned).
+- Repo-scoped, like `scenarios` and `check`: it reads the harness config of the project it
+  is invoked in and is no part of the daemon (decision-032). The review **loop** itself —
+  round counts, convergence, posting findings — stays with the harness following
+  `skills/the-loop/reference/reviewing.md`.
+
 ## Adding a command (extensibility)
 
 1. Create `the_loop/commands/<your_command>.py`.

@@ -180,6 +180,11 @@ indexed by `capabilities.md`, template
 - **The procedure is defined in `reviewing.md`** — attribution prefixes, reply-first-
   then-fix, one-finding-per-commit, stop-on-zero-new-findings, and the diminishing-
   returns escalation. Follow it so review depth is reproducible and the loop converges.
+- **A configured critic is runnable, not decorative.** `reviews.critics[]` carries the
+  critic's executable and args; `the-loop critic run <name> --prompt-file <path>` spawns
+  it (never through a shell) and returns its output as one JSON envelope the running
+  harness parses. A round that cannot run is recorded `unavailable` and does **not**
+  count toward `criticReviewCount`. See `reviewing.md` § Running a critic round.
 - **All reviews happen as comments** in the PR and/or ticket (paper trail). Record every
   round in the execution log's review table.
 

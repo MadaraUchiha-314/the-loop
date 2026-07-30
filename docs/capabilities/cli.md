@@ -77,6 +77,12 @@ self-learning/ML capabilities.
 - `the-loop scenarios` SHALL output the table of every Gherkin scenario covered by the
   integration tests (`--format table|markdown|json`; see
   [testing-and-contracts](testing-and-contracts.md)).
+- `the-loop critic list|run` SHALL list the configured critic harnesses and run **one**
+  named critic-review round, printing its result as a single JSON envelope on stdout — the
+  seam by which the running harness hands work to a *different* harness and reads back what
+  it said (see [review-loop](review-loop.md)). Like `check` and `scenarios` it is
+  repo-scoped: it reads the harness config of the project it is invoked in, and is no part
+  of the daemon (decision-032).
 - `the-loop events` SHALL query the structured JSONL event log of the CLI's own
   routing/dispatch/session decisions (see [observability](observability.md)).
 - The package SHALL be installable from PyPI as **`the-loopy-one`** (import package

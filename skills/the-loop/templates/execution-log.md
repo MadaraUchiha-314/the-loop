@@ -51,6 +51,9 @@ status: in-progress          # in-progress | complete
 
 ## Review cycles
 
+> Outcome is one of: new findings · zero (converged) · escalated · **unavailable** (the
+> configured critic could not run — it does NOT count toward `reviews.criticReviewCount`).
+
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
 |-------|-----------------------------|----------|---------|------|
 |       |                             |          |         |      |

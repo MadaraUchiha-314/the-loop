@@ -22,6 +22,7 @@ from ..trust import ClaudeTrustStore, TrustResult, args_request_bypass
 class ClaudeCodeAdapter(HarnessAdapter):
     name = "claude"
     default_binary = "claude"
+    model_flag = "--model"
 
     def prepare_environment(self, cwd: str, root: Optional[str] = None) -> TrustResult:
         """Pre-trust ``cwd`` (and accept the bypass disclaimer when configured).

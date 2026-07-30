@@ -146,6 +146,8 @@ capabilities (mostly Python SDKs). First command is a GitHub webhook receiver:
 the-loop gh-webhook start   # HMAC-verified receiver; GET /health; logs events
 the-loop gh-webhook stop
 the-loop scenarios          # tabular view of every Gherkin scenario the integration tests cover
+the-loop critic list        # the configured critic harnesses, and whether their CLI is installed
+the-loop critic run <name> --prompt-file <path>   # one critic round; prints a JSON envelope
 ```
 
 See [`cli/README.md`](cli/README.md) for install and how to add commands.
@@ -157,7 +159,9 @@ See [`cli/README.md`](cli/README.md) for install and how to add commands.
 - Collaborators are identified up-front; not every task needs every persona.
 - Every human decision leaves a **paper trail** on the ticket or PR.
 - Self-checks run tests at logical checkpoints; progress is logged for visibility.
-- Configured self-reviews and critic reviews run **before** escalating to a human.
+- Configured self-reviews and critic reviews run **before** escalating to a human. A critic
+  is a *runnable* config entry — `reviews.critics[]` names the harness (or the executable
+  and its args), and `the-loop critic run` spawns it and hands its output back.
 - The same tooling runs locally and in CI; logging is identical at dev-time and runtime.
 - Integration tests document their scenario in **Gherkin** docstrings (linked to the
   spec's `requirements.md`), queryable as a table via `the-loop scenarios`.

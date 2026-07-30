@@ -102,6 +102,10 @@ class HarnessAdapter:
 
     name: str = ""
     default_binary: str = ""
+    #: This harness's flag for selecting a model (``--model``, ``-m``, …). Empty
+    #: when the harness has none, in which case a requested model is ignored
+    #: rather than guessed at.
+    model_flag: str = ""
 
     def __init__(
         self,
@@ -132,6 +136,20 @@ class HarnessAdapter:
 
     def _spawn_argv(self, prompt: str) -> List[str]:
         raise NotImplementedError
+
+    def oneshot_argv(self, prompt: str, model: str = "") -> List[str]:
+        """Argv for ONE non-interactive run of this harness, JSON out.
+
+        The same argv :meth:`spawn` uses, minus its session semantics, plus an
+        optional model selection — which is exactly what a critic-review round
+        needs (issue-108). Kept here rather than in a critic-side lookup table
+        so "how do you run harness X once" has a single owner: add an adapter
+        and it is usable as a critic for free.
+        """
+        argv = self._spawn_argv(prompt)
+        if model and self.model_flag:
+            argv = argv + [self.model_flag, model]
+        return argv
 
     def interactive_argv(self, prompt: str, session_id: str) -> List[str]:
         """Argv hosting this harness's interactive TUI with a pre-assigned
@@ -218,13 +236,13 @@ class HarnessAdapter:
             ok=True,
             session_id=_session_id_from_output(proc.stdout),
             output=proc.stdout,
-            usage=_usage_from_output(proc.stdout),
+            usage=usage_from_output(proc.stdout),
         )
 
 
 def _session_id_from_output(stdout: str) -> str:
     """Best-effort session/chat id from the CLI's JSON output."""
-    data = _parse_json_object(stdout)
+    data = parse_json_object(stdout)
     for key in _SESSION_ID_KEYS:
         value = data.get(key)
         if isinstance(value, str) and value:
@@ -232,14 +250,14 @@ def _session_id_from_output(stdout: str) -> str:
     return ""
 
 
-def _usage_from_output(stdout: str) -> Usage:
+def usage_from_output(stdout: str) -> Usage:
     """Best-effort token/cost accounting from the CLI's JSON output (issue-37).
 
     Harness-agnostic: reads a top-level ``usage`` object (under any of the
     aliased keys) for token counts and a top-level cost field, tolerating a
     harness that reports neither. Never raises — telemetry is advisory.
     """
-    data = _parse_json_object(stdout)
+    data = parse_json_object(stdout)
     usage = Usage()
     block = next(
         (data[k] for k in _USAGE_KEYS if isinstance(data.get(k), dict)),
@@ -260,7 +278,7 @@ def _usage_from_output(stdout: str) -> Usage:
     return usage
 
 
-def _parse_json_object(stdout: str) -> dict:
+def parse_json_object(stdout: str) -> dict:
     """Parse the CLI's stdout as a JSON object, or ``{}`` on any failure."""
     try:
         data = json.loads(stdout.strip() or "{}")
