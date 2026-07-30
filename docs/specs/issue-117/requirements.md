@@ -2,8 +2,8 @@
 type: requirements
 phase: requirements-definition
 workItem: issue-117
-status: in-review
-approvedBy: []
+status: approved             # draft | in-review | approved
+approvedBy: []               # tier-3: the human gate is the PR review (#118) — see execution-log
 collaborators: [product-manager, technical-writer, engineer]
 overrides: {}
 ---

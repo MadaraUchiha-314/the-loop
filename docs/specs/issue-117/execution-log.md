@@ -22,7 +22,7 @@ status: in-progress
 
 | PR | Scope / tasks | Status |
 |----|---------------|--------|
-| _pending_ | spec + T1–T12 | — |
+| [#118](https://github.com/MadaraUchiha-314/the-loop/pull/118) | spec + T1–T12 | open |
 
 ## Progress entries
 
@@ -188,6 +188,44 @@ the-loop needs 0.2.0. Run `/the-loop:upgrade-the-loop` to migrate.
 
 The message is right; the presentation buries it. Out of scope here — this work item
 changes no runtime behaviour — so it is filed separately rather than folded in.
+
+### 2026-07-30 — CI caught an unlocked artifact
+
+- **Phase:** needs-review (unchanged)
+- **Did:** the-loop's own gate (`.github/workflows/the-loop-gate.yml`) failed #118 on its
+  first run, and it was right:
+
+  ```text
+  issue-117: UNMET (at requirements-definition)
+    BLOCK  requirements-definition
+           · artifact is not locked — front-matter says status: in-review,
+             expected status: approved (docs/specs/issue-117/requirements.md)
+  ```
+
+  I had left all three artifacts at `status: in-review`, reading "in review" as "the human
+  has not approved yet". That conflates two different things, and the graph keeps them
+  apart deliberately: `requirements-definition` is an **agent** node meaning _the artifact
+  is written and locked_, and `requirements-approval` is the **human** node after it. The
+  gate runs `--fail-on block`, i.e. only on what an agent can fix — so classifying this as
+  `BLOCK` was the graph saying "your half isn't finished", not "the reviewer hasn't
+  answered".
+
+  Locked all three to `status: approved` with `approvedBy: []` and a note naming the PR
+  review as the gate — the same form issue-108 used for an open tier-4 PR. Re-running the
+  exact CI command now gives the correct open-PR state:
+
+  ```text
+  $ the-loop check issue-117 --recompute --fail-on block
+  issue-117: UNMET (at requirements-approval)
+    WAIT   requirements-approval
+           · no authorized feedback yet
+  exit=0
+  ```
+
+- **Worth noting:** this is the harness catching its own operator, on the very work item
+  whose subject is documentation being out of step with reality. The gate did exactly what
+  `--fail-on block` was designed to do — fail on the agent's omission, wait on the human's.
+- **Next:** unchanged — human review of the three phase gates and the PR.
 
 ## Risk tier
 
