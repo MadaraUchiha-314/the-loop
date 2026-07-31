@@ -1,3 +1,15 @@
+## v4.0.0 (2026-07-31)
+
+### BREAKING CHANGE
+
+- polling.stateFile is removed and the CLI refuses a config that
+still declares it; run `the-loop migrate-config`. On-disk state is not moved —
+the old locations are read until each work item is written forward.
+
+### Fix
+
+- **issue-128**: classify generated state as portable or local, and document it (#129)
+
 ## v3.0.3 (2026-07-31)
 
 ### Fix
