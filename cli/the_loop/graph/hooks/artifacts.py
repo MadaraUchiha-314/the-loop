@@ -3,6 +3,13 @@
 The load-bearing behaviour is **aggregation**: every unmet requirement comes
 back in ONE result with one message each, so the agent repairs them in a single
 round instead of discovering them one at a time across three turns (R3.5).
+
+A node's ``produces`` names an **artifact**, not a file: one entry may accept
+several names (``requirements.md|bugfix.md``), because a bug's phase-1 spec is
+called ``bugfix.md`` and always has been (issue-124, decision-045). Resolution
+lives in :mod:`the_loop.graph.model`; what lives here is the *policy* — what to
+do when none of the accepted names is present, and what to do when more than one
+is.
 """
 
 from __future__ import annotations
@@ -12,16 +19,20 @@ from typing import Any, List, Mapping
 
 from ..contract import HookContext, HookResult, Message
 from ..frontmatter import sections, split_front_matter
+from ..model import ArtifactSlot, artifact_names, resolve_produces
 from ..registry import hook
 
 NAME = "validate-artifacts"
 
 
-def _artifact_paths(ctx: HookContext) -> List[Path]:
-    produces = ctx.node.get("produces") or []
-    if isinstance(produces, (str, Path)):
-        produces = [produces]
-    return [ctx.work_item.spec_dir / str(p) for p in produces]
+def _slots(ctx: HookContext) -> List[ArtifactSlot]:
+    return resolve_produces(ctx.node.get("produces"), ctx.work_item.spec_dir)
+
+
+def _rel(ctx: HookContext, path: Path) -> str:
+    return (
+        str(path.relative_to(ctx.repo)) if path.is_relative_to(ctx.repo) else str(path)
+    )
 
 
 @hook(NAME)
@@ -29,8 +40,8 @@ def validate_artifacts(ctx: HookContext) -> HookResult:
     params: Mapping[str, Any] = ctx.params or {}
     findings: List[Message] = []
 
-    paths = _artifact_paths(ctx)
-    if not paths:
+    slots = _slots(ctx)
+    if not slots:
         return HookResult.skipped(NAME, "this node declares no artifacts")
 
     # An *optional* node that produced nothing was simply not entered. The
@@ -38,18 +49,51 @@ def validate_artifacts(ctx: HookContext) -> HookResult:
     # item whose scope is already clear starts directly at
     # requirements-definition" — so a missing artifact there is a skip, not a
     # finding. Once the artifact exists, every gate applies normally.
-    if ctx.node.get("optional") and not any(p.is_file() for p in paths):
+    if ctx.node.get("optional") and not any(slot.present for slot in slots):
         return HookResult.skipped(NAME, "optional node; no artifact was produced")
 
-    for path in paths:
-        rel = (
-            str(path.relative_to(ctx.repo))
-            if path.is_relative_to(ctx.repo)
-            else str(path)
-        )
-        if not path.is_file():
-            findings.append(Message(text="required artifact is missing", path=rel))
+    paths: List[Path] = []
+    for slot in slots:
+        present = list(slot.present)
+        if not present:
+            # Name every accepted name: an agent cannot write the right file if
+            # the block does not say what the right file may be called.
+            if slot.alternatives:
+                findings.append(
+                    Message(
+                        text=f"required artifact is missing — write one of: {slot.label()}",
+                        path=_rel(ctx, ctx.work_item.spec_dir),
+                    )
+                )
+            else:
+                findings.append(
+                    Message(
+                        text="required artifact is missing",
+                        path=_rel(ctx, slot.candidates[0]),
+                    )
+                )
             continue
+
+        if len(present) > 1:
+            # Fail closed. Two artifacts filling one slot have no defined source
+            # of truth, and a resolver that quietly preferred the first-declared
+            # name would approve the gate against whichever the graph happened to
+            # list first — which could be the stale one.
+            findings.append(
+                Message(
+                    text=(
+                        f"{len(present)} artifacts present where one is expected "
+                        f"— keep one of: {slot.label()}"
+                    ),
+                    path=_rel(ctx, ctx.work_item.spec_dir),
+                )
+            )
+            continue
+
+        paths.append(present[0])
+
+    for path in paths:
+        rel = _rel(ctx, path)
 
         try:
             text = path.read_text(encoding="utf-8")
@@ -120,21 +164,44 @@ def enforces_boundaries_from(ctx: HookContext) -> HookResult:
     A cheap structural check with real value: it is exactly the "design.md
     silently drops a boundary requirements.md raised" failure that the-loop's
     own security gate is meant to catch, and which prose alone never caught.
+
+    ``upstream`` accepts the same alternation as ``produces``, and it must: it
+    named ``requirements.md`` literally until issue-124, so for every *bug* work
+    item the upstream resolved to nothing, the hook took its "absent" branch, and
+    a skip passed the chain. The gate reported success without ever running —
+    which is worse than the missing-artifact block that made the same mismatch
+    visible one node earlier.
+
+    When several accepted names are present their bodies are **joined** rather
+    than one being chosen: a boundary raised in either file still has to be
+    answered downstream, and this hook never has to make the choice
+    ``validate-artifacts`` deliberately refuses to make.
     """
     name = "enforces-boundaries-from"
     upstream = ctx.params.get("upstream")
     if not upstream:
         return HookResult.skipped(name, "no upstream artifact declared")
-    up = ctx.work_item.spec_dir / str(upstream)
-    downs = _artifact_paths(ctx)
-    if not up.is_file() or not downs:
+    ups = [
+        p
+        for p in (ctx.work_item.spec_dir / n for n in artifact_names(upstream))
+        if p.is_file()
+    ]
+    # Gate on what the node *declares*, and read what is *present*. A declared but
+    # missing downstream artifact leaves `down_body` empty, so every upstream
+    # marker reads as unanswered and blocks — which is what this hook did before
+    # alternation, and the direction to keep. (In the shipped graph the earlier
+    # `validate-artifacts` in the same chain blocks first, so this branch is a
+    # floor rather than a path anything reaches.)
+    slots = _slots(ctx)
+    downs = [p for slot in slots for p in slot.present]
+    if not ups or not slots:
         return HookResult.skipped(name, "upstream or downstream artifact absent")
 
-    up_body = split_front_matter(up.read_text(encoding="utf-8"))[1].lower()
+    up_body = "\n".join(
+        split_front_matter(u.read_text(encoding="utf-8"))[1] for u in ups
+    ).lower()
     down_body = "\n".join(
-        split_front_matter(d.read_text(encoding="utf-8"))[1]
-        for d in downs
-        if d.is_file()
+        split_front_matter(d.read_text(encoding="utf-8"))[1] for d in downs
     ).lower()
 
     missing = [

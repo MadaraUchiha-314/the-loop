@@ -68,7 +68,11 @@ deprecated:
 # Per-work-item artifacts: an optional brainstorm scratchpad, the Kiro-style 3-phase spec,
 # plus the execution log. <id> is the ticket id (e.g. issue-1, PROJ-42) — before a ticket
 # exists these live under docs/specs/draft-<slug>/. These MUST be checked in.
-# A bug uses bugfix.md in place of requirements.md.
+# A bug uses bugfix.md in place of requirements.md. They are two accepted names for ONE
+# artifact, not two artifacts: the process graph's requirements-definition node declares
+# `produces: ["requirements.md|bugfix.md"]` and blocks when both are present
+# (issue-124, decision-045). cli/tests/test_graph_parity.py holds this list and the
+# shipped graph to each other in both directions.
 workItemArtifacts:
   - pathPattern: docs/specs/<id>/brainstorm.md
     role: spec-brainstorm
@@ -80,6 +84,7 @@ workItemArtifacts:
   - pathPattern: docs/specs/<id>/bugfix.md
     role: spec-bugfix
     phase: requirements-definition
+    # An alternative name for spec-requirements, never a second artifact beside it.
   - pathPattern: docs/specs/<id>/design.md
     role: spec-design
     phase: design

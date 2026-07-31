@@ -46,6 +46,12 @@ until the current phase is approved; record the approver (paper trail).
 1. **`requirements.md`** (or **`bugfix.md`** for bugs) — introduction, user stories, and
    acceptance criteria in **EARS** notation
    (`WHEN <event> THEN the system SHALL <response>`). Phase: `requirements-definition`.
+   The two names are alternatives for **one** artifact: the process graph accepts either
+   (`produces: ["requirements.md|bugfix.md"]`), and blocks when **both** are present,
+   because two phase-1 artifacts in one folder have no defined source of truth
+   (decision-045). The gate is otherwise identical for both — same `status: approved` lock,
+   same required `## Requirements` and `## Security considerations` sections — so pick the
+   template that fits the work, not the gate.
    Includes the **Security considerations** section — a threat-model-lite (untrusted
    actors, trust boundaries, abuse cases, fail-closed expectations) captured with the
    requirements (`security.threatModel.required`); an empty section fails the gate,

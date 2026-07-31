@@ -177,3 +177,83 @@ class TestTheGraphShipsWithTheCli:
 
         graph = load_graph(shipped_graph_path())
         assert graph.start and graph.nodes
+
+
+class TestProducesNamesAnArtifactNotAFile:
+    """One artifact, several accepted names (issue-124, decision-045).
+
+    A bug's phase-1 spec is called `bugfix.md`. The graph had no way to say
+    that, so the node gating phase 1 demanded `requirements.md` and every bug
+    work item blocked on the absence of a file the documentation told it not to
+    write.
+    """
+
+    def test_alternatives_are_split_in_declaration_order(self):
+        from the_loop.graph.model import artifact_names
+
+        assert artifact_names("requirements.md|bugfix.md") == (
+            "requirements.md",
+            "bugfix.md",
+        )
+
+    def test_a_single_name_is_a_one_element_group(self):
+        from the_loop.graph.model import artifact_names
+
+        assert artifact_names("design.md") == ("design.md",)
+
+    def test_surrounding_whitespace_is_not_part_of_the_name(self):
+        from the_loop.graph.model import artifact_names
+
+        assert artifact_names("requirements.md | bugfix.md") == (
+            "requirements.md",
+            "bugfix.md",
+        )
+
+    @pytest.mark.parametrize("entry", ["a.md||b.md", "|a.md", "a.md|", "|", "  |  "])
+    def test_an_empty_alternative_fails_at_load(self, entry):
+        """A slip that would otherwise resolve to a silently shorter list of
+        names — a gate quietly accepting fewer artifacts than its author wrote.
+        Every structural failure is a startup failure."""
+        with pytest.raises(GraphConfigError, match="empty alternative"):
+            compile_graph({"nodes": [{"id": "a", "produces": [entry]}]})
+
+    def test_the_offending_node_and_entry_are_both_named(self):
+        with pytest.raises(GraphConfigError, match="'phase-one'.*'a.md\\|\\|b.md'"):
+            compile_graph({"nodes": [{"id": "phase-one", "produces": ["a.md||b.md"]}]})
+
+    def test_the_entry_is_kept_verbatim_so_graph_show_reports_what_was_declared(self):
+        """Splitting at parse time would make `the-loop graph show --format json`
+        claim two artifacts where the graph means one."""
+        graph = compile_graph(
+            {"nodes": [{"id": "a", "produces": ["requirements.md|bugfix.md"]}]}
+        )
+        assert graph.node("a").produces == ("requirements.md|bugfix.md",)
+        assert graph.node("a").as_mapping()["produces"] == ["requirements.md|bugfix.md"]
+
+    def test_resolution_reports_which_names_are_present(self, tmp_path):
+        from the_loop.graph.model import resolve_produces
+
+        (tmp_path / "bugfix.md").write_text("x")
+        (slot,) = resolve_produces(["requirements.md|bugfix.md"], tmp_path)
+        assert slot.names == ("requirements.md", "bugfix.md")
+        assert slot.present == (tmp_path / "bugfix.md",)
+        assert slot.alternatives is True
+
+    def test_resolution_never_chooses_between_two_present_names(self, tmp_path):
+        """Choosing is a policy decision, and it belongs to the hook that has to
+        make it — `validate-artifacts` blocks rather than preferring whichever
+        name the graph happened to list first."""
+        from the_loop.graph.model import resolve_produces
+
+        (tmp_path / "requirements.md").write_text("x")
+        (tmp_path / "bugfix.md").write_text("x")
+        (slot,) = resolve_produces(["requirements.md|bugfix.md"], tmp_path)
+        assert len(slot.present) == 2
+
+    def test_the_shipped_phase_one_node_accepts_both_documented_names(self):
+        """The end of the mismatch, asserted against the real graph."""
+        from the_loop.graph.model import artifact_names, load_graph, shipped_graph_path
+
+        node = load_graph(shipped_graph_path()).node("requirements-definition")
+        accepted = {n for entry in node.produces for n in artifact_names(entry)}
+        assert accepted == {"requirements.md", "bugfix.md"}

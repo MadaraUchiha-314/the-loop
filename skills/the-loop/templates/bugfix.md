@@ -33,7 +33,16 @@ What is wrong, and the observed impact. Link the ticket.
 
 What is causing the bug, once known.
 
-## Acceptance criteria (EARS)
+## Requirements
+
+> This exact heading is what the `requirements-definition` gate looks for — the same one
+> `requirements.md` uses, because a bug and a feature clear the same gate. For a bug the
+> requirements are usually one or two: restore the correct behaviour, and prove it stays
+> restored.
+
+### Requirement 1 — <the correct behaviour>
+
+#### Acceptance criteria (EARS)
 
 1. WHEN <repro steps> THEN the system SHALL <correct behaviour>.
 2. The fix SHALL include a regression test that fails before the fix and passes after.

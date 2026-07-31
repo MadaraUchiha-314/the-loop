@@ -29,20 +29,127 @@ GRAPH_FILENAME = "pdlc.yaml"
 logger = logging.getLogger("the-loop.graph")
 
 __all__ = [
+    "ALTERNATIVE_SEPARATOR",
+    "ArtifactSlot",
     "Edge",
     "Graph",
     "GraphConfigError",
     "Node",
+    "artifact_names",
     "load_graph",
+    "resolve_produces",
     "shipped_graph_path",
+    "validate_produces_entry",
 ]
 
 _ACTORS = frozenset({"agent", "human", "code"})
 _SESSION_MODES = frozenset({"new", "inherit"})
 
+#: Separates the names one ``produces`` entry accepts:
+#: ``requirements.md|bugfix.md`` means *one* artifact that may be called either
+#: (issue-124, decision-045). One artifact, several accepted names — not two
+#: artifacts, which is why the entry is kept verbatim in :attr:`Node.produces`
+#: and only split at resolution time.
+ALTERNATIVE_SEPARATOR = "|"
+
 
 class GraphConfigError(ValueError):
     """The graph could not be compiled. Always names the offending element."""
+
+
+# -- the ``produces`` name contract -------------------------------------------
+#
+# One artifact may have several accepted names: a bug's phase-1 spec is called
+# ``bugfix.md``, and the-loop has documented that in the skill, the workflow
+# reference, the manifest and a bundled template since long before the graph
+# existed (issue-124). The graph had no way to say it, so every bug work item
+# blocked at phase 1 for the absence of a ``requirements.md`` the documentation
+# told it not to write.
+#
+# The resolver lives here, in the module that already owns ``produces`` and is
+# where a structural fault becomes a startup failure, so the two hooks that read
+# it cannot drift apart — they used to carry a byte-identical private copy each,
+# which is the same defect one level down.
+
+
+@dataclass(frozen=True)
+class ArtifactSlot:
+    """One ``produces`` entry, resolved against a work item's spec folder.
+
+    A *slot* is one artifact the node must produce, under any one of the names
+    its entry accepts. ``present`` is the subset that exists on disk, in
+    declaration order — empty means the node produced nothing, and more than one
+    means the folder is ambiguous about which file is the source of truth.
+    """
+
+    names: Tuple[str, ...]
+    candidates: Tuple[Path, ...]
+    present: Tuple[Path, ...]
+
+    @property
+    def alternatives(self) -> bool:
+        """Does this slot accept more than one name?"""
+        return len(self.names) > 1
+
+    def label(self) -> str:
+        """The accepted names, for a message: ``requirements.md, bugfix.md``."""
+        return ", ".join(self.names)
+
+
+def artifact_names(entry: object) -> Tuple[str, ...]:
+    """The names one ``produces`` entry accepts, in declaration order."""
+    return tuple(
+        part.strip() for part in str(entry).split(ALTERNATIVE_SEPARATOR) if part.strip()
+    )
+
+
+def validate_produces_entry(node_id: str, entry: object) -> None:
+    """Reject a malformed entry at compile time (R1.2).
+
+    ``a||b``, ``|a``, ``a|`` and a bare separator are all authoring slips that
+    would otherwise resolve to a silently shorter list of names — a gate quietly
+    accepting fewer artifacts than its author wrote. Every structural failure is
+    a startup failure, so this raises rather than warns.
+    """
+    raw = str(entry)
+    parts = raw.split(ALTERNATIVE_SEPARATOR)
+    if any(not part.strip() for part in parts):
+        raise GraphConfigError(
+            f"node {node_id!r}: produces entry {raw!r} has an empty alternative; "
+            f"write the accepted names as 'first.md{ALTERNATIVE_SEPARATOR}second.md'"
+        )
+
+
+def resolve_produces(produces: object, spec_dir: Path) -> List[ArtifactSlot]:
+    """Resolve a node's ``produces`` against ``spec_dir``, one slot per entry.
+
+    The single shared resolver for every hook that reads ``produces``. It never
+    *chooses* between present alternatives — that is a policy decision, and the
+    hooks make it explicitly (``validate-artifacts`` blocks on ambiguity rather
+    than preferring whichever name the graph happened to list first).
+    """
+    entries: List[Any]
+    if not produces:
+        entries = []
+    elif isinstance(produces, (str, Path)):
+        entries = [produces]
+    elif isinstance(produces, Sequence):
+        entries = list(produces)
+    else:
+        entries = [produces]
+
+    slots: List[ArtifactSlot] = []
+    for entry in entries:
+        names = artifact_names(entry)
+        candidates = tuple(spec_dir / name for name in names)
+        slots.append(
+            ArtifactSlot(
+                names=names,
+                candidates=candidates,
+                present=tuple(p for p in candidates if p.is_file()),
+            )
+        )
+    return slots
 
 
 @dataclass(frozen=True)
@@ -200,6 +307,8 @@ def _build_node(raw: Mapping[str, Any]) -> Node:
     produces = raw.get("produces") or []
     if isinstance(produces, str):
         produces = [produces]
+    for entry in produces:
+        validate_produces_entry(node_id, entry)
     return Node(
         id=node_id,
         phase=str(raw.get("phase", "")),

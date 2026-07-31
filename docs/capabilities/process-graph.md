@@ -37,6 +37,31 @@ There are exactly **two** runtime concepts and **one** contract between them.
   …). There is no expression language: the LLM produces facts, declared edges route on
   them. That split is what makes judgement and determinism coexist.
 
+### What a node `produces`
+
+- A `produces` entry SHALL name an **artifact**, not a filename. It MAY accept several
+  names separated by `|` — `produces: ["requirements.md|bugfix.md"]` — because one artifact
+  can legitimately go by more than one name: a bug's phase-1 spec is called `bugfix.md`
+  ([decision-045](../decisions/decision-045.md)).
+- **Exactly one** accepted name may be present. None SHALL block with a message naming
+  *every* accepted name, so an agent knows what it is allowed to write; more than one
+  SHALL block as **ambiguous**, because two artifacts filling one slot have no defined
+  source of truth and a gate that quietly picks one can approve the stale one.
+- An artifact found under an alternative name SHALL be held to the **identical** standard —
+  `locked`, `frontMatter`, `sections`, `checkmarks`. The name is what is flexible; the bar
+  is not.
+- An entry with an empty alternative (`a||b`, `|a`, `a|`) SHALL fail at **graph-compile
+  time**, naming the node and the entry — every structural failure is a startup failure.
+- The entry SHALL be reported verbatim by `the-loop graph show`, unsplit, so the output
+  states what the graph declares rather than claiming two artifacts where it means one.
+- `enforces-boundaries-from`'s `upstream` SHALL resolve the same way; when several accepted
+  names are present their bodies are joined rather than one being chosen, so a boundary
+  raised in either still has to be answered downstream.
+- The names the graph gates, the names `.the-loop/manifest.yaml` tracks and the templates
+  under `skills/the-loop/templates/` SHALL agree, enforced in both directions by
+  `cli/tests/test_graph_parity.py` — including that a bundled template offers every section
+  the node it is authored for requires.
+
 ### The hook contract
 
 - Every hook SHALL have one signature — `(HookContext) -> HookResult` — where
@@ -170,6 +195,7 @@ There are exactly **two** runtime concepts and **one** contract between them.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-124 | `produces` names an artifact rather than a filename: `\|`-separated alternatives, one resolver shared by every hook that reads them, ambiguity fails closed, malformed entries fail at compile; `enforces-boundaries-from` resolves `upstream` the same way, which turned a security gate that had been silently skipping for every bug work item into one that runs; graph ↔ manifest ↔ template parity is now a test | [spec](../specs/issue-124/), [decision-045](../decisions/decision-045.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/124) |
 | issue-123 | The daemon stopped taking `specDir` from the operator's machine: `routing.graph.specDir` defaults to unset, so the work item's own `workflow.specDir` wins; the gate and the runtime resolve one value; the checkout's ownership is proved before its config is read; an escaping value is refused; and the skip is recorded as `graph.skipped` instead of a debug line | [spec](../specs/issue-123/), [decision-044](../decisions/decision-044.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/123) |
 | issue-113 | Wired the ingress to the graph: `Runtime.start()`, the `GraphLink` seam in the shared dispatcher, `HookContext.event` finally written, the `routing.graph` config block, and the chain-outcome fix that lets a passing gate's verdict reach its edges | [spec](../specs/issue-113/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/113) |
 | issue-109 | Established the capability: the two-concept graph (node + hook), the `HookResult` contract, the shipped PDLC graph, ten hooks, configurable integration transports, `the-loop check`/`graph`, and the forced-transition escape hatch | [spec](../specs/issue-109/), [decision-041](../decisions/decision-041.md), [decision-042](../decisions/decision-042.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/109) |

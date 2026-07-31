@@ -81,7 +81,8 @@ requirements.
    already well-defined.
 
 4. **Phase 1 — Requirements** (`requirements-definition`). Create
-   `docs/specs/<id>/requirements.md` (or `bugfix.md` for a bug) from the template:
+   `docs/specs/<id>/requirements.md` (or `bugfix.md` for a bug — one artifact, two
+   accepted names; write **one**, never both) from the template:
    introduction, user stories, and EARS acceptance criteria — **including the Security
    considerations section** (threat-model-lite: untrusted actors, trust boundaries,
    abuse cases, fail-closed; `security.threatModel.required` — "no new attack surface"
