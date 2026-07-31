@@ -1,3 +1,9 @@
+## v3.0.3 (2026-07-31)
+
+### Fix
+
+- **issue-124**: a `produces` entry names an artifact, not a filename (#127)
+
 ## v3.0.2 (2026-07-31)
 
 ### Fix
