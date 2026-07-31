@@ -90,12 +90,29 @@ present, neither pretending to be the other.
 
 ### A URL cannot always be derived
 
-A ref carries no host. `github:octo/repo#15` is `github.com` by assumption, and the-loop
-has no GitHub Enterprise support for the ref syntax to inherit (`workspace.defaultHost`
-exists for *checkouts*, and is not reachable from a store that is handed a directory). A
-work item whose provider is not `github`, or whose owner/repo are not the shape GitHub
-accepts, therefore gets **no URL** rather than a guessed one. Omission is honest; a link
-that 404s is not.
+A work item whose provider is not `github`, or whose owner/repo are not the shape GitHub
+accepts, gets **no URL** rather than a guessed one. Omission is honest; a link that 404s
+is not.
+
+### The host: corrected on review
+
+The first version of this section said a ref carries no host, so a URL assumes
+`github.com` and GitHub Enterprise is out of scope. The owner rejected that on
+[PR #131](https://github.com/MadaraUchiha-314/the-loop/pull/131):
+
+> Why is this out of scope? This should be in scope. When the poller is polling or the
+> webhook is receiving, we can identify the host as well.
+
+Correct, and checkable: a webhook payload carries `repository.html_url`; a polled item
+carries its own (the poller already stores it as `WorkItem.url`). The host was not
+unavailable, it was being **discarded** at the ingress one line before the ref was built.
+"A ref carries no host" described the format as though it were a constraint — but the
+format is ours.
+
+It also matters beyond the link. A work item on `ghe.corp.example` and one on `github.com`
+with the same owner/repo/number are *different work items*; sharing a registry entry, a
+poll ledger and a file name between them is a collision. So the host belongs to the
+**identity** — R5 — and the URL is then simply derived from it like everything else.
 
 ## Requirements
 
@@ -177,6 +194,30 @@ invented rather than after someone copies the wrong thing.
 4. The existing parity tests SHALL cover it: a build SHALL go red if the declaration, the
    documentation and the recipe disagree about it.
 
+### Requirement 5 — a ref names its host when it is not the default one
+
+**User story:** As an operator running the-loop against GitHub Enterprise, I want my work
+items identified and linked by the host they actually live on, so that the record is about
+my work item rather than about a github.com URL that does not exist.
+
+#### Acceptance criteria (EARS)
+
+1. A work-item ref SHALL be `<provider>:[<host>/]<owner>/<repo>#<number>`, and the host
+   SHALL be omitted when it is the provider's default (`github.com`), so every ref written
+   before this change parses to the same work item and resolves to the same file name.
+2. WHEN a webhook event is routed THEN the host SHALL be read from the event — the
+   repository's `html_url`, falling back to the issue/PR URL — and never from
+   configuration or assumption.
+3. WHEN a polled work item is identified THEN its host SHALL be read from its own URL, and
+   SHALL agree with the ref the router derives for the same item, because one keys the
+   poll ledger and the other keys the routing.
+4. IF a ref's path is neither `<owner>/<repo>` nor `<host>/<owner>/<repo>` — where a host
+   is a dotted name, or one with an explicit port — THEN parsing SHALL fail, rather than
+   yield a work item whose identity is a path fragment.
+5. WHEN a URL is derived for a ref THEN it SHALL use the ref's host.
+6. Two work items with the same owner, repo and number on different hosts SHALL be
+   different work items, with different records.
+
 ## Security considerations
 
 **Untrusted actors and inputs.** The refs the index is built from arrive from GitHub
@@ -190,12 +231,20 @@ data already in the record**; neither introduces a new ingress.
   stray). The index builder reads with the same tolerant reader the store already uses and
   omits what it cannot parse (R2.4) — a corrupt neighbour cannot fail a write.
 - *Ref → URL.* Building a URL by interpolating a ref into a string is the one new
-  operation. `WorkItemRef.parse` accepts any non-`#` text as the path, and splits it at
-  the *first* `/`, so `repo` may contain further slashes or `..` — enough to make a
-  derived URL point somewhere other than the work item it claims. The URL is therefore
-  emitted only when owner and repo match GitHub's own name shape
-  (`[A-Za-z0-9._-]+`), and omitted otherwise (R3.3). Fail closed: no link beats a
+  operation. The parts are constrained twice over. At **parse** (R5.4) the path must be
+  `[<host>/]<owner>/<repo>` — previously it split at the *first* `/` and let the rest be
+  the "repo", so `github:octo/repo/../../evil#15` became a work item whose identity was a
+  path fragment; it is now rejected outright. At **derivation** (R3.3) the host must be a
+  bare hostname with an optional port, and owner and repo must match GitHub's own name
+  shape (`[A-Za-z0-9._-]+`) — no `/`, so no path segment can be injected; no `@`, so no
+  credentials can be smuggled. Anything else yields no URL. Fail closed: no link beats a
   misleading one.
+- *Host → URL.* The host now comes from an attacker-influenceable field
+  (`repository.html_url` on a webhook payload). It is extracted with a scheme-anchored
+  regex that takes the authority only, and is then subject to the same shape check before
+  it reaches a URL. A payload naming a host the operator does not use produces a record
+  that links there — which is no more than the payload already claimed, and the receiver's
+  signature verification is what bounds who can make that claim.
 
 **Abuse cases.**
 
@@ -221,8 +270,16 @@ data already in the record**; neither introduces a new ingress.
   or JSONL, meant to be read with `jq`"*), and a second rendering of the same list is a
   second thing to keep in step. Reconsider if a rendered table on GitHub is what the
   operator actually wants.
-- **GitHub Enterprise hosts.** The ref syntax has no host, and inventing one here would
-  put a config-shaped decision inside a store. See Analysis.
+- **Host-aware `gh` invocations.** `comments.py`, `reactions.py` and the poll provider
+  call `gh api repos/<owner>/<repo>/…`, which resolves through the operator's own `gh`
+  host configuration — fine for a single-host deployment, insufficient for a daemon
+  spanning two. R5 is what makes the host *available* to that work; passing it to `gh`
+  touches authentication and is a follow-up work item.
+- **A read-fallback to the pre-R5 (hostless) file name.** An existing GitHub Enterprise
+  deployment is re-identified by R5: the ledger re-baselines once and a session should be
+  re-registered. The shim shape exists in this codebase (issue-106, issue-128) and is
+  cheap to add — held back because GHE was documented as unsupported, so the population it
+  would serve is speculative. Documented rather than silent.
 - **A `reindex` command.** The index self-repairs on the next record write, and an active
   daemon writes on every poll cycle. A command would be a second way to produce a file
   that is already produced automatically.

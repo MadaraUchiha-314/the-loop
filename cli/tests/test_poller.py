@@ -550,6 +550,29 @@ def test_a_cycle_only_writes_the_items_it_touched(tmp_path):
     assert records == ["github-octo-repo-1.json"]
 
 
+def test_a_polled_item_is_identified_with_the_host_it_lives_on():
+    """The poller knows the host too — it is in the item's own URL (issue-130).
+
+    This ref keys the poll ledger while the router's keys the routing, so the two
+    derivations must agree: a GitHub Enterprise item that was ``github:octo/repo#15``
+    to one and ``github:ghe.corp.example/octo/repo#15`` to the other would be two
+    work items, and the thread would be re-forwarded every cycle.
+    """
+    item = WorkItem(
+        provider="github",
+        owner="octo",
+        repo="repo",
+        number=15,
+        kind="issue",
+        url="https://ghe.corp.example/octo/repo/issues/15",
+    )
+    assert item.host == "ghe.corp.example"
+    assert item.ref == "github:ghe.corp.example/octo/repo#15"
+
+    # An item with no URL (an older provider, a fixture) still means github.com.
+    assert WorkItem("github", "octo", "repo", 15, "issue").ref == "github:octo/repo#15"
+
+
 # -- Poller core (provider-agnostic, recording dispatcher double) -------------
 
 

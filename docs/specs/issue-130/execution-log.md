@@ -15,7 +15,10 @@ status: in-progress          # in-progress | complete
 | design | 2026-07-31 | pending (PR) | Three pieces: a property on `WorkItemRef`, index maintenance inside the store's single write funnel, and the `GENERATED_PATHS` classification that drags the docs along |
 | tasks-breakdown | 2026-07-31 | pending (PR) | 8-task DAG |
 | implementation | 2026-07-31 | pending (PR) | T1–T8 |
-| needs-review | 2026-07-31 | pending | Tier 3 ⇒ `human-approves-pr`; completes when the PR merges |
+| needs-review | 2026-07-31 | **owner review received** | *"Why is this out of scope? … we can identify the host as well"* — GHE returned to scope; back to tasks-breakdown |
+| tasks-breakdown (2) | 2026-07-31 | pending (PR) | R5 + design § "The host on the ref"; tasks T9–T13 |
+| implementation (2) | 2026-07-31 | pending (PR) | T9–T13: the host is identity, identified at both ingresses |
+| needs-review (2) | 2026-07-31 | pending | Tier 3 ⇒ `human-approves-pr`; completes when the PR merges |
 | complete | | | |
 
 ## Pull requests
@@ -86,6 +89,46 @@ status: in-progress          # in-progress | complete
 - **Next:** post the reviewer briefing on the PR; the tier-3 gate is the human PR review.
 - **Blockers:** none.
 
+### 2026-07-31 — round 2: the host was never unavailable, it was being discarded
+
+- **Phase:** needs-review → tasks-breakdown → implementation → needs-review
+- **Trigger:** the owner, on PR #131 — *"Why is this out of scope? This should be in
+  scope. When the poller is polling or the webhook is receiving, we can identify the host
+  as well."*
+- **Verified before designing:** they are right, and it is one line in each ingress.
+  `repository.html_url` is on every webhook payload; the poller already stores the item's
+  `html_url` as `WorkItem.url`. The first version's *"a ref carries no host"* described
+  our own format as though it were a constraint.
+- **Did:** put the host on the identity rather than on the URL derivation
+  ([decision-048](../../decisions/decision-048.md)):
+  - **T9** `WorkItemRef.host` (normalised in `__post_init__`, or two refs for one work
+    item would compare unequal), `path`/`default_host`, a `parse` that accepts
+    `[<host>/]<owner>/<repo>` and rejects everything else, and `slug`/`url` derived from
+    them. The default host stays **unwritten**, which is what makes every existing ref
+    string and every existing state file name byte-identical — no shim, no migration.
+  - **T10** `_host(payload)` in the router (repository URL, then the issue/PR URL) and
+    `WorkItem.host` in the poller. The fallback is not decoration: the poller's
+    synthesised payloads carry the *item's* URL, not the repository's, so reading only
+    `repository.html_url` would have given a polled enterprise item a github.com identity
+    while the webhook path gave it the right one — one work item, two ledgers, a thread
+    re-forwarded every cycle.
+  - **T11/T12** the ref grammar in `docs/cli/concepts.md`, a GHE tip plus the
+    re-identification warning in `docs/cli/state.md`, the capability doc, decision-048,
+    and the corrections to R3/R5 and the design that follow from it.
+- **Found while doing it:** the malformed-path inputs the URL rule was defending against
+  (`github:octo/repo/../../evil#15`) are now rejected at `parse` — a better place to stop
+  them. One test changed from "parses, yields no URL" to "does not parse".
+- **Stated, not hidden:** an existing GHE deployment is **re-identified** (new file names
+  ⇒ one re-baseline, re-register the session). Documented in `docs/cli/state.md`; the
+  hostless-slug read fallback that would avoid it is designed but not built, because GHE
+  was documented as unsupported until today. `gh api repos/<owner>/<repo>/…` is still not
+  host-aware — a follow-up work item, and this change is what makes the host available to
+  it.
+- **Checkpoint/tests:** `make check` green — **931 passed, 1 skipped** (7 new: the ref
+  grammar, both ingresses, and the enterprise record end to end).
+- **Next:** reply on the PR; the tier-3 gate is still the human PR review.
+- **Blockers:** none.
+
 ## Self-review / critic-review
 
 Recorded as it happened, including the rounds that found nothing — `reviews.stopOnNoNewFindings`
@@ -97,6 +140,9 @@ stops the loop when a round is empty, and saying which round that was is the evi
 | 2 | self (post-implementation, code) | `_records()` was annotated `List[tuple]` — true, and useless to a reader or to pyright | Tightened to `List[Tuple[Path, Dict[str, Any]]]` |
 | 3 | self (post-implementation, integration) | Checked what else could misread the new file, and what the index costs: no other scanner touches `portable/` (`the_loop.sessions.registry` scans `local/` and additionally requires a `-<number>.json` name); `drop()` maintains the index, including on the empty-record path inside `write_section`; `_identified()` removes a stale `url` when one can no longer be derived; a poll cycle over *n* work items is O(*n*²) small reads, which at one file per actively-tracked item is not worth caching against | No changes. The cost is stated in `design.md` and decision-047 rather than hidden |
 | — | critic | `reviews.critics[]` is empty in this repository's harness config — no second harness/model is configured to run one here | Not run; escalated to the human PR review, which is the tier-3 gate anyway |
+| 4 | human (round 2, owner) | GHE declared out of scope on a premise that did not hold — the host *is* identifiable at both ingresses | Accepted in full: R5, decision-048, T9–T13. The finding is a reminder that "the format doesn't support it" is not a reason when the format is ours |
+| 5 | self (round 2, code) | The three-segment rule needed a discriminator, or `github:octo/repo/sub#15` (a typo) becomes a work item on a host called "octo" — a silent second identity | Fixed before green: a host must be a dotted name or carry an explicit port; anything else is a malformed ref |
+| 6 | self (round 2, integration) | Checked that the two ingresses cannot disagree (they share `host_from_url` and one `WorkItemRef`), and that `slug` is unchanged for github.com — the property the whole no-migration claim rests on | No changes; both are pinned by tests |
 
 ## Open questions raised on the ticket
 

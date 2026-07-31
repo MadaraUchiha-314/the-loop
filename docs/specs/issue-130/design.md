@@ -74,6 +74,57 @@ flowchart LR
 
 ## Components & interfaces
 
+### The host on the ref (`the_loop/sessions/registry.py`, R5 — added on PR review)
+
+```python
+DEFAULT_GITHUB_HOST = "github.com"
+
+def host_from_url(url: str, default: str = DEFAULT_GITHUB_HOST) -> str: ...
+
+@dataclass(frozen=True)
+class WorkItemRef:
+    provider: str; owner: str; repo: str; number: int
+    host: str = ""            # normalised in __post_init__ to the provider default
+    @property
+    def default_host(self) -> bool: ...
+    @property
+    def path(self) -> str: ...    # "[<host>/]<owner>/<repo>"
+```
+
+Four properties do the work, and each exists for a failure it prevents:
+
+- **`__post_init__` normalises an empty host** to `github.com`. The ref is a frozen
+  dataclass used as a dict key and compared for equality all over the routing path; a
+  `host=""` and a `host="github.com"` ref for one work item would be two identities.
+- **`path` omits the default host**, which is what makes `ref` and `slug` byte-identical
+  to what they were for github.com. No migration, no shim: `slug` is the *file name* of
+  every state record.
+- **`parse` accepts two or three segments**, the three-segment form requiring a
+  recognisable host — a dotted name or one with an explicit port. `github:octo/repo/sub#15`
+  is therefore an error rather than a work item on a host called "octo". Everything else
+  (four segments, `..`) is now rejected at parse instead of being defended against at URL
+  derivation.
+- **`url` uses `self.host`**, so the fail-closed rule is unchanged in shape and simply has
+  less to defend against.
+
+Ingress, one derivation each, both landing on the same `WorkItemRef`:
+
+```mermaid
+flowchart LR
+  WH["webhook payload"] -->|"repository.html_url"| H["host_from_url()"]
+  WH -.->|"fallback: issue / pull_request html_url"| H
+  PL["polled WorkItem"] -->|"item.url"| H
+  H --> R["WorkItemRef(host=…)"]
+  R --> ROUTE["routing + registry"]
+  R --> LEDGER["poll ledger"]
+  R --> URL["record url + index"]
+```
+
+The fallback matters: the poller's synthesised payloads carry `repository.full_name` but
+the *item's* `html_url`, so reading only `repository.html_url` would have given polled
+enterprise items a github.com identity while the webhook path gave them the right one —
+two identities for one work item, and a thread re-forwarded every cycle.
+
 ### `WorkItemRef.url` (`the_loop/sessions/registry.py`)
 
 ```python
@@ -83,14 +134,20 @@ def url(self) -> str:
 ```
 
 - **Input:** the ref's own fields. No config, no network.
-- **Output:** `https://github.com/<owner>/<repo>/issues/<number>` when `provider ==
-  "github"` and both names match `[A-Za-z0-9._-]+`; `""` otherwise.
+- **Output:** `https://<host>/<owner>/<repo>/issues/<number>` when `provider == "github"`,
+  the host is a bare hostname (with an optional port) and both names match
+  `[A-Za-z0-9._-]+`; `""` otherwise. The host is the ref's own (R5) — `github.com` when it
+  does not say.
 - **Why a property, not a function:** every caller that has a ref wants it in the same
   breath as `.slug`, and `.slug` is already a property with the same "derive a
   presentation of the identity" job.
 - **`/issues/<n>` for a pull request:** GitHub redirects `…/issues/<n>` to `…/pull/<n>`
   when the number is a PR, so one form serves both. A ref carries no issue/PR
   discriminator, so no other form is derivable anyway.
+- **Not reused in `workspace.py`.** It has a near-identical `_host_from_url` whose regex
+  deliberately drops the port, because its output becomes a *directory name* in the
+  checkout layout. Collapsing them would change checkout paths for a host with a port —
+  an unrelated behaviour change inside a review fix. Left as two, noted here.
 
 ### `WorkItemStore` index maintenance (`the_loop/workitem.py`)
 
@@ -253,6 +310,10 @@ to two existing files whose assertions this work item deliberately changes:
 | R3.2 | asserted alongside R3.1 (the ref keeps its form) |
 | R3.3, abuse 2 | `test_a_ref_that_is_not_github_shaped_gets_no_url` |
 | R4.1–R4.4 | the existing `cli/tests/test_state_portability.py` (S1–S5), extended for the new portable path |
+| R5.1, R5.5, R5.6 | `test_a_work_item_on_another_host_links_to_that_host` (record + index + file name) |
+| R5.2 | `test_a_work_item_on_github_enterprise_is_routed_as_such`, `test_the_item_url_is_the_fallback_host_source`, `test_a_payload_with_no_host_still_means_github_com` (`test_routing.py`) |
+| R5.3 | `test_a_polled_item_is_identified_with_the_host_it_lives_on` (`test_poller.py`) |
+| R5.4 | `test_a_ref_with_an_unreadable_path_is_rejected_outright` |
 
 `cli/tests/test_workitem.py` has one assertion that the index deliberately invalidates
 (`portable/` contains exactly the record files); it is updated to say what it meant —
@@ -282,13 +343,24 @@ before/after of a real `portable/` directory in the pull-request briefing.
 5. **No `reindex` command.** The file self-repairs on the next write; a command would be a
    second producer of the same file.
 
+6. **The host belongs to the identity, not to the URL derivation**
+   ([decision-048](../../decisions/decision-048.md), added on PR review). Two work items
+   with the same owner/repo/number on different hosts are two work items; the alternative
+   — threading a host through the writers — cannot reach the CLI path, where there is no
+   payload.
+
 ## Open questions
 
 - **Would a rendered (markdown) index serve the "easily navigable" ask better?** JSON is
   shipped for the reasons above; raised on the ticket, and a markdown rendering remains a
   small, additive follow-up if the answer is yes.
-- **GitHub Enterprise.** The ref syntax carries no host, so `url` assumes `github.com`. If
-  GHE support ever lands it will need a host on the ref, not a special case here.
+- **Host-aware `gh` invocations.** The ref now carries the host, but `gh api
+  repos/<owner>/<repo>/…` in `comments.py`, `reactions.py` and the poll provider still
+  resolves through the operator's `gh` configuration. Enough for one host; a follow-up
+  work item for two.
+- **Adopting an existing GHE deployment's pre-R5 state.** A hostless-slug read fallback is
+  the shim shape this codebase already uses twice. Not built (GHE was unsupported until
+  now); documented in `docs/cli/state.md` instead.
 
 ## Review comments
 

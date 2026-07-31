@@ -23,6 +23,12 @@ flowchart TD
   T5 --> T7["T7 decision-047"]
   T6 --> T8["T8 capability doc + full check"]
   T7 --> T8
+  T1 --> T9["T9 host on the ref<br/>(round 2, PR review)"]
+  T9 --> T10["T10 host at both ingresses"]
+  T10 --> T11["T11 docs: ref grammar<br/>+ upgrade note"]
+  T9 --> T12["T12 decision-048"]
+  T11 --> T13["T13 full check"]
+  T12 --> T13
 ```
 
 ## Task list
@@ -93,3 +99,43 @@ flowchart TD
   - _Depends on:_ 6, 7
   - _Requirements:_ all
   - _Test:_ `make check` (lint, format-check, typecheck, validate, test)
+
+## Round 2 — PR #131 review: the host is knowable, so it is in scope
+
+- [x] 9. The host on the ref (PR review, R5)
+  - `DEFAULT_GITHUB_HOST`, `host_from_url`, `WorkItemRef.host` (normalised),
+    `default_host`/`path`, `parse` accepting `[<host>/]<owner>/<repo>` and rejecting
+    everything else, `slug` and `url` derived from `path`/`host`.
+  - _Depends on:_ 1
+  - _Requirements:_ R5.1, R5.4, R5.5
+  - _Test:_ `pytest cli/tests/test_portable_index.py::test_a_work_item_on_another_host_links_to_that_host`,
+    `…::test_a_ref_with_an_unreadable_path_is_rejected_outright` (red→green)
+
+- [x] 10. Identify the host at both ingresses
+  - Router: `_host(payload)` from `repository.html_url`, falling back to the issue/PR URL;
+    poller: `WorkItem.host` from the item's own URL, and `WorkItem.ref` built through
+    `WorkItemRef` so the two derivations cannot drift.
+  - _Depends on:_ 9
+  - _Requirements:_ R5.2, R5.3, R5.6
+  - _Test:_ `pytest cli/tests/test_routing.py -k host`,
+    `cli/tests/test_poller.py::test_a_polled_item_is_identified_with_the_host_it_lives_on`
+    (red→green)
+
+- [x] 11. Documentation for the host, including the upgrade note
+  - `docs/cli/concepts.md` (the ref grammar), `docs/cli/state.md` (the GHE tip and the
+    re-identification warning), `docs/capabilities/cli.md`.
+  - _Depends on:_ 10
+  - _Requirements:_ R5.1–R5.6
+  - _Test:_ `make lint` + `pytest cli/tests/test_docs_parity.py`
+
+- [x] 12. `decision-048` — a ref names its host when it is not the default one
+  - The decision, its row in `docs/decisions/decisions.md`, and the requirements/design
+    corrections it follows from.
+  - _Depends on:_ 9
+  - _Requirements:_ R5
+  - _Test:_ `make lint`
+
+- [x] 13. The full gate, again
+  - _Depends on:_ 11, 12
+  - _Requirements:_ all
+  - _Test:_ `make check`

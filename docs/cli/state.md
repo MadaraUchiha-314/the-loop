@@ -115,11 +115,26 @@ and what the pre-issue-128 shim keys on. `url` is the same fact in the form you 
 added beside it rather than replacing it, because these files are tracked and therefore
 read by people.
 
-The URL is **derived, never guessed**: only `github` refs resolve (a ref carries no host),
-and only when the owner and repo are GitHub's own name shape. Anything else — a `jira:`
-ref, a name with a slash or a colon in it — has no `url` field at all, because a link
-somewhere other than the work item is worse than no link. When the number belongs to a
-pull request, GitHub redirects `…/issues/<n>` to `…/pull/<n>`, so one form serves both.
+The URL is **derived, never guessed**: only `github` refs resolve, to the host the ref
+names — `github.com` unless it says otherwise — and only when the host, owner and repo are
+the shapes GitHub accepts. Anything else, such as a `jira:` ref, has no `url` field at
+all, because a link somewhere other than the work item is worse than no link. When the
+number belongs to a pull request, GitHub redirects `…/issues/<n>` to `…/pull/<n>`, so one
+form serves both.
+
+::: tip GitHub Enterprise
+A work item that does not live on github.com carries its host in the ref
+(`github:ghe.corp.example/octo/repo#15`), and therefore in its file name
+(`github-ghe.corp.example-octo-repo-15.json`) and its URL. Nothing has to be configured:
+the receiver reads the host from the repository's `html_url` and the poller from the
+item's own. Two work items with the same owner/repo/number on different hosts are
+different work items, and get different records.
+
+If you were already running the-loop against a GitHub Enterprise host, its work items
+are **re-identified** by this change — a new file name, so the poll ledger re-baselines
+the thread once and any session for it should be re-registered
+(`the-loop sessions register`). github.com work items are untouched.
+:::
 
 ### `control` — what an authorized user asked for
 

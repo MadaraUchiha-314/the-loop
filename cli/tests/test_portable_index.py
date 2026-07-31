@@ -66,23 +66,37 @@ def test_a_record_written_by_an_older_version_gains_the_url(tmp_path):
     assert json.loads((portable / SLUG).read_text())["url"] == URL
 
 
+def test_a_work_item_on_another_host_links_to_that_host(tmp_path):
+    """R5 — a GitHub Enterprise work item is not on github.com, and says so.
+
+    The host is identified where the work item enters the-loop (see
+    `test_routing.py` / `test_poller.py`) and carried on the ref, so everything
+    downstream — this record, this index, `sessions list` — is right about it
+    without knowing anything about hosts.
+    """
+    ref = "github:ghe.corp.example/octo/repo#15"
+    ControlStore(tmp_path / "portable").record(ref, "start")
+
+    record = json.loads(
+        (
+            tmp_path / "portable" / "github-ghe.corp.example-octo-repo-15.json"
+        ).read_text()
+    )
+    assert record["ref"] == ref
+    assert record["url"] == "https://ghe.corp.example/octo/repo/issues/15"
+    assert _index(tmp_path / "portable")[0]["url"] == record["url"]
+
+
 @pytest.mark.parametrize(
     "ref",
     [
         "jira:octo/repo#15",  # no URL layout is known for a reserved provider
-        "github:octo/repo/../../evil#15",  # a second slash: a path segment injection
-        "github:evil.com:8080/repo#15",  # a host smuggled into the owner
-        "github:oc to/repo#15",  # whitespace
+        "github:oc to/repo#15",  # whitespace in the owner
+        "github:octo/re po#15",  # ...and in the repo
     ],
 )
 def test_a_ref_that_is_not_github_shaped_gets_no_url(tmp_path, ref):
-    """R3.3 — fail closed. No link beats a link somewhere else.
-
-    ``WorkItemRef.parse`` accepts any non-``#`` text as the path and splits it at
-    the *first* slash, so ``repo`` can carry further segments. Interpolating that
-    into a URL unchecked is how a record about ``octo/repo`` acquires a link to
-    something else entirely.
-    """
+    """R3.3 — fail closed. No link beats a link somewhere else."""
     assert WorkItemRef.parse(ref).url == ""
 
     ControlStore(tmp_path / "portable").record(ref, "start")
@@ -90,6 +104,26 @@ def test_a_ref_that_is_not_github_shaped_gets_no_url(tmp_path, ref):
     assert "url" not in record
     assert _index(tmp_path / "portable")[0].keys() >= {"ref", "file", "sections"}
     assert "url" not in _index(tmp_path / "portable")[0]
+
+
+@pytest.mark.parametrize(
+    "ref",
+    [
+        "github:octo/repo/../../evil#15",  # extra segments: a path injection
+        "github:octo/repo/sub#15",  # three segments whose first is not a host
+        "github:ev il.com/octo/repo#15",  # a host that is not a host
+    ],
+)
+def test_a_ref_with_an_unreadable_path_is_rejected_outright(ref):
+    """R5.4 — `[<host>/]<owner>/<repo>` is the whole grammar; nothing else parses.
+
+    Before the host existed, `parse` split the path at the *first* slash and let
+    the remainder be the "repo", so these produced a work item whose identity was
+    a path fragment. Rejecting them is the stronger guarantee, and it is what
+    makes interpolating the parts into a URL safe rather than merely guarded.
+    """
+    with pytest.raises(ValueError):
+        WorkItemRef.parse(ref)
 
 
 # -- the index -------------------------------------------------------------------

@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [048](decision-048.md) | A work-item ref names its host when it is not the default one | proposed | 2026-07-31 |
 | [047](decision-047.md) | The portable directory carries a derived index, and derived means nothing may read it | proposed | 2026-07-31 |
 | [046](decision-046.md) | State is organised by portability — facts about the work travel; handles to a machine do not | proposed | 2026-07-31 |
 | [045](decision-045.md) | `produces` names an artifact, not a filename — several accepted names, exactly one present | proposed | 2026-07-31 |

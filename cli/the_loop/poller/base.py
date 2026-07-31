@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Type, TypeVar
 
-from ..sessions import WorkItemRef
+from ..sessions import WorkItemRef, host_from_url
 from ..webhook.router import RoutedEvent
 
 
@@ -60,7 +60,8 @@ class WorkItem:
     """A provider-agnostic unit of work discovered by a poll source.
 
     ``provider``/``owner``/``repo``/``number`` map onto the existing
-    provider-qualified :class:`WorkItemRef` (``<provider>:<owner>/<repo>#<n>``),
+    provider-qualified :class:`WorkItemRef`
+    (``<provider>:[<host>/]<owner>/<repo>#<n>``, the host coming from ``url``),
     so the session registry stays the single, provider-neutral identity store.
     ``raw`` carries provider-specific extras a provider needs to build its
     events (e.g. a PR's head branch) without leaking them into the core.
@@ -78,8 +79,25 @@ class WorkItem:
     raw: Dict = field(default_factory=dict)
 
     @property
+    def host(self) -> str:
+        """Which host this item lives on, read off its own URL (issue-130 review).
+
+        A polled GitHub Enterprise item is identified as such here, exactly as
+        the webhook path identifies one from the repository's ``html_url`` — the
+        two must agree, because this ref keys the poll ledger while the router's
+        keys the routing.
+        """
+        return host_from_url(self.url)
+
+    @property
     def ref(self) -> str:
-        return f"{self.provider}:{self.owner}/{self.repo}#{self.number}"
+        return WorkItemRef(
+            provider=self.provider,
+            owner=self.owner,
+            repo=self.repo,
+            number=self.number,
+            host=self.host,
+        ).ref
 
 
 class PollProvider:
