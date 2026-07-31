@@ -225,10 +225,13 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   and the delivery still counts. See [process-graph](process-graph.md).
 - All `webhooks.*` keys above live in the **CLI config** (`cli-config.yaml`, resolved
   via `--config`/env/cwd/home — see `cli/README.md`), independent of any repo's
-  `.the-loop/harness-config.yaml` (the plugin config) — the daemon is not tied to a single repo
-  and never reads a repo's plugin config for anything (decision-032).
+  `.the-loop/harness-config.yaml` — the daemon is not tied to a single repo, and **no
+  repository configures the daemon** (decision-032, decision-044).
   `routing.authorizedUsers` has no fallback: it must be set explicitly in the CLI
-  config or the receiver fails closed (acts on no human-authored events).
+  config or the receiver fails closed (acts on no human-authored events). The rule runs
+  in one direction only: the graph coupling above *does* read a work item's own checkout
+  for `workflow.phaseLabelPrefix` and `notifications`, after `_checkout_belongs_to` has
+  proved via the checkout's `origin` remote that it is that repository's.
 
 ## Design
 

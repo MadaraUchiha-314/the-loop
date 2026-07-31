@@ -9,7 +9,8 @@ that process's output back.
 
 This module is that mechanism and nothing more. It
 
-1. loads ``reviews.critics[]`` from the repo's ``.the-loop/harness-config.yaml``,
+1. loads ``reviews.critics[]`` from the repo's harness config (via
+   :mod:`the_loop.harness_config`, the CLI's only reader of that file),
 2. resolves ONE critic into an argv list — either the operator's explicit
    ``command``/``args`` or, for a harness the-loop already has an adapter for, that
    adapter's own one-shot argv, and
@@ -41,10 +42,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Sequence
 
-import yaml
-
 from .harness import Usage, build_adapters
 from .harness.base import parse_json_object, usage_from_output
+from .harness_config import HarnessConfigError
+from .harness_config import config_path as config_path
+from .harness_config import load_strict
 
 logger = logging.getLogger("the-loop.critics")
 
@@ -150,17 +152,13 @@ class CriticResult:
 # --------------------------------------------------------------------------- load
 
 
-def config_path(root: Path) -> Optional[Path]:
-    """The harness config for ``root``, honouring the pre-rename name (issue-82)."""
-    for name in ("harness-config.yaml", "config.yaml"):
-        candidate = root / ".the-loop" / name
-        if candidate.is_file():
-            return candidate
-    return None
-
-
 def load_critics(root: Path) -> List[Critic]:
     """Every ``reviews.critics[]`` entry for the project rooted at ``root``.
+
+    Read **strictly** — alone among the CLI's harness-config readers (decision-044).
+    The others degrade a broken file to defaults; a critic round cannot, because
+    "no critics configured" and "the file naming them does not parse" would look
+    identical and the second one is a false green.
 
     Raises :class:`CriticConfigError` only for problems that make the *whole*
     configuration ambiguous (unparseable file, duplicate names). A problem with one
@@ -170,11 +168,9 @@ def load_critics(root: Path) -> List[Critic]:
     if path is None:
         return []
     try:
-        data = yaml.safe_load(path.read_text()) or {}
-    except Exception as exc:  # noqa: BLE001 - any parse failure is the same to us
-        raise CriticConfigError(f"could not parse {path}: {exc}") from exc
-    if not isinstance(data, dict):
-        raise CriticConfigError(f"{path} does not contain a YAML mapping")
+        data = load_strict(root)
+    except HarnessConfigError as exc:
+        raise CriticConfigError(str(exc)) from exc
     entries = ((data.get("reviews") or {}).get("critics")) or []
     if not isinstance(entries, list):
         raise CriticConfigError(f"{path}: reviews.critics must be a list")
