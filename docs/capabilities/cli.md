@@ -52,6 +52,19 @@ self-learning/ML capabilities.
   stay reserved for a registry-named file that can no longer be parsed, so genuine
   corruption remains visible instead of being lost in a per-cycle false positive about
   `poll-state.json` (issue-111).
+- Every generated path SHALL be classified as **portable** or **local**
+  (`the_loop.state.GENERATED_PATHS`, issue-128, decision-046): the control records and the
+  poll state are facts about the work — what an authorized user armed, which comments have
+  been seen — and travel to another machine; the session registry, the event log and the
+  pidfile are handles to the machine that made them and SHALL NOT be tracked. The session
+  registry is excluded emphatically: a copied record is still counted **live** by
+  `find_by_work_item`, so the duplicate guard would refuse the spawn the new machine needs
+  and route events to a conversation that is not there — and it carries an absolute `cwd`
+  and a resumable session id besides. The classification SHALL be declared as data and
+  pinned by a test, so a new generated path cannot be added without answering whether it
+  travels, and SHALL be published as a `.gitignore` block this repository itself uses
+  ([state on disk](https://madarauchiha-314.github.io/the-loop/cli/state)). the-loop SHALL
+  never commit state on the operator's behalf.
 - `the-loop check [<work item>|--all]` SHALL evaluate a work item's nodes against its
   checked-in artifacts and report what is unmet (`--format table|json`). It SHALL be
   **pure** — no network, no subprocess, no mutation — which is what lets the same code run
@@ -115,6 +128,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-128 | Generated state classified portable vs local (`GENERATED_PATHS`) and documented file by file in `docs/cli/state.md`; the control records and poll state un-ignored so a machine move is a `git pull`, the session registry emphatically not; a test pinning the declaration against `StateLayout`, the docs and this repository's own `.gitignore` | [spec](../specs/issue-128/), [decision-046](../decisions/decision-046.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/128) |
 | issue-121 | The harness-config read surface stated as a direction rule and pinned: one reader module (`the_loop.harness_config`) with a declared `READS` tuple replacing three duplicated readers, a test asserting it against the schema and the docs, and the four pages that claimed the daemon never reads a repo's harness config corrected — it has, on the `graphlink` path, since issue-113 | [spec](../specs/issue-121/), [decision-044](../decisions/decision-044.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/121) |
 | issue-117 | Documented as a product: an onboarding path plus one page per command under `docs/cli/`, every config option under `docs/config/cli/`, and a parity test that fails when a registered command has no page or a documented key is absent from the schema. `check`, `graph` and `migrate-config` documented for the first time; the `integrations`, `routing.workspace`, `routing.graph` and `polling.maxRetries` blocks written up; the removed `ghBinary` deleted from the docs | [spec](../specs/issue-117/), [documentation](documentation.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/117) |
 | issue-111 | Session listings recognise the registry's own files instead of every `*.json` in the shared `<root>/sessions/` directory, so `poll-state.json` no longer reports as a corrupt registry entry on every poll cycle | [spec](../specs/issue-111/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/111) |

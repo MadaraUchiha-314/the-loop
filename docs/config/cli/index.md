@@ -98,7 +98,10 @@ that legacy file still exists and the new one does not, the poller keeps using i
 warns once — adopting an empty state file would make every watched thread first-sight
 again and re-forward its entire comment history.
 
-All of it is git-ignored runtime state.
+Most of it is runtime state you should keep out of git — but not all of it. The control
+records and the poll state are facts about the *work*, not about this machine, and are the
+two files worth carrying when you move machines. [State on disk](/cli/state) documents
+every file, its contents, and the `.gitignore` block that tracks exactly those two.
 
 ::: warning `~` is not expanded here
 `state.root` is used as given. `root: ~/.the-loop` creates a directory literally named

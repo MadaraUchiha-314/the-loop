@@ -217,8 +217,7 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# the-loop CLI runtime artifacts
-.the-loop/*.pid
+# the-loop CLI build artifacts
 cli/build/
 cli/dist/
 cli/*.egg-info/
@@ -227,17 +226,16 @@ cli/.pytest_cache/
 # the-loop: not-yet-durable learning candidates (write-gate queue)
 .the-loop/learnings-pending/
 
-# the-loop: session-related runtime state under the default state.root —
-# the routing registry, the control records (sessions/control/) and, since
-# issue-106, the poller's cross-poll dedup state (sessions/poll-state.json)
-.the-loop/sessions/
-
-# the-loop: the poller's pre-issue-106 dedup-state location (still honoured
-# when it exists, so an upgrade does not re-forward every watched thread)
-.the-loop/poll-state.json
-
-# the-loop: structured event log (runtime state; `the-loop events`)
+# the-loop: generated state under state.root (default .the-loop) — see
+# https://madarauchiha-314.github.io/the-loop/cli/state
+# Local handles (session records, event log, pidfile) never leave the machine.
+.the-loop/sessions/*
 .the-loop/logs/
+.the-loop/*.pid
+# Portable: what an authorized user armed, and which comments have been seen.
+!.the-loop/sessions/control/
+!.the-loop/sessions/poll-state.json
+.the-loop/sessions/control/*.tmp
 
 # docs/ (VitePress) — node deps and the one directory synced in from
 # skills/the-loop/reference/ at build time (docs/scripts/sync-content.mts).

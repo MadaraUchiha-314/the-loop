@@ -29,7 +29,15 @@ the stateful session tracking" ask). Silently losing it would re-baseline every
 watched thread and re-forward its entire comment history, so
 :func:`resolve_poll_state_path` keeps a legacy file that exists and says so.
 
-Spec: docs/specs/issue-106/design.md §5.
+Knowing *where* the files are is half the question an operator moving machines
+has; :data:`GENERATED_PATHS` answers the other half — which of them mean anything
+somewhere else (issue-128, decision-046). Two do: the control records (what an
+authorized user armed) and the poll state (which comments have been seen) are
+facts about the world. The rest are handles to *this* machine — a harness
+conversation id, an absolute ``cwd``, a pid, a local audit trail — and copying
+them elsewhere is worse than losing them.
+
+Spec: docs/specs/issue-106/design.md §5, docs/specs/issue-128/design.md §2.
 """
 
 from __future__ import annotations
@@ -37,12 +45,14 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 logger = logging.getLogger("the-loop.state")
 
 __all__ = [
     "DEFAULT_STATE_ROOT",
+    "GENERATED_PATHS",
+    "GeneratedPath",
     "StateLayout",
     "layout_from_config",
     "resolve_poll_state_path",
@@ -86,6 +96,97 @@ class StateLayout:
     @property
     def pidfile(self) -> str:
         return str(self.root_path / "gh-webhook.pid")
+
+
+@dataclass(frozen=True)
+class GeneratedPath:
+    """One thing the CLI writes, and whether it means anything on another machine.
+
+    ``why`` is not decoration. An entry whose author cannot say *why* it is local
+    has probably put a machine handle inside something that is otherwise a fact
+    about the world — which is the mistake this declaration exists to catch,
+    while the path is being invented and the answer is still cheap.
+    """
+
+    name: str  # human label, used in prose and test failures
+    attr: str  # the StateLayout property this derives from
+    default: str  # the documented path, e.g. "<root>/sessions/<slug>.json"
+    portable: bool  # does it mean anything on another machine?
+    holds: str
+    why: str
+
+
+#: Every generated path, classified (issue-128, decision-046). Inert data: nothing
+#: reads it at runtime. It is pinned by ``cli/tests/test_state_portability.py``,
+#: which fails when :class:`StateLayout` grows a path no entry claims — so a new
+#: generated file cannot be added without answering "does this travel?" — and when
+#: ``docs/cli/state.md`` classifies one differently.
+GENERATED_PATHS: Tuple[GeneratedPath, ...] = (
+    GeneratedPath(
+        name="session record",
+        attr="sessions_dir",
+        default="<root>/sessions/<slug>.json",
+        portable=False,
+        holds=(
+            "harnessSessionId, cwd, runner, tmuxTarget, status, recentDeliveries — "
+            "one file per work item with a session"
+        ),
+        why=(
+            "a handle to a conversation and a directory that exist on one machine. "
+            "Copied elsewhere it is not merely useless: find_by_work_item counts it "
+            "as live, so the duplicate guard refuses the spawn the new machine needs "
+            "and events are routed to a conversation that is not there. It also "
+            "carries an absolute path from the operator's filesystem and a resumable "
+            "session id, neither of which belongs in a repository."
+        ),
+    ),
+    GeneratedPath(
+        name="control record",
+        attr="control_dir",
+        default="<root>/sessions/control/<slug>.json",
+        portable=True,
+        holds="ref, command (start|stop|pause|resume), source, actor, requestedAt, note",
+        why=(
+            "a statement about the work item — an authorized user asked for it to be "
+            "running — that is true whoever runs the daemon. Nothing on GitHub records "
+            "that a stop was honoured, so a lost record cannot be rebuilt: the item "
+            "silently stops being worked, or quietly re-arms."
+        ),
+    ),
+    GeneratedPath(
+        name="poll state",
+        attr="poll_state",
+        default="<root>/sessions/poll-state.json",
+        portable=True,
+        holds="per work item: seenComments, commentAttempts, spawn ledger, lastPolledAt",
+        why=(
+            "what GitHub already told us. A machine without it treats every watched "
+            "thread as first-sight and re-baselines it. The attempt ledgers inside are "
+            "local bookkeeping, carried anyway because they self-heal and splitting the "
+            "file would cost a migration to buy nothing."
+        ),
+    ),
+    GeneratedPath(
+        name="event log",
+        attr="event_log",
+        default="<root>/logs/events.jsonl",
+        portable=False,
+        holds="one JSON object per line: every accept, drop, route, spawn, failure",
+        why=(
+            "a record of what this machine did, appended to continuously. Two machines "
+            "appending to one tracked file conflict on every line, and the trail is "
+            "read where it was written."
+        ),
+    ),
+    GeneratedPath(
+        name="receiver pidfile",
+        attr="pidfile",
+        default="<root>/gh-webhook.pid",
+        portable=False,
+        holds="the pid of the running gh-webhook receiver",
+        why="a process id is meaningless on another host, and stale within a reboot.",
+    ),
+)
 
 
 def layout_from_config(config: Optional[dict]) -> StateLayout:

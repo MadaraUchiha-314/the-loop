@@ -188,7 +188,17 @@ This is how you answer "why did nothing happen?". Drops carry a machine-readable
 [`events`](/cli/commands/events) is the query surface. The file is plain JSONL, so `jq`,
 `grep` and `tail -f` work on it directly.
 
+## Where the state goes
+
+Everything above leaves a file: the registry, the control records, the poller's baselines,
+the event log. All of it sits under one root, [`state.root`](/config/cli/#state-root), and
+splits in two — **facts about the world** (what an authorized user armed, which comments
+have been seen) travel to another machine; **handles to this machine** (a conversation id,
+a `cwd`, a pid) must not. [State on disk](/cli/state) documents every file, what is in it,
+and the `.gitignore` block that carries the portable half.
+
 ## Next
 
+- **[State on disk](/cli/state)** — the files behind everything above.
 - **[Commands](/cli/commands/)** — the full reference.
 - **[Configuring the CLI](/config/cli/)** — every option, by area.

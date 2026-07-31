@@ -90,6 +90,7 @@ const cliSidebar = [
       { text: "Installation", link: "/cli/installation" },
       { text: "Getting started", link: "/cli/getting-started" },
       { text: "Concepts", link: "/cli/concepts" },
+      { text: "State on disk", link: "/cli/state" },
     ],
   },
   {
@@ -184,6 +185,12 @@ export default defineConfig({
   ignoreDeadLinks: true,
 
   markdown: {
+    // GitHub highlights ```gitignore fences; Shiki has no such grammar and warns on every
+    // build that it is falling back to plain text. The fence label is worth keeping — it
+    // says what the block *is*, on both renderers — so alias it to the closest grammar
+    // instead of relabelling the block.
+    languageAlias: { gitignore: "ini" },
+
     // The docs (especially docs/specs/**) are written for GitHub-flavoured Markdown and
     // are full of angle-bracket PLACEHOLDER tokens in prose — `<session-id>`, `<slug>`,
     // `<phase>`, `<id>` — not real HTML (markdownlint's MD033 is off for the same
