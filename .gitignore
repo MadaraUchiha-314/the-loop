@@ -229,13 +229,17 @@ cli/.pytest_cache/
 # the-loop: generated state under state.root (default .the-loop) — see
 # https://madarauchiha-314.github.io/the-loop/cli/state
 # Local handles (session records, event log, pidfile) never leave the machine.
-.the-loop/sessions/*
+# .the-loop/portable/ is the half that travels with the work, so it is tracked.
+.the-loop/local/
 .the-loop/logs/
 .the-loop/*.pid
-# Portable: what an authorized user armed, and which comments have been seen.
-!.the-loop/sessions/control/
-!.the-loop/sessions/poll-state.json
-.the-loop/sessions/control/*.tmp
+.the-loop/portable/*.tmp
+
+# the-loop: the pre-issue-128 layout, still READ once per work item so an
+# upgrade neither re-baselines a thread nor forgets what was armed. Delete it
+# when `the-loop sessions list` looks right on the new one.
+.the-loop/sessions/
+.the-loop/poll-state.json
 
 # docs/ (VitePress) — node deps and the one directory synced in from
 # skills/the-loop/reference/ at build time (docs/scripts/sync-content.mts).

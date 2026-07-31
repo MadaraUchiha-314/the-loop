@@ -24,6 +24,17 @@ graph LR
   T5 --> T8["T8 evidence + briefing"]
   T6 --> T8
   T7 --> T8
+  T8 --> T9["T9 WorkItemStore<br/>(review: consolidate)"]
+  T9 --> T10["T10 control + poll<br/>onto it"]
+  T9 --> T11["T11 upgrade shim"]
+  T10 --> T12["T12 layout + config<br/>portable/ local/"]
+  T12 --> T13["T13 retire<br/>polling.stateFile"]
+  T10 --> T14["T14 tests"]
+  T11 --> T14
+  T13 --> T14
+  T12 --> T15["T15 docs, decision,<br/>recipe"]
+  T14 --> T16["T16 evidence + briefing"]
+  T15 --> T16
 ```
 
 ## Tasks
@@ -56,3 +67,36 @@ graph LR
   `docs/capabilities/cli.md`. *(R4.1–R4.3)*
 - [x] **T8 — evidence and reviewer briefing.** Full suite green, `git check-ignore -v`
   evidence for all five paths, execution log updated, PR briefing posted. *(R5.1, R5.2)*
+
+## Tasks added in review (PR #129)
+
+> The owner asked whether the stores could be consolidated, and chose to do it in this
+> PR. R6/R7 and design §9 are the result; these are their tasks. The phase returned to
+> tasks-breakdown and then implementation before re-requesting review.
+
+- [x] **T9 — the shared record.** `cli/the_loop/workitem.py`: `WorkItemStore` over
+  `<state.root>/portable/<slug>.json` with `section`/`write_section`/`drop`,
+  read-modify-write per section, atomic writes, empty-record removal. *(R6.1–R6.3)*
+- [x] **T10 — move both writers onto it.** `ControlStore` delegates storage (public API
+  unchanged); `PollState` becomes directory-backed with lazy loads, a dirty set, and
+  write-through `forget`. *(R6.1, R6.2, R6.5)*
+- [x] **T11 — the upgrade shim.** Read the pre-issue-128 control record, the
+  pre-issue-128 poll state and the pre-issue-106 poll state when a section is absent;
+  write forward on the next write; new record wins. *(R7.1–R7.3)*
+- [x] **T12 — the layout.** `StateLayout.portable_dir`/`local_dir` replacing
+  `sessions_dir`/`control_dir`/`poll_state`; `LegacyLayout` beside it; `GENERATED_PATHS`
+  down to four entries; dispatcher, poll and sessions commands rewired;
+  `sessions --portable-dir`, `poll --state-dir`. *(R6.1, R6.4)*
+- [x] **T13 — retire `polling.stateFile`.** `migrations.py` refuses it with the
+  replacement named and removes it on migration; schema + template + this repo's config
+  updated; CLI config version `0.2.0` → `0.3.0`. *(R7.4)*
+- [x] **T14 — tests.** `test_workitem.py` (11 cases: independence, the clobber direction,
+  fail-closed, every shim path); `test_state.py` rewritten for the two-tree layout; the
+  poller/control/CLI suites moved to the new paths; four migration cases for the retired
+  key. *(R3, R6, R7)*
+- [x] **T15 — docs and decision.** `docs/cli/state.md` rewritten around the new layout
+  (including the three-line recipe and the upgrade section); decision-046 extended with
+  the layout decision and the "why each store exists" answer; capability docs, config
+  pages, concepts, `upgrade-the-loop`. *(R1, R2, R4)*
+- [x] **T16 — evidence and re-review.** Full gate green, `git check-ignore -v` re-run on
+  the new paths, execution log and PR briefing updated. *(R5)*

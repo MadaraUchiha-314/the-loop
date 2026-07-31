@@ -1,8 +1,12 @@
-"""The breaking config migration (issue-109, R6a).
+"""The breaking config migrations (issue-109 R6a, issue-128).
 
-A breaking change is only as good as its migration, so this is tested both
+A breaking change is only as good as its migration, so each is tested both
 ways: an old config migrates to the expected new one, AND the runtime refuses
 an un-migrated one.
+
+Two removed keys so far — `ghBinary` (one `integrations` block replaced three
+copies) and `polling.stateFile` (the poller's ledger became one record per work
+item under `state.root`, so a file path has nothing left to point at).
 """
 
 from __future__ import annotations
@@ -168,3 +172,44 @@ class TestMigrateConfigCommand:
             argparse.Namespace(path=str(tmp_path / "nope.yaml"), dry_run=False)
         )
         assert code == 2
+
+
+# -- issue-128: polling.stateFile ------------------------------------------------
+
+WITH_STATE_FILE = {
+    "version": CURRENT_CONFIG_VERSION,
+    "state": {"root": ".the-loop"},
+    "polling": {"intervalSeconds": 30, "stateFile": ".the-loop/poll-state.json"},
+}
+
+
+def test_a_config_still_pointing_at_a_poll_state_file_is_detected():
+    assert needs_migration(WITH_STATE_FILE) is True
+
+
+def test_the_runtime_refuses_a_stale_state_file_and_names_the_replacement():
+    # Honouring it is not an option: a poller writing somewhere other than where
+    # the operator pointed it is how a whole comment thread gets re-forwarded.
+    with pytest.raises(ConfigTooOld) as excinfo:
+        assert_current(WITH_STATE_FILE)
+    message = str(excinfo.value)
+    assert "polling.stateFile" in message
+    assert "state.root" in message
+    assert "/the-loop:upgrade-the-loop" in message
+
+
+def test_migration_removes_the_state_file_and_says_the_old_one_is_still_read():
+    report = migrate_cli_config(WITH_STATE_FILE)
+    assert report.changed is True
+    assert "polling" in report.config
+    assert "stateFile" not in report.config["polling"]
+    assert report.config["polling"]["intervalSeconds"] == 30
+    assert any("stateFile" in move for move in report.moves)
+    assert_current(report.config)  # the migrated config is accepted
+
+
+def test_the_state_file_migration_is_idempotent():
+    once = migrate_cli_config(WITH_STATE_FILE).config
+    twice = migrate_cli_config(once)
+    assert twice.changed is False
+    assert twice.config == once

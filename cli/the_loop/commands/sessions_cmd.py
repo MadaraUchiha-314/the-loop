@@ -47,7 +47,7 @@ from ..control import (
 from ..harness import ClaudeCodeAdapter, CursorAgentAdapter
 from ..runner import TmuxRunner
 from ..sessions import RegistryError, Session, SessionRegistry, WorkItemRef
-from ..state import control_dir_for
+from ..state import legacy_layout
 from ..webhook.dispatcher import RoutingConfig, TmuxConfig
 from ..webhook.router import RoutedEvent
 
@@ -68,7 +68,23 @@ def _routing_config() -> RoutingConfig:
 
 def _default_registry_dir() -> str:
     routing = _load_config_defaults().get("routing") or {}
-    return str(routing.get("registryDir") or _state_layout().sessions_dir)
+    return str(routing.get("registryDir") or _state_layout().local_dir)
+
+
+def _default_portable_dir() -> str:
+    return _state_layout().portable_dir
+
+
+def _control_store(args: argparse.Namespace) -> ControlStore:
+    """The portable half of the state, wherever `state.root` points (issue-128).
+
+    Deliberately not derived from ``--registry-dir``: that flag moves the
+    machine-local session handles, and a control record is not one of those —
+    it is a fact about the work item. ``--portable-dir`` moves this half.
+    """
+    layout = _state_layout()
+    root = getattr(args, "portable_dir", "") or layout.portable_dir
+    return ControlStore(root, legacy=legacy_layout(layout))
 
 
 def _control_config() -> ControlConfig:
@@ -86,7 +102,11 @@ def _dispatcher_for(args: argparse.Namespace):
     """
     routing = dict(_load_config_defaults().get("routing") or {})
     routing["registryDir"] = args.registry_dir
-    return _build_dispatcher(routing, _state_layout())
+    dispatcher, config = _build_dispatcher(routing, _state_layout())
+    # Same reasoning for the portable half: a spawn started from the CLI must
+    # record its control state where this invocation is looking (issue-128).
+    dispatcher.control_store = _control_store(args)
+    return dispatcher, config
 
 
 def _local_actor() -> str:
@@ -179,6 +199,7 @@ class SessionsCommand(Command):
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         registry_dir = _default_registry_dir()
+        portable_dir = _default_portable_dir()
         actions = parser.add_subparsers(dest="action", metavar="<action>")
         actions.required = True
 
@@ -207,12 +228,14 @@ class SessionsCommand(Command):
             help="Replace an existing active registration for this work item.",
         )
         reg.add_argument("--registry-dir", default=registry_dir)
+        reg.add_argument("--portable-dir", default=portable_dir)
         reg.set_defaults(_action=self._register)
 
         lst = actions.add_parser("list", help="List registered sessions")
         lst.add_argument("--status", choices=["active", "paused", "closed"])
         lst.add_argument("--format", choices=["table", "json"], default="table")
         lst.add_argument("--registry-dir", default=registry_dir)
+        lst.add_argument("--portable-dir", default=portable_dir)
         lst.set_defaults(_action=self._list)
 
         attach = actions.add_parser(
@@ -225,6 +248,7 @@ class SessionsCommand(Command):
             help="Observe without a keyboard (tmux attach -r).",
         )
         attach.add_argument("--registry-dir", default=registry_dir)
+        attach.add_argument("--portable-dir", default=portable_dir)
         attach.set_defaults(_action=self._attach)
 
         # -- execution control (issue-106) --------------------------------------
@@ -243,6 +267,7 @@ class SessionsCommand(Command):
             sub = actions.add_parser(command, help=control_help[command])
             sub.add_argument("--work-item", required=True)
             sub.add_argument("--registry-dir", default=registry_dir)
+            sub.add_argument("--portable-dir", default=portable_dir)
             sub.add_argument(
                 "--comment",
                 action=argparse.BooleanOptionalAction,
@@ -257,6 +282,7 @@ class SessionsCommand(Command):
         close = actions.add_parser("close", help="Close a work item's session")
         close.add_argument("--work-item", required=True)
         close.add_argument("--registry-dir", default=registry_dir)
+        close.add_argument("--portable-dir", default=portable_dir)
         tmux_fate = close.add_mutually_exclusive_group()
         tmux_fate.add_argument(
             "--keep-tmux",
@@ -316,7 +342,7 @@ class SessionsCommand(Command):
 
     def _list(self, args: argparse.Namespace) -> int:
         sessions = SessionRegistry(args.registry_dir).list_sessions(status=args.status)
-        store = ControlStore(control_dir_for(args.registry_dir))
+        store = _control_store(args)
 
         def control_of(session: Session) -> str:
             record = store.get(session.work_item)
@@ -394,7 +420,7 @@ class SessionsCommand(Command):
         except ValueError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
-        store = ControlStore(control_dir_for(args.registry_dir))
+        store = _control_store(args)
         actor = _local_actor()
         # A **disarming** command (pause/stop) is recorded whether or not there
         # was anything to act on — a stopped work item must not re-spawn on the
@@ -488,7 +514,7 @@ class SessionsCommand(Command):
         if no session came up**, so a start that could not run leaves nothing
         standing to be picked up by a later event (owner decision on PR #107).
         """
-        store = ControlStore(control_dir_for(args.registry_dir))
+        store = _control_store(args)
         dispatcher, routing = _dispatcher_for(args)
         if routing.spawn_on_unmatched == "never":
             print(

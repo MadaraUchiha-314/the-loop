@@ -16,7 +16,6 @@ from the_loop.control import ControlStore, parse_command, ControlConfig
 from the_loop.cli import main
 from the_loop.commands import sessions_cmd
 from the_loop.sessions import Session, SessionRegistry, WorkItemRef
-from the_loop.state import control_dir_for
 
 REF = "github:octo/repo#15"
 
@@ -36,11 +35,12 @@ def posted(monkeypatch):
 
 @pytest.fixture
 def registry(tmp_path):
-    return SessionRegistry(tmp_path / "sessions")
+    return SessionRegistry(tmp_path / "local")
 
 
 def store_for(tmp_path):
-    return ControlStore(control_dir_for(str(tmp_path / "sessions")))
+    """The portable half, where the CLI invocations below are pointed."""
+    return ControlStore(str(tmp_path / "portable"))
 
 
 def register(registry, status="active", runner="process"):
@@ -65,7 +65,9 @@ def run(command, tmp_path, *extra):
             "--work-item",
             REF,
             "--registry-dir",
-            str(tmp_path / "sessions"),
+            str(tmp_path / "local"),
+            "--portable-dir",
+            str(tmp_path / "portable"),
             *extra,
         ]
     )
@@ -149,7 +151,7 @@ def test_stop_closes_the_session_through_the_dispatcher(
     class FakeDispatcher:
         def close_session(self, session, routed=None, reason=""):
             closed.append((session.work_item.ref, reason))
-            SessionRegistry(tmp_path / "sessions").close(session.work_item)
+            SessionRegistry(tmp_path / "local").close(session.work_item)
 
         def stop(self, timeout=None):
             pass
@@ -227,7 +229,16 @@ def test_list_shows_the_status_and_the_last_control_command(
     register(registry)
     run("pause", tmp_path)
     capsys.readouterr()
-    main(["sessions", "list", "--registry-dir", str(tmp_path / "sessions")])
+    main(
+        [
+            "sessions",
+            "list",
+            "--registry-dir",
+            str(tmp_path / "local"),
+            "--portable-dir",
+            str(tmp_path / "portable"),
+        ]
+    )
     out = capsys.readouterr().out
     assert "paused" in out
     assert "pause (cli)" in out
@@ -244,7 +255,9 @@ def test_list_json_carries_the_control_record(tmp_path, registry, posted, capsys
             "--format",
             "json",
             "--registry-dir",
-            str(tmp_path / "sessions"),
+            str(tmp_path / "local"),
+            "--portable-dir",
+            str(tmp_path / "portable"),
         ]
     )
     rows = json.loads(capsys.readouterr().out)

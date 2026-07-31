@@ -49,6 +49,7 @@ from the_loop.authz import (
     resolve_authorized_users,
 )
 from the_loop.poller.poller import PollSummary  # noqa: F401 (re-exported too)
+from the_loop.workitem import WorkItemStore
 from the_loop.sessions import Session, SessionRegistry, WorkItemRef
 from the_loop.webhook.router import RoutedEvent
 
@@ -495,13 +496,11 @@ def test_poll_config_from_mapping_defaults_and_overrides():
     cfg = PollConfig.from_mapping(
         {
             "intervalSeconds": 5,
-            "stateFile": ".x/state.json",
             "maxRetries": 5,
             "sources": [{"provider": "github", "repos": ["a/b"]}],
         }
     )
     assert cfg.interval_seconds == 5
-    assert cfg.state_file == ".x/state.json"
     assert cfg.max_retries == 5
     assert cfg.sources == [{"provider": "github", "repos": ["a/b"]}]
 
@@ -515,24 +514,39 @@ def test_poll_config_max_retries_floored_at_one():
 
 
 def test_poll_state_roundtrips_and_dedups(tmp_path):
-    path = tmp_path / "poll-state.json"
-    state = PollState(path)
+    root = tmp_path / "portable"
+    state = PollState(WorkItemStore(root))
     ref = "github:octo/repo#15"
     assert state.is_known(ref) is False
     state.baseline_comments(ref, ["IC_1", "IC_2"], "2026-07-20T00:00:00Z")
     state.save()
-    reloaded = PollState(path)  # restart-surviving dedup
+    reloaded = PollState(WorkItemStore(root))  # restart-surviving dedup
     assert reloaded.is_known(ref) is True
     assert reloaded.seen_comments(ref) == {"IC_1", "IC_2"}
-    stored = json.loads(path.read_text())
-    assert stored["items"][ref]["seenComments"] == ["IC_1", "IC_2"]
+    # One file per work item, beside that item's control record (issue-128).
+    stored = json.loads((root / "github-octo-repo-15.json").read_text())
+    assert stored["ref"] == ref
+    assert stored["poll"]["seenComments"] == ["IC_1", "IC_2"]
 
 
-def test_poll_state_ignores_corrupt_file(tmp_path):
-    path = tmp_path / "poll-state.json"
-    path.write_text("{not json")
-    state = PollState(path)  # must not raise
+def test_poll_state_ignores_a_corrupt_record(tmp_path):
+    root = tmp_path / "portable"
+    root.mkdir()
+    (root / "github-octo-repo-1.json").write_text("{not json")
+    state = PollState(WorkItemStore(root))  # must not raise
     assert state.is_known("github:octo/repo#1") is False
+
+
+def test_a_cycle_only_writes_the_items_it_touched(tmp_path):
+    # The reason the ledger is per item now: two machines (or two cycles)
+    # conflict only over a work item they both worked.
+    root = tmp_path / "portable"
+    state = PollState(WorkItemStore(root))
+    state.baseline_comments("github:octo/repo#1", ["IC_1"], "2026-07-20T00:00:00Z")
+    state.save()
+    state.seen_comments("github:octo/repo#2")  # read-only: records nothing
+    state.save()
+    assert [p.name for p in sorted(root.glob("*.json"))] == ["github-octo-repo-1.json"]
 
 
 # -- Poller core (provider-agnostic, recording dispatcher double) -------------
@@ -683,7 +697,7 @@ def test_first_sight_spawns_and_baselines_comments(tmp_path):
     provider = FakeProvider(items=[_item(15)], comments={15: [_comment("IC_1")]})
     registry = SessionRegistry(tmp_path / "sessions")
     disp = RecordingDispatcher()
-    state = PollState(tmp_path / "state.json")
+    state = PollState(WorkItemStore(tmp_path / "portable"))
     summary = make_poller(provider, registry, disp, state).poll_once()
 
     assert summary.spawns == 1 and summary.comments_forwarded == 0
@@ -695,7 +709,7 @@ def test_existing_session_skips_presence_and_forwards_new_comment(tmp_path):
     ref = "github:octo/repo#15"
     registry = SessionRegistry(tmp_path / "sessions")
     registry.register(Session(WorkItemRef.parse(ref), "claude", "sess-1", "."))
-    state = PollState(tmp_path / "state.json")
+    state = PollState(WorkItemStore(tmp_path / "portable"))
     state.baseline_comments(ref, ["IC_1"], "t")
     provider = FakeProvider(
         items=[_item(15)], comments={15: [_comment("IC_1"), _comment("IC_2")]}
@@ -710,7 +724,7 @@ def test_existing_session_skips_presence_and_forwards_new_comment(tmp_path):
 
 def test_new_activity_without_session_retries_spawn_and_forwards(tmp_path):
     ref = "github:octo/repo#15"
-    state = PollState(tmp_path / "state.json")
+    state = PollState(WorkItemStore(tmp_path / "portable"))
     state.baseline_comments(ref, ["IC_1"], "t")  # known, but no session registered
     provider = FakeProvider(
         items=[_item(15)], comments={15: [_comment("IC_1"), _comment("IC_2")]}
@@ -731,7 +745,7 @@ def test_first_sight_with_existing_session_only_baselines(tmp_path):
     provider = FakeProvider(items=[_item(15)], comments={15: [_comment("IC_1")]})
     disp = RecordingDispatcher()
     summary = make_poller(
-        provider, registry, disp, PollState(tmp_path / "state.json")
+        provider, registry, disp, PollState(WorkItemStore(tmp_path / "portable"))
     ).poll_once()
 
     assert summary.spawns == 0 and summary.comments_forwarded == 0
@@ -752,7 +766,7 @@ def test_linked_ref_session_suppresses_presence(tmp_path):
     )
     disp = RecordingDispatcher()
     make_poller(
-        provider, registry, disp, PollState(tmp_path / "state.json")
+        provider, registry, disp, PollState(WorkItemStore(tmp_path / "portable"))
     ).poll_once()
     assert disp.events == []  # linked issue's session matched -> no spawn
 
@@ -764,7 +778,10 @@ def test_provider_error_is_captured_not_raised(tmp_path):
 
     disp = RecordingDispatcher()
     summary = make_poller(
-        Boom(), SessionRegistry(tmp_path / "s"), disp, PollState(tmp_path / "st.json")
+        Boom(),
+        SessionRegistry(tmp_path / "s"),
+        disp,
+        PollState(WorkItemStore(tmp_path / "portable")),
     ).poll_once()
     assert summary.errors and "boom" in summary.errors[0]
     assert disp.events == []
@@ -774,7 +791,7 @@ def test_provider_error_is_captured_not_raised(tmp_path):
 
 
 def test_poll_state_comment_retry_ledger(tmp_path):
-    state = PollState(tmp_path / "state.json")
+    state = PollState(WorkItemStore(tmp_path / "portable"))
     ref = "github:octo/repo#15"
     assert state.comment_attempts(ref, "IC_1") == 0
     assert state.note_comment_attempt(ref, "IC_1") == 1
@@ -787,7 +804,7 @@ def test_poll_state_comment_retry_ledger(tmp_path):
 
 
 def test_poll_state_spawn_retry_ledger(tmp_path):
-    state = PollState(tmp_path / "state.json")
+    state = PollState(WorkItemStore(tmp_path / "portable"))
     ref = "github:octo/repo#15"
     assert state.spawn_attempts(ref) == 0 and state.spawn_gave_up(ref) is False
     assert state.note_spawn_attempt(ref, "d-1") == 1
@@ -799,7 +816,7 @@ def test_poll_state_spawn_retry_ledger(tmp_path):
 
 
 def test_poll_state_finalize_prunes_to_live_thread(tmp_path):
-    state = PollState(tmp_path / "state.json")
+    state = PollState(WorkItemStore(tmp_path / "portable"))
     ref = "github:octo/repo#15"
     state.resolve_comment(ref, "IC_old")  # seen
     state.note_comment_attempt(ref, "IC_gone")  # pending
@@ -821,7 +838,7 @@ def test_failed_comment_is_retried_then_given_up(tmp_path):
     maxRetries, then given up (poll.comment_failed) and ignored thereafter."""
     ref = "github:octo/repo#15"
     registry = _with_session(tmp_path)
-    state = PollState(tmp_path / "state.json")
+    state = PollState(WorkItemStore(tmp_path / "portable"))
     state.baseline_comments(ref, ["IC_0"], "t")  # known item
     provider = FakeProvider(
         items=[_item(15)], comments={15: [_comment("IC_0"), _comment("IC_1")]}
@@ -847,7 +864,7 @@ def test_inflight_comment_is_not_counted_a_failure(tmp_path):
     up — the poller waits for it to finish (AC5)."""
     ref = "github:octo/repo#15"
     registry = _with_session(tmp_path)
-    state = PollState(tmp_path / "state.json")
+    state = PollState(WorkItemStore(tmp_path / "portable"))
     state.baseline_comments(ref, [], "t")
     provider = FakeProvider(items=[_item(15)], comments={15: [_comment("IC_1")]})
     disp = RecordingDispatcher(status_map={"comment-IC_1": "inflight"})
@@ -865,7 +882,7 @@ def test_delivered_comment_is_baselined_not_resent(tmp_path):
     poller baselines it and never resends it."""
     ref = "github:octo/repo#15"
     registry = _with_session(tmp_path)
-    state = PollState(tmp_path / "state.json")
+    state = PollState(WorkItemStore(tmp_path / "portable"))
     state.baseline_comments(ref, [], "t")
     state.note_comment_attempt(ref, "IC_1")  # already forwarded once
     provider = FakeProvider(items=[_item(15)], comments={15: [_comment("IC_1")]})
@@ -882,7 +899,7 @@ def test_new_comment_retriggers_after_a_giveup(tmp_path):
     comment was given up (issue comment 2)."""
     ref = "github:octo/repo#15"
     registry = _with_session(tmp_path)
-    state = PollState(tmp_path / "state.json")
+    state = PollState(WorkItemStore(tmp_path / "portable"))
     state.baseline_comments(ref, [], "t")
     comments = [_comment("IC_1")]
     provider = FakeProvider(items=[_item(15)], comments={15: comments})
@@ -906,7 +923,7 @@ def test_failed_spawn_is_retried_then_given_up_and_rearms(tmp_path):
     given up (poll.spawn_failed); a new comment re-arms it (AC3, AC6)."""
     ref = "github:octo/repo#15"
     registry = SessionRegistry(tmp_path / "sessions")  # no session ever appears
-    state = PollState(tmp_path / "state.json")
+    state = PollState(WorkItemStore(tmp_path / "portable"))
     comments = []
     provider = FakeProvider(items=[_item(15)], comments={15: comments})
     disp = RecordingDispatcher()
@@ -932,7 +949,7 @@ def test_dormant_known_item_without_session_does_not_spawn(tmp_path):
     """A known item with no session, no new activity and no spawn in progress
     must not spontaneously start spawning."""
     ref = "github:octo/repo#15"
-    state = PollState(tmp_path / "state.json")
+    state = PollState(WorkItemStore(tmp_path / "portable"))
     state.baseline_comments(ref, ["IC_1"], "t")  # known, spawn never armed
     provider = FakeProvider(items=[_item(15)], comments={15: [_comment("IC_1")]})
     disp = RecordingDispatcher()
@@ -952,7 +969,7 @@ def test_giveup_emits_terminal_events(tmp_path):
     try:
         ref = "github:octo/repo#15"
         registry = _with_session(tmp_path)
-        state = PollState(tmp_path / "state.json")
+        state = PollState(WorkItemStore(tmp_path / "portable"))
         state.baseline_comments(ref, [], "t")
         provider = FakeProvider(items=[_item(15)], comments={15: [_comment("IC_1")]})
         disp = RecordingDispatcher()
@@ -989,7 +1006,7 @@ def test_poller_drops_comment_from_unauthorized_author(tmp_path):
     ref = "github:octo/repo#15"
     registry = SessionRegistry(tmp_path / "sessions")
     registry.register(Session(WorkItemRef.parse(ref), "claude", "s", "."))
-    state = PollState(tmp_path / "state.json")
+    state = PollState(WorkItemStore(tmp_path / "portable"))
     state.baseline_comments(ref, ["IC_1"], "t")
     provider = FakeProvider(
         items=[_item(15, author="me")],
@@ -1020,7 +1037,7 @@ def test_poller_does_not_spawn_for_unauthorized_item_author(tmp_path):
         provider,
         SessionRegistry(tmp_path / "sessions"),
         disp,
-        PollState(tmp_path / "state.json"),
+        PollState(WorkItemStore(tmp_path / "portable")),
         authorized=("me",),
     ).poll_once()
     assert summary.spawns == 0 and disp.events == []
@@ -1060,7 +1077,7 @@ def test_poller_does_not_forward_its_own_marked_reply(tmp_path):
     ref = "github:octo/repo#15"
     registry = SessionRegistry(tmp_path / "sessions")
     registry.register(Session(WorkItemRef.parse(ref), "claude", "s", "."))
-    state = PollState(tmp_path / "state.json")
+    state = PollState(WorkItemStore(tmp_path / "portable"))
     state.baseline_comments(ref, ["IC_1"], "t")
     provider = FakeProvider(
         items=[_item(15, author="me")],
@@ -1091,7 +1108,7 @@ def test_poller_does_not_spawn_from_own_self_marked_comment(tmp_path):
     # No session yet; a stray self-marked comment (e.g. left over from a
     # session that already ended) must not resurrect one.
     ref = "github:octo/repo#15"
-    state = PollState(tmp_path / "state.json")
+    state = PollState(WorkItemStore(tmp_path / "portable"))
     state.baseline_comments(ref, ["IC_1"], "t")  # known, but no session registered
     provider = FakeProvider(
         items=[_item(15, author="me")],
@@ -1123,7 +1140,7 @@ def test_poller_empty_allowlist_fails_closed(tmp_path):
         provider,
         SessionRegistry(tmp_path / "sessions"),
         disp,
-        PollState(tmp_path / "state.json"),
+        PollState(WorkItemStore(tmp_path / "portable")),
         authorized=(),
     ).poll_once()
     assert summary.spawns == 0 and disp.events == []
@@ -1185,7 +1202,7 @@ def test_poller_hot_reloads_providers_and_interval(tmp_path):
         FakeProvider(),  # initial: nothing to poll
         registry,
         disp,
-        PollState(tmp_path / "state.json"),
+        PollState(WorkItemStore(tmp_path / "portable")),
         reloader=reloader,
     )
     path.write_text("v: 2\n")  # edit the config -> next cycle reloads
@@ -1214,7 +1231,7 @@ def test_a_closed_item_closes_its_session(tmp_path):
     _active_session(registry)
     provider = FakeProvider(items=[], closures={REF15: Closure(state="closed")})
     disp = RecordingDispatcher()
-    state = PollState(tmp_path / "state.json")
+    state = PollState(WorkItemStore(tmp_path / "portable"))
     state.baseline_comments(REF15, ["IC_1"], "t")
 
     summary = make_poller(provider, registry, disp, state).poll_once()
@@ -1233,7 +1250,7 @@ def test_a_merged_pr_closes_its_session(tmp_path):
     )
     disp = RecordingDispatcher()
     summary = make_poller(
-        provider, registry, disp, PollState(tmp_path / "state.json")
+        provider, registry, disp, PollState(WorkItemStore(tmp_path / "portable"))
     ).poll_once()
     assert summary.closures == 1
     assert disp.events[0].delivery_id.endswith("merged")
@@ -1246,7 +1263,7 @@ def test_a_still_open_item_keeps_its_session(tmp_path):
     provider = FakeProvider(items=[], closures={REF15: None})
     disp = RecordingDispatcher()
     summary = make_poller(
-        provider, registry, disp, PollState(tmp_path / "state.json")
+        provider, registry, disp, PollState(WorkItemStore(tmp_path / "portable"))
     ).poll_once()
     assert summary.closures == 0 and disp.events == []
     assert registry.find_by_work_item(REF15) is not None
@@ -1258,7 +1275,7 @@ def test_an_unanswerable_closure_leaves_the_session_running(tmp_path):
     provider = FakeProvider(items=[], closures={REF15: ProviderError("502")})
     disp = RecordingDispatcher()
     summary = make_poller(
-        provider, registry, disp, PollState(tmp_path / "state.json")
+        provider, registry, disp, PollState(WorkItemStore(tmp_path / "portable"))
     ).poll_once()
     assert summary.closures == 0 and disp.events == []
     assert summary.errors and "502" in summary.errors[0]
@@ -1276,7 +1293,7 @@ def test_a_failed_listing_never_reconciles(tmp_path):
     provider = Boom(items=[], closures={REF15: Closure(state="closed")})
     disp = RecordingDispatcher()
     summary = make_poller(
-        provider, registry, disp, PollState(tmp_path / "state.json")
+        provider, registry, disp, PollState(WorkItemStore(tmp_path / "portable"))
     ).poll_once()
     assert provider.closure_asks == [] and summary.closures == 0
     assert registry.find_by_work_item(REF15) is not None
@@ -1288,7 +1305,7 @@ def test_a_session_outside_the_sources_scope_is_untouched(tmp_path):
     provider = FakeProvider(items=[], closures={REF15: Closure("closed")}, owned=[])
     disp = RecordingDispatcher()
     summary = make_poller(
-        provider, registry, disp, PollState(tmp_path / "state.json")
+        provider, registry, disp, PollState(WorkItemStore(tmp_path / "portable"))
     ).poll_once()
     assert provider.closure_asks == [] and summary.closures == 0
 
@@ -1306,7 +1323,7 @@ def test_a_listed_items_linked_ref_is_not_reconciled(tmp_path):
     )
     disp = RecordingDispatcher()
     summary = make_poller(
-        provider, registry, disp, PollState(tmp_path / "state.json")
+        provider, registry, disp, PollState(WorkItemStore(tmp_path / "portable"))
     ).poll_once()
     assert provider.closure_asks == [] and summary.closures == 0
 
@@ -1318,13 +1335,13 @@ def test_an_already_closed_session_is_not_reconciled_again(tmp_path):
     provider = FakeProvider(items=[], closures={REF15: Closure("closed")})
     disp = RecordingDispatcher()
     summary = make_poller(
-        provider, registry, disp, PollState(tmp_path / "state.json")
+        provider, registry, disp, PollState(WorkItemStore(tmp_path / "portable"))
     ).poll_once()
     assert provider.closure_asks == [] and summary.closures == 0
 
 
 def test_poll_state_forget_drops_the_whole_ledger(tmp_path):
-    state = PollState(tmp_path / "state.json")
+    state = PollState(WorkItemStore(tmp_path / "portable"))
     state.baseline_comments(REF15, ["IC_1"], "t")
     state.note_spawn_attempt(REF15, "d-1")
     state.forget(REF15)
@@ -1356,7 +1373,7 @@ def test_first_sight_forwards_a_pre_existing_start_and_baselines_the_rest(tmp_pa
             15: [_comment("IC_0", body="hello"), _comment("IC_1", START_KEYWORD)]
         },
     )
-    state = PollState(tmp_path / "state.json")
+    state = PollState(WorkItemStore(tmp_path / "portable"))
     disp = _started_dispatcher()
     summary = make_poller(
         provider, SessionRegistry(tmp_path / "sessions"), disp, state
@@ -1381,7 +1398,7 @@ def test_first_sight_forwards_pre_existing_commands_in_thread_order(tmp_path):
         provider,
         SessionRegistry(tmp_path / "sessions"),
         disp,
-        PollState(tmp_path / "state.json"),
+        PollState(WorkItemStore(tmp_path / "portable")),
     ).poll_once()
 
     assert [e.delivery_id for e in disp.events] == ["comment-IC_1", "comment-IC_2"]
@@ -1398,7 +1415,7 @@ def test_a_deferring_first_sight_arms_the_spawn_exactly_once(tmp_path):
         provider,
         SessionRegistry(tmp_path / "sessions"),
         disp,
-        PollState(tmp_path / "state.json"),
+        PollState(WorkItemStore(tmp_path / "portable")),
     ).poll_once()
 
     assert summary.spawns == 1
@@ -1410,7 +1427,7 @@ def test_first_sight_baselines_an_unauthorized_authors_start(tmp_path):
         items=[_item(15)],
         comments={15: [_comment("IC_1", START_KEYWORD, author="stranger")]},
     )
-    state = PollState(tmp_path / "state.json")
+    state = PollState(WorkItemStore(tmp_path / "portable"))
     disp = _started_dispatcher()
     summary = make_poller(
         provider, SessionRegistry(tmp_path / "sessions"), disp, state
@@ -1428,7 +1445,7 @@ def test_first_sight_baselines_the_loops_own_keyword_comment(tmp_path):
         items=[_item(15)],
         comments={15: [_comment("IC_1", mark_self_authored(START_KEYWORD))]},
     )
-    state = PollState(tmp_path / "state.json")
+    state = PollState(WorkItemStore(tmp_path / "portable"))
     disp = _started_dispatcher()
     summary = make_poller(
         provider, SessionRegistry(tmp_path / "sessions"), disp, state
@@ -1444,7 +1461,7 @@ def test_first_sight_baselines_an_ambiguous_control_comment(tmp_path):
         items=[_item(15)],
         comments={15: [_comment("IC_1", f"{START_KEYWORD} then {STOP_KEYWORD}")]},
     )
-    state = PollState(tmp_path / "state.json")
+    state = PollState(WorkItemStore(tmp_path / "portable"))
     disp = _started_dispatcher()
     summary = make_poller(
         provider, SessionRegistry(tmp_path / "sessions"), disp, state
@@ -1458,7 +1475,7 @@ def test_first_sight_with_control_disabled_is_unchanged(tmp_path):
     provider = FakeProvider(
         items=[_item(15)], comments={15: [_comment("IC_1", START_KEYWORD)]}
     )
-    state = PollState(tmp_path / "state.json")
+    state = PollState(WorkItemStore(tmp_path / "portable"))
     disp = RecordingDispatcher(control=ControlConfig(enabled=False))
     summary = make_poller(
         provider, SessionRegistry(tmp_path / "sessions"), disp, state
@@ -1474,7 +1491,7 @@ def test_first_sight_ignores_the_thread_of_an_unauthorized_items_author(tmp_path
         items=[_item(15, author="stranger")],
         comments={15: [_comment("IC_1", START_KEYWORD)]},
     )
-    state = PollState(tmp_path / "state.json")
+    state = PollState(WorkItemStore(tmp_path / "portable"))
     disp = _started_dispatcher()
     summary = make_poller(
         provider, SessionRegistry(tmp_path / "sessions"), disp, state
@@ -1494,7 +1511,7 @@ def test_first_sight_does_not_replay_a_thread_the_loop_already_acted_on(tmp_path
     provider = FakeProvider(
         items=[_item(15)], comments={15: [_comment("IC_1", STOP_KEYWORD)]}
     )
-    state = PollState(tmp_path / "state.json")
+    state = PollState(WorkItemStore(tmp_path / "portable"))
     disp = _started_dispatcher(control_store=store)
     summary = make_poller(
         provider, SessionRegistry(tmp_path / "sessions"), disp, state

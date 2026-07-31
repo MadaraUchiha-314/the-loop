@@ -1,9 +1,9 @@
 """The generated-state classification, pinned (issue-128, decision-046).
 
 Issue #128 asked which of the-loop's state files may be carried to another
-machine. The answer is two of the five, and the reason is that the other three are
-handles to one machine rather than facts about the world. That answer is written in
-three places — ``the_loop.state.GENERATED_PATHS``, ``docs/cli/state.md`` and the
+machine. The answer is one of the four — the portable work-item records — and the
+reason is that the rest are handles to one machine rather than facts about the
+world. That answer is written in three places — ``the_loop.state.GENERATED_PATHS``, ``docs/cli/state.md`` and the
 repository's own ``.gitignore`` — so it needs a test, or the next generated file
 will be added with the question unasked.
 
@@ -41,7 +41,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 STATE_DOC = REPO_ROOT / "docs" / "cli" / "state.md"
 GITIGNORE = REPO_ROOT / ".gitignore"
 
-#: A sample work-item slug, for the two paths documented with a ``<slug>`` placeholder.
+#: A sample work-item slug, for the paths documented with a ``<slug>`` placeholder.
 SAMPLE_SLUG = "github-octo-repo-15"
 
 needs_docs = pytest.mark.skipif(
@@ -102,7 +102,7 @@ def test_declared_attrs_resolve_to_their_documented_default() -> None:
 def test_exactly_the_world_facts_are_portable() -> None:
     """The split itself, stated once so a flipped boolean is a red build."""
     portable = sorted(e.name for e in GENERATED_PATHS if e.portable)
-    assert portable == ["control record", "poll state"]
+    assert portable == ["work-item record"]
     assert all(entry.why.strip() for entry in GENERATED_PATHS)
 
 
@@ -222,5 +222,6 @@ def test_block_ignores_exactly_the_local_paths() -> None:
 def test_block_ignores_the_atomic_writers_temporaries() -> None:
     """A crash between mkstemp and os.replace must not leave a tracked stray."""
     block = _documented_block()
-    assert _is_ignored(block, ".the-loop/sessions/control/tmp9k2f.tmp")
-    assert _is_ignored(block, ".the-loop/sessions/tmp9k2f.tmp")
+    assert _is_ignored(block, ".the-loop/portable/tmp9k2f.tmp")
+    # ...while the record it was about to become stays tracked.
+    assert not _is_ignored(block, ".the-loop/portable/github-octo-repo-15.json")

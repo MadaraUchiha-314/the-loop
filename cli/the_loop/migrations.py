@@ -2,7 +2,9 @@
 
 issue-109 removes the per-feature ``ghBinary`` keys in favour of one
 ``integrations`` block, because three copies of one setting is exactly the
-duplication that block exists to remove. The owner's call was to make it a
+duplication that block exists to remove. issue-128 removes ``polling.stateFile``
+for a different reason: the poller's ledger became one record per work item, so
+a *file* path has nothing to point at. The owner's call was to make it a
 **breaking** change rather than carry a shadow override forever: *"Let's make
 breaking changes. /upgrade should be able to handle it."*
 
@@ -34,8 +36,9 @@ __all__ = [
     "needs_migration",
 ]
 
-#: Bumped by issue-109. A config below this needs `/the-loop:upgrade-the-loop`.
-CURRENT_CONFIG_VERSION = "0.2.0"
+#: Bumped by issue-109, then by issue-128. A config below this needs
+#: `/the-loop:upgrade-the-loop`.
+CURRENT_CONFIG_VERSION = "0.3.0"
 
 _UPGRADE = "/the-loop:upgrade-the-loop"
 
@@ -46,6 +49,13 @@ _GH_BINARY_SITES: Tuple[Tuple[str, ...], ...] = (
     ("webhooks", "ghWebhook", "routing", "announce"),
 )
 _REPLACEMENT = "integrations.github.cli.binary"
+
+# issue-128 reorganised generated state by portability: the poller's ledger is
+# now one record per work item under `<state.root>/portable/`, so a *file* path
+# has nowhere to point. `state.root` is the knob that replaced it.
+_STATE_FILE_SITE: Tuple[str, ...] = ("polling",)
+_STATE_FILE_KEY = "stateFile"
+_STATE_FILE_REPLACEMENT = "state.root"
 
 
 class ConfigTooOld(RuntimeError):
@@ -92,6 +102,8 @@ def needs_migration(config: Mapping[str, Any]) -> bool:
     removed key (belt and braces: a hand-edited file may lie about its version)."""
     if _parts(str(config.get("version", "0"))) < _parts(CURRENT_CONFIG_VERSION):
         return True
+    if (_dig(config, _STATE_FILE_SITE) or {}).get(_STATE_FILE_KEY) is not None:
+        return True
     return any(
         (section or {}).get("ghBinary") is not None
         for section in (_dig(config, path) for path in _GH_BINARY_SITES)
@@ -129,6 +141,16 @@ def assert_current(config: Mapping[str, Any]) -> None:
             "is declared once instead of three times. It is NOT being ignored — "
             f"ignoring a value you set would change behaviour silently. Run "
             f"`{_UPGRADE}` to migrate."
+        )
+    if (_dig(config, _STATE_FILE_SITE) or {}).get(_STATE_FILE_KEY) is not None:
+        raise ConfigTooOld(
+            "this CLI config still declares `polling.stateFile`. The poller's "
+            "ledger is now one record per work item under "
+            "`<state.root>/portable/` (issue-128), so a file path has nowhere to "
+            f"point; `{_STATE_FILE_REPLACEMENT}` moves it instead. It is NOT "
+            "being ignored — a poller silently writing somewhere other than where "
+            f"you pointed it is how a thread gets re-forwarded. Run `{_UPGRADE}` "
+            "to migrate."
         )
     declared = config.get("version")
     if declared is not None and _parts(str(declared)) < _parts(CURRENT_CONFIG_VERSION):
@@ -171,6 +193,21 @@ def migrate_cli_config(config: Mapping[str, Any]) -> MigrationReport:
                 + ", ".join(repr(b) for b in distinct)
                 + f"); kept {distinct[0]!r} — one transport is declared once now, "
                 "so please confirm this is the one you want"
+            )
+
+    polling = _dig(data, _STATE_FILE_SITE)
+    if polling is not None and _STATE_FILE_KEY in polling:
+        old = str(polling.pop(_STATE_FILE_KEY))
+        report.moves.append(
+            f"polling.{_STATE_FILE_KEY} ({old!r}) removed — the ledger is now "
+            f"`<state.root>/portable/<work item>.json`"
+        )
+        report.changed = True
+        if old and not old.startswith(str((data.get("state") or {}).get("root", ""))):
+            report.notes.append(
+                f"the old ledger at {old!r} is still READ once per work item, so "
+                "no watched thread is re-baselined; delete it once `the-loop "
+                "events` looks right on the new layout"
             )
 
     if _parts(str(data.get("version", "0"))) < _parts(CURRENT_CONFIG_VERSION):

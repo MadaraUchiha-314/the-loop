@@ -566,11 +566,17 @@ This posts **text** to GitHub with your own `gh` auth. Set `false` to opt out.
 ### `registryDir`
 
 - **Type:** `string`
-- **Default:** `<state.root>/sessions`
+- **Default:** `<state.root>/local`
 
-Directory of per-session registry JSON files (git-ignored), and the parent of the control
-records kept beside them at `<registryDir>/control/`. Unset resolves under
-[`state.root`](/config/cli/#state-root) — with the default root, `.the-loop/sessions`.
+Directory of per-session registry JSON files — the machine-**local** half of a work item's
+state (a harness conversation id, its `cwd`, its tmux target). Unset resolves under
+[`state.root`](/config/cli/#state-root) — with the default root, `.the-loop/local`.
+
+Never track it in git. A copied session record is still counted *live*, so the
+duplicate-session guard would refuse the spawn the other machine needs
+([decision-046](/decisions/decision-046)). The portable half — what was armed, what has
+been seen — lives in `<state.root>/portable/` and does not move with this setting; see
+[State on disk](/cli/state).
 
 ### `maxConcurrentDispatches`
 

@@ -33,19 +33,19 @@ polling:
 
 Seconds between poll cycles, across all sources.
 
-### `stateFile`
+::: info Where the ledger lives — `stateFile` is gone
+Which comments each item has already been forwarded is tracked in the `poll` section of
+that work item's record under [`state.root`](/config/cli/#state-root)
+(`<root>/portable/<work item>.json`), so a comment is delivered exactly once across cycles
+**and** restarts. It is one record per work item now, not one file for the poller, which is
+why `polling.stateFile` was removed in issue-128 — a file path has nothing left to point
+at. A config that still sets it is refused rather than ignored; run
+[`the-loop migrate-config`](/cli/commands/migrate-config).
 
-- **Type:** `string`
-- **Default:** `<state.root>/sessions/poll-state.json`
-
-Durable JSON tracking which comments each item has already been forwarded, so a comment is
-delivered exactly once across cycles **and** restarts. Git-ignored runtime state.
-
-Unset, it resolves under [`state.root`](/config/cli/#state-root) with the rest of the
-session tracking. A pre-issue-106 `.the-loop/poll-state.json` that still exists keeps being
-used, with a warning, rather than silently re-baselining: adopting an empty state file
-would make every watched thread first-sight again and re-forward its whole comment
-history.
+Nothing is re-forwarded on upgrade: a pre-issue-128 `poll-state.json` (or the
+pre-issue-106 `.the-loop/poll-state.json`) is read once per work item and written forward.
+See [State on disk](/cli/state).
+:::
 
 ### `maxRetries`
 

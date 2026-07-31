@@ -1,4 +1,4 @@
-# Decision 045: facts about the work travel; handles to a machine do not
+# Decision 046: state is organised by portability — facts about the work travel; handles to a machine do not
 
 - **Status:** proposed
 - **Date:** 2026-07-31
@@ -32,27 +32,50 @@ tracking the directory — which would have carried the one file that must never
 
 ## Decision
 
-**Everything the CLI generates is one of two kinds of thing, and only one of them
-travels.**
+**Everything the CLI generates is one of two kinds of thing, only one of them travels,
+and the directory layout says which is which.**
 
 - **Facts about the world** — what GitHub already told us, and what an authorized human
   asked for. True on any machine. **Portable**, and tracked in git:
-  - `<state.root>/sessions/control/` — the last `start`/`stop`/`pause`/`resume` per work
-    item, with who asked and when.
-  - `<state.root>/sessions/poll-state.json` — which comments have been seen, per item.
+  - `<state.root>/portable/<slug>.json` — one record per work item, with a `control`
+    section (the last `start`/`stop`/`pause`/`resume`, who asked, when) and a `poll`
+    section (which comments have been seen, and the retry ledgers).
 - **Handles to this machine** — things that exist only where they were created. **Local**,
   and never tracked:
-  - `<state.root>/sessions/<slug>.json` — the session registry.
+  - `<state.root>/local/<slug>.json` — the session registry.
   - `<state.root>/logs/events.jsonl` — the event log.
   - `<state.root>/gh-webhook.pid` — the receiver pidfile.
   - (and the per-work-item checkouts under `routing.workspace.root`, which are
     regenerable and not under `state.root` at all).
 
-Three consequences follow, and are accepted as part of the decision:
+### The layout follows the classification (PR #129 review)
+
+The first version of this decision classified the files but left them where they were —
+three stores grouped by **writer** (`sessions/`, `sessions/control/`,
+`sessions/poll-state.json`). The owner's question on the pull request was the right one:
+*do we need so many files and folders?* Not for these reasons, no. Grouping by writer is
+what forced a `.gitignore` recipe with two negations and an ancestor rule to express one
+idea, and it is why "what is happening with #15?" meant looking in three places.
+
+So the layout is the classification: **two directories, one file per work item in each.**
+Three consequences beyond the tidiness — the recipe is three lines with no negations; the
+single `poll-state.json` (the one file two machines were guaranteed to conflict in) becomes
+per work item, so they collide only over an item they both worked; and a cycle writes only
+the records it touched.
+
+What did **not** change is why each store exists. The session registry and the control
+records are not derivable from GitHub and are not optional: they survive a daemon restart,
+and they are the IPC between the `the-loop sessions …` CLI and the daemon, which are
+separate processes.
+
+Three further consequences follow, and are accepted as part of the decision:
 
 1. **The classification is declared in code** (`the_loop.state.GENERATED_PATHS`) and
    pinned by a test, so a new generated path cannot be added without answering "does this
    travel?", and the docs cannot drift from the answer.
+   Two writers now share a work-item record, so every write is **read-modify-write** on
+   its own section: a poll cycle must never erase a `start` the other ingress recorded a
+   moment earlier.
 2. **The recipe is a `.gitignore` block, published and dogfooded** — this repository
    tracks its own portable state with the exact block `docs/cli/state.md` prints.
 3. **the-loop never commits state for you.** A hand-off is a human moment: commit on the
@@ -93,14 +116,23 @@ a resume handle. Neither belongs in a repository, whoever can read it.
   bounded by the auto-execute label (which needs repository write access) still being
   required, by a `.the-loop/sessions/` diff being an obvious review item, and by the
   documented recommendation to track state where only the operator can push.
-- Operators whose `state.root` is outside a repository (`~/.the-loop`) copy the two paths
+- Operators whose `state.root` is outside a repository (`~/.the-loop`) copy `portable/`
   instead; the documentation says so rather than pretending git is the only route.
+- **The layout change is breaking, and is migrated rather than sniffed.**
+  `polling.stateFile` is removed — a file path cannot address a per-work-item ledger — so
+  a config still declaring it is refused with the replacement named, and
+  `the-loop migrate-config` removes it and bumps the schema to `0.3.0`. On disk nothing
+  is moved destructively: the pre-issue-128 locations are **read** when a work item's new
+  record has no such section and written forward on the next write, so no watched thread
+  is re-baselined and nothing armed is forgotten. The operator deletes the old tree when
+  they are satisfied.
 
 ## Alternatives considered
 
 | Option | Why not |
 |---|---|
 | `the-loop state export/import` | The state is already plain JSON in one directory and git already moves everything else in the-loop. A bundle command is a second, weaker transport to maintain, and answers none of the questions the issue asked. |
+| One file per work item holding *both* halves (session handle included) | Puts a machine handle inside the file that is tracked in git — an absolute `cwd` and a resume id in a repository, and a portability boundary that has to be enforced field by field instead of by directory. |
 | Track `sessions/` too, teaching the registry to ignore foreign records | Makes the duplicate-session invariant — the guard that stops two agents working one item — machine-aware, to solve a problem better solved by not copying the file. The new machine must spawn its own session either way. |
 | Document only, ignore everything as before | Answers the "is it documented?" question and leaves the other three as prose nobody can execute. The `.gitignore` block *is* the answer. |
 | Commit state automatically from the daemon | A daemon writing commits into an operator's repository is a surprise with a blast radius. Hand-off stays human. |

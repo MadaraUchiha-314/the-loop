@@ -37,9 +37,10 @@ than a half-markdown parser, and only an authorized user can reach it at all.
 
 ## The durable record
 
-:class:`ControlStore` keeps the last command per work item under
-``<registry dir>/control/``, in the same file-per-item, atomically-written shape
-as the session registry. It answers one question for the dispatcher and the
+:class:`ControlStore` keeps the last command per work item in the ``control``
+section of ``<state.root>/portable/<slug>.json`` (issue-128) — the portable half
+of that work item's state, beside what the poller has seen and away from the
+machine-local session handle. It answers one question for the dispatcher and the
 poller — *did an authorized user ask for this work item to be running?* — which
 is what makes a start request survive a daemon restart, and what lets
 pause/stop land on a work item that has no session yet.
@@ -49,11 +50,8 @@ Spec: docs/specs/issue-106/design.md §1.
 
 from __future__ import annotations
 
-import json
 import logging
-import os
 import re
-import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -61,6 +59,8 @@ from typing import Dict, List, Optional, Union
 
 from .authz import mark_self_authored
 from .sessions import WorkItemRef
+from .state import LegacyLayout
+from .workitem import CONTROL, WorkItemStore
 
 logger = logging.getLogger("the-loop.control")
 
@@ -245,23 +245,28 @@ def _as_ref(work_item: Union[str, WorkItemRef]) -> WorkItemRef:
 
 
 class ControlStore:
-    """File-per-work-item store of the last control command, under ``root``.
+    """The ``control`` section of each work item's portable record.
 
-    Same storage shape as :class:`the_loop.sessions.SessionRegistry` (atomic
-    tempfile + ``os.replace``, human-inspectable JSON, no shared file to contend
-    on), and it lives *beside* it — ``<registry dir>/control/`` — because it is
-    session-related tracking, which issue-106 asks to keep together.
+    Storage moved in issue-128: the last command per work item is now a section
+    of ``<state.root>/portable/<slug>.json`` (:class:`the_loop.workitem.WorkItemStore`)
+    rather than its own file under ``<registry dir>/control/``. The reason is
+    portability, not tidiness — "an authorized user asked for this to be running"
+    is true on any machine, so it belongs beside the other portable half (what
+    the poller has seen) and away from the session handle, which is not. The
+    public API here is unchanged, and a pre-issue-128 control record is still
+    read (once) so an upgrade never forgets what was armed.
 
     A store whose directory cannot be read degrades to "nothing recorded": the
     daemon then simply refuses to spawn on its own (fail closed), rather than
     failing an event.
     """
 
-    def __init__(self, root: Union[str, Path]):
-        self.root = Path(root)
+    def __init__(self, root: Union[str, Path], legacy: Optional[LegacyLayout] = None):
+        self.store = WorkItemStore(root, legacy=legacy)
 
-    def _path_for(self, item: WorkItemRef) -> Path:
-        return self.root / f"{item.slug}.json"
+    @property
+    def root(self) -> Path:
+        return self.store.root
 
     def record(
         self,
@@ -283,33 +288,22 @@ class ControlStore:
             requested_at=_utcnow(),
             note=note,
         )
-        self.root.mkdir(parents=True, exist_ok=True)
-        target = self._path_for(item)
-        fd, tmp_name = tempfile.mkstemp(dir=str(self.root), suffix=".tmp")
-        try:
-            with os.fdopen(fd, "w") as handle:
-                json.dump(record.to_dict(), handle, indent=2)
-                handle.write("\n")
-            os.replace(tmp_name, target)
-        except BaseException:
-            try:
-                os.unlink(tmp_name)
-            except FileNotFoundError:
-                pass
-            raise
+        self.store.write_section(item, CONTROL, record.to_dict())
         logger.info(
             "recorded control command %s for %s (source=%s)", command, item.ref, source
         )
         return record
 
     def get(self, work_item: Union[str, WorkItemRef]) -> Optional[ControlRecord]:
-        path = self._path_for(_as_ref(work_item))
-        if not path.is_file():
+        section = self.store.section(work_item, CONTROL)
+        if not section:
             return None
         try:
-            return ControlRecord.from_dict(json.loads(path.read_text()))
-        except (OSError, ValueError, KeyError) as exc:
-            logger.warning("skipping unreadable control record %s: %s", path, exc)
+            return ControlRecord.from_dict(section)
+        except (KeyError, TypeError, ValueError) as exc:
+            logger.warning(
+                "skipping unreadable control record for %s: %s", work_item, exc
+            )
             return None
 
     def start_requested(self, work_item: Union[str, WorkItemRef]) -> bool:
@@ -323,12 +317,12 @@ class ControlStore:
         return record is not None and record.command in _ARMING_COMMANDS
 
     def clear(self, work_item: Union[str, WorkItemRef]) -> bool:
-        """Forget a work item's control state (it ended). False if there was none."""
-        try:
-            self._path_for(_as_ref(work_item)).unlink()
-        except FileNotFoundError:
+        """Forget a work item's control state (it ended). False if there was none.
+
+        Only the control section goes: the poll section of the same record is the
+        poller's to drop, and it does so on the same closure path.
+        """
+        if self.get(work_item) is None:
             return False
-        except OSError as exc:  # advisory cleanup — never break a close
-            logger.warning("could not clear control record for %s: %s", work_item, exc)
-            return False
+        self.store.write_section(work_item, CONTROL, None)
         return True

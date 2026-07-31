@@ -35,7 +35,7 @@ This is a complete working file, not a fragment. Everything not named here takes
 default:
 
 ```yaml
-version: "0.2.0"
+version: "0.3.0"
 
 state:
   root: .the-loop          # relative to where you run the daemon; `~` is NOT expanded

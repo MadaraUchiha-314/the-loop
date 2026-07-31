@@ -27,7 +27,7 @@ A breaking change is only as good as its migration, so four properties hold:
 
 ## What it migrates today
 
-Current version: **`0.2.0`**.
+Current version: **`0.3.0`**.
 
 The per-feature `ghBinary` keys — declared separately under `routing.control`,
 `routing.reactions` and `routing.announce` — move to a single
@@ -41,10 +41,10 @@ migrated the CLI config:
   · webhooks.ghWebhook.routing.control.ghBinary → integrations.github.cli.binary ('gh')
   · webhooks.ghWebhook.routing.reactions.ghBinary → integrations.github.cli.binary ('gh')
   · webhooks.ghWebhook.routing.announce.ghBinary → integrations.github.cli.binary ('gh')
-  · version '0.1.0' → '0.2.0'
+  · version '0.1.0' → '0.3.0'
 
 --- /home/you/.the-loop/cli-config.yaml (preview, not written) ---
-version: 0.2.0
+version: 0.3.0
 …
 ```
 

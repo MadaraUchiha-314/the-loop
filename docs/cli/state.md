@@ -6,66 +6,65 @@ anything on another machine.
 Read this before you back up, wipe, or move a working setup between laptops.
 
 ::: tip Moving machines? The short answer
-Track **two** paths in git — `<state.root>/sessions/control/` and
-`<state.root>/sessions/poll-state.json` — with the [block below](#carrying-state-to-another-machine).
-They carry what an authorized user armed and which comments have already been seen.
+Track **one** directory in git: `<state.root>/portable/`. It holds one file per work item
+— what an authorized user armed, and which comments have already been seen. The
+[block below](#carrying-state-to-another-machine) is three lines.
 
-Leave everything else ignored. The session registry in particular must **not** travel:
-copying it is [worse than losing it](#what-must-never-be-carried).
+Leave `local/`, `logs/` and the pidfile ignored. The session records in `local/` must
+**not** travel: copying them is [worse than losing
+them](#what-must-never-be-carried).
 :::
 
 ## Where it lives
 
 Everything the CLI **generates** sits under one configured root,
 [`state.root`](/config/cli/#state-root) (default `.the-loop`, relative to the process's
-working directory):
+working directory), split by whether it travels:
 
 ```
 .the-loop/
-├── sessions/
-│   ├── github-octo-repo-15.json      # session record — one per work item with a session
-│   ├── poll-state.json               # what the poller has already seen
-│   └── control/
-│       └── github-octo-repo-15.json  # control record — what an authorized user asked for
+├── portable/
+│   └── github-octo-repo-15.json   # one per work item: control + poll state — tracked
+├── local/
+│   └── github-octo-repo-15.json   # that item's session handle — never tracked
 ├── logs/
-│   └── events.jsonl                  # the decision trail
-└── gh-webhook.pid                    # the running receiver
+│   └── events.jsonl               # the decision trail
+└── gh-webhook.pid                 # the running receiver
 ```
 
-Each of those four paths can also be set explicitly
-([`registryDir`](/config/cli/routing-options#registrydir),
-[`stateFile`](/config/cli/polling-options#statefile),
-[`eventLog.path`](/config/cli/observability-options#eventlog-path),
-[`pidfile`](/config/cli/webhook-options#pidfile)); the root only fills in what you left
-out. Everything here is JSON or JSONL, meant to be read with `jq`, `cat` and `tail -f`.
-The three record stores — sessions, control, poll state — are rewritten atomically
-(`tempfile` + `os.replace`), so a crash never leaves half a file; the event log is
-appended to a line at a time, and the pidfile is written once at startup.
+Everything here is JSON or JSONL, meant to be read with `jq`, `cat` and `tail -f`. The two
+record stores are rewritten atomically (`tempfile` + `os.replace`), so a crash never leaves
+half a file; the event log is appended to a line at a time, and the pidfile is written once
+at startup.
+
+Two paths can be pointed elsewhere explicitly —
+[`routing.registryDir`](/config/cli/routing-options#registrydir) for `local/`, and
+[`eventLog.path`](/config/cli/observability-options#eventlog-path) /
+[`pidfile`](/config/cli/webhook-options#pidfile) — but `portable/` follows `state.root`,
+because "where does the half I track live?" should have exactly one answer.
 
 ## Two kinds of state
 
-The portability question has a different answer for each, and every answer on this page
-follows from the split:
+The layout is the answer to one question, so it is worth stating the question. Everything
+the-loop writes is one of two things:
 
 - **Facts about the world.** What GitHub already told us, and what an authorized human
-  asked for. These are true no matter which machine is running. They are slow to rebuild,
-  and some of them cannot be rebuilt at all — nothing upstream records that a `stop` was
-  honoured.
+  asked for. True no matter which machine is running. Slow to rebuild, and some of it
+  cannot be rebuilt at all — nothing upstream records that a `stop` was honoured.
 - **Handles to this machine.** A harness conversation id, a working directory, a pid, a
-  local audit trail. These name things that exist only where they were created. They are
-  cheap to rebuild — the daemon rebuilds them by spawning — and actively harmful when
-  moved.
+  local audit trail. These name things that exist only where they were created. Cheap to
+  rebuild — the daemon rebuilds them by spawning — and actively harmful when moved.
 
-"Make the state portable" is therefore not answered by copying the directory. Half of it
-is not state *about* anything; it is a set of local handles.
+Grouping the files by **which of those they are**, rather than by which component writes
+them, is what makes the `.gitignore` recipe three lines instead of a puzzle
+([decision-046](/decisions/decision-046)).
 
 ## The classification
 
 | Path | Written by | Holds | Travels? |
 |---|---|---|---|
-| `<root>/sessions/<slug>.json` | the session registry | conversation id, `cwd`, runner, tmux target, status | **local** |
-| `<root>/sessions/control/<slug>.json` | execution control | the last `start`/`stop`/`pause`/`resume`, and who asked | **portable** |
-| `<root>/sessions/poll-state.json` | the poller | seen comment ids, retry ledgers, last poll time | **portable** |
+| `<root>/portable/<slug>.json` | execution control + the poller | what was armed, and which comments are already seen | **portable** |
+| `<root>/local/<slug>.json` | the session registry | conversation id, `cwd`, runner, tmux target, status | **local** |
 | `<root>/logs/events.jsonl` | every ingress, and `sessions` | one JSON object per decision | **local** |
 | `<root>/gh-webhook.pid` | `gh-webhook start` | the receiver's pid | **local** |
 
@@ -78,12 +77,78 @@ One more file belongs to this picture but lives elsewhere: `docs/specs/<id>/grap
 is checked in by design — the [process graph](/capabilities/process-graph) records where a
 work item is, and it must survive a machine change, a session change and a multi-day human
 review. It is a cache, never an authority, so a stale copy degrades to a recompute. The
-two portable files above are classified on exactly that reasoning.
+portable half above is classified on exactly that reasoning.
 
-## Session record — `<root>/sessions/<slug>.json`
+## Work-item record — `<root>/portable/<slug>.json`
 
-One file per work item that has a session, named for the work-item ref
-(`github:octo/repo#15` → `github-octo-repo-15.json`).
+One file per work item, named for its ref (`github:octo/repo#15` →
+`github-octo-repo-15.json`), with two independent sections.
+
+```json
+{
+  "ref": "github:octo/repo#15",
+  "control": {
+    "command": "start",
+    "source": "comment",
+    "actor": "octocat",
+    "requestedAt": "2026-07-31T09:11:58Z",
+    "note": ""
+  },
+  "poll": {
+    "seenComments": ["2451…", "2452…"],
+    "commentAttempts": {"2453…": 1},
+    "spawn": {"attempts": 0, "gaveUp": false, "deliveryId": ""},
+    "lastPolledAt": "2026-07-31T10:42:00Z"
+  }
+}
+```
+
+### `control` — what an authorized user asked for
+
+| Field | Meaning |
+|---|---|
+| `command` | the **last** command recorded: `start`, `stop`, `pause` or `resume` |
+| `source` | `comment` (a keyword on the ticket) or `cli` (`the-loop sessions …`) |
+| `actor` | the GitHub login that asked |
+| `requestedAt` | when |
+
+Written when a control keyword is accepted (from either ingress) or a
+`sessions start|stop|pause|resume` runs; cleared when the work item ends. It answers one
+question — *did an authorized user ask for this work item to be running?* — which is what
+makes a start survive a daemon restart, and what lets a `stop` durably disarm a labelled
+item so it does not quietly re-spawn on the next event.
+
+**If you delete it:** an armed item is disarmed. A labelled work item stops being worked
+with no error anywhere — the daemon is behaving exactly as configured, on a record that is
+no longer there. This is the state you most want to carry, and the one nothing upstream
+can rebuild.
+
+### `poll` — what the poller has already seen
+
+| Field | Meaning |
+|---|---|
+| `seenComments` | comment ids already baselined or delivered — capped, and pruned each cycle to what still exists upstream |
+| `commentAttempts` | in-flight delivery attempts per comment, against [`maxRetries`](/config/cli/polling-options#maxretries) |
+| `spawn` | the presence/spawn retry ledger: attempts, whether it gave up, the in-flight delivery id |
+| `lastPolledAt` | the last cycle that saw the item |
+
+An item is *baselined* on first sight — the whole existing thread is marked seen, because
+the spawned session reads it itself — and the section is dropped when the item ends, so a
+reopened item is first-sight again rather than skipped forever.
+
+**If you delete it:** every watched thread is first-sight again. Nothing breaks, but the
+poller re-baselines them, and an item that had been given up on gets a fresh spawn budget.
+
+::: tip Why one file, two writers
+Control comes from a keyword a human typed; the poll section from what the poller saw. They
+are written by different components, and grouping by *writer* is what used to spread this
+across three stores. Writes are read-modify-write per section, so a poll cycle can never
+clobber a control command recorded a moment earlier by the other ingress.
+:::
+
+## Session record — `<root>/local/<slug>.json`
+
+One file per work item that has a session.
 
 ```json
 {
@@ -122,79 +187,6 @@ checkout. Recoverable, at the cost of context.
 **Never carry it to another machine.** See [what must never be
 carried](#what-must-never-be-carried).
 
-## Control record — `<root>/sessions/control/<slug>.json`
-
-One file per work item an authorized user has steered, in the same file-per-item shape,
-in a subdirectory beside the sessions it steers.
-
-```json
-{
-  "ref": "github:octo/repo#15",
-  "command": "start",
-  "source": "comment",
-  "actor": "octocat",
-  "requestedAt": "2026-07-31T09:11:58Z",
-  "note": ""
-}
-```
-
-| Field | Meaning |
-|---|---|
-| `command` | the **last** command recorded: `start`, `stop`, `pause` or `resume` |
-| `source` | `comment` (a keyword on the ticket) or `cli` (`the-loop sessions …`) |
-| `actor` | the GitHub login that asked |
-| `requestedAt` | when |
-
-**Lifecycle.** Written when a control keyword is accepted (from either ingress) or a
-`sessions start|stop|pause|resume` runs; cleared when the work item ends.
-
-**What it answers.** *Did an authorized user ask for this work item to be running?* —
-which is what makes a start survive a daemon restart, and what lets a `stop` durably
-disarm a labelled item so it does not quietly re-spawn on the next event.
-
-**If you delete it:** an armed item is disarmed. A labelled work item stops being worked
-with no error anywhere — the daemon is behaving exactly as configured, on a record that is
-no longer there. This is the state you most want to carry, and the one nothing upstream
-can rebuild.
-
-## Poll state — `<root>/sessions/poll-state.json`
-
-One file for the whole poller, `{"items": {"<ref>": {…}}}`.
-
-```json
-{
-  "items": {
-    "github:octo/repo#15": {
-      "seenComments": ["2451…", "2452…"],
-      "commentAttempts": {"2453…": 1},
-      "spawn": {"attempts": 0, "gaveUp": false, "deliveryId": ""},
-      "lastPolledAt": "2026-07-31T10:42:00Z"
-    }
-  }
-}
-```
-
-| Field | Meaning |
-|---|---|
-| `seenComments` | comment ids already baselined or delivered — capped, and pruned each cycle to what still exists upstream |
-| `commentAttempts` | in-flight delivery attempts per comment, against [`maxRetries`](/config/cli/polling-options#maxretries) |
-| `spawn` | the presence/spawn retry ledger: attempts, whether it gave up, the in-flight delivery id |
-| `lastPolledAt` | the last cycle that saw the item |
-
-**Lifecycle.** An item is *baselined* on first sight — the whole existing thread is marked
-seen, because the spawned session reads it itself — and its ledger is dropped when the item
-ends, so a reopened item is first-sight again rather than skipped forever.
-
-**If you delete it:** every watched thread is first-sight again. Nothing breaks, but the
-poller re-baselines them, and an item that had been given up on gets a fresh spawn budget.
-
-::: warning The pre-issue-106 location
-Before the state root existed this file was `.the-loop/poll-state.json`. If that one is
-still on disk and the new one is not, the poller keeps using it and warns once. It is the
-same file and equally portable — move it to `sessions/poll-state.json` to silence the
-warning and match the recipe below.
-:::
-
 ## Event log — `<root>/logs/events.jsonl`
 
 Append-only JSONL: one object per decision, from both ingresses and the `sessions`
@@ -211,32 +203,22 @@ harmless; `stop` reports the process is gone.
 
 ## Carrying state to another machine
 
-Track the two portable files in git. Paste this into the `.gitignore` of the repository
-your `state.root` lives in — it is the block this repository uses for its own state:
+Track `portable/` in git. Paste this into the `.gitignore` of the repository your
+`state.root` lives in — it is the block this repository uses for its own state:
 
 ```gitignore
 # the-loop: generated state under state.root (default .the-loop) — see
 # https://madarauchiha-314.github.io/the-loop/cli/state
 # Local handles (session records, event log, pidfile) never leave the machine.
-.the-loop/sessions/*
+# .the-loop/portable/ is the half that travels with the work, so it is tracked.
+.the-loop/local/
 .the-loop/logs/
 .the-loop/*.pid
-# Portable: what an authorized user armed, and which comments have been seen.
-!.the-loop/sessions/control/
-!.the-loop/sessions/poll-state.json
-.the-loop/sessions/control/*.tmp
+.the-loop/portable/*.tmp
 ```
 
-Three details in there are easy to get wrong:
-
-- It excludes `sessions/*`, **not** `sessions/`. Git does not descend into an excluded
-  *directory*, so a `!` re-include beneath one has no effect. Excluding the directory's
-  contents leaves the directory itself visible, which is what makes the next line work.
-- `!sessions/control/` re-includes the **directory**. The files inside are then not
-  matched by `sessions/*` at all, because a `*` does not cross a `/`.
-- `control/*.tmp` re-excludes the atomic writers' temporaries — a crash between
-  `mkstemp` and `os.replace` leaves one behind. (The poll state's temporaries are already
-  covered by `sessions/*`.)
+The one non-obvious line is the last: `portable/*.tmp` re-excludes the atomic writer's
+temporaries — a crash between `mkstemp` and `os.replace` leaves one behind.
 
 ### The hand-off
 
@@ -245,7 +227,7 @@ The daemon never commits anything. Carrying state is a deliberate moment:
 ```bash
 # on the machine you are stopping
 the-loop gh-webhook stop            # or stop the poller
-git add .the-loop/sessions/control .the-loop/sessions/poll-state.json
+git add .the-loop/portable
 git commit -m "chore: hand off the-loop state"
 git push
 
@@ -265,8 +247,8 @@ The default is relative, so running the daemon from a checkout puts state in tha
 checkout. If yours is `~/.the-loop` (or any absolute path), there is no repository to
 track it in — two options:
 
-- **Copy the two paths.** `sessions/control/` and `sessions/poll-state.json`, with `rsync`
-  or anything else. Nothing else is needed, and nothing else should come.
+- **Copy `portable/`.** With `rsync` or anything else. Nothing else is needed, and nothing
+  else should come.
 - **Point `state.root` at a tracked directory** — the same "dev box repo" pattern the
   [CLI config](/config/cli/#where-the-file-is-found) already supports. Note that
   `state.root` does **not** expand `~`.
@@ -278,15 +260,34 @@ Worth knowing before you adopt it:
 1. **A dirty working tree while the daemon runs.** Every accepted control keyword and
    every poll cycle writes a tracked file, so `git status` in that repository is rarely
    clean. Commit at hand-off, not continuously.
-2. **Hand-resolved conflicts if two machines run at once.** `poll-state.json` is one JSON
-   object; two daemons polling the same repos will conflict in it. The intended shape is
-   one active machine at a time — that is what a hand-off is. If you do collide, taking
-   either side is safe: the worst case is a re-baselined thread.
+2. **Hand-resolved conflicts if two machines run at once.** Both would write the record of
+   any work item they *both* touched. The intended shape is one active machine at a time —
+   that is what a hand-off is. If you do collide, taking either side is safe: the worst
+   case is a re-baselined thread.
+
+### Upgrading from the pre-issue-128 layout
+
+State used to live in `<root>/sessions/` (session records), `<root>/sessions/control/`
+(control records) and one `<root>/sessions/poll-state.json`. Nothing is lost on upgrade:
+when a work item's new record has no such section yet, the-loop reads the old location
+once and writes it forward, so no watched thread is re-baselined and nothing armed is
+forgotten. Writes only ever go to the new layout, so each work item converges the first
+time it is touched. Delete `<root>/sessions/` once `the-loop sessions list` and
+`the-loop events` look right.
+
+While both trees exist you may see a record like `{"ref": …, "sealed": true}`, or a
+section written as `null`. That is a work item whose state the-loop ended deliberately,
+marked so the old tree cannot bring it back; the markers disappear with the old tree.
+
+The `polling.stateFile` option is gone with it — the ledger is a directory now, not a
+file. A config that still sets it is refused loudly rather than ignored; run
+[`the-loop migrate-config`](/cli/commands/migrate-config) (or
+`/the-loop:upgrade-the-loop`).
 
 ## What must never be carried
 
-The **session registry** — `<root>/sessions/<slug>.json` — is the one file where copying
-is worse than losing.
+The **session registry** — `<root>/local/<slug>.json` — is the one file where copying is
+worse than losing.
 
 A session record is a handle to a conversation and a directory on the machine that made
 it. On another machine the conversation id resumes nothing and the `cwd` may not exist.
@@ -307,28 +308,28 @@ resume handle to a conversation. Neither belongs in a repository, whoever can re
 Tracking state in a repository is publishing it, and — if that repository accepts pull
 requests — accepting proposals about it. Both are bounded, and worth stating plainly.
 
-**What the portable files disclose.** A control record holds a work-item ref, one of four
-fixed keywords, a GitHub login and a timestamp. Poll state holds refs, comment ids and
-timestamps. All of it is already visible on the ticket it describes. The file that would
-disclose something new — the session record, with its absolute paths and resume handle —
-is on the local side of the line, for that reason among others.
+**What `portable/` discloses.** A work-item record holds a ref, one of four fixed
+keywords, a GitHub login, timestamps and comment ids. All of it is already visible on the
+ticket it describes. The file that would disclose something new — the session record, with
+its absolute paths and resume handle — is on the local side of the line, for that reason
+among others.
 
-**A tracked control record is an input.** `start_requested` gates autonomous spawning, so
+**A tracked control section is an input.** `start_requested` gates autonomous spawning, so
 a forged `start` merged into a repository the daemon later pulls is an attempt to arm a
 work item without commenting on it. Three things bound that:
 
 1. **The record only arms.** The [auto-execute label](/config/cli/routing-options#autoexecutelabel)
    is still required and [`spawnOnUnmatched`](/config/cli/routing-options#spawnonunmatched)
    still governs — and applying a label needs write access to the repository.
-2. **The diff is loud.** A pull request touching `.the-loop/sessions/` is a configuration
+2. **The diff is loud.** A pull request touching `.the-loop/portable/` is a configuration
    change; review it like one, the way `reviews.critics[]` is reviewed as executable
    config.
 3. **Choose the repository accordingly.** Track state where only you can push. A
    repository that accepts third-party pull requests means arming records are proposable
    by strangers; the label gate is what keeps that insufficient rather than dangerous.
 
-**Fail-closed behaviour is unchanged.** A missing or unreadable control record reads as
-"nothing recorded", and the daemon declines to spawn on its own.
+**Fail-closed behaviour is unchanged.** A missing or unreadable record reads as "nothing
+recorded", and the daemon declines to spawn on its own.
 
 ## Next
 
