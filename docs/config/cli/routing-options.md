@@ -173,11 +173,31 @@ human or CI runs `the-loop graph advance`.
 ### `graph.specDir`
 
 - **Type:** `string`
-- **Default:** `docs/specs`
+- **Default:** `""` (unset — each repository's own `workflow.specDir` is used)
+- **Related:** [decision-044](/decisions/decision-044) · [harness config](/config/harness-config)
 
-Where specs live in the session's checkout — match `workflow.specDir` in the repository's
-[harness config](/config/harness-config). A work item with no directory here is skipped,
-which is what makes the coupling inert for repositories that keep no specs.
+An **optional override**. Leave it unset: where a repository keeps its specs is that
+repository's to declare, so the daemon reads `workflow.specDir` from the work item's own
+checkout (defaulting to `docs/specs`) — after `_checkout_belongs_to` has proved via the
+`origin` remote that the checkout really is that repository's.
+
+That is the only thing that works here. This is **one flat value** for every watched
+repository, and the daemon is meant to watch several, so two repositories with different
+layouts cannot both be served by a value set here. Setting it overrides *every* watched
+repository; it exists for a checkout that carries no harness config at all.
+
+A work item with no directory under the resolved path is skipped, which is what makes the
+coupling inert for repositories that keep no specs. The skip is recorded as
+`graph.skipped` in [`the-loop events`](/cli/commands/events) with the resolved directory
+and the reason — a work item that is labelled, armed and spawned but whose graph never
+moves is answerable from the event log.
+
+::: warning This used to default to `docs/specs` (fixed in issue-123)
+And because the value reaches the graph runtime as an explicit override, that default
+meant a watched repository's `workflow.specDir` was **never** honoured: a repository that
+kept its specs elsewhere had its graph silently skipped while its deliveries still
+counted as successful. If you set this key to work around that, unset it.
+:::
 
 ## Where sessions run
 

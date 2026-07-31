@@ -23,6 +23,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
 
+from .. import harness_config
 from ..harness_config import load as load_harness_config
 
 logger = logging.getLogger("the-loop.graph")
@@ -37,10 +38,18 @@ def build_runtime(
 ):
     """A runtime for ``root``, configured from the harness and CLI configs.
 
-    ``spec_root`` and ``authorized_users`` override what the files say. The
-    daemon passes both: it has already parsed its own CLI config (honouring
-    ``--config``), so re-reading the default path could disagree with the
-    config the process is actually running.
+    Both overrides exist, for **different** reasons — a distinction worth keeping
+    apart, because stating one reason for both is what produced issue-123:
+
+    * ``authorized_users`` is a **CLI-config** value. The daemon has already parsed its
+      own CLI config, honouring ``--config``, so re-reading the default path here could
+      disagree with the config the process is actually running. It passes what it parsed.
+    * ``spec_root`` is a **harness-config** value, read from ``root`` itself. There is no
+      ``--config`` ambiguity to protect against, so the repository's own
+      ``workflow.specDir`` is the answer unless a caller deliberately overrides it —
+      ``webhooks.ghWebhook.routing.graph.specDir``, for a checkout that carries no harness
+      config. Until issue-123 that key was never unset, so this fall-through was
+      unreachable on the daemon path and no watched repository's value was ever honoured.
     """
     from .runtime import Runtime
 
@@ -67,6 +76,6 @@ def build_runtime(
             config["authorizedUsers"] = routing.get("authorizedUsers") or []
     return Runtime(
         root,
-        spec_root=str(spec_root or workflow.get("specDir", "docs/specs")),
+        spec_root=str(spec_root or harness_config.spec_dir(harness)),
         config=config,
     )

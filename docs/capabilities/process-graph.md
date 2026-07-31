@@ -121,6 +121,22 @@ There are exactly **two** runtime concepts and **one** contract between them.
   the work item has no spec directory, or when `control.requireStartCommand` holds and
   nobody has started the item. **No input can move a work item forward**; inputs can only
   cause a move not to happen.
+- **Where the specs are is the work item's own repository's to declare** (issue-123,
+  [decision-044](../decisions/decision-044.md)). On the ingress path the coupling SHALL
+  resolve the spec directory from the checkout's `workflow.specDir` (default
+  `docs/specs`), with `routing.graph.specDir` left as a deliberate override for a checkout
+  that carries no harness config — not, as before, as a machine-scoped default that
+  silently governed every watched repository. It SHALL resolve that directory **once** and
+  use the same value for the skip decision and for the runtime it builds, so the directory
+  gated on and the directory `graph-state.json` is written into cannot drift apart.
+- That read SHALL happen only **after** `_checkout_belongs_to` has proved via the `origin`
+  remote that the directory is the work item's own repository, and a declared value that
+  is absolute or resolves outside the checkout SHALL be refused — a value read from a
+  repository must not select a write target elsewhere on the operator's machine.
+- A skip for want of a spec directory SHALL be recorded as `graph.skipped` in the event
+  log (`work_item`, `action`, `reason`, `spec_dir`). A work item that is labelled, armed
+  and spawned but whose graph never moves is a question `the-loop events` must be able to
+  answer; at `logger.debug` it could not.
 - A chain's routing outcome SHALL come from the last hook that declared one explicitly,
   whether or not that hook blocked. A gate that classifies a review returns `pass`
   *carrying* its verdict, so reading the outcome only from a blocking result discarded it
@@ -154,5 +170,6 @@ There are exactly **two** runtime concepts and **one** contract between them.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-123 | The daemon stopped taking `specDir` from the operator's machine: `routing.graph.specDir` defaults to unset, so the work item's own `workflow.specDir` wins; the gate and the runtime resolve one value; the checkout's ownership is proved before its config is read; an escaping value is refused; and the skip is recorded as `graph.skipped` instead of a debug line | [spec](../specs/issue-123/), [decision-044](../decisions/decision-044.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/123) |
 | issue-113 | Wired the ingress to the graph: `Runtime.start()`, the `GraphLink` seam in the shared dispatcher, `HookContext.event` finally written, the `routing.graph` config block, and the chain-outcome fix that lets a passing gate's verdict reach its edges | [spec](../specs/issue-113/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/113) |
 | issue-109 | Established the capability: the two-concept graph (node + hook), the `HookResult` contract, the shipped PDLC graph, ten hooks, configurable integration transports, `the-loop check`/`graph`, and the forced-transition escape hatch | [spec](../specs/issue-109/), [decision-041](../decisions/decision-041.md), [decision-042](../decisions/decision-042.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/109) |

@@ -1,14 +1,23 @@
-"""The ingress → process-graph coupling (issue-113).
+"""The ingress → process-graph coupling (issue-113, issue-123).
 
 The seam these tests pin down is a *bridge*, so most of them are about what it
 refuses to do: skip when the work item has no spec, skip when nobody started it,
 and — above all — never let a graph failure cost an event delivery.
+
+Issue-123 added the other half: *where* it looks for that spec. The directory is
+the work item's own repository's to declare (`workflow.specDir`, decision-044),
+with the CLI key left as a deliberate override — so these also pin which source
+wins, that the gate and the runtime resolve one value, and that a value read from
+a checkout cannot point outside it.
 """
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
+from the_loop import eventlog
 from the_loop.control import ControlConfig, ControlStore
 from the_loop.graphlink import GraphLink, GraphLinkConfig, comments_from, spec_id_for
 from the_loop.sessions import WorkItemRef
@@ -24,6 +33,10 @@ class _FakeRuntime:
     def __init__(self, raises: bool = False):
         self.started = []
         self.advanced = []
+        #: ``(cwd, spec_dir)`` per runtime the link built — the seam issue-123
+        #: pins: the directory handed to the runtime must be the one the skip
+        #: decision was made on.
+        self.built = []
         self.raises = raises
 
     def start(self, work_item_id, ref=""):
@@ -65,8 +78,36 @@ def repo(tmp_path):
 def _link(repo, runtime, **cfg):
     config = GraphLinkConfig(**{"enabled": True, **cfg})
     link = GraphLink(config, control=ControlConfig(enabled=False))
-    link._build_runtime = lambda cwd: runtime  # noqa: SLF001 — test seam
+
+    def _build(cwd, spec_dir):
+        runtime.built.append((cwd, spec_dir))
+        return runtime
+
+    link._build_runtime = _build  # noqa: SLF001 — test seam
     return link
+
+
+def _harness_config(root, spec_dir):
+    """Give ``root`` a harness config declaring ``workflow.specDir``."""
+    directory = root / ".the-loop"
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "harness-config.yaml").write_text(
+        f"workflow:\n  specDir: {spec_dir}\n", encoding="utf-8"
+    )
+    return root
+
+
+def _events(tmp_path):
+    """Configure the module-level event log at a fresh file and return its path."""
+    path = tmp_path / "events.jsonl"
+    eventlog.configure(source="test", path=path)
+    return path
+
+
+def _records(path):
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text().splitlines() if line]
 
 
 def _comment_event(body="looks good", author="octocat"):
@@ -187,7 +228,7 @@ def test_an_item_nobody_started_is_skipped(repo):
         control=ControlConfig(enabled=True, require_start_command=True),
         control_store=ControlStore(repo / "control.json"),
     )
-    link._build_runtime = lambda cwd: runtime  # noqa: SLF001
+    link._build_runtime = lambda cwd, spec_dir: runtime  # noqa: SLF001
     link.on_spawn(REF, str(repo))
     link.on_event(REF, str(repo), _comment_event())
     assert runtime.started == [] and runtime.advanced == []
@@ -202,7 +243,7 @@ def test_a_started_item_is_coupled(repo):
         control=ControlConfig(enabled=True, require_start_command=True),
         control_store=store,
     )
-    link._build_runtime = lambda cwd: runtime  # noqa: SLF001
+    link._build_runtime = lambda cwd, spec_dir: runtime  # noqa: SLF001
     link.on_spawn(REF, str(repo))
     assert runtime.started == [("issue-113", REF.ref)]
 
@@ -265,6 +306,14 @@ def test_routing_config_parses_the_graph_block():
 
 def test_the_graph_block_defaults_to_enabled():
     assert RoutingConfig.from_mapping({}, None).graph.enabled is True
+
+
+@pytest.mark.parametrize("data", [{}, {"graph": {}}, {"graph": {"specDir": None}}])
+def test_the_graph_block_leaves_spec_dir_unset_by_default(data):
+    """R1.3 — an always-set default is what made the repository's value
+    unreachable: `build_runtime` treats an explicit spec_root as an override, so
+    a non-empty default meant `workflow.specDir` was never consulted."""
+    assert RoutingConfig.from_mapping(data, None).graph.spec_dir == ""
 
 
 # -- dispatcher call sites (T6) --------------------------------------------------
@@ -361,3 +410,187 @@ def test_a_directory_that_is_not_a_checkout_is_skipped(tmp_path):
     _link(tmp_path, runtime).on_spawn(REF, str(tmp_path))
 
     assert runtime.started == []
+
+
+# -- where the specs are: the repository decides (issue-123) ---------------------
+
+
+def test_the_repositorys_spec_dir_is_honoured(tmp_path):
+    """R1.1 — a daemon watches N repositories and cannot hold one layout for all
+    of them; where a repository keeps its specs is its own to declare
+    (decision-044)."""
+    _git_repo(tmp_path)
+    _harness_config(tmp_path, "specs")
+    (tmp_path / "specs" / "issue-113").mkdir(parents=True)
+    runtime = _FakeRuntime()
+    link = _link(tmp_path, runtime)
+
+    link.on_spawn(REF, str(tmp_path))
+
+    assert runtime.started == [("issue-113", REF.ref)]
+    assert runtime.built == [(str(tmp_path), "specs")]
+
+
+def test_a_checkout_with_no_harness_config_uses_the_default(repo):
+    """R1.2 — the overwhelmingly common case must not move."""
+    runtime = _FakeRuntime()
+    link = _link(repo, runtime)
+
+    link.on_spawn(REF, str(repo))
+
+    assert runtime.started == [("issue-113", REF.ref)]
+    assert runtime.built == [(str(repo), "docs/specs")]
+
+
+def test_the_cli_key_overrides_the_repositorys_value(tmp_path):
+    """R1.3 — the key survives as a deliberate escape hatch (a checkout with no
+    harness config whose specs are elsewhere), not as a silent default."""
+    _git_repo(tmp_path)
+    _harness_config(tmp_path, "specs")
+    (tmp_path / "ops-specs" / "issue-113").mkdir(parents=True)
+    runtime = _FakeRuntime()
+    link = _link(tmp_path, runtime, spec_dir="ops-specs")
+
+    link.on_spawn(REF, str(tmp_path))
+
+    assert runtime.started == [("issue-113", REF.ref)]
+    assert runtime.built == [(str(tmp_path), "ops-specs")]
+
+
+def test_the_gate_reads_the_same_directory_the_runtime_will(tmp_path):
+    """R2.1 — the skip decision and the runtime resolve **one** value. A repo
+    that declares `specs` and still has an old `docs/specs` must not be gated on
+    the stale one and then written to the declared one."""
+    _git_repo(tmp_path)
+    _harness_config(tmp_path, "specs")
+    (tmp_path / "docs" / "specs" / "issue-113").mkdir(parents=True)
+    runtime = _FakeRuntime()
+    link = _link(tmp_path, runtime)
+
+    link.on_spawn(REF, str(tmp_path))
+
+    assert runtime.started == [], "the gate must use the declared directory"
+    assert runtime.built == []
+
+
+def test_an_unparseable_harness_config_falls_back_to_the_default(repo):
+    """A repository someone is halfway through editing still gets its graph
+    driven — `harness_config.load` degrades to `{}` and the default applies."""
+    (repo / ".the-loop").mkdir(parents=True, exist_ok=True)
+    (repo / ".the-loop" / "harness-config.yaml").write_text("workflow: [unclosed\n")
+    runtime = _FakeRuntime()
+    link = _link(repo, runtime)
+
+    link.on_spawn(REF, str(repo))
+
+    assert runtime.built == [(str(repo), "docs/specs")]
+
+
+@pytest.mark.parametrize("declared", ["../elsewhere", "/etc", "docs/../../escape"])
+def test_a_spec_dir_that_escapes_the_checkout_is_refused(tmp_path, declared):
+    """R4.3 — the value now comes from a repository, so it must not be able to
+    select a write target elsewhere on the operator's machine."""
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    _git_repo(checkout)
+    _harness_config(checkout, declared)
+    (tmp_path / "elsewhere" / "issue-113").mkdir(parents=True)
+    (tmp_path / "escape" / "issue-113").mkdir(parents=True)
+    events = _events(tmp_path)
+    runtime = _FakeRuntime()
+    link = _link(checkout, runtime)
+
+    link.on_spawn(REF, str(checkout))
+
+    assert runtime.started == [] and runtime.built == []
+    skipped = [r for r in _records(events) if r["event"] == "graph.skipped"]
+    assert [r["reason"] for r in skipped] == ["spec-dir-outside-checkout"]
+    assert [r["spec_dir"] for r in skipped] == [declared], (
+        "the record must name the refused value — a refusal whose value the "
+        "operator cannot see is one they cannot fix"
+    )
+
+
+def test_a_foreign_checkouts_harness_config_is_never_read(tmp_path, monkeypatch):
+    """R4.1/R4.2 — ownership is proved via the `origin` remote *before* anything
+    in the checkout is read. Resolving specDir from a directory the daemon has
+    not proved belongs to the work item would reopen the ⟵ direction
+    decision-044 closes."""
+    from the_loop import graphlink as graphlink_mod
+
+    _git_repo(tmp_path, origin="https://github.com/someone-else/other.git")
+    _harness_config(tmp_path, "specs")
+    (tmp_path / "specs" / "issue-113").mkdir(parents=True)
+    reads = []
+    monkeypatch.setattr(
+        graphlink_mod.harness_config,
+        "load",
+        lambda root: reads.append(root) or {},
+    )
+    runtime = _FakeRuntime()
+
+    _link(tmp_path, runtime).on_spawn(REF, str(tmp_path))
+
+    assert runtime.started == []
+    assert reads == [], "a foreign checkout's harness config must not be read"
+
+
+# -- a skipped work item is visible in `the-loop events` (issue-123) -------------
+
+
+def test_a_skipped_work_item_is_recorded_in_the_event_log(tmp_path):
+    """R3.1 — a work item that is labelled, armed and spawned but whose graph
+    never moves is worth one line in `the-loop events`. At `logger.debug` it was
+    invisible while the delivery still counted as a success."""
+    _git_repo(tmp_path)
+    events = _events(tmp_path)
+    runtime = _FakeRuntime()
+
+    _link(tmp_path, runtime).on_spawn(REF, str(tmp_path))
+
+    skipped = [r for r in _records(events) if r["event"] == "graph.skipped"]
+    assert len(skipped) == 1
+    assert skipped[0]["work_item"] == REF.ref
+    assert skipped[0]["action"] == "start"
+    assert skipped[0]["reason"] == "no-spec-dir"
+    assert skipped[0]["spec_dir"] == "docs/specs"
+    assert skipped[0]["level"] != "debug", (
+        "the record must be visible in `the-loop events` without a flag"
+    )
+
+
+def test_the_skip_record_names_the_action_that_was_refused(tmp_path):
+    """`start` and `advance` fail for different reasons in the operator's head;
+    the record has to say which one did not happen."""
+    _git_repo(tmp_path)
+    events = _events(tmp_path)
+    runtime = _FakeRuntime()
+
+    _link(tmp_path, runtime).on_event(REF, str(tmp_path), _comment_event())
+
+    assert [r["action"] for r in _records(events) if r["event"] == "graph.skipped"] == [
+        "advance"
+    ]
+
+
+def test_graph_skipped_is_in_the_event_catalog():
+    """R3.2 — `the-loop events --types` is what agents read to know what exists."""
+    assert "graph.skipped" in eventlog.EVENT_TYPES
+
+
+def test_the_quiet_skip_paths_stay_quiet(repo, tmp_path):
+    """Design C6 — a record per delivery for a coupling the operator switched off
+    (or for an item the dispatcher already logged as `awaiting-start`) is noise,
+    and noise is what makes a log unread."""
+    events = _events(tmp_path)
+    runtime = _FakeRuntime()
+
+    _link(repo, runtime, enabled=False).on_spawn(REF, str(repo))
+    GraphLink(
+        GraphLinkConfig(enabled=True),
+        control=ControlConfig(enabled=True, require_start_command=True),
+        control_store=ControlStore(repo / "control.json"),
+    ).on_spawn(REF, str(repo))
+    _link(repo, runtime).on_spawn(WorkItemRef.parse("jira:acme/proj#42"), str(repo))
+
+    assert [r for r in _records(events) if r["event"] == "graph.skipped"] == []

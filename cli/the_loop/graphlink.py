@@ -39,7 +39,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
-from . import eventlog
+from . import eventlog, harness_config
 from .control import ControlConfig, ControlStore
 from .sessions import WorkItemRef
 
@@ -64,17 +64,30 @@ class GraphLinkConfig:
     item fixes. It stays configurable because an operator who does not keep
     specs in the repo gets nothing from the coupling — though for them it is
     already inert, since a work item with no spec directory is skipped.
+
+    ``spec_dir`` defaults to **unset**, and that is the whole of issue-123. It
+    used to default to ``docs/specs``, which was never merely a default: it is
+    passed to ``build_runtime`` as an explicit ``spec_root``, and an explicit
+    ``spec_root`` overrides the repository's own ``workflow.specDir``. Always
+    being set therefore meant *never* honouring a watched repository's value —
+    a repo that kept its specs elsewhere had its graph silently skipped, on one
+    flat value the operator could not vary per repository (decision-032: the
+    daemon watches several). Empty means "the repository decides"; a non-empty
+    value is a deliberate override for a checkout that carries no harness
+    config at all.
     """
 
     enabled: bool = True
-    spec_dir: str = "docs/specs"
+    spec_dir: str = ""
 
     @classmethod
     def from_mapping(cls, data: Optional[dict]) -> "GraphLinkConfig":
         data = data or {}
         return cls(
             enabled=bool(data.get("enabled", True)),
-            spec_dir=str(data.get("specDir", "docs/specs")),
+            # `or ""` rather than a default, so an explicit `specDir: null` reads
+            # as unset instead of as the string "None".
+            spec_dir=str(data.get("specDir") or ""),
         )
 
 
@@ -111,6 +124,33 @@ def _repo_slug(remote_url: str) -> str:
     if len(parts) < 2:
         return ""
     return "/".join(parts[-2:]).lower()
+
+
+def _is_contained(root: Path, spec_dir: str) -> bool:
+    """Whether ``root / spec_dir`` stays inside ``root`` (issue-123 R4.3).
+
+    ``spec_dir`` now comes from a repository rather than from the operator, so
+    an absolute or ``../``-escaping value would let a checkout name a write
+    target elsewhere on the operator's machine. Only whoever can commit to the
+    work item's own repository can set it — the ownership proof runs first — but
+    "already trusted" is not a reason to hand out the whole filesystem.
+
+    Enforced on the daemon path only. ``the-loop check`` and ``the-loop graph``
+    resolve the same key from the same file and are unchanged: they run inside
+    the repository at the user's own invocation, where the value is the user's.
+
+    Fails closed on an ``OSError``: a path that cannot be resolved is not a
+    path that has been shown to be contained.
+    """
+    candidate = Path(spec_dir)
+    if candidate.is_absolute():
+        return False
+    try:
+        resolved = (root / candidate).resolve()
+        base = root.resolve()
+    except OSError:
+        return False
+    return resolved == base or base in resolved.parents
 
 
 def comments_from(routed) -> List[Dict[str, str]]:
@@ -184,7 +224,17 @@ class GraphLink:
     # -- internals --------------------------------------------------------------
 
     def _guarded(self, action: str, work_item: WorkItemRef, cwd: str, call) -> None:
-        """Run ``call`` behind every skip path, swallowing any failure."""
+        """Run ``call`` behind every skip path, swallowing any failure.
+
+        The gate order is load-bearing: ``_checkout_belongs_to`` runs **before**
+        anything reads the checkout, because resolving the spec directory reads
+        that checkout's harness config and the daemon may only do so once it has
+        proved the directory is the work item's own repository (decision-044,
+        issue-113 A6). The set of skipped work items is unchanged by the order —
+        both are pure predicates over disjoint inputs — only which reason is
+        reported when both would fire, and a foreign checkout is the more
+        important of the two.
+        """
         if not self.config.enabled:
             return
         item_id = spec_id_for(work_item)
@@ -201,29 +251,39 @@ class GraphLink:
             )
             return
         root = Path(cwd or ".")
-        if not (root / self.config.spec_dir / item_id).is_dir():
-            logger.debug(
-                "no %s/%s under %s; not %sing its graph",
-                self.config.spec_dir,
-                item_id,
-                root,
-                action,
-            )
-            return
         if not self._checkout_belongs_to(root, work_item):
             logger.warning(
-                "%s is not a checkout of %s/%s, so its %s/%s is a different "
-                "project's work item; not %sing a graph there",
+                "%s is not a checkout of %s/%s, so a work item directory there "
+                "belongs to a different project; not %sing a graph in it",
                 root,
                 work_item.owner,
                 work_item.repo,
-                self.config.spec_dir,
-                item_id,
                 action,
             )
             return
+        spec_dir = self._spec_dir(root)
+        if not _is_contained(root, spec_dir):
+            logger.warning(
+                "%s resolves its spec directory to %r, which is outside the "
+                "checkout; not %sing a graph there",
+                root,
+                spec_dir,
+                action,
+            )
+            self._skipped(action, work_item, "spec-dir-outside-checkout", spec_dir)
+            return
+        if not (root / spec_dir / item_id).is_dir():
+            logger.debug(
+                "no %s/%s under %s; not %sing its graph",
+                spec_dir,
+                item_id,
+                root,
+                action,
+            )
+            self._skipped(action, work_item, "no-spec-dir", spec_dir)
+            return
         try:
-            call(self._build_runtime(str(root)), item_id)
+            call(self._build_runtime(str(root), spec_dir), item_id)
         except Exception as exc:  # noqa: BLE001 — a graph fault must not cost a delivery
             logger.error(
                 "graph %s for %s failed: %s", action, work_item.ref, exc, exc_info=True
@@ -235,6 +295,58 @@ class GraphLink:
                 action=action,
                 error=str(exc),
             )
+
+    @staticmethod
+    def _skipped(
+        action: str, work_item: WorkItemRef, reason: str, spec_dir: str
+    ) -> None:
+        """Record a skip that would otherwise be invisible (issue-123).
+
+        A work item that is labelled, armed and spawned but whose graph never
+        moves is worth one line in ``the-loop events``: at ``logger.debug`` the
+        operator saw a successful delivery and an inert graph with nothing
+        joining the two.
+
+        Only the two spec-directory refusals record. The others already have a
+        voice: ``enabled: false`` is the operator's own switch, a non-GitHub ref
+        is not a work item the graph can name, ``_awaiting_start`` is already
+        logged by the dispatcher as ``dispatch.dropped`` with
+        ``reason: awaiting-start``, and a foreign checkout is a ``warning``.
+        """
+        eventlog.emit(
+            "graph.skipped",
+            work_item=work_item.ref,
+            action=action,
+            reason=reason,
+            spec_dir=spec_dir,
+        )
+
+    def _spec_dir(self, root: Path) -> str:
+        """Where this work item's specs live, as declared.
+
+        The repository's own ``workflow.specDir`` is the answer — that is the ⟶
+        direction decision-044 allows, and where a project keeps its specs is a
+        fact about that project's layout. ``config.spec_dir`` overrides it only
+        when the operator set it deliberately.
+
+        Returns the declared value **whether or not it is usable**; containment
+        is the caller's gate (:func:`_is_contained`), so a refused value can
+        still be named in the log and the ``graph.skipped`` record. A refusal the
+        operator cannot see the value of is a refusal they cannot fix.
+
+        Resolved **once** per call and threaded into both the ``is_dir()`` gate
+        and the runtime, so the directory the skip decision is made on and the
+        directory ``graph-state.json`` is written into cannot drift apart.
+
+        Reading the checkout is safe here and only here: the caller has already
+        proved via the ``origin`` remote that this directory is the work item's
+        own repository. ``harness_config.load`` degrades a missing, unparseable
+        or non-mapping file to ``{}``, so a repository mid-edit falls back to the
+        default rather than costing a delivery.
+        """
+        return self.config.spec_dir or harness_config.spec_dir(
+            harness_config.load(root)
+        )
 
     def _awaiting_start(self, work_item: WorkItemRef) -> bool:
         """Whether an authorized user has yet to start this item (issue-106).
@@ -287,7 +399,7 @@ class GraphLink:
             return ""
         return proc.stdout.strip() if proc.returncode == 0 else ""
 
-    def _build_runtime(self, cwd: str) -> Any:
+    def _build_runtime(self, cwd: str, spec_dir: str) -> Any:
         """The graph runtime rooted at the session's checkout.
 
         Not the daemon's cwd: with ``routing.workspace`` enabled each work item
@@ -298,6 +410,11 @@ class GraphLink:
         Imported lazily so the ingress does not pay for the graph package (and
         its yaml parse of ``pdlc.yaml``) on a path where the coupling is off.
 
+        ``spec_dir`` is the value :meth:`_spec_dir` already resolved, not the raw
+        CLI key. Passing the resolved value is what makes the gate and the
+        runtime agree on one directory (issue-123 R2.1); passing the raw key is
+        what made them disagree.
+
         ``authorized_users`` is threaded through deliberately: it is what
         ``classify-feedback`` filters comments on, and a runtime built without
         it fails closed on every human gate — the coupling would deliver the
@@ -307,6 +424,6 @@ class GraphLink:
 
         return build_runtime(
             Path(cwd),
-            spec_root=self.config.spec_dir,
+            spec_root=spec_dir,
             authorized_users=self.authorized_users,
         )

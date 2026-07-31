@@ -81,6 +81,13 @@ where no CLI config exists.
 
 Everything else in this file is read by the agent alone.
 
+`workflow.specDir` was the one of the five the daemon *claimed* to read but did not:
+`routing.graph.specDir` defaulted to `docs/specs` and reached the graph runtime as an
+explicit override, so a watched repository's value was never consulted and a repository
+that had moved its specs had its graph silently skipped. Fixed in
+[issue #123](https://github.com/MadaraUchiha-314/the-loop/issues/123) — that CLI key is
+now unset by default and is an override only.
+
 ::: tip The rule, in one line
 A repository's harness config configures work done **on that repository** — including
 when a daemon is the one doing it. It never configures the daemon itself: no checkout

@@ -39,13 +39,14 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Mapping, Optional, Tuple
 
 import yaml
 
 logger = logging.getLogger("the-loop.harness-config")
 
 __all__ = [
+    "DEFAULT_SPEC_DIR",
     "FILENAMES",
     "HarnessConfigError",
     "HarnessConfigRead",
@@ -53,7 +54,14 @@ __all__ = [
     "config_path",
     "load",
     "load_strict",
+    "spec_dir",
 ]
+
+#: Where a repository keeps its per-work-item specs when it says nothing. Expressed here
+#: rather than at each call site because ``graph/bootstrap.py`` and ``graphlink.py`` must
+#: agree on it: they resolve the same directory for the same work item, one to gate on and
+#: one to write into, and two copies of a literal is how they came to disagree (issue-123).
+DEFAULT_SPEC_DIR = "docs/specs"
 
 #: The config filename, then the pre-rename one. Expressed **once**: before issue-121
 #: three modules each carried their own copy of this fallback, which is how "which name
@@ -112,6 +120,23 @@ READS: Tuple[HarnessConfigRead, ...] = (
         "where the integration tests live is part of the repository's layout",
     ),
 )
+
+
+def spec_dir(harness: Mapping[str, Any]) -> str:
+    """``workflow.specDir`` from an already-loaded harness config, else the default.
+
+    Takes the loaded mapping rather than a root so a caller that has read the file for
+    something else — ``build_runtime`` reads ``phaseLabelPrefix`` and ``notifications``
+    from the same load — does not read it twice.
+
+    An empty or null value reads as "unset". A repository that writes ``specDir: ""`` has
+    not chosen the repository root; it has chosen nothing, and the default is the honest
+    answer.
+    """
+    workflow = harness.get("workflow") or {}
+    if not isinstance(workflow, dict):
+        return DEFAULT_SPEC_DIR
+    return str(workflow.get("specDir") or DEFAULT_SPEC_DIR)
 
 
 def config_path(root: Path) -> Optional[Path]:

@@ -222,7 +222,13 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   `classify-feedback`. The coupling lives in the dispatcher, so the poller and the
   receiver behave identically; it honours the same `control.requireStartCommand` gate the
   spawn path does; and it is best-effort — any failure is logged as `graph.link_failed`
-  and the delivery still counts. See [process-graph](process-graph.md).
+  and the delivery still counts. **Where the specs are comes from the work item's own
+  checkout** (`workflow.specDir`, default `docs/specs`), read only after the `origin`
+  remote has proved the checkout is that repository's; `routing.graph.specDir` is an
+  optional override for a checkout with no harness config, and setting it applies to every
+  watched repository. A work item skipped for want of that directory is recorded as
+  `graph.skipped` — the delivery still succeeds, so without the record an inert graph had
+  no explanation (issue-123). See [process-graph](process-graph.md).
 - All `webhooks.*` keys above live in the **CLI config** (`cli-config.yaml`, resolved
   via `--config`/env/cwd/home — see `cli/README.md`), independent of any repo's
   `.the-loop/harness-config.yaml` — the daemon is not tied to a single repo, and **no
@@ -230,8 +236,9 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   `routing.authorizedUsers` has no fallback: it must be set explicitly in the CLI
   config or the receiver fails closed (acts on no human-authored events). The rule runs
   in one direction only: the graph coupling above *does* read a work item's own checkout
-  for `workflow.phaseLabelPrefix` and `notifications`, after `_checkout_belongs_to` has
-  proved via the checkout's `origin` remote that it is that repository's.
+  for `workflow.phaseLabelPrefix`, `workflow.specDir` and `notifications`, after
+  `_checkout_belongs_to` has proved via the checkout's `origin` remote that it is that
+  repository's.
 
 ## Design
 
@@ -242,6 +249,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-123 | The graph coupling stopped sourcing a repo-scoped fact from the operator's machine: `routing.graph.specDir` became an optional override, so each watched repository's own `workflow.specDir` is honoured, and a spec-directory skip is recorded as `graph.skipped` rather than a debug line under a successful delivery | [spec](../specs/issue-123/), [decision-044](../decisions/decision-044.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/123) |
 | issue-119 | The poll path stopped swallowing a control command that predates first sight: unprocessed, authorized, unambiguous keyword comments are held back from the first-sight baseline and forwarded on the same cycle, so a labelled item whose start comment already existed actually starts | [spec](../specs/issue-119/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/119) |
 | issue-111 | The session registry treats `<root>/sessions/` as shared state: listings read only `<slug>.json` files it wrote, keeping the corrupt-entry warning meaningful | [spec](../specs/issue-111/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/111) |
 | issue-106 | Execution control: four declared keywords (`the-loop:start-execution`, …) an **authorized** user steers with, the auto-execute label demoted to *necessary but not sufficient* (`routing.control.requireStartCommand`, default on), `paused` sessions, CLI parity with the same paper trail, and one `state.root` for everything the CLI generates | [spec](../specs/issue-106/), [decision-040](../decisions/decision-040.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/106) |
