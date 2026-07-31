@@ -1,3 +1,9 @@
+## v3.0.2 (2026-07-31)
+
+### Fix
+
+- **issue-123**: honour the repository's own workflow.specDir on the daemon path (#126)
+
 ## v3.0.1 (2026-07-30)
 
 ### Fix
