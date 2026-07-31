@@ -89,6 +89,36 @@ status: in-progress          # in-progress | complete
 - **Next:** human review of the PR (the tier-3 gate).
 - **Blockers:** none.
 
+### 2026-07-31 — review question: what else should be logged?
+
+- **Phase:** needs-review
+- **Did:** @MadaraUchiha-314 asked on PR #122 whether the investigation turned up
+  anything worth logging. Went back through the trace for defects the spec's own scope
+  had set aside. Three outcomes:
+  1. **A fifth stale claim, fixed here.** `docs/capabilities/webhook-triggers.md` also
+     said the daemon *"never reads a repo's plugin config for anything"*. Same defect
+     class as the four in R2.1, missed because R2.1 enumerated `docs/cli/` and
+     `docs/config/` and this one lives under `docs/capabilities/`. In scope, one
+     paragraph, corrected in this PR rather than deferred.
+  2. **[#123](https://github.com/MadaraUchiha-314/the-loop/issues/123) — a live bug of
+     exactly the class this work item is about.** `graphlink._build_runtime` passes
+     `spec_root=self.config.spec_dir` (from `webhooks.ghWebhook.routing.graph.specDir`,
+     **CLI config**), and `build_runtime` treats an explicit `spec_root` as an override
+     of the repo's `workflow.specDir`. `GraphLinkConfig.from_mapping` always sets it, so
+     the repository's value is *never* honoured on the daemon path. A repo with
+     `workflow.specDir: specs` has its graph silently skipped at `logger.debug` while the
+     delivery still counts. The documented workaround ("match `workflow.specDir` in the
+     repository's harness config") is unfollowable: it is one flat value for N watched
+     repos. Not fixed here — this PR is deliberately no-behavioural-change, and #123 is
+     an ingress-path change that needs its own spec and tests.
+  3. **[#124](https://github.com/MadaraUchiha-314/the-loop/issues/124) — the
+     `bugfix.md` / `pdlc.yaml` mismatch** raised as a follow-up on PR #120 and never
+     actually logged. Re-confirmed still present; filed with the two options and the
+     missing parity test that is the real defect.
+- **Checkpoint/tests:** `make check` green after the doc fix; 839 passed, 1 skipped.
+- **Next:** unchanged — human review of PR #122.
+- **Blockers:** none.
+
 ## Review cycles
 
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
