@@ -27,10 +27,7 @@ Spec: docs/specs/issue-34/design.md; docs/specs/issue-94/design.md.
 
 from __future__ import annotations
 
-import json
 import logging
-import os
-import tempfile
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -41,6 +38,7 @@ from ..authz import is_authorized, is_self_authored
 from ..control import ControlConfig, ControlStore, parse_command
 from ..reload import Reloader
 from ..sessions import SessionRegistry, WorkItemRef
+from ..workitem import POLL, WorkItemStore
 from ..webhook.dispatcher import Dispatcher
 from .base import Comment, PollProvider, ProviderError, WorkItem
 
@@ -59,10 +57,14 @@ class PollConfig:
     Per-source (provider) settings live in ``sources``; a provider parses its
     own entry. Dispatch behaviour (registry dir, harness, runner, spawn policy,
     templates) is reused from ``webhooks.ghWebhook.routing``.
+
+    Where the ledger is stored is no longer one of these settings: issue-128 put
+    it under ``state.root`` with the rest of the portable state, and retired
+    ``polling.stateFile`` (a file where there is now a directory) through the
+    version-gated config migration.
     """
 
     interval_seconds: int = 60
-    state_file: str = ".the-loop/poll-state.json"
     max_retries: int = 3
     sources: List[dict] = field(default_factory=list)
 
@@ -71,19 +73,18 @@ class PollConfig:
         data = data or {}
         return cls(
             interval_seconds=int(data.get("intervalSeconds", 60)),
-            state_file=str(data.get("stateFile", ".the-loop/poll-state.json")),
             max_retries=max(1, int(data.get("maxRetries", 3))),
             sources=[dict(s) for s in (data.get("sources") or []) if s],
         )
 
 
 class PollState:
-    """Durable, atomic-write per-item retry ledger for the poller (issue-80).
+    """The poller's per-item ledger — the ``poll`` half of a work-item record.
 
-    One JSON file keyed by work-item ref. It exists so the poller is idempotent
-    across cycles *and* restarts (there is no webhook redelivery to lean on),
-    and so a *failed* spawn/forward is retried a bounded number of times instead
-    of being baselined as "processed" on the first attempt. Per ref it tracks:
+    It exists so the poller is idempotent across cycles *and* restarts (there is
+    no webhook redelivery to lean on), and so a *failed* spawn/forward is retried
+    a bounded number of times instead of being baselined as "processed" on the
+    first attempt (issue-80). Per work item it tracks:
 
     - ``seenComments`` — **resolved** comment ids (delivered *or* given up after
       the retry budget), the baseline the poller ignores. Pruned to the live
@@ -93,37 +94,52 @@ class PollState:
     - ``spawn`` — ``{attempts, gaveUp, deliveryId}`` for the presence/spawn
       retry (the presence delivery id is stored so the poller can tell an
       in-flight spawn from a failed one across cycles).
+
+    Storage moved in issue-128: one file per work item under
+    ``<state.root>/portable/``, written through
+    :class:`the_loop.workitem.WorkItemStore`, instead of a single
+    ``poll-state.json`` holding every item. Same contents, three consequences —
+    it sits beside that item's control record (both are facts about the world),
+    two machines now conflict only over an item they *both* worked, and a cycle
+    writes only the items it touched. Entries are read lazily and written back at
+    the end of a cycle; :meth:`forget` writes through immediately, because a work
+    item that ended must not be resurrected by a later flush.
     """
 
-    def __init__(self, path):
-        self.path = Path(path)
+    def __init__(self, store: WorkItemStore):
+        self.store = store
         self._items: Dict[str, dict] = {}
-        self._load()
+        self._dirty: set = set()
 
-    def _load(self) -> None:
-        try:
-            data = json.loads(self.path.read_text())
-        except FileNotFoundError:
-            return
-        except (OSError, ValueError) as exc:
-            logger.warning("ignoring unreadable poll state %s: %s", self.path, exc)
-            return
-        self._items = dict((data or {}).get("items") or {})
+    @property
+    def root(self) -> Path:
+        return self.store.root
+
+    def _read(self, ref: str) -> dict:
+        """This item's ledger, loaded on first touch. Never marks it dirty."""
+        if ref not in self._items:
+            section = self.store.section(ref, POLL)
+            if section is None:
+                return {}
+            self._items[ref] = dict(section)
+        return self._items[ref]
 
     def _item(self, ref: str) -> dict:
-        return self._items.setdefault(ref, {})
+        """The ledger to mutate — created if absent, and flushed by `save`."""
+        item = self._items.setdefault(ref, dict(self._read(ref)))
+        self._dirty.add(ref)
+        return item
 
     def is_known(self, ref: str) -> bool:
-        return ref in self._items
+        return ref in self._items or self.store.has_section(ref, POLL)
 
     def seen_comments(self, ref: str) -> set:
-        return set((self._items.get(ref) or {}).get("seenComments") or [])
+        return set(self._read(ref).get("seenComments") or [])
 
     # -- comment retry ledger ---------------------------------------------------
 
     def comment_attempts(self, ref: str, comment_id: str) -> int:
-        item = self._items.get(ref) or {}
-        return int((item.get("commentAttempts") or {}).get(comment_id, 0))
+        return int((self._read(ref).get("commentAttempts") or {}).get(comment_id, 0))
 
     def note_comment_attempt(self, ref: str, comment_id: str) -> int:
         """Record one delivery attempt for a comment; return the new count."""
@@ -151,17 +167,19 @@ class PollState:
         """First-sight baseline: mark the whole existing thread seen (the
         spawned session reads it itself), with no attempts pending."""
         ids = list(dict.fromkeys(comment_ids))[-_SEEN_COMMENTS_CAP:]
+        spawn = dict(self._read(ref).get("spawn") or {})
         self._items[ref] = {
             "seenComments": ids,
             "commentAttempts": {},
-            "spawn": (self._items.get(ref) or {}).get("spawn") or {},
+            "spawn": spawn,
             "lastPolledAt": polled_at,
         }
+        self._dirty.add(ref)
 
     # -- spawn retry ledger -----------------------------------------------------
 
     def _spawn(self, ref: str) -> dict:
-        return (self._items.get(ref) or {}).get("spawn") or {}
+        return self._read(ref).get("spawn") or {}
 
     def spawn_attempts(self, ref: str) -> int:
         return int(self._spawn(ref).get("attempts", 0))
@@ -198,9 +216,12 @@ class PollState:
 
         A **reopened** work item is then first-sight again: its thread is
         re-baselined and a fresh session spawned, instead of the item being
-        skipped forever as already-known.
+        skipped forever as already-known. Written through immediately so a later
+        `save` cannot resurrect it.
         """
         self._items.pop(ref, None)
+        self._dirty.discard(ref)
+        self.store.write_section(ref, POLL, None)
 
     # -- end of cycle -----------------------------------------------------------
 
@@ -227,19 +248,10 @@ class PollState:
         item["lastPolledAt"] = polled_at
 
     def save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(dir=str(self.path.parent), suffix=".tmp")
-        try:
-            with os.fdopen(fd, "w") as handle:
-                json.dump({"items": self._items}, handle, indent=2)
-                handle.write("\n")
-            os.replace(tmp, self.path)
-        except BaseException:
-            try:
-                os.unlink(tmp)
-            except FileNotFoundError:
-                pass
-            raise
+        """Flush every item this cycle touched, each into its own record."""
+        for ref in sorted(self._dirty):
+            self.store.write_section(ref, POLL, self._items[ref])
+        self._dirty.clear()
 
 
 @dataclass

@@ -19,7 +19,7 @@ from the_loop.harness.base import DispatchResult
 from the_loop.poller import PollConfig, Poller, PollState
 from the_loop.poller.base import Comment, PollProvider, WorkItem
 from the_loop.sessions import Session, SessionRegistry, WorkItemRef
-from the_loop.state import control_dir_for
+from the_loop.workitem import WorkItemStore
 from the_loop.trust import TrustResult
 from the_loop.webhook.dispatcher import Dispatcher, RoutingConfig
 from the_loop.webhook.router import RoutedEvent, extract_work_items
@@ -75,10 +75,11 @@ def _wait(predicate, timeout=5.0):
 @pytest.fixture
 def setup(tmp_path):
     """A dispatcher wired the way the daemon wires it, with control on."""
-    registry = SessionRegistry(tmp_path / "sessions")
+    registry = SessionRegistry(tmp_path / "local")
     adapter = FakeAdapter()
     config = RoutingConfig(
-        registry_dir=str(tmp_path / "sessions"),
+        registry_dir=str(tmp_path / "local"),
+        portable_dir=str(tmp_path / "portable"),
         spawn_on_unmatched="labeled",
         auto_execute_label=LABEL,
         spawn_workdir=str(tmp_path),
@@ -86,7 +87,7 @@ def setup(tmp_path):
         authorized_users=["octocat"],
     )
     dispatcher = _dispatcher(registry, adapter, config)
-    store = ControlStore(control_dir_for(str(tmp_path / "sessions")))
+    store = ControlStore(str(tmp_path / "portable"))
     yield dispatcher, registry, adapter, store
     dispatcher.stop(timeout=5)
 
@@ -363,7 +364,8 @@ def test_the_pre_106_behaviour_is_one_config_flag_away(tmp_path):
         registry,
         adapter,
         RoutingConfig(
-            registry_dir=str(tmp_path / "sessions"),
+            registry_dir=str(tmp_path / "local"),
+            portable_dir=str(tmp_path / "portable"),
             spawn_on_unmatched="labeled",
             auto_execute_label=LABEL,
             spawn_workdir=str(tmp_path),
@@ -390,7 +392,8 @@ def test_always_mode_still_waits_for_a_start(tmp_path):
         registry,
         adapter,
         RoutingConfig(
-            registry_dir=str(tmp_path / "sessions"),
+            registry_dir=str(tmp_path / "local"),
+            portable_dir=str(tmp_path / "portable"),
             spawn_on_unmatched="always",
             spawn_workdir=str(tmp_path),
         ),
@@ -571,7 +574,8 @@ def test_control_disabled_forwards_the_keyword_as_a_plain_comment(tmp_path):
         registry,
         adapter,
         RoutingConfig(
-            registry_dir=str(tmp_path / "sessions"),
+            registry_dir=str(tmp_path / "local"),
+            portable_dir=str(tmp_path / "portable"),
             control=ControlConfig(enabled=False),
             authorized_users=["octocat"],
         ),
@@ -629,8 +633,8 @@ def _poller(tmp_path, dispatcher, provider):
         providers=[provider],
         registry=dispatcher.registry,
         dispatcher=dispatcher,
-        config=PollConfig(state_file=str(tmp_path / "poll-state.json")),
-        state=PollState(tmp_path / "poll-state.json"),
+        config=PollConfig(),
+        state=PollState(WorkItemStore(tmp_path / "portable")),
         authorized_users=["octocat"],
     )
 

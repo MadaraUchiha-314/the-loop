@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [046](decision-046.md) | State is organised by portability — facts about the work travel; handles to a machine do not | proposed | 2026-07-31 |
 | [045](decision-045.md) | `produces` names an artifact, not a filename — several accepted names, exactly one present | proposed | 2026-07-31 |
 | [044](decision-044.md) | A repository's harness config configures work on that repository, never the daemon itself | proposed | 2026-07-30 |
 | [043](decision-043.md) | A critic is a declared executable the CLI spawns; the harness keeps the loop | proposed | 2026-07-29 |

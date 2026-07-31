@@ -56,9 +56,10 @@ the projects the-loop is run on.
   `routing.control.requireStartCommand` (issue-106): its default demotes the
   auto-execute label to *necessary but not sufficient*, so upgrade asks whether to keep
   the previous behaviour (`false`) or adopt the gate (`true`). Related state moves are
-  offered, never performed silently: a pre-issue-106 `.the-loop/poll-state.json` may be
-  moved under `<state.root>/sessions/`, but the daemon keeps using a legacy file that
-  exists, because an empty state file would re-forward every watched thread.
+  offered, never performed silently: an older state layout (`.the-loop/poll-state.json`,
+  then `<state.root>/sessions/`) may be tidied away, but the daemon keeps READING what is
+  there until each work item has been written forward, because an empty ledger would
+  re-forward every watched thread (issue-106, issue-128).
 - A CLI config that lives in the operator's **home directory** is outside upgrade's
   reach (it reconciles project files). Upgrade SHALL say so and print what to paste,
   and the runtime SHALL stay correct for an un-migrated config — every key added this

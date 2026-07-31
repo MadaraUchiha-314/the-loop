@@ -83,4 +83,6 @@ is take its *own* settings from a repository. That direction rule is
 - **[Getting started](/cli/getting-started)** — from nothing to a work item an agent picks
   up by itself.
 - **[Concepts](/cli/concepts)** — the model the command pages assume.
+- **[State on disk](/cli/state)** — what it writes, what is inside, and what you can carry
+  to another machine.
 - **[Commands](/cli/commands/)** — the full reference.

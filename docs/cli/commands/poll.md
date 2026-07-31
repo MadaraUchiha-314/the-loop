@@ -22,7 +22,7 @@ adapters and prompt templates are all reused unchanged.
 | `--interval` | [`polling.intervalSeconds`](/config/cli/polling-options#intervalseconds) | Seconds between cycles. |
 | `--once` | off | Run a single cycle and exit — for a cron job or systemd timer. |
 | `--max-retries` | [`polling.maxRetries`](/config/cli/polling-options#maxretries) | Per-event delivery attempts before giving up. |
-| `--state-file` | [`polling.stateFile`](/config/cli/polling-options#statefile) | Durable cross-poll, cross-restart comment dedup. |
+| `--state-dir` | `<state.root>/portable` | Portable work-item records — the cross-poll, cross-restart comment dedup lives in each item's `poll` section ([state on disk](/cli/state)). |
 | `--pidfile` | `<state.root>/poll.pid` | Where the PID is recorded, for `stop`. |
 
 Without `--once` it loops until `poll stop` (or SIGINT/SIGTERM), writing a pidfile like the

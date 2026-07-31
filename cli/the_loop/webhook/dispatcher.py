@@ -37,7 +37,7 @@ from ..reactions import (
 )
 from ..runner import TmuxRunner
 from ..sessions import Session, SessionRegistry, WorkItemRef
-from ..state import StateLayout, control_dir_for
+from ..state import LegacyLayout, StateLayout, legacy_layout
 from ..trust import TrustConfig, TrustResult, is_too_broad
 from ..workspace import RepoTarget, Workspace, WorkspaceError, repo_target_from_payload
 from .router import Deduper, RoutedEvent, event_actor, event_body, event_carries_label
@@ -213,7 +213,7 @@ class RoutingConfig:
     """Python-side mirror of ``webhooks.ghWebhook.routing`` (see config schema)."""
 
     enabled: bool = False
-    registry_dir: str = ".the-loop/sessions"
+    registry_dir: str = ".the-loop/local"
     default_harness: str = "claude"
     runner: str = "process"  # process | tmux (issue-32, decision-021)
     tmux: TmuxConfig = field(default_factory=TmuxConfig)
@@ -243,6 +243,11 @@ class RoutingConfig:
     control: ControlConfig = field(default_factory=ControlConfig)
     # Whether dispatch also drives the process graph (issue-113).
     graph: GraphLinkConfig = field(default_factory=GraphLinkConfig)
+    # Where the portable half of each work item's state lives (issue-128) —
+    # derived from `state.root`, never from `registryDir`: the two trees are
+    # deliberately separate now, one tracked in git and one never.
+    portable_dir: str = ".the-loop/portable"
+    legacy: Optional[LegacyLayout] = None
 
     @classmethod
     def from_mapping(
@@ -250,14 +255,17 @@ class RoutingConfig:
     ) -> "RoutingConfig":
         """Build from the ``routing`` mapping; ``layout`` supplies path defaults.
 
-        ``registryDir`` unset falls back to ``<state.root>/sessions`` (issue-106),
-        which with the default root is the pre-issue-106 default verbatim.
+        ``registryDir`` unset falls back to ``<state.root>/local`` (issue-128):
+        session records are the machine-local half of a work item's state. The
+        portable half is not configurable per-routing — it follows ``state.root``.
         """
         data = data or {}
         layout = layout or StateLayout()
         return cls(
             enabled=bool(data.get("enabled", False)),
-            registry_dir=str(data.get("registryDir") or layout.sessions_dir),
+            registry_dir=str(data.get("registryDir") or layout.local_dir),
+            portable_dir=layout.portable_dir,
+            legacy=legacy_layout(layout),
             default_harness=str(data.get("defaultHarness", "claude")),
             runner=str(data.get("runner", "process")),
             tmux=TmuxConfig.from_mapping(data.get("tmux") or {}),
@@ -398,10 +406,11 @@ class Dispatcher:
         self.registry = registry
         self.adapters = adapters
         self.config = config or RoutingConfig()
-        # Control records live beside the sessions they steer — derived from the
-        # registry's own root, so a relocated registry takes them with it.
+        # Control records are the portable half of a work item's state (issue-128),
+        # so they follow `state.root` rather than the registry: a relocated
+        # registry moves the machine-local handles, not the facts about the work.
         self.control_store = control_store or ControlStore(
-            control_dir_for(str(registry.root))
+            self.config.portable_dir, legacy=self.config.legacy
         )
         # Built unconditionally: a registry may hold tmux-mode sessions even
         # when config.runner is "process" (the session's recorded runner wins).

@@ -40,7 +40,8 @@ from ..poller import (
     Reloader,
     build_provider,
 )
-from ..state import StateLayout, layout_from_config, resolve_poll_state_path
+from ..state import StateLayout, layout_from_config, legacy_layout
+from ..workitem import WorkItemStore
 
 logger = logging.getLogger("the-loop.poll")
 
@@ -89,13 +90,14 @@ class PollCommand(Command):
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         # Path defaults come from `state.root` (issue-106) and are computed here,
-        # not at import: `--config` is resolved just before this runs. The poll
-        # state keeps its pre-issue-106 location when that is the only one on
-        # disk — adopting an empty new file would re-forward every thread.
+        # not at import: `--config` is resolved just before this runs. The ledger
+        # lives with the rest of the portable state (issue-128); a pre-issue-128
+        # location is still READ per work item, so an upgrade never re-forwards a
+        # thread it has already seen.
         layout = _state_layout()
         defaults = {
             **_DEFAULTS,
-            "stateFile": resolve_poll_state_path("", layout),
+            "stateDir": layout.portable_dir,
             "pidfile": str(Path(layout.root) / "poll.pid"),
             **_load_polling_config(),
         }
@@ -115,9 +117,9 @@ class PollCommand(Command):
             help="Run a single poll cycle and exit (useful under cron/systemd).",
         )
         start.add_argument(
-            "--state-file",
-            default=str(defaults["stateFile"]),
-            help="Durable cross-poll comment-dedup state.",
+            "--state-dir",
+            default=str(defaults["stateDir"]),
+            help="Portable work-item records (cross-poll comment-dedup state).",
         )
         start.add_argument(
             "--max-retries",
@@ -190,7 +192,6 @@ class PollCommand(Command):
 
         config = PollConfig.from_mapping(_load_polling_config())
         config.interval_seconds = args.interval  # flag overrides until a config edit
-        config.state_file = args.state_file
         config.max_retries = max(1, int(args.max_retries))
         authorized = resolve_authorized_users(routing.authorized_users)
         if not authorized:
@@ -204,7 +205,9 @@ class PollCommand(Command):
             registry=dispatcher.registry,
             dispatcher=dispatcher,
             config=config,
-            state=PollState(config.state_file),
+            state=PollState(
+                WorkItemStore(args.state_dir, legacy=legacy_layout(_state_layout()))
+            ),
             reloader=Reloader(_CONFIG_PATH, build_plan),
             authorized_users=authorized,
         )
@@ -229,7 +232,7 @@ class PollCommand(Command):
             config.interval_seconds,
             routing.runner,
             routing.spawn_on_unmatched,
-            config.state_file,
+            args.state_dir,
         )
         if routing.control.enabled and routing.control.require_start_command:
             logger.info(

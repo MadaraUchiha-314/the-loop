@@ -126,7 +126,13 @@ command reconciles them.
      one setting) → **`integrations.github.cli.binary`**, declared once. WHEN the three
      copies disagree THEN the migration keeps the first and reports the conflict as
      **needs-user** — pick deliberately rather than inherit an accident.
-   - The config gains a top-level `version` (now `0.2.0`). Detection is by version, not by
+   - `polling.stateFile` → **removed** (issue-128). The poller's ledger is now the `poll`
+     section of each work item's record under `<state.root>/portable/`, so a file path has
+     nothing to point at; `state.root` is the knob that replaced it. The old file keeps
+     being READ until each work item is written forward, so nothing is re-forwarded — say
+     so in the report, and offer to delete `<state.root>/sessions/` once the operator has
+     confirmed `the-loop sessions list` looks right.
+   - The config gains a top-level `version` (now `0.3.0`). Detection is by version, not by
      key-sniffing, so re-running is exact and cheap.
    - Add the `integrations` block from `templates/cli-config.yaml` if absent. Each provider
      takes `transport: auto|api|cli|sdk` — `auto` preserves today's behaviour, so an

@@ -26,6 +26,7 @@ from the_loop.poller import (
     PollState,
     parse_repos,
 )
+from the_loop.workitem import WorkItemStore
 from the_loop.sessions import Session, SessionRegistry, WorkItemRef
 from the_loop.webhook.dispatcher import Dispatcher, RoutingConfig
 
@@ -156,7 +157,7 @@ def _make(tmp_path, gh_state, monitor_issues=True, monitor_prs=False):
         registry=registry,
         dispatcher=dispatcher,
         config=PollConfig(),
-        state=PollState(tmp_path / "state.json"),
+        state=PollState(WorkItemStore(tmp_path / "portable")),
         authorized_users=["octocat"],  # the fixture author (authz guard)
     )
     return registry, adapter, dispatcher, poller

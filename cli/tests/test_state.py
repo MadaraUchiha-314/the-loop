@@ -1,39 +1,41 @@
-"""Unit tests for the one-root generated-state layout (issue-106)."""
-
-from pathlib import Path
+"""Unit tests for the generated-state layout (issue-106, reorganised in issue-128)."""
 
 from the_loop.state import (
     DEFAULT_STATE_ROOT,
-    LEGACY_POLL_STATE,
     StateLayout,
-    control_dir_for,
     layout_from_config,
-    resolve_poll_state_path,
+    legacy_layout,
 )
 
 
-def test_the_default_root_reproduces_the_pre_106_paths():
-    # The point of the default: an operator who sets nothing sees no move —
-    # except the poll state, which the legacy fallback covers.
+def test_the_default_root_places_both_halves_under_it():
     layout = StateLayout()
     assert layout.root == DEFAULT_STATE_ROOT
-    assert layout.sessions_dir == ".the-loop/sessions"
+    assert layout.portable_dir == ".the-loop/portable"
+    assert layout.local_dir == ".the-loop/local"
     assert layout.event_log == ".the-loop/logs/events.jsonl"
     assert layout.pidfile == ".the-loop/gh-webhook.pid"
 
 
-def test_session_related_state_lives_together_under_sessions():
+def test_the_two_halves_are_separate_trees():
+    # The whole point of issue-128: one directory is tracked in git and one is
+    # never, so neither may be nested inside the other.
     layout = StateLayout(root="/srv/loop")
-    assert layout.sessions_dir == "/srv/loop/sessions"
-    assert layout.control_dir == "/srv/loop/sessions/control"
-    assert layout.poll_state == "/srv/loop/sessions/poll-state.json"
+    assert layout.portable_dir == "/srv/loop/portable"
+    assert layout.local_dir == "/srv/loop/local"
+    assert not layout.local_dir.startswith(layout.portable_dir)
+    assert not layout.portable_dir.startswith(layout.local_dir)
 
 
 def test_one_root_relocates_everything():
     layout = StateLayout(root="/var/lib/the-loop")
-    assert layout.event_log.startswith("/var/lib/the-loop/")
-    assert layout.pidfile.startswith("/var/lib/the-loop/")
-    assert layout.sessions_dir.startswith("/var/lib/the-loop/")
+    for path in (
+        layout.event_log,
+        layout.pidfile,
+        layout.portable_dir,
+        layout.local_dir,
+    ):
+        assert path.startswith("/var/lib/the-loop/")
 
 
 def test_layout_from_config_reads_state_root():
@@ -45,43 +47,13 @@ def test_layout_from_config_falls_back_on_anything_missing():
         assert layout_from_config(config).root == DEFAULT_STATE_ROOT
 
 
-def test_control_records_live_beside_the_registry_they_steer():
-    assert control_dir_for("/somewhere/else/sessions") == (
-        "/somewhere/else/sessions/control"
-    )
+# -- the upgrade shim -----------------------------------------------------------
 
 
-# -- poll-state resolution ------------------------------------------------------
-
-
-def test_a_configured_poll_state_always_wins():
-    assert (
-        resolve_poll_state_path("/explicit.json", StateLayout(), exists=lambda p: True)
-        == "/explicit.json"
-    )
-
-
-def test_the_new_default_is_used_when_it_exists():
-    layout = StateLayout()
-    resolved = resolve_poll_state_path(
-        "", layout, exists=lambda p: str(p) == layout.poll_state
-    )
-    assert resolved == layout.poll_state
-
-
-def test_a_legacy_poll_state_is_kept_rather_than_re_baselining(caplog):
-    # Adopting an empty new file would make every watched thread first-sight
-    # again and re-forward its entire comment history.
-    layout = StateLayout()
-    resolved = resolve_poll_state_path(
-        "", layout, exists=lambda p: str(p) == LEGACY_POLL_STATE
-    )
-    assert resolved == LEGACY_POLL_STATE
-    assert any("poll state" in r.getMessage() for r in caplog.records)
-
-
-def test_a_fresh_install_gets_the_new_default():
-    layout = StateLayout()
-    resolved = resolve_poll_state_path("", layout, exists=lambda p: False)
-    assert resolved == layout.poll_state
-    assert Path(resolved).parent.name == "sessions"
+def test_legacy_layout_points_at_the_pre_128_locations():
+    legacy = legacy_layout(StateLayout(root="/srv/loop"))
+    assert legacy.sessions_dir == "/srv/loop/sessions"
+    assert legacy.control_dir == "/srv/loop/sessions/control"
+    assert legacy.poll_state == "/srv/loop/sessions/poll-state.json"
+    # And the pre-issue-106 file, still honoured so an upgrade never re-baselines.
+    assert legacy.pre_106_poll_state == ".the-loop/poll-state.json"

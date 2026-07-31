@@ -59,7 +59,7 @@ running harness conversation — a Claude Code session id, or a Cursor chat id.
 
 The invariant: **one work item, one active session.** The
 [registry](/cli/commands/sessions) is the source of truth, one human-inspectable JSON file
-per session under `<state.root>/sessions/`, written atomically so concurrent sessions on
+per session under `<state.root>/local/`, written atomically so concurrent sessions on
 one machine are safe.
 
 Events are matched to a work item by the router — issue/PR number, the `issue-<n>` PR
@@ -188,7 +188,18 @@ This is how you answer "why did nothing happen?". Drops carry a machine-readable
 [`events`](/cli/commands/events) is the query surface. The file is plain JSONL, so `jq`,
 `grep` and `tail -f` work on it directly.
 
+## Where the state goes
+
+Everything above leaves a file: the registry, the control records, the poller's baselines,
+the event log. All of it sits under one root, [`state.root`](/config/cli/#state-root),
+split by whether it travels — `portable/` holds one record per work item (**facts about
+the world**: what an authorized user armed, which comments have been seen) and is the half
+to track in git; `local/`, `logs/` and the pidfile are **handles to this machine** and must
+not move. [State on disk](/cli/state) documents every file, what is in it, and the
+three-line `.gitignore` block.
+
 ## Next
 
+- **[State on disk](/cli/state)** — the files behind everything above.
 - **[Commands](/cli/commands/)** — the full reference.
 - **[Configuring the CLI](/config/cli/)** — every option, by area.

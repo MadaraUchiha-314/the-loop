@@ -205,16 +205,20 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   the only thing preventing it from being delivered into the session it describes
   (issue-104).
 - Everything the CLI **generates** lives under one configured root (`state.root`,
-  default `.the-loop`): the session registry and the control records under
-  `<root>/sessions/`, the poll state at `<root>/sessions/poll-state.json`, the event log
-  under `<root>/logs/`, the receiver pidfile at `<root>/gh-webhook.pid`. The root
-  supplies **defaults only** — an explicitly configured path is still used verbatim —
-  and a pre-issue-106 `.the-loop/poll-state.json` that still exists keeps being used
-  (with a warning), so an upgrade never re-baselines and re-forwards every watched
-  thread. `<root>/sessions/` is shared between the registry, the control records and the
-  poll state, so the registry lists only the files it wrote (`<slug>.json`) and ignores
-  the rest without comment; the "unreadable registry file" warning means a real session
-  record went bad, not that a neighbour is present (issue-111).
+  default `.the-loop`), organised by whether it travels between machines (issue-128,
+  decision-046): one **portable** record per work item at `<root>/portable/<slug>.json`
+  (its `control` section — what an authorized user armed — and its `poll` section — which
+  comments have been seen), the machine-**local** session registry under `<root>/local/`,
+  the event log under `<root>/logs/`, the receiver pidfile at `<root>/gh-webhook.pid`.
+  The root supplies **defaults only** for the local paths — an explicitly configured
+  `registryDir`/`eventLog.path`/`pidfile` is still used verbatim — while `portable/`
+  always follows the root. Two writers share a work-item record, so a write SHALL replace
+  only its own section (read-modify-write): a poll cycle must never erase a control
+  command the other ingress recorded a moment earlier. Pre-issue-128 locations
+  (`<root>/sessions/`, `<root>/sessions/control/`, `<root>/sessions/poll-state.json`, and
+  the pre-issue-106 `.the-loop/poll-state.json`) SHALL still be READ once per work item
+  and written forward, so an upgrade never re-baselines a watched thread nor forgets what
+  was armed; nothing writes there any more.
 - **Dispatch also drives the process graph** (issue-113, `routing.graph`, default on).
   A successful spawn enters the work item's start node — which is what runs the entry
   hooks that write the `loop:<phase>` label — and a successfully delivered event advances
@@ -251,6 +255,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 |-----------|--------------|-------|
 | issue-123 | The graph coupling stopped sourcing a repo-scoped fact from the operator's machine: `routing.graph.specDir` became an optional override, so each watched repository's own `workflow.specDir` is honoured, and a spec-directory skip is recorded as `graph.skipped` rather than a debug line under a successful delivery | [spec](../specs/issue-123/), [decision-044](../decisions/decision-044.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/123) |
 | issue-119 | The poll path stopped swallowing a control command that predates first sight: unprocessed, authorized, unambiguous keyword comments are held back from the first-sight baseline and forwarded on the same cycle, so a labelled item whose start comment already existed actually starts | [spec](../specs/issue-119/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/119) |
+| issue-128 | Generated state reorganised by portability: one `portable/<slug>.json` per work item (control + poll sections, read-modify-write) and machine-local session handles under `local/`, replacing three writer-shaped stores; `polling.stateFile` retired through the version-gated config migration; the pre-issue-128 locations read forward on upgrade | [spec](../specs/issue-128/), [decision-046](../decisions/decision-046.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/128) |
 | issue-111 | The session registry treats `<root>/sessions/` as shared state: listings read only `<slug>.json` files it wrote, keeping the corrupt-entry warning meaningful | [spec](../specs/issue-111/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/111) |
 | issue-106 | Execution control: four declared keywords (`the-loop:start-execution`, …) an **authorized** user steers with, the auto-execute label demoted to *necessary but not sufficient* (`routing.control.requireStartCommand`, default on), `paused` sessions, CLI parity with the same paper trail, and one `state.root` for everything the CLI generates | [spec](../specs/issue-106/), [decision-040](../decisions/decision-040.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/106) |
 | issue-104 | The loop-prevention marker gained a producer-side helper (`mark_self_authored`) applied to the daemon's own comments — the session announcement no longer re-enters the session it announces | [spec](../specs/issue-104/), [decision-031](../decisions/decision-031.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/104) |

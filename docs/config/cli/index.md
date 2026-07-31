@@ -46,7 +46,7 @@ human-authored event, and polls nothing.
 
 - **Type:** `string`
 - **Default:** none — unset is accepted
-- **Current:** `0.2.0`
+- **Current:** `0.3.0`
 
 Schema version of this file. The CLI **refuses to start** against a config that declares
 a version older than the one it needs, naming the key, its replacement and the exact
@@ -55,8 +55,11 @@ set would change your behaviour without telling you.
 
 The gate is narrow on purpose — it refuses exactly two things:
 
-1. a **removed key is still present** (today: `ghBinary`, retired in favour of
-   [`integrations.github.cli.binary`](/config/cli/integrations-options#github-cli-binary));
+1. a **removed key is still present** — today `ghBinary`, retired in favour of
+   [`integrations.github.cli.binary`](/config/cli/integrations-options#github-cli-binary),
+   and `polling.stateFile`, retired in issue-128 because the poller's ledger became one
+   record per work item under `state.root` (below) and a file path has nothing left to
+   point at;
 2. the config **declares** a version older than the current one — it says it is stale, so
    it is believed.
 
@@ -78,27 +81,28 @@ idempotent, previewable with `--dry-run`, and it keeps a `.bak` of the file it r
 Root directory for everything the CLI **generates**. One value moves them all, because
 every generated path *defaults* from it:
 
-| What | Default |
-|------|---------|
-| session registry | `<root>/sessions/` |
-| control records | `<root>/sessions/control/` |
-| poll state | `<root>/sessions/poll-state.json` |
-| event log | `<root>/logs/events.jsonl` |
-| receiver pidfile | `<root>/gh-webhook.pid` |
+| What | Default | Travels? |
+|------|---------|----------|
+| work-item records (control + poll state) | `<root>/portable/` | **portable** |
+| session registry | `<root>/local/` | local |
+| event log | `<root>/logs/events.jsonl` | local |
+| receiver pidfile | `<root>/gh-webhook.pid` | local |
 
-A path you set **explicitly** —
+The tree is organised by **portability**, not by which component writes it
+([decision-046](/decisions/decision-046)): `portable/` holds one record per work item —
+what an authorized user armed, and which comments have already been seen — and is the half
+worth tracking in git. Everything else is a handle to this machine.
+
+Two of them can still be set **explicitly** —
 [`routing.registryDir`](/config/cli/routing-options#registrydir),
-[`polling.stateFile`](/config/cli/polling-options#statefile),
-[`eventLog.path`](/config/cli/observability-options#eventlog-path),
-[`webhooks.ghWebhook.pidfile`](/config/cli/webhook-options#pidfile) — is used verbatim.
-The root only fills in what you left out, so an existing config behaves identically.
+[`eventLog.path`](/config/cli/observability-options#eventlog-path) — plus
+[`webhooks.ghWebhook.pidfile`](/config/cli/webhook-options#pidfile); those are used
+verbatim. `portable/` follows the root, so "where is the half I track?" has one answer.
 
-With the default root only the poll state moves (it was `.the-loop/poll-state.json`). If
-that legacy file still exists and the new one does not, the poller keeps using it and
-warns once — adopting an empty state file would make every watched thread first-sight
-again and re-forward its entire comment history.
-
-All of it is git-ignored runtime state.
+[State on disk](/cli/state) documents every file, what is inside it, what is lost if you
+delete it, and the three-line `.gitignore` block. Upgrading from the pre-issue-128 layout
+(`<root>/sessions/…`) loses nothing: the old locations are read once per work item and
+written forward.
 
 ::: warning `~` is not expanded here
 `state.root` is used as given. `root: ~/.the-loop` creates a directory literally named
@@ -111,7 +115,7 @@ expand `~`.)
 ## A minimal working config
 
 ```yaml
-version: "0.2.0"
+version: "0.3.0"
 
 state:
   root: .the-loop

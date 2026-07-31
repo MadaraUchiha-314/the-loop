@@ -21,7 +21,7 @@
         "root": {
           "type": "string",
           "default": ".the-loop",
-          "description": "Root directory for generated state. Defaults derived from it: session registry `<root>/sessions/`, control records `<root>/sessions/control/`, poll state `<root>/sessions/poll-state.json`, event log `<root>/logs/events.jsonl`, receiver pidfile `<root>/gh-webhook.pid`. With the default root only the poll state moves (it was `.the-loop/poll-state.json`); the poller keeps using a legacy file that still exists and warns once, so an upgrade never re-baselines \u2014 and re-forwards \u2014 every watched thread."
+          "description": "Root directory for generated state. Defaults derived from it: portable work-item records `<root>/portable/` (control + poll state \u2014 the half that travels between machines), session records `<root>/local/`, event log `<root>/logs/events.jsonl`, receiver pidfile `<root>/gh-webhook.pid`. Issue-128 organised the tree by portability rather than by writer, retiring `polling.stateFile` (the ledger is a directory now) and moving the session registry's default from `<root>/sessions` to `<root>/local`. The pre-issue-128 locations are still READ once per work item, so an upgrade never re-baselines a watched thread or forgets what an authorized user armed."
         }
       }
     },
@@ -87,8 +87,8 @@
                 },
                 "registryDir": {
                   "type": "string",
-                  "default": "<state.root>/sessions",
-                  "description": "Directory of per-session registry JSON files (git-ignored), and the parent of the control records the-loop keeps beside them (<registryDir>/control/, issue-106). Unset resolves to `<state.root>/sessions` \u2014 with the default root, the pre-issue-106 `.the-loop/sessions` verbatim."
+                  "default": "<state.root>/local",
+                  "description": "Directory holding one JSON file per registered session \u2014 the machine-LOCAL half of a work item's state (a harness conversation id, its cwd, its tmux target). Never track it in git: a copied session record is still counted live, so the duplicate guard would refuse the spawn the other machine needs (issue-128, decision-046). Unset resolves to `<state.root>/local`."
                 },
                 "defaultHarness": {
                   "type": "string",
@@ -467,11 +467,6 @@
           "minimum": 1,
           "default": 60,
           "description": "Seconds between poll cycles (applies to all sources)."
-        },
-        "stateFile": {
-          "type": "string",
-          "default": "<state.root>/sessions/poll-state.json",
-          "description": "Durable JSON tracking which comments each item has processed (cross-poll/restart dedup). Git-ignored runtime state. Unset resolves under `state.root` with the rest of the session tracking (issue-106); a pre-issue-106 `.the-loop/poll-state.json` that still exists keeps being used, with a warning, rather than silently re-baselining every watched thread."
         },
         "maxRetries": {
           "type": "integer",
