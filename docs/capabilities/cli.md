@@ -56,6 +56,17 @@ self-learning/ML capabilities.
   files the registry itself wrote (`<slug>.json`, i.e. a name ending in `-<number>`) and
   SHALL ignore its neighbours silently, so the "skipping unreadable registry file"
   warning stays reserved for genuine corruption (issue-111).
+- Because `portable/` is the one generated directory that is **tracked**, it SHALL be
+  readable as well as writable (issue-130, decision-047): every record SHALL carry a
+  `url` beside its `ref`, and the directory SHALL carry `index.json` — one entry per
+  record (`ref`, `url`, `file`, the `sections` it holds, `sealed` when it is an upgrade
+  tombstone), ordered by `ref`. The index SHALL be **derived** by scanning the directory
+  on every write and removal, SHALL be removed with the last record, and SHALL be read by
+  nothing in the-loop, so a stale, hand-edited or forged index changes no behaviour and
+  the next write repairs it; a failure to write it SHALL be logged and SHALL NOT fail the
+  record write it accompanies. A URL SHALL be derived only for a `github` ref whose owner
+  and repo match GitHub's own name shape, and SHALL be omitted otherwise rather than
+  guessed — the `ref` itself is unchanged.
 - The pre-issue-128 locations (`<root>/sessions/`, `<root>/sessions/control/`,
   `<root>/sessions/poll-state.json`, and the pre-issue-106 `.the-loop/poll-state.json`)
   SHALL still be **read** when a work item's new record has no such section, and written
@@ -139,6 +150,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-130 | `portable/` made readable: a derived `index.json` listing every record (ref, url, file, sections), rebuilt on every write and read by nothing, plus a `url` beside each record's `ref` — derived for `github` refs and omitted rather than guessed | [spec](../specs/issue-130/), [decision-047](../decisions/decision-047.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/130) |
 | issue-128 | Generated state classified portable vs local (`GENERATED_PATHS`), documented file by file in `docs/cli/state.md`, and **reorganised by that classification**: one `portable/<slug>.json` per work item (control + poll, read-modify-write) tracked in git, machine-local handles under `local/`, three writer-shaped stores gone, `polling.stateFile` retired through the config migration, and the old locations read forward on upgrade | [spec](../specs/issue-128/), [decision-046](../decisions/decision-046.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/128) |
 | issue-121 | The harness-config read surface stated as a direction rule and pinned: one reader module (`the_loop.harness_config`) with a declared `READS` tuple replacing three duplicated readers, a test asserting it against the schema and the docs, and the four pages that claimed the daemon never reads a repo's harness config corrected — it has, on the `graphlink` path, since issue-113 | [spec](../specs/issue-121/), [decision-044](../decisions/decision-044.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/121) |
 | issue-117 | Documented as a product: an onboarding path plus one page per command under `docs/cli/`, every config option under `docs/config/cli/`, and a parity test that fails when a registered command has no page or a documented key is absent from the schema. `check`, `graph` and `migrate-config` documented for the first time; the `integrations`, `routing.workspace`, `routing.graph` and `polling.maxRetries` blocks written up; the removed `ghBinary` deleted from the docs | [spec](../specs/issue-117/), [documentation](documentation.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/117) |

@@ -34,6 +34,13 @@ _RECENT_DELIVERIES_CAP = 50
 
 _REF_RE = re.compile(r"^(?P<provider>[a-z][a-z0-9-]*):(?P<path>[^#]+)#(?P<number>\d+)$")
 
+# GitHub's own owner/repo name shape, used to decide whether a browser URL can be
+# derived from a ref (issue-130). ``_REF_RE`` accepts any non-``#`` text as the
+# path and splits it at the FIRST slash, so ``repo`` may carry further segments —
+# enough for an interpolated URL to point somewhere other than the work item it
+# claims to describe. A name that is not this shape gets no URL at all.
+_GITHUB_NAME_RE = re.compile(r"[A-Za-z0-9._-]+")
+
 # The registry directory is shared session-related state, not this class's
 # private space: the poll state sits beside these files by design (issue-106,
 # ``state.StateLayout.poll_state``) and the control records in a subdirectory. So
@@ -76,6 +83,29 @@ class WorkItemRef:
     @property
     def ref(self) -> str:
         return f"{self.provider}:{self.owner}/{self.repo}#{self.number}"
+
+    @property
+    def url(self) -> str:
+        """The work item's browser URL, or ``""`` when none can be derived.
+
+        The ref is the machine's name for a work item; this is the human's link to
+        it (issue-130). Both are kept: a URL carries no provider prefix and cannot
+        be parsed back into a ref without knowing each provider's layout.
+
+        Derived, never guessed. A ref carries no host, so only ``github`` refs
+        resolve — to ``github.com``, which GitHub redirects to ``/pull/<n>`` when
+        the number is a pull request, so one form serves both. Anything else, and
+        any owner/repo that is not GitHub's own name shape, yields ``""`` and the
+        field is simply absent wherever it would have been written.
+        """
+        if self.provider != "github":
+            return ""
+        if not (
+            _GITHUB_NAME_RE.fullmatch(self.owner)
+            and _GITHUB_NAME_RE.fullmatch(self.repo)
+        ):
+            return ""
+        return f"https://github.com/{self.owner}/{self.repo}/issues/{self.number}"
 
     @property
     def slug(self) -> str:

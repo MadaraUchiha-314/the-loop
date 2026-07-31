@@ -5,9 +5,15 @@ true on any machine::
 
     {
       "ref": "github:octo/repo#15",
+      "url": "https://github.com/octo/repo/issues/15",
       "control": {"command": "start", "actor": "octocat", …},
       "poll":    {"seenComments": [...], "commentAttempts": {...}, …}
     }
+
+The ``url`` is a navigation aid derived from the ref (issue-130), because these
+files are tracked and therefore read by people. Beside the records sits
+``index.json``, one derived list of everything in the directory — see
+:meth:`WorkItemStore._write_index`. Neither is read by the-loop.
 
 Before this, the two halves were separate stores in separate directories,
 because they have separate writers: the control record comes from a keyword an
@@ -48,18 +54,23 @@ import logging
 import os
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from .sessions import WorkItemRef
 from .state import LegacyLayout
 
 logger = logging.getLogger("the-loop.workitem")
 
-__all__ = ["CONTROL", "POLL", "SEALED", "WorkItemStore"]
+__all__ = ["CONTROL", "INDEX_FILE", "POLL", "SEALED", "WorkItemStore"]
 
 #: The two sections of a work-item record.
 CONTROL = "control"
 POLL = "poll"
+
+#: The directory's index (issue-130) — one file listing every record beside it,
+#: so ``portable/`` answers "what is being tracked?" without opening each record.
+#: Derived on every write and read by nothing: see :meth:`WorkItemStore._write_index`.
+INDEX_FILE = "index.json"
 
 #: Marks a record whose sections were all deliberately removed while a
 #: pre-issue-128 tree is still on disk. Without it, an ended work item would be
@@ -71,6 +82,30 @@ def _as_ref(work_item: Union[str, WorkItemRef]) -> WorkItemRef:
     if isinstance(work_item, WorkItemRef):
         return work_item
     return WorkItemRef.parse(work_item)
+
+
+def _url_for(ref: str) -> str:
+    """``ref``'s browser URL, or ``""`` when it has none (or will not parse)."""
+    try:
+        return WorkItemRef.parse(ref).url
+    except ValueError:
+        return ""
+
+
+def _identified(ref: WorkItemRef, record: Dict[str, Any]) -> Dict[str, Any]:
+    """``record`` with its identity first: the ref, then the URL when derivable.
+
+    Key order is normalised on write, so a record does not carry the order its
+    sections happened to be written in — these files are read by people, in a
+    pull-request diff (issue-130). ``url`` is a navigation aid *derived* from the
+    ref, and absent rather than guessed when none can be derived; the ref itself
+    is untouched, because it is what parses, what the filename comes from, and
+    what the pre-issue-128 shim keys on.
+    """
+    head: Dict[str, Any] = {"ref": ref.ref}
+    if ref.url:
+        head["url"] = ref.url
+    return {**head, **{k: v for k, v in record.items() if k not in ("ref", "url")}}
 
 
 def _read_json(path: Path) -> Optional[dict]:
@@ -104,14 +139,26 @@ class WorkItemStore:
 
     def refs(self) -> Dict[str, Path]:
         """``{ref: path}`` for every record on disk (ref read from the file)."""
-        found: Dict[str, Path] = {}
+        return {str(record["ref"]): path for path, record in self._records()}
+
+    def _records(self) -> List[Tuple[Path, Dict[str, Any]]]:
+        """``(path, record)`` for every readable record, sorted by file name.
+
+        Three things in the directory are deliberately *not* records: the index
+        (:data:`INDEX_FILE`, which describes them), the atomic writer's ``.tmp``
+        leftovers (not ``*.json``), and any stray a person left behind. A file
+        that will not parse, or that names no work item, is skipped rather than
+        described from its filename.
+        """
         if not self.root.is_dir():
-            return found
+            return []
+        found = []
         for path in sorted(self.root.glob("*.json")):
+            if path.name == INDEX_FILE:
+                continue
             record = _read_json(path)
-            ref = str((record or {}).get("ref") or "")
-            if ref:
-                found[ref] = path
+            if isinstance(record, dict) and str(record.get("ref") or ""):
+                found.append((path, record))
         return found
 
     # -- reads -----------------------------------------------------------------
@@ -195,28 +242,90 @@ class WorkItemStore:
         file would let the old tree resurrect state the-loop just ended.
         """
         ref = _as_ref(work_item)
-        target = self.path_for(ref)
         record = self.read(ref)
-        record["ref"] = ref.ref
         record[name] = data  # None is a tombstone: "deliberately not recorded"
         if not any(isinstance(record.get(s), dict) for s in (CONTROL, POLL)):
             if not self._legacy_holds(ref):
                 self.drop(ref)
                 return
-            record = {"ref": ref.ref, SEALED: True}
+            record = {SEALED: True}
+        self._write_json(self.path_for(ref), _identified(ref, record))
+        self._write_index()
+
+    def _write_json(self, path: Path, payload: Dict[str, Any]) -> None:
+        """Write ``payload`` to ``path`` atomically (``tempfile`` + ``os.replace``).
+
+        Every file this store produces goes through here, so a crash never leaves
+        half of one — a record or the index alike.
+        """
         self.root.mkdir(parents=True, exist_ok=True)
         fd, tmp_name = tempfile.mkstemp(dir=str(self.root), suffix=".tmp")
         try:
             with os.fdopen(fd, "w") as handle:
-                json.dump(record, handle, indent=2)
+                json.dump(payload, handle, indent=2)
                 handle.write("\n")
-            os.replace(tmp_name, target)
+            os.replace(tmp_name, path)
         except BaseException:
             try:
                 os.unlink(tmp_name)
             except FileNotFoundError:
                 pass
             raise
+
+    # -- the index -------------------------------------------------------------
+
+    def _index_entries(self) -> List[Dict[str, Any]]:
+        """One entry per record: what it is, where it is, what it holds."""
+        entries: List[Dict[str, Any]] = []
+        for path, record in self._records():
+            ref = str(record["ref"])
+            entry: Dict[str, Any] = {"ref": ref}
+            url = _url_for(ref)
+            if url:
+                entry["url"] = url
+            entry["file"] = path.name
+            entry["sections"] = [
+                section
+                for section in (CONTROL, POLL)
+                if isinstance(record.get(section), dict)
+            ]
+            if record.get(SEALED):
+                entry["sealed"] = True  # explains a record with no sections
+            entries.append(entry)
+        return sorted(entries, key=lambda entry: entry["ref"])
+
+    def _write_index(self) -> None:
+        """Rewrite — or remove — the directory's index (issue-130).
+
+        `portable/` is the tracked half of the-loop's state, so it is read by a
+        *person*: in a pull-request diff, or with ``jq``. The index is what lets
+        the directory answer "which work items is the-loop tracking, and where do
+        they live?" without opening every record.
+
+        **Derived, on every write.** The entries are rebuilt by scanning the
+        directory rather than maintained incrementally, so a record added or
+        removed by hand — or written by a version that kept no index — is picked
+        up by the next write, and a forged index (this file is tracked, so it is
+        proposable by anyone who can open a pull request) cannot survive one.
+        Nothing in the-loop reads it, which is what keeps a stale index a
+        cosmetic problem rather than a behavioural one, and what makes two
+        machines conflicting on it safe to resolve by taking either side.
+
+        **Best-effort.** The record beside it is a fact about a work item; this is
+        a convenience. Failing an arming ``start`` because a convenience could not
+        be written would be a silent disarm, so an ``OSError`` here is logged and
+        swallowed. The directory keeps no empty index: when the last record goes,
+        so does this file.
+        """
+        target = self.root / INDEX_FILE
+        entries = self._index_entries()
+        try:
+            if entries:
+                self._write_json(target, {"workItems": entries})
+            else:
+                target.unlink(missing_ok=True)
+        except OSError as exc:  # advisory: never break the write it accompanies
+            logger.warning("could not update the portable index %s: %s", target, exc)
 
     def _legacy_holds(self, ref: WorkItemRef) -> bool:
         """Whether the pre-issue-128 tree still has anything for this work item."""
@@ -233,4 +342,5 @@ class WorkItemStore:
         except OSError as exc:  # advisory cleanup — never break a close
             logger.warning("could not remove state for %s: %s", work_item, exc)
             return False
+        self._write_index()
         return True

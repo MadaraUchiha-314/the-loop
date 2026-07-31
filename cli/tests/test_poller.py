@@ -49,7 +49,7 @@ from the_loop.authz import (
     resolve_authorized_users,
 )
 from the_loop.poller.poller import PollSummary  # noqa: F401 (re-exported too)
-from the_loop.workitem import WorkItemStore
+from the_loop.workitem import INDEX_FILE, WorkItemStore
 from the_loop.sessions import Session, SessionRegistry, WorkItemRef
 from the_loop.webhook.router import RoutedEvent
 
@@ -546,7 +546,8 @@ def test_a_cycle_only_writes_the_items_it_touched(tmp_path):
     state.save()
     state.seen_comments("github:octo/repo#2")  # read-only: records nothing
     state.save()
-    assert [p.name for p in sorted(root.glob("*.json"))] == ["github-octo-repo-1.json"]
+    records = [p.name for p in sorted(root.glob("*.json")) if p.name != INDEX_FILE]
+    assert records == ["github-octo-repo-1.json"]
 
 
 # -- Poller core (provider-agnostic, recording dispatcher double) -------------

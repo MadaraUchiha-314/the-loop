@@ -84,6 +84,7 @@ every generated path *defaults* from it:
 | What | Default | Travels? |
 |------|---------|----------|
 | work-item records (control + poll state) | `<root>/portable/` | **portable** |
+| the index of those records (derived) | `<root>/portable/index.json` | **portable** |
 | session registry | `<root>/local/` | local |
 | event log | `<root>/logs/events.jsonl` | local |
 | receiver pidfile | `<root>/gh-webhook.pid` | local |
