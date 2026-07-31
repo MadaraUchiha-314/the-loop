@@ -22,7 +22,7 @@ status: in-progress          # in-progress | complete
 
 | PR | Scope / tasks | Status |
 |----|---------------|--------|
-| [#125](https://github.com/MadaraUchiha-314/the-loop/pull/125) | spec + T1–T8 | open |
+| [#126](https://github.com/MadaraUchiha-314/the-loop/pull/126) | spec + T1–T8 | open |
 
 ## Progress entries
 
@@ -90,7 +90,7 @@ status: in-progress          # in-progress | complete
 | 1 | self (does the fix reach the defect?) | the-loop session | Confirmed the fix is a *default* change, not a new mechanism: `build_runtime`'s `spec_root or workflow.get(...)` was already correct and merely unreachable. Also confirmed the sketch as filed would have read a **foreign** checkout's harness config, because the spec-dir gate ran before the ownership proof — promoted to R4.1 and T4 | `requirements.md` R4, `design.md` C5 |
 | 2 | self (observability field correctness) | the-loop session | **Finding, fixed.** The `spec-dir-outside-checkout` record passed `str(root)` as its `spec_dir` field — the checkout path, not the refused value, and an absolute path the design had promised not to log. `_spec_dir` now returns the declared value whether or not it is usable, containment is a separate gate in `_guarded`, and the record names the value the operator has to change. Pinned by an assertion in `test_a_spec_dir_that_escapes_the_checkout_is_refused` | `graphlink.py::_spec_dir` |
 | 3 | self (what did the reorder cost?) | the-loop session | `_checkout_belongs_to` spawns `git config --get remote.origin.url`, and now runs for a work item whose spec directory is absent, where `is_dir()` used to short-circuit it. Accepted and written down: one subprocess per delivery, already behind `_awaiting_start`, on a path about to spawn or resume a whole harness session — and the alternative is reading a checkout the daemon has not proved is the work item's | `design.md` C5 |
-| 4 | human (PR approval) | @MadaraUchiha-314 | pending | PR #125 |
+| 4 | human (PR approval) | @MadaraUchiha-314 | pending | PR #126 |
 
 ## Security review (gate)
 
