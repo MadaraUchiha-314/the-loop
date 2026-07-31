@@ -22,7 +22,7 @@ status: in-progress          # in-progress | complete
 
 | PR | Scope / tasks | Status |
 |----|---------------|--------|
-| [#126](https://github.com/MadaraUchiha-314/the-loop/pull/126) | spec + T1–T11 | open |
+| [#127](https://github.com/MadaraUchiha-314/the-loop/pull/127) | spec + T1–T11 | open |
 
 ## Progress entries
 
@@ -103,7 +103,7 @@ if it ever happens.
 | 2 | self (does the parity test measure what the gate measures?) | the-loop session | Found one: P3 extracted template headings with its own regex, while `validate-artifacts` uses `frontmatter.sections`, which ignores headings inside fences. A template could have been called compliant on the strength of a heading in an example block. P3 now uses the gate's own parser | `test_graph_parity.py` § P3 |
 | 3 | self (is the new syntax the smallest thing that works?) | the-loop session | No change. Checked the three consumers of `produces` (`as_mapping` → `graph show --format json`, both hooks) and the alternatives in decision-045 § Alternatives considered. One note recorded rather than acted on: hook **params** (`upstream`, `sections`, `markers`) are not compile-validated for any hook, so a malformed `upstream: "a\|\|b"` would resolve silently where a malformed `produces` raises. Consistent with how every other param behaves today; a per-hook param schema is a contract change, not this fix | decision-045 § Alternatives considered |
 | 4 | critic | — | **Not run: `reviews.critics: []`** — no critic harness is configured in this repository, so `the-loop critic run` has nothing to invoke. Recorded rather than silently skipped |
-| 5 | human (PR approval) | @MadaraUchiha-314 | pending | PR #126 |
+| 5 | human (PR approval) | @MadaraUchiha-314 | pending | PR #127 |
 
 ## Security review (gate)
 
