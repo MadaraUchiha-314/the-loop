@@ -292,6 +292,14 @@ EVENT_TYPES: Dict[str, str] = {
         "parked rather than guessed at (work_item, node, outcome)."
     ),
     "graph.completed": ("A work item reached a terminal node (work_item, node)."),
+    "graph.skipped": (
+        "The ingress→graph coupling declined to touch a work item's graph, so a "
+        "successful delivery moved nothing (work_item, action: start | advance, "
+        "reason: no-spec-dir | spec-dir-outside-checkout, spec_dir: the directory "
+        "resolved from the repository's `workflow.specDir`, or the "
+        "`routing.graph.specDir` override). The answer to 'it is labelled, armed "
+        "and spawned — why is its graph still at node one?'. issue-123."
+    ),
     "graph.link_failed": (
         "The ingress→graph coupling raised and was swallowed so the event was "
         "still delivered; the graph did not move (work_item, action, error). "

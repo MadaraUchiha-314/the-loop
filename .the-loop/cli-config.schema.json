@@ -166,8 +166,8 @@
                     },
                     "specDir": {
                       "type": "string",
-                      "default": "docs/specs",
-                      "description": "Where specs live in the session's checkout \u2014 match `workflow.specDir` in the repo's harness config. A work item with no directory here is skipped, which is what makes the coupling inert for repos that keep no specs."
+                      "default": "",
+                      "description": "OPTIONAL OVERRIDE. Where specs live in the session's checkout. Leave unset (the default): each work item's own repository declares this as `workflow.specDir` in its harness config, defaulting to `docs/specs` \u2014 which is the only thing that works for a daemon watching several repositories with different layouts (decision-032, decision-044). Setting it here overrides every watched repository, and exists for a checkout that carries no harness config at all. A work item with no directory under the resolved path is skipped (recorded as `graph.skipped`), which is what makes the coupling inert for repos that keep no specs. issue-123."
                     }
                   }
                 },

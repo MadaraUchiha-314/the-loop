@@ -63,7 +63,12 @@ webhooks:
       # same routing block, so both ingresses behave identically.
       graph:
         enabled: true               # false = pre-issue-113 behaviour
-        specDir: docs/specs         # match workflow.specDir in the repo's harness config
+        # specDir: ""               # OPTIONAL OVERRIDE — leave unset. Each watched repo
+                                    # declares its own `workflow.specDir` (default
+                                    # `docs/specs`) in its harness config, which is the
+                                    # only thing that works when this one flat value
+                                    # would otherwise govern N repos (issue-123). Set it
+                                    # only for a checkout with no harness config at all.
       # SECURITY (prompt-injection guard): only these GitHub logins' actions are acted on
       # by BOTH the webhook receiver and the poller. Comments/reviews/labels/items from
       # anyone else are ignored. REQUIRED: no fallback to any repo's plugin config —

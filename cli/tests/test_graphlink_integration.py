@@ -25,30 +25,33 @@ REF = WorkItemRef.parse("github:octo/repo#113")
 REVIEWER = "octocat"
 
 
-@pytest.fixture()
-def checkout(tmp_path):
-    """A checkout of the work item's own repo, with its spec folder.
+def _checkout(root, origin="https://github.com/octo/repo.git", spec_dir=""):
+    """A checkout of a work item's own repo, with its spec folder.
 
     A real `git init` + origin, because the link refuses to drive a graph in a
-    checkout that does not belong to the work item (issue-113 A6).
+    checkout that does not belong to the work item (issue-113 A6). ``spec_dir``
+    declares ``workflow.specDir`` in the checkout's harness config — the value
+    the daemon must honour rather than override (issue-123).
     """
-    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    root.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
     subprocess.run(
-        [
-            "git",
-            "-C",
-            str(tmp_path),
-            "remote",
-            "add",
-            "origin",
-            "https://github.com/octo/repo.git",
-        ],
-        check=True,
+        ["git", "-C", str(root), "remote", "add", "origin", origin], check=True
     )
-    spec = tmp_path / "docs" / "specs" / "issue-113"
+    if spec_dir:
+        (root / ".the-loop").mkdir(parents=True, exist_ok=True)
+        (root / ".the-loop" / "harness-config.yaml").write_text(
+            f"workflow:\n  specDir: {spec_dir}\n", encoding="utf-8"
+        )
+    spec = root / (spec_dir or "docs/specs") / "issue-113"
     spec.mkdir(parents=True)
     (spec / "execution-log.md").write_text("# Execution Log\n")
-    return tmp_path
+    return root
+
+
+@pytest.fixture()
+def checkout(tmp_path):
+    return _checkout(tmp_path)
 
 
 def _dispatcher(tmp_path, **routing):
@@ -196,6 +199,57 @@ def test_a_failing_graph_never_costs_the_delivery(tmp_path, checkout, monkeypatc
     logged = [json.loads(line) for line in events.read_text().splitlines() if line]
     assert any(e["event"] == "graph.link_failed" for e in logged), (
         "a swallowed failure must still be visible in `the-loop events`"
+    )
+
+
+def test_a_repository_that_moved_its_specs_still_advances(tmp_path):
+    """
+    Feature: Ingress-driven process graph
+    Scenario: A repository that keeps its specs outside docs/specs is not skipped
+      Given a checkout whose harness config declares workflow.specDir: specs
+      And the daemon's CLI config names no graph.specDir
+      When the dispatcher reports a spawned session for its work item
+      Then the graph's start node is entered under the repository's own directory
+      And graph-state.json is written there
+
+    Requirement: docs/specs/issue-123/requirements.md#R1.1
+    """
+    checkout = _checkout(tmp_path / "moved", spec_dir="specs")
+
+    _dispatcher(tmp_path).graphlink.on_spawn(REF, str(checkout))
+
+    spec = checkout / "specs" / "issue-113"
+    assert GraphState.load(spec, "issue-113").current_node == "brainstorming"
+    assert (spec / "graph-state.json").is_file(), (
+        "R2.2 — the runtime must write under the same directory the gate checked"
+    )
+
+
+def test_two_repositories_with_different_spec_dirs_are_both_driven(tmp_path):
+    """
+    Feature: Ingress-driven process graph
+    Scenario: One daemon serves repositories with different spec layouts
+      Given two watched repositories, one using docs/specs and one using specs
+      When a session is spawned for a work item in each
+      Then both graphs enter their start node
+      And each does so under its own repository's declared directory
+
+    Requirement: docs/specs/issue-123/requirements.md#R1.4
+    """
+    default = _checkout(tmp_path / "a", origin="https://github.com/octo/repo.git")
+    moved = _checkout(
+        tmp_path / "b", origin="https://github.com/octo/other.git", spec_dir="specs"
+    )
+    other_ref = WorkItemRef.parse("github:octo/other#113")
+    dispatcher = _dispatcher(tmp_path)
+
+    dispatcher.graphlink.on_spawn(REF, str(default))
+    dispatcher.graphlink.on_spawn(other_ref, str(moved))
+
+    assert _state(default).current_node == "brainstorming"
+    assert (
+        GraphState.load(moved / "specs" / "issue-113", "issue-113").current_node
+        == "brainstorming"
     )
 
 
