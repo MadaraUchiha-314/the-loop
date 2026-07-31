@@ -13,11 +13,11 @@ nobody thought to check — so it is a hook now.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 from typing import List
 
 from ..contract import HookContext, HookResult, Message
 from ..frontmatter import mermaid_blocks
+from ..model import resolve_produces
 from ..registry import hook
 
 NAME = "lint-artifacts"
@@ -45,13 +45,6 @@ _KNOWN_TYPES = (
     "C4Context",
     "block-beta",
 )
-
-
-def _artifact_paths(ctx: HookContext) -> List[Path]:
-    produces = ctx.node.get("produces") or []
-    if isinstance(produces, (str, Path)):
-        produces = [produces]
-    return [ctx.work_item.spec_dir / str(p) for p in produces]
 
 
 def check_mermaid(text: str, rel: str) -> List[Message]:
@@ -95,7 +88,15 @@ def check_mermaid(text: str, rel: str) -> List[Message]:
 @hook(NAME)
 def lint_artifacts(ctx: HookContext) -> HookResult:
     findings: List[Message] = []
-    paths = [p for p in _artifact_paths(ctx) if p.is_file()]
+    # Every artifact that is actually there, whichever accepted name it goes by.
+    # This hook used to carry its own byte-identical copy of the resolver — the
+    # same defect as issue-124 one level down, and a quieter one, since a file
+    # this hook never resolves is a file it never lints.
+    paths = [
+        p
+        for slot in resolve_produces(ctx.node.get("produces"), ctx.work_item.spec_dir)
+        for p in slot.present
+    ]
     if not paths:
         return HookResult.skipped(NAME, "no artifacts to lint")
 

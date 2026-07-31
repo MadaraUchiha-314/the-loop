@@ -18,7 +18,9 @@ does not change anything.
 
 2. **Read the artifacts** (whichever exist): `requirements.md`/`bugfix.md`, `design.md`,
    `tasks.md`, `execution-log.md`. Also read the ticket's current phase label if the
-   ticketing integration is available.
+   ticketing integration is available. `requirements.md` and `bugfix.md` are two accepted
+   names for the **same** phase-1 artifact — if both are on disk, say so: the
+   `requirements-definition` gate blocks on it (decision-045).
 
 3. **Summarize:**
    - **Phase** — from the execution log's front-matter and the ticket label (flag any

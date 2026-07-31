@@ -40,6 +40,10 @@ it is **locked** (`status: approved`), and only then is the next one derived. Sp
    locked. Phase: `brainstorming`. Skip it when the work is already clear.
 1. **`requirements.md`** (or **`bugfix.md`** for bugs) — user stories + EARS acceptance
    criteria (`WHEN <event> THEN the system SHALL <response>`). Phase: `requirements-definition`.
+   Both names clear the same gate, and **exactly one of them may be present** — two would
+   leave the gate with no defined source of truth, so it blocks (decision-045). Whichever
+   name it carries, the artifact needs the same `## Requirements` and
+   `## Security considerations` sections; both bundled templates provide them.
 2. **`design.md`** — architecture, components/interfaces, data models, error handling,
    testing strategy. Phase: `design`. For a **user-facing** work item the design phase also
    tracks **UI/UX design artifacts** (Figma links / self-contained HTML prototypes under

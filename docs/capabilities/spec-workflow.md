@@ -17,6 +17,14 @@ the `/the-loop:work-on` superset command and granular per-step commands
 - A work item's spec SHALL live in `docs/specs/<id>/` as the artifact chain
   `brainstorm.md (optional) → requirements.md|bugfix.md → design.md → tasks.md`, plus
   `execution-log.md`.
+- `requirements.md` and `bugfix.md` SHALL be two accepted names for the **same** phase-1
+  artifact, not two artifacts. Either clears the `requirements-definition` gate, held to
+  the identical standard; **both present blocks**, because two phase-1 artifacts in one
+  folder have no defined source of truth
+  ([decision-045](../decisions/decision-045.md)). Both bundled templates carry the
+  `## Requirements` and `## Security considerations` sections the gate requires, so the
+  choice is about which shape fits the work — reproduction and root cause, or user stories
+  — and never about which one will pass.
 - Each artifact SHALL be iterated with feedback until **locked** (`status: approved`);
   no downstream artifact is written against an unlocked upstream one
   (`workflow.requireHumanReviewPerPhase`, default true).
@@ -90,6 +98,7 @@ the `/the-loop:work-on` superset command and granular per-step commands
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-124 | A bug's `bugfix.md` clears the phase-1 gate it always should have: the two documented names became alternatives for one artifact, both present blocks, and the bundled bugfix template gained the `## Requirements` heading the gate asks for | [spec](../specs/issue-124/), [decision-045](../decisions/decision-045.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/124) |
 | issue-109 | The phase state machine became executable: every phase is a node in the shipped process graph, with hook chains deciding completion and declared edges routing on the outcome | [spec](../specs/issue-109/), [process-graph](process-graph.md), [decision-041](../decisions/decision-041.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/109) |
 | issue-101 | The execution log tracks a **list** of the PRs delivering a work item; each is labelled for routing and all must be merged/closed before `finish-tasks` completes the item | [spec](../specs/issue-101/), [decision-039](../decisions/decision-039.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/101) |
 | issue-59 | Added per-installation custom instruction docs the loop reads and honors (`customInstructions` config, onboarding group, precedence rules) | [spec](../specs/issue-59/), [decision-029](../decisions/decision-029.md) |
