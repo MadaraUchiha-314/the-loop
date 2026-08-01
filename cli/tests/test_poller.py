@@ -49,7 +49,7 @@ from the_loop.authz import (
     resolve_authorized_users,
 )
 from the_loop.poller.poller import PollSummary  # noqa: F401 (re-exported too)
-from the_loop.workitem import WorkItemStore
+from the_loop.workitem import INDEX_FILE, WorkItemStore
 from the_loop.sessions import Session, SessionRegistry, WorkItemRef
 from the_loop.webhook.router import RoutedEvent
 
@@ -546,7 +546,31 @@ def test_a_cycle_only_writes_the_items_it_touched(tmp_path):
     state.save()
     state.seen_comments("github:octo/repo#2")  # read-only: records nothing
     state.save()
-    assert [p.name for p in sorted(root.glob("*.json"))] == ["github-octo-repo-1.json"]
+    records = [p.name for p in sorted(root.glob("*.json")) if p.name != INDEX_FILE]
+    assert records == ["github-octo-repo-1.json"]
+
+
+def test_a_polled_item_is_identified_with_the_host_it_lives_on():
+    """The poller knows the host too — it is in the item's own URL (issue-130).
+
+    This ref keys the poll ledger while the router's keys the routing, so the two
+    derivations must agree: a GitHub Enterprise item that was ``github:octo/repo#15``
+    to one and ``github:ghe.corp.example/octo/repo#15`` to the other would be two
+    work items, and the thread would be re-forwarded every cycle.
+    """
+    item = WorkItem(
+        provider="github",
+        owner="octo",
+        repo="repo",
+        number=15,
+        kind="issue",
+        url="https://ghe.corp.example/octo/repo/issues/15",
+    )
+    assert item.host == "ghe.corp.example"
+    assert item.ref == "github:ghe.corp.example/octo/repo#15"
+
+    # An item with no URL (an older provider, a fixture) still means github.com.
+    assert WorkItem("github", "octo", "repo", 15, "issue").ref == "github:octo/repo#15"
 
 
 # -- Poller core (provider-agnostic, recording dispatcher double) -------------

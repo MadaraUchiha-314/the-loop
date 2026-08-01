@@ -17,7 +17,7 @@ import json
 from the_loop.control import ControlStore
 from the_loop.poller import PollState
 from the_loop.state import LegacyLayout, StateLayout, legacy_layout
-from the_loop.workitem import CONTROL, POLL, WorkItemStore
+from the_loop.workitem import CONTROL, INDEX_FILE, POLL, WorkItemStore
 
 REF = "github:octo/repo#15"
 SLUG = "github-octo-repo-15.json"
@@ -34,7 +34,11 @@ def test_both_halves_of_a_work_item_live_in_one_file(tmp_path):
     assert record["ref"] == REF
     assert record["control"]["command"] == "start"
     assert record["poll"]["seenComments"] == ["IC_1"]
-    assert [p.name for p in (tmp_path / "portable").glob("*.json")] == [SLUG]
+    # One work item, one record — beside the directory's derived index (issue-130).
+    records = [
+        p.name for p in (tmp_path / "portable").glob("*.json") if p.name != INDEX_FILE
+    ]
+    assert records == [SLUG]
 
 
 def test_a_poll_cycle_does_not_clobber_a_concurrent_control_command(tmp_path):

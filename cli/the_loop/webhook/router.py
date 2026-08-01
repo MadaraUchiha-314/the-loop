@@ -16,7 +16,7 @@ from typing import List, Optional, Sequence
 
 from .. import eventlog
 from ..authz import is_authorized, is_self_authored
-from ..sessions import WorkItemRef
+from ..sessions import DEFAULT_GITHUB_HOST, WorkItemRef, host_from_url
 
 logger = logging.getLogger("the-loop.gh-webhook")
 
@@ -85,6 +85,25 @@ def _repo_parts(payload: dict) -> Optional[tuple]:
     if not sep:
         return None
     return owner, repo
+
+
+def _host(payload: dict) -> str:
+    """Which GitHub the event came from, read off the payload (issue-130 review).
+
+    The repository's ``html_url`` is the authority — every real webhook carries
+    it. The poller's synthesised payloads carry the *item's* URL instead, so that
+    is the fallback, and both give a GitHub Enterprise work item a ref that says
+    so. Neither present (a hand-written payload, an older fixture) means
+    github.com, which is what a ref without a host has always meant.
+    """
+    repo_url = str((payload.get("repository") or {}).get("html_url") or "")
+    if repo_url:
+        return host_from_url(repo_url)
+    for key in ("issue", "pull_request"):
+        entity_url = str((payload.get(key) or {}).get("html_url") or "")
+        if entity_url:
+            return host_from_url(entity_url)
+    return DEFAULT_GITHUB_HOST
 
 
 def _issue_from_branch(branch: str) -> Optional[int]:
@@ -238,8 +257,9 @@ def extract_work_items(event: str, payload: dict) -> List[WorkItemRef]:
         for branch in payload.get("branches") or []:
             add(_issue_from_branch(branch.get("name") or ""))
 
+    host = _host(payload)
     return [
-        WorkItemRef(provider="github", owner=owner, repo=repo, number=n)
+        WorkItemRef(provider="github", owner=owner, repo=repo, number=n, host=host)
         for n in numbers
     ]
 

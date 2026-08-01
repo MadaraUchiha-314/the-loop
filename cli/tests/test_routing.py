@@ -285,6 +285,41 @@ def test_router_extracts_issue_comment_work_item():
     assert [r.ref for r in refs] == [REF]
 
 
+def test_a_work_item_on_github_enterprise_is_routed_as_such():
+    """The host comes off the payload, not from an assumption (issue-130 review).
+
+    Every real webhook carries the repository's ``html_url``. Reading it here is
+    what lets a GitHub Enterprise work item be identified where it enters, so its
+    ref, its state file name and its URL all name the host it actually lives on —
+    rather than github.com, where it does not exist.
+    """
+    payload = payload_issue_comment()
+    payload["repository"]["html_url"] = "https://ghe.corp.example/octo/repo"
+
+    refs = extract_work_items("issue_comment", payload)
+    assert [r.ref for r in refs] == ["github:ghe.corp.example/octo/repo#15"]
+    assert refs[0].host == "ghe.corp.example"
+    assert refs[0].url == "https://ghe.corp.example/octo/repo/issues/15"
+    assert refs[0].slug == "github-ghe.corp.example-octo-repo-15"
+
+
+def test_the_item_url_is_the_fallback_host_source():
+    """The poller's synthesised payloads carry the item's URL, not the repo's."""
+    payload = payload_issue_comment()
+    payload["issue"]["html_url"] = "https://ghe.corp.example/octo/repo/issues/15"
+
+    refs = extract_work_items("issue_comment", payload)
+    assert [r.ref for r in refs] == ["github:ghe.corp.example/octo/repo#15"]
+
+
+def test_a_payload_with_no_host_still_means_github_com():
+    """What a ref without a host has always meant — unchanged, and unwritten."""
+    refs = extract_work_items("issue_comment", payload_issue_comment())
+    assert [r.ref for r in refs] == [REF]
+    assert refs[0].host == "github.com"
+    assert refs[0].slug == "github-octo-repo-15"
+
+
 def test_router_extracts_pr_number_branch_issue_and_closing_keyword():
     payload = payload_pull_request(body="Closes #15")
     refs = {r.ref for r in extract_work_items("pull_request", payload)}

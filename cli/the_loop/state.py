@@ -78,6 +78,11 @@ class StateLayout:
         return str(self.root_path / "portable")
 
     @property
+    def portable_index(self) -> str:
+        """The portable directory's index — derived, rewritten on every record write."""
+        return str(self.root_path / "portable" / "index.json")
+
+    @property
     def local_dir(self) -> str:
         """Session records — handles to harness conversations on this machine."""
         return str(self.root_path / "local")
@@ -158,6 +163,22 @@ GENERATED_PATHS: Tuple[GeneratedPath, ...] = (
             "us — true whoever runs the daemon. Neither is derivable upstream: "
             "nothing on GitHub records that a stop was honoured, and a machine "
             "without the poll half treats every watched thread as first-sight."
+        ),
+    ),
+    GeneratedPath(
+        name="work-item index",
+        attr="portable_index",
+        default="<root>/portable/index.json",
+        portable=True,
+        holds=(
+            "one entry per record beside it: ref, url, file name, which sections "
+            "it holds"
+        ),
+        why=(
+            "it describes portable records, so it travels with them or describes "
+            "a directory that is not there. Derived on every write and read by "
+            "nothing, so a copy is never wrong for long and two machines "
+            "conflicting on it may resolve to either side."
         ),
     ),
     GeneratedPath(

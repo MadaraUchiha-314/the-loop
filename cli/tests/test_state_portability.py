@@ -102,7 +102,10 @@ def test_declared_attrs_resolve_to_their_documented_default() -> None:
 def test_exactly_the_world_facts_are_portable() -> None:
     """The split itself, stated once so a flipped boolean is a red build."""
     portable = sorted(e.name for e in GENERATED_PATHS if e.portable)
-    assert portable == ["work-item record"]
+    # The records, and the index that describes them (issue-130) — which travels
+    # for exactly that reason: left behind, it would describe a directory that is
+    # not there.
+    assert portable == ["work-item index", "work-item record"]
     assert all(entry.why.strip() for entry in GENERATED_PATHS)
 
 

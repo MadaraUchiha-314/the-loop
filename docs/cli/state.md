@@ -24,6 +24,7 @@ working directory), split by whether it travels:
 ```
 .the-loop/
 ├── portable/
+│   ├── index.json                 # what this directory holds, derived — tracked
 │   └── github-octo-repo-15.json   # one per work item: control + poll state — tracked
 ├── local/
 │   └── github-octo-repo-15.json   # that item's session handle — never tracked
@@ -64,6 +65,7 @@ them, is what makes the `.gitignore` recipe three lines instead of a puzzle
 | Path | Written by | Holds | Travels? |
 |---|---|---|---|
 | `<root>/portable/<slug>.json` | execution control + the poller | what was armed, and which comments are already seen | **portable** |
+| `<root>/portable/index.json` | the same store, derived | one entry per record: ref, url, file, sections | **portable** |
 | `<root>/local/<slug>.json` | the session registry | conversation id, `cwd`, runner, tmux target, status | **local** |
 | `<root>/logs/events.jsonl` | every ingress, and `sessions` | one JSON object per decision | **local** |
 | `<root>/gh-webhook.pid` | `gh-webhook start` | the receiver's pid | **local** |
@@ -82,11 +84,14 @@ portable half above is classified on exactly that reasoning.
 ## Work-item record — `<root>/portable/<slug>.json`
 
 One file per work item, named for its ref (`github:octo/repo#15` →
-`github-octo-repo-15.json`), with two independent sections.
+`github-octo-repo-15.json`), with two independent sections and, since
+[issue-130](https://github.com/MadaraUchiha-314/the-loop/issues/130), a link to the work
+item itself.
 
 ```json
 {
   "ref": "github:octo/repo#15",
+  "url": "https://github.com/octo/repo/issues/15",
   "control": {
     "command": "start",
     "source": "comment",
@@ -102,6 +107,34 @@ One file per work item, named for its ref (`github:octo/repo#15` →
   }
 }
 ```
+
+### `ref` and `url` — which work item this is about
+
+`ref` is the identity: it is what the daemon parses, what the file name is derived from,
+and what the pre-issue-128 shim keys on. `url` is the same fact in the form you can click,
+added beside it rather than replacing it, because these files are tracked and therefore
+read by people.
+
+The URL is **derived, never guessed**: only `github` refs resolve, to the host the ref
+names — `github.com` unless it says otherwise — and only when the host, owner and repo are
+the shapes GitHub accepts. Anything else, such as a `jira:` ref, has no `url` field at
+all, because a link somewhere other than the work item is worse than no link. When the
+number belongs to a pull request, GitHub redirects `…/issues/<n>` to `…/pull/<n>`, so one
+form serves both.
+
+::: tip GitHub Enterprise
+A work item that does not live on github.com carries its host in the ref
+(`github:ghe.corp.example/octo/repo#15`), and therefore in its file name
+(`github-ghe.corp.example-octo-repo-15.json`) and its URL. Nothing has to be configured:
+the receiver reads the host from the repository's `html_url` and the poller from the
+item's own. Two work items with the same owner/repo/number on different hosts are
+different work items, and get different records.
+
+If you were already running the-loop against a GitHub Enterprise host, its work items
+are **re-identified** by this change — a new file name, so the poll ledger re-baselines
+the thread once and any session for it should be re-registered
+(`the-loop sessions register`). github.com work items are untouched.
+:::
 
 ### `control` — what an authorized user asked for
 
@@ -144,6 +177,51 @@ Control comes from a keyword a human typed; the poll section from what the polle
 are written by different components, and grouping by *writer* is what used to spread this
 across three stores. Writes are read-modify-write per section, so a poll cycle can never
 clobber a control command recorded a moment earlier by the other ingress.
+:::
+
+## Work-item index — `<root>/portable/index.json`
+
+One file listing the records beside it, so the directory answers *"what is the-loop
+tracking?"* without opening every record ([issue-130](https://github.com/MadaraUchiha-314/the-loop/issues/130)).
+
+```json
+{
+  "workItems": [
+    {
+      "ref": "github:octo/repo#15",
+      "url": "https://github.com/octo/repo/issues/15",
+      "file": "github-octo-repo-15.json",
+      "sections": ["control", "poll"]
+    }
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `ref` / `url` | the work item, and its page — same rule as the record above (`url` is absent when none can be derived) |
+| `file` | the record's name inside `portable/` |
+| `sections` | which of `control` / `poll` that record actually holds |
+| `sealed` | present only on an [upgrade tombstone](#upgrading-from-the-pre-issue-128-layout), which is why it has no sections |
+
+**Lifecycle.** Rewritten after every record write and every removal, by scanning the
+directory — never maintained incrementally. Entries are ordered by `ref`, so an unchanged
+directory produces an identical file and a diff shows only what changed. When the last
+record goes, the index goes with it.
+
+**Nothing reads it.** Not the daemon, not any command. That is deliberate
+([decision-047](/decisions/decision-047)): an index that gated behaviour would be a second
+source of truth for what the directory already states, and a stale second source is worse
+than none.
+
+**If you delete it:** nothing happens, and the next record write puts it back. The same is
+true if it is stale, hand-edited, or arrives from someone else's pull request.
+
+::: tip Conflicts on it are safe
+This is the one file both machines write even when they worked *different* work items —
+the property [decision-046](/decisions/decision-046) otherwise gives you. Because it is
+derived, resolving is not a judgement call: **take either side** (or delete the file), and
+the next write rebuilds it from the directory.
 :::
 
 ## Session record — `<root>/local/<slug>.json`
@@ -274,6 +352,10 @@ once and writes it forward, so no watched thread is re-baselined and nothing arm
 forgotten. Writes only ever go to the new layout, so each work item converges the first
 time it is touched. Delete `<root>/sessions/` once `the-loop sessions list` and
 `the-loop events` look right.
+
+An existing `portable/` directory gains its `index.json` (and each record its `url`) the
+first time anything is written — a poll cycle, or an accepted control keyword. There is no
+migration step, and nothing is lost by not having them yet.
 
 While both trees exist you may see a record like `{"ref": …, "sealed": true}`, or a
 section written as `null`. That is a work item whose state the-loop ended deliberately,

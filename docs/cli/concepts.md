@@ -57,6 +57,13 @@ fail closed when unset. See [Configuring the-loop](/config/),
 A **work item** is a ticket, referenced as `github:OWNER/REPO#N`. A **session** is a
 running harness conversation — a Claude Code session id, or a Cursor chat id.
 
+A work item that does **not** live on github.com names its host —
+`github:ghe.corp.example/OWNER/REPO#N`. The full grammar is
+`<provider>:[<host>/]<owner>/<repo>#<number>`, and the host is left unwritten when it is
+github.com, so ordinary refs are exactly what they always were. Neither ingress needs to
+be told which it is: the webhook receiver reads the host from the repository's
+`html_url`, and the poller from the item's own URL.
+
 The invariant: **one work item, one active session.** The
 [registry](/cli/commands/sessions) is the source of truth, one human-inspectable JSON file
 per session under `<state.root>/local/`, written atomically so concurrent sessions on
