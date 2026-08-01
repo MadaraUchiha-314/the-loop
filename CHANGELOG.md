@@ -1,3 +1,9 @@
+## v4.1.0 (2026-08-01)
+
+### Feat
+
+- **issue-130**: index the portable directory, and give a ref a URL (and a host) (#131)
+
 ## v4.0.0 (2026-07-31)
 
 ### BREAKING CHANGE
