@@ -1,3 +1,9 @@
+## v4.2.0 (2026-08-03)
+
+### Feat
+
+- **issue-132**: make a custom-instruction registration verifiable, and findable (#133)
+
 ## v4.1.0 (2026-08-01)
 
 ### Feat
