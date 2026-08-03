@@ -14,7 +14,8 @@ and **design.md** — the implementation → review portion of the loop. A slice
 `reference/tooling.md` first.**
 Load `.the-loop/harness-config.yaml`; read every custom instruction doc it registers
 (`customInstructions.docs`, in order — the operator's conventions and styles,
-`reference/instructions.md`); apply any per-task `overrides` from the spec front-matter.
+`reference/instructions.md`, and `the-loop instructions` to confirm each one resolved);
+apply any per-task `overrides` from the spec front-matter.
 
 **Start clean.** Entering implementation crosses a phase boundary: apply
 `contextManagement.phaseBoundary` (default `clear`) so execution runs against the

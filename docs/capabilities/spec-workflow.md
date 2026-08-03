@@ -58,6 +58,15 @@ the `/the-loop:work-on` superset command and granular per-step commands
   the loop's gates (security, paper trail, reviews, autonomy) — such instructions are
   ignored and the conflict logged, fail-closed. A missing doc is handled per
   `customInstructions.onMissing` (default `warn`).
+- **A registration SHALL be verifiable, not only honoured.** WHEN an operator runs
+  `the-loop instructions` THEN the loop SHALL report every registered doc, in configured
+  order, with its resolved path and one of `present` / `missing` / `unreadable` /
+  `invalid`; everything that is not `present` SHALL count as unresolved (`invalid`
+  included), and `customInstructions.onMissing` SHALL decide the exit code — `error` → 1,
+  `warn` → 0 with a warning naming each one, `ignore` → 0. IF the harness config is
+  absent, unparseable, or registers no docs THEN the report SHALL be empty and the exit
+  code 0, because configuring nothing is not an error. The report SHALL carry facts
+  *about* each doc and never its contents ([cli](cli.md), issue-132).
 - The loop SHALL manage its context window by **checkpoint-then-reset**
   (`config.contextManagement`): a reset (clear or compact) is always preceded by a
   checkpoint — `tasks.md` checkmarks current, an execution-log entry with a concrete
@@ -101,6 +110,7 @@ the `/the-loop:work-on` superset command and granular per-step commands
 | issue-124 | A bug's `bugfix.md` clears the phase-1 gate it always should have: the two documented names became alternatives for one artifact, both present blocks, and the bundled bugfix template gained the `## Requirements` heading the gate asks for | [spec](../specs/issue-124/), [decision-045](../decisions/decision-045.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/124) |
 | issue-109 | The phase state machine became executable: every phase is a node in the shipped process graph, with hook chains deciding completion and declared edges routing on the outcome | [spec](../specs/issue-109/), [process-graph](process-graph.md), [decision-041](../decisions/decision-041.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/109) |
 | issue-101 | The execution log tracks a **list** of the PRs delivering a work item; each is labelled for routing and all must be merged/closed before `finish-tasks` completes the item | [spec](../specs/issue-101/), [decision-039](../decisions/decision-039.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/101) |
+| issue-132 | Custom instruction docs became **verifiable**: `the-loop instructions` reports which registered docs resolve and turns `onMissing` into an exit code, so a mistyped path is a signal rather than silence | [spec](../specs/issue-132/), [decision-049](../decisions/decision-049.md), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/132) |
 | issue-59 | Added per-installation custom instruction docs the loop reads and honors (`customInstructions` config, onboarding group, precedence rules) | [spec](../specs/issue-59/), [decision-029](../decisions/decision-029.md) |
 | issue-48 | Added checkpoint-then-reset context-window management (clear at phase boundaries, compact at task boundaries, `contextManagement` config) | [spec](../specs/issue-48/), [decision-027](../decisions/decision-027.md) |
 | issue-47 | Security became a gated concern of every phase: threat-model-lite in requirements, Security design section, security-review gate item, risk-tiered human sign-off (`config.security`) | [spec](../specs/issue-47/), [decision-026](../decisions/decision-026.md) |

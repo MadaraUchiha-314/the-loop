@@ -11,7 +11,8 @@ Kiro-style 3-phase spec workflow (https://kiro.dev/docs/specs/). Load
 `.the-loop/harness-config.yaml` first, then **read every custom instruction doc it registers**
 (`customInstructions.docs`, in order; missing docs per `customInstructions.onMissing`)
 and honor them throughout — they carry the operator's conventions and styles
-(`reference/instructions.md`). Apply any per-task `overrides` from the work item's
+(`reference/instructions.md`). Run `the-loop instructions` alongside that read, so a
+registration that fails to resolve surfaces instead of quietly contributing nothing. Apply any per-task `overrides` from the work item's
 front-matter. Specs live in `<workflow.specDir>/<id>/` (default `docs/specs/<id>/`).
 
 **`work-on` is the superset.** The same flow is also exposed as granular commands you can

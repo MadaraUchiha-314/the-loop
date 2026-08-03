@@ -173,7 +173,9 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   these are the operator's conventions (developing/testing/coding styles, house rules)
   that the structured config does not model. The structured config wins where both
   speak, and no instruction doc can weaken the loop's gates (security, paper trail,
-  reviews); a missing doc is handled per `customInstructions.onMissing`. See
+  reviews); a missing doc is handled per `customInstructions.onMissing`. Run
+  `the-loop instructions` at the same time, so a registration that silently fails to
+  resolve is a signal rather than guidance you never received. See
   `reference/instructions.md`.
 - **Use the configured tooling.** Package managers, test runners, linters, type checkers
   and release tooling come from `.the-loop/harness-config.yaml`; run scripts from the project
