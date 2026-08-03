@@ -33,6 +33,7 @@ is what lets [`check`](/cli/commands/check) run as a CI gate in a bare checkout.
 | [`graph`](/cli/commands/graph) | Inspect and drive the [process graph](/capabilities/process-graph): `show`, `status`, `advance`, `run`, `force`. |
 | [`critic`](/cli/commands/critic) | Hand a review round to a **different** harness and read back what it said, as one JSON envelope. |
 | [`scenarios`](/cli/commands/scenarios) | The table of Gherkin scenarios the integration tests cover. |
+| [`instructions`](/cli/commands/instructions) | Which of the project's registered [custom instruction docs](/operating-model/reference/instructions) actually resolve — and `onMissing` as an exit code. |
 
 ## Maintenance
 

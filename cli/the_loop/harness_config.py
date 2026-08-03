@@ -119,6 +119,13 @@ READS: Tuple[HarnessConfigRead, ...] = (
         "scenarios",
         "where the integration tests live is part of the repository's layout",
     ),
+    HarnessConfigRead(
+        "customInstructions",
+        "instructions",
+        "which conventions govern work on this repository is a fact about this "
+        "repository, and the agent reads the same entries — a check resolving a "
+        "different list from the one the loop honours would verify nothing",
+    ),
 )
 
 

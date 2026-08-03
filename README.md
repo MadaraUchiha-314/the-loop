@@ -129,11 +129,17 @@ Granular commands run the same flow one step at a time:
   **internal to the-loop** — they ship with the plugin under
   [`skills/the-loop/templates/`](skills/the-loop/templates/) and are read from there when
   an artifact is authored, rather than being copied into every project.
+- **Your project's own rules are read too.** Register your existing convention docs —
+  `CONTRIBUTING.md`, a house style guide, a company-wide policy file living outside the
+  repo — under `customInstructions.docs`, and the loop reads every one of them, in order,
+  before it starts a work item. `the-loop instructions` reports which ones actually
+  resolve, so a mistyped path is a signal rather than silence. See the
+  [instructions reference](skills/the-loop/reference/instructions.md).
 - **The operating model** is captured in the
   [`the-loop` skill](skills/the-loop/SKILL.md), with the full detail in its
-  [reference docs](skills/the-loop/reference/) — `workflow`, `design-artifacts`,
-  `reviewing`, `tooling`, `testing`, `minimalism`, `collaboration`, `observability`, and
-  `automation`.
+  [reference docs](skills/the-loop/reference/) — `workflow`, `context`, `onboarding`,
+  `instructions`, `design-artifacts`, `reviewing`, `security`, `tooling`, `testing`,
+  `minimalism`, `token-economy`, `collaboration`, `observability`, and `automation`.
 
 ## CLI companion (`the-loop`)
 
@@ -152,6 +158,7 @@ the-loop check <work-item>  # evaluate a work item's nodes against its artifacts
 the-loop graph status <id>  # where a work item sits in the process graph
 the-loop critic run <name> --prompt-file <path>   # one critic round; prints a JSON envelope
 the-loop scenarios          # every Gherkin scenario the integration tests cover
+the-loop instructions       # the project's registered instruction docs, and whether they resolve
 ```
 
 Full documentation: **[the-loop CLI](https://madarauchiha-314.github.io/the-loop/cli/)** — overview,
@@ -171,6 +178,9 @@ Full documentation: **[the-loop CLI](https://madarauchiha-314.github.io/the-loop
 - Configured self-reviews and critic reviews run **before** escalating to a human. A critic
   is a *runnable* config entry — `reviews.critics[]` names the harness (or the executable
   and its args), and `the-loop critic run` spawns it and hands its output back.
+- The project's **own** conventions are honoured: every doc registered in
+  `customInstructions.docs` is read before work starts, and the loop's own gates —
+  security, paper trail, reviews — are the one thing an instruction doc cannot weaken.
 - The same tooling runs locally and in CI; logging is identical at dev-time and runtime.
 - Integration tests document their scenario in **Gherkin** docstrings (linked to the
   spec's `requirements.md`), queryable as a table via `the-loop scenarios`.

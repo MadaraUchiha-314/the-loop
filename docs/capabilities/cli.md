@@ -123,6 +123,14 @@ self-learning/ML capabilities.
 - `the-loop scenarios` SHALL output the table of every Gherkin scenario covered by the
   integration tests (`--format table|markdown|json`; see
   [testing-and-contracts](testing-and-contracts.md)).
+- `the-loop instructions` SHALL report every doc registered in `customInstructions.docs`,
+  in configured order, with its configured path, resolved absolute path, `notes` and state
+  (`present` / `missing` / `unreadable` / `invalid`), in `--format table|markdown|json`.
+  Everything not `present` counts as unresolved, and `customInstructions.onMissing`
+  decides the exit code (`error` → 1, `warn`/`ignore` → 0) independently of the format.
+  Like `check` and `scenarios` it is repo-scoped and pure — filesystem reads only — and it
+  SHALL report facts *about* each doc, never its contents (see
+  [spec-workflow](spec-workflow.md)).
 - `the-loop critic list|run` SHALL list the configured critic harnesses and run **one**
   named critic-review round, printing its result as a single JSON envelope on stdout — the
   seam by which the running harness hands work to a *different* harness and reads back what
@@ -161,6 +169,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-132 | Added `instructions`, the sixth harness-config read: it resolves every doc registered in `customInstructions.docs` and turns `onMissing` into an exit code, so a mistyped path stops being silent. Reports facts about each doc, never its contents | [spec](../specs/issue-132/), [decision-049](../decisions/decision-049.md), [spec-workflow](spec-workflow.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/132) |
 | issue-130 | `portable/` made readable: a derived `index.json` listing every record (ref, url, file, sections), rebuilt on every write and read by nothing, plus a `url` beside each record's `ref`. On PR review, refs learned about **hosts** — `[<host>/]<owner>/<repo>`, identified at both ingresses from the event's own URLs — so a GitHub Enterprise work item links, and is identified, correctly | [spec](../specs/issue-130/), [decision-047](../decisions/decision-047.md), [decision-048](../decisions/decision-048.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/130) |
 | issue-128 | Generated state classified portable vs local (`GENERATED_PATHS`), documented file by file in `docs/cli/state.md`, and **reorganised by that classification**: one `portable/<slug>.json` per work item (control + poll, read-modify-write) tracked in git, machine-local handles under `local/`, three writer-shaped stores gone, `polling.stateFile` retired through the config migration, and the old locations read forward on upgrade | [spec](../specs/issue-128/), [decision-046](../decisions/decision-046.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/128) |
 | issue-121 | The harness-config read surface stated as a direction rule and pinned: one reader module (`the_loop.harness_config`) with a declared `READS` tuple replacing three duplicated readers, a test asserting it against the schema and the docs, and the four pages that claimed the daemon never reads a repo's harness config corrected — it has, on the `graphlink` path, since issue-113 | [spec](../specs/issue-121/), [decision-044](../decisions/decision-044.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/121) |

@@ -47,6 +47,30 @@ customInstructions:
   style guides under `docs/`) and the user confirms, adjusts or adds paths —
   including per-machine absolute paths init could never detect.
 
+## Verifying a registration
+
+Registering a doc and *reaching* it are different things, and until issue-132 only the
+first was observable: a mistyped or moved path contributed no guidance and produced no
+signal, so `onMissing: error` was a setting that never errored.
+
+```bash
+the-loop instructions                      # each entry, its resolved path, its state
+the-loop instructions --format json        # machine-readable, for a harness or CI
+```
+
+Each entry comes back as `present`, `missing` (nothing resolves at that path),
+`unreadable` (something is there, but it is not a readable text file) or `invalid` (the
+entry itself has no usable `path`). Everything that is not `present` counts as
+unresolved — `invalid` included, because a registration the-loop could not understand is
+guidance that is not reaching the agent. `onMissing` then decides the exit code:
+`error` → 1, `warn`/`ignore` → 0. A repository that registers no docs reports an empty
+list and succeeds.
+
+**Run it at the start of a work item**, alongside reading the docs themselves — it is
+how "I read your conventions" becomes a checked claim rather than a promise. It reports
+facts *about* each doc and never its contents, so pointing it at a doc is not a way to
+read one.
+
 ## Precedence (who wins on conflict)
 
 1. **the-loop's hard gates are not negotiable.** No instruction doc can weaken
