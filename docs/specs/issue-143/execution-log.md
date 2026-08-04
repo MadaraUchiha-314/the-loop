@@ -87,6 +87,29 @@ status: in-progress
 - **Checkpoint/tests:** full suite re-run green after the review fixes.
 - **Blockers:** human approval on the PR + a named security sign-off (risk tier 4).
 
+### 2026-08-04 — rebased onto main (issue-142 landed)
+
+- **Phase:** needs-review
+- **Did:** Owner asked for a rebase on PR #145. `main` had moved by two commits, one of them
+  breaking: [#144](https://github.com/MadaraUchiha-314/the-loop/pull/144) (issue-142)
+  promoted `routing` out from under `webhooks.ghWebhook` to the top level, and took decision
+  number **053**. Resolved by taking main's version of every conflicted file and re-applying
+  this work item's additions on the new layout:
+  - `harnessPlugins` re-inserted into the relocated top-level `routing` block in the schema
+    and both `cli-config.yaml` mirrors (re-indented for the shallower nesting);
+  - this work item's decision record renumbered `053 → 054` — every reference updated
+    (`harness_plugins.py`, the spec chain, the capability doc, the config reference, the
+    schema description, the decisions index);
+  - `webhooks.ghWebhook.routing` → `routing` throughout this work item's prose and the
+    `PluginConfig` docstring.
+- **Checkpoint/tests:** full suite re-run on the rebased branch — **1104 passed, 2 skipped**
+  (11 more than before: main's own new tests); ruff clean, pyright 0 errors, config VALID,
+  markdownlint 0 errors.
+- **Notes:** issue-142 also shipped a config migration for the `routing` move; the new
+  `harnessPlugins` key sits inside `routing`, so it travels with the block and needs no
+  migration of its own.
+- **Next:** human approval + named security sign-off.
+
 ## Review cycles
 
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
@@ -131,4 +154,4 @@ status: in-progress
 | R3.4 best-effort | existing `test_an_exploding_adapter_hook_does_not_wedge_the_work_item` covers the path unchanged |
 | R3.5 independent switches | `test_the_two_pre_spawn_steps_are_independently_switchable`, `test_disabled_trust_leaves_the_harness_config_alone` |
 | R4.1 this repo dogfoods it | `.claude/settings.json` diff |
-| Gates | 1093 passed / 2 skipped · ruff clean · pyright 0 errors · config VALID · markdownlint 0 errors |
+| Gates | 1104 passed / 2 skipped · ruff clean · pyright 0 errors · config VALID · markdownlint 0 errors |
