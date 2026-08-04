@@ -195,6 +195,12 @@ EVENT_TYPES: Dict[str, str] = {
         "was left active (work_item, reason, closed_ref, delivery_id); a work "
         "item may be delivered by several PRs (issue-101)."
     ),
+    "session.reset": (
+        "A work item's state on this machine was reset — `the-loop sessions "
+        "reset` (work_item, actor, removed: which of workspace|session|control|"
+        "poll went, found: false when there was nothing here, was_live, error). "
+        "Appended like every other event: a reset can never erase its own trail."
+    ),
     "session.harness_terminated": (
         "The harness process inside a retained tmux session was ended when the "
         "work item closed, so the pane stays readable but can no longer be "

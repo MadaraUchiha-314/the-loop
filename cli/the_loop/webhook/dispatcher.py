@@ -833,7 +833,7 @@ class Dispatcher:
         session: Session,
         routed: Optional[RoutedEvent] = None,
         reason: str = "",
-    ) -> None:
+    ) -> bool:
         """End a session: registry entry, tmux/harness, workspace checkout.
 
         The one close path, shared by the work item's own closure (issue-94), by
@@ -844,14 +844,20 @@ class Dispatcher:
         ``routed`` is the event that caused it, when there is one; without it the
         repository is taken from the session's own work-item ref, which is all
         the workspace cleanup needs.
+
+        Returns whether a workspace checkout was removed with it — the one fact
+        about a close that its caller cannot observe for itself, and what lets
+        ``sessions reset`` say "removed workspace" truthfully instead of
+        "workspace: maybe" (issue-137). Callers that do not care ignore it.
         """
         self.registry.close(session.work_item)
         if session.runner == "tmux":
             self._close_tmux(session)
         payload = routed.payload if routed is not None else _repo_payload(session)
-        self._cleanup_workspace(session, payload)
+        cleaned = self._cleanup_workspace(session, payload)
         if reason:
             logger.info("closed session %s (%s)", session.work_item.ref, reason)
+        return cleaned
 
     def _close_tmux(self, session: Session) -> None:
         """Retain (default) or kill a tmux session whose work item is closing.
@@ -1654,13 +1660,18 @@ class Dispatcher:
         )
         return str(checkout)
 
-    def _cleanup_workspace(self, session: Session, payload: dict) -> None:
-        """Remove a work item's worktree when its session ends (best-effort)."""
+    def _cleanup_workspace(self, session: Session, payload: dict) -> bool:
+        """Remove a work item's worktree when its session ends (best-effort).
+
+        Returns whether a checkout was actually removed — advisory as ever (a
+        git failure is warned about, never raised), but now *reported*, because
+        a reset has to tell the operator that uncommitted work went with it.
+        """
         if self.workspace is None or self.config.workspace.keep_checkout_on_close:
-            return
+            return False
         target = self._repo_target(payload)
         if target is None:
-            return
+            return False
         try:
             removed = self.workspace.cleanup(
                 target,
@@ -1671,7 +1682,7 @@ class Dispatcher:
             logger.warning(
                 "workspace cleanup for %s failed: %s", session.work_item.ref, exc
             )
-            return
+            return False
         if removed:
             logger.info("cleaned workspace for %s", session.work_item.ref)
             eventlog.emit(
@@ -1679,6 +1690,7 @@ class Dispatcher:
                 work_item=session.work_item.ref,
                 strategy=self.workspace.strategy,
             )
+        return bool(removed)
 
     def _render_prompt(
         self, routed: RoutedEvent, work_item: WorkItemRef, template: Template

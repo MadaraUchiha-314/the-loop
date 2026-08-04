@@ -585,6 +585,55 @@ def test_dispatcher_clone_strategy_pr_close_removes_work_item_folder(tmp_path):
     assert not ws.workitem_dir(item.slug).exists()  # whole folder removed
 
 
+def test_close_session_reports_that_it_removed_the_checkout(tmp_path):
+    """issue-137: the one fact about a close its caller cannot observe.
+
+    `sessions reset` prints "removed workspace" only when a checkout really
+    went, so the answer has to come back from the close path itself.
+    """
+    bare = make_origin(tmp_path)
+    registry, dispatcher = _dispatcher(tmp_path, bare, _RecordingAdapter())
+    item = WorkItemRef.parse("github:octo/repo#16")
+    ws = Workspace(tmp_path / "root")
+    worktree = ws.ensure_worktree(target_for(bare), item.slug)
+    session = registry.register(
+        Session(
+            work_item=item,
+            harness="claude",
+            harness_session_id="s-1",
+            cwd=str(worktree),
+        )
+    )
+    try:
+        assert dispatcher.close_session(session, reason="reset") is True
+    finally:
+        dispatcher.stop()
+    assert not worktree.exists()
+
+
+def test_close_session_reports_no_removal_when_the_checkout_is_kept(tmp_path):
+    bare = make_origin(tmp_path)
+    registry, dispatcher = _dispatcher(
+        tmp_path, bare, _RecordingAdapter(), keep_checkout_on_close=True
+    )
+    item = WorkItemRef.parse("github:octo/repo#16")
+    ws = Workspace(tmp_path / "root")
+    worktree = ws.ensure_worktree(target_for(bare), item.slug)
+    session = registry.register(
+        Session(
+            work_item=item,
+            harness="claude",
+            harness_session_id="s-1",
+            cwd=str(worktree),
+        )
+    )
+    try:
+        assert dispatcher.close_session(session, reason="reset") is False
+    finally:
+        dispatcher.stop()
+    assert worktree.exists()
+
+
 def test_dispatcher_without_workspace_uses_spawn_workdir(tmp_path):
     # Legacy behaviour preserved: no workspace.root => static spawnWorkdir.
     adapter = _RecordingAdapter()

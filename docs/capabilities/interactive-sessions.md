@@ -61,6 +61,15 @@ the same conversation.
   pausing suppresses *delivery*, it does not touch the hosted TUI, so the conversation
   is intact when the work item is resumed. Attaching to a paused session still works
   (and is still writable — a human at the terminal is not what a pause holds off).
+- WHEN a work item is **reset** (issue-137 — `the-loop sessions reset`) AND it has a live
+  session THEN that session SHALL be ended through the same close path above, so its tmux
+  session is retained or killed by exactly the configured policy; the difference from a
+  stop is what happens **after** — the registry record is deleted rather than left closed,
+  so the retained tmux session is no longer reachable through
+  `sessions attach --work-item` and is read back with `tmux attach -r -t loop-<slug>`
+  directly, or cleaned up with `tmux kill-session`. A reset SHALL therefore always report
+  that it ended a live session, and SHALL report a removed workspace checkout separately,
+  because uncommitted work in it does not survive.
 - WHEN a work item ends — the registered item itself closed or merged (one of its
   *linked* PRs closing does not end it, issue-101), or `the-loop sessions stop` /
   `the-loop sessions close` run —
@@ -146,6 +155,7 @@ the same conversation.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-137 | `sessions reset` ends a live session through that same close path and then **deletes** its registry record, so the work item starts over on a fixed CLI; a tmux session retained by policy outlives the record and is read back with `tmux attach -r -t loop-<slug>` | [spec](../specs/issue-137/), [decision-050](../decisions/decision-050.md), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/137) |
 | issue-106 | `paused` sessions (delivery suppressed, tmux session and conversation untouched) and `sessions stop`, which ends a session through the same close path a merge takes | [spec](../specs/issue-106/), [decision-040](../decisions/decision-040.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/106) |
 | issue-104 | The session-announcement comment is now marked as the-loop's own, so the poller stops pasting "the-loop started an interactive session for …" into that very session | [spec](../specs/issue-104/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/104) |
 | issue-32 | Introduced the tmux runner, `sessions attach`, the ttyd web terminal and dependency preflight | [spec](../specs/issue-32/), [decision-021](../decisions/decision-021.md) |
