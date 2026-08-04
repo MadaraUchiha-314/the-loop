@@ -1,3 +1,9 @@
+## v6.1.0 (2026-08-04)
+
+### Feat
+
+- **issue-143**: enable the-loop's own plugin before a spawned session starts (#145)
+
 ## v6.0.0 (2026-08-04)
 
 ### BREAKING CHANGE
