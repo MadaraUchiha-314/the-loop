@@ -1,3 +1,9 @@
+## v6.2.0 (2026-08-04)
+
+### Feat
+
+- **issue-148**: the graph runs the PDLC — completion claims, consult-first dispatch, session inheritance (#149)
+
 ## v6.1.1 (2026-08-04)
 
 ### Fix
