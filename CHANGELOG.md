@@ -1,3 +1,17 @@
+## v6.0.0 (2026-08-04)
+
+### BREAKING CHANGE
+
+- `webhooks.ghWebhook.routing` moved to the top-level `routing`
+key. A CLI config still declaring the old path is refused rather than silently
+ignored, because `routing.authorizedUsers` decides which GitHub logins may
+drive the daemon. Run `/the-loop:upgrade-the-loop` (or `the-loop
+migrate-config`) to move it; nothing inside the block changed.
+
+### Feat
+
+- **issue-142**: promote `routing` out from under `webhooks.ghWebhook` — it governs both ingresses (#144)
+
 ## v5.2.1 (2026-08-04)
 
 ### Fix
