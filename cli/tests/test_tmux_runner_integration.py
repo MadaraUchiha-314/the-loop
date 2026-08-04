@@ -519,15 +519,25 @@ def test_dead_session_is_respawned_with_the_event_as_boot_prompt(pipeline, monke
     monkeypatch.setenv("STUB_TMUX_FAIL", "has-session")
     deliver("issue_comment", issue_payload(action="created"), "d-dead-1")
 
-    assert wait_until(
-        lambda: (
-            (
-                registry.find_by_work_item(REF)
-                or Session(WorkItemRef.parse(REF), "", "uuid-1", "")
-            ).harness_session_id
-            != "uuid-1"
+    def respawned_and_recorded() -> bool:
+        """Both registry writes landed, not just the first.
+
+        ``_spawn_tmux`` registers the respawned session and *then* marks the
+        delivery processed — ``register()`` followed by ``touch()``, two separate
+        writes. Waiting only on the new harness id observes the first and races
+        the second, so a worker thread descheduled between them left
+        ``recent_deliveries`` empty and failed the assertion below (seen in CI,
+        never locally). Every sibling test here already waits on the delivery
+        itself; this one was the exception.
+        """
+        found = registry.find_by_work_item(REF)
+        return bool(
+            found
+            and found.harness_session_id != "uuid-1"
+            and "d-dead-1" in found.recent_deliveries
         )
-    )
+
+    assert wait_until(respawned_and_recorded)
     respawned = registry.find_by_work_item(REF)
     assert respawned is not None and respawned.runner == "tmux"
     assert respawned.tmux_target == "loop-github-octo-repo-15"

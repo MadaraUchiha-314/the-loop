@@ -95,6 +95,16 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
 - **Paper trail.** Every human decision/opinion is captured on the ticket or PR.
   Planning questions → ticket comments. PR & all reviews → PR/ticket comments.
   Notify via configured messaging channels when a human action is pending.
+- **Ask on the declared channel; iterate artifacts on the PR.** A session the CLI daemon
+  drives is *told* where its answers come from (`routing.interaction.mode`, rendered into
+  the prompt): `work-item` (the default) means every question is a **comment on the ticket
+  or PR** and the session then waits for the reply to arrive as an event — never block on
+  an interactive prompt, never read silence as consent; `cli` means a human is attached to
+  this terminal, so ask here and record the *outcome* on the ticket. **Independently of
+  the mode:** once an artifact exists (`brainstorm.md`, `requirements.md`/`bugfix.md`,
+  `design.md`, `tasks.md`), iterate on it **only** through pull-request review on the PR
+  that carries it — commit and push it, never re-paste it into a ticket comment. See
+  `reference/collaboration.md` § Where questions go.
 - **RULE: mark every comment/reply as your own (loop prevention).** You post as the
   operator's own credentials, so an unmarked reply is indistinguishable from a human
   one and can resume your own session forever. Before posting **any** comment, PR
