@@ -1,3 +1,9 @@
+## v5.1.0 (2026-08-04)
+
+### Feat
+
+- **issue-137**: reset the-loop CLI's state for a work item (#141)
+
 ## v5.0.0 (2026-08-04)
 
 ### BREAKING CHANGE
