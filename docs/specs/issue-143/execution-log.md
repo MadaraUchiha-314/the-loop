@@ -25,7 +25,7 @@ status: in-progress
 
 | PR | Scope / tasks | Status |
 |----|---------------|--------|
-| [#144](https://github.com/MadaraUchiha-314/the-loop/pull/144) | all tasks 1–12 | open |
+| [#145](https://github.com/MadaraUchiha-314/the-loop/pull/145) | all tasks 1–12 | open |
 
 ## Progress entries
 
@@ -91,8 +91,8 @@ status: in-progress
 
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
 |-------|-----------------------------|----------|---------|------|
-| 1 | self | the-loop (this session) | findings fixed — see the implementation entry's *Notes* (stale existence-proxy assertions) and the fail-closed guard on `marketplaceRepo` | PR #144 |
-| 2 | security | built-in security-review | see the Security review section | PR #144 |
+| 1 | self | the-loop (this session) | findings fixed — see the implementation entry's *Notes* (stale existence-proxy assertions) and the fail-closed guard on `marketplaceRepo` | PR #145 |
+| 2 | security | built-in security-review | see the Security review section | PR #145 |
 
 > `reviews.critics[]` is empty in this repository's `harness-config.yaml`, so no critic
 > round could run; a round that cannot run is recorded rather than counted
