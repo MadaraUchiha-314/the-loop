@@ -40,7 +40,12 @@ answer to:
 - **which events were rejected / accepted, and why?** — `webhook.rejected`,
   `routing.dropped` and `dispatch.dropped` carry a machine-readable `reason`
   (e.g. `invalid-signature`, `unauthorized-actor`, `duplicate-delivery`,
-  `spawn-policy`, `awaiting-start`, `session-paused`);
+  `spawn-policy`, `awaiting-start`, `session-paused`, `session-occupied`);
+- **why did nothing get respawned?** — `session.respawn_averted` says the tmux session
+  was alive after all, so the pending event was pasted into it (issue-146); a
+  `dispatch.dropped` with `reason: session-occupied` says a dead session held the
+  `loop-<slug>` name and would not clear, so the event was **skipped** rather than
+  retried into the same collision forever;
 - **who started (or stopped) this autonomous run?** — `control.command` records the
   command, its `source` (`comment` | `cli`), the `actor` and the `effect`
   (`spawned`/`resumed`/`paused`/`stopped`/`noop`); `control.rejected` and

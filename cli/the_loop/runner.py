@@ -32,6 +32,10 @@ if TYPE_CHECKING:  # pragma: no cover — type-only
 
 __all__ = [
     "HUB_SESSION",
+    "SESSION_ABSENT",
+    "SESSION_DEAD",
+    "SESSION_LIVE",
+    "SESSION_UNKNOWN",
     "TmuxResult",
     "TmuxRunner",
     "UnsupportedRunnerError",
@@ -57,6 +61,25 @@ _TERMINATE_POLL_SECONDS = 0.2
 # and terminating reaches OS processes — so a corrupted/hand-edited `tmuxTarget`
 # must not be able to aim a SIGTERM at some other tmux session's panes.
 _LOOP_TARGET_RE = re.compile(r"^loop-[A-Za-z0-9._-]+$")
+
+# What a tmux session named `loop-<slug>` can be, as far as the-loop is
+# concerned (issue-146). The fourth value is the one this vocabulary exists for:
+# before it, "tmux answered: no such session" and "tmux never answered" were the
+# same `False`, so a busy server turned a live session into a respawn — which
+# then collided with the very session it was replacing.
+SESSION_LIVE = "live"  # exists, and at least one pane is still running
+SESSION_DEAD = "dead"  # exists, every pane has exited (retained, issue-86)
+SESSION_ABSENT = "absent"  # tmux answered: there is no such session
+SESSION_UNKNOWN = "unknown"  # tmux did not answer (timeout, OSError, no binary)
+# How long a read-only probe waits for tmux. Deliberately far shorter than
+# `routing.dispatchTimeoutSeconds`, which governs the spawn — so a probe CAN time
+# out while the spawn behind it gets a real answer. That asymmetry is fine now
+# that an unanswered probe is `SESSION_UNKNOWN` rather than "absent".
+_PROBE_TIMEOUT_SECONDS = 10
+# tmux's refusal when `new-session -s <name>` names a session that already
+# exists. Matched only to decide whether to *re-probe* — never to authorise the
+# kill that may follow, which `session_state` decides.
+_DUPLICATE_SESSION_RE = re.compile(r"duplicate session", re.IGNORECASE)
 
 _INSTALL_HINTS = {
     "tmux": (
@@ -84,6 +107,16 @@ class TmuxResult:
     # stdout of the invocation, for the queries that read tmux back
     # (``has_live_session``); empty for the fire-and-forget commands.
     output: str = ""
+    # tmux's own exit status, or None when tmux never answered (probe timeout,
+    # OSError, binary missing). The distinction :meth:`TmuxRunner.session_state`
+    # is built on — see SESSION_UNKNOWN (issue-146).
+    exit_code: Optional[int] = None
+    # Set when an operation could not proceed because a session already holds the
+    # target name — the collision tmux calls `duplicate session`. ``session_live``
+    # then says whether that occupant still has a running harness, i.e. whether
+    # the pending event can simply be delivered into it instead (issue-146).
+    session_exists: bool = False
+    session_live: bool = False
 
 
 def check_dependencies(runner: str, web_enabled: bool) -> List[str]:
@@ -196,12 +229,13 @@ class TmuxRunner:
         if proc.returncode != 0:
             return TmuxResult(
                 ok=False,
+                exit_code=proc.returncode,
                 error=(
                     f"tmux {argv[0]} exited {proc.returncode}: "
                     f"{proc.stderr.strip() or proc.stdout.strip()}"
                 ),
             )
-        return TmuxResult(ok=True, output=proc.stdout or "")
+        return TmuxResult(ok=True, exit_code=0, output=proc.stdout or "")
 
     def spawn(
         self,
@@ -229,21 +263,109 @@ class TmuxRunner:
         except UnsupportedRunnerError as exc:
             return TmuxResult(ok=False, error=str(exc))
         target = self.target_for(work_item)
-        if self.has_session(target):
-            # A stale session with this deterministic name (crash/restart
-            # leftover) would make new-session fail with "duplicate session";
-            # the registry says the work item has no active session, so the
-            # leftover is dead weight — clear it.
-            logger.info("clearing stale tmux session %s before spawn", target)
-            self._run(["kill-session", "-t", target], timeout)
-        result = self._run(
-            ["new-session", "-d", "-s", target, "-c", cwd, "--", adapter.binary]
-            + harness_argv,
-            timeout,
-        )
+        argv = [
+            "new-session",
+            "-d",
+            "-s",
+            target,
+            "-c",
+            cwd,
+            "--",
+            adapter.binary,
+        ] + harness_argv
+        blocked = self._clear_target(target, timeout)
+        if blocked is not None:
+            return blocked
+        result = self._run(argv, timeout)
+        if not result.ok and _DUPLICATE_SESSION_RE.search(result.error):
+            # tmux is the authority on the collision, and it disagrees with the
+            # pre-flight probe — which can time out on a busy server and read as
+            # "nothing there". Re-decide knowing the name IS taken, and if the
+            # occupant was clearable spawn exactly once more: a straight line, so
+            # a persistent collision costs one extra attempt and then reports
+            # itself instead of recurring every cycle forever (issue-146).
+            logger.info(
+                "tmux refused to create %s (%s); re-checking what holds the name",
+                target,
+                result.error,
+            )
+            blocked = self._clear_target(target, timeout, present=True)
+            if blocked is not None:
+                return blocked
+            result = self._run(argv, timeout)
         if result.ok and self.remain_on_exit:
             self._set_remain_on_exit(target, timeout)
         return result
+
+    def _clear_target(
+        self, target: str, timeout: Optional[float], present: bool = False
+    ) -> Optional[TmuxResult]:
+        """Make ``target`` free for ``new-session``; a result when it cannot be.
+
+        ``None`` means "go ahead". Anything else is the result :meth:`spawn` must
+        return, carrying ``session_exists``/``session_live`` so the caller can
+        route the pending event into the occupant rather than retrying a spawn
+        that can only fail the same way (issue-146).
+
+        ``present=True`` says tmux has already *proved* the name is taken (it
+        answered ``duplicate session``), which changes only what an **unreadable**
+        probe means: not "try anyway" but "something is there that will not
+        identify itself".
+
+        The rule the whole method turns on: ``loop-<slug>`` is derived from the
+        work item, so an occupant is always **this work item's own agent**. A live
+        one is therefore never killed — an idle detached agent is indistinguishable
+        from a busy one, and spawning over it would destroy work in progress. Only
+        a definite "every pane is dead" ever licenses ``kill-session``.
+        """
+        state = self.session_state(target)
+        if state == SESSION_ABSENT:
+            return None
+        if state == SESSION_UNKNOWN and not present:
+            # The probe did not answer, so there is nothing to decide on. Let
+            # `new-session` be the authority: it either succeeds (the name was
+            # free) or reports the collision, which comes back here.
+            logger.debug(
+                "tmux did not answer for %s; letting new-session decide", target
+            )
+            return None
+        if state in (SESSION_LIVE, SESSION_UNKNOWN):
+            # Live, or held by an occupant tmux will not describe. Both are
+            # reported as live: never destroy what you cannot see, and let the
+            # caller *try delivering* into it — harmless if the occupant turns out
+            # to be a dead pane (the paste simply fails and is retried), and
+            # exactly right if there is an agent in there.
+            return TmuxResult(
+                ok=False,
+                session_exists=True,
+                session_live=True,
+                error=(
+                    f"tmux session {target} already exists and its harness is "
+                    "still running; not spawning over a live session"
+                    if state == SESSION_LIVE
+                    else (
+                        f"tmux session {target} already exists and tmux would not "
+                        "say what holds it; not spawning over it"
+                    )
+                ),
+            )
+        # Dead: a pane retained by remain-on-exit (issue-86) — a leftover holding
+        # the name, and nothing is lost by clearing it.
+        logger.info("clearing stale tmux session %s before spawn", target)
+        killed = self._run(["kill-session", "-t", target], timeout)
+        if killed.ok or self.session_state(target) == SESSION_ABSENT:
+            # A kill that reported failure against a session that is now gone is
+            # a success in the only sense that matters: the name is free.
+            return None
+        return TmuxResult(
+            ok=False,
+            session_exists=True,
+            session_live=False,
+            error=(
+                f"tmux session {target} already exists and could not be cleared "
+                f"({killed.error}); not spawning over it"
+            ),
+        )
 
     def _set_remain_on_exit(self, target: str, timeout: Optional[float]) -> None:
         """Keep the pane (and its scrollback) after the harness exits (issue-86).
@@ -263,29 +385,59 @@ class TmuxRunner:
                 result.error,
             )
 
+    def session_state(self, target: str) -> str:
+        """What holds ``target``: live / dead / absent, or *unknown* (issue-146).
+
+        ``absent`` is returned **only** when tmux itself answered — any non-zero
+        exit means "no such session" or "no server running", both of which mean
+        the name is free. When tmux never answered (the probe timed out, the
+        binary is missing, the call raised) the answer is ``unknown``, and no
+        caller may read that as absence: doing so is what let a busy tmux server
+        turn a live session into a respawn, which then collided with it.
+
+        Classified from the exit *status*, never from tmux's wording, so nothing
+        depends on a message tmux is free to change.
+        """
+        probe = self._run(["has-session", "-t", target], timeout=_PROBE_TIMEOUT_SECONDS)
+        if not probe.ok:
+            return SESSION_ABSENT if probe.exit_code is not None else SESSION_UNKNOWN
+        panes = self._run(
+            ["list-panes", "-t", target, "-F", "#{pane_dead}"],
+            timeout=_PROBE_TIMEOUT_SECONDS,
+        )
+        if not panes.ok:
+            return SESSION_LIVE
+        flags = [line.strip() for line in panes.output.splitlines() if line.strip()]
+        if not flags:
+            return SESSION_LIVE
+        return SESSION_LIVE if any(flag != "1" for flag in flags) else SESSION_DEAD
+
     def has_session(self, target: str) -> bool:
-        return self._run(["has-session", "-t", target], timeout=10).ok
+        """Whether a session holds ``target`` — dead or alive.
+
+        Existence only — no pane read, so it stays a single tmux call. An
+        unanswered probe reads False, which is what this method's callers
+        (``terminate_harness``, ``sessions attach``) want: both are best-effort
+        readers where "assume it is gone" is the safe answer. Callers that must
+        not confuse silence with absence use :meth:`session_state` directly.
+        """
+        return self._run(
+            ["has-session", "-t", target], timeout=_PROBE_TIMEOUT_SECONDS
+        ).ok
 
     def has_live_session(self, target: str) -> bool:
         """True when the session exists AND at least one pane is still running.
 
         With ``remain-on-exit`` a session outlives its harness process, so
         ``has-session`` alone no longer means "there is something to talk to".
-        Anything unreadable (a tmux too old to know ``#{pane_dead}``, empty
-        output) is treated as **live** — degrading to the pre-issue-86
-        behaviour rather than declaring healthy sessions dead.
+        Anything unreadable — a tmux too old to know ``#{pane_dead}``, empty
+        output, or (issue-146) a probe tmux never answered at all — is treated as
+        **live**, degrading to the pre-issue-86 behaviour rather than declaring
+        healthy sessions dead. A delivery therefore *attempts the paste* on a
+        doubtful probe and fails transiently if the session really is gone,
+        instead of respawning over a session that is still running.
         """
-        if not self.has_session(target):
-            return False
-        result = self._run(
-            ["list-panes", "-t", target, "-F", "#{pane_dead}"], timeout=10
-        )
-        if not result.ok:
-            return True
-        flags = [line.strip() for line in result.output.splitlines() if line.strip()]
-        if not flags:
-            return True
-        return any(flag != "1" for flag in flags)
+        return self.session_state(target) in (SESSION_LIVE, SESSION_UNKNOWN)
 
     def survived(
         self,

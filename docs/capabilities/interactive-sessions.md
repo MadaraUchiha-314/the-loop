@@ -27,13 +27,41 @@ the same conversation.
   Enter`), FIFO per session; a delivery that fails while the session is alive discards
   the delivery id so the next redelivery/poll retries.
 - WHEN a delivery finds the target tmux session **gone** (crashed or killed, i.e.
-  `has-session` fails) THEN the dispatcher SHALL **respawn** the harness on a fresh
+  tmux answers that there is no such session) THEN the dispatcher SHALL **respawn**
+  the harness on a fresh
   `loop-<slug>` session — reusing the recorded harness/cwd/tmux-target — and deliver
   the pending event as its boot prompt, re-registering the session (preserving the
   processed-delivery history) and emitting `session.respawned`; a respawn that cannot
   proceed (harness CLI missing, `tmux new-session` fails) fails the dispatch and
   releases for retry. This is what stops a redelivery loop into a session that no
   longer exists (issue-80).
+- WHEN a tmux session is probed THEN the answer SHALL distinguish **live** (a pane is
+  running), **dead** (retained, every pane exited), **absent** (tmux itself answered
+  "no such session") and **unknown** — tmux did not answer at all, because the probe
+  timed out on a busy/attached server, the call raised, or the binary is missing.
+  An unknown answer SHALL NEVER be read as absence (issue-146): a delivery treats it
+  as live and *attempts the paste*, failing transiently if the session really is gone,
+  rather than respawning over a session that is still running. That conflation is what
+  sent live sessions into the respawn path, where they collided with themselves.
+- WHEN a spawn or respawn would create `loop-<slug>` AND a session already holds that
+  name THEN the-loop SHALL decide by what holds it, never by killing blindly
+  (issue-146). `loop-<slug>` is derived from the work item, so an occupant is always
+  that work item's own agent: a **live** occupant is therefore NEVER killed or spawned
+  over — on the respawn path the pending event is delivered into it and the averted
+  respawn recorded as `session.respawn_averted` (the registry already points there, so
+  nothing is re-registered); on the first-spawn path, where there is no registered
+  session to deliver into, the spawn SHALL fail **loudly** with the operator's remedy
+  (`tmux kill-session -t loop-<slug>`, or `the-loop sessions reset`) rather than
+  destroy a running agent. A **dead** (retained) occupant SHALL be cleared and the
+  clear **verified** — a `kill-session` that reports failure against a session that is
+  nonetheless gone counts as cleared — before `new-session` runs. WHEN a dead occupant
+  cannot be cleared THEN the dispatch SHALL be **skipped**: `dispatch.dropped` with
+  `reason: session-occupied`, at error level, and the delivery id deliberately
+  **kept** — releasing it is what made every later cycle re-run the identical
+  collision. WHEN `tmux new-session` reports `duplicate session` anyway (the
+  pre-flight probe went unanswered, or lost a race) THEN tmux's answer SHALL be
+  treated as authoritative: re-decide from a fresh probe and spawn at most **once**
+  more, never in a loop.
 - WHEN a session is respawned AND `routing.tmux.resumeOnRespawn` is `true` (the
   default) THEN the respawned TUI SHALL **resume the recorded harness conversation**
   (`claude --resume <harnessSessionId>`, in the session's recorded cwd) rather than
@@ -78,7 +106,9 @@ the same conversation.
   `routing.tmux.keepSessionOnClose: false` — or `sessions close --kill-tmux` — SHALL
   terminate it instead (best-effort when already gone). Retained sessions accumulate
   until killed, and a new spawn for the same work item reclaims the deterministic
-  `loop-<slug>` name.
+  `loop-<slug>` name — but only when its harness has actually exited (the default
+  `killHarnessOnClose: true` ensures that). A retained session whose harness is still
+  running is never reclaimed silently: see the occupancy rules above (issue-146).
 - WHEN a tmux session is **kept** on close AND `routing.tmux.killHarnessOnClose` is
   `true` (the default) THEN the harness process running in its pane SHALL be ended —
   `SIGTERM`, escalating to `SIGKILL` after `routing.tmux.harnessKillGraceSeconds`
@@ -181,6 +211,7 @@ the same conversation.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-146 | Fixed a respawn colliding with the session it was replacing: an unanswered tmux probe is no longer read as "session gone", a **live** `loop-<slug>` occupant is delivered into rather than killed or spawned over, a `duplicate session` refusal is resolved once instead of recurring, and an unclearable dead occupant **skips** the event (`session-occupied`) instead of releasing it to fail identically forever | [spec](../specs/issue-146/), [decision-055](../decisions/decision-055.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/146) |
 | issue-143 | The pre-spawn step now also enables the-loop's own plugin (`extraKnownMarketplaces` + `enabledPlugins` in the harness's user settings, `routing.harnessPlugins`), so a spawned session has the skill, commands and hooks the work-on prompt assumes instead of running the ticket as a plain agent; existing values are never overwritten | [spec](../specs/issue-143/), [decision-054](../decisions/decision-054.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/143) |
 | issue-136 | Fixed the pre-spawn trust write missing the checkout it was for: the trust key has a second reader that does **not** walk ancestors, so the default `scope: workspace-root` left every checkout of a repo shipping `.claude/settings.json` grants on the dialog. Both keys are now written on the exact spawn directory under every scope; `scope` only widens | [spec](../specs/issue-136/), [decision-052](../decisions/decision-052.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/136) |
 | issue-137 | `sessions reset` ends a live session through that same close path and then **deletes** its registry record, so the work item starts over on a fixed CLI; a tmux session retained by policy outlives the record and is read back with `tmux attach -r -t loop-<slug>` | [spec](../specs/issue-137/), [decision-050](../decisions/decision-050.md), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/137) |

@@ -85,7 +85,11 @@ EVENT_TYPES: Dict[str, str] = {
     "dispatch.dropped": (
         "A routed event was discarded at dispatch (reason: duplicate-delivery "
         "| already-processed | spawn-policy | awaiting-start | session-paused "
-        "| session-vanished | no-adapter)."
+        "| session-vanished | no-adapter | session-occupied). "
+        "`session-occupied` (issue-146) means a dead tmux session held the work "
+        "item's `loop-<slug>` name and could not be cleared, so nothing was "
+        "spawned and the delivery id was deliberately NOT released — retrying "
+        "could only hit the same collision."
     ),
     "dispatch.succeeded": (
         "An event was delivered to its harness session (work_item, harness, "
@@ -153,6 +157,13 @@ EVENT_TYPES: Dict[str, str] = {
         "(work_item, harness, harness_session_id, runner, tmux_target, "
         "resumed: whether the previous conversation was resumed or a fresh one "
         "started, gh_event, delivery_id)."
+    ),
+    "session.respawn_averted": (
+        "A delivery reported its tmux session missing, but the session turned "
+        "out to be alive when the respawn re-checked — so the pending event was "
+        "delivered into the existing session and nothing was respawned "
+        "(work_item, harness, tmux_target, gh_event, delivery_id). issue-146: "
+        "the-loop never spawns over a live `loop-<slug>`; it routes into it."
     ),
     "session.resume_failed": (
         "A respawn could not resume the dead session's conversation and fell "
@@ -258,6 +269,13 @@ EVENT_TYPES: Dict[str, str] = {
         "The poller gave up spawning a session for an item after exhausting the "
         "retry budget (polling.maxRetries); later polls ignore it until new "
         "activity re-arms it (work_item, attempts, will_retry=False)."
+    ),
+    "poll.rearmed": (
+        "Comments abandoned by a spent retry budget under a DIFFERENT the-loop "
+        "version were un-resolved for one more full budget (work_item, comments, "
+        "version) — issue-146, so a work item stranded by a bug an upgrade fixed "
+        "is picked up instead of staying stuck. Never emitted for a give-up the "
+        "running version recorded."
     ),
     "poll.comment_failed": (
         "The poller gave up forwarding a comment after exhausting the retry "
