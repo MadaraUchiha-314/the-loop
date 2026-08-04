@@ -58,8 +58,9 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
 - **Execution control — the label is necessary, not sufficient** (`routing.control`,
   issue-106). Four declared keywords, usable by an **authorized** user
   (`routing.authorizedUsers`) in a comment on the work item or its PR, are interpreted
-  by the-loop instead of being forwarded to the agent: `the-loop:start-execution`,
-  `the-loop:stop-execution`, `the-loop:pause-execution`, `the-loop:resume-execution`.
+  by the-loop instead of being forwarded to the agent: `the-loop start`,
+  `the-loop stop`, `the-loop pause`, `the-loop resume` (issue-135 default; an
+  operator's own explicit `keywords` override is unaffected).
   With `control.requireStartCommand` (default **on**) an armed work item spawns only
   once someone has started it — the request is durable across restarts, and a
   stop/pause disarms it again. `pause` holds delivery without discarding the

@@ -35,8 +35,9 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 - **Execution control: the label is necessary, not sufficient** (issue-106,
   `routing.control`). The label says *which* items may run and `authorizedUsers` says
   *who* may be an input; four declared keywords say *when*:
-  `the-loop:start-execution`, `the-loop:stop-execution`, `the-loop:pause-execution`,
-  `the-loop:resume-execution` (all configurable).
+  `the-loop start`, `the-loop stop`, `the-loop pause`, `the-loop resume`
+  (all configurable; issue-135 — the pre-issue-135 defaults were
+  `the-loop:start-execution` and its three siblings).
   - WHEN an **authorized** user's comment on the work item or its PR carries one of
     them THEN the-loop SHALL execute that command and SHALL NOT forward the comment to
     the harness; keywords match as whole tokens, case-insensitively, and a comment
@@ -253,6 +254,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-135 | The default execution-control keywords changed shape from colon-joined (`the-loop:start-execution`) to a short command (`the-loop start`); the vocabulary, matching semantics and trust boundary from issue-106 are unchanged, and an operator's own explicit `keywords` override is unaffected | [spec](../specs/issue-135/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/135) |
 | issue-123 | The graph coupling stopped sourcing a repo-scoped fact from the operator's machine: `routing.graph.specDir` became an optional override, so each watched repository's own `workflow.specDir` is honoured, and a spec-directory skip is recorded as `graph.skipped` rather than a debug line under a successful delivery | [spec](../specs/issue-123/), [decision-044](../decisions/decision-044.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/123) |
 | issue-119 | The poll path stopped swallowing a control command that predates first sight: unprocessed, authorized, unambiguous keyword comments are held back from the first-sight baseline and forwarded on the same cycle, so a labelled item whose start comment already existed actually starts | [spec](../specs/issue-119/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/119) |
 | issue-128 | Generated state reorganised by portability: one `portable/<slug>.json` per work item (control + poll sections, read-modify-write) and machine-local session handles under `local/`, replacing three writer-shaped stores; `polling.stateFile` retired through the version-gated config migration; the pre-issue-128 locations read forward on upgrade | [spec](../specs/issue-128/), [decision-046](../decisions/decision-046.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/128) |

@@ -1381,8 +1381,8 @@ def test_poll_state_forget_drops_the_whole_ledger(tmp_path):
 # executed, so baselining it silences it forever. These assert which comments are
 # held back — never what they mean, which is the dispatcher's job.
 
-START_KEYWORD = "the-loop:start-execution"
-STOP_KEYWORD = "the-loop:stop-execution"
+START_KEYWORD = "the-loop start"
+STOP_KEYWORD = "the-loop stop"
 
 
 def _started_dispatcher(**kwargs):

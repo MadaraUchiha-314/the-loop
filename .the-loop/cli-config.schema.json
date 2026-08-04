@@ -136,19 +136,19 @@
                       "properties": {
                         "start": {
                           "type": "string",
-                          "default": "the-loop:start-execution"
+                          "default": "the-loop start"
                         },
                         "stop": {
                           "type": "string",
-                          "default": "the-loop:stop-execution"
+                          "default": "the-loop stop"
                         },
                         "pause": {
                           "type": "string",
-                          "default": "the-loop:pause-execution"
+                          "default": "the-loop pause"
                         },
                         "resume": {
                           "type": "string",
-                          "default": "the-loop:resume-execution"
+                          "default": "the-loop resume"
                         }
                       }
                     }

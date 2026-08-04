@@ -94,7 +94,7 @@ Three separate questions, answered by three separate settings:
 | **Which** items may run? | [`autoExecuteLabel`](/config/cli/routing-options#autoexecutelabel) + [`spawnOnUnmatched`](/config/cli/routing-options#spawnonunmatched) |
 | **When** does one start? | [`control` keywords](/config/cli/routing-options#execution-control) |
 
-Labelling an issue **arms** it. An authorized user's `the-loop:start-execution` comment
+Labelling an issue **arms** it. An authorized user's `the-loop start` comment
 **starts** it. Before this split, labelling was itself the trigger — an irreversible act
 you could perform by accident on a backlog.
 

@@ -125,7 +125,7 @@ it never undoes the local action.
 With [`spawnOnUnmatched: labeled`](/config/cli/routing-options#spawnonunmatched): give an
 issue or PR the configurable
 [`autoExecuteLabel`](/config/cli/routing-options#autoexecutelabel), have an authorized user
-comment `the-loop:start-execution` (or run `sessions start`), and the ingress spawns a
+comment `the-loop start` (or run `sessions start`), and the ingress spawns a
 session and starts `/the-loop:work-on` on it — then routes that item's later activity
 (comments, reviews, CI, and **every** PR linked to it) to the same session, and auto-closes
 when the item itself closes. Label presence is read straight from the webhook payload, with
