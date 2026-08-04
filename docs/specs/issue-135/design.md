@@ -12,7 +12,7 @@ overrides: {}
 
 > Phase 2 of 3 (requirements → design → tasks). Derives from `requirements.md`.
 
-## Overview
+## Architecture
 
 One value change, propagated to every place it is declared or quoted. No new
 module, no parser change: `control.parse_command`'s whole-token boundary regex
@@ -121,11 +121,16 @@ else in either file changes.
 
 ## Security design
 
-Unchanged from issue-106/decision-040 — see this work item's requirements
-`Security considerations`. No new code path is introduced, so there is nothing
-new to enforce; the only security-relevant note is the accidental-self-match
-observation already recorded there, which is a documentation/config-override
-answer (Requirement 1.4), not a code change.
+No new trust boundary, and none dropped: the comment-only, authorized-actor
+trust boundary decision-040 established for the control surface is unchanged
+by this PR — only the literal keyword value moves, not who may set it off or
+how it is gated. No new code path is introduced, so there is nothing new to
+enforce; the only security-relevant note is the accidental-self-match
+observation from this work item's `requirements.md` § Security considerations
+(a prose-plausible default is more likely to appear in an authorized user's
+own sentence than the old colon-joined one), which is answered by a
+documentation/config-override path (Requirement 1.4: an explicit `keywords`
+override keeps the old, less prose-prone value), not a code change.
 
 ## Testing strategy
 

@@ -117,7 +117,7 @@ one would have been.
 3. **3.3** The full CLI test suite (`pytest`) and lint (`ruff`) SHALL pass
    unchanged in every other respect.
 
-## Security considerations (threat-model-lite)
+## Security considerations
 
 - **No new trust boundary.** This changes a string value, not the parser, the
   authorization gate, or the ambiguity rule established and reviewed under

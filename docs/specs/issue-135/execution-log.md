@@ -65,6 +65,12 @@ status: in-progress
   low-severity, and mitigated by the existing `keywords` override.
 - **Human sign-off:** n/a (tier 3, below `security.review.humanSignOffMinTier` default of 4).
 
+## Capability docs
+
+- [`docs/capabilities/webhook-triggers.md`](../../capabilities/webhook-triggers.md) —
+  current-behaviour prose updated to the new default keywords; history row added
+  for issue-135.
+
 ## Final validation evidence
 
 - `ruff check` / `ruff format --check`: clean.
