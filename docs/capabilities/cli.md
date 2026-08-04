@@ -41,6 +41,29 @@ self-learning/ML capabilities.
   it. Posting is best-effort — `--no-comment` skips it, and a missing/failing `gh`
   warns without undoing the local action. `sessions list` SHALL show each session's
   status (including `paused`) and its last control command.
+- `the-loop sessions reset --work-item <ref> [--work-item …] | --all [--dry-run]` SHALL
+  remove everything this machine remembers about a work item (issue-137,
+  [decision-050](../decisions/decision-050.md)) — the verb for "I fixed a bug in the-loop
+  itself; start this item over on the new code". A **live** session (active or paused)
+  SHALL first be ended through the same close path `stop` takes, so no harness is left
+  running against records that have gone; the session record SHALL then be **deleted**
+  rather than closed (a closed record still lists and still attaches, which is the "still
+  remembered" a reset ends); the `control` section SHALL be cleared, which **disarms** the
+  work item, and the `poll` section cleared, which makes its thread first-sight again. The
+  portable sections SHALL be cleared through the work-item store, never by unlinking the
+  file, so a pre-issue-128 tree leaves a `sealed` record instead of resurrecting what was
+  just removed. The command SHALL post **no** comment on the ticket, and there SHALL be no
+  `reset` control keyword: a comment must not be able to delete local state, and posting
+  `stop-execution` would record intent the reset has just cleared. The event log SHALL be
+  **appended to and never rewritten** — one `session.reset` per work item, including when
+  nothing was found. A bare `reset` (no selector) SHALL be refused rather than read as
+  "everything", one invalid ref SHALL reset none of them, one failing work item SHALL NOT
+  strand the rest, and `--dry-run` SHALL report the same list while changing nothing and
+  emitting nothing. The operator SHALL be warned when the receiver is running (it can write
+  poll state back) and when `control.requireStartCommand` is false (a first-sight item may
+  re-spawn on the next poll cycle) — warnings, not refusals. Nothing in the **repository**
+  is touched: `docs/specs/<id>/graph-state.json` is checked in and re-derived from the
+  artifacts.
 - Everything the CLI **generates** SHALL live under one configured root
   (`state.root`, default `.the-loop`, issue-106), organised by **portability** rather
   than by which component writes it (issue-128, decision-046): `<root>/portable/<slug>.json`
@@ -169,6 +192,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-137 | Added `sessions reset`: one, several or all work items lose their session record, control and poll sections (and their checkout, per the close policy) so a work item starts over after a CLI fix. Composes the existing close and section-clearing paths — the seal rule is what stops a pre-issue-128 record coming back — adds `SessionRegistry.forget`, posts nothing to the ticket, and appends `session.reset` to a log it cannot rewrite | [spec](../specs/issue-137/), [decision-050](../decisions/decision-050.md), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/137) |
 | issue-132 | Added `instructions`, the sixth harness-config read: it resolves every doc registered in `customInstructions.docs` and turns `onMissing` into an exit code, so a mistyped path stops being silent. Reports facts about each doc, never its contents | [spec](../specs/issue-132/), [decision-049](../decisions/decision-049.md), [spec-workflow](spec-workflow.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/132) |
 | issue-130 | `portable/` made readable: a derived `index.json` listing every record (ref, url, file, sections), rebuilt on every write and read by nothing, plus a `url` beside each record's `ref`. On PR review, refs learned about **hosts** — `[<host>/]<owner>/<repo>`, identified at both ingresses from the event's own URLs — so a GitHub Enterprise work item links, and is identified, correctly | [spec](../specs/issue-130/), [decision-047](../decisions/decision-047.md), [decision-048](../decisions/decision-048.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/130) |
 | issue-128 | Generated state classified portable vs local (`GENERATED_PATHS`), documented file by file in `docs/cli/state.md`, and **reorganised by that classification**: one `portable/<slug>.json` per work item (control + poll, read-modify-write) tracked in git, machine-local handles under `local/`, three writer-shaped stores gone, `polling.stateFile` retired through the config migration, and the old locations read forward on upgrade | [spec](../specs/issue-128/), [decision-046](../decisions/decision-046.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/128) |

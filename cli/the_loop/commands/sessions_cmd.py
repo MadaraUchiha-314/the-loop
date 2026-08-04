@@ -1,4 +1,4 @@
-"""``the-loop sessions register|list|start|pause|resume|stop|attach|close``.
+"""``the-loop sessions register|list|start|pause|resume|stop|attach|close|reset``.
 
 Links a work item (``github:<owner>/<repo>#<number>``) to a harness session so
 the webhook receiver can route events to it. Harnesses register themselves
@@ -13,8 +13,14 @@ the work item, so the ticket stays the full record of who asked for what. Those
 comments carry the loop-prevention marker: the action has already been applied
 locally, and the daemon must not read it back and re-apply it.
 
+Since issue-137 it also carries the one action that **removes** rather than
+transitions: `reset` forgets everything this machine holds about a work item —
+its session record, its control and poll sections, its checkout — so an item
+mid-flight when the CLI was fixed starts over on the new code. It posts nothing
+to the ticket: there is no `reset` keyword, deliberately (decision-050).
+
 Spec: docs/specs/issue-15/design.md §5 (requirement R2.2);
-docs/specs/issue-106/design.md §6.
+docs/specs/issue-106/design.md §6; docs/specs/issue-137/design.md.
 """
 
 from __future__ import annotations
@@ -28,7 +34,7 @@ import shutil
 import sys
 import uuid
 from pathlib import Path
-from typing import Callable, List, Tuple
+from typing import Callable, List, Optional, Tuple
 
 from .base import Command, register
 from .gh_webhook import _load_config_defaults, _state_layout
@@ -45,6 +51,7 @@ from ..control import (
     command_comment,
 )
 from ..harness import ClaudeCodeAdapter, CursorAgentAdapter
+from ..reset import WORKSPACE, reset_work_item, work_items_with_state
 from ..runner import TmuxRunner
 from ..sessions import RegistryError, Session, SessionRegistry, WorkItemRef
 from ..state import legacy_layout
@@ -107,6 +114,56 @@ def _dispatcher_for(args: argparse.Namespace):
     # record its control state where this invocation is looking (issue-128).
     dispatcher.control_store = _control_store(args)
     return dispatcher, config
+
+
+def _running_receiver_pid() -> Optional[int]:
+    """The receiver's pid when its pidfile names a process that is alive.
+
+    A liveness probe, not a signal: ``os.kill(pid, 0)`` delivers nothing. A
+    ``PermissionError`` means the process exists under another user, which
+    counts as running — the warning is about a daemon holding state, and whose
+    daemon it is does not change that (issue-137, R5.1).
+    """
+    try:
+        pid = int(Path(_state_layout().pidfile).read_text().strip())
+    except (OSError, ValueError):
+        return None
+    if pid <= 0:
+        # A corrupt pidfile, not a process: 0 and negatives address process
+        # *groups*, and this probe must never widen beyond one pid.
+        return None
+    try:
+        os.kill(pid, 0)
+    except PermissionError:
+        return pid
+    except OSError:  # ProcessLookupError (stale pidfile) and anything else
+        return None
+    return pid
+
+
+class _LazyCloser:
+    """Ends live sessions through the daemon's dispatcher, built on first use.
+
+    A reset that finds no live session must not pay for a dispatcher — building
+    one resolves the workspace, the harness trust config and the runner — and,
+    more to the point, must not *fail* because one could not be built. So it is
+    constructed at the first live session and stopped once at the end.
+    """
+
+    def __init__(self, args: argparse.Namespace):
+        self._args = args
+        self._dispatcher = None
+
+    def __call__(self, session: Session) -> bool:
+        if self._dispatcher is None:
+            self._dispatcher, _ = _dispatcher_for(self._args)
+        return bool(
+            self._dispatcher.close_session(session, reason="reset from the CLI")
+        )
+
+    def stop(self) -> None:
+        if self._dispatcher is not None:
+            self._dispatcher.stop(timeout=5)
 
 
 def _local_actor() -> str:
@@ -278,6 +335,41 @@ class SessionsCommand(Command):
                 ),
             )
             sub.set_defaults(_action=self._control, _command=command)
+
+        # -- reset (issue-137) --------------------------------------------------
+        # The one action that removes rather than transitions: everything this
+        # machine remembers about a work item goes, so it starts over on the
+        # code the operator has just fixed.
+        reset = actions.add_parser(
+            "reset",
+            help=(
+                "Forget this machine's state for a work item (session record, "
+                "control + poll sections) so it starts from scratch"
+            ),
+        )
+        reset.add_argument(
+            "--work-item",
+            action="append",
+            metavar="REF",
+            help="Which work item to reset. Repeatable.",
+        )
+        reset.add_argument(
+            "--all",
+            dest="all_items",
+            action="store_true",
+            help=(
+                "Reset every work item this machine holds state for. Must be "
+                "asked for explicitly — a bare `reset` never means this."
+            ),
+        )
+        reset.add_argument(
+            "--dry-run",
+            action="store_true",
+            help="Report what would be removed, and change nothing.",
+        )
+        reset.add_argument("--registry-dir", default=registry_dir)
+        reset.add_argument("--portable-dir", default=portable_dir)
+        reset.set_defaults(_action=self._reset)
 
         close = actions.add_parser("close", help="Close a work item's session")
         close.add_argument("--work-item", required=True)
@@ -588,6 +680,159 @@ class SessionsCommand(Command):
             command=command,
             error=error,
         )
+
+    # -- reset (issue-137) -------------------------------------------------------
+
+    def _reset(self, args: argparse.Namespace) -> int:
+        """Forget this machine's state for one, several, or all work items.
+
+        The surface owns the selector rules, the all-or-nothing ref validation
+        and the reporting; :mod:`the_loop.reset` owns what is removed and in
+        which order.
+        """
+        if args.work_item and args.all_items:
+            print(
+                "error: --work-item and --all are mutually exclusive; name the "
+                "work items, or ask for all of them",
+                file=sys.stderr,
+            )
+            return 2
+        if not args.work_item and not args.all_items:
+            print(
+                "error: pass --work-item <ref> (repeatable) or --all; a bare "
+                "reset never means 'reset everything'",
+                file=sys.stderr,
+            )
+            return 2
+
+        registry = SessionRegistry(args.registry_dir)
+        store = _control_store(args).store  # the portable half, legacy shim wired
+
+        if args.all_items:
+            items = work_items_with_state(registry, store)
+            if not items:
+                print(
+                    "nothing to reset: this machine holds no work-item state",
+                    file=sys.stderr,
+                )
+                return 1
+        else:
+            # Validated all-or-nothing: a typo in the third of four refs must
+            # not leave the first two reset.
+            items, invalid, seen = [], [], set()
+            for raw in args.work_item:
+                try:
+                    item = WorkItemRef.parse(raw)
+                except ValueError as exc:
+                    invalid.append(str(exc))
+                    continue
+                # The same item named twice is one reset, not a reset followed
+                # by a puzzling "nothing to reset" for something just cleared.
+                if item.ref not in seen:
+                    seen.add(item.ref)
+                    items.append(item)
+            if invalid:
+                for line in invalid:
+                    print(f"error: {line}", file=sys.stderr)
+                return 2
+
+        for warning in self._reset_warnings():
+            print(warning, file=sys.stderr)
+
+        closer = None if args.dry_run else _LazyCloser(args)
+        actor = _local_actor()
+        outcomes = []
+        try:
+            for item in items:
+                outcomes.append(
+                    reset_work_item(
+                        item,
+                        registry=registry,
+                        store=store,
+                        close=closer,
+                        dry_run=args.dry_run,
+                        actor=actor,
+                    )
+                )
+                self._report_reset(outcomes[-1], dry_run=args.dry_run)
+                if args.dry_run and outcomes[-1].was_live:
+                    self._warn_about_the_checkout(outcomes[-1])
+        finally:
+            if closer is not None:
+                closer.stop()
+
+        done = [outcome for outcome in outcomes if outcome.ok]
+        noun = "work item" if len(done) == 1 else "work items"
+        if args.dry_run:
+            print(f"would reset {len(done)} {noun} (dry run — nothing was changed)")
+        elif done:
+            print(f"reset {len(done)} {noun}")
+        return 0 if len(done) == len(outcomes) else 1
+
+    def _report_reset(self, outcome, dry_run: bool) -> None:
+        """One work item's result. The irreversible facts get their own lines."""
+        if outcome.was_live:
+            print(
+                f"{outcome.ref}: "
+                + ("would end a live session" if dry_run else "ended a live session")
+            )
+        if WORKSPACE in outcome.removed:
+            print(
+                f"{outcome.ref}: removed the workspace checkout — uncommitted "
+                "work in it is gone"
+            )
+        pieces = [piece for piece in outcome.removed if piece != WORKSPACE]
+        if pieces:
+            verb = "would remove" if dry_run else "reset — removed"
+            print(f"{outcome.ref}: {verb} {', '.join(pieces)}")
+        for error in outcome.errors:
+            print(f"{outcome.ref}: error: {error}", file=sys.stderr)
+        if not outcome.found:
+            print(f"{outcome.ref}: nothing to reset", file=sys.stderr)
+
+    def _warn_about_the_checkout(self, outcome) -> None:
+        """Say in the *rehearsal* that a real run would remove the checkout.
+
+        A dry run cannot know whether a checkout is on disk without building the
+        dispatcher it deliberately does not build — but the config alone says
+        whether the close path would remove one, and the piece that is not
+        recoverable is exactly the piece an operator must not discover
+        afterwards.
+        """
+        workspace = _routing_config().workspace
+        if not workspace.root or workspace.keep_checkout_on_close:
+            return
+        print(
+            f"{outcome.ref}: would also remove its workspace checkout under "
+            f"{workspace.root} — uncommitted work in it would be gone"
+        )
+
+    def _reset_warnings(self) -> List[str]:
+        """What the operator should know *before* reading the report.
+
+        Both are warnings rather than refusals: an operator may legitimately
+        reset one work item while the daemon serves others, and a refusal would
+        only be routed around with a `--force` that means less.
+        """
+        warnings = []
+        pid = _running_receiver_pid()
+        if pid is not None:
+            warnings.append(
+                f"warning: the gh-webhook receiver looks like it is running (pid "
+                f"{pid}); it holds poll state in memory and can write it back "
+                "after this reset — stop it first for a clean slate"
+            )
+        routing = _routing_config()
+        if not routing.control.require_start_command and (
+            routing.spawn_on_unmatched != "never"
+        ):
+            warnings.append(
+                "warning: routing.control.requireStartCommand is false and "
+                f"spawnOnUnmatched is {routing.spawn_on_unmatched!r}, so a reset "
+                "work item is first-sight again and may re-spawn on the next "
+                "poll cycle rather than waiting for a start"
+            )
+        return warnings
 
     def _close(self, args: argparse.Namespace) -> int:
         try:

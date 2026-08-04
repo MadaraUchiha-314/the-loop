@@ -279,6 +279,30 @@ machine-readable `reason`. Query it with [`the-loop events`](/cli/commands/event
 Written by `gh-webhook start`, removed by `gh-webhook stop`. A stale file after a crash is
 harmless; `stop` reports the process is gone.
 
+## Wiping one work item — `sessions reset`
+
+Backing state up is one question; getting rid of it is the other, and it has a command:
+[`the-loop sessions reset`](/cli/commands/sessions#reset). It exists for the case where the
+memory is the problem — you fixed a bug in the-loop's own CLI, released it, and the item in
+flight is still holding a conversation the old code started.
+
+| Path | What a reset does to it |
+|---|---|
+| `<root>/local/<slug>.json` | deleted (the session is closed through the normal close path first) |
+| `<root>/portable/<slug>.json` | `control` and `poll` cleared — the file is removed, or left `sealed` while a pre-issue-128 tree still holds something for that item |
+| `<root>/portable/index.json` | rewritten to match, on the same write |
+| `<root>/logs/events.jsonl` | **appended to** — one `session.reset` line. Never rewritten: a command that could erase its own trail is not auditable |
+| `<root>/gh-webhook.pid` | untouched. Reset does not stop the daemon — it warns when one is running, because a daemon holds poll state in memory and can write it back |
+| the workspace checkout | removed unless [`workspace.keepCheckoutOnClose`](/config/cli/routing-options#workspace-keepcheckoutonclose) |
+
+Nothing in your **repository** is touched: `docs/specs/<id>/graph-state.json` is checked in
+on the work item's branch and re-derived from the artifacts, so wiping local state never
+rewrites the record of the work itself.
+
+`--dry-run` prints the same list without doing any of it. Reaching for `rm` instead is the
+one thing to avoid — deleting `portable/<slug>.json` by hand can *resurrect* a pre-issue-128
+record through the legacy readers, which is exactly what the `sealed` marker below prevents.
+
 ## Carrying state to another machine
 
 Track `portable/` in git. Paste this into the `.gitignore` of the repository your

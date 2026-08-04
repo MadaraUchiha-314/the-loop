@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [050](decision-050.md) | A reset erases the-loop's memory of a work item, and nothing else — and it is not a control verb | proposed | 2026-08-04 |
 | [049](decision-049.md) | An instruction registration is verified by a command, not by a graph gate | proposed | 2026-08-03 |
 | [048](decision-048.md) | A work-item ref names its host when it is not the default one | proposed | 2026-07-31 |
 | [047](decision-047.md) | The portable directory carries a derived index, and derived means nothing may read it | proposed | 2026-07-31 |

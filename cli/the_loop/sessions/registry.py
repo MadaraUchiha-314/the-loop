@@ -449,6 +449,24 @@ class SessionRegistry:
         )
         return True
 
+    def forget(self, work_item: Union[str, WorkItemRef]) -> bool:
+        """Delete a work item's record entirely. False when there was none.
+
+        The only method here that does not *transition* a record, and the reason
+        `reset` differs from `close` (issue-137): a closed record still lists and
+        is still reachable by ``sessions attach``, which is precisely the "the
+        CLI still remembers this work item" a reset exists to end. Emits nothing
+        — the reset emits one event for the whole work item rather than a partial
+        trail per piece — and lets an ``OSError`` through for its caller to
+        report.
+        """
+        try:
+            self._path_for(_as_ref(work_item)).unlink()
+        except FileNotFoundError:
+            return False
+        logger.info("forgot session record for %s", _as_ref(work_item).ref)
+        return True
+
     def touch(
         self,
         work_item: Union[str, WorkItemRef],

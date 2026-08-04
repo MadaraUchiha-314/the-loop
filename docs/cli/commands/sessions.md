@@ -1,6 +1,7 @@
 # `sessions`
 
-The work-item ↔ harness-session registry, and the four execution-control commands.
+The work-item ↔ harness-session registry, the four execution-control commands, and the
+reset that forgets a work item entirely.
 
 ```bash
 # registry
@@ -9,6 +10,8 @@ the-loop sessions register --work-item github:OWNER/REPO#N --harness claude \
 the-loop sessions list   [--status active|paused|closed] [--format table|json]
 the-loop sessions attach --work-item github:OWNER/REPO#N [--read-only]
 the-loop sessions close  --work-item github:OWNER/REPO#N [--keep-tmux|--kill-tmux]
+the-loop sessions reset  --work-item github:OWNER/REPO#N [--work-item …] [--dry-run]
+the-loop sessions reset  --all [--dry-run]
 
 # execution control — the same four commands as the comment keywords
 the-loop sessions start  --work-item github:OWNER/REPO#N [--no-comment]
@@ -23,7 +26,7 @@ Every subcommand accepts `--registry-dir`, defaulting to
 ## The registry
 
 One human-inspectable JSON file per session under `<registryDir>` (default
-`<state.root>/sessions/`, git-ignored). Writes are atomic, so concurrent sessions on one
+`<state.root>/local/`, git-ignored). Writes are atomic, so concurrent sessions on one
 machine are safe.
 
 The invariant is **one work item ↔ one active session**. `--force` replaces a stale
@@ -95,6 +98,61 @@ item has left the open listing and confirming upstream that it really ended.
 A tmux-hosted session is **kept** so you can read back what happened, but the harness inside
 it is **ended** so nothing can be typed into finished work.
 
+## `reset`
+
+Forget everything this machine remembers about a work item, so it starts over on the code
+you have just fixed. The command #137 asked for: after fixing a bug **in the-loop itself**
+and releasing, an in-progress item is still holding a conversation the old CLI started, a
+poll ledger saying every comment is handled, and a control record saying it is armed.
+
+| Flag | Default | Meaning |
+|------|---------|---------|
+| `--work-item` | — | Which work item to reset. **Repeatable.** |
+| `--all` | off | Every work item this machine holds state for. Mutually exclusive with `--work-item`. |
+| `--dry-run` | off | Report what would go; change nothing. |
+
+```console
+$ the-loop sessions reset --work-item github:octo/repo#15
+github:octo/repo#15: ended a live session
+github:octo/repo#15: removed the workspace checkout — uncommitted work in it is gone
+github:octo/repo#15: reset — removed session, control, poll
+reset 1 work item
+```
+
+### What it removes
+
+| | What goes | Why |
+|---|---|---|
+| the live session | ended through the normal [close path](#close) | no harness is left running against records that have gone |
+| `<state.root>/local/<slug>.json` | **deleted**, not closed | a closed record still lists, and is still `attach`-able — that is the "still remembered" a reset ends |
+| `portable/<slug>.json` `control` | cleared | the item is **disarmed**: it waits for an explicit start rather than resuming itself |
+| `portable/<slug>.json` `poll` | cleared | the thread is first-sight again, so a fresh session re-reads it instead of finding everything already seen |
+| the workspace checkout | per [`workspace.keepCheckoutOnClose`](/config/cli/routing-options#workspace-keepcheckoutonclose) | reset reuses the close path rather than inventing a second policy |
+
+### What it does not
+
+The event log is **appended to, never rewritten** — the reset itself lands in it as
+`session.reset`, so "someone reset this" is a visible cause rather than an unexplained gap.
+And nothing in your repository is touched: `docs/specs/<id>/graph-state.json`, the spec
+artifacts and the phase label are checked in on the work item's branch, and the process
+graph [re-derives](/capabilities/process-graph) the current node from the artifacts anyway.
+
+::: warning Two things it will tell you about
+A reset run while `gh-webhook` is up can be partly undone — the daemon holds poll state in
+memory and may write it back. Stop it first for a clean slate.
+
+And when [`requireStartCommand`](/config/cli/routing-options#control-requirestartcommand) is
+`false`, clearing the poll section makes the item first-sight again, so the next poll cycle
+may **re-spawn** it rather than wait for a start. The command warns in both cases and still
+does the work — the judgement is yours.
+:::
+
+Selection is deliberate: a bare `reset` is a usage error rather than "reset everything", and
+one bad ref in a list resets none of them. Nothing is posted to the ticket — there is no
+`reset` keyword (a comment must not be able to delete local state), and posting
+`stop-execution` would record intent the reset has just cleared
+([decision-050](/decisions/decision-050)).
+
 ## Execution control
 
 `start` / `pause` / `resume` / `stop` apply exactly what the corresponding
@@ -112,7 +170,8 @@ running the-loop:
 | `--work-item` | required | Which work item to act on. |
 | `--comment` / `--no-comment` | on | Post the equivalent keyword comment on the work item. |
 
-Each invocation records the command beside the session (`<registryDir>/control/`) and posts
+Each invocation records the command in that work item's portable record
+(`<state.root>/portable/<slug>.json`, `control` section) and posts
 the **same keyword** back to the work item, so the ticket stays the full record of who asked
 for what. That comment carries the loop-prevention marker, so the daemon never reads its own
 action back and re-applies it.
