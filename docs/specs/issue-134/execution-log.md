@@ -65,6 +65,30 @@ status: in-progress
   - Full suite: **1011 passed, 2 skipped**.
 - **Next:** self-review rounds.
 
+### 2026-08-04 — Rebased onto main; decision renumbered 050 → 051
+
+- **Phase:** needs-review
+- **Did:** Rebased onto `origin/main` at the reviewer's request. Main had moved four
+  commits (issue-135's short control keywords, issue-137's `reset`, two version bumps),
+  producing five conflicts. Resolutions:
+  - **`decision-050` collided.** issue-137 claimed 050 on main while this branch was open,
+    so this work item's decision became **051** — file, heading, index row and all 13
+    references. Main's 050 is byte-identical to its merged form, and the four issue-137
+    files a careless rename would have corrupted (`sessions_cmd.py`,
+    `capabilities/cli.md`, `capabilities/interactive-sessions.md`,
+    `cli/commands/sessions.md`) were restored from main and verified untouched.
+  - **Control keywords** (both `cli-config.yaml` files): took main's new short form
+    (`the-loop start`), kept the `interaction` block after it. Nothing in this work item
+    referenced the old `the-loop:<verb>-execution` shape — checked, not assumed.
+  - **Capability history table:** kept *both* rows (issue-134 and issue-135), newest first.
+  - **`uv.lock`:** the second commit had in fact carried the 136-line `uv run` reformat
+    despite an earlier claim that it was reverted. The rebase surfaced it; it is now
+    dropped entirely and `uv.lock` is byte-identical to main.
+- **Checkpoint/tests:** full suite **1067 passed, 2 skipped** on the rebased branch (up
+  from 1011 — main brought issue-137's tests). ruff, pyright, markdownlint and config
+  validation all clean.
+- **Next:** human approval + the tier-4 security sign-off.
+
 ## Review cycles
 
 > Outcome is one of: new findings · zero (converged) · escalated · **unavailable** (the
