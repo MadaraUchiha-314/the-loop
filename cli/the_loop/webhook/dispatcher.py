@@ -36,7 +36,7 @@ from ..reactions import (
     GitHubReactor,
     ReactionConfig,
 )
-from ..runner import TmuxRunner
+from ..runner import SESSION_LIVE, TmuxRunner
 from ..sessions import Session, SessionRegistry, WorkItemRef
 from ..state import LegacyLayout, StateLayout, legacy_layout
 from ..harness_plugins import PluginConfig
@@ -1286,6 +1286,37 @@ class Dispatcher:
             session_id=session_id,
             timeout=self.config.dispatch_timeout_seconds,
         )
+        if not result.ok and result.session_exists:
+            # A live session holds `loop-<slug>` but the registry has no session
+            # for the work item — the-loop lost track of an agent (a reset or
+            # lost registry, or `killHarnessOnClose: false` on a closed item).
+            # There is nothing here to deliver into, so refuse **loudly** rather
+            # than kill a running agent, and name the remedy (issue-146).
+            target = self.tmux.target_for(work_item)
+            logger.error(
+                "not spawning a tmux session for %s: %s. the-loop has no "
+                "registered session for this work item, so there is nothing to "
+                "deliver into — inspect it with `tmux attach -r -t %s`, then "
+                "either `tmux kill-session -t %s` or `the-loop sessions reset "
+                "--work-item %s` to let a fresh session start",
+                work_item.ref,
+                result.error,
+                target,
+                target,
+                work_item.ref,
+            )
+            eventlog.emit(
+                "session.spawn_failed",
+                level="error",
+                work_item=work_item.ref,
+                harness=self.config.default_harness,
+                tmux_target=target,
+                error=result.error,
+                will_retry=bool(routed.delivery_id),
+            )
+            if routed.delivery_id:
+                self.deduper.discard(routed.delivery_id)
+            return False
         if not result.ok:
             logger.error("tmux spawn for %s failed: %s", work_item.ref, result.error)
             eventlog.emit(
@@ -1347,8 +1378,18 @@ class Dispatcher:
         anything doubtful about that resume falls back to a fresh conversation,
         which is exactly the pre-issue-89 behaviour. Fails closed (release the
         delivery for retry, emit a failure record) when no respawn can proceed.
+
+        Before replacing anything it asks tmux whether the target name is still
+        held by a **live** session (issue-146). It can be: a busy or attached
+        tmux server can fail the delivery's liveness probe while the harness is
+        perfectly alive, and respawning then destroys a working agent — or, when
+        tmux refuses with ``duplicate session``, fails identically on every
+        later event. A live occupant is delivered into instead.
         """
         work_item = session.work_item
+        target = self.tmux.target_for(work_item)
+        if self.tmux.session_state(target) == SESSION_LIVE:
+            return self._deliver_into_occupant(session, routed, prompt, target)
         adapter = self.adapters.get(session.harness)
         if adapter is None or not adapter.is_available():
             detail = (
@@ -1391,6 +1432,14 @@ class Dispatcher:
                 session_id=session_id,
                 timeout=self.config.dispatch_timeout_seconds,
             )
+            if not result.ok and result.session_exists:
+                # The name was taken after all — the opening probe and tmux
+                # raced, or the probe went unanswered and `new-session` reported
+                # the collision (issue-146). Same two outcomes as above: route
+                # into a live occupant, or skip rather than loop.
+                if result.session_live:
+                    return self._deliver_into_occupant(session, routed, prompt, target)
+                return self._skip_occupied(session, routed, target, result.error)
             if not result.ok:
                 logger.error(
                     "respawn of tmux session for %s failed: %s",
@@ -1456,6 +1505,98 @@ class Dispatcher:
         # still correct and a second comment would only add noise.
         return True
 
+    def _deliver_into_occupant(
+        self, session: Session, routed: RoutedEvent, prompt: str, target: str
+    ) -> bool:
+        """The tmux session is alive after all: paste into it, don't replace it.
+
+        The registry already points at ``target``, so there is nothing to
+        re-register — this is an ordinary delivery that the liveness probe
+        mis-read, and its tail is an ordinary delivery's (mark processed, drive
+        the graph link). Deliberately does **not** fall back to a respawn if the
+        paste fails: that failure is transient, so it is released for retry, and
+        respawning is the loop issue-146 exists to remove.
+        """
+        result = self.tmux.deliver(
+            session, prompt, timeout=self.config.dispatch_timeout_seconds
+        )
+        if result.ok:
+            logger.info(
+                "tmux session %s for %s was alive after all; delivered the "
+                "pending event into it instead of respawning",
+                target,
+                session.work_item.ref,
+            )
+            eventlog.emit(
+                "session.respawn_averted",
+                work_item=session.work_item.ref,
+                harness=session.harness,
+                tmux_target=target,
+                gh_event=routed.event,
+                action=routed.action or None,
+                delivery_id=routed.delivery_id or None,
+            )
+            self.registry.touch(
+                session.work_item, delivery_id=routed.delivery_id or None
+            )
+            self.graphlink.on_event(session.work_item, session.cwd, routed)
+            return True
+        logger.error(
+            "tmux session %s for %s is alive but would not take the event: %s",
+            target,
+            session.work_item.ref,
+            result.error,
+        )
+        eventlog.emit(
+            "dispatch.failed",
+            level="error",
+            work_item=session.work_item.ref,
+            harness=session.harness,
+            via="tmux",
+            gh_event=routed.event,
+            delivery_id=routed.delivery_id or None,
+            error=result.error,
+            will_retry=bool(routed.delivery_id),
+        )
+        if routed.delivery_id:
+            self.deduper.discard(routed.delivery_id)
+        return False
+
+    def _skip_occupied(
+        self, session: Session, routed: RoutedEvent, target: str, error: str
+    ) -> bool:
+        """A dead session holds the name and cannot be cleared — skip, don't loop.
+
+        The one case where nothing can be done with the event: there is no live
+        harness to deliver into and the leftover will not go away. Recorded as a
+        **skipped** dispatch rather than a failed one, and the delivery id is
+        deliberately kept — releasing it is what made every later cycle re-run
+        the identical collision (issue-146). Loud (error level, its own reason,
+        the 😕 reaction) so it is visible rather than merely quiet.
+        """
+        logger.error(
+            "skipping this event for %s: %s. Nothing was spawned and the "
+            "delivery will NOT be retried — it could only collide again. "
+            "Inspect with `tmux attach -r -t %s`, then `tmux kill-session -t %s`",
+            session.work_item.ref,
+            error,
+            target,
+            target,
+        )
+        eventlog.emit(
+            "dispatch.dropped",
+            level="error",
+            reason="session-occupied",
+            work_item=session.work_item.ref,
+            harness=session.harness,
+            tmux_target=target,
+            gh_event=routed.event,
+            delivery_id=routed.delivery_id or None,
+            error=error,
+            will_retry=False,
+        )
+        return False
+
     def _try_resume(
         self, session: Session, adapter: HarnessAdapter, prompt: str
     ) -> Optional[str]:
@@ -1494,6 +1635,12 @@ class Dispatcher:
             timeout=self.config.dispatch_timeout_seconds,
             resume=True,
         )
+        if result.session_exists:
+            # Not a resume problem: a session already holds the target name
+            # (issue-146). Say nothing about the conversation — the caller's
+            # fresh-spawn attempt meets the same collision and reports it as what
+            # it is, rather than this looking like an unresumable transcript.
+            return None
         if not result.ok:
             return self._resume_failed(session, session_id, result.error)
         if not self.tmux.survived(

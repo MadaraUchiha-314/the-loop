@@ -58,6 +58,16 @@ poller logs a terminal failure (`poll.spawn_failed` / `poll.comment_failed`) and
 the event on later polls until new activity re-arms it. An in-flight, still-processing
 dispatch is not counted as a failed attempt.
 
+**An upgrade re-arms an abandoned comment, once** (issue-146). A give-up is a statement
+about a failing environment, and a new the-loop version is the one event that can
+invalidate it — the reason those events could not be delivered may be exactly what the
+upgrade fixed. So the ledger records *which version* gave up, and the first time a
+poller running a **different** version sees that work item it un-resolves those comments
+with a full fresh budget (`poll.rearmed`), which is how an item stranded by a bug is
+picked up instead of staying stuck forever. Gated on the version rather than on "the
+poller started", so repeated `poll --once` runs from cron cannot re-forward abandoned
+comments every minute.
+
 ## Sources
 
 `sources` is an ordered list. Each entry names a `provider`; the remaining keys are that

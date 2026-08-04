@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
-from .. import eventlog
+from .. import __version__, eventlog
 from ..authz import is_authorized, is_self_authored
 from ..control import ControlConfig, ControlStore, parse_command
 from ..reload import Reloader
@@ -94,6 +94,10 @@ class PollState:
     - ``spawn`` — ``{attempts, gaveUp, deliveryId}`` for the presence/spawn
       retry (the presence delivery id is stored so the poller can tell an
       in-flight spawn from a failed one across cycles).
+    - ``gaveUp`` — ``{comments, version}``: comments **abandoned** after their
+      retry budget was spent, and the CLI version that abandoned them. What makes
+      an item stranded by a bug recoverable once the bug is fixed (issue-146);
+      without it an abandoned comment is indistinguishable from a delivered one.
 
     Storage moved in issue-128: one file per work item under
     ``<state.root>/portable/``, written through
@@ -149,9 +153,16 @@ class PollState:
         item["commentAttempts"] = attempts
         return attempts[comment_id]
 
-    def resolve_comment(self, ref: str, comment_id: str) -> None:
-        """Mark a comment done (delivered or given up): baseline it, drop its
-        in-flight counter so it is ignored on later polls."""
+    def resolve_comment(self, ref: str, comment_id: str, gave_up: bool = False) -> None:
+        """Mark a comment done: baseline it, drop its in-flight counter.
+
+        ``gave_up`` distinguishes the two ways a comment becomes "done"
+        (issue-146). They used to be recorded identically, which is why an item
+        stranded by a bug stayed stranded after the bug was fixed: nothing could
+        tell an abandoned comment from a delivered one, so no later cycle would
+        ever look at it again. An abandonment is now recorded **with the CLI
+        version that gave up**, which :meth:`rearm_gave_up_comments` reads.
+        """
         item = self._item(ref)
         seen = list(item.get("seenComments") or [])
         if comment_id not in seen:
@@ -160,6 +171,41 @@ class PollState:
         attempts = dict(item.get("commentAttempts") or {})
         attempts.pop(comment_id, None)
         item["commentAttempts"] = attempts
+        if not gave_up:
+            return
+        record = dict(item.get("gaveUp") or {})
+        abandoned = [c for c in (record.get("comments") or []) if c != comment_id]
+        abandoned.append(comment_id)
+        item["gaveUp"] = {
+            "comments": abandoned[-_SEEN_COMMENTS_CAP:],
+            "version": __version__,
+        }
+
+    def rearm_gave_up_comments(self, ref: str) -> List[str]:
+        """Un-resolve comments abandoned by a **different** CLI version.
+
+        Returns what it re-armed (empty when there is nothing, or when the
+        give-up was recorded by the version now running). Their attempt counters
+        were already dropped when they were resolved, so they come back with a
+        full retry budget and flow through the ordinary candidate path.
+
+        Version-gated rather than "on every poller start" on purpose: `poll
+        --once` from cron would otherwise re-forward abandoned comments every
+        minute, turning a bounded give-up into the endless retry it exists to
+        prevent. An upgrade is the event that actually invalidates a give-up —
+        the reason those events were abandoned may well be what the upgrade
+        fixed — and by construction a fix only reaches an operator through one.
+        """
+        record = self._read(ref).get("gaveUp") or {}
+        abandoned = [c for c in (record.get("comments") or []) if c]
+        if not abandoned or str(record.get("version") or "") == __version__:
+            return []
+        item = self._item(ref)
+        item["seenComments"] = [
+            c for c in (item.get("seenComments") or []) if c not in set(abandoned)
+        ]
+        item["gaveUp"] = {}
+        return abandoned
 
     def baseline_comments(
         self, ref: str, comment_ids: Sequence[str], polled_at: str
@@ -245,6 +291,11 @@ class PollState:
             if cid in live
         }
         item["commentAttempts"] = attempts
+        record = dict(item.get("gaveUp") or {})
+        abandoned = [c for c in (record.get("comments") or []) if c in live]
+        # A comment that is gone upstream can never be re-armed, so the record
+        # follows the same pruning as the rest of the ledger (issue-146).
+        item["gaveUp"] = {**record, "comments": abandoned} if abandoned else {}
         item["lastPolledAt"] = polled_at
 
     def save(self) -> None:
@@ -319,6 +370,11 @@ class Poller:
         # so a hot-reloaded control policy is honoured without a restart.
         self._control = control
         self._control_store = control_store
+        # Work items whose abandoned comments this *run* has already considered
+        # re-arming (issue-146) — the check is once per item per run, and the
+        # re-arm itself only fires when a different CLI version recorded the
+        # give-up, so a long-running poller never revisits it.
+        self._rearm_considered: set = set()
 
     @property
     def control(self) -> ControlConfig:
@@ -516,10 +572,16 @@ class Poller:
                 len(pending),
             )
 
-        # Known item. Sort unresolved comments into candidates (authorized,
-        # non-self) to forward, and dropped ones (unauthorized, or issue-64
-        # self-marked replies) which are baselined so they are never
-        # re-evaluated — matching the old unconditional baseline for those.
+        # Known item. Before reading the baseline, give comments that an OLDER
+        # CLI abandoned one more chance (issue-146): the reason they were
+        # abandoned may be exactly what the upgrade fixed, and until they are
+        # un-resolved the item stays stuck forever with no signal.
+        self._maybe_rearm(ref)
+
+        # Sort unresolved comments into candidates (authorized, non-self) to
+        # forward, and dropped ones (unauthorized, or issue-64 self-marked
+        # replies) which are baselined so they are never re-evaluated —
+        # matching the old unconditional baseline for those.
         seen = self.state.seen_comments(ref)
         candidates = []
         for comment in comments:
@@ -680,6 +742,36 @@ class Poller:
         )
         return True
 
+    def _maybe_rearm(self, ref: str) -> None:
+        """Once per run per item: re-arm comments an older CLI gave up on.
+
+        A give-up is a statement about a *failing* environment ("three attempts,
+        this is not working"); a new CLI version is the one event that can
+        invalidate it. :meth:`PollState.rearm_gave_up_comments` owns that gate and
+        returns nothing when the running version is the one that gave up, so this
+        is a no-op on every ordinary cycle — including repeated `poll --once`
+        runs, which must not re-forward abandoned comments every minute.
+        """
+        if ref in self._rearm_considered:
+            return
+        self._rearm_considered.add(ref)
+        rearmed = self.state.rearm_gave_up_comments(ref)
+        if not rearmed:
+            return
+        logger.info(
+            "%s: %d comment(s) were abandoned by an earlier the-loop version; "
+            "re-arming them with a fresh retry budget (the-loop %s)",
+            ref,
+            len(rearmed),
+            __version__,
+        )
+        eventlog.emit(
+            "poll.rearmed",
+            work_item=ref,
+            comments=rearmed,
+            version=__version__,
+        )
+
     def _process_comment(
         self,
         provider: PollProvider,
@@ -722,7 +814,7 @@ class Poller:
                 attempts=attempts,
                 will_retry=False,
             )
-            self.state.resolve_comment(ref, comment.id)
+            self.state.resolve_comment(ref, comment.id, gave_up=True)
             summary.failures += 1
             return
         self.dispatcher.handle(event)

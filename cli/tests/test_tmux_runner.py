@@ -47,24 +47,52 @@ class FakeRun:
 
     ``per_verb`` overrides the exit code for specific tmux sub-commands
     (e.g. ``{"has-session": 1}`` = "no such session"); ``stdout_per_verb``
-    does the same for stdout (e.g. ``list-panes`` pane-dead flags).
+    does the same for stdout (e.g. ``list-panes`` pane-dead flags);
+    ``stderr_per_verb`` for stderr (e.g. ``new-session`` reporting
+    ``duplicate session``). ``timeout_verbs`` makes a sub-command raise
+    ``TimeoutExpired`` instead of answering — a tmux server too busy to reply,
+    which issue-146 is about not mistaking for "no such session".
+    ``verbs_per_call`` overrides the exit code for the *n*-th occurrence of a
+    verb, so a collision that clears can be modelled.
     """
 
-    def __init__(self, returncode=0, per_verb=None, stdout_per_verb=None):
+    def __init__(
+        self,
+        returncode=0,
+        per_verb=None,
+        stdout_per_verb=None,
+        stderr_per_verb=None,
+        timeout_verbs=(),
+        verbs_per_call=None,
+    ):
         self.calls = []
         self.returncode = returncode
         self.per_verb = per_verb or {}
         self.stdout_per_verb = stdout_per_verb or {}
+        self.stderr_per_verb = stderr_per_verb or {}
+        self.timeout_verbs = set(timeout_verbs)
+        self.verbs_per_call = verbs_per_call or {}
 
     def __call__(self, cmd, **kwargs):
+        import subprocess as real_subprocess
+
         self.calls.append(list(cmd))
-        rc = self.per_verb.get(cmd[1], self.returncode)
-        out = self.stdout_per_verb.get(cmd[1], "")
+        verb = cmd[1]
+        if verb in self.timeout_verbs:
+            raise real_subprocess.TimeoutExpired(cmd, kwargs.get("timeout") or 10)
+        seen = sum(1 for call in self.calls if call[1] == verb)
+        per_call = self.verbs_per_call.get(verb)
+        if per_call is not None and seen <= len(per_call):
+            rc = per_call[seen - 1]
+        else:
+            rc = self.per_verb.get(verb, self.returncode)
+        out = self.stdout_per_verb.get(verb, "")
+        err = self.stderr_per_verb.get(verb, "")
 
         class Proc:
             returncode = rc
             stdout = out
-            stderr = ""
+            stderr = err
 
         return Proc()
 
@@ -159,7 +187,11 @@ class TestTmuxRunner:
         assert tail == ["claude", "--session-id", "uuid-1", "start work"]
 
     def test_spawn_clears_a_stale_session_with_the_same_name(self, monkeypatch):
-        fake = FakeRun()  # has-session exits 0: a stale leftover exists
+        # has-session exits 0 and every pane is dead: a retained leftover holding
+        # the name. Since issue-146 the pane read is what licenses the clear — a
+        # leftover whose harness is still *running* is refused, not killed
+        # (TestSpawnCollision).
+        fake = FakeRun(stdout_per_verb={"list-panes": "1\n"})
         monkeypatch.setattr(runner_mod.subprocess, "run", fake)
         monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
         result = TmuxRunner().spawn(
@@ -172,6 +204,7 @@ class TestTmuxRunner:
         assert result.ok, result.error
         assert fake.verbs == [
             "has-session",
+            "list-panes",
             "kill-session",
             "new-session",
             "set-option",  # remain-on-exit (issue-86)
@@ -374,6 +407,264 @@ class TestPaneLiveness:
     def test_failing_list_panes_degrades_to_live(self, monkeypatch):
         runner, _ = self._runner(monkeypatch, per_verb={"list-panes": 1})
         assert runner.has_live_session("loop-x") is True
+
+
+class TestSessionState:
+    """``session_state`` — tmux's answer, and the absence of one (issue-146).
+
+    The defect this closes: ``has_session`` returned False both when tmux said
+    "no such session" *and* when tmux never answered (a busy server exceeding
+    the probe timeout), so a **live** session read as gone and the respawn walked
+    into ``duplicate session``.
+    """
+
+    @staticmethod
+    def _runner(monkeypatch, **kwargs):
+        fake = FakeRun(**kwargs)
+        monkeypatch.setattr(runner_mod.subprocess, "run", fake)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        return TmuxRunner(), fake
+
+    def test_live_when_a_pane_is_running(self, monkeypatch):
+        runner, _ = self._runner(monkeypatch, stdout_per_verb={"list-panes": "0\n"})
+        assert runner.session_state("loop-x") == runner_mod.SESSION_LIVE
+
+    def test_dead_when_every_pane_has_exited(self, monkeypatch):
+        runner, _ = self._runner(monkeypatch, stdout_per_verb={"list-panes": "1\n"})
+        assert runner.session_state("loop-x") == runner_mod.SESSION_DEAD
+
+    def test_absent_when_tmux_answers_no_such_session(self, monkeypatch):
+        runner, fake = self._runner(monkeypatch, per_verb={"has-session": 1})
+        assert runner.session_state("loop-x") == runner_mod.SESSION_ABSENT
+        assert "list-panes" not in fake.verbs
+
+    def test_unknown_when_the_probe_times_out(self, monkeypatch):
+        # The issue-146 trigger: a loaded/attached tmux server. NOT absent —
+        # nothing may be killed or spawned over on this answer.
+        runner, _ = self._runner(monkeypatch, timeout_verbs={"has-session"})
+        assert runner.session_state("loop-x") == runner_mod.SESSION_UNKNOWN
+
+    def test_unknown_when_tmux_is_not_installed(self, monkeypatch):
+        fake = FakeRun()
+        monkeypatch.setattr(runner_mod.subprocess, "run", fake)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: None)
+        assert TmuxRunner().session_state("loop-x") == runner_mod.SESSION_UNKNOWN
+        assert fake.calls == []
+
+    def test_run_records_tmux_exit_status_and_leaves_it_none_on_no_answer(
+        self, monkeypatch
+    ):
+        runner, _ = self._runner(monkeypatch, per_verb={"has-session": 1})
+        assert runner._run(["has-session", "-t", "loop-x"]).exit_code == 1
+        runner, _ = self._runner(monkeypatch, timeout_verbs={"has-session"})
+        assert runner._run(["has-session", "-t", "loop-x"]).exit_code is None
+
+    def test_has_session_truth_table(self, monkeypatch):
+        runner, _ = self._runner(monkeypatch, stdout_per_verb={"list-panes": "1\n"})
+        assert runner.has_session("loop-x") is True  # dead but present
+        runner, _ = self._runner(monkeypatch, per_verb={"has-session": 1})
+        assert runner.has_session("loop-x") is False
+        # Unknown keeps reading as False for has_session's best-effort callers
+        # (terminate_harness, sessions attach): "assume gone" is safe there.
+        runner, _ = self._runner(monkeypatch, timeout_verbs={"has-session"})
+        assert runner.has_session("loop-x") is False
+
+    def test_an_unanswered_probe_is_live_for_delivery(self, monkeypatch):
+        # has_live_session's documented bias — never declare a healthy session
+        # dead — now applies to the has-session call too, not just the pane read.
+        runner, _ = self._runner(monkeypatch, timeout_verbs={"has-session"})
+        assert runner.has_live_session("loop-x") is True
+
+    def test_delivery_to_an_unanswered_probe_is_not_a_missing_session(
+        self, monkeypatch
+    ):
+        # So it is retried as a transient fault instead of triggering a respawn
+        # that can only collide with the session that is still there (AC2).
+        runner, _ = self._runner(
+            monkeypatch, timeout_verbs={"has-session"}, per_verb={"load-buffer": 1}
+        )
+        result = runner.deliver(
+            make_session(runner="tmux", tmux_target="loop-busy"), "p"
+        )
+        assert not result.ok
+        assert result.session_missing is False
+
+
+class TestSpawnCollision:
+    """``spawn`` against an occupied ``loop-<slug>`` name (issue-146)."""
+
+    @staticmethod
+    def _spawn(monkeypatch, **kwargs):
+        fake = FakeRun(**kwargs)
+        monkeypatch.setattr(runner_mod.subprocess, "run", fake)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        result = TmuxRunner().spawn(
+            work_item=WorkItemRef.parse(REF),
+            adapter=ClaudeCodeAdapter(),
+            prompt="p",
+            cwd="/work",
+            session_id="uuid-1",
+        )
+        return result, fake
+
+    def test_a_live_occupant_is_neither_killed_nor_spawned_over(self, monkeypatch):
+        # The bug this closes both ways: today's code kills a live agent when the
+        # probe sees it, and crash-loops when the probe misses it.
+        result, fake = self._spawn(monkeypatch, stdout_per_verb={"list-panes": "0\n"})
+        assert not result.ok
+        assert result.session_exists is True and result.session_live is True
+        assert "kill-session" not in fake.verbs
+        assert "new-session" not in fake.verbs
+        assert "loop-github-octo-repo-15" in result.error
+
+    def test_a_dead_occupant_is_cleared_then_spawned_over(self, monkeypatch):
+        result, fake = self._spawn(monkeypatch, stdout_per_verb={"list-panes": "1\n"})
+        assert result.ok, result.error
+        assert fake.verbs.index("kill-session") < fake.verbs.index("new-session")
+
+    def test_an_unclearable_dead_occupant_is_reported_not_spawned_over(
+        self, monkeypatch
+    ):
+        result, fake = self._spawn(
+            monkeypatch,
+            stdout_per_verb={"list-panes": "1\n"},
+            per_verb={"kill-session": 1},
+        )
+        assert not result.ok
+        assert result.session_exists is True and result.session_live is False
+        assert "new-session" not in fake.verbs  # never walk into the collision
+
+    def test_a_kill_that_reports_failure_but_worked_still_spawns(self, monkeypatch):
+        # kill-session errored, yet the session is gone: the only thing that
+        # matters is that the name is free.
+        fake = FakeRun(
+            per_verb={"kill-session": 1},
+            stdout_per_verb={"list-panes": "1\n"},
+            verbs_per_call={"has-session": [0, 1]},
+        )
+        monkeypatch.setattr(runner_mod.subprocess, "run", fake)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        result = TmuxRunner().spawn(
+            work_item=WorkItemRef.parse(REF),
+            adapter=ClaudeCodeAdapter(),
+            prompt="p",
+            cwd="/work",
+            session_id="uuid-1",
+        )
+        assert result.ok, result.error
+        assert "new-session" in fake.verbs
+
+    def test_an_unanswered_probe_lets_new_session_decide(self, monkeypatch):
+        # Pre-flight cannot know, so it does not guess: tmux is the authority.
+        result, fake = self._spawn(monkeypatch, timeout_verbs={"has-session"})
+        assert result.ok, result.error
+        assert "kill-session" not in fake.verbs
+        assert "new-session" in fake.verbs
+
+    @staticmethod
+    def _staged_states(monkeypatch, states):
+        """Make ``session_state`` answer ``states`` in order (last one repeats).
+
+        The collision cases need the *pre-flight* probe to go unanswered and the
+        re-probe after ``duplicate session`` to answer — a fixed return value
+        cannot express that.
+        """
+        seen = []
+
+        def state(self, target):
+            seen.append(target)
+            return states[min(len(seen) - 1, len(states) - 1)]
+
+        monkeypatch.setattr(TmuxRunner, "session_state", state)
+        return seen
+
+    def _spawn_with(self, monkeypatch, fake, states):
+        monkeypatch.setattr(runner_mod.subprocess, "run", fake)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        self._staged_states(monkeypatch, states)
+        return TmuxRunner().spawn(
+            work_item=WorkItemRef.parse(REF),
+            adapter=ClaudeCodeAdapter(),
+            prompt="p",
+            cwd="/work",
+            session_id="uuid-1",
+        )
+
+    def test_duplicate_session_is_resolved_and_retried_exactly_once(self, monkeypatch):
+        # tmux proves the name is taken (our probe timed out), the occupant turns
+        # out to be a retained dead session -> clear it and spawn again. Once.
+        fake = FakeRun(
+            stderr_per_verb={
+                "new-session": "duplicate session: loop-github-octo-repo-15"
+            },
+            verbs_per_call={"new-session": [1, 0]},
+        )
+        result = self._spawn_with(
+            monkeypatch,
+            fake,
+            [runner_mod.SESSION_UNKNOWN, runner_mod.SESSION_DEAD],
+        )
+        assert result.ok, result.error
+        assert fake.verbs.count("new-session") == 2
+        assert fake.verbs.count("kill-session") == 1
+
+    def test_duplicate_session_against_a_live_occupant_is_reported(self, monkeypatch):
+        fake = FakeRun(
+            per_verb={"new-session": 1},
+            stderr_per_verb={
+                "new-session": "duplicate session: loop-github-octo-repo-15"
+            },
+        )
+        result = self._spawn_with(
+            monkeypatch,
+            fake,
+            [runner_mod.SESSION_UNKNOWN, runner_mod.SESSION_LIVE],
+        )
+        assert not result.ok
+        assert result.session_exists is True and result.session_live is True
+        assert fake.verbs.count("new-session") == 1  # no blind retry
+        assert "kill-session" not in fake.verbs
+
+    def test_an_occupant_tmux_will_not_describe_is_assumed_live(self, monkeypatch):
+        # tmux says the name is taken but the probe will not say by what. Only a
+        # definite dead-pane reading licenses a kill, so this is reported as live:
+        # never destroy what you cannot see. The caller tries delivering instead,
+        # which is harmless if it really is a dead pane.
+        fake = FakeRun(
+            per_verb={"new-session": 1},
+            stderr_per_verb={"new-session": "duplicate session: loop-x"},
+        )
+        result = self._spawn_with(
+            monkeypatch,
+            fake,
+            [runner_mod.SESSION_UNKNOWN, runner_mod.SESSION_UNKNOWN],
+        )
+        assert not result.ok
+        assert result.session_exists is True and result.session_live is True
+        assert "kill-session" not in fake.verbs
+        assert fake.verbs.count("new-session") == 1
+
+    def test_has_session_stays_a_single_call(self, monkeypatch):
+        # Existence only: terminate_harness / sessions attach do not need a pane
+        # read, and this is on their hot path.
+        fake = FakeRun()
+        monkeypatch.setattr(runner_mod.subprocess, "run", fake)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        assert TmuxRunner().has_session("loop-x") is True
+        assert fake.verbs == ["has-session"]
+
+    def test_a_persistent_duplicate_stops_after_one_retry(self, monkeypatch):
+        fake = FakeRun(
+            per_verb={"new-session": 1},
+            stderr_per_verb={"new-session": "duplicate session: loop-x"},
+        )
+        result = self._spawn_with(
+            monkeypatch,
+            fake,
+            [runner_mod.SESSION_UNKNOWN, runner_mod.SESSION_DEAD],
+        )
+        assert not result.ok
+        assert fake.verbs.count("new-session") == 2  # bounded, not a loop
 
 
 class TestSurvivedProbe:

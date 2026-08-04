@@ -311,7 +311,12 @@ way. `false` restores kill-on-close.
 Retained sessions **accumulate** until you kill them —
 `the-loop sessions list --status closed` finds them, `sessions close --kill-tmux` ends one
 — and a new spawn for the same work item **reclaims** the deterministic `loop-<slug>` name,
-clearing whatever was retained under it.
+clearing whatever was retained under it. "Retained" means its harness has exited, which
+the default `killHarnessOnClose: true` guarantees; a session whose harness is **still
+running** is never reclaimed silently (issue-146). On the respawn path the pending event
+is delivered into it instead (`session.respawn_averted`); on a from-scratch spawn, which
+has no registered session to deliver into, the spawn fails with the remedy in the log —
+`tmux kill-session -t loop-<slug>`, or `the-loop sessions reset --work-item <ref>`.
 
 ### `tmux.remainOnExit`
 
@@ -333,11 +338,17 @@ When a dead tmux session is respawned, continue the **same** harness conversatio
 it knew about the work item. The registry keeps that id, so repeated crashes converge on
 one conversation.
 
+So a tmux session that was killed while the-loop still considered it active is recovered
+on the next event *with its conversation intact*: a fresh `loop-<slug>` session running
+`claude --resume <the recorded id>`, in the session's recorded cwd.
+
 Anything doubtful falls back to a fresh conversation and says so — `session.resume_failed`
 in [`the-loop events`](/cli/commands/events), plus `resumed: false` on
 `session.respawned`. Doubtful means: the harness has no interactive resume (anything but
 Claude Code today), the recorded id is missing or malformed, tmux failed, or the resumed
-harness exited immediately, which is what an unresumable id looks like.
+harness exited immediately, which is what an unresumable id looks like. A tmux session
+already **holding** the name is not doubt about the conversation and is not reported as
+such — it is handled by the occupancy rules under `tmux.keepSessionOnClose` above.
 
 ### `tmux.resumeProbeSeconds`
 
@@ -347,7 +358,8 @@ harness exited immediately, which is what an unresumable id looks like.
 How long a resume waits before checking the harness is still running. `tmux new-session -d`
 succeeds the moment the pane forks, while a harness that cannot resume exits in a fraction
 of a second — without the probe such a respawn would report success forever while events
-went nowhere. `0` checks immediately.
+went nowhere. `0` checks immediately. A probe tmux is too busy to answer counts as **live**,
+so a loaded server no longer discards a resume that in fact took (issue-146).
 
 ### `tmux.killHarnessOnClose`
 

@@ -27,37 +27,81 @@ from the_loop.webhook.router import Router
 REF = "github:octo/repo#15"
 AUTO_LABEL = "the-loop: auto-execute"
 
-# Records argv as JSON lines; everything succeeds unless its tmux sub-command is
-# listed in $STUB_TMUX_FAIL (comma-separated) — e.g. `has-session` to simulate a
-# crashed/killed session (issue-80). $STUB_TMUX_PANE_DEAD makes `list-panes`
-# report a dead pane, i.e. a session retained after its harness exited
-# (issue-86); $STUB_TMUX_PANE_DEAD_ONCE reports one dead pane and then live
-# ones, which is a session that died and was successfully respawned — the
-# resume-on-respawn happy path (issue-89). `list-panes` answers whichever
-# format was asked for, so the pid-carrying query `terminate_harness` uses
-# (issue-94) gets $STUB_TMUX_PANE_PID; once $STUB_TMUX_KILLED_FLAG exists the
-# pane reports dead — that file is how a test's fake `os.kill` says the harness
-# took the signal.
+# Records argv as JSON lines and keeps just enough state to answer like tmux.
+#
+# **Which sessions exist** is tracked, not assumed (issue-146): the names in
+# $STUB_TMUX_EXISTING (comma-separated) plus every name a recorded `new-session`
+# created, minus every name a recorded `kill-session` removed. So `has-session`
+# answers truthfully, and `new-session` against a name already held exits 1 with
+# tmux's own `duplicate session: <name>` — the collision this stub could not
+# express before, and therefore could not have caught.
+#
+# Everything else succeeds unless its tmux sub-command is listed in
+# $STUB_TMUX_FAIL (comma-separated) — `has-session` to make the *probe* fail while
+# the session is whatever the state says (a crashed session, issue-80, or the
+# mis-read at the heart of issue-146), `kill-session` for a leftover that will not
+# clear. $STUB_TMUX_PANE_DEAD makes `list-panes` report a dead pane, i.e. a session
+# retained after its harness exited (issue-86); $STUB_TMUX_PANE_DEAD_ONCE reports
+# one dead pane and then live ones — a liveness probe that read dead while the
+# harness was in fact alive. `list-panes` answers whichever format was asked for,
+# so the pid-carrying query `terminate_harness` uses (issue-94) gets
+# $STUB_TMUX_PANE_PID; once $STUB_TMUX_KILLED_FLAG exists the pane reports dead —
+# that file is how a test's fake `os.kill` says the harness took the signal.
+# $STUB_TMUX_SLOW (comma-separated) makes a sub-command sleep
+# $STUB_TMUX_SLOW_SECONDS before answering — a tmux server too busy to reply,
+# which is how the-loop's probe times out (issue-146) without a test waiting out
+# the real ten seconds.
 STUB_TMUX = """#!/usr/bin/env python3
-import json, os, sys
+import json, os, sys, time
 argv = sys.argv[1:]
 record = os.environ["STUB_TMUX_RECORD"]
 with open(record, "a") as f:
     f.write(json.dumps(argv) + "\\n")
+
+
+def history():
+    with open(record) as handle:
+        return [json.loads(line) for line in handle if line.strip()]
+
+
+def named(call, flag):
+    return call[call.index(flag) + 1] if flag in call else ""
+
+
+def existing(calls):  # reads `fail`, assigned below before any call
+    names = set(n for n in os.environ.get("STUB_TMUX_EXISTING", "").split(",") if n)
+    for call in calls:
+        if call[0] == "new-session":
+            names.add(named(call, "-s"))
+        elif call[0] == "kill-session" and "kill-session" not in fail:
+            names.discard(named(call, "-t"))
+    return names
+
+
+fail = set(v for v in os.environ.get("STUB_TMUX_FAIL", "").split(",") if v)
+slow = set(v for v in os.environ.get("STUB_TMUX_SLOW", "").split(",") if v)
+if argv and argv[0] in slow:
+    time.sleep(float(os.environ.get("STUB_TMUX_SLOW_SECONDS", "0.5")))
+past = history()[:-1]  # state BEFORE this call
 if argv and argv[0] == "list-panes":
     dead = bool(os.environ.get("STUB_TMUX_PANE_DEAD"))
     if os.environ.get("STUB_TMUX_PANE_DEAD_ONCE"):
-        seen = sum(1 for line in open(record) if json.loads(line)[0] == "list-panes")
-        dead = seen <= 1
+        dead = not any(call[0] == "list-panes" for call in past)
     killed = os.environ.get("STUB_TMUX_KILLED_FLAG")
     if killed and os.path.exists(killed):
         dead = True
     flag = "1" if dead else "0"
     pid = os.environ.get("STUB_TMUX_PANE_PID", "4242")
     print(pid + " " + flag if "pane_pid" in argv[-1] else flag)
-fail = set(v for v in os.environ.get("STUB_TMUX_FAIL", "").split(",") if v)
+if argv and argv[0] == "has-session" and named(argv, "-t") not in existing(past):
+    sys.exit(1)
+if argv and argv[0] == "new-session" and named(argv, "-s") in existing(past):
+    sys.stderr.write("duplicate session: " + named(argv, "-s") + "\\n")
+    sys.exit(1)
 sys.exit(1 if argv and argv[0] in fail else 0)
 """
+
+TARGET = "loop-github-octo-repo-15"
 
 
 class RecordingAnnouncer:
@@ -194,11 +238,11 @@ def test_labeled_issue_spawns_tmux_hosted_interactive_session(pipeline):
     assert tail[2] == session.harness_session_id
 
 
-def test_followup_event_is_pasted_into_the_running_session(pipeline):
+def test_followup_event_is_pasted_into_the_running_session(pipeline, monkeypatch):
     """
     Feature: tmux-hosted interactive sessions
     Scenario: a follow-up comment is pasted into the live TUI
-      Given a registered tmux-mode session for the work item
+      Given a registered tmux-mode session for the work item, live in tmux
       When an issue_comment event for that work item arrives
       Then the prompt is delivered via load-buffer, bracketed paste-buffer and Enter
       And the session records the processed delivery id
@@ -215,6 +259,7 @@ def test_followup_event_is_pasted_into_the_running_session(pipeline):
             tmux_target="loop-github-octo-repo-15",
         )
     )
+    monkeypatch.setenv("STUB_TMUX_EXISTING", TARGET)
     deliver("issue_comment", issue_payload(action="created"), "d-evt-1")
     assert wait_until(
         lambda: (
@@ -367,12 +412,12 @@ def fake_kill(tmp_path, monkeypatch):
     [("pull_request", pr_close_payload), ("issues", issue_close_payload)],
 )
 def test_closing_a_work_item_ends_the_harness_but_keeps_the_session(
-    pipeline, fake_kill, event, payload_fn
+    pipeline, fake_kill, monkeypatch, event, payload_fn
 ):
     """
     Feature: tmux-hosted interactive sessions
     Scenario: a closed work item's harness is ended, its transcript retained
-      Given a registered tmux-mode session for the work item
+      Given a registered tmux-mode session for the work item, live in tmux
       And routing.tmux.keepSessionOnClose and killHarnessOnClose are at their defaults
       When the work item is closed (its PR merged, or the issue closed)
       Then the harness process in the session's pane is sent SIGTERM
@@ -382,6 +427,7 @@ def test_closing_a_work_item_ends_the_harness_but_keeps_the_session(
     """
     deliver, registry, calls = pipeline
     register_tmux_session(registry)
+    monkeypatch.setenv("STUB_TMUX_EXISTING", TARGET)
     deliver(event, payload_fn(), f"d-term-{event}")
     assert wait_until(lambda: registry.find_by_work_item(REF) is None)
     assert wait_until(lambda: fake_kill == [(4242, signal.SIGTERM)])
@@ -462,13 +508,14 @@ def test_respawn_does_not_re_announce(pipeline_factory, monkeypatch):
     Requirement: docs/specs/issue-86/requirements.md#R3
     """
     announcer = RecordingAnnouncer()
-    deliver, registry, _ = pipeline_factory(announcer=announcer)
-    register_tmux_session(registry)
-    monkeypatch.setenv("STUB_TMUX_FAIL", "has-session")
+    deliver, registry, calls = pipeline_factory(announcer=announcer)
+    register_tmux_session(registry)  # nothing holds TARGET in tmux: it is gone
     deliver("issue_comment", issue_payload(action="created"), "d-announce-2")
     assert wait_until(
-        lambda: registry.find_by_work_item(REF).harness_session_id != "uuid-1"
+        lambda: "d-announce-2" in registry.find_by_work_item(REF).recent_deliveries
     )
+    spawn = [c for c in calls() if c[0] == "new-session"][-1]
+    assert spawn[spawn.index("-s") + 1] == TARGET  # same name, hence no re-announce
     assert announcer.calls == []
 
 
@@ -515,8 +562,9 @@ def test_dead_session_is_respawned_with_the_event_as_boot_prompt(pipeline, monke
             tmux_target="loop-github-octo-repo-15",
         )
     )
-    # The session crashed: every has-session probe now fails.
-    monkeypatch.setenv("STUB_TMUX_FAIL", "has-session")
+    # The session crashed, and its conversation is gone with it: the resume
+    # attempt comes up dead, so the respawn falls back to a fresh conversation.
+    monkeypatch.setenv("STUB_TMUX_PANE_DEAD", "1")
     deliver("issue_comment", issue_payload(action="created"), "d-dead-1")
 
     def respawned_and_recorded() -> bool:
@@ -543,9 +591,9 @@ def test_dead_session_is_respawned_with_the_event_as_boot_prompt(pipeline, monke
     assert respawned.tmux_target == "loop-github-octo-repo-15"
     assert "d-dead-1" in respawned.recent_deliveries  # marked processed
 
-    # Every has-session probe fails here, so the resume attempt (issue-89)
-    # cannot be verified and the respawn falls back to a fresh conversation —
-    # the session the registry ends up pointing at.
+    # Every pane comes up dead here, so the resume attempt (issue-89) cannot be
+    # verified and the respawn falls back to a fresh conversation — the session
+    # the registry ends up pointing at.
     spawn = [c for c in calls() if c[0] == "new-session"][-1]
     tail = spawn[spawn.index("--") + 1 :]
     assert tail[0].endswith("claude")
@@ -557,18 +605,17 @@ def test_respawn_resumes_the_dead_sessions_conversation(pipeline_factory, monkey
     """
     Feature: tmux-hosted interactive sessions
     Scenario: a respawned session continues the same harness conversation
-      Given a registered tmux-mode session whose pane has died
+      Given a registered tmux-mode session whose tmux session was killed
       When an issue_comment event for that work item arrives
       Then the harness TUI is respawned with --resume <the recorded session id>
       And the registry keeps that same harness session id
       And no second announcement comment is posted
     Requirement: docs/specs/issue-89/requirements.md#R1
+    Requirement: docs/specs/issue-146/bugfix.md#AC12
     """
     announcer = RecordingAnnouncer()
     deliver, registry, calls = pipeline_factory(announcer=announcer)
-    register_tmux_session(registry)
-    # Dead when the event is delivered, alive once respawned: a resume that took.
-    monkeypatch.setenv("STUB_TMUX_PANE_DEAD_ONCE", "1")
+    register_tmux_session(registry)  # nothing holds TARGET in tmux any more
     deliver("issue_comment", issue_payload(action="created"), "d-resume-1")
 
     assert wait_until(
@@ -584,6 +631,109 @@ def test_respawn_resumes_the_dead_sessions_conversation(pipeline_factory, monkey
     assert tail[1] == "--resume" and tail[2] == "uuid-1"
     assert "issue_comment" in tail[-1]  # the event is still the boot prompt
     assert announcer.calls == []  # same loop-<slug> name, no new comment
+
+
+def test_a_busy_tmux_server_does_not_trigger_a_respawn(pipeline, monkeypatch):
+    """
+    Feature: tmux-hosted interactive sessions
+    Scenario: a liveness probe the tmux server is too busy to answer
+      Given a registered tmux-mode session that is alive in tmux
+      But a tmux server too slow to answer the liveness probe before it times out
+      When an issue_comment event for that work item arrives
+      Then the event is still pasted into the live session
+      And nothing is respawned (an unanswered probe is not an absent session)
+    Requirement: docs/specs/issue-146/bugfix.md#AC1 #AC2
+    """
+    deliver, registry, calls = pipeline
+    register_tmux_session(registry)
+    monkeypatch.setenv("STUB_TMUX_EXISTING", TARGET)
+    monkeypatch.setenv("STUB_TMUX_SLOW", "has-session")
+    monkeypatch.setenv("STUB_TMUX_SLOW_SECONDS", "0.2")
+    monkeypatch.setattr(runner_mod, "_PROBE_TIMEOUT_SECONDS", 0.05)
+    deliver("issue_comment", issue_payload(action="created"), "d-busy-1")
+
+    assert wait_until(
+        lambda: "d-busy-1" in registry.find_by_work_item(REF).recent_deliveries
+    )
+    assert any(c[0] == "paste-buffer" for c in calls())
+    assert [c for c in calls() if c[0] == "new-session"] == []
+    assert registry.find_by_work_item(REF).harness_session_id == "uuid-1"
+
+
+def test_a_respawn_that_finds_the_session_alive_delivers_into_it(
+    pipeline, monkeypatch, tmp_path
+):
+    """
+    Feature: tmux-hosted interactive sessions
+    Scenario: the session is alive after all, so the pending event is pasted into it
+      Given a registered tmux-mode session that is alive in tmux
+      But whose liveness probe read dead when the event was delivered
+      When the respawn re-checks the target name and finds a running harness
+      Then the pending event is pasted into that session
+      And no new session is spawned over it
+      And the averted respawn is recorded as session.respawn_averted
+    Requirement: docs/specs/issue-146/bugfix.md#AC6
+    """
+    deliver, registry, calls = pipeline
+    log_path = tmp_path / "events.jsonl"
+    eventlog.configure("test", path=log_path)
+    register_tmux_session(registry)
+    monkeypatch.setenv("STUB_TMUX_EXISTING", TARGET)
+    # Dead to the delivery's probe, alive to every probe after it: the race that
+    # used to send a live session into `tmux new-session` and `duplicate session`.
+    monkeypatch.setenv("STUB_TMUX_PANE_DEAD_ONCE", "1")
+    deliver("issue_comment", issue_payload(action="created"), "d-averted-1")
+
+    assert wait_until(
+        lambda: "d-averted-1" in registry.find_by_work_item(REF).recent_deliveries
+    )
+    assert [c for c in calls() if c[0] == "new-session"] == []  # nothing spawned
+    assert [c for c in calls() if c[0] == "kill-session"] == []  # nothing killed
+    paste = [c for c in calls() if c[0] == "paste-buffer"]
+    assert paste and paste[0][paste[0].index("-t") + 1] == TARGET
+    kept = registry.find_by_work_item(REF)
+    assert kept.harness_session_id == "uuid-1"  # same conversation, untouched
+    types = [json.loads(line)["event"] for line in log_path.read_text().splitlines()]
+    assert "session.respawn_averted" in types
+    assert "session.respawned" not in types
+
+
+def test_an_unclearable_occupant_skips_the_event_instead_of_looping(
+    pipeline, monkeypatch, tmp_path
+):
+    """
+    Feature: tmux-hosted interactive sessions
+    Scenario: a dead session holds the name and will not clear
+      Given a registered tmux-mode session whose pane is dead
+      And a tmux that refuses to kill that session
+      When an issue_comment event for that work item arrives
+      Then no session is spawned over it (no `duplicate session` collision)
+      And the dispatch is dropped as session-occupied, not failed
+      And the delivery id is NOT released, so no cycle retries the same collision
+    Requirement: docs/specs/issue-146/bugfix.md#AC5 #AC8
+    """
+    deliver, registry, calls = pipeline
+    log_path = tmp_path / "events.jsonl"
+    eventlog.configure("test", path=log_path)
+    register_tmux_session(registry)
+    monkeypatch.setenv("STUB_TMUX_EXISTING", TARGET)
+    monkeypatch.setenv("STUB_TMUX_PANE_DEAD", "1")
+    monkeypatch.setenv("STUB_TMUX_FAIL", "kill-session")
+    deliver("issue_comment", issue_payload(action="created"), "d-occupied-1")
+
+    def dropped():
+        if not log_path.exists():
+            return False
+        return any(
+            json.loads(line).get("reason") == "session-occupied"
+            for line in log_path.read_text().splitlines()
+        )
+
+    assert wait_until(dropped)
+    assert [c for c in calls() if c[0] == "new-session"] == []
+    kept = registry.find_by_work_item(REF)
+    assert kept is not None and kept.harness_session_id == "uuid-1"
+    assert "d-occupied-1" not in kept.recent_deliveries  # not claimed as handled
 
 
 def test_an_unresumable_conversation_falls_back_to_a_fresh_session(
@@ -650,7 +800,6 @@ def test_a_flag_shaped_session_id_is_never_passed_to_the_harness(pipeline, monke
     """
     deliver, registry, calls = pipeline
     register_tmux_session(registry, harness_session_id="--dangerously-skip-permissions")
-    monkeypatch.setenv("STUB_TMUX_PANE_DEAD_ONCE", "1")
     deliver("issue_comment", issue_payload(action="created"), "d-resume-4")
 
     assert wait_until(
@@ -669,7 +818,7 @@ def test_resume_on_respawn_can_be_switched_off(pipeline_factory, monkeypatch):
     Feature: tmux-hosted interactive sessions
     Scenario: the pre-issue-89 behaviour stays available
       Given routing.tmux.resumeOnRespawn is false
-      And a registered tmux-mode session whose pane has died
+      And a registered tmux-mode session whose tmux session was killed
       When an issue_comment event for that work item arrives
       Then the respawn starts a fresh conversation without attempting a resume
     Requirement: docs/specs/issue-89/requirements.md#R1
@@ -678,7 +827,6 @@ def test_resume_on_respawn_can_be_switched_off(pipeline_factory, monkeypatch):
         overrides={"tmux": {"resumeOnRespawn": False, "resumeProbeSeconds": 0}}
     )
     register_tmux_session(registry)
-    monkeypatch.setenv("STUB_TMUX_PANE_DEAD_ONCE", "1")
     deliver("issue_comment", issue_payload(action="created"), "d-resume-3")
 
     assert wait_until(
@@ -712,6 +860,7 @@ def test_non_missing_delivery_failure_does_not_respawn(pipeline, monkeypatch):
         )
     )
     # Session is alive, but the bracketed paste errors.
+    monkeypatch.setenv("STUB_TMUX_EXISTING", TARGET)
     monkeypatch.setenv("STUB_TMUX_FAIL", "paste-buffer")
     deliver("issue_comment", issue_payload(action="created"), "d-alive-1")
 

@@ -49,7 +49,8 @@ from the_loop.authz import (
     resolve_authorized_users,
 )
 from the_loop.poller.poller import PollSummary  # noqa: F401 (re-exported too)
-from the_loop.workitem import INDEX_FILE, WorkItemStore
+from the_loop import __version__ as the_loop_version
+from the_loop.workitem import INDEX_FILE, POLL, WorkItemStore
 from the_loop.sessions import Session, SessionRegistry, WorkItemRef
 from the_loop.webhook.router import RoutedEvent
 
@@ -881,6 +882,103 @@ def test_failed_comment_is_retried_then_given_up(tmp_path):
     assert summary.comments_forwarded == 0
     assert "IC_1" in state.seen_comments(ref)  # baselined -> ignored henceforth
     assert [e.delivery_id for e in disp.events] == ["comment-IC_1", "comment-IC_1"]
+
+
+# -- recovering items an older CLI gave up on (issue-146, AC11) ----------------
+
+
+def test_poll_state_records_a_give_up_with_the_version_that_gave_up(tmp_path):
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    ref = "github:octo/repo#15"
+    state.resolve_comment(ref, "IC_1")  # delivered
+    state.resolve_comment(ref, "IC_2", gave_up=True)  # abandoned
+    state.save()
+    section = state.store.section(ref, POLL) or {}
+    assert section["gaveUp"]["comments"] == ["IC_2"]
+    assert section["gaveUp"]["version"] == the_loop_version
+    # A delivered comment is never re-armable; an abandoned one is.
+    assert {"IC_1", "IC_2"} <= state.seen_comments(ref)
+
+
+def test_a_give_up_by_the_running_version_is_not_rearmed(tmp_path):
+    # Otherwise repeated `poll --once` runs would re-forward abandoned comments
+    # every minute, which is the endless retry the give-up exists to prevent.
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    ref = "github:octo/repo#15"
+    state.resolve_comment(ref, "IC_2", gave_up=True)
+    assert state.rearm_gave_up_comments(ref) == []
+    assert "IC_2" in state.seen_comments(ref)
+
+
+def test_a_give_up_by_another_version_is_rearmed_once(tmp_path):
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    ref = "github:octo/repo#15"
+    state.resolve_comment(ref, "IC_2", gave_up=True)
+    state._item(ref)["gaveUp"]["version"] = "0.0.1-before-the-fix"
+
+    assert state.rearm_gave_up_comments(ref) == ["IC_2"]
+    assert "IC_2" not in state.seen_comments(ref)  # unresolved again
+    assert state.comment_attempts(ref, "IC_2") == 0  # with a full budget
+    assert state.rearm_gave_up_comments(ref) == []  # and only once
+
+
+def test_finalize_forgets_a_rearmable_comment_that_vanished(tmp_path):
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    ref = "github:octo/repo#15"
+    state.resolve_comment(ref, "IC_gone", gave_up=True)
+    state.finalize(ref, [], "t")  # deleted upstream: nothing to re-arm ever
+    state._item(ref)["gaveUp"]["version"] = "0.0.1-before-the-fix"
+    assert state.rearm_gave_up_comments(ref) == []
+
+
+def test_an_upgrade_picks_up_a_comment_the_old_version_gave_up_on(tmp_path):
+    """The stuck-work-item recovery, end to end through the poller.
+
+    A comment abandoned by an older CLI is re-forwarded on the first cycle after
+    the upgrade, with a full retry budget — and only on that one cycle's decision,
+    not once per cycle thereafter.
+    """
+    ref = "github:octo/repo#15"
+    registry = _with_session(tmp_path)
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    state.baseline_comments(ref, ["IC_0"], "t")
+    state.resolve_comment(ref, "IC_1", gave_up=True)
+    state._item(ref)["gaveUp"]["version"] = "0.0.1-before-the-fix"
+    provider = FakeProvider(
+        items=[_item(15)], comments={15: [_comment("IC_0"), _comment("IC_1")]}
+    )
+    disp = RecordingDispatcher()  # dispatch still unconfirmed after forwarding
+    poller = make_poller(provider, registry, disp, state)
+
+    summary = poller.poll_once()
+    assert summary.comments_forwarded == 1
+    assert [e.delivery_id for e in disp.events] == ["comment-IC_1"]
+    assert state.comment_attempts(ref, "IC_1") == 1  # a FULL budget, not a resumed one
+    assert "IC_1" not in state.seen_comments(ref)
+
+    # The re-arm itself happened once: the record is spent, so a later run (a
+    # fresh `poll --once`, hence a fresh Poller) cannot re-arm it a second time.
+    state.save()
+    assert (
+        PollState(WorkItemStore(tmp_path / "portable")).rearm_gave_up_comments(ref)
+        == []
+    )
+
+
+def test_an_unchanged_version_leaves_a_given_up_comment_alone(tmp_path):
+    ref = "github:octo/repo#15"
+    registry = _with_session(tmp_path)
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    state.baseline_comments(ref, ["IC_0"], "t")
+    state.resolve_comment(ref, "IC_1", gave_up=True)  # this very version
+    provider = FakeProvider(
+        items=[_item(15)], comments={15: [_comment("IC_0"), _comment("IC_1")]}
+    )
+    disp = RecordingDispatcher()
+    # A fresh Poller each time is what `poll --once` from cron looks like.
+    for _ in range(3):
+        make_poller(provider, registry, disp, state).poll_once()
+    assert disp.events == []
 
 
 def test_inflight_comment_is_not_counted_a_failure(tmp_path):
