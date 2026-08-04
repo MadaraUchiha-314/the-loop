@@ -1,3 +1,9 @@
+## v6.1.1 (2026-08-04)
+
+### Fix
+
+- **cli**: never spawn over a live tmux session; resolve duplicate-session collisions (issue #146) (#147)
+
 ## v6.1.0 (2026-08-04)
 
 ### Feat
