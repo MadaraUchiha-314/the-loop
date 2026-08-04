@@ -1,7 +1,7 @@
 ---
 type: execution-log
 workItem: issue-148
-phase: requirements-definition
+phase: design
 status: in-progress
 ---
 
@@ -14,8 +14,8 @@ status: in-progress
 
 | Phase | Entered | Reviewed/approved by | Notes |
 |-------|---------|----------------------|-------|
-| requirements-definition | 2026-08-04 | *pending* | Tier 5 (`human-approves-spec-and-pr`): each phase artifact needs explicit human approval. Requirements drafted from the issue's audit of the ingress↔graph seam. |
-| design | | | |
+| requirements-definition | 2026-08-04 | MadaraUchiha-314 ("go ahead", [PR #149 comment](https://github.com/MadaraUchiha-314/the-loop/pull/149)) | Tier 5 (`human-approves-spec-and-pr`): each phase artifact needs explicit human approval. Requirements drafted from the issue's audit of the ingress↔graph seam. |
+| design | 2026-08-04 | *pending* | Seven decisions (D1–D7); both open questions from requirements resolved: completion signal is a CLI verb (D1), no consume-only routes (D4). |
 | tasks-breakdown | | | |
 | implementation | | | |
 | needs-review | | | |
@@ -55,5 +55,22 @@ status: in-progress
   Tier 5 still means a human must approve this phase on [PR #149] before design begins.
 - **Checkpoint/tests:** `uv run the-loop check issue-148 --recompute --fail-on block`
   green locally; markdownlint clean.
+
+### 2026-08-04 — requirements approved; design derived
+
+- **Phase:** design
+- **Did:** The owner approved the requirements on [PR #149] ("go ahead") —
+  `approvedBy` recorded, phase advanced, label moved to `loop:design`. Derived
+  `design.md` from the locked requirements: D1 completion signal as
+  `the-loop graph complete` (JSON envelope, node-named idempotent claims), D2 read-only
+  `GraphContext`, D3 one `$graph_context` template variable (empty ⇒ byte-identical
+  prompts for out-of-graph repos), D4 consult-first only at human gates (open question 2
+  answered: no consume-only routes), D5 read-before-render / enter-after-success spawn,
+  D6 session binding in graph state + `resolve_session`'s first caller, D7 phase parity
+  test. Two-writer concurrency handled with a stdlib flock; error handling enumerated
+  per call site.
+- **Checkpoint/tests:** `the-loop check issue-148 --recompute --fail-on block` and
+  markdownlint to be re-run before push. Next: human review of design on the PR; do not
+  derive `tasks.md` until locked.
 
 [PR #149]: https://github.com/MadaraUchiha-314/the-loop/pull/149

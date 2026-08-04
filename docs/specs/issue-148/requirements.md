@@ -3,7 +3,7 @@ type: requirements
 phase: requirements-definition
 workItem: issue-148
 status: approved             # draft | in-review | approved
-approvedBy: []               # tier-5: the human gate is the PR review — see execution-log
+approvedBy: [MadaraUchiha-314]   # "go ahead" on PR #149 — see execution-log
 collaborators: [engineer, approver]
 riskTier: 5                  # redefines who controls event delivery and phase authority — the operating model itself
 overrides: {}
