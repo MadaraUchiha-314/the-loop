@@ -1,3 +1,9 @@
+## v5.2.0 (2026-08-04)
+
+### Feat
+
+- **issue-134**: tell a spawned session where its answers come from — CLI or the work item (#139)
+
 ## v5.1.0 (2026-08-04)
 
 ### Feat

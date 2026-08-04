@@ -6,14 +6,14 @@
   },
   "metadata": {
     "description": "Marketplace for \"the-loop\" — the product-development-lifecycle harness.",
-    "version": "5.1.0"
+    "version": "5.2.0"
   },
   "plugins": [
     {
       "name": "the-loop",
       "source": "./",
       "description": "Plan, execute, review and ship work items end-to-end with a predictable agent loop.",
-      "version": "5.1.0",
+      "version": "5.2.0",
       "category": "workflow",
       "keywords": ["pdlc", "workflow", "automation", "loop"]
     }
