@@ -18,32 +18,15 @@ installation, quickstart, CLI reference, and developer docs.
 
 `(brainstorm) → requirements → design → tasks (each iterated until locked + human-reviewed) → implement (+self-check) → self/critic review → evidence → complete → learn`
 
-```mermaid
-flowchart TD
-    subgraph spec["Specified and reviewed — each artifact iterated with feedback until locked"]
-        direction TB
-        B["brainstorm.md\n(optional root artifact)\nlabel: brainstorming"]
-        R["requirements.md\nlabel: requirements-definition"]
-        D["design.md\nlabel: design"]
-        K["tasks.md\nlabel: tasks-breakdown"]
-        B -->|convert| R
-        R -->|human review| D
-        D -->|human review| K
-    end
+![the-loop workflow: a ticket is opened, then the spec artifacts (optional
+brainstorm.md, requirements.md, design.md, tasks.md) are each iterated with feedback
+until locked, gated by human review; then implement + self-check, self/critic review
+and evidence run autonomously, ending in complete and learn](docs/assets/the-loop-workflow.svg)
 
-    subgraph exec["Executed autonomously"]
-        direction TB
-        I["implement + self-check\nlabel: implementation"]
-        C["self / critic review\nlabel: needs-review"]
-        E["evidence"]
-        I --> C --> E
-    end
-
-    T(["ticket opened\nnot-started"]) --> B
-    K -->|human review| I
-    E --> X(["✅ complete"])
-    X --> L[["📚 learn"]]
-```
+*Drawn with [Excalidraw](https://excalidraw.com). Both the
+[SVG](docs/assets/the-loop-workflow.svg) (which embeds the scene) and the
+[`.excalidraw` source](docs/assets/the-loop-workflow.excalidraw) can be dropped into
+excalidraw.com to edit.*
 
 A work item is a chain of artifacts, each derived from the one before it and **iterated
 with feedback until it is locked** before the loop advances. Optionally it starts with a
