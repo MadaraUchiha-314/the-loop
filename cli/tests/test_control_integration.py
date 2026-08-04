@@ -26,10 +26,10 @@ from the_loop.webhook.router import RoutedEvent, extract_work_items
 
 LABEL = "the-loop: auto-execute"
 REF = "github:octo/repo#15"
-START_KEYWORD = "the-loop:start-execution"
-STOP_KEYWORD = "the-loop:stop-execution"
-PAUSE_KEYWORD = "the-loop:pause-execution"
-RESUME_KEYWORD = "the-loop:resume-execution"
+START_KEYWORD = "the-loop start"
+STOP_KEYWORD = "the-loop stop"
+PAUSE_KEYWORD = "the-loop pause"
+RESUME_KEYWORD = "the-loop resume"
 
 
 class FakeAdapter:

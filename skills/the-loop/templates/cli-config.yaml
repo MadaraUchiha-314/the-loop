@@ -54,10 +54,10 @@ webhooks:
         enabled: true
         requireStartCommand: true
         keywords:
-          start: "the-loop:start-execution"
-          stop: "the-loop:stop-execution"
-          pause: "the-loop:pause-execution"
-          resume: "the-loop:resume-execution"
+          start: "the-loop start"
+          stop: "the-loop stop"
+          pause: "the-loop pause"
+          resume: "the-loop resume"
       # Drive the-loop's PROCESS GRAPH from ingress events (issue-113). Without this,
       # the graph only moved when a human ran `the-loop graph advance`: a spawned
       # session left the work item's graph unentered (so the entry hooks never wrote

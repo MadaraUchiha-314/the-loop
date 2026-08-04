@@ -99,7 +99,8 @@ command reconciles them.
      defaults, so a config that names its paths keeps behaving identically.
    - **Report `control.requireStartCommand` as `needs-user`, never as a silent
      add.** Its default (`true`) means the auto-execute label alone no longer starts
-     a session: an authorized user must comment `the-loop:start-execution` (or run
+     a session: an authorized user must comment `the-loop start` (issue-135; the
+     pre-issue-135 default was `the-loop:start-execution`) (or run
      `the-loop sessions start`). Ask which the operator wants — keep the pre-issue-106
      behaviour (write `requireStartCommand: false`) or adopt the new gate (`true`) —
      and say what each means. Do not decide it for them.

@@ -85,17 +85,17 @@ COMMANDS = (START, STOP, PAUSE, RESUME)
 _ARMING_COMMANDS = (START, RESUME)
 
 DEFAULT_KEYWORDS: Dict[str, str] = {
-    START: "the-loop:start-execution",
-    STOP: "the-loop:stop-execution",
-    PAUSE: "the-loop:pause-execution",
-    RESUME: "the-loop:resume-execution",
+    START: "the-loop start",
+    STOP: "the-loop stop",
+    PAUSE: "the-loop pause",
+    RESUME: "the-loop resume",
 }
 
 # What may NOT sit directly against a keyword for it to count as a whole token.
-# `\w`, `-` and `:` are the characters the keywords themselves are made of, so
-# excluding them means `the-loop:start-execution.` (trailing punctuation, end of
-# a sentence, end of a line) matches while `the-loop:start-execution-later` and
-# `xthe-loop:start-executionx` do not.
+# `\w`, `-` and `:` are the characters the keywords themselves are made of (plus
+# the space between the two words), so excluding them means `the-loop start.`
+# (trailing punctuation, end of a sentence, end of a line) matches while
+# `the-loop startlater` and `xthe-loop start` do not.
 _BOUNDARY_BEFORE = r"(?<![\w:-])"
 _BOUNDARY_AFTER = r"(?![\w:-])"
 

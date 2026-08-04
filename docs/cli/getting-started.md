@@ -2,7 +2,7 @@
 
 From an uninstalled CLI to a GitHub issue that an agent picks up on its own, in five steps.
 
-By the end: you comment `the-loop:start-execution` on a labelled issue, a harness session
+By the end: you comment `the-loop start` on a labelled issue, a harness session
 spawns for it, every later comment and CI result on that item is routed to the same
 session, and the session closes itself when the item does.
 
@@ -129,7 +129,7 @@ Two separate acts, deliberately ([issue-106](https://github.com/MadaraUchiha-314
 2. **Start it** — comment the keyword:
 
    ```text
-   the-loop:start-execution
+   the-loop start
    ```
 
 Labelling used to be the trigger, which made it an irreversible act you could perform by
@@ -178,7 +178,7 @@ sequenceDiagram
   H->>GH: label "the-loop: auto-execute"
   GH-->>D: issues.labeled
   D->>D: armed (no spawn yet)
-  H->>GH: comment "the-loop:start-execution"
+  H->>GH: comment "the-loop start"
   GH-->>D: issue_comment.created
   D->>D: authorized? not self? keyword?
   D->>S: spawn + register (one per work item)

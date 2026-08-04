@@ -113,35 +113,41 @@ afterwards will not start it.
 
 ::: warning Upgrading from ≤ 0.22
 With the default `true`, labelling an issue no longer starts a session on its own —
-comment `the-loop:start-execution`, or run `the-loop sessions start`. Set `false` for the
+comment `the-loop start`, or run `the-loop sessions start`. Set `false` for the
 old behaviour.
+:::
+
+::: warning Upgrading from ≤ 4.2 (issue-135)
+The default keywords changed shape from `the-loop:<verb>-execution` to `the-loop <verb>`.
+If you rely on the shipped defaults (never set `keywords` explicitly), your comment
+habit changes; an explicit `keywords` override in your own config is unaffected.
 :::
 
 ### `control.keywords.start`
 
 - **Type:** `string`
-- **Default:** `the-loop:start-execution`
+- **Default:** `the-loop start`
 
 Start (or resume) execution for the work item.
 
 ### `control.keywords.stop`
 
 - **Type:** `string`
-- **Default:** `the-loop:stop-execution`
+- **Default:** `the-loop stop`
 
 Close the session and end its harness.
 
 ### `control.keywords.pause`
 
 - **Type:** `string`
-- **Default:** `the-loop:pause-execution`
+- **Default:** `the-loop pause`
 
 Hold events; the session keeps its conversation.
 
 ### `control.keywords.resume`
 
 - **Type:** `string`
-- **Default:** `the-loop:resume-execution`
+- **Default:** `the-loop resume`
 
 Deliver events again.
 

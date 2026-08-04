@@ -51,10 +51,10 @@ webhooks:
         enabled: true
         requireStartCommand: true
         keywords:
-          start: "the-loop:start-execution"
-          stop: "the-loop:stop-execution"
-          pause: "the-loop:pause-execution"
-          resume: "the-loop:resume-execution"
+          start: "the-loop start"
+          stop: "the-loop stop"
+          pause: "the-loop pause"
+          resume: "the-loop resume"
       # SECURITY: no fallback to this repo's plugin config (issue-63 review) —
       # empty here means nothing human-authored is actioned (fail closed).
       # Set this explicitly, e.g. ["MadaraUchiha-314"], to actually route events.

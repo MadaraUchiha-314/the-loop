@@ -32,10 +32,10 @@ REF = "github:octo/repo#15"
 def test_defaults_declare_the_four_documented_keywords():
     config = ControlConfig()
     assert config.enabled and config.require_start_command
-    assert config.keyword(START) == "the-loop:start-execution"
-    assert config.keyword(STOP) == "the-loop:stop-execution"
-    assert config.keyword(PAUSE) == "the-loop:pause-execution"
-    assert config.keyword(RESUME) == "the-loop:resume-execution"
+    assert config.keyword(START) == "the-loop start"
+    assert config.keyword(STOP) == "the-loop stop"
+    assert config.keyword(PAUSE) == "the-loop pause"
+    assert config.keyword(RESUME) == "the-loop resume"
     assert set(DEFAULT_KEYWORDS) == set(COMMANDS)
 
 
@@ -81,8 +81,8 @@ def test_the_binary_now_comes_from_the_integrations_block(tmp_path):
 
 def test_an_empty_keyword_disables_only_that_command():
     config = ControlConfig.from_mapping({"keywords": {"stop": ""}})
-    assert parse_command("the-loop:stop-execution now", config).command is None
-    assert parse_command("the-loop:pause-execution", config).command == PAUSE
+    assert parse_command("the-loop stop now", config).command is None
+    assert parse_command("the-loop pause", config).command == PAUSE
 
 
 # -- parse_command --------------------------------------------------------------
@@ -103,12 +103,12 @@ def test_a_comment_without_a_keyword_is_not_a_command():
 @pytest.mark.parametrize(
     "body",
     [
-        "the-loop:start-execution",
-        "the-loop:start-execution.",
-        "**the-loop:start-execution**",
-        "line one\nthe-loop:start-execution\nline three",
-        "(the-loop:start-execution)",
-        "THE-LOOP:START-EXECUTION",
+        "the-loop start",
+        "the-loop start.",
+        "**the-loop start**",
+        "line one\nthe-loop start\nline three",
+        "(the-loop start)",
+        "THE-LOOP START",
     ],
 )
 def test_keyword_matches_as_a_whole_token_case_insensitively(body):
@@ -118,10 +118,10 @@ def test_keyword_matches_as_a_whole_token_case_insensitively(body):
 @pytest.mark.parametrize(
     "body",
     [
-        "xthe-loop:start-executionx",
-        "the-loop:start-execution-later",
-        "athe-loop:start-execution",
-        "the-loop:start-execution:now",
+        "xthe-loop start",
+        "the-loop startx",
+        "the-loop startlater",
+        "the-loop start:now",
     ],
 )
 def test_a_keyword_glued_to_other_word_characters_does_not_match(body):
@@ -129,12 +129,12 @@ def test_a_keyword_glued_to_other_word_characters_does_not_match(body):
 
 
 def test_the_same_command_twice_is_not_ambiguous():
-    body = "the-loop:start-execution — I mean it, the-loop:start-execution"
+    body = "the-loop start — I mean it, the-loop start"
     assert parse_command(body, ControlConfig()).command == START
 
 
 def test_two_different_commands_are_refused_as_ambiguous():
-    body = "the-loop:start-execution ... actually the-loop:stop-execution"
+    body = "the-loop start ... actually the-loop stop"
     result = parse_command(body, ControlConfig())
     assert result.ambiguous is True
     assert result.command is None
@@ -144,7 +144,7 @@ def test_two_different_commands_are_refused_as_ambiguous():
 
 def test_disabled_control_recognises_nothing():
     config = ControlConfig(enabled=False)
-    assert parse_command("the-loop:stop-execution", config).command is None
+    assert parse_command("the-loop stop", config).command is None
 
 
 def test_an_empty_body_is_not_a_command():

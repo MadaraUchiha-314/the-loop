@@ -39,7 +39,7 @@ install lines keep resolving.)
 the-loop poll start
 
 # 3. Label a GitHub issue "the-loop: auto-execute", then comment:
-#      the-loop:start-execution
+#      the-loop start
 
 # 4. Watch
 the-loop sessions list
