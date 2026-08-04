@@ -6,6 +6,12 @@ Defaults can come from the CLI config (``webhooks.ghWebhook``; see
 then ``$THE_LOOP_CLI_CONFIG``, then ``./.the-loop/cli-config.yaml``, then
 ``~/.the-loop/cli-config.yaml``, decision-032); CLI flags always win. The secret is
 read from an env var (never a flag) so it doesn't leak into process listings.
+
+``webhooks.ghWebhook`` is the *receiver's* half only — the HTTP listener, its pid
+and its event filter. What happens to an event once accepted is the top-level
+``routing`` block (issue-142), read here through
+:func:`the_loop.cli_config.load_routing_config` because the poller dispatches on
+exactly the same values.
 """
 
 from __future__ import annotations
@@ -105,12 +111,14 @@ def _load_config_defaults() -> dict:
     return _read_gh_webhook_config(strict=False)
 
 
-def _build_routing(gh_webhook_config: dict):
+def _build_routing(routing_config: dict, gh_webhook_config: dict):
     """Compose router + dispatcher into the server's on_event callback.
 
-    Spec: docs/specs/issue-15/design.md §6. Imported lazily-ish here (module
-    level is fine — everything is stdlib) and returned with the dispatcher so
-    `start` can drain it on shutdown.
+    Takes the two blocks separately, because they are two concerns: the shared
+    top-level ``routing`` policy, and the receiver's own event filter
+    (issue-142). Spec: docs/specs/issue-15/design.md §6. Imported lazily-ish here
+    (module level is fine — everything is stdlib) and returned with the
+    dispatcher so `start` can drain it on shutdown.
     """
     from ..authz import resolve_authorized_users
     from ..harness import build_adapters
@@ -120,7 +128,7 @@ def _build_routing(gh_webhook_config: dict):
     from ..webhook.router import Router
 
     layout = _state_layout()
-    config = RoutingConfig.from_mapping(gh_webhook_config.get("routing") or {}, layout)
+    config = RoutingConfig.from_mapping(routing_config or {}, layout)
     dispatcher = Dispatcher(
         registry=SessionRegistry(config.registry_dir),
         adapters=build_adapters(config.harness_args, config.harness_trust),
@@ -130,9 +138,8 @@ def _build_routing(gh_webhook_config: dict):
     if not authorized:
         logger.warning(
             "no authorizedUsers configured — the receiver will act on NO "
-            "human-authored events until you set "
-            "webhooks.ghWebhook.routing.authorizedUsers in the CLI config "
-            "(prompt-injection guard)"
+            "human-authored events until you set routing.authorizedUsers in the "
+            "CLI config (prompt-injection guard)"
         )
     # The router shares the dispatcher's deduper: the dispatcher marks processed
     # delivery ids, the router drops duplicates before extraction.
@@ -145,9 +152,14 @@ def _build_routing(gh_webhook_config: dict):
         authorized_users=authorized,
     )
 
-    def apply(gh_cfg: dict) -> None:
-        """Hot-swap the soft routing policy from a freshly read config."""
-        new = RoutingConfig.from_mapping(gh_cfg.get("routing") or {}, layout)
+    def apply(cfg: dict) -> None:
+        """Hot-swap the soft routing policy from a freshly read config.
+
+        Takes the whole document: since issue-142 the dispatch policy and the
+        receiver's event filter live in different top-level blocks.
+        """
+        gh_cfg = ((cfg.get("webhooks") or {}).get("ghWebhook")) or {}
+        new = RoutingConfig.from_mapping(cfg.get("routing") or {}, layout)
         dispatcher.reload(new)
         router.events = resolve_events(gh_cfg)
         warn_on_missing_lifecycle_events(router.events)
@@ -174,7 +186,9 @@ def _build_routing(gh_webhook_config: dict):
     # Re-read the config file on each event and hot-swap soft policy on change
     # (a bad edit is logged and the previous config kept). Bind/secret, the web
     # terminal and the dispatcher's threads/dedup/registry are start-time only.
-    reloader = Reloader(_CONFIG_PATH, lambda: _read_gh_webhook_config(strict=True))
+    reloader = Reloader(
+        _CONFIG_PATH, lambda: cli_config.load_cli_config(_CONFIG_PATH, strict=True)
+    )
     reload_lock = threading.Lock()
 
     def on_event(event: str, payload: dict, delivery_id: str) -> None:
@@ -227,7 +241,7 @@ class GhWebhookCommand(Command):
         actions = parser.add_subparsers(dest="action", metavar="<action>")
         actions.required = True
 
-        routing_defaults = defaults.get("routing") or {}
+        routing_defaults = cli_config.load_routing_config(_CONFIG_PATH)
         start = actions.add_parser("start", help="Start the webhook receiver")
         start.add_argument("--host", default=defaults["host"])
         start.add_argument("--port", type=int, default=int(defaults["port"]))
@@ -237,7 +251,7 @@ class GhWebhookCommand(Command):
             action=argparse.BooleanOptionalAction,
             default=bool(routing_defaults.get("enabled", False)),
             help="Route events to registered harness sessions "
-            "(default: webhooks.ghWebhook.routing.enabled).",
+            "(default: routing.enabled).",
         )
         start.add_argument(
             "--pidfile",
@@ -277,7 +291,7 @@ class GhWebhookCommand(Command):
         on_event = dispatcher = web_proc = None
         if args.route:
             on_event, dispatcher, routing_config = _build_routing(
-                _load_config_defaults()
+                cli_config.load_routing_config(_CONFIG_PATH), _load_config_defaults()
             )
             missing = check_dependencies(
                 routing_config.runner, routing_config.web_terminal.enabled

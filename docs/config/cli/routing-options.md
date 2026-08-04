@@ -1,13 +1,21 @@
 ---
-configBase: webhooks.ghWebhook.routing
+configBase: routing
 ---
 
 # Routing options
 
-Options under `webhooks.ghWebhook.routing` — what happens to an event once it has been
+Options under the top-level `routing` key — what happens to an event once it has been
 accepted. This is the largest block in the CLI config, and it is shared: the
 [poller](/cli/commands/poll) reuses the whole of it for dispatch, so everything here
 applies to **both** ingresses.
+
+::: warning Moved in issue-142
+This block used to be nested under `webhooks.ghWebhook.routing`, which read as though it
+were the receiver's — it never was. A config still declaring the old path is **refused**
+rather than silently ignored, because `authorizedUsers` decides which logins may drive
+your daemon. Run [`the-loop migrate-config`](/cli/commands/migrate-config) (or
+`/the-loop:upgrade-the-loop`) to move it.
+:::
 
 The mental model these options configure is on [concepts](/cli/concepts). In short: an
 event is matched to a work item, a work item maps to exactly one session, and a session is

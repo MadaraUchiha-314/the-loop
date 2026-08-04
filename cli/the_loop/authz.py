@@ -94,7 +94,7 @@ def mark_self_authored(body: str) -> str:
 
 
 def resolve_authorized_users(configured: Sequence[str]) -> List[str]:
-    """The effective allowlist: exactly ``webhooks.ghWebhook.routing.authorizedUsers``
+    """The effective allowlist: exactly ``routing.authorizedUsers``
     from the CLI config, normalized (falsy entries dropped, cast to ``str``).
 
     Deliberately has no fallback to the plugin config's ``ticketing.github.owner``

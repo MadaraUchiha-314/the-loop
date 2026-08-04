@@ -58,7 +58,7 @@ _COMMENT_EVENTS = {
 
 @dataclass
 class GraphLinkConfig:
-    """Mirror of ``webhooks.ghWebhook.routing.graph``.
+    """Mirror of ``routing.graph``.
 
     ``enabled`` defaults to true: a graph nothing drives is the bug this work
     item fixes. It stays configurable because an operator who does not keep

@@ -22,7 +22,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   `pull_request` THEN the receiver SHALL **warn at startup and on hot reload**: a
   work item that ends would never be seen, so its session (and tmux session) would
   leak. A warning, not an error — narrowing is the operator's call.
-- WHEN routing is enabled (`webhooks.ghWebhook.routing.enabled`) THEN a verified event
+- WHEN routing is enabled (`routing.enabled`) THEN a verified event
   SHALL be matched to a registered session (`.the-loop/sessions/*.json`, managed by
   `the-loop sessions`) and the harness SHALL be resumed via its official CLI
   (`claude -p --resume` / `cursor-agent -p --resume`), serialized per session and
@@ -264,10 +264,15 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   watched repository. A work item skipped for want of that directory is recorded as
   `graph.skipped` — the delivery still succeeds, so without the record an inert graph had
   no explanation (issue-123). See [process-graph](process-graph.md).
-- All `webhooks.*` keys above live in the **CLI config** (`cli-config.yaml`, resolved
-  via `--config`/env/cwd/home — see `cli/README.md`), independent of any repo's
+- The `webhooks.*` and `routing.*` keys above live in the **CLI config**
+  (`cli-config.yaml`, resolved via `--config`/env/cwd/home — see `cli/README.md`),
+  independent of any repo's
   `.the-loop/harness-config.yaml` — the daemon is not tied to a single repo, and **no
   repository configures the daemon** (decision-032, decision-044).
+  `routing` is a **top-level** key, not part of `webhooks`: it configures what happens to
+  an event once accepted, which is what the poller does with the very same values, so one
+  declaration governs both ingresses (issue-142, decision-053). A config still nesting it
+  under `webhooks.ghWebhook` is refused, naming the replacement and the upgrade command.
   `routing.authorizedUsers` has no fallback: it must be set explicitly in the CLI
   config or the receiver fails closed (acts on no human-authored events). The rule runs
   in one direction only: the graph coupling above *does* read a work item's own checkout
@@ -284,6 +289,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-142 | `routing` promoted out from under `webhooks.ghWebhook` to a top-level key: the block was never the receiver's — the poller reads it verbatim for dispatch and `the-loop sessions` reads it again — so its scope is now legible from the config's shape rather than from a comment. A relocation only: same options, same defaults, same behaviour, with the cross-command import replaced by one shared accessor and the old path refused rather than ignored (schema `0.4.0`) | [spec](../specs/issue-142/), [decision-053](../decisions/decision-053.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/142) |
 | issue-136 | Pre-spawn trust reached the checkout it was for: `hasTrustDialogAccepted` is written on the exact spawn directory under every `scope` (the gate that decides whether the dialog appears for a repo shipping `.claude/settings.json` grants has no ancestor walk), so `scope` now only widens | [spec](../specs/issue-136/), [decision-052](../decisions/decision-052.md), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/136) |
 | issue-134 | A spawned session is told **where its answers come from** instead of guessing: `routing.interaction.mode` (`work-item` default, or `cli`) is rendered into every prompt through `$interaction_directive`, appended when a custom template omits the placeholder, and reported on `session.spawned`; artifact iteration in pull-request review became a stated invariant of the loop | [spec](../specs/issue-134/), [decision-051](../decisions/decision-051.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/134) |
 | issue-135 | The default execution-control keywords changed shape from colon-joined (`the-loop:start-execution`) to a short command (`the-loop start`); the vocabulary, matching semantics and trust boundary from issue-106 are unchanged, and an operator's own explicit `keywords` override is unaffected | [spec](../specs/issue-135/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/135) |

@@ -9,7 +9,7 @@ instruction to the-loop itself.
 
 This module is that missing vocabulary: four commands — ``start``, ``stop``,
 ``pause``, ``resume`` — declared in the CLI config
-(``webhooks.ghWebhook.routing.control.keywords``), recognised in a comment on
+(``routing.control.keywords``), recognised in a comment on
 the work item or its PR, and *executed by the-loop* rather than forwarded to the
 agent. The same four are available from the CLI (``the-loop sessions start|stop|
 pause|resume``), which posts the same keyword back to the ticket so the thread
@@ -106,7 +106,7 @@ def _utcnow() -> str:
 
 @dataclass(frozen=True)
 class ControlConfig:
-    """Mirror of ``webhooks.ghWebhook.routing.control`` (see the config schema).
+    """Mirror of ``routing.control`` (see the config schema).
 
     ``require_start_command`` is the issue-106 headline: the auto-execute label
     becomes *necessary but not sufficient*, so a labelled work item waits for an

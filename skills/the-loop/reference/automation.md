@@ -41,7 +41,7 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
     `collaborators.yaml` but declared, never looked up) and the daemon-side
     `notifications.events` filters (work-item-spawned, dispatch-failed, session-died,
     event-dropped-unauthorized) — issue-82, decision-035.
-- **Webhook → session routing** (`--route`; `webhooks.ghWebhook.routing`): a received
+- **Webhook → session routing** (`--route`; `routing`): a received
   event (PR/issue comment, `workflow_run` result, …) is matched to the registered
   session working that item and delivered by *resuming* that session through its
   official CLI (`claude -p … --resume` / `cursor-agent -p … --resume`) with a prompt

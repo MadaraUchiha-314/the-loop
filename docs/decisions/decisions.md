@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [053](decision-053.md) | A config key is nested under what owns it — `routing` governs both ingresses, so it is top-level | proposed | 2026-08-04 |
 | [052](decision-052.md) | Trust the spawn directory itself under every scope — `harnessTrust.scope` only widens | proposed | 2026-08-04 |
 | [051](decision-051.md) | The interaction channel is declared (two values); artifact iteration on the PR is an invariant | proposed | 2026-08-04 |
 | [050](decision-050.md) | A reset erases the-loop's memory of a work item, and nothing else — and it is not a control verb | proposed | 2026-08-04 |

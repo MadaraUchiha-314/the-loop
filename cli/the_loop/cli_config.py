@@ -101,9 +101,7 @@ def apply_integrations(config: dict) -> dict:
             "binary", "gh"
         )
     )
-    routing = ((config.get("webhooks") or {}).get("ghWebhook") or {}).get(
-        "routing"
-    ) or {}
+    routing = config.get("routing") or {}
     for feature in ("control", "reactions", "announce"):
         section = routing.get(feature)
         if isinstance(section, dict):
@@ -127,3 +125,21 @@ def load_cli_config(path: Path, strict: bool = False) -> dict:
 
         _apply(data)
     return data
+
+
+def load_routing_config(path: Optional[Union[str, Path]] = None) -> dict:
+    """The top-level ``routing`` block — the policy **both** ingresses run on.
+
+    One accessor, because there is one block: the receiver, the poller and
+    ``the-loop sessions`` all dispatch on the same values. It lived under
+    ``webhooks.ghWebhook`` until issue-142, which meant the poller read its own
+    dispatch policy by importing the webhook command's module — a coupling that
+    told the reader the block belonged to the receiver, which it never did.
+
+    The path is resolved per call rather than cached at import, so a ``--config``
+    override set by :mod:`the_loop.cli`'s pre-scan is always honoured. Missing or
+    unparseable config degrades to ``{}``, and an empty policy fails closed:
+    ``authorizedUsers`` is then empty, so no human-authored event is acted on.
+    """
+    resolved = Path(path) if path is not None else default_cli_config_path()
+    return load_cli_config(resolved, strict=False).get("routing") or {}

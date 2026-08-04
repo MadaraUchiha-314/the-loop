@@ -14,7 +14,7 @@
 # See .the-loop/config.yaml for the-loop's own PLUGIN config (ticketing,
 # workflow, tooling, reviews, …).
 
-version: "0.3.0"
+version: "0.4.0"
 
 # Everything the CLI GENERATES lives under this root (issue-106), organised by
 # whether it travels between machines (issue-128, decision-046):
@@ -35,144 +35,148 @@ webhooks:
     secretEnv: THE_LOOP_GH_WEBHOOK_SECRET
     pidfile: .the-loop/gh-webhook.pid
     events: [issues, issue_comment, pull_request, pull_request_review, pull_request_review_comment, workflow_run]
-    routing:
-      enabled: false                # flip on to route events to registered sessions
-      registryDir: .the-loop/local        # machine-local session handles (issue-128)
-      defaultHarness: claude        # claude | cursor
-      spawnOnUnmatched: labeled     # never | always | labeled
-      autoExecuteLabel: "the-loop: auto-execute"   # label that ARMS an issue/PR for autonomous execution
-      # Execution control (issue-106): the label is necessary, not sufficient.
-      # An authorized user starts/stops/pauses/resumes a work item by commenting
-      # one of these keywords (or with `the-loop sessions start|stop|pause|
-      # resume`, which posts the same keyword back to the ticket). A comment
-      # carrying a keyword is executed by the-loop, never forwarded to the agent.
-      # Set requireStartCommand: false for the pre-issue-106 label-alone spawn.
-      control:
-        enabled: true
-        requireStartCommand: true
-        keywords:
-          start: "the-loop start"
-          stop: "the-loop stop"
-          pause: "the-loop pause"
-          resume: "the-loop resume"
-      # Where a session the daemon drives takes its ANSWERS from (issue-134).
-      # Until this existed, a spawned session was never told whether a human was
-      # at its terminal, so the model guessed — and both guesses fail: a
-      # `process`-runner session asking interactively asks into a pipe nobody
-      # reads, while an operator sitting in an attached tmux pane gets
-      # round-tripped through GitHub for no reason.
-      #   work-item  every question is a comment on the issue/PR; the session
-      #              then waits, and the reply arrives as the next event.
-      #   cli        a human is attached to this session's terminal; ask there.
-      #              The decision's OUTCOME still lands on the ticket — the paper
-      #              trail is not waived by asking in a terminal.
-      # Default work-item because it fails safe: a tmux session is attachable,
-      # not attended. An unrecognised value resolves to work-item with a warning,
-      # never to cli. The resolved mode is rendered into every prompt through the
-      # $interaction_directive placeholder; a custom promptTemplate that omits it
-      # gets the directive APPENDED, so a template edit cannot strip the rule.
-      # Independent of the mode, iteration on a generated artifact (brainstorm.md,
-      # requirements.md/bugfix.md, design.md, tasks.md) always happens in
-      # pull-request review — an invariant of the loop (decision-051).
-      # NOTE: like everything under `routing`, this is NOT webhook-only — the
-      # poller reads this same block verbatim for dispatch, so one declaration
-      # governs both ingresses (`poll._load_config_defaults`).
-      interaction:
-        mode: work-item             # work-item | cli
-      # SECURITY: no fallback to this repo's plugin config (issue-63 review) —
-      # empty here means nothing human-authored is actioned (fail closed).
-      # Set this explicitly, e.g. ["MadaraUchiha-314"], to actually route events.
-      authorizedUsers: []
-      spawnWorkdir: "."             # used only when workspace.root is unset (below)
-      # Per-work-item checkout workspace (issue-76): set `root` to check out each event's
-      # repo under it and run the spawned session there, cleaned up on PR merge/close.
-      # Empty = legacy spawnWorkdir. strategy: worktree (shared clone + per-item worktree)
-      # or clone (one folder per work item, full clone of each repo it touches).
-      workspace:
-        root: ""                    # e.g. ~/.the-loop/workspace (empty = disabled)
-        strategy: worktree          # worktree | clone
-        cloneProtocol: https        # https | ssh
-        defaultHost: github.com     # host dir when the payload has no html_url (set to your GHE domain)
-        keepCheckoutOnClose: false  # keep the work item's checkout after PR close (for post-mortem)
-        gitBinary: git
-      runner: process             # process (headless) | tmux (attachable interactive TUI — issue-32)
-      # Lifetime of the tmux-hosted sessions (issue-86): a finished session stays
-      # readable. keepSessionOnClose leaves the tmux session running when the work
-      # item closes (PR merged/closed or `sessions close`); remainOnExit keeps the
-      # pane + scrollback when the harness process itself exits. Retained sessions
-      # accumulate — `the-loop sessions list --status closed` shows them, and a new
-      # spawn for the same work item reclaims the loop-<slug> name.
-      # resumeOnRespawn (issue-89) makes a respawn of a dead session continue the
-      # SAME harness conversation (claude --resume <id>) instead of booting blank;
-      # the spawn is probed for resumeProbeSeconds and falls back to a fresh
-      # conversation if the harness could not resume (0 = probe immediately).
-      # killHarnessOnClose (issue-94) ends the harness process inside a RETAINED
-      # session when the work item closes, so the pane stays readable but is no
-      # longer a live TUI stray input could resume (SIGTERM, then SIGKILL after
-      # harnessKillGraceSeconds).
-      tmux:
-        keepSessionOnClose: true
-        remainOnExit: true
-        resumeOnRespawn: true
-        resumeProbeSeconds: 2
-        killHarnessOnClose: true
-        harnessKillGraceSeconds: 5
-      webTerminal:                # ttyd browser terminal onto tmux sessions (runner: tmux)
-        enabled: false            # access control is environmental: localhost/VPN/provider (decision-021)
-        host: 127.0.0.1
-        port: 7681
-      maxConcurrentDispatches: 4
-      dedupCacheSize: 1024
-      dispatchTimeoutSeconds: 1800
-      promptTemplate: skills/the-loop/templates/webhook-event-prompt.md          # internal template; dispatcher falls back to a built-in default when absent
-      spawnPromptTemplate: skills/the-loop/templates/webhook-autoexecute-prompt.md  # internal template; dispatcher falls back to a built-in default when absent
-      harnessArgs:
-        claude: []                  # e.g. [--permission-mode, acceptEdits]
-        cursor: []                  # e.g. [--force]
-      # Pre-spawn harness preparation (issue-90). Claude Code's workspace-trust
-      # dialog and bypass-permissions disclaimer are NOT permission rules, so no
-      # flag (--dangerously-skip-permissions included) silences them — and every
-      # per-work-item checkout is a new directory, so an unattended session used
-      # to sit on a modal forever. Before each spawn the-loop marks that exact
-      # directory trusted in your harness config (honouring CLAUDE_CONFIG_DIR),
-      # merging into what's already there and writing nothing when it's already
-      # set. acceptBypassPermissions: auto records the bypass disclaimer ONLY
-      # when harnessArgs above already ask for bypass mode — the-loop never
-      # widens permissions you didn't request. Set enabled: false to opt out.
-      harnessTrust:
-        enabled: true
-        # The spawn dir itself is ALWAYS trusted (issue-136): the check that
-        # decides whether the dialog appears for a repo shipping
-        # .claude/settings.json grants reads the exact project key with no
-        # ancestor walk, and neither does the onboarding key. scope only decides
-        # whether trust ADDITIONALLY widens: workspace-root (default) writes a
-        # second entry on workspace.root, so the harness's upward lookup covers
-        # every checkout beneath it including folders the-loop never spawned
-        # into; directory stops at the spawn dir (least privilege) — use it when
-        # the root holds more than the-loop's checkouts. A root that doesn't
-        # contain the spawn dir, or one as broad as / or $HOME, is dropped.
-        scope: workspace-root           # workspace-root | directory
-        acceptBypassPermissions: auto   # auto | always | never
-      # Dispatch-lifecycle emoji reactions (issue-84): acknowledge on the triggering
-      # comment (or the issue/PR itself) that the-loop started / completed / failed
-      # processing an event. GitHub's palette is fixed (+1 -1 laugh confused heart
-      # hooray rocket eyes) — ✅/⁉️ don't exist, so defaults are the closest match.
-      # Best-effort via the operator's gh CLI; no-op when gh is absent, a state is
-      # "", or the event has no reactable GitHub target. Default true (owner
-      # decision, PR #85); posts with YOUR gh auth — set enabled: false to opt out.
-      reactions:
-        enabled: true
-        started: eyes               # 👀 event dequeued for delivery/spawn
-        completed: hooray           # 🎉 dispatch succeeded
-        error: confused             # 😕 dispatch failed / worker crashed
-      # Session announcement comment (issue-86): when a tmux-mode session is
-      # spawned, post the tmux session name + `tmux attach -t …` on the work item
-      # so a human can watch it work. A respawn posts nothing further (same name,
-      # same command). Best-effort via your gh CLI; no-op for process-runner
-      # sessions, non-GitHub work items, or a missing gh. The body carries no
-      # paths, session ids or hostnames.
-      announce:
-        enabled: true
+
+# What happens to an event ONCE ACCEPTED. Top-level since issue-142, and the
+# nesting is the point: this block is NOT the receiver's. The poller reads
+# every value here verbatim for dispatch, and `the-loop sessions` reads it
+# again — one declaration governs both ingresses and the operator's own
+# control surface. Only the listener itself (host/port/path/secret/pidfile)
+# and the event filter are webhook-specific, and they stayed above.
+routing:
+  enabled: false                # flip on to route events to registered sessions
+  registryDir: .the-loop/local        # machine-local session handles (issue-128)
+  defaultHarness: claude        # claude | cursor
+  spawnOnUnmatched: labeled     # never | always | labeled
+  autoExecuteLabel: "the-loop: auto-execute"   # label that ARMS an issue/PR for autonomous execution
+  # Execution control (issue-106): the label is necessary, not sufficient.
+  # An authorized user starts/stops/pauses/resumes a work item by commenting
+  # one of these keywords (or with `the-loop sessions start|stop|pause|
+  # resume`, which posts the same keyword back to the ticket). A comment
+  # carrying a keyword is executed by the-loop, never forwarded to the agent.
+  # Set requireStartCommand: false for the pre-issue-106 label-alone spawn.
+  control:
+    enabled: true
+    requireStartCommand: true
+    keywords:
+      start: "the-loop start"
+      stop: "the-loop stop"
+      pause: "the-loop pause"
+      resume: "the-loop resume"
+  # Where a session the daemon drives takes its ANSWERS from (issue-134).
+  # Until this existed, a spawned session was never told whether a human was
+  # at its terminal, so the model guessed — and both guesses fail: a
+  # `process`-runner session asking interactively asks into a pipe nobody
+  # reads, while an operator sitting in an attached tmux pane gets
+  # round-tripped through GitHub for no reason.
+  #   work-item  every question is a comment on the issue/PR; the session
+  #              then waits, and the reply arrives as the next event.
+  #   cli        a human is attached to this session's terminal; ask there.
+  #              The decision's OUTCOME still lands on the ticket — the paper
+  #              trail is not waived by asking in a terminal.
+  # Default work-item because it fails safe: a tmux session is attachable,
+  # not attended. An unrecognised value resolves to work-item with a warning,
+  # never to cli. The resolved mode is rendered into every prompt through the
+  # $interaction_directive placeholder; a custom promptTemplate that omits it
+  # gets the directive APPENDED, so a template edit cannot strip the rule.
+  # Independent of the mode, iteration on a generated artifact (brainstorm.md,
+  # requirements.md/bugfix.md, design.md, tasks.md) always happens in
+  # pull-request review — an invariant of the loop (decision-051).
+  interaction:
+    mode: work-item             # work-item | cli
+  # SECURITY: no fallback to this repo's plugin config (issue-63 review) —
+  # empty here means nothing human-authored is actioned (fail closed).
+  # Set this explicitly, e.g. ["MadaraUchiha-314"], to actually route events.
+  authorizedUsers: []
+  spawnWorkdir: "."             # used only when workspace.root is unset (below)
+  # Per-work-item checkout workspace (issue-76): set `root` to check out each event's
+  # repo under it and run the spawned session there, cleaned up on PR merge/close.
+  # Empty = legacy spawnWorkdir. strategy: worktree (shared clone + per-item worktree)
+  # or clone (one folder per work item, full clone of each repo it touches).
+  workspace:
+    root: ""                    # e.g. ~/.the-loop/workspace (empty = disabled)
+    strategy: worktree          # worktree | clone
+    cloneProtocol: https        # https | ssh
+    defaultHost: github.com     # host dir when the payload has no html_url (set to your GHE domain)
+    keepCheckoutOnClose: false  # keep the work item's checkout after PR close (for post-mortem)
+    gitBinary: git
+  runner: process             # process (headless) | tmux (attachable interactive TUI — issue-32)
+  # Lifetime of the tmux-hosted sessions (issue-86): a finished session stays
+  # readable. keepSessionOnClose leaves the tmux session running when the work
+  # item closes (PR merged/closed or `sessions close`); remainOnExit keeps the
+  # pane + scrollback when the harness process itself exits. Retained sessions
+  # accumulate — `the-loop sessions list --status closed` shows them, and a new
+  # spawn for the same work item reclaims the loop-<slug> name.
+  # resumeOnRespawn (issue-89) makes a respawn of a dead session continue the
+  # SAME harness conversation (claude --resume <id>) instead of booting blank;
+  # the spawn is probed for resumeProbeSeconds and falls back to a fresh
+  # conversation if the harness could not resume (0 = probe immediately).
+  # killHarnessOnClose (issue-94) ends the harness process inside a RETAINED
+  # session when the work item closes, so the pane stays readable but is no
+  # longer a live TUI stray input could resume (SIGTERM, then SIGKILL after
+  # harnessKillGraceSeconds).
+  tmux:
+    keepSessionOnClose: true
+    remainOnExit: true
+    resumeOnRespawn: true
+    resumeProbeSeconds: 2
+    killHarnessOnClose: true
+    harnessKillGraceSeconds: 5
+  webTerminal:                # ttyd browser terminal onto tmux sessions (runner: tmux)
+    enabled: false            # access control is environmental: localhost/VPN/provider (decision-021)
+    host: 127.0.0.1
+    port: 7681
+  maxConcurrentDispatches: 4
+  dedupCacheSize: 1024
+  dispatchTimeoutSeconds: 1800
+  promptTemplate: skills/the-loop/templates/webhook-event-prompt.md          # internal template; dispatcher falls back to a built-in default when absent
+  spawnPromptTemplate: skills/the-loop/templates/webhook-autoexecute-prompt.md  # internal template; dispatcher falls back to a built-in default when absent
+  harnessArgs:
+    claude: []                  # e.g. [--permission-mode, acceptEdits]
+    cursor: []                  # e.g. [--force]
+  # Pre-spawn harness preparation (issue-90). Claude Code's workspace-trust
+  # dialog and bypass-permissions disclaimer are NOT permission rules, so no
+  # flag (--dangerously-skip-permissions included) silences them — and every
+  # per-work-item checkout is a new directory, so an unattended session used
+  # to sit on a modal forever. Before each spawn the-loop marks that exact
+  # directory trusted in your harness config (honouring CLAUDE_CONFIG_DIR),
+  # merging into what's already there and writing nothing when it's already
+  # set. acceptBypassPermissions: auto records the bypass disclaimer ONLY
+  # when harnessArgs above already ask for bypass mode — the-loop never
+  # widens permissions you didn't request. Set enabled: false to opt out.
+  harnessTrust:
+    enabled: true
+    # The spawn dir itself is ALWAYS trusted (issue-136): the check that
+    # decides whether the dialog appears for a repo shipping
+    # .claude/settings.json grants reads the exact project key with no
+    # ancestor walk, and neither does the onboarding key. scope only decides
+    # whether trust ADDITIONALLY widens: workspace-root (default) writes a
+    # second entry on workspace.root, so the harness's upward lookup covers
+    # every checkout beneath it including folders the-loop never spawned
+    # into; directory stops at the spawn dir (least privilege) — use it when
+    # the root holds more than the-loop's checkouts. A root that doesn't
+    # contain the spawn dir, or one as broad as / or $HOME, is dropped.
+    scope: workspace-root           # workspace-root | directory
+    acceptBypassPermissions: auto   # auto | always | never
+  # Dispatch-lifecycle emoji reactions (issue-84): acknowledge on the triggering
+  # comment (or the issue/PR itself) that the-loop started / completed / failed
+  # processing an event. GitHub's palette is fixed (+1 -1 laugh confused heart
+  # hooray rocket eyes) — ✅/⁉️ don't exist, so defaults are the closest match.
+  # Best-effort via the operator's gh CLI; no-op when gh is absent, a state is
+  # "", or the event has no reactable GitHub target. Default true (owner
+  # decision, PR #85); posts with YOUR gh auth — set enabled: false to opt out.
+  reactions:
+    enabled: true
+    started: eyes               # 👀 event dequeued for delivery/spawn
+    completed: hooray           # 🎉 dispatch succeeded
+    error: confused             # 😕 dispatch failed / worker crashed
+  # Session announcement comment (issue-86): when a tmux-mode session is
+  # spawned, post the tmux session name + `tmux attach -t …` on the work item
+  # so a human can watch it work. A respawn posts nothing further (same name,
+  # same command). Best-effort via your gh CLI; no-op for process-runner
+  # sessions, non-GitHub work items, or a missing gh. The body carries no
+  # paths, session ids or hostnames.
+  announce:
+    enabled: true
 
 polling:
   intervalSeconds: 60

@@ -34,7 +34,7 @@ Resolved in priority order — the first that exists wins:
 4. **`~/.the-loop/cli-config.yaml`** — the always-available fallback, tied to no repo.
 
 ::: danger Two settings have no fallback
-`webhooks.ghWebhook.routing.authorizedUsers` (who may trigger the daemon) and a poll
+`routing.authorizedUsers` (who may trigger the daemon) and a poll
 source's `repos` (what it watches) are **CLI-config only**. They do **not** fall back to
 any repository's harness config. Left unset, the daemon fails closed: it ignores every
 human-authored event, and polls nothing.
@@ -46,7 +46,7 @@ human-authored event, and polls nothing.
 
 - **Type:** `string`
 - **Default:** none — unset is accepted
-- **Current:** `0.3.0`
+- **Current:** `0.4.0`
 
 Schema version of this file. The CLI **refuses to start** against a config that declares
 a version older than the one it needs, naming the key, its replacement and the exact
@@ -56,10 +56,12 @@ set would change your behaviour without telling you.
 The gate is narrow on purpose — it refuses exactly two things:
 
 1. a **removed key is still present** — today `ghBinary`, retired in favour of
-   [`integrations.github.cli.binary`](/config/cli/integrations-options#github-cli-binary),
-   and `polling.stateFile`, retired in issue-128 because the poller's ledger became one
+   [`integrations.github.cli.binary`](/config/cli/integrations-options#github-cli-binary);
+   `polling.stateFile`, retired in issue-128 because the poller's ledger became one
    record per work item under `state.root` (below) and a file path has nothing left to
-   point at;
+   point at; and `webhooks.ghWebhook.routing`, promoted in issue-142 to the top-level
+   [`routing`](/config/cli/routing-options) because the poller dispatches on that same
+   block and a key named `webhooks` said otherwise;
 2. the config **declares** a version older than the current one — it says it is stale, so
    it is believed.
 
@@ -116,7 +118,7 @@ expand `~`.)
 ## A minimal working config
 
 ```yaml
-version: "0.3.0"
+version: "0.4.0"
 
 state:
   root: .the-loop
@@ -125,11 +127,12 @@ webhooks:
   ghWebhook:
     host: 127.0.0.1
     port: 8787
-    routing:
-      enabled: true
-      authorizedUsers: ["your-github-login"]   # REQUIRED — empty fails closed
-      spawnOnUnmatched: labeled
-      runner: tmux
+
+routing:                                     # shared by BOTH ingresses
+  enabled: true
+  authorizedUsers: ["your-github-login"]     # REQUIRED — empty fails closed
+  spawnOnUnmatched: labeled
+  runner: tmux
 ```
 
 Everything else takes its default. Build up from here with the option pages below.
@@ -139,7 +142,7 @@ Everything else takes its default. Build up from here with the option pages belo
 | Page | Block |
 |------|-------|
 | [Webhook options](/config/cli/webhook-options) | `webhooks.ghWebhook` — bind address, path, HMAC secret, event filter |
-| [Routing options](/config/cli/routing-options) | `webhooks.ghWebhook.routing` — who may trigger, what spawns, how sessions are hosted |
+| [Routing options](/config/cli/routing-options) | `routing` — who may trigger, what spawns, how sessions are hosted |
 | [Polling options](/config/cli/polling-options) | `polling` — the pull-based ingress and its sources |
 | [Integrations options](/config/cli/integrations-options) | `integrations` — how the-loop's own calls reach GitHub, Slack and Jira |
 | [Observability options](/config/cli/observability-options) | `eventLog`, `collaborators`, `notifications` |

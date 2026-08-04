@@ -137,8 +137,11 @@ self-learning/ML capabilities.
   config older than the current schema version rather than guessing at the old shape
   (issue-109). Per-provider settings SHALL live under one `integrations` block —
   `integrations.github.cli.binary` replaces the `ghBinary` key that was previously
-  duplicated across three consumers. This is a **breaking** change, handled by
-  `/the-loop:upgrade-the-loop`.
+  duplicated across three consumers. Dispatch policy SHALL live under a **top-level**
+  `routing` key, not under `webhooks.ghWebhook`: the poller and `the-loop sessions`
+  dispatch on the same block, so nesting it under one ingress misstated its scope
+  (issue-142). Both are **breaking** changes, handled by `/the-loop:upgrade-the-loop`,
+  which shells out to `the-loop migrate-config`.
 - The CLI SHALL declare a second runtime dependency, `slack-sdk`, only as an **optional
   extra**: it is Slack's official SDK and has zero required dependencies of its own, but
   the dependency-free `webhook` transport remains available so the base install stays
@@ -192,6 +195,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-142 | `webhooks.ghWebhook.routing` promoted to a top-level `routing` through the version-gated config migration (`0.4.0`), and the import seam that expressed the same misfiling removed: `poll` and `sessions` read dispatch policy through `cli_config.load_routing_config` instead of importing the webhook command's helper. A relocation only — no option's name, default or behaviour changed | [spec](../specs/issue-142/), [decision-053](../decisions/decision-053.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/142) |
 | issue-137 | Added `sessions reset`: one, several or all work items lose their session record, control and poll sections (and their checkout, per the close policy) so a work item starts over after a CLI fix. Composes the existing close and section-clearing paths — the seal rule is what stops a pre-issue-128 record coming back — adds `SessionRegistry.forget`, posts nothing to the ticket, and appends `session.reset` to a log it cannot rewrite | [spec](../specs/issue-137/), [decision-050](../decisions/decision-050.md), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/137) |
 | issue-132 | Added `instructions`, the sixth harness-config read: it resolves every doc registered in `customInstructions.docs` and turns `onMissing` into an exit code, so a mistyped path stops being silent. Reports facts about each doc, never its contents | [spec](../specs/issue-132/), [decision-049](../decisions/decision-049.md), [spec-workflow](spec-workflow.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/132) |
 | issue-130 | `portable/` made readable: a derived `index.json` listing every record (ref, url, file, sections), rebuilt on every write and read by nothing, plus a `url` beside each record's `ref`. On PR review, refs learned about **hosts** — `[<host>/]<owner>/<repo>`, identified at both ingresses from the event's own URLs — so a GitHub Enterprise work item links, and is identified, correctly | [spec](../specs/issue-130/), [decision-047](../decisions/decision-047.md), [decision-048](../decisions/decision-048.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/130) |

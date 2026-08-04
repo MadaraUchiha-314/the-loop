@@ -4,9 +4,11 @@ A breaking change is only as good as its migration, so each is tested both
 ways: an old config migrates to the expected new one, AND the runtime refuses
 an un-migrated one.
 
-Two removed keys so far — `ghBinary` (one `integrations` block replaced three
-copies) and `polling.stateFile` (the poller's ledger became one record per work
-item under `state.root`, so a file path has nothing left to point at).
+Three so far — `ghBinary` (one `integrations` block replaced three copies),
+`polling.stateFile` (the poller's ledger became one record per work item under
+`state.root`, so a file path has nothing left to point at), and
+`webhooks.ghWebhook.routing` (promoted to a top-level `routing`, because the
+poller reads that same block and a key named `webhooks` said otherwise).
 """
 
 from __future__ import annotations
@@ -61,7 +63,8 @@ def test_an_old_version_alone_is_also_refused():
 def test_migration_moves_the_key_and_bumps_the_version():
     report = migrate_cli_config(OLD)
     assert report.changed
-    routing = report.config["webhooks"]["ghWebhook"]["routing"]
+    # issue-142 promoted the block itself, so the migrated config reads it here.
+    routing = report.config["routing"]
     assert "ghBinary" not in routing["control"]
     assert "ghBinary" not in routing["reactions"]
     assert "ghBinary" not in routing["announce"]
@@ -213,3 +216,86 @@ def test_the_state_file_migration_is_idempotent():
     twice = migrate_cli_config(once)
     assert twice.changed is False
     assert twice.config == once
+
+
+# -- issue-142: webhooks.ghWebhook.routing → routing -----------------------------
+#
+# The block was never webhook-only: the poller reads it verbatim for dispatch, and
+# `the-loop sessions` reads it a third time. Promoting it makes the config's shape
+# say what a comment used to have to.
+
+WITH_NESTED_ROUTING = {
+    "version": "0.3.0",
+    "webhooks": {
+        "ghWebhook": {
+            "port": 8787,
+            "routing": {"enabled": True, "authorizedUsers": ["operator"]},
+        }
+    },
+}
+
+
+def test_a_config_still_nesting_routing_under_the_receiver_is_detected():
+    assert needs_migration(WITH_NESTED_ROUTING) is True
+
+
+def test_the_runtime_refuses_nested_routing_and_names_the_replacement():
+    """Ignoring it would change WHICH logins may drive the daemon, in silence."""
+    with pytest.raises(ConfigTooOld) as excinfo:
+        assert_current(WITH_NESTED_ROUTING)
+    message = str(excinfo.value)
+    assert "webhooks.ghWebhook.routing" in message
+    assert "`routing`" in message
+    assert "/the-loop:upgrade-the-loop" in message
+
+
+def test_migration_promotes_the_block_verbatim_and_keeps_the_receiver_keys():
+    report = migrate_cli_config(WITH_NESTED_ROUTING)
+    assert report.changed is True
+    assert report.config["routing"] == {
+        "enabled": True,
+        "authorizedUsers": ["operator"],
+    }
+    assert "routing" not in report.config["webhooks"]["ghWebhook"]
+    assert report.config["webhooks"]["ghWebhook"]["port"] == 8787
+    assert any("webhooks.ghWebhook.routing" in move for move in report.moves)
+    assert_current(report.config)  # the migrated config is accepted
+
+
+def test_an_emptied_receiver_block_is_removed_rather_than_left_as_a_husk():
+    report = migrate_cli_config(
+        {"version": "0.3.0", "webhooks": {"ghWebhook": {"routing": {"enabled": True}}}}
+    )
+    assert report.config["routing"] == {"enabled": True}
+    assert "webhooks" not in report.config
+
+
+def test_the_routing_migration_is_idempotent():
+    once = migrate_cli_config(WITH_NESTED_ROUTING)
+    twice = migrate_cli_config(once.config)
+    assert twice.changed is False
+    assert twice.config == once.config
+
+
+def test_a_half_migrated_config_prefers_the_new_block_and_reports_what_it_dropped():
+    """Both blocks present: the top-level one wins WHOLE, key by key.
+
+    Never a union — merging two `authorizedUsers` lists would silently re-admit a
+    login the operator had removed from the block they were maintaining.
+    """
+    report = migrate_cli_config(
+        {
+            "version": "0.3.0",
+            "routing": {"authorizedUsers": ["current"]},
+            "webhooks": {
+                "ghWebhook": {
+                    "routing": {"authorizedUsers": ["stale"], "enabled": True}
+                }
+            },
+        }
+    )
+    assert report.config["routing"]["authorizedUsers"] == ["current"]
+    assert report.config["routing"]["enabled"] is True  # not declared twice: adopted
+    assert any("authorizedUsers" in note and "stale" in note for note in report.notes)
+    assert "webhooks" not in report.config
+    assert_current(report.config)

@@ -10,8 +10,10 @@ label-gated work items in each source, and drives them through the *same*
 router/dispatcher/registry the webhook receiver uses — so sessions spawn and
 events route identically (including the tmux runner). The system interfaces
 with a provider (e.g. GitHub) *only* through config; the CLI and core carry no
-provider-specific knobs. Dispatch behaviour is reused from
-``webhooks.ghWebhook.routing``. Flags cover only the run loop.
+provider-specific knobs. Dispatch behaviour is the top-level ``routing`` block,
+read through :func:`the_loop.cli_config.load_routing_config` — the same policy
+the receiver runs on, which is why issue-142 promoted it out from under
+``webhooks``. Flags cover only the run loop.
 
 Spec: docs/specs/issue-34/design.md; docs/specs/issue-63/design.md.
 """
@@ -28,7 +30,6 @@ from pathlib import Path
 from typing import Optional
 
 from .base import Command, register
-from .gh_webhook import _load_config_defaults
 from .. import cli_config, eventlog
 from ..authz import resolve_authorized_users
 from ..poller import (
@@ -151,7 +152,9 @@ class PollCommand(Command):
             level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
         )
         eventlog.configure_from_file("poll")
-        dispatcher, routing = _build_dispatcher(_load_config_defaults().get("routing"))
+        dispatcher, routing = _build_dispatcher(
+            cli_config.load_routing_config(_CONFIG_PATH)
+        )
 
         # Rebuilds the mutable plan (providers + interval) from the config file.
         # Used once for the initial plan and again by the Reloader on each edit,
@@ -197,8 +200,8 @@ class PollCommand(Command):
         if not authorized:
             logger.warning(
                 "no authorizedUsers configured — the poller will act on NO items "
-                "or comments until you set webhooks.ghWebhook.routing.authorizedUsers "
-                "in the CLI config (prompt-injection guard)"
+                "or comments until you set routing.authorizedUsers in the CLI "
+                "config (prompt-injection guard)"
             )
         poller = Poller(
             providers=plan.providers,
