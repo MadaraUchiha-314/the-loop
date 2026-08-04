@@ -100,3 +100,35 @@ status: in-progress
   item is the collision fix itself landing the next event. Stated on the ticket and
   in `bugfix.md` § Out of scope.
 - **Next:** T15 — PR + reviewer briefing, then human approval (tier 3).
+
+### 2026-08-04 — CI: the-loop's own PDLC gate rejected the spec's headings
+
+- **Phase:** needs-review (no code change)
+- **Failed:** the `gate` job — `the-loop check issue-146 --recompute --fail-on
+  block` → `BLOCK requirements-definition · required section is missing:
+  Requirements`. `checks` (ruff/pyright/pytest/markdownlint) was green.
+- **Cause:** the spec was written with *paraphrases* of the required headings
+  ("Acceptance criteria (EARS)" for `## Requirements`, numbered "6. Testing
+  strategy" for `## Testing strategy`, "Tasks" for `## Task list`).
+  `validate-artifacts` matches heading text **exactly**, by design — which is the
+  point of the gate, and dogfooding it means using the bundled templates'
+  vocabulary rather than my own.
+- **Fixed:** restructured all three artifacts to the template headings
+  (`bugfix.md`: `## Requirements` with seven `### Requirement N` blocks, each
+  carrying its EARS criteria and keeping the `(ACn)` tags everything references;
+  `design.md`: `## Architecture` / `## Components & interfaces` /
+  `## Error handling` / `## Testing strategy` / `## Trade-offs & decisions` /
+  `## Security design`; `tasks.md`: `## Task list`), ticked T15/T16, and named the
+  upstream security markers (`trust boundary`, `abuse case`) in **both** artifacts
+  so `enforces-boundaries-from` runs instead of skipping on a near-miss word
+  ("trust boundaries" is not a substring of "trust boundary").
+- **Also verified the gates CI cannot reach yet** (the walk stops at the human
+  `requirements-approval`, correctly): ran the `design` and `tasks-breakdown`
+  hooks' checks directly — required sections present and non-empty, artifacts
+  locked, mermaid blocks pass `check_mermaid`, no unchecked task boxes.
+- **Evidence:** `the-loop check issue-146 --recompute --fail-on block` → exit 0
+  (`WAIT requirements-approval · no authorized feedback yet` — the normal state of
+  an open PR). Code gate re-run: 1132 passed, ruff/pyright/markdownlint clean.
+- **Learning candidate:** a spec artifact should be started from
+  `skills/the-loop/templates/*.md` rather than written freehand and reconciled
+  later. Third occurrence would justify a write-up per `selfImprovement`.

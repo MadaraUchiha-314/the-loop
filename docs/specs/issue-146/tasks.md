@@ -13,7 +13,7 @@ overrides: {}
 > Phase 3 of 3. Derived from the locked [`design.md`](design.md). TDD
 > (`tdd.mode: standard`): the failing test comes first for every behavioural task.
 
-## DAG
+## Dependency graph (DAG)
 
 ```mermaid
 flowchart LR
@@ -38,7 +38,7 @@ flowchart LR
     T14 --> T15[T15 PR + reviewer briefing]
 ```
 
-## Tasks
+## Task list
 
 - [x] **T1 — Failing probe unit tests.** In `cli/tests/test_tmux_runner.py`:
   `session_state` returns `live` / `dead` / `absent` / `unknown`, with `unknown`
@@ -116,5 +116,15 @@ flowchart LR
   `tmux.resumeOnRespawn` paragraphs in `docs/config/cli/routing-options.md` that
   still promise a reclaimed name, and `docs/decisions/decision-055.md` +
   `decisions.md` for "never spawn over a live `loop-<slug>`; route into it".
-- [ ] **T15 — PR + reviewer briefing** from the bundled template, phase label
-  → `loop:needs-review`, execution log updated.
+- [x] **T15 — PR + reviewer briefing** from the bundled template, phase label
+  → `loop:needs-review`, execution log updated. *(PR
+  [#147](https://github.com/MadaraUchiha-314/the-loop/pull/147))*
+- [x] **T16 — Spec artifacts clear the-loop's own PDLC gate.** `the-loop check
+  issue-146 --recompute --fail-on block` (what the `gate` job runs) requires the
+  exact headings `pdlc.yaml` names — `## Requirements` / `## Security
+  considerations` in `bugfix.md`, `## Architecture` / `## Security design` /
+  `## Testing strategy` in `design.md`, `## Task list` here — and every checkbox
+  ticked. Restructured to the bundled templates' vocabulary rather than
+  paraphrases of it, and the upstream security markers (`trust boundary`, `abuse
+  case`) named in both artifacts so `enforces-boundaries-from` actually runs
+  instead of skipping on a near-miss word.

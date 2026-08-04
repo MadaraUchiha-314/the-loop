@@ -107,9 +107,15 @@ Tracked as [issue #146](https://github.com/MadaraUchiha-314/the-loop/issues/146)
 | C5 | `dispatcher.py: _respawn_tmux` | Replaces the session without ever asking whether the target name is occupied. |
 | C6 | `dispatcher.py: _respawn_tmux` | Every failure is `dispatch.failed` + `deduper.discard(...)`, i.e. "retry me", including failures that can only recur. |
 
-## Acceptance criteria (EARS)
+## Requirements
 
-### Probing a tmux session
+> A bug's requirements are the correct behaviour plus proof it stays correct. The
+> `(ACn)` tags are the stable identifiers `design.md`, `tasks.md` and the
+> `Requirement:` lines on the integration tests all reference.
+
+### Requirement 1 — an unanswered probe never reads as an absent session
+
+#### Acceptance criteria (EARS)
 
 1. WHEN the-loop probes a tmux session AND tmux **answers** (any exit status)
    THEN the system SHALL use that answer; WHEN tmux does **not** answer (probe
@@ -120,7 +126,9 @@ Tracked as [issue #146](https://github.com/MadaraUchiha-314/the-loop/issues/146)
    unanswered probe cannot trigger a respawn of a live session; the delivery
    fails and is retried as an ordinary transient fault instead. (AC2)
 
-### Spawning against an occupied name
+### Requirement 2 — a spawn neither destroys nor collides with an occupant of `loop-<slug>`
+
+#### Acceptance criteria (EARS)
 
 1. WHEN a spawn is asked for a `loop-<slug>` name whose session is **live** (its
    harness is still running) THEN the system SHALL NOT kill it and SHALL NOT
@@ -135,7 +143,9 @@ Tracked as [issue #146](https://github.com/MadaraUchiha-314/the-loop/issues/146)
    answer (live occupant → report it; clearable leftover → clear and retry the
    spawn **exactly once**) and SHALL NOT retry indefinitely. (AC5)
 
-### Recovering the pending event
+### Requirement 3 — the pending event survives the collision
+
+#### Acceptance criteria (EARS)
 
 1. WHEN a respawn is about to start AND the work item's tmux session is in fact
    **live** THEN the system SHALL deliver the pending event into that session
@@ -150,14 +160,20 @@ Tracked as [issue #146](https://github.com/MadaraUchiha-314/the-loop/issues/146)
 4. WHEN a respawn fails for any other reason THEN behaviour SHALL be unchanged:
    `dispatch.failed`, delivery released for retry (issue-80). (AC9)
 
-### Observability
+### Requirement 4 — both new outcomes are observable
+
+#### Acceptance criteria (EARS)
 
 1. An averted respawn and a skipped-because-occupied dispatch SHALL each be
     visible in `the-loop events` under their own type/reason, distinct from
     `session.respawned`, `session.resume_failed` and a transient
     `dispatch.failed`. (AC10)
 
-### Picking up items already stranded (owner follow-up, [comment](https://github.com/MadaraUchiha-314/the-loop/issues/146#issuecomment-5175052576))
+### Requirement 5 — items already stranded are picked up after an upgrade
+
+> Owner follow-up: [issue comment](https://github.com/MadaraUchiha-314/the-loop/issues/146#issuecomment-5175052576).
+
+#### Acceptance criteria (EARS)
 
 1. WHEN the poller processes a work item whose ledger records comments
     **abandoned by a spent retry budget** AND that give-up was recorded by a
@@ -168,7 +184,12 @@ Tracked as [issue #146](https://github.com/MadaraUchiha-314/the-loop/issues/146)
     recorded by the *running* version SHALL NOT be re-armed, so `poll --once`
     from cron cannot re-forward abandoned comments every minute. (AC11)
 
-### A killed tmux session keeps its conversation (owner follow-up)
+### Requirement 6 — a killed tmux session keeps its conversation
+
+> Owner follow-up, same comment. Existing behaviour (issue-89) that this bug broke;
+> the requirement here is that it holds and is regression-tested.
+
+#### Acceptance criteria (EARS)
 
 1. WHEN the registry holds an **active** tmux-mode session whose tmux session
     has been killed THEN the next event for that work item SHALL respawn a fresh
@@ -178,6 +199,19 @@ Tracked as [issue #146](https://github.com/MadaraUchiha-314/the-loop/issues/146)
     breaking; it SHALL be regression-tested here. A harness with no interactive
     resume (anything but Claude Code) SHALL keep falling back to a fresh
     conversation with `session.resume_failed`. (AC12)
+
+### Requirement 7 — the fix is proved, and stays proved
+
+#### Acceptance criteria (EARS)
+
+1. Every acceptance criterion above SHALL be covered by a test that fails before
+   the fix and passes after it (`tdd.mode: standard`), including an integration
+   test reproducing the reporter's own scenario: a liveness probe the tmux server
+   is too busy to answer.
+2. The test double for tmux SHALL model **which sessions exist**, so that a
+   `duplicate session` collision is expressible at all — the previous stub
+   answered "exists, and is live" for every name, which is why a defect of this
+   shape could ship.
 
 ## Out of scope
 
@@ -219,7 +253,7 @@ Tracked as [issue #146](https://github.com/MadaraUchiha-314/the-loop/issues/146)
 
 No new attack surface, and one destructive capability **narrowed**.
 
-- **Trust boundaries unchanged.** Every decision this work adds is taken from
+- **Every trust boundary is unchanged.** Every decision this work adds is taken from
   tmux's own answers about a session name the-loop itself minted
   (`target_for(work_item)` → `loop-<slug>`) plus the session registry (a local
   file the-loop wrote). No event payload, comment body, or other untrusted input
@@ -239,6 +273,12 @@ No new attack surface, and one destructive capability **narrowed**.
   it cannot become a spawn amplifier, and the skipped outcome deliberately does
   **not** release the delivery id — removing, rather than adding, a way for a
   hostile or crashing session to induce repeated harness spawns.
+- **Abuse case considered.** The only abuse case this path admits is inducing
+  repeated harness spawns (a crashing session, or a flood of events). It is
+  *narrowed*: the `session-occupied` outcome withholds the delivery id, the
+  post-`duplicate session` retry is a single straight-line attempt, and the poll
+  path still caps attempts per event — so this change removes a way to provoke
+  repeated spawning and adds none.
 - **No new secrets, files, network calls, or config surface.**
 
 ## Open questions

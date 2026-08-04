@@ -13,7 +13,7 @@ overrides: {}
 > Phase 2 of 3. Derived from the locked [`bugfix.md`](bugfix.md). No UI artifacts
 > (`design.uiArtifacts` — the-loop ships a CLI).
 
-## 1. Shape of the fix
+## Architecture
 
 Three seams, in the order a dispatch meets them:
 
@@ -40,9 +40,11 @@ item, so an occupant is always *this* work item's own agent.** Therefore an
 occupant that is alive is never something to destroy — it is something to talk
 to. That single rule collapses the crash-loop *and* the silent-kill defect.
 
-## 2. `the_loop/runner.py`
+## Components & interfaces
 
-### 2.1 A tri-state probe (C1 → AC1)
+### `the_loop/runner.py`
+
+#### A tri-state probe (C1 → AC1)
 
 `_run` gains one field so callers can tell "tmux said no" from "tmux never
 answered":
@@ -91,7 +93,7 @@ proceeds to paste, and if the session really is gone the paste fails as an
 ordinary error — `dispatch.failed`, released, retried — instead of a respawn that
 can only collide.
 
-### 2.2 A protective, verified pre-flight (C2/C3/C4 → AC3–AC5)
+#### A protective, verified pre-flight (C2/C3/C4 → AC3–AC5)
 
 Two more result fields describe a collision, so callers need no second probe:
 
@@ -139,9 +141,9 @@ decide a destructive action: the kill that may follow is authorised by
 one-shot recovery and falls back to the pre-existing behaviour (an error the
 delivery retries), which is why the pre-flight is kept as the primary guard.
 
-## 3. `the_loop/webhook/dispatcher.py`
+### `the_loop/webhook/dispatcher.py`
 
-### 3.1 Ask before replacing (C5 → AC6)
+#### Ask before replacing (C5 → AC6)
 
 `_respawn_tmux` opens with the check the issue asks for:
 
@@ -156,7 +158,7 @@ in exchange for never replacing a live agent. Placed before `_try_resume` so the
 event log tells the truth: a live occupant is not a resume failure, and
 `session.resume_failed` is not emitted for it.
 
-### 3.2 Route into the occupant (AC6/AC7)
+#### Route into the occupant (AC6/AC7)
 
 `_deliver_into_occupant` pastes the pending event into the existing session and,
 on success, marks the delivery processed, drives the graph link and emits
@@ -170,7 +172,7 @@ The same helper serves the `session_exists && session_live` branch of a spawn
 result (AC7), so the race between the opening probe and `new-session` lands in
 the same place as the probe itself.
 
-### 3.3 Skip, don't loop (C6 → AC8)
+#### Skip, don't loop (C6 → AC8)
 
 `session_exists && not session_live` — an occupant that is dead and could not be
 cleared — is the one case where nothing can be done with the event. It becomes
@@ -186,7 +188,7 @@ operator's remedy (`tmux kill-session -t loop-<slug>`) — a loud refusal instea
 of today's silent kill. See `bugfix.md` § Out of scope for why adopting an
 orphaned live session is not attempted here.
 
-## 4. Event-log vocabulary (AC10)
+### Event-log vocabulary (AC10)
 
 | Type / reason | Meaning |
 |---|---|
@@ -197,7 +199,7 @@ orphaned live session is not attempted here.
 Both are added to `EVENT_TYPES` in `the_loop/eventlog.py` (adding an
 instrumentation point means adding its description there).
 
-## 4b. Picking up already-stranded items (AC11) — `the_loop/poller/poller.py`
+### Picking up already-stranded items (AC11) — `the_loop/poller/poller.py`
 
 The collision fix repairs the *mechanism*; it does not revisit events the old
 mechanism already abandoned. `_process_comment` spends the budget, emits
@@ -247,7 +249,7 @@ matches the trigger the owner asked for — anyone who has this fix has upgraded
 so the upgrade *is* the signal. `finalize`'s pruning to live comment ids applies
 to the new record too, so a re-armable id cannot outlive the comment.
 
-## 4c. A killed tmux session keeps its conversation (AC12)
+### A killed tmux session keeps its conversation (AC12)
 
 No new mechanism: this is the issue-89 path, and issue-146 is what was breaking
 it. With `session_state` in place it becomes reliable end to end —
@@ -264,7 +266,7 @@ test (T12b) asserting the respawn argv is `--resume <recorded id>` and that the
 registry keeps that id. Unchanged: cursor-agent has no interactive resume, so it
 still falls back to a fresh conversation with `session.resume_failed`.
 
-## 5. Error handling
+## Error handling
 
 | Situation | Outcome |
 |---|---|
@@ -276,7 +278,7 @@ still falls back to a fresh conversation with `session.resume_failed`.
 | Live occupant on the **first**-spawn path | `session.spawn_failed` with the manual remedy; nothing killed |
 | Anything else | Unchanged (issue-80/89 paths) |
 
-## 6. Testing strategy
+## Testing strategy
 
 Unit (`cli/tests/test_tmux_runner.py`) — `session_state` over all four states
 including a `subprocess.TimeoutExpired` probe; `has_session` / `has_live_session`
@@ -299,7 +301,7 @@ recorded, live after — which is what the issue-89 test's own Gherkin says
 ("dead when the event is delivered, alive once respawned") and is independent of
 probe count.
 
-## 7. Alternatives considered
+## Trade-offs & decisions
 
 - **Keep killing the occupant, just check the kill.** Fixes the crash-loop and
   keeps the data-loss bug: an idle detached agent reads identically to a busy
@@ -325,7 +327,8 @@ probe count.
 
 The `bugfix.md` threat model requires that the collision decision be derived only
 from already-trusted state and that the destructive branch narrow rather than
-widen. Enforced concretely:
+widen. Every **trust boundary** it names is enforced here, and its **abuse case**
+answered:
 
 - **Every tmux target is `target_for(work_item)`** — minted from the registry's
   work-item ref, never from a payload or a registry-supplied `tmuxTarget` string.
@@ -343,5 +346,11 @@ widen. Enforced concretely:
   straight-line attempt, and the `session-occupied` outcome withholds the
   delivery id — so this change removes an existing way to induce repeated spawn
   attempts and adds none.
+- **The abuse case — inducing repeated harness spawns** — is answered by
+  construction rather than by policy: the `session-occupied` outcome *withholds*
+  the delivery id (so a hostile or crashing session cannot have it re-attempted),
+  the post-`duplicate session` retry is one straight-line attempt with no loop to
+  drive, and the poll path's per-event cap is untouched. The change removes an
+  existing way to provoke repeated spawning and adds none.
 - **No new external input, config key, file, or network call**, and no change to
   authorization, the prompt template, or the payload framing.
