@@ -37,7 +37,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from . import eventlog, harness_config
 from .control import ControlConfig, ControlStore
@@ -45,7 +45,14 @@ from .sessions import WorkItemRef
 
 logger = logging.getLogger("the-loop.graph")
 
-__all__ = ["GraphLink", "GraphLinkConfig", "comments_from", "spec_id_for"]
+__all__ = [
+    "GraphContext",
+    "GraphLink",
+    "GraphLinkConfig",
+    "comments_from",
+    "render_graph_context",
+    "spec_id_for",
+]
 
 # Events that carry human-authored prose a gate may route on. `pull_request_review`
 # holds its text under `review`; the two comment events under `comment`.
@@ -177,6 +184,67 @@ def comments_from(routed) -> List[Dict[str, str]]:
     return [{"author": author, "body": body}]
 
 
+@dataclass(frozen=True)
+class GraphContext:
+    """A work item's graph state, as the dispatcher reads it (issue-148, D2).
+
+    Pure data, resolved read-only **before** anything is delivered — this is
+    what lets a prompt say which node the item stands on, and what lets the
+    dispatcher notice an item parked at a human gate. Everything here derives
+    from the-loop's own state and graph definition: no comment body, no payload
+    text, so nothing in it widens what untrusted input can reach a prompt.
+    """
+
+    current_node: str
+    phase: str
+    status: str  # in-progress | waiting | blocked | parked | complete | escalated
+    reason: str
+    messages: Tuple[str, ...]
+    next_command: str
+    actor: str  # agent | human — who the current node waits on
+
+    @property
+    def at_human_gate(self) -> bool:
+        """Parked/waiting on a human node — the consult-first case (D4)."""
+        return self.actor == "human" and self.status in ("waiting", "parked")
+
+
+def render_graph_context(
+    ctx: Optional["GraphContext"], item_id: str, verdict: str = ""
+) -> str:
+    """The ``$graph_context`` prompt block (issue-148, D3).
+
+    Empty when there is no context — the templates carry the variable
+    unconditionally, and an out-of-graph repository renders byte-identical
+    prompts modulo this empty substitution (R3.4). ``verdict`` carries a
+    gate-first outcome (D4) so the session knows what the gate just decided
+    about the event it is receiving.
+    """
+    if ctx is None or not ctx.current_node:
+        return ""
+    lines = [
+        f"the-loop process state for {item_id}:",
+        f"  node: {ctx.current_node}"
+        + (f" (phase: {ctx.phase})" if ctx.phase else "")
+        + f" — status: {ctx.status}",
+    ]
+    if ctx.reason:
+        lines.append(f"  reason: {ctx.reason}")
+    for message in ctx.messages:
+        lines.append(f"  gate: {message}")
+    if verdict:
+        lines.append(f"  this event was classified by the gate first: {verdict}")
+    if ctx.next_command:
+        lines.append(f"  resume with: `/the-loop:{ctx.next_command} {item_id}`")
+    lines.append(
+        f"  when this node's work is done, run: `the-loop graph complete {item_id}`"
+    )
+    lines.append(
+        "  (this block is the-loop's own state, not part of the event payload)"
+    )
+    return "\n".join(lines)
+
+
 class GraphLink:
     """Drives the process graph from ingress events. Never raises."""
 
@@ -194,36 +262,81 @@ class GraphLink:
 
     # -- entry points -----------------------------------------------------------
 
-    def on_spawn(self, work_item: WorkItemRef, cwd: str) -> None:
+    def on_spawn(
+        self, work_item: WorkItemRef, cwd: str, session_id: str = "", runner: str = ""
+    ) -> None:
         """A session was spawned — enter the graph's start node.
 
         Idempotent by way of :meth:`Runtime.start`, which returns ``None`` for a
         work item that already has a pointer: a redelivered spawn, or a session
-        respawned after a crash, never rewinds it.
+        respawned after a crash, never rewinds it. Either way the **session
+        binding** is (re)recorded (issue-148, D6): `session: inherit` gates read
+        it, and a respawned session is the new inheritance target.
         """
-        self._guarded(
-            "start", work_item, cwd, lambda rt, item: rt.start(item, work_item.ref)
-        )
 
-    def on_event(self, work_item: WorkItemRef, cwd: str, routed) -> None:
+        def call(rt, item):
+            rt.start(item, work_item.ref)
+            self._bind_session(rt, item, session_id, runner)
+
+        self._guarded("start", work_item, cwd, call)
+
+    def on_event(self, work_item: WorkItemRef, cwd: str, routed) -> Optional[Any]:
         """An event reached a session — advance at most one node boundary.
 
         The event's comments ride along as ``HookContext.event["comments"]``, so
         a human-approval node's ``classify-feedback`` finally has the input it
         was written to read. ``block``/``wait`` need no handling here: the
         runtime records them and leaves the pointer where it is.
+
+        Returns the runtime's :class:`NodeReport` when the graph ran, ``None``
+        on any skip or fault (issue-148, D4) — the consult-first path renders
+        the gate's verdict into the prompt it delivers.
         """
         event = {"comments": comments_from(routed)}
-        self._guarded(
+        return self._guarded(
             "advance",
             work_item,
             cwd,
             lambda rt, item: rt.advance(item, ref=work_item.ref, event=event),
         )
 
+    def on_close(self, work_item: WorkItemRef, cwd: str) -> None:
+        """The item's session ended — mark the graph's binding dead (issue-148, D6).
+
+        Best-effort like everything here: a failure leaves a stale binding,
+        which :meth:`Runtime.resolve_session` treats as inheritable until the
+        next spawn re-records it — the registry, not the binding, decides what
+        is actually dispatched to.
+        """
+
+        def call(rt, item):
+            from .graph.state import GraphState
+
+            spec_dir = rt.work_item(item).spec_dir
+            state = GraphState.load(spec_dir, item)
+            if state.session:
+                state.session = {**state.session, "alive": False}
+                state.save(spec_dir)
+
+        self._guarded("close", work_item, cwd, call)
+
+    def context(self, work_item: WorkItemRef, cwd: str) -> Optional[GraphContext]:
+        """Resolve the item's graph state, read-only (issue-148, D2).
+
+        Runs behind the same gate order as the driving entry points — the
+        ownership proof still precedes any checkout read — but runs **no**
+        chain and mutates nothing. ``None`` means "unknown or not applicable",
+        and every caller treats that as "deliver without context" (R3.3).
+        """
+        return self._guarded(
+            "context", work_item, cwd, lambda rt, item: self._context_from(rt, item)
+        )
+
     # -- internals --------------------------------------------------------------
 
-    def _guarded(self, action: str, work_item: WorkItemRef, cwd: str, call) -> None:
+    def _guarded(
+        self, action: str, work_item: WorkItemRef, cwd: str, call
+    ) -> Optional[Any]:
         """Run ``call`` behind every skip path, swallowing any failure.
 
         The gate order is load-bearing: ``_checkout_belongs_to`` runs **before**
@@ -236,7 +349,7 @@ class GraphLink:
         important of the two.
         """
         if not self.config.enabled:
-            return
+            return None
         item_id = spec_id_for(work_item)
         if item_id is None:
             logger.debug(
@@ -244,12 +357,12 @@ class GraphLink:
                 work_item.ref,
                 action,
             )
-            return
+            return None
         if self._awaiting_start(work_item):
             logger.debug(
                 "%s has not been started; not %sing its graph", work_item.ref, action
             )
-            return
+            return None
         root = Path(cwd or ".")
         if not self._checkout_belongs_to(root, work_item):
             logger.warning(
@@ -260,7 +373,7 @@ class GraphLink:
                 work_item.repo,
                 action,
             )
-            return
+            return None
         spec_dir = self._spec_dir(root)
         if not _is_contained(root, spec_dir):
             logger.warning(
@@ -271,7 +384,7 @@ class GraphLink:
                 action,
             )
             self._skipped(action, work_item, "spec-dir-outside-checkout", spec_dir)
-            return
+            return None
         if not (root / spec_dir / item_id).is_dir():
             logger.debug(
                 "no %s/%s under %s; not %sing its graph",
@@ -281,9 +394,22 @@ class GraphLink:
                 action,
             )
             self._skipped(action, work_item, "no-spec-dir", spec_dir)
-            return
+            return None
         try:
-            call(self._build_runtime(str(root), spec_dir), item_id)
+            runtime = self._build_runtime(str(root), spec_dir)
+            if action == "context":
+                return call(runtime, item_id)
+            # Write actions hold the graph-state lock (issue-148): the session's
+            # `graph complete` is a second writer beside this daemon, and the
+            # load→mutate→save windows must not interleave. `context` stays
+            # outside the lock — it is a pure read, and a stale read costs a
+            # slightly stale prompt, never a wrong pointer. flock is not
+            # reentrant across file handles, so everything `call` reaches must
+            # not re-acquire it.
+            from .graph.state import state_lock
+
+            with state_lock(root / spec_dir / item_id):
+                return call(runtime, item_id)
         except Exception as exc:  # noqa: BLE001 — a graph fault must not cost a delivery
             logger.error(
                 "graph %s for %s failed: %s", action, work_item.ref, exc, exc_info=True
@@ -295,6 +421,52 @@ class GraphLink:
                 action=action,
                 error=str(exc),
             )
+            return None
+
+    @staticmethod
+    def _bind_session(rt: Any, item_id: str, session_id: str, runner: str) -> None:
+        """Record which session works this item (issue-148, D6).
+
+        Runs inside :meth:`_guarded`'s state lock — it must not re-acquire it.
+        """
+        from .graph.state import GraphState
+
+        spec_dir = rt.work_item(item_id).spec_dir
+        state = GraphState.load(spec_dir, item_id)
+        state.session = {"id": session_id, "runner": runner, "alive": True}
+        state.save(spec_dir)
+
+    @staticmethod
+    def _context_from(rt: Any, item_id: str) -> Optional[GraphContext]:
+        """Derive a :class:`GraphContext` from state + graph, mutating nothing."""
+        from .graph.state import GraphState
+
+        spec_dir = rt.work_item(item_id).spec_dir
+        state = GraphState.load(spec_dir, item_id)
+        if not state.current_node:
+            return None  # never entered — a fresh item starts, it doesn't resume
+        node = rt.graph.node(state.current_node)
+        rec = state.nodes.get(node.id)
+        reason, messages = "", ()
+        if node.terminal and rec is not None and rec.outcome:
+            status = "complete"
+        elif state.parked:
+            status = "waiting" if node.actor == "human" else "parked"
+            reason = str(state.parked.get("reason") or "")
+        elif rec is not None and rec.last_block:
+            status = "escalated" if rec.attempts >= node.max_attempts else "blocked"
+            messages = (rec.last_block,)
+        else:
+            status = "in-progress"
+        return GraphContext(
+            current_node=node.id,
+            phase=node.phase,
+            status=status,
+            reason=reason,
+            messages=messages,
+            next_command=node.command,
+            actor=node.actor,
+        )
 
     @staticmethod
     def _skipped(

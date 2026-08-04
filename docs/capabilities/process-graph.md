@@ -122,12 +122,49 @@ There are exactly **two** runtime concepts and **one** contract between them.
   to the harness** (`mcp-call`), because MCP is an agent protocol, not a daemon protocol
   ([decision-042](../decisions/decision-042.md)).
 
-### What drives the graph (issue-113)
+### What drives the graph (issue-113, issue-148)
 
 - The graph SHALL be driven by the **ingress**, not only by a human at a terminal: the
   shared dispatcher — which both the webhook receiver and the poller feed — SHALL enter a
-  work item's start node when a session is spawned for it, and SHALL advance it at most
-  one node boundary when an event is delivered to an existing session.
+  work item's start node when a session is spawned for it (**on either runner** —
+  issue-148 closed the gap where only process-runner spawns entered), and SHALL advance
+  it at most one node boundary when an event is delivered to an existing session.
+- **The session drives it too** (issue-148): `the-loop graph complete <id>` is the
+  node-completion claim. WHEN a claim arrives THEN the runtime SHALL evaluate the
+  current node's exit chain and advance only when it passes; the claim SHALL carry no
+  verdict and no event text. Claims name their node: a replay of a claim for a node the
+  pointer has left SHALL be a recorded no-op, a claim for a node that is neither current
+  nor past SHALL be refused naming the current node, and a claim on an item that never
+  entered the graph SHALL be refused. Output is one JSON envelope; a refusal or block is
+  a result, not a CLI error. Claims are recorded in the state's `completions` ledger.
+- **Graph state is resolved before anything is delivered** (issue-148): the dispatcher
+  SHALL resolve a read-only context — current node, phase, status, parked/blocked
+  reason, gate messages, the node's `command` — before rendering any prompt, and SHALL
+  render it into the `$graph_context` placeholder. A spawn prompt for a mid-graph item
+  SHALL say *resume at the current node*; entering the graph (`on_spawn`, the write)
+  SHALL still happen only after a successful spawn. Reads before the spawn, writes
+  after it.
+- **A waiting human gate sees its input first** (issue-148): WHEN an event arrives for
+  an item parked at a human-actor node THEN the dispatcher SHALL run `advance` (with
+  the event's comments) **before** delivering, and the delivered prompt SHALL carry the
+  gate's verdict; the graph SHALL NOT be advanced a second time for the same event.
+  There are **no consume-only routes**: every event is still delivered — a gate speaks
+  first, never instead. WHEN the gate cannot classify (unauthorized author, indecisive
+  text, fault) THEN the event SHALL still be delivered with the gate still waiting.
+- **Advancement fails closed; delivery fails open** (issue-148). No input — comment
+  text, completion claim, payload — moves the pointer except through an exit chain over
+  checked-in artifacts or `classify-feedback` on an authorized author's text. Any
+  consultation fault delivers with the context unknown and records `graph.link_failed`.
+- Graph state has **two writers** (the daemon's link and the session's claim), so the
+  load→mutate→save window SHALL run under an advisory lock (`graph-state.lock`,
+  stdlib `fcntl`, no-op where unavailable); a busy lock reports `busy` rather than
+  blocking, and a lost update on the no-op fallback costs a re-evaluation, never a
+  wrong pointer.
+- WHEN a human gate is entered THEN the runtime SHALL resolve its session per
+  `session: inherit` — the binding `on_spawn` records (session id, runner, alive),
+  flipped dead on close, re-recorded on respawn — and SHALL record the resolution as
+  `graph.gate_session` (`inherited` or `fresh-with-artifacts`). The registry remains
+  the dispatch authority.
 - Entering the start node SHALL run its **entry chain**, which is what writes the
   `loop:<phase>` label and the execution-log checkpoint. Before this, no node was ever
   entered on the automated path, so those side effects never fired and the phase labels
@@ -195,6 +232,7 @@ There are exactly **two** runtime concepts and **one** contract between them.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-148 | The graph went from observer to authority: `the-loop graph complete` (the node-completion claim — idempotent, node-named, never a verdict), `GraphContext` resolved read-only before every delivery and spawn, the `$graph_context` prompt block, consult-first ordering at human gates (no consume-only routes), `resolve_session` gained its caller (`graph.gate_session`), tmux spawns finally enter the graph, two-writer state locking, and P4 phase parity — `pdlc.yaml` defines the sequence, the prose renders it | [spec](../specs/issue-148/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/148) |
 | issue-124 | `produces` names an artifact rather than a filename: `\|`-separated alternatives, one resolver shared by every hook that reads them, ambiguity fails closed, malformed entries fail at compile; `enforces-boundaries-from` resolves `upstream` the same way, which turned a security gate that had been silently skipping for every bug work item into one that runs; graph ↔ manifest ↔ template parity is now a test | [spec](../specs/issue-124/), [decision-045](../decisions/decision-045.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/124) |
 | issue-123 | The daemon stopped taking `specDir` from the operator's machine: `routing.graph.specDir` defaults to unset, so the work item's own `workflow.specDir` wins; the gate and the runtime resolve one value; the checkout's ownership is proved before its config is read; an escaping value is refused; and the skip is recorded as `graph.skipped` instead of a debug line | [spec](../specs/issue-123/), [decision-044](../decisions/decision-044.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/123) |
 | issue-113 | Wired the ingress to the graph: `Runtime.start()`, the `GraphLink` seam in the shared dispatcher, `HookContext.event` finally written, the `routing.graph` config block, and the chain-outcome fix that lets a passing gate's verdict reach its edges | [spec](../specs/issue-113/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/113) |

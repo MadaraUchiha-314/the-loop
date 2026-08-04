@@ -61,6 +61,11 @@ not-started → brainstorming → requirements-definition → design → tasks-b
             → implementation → needs-review → complete
 ```
 
+This sequence is **defined by the shipped process graph**
+(`cli/the_loop/graph/pdlc.yaml`); the prose here renders it, never redefines it
+(issue-148). When a node's work is done, tell the graph so —
+`the-loop graph complete <id>` — rather than only narrating the transition.
+
 See `reference/workflow.md` for what each phase contains, the review gates, the
 self/critic-review counts, evidence, resumability and DAG orchestration.
 

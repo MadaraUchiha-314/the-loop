@@ -198,3 +198,53 @@ def test_p3_every_gated_name_has_a_template_that_can_satisfy_it() -> None:
         "a bundled template cannot satisfy the gate it is authored for: "
         + "; ".join(problems)
     )
+
+
+def _config_phases(path: Path) -> List[str]:
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    return [str(p) for p in (data.get("workflow") or {}).get("phases") or []]
+
+
+@pytest.mark.parametrize(
+    "config_path",
+    [
+        REPO_ROOT / ".the-loop" / "harness-config.yaml",
+        REPO_ROOT / "skills" / "the-loop" / "templates" / "harness-config.yaml",
+    ],
+    ids=["own-config", "template-config"],
+)
+def test_p4_the_graph_defines_the_phase_sequence(config_path: Path) -> None:
+    """P4 (issue-148, R6.2) — one source of truth for the process.
+
+    The graph's ordered ``phase:`` values must appear, in the same order,
+    within ``workflow.phases`` — and the complement is pinned: the only phase
+    a config may declare that no node carries is ``not-started``, the
+    pre-graph state. Anything else is the prose and the graph drifting into
+    two processes, which is the defect issue-148 exists to close.
+    """
+    if not config_path.is_file():
+        pytest.skip(f"{config_path} not shipped in this distribution")
+    graph = load_graph(repo=REPO_ROOT)
+    graph_phases: List[str] = []
+    for node in graph.ordered():
+        if node.phase and node.phase not in graph_phases:
+            graph_phases.append(node.phase)
+    config_phases = _config_phases(config_path)
+
+    positions = []
+    for phase in graph_phases:
+        assert phase in config_phases, (
+            f"the graph carries phase {phase!r} that {config_path.name} does not "
+            "declare in workflow.phases"
+        )
+        positions.append(config_phases.index(phase))
+    assert positions == sorted(positions), (
+        f"{config_path.name} orders workflow.phases differently from the graph: "
+        f"graph {graph_phases} vs config {config_phases}"
+    )
+
+    extras = set(config_phases) - set(graph_phases)
+    assert extras <= {"not-started"}, (
+        "workflow.phases declares phases no graph node carries (only "
+        f"'not-started' may be): {sorted(extras)}"
+    )

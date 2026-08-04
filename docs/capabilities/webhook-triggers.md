@@ -32,6 +32,15 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   `the-loop: auto-execute` label) using the configured prompt templates — **and, since
   issue-106, only once an authorized user has explicitly started the work item** (see
   *Execution control* below).
+- **Every rendered prompt states where the work item stands in the process graph**
+  (issue-148). WHEN a prompt is rendered THEN the item's graph context — current node,
+  phase, status, gate messages, the node's resume command and the
+  `the-loop graph complete` instruction — SHALL be substituted into the
+  `$graph_context` placeholder, resolved read-only **before** delivery or spawn. WHEN
+  no context exists (fresh item, graph disabled, no spec directory, foreign checkout,
+  or a resolution fault) THEN the placeholder SHALL render empty and the prompt SHALL
+  otherwise be unchanged — resolution failure never costs a delivery. See
+  [process-graph](process-graph.md) for the consult-first ordering at human gates.
 - **Every rendered prompt states where the session takes its answers from** (issue-134,
   `routing.interaction.mode`, [decision-051](../decisions/decision-051.md)).
   - WHEN a prompt is rendered — an event prompt or a spawn prompt, either runner, either
