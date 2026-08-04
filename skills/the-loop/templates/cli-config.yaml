@@ -160,6 +160,21 @@ routing:
     # contain the spawn dir, or one as broad as / or $HOME, is dropped.
     scope: workspace-root           # workspace-root | directory
     acceptBypassPermissions: auto   # auto | always | never
+  # Enable the-loop's OWN plugin before the session starts (issue-143): the
+  # skill, the /the-loop:* commands and the SessionStart hook all ship in the
+  # plugin, and nothing else in the spawn path installs it — so without this a
+  # spawned session is told to run a loop it doesn't have. Writes
+  # extraKnownMarketplaces["the-loop"] + enabledPlugins["the-loop@the-loop"]
+  # into your harness's USER settings file, exactly what /plugin marketplace add
+  # + /plugin install write, never touching a value that's already there. NOTE
+  # that file is user-global: the plugin then loads in the Claude Code sessions
+  # you start by hand too. enabled: false is the opt-out.
+  harnessPlugins:
+    enabled: true
+    # owner/repo the marketplace is served from — point it at your fork to run
+    # that fork's plugin (i.e. to run whatever code it ships). "" enables the
+    # plugin without registering any marketplace.
+    marketplaceRepo: "MadaraUchiha-314/the-loop"
   # Dispatch-lifecycle emoji reactions (issue-84): acknowledge on the triggering
   # comment (or the issue/PR itself) that the-loop started / completed / failed
   # processing an event. GitHub's palette is fixed (+1 -1 laugh confused heart

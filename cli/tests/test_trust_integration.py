@@ -3,10 +3,13 @@
 Feature: Pre-trust a spawned session's workspace
 Requirement: docs/specs/issue-90/requirements.md
 
-Each scenario drives the real ``Dispatcher`` worker with a real
-``ClaudeCodeAdapter`` pointed at a fake HOME, so they prove what actually lands
-in the harness's config — and, crucially, that it lands **before** the harness
-is started rather than after.
+Feature: Enable the-loop's own plugin for a spawned session
+Requirement: docs/specs/issue-143/requirements.md
+
+Both features are the same pre-spawn step, so they share these scenarios. Each
+drives the real ``Dispatcher`` worker with a real ``ClaudeCodeAdapter`` pointed
+at a fake HOME, so they prove what actually lands in the harness's config — and,
+crucially, that it lands **before** the harness is started rather than after.
 """
 
 import json
@@ -21,6 +24,12 @@ from the_loop.harness.base import DispatchResult
 from the_loop.harness.claude_code import ClaudeCodeAdapter
 from the_loop.runner import TmuxResult, TmuxRunner
 from the_loop.sessions import Session, SessionRegistry, WorkItemRef
+from the_loop.harness_plugins import (
+    DEFAULT_MARKETPLACE_REPO,
+    MARKETPLACE_NAME,
+    PLUGIN_KEY,
+    PluginConfig,
+)
 from the_loop.trust import TrustConfig
 from the_loop.workspace import Workspace
 from the_loop.webhook.dispatcher import Dispatcher, RoutingConfig
@@ -68,8 +77,10 @@ class RecordingClaudeAdapter(ClaudeCodeAdapter):
     def __init__(self, config_path, **kwargs):
         super().__init__(**kwargs)
         self._config_path = config_path
+        self._settings_path = config_path.parent / ".claude" / "settings.json"
         self.spawns = []
         self.trusted_at_spawn = []
+        self.plugins_at_spawn = []
 
     def is_available(self):
         return True
@@ -77,6 +88,7 @@ class RecordingClaudeAdapter(ClaudeCodeAdapter):
     def spawn(self, work_item, prompt, cwd, timeout=None):
         self.spawns.append((work_item.ref, cwd))
         self.trusted_at_spawn.append(trusted_dirs(self._config_path))
+        self.plugins_at_spawn.append(enabled_plugins(self._settings_path))
         return DispatchResult(ok=True, session_id="spawned-1")
 
     def resume(self, session, prompt, timeout=None):
@@ -124,6 +136,17 @@ def trusted_dirs(config_path):
         for key, entry in (data.get("projects") or {}).items()
         if isinstance(entry, dict) and entry.get("hasTrustDialogAccepted") is True
     ]
+
+
+def enabled_plugins(settings_path):
+    """Plugins currently switched on in the harness's user settings file."""
+    if not settings_path.exists():
+        return []
+    try:
+        data = json.loads(settings_path.read_text())
+    except json.JSONDecodeError:
+        return []
+    return [key for key, on in (data.get("enabledPlugins") or {}).items() if on is True]
 
 
 class StubWorkspace(Workspace):
@@ -440,8 +463,10 @@ def test_disabled_trust_leaves_the_harness_config_alone(tmp_path, fake_home, wor
       Given routing.harnessTrust.enabled is false
       When a labeled issues event spawns a session
       Then the spawn happens exactly as before
-      And nothing is written to the harness config
+      And nothing is written to the harness's trust config
+      And the plugin step is unaffected, being its own switch
     Requirement: docs/specs/issue-90/requirements.md#requirement-3
+    Requirement: docs/specs/issue-143/requirements.md#requirement-3
     """
     adapter = RecordingClaudeAdapter(
         fake_home / ".claude.json", trust=TrustConfig(enabled=False)
@@ -452,4 +477,66 @@ def test_disabled_trust_leaves_the_harness_config_alone(tmp_path, fake_home, wor
     assert wait_until(lambda: len(adapter.spawns) == 1)
     dispatcher.stop()
 
-    assert list(fake_home.iterdir()) == []
+    assert not (fake_home / ".claude.json").exists()
+    # …while `harnessPlugins` — a separate switch, left at its default — still
+    # enabled the plugin (issue-143).
+    assert enabled_plugins(fake_home / ".claude" / "settings.json") == [PLUGIN_KEY]
+
+
+def test_the_plugin_is_enabled_before_the_harness_starts(tmp_path, fake_home, workdir):
+    """
+    Feature: Enable the-loop's own plugin for a spawned session
+    Scenario: An auto-execute label spawns a session on a machine without the plugin
+      Given a harness config that has never had the-loop plugin installed
+      And routing.harnessPlugins is enabled with its defaults
+      When a labeled issues event spawns a session
+      Then the marketplace and the plugin are recorded in the user settings file
+      And they were already recorded at the moment the harness was started
+      And the write is named in the workspace.trusted event
+    Requirement: docs/specs/issue-143/requirements.md#requirement-1
+    """
+    log = tmp_path / "events.jsonl"
+    eventlog.configure("gh-webhook", path=log, enabled=True)
+    settings = fake_home / ".claude" / "settings.json"
+
+    adapter = RecordingClaudeAdapter(fake_home / ".claude.json")
+    dispatcher = make_dispatcher(tmp_path, adapter, spawn_workdir=str(workdir))
+
+    dispatcher.handle(routed_labeled_issue())
+    assert wait_until(lambda: len(adapter.spawns) == 1)
+    dispatcher.stop()
+
+    assert json.loads(settings.read_text())["extraKnownMarketplaces"] == {
+        MARKETPLACE_NAME: {
+            "source": {"source": "github", "repo": DEFAULT_MARKETPLACE_REPO}
+        }
+    }
+    # the ordering assertion: enabled *before* the harness process was started
+    assert adapter.plugins_at_spawn == [[PLUGIN_KEY]]
+
+    records = [json.loads(line) for line in log.read_text().splitlines()]
+    prepared = next(r for r in records if r["event"] == "workspace.trusted")
+    assert any(PLUGIN_KEY in note for note in prepared["applied"])
+
+
+def test_disabled_plugins_leave_the_settings_file_alone(tmp_path, fake_home, workdir):
+    """
+    Feature: Enable the-loop's own plugin for a spawned session
+    Scenario: The operator opted out
+      Given routing.harnessPlugins.enabled is false
+      When a labeled issues event spawns a session
+      Then the spawn happens exactly as before
+      And no plugin entry is written
+    Requirement: docs/specs/issue-143/requirements.md#requirement-3
+    """
+    adapter = RecordingClaudeAdapter(
+        fake_home / ".claude.json", plugins=PluginConfig(enabled=False)
+    )
+    dispatcher = make_dispatcher(tmp_path, adapter, spawn_workdir=str(workdir))
+
+    dispatcher.handle(routed_labeled_issue())
+    assert wait_until(lambda: len(adapter.spawns) == 1)
+    dispatcher.stop()
+
+    assert trusted_dirs(fake_home / ".claude.json") == [str(workdir)]
+    assert not (fake_home / ".claude" / "settings.json").exists()

@@ -81,6 +81,7 @@ __all__ = [
     "args_request_bypass",
     "is_too_broad",
     "is_within",
+    "update_json",
 ]
 
 # Current home of the bypass-permissions acceptance (user settings file)…
@@ -229,8 +230,13 @@ def args_request_bypass(args) -> bool:
     return False
 
 
-def _update_json(path: Path, mutate: Callable[[dict], bool]) -> TrustResult:
+def update_json(path: Path, mutate: Callable[[dict], bool]) -> TrustResult:
     """Read ``path``, apply ``mutate``, and write it back only if it changed.
+
+    Public because it is the *only* atomic, non-destructive writer for a
+    harness's own config files: :mod:`the_loop.harness_plugins` (issue-143)
+    reuses it rather than growing a second one that could get the locking, the
+    symlink handling or the leave-it-alone guarantees subtly wrong.
 
     ``mutate`` returns True when it actually changed the mapping; False means
     the desired state already holds and **nothing is written** — that is what
@@ -418,7 +424,7 @@ class ClaudeTrustStore:
                 changed |= _set_flag(projects, key, "hasCompletedProjectOnboarding")
             return changed
 
-        result = _update_json(self.config_path(), mutate)
+        result = update_json(self.config_path(), mutate)
         if result.applied:
             # Name every directory that was trusted, not just the widest one:
             # `workspace.trusted` is the audit trail for a config the operator
@@ -449,12 +455,12 @@ class ClaudeTrustStore:
             data[_BYPASS_LEGACY_KEY] = True
             return True
 
-        settings = _update_json(self.settings_path(), mutate_settings)
+        settings = update_json(self.settings_path(), mutate_settings)
         if settings.applied:
             settings = TrustResult(
                 applied=[f"accepted bypass-permissions in {self.settings_path()}"]
             )
-        config = _update_json(self.config_path(), mutate_config)
+        config = update_json(self.config_path(), mutate_config)
         if config.applied:
             # Its own note, not folded into the settings one: every write this
             # module makes has to show up in the `workspace.trusted` audit trail.

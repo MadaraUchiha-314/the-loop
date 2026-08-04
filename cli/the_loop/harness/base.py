@@ -20,6 +20,7 @@ import subprocess
 from dataclasses import dataclass, field
 from typing import List, Optional, Sequence
 
+from ..harness_plugins import PluginConfig
 from ..sessions import Session, WorkItemRef
 from ..trust import TrustConfig, TrustResult
 
@@ -112,10 +113,12 @@ class HarnessAdapter:
         binary: Optional[str] = None,
         extra_args: Optional[Sequence[str]] = None,
         trust: Optional[TrustConfig] = None,
+        plugins: Optional[PluginConfig] = None,
     ):
         self.binary = binary or self.default_binary
         self.extra_args = list(extra_args or [])
         self.trust = trust or TrustConfig()
+        self.plugins = plugins or PluginConfig()
 
     def is_available(self) -> bool:
         return shutil.which(self.binary) is not None
@@ -125,9 +128,12 @@ class HarnessAdapter:
 
         Called by the dispatcher before every spawn/respawn (issue-90). ``root``
         is the workspace root the dispatcher resolved for ``scope:
-        workspace-root``, or None to scope everything to ``cwd``. The default is
-        a no-op — a harness with no such configuration surface (cursor-agent
-        today) is not an error, it simply has nothing to prepare.
+        workspace-root``, or None to scope everything to ``cwd``. Also where
+        the-loop's own plugin is enabled, so the session has the loop's skill,
+        commands and hooks loaded rather than being told to run a loop it does
+        not have (issue-143). The default is a no-op — a harness with no such
+        configuration surface (cursor-agent today) is not an error, it simply
+        has nothing to prepare.
         """
         return TrustResult()
 

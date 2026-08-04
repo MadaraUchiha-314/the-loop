@@ -149,6 +149,24 @@ the same conversation.
   **every** directory that was trusted; a failure warns, emits `workspace.trust_failed`
   and still spawns. A harness with no such config surface (cursor-agent) is a silent
   no-op.
+- WHEN a session is spawned or respawned THEN — in that same pre-spawn step, before any
+  harness start — **the-loop's own plugin** SHALL be enabled in the harness's user
+  settings file (`routing.harnessPlugins`, default on), because everything the session
+  knows about the loop (the `the-loop` skill, the `/the-loop:*` commands, the
+  SessionStart hook stating the operating rules) ships in the plugin and nothing else in
+  the spawn path installs it. For Claude Code that means
+  `extraKnownMarketplaces["the-loop"]` (from `marketplaceRepo`, default
+  `MadaraUchiha-314/the-loop`) and `enabledPlugins["the-loop@the-loop"]: true` in
+  `<config dir>/settings.json` — exactly what `/plugin marketplace add` +
+  `/plugin install` write, honouring `CLAUDE_CONFIG_DIR`. A value that already exists is
+  **never** changed: a marketplace of the operator's keeps pointing where it points, and
+  an entry already set to `false` stays `false`. `marketplaceRepo` is validated as
+  `owner/repo` and read only from the operator's own config, never from an event payload
+  or a cloned repository. That settings file is **user-global**, so the plugin also loads
+  in sessions the operator starts by hand — `enabled: false` is the opt-out. The step is
+  independent of `harnessTrust` (either may be off without the other), shares its write
+  discipline and its `workspace.trusted` / `workspace.trust_failed` events, and is a
+  silent no-op for cursor-agent.
 - WHEN `routing.runner` is `process` or unset THEN behaviour SHALL be identical to the
   pre-issue-32 receiver; registry files from before issue-32 remain readable, and a
   registry may mix process- and tmux-mode sessions (the session's recorded runner
@@ -163,6 +181,7 @@ the same conversation.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-143 | The pre-spawn step now also enables the-loop's own plugin (`extraKnownMarketplaces` + `enabledPlugins` in the harness's user settings, `routing.harnessPlugins`), so a spawned session has the skill, commands and hooks the work-on prompt assumes instead of running the ticket as a plain agent; existing values are never overwritten | [spec](../specs/issue-143/), [decision-054](../decisions/decision-054.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/143) |
 | issue-136 | Fixed the pre-spawn trust write missing the checkout it was for: the trust key has a second reader that does **not** walk ancestors, so the default `scope: workspace-root` left every checkout of a repo shipping `.claude/settings.json` grants on the dialog. Both keys are now written on the exact spawn directory under every scope; `scope` only widens | [spec](../specs/issue-136/), [decision-052](../decisions/decision-052.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/136) |
 | issue-137 | `sessions reset` ends a live session through that same close path and then **deletes** its registry record, so the work item starts over on a fixed CLI; a tmux session retained by policy outlives the record and is read back with `tmux attach -r -t loop-<slug>` | [spec](../specs/issue-137/), [decision-050](../decisions/decision-050.md), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/137) |
 | issue-106 | `paused` sessions (delivery suppressed, tmux session and conversation untouched) and `sessions stop`, which ends a session through the same close path a merge takes | [spec](../specs/issue-106/), [decision-040](../decisions/decision-040.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/106) |

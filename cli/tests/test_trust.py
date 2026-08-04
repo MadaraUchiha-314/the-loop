@@ -14,6 +14,7 @@ import pytest
 from the_loop.harness import build_adapters
 from the_loop.harness.claude_code import ClaudeCodeAdapter
 from the_loop.harness.cursor_agent import CursorAgentAdapter
+from the_loop.harness_plugins import PluginConfig
 from the_loop.trust import (
     ClaudeTrustStore,
     TrustConfig,
@@ -399,8 +400,10 @@ def test_claude_adapter_trusts_but_does_not_accept_bypass_by_default(
     assert read_json(store.config_path())["projects"][str(workdir)][
         "hasTrustDialogAccepted"
     ]
-    # the-loop never widens permissions the operator did not request
-    assert not store.settings_path().exists()
+    # the-loop never widens permissions the operator did not request. The
+    # settings file itself now exists — the plugin step writes there
+    # (issue-143) — so the assertion is on the bypass key, not the file.
+    assert "skipDangerousModePermissionPrompt" not in read_json(store.settings_path())
 
 
 def test_claude_adapter_accepts_bypass_when_the_args_ask_for_it(tmp_path, fake_home):
@@ -423,7 +426,8 @@ def test_accept_bypass_never_overrides_the_args(tmp_path, fake_home):
     )
 
     assert adapter.prepare_environment(str(workdir)).ok
-    assert not store_for(fake_home).settings_path().exists()
+    settings = read_json(store_for(fake_home).settings_path())
+    assert "skipDangerousModePermissionPrompt" not in settings
 
 
 def test_accept_bypass_always_applies_without_the_args(tmp_path, fake_home):
@@ -438,9 +442,12 @@ def test_accept_bypass_always_applies_without_the_args(tmp_path, fake_home):
 def test_disabled_trust_writes_nothing_at_all(tmp_path, fake_home):
     workdir = tmp_path / "wt"
     workdir.mkdir()
+    # The plugin step is switched off separately (issue-143) — its own
+    # independence from trust is covered in test_harness_plugins.py.
     adapter = ClaudeCodeAdapter(
         extra_args=["--dangerously-skip-permissions"],
         trust=TrustConfig(enabled=False),
+        plugins=PluginConfig(enabled=False),
     )
 
     result = adapter.prepare_environment(str(workdir))

@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [054](decision-054.md) | The CLI enables the-loop's own plugin in the harness's user settings before a spawn | proposed | 2026-08-04 |
 | [053](decision-053.md) | A config key is nested under what owns it — `routing` governs both ingresses, so it is top-level | proposed | 2026-08-04 |
 | [052](decision-052.md) | Trust the spawn directory itself under every scope — `harnessTrust.scope` only widens | proposed | 2026-08-04 |
 | [051](decision-051.md) | The interaction channel is declared (two values); artifact iteration on the PR is an invariant | proposed | 2026-08-04 |

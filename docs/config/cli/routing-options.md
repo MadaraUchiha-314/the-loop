@@ -10,7 +10,7 @@ accepted. This is the largest block in the CLI config, and it is shared: the
 applies to **both** ingresses.
 
 ::: warning Moved in issue-142
-This block used to be nested under `webhooks.ghWebhook.routing`, which read as though it
+This block used to be nested under `routing`, which read as though it
 were the receiver's — it never was. A config still declaring the old path is **refused**
 rather than silently ignored, because `authorizedUsers` decides which logins may drive
 your daemon. Run [`the-loop migrate-config`](/cli/commands/migrate-config) (or
@@ -568,6 +568,72 @@ That is the only form the harness exposes. If you would rather keep the confirma
 your own sessions, set `never` and drop `--dangerously-skip-permissions` from
 `harnessArgs`; a narrower `--permission-mode acceptEdits` needs no acceptance at all.
 :::
+
+### `harnessPlugins.enabled`
+
+- **Type:** `boolean`
+- **Default:** `true`
+- **Related:** [decision-054](/decisions/decision-054)
+
+Enable the-loop's **own plugin** in the harness before each spawn, so the session actually
+has the loop.
+
+Everything a spawned session knows about the loop ships in the plugin: the `the-loop`
+skill, the `/the-loop:*` commands, and the SessionStart hook that states the operating
+rules. Nothing else in the spawn path installs it — the-loop pre-seeded workspace trust so
+the session *starts*, then handed it a work-on prompt for machinery that was not loaded. On
+a machine where nobody ran `/plugin marketplace add` by hand, the session worked the ticket
+as a plain agent: no phase labels, no spec chain, no gates.
+
+So before each spawn the-loop writes what the harness reads, into the **user settings
+file** (`<config dir>/settings.json`, honouring `CLAUDE_CONFIG_DIR`) — exactly what
+`/plugin marketplace add` + `/plugin install` write:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "the-loop": { "source": { "source": "github", "repo": "MadaraUchiha-314/the-loop" } }
+  },
+  "enabledPlugins": { "the-loop@the-loop": true }
+}
+```
+
+Same discipline as [`harnessTrust`](#harnesstrustenabled), and the same writer: those two
+keys only, merged into what is already there, temp file plus atomic rename, **nothing
+written** once both are set, and a file that does not parse as JSON is reported and left
+alone. A value that already exists is never changed — your marketplace keeps pointing where
+you pointed it, and an entry you deliberately set to `false` stays `false`. Failures are
+best-effort: a warning, a `workspace.trust_failed` record, and the spawn still happens.
+`cursor-agent` has no plugin-configuration surface, so it is a silent no-op there.
+
+The two pre-spawn steps are **independent**: turning trust off does not turn this off, and
+vice versa.
+
+::: warning This one is user-global
+`enabledPlugins` in the user settings file is not scoped to the-loop's checkouts. Enabling
+the plugin there means its skill, commands and **SessionStart hook** also load in the Claude
+Code sessions you start by hand.
+
+That is what installing a plugin means, and it is the only form the harness offers — the
+alternative, writing into each cloned checkout, would leave a file the daemon authored
+inside a working tree the agent is about to open a PR from. `enabled: false` is the opt-out;
+`/plugin` remains yours to manage.
+:::
+
+### `harnessPlugins.marketplaceRepo`
+
+- **Type:** `string`
+- **Default:** `MadaraUchiha-314/the-loop`
+
+The `owner/repo` the `the-loop` marketplace is registered from. Point it at your fork to run
+that fork's plugin — which means running whatever code that repository ships, in every
+session on the machine.
+
+Validated as `owner/repo`: anything else (a URL, a path, a value with shell metacharacters)
+is refused and nothing is written. It is read only from your own config file, never from an
+event payload or a cloned repository, so a work item cannot redirect it. Set it to `""` to
+enable the plugin without registering any marketplace — the escape hatch when you register
+the marketplace some other way.
 
 ## Feedback on the ticket
 

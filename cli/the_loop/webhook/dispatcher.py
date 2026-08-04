@@ -39,6 +39,7 @@ from ..reactions import (
 from ..runner import TmuxRunner
 from ..sessions import Session, SessionRegistry, WorkItemRef
 from ..state import LegacyLayout, StateLayout, legacy_layout
+from ..harness_plugins import PluginConfig
 from ..trust import TrustConfig, TrustResult, is_too_broad
 from ..workspace import RepoTarget, Workspace, WorkspaceError, repo_target_from_payload
 from .router import Deduper, RoutedEvent, event_actor, event_body, event_carries_label
@@ -236,6 +237,9 @@ class RoutingConfig:
     # Pre-seed the harness's own config before a spawn so the session does not
     # stall on a trust dialog nobody is there to answer (issue-90).
     harness_trust: TrustConfig = field(default_factory=TrustConfig)
+    # …and so it has the-loop's plugin — skill, commands, hooks — actually
+    # loaded when it reads the work-on prompt (issue-143).
+    harness_plugins: PluginConfig = field(default_factory=PluginConfig)
     # GitHub logins whose actions the-loop may act on (prompt-injection guard,
     # issue-34 review). Empty => fail closed for human-authored actions.
     authorized_users: List[str] = field(default_factory=list)
@@ -293,6 +297,7 @@ class RoutingConfig:
             ),
             harness_args=dict(data.get("harnessArgs") or {}),
             harness_trust=TrustConfig.from_mapping(data.get("harnessTrust") or {}),
+            harness_plugins=PluginConfig.from_mapping(data.get("harnessPlugins") or {}),
             authorized_users=[str(u) for u in (data.get("authorizedUsers") or [])],
             reactions=ReactionConfig.from_mapping(data.get("reactions") or {}),
             announce=AnnounceConfig.from_mapping(data.get("announce") or {}),
@@ -503,7 +508,9 @@ class Dispatcher:
         from ..harness import build_adapters
 
         self.config = config
-        self.adapters = build_adapters(config.harness_args, config.harness_trust)
+        self.adapters = build_adapters(
+            config.harness_args, config.harness_trust, config.harness_plugins
+        )
         if not self._workspace_override:
             self.workspace = self._build_workspace(config)
         if not self._reactor_override:
