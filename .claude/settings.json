@@ -75,6 +75,15 @@
       "mcp__plugin_chrome-devtools-mcp_chrome-devtools__*"
     ]
   },
-  "extraKnownMarketplaces": {},
-  "enabledPlugins": {}
+  "extraKnownMarketplaces": {
+    "the-loop": {
+      "source": {
+        "source": "github",
+        "repo": "MadaraUchiha-314/the-loop"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "the-loop@the-loop": true
+  }
 }

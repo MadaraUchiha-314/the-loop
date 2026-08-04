@@ -464,6 +464,23 @@
             }
           }
         },
+        "harnessPlugins": {
+          "type": "object",
+          "description": "Enable the-loop's OWN plugin in the harness before spawning a session, so the session actually has the loop (issue-143, decision-054). Everything a spawned session knows about the loop \u2014 the `the-loop` skill, the `/the-loop:*` commands, the SessionStart hook stating the operating rules \u2014 ships in the plugin; nothing else in the spawn path installs it, so on a machine where nobody ran `/plugin marketplace add` by hand the session worked its ticket as a plain agent. Before each spawn/respawn the dispatcher ensures the harness's USER SETTINGS file (`<config dir>/settings.json`, honouring `CLAUDE_CONFIG_DIR`) carries `extraKnownMarketplaces[\"the-loop\"]` and `enabledPlugins[\"the-loop@the-loop\"]: true` \u2014 exactly what `/plugin marketplace add` + `/plugin install` write. Writes are narrow and non-destructive, sharing `harnessTrust`'s writer: only those two keys, merged into what is already there, temp file + atomic replace, skipped entirely when both already hold a value, and never applied to a file that does not parse as JSON. An EXISTING value is never changed \u2014 a marketplace of yours keeps pointing where it points, and an `enabledPlugins` entry already set to `false` stays `false`. A failure logs a warning and emits `workspace.trust_failed` but never fails the dispatch; `cursor-agent` has no plugin-configuration surface and is a silent no-op. Independent of `harnessTrust`: either may be switched off without the other. NOTE the scope: `enabledPlugins` in the user settings file is USER-GLOBAL, so the plugin \u2014 skill, commands and its SessionStart hook \u2014 also loads in Claude Code sessions you start by hand, not only the ones the-loop spawns. `enabled: false` is the opt-out.",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true,
+              "description": "Default true \u2014 a spawned session that lacks the plugin is told to run a loop it does not have. Set false to leave your plugin configuration untouched; the session then relies on whatever the operator installed by hand (and on a repo-level `.claude/settings.json`, if the checkout ships one)."
+            },
+            "marketplaceRepo": {
+              "type": "string",
+              "default": "MadaraUchiha-314/the-loop",
+              "description": "The `owner/repo` the `the-loop` marketplace is registered from, written as `{\"source\": {\"source\": \"github\", \"repo\": \"<this>\"}}`. Point it at your fork to run that fork's plugin \u2014 which means running whatever code that repository ships, in every session on this machine. Validated as `owner/repo` (nothing else is written) and only ever read from THIS file, never from an event payload or a cloned repository. Set it to the empty string to enable the plugin without registering any marketplace, for an operator who adds the marketplace some other way."
+            }
+          }
+        },
         "reactions": {
           "type": "object",
           "description": "Dispatch-lifecycle emoji reactions on the triggering GitHub entity (issue-84): when the dispatcher picks an event up it reacts with `started` on the comment that triggered it (or the issue/PR itself for presence/label/review events), then `completed` or `error` from the dispatch outcome. Shared by the webhook receiver AND the poller (like the rest of `routing`). Best-effort via the operator's own `gh` CLI: a reaction failure never affects the dispatch, and a missing `gh`, a non-GitHub provider, or an event with no reactable target is a silent no-op. GitHub's reaction palette is fixed (+1 -1 laugh confused heart hooray rocket eyes) \u2014 \u2705/\u2049\ufe0f do not exist, so the defaults map each state to the closest supported emoji.",

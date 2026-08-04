@@ -78,7 +78,9 @@ def _build_dispatcher(
     routing = RoutingConfig.from_mapping(routing_map or {}, layout or _state_layout())
     dispatcher = Dispatcher(
         registry=SessionRegistry(routing.registry_dir),
-        adapters=build_adapters(routing.harness_args, routing.harness_trust),
+        adapters=build_adapters(
+            routing.harness_args, routing.harness_trust, routing.harness_plugins
+        ),
         config=routing,
     )
     return dispatcher, routing

@@ -7,7 +7,10 @@ project directory, hence the session's recorded ``cwd``.
 It is also the adapter that has something to prepare before a spawn: Claude
 Code's workspace-trust dialog and bypass-permissions disclaimer are not
 permission rules, so no CLI flag silences them and an unattended session stalls
-on them (issue-90). See :mod:`the_loop.trust`.
+on them (issue-90) — and the-loop's own plugin, which carries the skill, the
+commands and the hooks the spawn prompt assumes, has to be enabled or the
+session runs a loop it does not have (issue-143). See :mod:`the_loop.trust` and
+:mod:`the_loop.harness_plugins`.
 """
 
 from __future__ import annotations
@@ -15,6 +18,7 @@ from __future__ import annotations
 from typing import List, Optional
 
 from .base import HarnessAdapter
+from ..harness_plugins import ClaudePluginStore
 from ..sessions import Session
 from ..trust import ClaudeTrustStore, TrustResult, args_request_bypass
 
@@ -25,19 +29,29 @@ class ClaudeCodeAdapter(HarnessAdapter):
     model_flag = "--model"
 
     def prepare_environment(self, cwd: str, root: Optional[str] = None) -> TrustResult:
-        """Pre-trust ``cwd`` (and accept the bypass disclaimer when configured).
+        """Pre-trust ``cwd``, accept the bypass disclaimer, enable the plugin.
 
         ``root`` widens the trust entry to the workspace root — the dispatcher
         only passes one under ``scope: workspace-root``, and the store ignores a
         root that does not contain ``cwd``.
+
+        The plugin step (issue-143) is **independent** of trust: an operator who
+        trusts their checkouts by hand still wants the session to load the loop,
+        and one who declines the plugin still wants the trust write. ``merge``
+        keeps every note and the first error, so neither step can hide or block
+        the other.
         """
-        if not self.trust.enabled:
-            return TrustResult()
-        store = ClaudeTrustStore()
-        result = store.trust(cwd, root if self.trust.roots_allowed else None)
-        if self._wants_bypass():
-            # Independent files: a failed trust write must not skip this one.
-            result = result.merge(store.accept_bypass_permissions())
+        result = TrustResult()
+        if self.trust.enabled:
+            store = ClaudeTrustStore()
+            result = store.trust(cwd, root if self.trust.roots_allowed else None)
+            if self._wants_bypass():
+                # Independent files: a failed trust write must not skip this one.
+                result = result.merge(store.accept_bypass_permissions())
+        if self.plugins.enabled:
+            result = result.merge(
+                ClaudePluginStore().enable(self.plugins.marketplace_repo)
+            )
         return result
 
     def _wants_bypass(self) -> bool:

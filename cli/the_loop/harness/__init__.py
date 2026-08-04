@@ -18,18 +18,19 @@ __all__ = [
 ]
 
 
-def build_adapters(harness_args=None, trust=None):
+def build_adapters(harness_args=None, trust=None, plugins=None):
     """Adapters keyed by harness name, with per-harness extra CLI args.
 
-    ``trust`` is the ``routing.harnessTrust`` policy (issue-90); adapters use it
-    to decide what to pre-seed in their harness's own config before a spawn.
+    ``trust`` is the ``routing.harnessTrust`` policy (issue-90) and ``plugins``
+    the ``routing.harnessPlugins`` one (issue-143); adapters use them to decide
+    what to pre-seed in their harness's own config before a spawn.
     """
     harness_args = harness_args or {}
     return {
         "claude": ClaudeCodeAdapter(
-            extra_args=harness_args.get("claude") or [], trust=trust
+            extra_args=harness_args.get("claude") or [], trust=trust, plugins=plugins
         ),
         "cursor": CursorAgentAdapter(
-            extra_args=harness_args.get("cursor") or [], trust=trust
+            extra_args=harness_args.get("cursor") or [], trust=trust, plugins=plugins
         ),
     }
