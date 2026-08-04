@@ -1,3 +1,17 @@
+## v5.0.0 (2026-08-04)
+
+### BREAKING CHANGE
+
+- an operator relying on the shipped default keywords (never
+configured `keywords` explicitly) must now comment `the-loop start` (etc.)
+instead of `the-loop:start-execution` (etc.). Pin the old value explicitly
+in `webhooks.ghWebhook.routing.control.keywords` to keep the previous
+comment phrase.
+
+### Feat
+
+- **issue-135**: change the default session-control keywords to a short command form (#138)
+
 ## v4.2.0 (2026-08-03)
 
 ### Feat
