@@ -16,6 +16,49 @@ PR.
   recipient's enabled channels (issue-82, decision-035). Notification only; the
   decision itself still lands as a comment.
 
+## Where questions go, and where artifacts are iterated (issue-134)
+
+Two rules. The first is configurable, because only the operator knows where they are.
+The second is not, because it is a property of the artifact.
+
+### 1. The interaction channel is declared, not guessed
+
+A session driven by the CLI daemon is **told** where its answers come from, via
+`webhooks.ghWebhook.routing.interaction.mode` in the operator's `cli-config.yaml`
+(rendered into every event/spawn prompt as `$interaction_directive` —
+`reference/automation.md`):
+
+- **`work-item` (default)** — do not assume a human is watching this terminal. Every
+  question, clarification, decision or approval is asked as a **comment on the work item
+  or its PR** (marked as the-loop's own, per the loop-prevention rule below), and the
+  session then **stops and waits**: the reply reaches it as the next event. Never block
+  on an interactive prompt, and never read silence as consent — if genuinely blocked, log
+  the conflict, escalate once, and move to the next available work.
+- **`cli`** — a human is attached to this session's terminal, so ask there. This does not
+  waive the paper trail: the **outcome** of every human decision still lands on the work
+  item as a comment.
+
+When no daemon is involved (a human ran `/the-loop:work-on` themselves), the human is by
+definition at the terminal — that is `cli` behaviour, with the same paper-trail obligation.
+
+### 2. RULE: a generated artifact is iterated in pull-request review
+
+Once an artifact of the chain exists — `brainstorm.md`, `requirements.md`/`bugfix.md`,
+`design.md`, `tasks.md` — iteration on it happens **only** through review comments and
+replies on the pull request that carries it. In **both** modes; this one is not
+configurable.
+
+- Commit and push the artifact and open (or update) its PR; do not paste its contents into
+  a fresh ticket comment, and do not iterate on it interactively where the reasoning
+  vanishes with the scrollback.
+- This is the *reference, don't duplicate* rule (`SKILL.md`) reaching its conclusion: the
+  artifact is a checked-in file, so the review surface for a file is the PR that carries
+  it — the file, the discussion and the approval end up in one place.
+- Planning questions asked *before* any artifact exists still follow rule 1.
+
+See `docs/decisions/decision-051.md` for why the mode is a two-value enum and the artifact
+rule an invariant.
+
 ## RULE: mark every comment/reply as the-loop's own (loop prevention)
 
 The webhook/poller trigger paths react to their own repo's activity, but the harness

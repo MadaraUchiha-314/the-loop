@@ -58,6 +58,30 @@ webhooks:
           stop: "the-loop stop"
           pause: "the-loop pause"
           resume: "the-loop resume"
+      # Where a session the daemon drives takes its ANSWERS from (issue-134).
+      # Until this existed, a spawned session was never told whether a human was
+      # at its terminal, so the model guessed — and both guesses fail: a
+      # `process`-runner session asking interactively asks into a pipe nobody
+      # reads, while an operator sitting in an attached tmux pane gets
+      # round-tripped through GitHub for no reason.
+      #   work-item  every question is a comment on the issue/PR; the session
+      #              then waits, and the reply arrives as the next event.
+      #   cli        a human is attached to this session's terminal; ask there.
+      #              The decision's OUTCOME still lands on the ticket — the paper
+      #              trail is not waived by asking in a terminal.
+      # Default work-item because it fails safe: a tmux session is attachable,
+      # not attended. An unrecognised value resolves to work-item with a warning,
+      # never to cli. The resolved mode is rendered into every prompt through the
+      # $interaction_directive placeholder; a custom promptTemplate that omits it
+      # gets the directive APPENDED, so a template edit cannot strip the rule.
+      # Independent of the mode, iteration on a generated artifact (brainstorm.md,
+      # requirements.md/bugfix.md, design.md, tasks.md) always happens in
+      # pull-request review — an invariant of the loop (decision-051).
+      # NOTE: like everything under `routing`, this is NOT webhook-only — the
+      # poller reads this same block verbatim for dispatch, so one declaration
+      # governs both ingresses (`poll._load_config_defaults`).
+      interaction:
+        mode: work-item             # work-item | cli
       # Drive the-loop's PROCESS GRAPH from ingress events (issue-113). Without this,
       # the graph only moved when a human ran `the-loop graph advance`: a spawned
       # session left the work item's graph unentered (so the entry hooks never wrote

@@ -32,6 +32,33 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   `the-loop: auto-execute` label) using the configured prompt templates — **and, since
   issue-106, only once an authorized user has explicitly started the work item** (see
   *Execution control* below).
+- **Every rendered prompt states where the session takes its answers from** (issue-134,
+  `routing.interaction.mode`, [decision-051](../decisions/decision-051.md)).
+  - WHEN a prompt is rendered — an event prompt or a spawn prompt, either runner, either
+    ingress — THEN the resolved mode's directive SHALL be substituted into the
+    `$interaction_directive` placeholder, **above** the untrusted payload excerpt.
+  - WHEN the mode is `work-item` (**the default**) THEN the directive SHALL tell the agent
+    not to assume a human is watching its terminal: every question is a **comment on the work item or
+    its PR**, marked as the-loop's own, after which the session waits for the reply to
+    arrive as the next event — never blocking on an interactive prompt, never reading
+    silence as consent. WHEN it is `cli` THEN the agent SHALL ask interactively **and**
+    still record each decision's outcome on the work item.
+  - IF the configured `promptTemplate`/`spawnPromptTemplate` does not declare the
+    placeholder THEN the directive SHALL be **appended** to the rendered prompt: a custom
+    template — every template written before issue-134 included — must not be able to
+    strip the rule silently.
+  - IF `interaction.mode` carries an undeclared value THEN it SHALL resolve to
+    `work-item` with a warning, never to `cli`: a wrong `work-item` leaves a visible
+    comment awaiting a reply, a wrong `cli` leaves a question in a void. The directive is
+    a **constant per mode** — it interpolates nothing, so no payload text can reach it.
+  - IF the mode is `cli` WHILE `routing.runner` is `process` THEN the-loop SHALL warn —
+    a headless one-shot session has no terminal to be asked in — without refusing or
+    overriding the operator's declaration.
+  - WHEN a session is spawned THEN `session.spawned` SHALL carry the resolved mode.
+  - **Independently of the mode**, iteration on a generated artifact (`brainstorm.md`,
+    `requirements.md`/`bugfix.md`, `design.md`, `tasks.md`) happens **only** in
+    pull-request review on the PR carrying it — an invariant of the loop stated in the
+    skill (`reference/collaboration.md`), restated in every rendered prompt.
 - **Execution control: the label is necessary, not sufficient** (issue-106,
   `routing.control`). The label says *which* items may run and `authorizedUsers` says
   *who* may be an input; four declared keywords say *when*:
@@ -254,6 +281,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-134 | A spawned session is told **where its answers come from** instead of guessing: `routing.interaction.mode` (`work-item` default, or `cli`) is rendered into every prompt through `$interaction_directive`, appended when a custom template omits the placeholder, and reported on `session.spawned`; artifact iteration in pull-request review became a stated invariant of the loop | [spec](../specs/issue-134/), [decision-051](../decisions/decision-051.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/134) |
 | issue-135 | The default execution-control keywords changed shape from colon-joined (`the-loop:start-execution`) to a short command (`the-loop start`); the vocabulary, matching semantics and trust boundary from issue-106 are unchanged, and an operator's own explicit `keywords` override is unaffected | [spec](../specs/issue-135/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/135) |
 | issue-123 | The graph coupling stopped sourcing a repo-scoped fact from the operator's machine: `routing.graph.specDir` became an optional override, so each watched repository's own `workflow.specDir` is honoured, and a spec-directory skip is recorded as `graph.skipped` rather than a debug line under a successful delivery | [spec](../specs/issue-123/), [decision-044](../decisions/decision-044.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/123) |
 | issue-119 | The poll path stopped swallowing a control command that predates first sight: unprocessed, authorized, unambiguous keyword comments are held back from the first-sight baseline and forwarded on the same cycle, so a labelled item whose start comment already existed actually starts | [spec](../specs/issue-119/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/119) |

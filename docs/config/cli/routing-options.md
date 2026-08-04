@@ -423,6 +423,47 @@ Set a repo-relative path to override.
 `string.Template` rendered into the prompt for a **newly spawned** (auto-execute) session —
 it kicks off the `work-on` flow. Same fallback behaviour as `promptTemplate`.
 
+### `interaction.mode`
+
+- **Type:** `string` (`work-item` | `cli`)
+- **Default:** `work-item`
+- **Related:** [decision-051](/decisions/decision-051) ·
+  [webhook-triggers](/capabilities/webhook-triggers)
+
+Where a session the daemon drives takes its **answers** from. Before this existed, a
+spawned session was never told whether a human was at its terminal, so the model guessed —
+and both guesses fail. A `process`-runner session asking interactively asks into a pipe
+nobody reads; an operator sitting in an attached tmux pane gets round-tripped through
+GitHub for no reason.
+
+| Mode | The agent asks… | Still records the decision on the ticket? |
+|------|-----------------|------------------------------------------|
+| `work-item` (default) | as a comment on the issue/PR, then **waits** — the reply arrives as the next event | yes (it *is* the comment) |
+| `cli` | interactively, in its own session | yes — the outcome, as a comment |
+
+The resolved mode reaches the agent through the `$interaction_directive` placeholder in
+[`promptTemplate`](#prompttemplate) / [`spawnPromptTemplate`](#spawnprompttemplate). A
+custom template that omits the placeholder gets the directive **appended** rather than
+dropped, so the rule cannot be lost to a template edit. The mode also appears on
+`session.spawned` in [`the-loop events`](/cli/commands/events).
+
+::: tip Why the default is `work-item`
+A tmux session is *attachable*, not *attended* — the-loop announces the `tmux attach`
+command precisely because nobody is there yet. So the default is the channel that reaches
+a human who was not watching. An unrecognised value resolves to `work-item` with a warning,
+never to `cli`: a wrong `work-item` leaves a visible comment awaiting a reply, a wrong `cli`
+leaves a question in a void.
+
+Setting `cli` while [`runner`](#runner) is `process` warns at startup and on reload: a
+headless one-shot session has no terminal for a human to answer in. A warning, not a
+refusal — your declaration stands.
+:::
+
+Independent of the mode, iteration on a **generated artifact** (`brainstorm.md`,
+`requirements.md`/`bugfix.md`, `design.md`, `tasks.md`) always happens in pull-request
+review. That is an invariant of the loop rather than a setting — see the skill's
+`reference/collaboration.md`.
+
 ### `harnessTrust.enabled`
 
 - **Type:** `boolean`
@@ -611,7 +652,8 @@ Timeout for a single harness resume/spawn subprocess.
 
 While the receiver runs, edits to `routing` and `events` are picked up on the **next
 received event** — no restart. The soft policy swaps live: the events filter, the label,
-the spawn policy, harness and runner, per-harness args, prompt templates. The dedup cache,
+the spawn policy, harness and runner, per-harness args, prompt templates, the interaction
+mode. The dedup cache,
 the per-session queues and the registry are preserved.
 
 These still need a restart, because they are infrastructural:

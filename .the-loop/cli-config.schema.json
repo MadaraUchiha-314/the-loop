@@ -154,6 +154,19 @@
                     }
                   }
                 },
+                "interaction": {
+                  "type": "object",
+                  "description": "Where a session the daemon drives takes its answers FROM (issue-134). Until this existed, a spawned session was never told whether a human was at its terminal, so the model guessed — and both guesses fail: a `process`-runner session asking interactively asks into a pipe nobody reads, while an operator sitting in an attached tmux pane gets round-tripped through GitHub for no reason. The resolved mode is rendered into every event and spawn prompt through the `$interaction_directive` placeholder; a custom promptTemplate that omits the placeholder gets the directive APPENDED, so the rule cannot be stripped by a template edit. Independent of the mode, iteration on a generated artifact (brainstorm.md, requirements.md/bugfix.md, design.md, tasks.md) always happens in pull-request review — an invariant of the loop, not a setting (decision-051).",
+                  "additionalProperties": false,
+                  "properties": {
+                    "mode": {
+                      "type": "string",
+                      "enum": ["work-item", "cli"],
+                      "default": "work-item",
+                      "description": "`work-item`: every question the agent needs answered is posted as a comment on the work item (or its PR) and the session waits for the reply to arrive as a new event. `cli`: a human is attached to the session's terminal, so questions are asked there — the decision's OUTCOME still lands on the work item, because the paper trail is not waived by asking in a terminal. Default `work-item` because it fails safe: a tmux session is attachable, not attended (the-loop announces the attach command precisely because nobody is there yet), so the default must be the channel that reaches a human who was not watching. An unrecognised value resolves to `work-item` with a warning, never to `cli`. `cli` combined with `runner: process` also warns: a headless one-shot session has no terminal for a human to answer in. That one is a warning rather than a refusal \u2014 the operator may be piping the harness somewhere the-loop cannot see."
+                    }
+                  }
+                },
                 "graph": {
                   "type": "object",
                   "description": "Whether dispatch also drives the-loop's process graph (issue-113). Before this, the ingress and the graph never met: spawning a session left the work item's graph unentered (so the `loop:<phase>` labels were never written by the entry hooks), and an arriving comment never reached the human gate waiting for it. With this enabled, a spawn enters the graph's start node and a delivered event advances at most one node boundary, carrying the event's comments to the gate's `classify-feedback`. It is best-effort: a graph failure is logged (`graph.link_failed`) and never costs the delivery. The same block serves the poller, which reuses this routing config.",
