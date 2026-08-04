@@ -20,7 +20,7 @@ from .. import eventlog
 from .chain import ChainOutcome, run_chain
 from .contract import BLOCK, PASS, SKIP, WAIT, HookContext, WorkItem
 from .model import Graph, load_graph
-from .state import GraphState, utc_now
+from .state import GraphState, StateLockBusy, state_lock, utc_now
 
 logger = logging.getLogger("the-loop.graph")
 
@@ -262,6 +262,93 @@ class Runtime:
             attempts=state.record(node_id).attempts,
         )
 
+    def complete(
+        self,
+        work_item_id: str,
+        ref: str = "",
+        node: str = "",
+        actor: str = "",
+    ) -> Dict[str, Any]:
+        """A completion **claim**: the session says a node's work is done (issue-148).
+
+        The claim carries no verdict and no event text — it is a prompt to run
+        the current node's exit chain, nothing more (R1.2). The chain reads
+        checked-in artifacts; a claim for work that is not actually done blocks
+        on exactly what it would block on anyway.
+
+        Claims name the node they are about (R1.4/R1.5): a replayed claim for a
+        node the pointer has already left is a recorded no-op, and a claim for a
+        node that is neither current nor past is refused naming the current one.
+        The whole load→evaluate→save window runs under the graph-state lock —
+        this verb is the second writer beside the daemon's GraphLink.
+        """
+        item = self.work_item(work_item_id, ref)
+        try:
+            with state_lock(item.spec_dir):
+                return self._complete_locked(item, work_item_id, ref, node, actor)
+        except StateLockBusy:
+            return {
+                "node": node or "",
+                "status": "busy",
+                "outcome": "",
+                "moved": False,
+                "currentNode": "",
+                "messages": ["another the-loop process holds the graph-state lock"],
+                "reason": "busy",
+            }
+
+    def _complete_locked(
+        self, item: WorkItem, work_item_id: str, ref: str, node: str, actor: str
+    ) -> Dict[str, Any]:
+        state = GraphState.load(item.spec_dir, work_item_id)
+        if not state.current_node:
+            return {
+                "node": node or "",
+                "status": "refused",
+                "outcome": "",
+                "moved": False,
+                "currentNode": "",
+                "messages": [
+                    "this work item has not entered the graph; nothing to complete"
+                ],
+                "reason": "not-started",
+            }
+        current = state.current_node
+        claimed = node or current
+        order = [n.id for n in self.graph.ordered()]
+        if claimed != current:
+            past = (
+                claimed in order
+                and current in order
+                and order.index(claimed) < order.index(current)
+            )
+            reason = "already-past" if past else "not-current"
+            return {
+                "node": claimed,
+                "status": "noop" if past else "refused",
+                "outcome": "",
+                "moved": False,
+                "currentNode": current,
+                "messages": [
+                    f"the current node is {current!r}"
+                    + (" and the claimed node is behind it" if past else "")
+                ],
+                "reason": reason,
+            }
+        state.completions[claimed] = {"at": utc_now(), "by": actor or "cli"}
+        state.save(item.spec_dir)
+        report = self.advance(work_item_id, ref=ref)
+        after = GraphState.load(item.spec_dir, work_item_id).current_node
+        return {
+            "node": claimed,
+            "status": report.status,
+            "outcome": report.outcome,
+            "moved": after != current,
+            "currentNode": after,
+            "messages": report.messages,
+            "reason": "",
+        }
+
     def advance(
         self,
         work_item_id: str,
@@ -348,6 +435,19 @@ class Runtime:
         state.enter(target)
         state.save(item.spec_dir)  # persist BEFORE any dependent side effect (R8.2)
         entry_node = self.graph.node(target)
+        if entry_node.actor == "human":
+            # `session: inherit` honoured for real (issue-148, R5): decide which
+            # session this gate runs in, and record how it was arrived at. The
+            # registry stays the dispatch authority — this is the graph's own
+            # binding, consulted and logged, not a routing override.
+            binding, how = self.resolve_session(entry_node, state)
+            eventlog.emit(
+                "graph.gate_session",
+                work_item=item.ref,
+                node=target,
+                resolution=how,
+                session=(binding or {}).get("id") or None,
+            )
         run_chain(entry_node.entry, self._context(item, entry_node, "entry"))
         eventlog.emit(
             "graph.advanced",

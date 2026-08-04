@@ -8,6 +8,7 @@ remembers to move.
 the-loop graph [--repo .] show   [--format text|json]
 the-loop graph [--repo .] status <work-item>
 the-loop graph [--repo .] advance <work-item> [--ref REF]
+the-loop graph [--repo .] complete <work-item> [--node NODE] [--actor WHO] [--ref REF]
 the-loop graph [--repo .] run    <work-item> [--ref REF] [--max-nodes 20] [--dry-run]
 the-loop graph [--repo .] force  <work-item> --to NODE --reason TEXT [--actor WHO] [--ref REF]
 ```
@@ -66,6 +67,26 @@ Evaluate the current node and take the matching edge — **one** boundary.
 
 Prints `<work-item>: <node> → <status>` plus any messages. Exit `0` for `pass` or `wait`,
 `1` otherwise.
+
+## `complete`
+
+The node-completion **claim** (issue-148): the working session — or you — says "this
+node's work is done", and the graph decides. The current node's exit chain is evaluated
+against the checked-in artifacts and the matching edge taken only when it passes. The
+claim carries no verdict: claiming completion of unfinished work blocks on exactly what
+it would block on anyway.
+
+| Flag | Default | Meaning |
+|------|---------|---------|
+| `--node` | current | The node being claimed. A claim for a node the pointer already left is a recorded no-op (`already-past`); any other non-current node is refused naming the current one. |
+| `--actor` | `cli` | Recorded in the state's `completions` ledger. |
+| `--ref` | `""` | Work-item ref for integrations. |
+
+Output is **one JSON envelope** — `{node, status, outcome, moved, currentNode,
+messages, reason}` — and the exit code is `0` whether or not the pointer moved: a
+refusal or a block is a result the caller acts on, not a CLI error. The prompt every
+driven session receives names this verb, so an agent finishing a phase reports it here
+rather than only narrating it.
 
 ## `run`
 

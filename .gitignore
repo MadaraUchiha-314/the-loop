@@ -248,3 +248,7 @@ cli/.pytest_cache/
 node_modules/
 docs/.vitepress/cache/
 docs/operating-model/reference/
+
+# the-loop: per-work-item advisory lock beside graph-state.json (issue-148) —
+# runtime coordination only, never part of the record
+graph-state.lock

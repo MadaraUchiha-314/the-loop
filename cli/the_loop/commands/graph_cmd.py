@@ -196,6 +196,25 @@ class GraphCommand(Command):
         advance.add_argument("work_item")
         advance.add_argument("--ref", default="", help="work item ref for integrations")
 
+        complete = sub.add_parser(
+            "complete",
+            help=(
+                "claim the current node's work is done: evaluate its exit chain "
+                "and advance if it passes (issue-148). The claim is a prompt to "
+                "evaluate, never a verdict — output is one JSON envelope."
+            ),
+        )
+        complete.add_argument("work_item")
+        complete.add_argument(
+            "--node",
+            default="",
+            help="the node being claimed (default: the current node)",
+        )
+        complete.add_argument(
+            "--ref", default="", help="work item ref for integrations"
+        )
+        complete.add_argument("--actor", default="", help="who is claiming completion")
+
         forced = sub.add_parser(
             "force",
             help="move a work item to a node regardless of gates (escape hatch)",
@@ -274,6 +293,17 @@ class GraphCommand(Command):
             for message in result.messages:
                 print(f"  · {message}")
             return 0 if result.status in ("pass", "wait") else 1
+
+        if args.action == "complete":
+            # One JSON envelope on stdout, machine-readable (R1.3). A refusal
+            # or a block is a *result* the agent acts on, not a CLI error —
+            # exit 0 either way; non-zero is reserved for not being able to
+            # answer at all.
+            result = runtime.complete(
+                args.work_item, ref=args.ref, node=args.node, actor=args.actor
+            )
+            print(json.dumps(result, indent=2))
+            return 0
 
         if args.action == "run":
             return self._run_loop(runtime, args)

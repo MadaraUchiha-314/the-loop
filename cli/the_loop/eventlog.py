@@ -336,6 +336,11 @@ EVENT_TYPES: Dict[str, str] = {
         "so `check --recompute` still reports it (work_item, from, to, actor, "
         "reason)."
     ),
+    "graph.gate_session": (
+        "A human gate was entered and its session resolved per `session: "
+        "inherit` — inherited, or fresh-with-artifacts when the producing "
+        "session is gone (work_item, node, resolution, session). issue-148."
+    ),
 }
 
 

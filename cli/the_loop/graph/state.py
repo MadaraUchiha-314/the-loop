@@ -13,21 +13,66 @@ cannot thereby pass a gate.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
 import tempfile
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional
 
 logger = logging.getLogger("the-loop.graph")
 
-__all__ = ["GraphState", "STATE_FILENAME", "utc_now"]
+__all__ = ["GraphState", "STATE_FILENAME", "StateLockBusy", "state_lock", "utc_now"]
 
 STATE_FILENAME = "graph-state.json"
+LOCK_FILENAME = "graph-state.lock"
 STATE_VERSION = 1
+
+
+class StateLockBusy(RuntimeError):
+    """Another writer holds the graph-state lock (issue-148)."""
+
+
+@contextlib.contextmanager
+def state_lock(spec_dir: Path, timeout: float = 2.0) -> Iterator[None]:
+    """Advisory lock serialising graph-state writers (issue-148, D-concurrency).
+
+    `graph-state.json` has two writers now — the daemon's GraphLink and the
+    session's `the-loop graph complete` — so the load→mutate→save window is
+    held under an `fcntl.flock` on a sibling lock file. Stdlib only; where
+    `fcntl` does not exist (non-POSIX) this degrades to no locking, which is
+    acceptable because claims are idempotent and evaluation re-derives from
+    artifacts: a lost update costs a re-run, never a wrong pointer.
+
+    Raises :class:`StateLockBusy` when the lock cannot be taken within
+    ``timeout`` — callers report "busy" rather than blocking a poll cycle.
+    """
+    try:
+        import fcntl
+    except ImportError:  # non-POSIX: documented no-op fallback
+        yield
+        return
+    spec_dir.mkdir(parents=True, exist_ok=True)
+    with open(spec_dir / LOCK_FILENAME, "w", encoding="utf-8") as fh:
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise StateLockBusy(
+                        f"could not lock {spec_dir / LOCK_FILENAME} within {timeout}s"
+                    ) from None
+                time.sleep(0.05)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)
 
 
 def utc_now() -> str:
@@ -74,6 +119,7 @@ class GraphState:
     forced: List[Dict[str, Any]] = field(default_factory=list)
     parked: Optional[Dict[str, Any]] = None
     session: Optional[Dict[str, Any]] = None
+    completions: Dict[str, Any] = field(default_factory=dict)
     version: int = STATE_VERSION
 
     # -- persistence ----------------------------------------------------------
@@ -114,6 +160,7 @@ class GraphState:
             forced=list(data.get("forced") or []),
             parked=data.get("parked"),
             session=data.get("session"),
+            completions=dict(data.get("completions") or {}),
             version=int(data.get("version", STATE_VERSION)),
         )
 
@@ -142,6 +189,7 @@ class GraphState:
             "forced": self.forced,
             "parked": self.parked,
             "session": self.session,
+            "completions": self.completions,
         }
 
     # -- mutation -------------------------------------------------------------

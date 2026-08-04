@@ -71,6 +71,14 @@ until the current phase is approved; record the approver (paper trail).
 
 ## Phase state machine (tracked on the ticket via labels)
 
+**The sequence below is defined by the shipped process graph**
+(`cli/the_loop/graph/pdlc.yaml`) — this reference renders it, never redefines it,
+and `cli/tests/test_graph_parity.py` (P4) enforces the agreement in both
+directions (issue-148). On the automated path the graph's own entry hooks write
+the label and the log checkpoint at each boundary; when a node's work is done,
+run `the-loop graph complete <id>` so the graph evaluates the gate and advances
+— the pointer is the authority on which phase an item is in.
+
 Label = `<workflow.phaseLabelPrefix><phase>` (e.g. `loop:design`). Keep the label in
 sync at every transition and mirror it in the execution log's `phase` front-matter.
 
