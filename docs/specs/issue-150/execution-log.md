@@ -10,8 +10,8 @@ status: in-progress
 > Append-only log of progress for the user's visibility. Checked in alongside the spec
 > at `docs/specs/issue-150/execution-log.md`.
 
-Tier 1–2 (trivial docs/diagram change, `autonomy.tiers` → autonomous-complete): no full
-3-phase spec; this execution log is the paper trail.
+Tier 1–2 (trivial docs/diagram change, `autonomy.tiers` → autonomous-complete): the
+3-phase spec is compact, locked on the operator's direct request, and iterated on the PR.
 
 ## Phase transitions
 
@@ -54,6 +54,12 @@ Tier 1–2 (trivial docs/diagram change, `autonomy.tiers` → autonomous-complet
 |-------|-----------------------------|----------|---------|------|
 | 1 | self (visual + content diff vs mermaid) | agent | new findings (label overflow, zone-title collision) — fixed | PR #151 |
 | 2 | self (re-render) | agent | zero (converged) | PR #151 |
+
+## Capability docs
+
+No capability's current behaviour changes — the README's hero diagram is
+presentation, not a capability. No `docs/capabilities/` doc references the mermaid
+block. Nothing to update.
 
 ## Security review (gate)
 
