@@ -1,3 +1,9 @@
+## v5.2.1 (2026-08-04)
+
+### Fix
+
+- **issue-136**: trust the spawn directory itself, not only its workspace root (#140)
+
 ## v5.2.0 (2026-08-04)
 
 ### Feat
