@@ -141,14 +141,16 @@ webhooks:
       # widens permissions you didn't request. Set enabled: false to opt out.
       harnessTrust:
         enabled: true
-        # scope: workspace-root (default) writes ONE trust entry on
-        # workspace.root — the harness walks up from the cwd, so every checkout
-        # beneath it is covered, including folders the-loop never spawned into.
-        # directory trusts only the exact spawn dir (least privilege) — use it
-        # when the root holds more than the-loop's checkouts. Either way the
-        # per-directory write stays: the onboarding key is NOT ancestor-
-        # inherited. A root that doesn't contain the spawn dir, or one as broad
-        # as / or $HOME, degrades to per-directory trust.
+        # The spawn dir itself is ALWAYS trusted (issue-136): the check that
+        # decides whether the dialog appears for a repo shipping
+        # .claude/settings.json grants reads the exact project key with no
+        # ancestor walk, and neither does the onboarding key. scope only decides
+        # whether trust ADDITIONALLY widens: workspace-root (default) writes a
+        # second entry on workspace.root, so the harness's upward lookup covers
+        # every checkout beneath it including folders the-loop never spawned
+        # into; directory stops at the spawn dir (least privilege) — use it when
+        # the root holds more than the-loop's checkouts. A root that doesn't
+        # contain the spawn dir, or one as broad as / or $HOME, is dropped.
         scope: workspace-root           # workspace-root | directory
         acceptBypassPermissions: auto   # auto | always | never
       # Dispatch-lifecycle emoji reactions (issue-84): acknowledge on the triggering
