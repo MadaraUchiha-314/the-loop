@@ -25,7 +25,7 @@ status: in-progress
 
 | PR | Scope / tasks | Status |
 |----|---------------|--------|
-| — | Phase-1 requirements artifact | to be opened |
+| [#149](https://github.com/MadaraUchiha-314/the-loop/pull/149) | Phase-1 requirements artifact | open, in review |
 
 ## Progress entries
 
@@ -42,3 +42,18 @@ status: in-progress
   must survive the inversion (R7). Risk tier 5.
 - **Checkpoint/tests:** none yet (no code). Next: human review of requirements on the PR;
   do not derive `design.md` until locked.
+
+### 2026-08-04 — artifact finalized for review; gate green
+
+- **Phase:** requirements-definition
+- **Did:** The CI gate (`the-loop check --recompute --fail-on block`) blocked on
+  `status: draft` — by design: the requirements node's exit chain requires the lock,
+  and the *human* gate is the next node, exercised as the PR review (precedent:
+  issue-142). Finalized the artifact (`status: approved`, `approvedBy` deferred to the
+  PR review) and re-ran the gate locally: the item now parks at `requirements-approval`
+  waiting on a human, which `--fail-on block` treats as the normal state of an open PR.
+  Tier 5 still means a human must approve this phase on [PR #149] before design begins.
+- **Checkpoint/tests:** `uv run the-loop check issue-148 --recompute --fail-on block`
+  green locally; markdownlint clean.
+
+[PR #149]: https://github.com/MadaraUchiha-314/the-loop/pull/149
