@@ -124,23 +124,31 @@ the same conversation.
   above as well as the fresh-conversation fallback) — the harness's own user config
   SHALL be pre-seeded so the session does not
   open on an interactive dialog (`routing.harnessTrust`, default on). For Claude Code
-  that means writing `hasTrustDialogAccepted` — on the **workspace root** under the
-  default `scope: workspace-root`, so every checkout beneath it is covered by the
-  harness's ancestor walk, or on the exact spawn directory under `scope: directory`
-  (least privilege) — plus `hasCompletedProjectOnboarding` on the **spawn directory**
-  under either scope, since that key has no ancestor walk and root trust alone would
-  just reveal the onboarding screen. A root that does not contain the spawn directory,
-  or one as broad as `/` or the home directory, degrades to per-directory trust.
-  All honouring `CLAUDE_CONFIG_DIR`. And, **only** when this harness's
+  that means writing **both** `hasTrustDialogAccepted` and
+  `hasCompletedProjectOnboarding` on the **exact spawn directory**, under **every**
+  `scope`, because the harness reads each of those keys from the exact project key on at
+  least one path: the check that gates the dialog for a repo shipping
+  `.claude/settings.json` grants does not walk ancestors, and neither does onboarding.
+  `scope` decides only whether trust *additionally* widens — the default
+  `workspace-root` writes a second `hasTrustDialogAccepted` entry on the workspace root,
+  so the harness's ancestor walk covers checkouts the-loop never spawned into;
+  `scope: directory` trusts the spawn directory alone (least privilege). A root that
+  does not contain the spawn directory, or one as broad as `/` or the home directory, is
+  dropped and only the spawn directory is trusted. Trust is what lets a checkout's own
+  `.claude/settings.json` pre-approve tool permissions and add directories, so
+  pre-trusting a clone honours grants authored by anyone who can push to that repository
+  — `enabled: false` is the opt-out. All honouring `CLAUDE_CONFIG_DIR`. And, **only**
+  when this harness's
   `harnessArgs` already ask for bypass mode, recording the bypass-permissions
   disclaimer acceptance (`acceptBypassPermissions: auto`; `always`/`never` decide
   explicitly). Neither dialog is a permission rule, so no CLI flag —
   `--dangerously-skip-permissions` included — silences them. Writes touch only those
   keys, merge into what is already there, go through a temp file + atomic replace, are
   **skipped entirely** when the value is already correct, and are never applied to a
-  file that does not parse as JSON. Applied changes emit `workspace.trusted`; a
-  failure warns, emits `workspace.trust_failed` and still spawns. A harness with no
-  such config surface (cursor-agent) is a silent no-op.
+  file that does not parse as JSON. Applied changes emit `workspace.trusted` naming
+  **every** directory that was trusted; a failure warns, emits `workspace.trust_failed`
+  and still spawns. A harness with no such config surface (cursor-agent) is a silent
+  no-op.
 - WHEN `routing.runner` is `process` or unset THEN behaviour SHALL be identical to the
   pre-issue-32 receiver; registry files from before issue-32 remain readable, and a
   registry may mix process- and tmux-mode sessions (the session's recorded runner
@@ -155,6 +163,7 @@ the same conversation.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-136 | Fixed the pre-spawn trust write missing the checkout it was for: the trust key has a second reader that does **not** walk ancestors, so the default `scope: workspace-root` left every checkout of a repo shipping `.claude/settings.json` grants on the dialog. Both keys are now written on the exact spawn directory under every scope; `scope` only widens | [spec](../specs/issue-136/), [decision-052](../decisions/decision-052.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/136) |
 | issue-137 | `sessions reset` ends a live session through that same close path and then **deletes** its registry record, so the work item starts over on a fixed CLI; a tmux session retained by policy outlives the record and is read back with `tmux attach -r -t loop-<slug>` | [spec](../specs/issue-137/), [decision-050](../decisions/decision-050.md), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/137) |
 | issue-106 | `paused` sessions (delivery suppressed, tmux session and conversation untouched) and `sessions stop`, which ends a session through the same close path a merge takes | [spec](../specs/issue-106/), [decision-040](../decisions/decision-040.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/106) |
 | issue-104 | The session-announcement comment is now marked as the-loop's own, so the poller stops pasting "the-loop started an interactive session for …" into that very session | [spec](../specs/issue-104/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/104) |

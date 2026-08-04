@@ -27,25 +27,38 @@ configuration: only the keys above, merged into whatever is already there,
 via a temp file + atomic replace, and **not written at all** when the value is
 already correct. A file that does not parse is reported, never overwritten.
 
-**Scope** (`routing.harnessTrust.scope`, owner decision on PR #92) is the one
-real choice here, and it hinges on the two keys being read differently:
+**Every key above is written on the exact spawn directory, always** — because
+the harness reads each of them from the exact project key somewhere:
 
-* the harness's trust lookup walks **up** from the cwd, so a single entry on the
-  **workspace root** covers every checkout beneath it — including folders
-  the-loop never spawned into. That is the default (``workspace-root``): a
-  workspace the operator already dedicated to the-loop is trusted once.
-* ``hasCompletedProjectOnboarding`` has **no** ancestor walk (the harness reads
-  it from the exact project key), so it is written per spawn directory
-  regardless of scope. Root trust alone would silence the trust dialog and leave
-  the onboarding screen behind it.
+* ``hasTrustDialogAccepted`` has **two** readers. The base "is this workspace
+  trusted" check walks **up** from the cwd, so an entry on an ancestor covers
+  everything beneath it. But the check that decides whether the dialog is shown
+  anyway — and whether a repository's own ``.claude/settings.json``
+  ``permissions.allow`` / ``additionalDirectories`` load at all — reads the
+  **exact** project key with **no** walk. A checkout of a repo that ships those
+  grants therefore still opens on the dialog when only an ancestor is trusted
+  (issue-136), and the harness says so itself: *"set
+  projects[<the checkout>].hasTrustDialogAccepted: true"*.
+* ``hasCompletedProjectOnboarding`` has no ancestor walk either, so root trust
+  alone would silence the trust dialog and leave the onboarding screen behind it
+  (issue-90).
 
-``scope: directory`` keeps trust on the exact spawn directory only — least
-privilege, one entry per work item, and the right choice when the workspace root
-holds more than the-loop's own checkouts. Either way a root that does not
-contain the spawn directory, or one broad enough to be meaningless (``/``, the
-home directory itself), degrades to per-directory trust.
+**Scope** (`routing.harnessTrust.scope`, owner decision on PR #92) therefore
+decides only whether trust *additionally* widens to an ancestor:
 
-Spec: docs/specs/issue-90/design.md (decision-037).
+* ``workspace-root`` (the default) also writes ``hasTrustDialogAccepted`` on the
+  **workspace root**, so the base check's ancestor walk covers every checkout
+  beneath it — including folders the-loop never spawned into.
+* ``directory`` keeps trust on the exact spawn directory only — least privilege,
+  one entry per work item, and the right choice when the workspace root holds
+  more than the-loop's own checkouts.
+
+Either way a root that does not contain the spawn directory, or one broad enough
+to be meaningless (``/``, the home directory itself), is dropped and only the
+spawn directory is trusted.
+
+Spec: docs/specs/issue-90/design.md (decision-037), revised by
+docs/specs/issue-136/design.md (decision-052).
 """
 
 from __future__ import annotations
@@ -365,30 +378,33 @@ class ClaudeTrustStore:
     def trust(self, cwd: str, root: Optional[str] = None) -> TrustResult:
         """Mark ``cwd`` usable by the harness without an interactive dialog.
 
-        Two keys, with **different scoping rules**, because the harness reads
-        them differently:
+        Both keys are **always** written on ``cwd``, because the harness reads
+        each of them from the exact project key on at least one path:
 
-        * ``hasTrustDialogAccepted`` — the harness's trust lookup walks *up*
-          from the cwd, so an entry on ``root`` covers every directory beneath
-          it, including checkouts the-loop never spawned into. Written on
-          ``root`` when one is given (``scope: workspace-root``), else on
-          ``cwd``.
-        * ``hasCompletedProjectOnboarding`` — read from the **exact** project
-          key with no ancestor walk, so it is always written on ``cwd``.
-          Otherwise removing the trust dialog would just reveal the onboarding
-          screen behind it in every fresh checkout.
+        * ``hasTrustDialogAccepted`` — the base trust check walks *up* from the
+          cwd, but the check gating the dialog for a repository that ships
+          ``.claude/settings.json`` grants does not (issue-136). An ancestor
+          entry alone leaves that gate — and the dialog — in place.
+        * ``hasCompletedProjectOnboarding`` — no ancestor walk at all, so
+          removing the trust dialog would otherwise just reveal the onboarding
+          screen behind it in every fresh checkout (issue-90).
 
-        A ``root`` that does not actually contain ``cwd`` is ignored (falling
-        back to ``cwd``): trusting an unrelated tree is never what the caller
+        ``root`` (``scope: workspace-root``) *adds* a second trust entry on the
+        workspace root, so the base check's ancestor walk covers checkouts
+        the-loop never spawned into. A ``root`` that does not actually contain
+        ``cwd`` is dropped: trusting an unrelated tree is never what the caller
         meant.
         """
         if not str(cwd or "").strip():
             return TrustResult(ok=False, error="no working directory to trust")
         onboarding_keys = self.project_keys(cwd)
+        trust_keys = list(onboarding_keys)
+        root_keys: List[str] = []
         if root and str(root).strip() and is_within(root, cwd):
-            trust_keys = self.project_keys(str(root))
-        else:
-            trust_keys = onboarding_keys
+            root_keys = [
+                key for key in self.project_keys(str(root)) if key not in trust_keys
+            ]
+            trust_keys += root_keys
 
         def mutate(data: dict) -> bool:
             projects = data.get("projects")
@@ -404,11 +420,13 @@ class ClaudeTrustStore:
 
         result = _update_json(self.config_path(), mutate)
         if result.applied:
-            scope = (
-                f"{trust_keys[0]} (and everything under it)"
-                if trust_keys is not onboarding_keys
-                else trust_keys[0]
-            )
+            # Name every directory that was trusted, not just the widest one:
+            # `workspace.trusted` is the audit trail for a config the operator
+            # owns, so it has to show the real scope. Realpath aliases stay out
+            # — the same directory under a second name is noise, not scope.
+            scope = onboarding_keys[0]
+            if root_keys:
+                scope += f" and {root_keys[0]} (and everything under it)"
             result = TrustResult(applied=[f"trusted {scope} in {self.config_path()}"])
         return result
 

@@ -305,9 +305,13 @@ def test_workspace_root_scope_trusts_the_root_covering_every_checkout(
       When a labeled issues event spawns a session
       Then the workspace ROOT is marked trusted, covering every checkout under
         it — including folders the-loop never spawned into
+      And the spawn directory is marked trusted in its own right, because the
+        gate that decides whether the dialog appears for a repo carrying
+        .claude/settings.json grants reads the exact key with no ancestor walk
+      And that was already true at the moment the harness was started
       And the spawn directory still gets its own onboarding key, which the
         harness does not inherit from an ancestor
-    Requirement: docs/specs/issue-90/requirements.md#requirement-1
+    Requirement: docs/specs/issue-136/bugfix.md#requirement-1
     """
     root = tmp_path / "workspace"
     adapter = RecordingClaudeAdapter(fake_home / ".claude.json")
@@ -324,9 +328,15 @@ def test_workspace_root_scope_trusts_the_root_covering_every_checkout(
 
     projects = json.loads((fake_home / ".claude.json").read_text())["projects"]
     assert projects[str(root)]["hasTrustDialogAccepted"] is True
+    assert projects[str(workdir)]["hasTrustDialogAccepted"] is True
     assert projects[str(workdir)]["hasCompletedProjectOnboarding"] is True
     # a sibling checkout the-loop never spawned into is covered by the root
     assert str(root) in trusted_dirs(fake_home / ".claude.json")
+    # the ordering assertion: the checkout was trusted *before* the harness ran,
+    # which is the whole point — a dialog is not something a daemon can answer
+    assert [sorted(snap) for snap in adapter.trusted_at_spawn] == [
+        sorted([str(root), str(workdir)])
+    ]
 
 
 def test_directory_scope_keeps_trust_on_the_checkout_alone(

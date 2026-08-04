@@ -212,9 +212,12 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   (`routing.harnessTrust`, default **on**), so an unattended session cannot stall on
   Claude Code's workspace-trust dialog or its bypass-permissions disclaimer — neither
   of which is a permission rule, hence neither is silenced by
-  `--dangerously-skip-permissions`. Scoped by `harnessTrust.scope` — the workspace
-  root by default (one entry covering every checkout under it) or the exact spawn
-  directory — non-destructive (named keys only, merged, atomic, skipped when already
+  `--dangerously-skip-permissions`. The spawn directory is trusted under **every**
+  `harnessTrust.scope` (the key that gates the dialog for a repo shipping
+  `.claude/settings.json` grants has no ancestor walk); `scope` decides only whether a
+  second entry additionally widens trust to the workspace root (`workspace-root`, the
+  default, covering every checkout under it) or not (`directory`). Writes are
+  non-destructive (named keys only, merged, atomic, skipped when already
   correct, refused on an unparseable file), and permission-neutral: the bypass
   disclaimer is accepted only when this harness's `harnessArgs` already ask for bypass
   mode. Best-effort — a failure warns, emits `workspace.trust_failed` and still spawns.
@@ -281,6 +284,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-136 | Pre-spawn trust reached the checkout it was for: `hasTrustDialogAccepted` is written on the exact spawn directory under every `scope` (the gate that decides whether the dialog appears for a repo shipping `.claude/settings.json` grants has no ancestor walk), so `scope` now only widens | [spec](../specs/issue-136/), [decision-052](../decisions/decision-052.md), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/136) |
 | issue-134 | A spawned session is told **where its answers come from** instead of guessing: `routing.interaction.mode` (`work-item` default, or `cli`) is rendered into every prompt through `$interaction_directive`, appended when a custom template omits the placeholder, and reported on `session.spawned`; artifact iteration in pull-request review became a stated invariant of the loop | [spec](../specs/issue-134/), [decision-051](../decisions/decision-051.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/134) |
 | issue-135 | The default execution-control keywords changed shape from colon-joined (`the-loop:start-execution`) to a short command (`the-loop start`); the vocabulary, matching semantics and trust boundary from issue-106 are unchanged, and an operator's own explicit `keywords` override is unaffected | [spec](../specs/issue-135/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/135) |
 | issue-123 | The graph coupling stopped sourcing a repo-scoped fact from the operator's machine: `routing.graph.specDir` became an optional override, so each watched repository's own `workflow.specDir` is honoured, and a spec-directory skip is recorded as `graph.skipped` rather than a debug line under a successful delivery | [spec](../specs/issue-123/), [decision-044](../decisions/decision-044.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/123) |

@@ -107,8 +107,14 @@ def test_without_a_root_no_ancestor_key_is_ever_written(tmp_path, fake_home):
 # -- scope: workspace-root -----------------------------------------------------
 
 
-def test_root_scope_trusts_the_root_and_onboards_the_checkout(tmp_path, fake_home):
-    """The two keys scope differently — trust inherits, onboarding does not."""
+def test_root_scope_trusts_the_root_and_the_checkout(tmp_path, fake_home):
+    """Both entries, because the harness reads the trust key in two places.
+
+    The base check walks up (so the root covers sibling checkouts), but the
+    check that gates the dialog for a repo carrying `.claude/settings.json`
+    grants reads the **exact** project key with no walk (issue-136). Root trust
+    alone leaves that second gate — and the dialog behind it — in place.
+    """
     root = tmp_path / "workspace"
     workdir = root / ".worktrees" / "github.com" / "octo" / "repo" / "slug"
     workdir.mkdir(parents=True)
@@ -120,13 +126,14 @@ def test_root_scope_trusts_the_root_and_onboards_the_checkout(tmp_path, fake_hom
     # trust on the root: the harness walks up, so every checkout beneath is covered
     assert projects[str(root)]["hasTrustDialogAccepted"] is True
     assert "hasCompletedProjectOnboarding" not in projects[str(root)]
+    # …and on the checkout itself, which no ancestor walk reaches
+    assert projects[str(workdir)]["hasTrustDialogAccepted"] is True
     # onboarding is read from the exact project key, so it lands on the checkout
     assert projects[str(workdir)]["hasCompletedProjectOnboarding"] is True
-    assert "hasTrustDialogAccepted" not in projects[str(workdir)]
 
 
 def test_root_scope_is_idempotent_across_sibling_checkouts(tmp_path, fake_home):
-    """The second work item under the same root re-uses its trust entry."""
+    """The second work item under the same root re-uses the root's trust entry."""
     root = tmp_path / "workspace"
     first = root / "a"
     second = root / "b"
@@ -139,9 +146,56 @@ def test_root_scope_is_idempotent_across_sibling_checkouts(tmp_path, fake_home):
 
     projects = read_json(store.config_path())["projects"]
     assert projects[str(root)]["hasTrustDialogAccepted"] is True
-    # only the per-checkout onboarding key was added the second time
+    # the second checkout gets its own pair; the root's entry was already there
     assert projects[str(second)]["hasCompletedProjectOnboarding"] is True
-    assert "hasTrustDialogAccepted" not in projects[str(second)]
+    assert projects[str(second)]["hasTrustDialogAccepted"] is True
+
+
+def test_root_scope_writes_nothing_on_a_repeat_spawn_into_the_same_checkout(
+    tmp_path, fake_home
+):
+    """Re-spawning into a prepared checkout must not touch the operator's file."""
+    root = tmp_path / "workspace"
+    workdir = root / "wt"
+    workdir.mkdir(parents=True)
+    store = store_for(fake_home)
+    assert store.trust(str(workdir), str(root)).applied
+
+    before = store.config_path().stat()
+    again = store.trust(str(workdir), str(root))
+
+    assert again.ok and again.applied == []
+    after = store.config_path().stat()
+    assert (after.st_mtime_ns, after.st_ino) == (before.st_mtime_ns, before.st_ino)
+
+
+def test_a_root_equal_to_the_checkout_is_recorded_once(tmp_path, fake_home):
+    """`root == cwd` is one directory, so the audit note must not list it twice."""
+    workdir = tmp_path / "workspace"
+    workdir.mkdir()
+    store = store_for(fake_home)
+
+    result = store.trust(str(workdir), str(workdir))
+
+    assert result.ok
+    assert len(result.applied) == 1
+    assert result.applied[0].count(str(workdir)) == 1
+    assert read_json(store.config_path())["projects"][str(workdir)] == {
+        "hasTrustDialogAccepted": True,
+        "hasCompletedProjectOnboarding": True,
+    }
+
+
+def test_the_applied_note_names_every_trusted_directory(tmp_path, fake_home):
+    """`workspace.trusted` has to record the real scope, not half of it."""
+    root = tmp_path / "workspace"
+    workdir = root / "wt"
+    workdir.mkdir(parents=True)
+
+    note = store_for(fake_home).trust(str(workdir), str(root)).applied[0]
+
+    assert str(workdir) in note
+    assert f"{root} (and everything under it)" in note
 
 
 def test_a_root_that_does_not_contain_the_cwd_is_ignored(tmp_path, fake_home):
@@ -438,6 +492,7 @@ def test_root_scope_is_the_adapter_default(tmp_path, fake_home):
 
     projects = read_json(store_for(fake_home).config_path())["projects"]
     assert projects[str(root)]["hasTrustDialogAccepted"] is True
+    assert projects[str(workdir)]["hasTrustDialogAccepted"] is True
 
 
 def test_trust_config_defaults_and_mapping():

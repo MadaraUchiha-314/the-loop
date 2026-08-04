@@ -427,7 +427,7 @@ it kicks off the `work-on` flow. Same fallback behaviour as `promptTemplate`.
 
 - **Type:** `string` (`work-item` | `cli`)
 - **Default:** `work-item`
-- **Related:** [decision-051](/decisions/decision-051) ·
+- **Related:** [decision-052](/decisions/decision-052) ·
   [webhook-triggers](/capabilities/webhook-triggers)
 
 Where a session the daemon drives takes its **answers** from. Before this existed, a
@@ -471,22 +471,22 @@ review. That is an invariant of the loop rather than a setting — see the skill
 
 - **Type:** `boolean`
 - **Default:** `true`
-- **Related:** [decision-036](/decisions/decision-036)
+- **Related:** [decision-036](/decisions/decision-036), [decision-052](/decisions/decision-052)
 
 Pre-seed the harness's own config before each spawn so the session starts working instead
 of stopping on an interactive dialog.
 
-Claude Code's **workspace-trust** dialog ("Do you trust the files in this folder?") and its
-one-time **bypass-permissions disclaimer** are not permission *rules*, which is why no CLI
-flag — `--dangerously-skip-permissions` very much included — silences them. And since every
-work item gets its own checkout, every spawn lands in a directory the harness has never
-seen. The result was a daemon that looked healthy (`session.spawned` logged, prompt pasted)
-while the TUI sat on a modal nobody was there to answer.
+Claude Code's **workspace-trust** dialog ("Accessing workspace: … Yes, I trust this
+folder") and its one-time **bypass-permissions disclaimer** are not permission *rules*,
+which is why no CLI flag — `--dangerously-skip-permissions` very much included — silences
+them. And since every work item gets its own checkout, every spawn lands in a directory the
+harness has never seen. The result was a daemon that looked healthy (`session.spawned`
+logged, prompt pasted) while the TUI sat on a modal nobody was there to answer.
 
-So before each spawn the-loop writes exactly what the harness is about to ask for:
-`hasTrustDialogAccepted` (scope below), `hasCompletedProjectOnboarding` on the spawn
-directory always, and `skipDangerousModePermissionPrompt` only per
-`acceptBypassPermissions`.
+So before each spawn the-loop writes exactly what the harness is about to ask for, on the
+**exact spawn directory**: `hasTrustDialogAccepted` and `hasCompletedProjectOnboarding`
+(plus a wider entry per `harnessTrust.scope` below), and
+`skipDangerousModePermissionPrompt` only per `acceptBypassPermissions`.
 
 The writes are deliberately narrow: those keys only, merged into what is already there,
 temp file plus atomic rename, `0600` on files it creates, **nothing written at all** when
@@ -495,29 +495,43 @@ alone. Every applied change is auditable with `the-loop events --type 'workspace
 Failures are best-effort — a warning, a `workspace.trust_failed` record, and the spawn
 still happens. `cursor-agent` has no such config surface, so it is a silent no-op there.
 
-`false` leaves your harness config untouched.
+::: warning Know what "trusted" buys the checkout
+Workspace trust is what lets a repository's **own** `.claude/settings.json` pre-approve
+tool permissions and add directories to the workspace. Pre-trusting a clone therefore
+honours grants authored by anyone who can push to that repository — the same thing you
+would be agreeing to by answering the dialog by hand. `enabled: false` is the opt-out; it
+brings the dialog back.
+:::
 
 ### `harnessTrust.scope`
 
 - **Type:** `'workspace-root' | 'directory'`
 - **Default:** `workspace-root`
 
-How wide the trust entry goes.
+Whether trust **additionally** widens to an ancestor. The spawn directory itself is
+trusted either way — that is not the choice here.
 
-- `workspace-root` writes **one** entry on `workspace.root`. The harness's trust lookup
-  walks **up** from the cwd, so every checkout beneath the root is covered — including
-  folders the-loop never spawned into (a repo you clone there by hand, a nested repo the
-  agent walks into).
-- `directory` writes trust on the exact spawn directory only — least privilege, one entry
+- `workspace-root` writes a **second** entry on `workspace.root`. The harness's base trust
+  check walks **up** from the cwd, so every checkout beneath the root is covered —
+  including folders the-loop never spawned into (a repo you clone there by hand, a nested
+  repo the agent walks into).
+- `directory` keeps trust on the exact spawn directory only — least privilege, one entry
   per work item. Use it when the workspace root holds more than the-loop's own checkouts.
 
-Onboarding is written per spawn directory under **either** scope, because
-`hasCompletedProjectOnboarding` is read from the exact project key with no ancestor walk —
-otherwise root trust would silence the trust dialog and leave the onboarding screen behind
-it in every fresh checkout.
+::: tip Why the spawn directory is always written
+`hasTrustDialogAccepted` has **two** readers in the harness and only one of them walks up.
+The other reads the **exact** project key with no walk, and it is the one that decides
+whether the dialog appears *anyway* — and whether the repo's own `permissions.allow` /
+`additionalDirectories` load at all. Trusting only the root left every checkout of a repo
+that ships `.claude/settings.json` grants sitting on the dialog, with its grants dropped
+(`Ignoring N permissions.allow entries … this workspace has not been trusted`).
+`hasCompletedProjectOnboarding` has no ancestor walk either, or root trust would silence
+the dialog and reveal the onboarding screen behind it. See
+[decision-052](/decisions/decision-052).
+:::
 
 Safety rails on `workspace-root`: a root that does not actually contain the spawn directory
-is ignored, and a root broad enough to be meaningless (`/`, or your home directory itself)
+is dropped, and a root broad enough to be meaningless (`/`, or your home directory itself)
 degrades to per-directory trust with a warning. With no workspace root configured, the two
 scopes behave identically.
 

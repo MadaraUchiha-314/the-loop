@@ -79,7 +79,7 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
   and an unrecognised mode resolves to `work-item` with a warning (never to `cli`). The
   behaviour it asks for — and the artifact-iteration invariant that rides along with it —
   is `reference/collaboration.md` § Where questions go. Decision:
-  `docs/decisions/decision-051.md`.
+  `docs/decisions/decision-052.md`.
 - **Per-work-item checkout workspace** (`routing.workspace`, issue-76): the CLI daemon
   runs independent of any repo, so a spawned session needs a checkout of the repo an
   event concerns. Set `routing.workspace.root` to turn it on (leave empty to keep the
@@ -123,10 +123,17 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
   only when your `harnessArgs` already ask for bypass mode — records the disclaimer
   acceptance too. Writes are narrow and non-destructive (those keys only, merged,
   atomic, skipped when already set, never applied to a file that does not parse),
-  scoped to the spawn directory and never a parent, audited as
-  `workspace.trusted`, and best-effort: a failure warns and still spawns. Opt out
-  with `harnessTrust.enabled: false`. Design: `docs/specs/issue-90/design.md`,
-  decision: `docs/decisions/decision-037.md`.
+  audited as `workspace.trusted`, and best-effort: a failure warns and still
+  spawns. Both keys always land on the **exact spawn directory** — the harness
+  reads each of them from the exact project key on at least one path, so an
+  ancestor entry alone leaves the dialog up for a repo shipping
+  `.claude/settings.json` grants (issue-136). `harnessTrust.scope` decides only
+  whether trust *additionally* widens to `workspace.root` (`workspace-root`, the
+  default) or stops at the checkout (`directory`). Trusting a checkout is what
+  lets that repo's own settings pre-approve tool permissions, so opt out with
+  `harnessTrust.enabled: false` if that is not what you want. Design:
+  `docs/specs/issue-90/design.md` and `docs/specs/issue-136/design.md`,
+  decisions: `docs/decisions/decision-037.md`, `docs/decisions/decision-052.md`.
 - **The label works on PRs directly — the ticketing system need not be GitHub.** A PR
   carrying the auto-execute label is routed as its own work item
   (`github:OWNER/REPO#<pr-number>`) when it is linked to no GitHub issue. This is
