@@ -33,7 +33,7 @@ change; the phase rows above record that, rather than claiming approvals nobody 
 
 | PR | Scope / tasks | Status |
 |----|---------------|--------|
-| [#138](https://github.com/MadaraUchiha-314/the-loop/pull/138) | All tasks 1–12 | open |
+| [#141](https://github.com/MadaraUchiha-314/the-loop/pull/141) | All tasks 1–12 | open |
 
 ## Progress entries
 
