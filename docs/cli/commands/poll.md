@@ -103,7 +103,7 @@ comments" and cannot retrigger a spawn, even though it was posted under an autho
 ## Config
 
 Ingress defaults come from [`polling`](/config/cli/polling-options). Dispatch behaviour is
-reused from [`webhooks.ghWebhook.routing`](/config/cli/routing-options) in the same file.
+reused from [`routing`](/config/cli/routing-options) in the same file.
 Flags cover only the run loop.
 
 **Hot reload:** edit `polling.sources` or `intervalSeconds` while it runs and the change is

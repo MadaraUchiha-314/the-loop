@@ -56,7 +56,7 @@ class PollConfig:
 
     Per-source (provider) settings live in ``sources``; a provider parses its
     own entry. Dispatch behaviour (registry dir, harness, runner, spawn policy,
-    templates) is reused from ``webhooks.ghWebhook.routing``.
+    templates) is reused from ``routing``.
 
     Where the ledger is stored is no longer one of these settings: issue-128 put
     it under ``state.root`` with the rest of the portable state, and retired

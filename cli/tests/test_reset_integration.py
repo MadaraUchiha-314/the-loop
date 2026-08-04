@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from the_loop import eventlog
+from the_loop import cli_config, eventlog
 from the_loop.cli import main
 from the_loop.commands import sessions_cmd
 from the_loop.control import ControlStore
@@ -34,7 +34,7 @@ OTHER = "github:octo/repo#21"
 def _no_daemon(monkeypatch, tmp_path):
     """No receiver pidfile and a fail-closed routing config, unless a test says
     otherwise: the warnings have their own tests and must not colour the rest."""
-    monkeypatch.setattr(sessions_cmd, "_load_config_defaults", lambda: {})
+    monkeypatch.setattr(cli_config, "load_routing_config", lambda *_a, **_k: {})
     monkeypatch.setattr(
         sessions_cmd, "_state_layout", lambda: _layout(tmp_path / "unused-root")
     )
@@ -245,9 +245,9 @@ def test_dry_run_names_the_checkout_it_would_remove(tmp_path, capsys, monkeypatc
       Then the report says the checkout would go with it
     """
     monkeypatch.setattr(
-        sessions_cmd,
-        "_load_config_defaults",
-        lambda: {"routing": {"workspace": {"root": str(tmp_path / "ws")}}},
+        cli_config,
+        "load_routing_config",
+        lambda *_a, **_k: {"workspace": {"root": str(tmp_path / "ws")}},
     )
     register(tmp_path)
     assert run(tmp_path, "--work-item", REF, "--dry-run") == 0
@@ -260,12 +260,10 @@ def test_dry_run_stays_quiet_about_a_checkout_that_is_kept(
     tmp_path, capsys, monkeypatch
 ):
     monkeypatch.setattr(
-        sessions_cmd,
-        "_load_config_defaults",
-        lambda: {
-            "routing": {
-                "workspace": {"root": str(tmp_path / "ws"), "keepCheckoutOnClose": True}
-            }
+        cli_config,
+        "load_routing_config",
+        lambda *_a, **_k: {
+            "workspace": {"root": str(tmp_path / "ws"), "keepCheckoutOnClose": True}
         },
     )
     register(tmp_path)
@@ -498,13 +496,11 @@ def test_a_config_that_can_respawn_warns(tmp_path, capsys, monkeypatch):
       Then the operator is warned it can be re-spawned by the next poll cycle
     """
     monkeypatch.setattr(
-        sessions_cmd,
-        "_load_config_defaults",
-        lambda: {
-            "routing": {
-                "spawnOnUnmatched": "labeled",
-                "control": {"requireStartCommand": False},
-            }
+        cli_config,
+        "load_routing_config",
+        lambda *_a, **_k: {
+            "spawnOnUnmatched": "labeled",
+            "control": {"requireStartCommand": False},
         },
     )
     arm(tmp_path)
@@ -516,13 +512,11 @@ def test_a_config_that_can_respawn_warns(tmp_path, capsys, monkeypatch):
 
 def test_a_fail_closed_config_does_not_warn(tmp_path, capsys, monkeypatch):
     monkeypatch.setattr(
-        sessions_cmd,
-        "_load_config_defaults",
-        lambda: {
-            "routing": {
-                "spawnOnUnmatched": "labeled",
-                "control": {"requireStartCommand": True},
-            }
+        cli_config,
+        "load_routing_config",
+        lambda *_a, **_k: {
+            "spawnOnUnmatched": "labeled",
+            "control": {"requireStartCommand": True},
         },
     )
     arm(tmp_path)

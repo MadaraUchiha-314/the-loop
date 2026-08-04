@@ -32,7 +32,7 @@ install lines keep resolving.)
 
 ```bash
 # 1. Tell the daemon who may drive it, in ~/.the-loop/cli-config.yaml
-#      webhooks.ghWebhook.routing.authorizedUsers: ["your-github-login"]
+#      routing.authorizedUsers: ["your-github-login"]
 #      polling.sources: [{ provider: github, repos: ["your-org/your-repo"] }]
 
 # 2. Start an ingress (poll needs no inbound networking)

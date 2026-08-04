@@ -183,9 +183,10 @@ def test_the_poller_honours_the_same_interaction_block(tmp_path, monkeypatch):
       And the mode did not have to be declared a second time for the poller
 
     Guards the issue-65 class of defect: a routing setting that silently applies
-    to only one of the two ingresses. The poller reads
-    `webhooks.ghWebhook.routing` verbatim (`poll._load_config_defaults`), which is
-    why one block serves both — see the reply on PR #139.
+    to only one of the two ingresses. The poller reads the shared top-level
+    `routing` block verbatim (`cli_config.load_routing_config`), which is why one
+    block serves both — see the reply on PR #139. Issue-142 promoted the block out
+    from under `webhooks` so the config's shape says that too.
     """
     from the_loop.commands import poll
 

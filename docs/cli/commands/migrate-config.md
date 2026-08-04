@@ -27,13 +27,26 @@ A breaking change is only as good as its migration, so four properties hold:
 
 ## What it migrates today
 
-Current version: **`0.3.0`**.
+Current version: **`0.4.0`**.
 
-The per-feature `ghBinary` keys — declared separately under `routing.control`,
-`routing.reactions` and `routing.announce` — move to a single
+**`ghBinary` → `integrations.github.cli.binary`** (issue-109). The per-feature keys —
+declared separately under `routing.control`, `routing.reactions` and `routing.announce` —
+move to a single
 [`integrations.github.cli.binary`](/config/cli/integrations-options#github-cli-binary).
 Three copies of one setting is exactly the duplication the `integrations` block exists to
 remove.
+
+**`polling.stateFile` removed** (issue-128). The poller's ledger became one record per
+work item under [`state.root`](/config/cli/#state-root), so a file path has nothing left
+to point at.
+
+**`webhooks.ghWebhook.routing` → `routing`** (issue-142). The block is promoted to the top
+level, unchanged key for key. It was never the receiver's: the
+[poller](/cli/commands/poll) reads every value in it verbatim for dispatch, and
+`the-loop sessions` reads it again. If your config happens to declare **both** the old and
+the new block, the top-level one wins key by key and the report names every value it
+dropped — never a merge, because unioning two `authorizedUsers` lists would quietly
+re-admit a login you had removed.
 
 ```text
 $ the-loop migrate-config --dry-run
@@ -41,10 +54,11 @@ migrated the CLI config:
   · webhooks.ghWebhook.routing.control.ghBinary → integrations.github.cli.binary ('gh')
   · webhooks.ghWebhook.routing.reactions.ghBinary → integrations.github.cli.binary ('gh')
   · webhooks.ghWebhook.routing.announce.ghBinary → integrations.github.cli.binary ('gh')
-  · version '0.1.0' → '0.3.0'
+  · webhooks.ghWebhook.routing → routing (top level; it governs the poller too)
+  · version '0.1.0' → '0.4.0'
 
 --- /home/you/.the-loop/cli-config.yaml (preview, not written) ---
-version: 0.3.0
+version: 0.4.0
 …
 ```
 
@@ -80,10 +94,11 @@ version: 0.3.0
 ## When the runtime refuses
 
 ```text
-this CLI config still declares webhooks.ghWebhook.routing.control.ghBinary. That key
-was removed in favour of `integrations.github.cli.binary`, so transport is declared
-once instead of three times. It is NOT being ignored — ignoring a value you set would
-change behaviour silently. Run `/the-loop:upgrade-the-loop` to migrate.
+this CLI config still declares `webhooks.ghWebhook.routing`. That block governs BOTH
+ingresses — the poller reads it verbatim for dispatch — so it moved to a top-level
+`routing` (issue-142). It is NOT being ignored: `routing.authorizedUsers` decides which
+GitHub logins may drive your daemon, and quietly falling back to none is not a decision
+this config gets to make for you. Run `/the-loop:upgrade-the-loop` to migrate.
 ```
 
 `/the-loop:upgrade-the-loop` shells out to this command, so an upgrade never hand-edits a

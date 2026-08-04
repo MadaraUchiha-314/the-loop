@@ -198,9 +198,7 @@ def test_the_directive_precedes_the_untrusted_payload_block():
 
 def test_the_schema_declares_the_mode_enum():
     schema = json.loads(CLI_CONFIG_SCHEMA.read_text(encoding="utf-8"))
-    routing = schema["properties"]["webhooks"]["properties"]["ghWebhook"]["properties"][
-        "routing"
-    ]
+    routing = schema["properties"]["routing"]
     mode = routing["properties"]["interaction"]["properties"]["mode"]
     assert mode["enum"] == list(MODES)
     assert mode["default"] == DEFAULT_MODE

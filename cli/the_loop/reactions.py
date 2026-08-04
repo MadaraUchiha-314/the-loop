@@ -10,7 +10,7 @@ succeeds, and *error* (default 😕 ``confused``) when it fails.
 GitHub's reaction palette is fixed (``+1 -1 laugh confused heart hooray rocket
 eyes``) — ✅/⁉️ from the original ask do not exist, so the defaults map each
 state to the closest supported emoji and the mapping is operator-configurable
-(``webhooks.ghWebhook.routing.reactions`` in the CLI config). Enabled by
+(``routing.reactions`` in the CLI config). Enabled by
 default (owner decision on PR #85 — visibility out of the box is the point);
 set ``enabled: false`` to opt out of the daemon's one write surface to GitHub.
 
@@ -70,7 +70,7 @@ _NODE_ID_RE = re.compile(r"^[A-Za-z0-9_=+/-]+$")  # GraphQL node ids
 
 @dataclass
 class ReactionConfig:
-    """Mirror of ``webhooks.ghWebhook.routing.reactions`` (see config schema)."""
+    """Mirror of ``routing.reactions`` (see config schema)."""
 
     enabled: bool = True
     started: str = "eyes"

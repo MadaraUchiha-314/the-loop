@@ -8,7 +8,7 @@ nobody reads; guessing "the ticket" while the operator sits in an attached tmux
 pane routes a live conversation through GitHub for no reason.
 
 The operator knows which one they want, so they declare it:
-``webhooks.ghWebhook.routing.interaction.mode`` is ``work-item`` (the default)
+``routing.interaction.mode`` is ``work-item`` (the default)
 or ``cli``. This module owns two things and nothing else:
 
 1. **Resolution.** :meth:`InteractionConfig.from_mapping` never raises and never
@@ -116,7 +116,7 @@ def directive_for(mode: str) -> str:
 
 @dataclass(frozen=True)
 class InteractionConfig:
-    """Mirror of ``webhooks.ghWebhook.routing.interaction`` (see config schema)."""
+    """Mirror of ``routing.interaction`` (see config schema)."""
 
     mode: str = DEFAULT_MODE
 

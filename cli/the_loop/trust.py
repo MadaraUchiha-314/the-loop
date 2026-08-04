@@ -110,7 +110,7 @@ def _lock_for(path: Path) -> threading.Lock:
 
 @dataclass
 class TrustConfig:
-    """Mirror of ``webhooks.ghWebhook.routing.harnessTrust`` (see config schema)."""
+    """Mirror of ``routing.harnessTrust`` (see config schema)."""
 
     enabled: bool = True
     # workspace-root (default, owner decision on PR #92): trust the workspace

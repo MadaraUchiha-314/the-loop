@@ -67,15 +67,15 @@ def test_the_binary_now_comes_from_the_integrations_block(tmp_path):
     path.write_text(
         yaml.safe_dump(
             {
-                "version": "0.3.0",
+                "version": "0.4.0",
                 "integrations": {"github": {"cli": {"binary": "/usr/bin/gh"}}},
-                "webhooks": {"ghWebhook": {"routing": {"control": {"enabled": True}}}},
+                "routing": {"control": {"enabled": True}},
             }
         ),
         encoding="utf-8",
     )
     data = cli_config.load_cli_config(path)
-    section = data["webhooks"]["ghWebhook"]["routing"]["control"]
+    section = data["routing"]["control"]
     assert ControlConfig.from_mapping(section).gh_binary == "/usr/bin/gh"
 
 

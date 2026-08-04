@@ -75,10 +75,10 @@ def test_the_binary_comes_from_the_integrations_block():
     data = apply_integrations(
         {
             "integrations": {"github": {"cli": {"binary": "/opt/gh"}}},
-            "webhooks": {"ghWebhook": {"routing": {"announce": {"enabled": True}}}},
+            "routing": {"announce": {"enabled": True}},
         }
     )
-    section = data["webhooks"]["ghWebhook"]["routing"]["announce"]
+    section = data["routing"]["announce"]
     assert AnnounceConfig.from_mapping(section).gh_binary == "/opt/gh"
 
 

@@ -37,9 +37,9 @@ from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
 from .base import Command, register
-from .gh_webhook import _load_config_defaults, _state_layout
+from .gh_webhook import _state_layout
 from .poll import _build_dispatcher
-from .. import eventlog
+from .. import cli_config, eventlog
 from ..comments import post_issue_comment
 from ..control import (
     PAUSE,
@@ -68,13 +68,11 @@ _HARNESS_BINARIES = {
 
 def _routing_config() -> RoutingConfig:
     """The same ``routing`` config the daemon runs on (path defaults included)."""
-    return RoutingConfig.from_mapping(
-        _load_config_defaults().get("routing") or {}, _state_layout()
-    )
+    return RoutingConfig.from_mapping(cli_config.load_routing_config(), _state_layout())
 
 
 def _default_registry_dir() -> str:
-    routing = _load_config_defaults().get("routing") or {}
+    routing = cli_config.load_routing_config()
     return str(routing.get("registryDir") or _state_layout().local_dir)
 
 
@@ -96,7 +94,7 @@ def _control_store(args: argparse.Namespace) -> ControlStore:
 
 def _control_config() -> ControlConfig:
     """``routing.control`` — the keyword vocabulary (issue-106)."""
-    routing = _load_config_defaults().get("routing") or {}
+    routing = cli_config.load_routing_config()
     return ControlConfig.from_mapping(routing.get("control") or {})
 
 
@@ -107,7 +105,7 @@ def _dispatcher_for(args: argparse.Namespace):
     no-op — but when an operator points the CLI at another registry, the close
     and the spawn must land in *that* one, not in the config's.
     """
-    routing = dict(_load_config_defaults().get("routing") or {})
+    routing = dict(cli_config.load_routing_config())
     routing["registryDir"] = args.registry_dir
     dispatcher, config = _build_dispatcher(routing, _state_layout())
     # Same reasoning for the portable half: a spawn started from the CLI must
@@ -180,7 +178,7 @@ def _local_actor() -> str:
 
 def _tmux_config() -> TmuxConfig:
     """``routing.tmux`` — retention/termination policy (issue-86, issue-94)."""
-    routing = _load_config_defaults().get("routing") or {}
+    routing = cli_config.load_routing_config()
     return TmuxConfig.from_mapping(routing.get("tmux") or {})
 
 

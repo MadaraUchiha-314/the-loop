@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from the_loop import cli_config
 from the_loop.control import ControlConfig
 from the_loop.harness import (
     ClaudeCodeAdapter,
@@ -1264,14 +1265,16 @@ def test_read_gh_webhook_config_strict_vs_lenient(tmp_path, monkeypatch):
         gh_webhook._read_gh_webhook_config(strict=True)
 
 
-def _write_webhook_config(path, policy, sessions_dir):
+def _write_webhook_config(path, policy, sessions_dir, events="[]"):
+    """The receiver's block and the shared `routing` block — two top-level keys
+    since issue-142, which is what the hot-reload has to read separately."""
     path.write_text(
         "webhooks:\n"
         "  ghWebhook:\n"
-        "    events: []\n"
-        "    routing:\n"
-        f"      spawnOnUnmatched: {policy}\n"
-        f"      registryDir: {sessions_dir}\n"
+        f"    events: {events}\n"
+        "routing:\n"
+        f"  spawnOnUnmatched: {policy}\n"
+        f"  registryDir: {sessions_dir}\n"
     )
 
 
@@ -1283,7 +1286,7 @@ def test_webhook_hot_reload_applies_on_next_event(tmp_path, monkeypatch):
     monkeypatch.setattr(gh_webhook, "_CONFIG_PATH", cfg)
 
     on_event, dispatcher, _ = gh_webhook._build_routing(
-        gh_webhook._read_gh_webhook_config()
+        cli_config.load_routing_config(cfg), gh_webhook._read_gh_webhook_config()
     )
     assert dispatcher.config.spawn_on_unmatched == "never"
 

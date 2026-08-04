@@ -215,7 +215,7 @@ class WorkspaceConfig:
 
 @dataclass
 class RoutingConfig:
-    """Python-side mirror of ``webhooks.ghWebhook.routing`` (see config schema)."""
+    """Python-side mirror of ``routing`` (see config schema)."""
 
     enabled: bool = False
     registry_dir: str = ".the-loop/local"

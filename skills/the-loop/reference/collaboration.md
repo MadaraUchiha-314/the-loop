@@ -24,7 +24,7 @@ The second is not, because it is a property of the artifact.
 ### 1. The interaction channel is declared, not guessed
 
 A session driven by the CLI daemon is **told** where its answers come from, via
-`webhooks.ghWebhook.routing.interaction.mode` in the operator's `cli-config.yaml`
+`routing.interaction.mode` in the operator's `cli-config.yaml`
 (rendered into every event/spawn prompt as `$interaction_directive` —
 `reference/automation.md`):
 

@@ -46,7 +46,7 @@ __all__ = ["AnnounceConfig", "SessionAnnouncer", "announcement_body"]
 
 @dataclass
 class AnnounceConfig:
-    """Mirror of ``webhooks.ghWebhook.routing.announce`` (see config schema)."""
+    """Mirror of ``routing.announce`` (see config schema)."""
 
     enabled: bool = True
     gh_binary: str = "gh"

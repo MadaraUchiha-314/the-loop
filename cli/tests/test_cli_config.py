@@ -134,6 +134,60 @@ def test_gh_webhook_and_poll_default_to_the_cli_config_path():
     assert not hasattr(poll, "_PLUGIN_CONFIG_PATH")
 
 
+# -- the shared routing accessor (issue-142) -------------------------------------
+
+
+def test_routing_is_read_from_the_top_level_key(tmp_path):
+    """`routing` governs BOTH ingresses, so it is read from the top level."""
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("routing:\n  enabled: true\n  authorizedUsers: [operator]\n")
+    assert cli_config.load_routing_config(cfg) == {
+        "enabled": True,
+        "authorizedUsers": ["operator"],
+    }
+
+
+def test_a_config_without_routing_reads_as_an_empty_policy(tmp_path):
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text("webhooks:\n  ghWebhook:\n    port: 9999\n")
+    assert cli_config.load_routing_config(cfg) == {}
+    assert cli_config.load_routing_config(tmp_path / "absent.yaml") == {}
+
+
+def test_the_accessor_resolves_the_config_path_per_call(monkeypatch, isolated_cwd):
+    """No cached module global: `--config` is honoured whenever it was set."""
+    cfg = isolated_cwd / "flag.yaml"
+    cfg.write_text("routing:\n  spawnOnUnmatched: always\n")
+    monkeypatch.delenv(cli_config.CLI_CONFIG_ENV, raising=False)
+    cli_config.set_override(cfg)
+    assert cli_config.load_routing_config() == {"spawnOnUnmatched": "always"}
+
+
+def test_the_gh_binary_reaches_the_promoted_block(tmp_path):
+    """`integrations.github.cli.binary` still fans out to the three features."""
+    config = cli_config.apply_integrations(
+        {
+            "integrations": {"github": {"cli": {"binary": "gh-enterprise"}}},
+            "routing": {"control": {}, "reactions": {}, "announce": {}},
+        }
+    )
+    for feature in ("control", "reactions", "announce"):
+        assert config["routing"][feature]["_ghBinary"] == "gh-enterprise"
+
+
+def test_the_poller_and_sessions_no_longer_read_routing_through_the_receiver():
+    """The import seam issue-142 removed: `routing` is nobody's private block.
+
+    A reader auditing which logins may drive their daemon should find
+    `authorizedUsers` resolved by one shared accessor, not by importing the
+    webhook command's module.
+    """
+    from the_loop.commands import poll, sessions_cmd
+
+    for module in (poll, sessions_cmd):
+        assert not hasattr(module, "_load_config_defaults")
+
+
 def test_eventlog_load_config_reads_top_level_event_log_key(tmp_path):
     from the_loop import eventlog
 

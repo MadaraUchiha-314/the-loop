@@ -275,8 +275,8 @@ def test_the_binary_comes_from_the_integrations_block():
     data = apply_integrations(
         {
             "integrations": {"github": {"cli": {"binary": "/opt/gh"}}},
-            "webhooks": {"ghWebhook": {"routing": {"reactions": {"enabled": True}}}},
+            "routing": {"reactions": {"enabled": True}},
         }
     )
-    section = data["webhooks"]["ghWebhook"]["routing"]["reactions"]
+    section = data["routing"]["reactions"]
     assert ReactionConfig.from_mapping(section).gh_binary == "/opt/gh"

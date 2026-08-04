@@ -4,9 +4,13 @@ issue-109 removes the per-feature ``ghBinary`` keys in favour of one
 ``integrations`` block, because three copies of one setting is exactly the
 duplication that block exists to remove. issue-128 removes ``polling.stateFile``
 for a different reason: the poller's ledger became one record per work item, so
-a *file* path has nothing to point at. The owner's call was to make it a
-**breaking** change rather than carry a shadow override forever: *"Let's make
-breaking changes. /upgrade should be able to handle it."*
+a *file* path has nothing to point at. issue-142 removes
+``webhooks.ghWebhook.routing`` for a third: the block was never the receiver's —
+the poller reads it verbatim for dispatch and ``the-loop sessions`` reads it
+again — so it is promoted to a top-level ``routing``, where its scope is legible
+from the config's shape rather than from a comment. The owner's call was to make
+these **breaking** changes rather than carry shadow overrides forever: *"Let's
+make breaking changes. /upgrade should be able to handle it."*
 
 A breaking change is only as good as its migration, so four properties hold:
 
@@ -36,19 +40,31 @@ __all__ = [
     "needs_migration",
 ]
 
-#: Bumped by issue-109, then by issue-128. A config below this needs
+#: Bumped by issue-109, then issue-128, then issue-142. A config below this needs
 #: `/the-loop:upgrade-the-loop`.
-CURRENT_CONFIG_VERSION = "0.3.0"
+CURRENT_CONFIG_VERSION = "0.4.0"
 
 _UPGRADE = "/the-loop:upgrade-the-loop"
 
-# Where the per-feature `ghBinary` keys lived, and what replaced them.
+# Where the per-feature `ghBinary` keys lived, and what replaced them. Both
+# spellings of the routing block are listed: a pre-issue-142 config nests it
+# under the receiver, a hand-written one may already have promoted it, and
+# either way the removed key must not survive the migration.
 _GH_BINARY_SITES: Tuple[Tuple[str, ...], ...] = (
     ("webhooks", "ghWebhook", "routing", "control"),
     ("webhooks", "ghWebhook", "routing", "reactions"),
     ("webhooks", "ghWebhook", "routing", "announce"),
+    ("routing", "control"),
+    ("routing", "reactions"),
+    ("routing", "announce"),
 )
 _REPLACEMENT = "integrations.github.cli.binary"
+
+# issue-142 promoted the routing block. It configures what happens to an event
+# *once accepted* — which the poller does with the very same values — so nesting
+# it under `webhooks` claimed a scope it never had.
+_ROUTING_SITE: Tuple[str, ...] = ("webhooks", "ghWebhook")
+_ROUTING_KEY = "routing"
 
 # issue-128 reorganised generated state by portability: the poller's ledger is
 # now one record per work item under `<state.root>/portable/`, so a *file* path
@@ -104,6 +120,8 @@ def needs_migration(config: Mapping[str, Any]) -> bool:
         return True
     if (_dig(config, _STATE_FILE_SITE) or {}).get(_STATE_FILE_KEY) is not None:
         return True
+    if (_dig(config, _ROUTING_SITE) or {}).get(_ROUTING_KEY) is not None:
+        return True
     return any(
         (section or {}).get("ghBinary") is not None
         for section in (_dig(config, path) for path in _GH_BINARY_SITES)
@@ -117,7 +135,8 @@ def assert_current(config: Mapping[str, Any]) -> None:
     the upgrade command should stamp a version onto anything that lacks one. This
     gate is not, because it stops the daemon. It refuses exactly two things:
 
-    1. A **removed key is still present.** Honouring the config would mean
+    1. A **removed key is still present** (``ghBinary``, ``polling.stateFile``,
+       ``webhooks.ghWebhook.routing``). Honouring the config would mean
        ignoring a value the operator deliberately set, silently changing their
        behaviour. That is the failure this whole mechanism exists to prevent.
     2. The config **declares** a version older than the current one. It says it
@@ -152,6 +171,16 @@ def assert_current(config: Mapping[str, Any]) -> None:
             f"you pointed it is how a thread gets re-forwarded. Run `{_UPGRADE}` "
             "to migrate."
         )
+    if (_dig(config, _ROUTING_SITE) or {}).get(_ROUTING_KEY) is not None:
+        raise ConfigTooOld(
+            "this CLI config still declares `webhooks.ghWebhook.routing`. That "
+            "block governs BOTH ingresses — the poller reads it verbatim for "
+            "dispatch — so it moved to a top-level `routing` (issue-142). It is "
+            "NOT being ignored: `routing.authorizedUsers` decides which GitHub "
+            "logins may drive your daemon, and quietly falling back to none is "
+            f"not a decision this config gets to make for you. Run `{_UPGRADE}` "
+            "to migrate."
+        )
     declared = config.get("version")
     if declared is not None and _parts(str(declared)) < _parts(CURRENT_CONFIG_VERSION):
         raise ConfigTooOld(
@@ -159,6 +188,54 @@ def assert_current(config: Mapping[str, Any]) -> None:
             f"the installed the-loop needs {CURRENT_CONFIG_VERSION}. Run "
             f"`{_UPGRADE}` to migrate."
         )
+
+
+def _promote_routing(data: Dict[str, Any], report: MigrationReport) -> None:
+    """Move ``webhooks.ghWebhook.routing`` to the top level (issue-142).
+
+    A hand-edited config may declare **both** blocks. The top-level one wins,
+    key by key — never a deep merge and never a list union, because unioning two
+    ``authorizedUsers`` lists would silently re-admit a login the operator had
+    removed from the block they were actually maintaining. Whatever the old block
+    declared and the new one overrode is named in the report, both values shown,
+    so nothing is dropped without being said out loud.
+    """
+    receiver = _dig(data, _ROUTING_SITE)
+    if receiver is None or _ROUTING_KEY not in receiver:
+        return
+    old = receiver.pop(_ROUTING_KEY) or {}
+    report.changed = True
+    report.moves.append(
+        f"{'.'.join(_ROUTING_SITE)}.{_ROUTING_KEY} → {_ROUTING_KEY} (top level; it "
+        "governs the poller too)"
+    )
+
+    current = data.setdefault(_ROUTING_KEY, {})
+    if not isinstance(current, dict):  # a scalar under `routing`: refuse to guess
+        report.notes.append(
+            f"the existing top-level `routing` is {current!r}, not a block; the "
+            "promoted one is kept and yours is dropped — re-declare it by hand"
+        )
+        current = {}
+        data[_ROUTING_KEY] = current
+    for key, value in old.items() if isinstance(old, dict) else ():
+        if key in current:
+            if current[key] != value:
+                report.notes.append(
+                    f"`routing.{key}` was declared in both places; kept the "
+                    f"top-level {current[key]!r} and dropped {value!r}"
+                )
+            continue
+        current[key] = value
+
+    # Don't leave `webhooks: {ghWebhook: {}}` behind — a husk that says nothing
+    # and invites the question of what used to be there.
+    if not receiver:
+        webhooks = data.get("webhooks")
+        if isinstance(webhooks, dict):
+            webhooks.pop("ghWebhook", None)
+            if not webhooks:
+                data.pop("webhooks", None)
 
 
 def migrate_cli_config(config: Mapping[str, Any]) -> MigrationReport:
@@ -209,6 +286,8 @@ def migrate_cli_config(config: Mapping[str, Any]) -> MigrationReport:
                 "no watched thread is re-baselined; delete it once `the-loop "
                 "events` looks right on the new layout"
             )
+
+    _promote_routing(data, report)
 
     if _parts(str(data.get("version", "0"))) < _parts(CURRENT_CONFIG_VERSION):
         report.moves.append(

@@ -47,7 +47,7 @@ def build_runtime(
     * ``spec_root`` is a **harness-config** value, read from ``root`` itself. There is no
       ``--config`` ambiguity to protect against, so the repository's own
       ``workflow.specDir`` is the answer unless a caller deliberately overrides it —
-      ``webhooks.ghWebhook.routing.graph.specDir``, for a checkout that carries no harness
+      ``routing.graph.specDir``, for a checkout that carries no harness
       config. Until issue-123 that key was never unset, so this fall-through was
       unreachable on the daemon path and no watched repository's value was ever honoured.
     """

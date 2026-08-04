@@ -143,5 +143,5 @@ label-gated backlog), but they are the known costs:
 - Cycle logic, state, cadence: [`cli/the_loop/poller/poller.py`](../../cli/the_loop/poller/poller.py)
 - Design: [`docs/specs/issue-34/design.md`](../specs/issue-34/design.md) ·
   [decision-022](../decisions/decision-022.md) · [decision-023](../decisions/decision-023.md)
-- Config knobs: `polling.*` and `webhooks.ghWebhook.routing.autoExecuteLabel` in
+- Config knobs: `polling.*` and `routing.autoExecuteLabel` in
   [`skills/the-loop/templates/config.yaml`](../../skills/the-loop/templates/config.yaml)

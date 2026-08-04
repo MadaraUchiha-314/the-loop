@@ -16,16 +16,14 @@ from the_loop.commands import gh_webhook, poll
 from the_loop.poller import github as gh_mod
 
 CONFIG = """
-webhooks:
-  ghWebhook:
-    routing:
-      enabled: true
-      runner: tmux
-      webTerminal:
-        enabled: true
-        host: 127.0.0.1
-        port: 7681
-      authorizedUsers: ["octocat"]
+routing:
+  enabled: true
+  runner: tmux
+  webTerminal:
+    enabled: true
+    host: 127.0.0.1
+    port: 7681
+  authorizedUsers: ["octocat"]
 polling:
   intervalSeconds: 60
   sources:

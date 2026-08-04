@@ -45,7 +45,7 @@ command reconciles them.
    `.the-loop/collaborators.yaml`, issue-82/decision-035) and the
    **CLI daemon** config (`.the-loop/cli-config.schema.json` ↔ `.the-loop/cli-config.yaml`,
    decision-032). Check each one **independently**: a release may change only one of them
-   (e.g. a new `webhooks.ghWebhook.routing.*` key touches only the CLI schema), so never
+   (e.g. a new `routing.*` key touches only the CLI schema), so never
    gate the CLI-config migration on the plugin schema having changed.
 
    **Rename migration (issue-82, decision-035):** if the project still has
@@ -89,7 +89,7 @@ command reconciles them.
      those need an explicit value in the new CLI config or the daemon fails closed.
 
    **Execution control + one state root (issue-106, decision-040).** Two purely
-   additive CLI-config blocks — `state` and `webhooks.ghWebhook.routing.control` —
+   additive CLI-config blocks — `state` and `routing.control` —
    but one of them **changes runtime behaviour by default**, so this one is not the
    ordinary add-with-defaults case:
    - Add `state.root: .the-loop` and the `control` block (with the four default
@@ -133,6 +133,14 @@ command reconciles them.
      being READ until each work item is written forward, so nothing is re-forwarded — say
      so in the report, and offer to delete `<state.root>/sessions/` once the operator has
      confirmed `the-loop sessions list` looks right.
+   - `webhooks.ghWebhook.routing` → **`routing`**, at the top level (issue-142). The block
+     is moved key for key, nothing inside it changes, and `webhooks.ghWebhook` keeps only
+     what is genuinely the receiver's (`host`, `port`, `path`, `secretEnv`, `pidfile`,
+     `events`). It moved because the poller reads that same block verbatim for dispatch —
+     the nesting claimed a scope it never had. WHEN a config declares **both** the old and
+     the new block THEN the migration keeps the top-level value key by key and reports each
+     one it dropped; surface those as **needs-user**, since a dropped `authorizedUsers`
+     entry is a change to who may drive the daemon.
    - The config gains a top-level `version` (now `0.3.0`). Detection is by version, not by
      key-sniffing, so re-running is exact and cheap.
    - Add the `integrations` block from `templates/cli-config.yaml` if absent. Each provider
