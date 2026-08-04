@@ -18,6 +18,7 @@ import pytest
 from the_loop.control import ControlConfig
 from the_loop.interaction import PLACEHOLDER, InteractionConfig
 from the_loop.sessions import SessionRegistry, WorkItemRef
+from the_loop.state import StateLayout
 from the_loop.webhook.dispatcher import Dispatcher, RoutingConfig
 from the_loop.webhook.router import RoutedEvent, extract_work_items
 
@@ -170,4 +171,30 @@ def test_a_reload_swaps_the_interaction_mode(tmp_path):
         _routed(), WorkItemRef.parse(REF), dispatcher._event_template
     )
     dispatcher.stop()
+    assert "interaction mode: `cli`" in prompt
+
+
+def test_the_poller_honours_the_same_interaction_block(tmp_path, monkeypatch):
+    """
+    Scenario: The pull-based ingress reads the very same setting
+      Given a routing map declaring `interaction.mode: cli`
+      When `the-loop poll` composes its dispatcher from it
+      Then that dispatcher renders the CLI directive
+      And the mode did not have to be declared a second time for the poller
+
+    Guards the issue-65 class of defect: a routing setting that silently applies
+    to only one of the two ingresses. The poller reads
+    `webhooks.ghWebhook.routing` verbatim (`poll._load_config_defaults`), which is
+    why one block serves both — see the reply on PR #139.
+    """
+    from the_loop.commands import poll
+
+    monkeypatch.setattr(poll, "_state_layout", lambda: StateLayout(root=str(tmp_path)))
+    dispatcher, routing = poll._build_dispatcher({"interaction": {"mode": "cli"}})
+    dispatcher.stop()
+
+    assert routing.interaction.mode == "cli"
+    prompt = dispatcher._render_prompt(
+        _routed(), WorkItemRef.parse(REF), dispatcher._event_template
+    )
     assert "interaction mode: `cli`" in prompt

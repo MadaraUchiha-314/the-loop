@@ -441,6 +441,9 @@ GitHub for no reason.
 | `work-item` (default) | as a comment on the issue/PR, then **waits** — the reply arrives as the next event | yes (it *is* the comment) |
 | `cli` | interactively, in its own session | yes — the outcome, as a comment |
 
+Like every option on this page, it is **not webhook-only**: the poller reads the same
+`routing` block verbatim, so one declaration governs both ingresses.
+
 The resolved mode reaches the agent through the `$interaction_directive` placeholder in
 [`promptTemplate`](#prompttemplate) / [`spawnPromptTemplate`](#spawnprompttemplate). A
 custom template that omits the placeholder gets the directive **appended** rather than
