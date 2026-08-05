@@ -1,3 +1,9 @@
+## v6.2.1 (2026-08-05)
+
+### Fix
+
+- **issue-154**: record and post the tmux session name tmux actually gave the session (#155)
+
 ## v6.2.0 (2026-08-04)
 
 ### Feat
