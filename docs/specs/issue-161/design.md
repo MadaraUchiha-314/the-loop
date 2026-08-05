@@ -20,7 +20,7 @@ the-loop's executable functionality is re-layered into **core → API → client
 without changing what any capability does. The existing modules (`poller/`,
 `webhook/`, `sessions/`, `graph/`, `eventlog`, `workitem`, …) already carry the
 behaviour; what is missing is one **explicit, transport-agnostic core surface** over
-them, one **HTTP service** exposing that surface, and clients (CLI, MCP, UI) that
+them, one **HTTP service** exposing that surface, and clients (CLI, MCP) that
 consume it. The re-architecture is therefore an *extraction and rewiring*, not a
 rewrite (R1.5).
 
@@ -30,7 +30,6 @@ rewrite (R1.5).
 flowchart TD
   subgraph clients["Clients (no business logic — R1.3)"]
     CLI["CLI commands<br/>(argparse handlers)"]
-    UI["Control-plane UI<br/>ui/ · Vite + TS · static build"]
     AGENT["Agent harness<br/>(Claude etc.)"]
   end
   subgraph service["API service — the-loop service start"]
@@ -44,7 +43,6 @@ flowchart TD
     STORES["portable/<slug>.json · local/ registry<br/>event log · pidfiles"]
   end
   CLI -->|"stdlib HTTP client"| HTTP
-  UI -->|"fetch"| HTTP
   AGENT -->|"JSON-RPC over HTTP"| MCP
   CORE --> STORES
   CORE -.->|delegates to| EXISTING["existing modules<br/>poller/ · webhook/ · sessions/ · graph/ …"]
@@ -57,9 +55,8 @@ flowchart TD
 | `cli/the_loop/core/` | core | The facade: one module per capability (`workitems`, `sessions`, `graphs`, `events`, `daemons`, `repo`), each a set of plain functions/dataclasses delegating to the existing modules. Importable with no CLI/HTTP context (R1.1). |
 | `cli/the_loop/api/` | API | FastAPI `app.py` + one router per capability, `serve.py` (uvicorn entry + exposure guard), `mcp.py` (MCP endpoint). Transport/serialization only — **no in-app auth** (the gateway owns it, owner decision PR #162). |
 | `cli/the_loop/client/` | client | Stdlib (`urllib.request`) HTTP client the CLI commands call; reads the same config. No new base-install dependency. |
-| `cli/the_loop/commands/service_cmd.py` | client | `the-loop service start\|stop\|status` and `the-loop ui dev\|build`. |
+| `cli/the_loop/commands/service_cmd.py` | client | `the-loop service start\|stop\|status`. |
 | `specs/openapi/the-loop.v1.yaml` | contract | The authored OpenAPI source of truth (R3.2); a parity test asserts the served schema matches it. |
-| `ui/` | client | Vite + TypeScript control-plane UI (R6); static build, configurable API base. |
 
 ## Key decisions (recorded in decision-058)
 
@@ -75,7 +72,7 @@ flowchart TD
    and the `[service]` extra is installed; `service.autoStart: false` disables it.
 3. **Bootstrap exclusions.** Commands that manage *the installation or the service
    process itself* stay local, because they must work when no service can exist
-   yet: `install`, `upgrade`, `migrate-config`, `service *`, `ui *`, `--version`.
+   yet: `install`, `upgrade`, `migrate-config`, `service *`, `--version`.
    Everything else — work items, sessions, graph/check, events, scenarios,
    instructions, critics, poller/webhook lifecycle — goes through the API.
 4. **MCP implemented as a minimal JSON-RPC endpoint on the same app** (`/mcp`,
@@ -84,11 +81,11 @@ flowchart TD
    ladder stops before the `mcp` SDK: the SDK would add httpx/sse-starlette et al.
    for a protocol subset that is ~150 lines over FastAPI, and the tool registry is
    *generated from the same core surface* the REST routers use (R1.4, R5.1).
-5. **UI: Vite + vanilla TypeScript, no framework.** All code TS (owner rule). Three
-   views over the API need no component framework; `ui/` carries the repo's first
-   `package.json`, scoped there. The build emits static assets with a configurable
-   API base (build-time `VITE_API_BASE`, runtime `?api=` / localStorage override) —
-   statically hostable per R6.1.
+5. **UI: descoped from this work item** (owner decision on PR #162 — services,
+   CLI and MCP only). The Vite + vanilla-TypeScript design that was built here is
+   recorded in this file's history for the follow-up UI work item; nothing under
+   `ui/` ships in this PR, and the service sends no CORS headers (no browser
+   client to serve — same-origin default denies cross-origin access).
 6. **Repo-scoped operations take an explicit `repo` path parameter.** `check`,
    `scenarios`, `instructions`, `critic` are repo-scoped; the CLI passes its cwd.
    The service validates the path exists and is a directory before any core call.
@@ -148,14 +145,11 @@ hatch; requires a human-attributed reason — exposing it to a prompt-injectable
 agent would forge that attribution). No in-app auth; same event log
 (`mcp.call` events) (R5.2).
 
-### UI (`ui/`)
+### UI — descoped
 
-Views: **Work items** (list + phase badge), **Detail** (graph node states from
-`check`, recent events, session controls per R6.4), **Attention** (R6.3). It talks
-to the configured API base (build-time `VITE_API_BASE`, runtime `?api=`); no
-credential to hold. `the-loop ui dev|build` shells (argv, no shell=True) to
-`npm --prefix ui run dev|build`, reporting a clear skip when npm is absent
-(R4.2, R6.2).
+Removed from this work item on owner review (services, CLI and MCP only). The
+`attention` core/API surface it would consume stays; the follow-up UI work item
+picks up from the recorded R6 scope.
 
 ## Error handling (fail closed)
 
@@ -180,8 +174,9 @@ credential to hold. `the-loop ui dev|build` shells (argv, no shell=True) to
 - **Input validation** at the transport edge: refs via the existing
   `workitem` ref parser, repo paths must resolve to existing directories, critic
   invocations remain argv-no-shell through the existing critic runner (abuse case 3).
-- **CORS** pinned to `service.ui.origins` (default: the Vite dev origin only);
-  no wildcard (abuse case 4).
+- **No CORS headers at all** (the UI was descoped, so no browser client is
+  served): the browser's same-origin default denies cross-origin access — stricter
+  than the pinned allowlist originally specified (abuse case 4, superseded).
 - **MCP exclusions** as above (abuse case 5). No API response ever includes webhook
   secrets or any credential; responses are built from the stores, which hold none.
 - **Existing ingress boundaries unchanged**: webhook HMAC verification and
@@ -198,8 +193,6 @@ service:
   port: 4114
   exposed: false
   autoStart: true        # CLI may boot a local service on demand
-  ui:
-    origins: ["http://localhost:5173"]
 ```
 
 ## Testing strategy
@@ -213,14 +206,13 @@ service:
 - **Lifecycle**: reuse issue-159's lock/idempotency test patterns for
   `service start|stop`.
 - **Integration tests** carry Gherkin docstrings with `Requirement:` links.
-- **UI**: `tsc --noEmit` + `vite build` in CI (a `ui` job); behaviour smoke-tested
-  against the dev service.
 
 ## UI/UX design artifacts
 
-`docs/specs/issue-161/design/control-plane.html` — self-contained HTML prototype
-(inlined CSS/JS, no network deps) of the three views; the visual contract the
-implementation matches (`design.uiArtifacts`).
+None ship with this work item — the UI was descoped on owner review (this work
+item is backend/CLI/MCP shaped, which per `design.uiArtifacts` produces no visual
+artifacts). The prototype built during the design phase lives in this branch's
+history for the follow-up UI work item to resurrect.
 
 ## Dependency justification (minimalism ladder)
 
@@ -228,7 +220,6 @@ implementation matches (`design.uiArtifacts`).
 |------------|-------|--------------|
 | `fastapi`, `uvicorn` | `[service]` extra | Owner-sanctioned; contract generation, validation, ASGI lifecycle vs. re-implementing on `http.server` |
 | `httpx` | dev/test only | required by Starlette's TestClient |
-| Vite + TypeScript toolchain | `ui/` only | Owner-directed (SOTA tooling, TS-only) |
 | — (MCP SDK rejected) | — | ~150-line JSON-RPC subset over the existing app beats a multi-dep SDK (decision-058) |
 
 ## Review comments

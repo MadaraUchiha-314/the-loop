@@ -35,19 +35,3 @@ jobs:
       - name: Validate JSON artifacts parse
         run: |
           uv run python -c "import json; [json.load(open(p)) for p in ['.claude-plugin/plugin.json', '.claude-plugin/marketplace.json', '.cursor-plugin/plugin.json', '.cursor-plugin/marketplace.json', '.the-loop/harness-config.schema.json', '.the-loop/collaborators.schema.json', 'hooks/hooks.json']]; print('json ok')"
-
-  # The control-plane UI (issue-161): TypeScript-only, Vite build. Same commands
-  # `the-loop ui build` delegates to — no local-vs-CI drift.
-  ui:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: ui/package-lock.json
-      - name: Install UI dependencies
-        run: npm --prefix ui ci
-      - name: Typecheck + build (tsc --noEmit && vite build)
-        run: npm --prefix ui run build

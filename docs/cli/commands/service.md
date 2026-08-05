@@ -1,7 +1,7 @@
 # `the-loop service`
 
 Run the **control-plane API service** — the HTTP layer over the-loop's core that the
-CLI, the [MCP endpoint](/cli/commands/service#mcp) and the control-plane UI consume
+CLI and the [MCP endpoint](/cli/commands/service#mcp) consume
 (issue-161, decision-058). The service is the CLI's **only execution path** for core
 capabilities: commands like `sessions`, `check` and `events` talk to it (auto-starting
 a local one when [`service.autoStart`](/config/cli/service-options#autostart) allows)

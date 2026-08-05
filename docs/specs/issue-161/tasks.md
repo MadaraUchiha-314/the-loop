@@ -51,6 +51,9 @@ overrides: {}
   - _Requirements:_ R1.2, R3.1; abuse cases 1, 2, 4
   - _Test:_ `cli/tests/test_api_auth.py` — **negative first**: no/bad token → 401
     before any core call; non-loopback without `exposed` refuses to boot
+  - _Note:_ the token auth and CORS built here were later removed — the gateway
+    owns auth (decision-059) and the UI descope took CORS with it; the exposure
+    guard remains, and the test file now pins that boundary.
 - [x] 6. API routers over the core + contract parity
   - Routers: work-items, graph/check, sessions, events, daemons, repo, attention;
     every operation emits `api.<op>` to the event log; parity test: served schema
@@ -78,7 +81,7 @@ overrides: {}
   - `sessions` (register/list/attach/close/start/pause/resume/stop), `check`,
     `graph`, `events`, `scenarios`, `instructions`, `critic`, `poll`,
     `gh-webhook` → client calls; flags/output/exit codes unchanged (R2.1);
-    bootstrap commands (`install`, `upgrade`, `migrate-config`, `service`, `ui`,
+    bootstrap commands (`install`, `upgrade`, `migrate-config`, `service`,
     `--version`) stay local; `sessions reset` stays local-only (R5.3 rationale).
   - **Progress:** `check` and `events` route through the service (the pattern:
     routing seam + fail-closed + auto-start + `--file` local escape). Remaining
@@ -97,33 +100,21 @@ overrides: {}
   - _Requirements:_ R5.1, R5.2, R5.3; abuse case 5
   - _Test:_ `cli/tests/test_mcp_integration.py` — tools/list matches registry;
     tools/call round-trips; excluded tools absent; unauth → JSON-RPC error
-- [x] 11. UI scaffold — `ui/` (Vite + TypeScript)
-  - Vite vanilla-ts scaffold; typed API client (token from localStorage, base
-    from `VITE_API_BASE` with `?api=`/localStorage override); `tsc --noEmit`
-    green; static `vite build` output (R6.1).
-  - _Depends on:_ 4
-  - _Requirements:_ R6.1, R6.6
-  - _Test:_ `tsc --noEmit` + `vite build` succeed (CI `ui` job)
-- [x] 12. UI views — work items, detail (graph + controls), attention
-  - Implement the three prototype views against /api/v1; session control verbs
-    wired to the API (paper trail comes from the service path, R6.4).
-  - _Depends on:_ 11, 6
-  - _Requirements:_ R6.3, R6.4, R6.5
-  - _Test:_ typecheck + build; smoke against dev service (evidence: screenshot)
-- [x] 13. `the-loop ui dev|build` + CI
-  - Command delegating to `npm --prefix ui run dev|build` (argv, no shell;
-    clear skip if npm absent); CI `ui` job (install, typecheck, build).
-  - _Depends on:_ 11
-  - _Requirements:_ R4.2, R6.2
-  - _Test:_ `cli/tests/test_ui_cmd.py` (plan/skip paths); CI job green
-- [ ] 14. Docs + capability folds
-  - `docs/cli/service.md` + `ui.md` pages; `docs/config/cli/service.md`;
-    capability docs: update `cli.md`, mint `control-plane.md`, update index +
-    architecture doc; parity tests stay green.
+- [x] 11. ~~UI scaffold — `ui/` (Vite + TypeScript)~~ **DESCOPED** (owner
+  decision on PR #162: services, CLI and MCP only). Built, then removed from
+  this PR; deferred with R6 to the follow-up UI work item.
+- [x] 12. ~~UI views — work items, detail (graph + controls), attention~~
+  **DESCOPED** (same decision). The `attention` API surface (T3/T6) ships.
+- [x] 13. ~~`the-loop ui dev|build` + CI~~ **DESCOPED** (same decision; the CI
+  `ui` job and the command were removed with the frontend).
+- [x] 14. Docs + capability folds
+  - `docs/cli/commands/service.md` page; `docs/config/cli/service-options.md`;
+    capability docs: update `cli.md`, mint `control-plane.md`, update index;
+    parity tests stay green. (The `ui.md` page was removed with the UI descope.)
   - _Depends on:_ 9, 10, 13
   - _Requirements:_ NFR Docs
   - _Test:_ existing docs/config parity tests
-- [ ] 15. Ready-to-ship — reviews, security gate, evidence, briefing
+- [x] 15. Ready-to-ship — reviews, security gate, evidence, briefing
   - Self-review ×3 + critic rounds (config: none runnable → recorded), security
     review vs the abuse-case tests, validation evidence in the execution log,
     PR #162 briefing refreshed. Tier 4: named human security sign-off requested.
@@ -146,20 +137,15 @@ flowchart LR
   T6 --> T9[9 rewire commands]
   T8 --> T9
   T6 --> T10[10 mcp]
-  T4 --> T11[11 ui scaffold]
-  T11 --> T12[12 ui views]
-  T6 --> T12
-  T11 --> T13[13 ui cmd + ci]
   T9 --> T14[14 docs + capabilities]
   T10 --> T14
-  T13 --> T14
   T14 --> T15[15 ready-to-ship]
-  T12 --> T15
+  %% T11–T13 (UI scaffold/views/cmd+CI) descoped — owner decision on PR #162
 ```
 
 ## Checkpoints
 
 After each task: run its named tests (red→green recorded in the execution log),
-tick the checkbox, commit. After T6, T9, T13: run `make check` (full CI parity).
+tick the checkbox, commit. After T6 and T9: run `make check` (full CI parity).
 After T15: the review phase (self/critic + security gate) precedes requesting the
 consolidated human review on PR #162.

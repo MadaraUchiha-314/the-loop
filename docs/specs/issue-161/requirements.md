@@ -135,9 +135,10 @@ and the UI, so that running the control plane is as easy as running the poller t
    API service; WHEN the operator runs the stop command THEN the system SHALL stop
    it — with the same lifecycle discipline as existing daemons (pidfile+lock,
    idempotent stop/start, no zombie state; issue-159).
-2. WHEN the operator wants the UI THEN the system SHALL provide a **separate**
+2. ~~WHEN the operator wants the UI THEN the system SHALL provide a **separate**
    command to serve it (dev-server mode); the API service SHALL be startable
-   without the UI and vice versa.
+   without the UI and vice versa.~~ **Descoped with the UI** (owner decision on
+   PR #162 — see the Requirement 6 note).
 3. IF a start command is invoked while the component is already running THEN the
    system SHALL report that fact and SHALL NOT start a second instance against the
    same state.
@@ -161,6 +162,15 @@ directly.
    THEN that exclusion SHALL be recorded and justified in `design.md`.
 
 ### Requirement 6 — control-plane UI, statically hostable
+
+> **DESCOPED from this work item** (owner decision,
+> [PR #162 comment](https://github.com/MadaraUchiha-314/the-loop/pull/162)):
+> "Let's remove the UI part from this PR. Just the services, CLI changes and the
+> MCP." The whole requirement (R6.1–R6.6, and R4.2's UI dev-server command) is
+> **deferred to a follow-up work item**; the API surface it would consume
+> (including the `attention` endpoint, R6.3's data source) ships in this one.
+> The acceptance criteria below are kept as the recorded scope for that
+> follow-up, not as gates on this PR.
 
 **User story:** As a project owner, I want a control-plane UI showing what work items
 are being worked on, each one's graph state, and what needs attention, so that
@@ -248,9 +258,11 @@ managing work items is easy without shell access.
      SHALL validate inputs against the same rules the CLI enforces today (argv
      lists, no shell; ref shape validation; schema-validated config) and reject
      what fails them.
-  4. WHEN a browser context (the UI) talks to the API THEN cross-origin requests
-     SHALL be constrained (CORS pinned to the configured UI origin), so a malicious
-     web page cannot drive a local control plane.
+  4. *(Superseded with the UI descope: the service ships no browser client and
+     sends **no CORS headers at all** — the browser's same-origin default
+     therefore denies cross-origin access, which is stricter than the pinned
+     allowlist this case originally required. A future UI work item reintroduces
+     a pinned CORS policy with it.)*
   5. WHEN MCP tools are invoked by an agent THEN destructive operations SHALL be
      excluded or gated per R5.3, so a prompt-injected agent cannot silently wipe
      state.
@@ -330,3 +342,15 @@ managing work items is easy without shell access.
   (on Q5): "task breakdown looks ok. but i need all this done in a single PR." —
   delivery is this single PR; the program note updated, and the loop continues on
   PR #162 through design → tasks → implementation.
+- **2026-08-05 · @MadaraUchiha-314 ·
+  [PR #162 comment](https://github.com/MadaraUchiha-314/the-loop/pull/162#issuecomment-5194359297)**:
+  "Why have we added the constructs of tokens and all that? Remove AuthN from the
+  picture for now. The GW under which the service is deployed will take care of
+  Auth" — in-app authentication removed end to end (decision-059); the security
+  section's authentication-model note records the new posture.
+- **2026-08-05 · @MadaraUchiha-314 · PR #162 comment**: "Let's remove the UI part
+  from this PR. Just the services, CLI changes and the MCP." — R6 (and R4.2)
+  descoped to a follow-up work item; the `ui/` frontend, `the-loop ui` command,
+  CI `ui` job, UI design artifacts and the CORS/`service.ui.origins` config
+  removed from this PR. The API surface a UI would consume (including
+  `attention`) remains.

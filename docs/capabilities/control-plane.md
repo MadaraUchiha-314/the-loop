@@ -1,15 +1,16 @@
 # Capability: control plane
 
-> The API layer over the-loop's core, and its clients: the service-routed CLI,
-> the MCP endpoint, and the statically-hostable UI (issue-161, decision-058).
+> The API layer over the-loop's core, and its clients: the service-routed CLI
+> and the MCP endpoint (issue-161, decision-058). A control-plane UI over the
+> same API is future work — descoped from issue-161 on owner review.
 
 ## What it is
 
 the-loop's executable functionality is layered as **core → API → clients**: a
 transport-agnostic core facade (`the_loop.core`, one module per capability) is the
 single implementation; the API service (`the_loop.api`, FastAPI behind the
-`[service]` extra) exposes it at `/api/v1` plus an MCP endpoint at `/mcp`; the CLI,
-an agent host and the `ui/` frontend are thin clients of that surface.
+`[service]` extra) exposes it at `/api/v1` plus an MCP endpoint at `/mcp`; the CLI
+and an agent host are thin clients of that surface.
 
 ## Current behaviour
 
@@ -45,22 +46,19 @@ an agent host and the `ui/` frontend are thin clients of that surface.
   (requires a human-attributed reason) SHALL NOT be exposed as tools.
 - Every API operation SHALL land in the event log (`api.request`; tool calls as
   `mcp.call`), queryable via `the-loop events --source service`.
-- The UI under `ui/` SHALL be TypeScript only, built with Vite to **static assets**
-  (relative base) with the API base configurable at build time (`VITE_API_BASE`)
-  and runtime (`?api=`, remembered); it holds no credential (auth is the gateway's
-  job). It SHALL surface the work items in flight, a work item's detail
-  (session controls + event trail), and the needs-attention list. `the-loop ui
-  dev|build` delegate to `npm --prefix ui` as an argv list, never a shell.
+- A **control-plane UI is not part of this capability yet** (descoped from
+  issue-161 on owner review). The `attention` surface and the read/manage API it
+  would consume are in place; the UI arrives as its own work item.
 
 ## Design
 
 [`docs/specs/issue-161/design.md`](../specs/issue-161/design.md) ·
 [`specs/openapi/the-loop.v1.yaml`](../../specs/openapi/the-loop.v1.yaml) ·
-[CLI: service](../cli/commands/service.md) · [CLI: ui](../cli/commands/ui.md) ·
+[CLI: service](../cli/commands/service.md) ·
 [config: service options](../config/cli/service-options.md)
 
 ## History
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
-| issue-161 | Capability minted: core facade extracted, API service + OpenAPI contract, loopback-default network posture (no in-app auth — the gateway owns it), service lifecycle commands, service-routed CLI (check/events first), HTTP-only MCP endpoint, Vite+TS control-plane UI | [spec](../specs/issue-161/), [decision-058](../decisions/decision-058.md), [decision-059](../decisions/decision-059.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/161) |
+| issue-161 | Capability minted: core facade extracted, API service + OpenAPI contract, loopback-default network posture (no in-app auth — the gateway owns it, decision-059), service lifecycle commands, service-routed CLI (check/events first), HTTP-only MCP endpoint. The UI was descoped on owner review | [spec](../specs/issue-161/), [decision-058](../decisions/decision-058.md), [decision-059](../decisions/decision-059.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/161) |

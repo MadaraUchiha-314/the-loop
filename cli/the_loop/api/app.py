@@ -1,12 +1,14 @@
 """The control-plane FastAPI app: /api/v1 over :mod:`the_loop.core` (issue-161).
 
-Routes add transport, serialization and authn only (R1.2). Work-item refs
+Routes add transport and serialization only (R1.2) — no in-app auth (the
+deploying gateway owns it, decision-059) and no CORS headers (no browser client
+ships; the same-origin default denies cross-origin access). Work-item refs
 travel as query/body parameters, never path segments — a ref contains ``/``
 and ``#``, and URL-encoding those into paths trades one escaping bug for
 another. Error mapping is uniform: ``ValueError`` → 400 (caller mistake),
-``LookupError`` → 404, auth failure → 401 before any core call. Every /api/v1
-operation lands in the event log as ``api.request``; /health is exempt (it is
-the unauthenticated liveness probe the CLI's auto-start loop hammers).
+``LookupError`` → 404. Every /api/v1 operation lands in the event log as
+``api.request``; /health is exempt (it is the liveness probe the CLI's
+auto-start loop hammers).
 """
 
 from __future__ import annotations
@@ -14,7 +16,6 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, Query, Request
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -26,7 +27,6 @@ from ..core import graphs as core_graphs
 from ..core import repo as core_repo
 from ..core import sessions as core_sessions
 from ..core import workitems as core_workitems
-from .config import service_config
 
 API_PREFIX = "/api/v1"
 
@@ -85,18 +85,11 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
     it is deployed behind a gateway that handles auth, and locally it binds
     loopback-only by default (the exposure guard in ``serve.py`` is the network
     boundary). Adding a token layer here would duplicate what the gateway owns."""
-    conf = service_config(cli_config)
     app = FastAPI(
         title="the-loop control plane",
         version="1",
         docs_url="/api/docs",
         openapi_url="/api/openapi.json",
-    )
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=conf["ui"]["origins"],
-        allow_methods=["*"],
-        allow_headers=["*"],
     )
 
     @app.exception_handler(ValueError)

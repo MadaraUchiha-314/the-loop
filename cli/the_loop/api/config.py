@@ -14,20 +14,17 @@ from ..state import layout_from_config
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 4114
-DEFAULT_UI_ORIGINS = ["http://localhost:5173"]
 
 _LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
 
 
 def service_config(cli_config: Optional[dict] = None) -> Dict[str, Any]:
     raw = ((cli_config or {}).get("service")) or {}
-    ui = raw.get("ui") or {}
     return {
         "host": str(raw.get("host") or DEFAULT_HOST),
         "port": int(raw.get("port") or DEFAULT_PORT),
         "exposed": bool(raw.get("exposed", False)),
         "autoStart": bool(raw.get("autoStart", True)),
-        "ui": {"origins": [str(o) for o in (ui.get("origins") or DEFAULT_UI_ORIGINS)]},
     }
 
 

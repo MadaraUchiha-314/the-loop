@@ -94,7 +94,7 @@ def test_graph_check_rejects_a_bad_repo_path(tmp_path):
 def test_sessions_daemons_attention_and_events(tmp_path):
     """
     Feature: control-plane operational reads
-      Scenario: the UI loads its three views
+      Scenario: a client loads the operational surfaces
         Given a machine with no sessions and stopped daemons
         When the client reads sessions, daemons, attention and event types
         Then every surface answers with well-formed, empty-safe payloads

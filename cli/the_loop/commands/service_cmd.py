@@ -1,26 +1,20 @@
-"""``the-loop service`` / ``the-loop ui`` — control-plane lifecycle (issue-161).
+"""``the-loop service`` — control-plane service lifecycle (issue-161).
 
 ``service start|stop|status`` manage the API service process with the same
 discipline as the other daemons (issue-159): the pidfile is the flock, start is
-idempotent, stop signals and waits. ``ui dev|build`` delegate to the frontend's
-own toolchain (``npm --prefix ui``) as an argv list, never a shell, and report
-a clear skip when npm is absent. These are **bootstrap commands** — they manage
-the installation and the service process itself, so they are the exceptions to
-the service-only execution rule (decision-058).
+idempotent, stop signals and waits. This is a **bootstrap command** — it manages
+the service process itself, so it is an exception to the service-only execution
+rule (decision-058).
 """
 
 from __future__ import annotations
 
 import argparse
 import os
-import shutil
 import signal
 import subprocess
 import sys
 import time
-from pathlib import Path
-
-from typing import Optional
 
 from .base import Command, register
 from .. import eventlog
@@ -138,42 +132,6 @@ class ServiceCommand(Command):
         return 0
 
 
-@register
-class UiCommand(Command):
-    name = "ui"
-    help = "Serve or build the control-plane UI (dev | build)"
-
-    def add_arguments(self, parser: argparse.ArgumentParser) -> None:
-        actions = parser.add_subparsers(dest="action", metavar="<action>")
-        actions.required = True
-        for verb, help_text in (
-            ("dev", "Run the UI dev server against a local API service"),
-            ("build", "Build the static, hostable UI bundle"),
-        ):
-            sub = actions.add_parser(verb, help=help_text)
-            sub.set_defaults(_verb=verb)
-
-    def run(self, args: argparse.Namespace) -> int:
-        ui_dir = _repo_ui_dir()
-        if ui_dir is None:
-            print(
-                "error: no ui/ directory here — run from a the-loop checkout",
-                file=sys.stderr,
-            )
-            return 1
-        npm = shutil.which("npm")
-        if npm is None:
-            print(
-                "skipped: npm is not on PATH; install Node.js to run the UI",
-                file=sys.stderr,
-            )
-            return 1
-        argv = [npm, "--prefix", str(ui_dir), "run", args._verb]
-        print("+ " + " ".join(argv))
-        proc = subprocess.run(argv)  # noqa: S603 — fixed argv, no shell
-        return proc.returncode
-
-
 def _load_config() -> dict:
     from ..cli_config import default_cli_config_path, load_cli_config
 
@@ -181,8 +139,3 @@ def _load_config() -> dict:
         return load_cli_config(default_cli_config_path())
     except Exception:
         return {}
-
-
-def _repo_ui_dir() -> Optional[Path]:
-    candidate = Path.cwd() / "ui"
-    return candidate if (candidate / "package.json").is_file() else None

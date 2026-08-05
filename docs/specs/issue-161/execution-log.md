@@ -103,6 +103,24 @@ status: in-progress
 - **Next:** owner review on PR #162 (tier-4 approval + named security
   sign-off); follow-up work item for the T9 remainder + dispatcher fold-in.
 
+### 2026-08-05 — UI descoped on owner review
+
+- **Phase:** needs-review (scope change during review)
+- **Owner decision (PR #162):** "Let's remove the UI part from this PR. Just the
+  services, CLI changes and the MCP."
+- **Did:** removed the UI end to end — `ui/` (Vite + TS frontend), the
+  `the-loop ui` command + its tests, the CI `ui` job, the `docs/cli/commands/ui`
+  page, the UI design prototype + screenshots, and the CORS middleware +
+  `service.ui.origins` config (no browser client → no CORS headers; the browser
+  same-origin default is stricter than the pinned allowlist). R6 and R4.2 are
+  recorded as **descoped to a follow-up work item** in `requirements.md`;
+  T11–T13 marked descoped in `tasks.md`; design/capability docs updated. The
+  `attention` core/API surface a UI would consume stays (also used over MCP).
+- **Checkpoint/tests:** `make check` (full CI parity) after the removal —
+  evidence below.
+- **Next:** owner review of the reduced scope (services + CLI + MCP); tier-4
+  named security sign-off still pending.
+
 ## Review cycles
 
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
@@ -113,6 +131,7 @@ status: in-progress
 | 4 | critic | — | **unavailable** — `reviews.critics` is empty in this repo's config; does not count toward `criticReviewCount` | — |
 | 5 | security (gate) | security-review skill (adversarial sub-agent) | one HIGH (UI token exfil via `?api=`) — first fixed by origin-pinning, then **resolved at root** by removing in-app auth (decision-059, owner); `esc()` quote-hardening kept | see Security review section |
 | 6 | owner direction (PR #162) | @MadaraUchiha-314 | remove in-app authentication — the gateway owns auth (decision-059); implemented, 1310 tests green | [comment](https://github.com/MadaraUchiha-314/the-loop/pull/162#issuecomment-5194359297) |
+| 7 | owner direction (PR #162) | @MadaraUchiha-314 | remove the UI from this PR — services, CLI and MCP only; R6/R4.2 descoped to a follow-up work item, frontend + CORS removed | PR #162 |
 
 ## Security review (gate)
 
