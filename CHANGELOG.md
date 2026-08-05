@@ -1,3 +1,15 @@
+## v7.0.0 (2026-08-05)
+
+### BREAKING CHANGE
+
+- the routing.runner config key and the headless process
+runner are gone; tmux is required for the daemon. Session records no longer
+carry a runner field; sessions list drops the Runner column.
+
+### Feat
+
+- **issue-156**: remove the process runner — tmux is the only runner (#158)
+
 ## v6.2.1 (2026-08-05)
 
 ### Fix
