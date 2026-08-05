@@ -477,3 +477,104 @@ def test_a_reopened_item_spawns_a_fresh_session(tmp_path):
     assert wait_until(lambda: len(tmux.spawns) == 2)
     dispatcher.stop()
     assert registry.find_by_work_item(REF) is not None
+
+
+# -- restarting the poller is invisible (issue-159) ---------------------------
+
+
+def test_a_restart_after_a_completed_item_does_not_re_forward_it(tmp_path):
+    """Scenario: the poller is killed mid-cycle, after item 15 was finished.
+
+    Given a labelled issue whose new comment was delivered into its session
+    When the cycle is abandoned before it ends and a FRESH poller starts on the
+      same state root
+    Then the item's record is complete on disk and the comment is not forwarded
+      again
+    Requirement: github issue #159 (AC3.1)
+    """
+    gh = GhState()
+    gh.comments = [_comment("IC_1", "old")]
+    registry, tmux, dispatcher, poller = _make(tmp_path, gh)
+
+    poller.poll_once()  # spawn + baseline IC_1
+    assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
+    gh.comments.append(_comment("IC_2", "the build is red"))
+    poller.poll_once()  # forwards IC_2
+    assert wait_until(lambda: len(tmux.delivers) == 1)
+
+    # The process dies here — nothing further is saved. A fresh poller reads
+    # only what is ON DISK.
+    restarted = Poller(
+        providers=poller.providers,
+        registry=registry,
+        dispatcher=dispatcher,
+        config=PollConfig(),
+        state=PollState(WorkItemStore(tmp_path / "portable")),
+        authorized_users=["octocat"],
+    )
+    summary = restarted.poll_once()
+    time.sleep(0.1)
+    dispatcher.stop()
+
+    assert summary.spawns == 0 and summary.comments_forwarded == 0
+    assert len(tmux.spawns) == 1 and len(tmux.delivers) == 1
+
+
+def test_an_abandoned_dispatch_is_retried_with_a_full_budget(tmp_path):
+    """Scenario: a graceful stop leaves a comment queued and undelivered.
+
+    Given a comment the poller enqueued but the dispatcher never delivered
+    When the dispatcher is stopped and reports it abandoned
+    Then its attempt is handed back, it stays unresolved, and the next start
+      forwards it as a first attempt
+    Requirement: github issue #159 (AC5.1, AC5.2, AC5.3)
+    """
+    gh = GhState()
+    gh.comments = [_comment("IC_1", "old")]
+    registry, tmux, dispatcher, poller = _make(tmp_path, gh)
+    poller.poll_once()  # spawn + baseline IC_1
+    assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
+
+    # Wedge the session's single worker inside IC_2's delivery, so IC_3 is still
+    # sitting in the queue when the dispatcher is asked to stop.
+    tmux.deliver_gate = threading.Event()
+    try:
+        gh.comments.append(_comment("IC_2", "the build is red"))
+        poller.poll_once()
+        assert poller.state.comment_attempts(REF, "IC_2") == 1
+
+        gh.comments.append(_comment("IC_3", "and now the tests too"))
+        poller.poll_once()
+        assert poller.state.comment_attempts(REF, "IC_3") == 1
+
+        abandoned = dispatcher.stop(timeout=0.2)
+        assert "poll-comment-IC_3" in abandoned
+        poller.release_abandoned(abandoned)
+    finally:
+        tmux.deliver_gate.set()
+
+    # A fresh poller, reading only what is on disk: IC_3 was never baselined and
+    # its budget is untouched.
+    reread = PollState(WorkItemStore(tmp_path / "portable"))
+    assert "IC_3" not in reread.seen_comments(REF)
+    assert reread.comment_attempts(REF, "IC_3") == 0
+
+
+def test_a_second_poller_is_refused_rather_than_sharing_the_ledger(tmp_path):
+    """Scenario: `poll start` while another poller is running.
+
+    Given a poller holding the single-instance lock on the state root
+    When a second one tries to take it
+    Then it is refused, so the two can never interleave writes to one ledger
+    Requirement: github issue #159 (AC1.1)
+    """
+    from the_loop.runlock import RunLock
+
+    pidfile = tmp_path / "poll.pid"
+    first = RunLock(pidfile, name="poller")
+    assert first.acquire() is True
+    try:
+        assert RunLock(pidfile, name="poller").acquire() is False
+    finally:
+        first.release()
+    assert RunLock(pidfile, name="poller").acquire() is True

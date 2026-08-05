@@ -22,7 +22,14 @@ responsibilities are ingress-agnostic:
   *open* items, so the poller reconciles the registry against it and asks the
   provider about anything that disappeared (issue-94).
 
-Spec: docs/specs/issue-34/design.md; docs/specs/issue-94/design.md.
+Stopping and starting it is meant to be invisible (issue-159): each work item's
+ledger is persisted as soon as that item is done, a stop is honoured *within* a
+cycle (and an interrupted cycle never reconciles closures — a partial listing is
+not proof anything ended), and a shutdown hands back the retry budget of
+dispatches that died queued.
+
+Spec: docs/specs/issue-34/design.md; docs/specs/issue-94/design.md;
+docs/specs/issue-159/design.md.
 """
 
 from __future__ import annotations
@@ -105,9 +112,12 @@ class PollState:
     ``poll-state.json`` holding every item. Same contents, three consequences —
     it sits beside that item's control record (both are facts about the world),
     two machines now conflict only over an item they *both* worked, and a cycle
-    writes only the items it touched. Entries are read lazily and written back at
-    the end of a cycle; :meth:`forget` writes through immediately, because a work
-    item that ended must not be resurrected by a later flush.
+    writes only the items it touched. Entries are read lazily and written back by
+    :meth:`flush` as soon as their work item is done (issue-159 — a poller killed
+    mid-cycle then loses the item in flight rather than everything the cycle
+    learned), with :meth:`save` as the end-of-cycle backstop; :meth:`forget`
+    writes through immediately, because a work item that ended must not be
+    resurrected by a later flush.
     """
 
     def __init__(self, store: WorkItemStore):
@@ -257,6 +267,44 @@ class PollState:
         item = self._item(ref)
         item["spawn"] = {}
 
+    # -- returning unspent budget (issue-159) -----------------------------------
+
+    def release_comment_attempt(self, ref: str, comment_id: str) -> None:
+        """Un-count one recorded attempt for a comment that was never delivered.
+
+        An attempt is recorded when the poller *enqueues* an event, and the
+        outcome is observed on a later cycle (issue-80). A shutdown that
+        abandons the event while it is still queued therefore leaves an attempt
+        spent on a dispatch that never happened — and three restarts would
+        exhaust the budget and abandon a comment nothing ever tried to deliver.
+
+        Deliberately does **not** touch ``seenComments``: the comment stays
+        unresolved, exactly as if it had never been enqueued, so the next start
+        rediscovers it as an ordinary candidate.
+        """
+        item = self._item(ref)
+        attempts = dict(item.get("commentAttempts") or {})
+        remaining = int(attempts.get(comment_id, 0)) - 1
+        if remaining > 0:
+            attempts[comment_id] = remaining
+        else:
+            attempts.pop(comment_id, None)
+        item["commentAttempts"] = attempts
+
+    def release_spawn_attempt(self, ref: str) -> None:
+        """The spawn-ledger twin of :meth:`release_comment_attempt`.
+
+        Also clears the in-flight delivery id, because the delivery it named
+        died with the process — leaving it would make the next start read a
+        presence event that no longer exists anywhere as "still in flight".
+        """
+        item = self._item(ref)
+        spawn = dict(item.get("spawn") or {})
+        remaining = int(spawn.get("attempts", 0)) - 1
+        spawn["attempts"] = remaining if remaining > 0 else 0
+        spawn["deliveryId"] = ""
+        item["spawn"] = spawn
+
     def forget(self, ref: str) -> None:
         """Drop an item's whole ledger — it ended (issue-94).
 
@@ -298,8 +346,26 @@ class PollState:
         item["gaveUp"] = {**record, "comments": abandoned} if abandoned else {}
         item["lastPolledAt"] = polled_at
 
+    def flush(self, ref: str) -> None:
+        """Write **one** item's record, if this cycle changed it (issue-159).
+
+        Called as soon as a work item is done rather than at the end of the
+        cycle, so a poller killed while processing item 40 of 50 loses what it
+        learned about item 40 and nothing else. Storage is unchanged — records
+        were already one atomic file per work item — only the schedule is: same
+        bytes, same records, written sooner.
+        """
+        if ref not in self._dirty:
+            return
+        self.store.write_section(ref, POLL, self._items[ref])
+        self._dirty.discard(ref)
+
     def save(self) -> None:
-        """Flush every item this cycle touched, each into its own record."""
+        """Flush every item still dirty, each into its own record.
+
+        The end-of-cycle backstop now that :meth:`flush` writes each item as it
+        finishes: whatever a cycle touched outside the per-item path still lands.
+        """
         for ref in sorted(self._dirty):
             self.store.write_section(ref, POLL, self._items[ref])
         self._dirty.clear()
@@ -315,6 +381,7 @@ class PollSummary:
     closures: int = 0  # sessions closed because their item ended (issue-94)
     failures: int = 0  # events given up after exhausting the retry budget (issue-80)
     errors: List[str] = field(default_factory=list)
+    interrupted: bool = False  # a stop was requested mid-cycle (issue-159)
 
 
 def _utcnow() -> str:
@@ -375,6 +442,15 @@ class Poller:
         # re-arm itself only fires when a different CLI version recorded the
         # give-up, so a long-running poller never revisits it.
         self._rearm_considered: set = set()
+        # Attempts this process has recorded but not yet seen resolved, keyed by
+        # the delivery id they were spent on: `{delivery_id: (ref, comment_id)}`,
+        # with an empty comment id meaning a presence/spawn attempt. Read only by
+        # `release_abandoned` (issue-159), to hand back the budget of events that
+        # died queued in the dispatcher at shutdown. In-memory on purpose: it
+        # answers "did *this* process abandon that event?", which no other
+        # process can answer — and a SIGKILL, where there is no shutdown to roll
+        # back, must leave the ledger exactly as the per-item flush left it.
+        self._attempted: Dict[str, tuple] = {}
 
     @property
     def control(self) -> ControlConfig:
@@ -392,20 +468,32 @@ class Poller:
 
     # -- one cycle --------------------------------------------------------------
 
-    def poll_once(self) -> PollSummary:
-        """Run a single discovery→dispatch pass over every provider."""
+    def poll_once(self, stop_event: Optional[threading.Event] = None) -> PollSummary:
+        """Run a single discovery→dispatch pass over every provider.
+
+        ``stop_event`` makes a shutdown observable *inside* the cycle
+        (issue-159): without it, `SIGTERM` was only ever checked between cycles,
+        so a stop could take as long as every remaining item's dispatch — up to
+        ``routing.dispatchTimeoutSeconds`` each — and every item processed in
+        that window is a session spawned after the operator asked it to stop.
+        The item in flight always finishes; nothing below it starts.
+        """
         summary = PollSummary()
         for provider in self.providers:
-            self._poll_provider(provider, summary)
+            if stop_event is not None and stop_event.is_set():
+                summary.interrupted = True
+                break
+            self._poll_provider(provider, summary, stop_event)
         self.state.save()
         logger.info(
-            "poll cycle: %d item(s), %d spawn(s), %d comment(s) forwarded%s%s%s",
+            "poll cycle: %d item(s), %d spawn(s), %d comment(s) forwarded%s%s%s%s",
             summary.items_seen,
             summary.spawns,
             summary.comments_forwarded,
             f", {summary.closures} closed" if summary.closures else "",
             f", {summary.failures} gave up" if summary.failures else "",
             f", {len(summary.errors)} error(s)" if summary.errors else "",
+            " (interrupted by a stop request)" if summary.interrupted else "",
         )
         eventlog.emit(
             "poll.cycle",
@@ -415,10 +503,16 @@ class Poller:
             closures=summary.closures or None,
             failures=summary.failures or None,
             errors=summary.errors or None,
+            interrupted=summary.interrupted or None,
         )
         return summary
 
-    def _poll_provider(self, provider: PollProvider, summary: PollSummary) -> None:
+    def _poll_provider(
+        self,
+        provider: PollProvider,
+        summary: PollSummary,
+        stop_event: Optional[threading.Event] = None,
+    ) -> None:
         try:
             items = provider.list_work_items()
         except ProviderError as exc:
@@ -434,6 +528,17 @@ class Poller:
             return
         open_refs = set()
         for item in items:
+            if stop_event is not None and stop_event.is_set():
+                # Stop between work items, never inside one: an item abandoned
+                # half-processed is exactly the partially-written state the
+                # per-item flush exists to prevent (issue-159).
+                logger.info(
+                    "stop requested; ending this poll cycle after %d item(s) of %s",
+                    summary.items_seen,
+                    provider.describe(),
+                )
+                summary.interrupted = True
+                return
             summary.items_seen += 1
             # An item's *linked* refs, not just its own: a session registered
             # against an issue is still live while its PR is open and labelled.
@@ -450,9 +555,17 @@ class Poller:
                     will_retry=True,
                 )
                 summary.errors.append(f"{item.ref}: {exc}")
-        # Only ever reached on a SUCCESSFUL listing (the ProviderError path
-        # above returns first), so a failed or partial listing can never be read
-        # as "everything closed" (issue-94).
+            finally:
+                # Persist what this item learned before touching the next one —
+                # including after a failure, so an attempt already spent cannot
+                # be spent twice by the next start (issue-159, AC3.2).
+                self.state.flush(item.ref)
+        # Only ever reached on a SUCCESSFUL and COMPLETE listing: the
+        # ProviderError path above returns first, and so does an interrupted
+        # walk. Reconciliation closes every active session whose item is absent
+        # from `open_refs`, so a partial set would read as "everything below the
+        # interruption closed" and end live sessions — the same reason issue-94
+        # skips it for a failed listing (issue-159, AC4.2).
         self._reconcile_closures(provider, open_refs, summary)
 
     def _reconcile_closures(
@@ -646,6 +759,7 @@ class Poller:
             if status == "inflight":
                 return
             if status == "done":  # session came up — belt and suspenders
+                self._attempted.pop(last_did, None)
                 self.state.reset_spawn(ref)
                 return
         attempts = self.state.spawn_attempts(ref)
@@ -664,11 +778,13 @@ class Poller:
                 will_retry=False,
             )
             self.state.mark_spawn_gave_up(ref)
+            self._attempted.pop(last_did, None)  # resolved: nothing left to release
             summary.failures += 1
             return
         event = provider.presence_event(item, refs)
         self.dispatcher.handle(event)
         self.state.note_spawn_attempt(ref, event.delivery_id)
+        self._attempted[event.delivery_id] = (ref, "")
         summary.spawns += 1
 
     def _pending_control_ids(self, ref: str, comments: Sequence[Comment]) -> set:
@@ -792,6 +908,7 @@ class Poller:
         event = provider.comment_event(item, comment, refs)
         status = self.dispatcher.delivery_status(event.delivery_id, refs)
         if status == "done":
+            self._attempted.pop(event.delivery_id, None)
             self.state.resolve_comment(ref, comment.id)
             return
         if status == "inflight":
@@ -815,10 +932,12 @@ class Poller:
                 will_retry=False,
             )
             self.state.resolve_comment(ref, comment.id, gave_up=True)
+            self._attempted.pop(event.delivery_id, None)  # resolved, one way or another
             summary.failures += 1
             return
         self.dispatcher.handle(event)
         attempt = self.state.note_comment_attempt(ref, comment.id)
+        self._attempted[event.delivery_id] = (ref, comment.id)
         eventlog.emit(
             "poll.comment_forwarded",
             work_item=ref,
@@ -827,6 +946,47 @@ class Poller:
             attempt=attempt,
         )
         summary.comments_forwarded += 1
+
+    # -- shutdown (issue-159) ---------------------------------------------------
+
+    def release_abandoned(self, delivery_ids: Sequence[str]) -> int:
+        """Hand back the retry budget of events that died queued at shutdown.
+
+        The poller records an attempt when it *enqueues* an event and reads the
+        outcome on a later cycle (issue-80). A shutdown drains what it can and
+        the process then exits, so anything left in the dispatcher's queues was
+        counted as an attempt but never delivered — and with
+        ``polling.maxRetries`` at its default, three restarts would permanently
+        abandon a comment nothing ever tried to deliver (the give-up is
+        version-gated, issue-146, so nothing re-arms it until an upgrade).
+
+        Takes the delivery ids :meth:`Dispatcher.stop` reports as abandoned,
+        keeps the ones *this* process spent an attempt on, and un-counts them.
+        The events stay **unresolved** — no baseline is written — so the next
+        start rediscovers them with the budget it started with. Returns how many
+        were released, for the log line.
+        """
+        released = 0
+        for delivery_id in delivery_ids or ():
+            entry = self._attempted.pop(delivery_id, None)
+            if entry is None:
+                continue
+            ref, comment_id = entry
+            if comment_id:
+                self.state.release_comment_attempt(ref, comment_id)
+            else:
+                self.state.release_spawn_attempt(ref)
+            released += 1
+        if released:
+            logger.info(
+                "shutdown: %d dispatch(es) were still queued and never "
+                "delivered; their retry attempts were returned so the next "
+                "start retries them with a full budget",
+                released,
+            )
+            eventlog.emit("poll.attempts_released", released=released)
+        self.state.save()
+        return released
 
     # -- hot reload -------------------------------------------------------------
 
@@ -864,12 +1024,16 @@ class Poller:
         The config file is re-checked before every cycle (hot reload): edits to
         ``polling.sources`` / ``intervalSeconds`` take effect on the next cycle
         with no restart.
+
+        The event is passed *into* the cycle as well as checked around it
+        (issue-159), so a stop is honoured within one work item rather than
+        within one cycle.
         """
         stop_event = stop_event or threading.Event()
         while not stop_event.is_set():
             self._maybe_reload()
             try:
-                self.poll_once()
+                self.poll_once(stop_event)
             except Exception:  # noqa: BLE001 — one bad cycle must not kill the loop
                 logger.exception("poll cycle raised; continuing")
             if once:

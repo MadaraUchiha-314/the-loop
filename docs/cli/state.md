@@ -278,6 +278,20 @@ machine-readable `reason`. Query it with [`the-loop events`](/cli/commands/event
 Written by `gh-webhook start`, removed by `gh-webhook stop`. A stale file after a crash is
 harmless; `stop` reports the process is gone.
 
+## Poller pidfile — `<root>/poll.pid`
+
+Written by [`poll start`](/cli/commands/poll), removed when it exits. It is also the
+poller's **single-instance lock**: `start` holds an exclusive advisory lock on it for the
+whole run, so a second poller against the same state root refuses rather than sharing the
+ledger, and `stop` uses the same lock to tell a live poller from a pid left behind by a
+crash. Being one file rather than two is the point — "who is running" and "how do I signal
+them" cannot then disagree.
+
+**If you delete it while a poller is running:** the running poller keeps its lock (the lock
+lives on the open file, not the name), but a second `start` will no longer see it and can
+start alongside. Don't. **A stale file after a crash is harmless:** it is unlocked, so the
+next `start` simply takes it and `stop` removes it.
+
 ## Wiping one work item — `sessions reset`
 
 Backing state up is one question; getting rid of it is the other, and it has a command:

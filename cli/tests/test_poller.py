@@ -1642,3 +1642,261 @@ def test_first_sight_does_not_replay_a_thread_the_loop_already_acted_on(tmp_path
     assert summary.comments_forwarded == 0
     assert state.seen_comments(REF15) == {"IC_1"}
     assert [e.event for e in disp.events] == ["issues"]  # started -> presence armed
+
+
+# -- restart idempotency: the process lifecycle (issue-159) --------------------
+#
+# The ledger was already restart-safe; the process around it was not. These pin
+# the four lifecycle properties that make `poll stop` + `poll start`
+# indistinguishable from a poller that never stopped: an item's record is
+# durable as soon as the item is done, a stop is honoured inside a cycle, an
+# interrupted cycle never reconciles closures, and a shutdown hands back the
+# retry budget of dispatches it abandoned.
+
+
+def _read_poll_section(tmp_path, ref):
+    """The `poll` section as it exists ON DISK — not the in-memory ledger."""
+    return WorkItemStore(tmp_path / "portable").section(ref, POLL)
+
+
+def test_each_work_item_is_persisted_before_the_next_one_is_processed(tmp_path):
+    """AC3.1 — a kill mid-cycle loses the item in flight, not the whole cycle."""
+    seen_on_disk = []
+
+    class WatchingProvider(FakeProvider):
+        def list_comments(self, item):
+            # Runs at the START of each item, so it observes what the previous
+            # item wrote — which, before issue-159, was nothing until the cycle
+            # ended.
+            seen_on_disk.append(
+                sorted(
+                    ref
+                    for ref in WorkItemStore(tmp_path / "portable").refs()
+                    if ref  # the index is excluded by the store itself
+                )
+            )
+            return super().list_comments(item)
+
+    provider = WatchingProvider(
+        items=[_item(15), _item(16), _item(17)],
+        comments={15: [_comment("IC_1")], 16: [_comment("IC_2")], 17: []},
+    )
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    make_poller(
+        provider, SessionRegistry(tmp_path / "sessions"), RecordingDispatcher(), state
+    ).poll_once()
+
+    assert seen_on_disk == [
+        [],
+        ["github:octo/repo#15"],
+        ["github:octo/repo#15", "github:octo/repo#16"],
+    ]
+
+
+def test_a_failing_item_still_persists_the_attempt_it_spent(tmp_path):
+    """AC3.2 — an attempt already spent must not be spendable twice."""
+    ref = "github:octo/repo#15"
+
+    class ExplodingProvider(FakeProvider):
+        """Forwards IC_2, then falls over before the item can be finalized."""
+
+        def comment_event(self, item, comment, refs):
+            if comment.id == "IC_3":
+                raise ProviderError("upstream fell over mid-item")
+            return super().comment_event(item, comment, refs)
+
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    state.baseline_comments(ref, ["IC_1"], "t")
+    state.save()
+    registry = SessionRegistry(tmp_path / "sessions")
+    registry.register(Session(WorkItemRef.parse(ref), "claude", "sess-1", "."))
+    provider = ExplodingProvider(
+        items=[_item(15)],
+        comments={15: [_comment("IC_1"), _comment("IC_2"), _comment("IC_3")]},
+    )
+    summary = make_poller(provider, registry, RecordingDispatcher(), state).poll_once()
+
+    assert summary.errors  # the item raised, as arranged
+    assert (_read_poll_section(tmp_path, ref) or {}).get("commentAttempts") == {
+        "IC_2": 1
+    }
+
+
+def test_a_stop_request_ends_the_cycle_between_work_items(tmp_path):
+    """AC4.1/AC4.3 — stopping takes one work item, not one cycle."""
+    import threading
+
+    stop_event = threading.Event()
+
+    class StoppingProvider(FakeProvider):
+        def list_comments(self, item):
+            stop_event.set()  # the operator's SIGTERM lands during item 15
+            return super().list_comments(item)
+
+    provider = StoppingProvider(items=[_item(15), _item(16)], comments={15: [], 16: []})
+    disp = RecordingDispatcher()
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    summary = make_poller(
+        provider, SessionRegistry(tmp_path / "sessions"), disp, state
+    ).poll_once(stop_event)
+
+    assert summary.interrupted is True
+    assert summary.items_seen == 1 and summary.spawns == 1
+    # Item 15 finished and was persisted; item 16 was never touched.
+    assert _read_poll_section(tmp_path, "github:octo/repo#15") is not None
+    assert _read_poll_section(tmp_path, "github:octo/repo#16") is None
+
+
+def test_a_stop_request_between_providers_ends_the_cycle(tmp_path):
+    import threading
+
+    stop_event = threading.Event()
+    stop_event.set()
+    provider = FakeProvider(items=[_item(15)], comments={15: []})
+    disp = RecordingDispatcher()
+    poller = make_poller(
+        provider,
+        SessionRegistry(tmp_path / "sessions"),
+        disp,
+        PollState(WorkItemStore(tmp_path / "portable")),
+    )
+    summary = poller.poll_once(stop_event)
+
+    assert summary.interrupted is True
+    assert summary.items_seen == 0 and disp.events == []
+
+
+def test_an_interrupted_cycle_never_reconciles_closures(tmp_path):
+    """AC4.2 — the dangerous case: a partial listing is not proof of closure.
+
+    Reconciliation walks the REGISTRY and closes every active session whose work
+    item is absent from the listing. A cycle cut short below item 15 has not
+    listed items 16+, so reconciling would close their live sessions — the same
+    reason issue-94 skips reconciliation for a *failed* listing.
+    """
+    import threading
+
+    stop_event = threading.Event()
+    ref16 = "github:octo/repo#16"
+
+    class StoppingProvider(FakeProvider):
+        def list_comments(self, item):
+            stop_event.set()
+            return super().list_comments(item)
+
+    registry = SessionRegistry(tmp_path / "sessions")
+    registry.register(Session(WorkItemRef.parse(ref16), "claude", "sess-16", "."))
+    provider = StoppingProvider(
+        items=[_item(15), _item(16)],
+        comments={15: [], 16: []},
+        closures={ref16: Closure(state="closed", kind="issue")},
+        owned=[ref16],
+    )
+    disp = RecordingDispatcher()
+    summary = make_poller(
+        provider, registry, disp, PollState(WorkItemStore(tmp_path / "portable"))
+    ).poll_once(stop_event)
+
+    assert summary.interrupted is True
+    assert summary.closures == 0
+    assert provider.closure_asks == []  # never even asked
+    assert registry.find_by_work_item(WorkItemRef.parse(ref16)) is not None
+
+
+def test_a_complete_cycle_still_reconciles_closures(tmp_path):
+    """The other side of AC4.2: nothing changes when the cycle is not cut short."""
+    ref16 = "github:octo/repo#16"
+    registry = SessionRegistry(tmp_path / "sessions")
+    registry.register(Session(WorkItemRef.parse(ref16), "claude", "sess-16", "."))
+    provider = FakeProvider(
+        items=[_item(15)],
+        comments={15: []},
+        closures={ref16: Closure(state="closed", kind="issue")},
+        owned=[ref16],
+    )
+    summary = make_poller(
+        provider,
+        registry,
+        RecordingDispatcher(),
+        PollState(WorkItemStore(tmp_path / "portable")),
+    ).poll_once()
+
+    assert summary.closures == 1 and provider.closure_asks == [ref16]
+
+
+def test_release_abandoned_returns_a_comment_attempt_without_baselining_it(tmp_path):
+    """AC5.2/AC5.3 — a queued-but-undelivered comment costs no budget.
+
+    The poller counts an attempt when it ENQUEUES and reads the outcome next
+    cycle (issue-80). A shutdown that abandons the event leaves an attempt spent
+    on a dispatch that never happened, so three restarts would permanently
+    abandon a comment nothing ever tried to deliver.
+    """
+    ref = "github:octo/repo#15"
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    state.baseline_comments(ref, ["IC_1"], "t")
+    registry = SessionRegistry(tmp_path / "sessions")
+    registry.register(Session(WorkItemRef.parse(ref), "claude", "sess-1", "."))
+    provider = FakeProvider(
+        items=[_item(15)], comments={15: [_comment("IC_1"), _comment("IC_2")]}
+    )
+    poller = make_poller(provider, registry, RecordingDispatcher(), state)
+    poller.poll_once()
+    assert state.comment_attempts(ref, "IC_2") == 1
+
+    assert poller.release_abandoned(["comment-IC_2"]) == 1
+
+    assert state.comment_attempts(ref, "IC_2") == 0
+    assert "IC_2" not in state.seen_comments(ref)  # unresolved, not baselined
+    on_disk = _read_poll_section(tmp_path, ref) or {}
+    assert on_disk.get("commentAttempts") == {}
+    assert "IC_2" not in (on_disk.get("seenComments") or [])
+
+
+def test_release_abandoned_returns_a_spawn_attempt(tmp_path):
+    ref = "github:octo/repo#15"
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    provider = FakeProvider(items=[_item(15)], comments={15: []})
+    poller = make_poller(
+        provider, SessionRegistry(tmp_path / "sessions"), RecordingDispatcher(), state
+    )
+    poller.poll_once()
+    assert state.spawn_attempts(ref) == 1
+
+    assert poller.release_abandoned([f"presence-{ref}"]) == 1
+
+    assert state.spawn_attempts(ref) == 0
+    # The in-flight delivery id is cleared too: it named a dispatch that died
+    # with the process, and leaving it would read as "still in flight".
+    assert state.spawn_delivery_id(ref) == ""
+
+
+def test_release_abandoned_ignores_deliveries_it_never_attempted(tmp_path):
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    poller = make_poller(
+        FakeProvider(items=[], comments={}),
+        SessionRegistry(tmp_path / "sessions"),
+        RecordingDispatcher(),
+        state,
+    )
+    assert poller.release_abandoned(["comment-NEVER", ""]) == 0
+
+
+def test_a_resolved_delivery_is_no_longer_releasable(tmp_path):
+    """Once a session has the event, its attempt is genuinely spent."""
+    ref = "github:octo/repo#15"
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    state.baseline_comments(ref, ["IC_1"], "t")
+    registry = SessionRegistry(tmp_path / "sessions")
+    registry.register(Session(WorkItemRef.parse(ref), "claude", "sess-1", "."))
+    provider = FakeProvider(
+        items=[_item(15)], comments={15: [_comment("IC_1"), _comment("IC_2")]}
+    )
+    disp = RecordingDispatcher()
+    poller = make_poller(provider, registry, disp, state)
+    poller.poll_once()
+    disp.status_map["comment-IC_2"] = "done"
+    poller.poll_once()  # the next cycle observes the delivery landing
+
+    assert poller.release_abandoned(["comment-IC_2"]) == 0
+    assert "IC_2" in state.seen_comments(ref)

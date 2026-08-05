@@ -41,6 +41,7 @@ from ..poller import (
     Reloader,
     build_provider,
 )
+from ..runlock import RunLock
 from ..state import StateLayout, layout_from_config, legacy_layout
 from ..workitem import WorkItemStore
 
@@ -55,6 +56,11 @@ _DEFAULTS = {
     "intervalSeconds": 60,
     "maxRetries": 3,
 }
+
+# How long `stop` waits for the poller to actually exit before reporting that it
+# did not (issue-159). Generous enough for the dispatcher to drain its queues,
+# short enough that a scripted `stop && start` fails loudly rather than hanging.
+_STOP_TIMEOUT_SECONDS = 30.0
 
 
 def _load_polling_config() -> dict:
@@ -142,6 +148,15 @@ class PollCommand(Command):
 
         stop = actions.add_parser("stop", help="Stop a running poller")
         stop.add_argument("--pidfile", default=str(defaults["pidfile"]))
+        stop.add_argument(
+            "--timeout",
+            type=float,
+            default=_STOP_TIMEOUT_SECONDS,
+            help=(
+                "Seconds to wait for the poller to actually exit before "
+                "reporting that it did not (default: 30)."
+            ),
+        )
         stop.set_defaults(_action=self._stop)
 
     def run(self, args: argparse.Namespace) -> int:
@@ -154,6 +169,45 @@ class PollCommand(Command):
             level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
         )
         eventlog.configure_from_file("poll")
+
+        # At most one poller per state root (issue-159). Taken BEFORE anything
+        # else is built: a second poller must not get as far as checking
+        # dependencies or binding the ttyd web terminal, and above all must not
+        # touch the ledger — two pollers reading a work-item record on first
+        # touch and writing it back later interleave read-modify-write and
+        # re-forward each other's comments, which is exactly what makes a
+        # restart observable. `--once` takes it too, so two overlapping cron
+        # invocations cannot interleave either. The lock IS the pidfile, so
+        # "who is running" and "how do I signal them" cannot disagree.
+        lock = RunLock(args.pidfile, name="poller")
+        try:
+            acquired = lock.acquire()
+        except OSError as exc:
+            logger.error("cannot use the poller lockfile %s: %s", args.pidfile, exc)
+            return 1
+        if not acquired:
+            holder = lock.holder()
+            logger.error(
+                "another poller is already running (pid %s, pidfile %s); not "
+                "starting a second one against the same state — stop it first "
+                "with `the-loop poll stop`",
+                holder or "unknown",
+                args.pidfile,
+            )
+            eventlog.emit(
+                "poller.blocked",
+                level="error",
+                pidfile=str(args.pidfile),
+                holder=holder or None,
+            )
+            return 1
+        try:
+            return self._run_poller(args, lock)
+        finally:
+            lock.release()
+
+    def _run_poller(self, args: argparse.Namespace, lock: RunLock) -> int:
+        """The poll run itself, with the single-instance lock already held."""
         dispatcher, routing = _build_dispatcher(
             cli_config.load_routing_config(_CONFIG_PATH)
         )
@@ -219,7 +273,6 @@ class PollCommand(Command):
         providers = plan.providers
 
         stop_event = threading.Event()
-        pidfile = Path(args.pidfile)
 
         def _shutdown(signum, _frame):
             logger.info("received signal %s, stopping poller", signum)
@@ -228,9 +281,6 @@ class PollCommand(Command):
         signal.signal(signal.SIGTERM, _shutdown)
         signal.signal(signal.SIGINT, _shutdown)
 
-        if not args.once:
-            pidfile.parent.mkdir(parents=True, exist_ok=True)
-            pidfile.write_text(str(os.getpid()))
         logger.info(
             "poll: %s every %ss (spawnOnUnmatched=%s, state=%s)",
             "; ".join(p.describe() for p in providers),
@@ -255,31 +305,57 @@ class PollCommand(Command):
         try:
             poller.run(once=args.once, stop_event=stop_event)
         finally:
-            dispatcher.stop()
+            # Whatever the dispatcher could not deliver before it shut down had
+            # an attempt spent on it that never reached a session; hand that
+            # budget back so restarting does not accumulate toward
+            # `polling.maxRetries` (issue-159). The pidfile goes with the lock,
+            # released by the caller.
+            poller.release_abandoned(dispatcher.stop())
             stop_web_terminal(web_proc)
             eventlog.emit("poller.stopped")
-            if not args.once:
-                try:
-                    pidfile.unlink()
-                except FileNotFoundError:
-                    pass
         return 0
 
     def _stop(self, args: argparse.Namespace) -> int:
+        """Stop the running poller, and return only once it has actually gone.
+
+        The pidfile is also the poller's lock (issue-159), which is what makes
+        both halves of this honest. Being able to *take* the lock proves nobody
+        is running, so a pid left behind by a `SIGKILL` is never signalled — it
+        used to be, and on a busy host pid reuse meant `the-loop` sending
+        `SIGTERM` to an unrelated process. And waiting for the lock to be
+        released proves the poller has exited, so the `stop && start` an
+        operator actually types cannot overlap the shutdown it just asked for.
+        """
         pidfile = Path(args.pidfile)
         if not pidfile.is_file():
             print(f"no pidfile at {pidfile}; is the poller running?", file=sys.stderr)
             return 1
-        try:
-            pid = int(pidfile.read_text().strip())
-        except ValueError:
+        lock = RunLock(pidfile, name="poller")
+        if not lock.is_held():
+            print(
+                f"no poller is running; removing the stale pidfile {pidfile}",
+                file=sys.stderr,
+            )
+            pidfile.unlink(missing_ok=True)
+            return 1
+        pid = lock.holder()
+        if pid <= 0:
             print(f"pidfile {pidfile} is corrupt", file=sys.stderr)
             return 1
         try:
             os.kill(pid, signal.SIGTERM)
-        except ProcessLookupError:
+        except ProcessLookupError:  # died between the lock probe and the signal
             print(f"process {pid} not running; removing stale pidfile", file=sys.stderr)
             pidfile.unlink(missing_ok=True)
             return 1
-        print(f"sent SIGTERM to poll process (pid {pid})")
+        print(f"sent SIGTERM to poll process (pid {pid}); waiting for it to exit")
+        if not lock.wait_until_free(args.timeout):
+            print(
+                f"poll process (pid {pid}) had not exited after {args.timeout:g}s; "
+                "it may be draining a long dispatch — check again before starting "
+                "another poller",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"poll process (pid {pid}) stopped")
         return 0

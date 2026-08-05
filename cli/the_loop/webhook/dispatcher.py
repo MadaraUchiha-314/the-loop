@@ -1872,11 +1872,51 @@ class Dispatcher:
 
     # -- lifecycle ----------------------------------------------------------------
 
-    def stop(self, timeout: float = 10.0) -> None:
-        """Drain: signal every worker and join (used by tests and shutdown)."""
+    def stop(self, timeout: float = 10.0) -> List[str]:
+        """Drain: signal every worker and join (used by tests and shutdown).
+
+        Returns the delivery ids of events that were still **queued** when the
+        join gave up — events this process accepted and will never deliver
+        (issue-159). They used to be dropped on the floor, which mattered on the
+        poll path: the poller counts an attempt when it enqueues and reads the
+        outcome on a later cycle, so an abandoned event silently spent one of
+        its ``polling.maxRetries``. Reporting them lets the poller hand that
+        budget back (:meth:`the_loop.poller.Poller.release_abandoned`).
+
+        The sentinel goes at the *tail* of each queue, so a graceful stop still
+        delivers everything already queued; only what the timeout cuts off is
+        reported here. Callers that do not care ignore the return value.
+        """
         with self._lock:
             items = list(self._workers.items())
         for key, _ in items:
             self._queues[key].put(None)
         for _, worker in items:
             worker.join(timeout=timeout)
+        abandoned: List[str] = []
+        for key, _ in items:
+            queue_ = self._queues[key]
+            while True:
+                try:
+                    pending = queue_.get_nowait()
+                except queue.Empty:
+                    break
+                if pending is None:  # the stop sentinel, not an event
+                    continue
+                routed, _spawn = pending
+                if routed.delivery_id:
+                    abandoned.append(routed.delivery_id)
+        if abandoned:
+            logger.warning(
+                "shut down with %d event(s) still queued; they were not "
+                "delivered and will be retried by the next start: %s",
+                len(abandoned),
+                ", ".join(abandoned),
+            )
+            eventlog.emit(
+                "dispatch.abandoned",
+                level="warning",
+                count=len(abandoned),
+                delivery_ids=abandoned,
+            )
+        return abandoned
