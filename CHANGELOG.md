@@ -1,3 +1,9 @@
+## v7.1.1 (2026-08-05)
+
+### Fix
+
+- **issue-159**: make stopping and restarting the poller invisible (#160)
+
 ## v7.1.0 (2026-08-05)
 
 ### Feat
