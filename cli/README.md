@@ -24,6 +24,17 @@ pip install the-loopy-one   # PyYAML comes with it — nothing else to add
 the-loop --help
 ```
 
+From there the CLI installs the rest of the-loop — and upgrades itself:
+
+```bash
+the-loop install            # this CLI + the Claude Code plugin (Cursor: issue #157)
+the-loop upgrade            # move both to the current release
+the-loop install claude --scope project --project-dir .   # one repository only
+```
+
+`upgrade` uses the installer that owns the copy you are running (`uv tool`, `pipx`,
+`pip`), and `--dry-run` prints the exact commands first.
+
 Optional extras: `the-loopy-one[slack]` for the official Slack SDK transport.
 (`[config]` is a deprecated no-op — PyYAML is a required dependency now — kept so pinned
 install lines keep resolving.)
@@ -56,7 +67,7 @@ Full docs at **<https://madarauchiha-314.github.io/the-loop/cli/>**:
 | [Installation](https://madarauchiha-314.github.io/the-loop/cli/installation) | PyPI, uv, extras, what else to have on `PATH` |
 | [Getting started](https://madarauchiha-314.github.io/the-loop/cli/getting-started) | Zero to an auto-executing work item, in five steps |
 | [Concepts](https://madarauchiha-314.github.io/the-loop/cli/concepts) | Ingress, sessions, guards, workspaces, the process graph |
-| [Commands](https://madarauchiha-314.github.io/the-loop/cli/commands/) | `gh-webhook` · `poll` · `sessions` · `events` · `check` · `graph` · `critic` · `scenarios` · `migrate-config` |
+| [Commands](https://madarauchiha-314.github.io/the-loop/cli/commands/) | `gh-webhook` · `poll` · `sessions` · `events` · `check` · `graph` · `critic` · `scenarios` · `instructions` · `install` · `upgrade` · `migrate-config` |
 | [Configuration](https://madarauchiha-314.github.io/the-loop/config/cli/) | Every option, by area, with types and defaults |
 | [Adding a command](https://madarauchiha-314.github.io/the-loop/cli/extending) | The `Command` / `@register` contract |
 

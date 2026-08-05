@@ -7,6 +7,7 @@ from . import critic_cmd  # noqa: F401,E402
 from . import events  # noqa: F401,E402
 from . import gh_webhook  # noqa: F401,E402
 from . import graph_cmd  # noqa: F401,E402
+from . import install_cmd  # noqa: F401,E402
 from . import instructions_cmd  # noqa: F401,E402
 from . import migrate_cmd  # noqa: F401,E402
 from . import poll  # noqa: F401,E402

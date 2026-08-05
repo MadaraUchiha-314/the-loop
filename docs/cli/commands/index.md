@@ -39,6 +39,8 @@ is what lets [`check`](/cli/commands/check) run as a CI gate in a bare checkout.
 
 | Command | What it does |
 |---------|--------------|
+| [`install`](/cli/commands/install) | Install the-loop itself — the CLI and the Claude Code / Cursor plugin — at user or project scope. Plans, previews, and reports every step. |
+| [`upgrade`](/cli/commands/upgrade) | The same plan, moving an installed CLI/plugin to the current version with the installer that owns it. |
 | [`migrate-config`](/cli/commands/migrate-config) | Migrate a `cli-config.yaml` to the current schema version. Deterministic, idempotent, previewable. |
 
 ## Global flags

@@ -106,6 +106,8 @@ const cliSidebar = [
       { text: "critic", link: "/cli/commands/critic" },
       { text: "scenarios", link: "/cli/commands/scenarios" },
       { text: "instructions", link: "/cli/commands/instructions" },
+      { text: "install", link: "/cli/commands/install" },
+      { text: "upgrade", link: "/cli/commands/upgrade" },
       { text: "migrate-config", link: "/cli/commands/migrate-config" },
     ],
   },
