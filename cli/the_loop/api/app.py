@@ -288,4 +288,8 @@ def create_app(cli_config: Optional[dict] = None, token: str = "") -> FastAPI:
             timeout=body.timeout,
         )
 
+    from .mcp import add_mcp
+
+    add_mcp(app, cli_config, require_token)
+
     return app
