@@ -165,6 +165,38 @@ self-learning/ML capabilities.
   of the daemon (decision-032).
 - `the-loop events` SHALL query the structured JSONL event log of the CLI's own
   routing/dispatch/session decisions (see [observability](observability.md)).
+- `the-loop install` / `the-loop upgrade` SHALL install and upgrade **the-loop itself** —
+  this CLI and the **Claude Code** plugin — at `--scope user` (default) or
+  `--scope project`, naming `cli`, `claude` or `all` (default: the CLI plus every harness
+  found on `PATH`). Cursor SHALL NOT be a component until issue-157 establishes how a
+  Cursor plugin is installed from a terminal (owner decision on PR #153); `the_loop.install`
+  is harness-shaped, so adding it is a `BINARIES` entry plus a planner, not a new command. Both verbs SHALL build an ordered **plan of steps**,
+  print the exact argv (or file) of each, and report one outcome per step (`applied` ·
+  `already` · `skipped` · `failed`, and `planned` under `--dry-run`), exiting non-zero
+  only when a step failed; `--dry-run` SHALL be that same plan with the execution left
+  out, and `--format json` SHALL emit the same records (issue-152, decision-057).
+- Installing a plugin SHALL be delegated to the **harness's own installer** where it has
+  one: the-loop SHALL determine that by asking the binary (`<binary> plugin --help`, and
+  `plugin install --help` for a `--scope` flag) rather than assuming a version, and SHALL
+  pass the requested scope through instead of emulating it. A binary offering
+  `plugin marketplace` but no working `plugin install` SHALL count as **no surface** —
+  the split is real (Cursor 2.5) and running an install that cannot work would report a
+  failure for an absent feature. WHERE no usable surface exists it SHALL fall back only to
+  an already-documented route — the decision-054 settings keys, in the user file or
+  `<project>/.claude/settings.json` at project scope, through the same non-destructive
+  writer — and WHERE a requested scope cannot be expressed it SHALL report the component
+  **skipped** with the manual instruction rather than install at a scope that was not
+  asked for.
+- `the-loop upgrade` SHALL determine how the **running** CLI was installed from where its
+  package lives (`uv tool` / `pipx` / `pip`) and use that method's upgrade command; a
+  source checkout SHALL be reported skipped, naming the checkout, never installed over
+  (issue-78's failure mode, closed from the other side). At project scope the CLI SHALL be
+  installed into the project's `.venv` and SHALL NOT modify the project's `pyproject.toml`.
+- The marketplace source for both verbs SHALL resolve `--from` → the CLI config's
+  `routing.harnessPlugins.marketplaceRepo` → the shipped default, SHALL be validated as
+  `owner/repo` before it can reach a command line, a URL or a settings file (an invalid
+  value exits 2 and touches nothing), and SHALL be printed in the plan header before
+  anything is trusted. Every step SHALL be executed as an argv list with no shell.
 - The package SHALL be installable from PyPI as **`the-loopy-one`** (import package
   `the_loop` and the `the-loop` script unchanged; see
   [release-publishing](release-publishing.md)).
@@ -196,6 +228,7 @@ self-learning/ML capabilities.
 | Work item | What changed | Links |
 |-----------|--------------|-------|
 | issue-156 | Process runner removed; tmux is the only runner (2026-08-05): `sessions start` spawns tmux-hosted sessions unconditionally — there is no configured runner to pick | [spec](../specs/issue-156/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/156) |
+| issue-152 | Added `install` and `upgrade`: one plan-then-execute implementation, two verbs, covering the CLI and the **Claude Code** plugin at user or project scope. Drives the harness's own plugin CLI (probed, not assumed — a marketplace command without a working `plugin install` counts as no surface), falls back to the decision-054 settings keys, detects how the running CLI was installed, and reports every step's argv and outcome — `--dry-run` being the same plan minus the execution. Cursor parked on review and split out as issue-157 | [spec](../specs/issue-152/), [decision-057](../decisions/decision-057.md), [distribution](distribution.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/152) |
 | issue-142 | `webhooks.ghWebhook.routing` promoted to a top-level `routing` through the version-gated config migration (`0.4.0`), and the import seam that expressed the same misfiling removed: `poll` and `sessions` read dispatch policy through `cli_config.load_routing_config` instead of importing the webhook command's helper. A relocation only — no option's name, default or behaviour changed | [spec](../specs/issue-142/), [decision-053](../decisions/decision-053.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/142) |
 | issue-137 | Added `sessions reset`: one, several or all work items lose their session record, control and poll sections (and their checkout, per the close policy) so a work item starts over after a CLI fix. Composes the existing close and section-clearing paths — the seal rule is what stops a pre-issue-128 record coming back — adds `SessionRegistry.forget`, posts nothing to the ticket, and appends `session.reset` to a log it cannot rewrite | [spec](../specs/issue-137/), [decision-050](../decisions/decision-050.md), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/137) |
 | issue-132 | Added `instructions`, the sixth harness-config read: it resolves every doc registered in `customInstructions.docs` and turns `onMissing` into an exit code, so a mistyped path stops being silent. Reports facts about each doc, never its contents | [spec](../specs/issue-132/), [decision-049](../decisions/decision-049.md), [spec-workflow](spec-workflow.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/132) |

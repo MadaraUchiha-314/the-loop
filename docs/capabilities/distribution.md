@@ -19,6 +19,14 @@ the projects the-loop is run on.
 - the-loop SHALL be installable in Cursor (≥ 2.5) from the same repo via
   `.cursor-plugin/plugin.json` + `marketplace.json`, or by cloning under
   `~/.cursor/plugins/local/`.
+- The **Claude Code** plugin SHALL also be installable **non-interactively from a
+  terminal** with `the-loop install claude [--scope user|project]` (and moved forward with
+  `the-loop upgrade`), which drives `claude`'s own plugin CLI where it has one and
+  otherwise falls back to the settings keys above. The **Cursor** plugin SHALL keep its
+  documented in-editor routes until issue-157 establishes a terminal one — the CLI reports
+  `cursor` as an unknown component rather than half-supporting it (owner decision on
+  PR #153). See [cli](cli.md) and [decision-057](../decisions/decision-057.md); the
+  in-session `/plugin` and `/add-plugin` routes remain exactly as documented.
 - Both plugins SHALL reuse the SAME `skills/` (Agent Skills standard) and `commands/`;
   nothing is forked per harness.
 - Plugin and marketplace manifest `version` fields SHALL carry the released version:
@@ -74,6 +82,7 @@ the projects the-loop is run on.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-152 | The **Claude Code** plugin became installable and upgradable from the CLI (`the-loop install` / `upgrade`), at user or project scope, without opening a session — the terminal-side counterpart to the marketplace routes. Cursor stays in-editor-only, split out as issue-157 | [spec](../specs/issue-152/), [decision-057](../decisions/decision-057.md), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/152) |
 | issue-106 | A key whose default changes behaviour (`routing.control.requireStartCommand`) is reported as **needs-user**, not silently added; the `state`/`control` blocks are added with defaults and the poll-state move is offered, not forced | [spec](../specs/issue-106/), [decision-040](../decisions/decision-040.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/106) |
 | issue-63 | `/upgrade` migrates (not just flags) removed schema keys with live data — the `webhooks`/`polling`/`observability.eventLog` → CLI config extraction | [spec](../specs/issue-63/), [decision-032](../decisions/decision-032.md) |
 | issue-46 | Plugin/marketplace manifest versions bumped by the release engine (were frozen at 0.1.0) | [spec](../specs/issue-46/), [decision-028](../decisions/decision-028.md) |

@@ -43,6 +43,23 @@ the-loop is installable directly from GitHub via each harness's marketplace cons
 no bespoke marketplace publishing. One repo, one set of skills/commands/templates,
 two plugin manifests (`.claude-plugin/` and `.cursor-plugin/`).
 
+### From a terminal (Claude Code)
+
+With [the CLI](#cli-companion-the-loop) installed, one command installs the plugin without
+opening a session — at user scope, or for one project only:
+
+```bash
+pip install the-loopy-one                                  # once
+the-loop install                                           # CLI + the Claude Code plugin
+the-loop install claude --scope project --project-dir .    # this repository only
+the-loop upgrade                                           # when a release lands
+```
+
+It drives Claude Code's own plugin installer, prints every command before running it
+(`--dry-run` previews), and says what it skipped and why. Cursor is not covered yet
+([#157](https://github.com/MadaraUchiha-314/the-loop/issues/157)). The in-session routes
+below are unchanged, and are the shortest path if you would rather not install the CLI.
+
 ### Claude Code
 
 ```
@@ -142,6 +159,8 @@ the-loop graph status <id>  # where a work item sits in the process graph
 the-loop critic run <name> --prompt-file <path>   # one critic round; prints a JSON envelope
 the-loop scenarios          # every Gherkin scenario the integration tests cover
 the-loop instructions       # the project's registered instruction docs, and whether they resolve
+the-loop install            # install the-loop itself: this CLI + the Claude Code plugin
+the-loop upgrade            # move both to the current release (user or project scope)
 ```
 
 Full documentation: **[the-loop CLI](https://madarauchiha-314.github.io/the-loop/cli/)** — overview,

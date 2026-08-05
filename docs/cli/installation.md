@@ -28,6 +28,25 @@ the-loop --version
 The version is derived from the installed package metadata, not a hardcoded string, so it
 always reports what you actually have.
 
+## Upgrading (and installing the plugin)
+
+Once the CLI is on the machine it installs the rest of the-loop — and itself:
+
+```bash
+the-loop install            # the CLI + the Claude Code plugin, if `claude` is on PATH
+the-loop upgrade            # move both to the current release
+the-loop upgrade --dry-run  # see the exact commands first
+```
+
+Claude Code only for now; the Cursor plugin is
+[issue #157](https://github.com/MadaraUchiha-314/the-loop/issues/157).
+
+`upgrade` works out how the running copy was installed — `uv tool`, `pipx` or `pip` — and
+uses that installer's upgrade command, so you do not have to remember which one you used.
+A development checkout is reported and left alone. See
+[`install`](/cli/commands/install) and [`upgrade`](/cli/commands/upgrade) for scopes and
+outcomes.
+
 ## Extras
 
 ### `slack` — notifications through the official SDK

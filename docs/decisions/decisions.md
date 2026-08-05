@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [057](decision-057.md) | `the-loop install`/`upgrade` drive the harness's own installer (Claude Code first); fallback only to a documented route | proposed | 2026-08-05 |
 | [056](decision-056.md) | tmux is the only runner — the headless process runner is removed | proposed | 2026-08-05 |
 | [055](decision-055.md) | the-loop never spawns over a live `loop-<slug>` tmux session — it routes the event into it | proposed | 2026-08-04 |
 | [054](decision-054.md) | The CLI enables the-loop's own plugin in the harness's user settings before a spawn | proposed | 2026-08-04 |

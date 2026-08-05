@@ -108,11 +108,26 @@ class ClaudePluginStore:
     the harness reads. Tests inject a store with a fake HOME.
     """
 
-    def __init__(self, store: Optional[ClaudeTrustStore] = None):
+    def __init__(
+        self,
+        store: Optional[ClaudeTrustStore] = None,
+        settings_file: Optional[Path] = None,
+    ):
         self._store = store or ClaudeTrustStore()
+        # An explicit file overrides the resolved user-settings path, which is what
+        # lets `the-loop install --scope project` (issue-152) write a repository's own
+        # `.claude/settings.json` through this same writer instead of growing a second
+        # one. The spawn path never passes it: the daemon's scope is the user file.
+        self._settings_file = Path(settings_file) if settings_file else None
 
     def settings_path(self) -> Path:
-        """The user settings file (``<config dir>/settings.json``)."""
+        """The settings file this store writes.
+
+        ``<config dir>/settings.json`` (the user file) unless an explicit
+        ``settings_file`` was injected.
+        """
+        if self._settings_file is not None:
+            return self._settings_file
         return self._store.settings_path()
 
     def enable(self, marketplace_repo: str = DEFAULT_MARKETPLACE_REPO) -> TrustResult:
