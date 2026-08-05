@@ -249,9 +249,12 @@ managing work items is easy without shell access.
 > decisions**; they are listed here so the requirements reviewer can flag any that
 > actually change scope.
 
-1. API style and stack: OpenAPI-documented REST over stdlib `http.server` (zero new
+1. ~~API style and stack: OpenAPI-documented REST over stdlib `http.server` (zero new
    required deps) vs. an optional-extra framework — where does the minimalism ladder
-   land?
+   land?~~ **Answered** (owner, [PR #162 review](https://github.com/MadaraUchiha-314/the-loop/pull/162#discussion_r3718668715)):
+   a framework (e.g. FastAPI) is acceptable; the design phase picks one on its
+   merits. The base install keeps its footprint — the framework lands behind an
+   optional extra.
 2. Should the CLI *prefer* the service when one is running (auto-discovery), or only
    target it when explicitly told to?
 3. UI stack: how much UI is buildable as dependency-free static assets vs. a
@@ -265,3 +268,10 @@ managing work items is easy without shell access.
 
 > Appended by the-loop's `record-feedback` hook when a human gate approves with
 > comments (issue-109). Append-only and attributed.
+
+- **2026-08-05 · @MadaraUchiha-314 ·
+  [PR #162 review comment](https://github.com/MadaraUchiha-314/the-loop/pull/162#discussion_r3718668715)**
+  (on §Open questions Q1): "Feel free to use any framework like FastAPI for this." —
+  resolves Q1: the API layer may use a framework, chosen in the design phase; the
+  non-functional dependency-budget requirement (optional extra, base install
+  unchanged) still applies.
