@@ -127,7 +127,7 @@ class TestSessionRunnerFields:
         # the-loop *asked* for; tmux had already renamed the session. Reading it
         # back must address the session that exists — no migration, nothing to
         # rename.
-        data = make_session(runner="tmux").to_dict()
+        data = make_session().to_dict()
         data["tmuxTarget"] = "loop-github-octo-foo.js-15"
         assert Session.from_dict(data).tmux_target == DOTTED_TARGET
         # …and a direct construction is normalised too, so the invariant is
@@ -138,7 +138,6 @@ class TestSessionRunnerFields:
                 harness="claude",
                 harness_session_id="abc-123",
                 cwd="/work",
-                runner="tmux",
                 tmux_target="loop-github-octo-foo.js-15",
             ).tmux_target
             == DOTTED_TARGET
@@ -335,7 +334,7 @@ class TestTmuxRunner:
         monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
         session = Session.from_dict(
             {
-                **make_session(runner="tmux").to_dict(),
+                **make_session().to_dict(),
                 "workItem": {"ref": DOTTED_REF},
                 "tmuxTarget": "loop-github-octo-foo.js-15",
             }

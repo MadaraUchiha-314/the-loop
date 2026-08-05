@@ -122,7 +122,6 @@ def test_body_names_the_real_tmux_session():
         harness="claude",
         harness_session_id="9f1c-secret-session-id",
         cwd="/home/operator/work/checkouts/repo",
-        runner="tmux",
         tmux_target="loop-github-octo-foo.js-15",
     )
     body = announcement_body(session)
