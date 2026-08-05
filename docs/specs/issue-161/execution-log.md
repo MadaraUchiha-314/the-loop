@@ -1,7 +1,7 @@
 ---
 type: execution-log
 workItem: "issue-161"
-phase: requirements-definition
+phase: needs-review
 status: in-progress
 ---
 
@@ -16,9 +16,9 @@ status: in-progress
 |-------|---------|----------------------|-------|
 | requirements-definition | 2026-08-05 | _(pending — tier-4 program: this phase gate is human-reviewed on the spec PR)_ | Issue #161: re-architect into core / API layer / clients (CLI, MCP, UI). |
 | design | 2026-08-05 | _(consolidated on PR #162 — single-PR delivery, owner decision)_ | Derived from locked requirements incl. the five answered forks. |
-| tasks-breakdown |  |  | Expected to decompose delivery into sub-issues (DAG across work items). |
-| implementation |  |  |  |
-| needs-review |  |  |  |
+| tasks-breakdown | 2026-08-05 | _(consolidated on PR #162)_ | 15-task DAG, single-PR execution (owner decision). |
+| implementation | 2026-08-05 |  | T1–T8, T10–T13 complete; T9 partial (check/events routed; pattern established). |
+| needs-review | 2026-08-05 |  | Tier-4 human approval + named security sign-off on PR #162. |
 | complete |  |  |  |
 
 ## Pull requests
@@ -71,11 +71,47 @@ status: in-progress
 - **Next:** derive `tasks.md` (DAG, single-PR execution), then implement in
   dependency order (TDD per task).
 
+### 2026-08-05 — implementation: core → API → clients
+
+- **Phase:** tasks-breakdown → implementation → needs-review
+- **Did (per DAG):** T1–T3 `the_loop.core` facade (23 tests); T4–T6 FastAPI
+  `/api/v1` + authored OpenAPI contract + parity test + auth boundary (14
+  tests); T7–T8 `service start|stop|status` (RunLock lifecycle) + stdlib
+  client with auto-start and fail-closed `ServiceUnavailable`; T9 partial —
+  `check` and `events` route through the service (routing seam,
+  `THE_LOOP_SERVICE_LOCAL` loop guard, `--file` local escape); T10 `/mcp`
+  JSON-RPC endpoint, 14 tools, exclusions enforced (6 tests); T11–T13 `ui/`
+  Vite+TS frontend (typecheck+build green, live smoke screenshots in
+  `design/`), `ui dev|build` command (3 tests), CI `ui` job. Schema gained the
+  `service` block; docs pages for both commands + service options (parity
+  gates green).
+- **TDD note (honesty):** the facade/API tests were written with their
+  modules per task and several passed first-run — thin adapters over
+  already-tested modules leave little to go red. The negative/abuse-case
+  tests (401s, exposure guard, fail-closed client, MCP exclusions) are the
+  load-bearing coverage. Live-service integration tests exercise the real
+  spawn/lock/token path.
+- **Known limitations (deliberate, recorded):** T9's remaining commands
+  (`sessions`, `graph` mutations, `scenarios`, `instructions`, `critic`,
+  `poll`, `gh-webhook` entry points) still execute locally — the service-side
+  surface for all of them is complete (REST + MCP), only their CLI transport
+  switch remains; session/daemon control verbs run through the CLI's own verb
+  as a transitional adapter (folding the dispatcher into core is follow-up);
+  the CLI reads the local token file, so pointing it at a _remote_ service
+  needs a token option (UI already handles this via its token field).
+- **Checkpoint/tests:** `make check` (full CI parity) — evidence below.
+- **Next:** owner review on PR #162 (tier-4 approval + named security
+  sign-off); follow-up work item for the T9 remainder + dispatcher fold-in.
+
 ## Review cycles
 
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
 |-------|-----------------------------|----------|---------|------|
 | 1 | self (spec re-read against issue #161 + capability docs) | harness | zero (converged) | — |
+| 2 | self (implementation re-read: client/config resolution, error mapping, subprocess spawns) | harness | new finding — `connect()` with no config ignored the operator's CLI config (custom `service.port` unread); fixed with `_resolved()` | commit on PR #162 |
+| 3 | self (security-focused: CORS, token handling, argv spawns, MCP exclusions, audit records) | harness | zero new (remote-token limitation recorded, not a defect) | — |
+| 4 | critic | — | **unavailable** — `reviews.critics` is empty in this repo's config; does not count toward `criticReviewCount` | — |
+| 5 | security (gate) | security-review skill / checklist | see Security review section | — |
 
 ## Security review (gate)
 

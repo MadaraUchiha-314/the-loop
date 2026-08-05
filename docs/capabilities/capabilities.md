@@ -15,6 +15,7 @@ PR** as the work item that changes behaviour (a ready-to-ship gate item).
 | [capability-docs](capability-docs.md) | This layer itself: the organized view of specs and its fold-in gate. |
 | [distribution](distribution.md) | Shipping the-loop as a Claude Code and Cursor plugin from one repo. |
 | [cli](cli.md) | The `the-loop` Python CLI companion and its commands. |
+| [control-plane](control-plane.md) | The core → API → clients layering: the HTTP API service, the service-routed CLI, the MCP endpoint, and the statically-hostable UI. |
 | [webhook-triggers](webhook-triggers.md) | GitHub webhook receiver and event → session routing. |
 | [interactive-sessions](interactive-sessions.md) | tmux-hosted harness sessions humans can watch/steer live (local, SSH, browser). |
 | [observability](observability.md) | Structured JSONL event log of the CLI's actions and the `events` query command. |

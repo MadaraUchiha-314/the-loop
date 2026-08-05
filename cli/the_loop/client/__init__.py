@@ -37,6 +37,23 @@ class ServiceUnavailable(RuntimeError):
     """No reachable service, and none could be (auto-)started."""
 
 
+def _resolved(config: Optional[dict]) -> dict:
+    """``config``, or the operator's CLI config loaded from its default path.
+
+    Without this, a caller that passes ``None`` would silently talk to the
+    built-in host/port even where the operator configured others — the exact
+    "ignored a value the operator set" failure the config loader refuses.
+    """
+    if config is not None:
+        return config
+    from ..cli_config import default_cli_config_path, load_cli_config
+
+    try:
+        return load_cli_config(default_cli_config_path())
+    except Exception:
+        return {}
+
+
 class ApiError(RuntimeError):
     """The service answered with an error status."""
 
@@ -72,6 +89,7 @@ def _request(
 
 
 def healthy(config: Optional[dict] = None, timeout: float = 2.0) -> bool:
+    config = _resolved(config)
     try:
         request = urllib.request.Request(f"{base_url(config)}/api/v1/health")
         with urllib.request.urlopen(request, timeout=timeout):  # noqa: S310
@@ -101,6 +119,7 @@ def _spawn_service() -> None:
 
 def ensure_service(config: Optional[dict] = None) -> None:
     """A reachable service, or :class:`ServiceUnavailable` — never a fallback."""
+    config = _resolved(config)
     if healthy(config):
         return
     conf = service_config(config)
@@ -118,9 +137,9 @@ class Client:
     """One configured connection: base URL + bearer token."""
 
     def __init__(self, config: Optional[dict] = None):
-        self._config = config
-        self._base = base_url(config)
-        self._token = read_token(token_path(config))
+        self._config = _resolved(config)
+        self._base = base_url(self._config)
+        self._token = read_token(token_path(self._config))
 
     def get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
         query = ""
@@ -136,5 +155,6 @@ class Client:
 
 def connect(config: Optional[dict] = None) -> Client:
     """Ensure a service is reachable (auto-starting if permitted), then a client."""
+    config = _resolved(config)
     ensure_service(config)
     return Client(config)
