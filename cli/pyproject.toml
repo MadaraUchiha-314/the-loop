@@ -38,7 +38,13 @@ slack = ["slack-sdk>=3"]
 # `pip install "the-loopy-one[config]"` keeps working without pip's "does not
 # provide the extra" warning. PyYAML is a required dependency now (issue-97).
 config = []
-dev = ["pytest>=8", "commitizen>=3"]
+# Hosting the control-plane API service (issue-161, decision-058). Optional so
+# the base install keeps its one-dependency footprint: a plain install can still
+# *talk to* a running service (the client is stdlib urllib); *hosting* one needs
+# this extra, and `the-loop service start` without it fails closed naming the
+# install line.
+service = ["fastapi>=0.110", "uvicorn>=0.29"]
+dev = ["pytest>=8", "commitizen>=3", "httpx>=0.27"]
 
 [project.scripts]
 the-loop = "the_loop.__main__:main"

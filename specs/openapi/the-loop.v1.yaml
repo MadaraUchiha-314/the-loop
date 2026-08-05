@@ -1,0 +1,678 @@
+openapi: 3.1.0
+info:
+  title: the-loop control plane
+  version: '1'
+  description: 'the-loop''s control-plane API (issue-161). This file is the authored
+    contract: cli/tests/test_api_contract_parity.py asserts the served schema matches
+    it, so drift fails CI. Docs are served at /api/docs.'
+paths:
+  /api/v1/health:
+    get:
+      summary: Health
+      operationId: health
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                type: object
+                title: Response Health
+  /api/v1/work-items:
+    get:
+      summary: List Work Items
+      operationId: listWorkItems
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  additionalProperties: true
+                  type: object
+                type: array
+                title: Response Listworkitems
+  /api/v1/work-items/one:
+    get:
+      summary: Get Work Item
+      operationId: getWorkItem
+      parameters:
+      - name: ref
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Ref
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Getworkitem
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/graph/check:
+    post:
+      summary: Graph Check
+      operationId: graphCheck
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphCheckBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Graphcheck
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/graph/complete:
+    post:
+      summary: Graph Complete
+      operationId: graphComplete
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphCompleteBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Graphcomplete
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/graph/advance:
+    post:
+      summary: Graph Advance
+      operationId: graphAdvance
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphAdvanceBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Graphadvance
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/graph/force:
+    post:
+      summary: Graph Force
+      operationId: graphForce
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphForceBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Graphforce
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sessions:
+    get:
+      summary: List Sessions
+      operationId: listSessions
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Status
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response Listsessions
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sessions/one:
+    get:
+      summary: Get Session
+      operationId: getSession
+      parameters:
+      - name: ref
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Ref
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Getsession
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sessions/control:
+    post:
+      summary: Control Session
+      operationId: controlSession
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionControlBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Controlsession
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/events:
+    get:
+      summary: Query Events
+      operationId: queryEvents
+      parameters:
+      - name: type
+        in: query
+        required: false
+        schema:
+          type: array
+          items:
+            type: string
+          default: []
+          title: Type
+      - name: workItem
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Workitem
+      - name: deliveryId
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Deliveryid
+      - name: source
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Source
+      - name: level
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Level
+      - name: since
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Since
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 50
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response Queryevents
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/events/types:
+    get:
+      summary: Event Types
+      operationId: eventTypes
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties:
+                  type: string
+                type: object
+                title: Response Eventtypes
+  /api/v1/daemons:
+    get:
+      summary: List Daemons
+      operationId: listDaemons
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  additionalProperties: true
+                  type: object
+                type: array
+                title: Response Listdaemons
+  /api/v1/daemons/control:
+    post:
+      summary: Control Daemon
+      operationId: controlDaemon
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DaemonControlBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Controldaemon
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/attention:
+    get:
+      summary: List Attention
+      operationId: listAttention
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  additionalProperties: true
+                  type: object
+                type: array
+                title: Response Listattention
+  /api/v1/repo/scenarios:
+    get:
+      summary: Repo Scenarios
+      operationId: repoScenarios
+      parameters:
+      - name: repo
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Repo
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response Reposcenarios
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/repo/instructions:
+    get:
+      summary: Repo Instructions
+      operationId: repoInstructions
+      parameters:
+      - name: repo
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Repo
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response Repoinstructions
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/repo/critics:
+    get:
+      summary: Repo Critics
+      operationId: repoCritics
+      parameters:
+      - name: repo
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Repo
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  additionalProperties: true
+                title: Response Repocritics
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/repo/critics/run:
+    post:
+      summary: Repo Critic Run
+      operationId: repoCriticRun
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CriticRunBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Repocriticrun
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+components:
+  schemas:
+    CriticRunBody:
+      properties:
+        repo:
+          type: string
+          title: Repo
+        name:
+          type: string
+          title: Name
+        prompt:
+          type: string
+          title: Prompt
+          default: ''
+        promptFile:
+          type: string
+          title: Promptfile
+          default: ''
+        workItem:
+          type: string
+          title: Workitem
+          default: ''
+        specDir:
+          type: string
+          title: Specdir
+          default: ''
+        timeout:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Timeout
+      type: object
+      required:
+      - repo
+      - name
+      title: CriticRunBody
+    DaemonControlBody:
+      properties:
+        daemon:
+          type: string
+          title: Daemon
+        verb:
+          type: string
+          title: Verb
+      type: object
+      required:
+      - daemon
+      - verb
+      title: DaemonControlBody
+    GraphAdvanceBody:
+      properties:
+        repo:
+          type: string
+          title: Repo
+        workItem:
+          type: string
+          title: Workitem
+      type: object
+      required:
+      - repo
+      - workItem
+      title: GraphAdvanceBody
+    GraphCheckBody:
+      properties:
+        repo:
+          type: string
+          title: Repo
+        workItem:
+          type: string
+          title: Workitem
+        recompute:
+          type: boolean
+          title: Recompute
+          default: false
+      type: object
+      required:
+      - repo
+      - workItem
+      title: GraphCheckBody
+    GraphCompleteBody:
+      properties:
+        repo:
+          type: string
+          title: Repo
+        workItem:
+          type: string
+          title: Workitem
+        node:
+          type: string
+          title: Node
+          default: ''
+        actor:
+          type: string
+          title: Actor
+          default: ''
+      type: object
+      required:
+      - repo
+      - workItem
+      title: GraphCompleteBody
+    GraphForceBody:
+      properties:
+        repo:
+          type: string
+          title: Repo
+        workItem:
+          type: string
+          title: Workitem
+        toNode:
+          type: string
+          title: Tonode
+        reason:
+          type: string
+          title: Reason
+        actor:
+          type: string
+          title: Actor
+          default: ''
+      type: object
+      required:
+      - repo
+      - workItem
+      - toNode
+      - reason
+      title: GraphForceBody
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    SessionControlBody:
+      properties:
+        ref:
+          type: string
+          title: Ref
+        verb:
+          type: string
+          title: Verb
+        comment:
+          type: boolean
+          title: Comment
+          default: true
+      type: object
+      required:
+      - ref
+      - verb
+      title: SessionControlBody
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
