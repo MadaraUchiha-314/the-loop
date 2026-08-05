@@ -12,7 +12,7 @@ the-loop poll stop  [--pidfile .the-loop/poll.pid]
 
 Every `--interval` seconds it asks each configured **provider** for the label-gated work
 items in its scope, and drives them through the **same** routing, dispatch and session stack
-the webhook receiver uses. Spawning, one-session-per-work-item, the `tmux` runner, harness
+the webhook receiver uses. Spawning, one-session-per-work-item, tmux hosting, harness
 adapters and prompt templates are all reused unchanged.
 
 ## `start`
@@ -62,8 +62,8 @@ GitHub is reached only through your own authenticated `gh` — the daemon holds 
   item maps to exactly one session, the same one on later polls.
 - **New comments** are forwarded exactly once, deduped across cycles **and restarts** via
   `--state-file`. The pre-existing thread is *baselined* on first sight, not replayed.
-- **Spawns tmux sessions** when [`routing.runner: tmux`](/config/cli/routing-options#runner)
-  — attach with `the-loop sessions attach --work-item github:OWNER/REPO#N`.
+- **Spawns tmux sessions** — every spawned session is hosted in a named tmux session.
+  Attach with `the-loop sessions attach --work-item github:OWNER/REPO#N`.
 - **Retries.** A spawn or comment forward whose dispatch keeps failing is retried each cycle
   up to `--max-retries`; after that the poller logs a terminal failure (`poll.spawn_failed` /
   `poll.comment_failed`) and ignores the event until new activity re-arms it. An in-flight

@@ -22,7 +22,7 @@ You want the CLI when you stop driving the loop by hand:
 |---|---|
 | Have a comment on a GitHub issue start an agent, unattended | [`gh-webhook`](/cli/commands/gh-webhook) or [`poll`](/cli/commands/poll) |
 | Keep one session per work item and route later activity to it | [`sessions`](/cli/commands/sessions) |
-| Watch an agent work, live, and type into it | `runner: tmux` + [`sessions attach`](/cli/commands/sessions) |
+| Watch an agent work, live, and type into it | [`sessions attach`](/cli/commands/sessions) |
 | Answer "why did nothing happen?" | [`events`](/cli/commands/events) |
 | Gate CI on a work item's own phase rules | [`check`](/cli/commands/check) |
 | Hand a review round to a *different* model | [`critic`](/cli/commands/critic) |

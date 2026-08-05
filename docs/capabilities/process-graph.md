@@ -126,8 +126,8 @@ There are exactly **two** runtime concepts and **one** contract between them.
 
 - The graph SHALL be driven by the **ingress**, not only by a human at a terminal: the
   shared dispatcher — which both the webhook receiver and the poller feed — SHALL enter a
-  work item's start node when a session is spawned for it (**on either runner** —
-  issue-148 closed the gap where only process-runner spawns entered), and SHALL advance
+  work item's start node when a session is spawned for it (**every spawn enters** —
+  issue-148 closed the gap where tmux-hosted spawns never entered), and SHALL advance
   it at most one node boundary when an event is delivered to an existing session.
 - **The session drives it too** (issue-148): `the-loop graph complete <id>` is the
   node-completion claim. WHEN a claim arrives THEN the runtime SHALL evaluate the
@@ -161,7 +161,8 @@ There are exactly **two** runtime concepts and **one** contract between them.
   blocking, and a lost update on the no-op fallback costs a re-evaluation, never a
   wrong pointer.
 - WHEN a human gate is entered THEN the runtime SHALL resolve its session per
-  `session: inherit` — the binding `on_spawn` records (session id, runner, alive),
+  `session: inherit` — the binding `on_spawn` records (session id, runner — always
+  `"tmux"` since issue-156 — alive),
   flipped dead on close, re-recorded on respawn — and SHALL record the resolution as
   `graph.gate_session` (`inherited` or `fresh-with-artifacts`). The registry remains
   the dispatch authority.
@@ -232,6 +233,7 @@ There are exactly **two** runtime concepts and **one** contract between them.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-156 | Process runner removed; tmux is the only runner (2026-08-05): every spawn is tmux-hosted, so "every spawn enters the graph" no longer needs a per-runner qualifier, and the gate-session binding's `runner` is always `"tmux"` | [spec](../specs/issue-156/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/156) |
 | issue-148 | The graph went from observer to authority: `the-loop graph complete` (the node-completion claim — idempotent, node-named, never a verdict), `GraphContext` resolved read-only before every delivery and spawn, the `$graph_context` prompt block, consult-first ordering at human gates (no consume-only routes), `resolve_session` gained its caller (`graph.gate_session`), tmux spawns finally enter the graph, two-writer state locking, and P4 phase parity — `pdlc.yaml` defines the sequence, the prose renders it | [spec](../specs/issue-148/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/148) |
 | issue-124 | `produces` names an artifact rather than a filename: `\|`-separated alternatives, one resolver shared by every hook that reads them, ambiguity fails closed, malformed entries fail at compile; `enforces-boundaries-from` resolves `upstream` the same way, which turned a security gate that had been silently skipping for every bug work item into one that runs; graph ↔ manifest ↔ template parity is now a test | [spec](../specs/issue-124/), [decision-045](../decisions/decision-045.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/124) |
 | issue-123 | The daemon stopped taking `specDir` from the operator's machine: `routing.graph.specDir` defaults to unset, so the work item's own `workflow.specDir` wins; the gate and the runtime resolve one value; the checkout's ownership is proved before its config is read; an escaping value is refused; and the skip is recorded as `graph.skipped` instead of a debug line | [spec](../specs/issue-123/), [decision-044](../decisions/decision-044.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/123) |

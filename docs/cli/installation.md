@@ -92,7 +92,7 @@ every command:
 |------|-----------|
 | `gh`, authenticated | GitHub reads and writes — the poller, reactions, session announcements, control paper-trail comments. The daemon holds no token of its own. |
 | `git` | Per-work-item [workspaces](/config/cli/routing-options#workspace-root). |
-| `tmux` | `runner: tmux` — [interactive sessions](/capabilities/interactive-sessions). |
+| `tmux` | Hosting every spawned session — **required** by `gh-webhook start` and `poll start`. See [interactive sessions](/capabilities/interactive-sessions). |
 | `ttyd` | The optional [browser terminal](/config/cli/routing-options#webterminal-enabled). |
 | `claude` / `cursor-agent` | Whichever harness you spawn sessions with. |
 

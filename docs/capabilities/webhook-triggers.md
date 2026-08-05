@@ -24,8 +24,9 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   leak. A warning, not an error — narrowing is the operator's call.
 - WHEN routing is enabled (`routing.enabled`) THEN a verified event
   SHALL be matched to a registered session (`.the-loop/sessions/*.json`, managed by
-  `the-loop sessions`) and the harness SHALL be resumed via its official CLI
-  (`claude -p --resume` / `cursor-agent -p --resume`), serialized per session and
+  `the-loop sessions`) and delivered into that session's tmux-hosted conversation
+  (respawned first when it has died — see
+  [interactive-sessions](interactive-sessions.md)), serialized per session and
   parallel across sessions (`maxConcurrentDispatches`).
 - WHEN no session matches THEN the router SHALL spawn a new session per
   `spawnOnUnmatched` (`never | always | labeled`, default `labeled` — opt-in via the
@@ -43,7 +44,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   [process-graph](process-graph.md) for the consult-first ordering at human gates.
 - **Every rendered prompt states where the session takes its answers from** (issue-134,
   `routing.interaction.mode`, [decision-051](../decisions/decision-051.md)).
-  - WHEN a prompt is rendered — an event prompt or a spawn prompt, either runner, either
+  - WHEN a prompt is rendered — an event prompt or a spawn prompt, either
     ingress — THEN the resolved mode's directive SHALL be substituted into the
     `$interaction_directive` placeholder, **above** the untrusted payload excerpt.
   - WHEN the mode is `work-item` (**the default**) THEN the directive SHALL tell the agent
@@ -60,9 +61,8 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
     `work-item` with a warning, never to `cli`: a wrong `work-item` leaves a visible
     comment awaiting a reply, a wrong `cli` leaves a question in a void. The directive is
     a **constant per mode** — it interpolates nothing, so no payload text can reach it.
-  - IF the mode is `cli` WHILE `routing.runner` is `process` THEN the-loop SHALL warn —
-    a headless one-shot session has no terminal to be asked in — without refusing or
-    overriding the operator's declaration.
+    Both modes are valid: `cli` means a human attaches to the session's tmux pane and
+    answers there.
   - WHEN a session is spawned THEN `session.spawned` SHALL carry the resolved mode.
   - **Independently of the mode**, iteration on a generated artifact (`brainstorm.md`,
     `requirements.md`/`bugfix.md`, `design.md`, `tasks.md`) happens **only** in
@@ -148,7 +148,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   GitHub issue is routed as its own work item (`github:OWNER/REPO#<pr-number>`), so PRs
   stay monitorable when the ticketing system is not GitHub (Jira, …) — `work-on` adds
   the label to the PR it opens and registers the session against the PR's ref.
-- WHEN `routing.runner` is `tmux` THEN spawned sessions SHALL be hosted as attachable
+- Spawned sessions SHALL be hosted as attachable
   interactive tmux sessions and events pasted into them — see
   [interactive-sessions](interactive-sessions.md).
 - WHEN a work item **ends** — an `issues` event with action `closed`, or a
@@ -298,6 +298,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-156 | Process runner removed; tmux is the only runner (2026-08-05): dispatch always pastes into a tmux-hosted session, the `cli`-under-process interaction warning went with the runner choice, and the tmux-hosting requirement is unconditional | [spec](../specs/issue-156/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/156) |
 | issue-142 | `routing` promoted out from under `webhooks.ghWebhook` to a top-level key: the block was never the receiver's — the poller reads it verbatim for dispatch and `the-loop sessions` reads it again — so its scope is now legible from the config's shape rather than from a comment. A relocation only: same options, same defaults, same behaviour, with the cross-command import replaced by one shared accessor and the old path refused rather than ignored (schema `0.4.0`) | [spec](../specs/issue-142/), [decision-053](../decisions/decision-053.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/142) |
 | issue-136 | Pre-spawn trust reached the checkout it was for: `hasTrustDialogAccepted` is written on the exact spawn directory under every `scope` (the gate that decides whether the dialog appears for a repo shipping `.claude/settings.json` grants has no ancestor walk), so `scope` now only widens | [spec](../specs/issue-136/), [decision-052](../decisions/decision-052.md), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/136) |
 | issue-134 | A spawned session is told **where its answers come from** instead of guessing: `routing.interaction.mode` (`work-item` default, or `cli`) is rendered into every prompt through `$interaction_directive`, appended when a custom template omits the placeholder, and reported on `session.spawned`; artifact iteration in pull-request review became a stated invariant of the loop | [spec](../specs/issue-134/), [decision-051](../decisions/decision-051.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/134) |

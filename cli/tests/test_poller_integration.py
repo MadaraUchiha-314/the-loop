@@ -1,10 +1,13 @@
-"""Integration tests: gh poll → GitHub provider → dispatcher → harness spawn.
+"""Integration tests: gh poll → GitHub provider → dispatcher → tmux session.
 
 Unlike ``test_poller.py`` (which asserts on synthesised events via doubles),
 these drive the *real* GitHub provider and the *real* Dispatcher — a poll cycle
-actually spawns and registers a session and a later cycle actually resumes it —
-so they prove the provider-agnostic poller reuses the webhook routing/dispatch
-stack end to end, including the one-session-per-work-item guarantee.
+actually spawns and registers a tmux-hosted session and a later cycle actually
+delivers into it — so they prove the provider-agnostic poller reuses the
+webhook routing/dispatch stack end to end, including the
+one-session-per-work-item guarantee. The observable seam is the injected
+FakeTmux (issue-156): spawns land in ``tmux.spawns``, deliveries in
+``tmux.delivers``.
 
 Feature: Poll GitHub and spawn/route harness sessions
 Requirement: docs/specs/issue-34/requirements.md#R1
@@ -15,9 +18,9 @@ import subprocess
 import threading
 import time
 
+from conftest import FakeTmux, StubInteractiveAdapter
 from the_loop.control import ControlConfig
 from the_loop.announce import announcement_body
-from the_loop.harness import DispatchResult
 from the_loop.poller import (
     GhClient,
     GitHubPollProvider,
@@ -32,6 +35,7 @@ from the_loop.webhook.dispatcher import Dispatcher, RoutingConfig
 
 LABEL = "the-loop: auto-execute"
 REF = "github:octo/repo#15"
+TARGET = "loop-github-octo-repo-15"
 
 
 def wait_until(predicate, timeout=5.0, interval=0.01):
@@ -41,31 +45,6 @@ def wait_until(predicate, timeout=5.0, interval=0.01):
             return True
         time.sleep(interval)
     return predicate()
-
-
-class FakeAdapter:
-    """In-process HarnessAdapter double recording spawns and resumes."""
-
-    name = "claude"
-
-    def __init__(self, spawn_id="spawned-1"):
-        self.spawn_id = spawn_id
-        self.spawns = []
-        self.resumes = []
-        self._lock = threading.Lock()
-
-    def is_available(self):
-        return True
-
-    def spawn(self, work_item, prompt, cwd, timeout=None):
-        with self._lock:
-            self.spawns.append((work_item.ref, prompt, cwd))
-        return DispatchResult(ok=True, session_id=self.spawn_id)
-
-    def resume(self, session, prompt, timeout=None):
-        with self._lock:
-            self.resumes.append((session.work_item.ref, prompt))
-        return DispatchResult(ok=True, session_id=session.harness_session_id)
 
 
 class GhState:
@@ -127,18 +106,21 @@ def _comment(cid, body):
     }
 
 
-def _dispatcher(registry, adapter, config):
-    # adapter intentionally unannotated so the in-process FakeAdapter double
-    # satisfies Dict[str, HarnessAdapter] (mirrors test_routing.make_dispatcher).
-    return Dispatcher(registry=registry, adapters={"claude": adapter}, config=config)
+def _dispatcher(registry, tmux, config):
+    return Dispatcher(
+        registry=registry,
+        adapters={"claude": StubInteractiveAdapter()},
+        config=config,
+        tmux_runner=tmux,
+    )
 
 
 def _make(tmp_path, gh_state, monitor_issues=True, monitor_prs=False):
     registry = SessionRegistry(tmp_path / "sessions")
-    adapter = FakeAdapter()
+    tmux = FakeTmux()
     dispatcher = _dispatcher(
         registry,
-        adapter,
+        tmux,
         RoutingConfig(
             spawn_on_unmatched="labeled",
             # Pre-issue-106: the label alone spawns (the start gate has its own tests).
@@ -160,7 +142,21 @@ def _make(tmp_path, gh_state, monitor_issues=True, monitor_prs=False):
         state=PollState(WorkItemStore(tmp_path / "portable")),
         authorized_users=["octocat"],  # the fixture author (authz guard)
     )
-    return registry, adapter, dispatcher, poller
+    return registry, tmux, dispatcher, poller
+
+
+def _register_live_session(registry, tmp_path, ref=REF, session_id="sess-15"):
+    """A pre-existing session hosted in a live tmux session for its work item."""
+    item = WorkItemRef.parse(ref)
+    registry.register(
+        Session(
+            work_item=item,
+            harness="claude",
+            harness_session_id=session_id,
+            cwd=str(tmp_path),
+            tmux_target=f"loop-{item.slug}",
+        )
+    )
 
 
 def test_labeled_issue_spawns_a_registered_session_once(tmp_path):
@@ -168,20 +164,21 @@ def test_labeled_issue_spawns_a_registered_session_once(tmp_path):
 
     Given a labelled issue with no registered session
     When two poll cycles run
-    Then a single harness session is spawned and registered for it
+    Then a single tmux-hosted harness session is spawned and registered for it
     """
-    registry, adapter, dispatcher, poller = _make(tmp_path, GhState())
+    registry, tmux, dispatcher, poller = _make(tmp_path, GhState())
 
     poller.poll_once()
-    assert wait_until(lambda: len(adapter.spawns) == 1)
+    assert wait_until(lambda: len(tmux.spawns) == 1)
     poller.poll_once()  # registry now has it -> must not spawn again
     time.sleep(0.1)
     dispatcher.stop()
 
-    assert len(adapter.spawns) == 1
+    assert len(tmux.spawns) == 1
     session = registry.find_by_work_item(REF)
-    assert session is not None and session.harness_session_id == "spawned-1"
-    _, prompt, _ = adapter.spawns[0]
+    assert session is not None and session.harness_session_id  # pre-assigned uuid
+    assert session.tmux_target == TARGET
+    _, prompt, _, _ = tmux.spawns[0]
     assert "/the-loop:work-on" in prompt and REF in prompt
 
 
@@ -190,22 +187,22 @@ def test_new_comment_after_spawn_resumes_same_session(tmp_path):
 
     Given a labelled issue that already spawned a session
     When a new comment appears and the next poll cycle runs
-    Then the existing session is resumed with the comment (no new spawn)
+    Then the comment is delivered into the existing tmux session (no new spawn)
     """
     gh = GhState()
     gh.comments = [_comment("IC_1", "old")]
-    registry, adapter, dispatcher, poller = _make(tmp_path, gh)
+    registry, tmux, dispatcher, poller = _make(tmp_path, gh)
 
     poller.poll_once()  # spawn + baseline IC_1
     assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
 
     gh.comments = [_comment("IC_1", "old"), _comment("IC_2", "the build is red")]
     poller.poll_once()  # forward IC_2 only
-    assert wait_until(lambda: len(adapter.resumes) == 1)
+    assert wait_until(lambda: len(tmux.delivers) == 1)
     dispatcher.stop()
 
-    assert len(adapter.spawns) == 1  # no duplicate spawn
-    ref, prompt = adapter.resumes[0]
+    assert len(tmux.spawns) == 1  # no duplicate spawn
+    ref, prompt = tmux.delivers[0]
     assert ref == REF
     assert "the build is red" in prompt and "UNTRUSTED" in prompt
 
@@ -215,23 +212,23 @@ def test_comment_not_reforwarded_across_cycles(tmp_path):
 
     Given a session and a comment already forwarded
     When further poll cycles run with no new comments
-    Then the comment is not resumed again (durable dedup)
+    Then the comment is not delivered again (durable dedup)
     """
     gh = GhState()
     gh.comments = [_comment("IC_1", "baseline")]
-    registry, adapter, dispatcher, poller = _make(tmp_path, gh)
+    registry, tmux, dispatcher, poller = _make(tmp_path, gh)
 
     poller.poll_once()
     assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
     gh.comments = [_comment("IC_1", "baseline"), _comment("IC_2", "fix it")]
     poller.poll_once()
-    assert wait_until(lambda: len(adapter.resumes) == 1)
+    assert wait_until(lambda: len(tmux.delivers) == 1)
     poller.poll_once()  # no new comments
     poller.poll_once()
     time.sleep(0.1)
     dispatcher.stop()
 
-    assert len(adapter.resumes) == 1  # IC_2 delivered exactly once
+    assert len(tmux.delivers) == 1  # IC_2 delivered exactly once
 
 
 def test_the_daemons_own_announcement_is_not_forwarded(tmp_path):
@@ -240,13 +237,13 @@ def test_the_daemons_own_announcement_is_not_forwarded(tmp_path):
     Feature: Poll GitHub and route only human input into a session
     Given a labelled issue whose session the-loop announced on the ticket
     When the next poll cycle sees that announcement as a new comment
-    Then it is resolved without being delivered into the session
+    Then it is resolved without being delivered into the tmux session
 
     Requirement: docs/specs/issue-104/bugfix.md#AC5
     """
     gh = GhState()
     gh.comments = [_comment("IC_1", "old")]
-    registry, adapter, dispatcher, poller = _make(tmp_path, gh)
+    registry, tmux, dispatcher, poller = _make(tmp_path, gh)
 
     poller.poll_once()  # spawn + baseline IC_1
     assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
@@ -263,8 +260,8 @@ def test_the_daemons_own_announcement_is_not_forwarded(tmp_path):
     time.sleep(0.1)
     dispatcher.stop()
 
-    assert adapter.resumes == []
-    assert len(adapter.spawns) == 1
+    assert tmux.delivers == []
+    assert len(tmux.spawns) == 1
 
 
 def test_pr_comment_reuses_the_linked_issues_session(tmp_path):
@@ -273,7 +270,7 @@ def test_pr_comment_reuses_the_linked_issues_session(tmp_path):
     Given a labelled PR 16 that GitHub reports as closing issue 15
     And an active session already registered for issue 15
     When poll cycles run and a new comment appears on the PR
-    Then the comment resumes the issue's session
+    Then the comment is delivered into the issue's tmux session
     And no second session is spawned for the PR's own ref
 
     Requirement: docs/specs/issue-93/bugfix.md#AC4
@@ -291,37 +288,30 @@ def test_pr_comment_reuses_the_linked_issues_session(tmp_path):
             "closingIssuesReferences": [{"number": 15}],
         }
     ]
-    registry, adapter, dispatcher, poller = _make(
+    registry, tmux, dispatcher, poller = _make(
         tmp_path, gh, monitor_issues=False, monitor_prs=True
     )
     # The issue's session already exists — this is the reporter's scenario.
-    registry.register(
-        Session(
-            work_item=WorkItemRef.parse(REF),
-            harness="claude",
-            harness_session_id="sess-15",
-            cwd=str(tmp_path),
-        )
-    )
+    _register_live_session(registry, tmp_path)
 
     poller.poll_once()  # first sight: must NOT spawn, the issue has a session
     gh.pr_comments = [_comment("IC_9", "the build is red")]
     poller.poll_once()
-    assert wait_until(lambda: len(adapter.resumes) == 1)
+    assert wait_until(lambda: len(tmux.delivers) == 1)
     time.sleep(0.1)
     dispatcher.stop()
 
-    assert adapter.spawns == []
+    assert tmux.spawns == []
     assert registry.find_by_work_item("github:octo/repo#16") is None
-    ref, prompt = adapter.resumes[0]
+    ref, prompt = tmux.delivers[0]
     assert ref == REF
     assert "the build is red" in prompt
 
 
 def test_run_once_stops_after_a_single_cycle(tmp_path):
-    _, adapter, dispatcher, poller = _make(tmp_path, GhState())
+    _, tmux, dispatcher, poller = _make(tmp_path, GhState())
     poller.run(once=True, stop_event=threading.Event())
-    assert wait_until(lambda: len(adapter.spawns) == 1)
+    assert wait_until(lambda: len(tmux.spawns) == 1)
     dispatcher.stop()
 
 
@@ -335,11 +325,11 @@ def test_a_closed_issue_closes_its_session(tmp_path):
         Given a labelled issue with a spawned, registered session
         When the issue is closed upstream and the next poll cycle runs
         Then the session is closed in the registry
-        And the harness is never resumed for the closure
+        And nothing is delivered into the tmux session for the closure
     Requirement: docs/specs/issue-94/requirements.md#R1
     """
     gh = GhState()
-    registry, adapter, dispatcher, poller = _make(tmp_path, gh)
+    registry, tmux, dispatcher, poller = _make(tmp_path, gh)
     poller.poll_once()
     assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
 
@@ -350,7 +340,7 @@ def test_a_closed_issue_closes_its_session(tmp_path):
     assert summary.closures == 1
     assert registry.find_by_work_item(REF) is None  # closed
     assert registry.list_sessions(status="closed")  # …and persisted as such
-    assert adapter.resumes == []  # never delivered into the conversation
+    assert tmux.delivers == []  # never delivered into the conversation
 
 
 def test_a_merged_pr_closes_its_session(tmp_path):
@@ -363,7 +353,7 @@ def test_a_merged_pr_closes_its_session(tmp_path):
     Requirement: docs/specs/issue-94/requirements.md#R1
     """
     gh = GhState()
-    registry, adapter, dispatcher, poller = _make(tmp_path, gh)
+    registry, tmux, dispatcher, poller = _make(tmp_path, gh)
     poller.poll_once()
     assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
 
@@ -395,15 +385,8 @@ def test_a_merged_pr_does_not_close_its_still_open_work_item(tmp_path):
             "closingIssuesReferences": [{"number": 15}],
         }
     ]
-    registry, adapter, dispatcher, poller = _make(tmp_path, gh, monitor_prs=True)
-    registry.register(
-        Session(
-            work_item=WorkItemRef.parse(REF),
-            harness="claude",
-            harness_session_id="sess-15",
-            cwd=str(tmp_path),
-        )
-    )
+    registry, tmux, dispatcher, poller = _make(tmp_path, gh, monitor_prs=True)
+    _register_live_session(registry, tmp_path)
     poller.poll_once()
 
     gh.prs = []  # PR 16 merged; issue 15 is still open and still listed
@@ -413,7 +396,7 @@ def test_a_merged_pr_does_not_close_its_still_open_work_item(tmp_path):
     assert summary.closures == 0
     session = registry.find_by_work_item(REF)
     assert session is not None and session.status == "active"
-    assert adapter.spawns == [] and adapter.resumes == []
+    assert tmux.spawns == [] and tmux.delivers == []
 
 
 def test_a_still_open_item_that_left_the_listing_keeps_its_session(tmp_path):
@@ -426,7 +409,7 @@ def test_a_still_open_item_that_left_the_listing_keeps_its_session(tmp_path):
     Requirement: docs/specs/issue-94/requirements.md#R1
     """
     gh = GhState()
-    registry, adapter, dispatcher, poller = _make(tmp_path, gh)
+    registry, tmux, dispatcher, poller = _make(tmp_path, gh)
     poller.poll_once()
     assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
 
@@ -446,7 +429,7 @@ def test_an_unreachable_github_never_closes_a_session(tmp_path):
     Requirement: docs/specs/issue-94/requirements.md#R1
     """
     gh = GhState()
-    registry, adapter, dispatcher, poller = _make(tmp_path, gh)
+    registry, tmux, dispatcher, poller = _make(tmp_path, gh)
     poller.poll_once()
     assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
 
@@ -474,7 +457,7 @@ def test_a_reopened_item_spawns_a_fresh_session(tmp_path):
     Requirement: docs/specs/issue-94/requirements.md#R1
     """
     gh = GhState()
-    registry, adapter, dispatcher, poller = _make(tmp_path, gh)
+    registry, tmux, dispatcher, poller = _make(tmp_path, gh)
     poller.poll_once()
     assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
     gh.close_issue()
@@ -491,6 +474,6 @@ def test_a_reopened_item_spawns_a_fresh_session(tmp_path):
     ]
     gh.item_state = {"number": 15, "state": "open"}
     poller.poll_once()
-    assert wait_until(lambda: len(adapter.spawns) == 2)
+    assert wait_until(lambda: len(tmux.spawns) == 2)
     dispatcher.stop()
     assert registry.find_by_work_item(REF) is not None

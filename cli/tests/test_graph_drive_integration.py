@@ -11,10 +11,10 @@ import time
 from pathlib import Path
 
 
+from conftest import FakeTmux, StubInteractiveAdapter
 from the_loop.control import ControlConfig
 from the_loop.graphlink import GraphContext
 from the_loop.sessions import SessionRegistry, Session, WorkItemRef
-from the_loop.harness.base import DispatchResult
 from the_loop.webhook.dispatcher import Dispatcher, RoutingConfig
 from the_loop.webhook.router import RoutedEvent, extract_work_items
 
@@ -80,26 +80,28 @@ class _Report:
     status = "pass"
 
 
-class _Adapter:
-    binary = "fake"
-    name = "claude"
+class _SeqTmux(FakeTmux):
+    """The tmux runner hosts every delivery and spawn (issue-156), so *it* is
+    the harness side of the ordering under test: both count as "deliver"."""
 
     def __init__(self, seq):
+        super().__init__()
         self.seq = seq
         self.prompts = []
 
-    def is_available(self):
-        return True
-
-    def resume(self, session, prompt, timeout=None):
+    def deliver(self, session, prompt, timeout=None):
         self.seq.append("deliver")
         self.prompts.append(prompt)
-        return DispatchResult(ok=True, session_id=session.harness_session_id)
+        return super().deliver(session, prompt, timeout)
 
-    def spawn(self, work_item, prompt, cwd, timeout=None):
+    def spawn(
+        self, work_item, adapter, prompt, cwd, session_id, timeout=None, resume=False
+    ):
         self.seq.append("deliver")
         self.prompts.append(prompt)
-        return DispatchResult(ok=True, session_id="spawned-1")
+        return super().spawn(
+            work_item, adapter, prompt, cwd, session_id, timeout=timeout, resume=resume
+        )
 
 
 def _wait(predicate, timeout=5.0):
@@ -114,14 +116,15 @@ def _wait(predicate, timeout=5.0):
 def _dispatcher(tmp_path, link, **overrides):
     registry = SessionRegistry(tmp_path / "sessions")
     overrides.setdefault("control", ControlConfig(require_start_command=False))
-    adapters: dict = {"claude": _Adapter(link.seq)}
+    tmux = _SeqTmux(link.seq)
     dispatcher = Dispatcher(
         registry=registry,
-        adapters=adapters,
+        adapters={"claude": StubInteractiveAdapter()},
         config=RoutingConfig(**overrides),
+        tmux_runner=tmux,
     )
     dispatcher.graphlink = link
-    return registry, dispatcher, adapters["claude"]
+    return registry, dispatcher, tmux
 
 
 def _session(cwd="."):
@@ -162,13 +165,13 @@ def test_an_ordinary_event_is_delivered_then_advanced(tmp_path):
     Requirement: docs/specs/issue-148/requirements.md R3.1, R4.3
     """
     link = _SeqLink(ctx=_ctx())
-    registry, dispatcher, adapter = _dispatcher(tmp_path, link)
+    registry, dispatcher, tmux = _dispatcher(tmp_path, link)
     registry.register(_session())
     dispatcher.handle(_comment())
     assert _wait(lambda: "advance" in link.seq)
     dispatcher.stop()
     assert link.seq == ["context", "deliver", "advance"]
-    prompt = adapter.prompts[0]
+    prompt = tmux.prompts[0]
     assert "the-loop process state for issue-15" in prompt
     assert "node: implementation" in prompt
     assert "`the-loop graph complete issue-15`" in prompt
@@ -187,13 +190,13 @@ def test_a_human_gate_classifies_the_event_before_delivery(tmp_path):
     Requirement: docs/specs/issue-148/requirements.md R4.1
     """
     link = _SeqLink(ctx=GATE_CTX, report=_Report())
-    registry, dispatcher, adapter = _dispatcher(tmp_path, link)
+    registry, dispatcher, tmux = _dispatcher(tmp_path, link)
     registry.register(_session())
     dispatcher.handle(_comment(body="approved, ship it"))
     assert _wait(lambda: "deliver" in link.seq)
     dispatcher.stop()
     assert link.seq == ["context", "advance", "context", "deliver"]
-    assert "classified by the gate first: approved" in adapter.prompts[0]
+    assert "classified by the gate first: approved" in tmux.prompts[0]
 
 
 def test_an_unclassifiable_event_at_a_gate_is_still_delivered(tmp_path):
@@ -209,7 +212,7 @@ def test_an_unclassifiable_event_at_a_gate_is_still_delivered(tmp_path):
     Requirement: docs/specs/issue-148/requirements.md R4.2, abuse case 1
     """
     link = _SeqLink(ctx=GATE_CTX, report=None)  # advance ran, nothing resolved
-    registry, dispatcher, adapter = _dispatcher(tmp_path, link)
+    registry, dispatcher, tmux = _dispatcher(tmp_path, link)
     registry.register(_session())
     dispatcher.handle(_comment(body="lgtm from a stranger"))
     assert _wait(lambda: "deliver" in link.seq)
@@ -217,8 +220,8 @@ def test_an_unclassifiable_event_at_a_gate_is_still_delivered(tmp_path):
     assert "deliver" in link.seq and link.seq.index("advance") < link.seq.index(
         "deliver"
     )
-    assert "classified by the gate first" not in adapter.prompts[0]
-    assert "status: waiting" in adapter.prompts[0]
+    assert "classified by the gate first" not in tmux.prompts[0]
+    assert "status: waiting" in tmux.prompts[0]
 
 
 def test_a_graph_fault_never_costs_a_delivery(tmp_path):
@@ -232,13 +235,13 @@ def test_a_graph_fault_never_costs_a_delivery(tmp_path):
     Requirement: docs/specs/issue-148/requirements.md R3.3
     """
     link = _SeqLink(ctx=None)
-    registry, dispatcher, adapter = _dispatcher(tmp_path, link)
+    registry, dispatcher, tmux = _dispatcher(tmp_path, link)
     registry.register(_session())
     dispatcher.handle(_comment())
     assert _wait(lambda: "deliver" in link.seq)
     dispatcher.stop()
-    assert "the-loop process state" not in adapter.prompts[0]
-    assert "looks good" in adapter.prompts[0]
+    assert "the-loop process state" not in tmux.prompts[0]
+    assert "looks good" in tmux.prompts[0]
 
 
 def test_a_spawn_reads_context_before_render_and_enters_after(tmp_path):
@@ -254,7 +257,7 @@ def test_a_spawn_reads_context_before_render_and_enters_after(tmp_path):
     Requirement: docs/specs/issue-148/requirements.md R3.2, R7.2
     """
     link = _SeqLink(ctx=_ctx())
-    registry, dispatcher, adapter = _dispatcher(
+    registry, dispatcher, tmux = _dispatcher(
         tmp_path, link, spawn_on_unmatched="always"
     )
     dispatcher.handle(_comment())
@@ -263,8 +266,14 @@ def test_a_spawn_reads_context_before_render_and_enters_after(tmp_path):
     deliver_at = link.seq.index("deliver")
     spawn_at = next(i for i, s in enumerate(link.seq) if isinstance(s, tuple))
     assert deliver_at < spawn_at  # writes only after the spawn succeeded
-    assert link.seq[spawn_at] == ("spawn", "spawned-1", "process")
-    prompt = adapter.prompts[0]
+    verb, bound_id, runner = link.seq[spawn_at]
+    assert verb == "spawn" and runner == "tmux"
+    # The dispatcher pre-assigns the session id (a uuid4, issue-156): the id
+    # recorded with the binding is the one the registered session carries.
+    session = registry.find_by_work_item(REF)
+    assert session is not None and bound_id == session.harness_session_id
+    assert bound_id  # a real pre-assigned id, not an empty default
+    prompt = tmux.prompts[0]
     assert "resume with: `/the-loop:execute-tasks issue-15`" in prompt
     assert "requirements → design → tasks" not in prompt  # R6.3: no prose flow
 
@@ -280,13 +289,13 @@ def test_a_fresh_spawn_gets_the_start_prompt_unchanged(tmp_path):
     Requirement: docs/specs/issue-148/requirements.md R3.4
     """
     link = _SeqLink(ctx=None)
-    registry, dispatcher, adapter = _dispatcher(
+    registry, dispatcher, tmux = _dispatcher(
         tmp_path, link, spawn_on_unmatched="always"
     )
     dispatcher.handle(_comment())
-    assert _wait(lambda: adapter.prompts)
+    assert _wait(lambda: tmux.prompts)
     dispatcher.stop()
-    prompt = adapter.prompts[0]
+    prompt = tmux.prompts[0]
     assert "/the-loop:work-on" in prompt
     assert "the-loop process state" not in prompt
 
@@ -302,7 +311,7 @@ def test_closing_a_session_marks_the_graph_binding(tmp_path):
     Requirement: docs/specs/issue-148/requirements.md R5.2
     """
     link = _SeqLink(ctx=None)
-    registry, dispatcher, adapter = _dispatcher(tmp_path, link)
+    registry, dispatcher, tmux = _dispatcher(tmp_path, link)
     session = _session()
     registry.register(session)
     dispatcher.close_session(session)

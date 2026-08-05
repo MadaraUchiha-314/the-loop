@@ -72,8 +72,8 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
   `docs/decisions/decision-040.md`.
 - **Where the session takes its answers from** (`routing.interaction.mode`, issue-134):
   `work-item` (default) or `cli`. Until this existed the prompt never said, so the agent
-  guessed — and a `process`-runner session guessing "the terminal" asks into a pipe nobody
-  reads. The resolved mode is rendered into every event/spawn prompt through the
+  guessed — and a session guessing "the terminal" asks into a tmux pane nobody may be
+  attached to. The resolved mode is rendered into every event/spawn prompt through the
   `$interaction_directive` placeholder; a custom `promptTemplate` that omits the
   placeholder gets the directive **appended**, so a template edit cannot strip the rule,
   and an unrecognised mode resolves to `work-item` with a warning (never to `cli`). The

@@ -132,7 +132,6 @@ routing:                                     # shared by BOTH ingresses
   enabled: true
   authorizedUsers: ["your-github-login"]     # REQUIRED — empty fails closed
   spawnOnUnmatched: labeled
-  runner: tmux
 ```
 
 Everything else takes its default. Build up from here with the option pages below.

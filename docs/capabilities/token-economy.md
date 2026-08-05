@@ -9,8 +9,8 @@
 
 the-loop iterates (brainstorm → 3-phase spec → implement → self/critic review → evidence →
 fold-in → briefing), is verbose by design (a `SKILL.md` + ten `reference/*.md` + rich
-templates), and — in the default `process` runner — re-primes the harness on every webhook
-event. That makes it token-hungry. This capability packages the field's token-reduction
+templates), and hosts each work item as a resident tmux TUI whose window only grows across
+the item's events. That makes it token-hungry. This capability packages the field's token-reduction
 practices (Anthropic context engineering, the caveman/ponytail projects, loop-engineering
 guidance) as the `tokenEconomy` config section and `reference/token-economy.md`, keyed so
 mechanical stages don't pay frontier-model prices and verbose output doesn't crowd the
@@ -65,7 +65,8 @@ Pointers, not copies:
   the annotated `.the-loop/templates/harness-config.yaml`.
 - Telemetry parsing: `cli/the_loop/harness/base.py` (`Usage`, `usage_from_output`) with
   per-dispatch logging in `cli/the_loop/webhook/dispatcher.py`.
-- Runner interplay (resident tmux vs. cold `-p --resume` re-priming):
+- Resident-session interplay (the tmux-hosted TUI amortizes context across a work item's
+  events; the window is managed inside the session):
   [`interactive-sessions`](interactive-sessions.md) and `docs/specs/issue-32/`.
 - Research digest & rejected alternatives: [`docs/specs/issue-37/brainstorm.md`](../specs/issue-37/brainstorm.md).
 
@@ -73,4 +74,5 @@ Pointers, not copies:
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-156 | Process runner removed; tmux is the only runner (2026-08-05): the cost model inverted — the resident TUI amortizes context across a work item's events instead of re-priming per event, and window growth is managed inside the session (compaction/clears). | [spec](../specs/issue-156/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/156) |
 | issue-37 | Introduced the token-economy capability: `tokenEconomy` config (model routing, thinking effort, output verbosity, progressive disclosure, sub-agents, compaction, telemetry), the `token-economy.md` reference, best-effort usage telemetry in the CLI, and registration of caveman/ponytail. | [spec](../specs/issue-37/), PR #41 |

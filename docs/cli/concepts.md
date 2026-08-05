@@ -160,11 +160,10 @@ keys the harness is about to ask about, and nothing else.
 
 ## How sessions are hosted
 
-- **`process`** — a headless one-shot subprocess. Fine for unattended work.
-- **`tmux`** — the harness TUI in a named session, `loop-<slug>`, that you can attach to,
-  watch, and type into.
+Every daemon-spawned session is the harness TUI in a named tmux session, `loop-<slug>`,
+that you can attach to, watch, and type into.
 
-`tmux` is what makes the loop *observable while it runs*. The defaults keep a finished
+tmux is what makes the loop *observable while it runs*. The defaults keep a finished
 session readable and a crashed one's conversation alive: the pane survives the process
 exiting, a dead session is respawned into the **same** conversation, and a closed work
 item's session is retained as a record with its harness ended — so nothing can be typed

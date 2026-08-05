@@ -16,3 +16,8 @@ dev = [
     "jsonschema",
     "pyyaml",
 ]
+
+# Test modules import shared doubles from their sibling conftest.py (pytest puts
+# the tests directory on sys.path); tell pyright the same thing.
+[tool.pyright]
+executionEnvironments = [{ root = "cli/tests", extraPaths = ["cli/tests"] }]

@@ -5,8 +5,6 @@ Spec: docs/specs/issue-15/ (requirements R2–R5).
 
 import json
 import logging
-import stat
-import threading
 import time
 from pathlib import Path
 
@@ -14,11 +12,7 @@ import pytest
 
 from the_loop import cli_config
 from the_loop.control import ControlConfig
-from the_loop.harness import (
-    ClaudeCodeAdapter,
-    CursorAgentAdapter,
-    DispatchResult,
-)
+from conftest import FakeTmux, StubInteractiveAdapter
 from the_loop.sessions import (
     RegistryError,
     Session,
@@ -601,7 +595,6 @@ def test_router_drops_the_daemons_own_session_announcement():
         harness="claude",
         harness_session_id="s-1",
         cwd=".",
-        runner="tmux",
         tmux_target="loop-github-octo-repo-15",
     )
     router = Router(events=[], authorized_users=["me"])
@@ -621,154 +614,21 @@ def test_router_deduper_is_bounded_lru():
     assert "b" not in deduper
 
 
-# -- harness adapters (R4) ----------------------------------------------------
-
-STUB_SOURCE = """#!/usr/bin/env python3
-import json, os, sys
-with open(os.environ["STUB_RECORD"], "a") as f:
-    f.write(json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd()}) + "\\n")
-if os.environ.get("STUB_EXIT", "0") != "0":
-    sys.stderr.write("stub harness exploded\\n")
-    sys.exit(int(os.environ["STUB_EXIT"]))
-print(os.environ.get("STUB_STDOUT", "{}"))
-"""
-
-
-@pytest.fixture()
-def stub_harness(tmp_path, monkeypatch):
-    """A fake harness CLI that records its argv/cwd and prints canned JSON."""
-    binary = tmp_path / "stub-harness"
-    binary.write_text(STUB_SOURCE)
-    binary.chmod(binary.stat().st_mode | stat.S_IXUSR)
-    record = tmp_path / "record.jsonl"
-    monkeypatch.setenv("STUB_RECORD", str(record))
-
-    def calls():
-        if not record.exists():
-            return []
-        lines = record.read_text().strip().splitlines()
-        return [json.loads(line) for line in lines]
-
-    return binary, calls
-
-
-def test_claude_adapter_resume_invokes_cli_in_session_cwd(
-    tmp_path, stub_harness, monkeypatch
-):
-    binary, calls = stub_harness
-    monkeypatch.setenv("STUB_STDOUT", json.dumps({"session_id": "sess-1"}))
-    workdir = tmp_path / "work"
-    workdir.mkdir()
-    adapter = ClaudeCodeAdapter(binary=str(binary), extra_args=["--extra-flag"])
-    session = make_session(cwd=str(workdir))
-    result = adapter.resume(session, "handle the event", timeout=30)
-    assert result.ok, result.error
-    (call,) = calls()
-    assert call["argv"] == [
-        "-p",
-        "handle the event",
-        "--resume",
-        "sess-1",
-        "--output-format",
-        "json",
-        "--extra-flag",
-    ]
-    assert Path(call["cwd"]).resolve() == workdir.resolve()
-
-
-def test_claude_adapter_spawn_parses_new_session_id(stub_harness, monkeypatch):
-    binary, calls = stub_harness
-    monkeypatch.setenv("STUB_STDOUT", json.dumps({"session_id": "new-42"}))
-    adapter = ClaudeCodeAdapter(binary=str(binary))
-    result = adapter.spawn(WorkItemRef.parse(REF), "start work", cwd=".")
-    assert result.ok and result.session_id == "new-42"
-    (call,) = calls()
-    assert "--resume" not in call["argv"]
-
-
-def test_claude_adapter_reports_failure_with_stderr(stub_harness, monkeypatch):
-    binary, _ = stub_harness
-    monkeypatch.setenv("STUB_EXIT", "3")
-    adapter = ClaudeCodeAdapter(binary=str(binary))
-    result = adapter.resume(make_session(), "boom", timeout=30)
-    assert not result.ok
-    assert "stub harness exploded" in result.error
-
-
-def test_claude_adapter_unavailable_binary_is_actionable():
-    adapter = ClaudeCodeAdapter(binary="definitely-not-installed-xyz")
-    assert adapter.is_available() is False
-    result = adapter.resume(make_session(), "hello", timeout=5)
-    assert not result.ok and "definitely-not-installed-xyz" in result.error
-
-
-def test_cursor_adapter_resume_uses_chat_id(tmp_path, stub_harness, monkeypatch):
-    binary, calls = stub_harness
-    monkeypatch.setenv("STUB_STDOUT", json.dumps({"chat_id": "chat-9"}))
-    adapter = CursorAgentAdapter(binary=str(binary))
-    session = make_session(harness="cursor", session_id="chat-9")
-    result = adapter.resume(session, "handle it", timeout=30)
-    assert result.ok
-    (call,) = calls()
-    assert call["argv"][:4] == ["-p", "handle it", "--resume", "chat-9"]
-
-
-def test_cursor_adapter_spawn_parses_chat_id(stub_harness, monkeypatch):
-    binary, _ = stub_harness
-    monkeypatch.setenv("STUB_STDOUT", json.dumps({"chat_id": "chat-77"}))
-    adapter = CursorAgentAdapter(binary=str(binary))
-    result = adapter.spawn(WorkItemRef.parse(REF), "start", cwd=".")
-    assert result.ok and result.session_id == "chat-77"
-
-
 # -- dispatcher (R3.2/R3.3, R5) -----------------------------------------------
 
 
-class FakeAdapter:
-    """In-process HarnessAdapter double recording calls and concurrency."""
-
-    name = "claude"
-
-    def __init__(self, delay=0.0, spawn_id="spawned-1"):
-        self.delay = delay
-        self.spawn_id = spawn_id
-        self.calls = []
-        self.spawns = []
-        self._lock = threading.Lock()
-        self._in_flight = 0
-        self.max_in_flight = 0
-
-    def is_available(self):
-        return True
-
-    def resume(self, session, prompt, timeout=None):
-        with self._lock:
-            self._in_flight += 1
-            self.max_in_flight = max(self.max_in_flight, self._in_flight)
-        try:
-            if self.delay:
-                time.sleep(self.delay)
-            with self._lock:
-                self.calls.append((session.work_item.ref, prompt))
-            return DispatchResult(ok=True, session_id=session.harness_session_id)
-        finally:
-            with self._lock:
-                self._in_flight -= 1
-
-    def spawn(self, work_item, prompt, cwd, timeout=None):
-        with self._lock:
-            self.spawns.append((work_item.ref, prompt, cwd))
-        return DispatchResult(ok=True, session_id=self.spawn_id)
-
-
-def make_dispatcher(tmp_path, adapter, **config_overrides):
+def make_dispatcher(tmp_path, tmux, **config_overrides):
+    """A dispatcher whose observable seam is the injected FakeTmux (issue-156)."""
     registry = SessionRegistry(tmp_path / "sessions")
     # Pre-issue-106 spawn behaviour by default: these cover the spawn mechanics,
     # while the start-command gate has its own tests below.
     config_overrides.setdefault("control", ControlConfig(require_start_command=False))
     config = RoutingConfig(**config_overrides)
     dispatcher = Dispatcher(
-        registry=registry, adapters={"claude": adapter}, config=config
+        registry=registry,
+        adapters={"claude": StubInteractiveAdapter()},
+        config=config,
+        tmux_runner=tmux,
     )
     return registry, dispatcher
 
@@ -785,13 +645,13 @@ def routed_issue_comment(delivery="d-1", number=15, body="please fix"):
 
 
 def test_dispatcher_resumes_matched_session_with_rendered_prompt(tmp_path):
-    adapter = FakeAdapter()
-    registry, dispatcher = make_dispatcher(tmp_path, adapter)
+    tmux = FakeTmux()
+    registry, dispatcher = make_dispatcher(tmp_path, tmux)
     registry.register(make_session())
     dispatcher.handle(routed_issue_comment(body="the build is red"))
-    assert wait_until(lambda: len(adapter.calls) == 1)
+    assert wait_until(lambda: len(tmux.delivers) == 1)
     dispatcher.stop()
-    ref, prompt = adapter.calls[0]
+    ref, prompt = tmux.delivers[0]
     assert ref == REF
     assert REF in prompt and "issue_comment" in prompt
     assert "the build is red" in prompt  # payload excerpt is embedded
@@ -802,48 +662,47 @@ def test_dispatcher_resumes_matched_session_with_rendered_prompt(tmp_path):
 
 
 def test_dispatcher_serializes_events_for_one_session_in_order(tmp_path):
-    adapter = FakeAdapter(delay=0.03)
-    registry, dispatcher = make_dispatcher(tmp_path, adapter)
+    tmux = FakeTmux(delay=0.03)
+    registry, dispatcher = make_dispatcher(tmp_path, tmux)
     registry.register(make_session())
     for i in range(3):
         dispatcher.handle(routed_issue_comment(delivery=f"d-{i}", body=f"event {i}"))
-    assert wait_until(lambda: len(adapter.calls) == 3)
+    assert wait_until(lambda: len(tmux.delivers) == 3)
     dispatcher.stop()
-    bodies = [prompt for _, prompt in adapter.calls]
+    bodies = [prompt for _, prompt in tmux.delivers]
     assert [f"event {i}" in body for i, body in enumerate(bodies)] == [True] * 3
-    assert adapter.max_in_flight == 1  # same session never dispatches concurrently
+    assert tmux.max_in_flight == 1  # same session never dispatches concurrently
 
 
 def test_dispatcher_dispatches_different_sessions_in_parallel(tmp_path):
-    adapter = FakeAdapter(delay=0.2)
-    registry, dispatcher = make_dispatcher(tmp_path, adapter)
+    tmux = FakeTmux(delay=0.2)
+    registry, dispatcher = make_dispatcher(tmp_path, tmux)
     registry.register(make_session(ref="github:octo/repo#1", session_id="s1"))
     registry.register(make_session(ref="github:octo/repo#2", session_id="s2"))
     dispatcher.handle(routed_issue_comment(delivery="d-1", number=1))
     dispatcher.handle(routed_issue_comment(delivery="d-2", number=2))
-    assert wait_until(lambda: len(adapter.calls) == 2)
+    assert wait_until(lambda: len(tmux.delivers) == 2)
     dispatcher.stop()
-    assert adapter.max_in_flight == 2  # both sessions were in flight together
+    assert tmux.max_in_flight == 2  # both sessions were in flight together
 
 
 def test_dispatcher_drops_unmatched_event_by_default(tmp_path):
-    adapter = FakeAdapter()
-    _, dispatcher = make_dispatcher(tmp_path, adapter)  # empty registry
+    tmux = FakeTmux()
+    _, dispatcher = make_dispatcher(tmp_path, tmux)  # empty registry
     dispatcher.handle(routed_issue_comment())
     dispatcher.stop()
-    assert adapter.calls == [] and adapter.spawns == []
+    assert tmux.delivers == [] and tmux.spawns == []
 
 
 def test_dispatcher_spawns_and_registers_when_configured(tmp_path):
-    adapter = FakeAdapter(spawn_id="fresh-9")
-    registry, dispatcher = make_dispatcher(
-        tmp_path, adapter, spawn_on_unmatched="always"
-    )
+    tmux = FakeTmux()
+    registry, dispatcher = make_dispatcher(tmp_path, tmux, spawn_on_unmatched="always")
     dispatcher.handle(routed_issue_comment())
-    assert wait_until(lambda: len(adapter.spawns) == 1)
+    assert wait_until(lambda: len(tmux.spawns) == 1)
     dispatcher.stop()
     found = registry.find_by_work_item(REF)
-    assert found is not None and found.harness_session_id == "fresh-9"
+    assert found is not None and found.harness_session_id  # pre-assigned uuid
+    assert found.tmux_target == "loop-github-octo-repo-15"
 
 
 def routed_labeled_issue(delivery="l-1", number=15, labeled=True):
@@ -864,58 +723,60 @@ def routed_labeled_issue(delivery="l-1", number=15, labeled=True):
 
 
 def test_dispatcher_labeled_mode_spawns_only_for_labeled_items(tmp_path):
-    adapter = FakeAdapter(spawn_id="auto-1")
-    registry, dispatcher = make_dispatcher(
-        tmp_path, adapter, spawn_on_unmatched="labeled"
-    )
+    tmux = FakeTmux()
+    registry, dispatcher = make_dispatcher(tmp_path, tmux, spawn_on_unmatched="labeled")
     # An unlabelled unmatched event does nothing (owner scenario 1).
     dispatcher.handle(routed_labeled_issue(delivery="u-1", labeled=False))
     # A labelled one spawns + registers a session (owner scenario 2).
     dispatcher.handle(routed_labeled_issue(delivery="l-1", labeled=True))
-    assert wait_until(lambda: len(adapter.spawns) == 1)
+    assert wait_until(lambda: len(tmux.spawns) == 1)
     dispatcher.stop()
-    assert len(adapter.spawns) == 1  # only the labelled event spawned
+    assert len(tmux.spawns) == 1  # only the labelled event spawned
     found = registry.find_by_work_item(REF)
-    assert found is not None and found.harness_session_id == "auto-1"
+    assert found is not None and found.harness_session_id  # pre-assigned uuid
 
 
 def test_dispatcher_labeled_spawn_prompt_kicks_off_work_on(tmp_path):
-    adapter = FakeAdapter()
-    _, dispatcher = make_dispatcher(tmp_path, adapter, spawn_on_unmatched="labeled")
+    tmux = FakeTmux()
+    _, dispatcher = make_dispatcher(tmp_path, tmux, spawn_on_unmatched="labeled")
     dispatcher.handle(routed_labeled_issue())
-    assert wait_until(lambda: len(adapter.spawns) == 1)
+    assert wait_until(lambda: len(tmux.spawns) == 1)
     dispatcher.stop()
-    _, prompt, _ = adapter.spawns[0]
+    _, prompt, _, _ = tmux.spawns[0]
     assert "/the-loop:work-on" in prompt and REF in prompt
 
 
 def test_dispatcher_always_mode_still_spawns_regardless_of_label(tmp_path):
-    adapter = FakeAdapter()
-    _, dispatcher = make_dispatcher(tmp_path, adapter, spawn_on_unmatched="always")
+    tmux = FakeTmux()
+    _, dispatcher = make_dispatcher(tmp_path, tmux, spawn_on_unmatched="always")
     dispatcher.handle(routed_labeled_issue(labeled=False))  # unlabelled
-    assert wait_until(lambda: len(adapter.spawns) == 1)  # 'always' ignores the label
+    assert wait_until(lambda: len(tmux.spawns) == 1)  # 'always' ignores the label
     dispatcher.stop()
 
 
 def test_dispatcher_processes_duplicate_delivery_at_most_once(tmp_path):
-    adapter = FakeAdapter()
-    registry, dispatcher = make_dispatcher(tmp_path, adapter)
+    tmux = FakeTmux()
+    registry, dispatcher = make_dispatcher(tmp_path, tmux)
     registry.register(make_session())
     dispatcher.handle(routed_issue_comment(delivery="dup-1"))
     dispatcher.handle(routed_issue_comment(delivery="dup-1"))
-    assert wait_until(lambda: len(adapter.calls) >= 1)
+    assert wait_until(lambda: len(tmux.delivers) >= 1)
     time.sleep(0.1)  # give a would-be duplicate time to (wrongly) dispatch
     dispatcher.stop()
-    assert len(adapter.calls) == 1
+    assert len(tmux.delivers) == 1
 
 
-def test_dispatcher_skips_session_whose_adapter_is_unknown(tmp_path, caplog):
-    adapter = FakeAdapter()
-    registry, dispatcher = make_dispatcher(tmp_path, adapter)
+def test_dispatcher_skips_respawn_whose_adapter_is_unknown(tmp_path, caplog):
+    # Delivery into a live tmux session is harness-agnostic; only a respawn
+    # needs the adapter. A dead session for an unwired harness fails loudly
+    # instead of spawning something else.
+    tmux = FakeTmux()
+    tmux.session_missing = True  # every delivery reads "session gone"
+    registry, dispatcher = make_dispatcher(tmp_path, tmux)
     registry.register(make_session(harness="cursor"))  # no cursor adapter wired
     dispatcher.handle(routed_issue_comment())
     dispatcher.stop()
-    assert adapter.calls == []
+    assert tmux.spawns == []
 
 
 def routed_pr_closed(
@@ -947,31 +808,31 @@ def routed_pr_closed(
 def test_pr_close_leaves_the_linked_issues_session_active(tmp_path):
     # issue-101: a work item can be delivered by several PRs, so one of them
     # merging is not the work item ending — only the item's own close is.
-    adapter = FakeAdapter()
-    registry, dispatcher = make_dispatcher(tmp_path, adapter)
+    tmux = FakeTmux()
+    registry, dispatcher = make_dispatcher(tmp_path, tmux)
     registry.register(make_session())  # session for the issue #15
     dispatcher.handle(routed_pr_closed())  # PR #16 closes, links issue #15
     dispatcher.stop()
     session = registry.find_by_work_item(REF)
     assert session is not None and session.status == "active"  # still working
-    assert adapter.calls == []  # a close is never delivered into the conversation
+    assert tmux.delivers == []  # a close is never delivered into the conversation
 
 
 def test_pr_close_closes_a_session_registered_against_the_pr_itself(tmp_path):
     # The non-GitHub-ticketing path (Jira, …): the PR *is* the work item.
-    adapter = FakeAdapter()
-    registry, dispatcher = make_dispatcher(tmp_path, adapter)
+    tmux = FakeTmux()
+    registry, dispatcher = make_dispatcher(tmp_path, tmux)
     registry.register(make_session(ref="github:octo/repo#16", session_id="pr-sess"))
     dispatcher.handle(routed_pr_closed())
     dispatcher.stop()
     assert registry.find_by_work_item("github:octo/repo#16") is None  # auto-closed
     assert registry.list_sessions(status="closed")  # persisted as closed
-    assert adapter.calls == []
+    assert tmux.delivers == []
 
 
 def test_a_second_pr_closing_ends_nothing_while_the_work_item_is_open(tmp_path):
-    adapter = FakeAdapter()
-    registry, dispatcher = make_dispatcher(tmp_path, adapter)
+    tmux = FakeTmux()
+    registry, dispatcher = make_dispatcher(tmp_path, tmux)
     registry.register(make_session())  # one session for the work item #15
     dispatcher.handle(routed_pr_closed(delivery="c-1", number=16))  # first PR
     dispatcher.handle(routed_pr_closed(delivery="c-2", number=17))  # second PR
@@ -981,8 +842,8 @@ def test_a_second_pr_closing_ends_nothing_while_the_work_item_is_open(tmp_path):
 
 
 def test_a_malformed_close_payload_closes_nothing(tmp_path):
-    adapter = FakeAdapter()
-    registry, dispatcher = make_dispatcher(tmp_path, adapter)
+    tmux = FakeTmux()
+    registry, dispatcher = make_dispatcher(tmp_path, tmux)
     registry.register(make_session())
     broken = routed_pr_closed()
     broken.payload["pull_request"].pop("number")  # nothing names what closed
@@ -992,23 +853,21 @@ def test_a_malformed_close_payload_closes_nothing(tmp_path):
 
 
 def test_dispatcher_pr_close_never_spawns(tmp_path):
-    adapter = FakeAdapter()
-    registry, dispatcher = make_dispatcher(
-        tmp_path, adapter, spawn_on_unmatched="always"
-    )
+    tmux = FakeTmux()
+    registry, dispatcher = make_dispatcher(tmp_path, tmux, spawn_on_unmatched="always")
     dispatcher.handle(routed_pr_closed())  # no session registered
     dispatcher.stop()
-    assert adapter.spawns == []  # never spawn a session to handle a close
+    assert tmux.spawns == []  # never spawn a session to handle a close
 
 
 def test_dispatcher_still_resumes_on_pr_events_that_are_not_close(tmp_path):
-    adapter = FakeAdapter()
-    registry, dispatcher = make_dispatcher(tmp_path, adapter)
+    tmux = FakeTmux()
+    registry, dispatcher = make_dispatcher(tmp_path, tmux)
     registry.register(make_session())
     open_pr = routed_pr_closed(delivery="o-1", merged=False)
     open_pr.action = "synchronize"  # a non-close PR event still routes normally
     dispatcher.handle(open_pr)
-    assert wait_until(lambda: len(adapter.calls) == 1)
+    assert wait_until(lambda: len(tmux.delivers) == 1)
     dispatcher.stop()
     assert registry.find_by_work_item(REF) is not None  # not closed
 
@@ -1030,34 +889,32 @@ def routed_issue_closed(delivery="ic-1", number=15):
 
 def test_dispatcher_auto_closes_session_on_issue_close(tmp_path):
     # issue-94: a closed ticket ends the session instead of waking the agent.
-    adapter = FakeAdapter()
-    registry, dispatcher = make_dispatcher(tmp_path, adapter)
+    tmux = FakeTmux()
+    registry, dispatcher = make_dispatcher(tmp_path, tmux)
     registry.register(make_session())
     dispatcher.handle(routed_issue_closed())
     dispatcher.stop()
     assert registry.find_by_work_item(REF) is None  # auto-closed
     assert registry.list_sessions(status="closed")
-    assert adapter.calls == []  # never delivered into the conversation
+    assert tmux.delivers == []  # never delivered into the conversation
 
 
 def test_dispatcher_issue_close_never_spawns(tmp_path):
-    adapter = FakeAdapter()
-    registry, dispatcher = make_dispatcher(
-        tmp_path, adapter, spawn_on_unmatched="always"
-    )
+    tmux = FakeTmux()
+    registry, dispatcher = make_dispatcher(tmp_path, tmux, spawn_on_unmatched="always")
     dispatcher.handle(routed_issue_closed())
     dispatcher.stop()
-    assert adapter.spawns == []
+    assert tmux.spawns == []
 
 
 def test_dispatcher_still_resumes_on_issue_events_that_are_not_close(tmp_path):
-    adapter = FakeAdapter()
-    registry, dispatcher = make_dispatcher(tmp_path, adapter)
+    tmux = FakeTmux()
+    registry, dispatcher = make_dispatcher(tmp_path, tmux)
     registry.register(make_session())
     reopened = routed_issue_closed(delivery="ic-2")
     reopened.action = "reopened"
     dispatcher.handle(reopened)
-    assert wait_until(lambda: len(adapter.calls) == 1)
+    assert wait_until(lambda: len(tmux.delivers) == 1)
     dispatcher.stop()
     assert registry.find_by_work_item(REF) is not None
 
@@ -1084,8 +941,8 @@ def test_close_reason_names_why_the_work_item_ended(event, merged, expected):
 
 
 def test_delivery_status_done_inflight_unhandled(tmp_path):
-    adapter = FakeAdapter()
-    registry, dispatcher = make_dispatcher(tmp_path, adapter)
+    tmux = FakeTmux()
+    registry, dispatcher = make_dispatcher(tmp_path, tmux)
     registry.register(make_session())
     refs = [WorkItemRef.parse(REF)]
 
@@ -1215,10 +1072,8 @@ def test_sessions_command_table_output(tmp_path, capsys):
 
 
 def test_dispatcher_reload_swaps_policy_and_templates_keeps_dedup(tmp_path):
-    adapter = FakeAdapter()
-    registry, dispatcher = make_dispatcher(
-        tmp_path, adapter, spawn_on_unmatched="never"
-    )
+    tmux = FakeTmux()
+    registry, dispatcher = make_dispatcher(tmp_path, tmux, spawn_on_unmatched="never")
     dispatcher.deduper.add("keep-me")  # in-memory dedup must survive a reload
     tmpl = tmp_path / "evt.md"
     tmpl.write_text("RELOADED $work_item")

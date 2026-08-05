@@ -1,8 +1,8 @@
-"""Claude Code adapter: ``claude -p … --resume <session-id> --output-format json``.
+"""Claude Code adapter: host the ``claude`` TUI in tmux; run it one-shot for critics.
 
-The session id comes from the JSON output of a previous run (or Claude Code's
-``$CLAUDE_SESSION_ID`` at registration time); resume lookup is scoped to the
-project directory, hence the session's recorded ``cwd``.
+The session id is pre-assigned by the dispatcher (``--session-id``) or comes
+from Claude Code's ``$CLAUDE_SESSION_ID`` at registration time; resume lookup
+is scoped to the project directory, hence the session's recorded ``cwd``.
 
 It is also the adapter that has something to prepare before a spawn: Claude
 Code's workspace-trust dialog and bypass-permissions disclaimer are not
@@ -19,7 +19,6 @@ from typing import List, Optional
 
 from .base import HarnessAdapter
 from ..harness_plugins import ClaudePluginStore
-from ..sessions import Session
 from ..trust import ClaudeTrustStore, TrustResult, args_request_bypass
 
 
@@ -69,17 +68,7 @@ class ClaudeCodeAdapter(HarnessAdapter):
             return False
         return args_request_bypass(self.extra_args)
 
-    def _resume_argv(self, session: Session, prompt: str) -> List[str]:
-        return [
-            "-p",
-            prompt,
-            "--resume",
-            session.harness_session_id,
-            "--output-format",
-            "json",
-        ] + self.extra_args
-
-    def _spawn_argv(self, prompt: str) -> List[str]:
+    def _oneshot_argv(self, prompt: str) -> List[str]:
         return ["-p", prompt, "--output-format", "json"] + self.extra_args
 
     def interactive_argv(self, prompt: str, session_id: str) -> List[str]:

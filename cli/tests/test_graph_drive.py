@@ -249,7 +249,7 @@ def test_on_spawn_records_the_session_binding(runtime, repo):
 def test_on_close_marks_the_binding_dead(runtime, repo):
     _write_design(repo)
     link = _link(repo, runtime)
-    link.on_spawn(REF, str(repo), session_id="s-9", runner="process")
+    link.on_spawn(REF, str(repo), session_id="s-9", runner="tmux")
     link.on_close(REF, str(repo))
     bound = GraphState.load(_spec(repo), "issue-1").session
     assert bound is not None and bound["alive"] is False
@@ -263,7 +263,7 @@ def test_a_gate_entry_resolves_its_session(runtime, repo, tmp_path):
     eventlog.configure(source="test", path=str(tmp_path / "events.jsonl"))
     _write_design(repo)
     link = _link(repo, runtime)
-    link.on_spawn(REF, str(repo), session_id="s-9", runner="process")
+    link.on_spawn(REF, str(repo), session_id="s-9", runner="tmux")
     runtime.complete("issue-1")  # design → gate (a human, session: inherit node)
     records = (tmp_path / "events.jsonl").read_text().splitlines()
     assert any('"graph.gate_session"' in r and '"inherited"' in r for r in records)

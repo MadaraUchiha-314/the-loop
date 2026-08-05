@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [056](decision-056.md) | tmux is the only runner — the headless process runner is removed | proposed | 2026-08-05 |
 | [055](decision-055.md) | the-loop never spawns over a live `loop-<slug>` tmux session — it routes the event into it | proposed | 2026-08-04 |
 | [054](decision-054.md) | The CLI enables the-loop's own plugin in the harness's user settings before a spawn | proposed | 2026-08-04 |
 | [053](decision-053.md) | A config key is nested under what owns it — `routing` governs both ingresses, so it is top-level | proposed | 2026-08-04 |
@@ -39,7 +40,7 @@ record (`decision-<nnn>.md`). Newest first.
 | [024](decision-024.md) | Schema-driven grouped onboarding for `/init` (x-onboarding annotations) | accepted | 2026-07-22 |
 | [023](decision-023.md) | Authorized-actor guard on both trigger paths (prompt-injection remediation) | accepted | 2026-07-22 |
 | [022](decision-022.md) | Poll as a provider-agnostic pull ingress reusing the webhook dispatch stack | accepted | 2026-07-21 |
-| [021](decision-021.md) | tmux runner for observable/interactive webhook-spawned sessions | accepted | 2026-07-17 |
+| [021](decision-021.md) | tmux runner for observable/interactive webhook-spawned sessions | partly superseded (by 056: the runner choice) | 2026-07-17 |
 | [020](decision-020.md) | Capability docs are the organized view of specs (SoT for current behaviour) | accepted | 2026-07-07 |
 | [019](decision-019.md) | Publish the CLI to PyPI as `the-loopy-one` via Trusted Publishing | accepted | 2026-07-04 |
 | [018](decision-018.md) | UI/UX design artifacts are first-class, tracked design-phase artifacts | accepted | 2026-07-04 |

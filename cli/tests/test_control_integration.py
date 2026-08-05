@@ -14,13 +14,12 @@ import time
 
 import pytest
 
+from conftest import FakeTmux, StubInteractiveAdapter
 from the_loop.control import ControlConfig, ControlStore
-from the_loop.harness.base import DispatchResult
 from the_loop.poller import PollConfig, Poller, PollState
 from the_loop.poller.base import Comment, PollProvider, WorkItem
 from the_loop.sessions import Session, SessionRegistry, WorkItemRef
 from the_loop.workitem import WorkItemStore
-from the_loop.trust import TrustResult
 from the_loop.webhook.dispatcher import Dispatcher, RoutingConfig
 from the_loop.webhook.router import RoutedEvent, extract_work_items
 
@@ -32,35 +31,14 @@ PAUSE_KEYWORD = "the-loop pause"
 RESUME_KEYWORD = "the-loop resume"
 
 
-class FakeAdapter:
-    """Records spawns/resumes instead of running a harness."""
-
-    name = "claude"
-    binary = "claude"
-
-    def __init__(self):
-        self.spawns = []
-        self.resumes = []
-
-    def is_available(self):
-        return True
-
-    def prepare_environment(self, cwd, root=None):
-        return TrustResult(ok=True)
-
-    def spawn(self, work_item, prompt, cwd=".", timeout=None):
-        self.spawns.append((work_item.ref, prompt))
-        return DispatchResult(ok=True, session_id=f"sess-{len(self.spawns)}")
-
-    def resume(self, session, prompt, timeout=None):
-        self.resumes.append((session.work_item.ref, prompt))
-        return DispatchResult(ok=True, session_id=session.harness_session_id)
-
-
-def _dispatcher(registry, adapter, config):
-    # adapter intentionally unannotated so the in-process FakeAdapter double
-    # satisfies Dict[str, HarnessAdapter] (mirrors test_routing.make_dispatcher).
-    return Dispatcher(registry=registry, adapters={"claude": adapter}, config=config)
+def _dispatcher(registry, tmux, config):
+    """A dispatcher whose observable seam is the injected FakeTmux (issue-156)."""
+    return Dispatcher(
+        registry=registry,
+        adapters={"claude": StubInteractiveAdapter()},
+        config=config,
+        tmux_runner=tmux,
+    )
 
 
 def _wait(predicate, timeout=5.0):
@@ -76,7 +54,7 @@ def _wait(predicate, timeout=5.0):
 def setup(tmp_path):
     """A dispatcher wired the way the daemon wires it, with control on."""
     registry = SessionRegistry(tmp_path / "local")
-    adapter = FakeAdapter()
+    tmux = FakeTmux()
     config = RoutingConfig(
         registry_dir=str(tmp_path / "local"),
         portable_dir=str(tmp_path / "portable"),
@@ -86,9 +64,9 @@ def setup(tmp_path):
         control=ControlConfig(),  # defaults: enabled, requireStartCommand
         authorized_users=["octocat"],
     )
-    dispatcher = _dispatcher(registry, adapter, config)
+    dispatcher = _dispatcher(registry, tmux, config)
     store = ControlStore(str(tmp_path / "portable"))
-    yield dispatcher, registry, adapter, store
+    yield dispatcher, registry, tmux, store
     dispatcher.stop(timeout=5)
 
 
@@ -156,6 +134,7 @@ def register(registry, status="active"):
             harness_session_id="sess-0",
             cwd=".",
             status=status,
+            tmux_target="loop-github-octo-repo-15",
         ),
         force=True,
     )
@@ -176,15 +155,15 @@ def test_a_labelled_work_item_does_not_spawn_until_it_is_started(setup):
         Then a session is spawned for the work item
     Requirement: docs/specs/issue-106/requirements.md AC2.1, AC2.3
     """
-    dispatcher, registry, adapter, _ = setup
+    dispatcher, registry, tmux, _ = setup
 
     dispatcher.handle(labeled_event())
     assert _wait(lambda: True, 0.2)
-    assert adapter.spawns == []
+    assert tmux.spawns == []
     assert registry.find_by_work_item(REF) is None
 
     dispatcher.handle(comment_event(f"let's go: {START_KEYWORD}", delivery="d-start"))
-    assert _wait(lambda: len(adapter.spawns) == 1)
+    assert _wait(lambda: len(tmux.spawns) == 1)
     session = registry.find_by_work_item(REF)
     assert session is not None and session.status == "active"
 
@@ -225,16 +204,16 @@ def test_an_issue_created_with_the_label_still_waits_for_a_start(setup):
     # label to an existing one: it arms, it does not start (owner question on
     # PR #107). Otherwise "open pre-labelled" would be a way to keep the
     # label-is-the-trigger behaviour the whole work item removes.
-    dispatcher, registry, adapter, store = setup
+    dispatcher, registry, tmux, store = setup
 
     dispatcher.handle(opened_event())
     assert _wait(lambda: True, 0.2)
-    assert adapter.spawns == []
+    assert tmux.spawns == []
     assert registry.find_by_work_item(REF) is None
     assert store.get(REF) is None
 
     dispatcher.handle(comment_event(START_KEYWORD, delivery="d-start"))
-    assert _wait(lambda: len(adapter.spawns) == 1)
+    assert _wait(lambda: len(tmux.spawns) == 1)
 
 
 def test_a_keyword_in_the_issue_body_is_not_a_command(setup):
@@ -249,11 +228,11 @@ def test_a_keyword_in_the_issue_body_is_not_a_command(setup):
     # The issue/PR body is the text most rewritten (and most quoted from
     # elsewhere), and an `edited` action would re-trigger it. Commands live in
     # comments, where each one is a discrete, attributable, timestamped act.
-    dispatcher, registry, adapter, store = setup
+    dispatcher, registry, tmux, store = setup
 
     dispatcher.handle(opened_event(body=f"do the thing. {START_KEYWORD}"))
     assert _wait(lambda: True, 0.2)
-    assert adapter.spawns == []
+    assert tmux.spawns == []
     assert store.get(REF) is None
 
 
@@ -266,11 +245,11 @@ def test_a_start_is_durable_so_a_later_event_can_spawn(setup):
         Then it spawns without the start command being repeated
     Requirement: docs/specs/issue-106/requirements.md AC2.5
     """
-    dispatcher, registry, adapter, store = setup
+    dispatcher, registry, tmux, store = setup
     store.record(REF, "start", source="cli", actor="operator")
 
     dispatcher.handle(labeled_event(delivery="l-after-start"))
-    assert _wait(lambda: len(adapter.spawns) == 1)
+    assert _wait(lambda: len(tmux.spawns) == 1)
 
 
 def test_a_start_on_an_unlabelled_item_is_refused(setup):
@@ -282,10 +261,10 @@ def test_a_start_on_an_unlabelled_item_is_refused(setup):
         Then no session is spawned
     Requirement: docs/specs/issue-106/requirements.md AC2.4
     """
-    dispatcher, registry, adapter, store = setup
+    dispatcher, registry, tmux, store = setup
     dispatcher.handle(comment_event(START_KEYWORD, labels=()))
     assert _wait(lambda: True, 0.2)
-    assert adapter.spawns == []
+    assert tmux.spawns == []
     assert registry.find_by_work_item(REF) is None
     assert store.get(REF) is None  # and nothing is left armed
 
@@ -304,22 +283,22 @@ def test_a_start_on_an_unarmed_item_leaves_nothing_standing(setup):
     # Owner decision on PR #107: a refused start must not be remembered, or
     # labelling later would start the item — which is the very "labelling is the
     # trigger" behaviour issue-106 removes.
-    dispatcher, registry, adapter, store = setup
+    dispatcher, registry, tmux, store = setup
 
     # 1. start, with no label
     dispatcher.handle(comment_event(START_KEYWORD, delivery="d-1", labels=()))
     assert store.get(REF) is None
-    assert adapter.spawns == []
+    assert tmux.spawns == []
 
     # 2. the label is added
     dispatcher.handle(labeled_event(delivery="l-1"))
     assert _wait(lambda: True, 0.2)
-    assert adapter.spawns == []
+    assert tmux.spawns == []
     assert registry.find_by_work_item(REF) is None
 
     # 3. and only now does a start actually start it
     dispatcher.handle(comment_event(START_KEYWORD, delivery="d-2"))
-    assert _wait(lambda: len(adapter.spawns) == 1)
+    assert _wait(lambda: len(tmux.spawns) == 1)
 
 
 def test_a_resume_with_nothing_to_resume_does_not_arm_the_item(setup):
@@ -328,12 +307,12 @@ def test_a_resume_with_nothing_to_resume_does_not_arm_the_item(setup):
       Scenario: resume is an arming command, so it too leaves nothing standing
     Requirement: docs/specs/issue-106/requirements.md AC3.6
     """
-    dispatcher, registry, adapter, store = setup
+    dispatcher, registry, tmux, store = setup
     dispatcher.handle(comment_event(RESUME_KEYWORD, delivery="d-r"))
     assert store.get(REF) is None
     dispatcher.handle(labeled_event(delivery="l-r"))
     assert _wait(lambda: True, 0.2)
-    assert adapter.spawns == []
+    assert tmux.spawns == []
 
 
 def test_a_stop_is_remembered_even_with_no_session(setup):
@@ -342,14 +321,14 @@ def test_a_stop_is_remembered_even_with_no_session(setup):
       Scenario: disarming persists — a stopped work item does not re-spawn
     Requirement: docs/specs/issue-106/requirements.md AC3.6
     """
-    dispatcher, registry, adapter, store = setup
+    dispatcher, registry, tmux, store = setup
     store.record(REF, "start", source="cli", actor="operator")
     dispatcher.handle(comment_event(STOP_KEYWORD, delivery="d-s"))
     record = store.get(REF)
     assert record is not None and record.command == "stop"
     dispatcher.handle(labeled_event(delivery="l-s"))
     assert _wait(lambda: True, 0.2)
-    assert adapter.spawns == []
+    assert tmux.spawns == []
 
 
 def test_the_pre_106_behaviour_is_one_config_flag_away(tmp_path):
@@ -359,10 +338,10 @@ def test_the_pre_106_behaviour_is_one_config_flag_away(tmp_path):
     Requirement: docs/specs/issue-106/requirements.md AC2.6
     """
     registry = SessionRegistry(tmp_path / "sessions")
-    adapter = FakeAdapter()
+    tmux = FakeTmux()
     dispatcher = _dispatcher(
         registry,
-        adapter,
+        tmux,
         RoutingConfig(
             registry_dir=str(tmp_path / "local"),
             portable_dir=str(tmp_path / "portable"),
@@ -375,7 +354,7 @@ def test_the_pre_106_behaviour_is_one_config_flag_away(tmp_path):
     )
     try:
         dispatcher.handle(labeled_event())
-        assert _wait(lambda: len(adapter.spawns) == 1)
+        assert _wait(lambda: len(tmux.spawns) == 1)
     finally:
         dispatcher.stop(timeout=5)
 
@@ -387,10 +366,10 @@ def test_always_mode_still_waits_for_a_start(tmp_path):
     Requirement: docs/specs/issue-106/requirements.md AC2.2
     """
     registry = SessionRegistry(tmp_path / "sessions")
-    adapter = FakeAdapter()
+    tmux = FakeTmux()
     dispatcher = _dispatcher(
         registry,
-        adapter,
+        tmux,
         RoutingConfig(
             registry_dir=str(tmp_path / "local"),
             portable_dir=str(tmp_path / "portable"),
@@ -401,7 +380,7 @@ def test_always_mode_still_waits_for_a_start(tmp_path):
     try:
         dispatcher.handle(labeled_event())
         assert _wait(lambda: True, 0.2)
-        assert adapter.spawns == []
+        assert tmux.spawns == []
     finally:
         dispatcher.stop(timeout=5)
 
@@ -420,7 +399,7 @@ def test_a_pause_holds_events_and_a_resume_lets_them_through(setup):
         Then the session is active again and comments are delivered
     Requirement: docs/specs/issue-106/requirements.md AC3.2, AC3.3
     """
-    dispatcher, registry, adapter, _ = setup
+    dispatcher, registry, tmux, _ = setup
     register(registry)
 
     dispatcher.handle(comment_event(PAUSE_KEYWORD, delivery="d-pause"))
@@ -429,14 +408,14 @@ def test_a_pause_holds_events_and_a_resume_lets_them_through(setup):
 
     dispatcher.handle(comment_event("please rebase", delivery="d-while-paused"))
     assert _wait(lambda: True, 0.2)
-    assert adapter.resumes == []
+    assert tmux.delivers == []
 
     dispatcher.handle(comment_event(RESUME_KEYWORD, delivery="d-resume"))
     session = registry.find_by_work_item(REF)
     assert session is not None and session.status == "active"
 
     dispatcher.handle(comment_event("please rebase now", delivery="d-after"))
-    assert _wait(lambda: len(adapter.resumes) == 1)
+    assert _wait(lambda: len(tmux.delivers) == 1)
 
 
 def test_a_paused_session_is_not_replaced_by_a_second_one(setup):
@@ -445,10 +424,10 @@ def test_a_paused_session_is_not_replaced_by_a_second_one(setup):
       Scenario: a paused session still owns its work item
     Requirement: docs/specs/issue-106/requirements.md AC3.7
     """
-    dispatcher, registry, adapter, _ = setup
+    dispatcher, registry, tmux, _ = setup
     register(registry, status="paused")
     dispatcher.handle(comment_event(START_KEYWORD, delivery="d-start"))
-    assert adapter.spawns == []  # resumed, not re-spawned
+    assert tmux.spawns == []  # resumed, not re-spawned
     resumed = registry.find_by_work_item(REF)
     assert resumed is not None and resumed.status == "active"
 
@@ -459,7 +438,7 @@ def test_a_stop_closes_the_session(setup):
       Scenario: stopping ends the session through the normal close path
     Requirement: docs/specs/issue-106/requirements.md AC3.4
     """
-    dispatcher, registry, adapter, store = setup
+    dispatcher, registry, tmux, store = setup
     register(registry)
 
     dispatcher.handle(comment_event(STOP_KEYWORD, delivery="d-stop"))
@@ -492,11 +471,11 @@ def test_a_control_comment_is_never_forwarded_to_the_harness(setup):
       Scenario: a command is executed by the-loop, not read by the agent
     Requirement: docs/specs/issue-106/requirements.md AC1.2
     """
-    dispatcher, registry, adapter, _ = setup
+    dispatcher, registry, tmux, _ = setup
     register(registry)
     dispatcher.handle(comment_event(f"{PAUSE_KEYWORD} please", delivery="d-1"))
     assert _wait(lambda: True, 0.2)
-    assert adapter.resumes == []
+    assert tmux.delivers == []
 
 
 def test_an_ambiguous_comment_does_nothing_at_all(setup):
@@ -505,7 +484,7 @@ def test_an_ambiguous_comment_does_nothing_at_all(setup):
       Scenario: two conflicting keywords execute nothing and forward nothing
     Requirement: docs/specs/issue-106/requirements.md AC1.4
     """
-    dispatcher, registry, adapter, store = setup
+    dispatcher, registry, tmux, store = setup
     register(registry)
     dispatcher.handle(
         comment_event(f"{PAUSE_KEYWORD} then {STOP_KEYWORD}", delivery="d-amb")
@@ -513,7 +492,7 @@ def test_an_ambiguous_comment_does_nothing_at_all(setup):
     assert _wait(lambda: True, 0.2)
     session = registry.find_by_work_item(REF)
     assert session is not None and session.status == "active"
-    assert adapter.resumes == []
+    assert tmux.delivers == []
     assert store.get(REF) is None
 
 
@@ -530,7 +509,7 @@ def test_a_command_needs_a_named_authorized_actor(setup):
     # carries status, not instructions) — a comment by a deleted account reaches
     # the dispatcher the same way on the poll path. Harmless as agent input;
     # not harmless as a command, so the control path re-checks.
-    dispatcher, registry, adapter, store = setup
+    dispatcher, registry, tmux, store = setup
     register(registry)
     dispatcher.handle(comment_event(STOP_KEYWORD, delivery="d-ghost", author=""))
     assert registry.find_by_work_item(REF) is not None
@@ -543,7 +522,7 @@ def test_a_command_from_a_login_outside_the_allowlist_is_refused(setup):
       Scenario: the control path is gated by the same allowlist as everything else
     Requirement: docs/specs/issue-106/requirements.md AC1.6
     """
-    dispatcher, registry, adapter, store = setup
+    dispatcher, registry, tmux, store = setup
     register(registry)
     dispatcher.handle(comment_event(STOP_KEYWORD, delivery="d-x", author="stranger"))
     assert registry.find_by_work_item(REF) is not None
@@ -556,10 +535,10 @@ def test_an_ordinary_comment_still_reaches_the_session(setup):
       Scenario: control parsing does not disturb normal event delivery
     Requirement: docs/specs/issue-106/requirements.md AC1.7
     """
-    dispatcher, registry, adapter, _ = setup
+    dispatcher, registry, tmux, _ = setup
     register(registry)
     dispatcher.handle(comment_event("could you rebase?", delivery="d-plain"))
-    assert _wait(lambda: len(adapter.resumes) == 1)
+    assert _wait(lambda: len(tmux.delivers) == 1)
 
 
 def test_control_disabled_forwards_the_keyword_as_a_plain_comment(tmp_path):
@@ -569,10 +548,10 @@ def test_control_disabled_forwards_the_keyword_as_a_plain_comment(tmp_path):
     Requirement: docs/specs/issue-106/requirements.md AC1.7
     """
     registry = SessionRegistry(tmp_path / "sessions")
-    adapter = FakeAdapter()
+    tmux = FakeTmux()
     dispatcher = _dispatcher(
         registry,
-        adapter,
+        tmux,
         RoutingConfig(
             registry_dir=str(tmp_path / "local"),
             portable_dir=str(tmp_path / "portable"),
@@ -583,7 +562,7 @@ def test_control_disabled_forwards_the_keyword_as_a_plain_comment(tmp_path):
     register(registry)
     try:
         dispatcher.handle(comment_event(PAUSE_KEYWORD, delivery="d-off"))
-        assert _wait(lambda: len(adapter.resumes) == 1)
+        assert _wait(lambda: len(tmux.delivers) == 1)
         session = registry.find_by_work_item(REF)
         assert session is not None and session.status == "active"
     finally:
@@ -648,7 +627,7 @@ def test_the_poller_does_not_arm_a_spawn_for_an_unstarted_item(setup, tmp_path):
         Then it emits no presence event (and burns no retry budget)
     Requirement: docs/specs/issue-106/requirements.md AC2.1
     """
-    dispatcher, registry, adapter, _ = setup
+    dispatcher, registry, tmux, _ = setup
     provider = _Provider()
     poller = _poller(tmp_path, dispatcher, provider)
 
@@ -665,14 +644,14 @@ def test_the_poller_arms_once_the_item_has_been_started(setup, tmp_path):
       Scenario: a started work item is spawned by the next poll cycle
     Requirement: docs/specs/issue-106/requirements.md AC2.3, AC2.5
     """
-    dispatcher, registry, adapter, store = setup
+    dispatcher, registry, tmux, store = setup
     store.record(REF, "start", source="cli", actor="operator")
     provider = _Provider()
     poller = _poller(tmp_path, dispatcher, provider)
 
     poller.poll_once()
     assert provider.presence_events == 1
-    assert _wait(lambda: len(adapter.spawns) == 1)
+    assert _wait(lambda: len(tmux.spawns) == 1)
 
 
 def test_a_start_comment_spawns_through_the_poll_path(setup, tmp_path):
@@ -684,7 +663,7 @@ def test_a_start_comment_spawns_through_the_poll_path(setup, tmp_path):
         Then the next poll cycle forwards it and a session is spawned
     Requirement: docs/specs/issue-106/requirements.md AC1.5, AC2.3
     """
-    dispatcher, registry, adapter, _ = setup
+    dispatcher, registry, tmux, _ = setup
     provider = _Provider()
     poller = _poller(tmp_path, dispatcher, provider)
     poller.poll_once()  # first sight: baseline the (empty) thread
@@ -699,7 +678,7 @@ def test_a_start_comment_spawns_through_the_poll_path(setup, tmp_path):
         )
     ]
     poller.poll_once()
-    assert _wait(lambda: len(adapter.spawns) == 1)
+    assert _wait(lambda: len(tmux.spawns) == 1)
     assert provider.presence_events == 0  # the comment spawned it, not presence
 
 
@@ -730,13 +709,13 @@ def test_a_start_comment_that_predates_first_sight_still_starts_the_item(
         And no presence event is emitted for it
     Requirement: docs/specs/issue-119/requirements.md AC1, AC3, AC8
     """
-    dispatcher, registry, adapter, store = setup
+    dispatcher, registry, tmux, store = setup
     provider = _Provider(comments=[_comment("c1", START_KEYWORD)])
     poller = _poller(tmp_path, dispatcher, provider)
 
     poller.poll_once()
 
-    assert _wait(lambda: len(adapter.spawns) == 1)
+    assert _wait(lambda: len(tmux.spawns) == 1)
     record = store.get(REF)
     assert record is not None and record.command == "start"
     assert provider.presence_events == 0  # the comment started it, not the label
@@ -757,7 +736,7 @@ def test_pre_existing_control_comments_are_applied_in_thread_order(setup, tmp_pa
         Then both are applied in thread order, so the recorded state is stop
     Requirement: docs/specs/issue-119/requirements.md AC2
     """
-    dispatcher, registry, adapter, store = setup
+    dispatcher, registry, tmux, store = setup
     provider = _Provider(
         comments=[_comment("c1", START_KEYWORD), _comment("c2", STOP_KEYWORD)]
     )
@@ -779,7 +758,7 @@ def test_a_stop_that_predates_first_sight_leaves_the_item_disarmed(setup, tmp_pa
       Scenario: a pre-existing stop is honoured, not discarded
     Requirement: docs/specs/issue-119/requirements.md AC2
     """
-    dispatcher, registry, adapter, store = setup
+    dispatcher, registry, tmux, store = setup
     provider = _Provider(comments=[_comment("c1", STOP_KEYWORD)])
     poller = _poller(tmp_path, dispatcher, provider)
 
@@ -787,5 +766,5 @@ def test_a_stop_that_predates_first_sight_leaves_the_item_disarmed(setup, tmp_pa
 
     assert _recorded(store) == "stop"
     assert _wait(lambda: True, 0.2)
-    assert adapter.spawns == []
+    assert tmux.spawns == []
     assert provider.presence_events == 0

@@ -12,9 +12,9 @@ GitHub entity, for each dispatch outcome.
 import subprocess
 import time
 
+from conftest import FakeTmux, StubInteractiveAdapter
 from the_loop.control import ControlConfig
 from the_loop import reactions as reactions_mod
-from the_loop.harness.base import DispatchResult
 from the_loop.reactions import GitHubReactor, ReactionConfig
 from the_loop.sessions import Session, SessionRegistry, WorkItemRef
 from the_loop.webhook.dispatcher import Dispatcher, RoutingConfig
@@ -33,30 +33,6 @@ def wait_until(predicate, timeout=5.0, interval=0.01):
     return predicate()
 
 
-class FakeAdapter:
-    """In-process harness double with a scriptable resume outcome."""
-
-    name = "claude"
-
-    def __init__(self, resume_ok=True):
-        self.resume_ok = resume_ok
-        self.calls = []
-        self.spawns = []
-
-    def is_available(self):
-        return True
-
-    def resume(self, session, prompt, timeout=None):
-        self.calls.append((session.work_item.ref, prompt))
-        if self.resume_ok:
-            return DispatchResult(ok=True, session_id=session.harness_session_id)
-        return DispatchResult(ok=False, error="harness exploded")
-
-    def spawn(self, work_item, prompt, cwd, timeout=None):
-        self.spawns.append((work_item.ref, prompt, cwd))
-        return DispatchResult(ok=True, session_id="spawned-1")
-
-
 class RecordingRunner:
     """Captures every gh argv the reactor runs; always succeeds."""
 
@@ -68,7 +44,7 @@ class RecordingRunner:
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
 
-def make_dispatcher(tmp_path, adapter, monkeypatch, reactions=None, **config_overrides):
+def make_dispatcher(tmp_path, tmux, monkeypatch, reactions=None, **config_overrides):
     monkeypatch.setattr(reactions_mod.shutil, "which", lambda _: "/usr/bin/gh")
     runner = RecordingRunner()
     config_overrides.setdefault(
@@ -81,8 +57,9 @@ def make_dispatcher(tmp_path, adapter, monkeypatch, reactions=None, **config_ove
     )
     dispatcher = Dispatcher(
         registry=SessionRegistry(tmp_path / "sessions"),
-        adapters={"claude": adapter},
+        adapters={"claude": StubInteractiveAdapter()},
         config=config,
+        tmux_runner=tmux,
         reactor=GitHubReactor(config=config.reactions, runner=runner),
     )
     return dispatcher, runner
@@ -94,6 +71,7 @@ def make_session(ref=REF):
         harness="claude",
         harness_session_id="sess-1",
         cwd=".",
+        tmux_target="loop-github-octo-repo-15",
     )
 
 
@@ -146,13 +124,13 @@ def test_successful_dispatch_reacts_started_then_completed_on_comment(
     Scenario: A routed comment is dispatched successfully
       Given a registered session for the work item
       And reactions are enabled with the default palette
-      When an issue_comment event is dispatched and the harness resume succeeds
+      When an issue_comment event is dispatched and the tmux delivery succeeds
       Then the triggering comment receives the started reaction (eyes)
       And then the completed reaction (hooray)
     Requirement: docs/specs/issue-84/requirements.md#requirement-1
     """
-    adapter = FakeAdapter(resume_ok=True)
-    dispatcher, runner = make_dispatcher(tmp_path, adapter, monkeypatch)
+    tmux = FakeTmux()
+    dispatcher, runner = make_dispatcher(tmp_path, tmux, monkeypatch)
     dispatcher.registry.register(make_session())
     dispatcher.handle(routed_comment())
     assert wait_until(lambda: len(runner.commands) == 2)
@@ -166,15 +144,16 @@ def test_failed_dispatch_reacts_started_then_error(tmp_path, monkeypatch):
     """
     Feature: Dispatch-lifecycle emoji reactions
     Scenario: A routed comment's dispatch fails
-      Given a registered session whose harness resume fails
+      Given a registered session whose tmux delivery fails
       When the issue_comment event is dispatched
       Then the comment receives the started reaction (eyes)
       And then the error reaction (confused)
       And the dispatch failure handling (delivery release) is unchanged
     Requirement: docs/specs/issue-84/requirements.md#requirement-1
     """
-    adapter = FakeAdapter(resume_ok=False)
-    dispatcher, runner = make_dispatcher(tmp_path, adapter, monkeypatch)
+    tmux = FakeTmux()
+    tmux.deliver_ok = False  # transient delivery failure
+    dispatcher, runner = make_dispatcher(tmp_path, tmux, monkeypatch)
     dispatcher.registry.register(make_session())
     dispatcher.handle(routed_comment(delivery="fail-1"))
     assert wait_until(lambda: len(runner.commands) == 2)
@@ -193,14 +172,14 @@ def test_labeled_spawn_reacts_on_the_issue_itself(tmp_path, monkeypatch):
       Because a presence event carries no comment to react on
     Requirement: docs/specs/issue-84/requirements.md#requirement-1
     """
-    adapter = FakeAdapter()
+    tmux = FakeTmux()
     dispatcher, runner = make_dispatcher(
-        tmp_path, adapter, monkeypatch, spawn_on_unmatched="labeled"
+        tmp_path, tmux, monkeypatch, spawn_on_unmatched="labeled"
     )
     dispatcher.handle(routed_labeled_issue())
     assert wait_until(lambda: len(runner.commands) == 2)
     dispatcher.stop()
-    assert len(adapter.spawns) == 1
+    assert len(tmux.spawns) == 1
     assert contents(runner) == ["content=eyes", "content=hooray"]
     for cmd in runner.commands:
         assert "repos/octo/repo/issues/15/reactions" in cmd
@@ -216,13 +195,13 @@ def test_unprocessed_events_get_no_reaction(tmp_path, monkeypatch):
       Then no reaction is posted for the dropped and duplicate events
     Requirement: docs/specs/issue-84/requirements.md#requirement-1
     """
-    adapter = FakeAdapter()
-    dispatcher, runner = make_dispatcher(tmp_path, adapter, monkeypatch)
+    tmux = FakeTmux()
+    dispatcher, runner = make_dispatcher(tmp_path, tmux, monkeypatch)
     dispatcher.handle(routed_comment(delivery="drop-1"))  # unmatched → dropped
     dispatcher.stop()
     assert runner.commands == []
 
-    dispatcher, runner = make_dispatcher(tmp_path, adapter, monkeypatch)
+    dispatcher, runner = make_dispatcher(tmp_path, tmux, monkeypatch)
     dispatcher.registry.register(make_session())
     dispatcher.handle(routed_comment(delivery="dup-1"))
     dispatcher.handle(routed_comment(delivery="dup-1"))  # duplicate → dropped
@@ -241,15 +220,15 @@ def test_reactions_disabled_posts_nothing(tmp_path, monkeypatch):
       Then no gh invocation happens at all
     Requirement: docs/specs/issue-84/requirements.md#requirement-2
     """
-    adapter = FakeAdapter()
+    tmux = FakeTmux()
     dispatcher, runner = make_dispatcher(
         tmp_path,
-        adapter,
+        tmux,
         monkeypatch,
         reactions=ReactionConfig(enabled=False),
     )
     dispatcher.registry.register(make_session())
     dispatcher.handle(routed_comment())
-    assert wait_until(lambda: len(adapter.calls) == 1)
+    assert wait_until(lambda: len(tmux.delivers) == 1)
     dispatcher.stop()
     assert runner.commands == []

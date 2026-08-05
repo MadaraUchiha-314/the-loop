@@ -43,7 +43,7 @@ def store_for(tmp_path):
     return ControlStore(str(tmp_path / "portable"))
 
 
-def register(registry, status="active", runner="process"):
+def register(registry, status="active", tmux_target=""):
     return registry.register(
         Session(
             work_item=WorkItemRef.parse(REF),
@@ -51,7 +51,7 @@ def register(registry, status="active", runner="process"):
             harness_session_id="sess-0",
             cwd=".",
             status=status,
-            runner=runner,
+            tmux_target=tmux_target,
         ),
         force=True,
     )

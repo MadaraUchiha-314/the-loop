@@ -11,8 +11,8 @@ re-announcing would just be noise on the ticket (owner decision, PR #87).
 Built in the mould of :mod:`the_loop.reactions`: it shells the operator's own
 ``gh`` CLI (no token of the-loop's own), and everything is best-effort — an
 announcement must never fail, delay or drop the dispatch, so every failure
-degrades to a logged no-op. Process-runner sessions are skipped (there is no
-terminal to attach) and so are non-GitHub work items.
+degrades to a logged no-op. Sessions with no tmux session yet are skipped
+(there is nothing to attach to) and so are non-GitHub work items.
 
 The comment body is built **only** from the session's own registry fields — the
 work-item ref, the tmux target and the harness name. No event-payload data
@@ -124,8 +124,8 @@ class SessionAnnouncer:
         config = self.config
         if not config.enabled:
             return False
-        if session.runner != "tmux" or not session.tmux_target:
-            # A headless process session has no terminal to attach to.
+        if not session.tmux_target:
+            # No tmux session yet (nothing spawned) — nothing to announce.
             return False
         item = session.work_item
         ok, error = post_issue_comment(

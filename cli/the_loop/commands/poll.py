@@ -185,7 +185,7 @@ class PollCommand(Command):
         from ..runner import check_dependencies, start_web_terminal, stop_web_terminal
 
         missing = [line for p in plan.providers for line in p.check_dependencies()]
-        missing += check_dependencies(routing.runner, routing.web_terminal.enabled)
+        missing += check_dependencies(routing.web_terminal.enabled)
         if missing:
             for line in missing:
                 logger.error(line)
@@ -232,10 +232,9 @@ class PollCommand(Command):
             pidfile.parent.mkdir(parents=True, exist_ok=True)
             pidfile.write_text(str(os.getpid()))
         logger.info(
-            "poll: %s every %ss (runner=%s, spawnOnUnmatched=%s, state=%s)",
+            "poll: %s every %ss (spawnOnUnmatched=%s, state=%s)",
             "; ".join(p.describe() for p in providers),
             config.interval_seconds,
-            routing.runner,
             routing.spawn_on_unmatched,
             args.state_dir,
         )

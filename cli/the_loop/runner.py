@@ -1,13 +1,14 @@
-"""tmux runner: host webhook-spawned harness sessions in attachable tmux sessions.
+"""tmux runner: host daemon-spawned harness sessions in attachable tmux sessions.
 
-With ``routing.runner: tmux`` the dispatcher starts the harness's *interactive*
-TUI inside a detached, named tmux session (``loop-<work-item-slug>``) instead of
-a one-shot headless subprocess; webhook events are bracketed-pasted into the
-TUI; humans attach locally, over SSH, or via the optional ttyd web terminal.
-tmux/ttyd are native host binaries (a wheel can't carry them), verified by
-``check_dependencies`` at receiver start.
+The dispatcher starts the harness's *interactive* TUI inside a detached, named
+tmux session (``loop-<work-item-slug>``); webhook events are bracketed-pasted
+into the TUI; humans attach locally, over SSH, or via the optional ttyd web
+terminal. This is the **only** runner — the headless one-shot subprocess
+runner was removed (issue-156, decision-056). tmux/ttyd are native host
+binaries (a wheel can't carry them), verified by ``check_dependencies`` at
+receiver start.
 
-Spec: docs/specs/issue-32/design.md (decision-021).
+Spec: docs/specs/issue-32/design.md (decision-021); docs/specs/issue-156/.
 """
 
 from __future__ import annotations
@@ -102,7 +103,7 @@ _INSTALL_HINTS = {
 
 @dataclass
 class TmuxResult:
-    """Outcome of one tmux operation (mirrors DispatchResult's ok/error shape)."""
+    """Outcome of one tmux operation (an ok/error result, never an exception)."""
 
     ok: bool
     error: str = ""
@@ -126,17 +127,15 @@ class TmuxResult:
     session_live: bool = False
 
 
-def check_dependencies(runner: str, web_enabled: bool) -> List[str]:
-    """Missing native dependencies for the configured runner, with install hints.
+def check_dependencies(web_enabled: bool) -> List[str]:
+    """Missing native dependencies for the daemon, with install hints.
 
-    Empty when everything needed is present (R6.2: silent on the happy path).
+    tmux is always required — it is the only runner (issue-156); ttyd only
+    when the web terminal is enabled. Empty when everything needed is present
+    (R6.2: silent on the happy path).
     """
-    needed: List[str] = []
-    if runner == "tmux":
-        needed.append("tmux")
+    needed: List[str] = ["tmux"]
     if web_enabled:
-        if "tmux" not in needed:
-            needed.append("tmux")
         needed.append("ttyd")
     return [
         f"missing dependency: {binary} — install it ({_INSTALL_HINTS[binary]})"
@@ -609,6 +608,18 @@ class TmuxRunner:
         non-issues; -p pastes bracketed so the TUI treats it as one message.
         """
         target = session.tmux_target
+        if not target:
+            # A record with no tmux session yet: self-registered, or written by
+            # the removed process runner (issue-156). Report it missing so the
+            # caller's respawn path gives it one.
+            return TmuxResult(
+                ok=False,
+                session_missing=True,
+                error=(
+                    f"no tmux session recorded for {session.work_item.ref}; "
+                    "spawning one and delivering this event into it"
+                ),
+            )
         if not self.has_live_session(target):
             return TmuxResult(
                 ok=False,

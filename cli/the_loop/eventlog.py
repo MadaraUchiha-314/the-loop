@@ -141,7 +141,7 @@ EVENT_TYPES: Dict[str, str] = {
     # -- session lifecycle (source: any) --------------------------------------
     "session.registered": (
         "A work item ↔ harness session link was recorded in the registry "
-        "(work_item, harness, harness_session_id, runner, cwd)."
+        "(work_item, harness, harness_session_id, cwd)."
     ),
     "session.spawned": (
         "A new harness session was spawned for a work item — this is the "

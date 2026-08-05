@@ -84,31 +84,13 @@ def test_an_undeclared_mode_falls_back_to_work_item_and_warns(raw, caplog):
     assert any("interaction.mode" in record.message for record in caplog.records)
 
 
-def test_cli_mode_under_the_headless_runner_warns(caplog):
-    """The one combination that reproduces the defect: nobody can answer a pipe."""
+@pytest.mark.parametrize("mode", ["cli", "work-item"])
+def test_the_declared_modes_are_quiet(mode, caplog):
+    # Both modes are workable under the tmux runner — the only runner there is
+    # (issue-156): `cli` means a human sits in the attached pane.
     with caplog.at_level(logging.WARNING, logger="the-loop.interaction"):
-        resolved = InteractionConfig.from_mapping({"mode": "cli"}, runner="process")
-    assert (
-        resolved.mode == "cli"
-    )  # warned, not overridden — it stays the operator's call
-    assert any("has no terminal" in record.message for record in caplog.records)
-
-
-@pytest.mark.parametrize(
-    "mode,runner", [("cli", "tmux"), ("work-item", "process"), ("work-item", "tmux")]
-)
-def test_the_workable_combinations_are_quiet(mode, runner, caplog):
-    with caplog.at_level(logging.WARNING, logger="the-loop.interaction"):
-        InteractionConfig.from_mapping({"mode": mode}, runner=runner)
+        InteractionConfig.from_mapping({"mode": mode})
     assert caplog.records == []
-
-
-def test_the_routing_config_warns_for_cli_under_the_process_runner(caplog):
-    with caplog.at_level(logging.WARNING, logger="the-loop.interaction"):
-        RoutingConfig.from_mapping(
-            {"interaction": {"mode": "cli"}, "runner": "process"}
-        )
-    assert any("has no terminal" in record.message for record in caplog.records)
 
 
 def test_the_routing_config_carries_the_resolved_mode():

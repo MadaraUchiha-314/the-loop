@@ -3,7 +3,7 @@
 A session the daemon spawns or resumes was never told **where a human is**. The
 rendered prompt said what happened and which rules apply, then left the most
 consequential question to the model's guess — and both guesses fail. Guessing
-"the terminal" in a ``process``-runner session asks a question into a pipe
+"the terminal" when nobody ever attaches to the tmux session asks a question
 nobody reads; guessing "the ticket" while the operator sits in an attached tmux
 pane routes a live conversation through GitHub for no reason.
 
@@ -121,30 +121,15 @@ class InteractionConfig:
     mode: str = DEFAULT_MODE
 
     @classmethod
-    def from_mapping(cls, data: object, runner: str = "process") -> "InteractionConfig":
+    def from_mapping(cls, data: object) -> "InteractionConfig":
         """Resolve the declared mode, degrading to :data:`DEFAULT_MODE`.
 
         Silent when nothing was declared (a config that predates issue-134 is
         not a mistake); **warned** when something was declared and is not a mode
         — that is a typo the operator wants to hear about, and honouring it
         would mean choosing an interaction channel they never asked for.
-
-        ``runner`` is taken only to warn about the one combination that
-        reproduces the defect this feature exists to remove: ``cli`` under the
-        headless ``process`` runner is a session told to ask a human who has no
-        terminal to be asked in. It is a *warning*, not a refusal — the operator
-        may be piping the harness somewhere the-loop cannot see, and a daemon
-        that refuses to start over a prompt hint is worse than a loud one.
         """
-        resolved = cls._resolve(data)
-        if resolved.mode == "cli" and str(runner or "").strip().lower() == "process":
-            logger.warning(
-                "routing.interaction.mode is 'cli' but routing.runner is 'process': "
-                "a headless one-shot session has no terminal for a human to answer "
-                "in. Use runner 'tmux' to sit in the session, or interaction mode "
-                "'work-item' to be asked on the ticket"
-            )
-        return resolved
+        return cls._resolve(data)
 
     @classmethod
     def _resolve(cls, data: object) -> "InteractionConfig":

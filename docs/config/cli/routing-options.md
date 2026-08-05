@@ -287,17 +287,12 @@ Path or name of the git binary used for clone and worktree operations.
 
 ## How sessions are hosted
 
-### `runner`
-
-- **Type:** `'process' | 'tmux'`
-- **Default:** `process`
-- **Related:** [interactive-sessions](/capabilities/interactive-sessions) · [decision-021](/decisions/decision-021)
-
-Receiver-global choice of how spawned sessions are hosted:
-
-- `process` — a headless one-shot subprocess.
-- `tmux` — the interactive harness TUI in a named tmux session (`loop-<slug>`) a human can
-  attach to, watch and type into.
+Every spawned session is hosted as the interactive harness TUI in a named tmux session
+(`loop-<slug>`) a human can attach to, watch and type into — see
+[interactive-sessions](/capabilities/interactive-sessions). There is no runner choice: the
+headless `process` runner was removed (issue-156, [decision-056](/decisions/decision-056)),
+and a leftover `runner` key in the config is ignored with a startup warning. `tmux` is
+therefore a required dependency of `gh-webhook start` / `poll start`.
 
 ### `tmux.keepSessionOnClose`
 
@@ -385,7 +380,7 @@ How long the harness gets to exit after SIGTERM before SIGKILL. `0` escalates im
 - **Related:** [decision-021](/decisions/decision-021)
 
 Serve the tmux sessions over HTTP via [ttyd](https://github.com/tsl0922/ttyd), verified at
-receiver start. Applies to `runner: tmux` only.
+receiver start.
 
 ::: danger ttyd has no authentication of its own
 Access control is entirely environmental — localhost, a VPN, or your hosting provider's
@@ -452,9 +447,9 @@ it kicks off the `work-on` flow. Same fallback behaviour as `promptTemplate`.
 
 Where a session the daemon drives takes its **answers** from. Before this existed, a
 spawned session was never told whether a human was at its terminal, so the model guessed —
-and both guesses fail. A `process`-runner session asking interactively asks into a pipe
-nobody reads; an operator sitting in an attached tmux pane gets round-tripped through
-GitHub for no reason.
+and both guesses fail. A session asking interactively when nobody ever attaches to its
+tmux pane asks into a void; an operator sitting in an attached pane gets round-tripped
+through GitHub for no reason.
 
 | Mode | The agent asks… | Still records the decision on the ticket? |
 |------|-----------------|------------------------------------------|
@@ -476,10 +471,6 @@ command precisely because nobody is there yet. So the default is the channel tha
 a human who was not watching. An unrecognised value resolves to `work-item` with a warning,
 never to `cli`: a wrong `work-item` leaves a visible comment awaiting a reply, a wrong `cli`
 leaves a question in a void.
-
-Setting `cli` while [`runner`](#runner) is `process` warns at startup and on reload: a
-headless one-shot session has no terminal for a human to answer in. A warning, not a
-refusal — your declaration stands.
 :::
 
 Independent of the mode, iteration on a **generated artifact** (`brainstorm.md`,
@@ -705,7 +696,7 @@ A **respawn** posts nothing further — it reuses the same session name, so the 
 already there stays correct and a flapping session cannot bury the thread.
 
 Best-effort via your own `gh` CLI, like reactions: a failure never affects the dispatch,
-and a process-runner session, a non-GitHub work item or a missing `gh` is a no-op. The body
+and a non-GitHub work item or a missing `gh` is a no-op. The body
 is built only from registry fields — work-item ref, tmux target, harness — never from event
 payloads, and carries no filesystem paths, harness session ids or hostnames.
 
@@ -755,7 +746,7 @@ Timeout for a single harness resume/spawn subprocess.
 
 While the receiver runs, edits to `routing` and `events` are picked up on the **next
 received event** — no restart. The soft policy swaps live: the events filter, the label,
-the spawn policy, harness and runner, per-harness args, prompt templates, the interaction
+the spawn policy, the harness, per-harness args, prompt templates, the interaction
 mode. The dedup cache,
 the per-session queues and the registry are preserved.
 

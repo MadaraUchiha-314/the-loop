@@ -73,6 +73,10 @@ them.
 Works after the work item is closed too — and is then **always** read-only, because a
 finished session takes no input. Equivalent to `tmux attach -t loop-<slug>`.
 
+A session registered by hand (`sessions register`) has no tmux session until its first
+dispatched event spawns one; until then `attach` errors, telling you no tmux session is
+recorded yet.
+
 ## `close`
 
 | Flag | Default | Meaning |
@@ -160,7 +164,8 @@ one bad ref in a list resets none of them. Nothing is posted to the ticket — t
 running the-loop:
 
 - **`start`** spawns through the same dispatcher the daemon uses — workspace checkout,
-  harness trust, runner, announcement — or resumes a paused session.
+  harness trust, tmux hosting, announcement — or resumes a paused session, and prints
+  the tmux target it spawned into.
 - **`pause`** holds events; the session keeps its conversation.
 - **`resume`** delivers events again.
 - **`stop`** takes the normal close path.
@@ -203,6 +208,6 @@ exactly like a GitHub-ticketed item.
 
 ## See also
 
-- [Routing options](/config/cli/routing-options) — registry location, runner, tmux lifetime.
+- [Routing options](/config/cli/routing-options) — registry location, tmux lifetime.
 - [Concepts](/cli/concepts#work-items-and-sessions) — the invariant and how sessions end.
 - [interactive sessions](/capabilities/interactive-sessions) — the capability doc.

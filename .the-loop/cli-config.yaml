@@ -64,10 +64,10 @@ routing:
       resume: "the-loop resume"
   # Where a session the daemon drives takes its ANSWERS from (issue-134).
   # Until this existed, a spawned session was never told whether a human was
-  # at its terminal, so the model guessed — and both guesses fail: a
-  # `process`-runner session asking interactively asks into a pipe nobody
-  # reads, while an operator sitting in an attached tmux pane gets
-  # round-tripped through GitHub for no reason.
+  # at its terminal, so the model guessed — and both guesses fail: asking
+  # interactively when nobody ever attaches to the tmux pane asks into a
+  # void, while an operator sitting in an attached pane gets round-tripped
+  # through GitHub for no reason.
   #   work-item  every question is a comment on the issue/PR; the session
   #              then waits, and the reply arrives as the next event.
   #   cli        a human is attached to this session's terminal; ask there.
@@ -99,7 +99,8 @@ routing:
     defaultHost: github.com     # host dir when the payload has no html_url (set to your GHE domain)
     keepCheckoutOnClose: false  # keep the work item's checkout after PR close (for post-mortem)
     gitBinary: git
-  runner: process             # process (headless) | tmux (attachable interactive TUI — issue-32)
+  # Sessions are hosted in attachable tmux sessions (loop-<slug>) — the only
+  # runner (issue-32, issue-156, decision-056).
   # Lifetime of the tmux-hosted sessions (issue-86): a finished session stays
   # readable. keepSessionOnClose leaves the tmux session running when the work
   # item closes (PR merged/closed or `sessions close`); remainOnExit keeps the
@@ -121,7 +122,7 @@ routing:
     resumeProbeSeconds: 2
     killHarnessOnClose: true
     harnessKillGraceSeconds: 5
-  webTerminal:                # ttyd browser terminal onto tmux sessions (runner: tmux)
+  webTerminal:                # ttyd browser terminal onto the tmux sessions
     enabled: false            # access control is environmental: localhost/VPN/provider (decision-021)
     host: 127.0.0.1
     port: 7681
@@ -187,7 +188,7 @@ routing:
   # Session announcement comment (issue-86): when a tmux-mode session is
   # spawned, post the tmux session name + `tmux attach -t …` on the work item
   # so a human can watch it work. A respawn posts nothing further (same name,
-  # same command). Best-effort via your gh CLI; no-op for process-runner
+  # same command). Best-effort via your gh CLI; no-op for target-less
   # sessions, non-GitHub work items, or a missing gh. The body carries no
   # paths, session ids or hostnames.
   announce:

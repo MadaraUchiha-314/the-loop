@@ -30,8 +30,8 @@ self-learning/ML capabilities.
 - `the-loop sessions start|pause|resume|stop` SHALL give an operator with shell access
   the **same four commands** an authorized user issues by keyword in a comment
   (issue-106, see [webhook-triggers](webhook-triggers.md)): `start` spawns through the
-  same dispatcher the daemon uses — workspace checkout, harness trust, configured
-  runner, session announcement — or resumes a paused session; `stop` takes the normal
+  same dispatcher the daemon uses — workspace checkout, harness trust, tmux hosting,
+  session announcement — or resumes a paused session; `stop` takes the normal
   close path. Each invocation SHALL record the command in that work item's portable
   record (`<state.root>/portable/<slug>.json`, `control` section — issue-128) and SHALL
   post the **same keyword** back to the work item
@@ -195,6 +195,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-156 | Process runner removed; tmux is the only runner (2026-08-05): `sessions start` spawns tmux-hosted sessions unconditionally — there is no configured runner to pick | [spec](../specs/issue-156/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/156) |
 | issue-142 | `webhooks.ghWebhook.routing` promoted to a top-level `routing` through the version-gated config migration (`0.4.0`), and the import seam that expressed the same misfiling removed: `poll` and `sessions` read dispatch policy through `cli_config.load_routing_config` instead of importing the webhook command's helper. A relocation only — no option's name, default or behaviour changed | [spec](../specs/issue-142/), [decision-053](../decisions/decision-053.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/142) |
 | issue-137 | Added `sessions reset`: one, several or all work items lose their session record, control and poll sections (and their checkout, per the close policy) so a work item starts over after a CLI fix. Composes the existing close and section-clearing paths — the seal rule is what stops a pre-issue-128 record coming back — adds `SessionRegistry.forget`, posts nothing to the ticket, and appends `session.reset` to a log it cannot rewrite | [spec](../specs/issue-137/), [decision-050](../decisions/decision-050.md), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/137) |
 | issue-132 | Added `instructions`, the sixth harness-config read: it resolves every doc registered in `customInstructions.docs` and turns `onMissing` into an exit code, so a mistyped path stops being silent. Reports facts about each doc, never its contents | [spec](../specs/issue-132/), [decision-049](../decisions/decision-049.md), [spec-workflow](spec-workflow.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/132) |

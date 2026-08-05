@@ -10,6 +10,9 @@ Both features are the same pre-spawn step, so they share these scenarios. Each
 drives the real ``Dispatcher`` worker with a real ``ClaudeCodeAdapter`` pointed
 at a fake HOME, so they prove what actually lands in the harness's config — and,
 crucially, that it lands **before** the harness is started rather than after.
+Since the process runner's removal (issue-156) every harness start goes through
+the tmux runner, so the "already on disk at start" snapshot is taken at that
+seam: a ``FakeTmux`` whose ``spawn`` records what the config held.
 """
 
 import json
@@ -18,11 +21,11 @@ import time
 
 import pytest
 
+from conftest import FakeTmux
 from the_loop.control import ControlConfig
 from the_loop import eventlog
-from the_loop.harness.base import DispatchResult
 from the_loop.harness.claude_code import ClaudeCodeAdapter
-from the_loop.runner import TmuxResult, TmuxRunner
+from the_loop.runner import TmuxResult
 from the_loop.sessions import Session, SessionRegistry, WorkItemRef
 from the_loop.harness_plugins import (
     DEFAULT_MARKETPLACE_REPO,
@@ -66,61 +69,50 @@ def workdir(tmp_path):
     return path
 
 
-class RecordingClaudeAdapter(ClaudeCodeAdapter):
-    """Real preparation, faked process launch — and it records the ordering.
-
-    ``spawn`` snapshots whether the trust key was already on disk when the
-    harness was (notionally) started: that snapshot is what turns "the key
-    exists afterwards" into "the key existed *before* the dialog could appear".
-    """
-
-    def __init__(self, config_path, **kwargs):
-        super().__init__(**kwargs)
-        self._config_path = config_path
-        self._settings_path = config_path.parent / ".claude" / "settings.json"
-        self.spawns = []
-        self.trusted_at_spawn = []
-        self.plugins_at_spawn = []
+class AvailableClaudeAdapter(ClaudeCodeAdapter):
+    """Real preparation, faked availability — the binary is never executed."""
 
     def is_available(self):
         return True
 
-    def spawn(self, work_item, prompt, cwd, timeout=None):
-        self.spawns.append((work_item.ref, cwd))
-        self.trusted_at_spawn.append(trusted_dirs(self._config_path))
-        self.plugins_at_spawn.append(enabled_plugins(self._settings_path))
-        return DispatchResult(ok=True, session_id="spawned-1")
 
-    def resume(self, session, prompt, timeout=None):
-        return DispatchResult(ok=True, session_id=session.harness_session_id)
+class SnapshotTmux(FakeTmux):
+    """A tmux runner whose ``spawn`` snapshots the harness config on disk.
 
-
-class DeadTmux(TmuxRunner):
-    """A tmux runner whose sessions are always gone, forcing the respawn path.
-
-    ``spawn`` snapshots the trusted directories the same way the adapter does,
-    so the respawn gets the identical before-the-harness-starts assertion.
+    ``spawn`` is the moment the harness is (notionally) started, so the
+    snapshot is what turns "the key exists afterwards" into "the key existed
+    *before* the dialog could appear".
     """
 
     def __init__(self, config_path):
         super().__init__()
         self._config_path = config_path
-        self.spawns = []
+        self._settings_path = config_path.parent / ".claude" / "settings.json"
         self.trusted_at_spawn = []
-
-    def deliver(self, session, prompt, timeout=None):
-        return TmuxResult(ok=False, session_missing=True, error="gone")
+        self.plugins_at_spawn = []
 
     def spawn(
         self, work_item, adapter, prompt, cwd, session_id, timeout=None, resume=False
     ):
-        # `resume` (issue-89): a respawn first tries to CONTINUE the dead
-        # session's conversation, and that resume attempt starts a harness
-        # process too — so the snapshot has to be taken here either way, which
-        # is what pins the trust write ahead of both respawn paths.
-        self.spawns.append(cwd)
         self.trusted_at_spawn.append(trusted_dirs(self._config_path))
-        return TmuxResult(ok=True)
+        self.plugins_at_spawn.append(enabled_plugins(self._settings_path))
+        return super().spawn(
+            work_item, adapter, prompt, cwd, session_id, timeout=timeout, resume=resume
+        )
+
+
+class DeadTmux(SnapshotTmux):
+    """A tmux runner whose sessions are always gone, forcing the respawn path.
+
+    ``spawn`` snapshots the trusted directories exactly like a first spawn's,
+    so the respawn gets the identical before-the-harness-starts assertion —
+    and that covers **every** harness start the respawn makes: the issue-89
+    conversation-resume attempt spawns through this same seam before the
+    fresh-conversation fallback would, so the snapshot is taken either way.
+    """
+
+    def deliver(self, session, prompt, timeout=None):
+        return TmuxResult(ok=False, session_missing=True, error="gone")
 
 
 def trusted_dirs(config_path):
@@ -164,7 +156,7 @@ class StubWorkspace(Workspace):
         return self._checkout
 
 
-def make_dispatcher(tmp_path, adapter, workspace=None, **config_overrides):
+def make_dispatcher(tmp_path, adapter, tmux, workspace=None, **config_overrides):
     # Pre-issue-106 spawn behaviour (the start gate has its own tests).
     config_overrides.setdefault("control", ControlConfig(require_start_command=False))
     config = RoutingConfig(spawn_on_unmatched="labeled", **config_overrides)
@@ -172,6 +164,7 @@ def make_dispatcher(tmp_path, adapter, workspace=None, **config_overrides):
         registry=SessionRegistry(tmp_path / "sessions"),
         adapters={"claude": adapter},
         config=config,
+        tmux_runner=tmux,
         workspace=workspace,
     )
 
@@ -207,16 +200,17 @@ def test_spawned_workspace_is_trusted_before_the_harness_starts(
       And no ancestor directory was trusted
     Requirement: docs/specs/issue-90/requirements.md#requirement-1
     """
-    adapter = RecordingClaudeAdapter(fake_home / ".claude.json")
-    dispatcher = make_dispatcher(tmp_path, adapter, spawn_workdir=str(workdir))
+    tmux = SnapshotTmux(fake_home / ".claude.json")
+    adapter = AvailableClaudeAdapter()
+    dispatcher = make_dispatcher(tmp_path, adapter, tmux, spawn_workdir=str(workdir))
 
     dispatcher.handle(routed_labeled_issue())
-    assert wait_until(lambda: len(adapter.spawns) == 1)
+    assert wait_until(lambda: len(tmux.spawns) == 1)
     dispatcher.stop()
 
     assert trusted_dirs(fake_home / ".claude.json") == [str(workdir)]
     # the ordering assertion: trusted *before* the harness process was started
-    assert adapter.trusted_at_spawn == [[str(workdir)]]
+    assert tmux.trusted_at_spawn == [[str(workdir)]]
 
 
 def test_respawned_tmux_session_workspace_is_trusted_too(tmp_path, fake_home, workdir):
@@ -233,13 +227,11 @@ def test_respawned_tmux_session_workspace_is_trusted_too(tmp_path, fake_home, wo
     """
 
     tmux = DeadTmux(fake_home / ".claude.json")
-    adapter = RecordingClaudeAdapter(fake_home / ".claude.json")
+    adapter = AvailableClaudeAdapter()
     dispatcher = Dispatcher(
         registry=SessionRegistry(tmp_path / "sessions"),
         adapters={"claude": adapter},
-        config=RoutingConfig(
-            runner="tmux", control=ControlConfig(require_start_command=False)
-        ),
+        config=RoutingConfig(control=ControlConfig(require_start_command=False)),
         tmux_runner=tmux,
     )
     dispatcher.registry.register(
@@ -248,8 +240,7 @@ def test_respawned_tmux_session_workspace_is_trusted_too(tmp_path, fake_home, wo
             harness="claude",
             harness_session_id="sess-1",
             cwd=str(workdir),
-            runner="tmux",
-            tmux_target="loop-github--octo-repo-15",
+            tmux_target="loop-github-octo-repo-15",
         )
     )
 
@@ -260,7 +251,7 @@ def test_respawned_tmux_session_workspace_is_trusted_too(tmp_path, fake_home, wo
     # A respawn starts the harness once to try resuming the conversation and,
     # if that fails, again for a fresh one. Assert on ALL of them: a regression
     # that trusted only before the fallback would still stall the resume path.
-    assert tmux.spawns and set(tmux.spawns) == {str(workdir)}
+    assert tmux.spawns and {cwd for _, _, cwd, _ in tmux.spawns} == {str(workdir)}
     assert tmux.trusted_at_spawn == [[str(workdir)]] * len(tmux.spawns)
 
 
@@ -276,13 +267,12 @@ def test_bypass_disclaimer_is_accepted_when_the_operator_configured_it(
         harness's user settings, so the configured flag actually takes effect
     Requirement: docs/specs/issue-90/requirements.md#requirement-2
     """
-    adapter = RecordingClaudeAdapter(
-        fake_home / ".claude.json", extra_args=["--dangerously-skip-permissions"]
-    )
-    dispatcher = make_dispatcher(tmp_path, adapter, spawn_workdir=str(workdir))
+    tmux = SnapshotTmux(fake_home / ".claude.json")
+    adapter = AvailableClaudeAdapter(extra_args=["--dangerously-skip-permissions"])
+    dispatcher = make_dispatcher(tmp_path, adapter, tmux, spawn_workdir=str(workdir))
 
     dispatcher.handle(routed_labeled_issue())
-    assert wait_until(lambda: len(adapter.spawns) == 1)
+    assert wait_until(lambda: len(tmux.spawns) == 1)
     dispatcher.stop()
 
     settings = json.loads((fake_home / ".claude" / "settings.json").read_text())
@@ -303,11 +293,12 @@ def test_a_failing_preparation_does_not_fail_the_dispatch(tmp_path, fake_home, w
     log = tmp_path / "events.jsonl"
     eventlog.configure("gh-webhook", path=log, enabled=True)
 
-    adapter = RecordingClaudeAdapter(fake_home / ".claude.json")
-    dispatcher = make_dispatcher(tmp_path, adapter, spawn_workdir=str(workdir))
+    tmux = SnapshotTmux(fake_home / ".claude.json")
+    adapter = AvailableClaudeAdapter()
+    dispatcher = make_dispatcher(tmp_path, adapter, tmux, spawn_workdir=str(workdir))
 
     dispatcher.handle(routed_labeled_issue())
-    assert wait_until(lambda: len(adapter.spawns) == 1)
+    assert wait_until(lambda: len(tmux.spawns) == 1)
     dispatcher.stop()
 
     assert dispatcher.registry.find_by_work_item(REF) is not None
@@ -337,16 +328,18 @@ def test_workspace_root_scope_trusts_the_root_covering_every_checkout(
     Requirement: docs/specs/issue-136/bugfix.md#requirement-1
     """
     root = tmp_path / "workspace"
-    adapter = RecordingClaudeAdapter(fake_home / ".claude.json")
+    tmux = SnapshotTmux(fake_home / ".claude.json")
+    adapter = AvailableClaudeAdapter()
     dispatcher = make_dispatcher(
         tmp_path,
         adapter,
+        tmux,
         spawn_workdir=str(workdir),
         workspace=StubWorkspace(root, workdir),
     )
 
     dispatcher.handle(routed_labeled_issue())
-    assert wait_until(lambda: len(adapter.spawns) == 1)
+    assert wait_until(lambda: len(tmux.spawns) == 1)
     dispatcher.stop()
 
     projects = json.loads((fake_home / ".claude.json").read_text())["projects"]
@@ -357,7 +350,7 @@ def test_workspace_root_scope_trusts_the_root_covering_every_checkout(
     assert str(root) in trusted_dirs(fake_home / ".claude.json")
     # the ordering assertion: the checkout was trusted *before* the harness ran,
     # which is the whole point — a dialog is not something a daemon can answer
-    assert [sorted(snap) for snap in adapter.trusted_at_spawn] == [
+    assert [sorted(snap) for snap in tmux.trusted_at_spawn] == [
         sorted([str(root), str(workdir)])
     ]
 
@@ -375,19 +368,19 @@ def test_directory_scope_keeps_trust_on_the_checkout_alone(
     Requirement: docs/specs/issue-90/requirements.md#requirement-1
     """
     root = tmp_path / "workspace"
-    adapter = RecordingClaudeAdapter(
-        fake_home / ".claude.json", trust=TrustConfig(scope="directory")
-    )
+    tmux = SnapshotTmux(fake_home / ".claude.json")
+    adapter = AvailableClaudeAdapter(trust=TrustConfig(scope="directory"))
     dispatcher = make_dispatcher(
         tmp_path,
         adapter,
+        tmux,
         spawn_workdir=str(workdir),
         workspace=StubWorkspace(root, workdir),
         harness_trust=TrustConfig(scope="directory"),
     )
 
     dispatcher.handle(routed_labeled_issue())
-    assert wait_until(lambda: len(adapter.spawns) == 1)
+    assert wait_until(lambda: len(tmux.spawns) == 1)
     dispatcher.stop()
 
     assert trusted_dirs(fake_home / ".claude.json") == [str(workdir)]
@@ -406,16 +399,18 @@ def test_a_too_broad_workspace_root_degrades_to_the_checkout(
       And trust falls back to the exact spawn directory
     Requirement: docs/specs/issue-90/requirements.md#requirement-1
     """
-    adapter = RecordingClaudeAdapter(fake_home / ".claude.json")
+    tmux = SnapshotTmux(fake_home / ".claude.json")
+    adapter = AvailableClaudeAdapter()
     dispatcher = make_dispatcher(
         tmp_path,
         adapter,
+        tmux,
         spawn_workdir=str(workdir),
         workspace=StubWorkspace(fake_home, workdir),
     )
 
     dispatcher.handle(routed_labeled_issue())
-    assert wait_until(lambda: len(adapter.spawns) == 1)
+    assert wait_until(lambda: len(tmux.spawns) == 1)
     dispatcher.stop()
 
     trusted = trusted_dirs(fake_home / ".claude.json")
@@ -436,18 +431,19 @@ def test_an_exploding_adapter_hook_does_not_wedge_the_work_item(
     Requirement: docs/specs/issue-90/requirements.md#requirement-3
     """
 
-    class ExplodingAdapter(RecordingClaudeAdapter):
+    class ExplodingAdapter(AvailableClaudeAdapter):
         def prepare_environment(self, cwd, root=None):
             raise RuntimeError("kaboom")
 
     log = tmp_path / "events.jsonl"
     eventlog.configure("gh-webhook", path=log, enabled=True)
 
-    adapter = ExplodingAdapter(fake_home / ".claude.json")
-    dispatcher = make_dispatcher(tmp_path, adapter, spawn_workdir=str(workdir))
+    tmux = SnapshotTmux(fake_home / ".claude.json")
+    adapter = ExplodingAdapter()
+    dispatcher = make_dispatcher(tmp_path, adapter, tmux, spawn_workdir=str(workdir))
 
     dispatcher.handle(routed_labeled_issue())
-    assert wait_until(lambda: len(adapter.spawns) == 1)
+    assert wait_until(lambda: len(tmux.spawns) == 1)
     dispatcher.stop()
 
     records = [json.loads(line) for line in log.read_text().splitlines()]
@@ -468,13 +464,12 @@ def test_disabled_trust_leaves_the_harness_config_alone(tmp_path, fake_home, wor
     Requirement: docs/specs/issue-90/requirements.md#requirement-3
     Requirement: docs/specs/issue-143/requirements.md#requirement-3
     """
-    adapter = RecordingClaudeAdapter(
-        fake_home / ".claude.json", trust=TrustConfig(enabled=False)
-    )
-    dispatcher = make_dispatcher(tmp_path, adapter, spawn_workdir=str(workdir))
+    tmux = SnapshotTmux(fake_home / ".claude.json")
+    adapter = AvailableClaudeAdapter(trust=TrustConfig(enabled=False))
+    dispatcher = make_dispatcher(tmp_path, adapter, tmux, spawn_workdir=str(workdir))
 
     dispatcher.handle(routed_labeled_issue())
-    assert wait_until(lambda: len(adapter.spawns) == 1)
+    assert wait_until(lambda: len(tmux.spawns) == 1)
     dispatcher.stop()
 
     assert not (fake_home / ".claude.json").exists()
@@ -499,11 +494,12 @@ def test_the_plugin_is_enabled_before_the_harness_starts(tmp_path, fake_home, wo
     eventlog.configure("gh-webhook", path=log, enabled=True)
     settings = fake_home / ".claude" / "settings.json"
 
-    adapter = RecordingClaudeAdapter(fake_home / ".claude.json")
-    dispatcher = make_dispatcher(tmp_path, adapter, spawn_workdir=str(workdir))
+    tmux = SnapshotTmux(fake_home / ".claude.json")
+    adapter = AvailableClaudeAdapter()
+    dispatcher = make_dispatcher(tmp_path, adapter, tmux, spawn_workdir=str(workdir))
 
     dispatcher.handle(routed_labeled_issue())
-    assert wait_until(lambda: len(adapter.spawns) == 1)
+    assert wait_until(lambda: len(tmux.spawns) == 1)
     dispatcher.stop()
 
     assert json.loads(settings.read_text())["extraKnownMarketplaces"] == {
@@ -512,7 +508,7 @@ def test_the_plugin_is_enabled_before_the_harness_starts(tmp_path, fake_home, wo
         }
     }
     # the ordering assertion: enabled *before* the harness process was started
-    assert adapter.plugins_at_spawn == [[PLUGIN_KEY]]
+    assert tmux.plugins_at_spawn == [[PLUGIN_KEY]]
 
     records = [json.loads(line) for line in log.read_text().splitlines()]
     prepared = next(r for r in records if r["event"] == "workspace.trusted")
@@ -529,13 +525,12 @@ def test_disabled_plugins_leave_the_settings_file_alone(tmp_path, fake_home, wor
       And no plugin entry is written
     Requirement: docs/specs/issue-143/requirements.md#requirement-3
     """
-    adapter = RecordingClaudeAdapter(
-        fake_home / ".claude.json", plugins=PluginConfig(enabled=False)
-    )
-    dispatcher = make_dispatcher(tmp_path, adapter, spawn_workdir=str(workdir))
+    tmux = SnapshotTmux(fake_home / ".claude.json")
+    adapter = AvailableClaudeAdapter(plugins=PluginConfig(enabled=False))
+    dispatcher = make_dispatcher(tmp_path, adapter, tmux, spawn_workdir=str(workdir))
 
     dispatcher.handle(routed_labeled_issue())
-    assert wait_until(lambda: len(adapter.spawns) == 1)
+    assert wait_until(lambda: len(tmux.spawns) == 1)
     dispatcher.stop()
 
     assert trusted_dirs(fake_home / ".claude.json") == [str(workdir)]
