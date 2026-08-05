@@ -115,21 +115,21 @@ and the ttyd web terminal, which would otherwise fight over port 7681.
 ```mermaid
 sequenceDiagram
     participant S as poll stop
-    participant L as RunLock(poll.pid)
+    participant L as RunLock on poll.pid
     participant P as running poller
-    S->>L: acquire()?
-    alt acquired (nobody is running)
+    S->>L: can I acquire it?
+    alt acquired, so nobody is running
         L-->>S: yes
-        S->>L: release() -- removes the stale pidfile
-        S-->>S: "no poller is running; removed a stale pidfile" -> exit 1
+        S->>L: release, which removes the stale pidfile
+        Note over S: nothing is running, stale pidfile removed. exit 1
     else held
-        L-->>S: no, holder = pid
+        L-->>S: no, the holder is pid N
         S->>P: SIGTERM
-        S->>L: wait_until_free(timeout)
+        S->>L: wait_until_free, bounded by the timeout
         alt released
-            S-->>S: "poller (pid N) stopped" -> exit 0
+            Note over S: poll process pid N stopped. exit 0
         else still held
-            S-->>S: "did not exit within Ns" -> exit 1
+            Note over S: did not exit within the timeout. exit 1
         end
     end
 ```
