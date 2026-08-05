@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, List, Optional, Sequence
 
 from .harness.base import UnsupportedRunnerError
-from .sessions import Session, WorkItemRef
+from .sessions import Session, WorkItemRef, tmux_session_name
 
 if TYPE_CHECKING:  # pragma: no cover — type-only
     from .harness.base import HarnessAdapter
@@ -60,7 +60,14 @@ _TERMINATE_POLL_SECONDS = 0.2
 # it: the `loop-<slug>` names `target_for` mints. The registry is a plain file,
 # and terminating reaches OS processes — so a corrupted/hand-edited `tmuxTarget`
 # must not be able to aim a SIGTERM at some other tmux session's panes.
-_LOOP_TARGET_RE = re.compile(r"^loop-[A-Za-z0-9._-]+$")
+#
+# `.` and `:` are excluded (issue-154): they are tmux's own target grammar
+# (`session:window.pane`), so a name carrying them does not merely fail to
+# resolve — tmux re-parses it into a *different kind* of target. `target_for`
+# and `Session.__post_init__` both rewrite them, so nothing that came through
+# the normal path is rejected here; this keeps the shape unreachable for
+# anything that did not.
+_LOOP_TARGET_RE = re.compile(r"^loop-[A-Za-z0-9_-]+$")
 
 # What a tmux session named `loop-<slug>` can be, as far as the-loop is
 # concerned (issue-146). The fourth value is the one this vocabulary exists for:
@@ -203,9 +210,21 @@ class TmuxRunner:
         return shutil.which(self.binary) is not None
 
     def target_for(self, work_item: WorkItemRef) -> str:
-        """tmux session name for a work item — `-` separated (`:`/`.` are tmux
-        target syntax), stored in the registry and never re-derived after."""
-        return f"loop-{work_item.slug}"
+        """tmux session name for a work item, spelled the way tmux will keep it.
+
+        `-` separated, because `:` and `.` are tmux target syntax — but the slug
+        is also the registry *file name* and deliberately keeps its dots
+        (issue-130), so a repo like `octo/foo.js`, or any work item on a
+        non-default host, still arrives here with one. Passing that through was
+        issue-154: tmux created `loop-…foo_js-15`, the-loop recorded and posted
+        `loop-…foo.js-15`, and every later probe addressed a target tmux read as
+        `session.window`. :func:`tmux_session_name` applies tmux's own rule, so
+        the name minted here is the name tmux ends up with — byte for byte, and
+        unchanged for every slug without a `.`/`:`.
+
+        Stored in the registry and never re-derived after.
+        """
+        return tmux_session_name(f"loop-{work_item.slug}")
 
     def _run(self, argv: List[str], timeout: Optional[float] = None) -> TmuxResult:
         if not self.is_available():
@@ -313,10 +332,19 @@ class TmuxRunner:
         identify itself".
 
         The rule the whole method turns on: ``loop-<slug>`` is derived from the
-        work item, so an occupant is always **this work item's own agent**. A live
-        one is therefore never killed — an idle detached agent is indistinguishable
-        from a busy one, and spawning over it would destroy work in progress. Only
-        a definite "every pane is dead" ever licenses ``kill-session``.
+        work item, so an occupant is almost always **this work item's own agent**.
+        A live one is therefore never killed — an idle detached agent is
+        indistinguishable from a busy one, and spawning over it would destroy work
+        in progress. Only a definite "every pane is dead" ever licenses
+        ``kill-session``.
+
+        The one exception, recorded rather than hidden (issue-154): the name is
+        tmux-normalised, so two work items whose slugs differ only in a ``.``/``_``
+        position (``octo/foo.bar#15`` vs ``octo/foo_bar#15``) share it. The
+        aliasing is tmux's — it cannot host both names at once either — and this
+        method's refusal to spawn over a live occupant is exactly what keeps it
+        harmless: the worst case is the *other* work item's event routed into an
+        agent, never an agent destroyed.
         """
         state = self.session_state(target)
         if state == SESSION_ABSENT:

@@ -8,6 +8,7 @@ from .registry import (  # noqa: F401
     SessionRegistry,
     WorkItemRef,
     host_from_url,
+    tmux_session_name,
 )
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "SessionRegistry",
     "WorkItemRef",
     "host_from_url",
+    "tmux_session_name",
 ]
