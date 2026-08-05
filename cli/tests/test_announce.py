@@ -113,6 +113,24 @@ def test_body_is_marked_as_the_loops_own():
     assert "respawn" in body
 
 
+def test_body_names_the_real_tmux_session():
+    # AC4 (issue-154): the attach command posted on the ticket is the visible
+    # symptom of the bug — it named `loop-github-octo-foo.js-15` while tmux had
+    # created `loop-github-octo-foo_js-15`, so the human's copy-paste answered
+    # "can't find pane: js-15".
+    session = Session(
+        work_item=WorkItemRef.parse("github:octo/foo.js#15"),
+        harness="claude",
+        harness_session_id="9f1c-secret-session-id",
+        cwd="/home/operator/work/checkouts/repo",
+        runner="tmux",
+        tmux_target="loop-github-octo-foo.js-15",
+    )
+    body = announcement_body(session)
+    assert "tmux attach -t loop-github-octo-foo_js-15" in body
+    assert "loop-github-octo-foo.js-15" not in body
+
+
 def test_body_explains_the_commands_survive_a_respawn():
     # A respawn reuses the same loop-<slug> name and posts no second comment
     # (owner decision, PR #87), so the body says the commands keep working.

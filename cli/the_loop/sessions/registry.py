@@ -58,6 +58,32 @@ DEFAULT_GITHUB_HOST = "github.com"
 
 _SCHEME_HOST_RE = re.compile(r"[a-zA-Z][a-zA-Z0-9+.-]*://(?:[^@/]+@)?([^/:]+(?::\d+)?)")
 
+# The characters tmux rewrites in a session name, because they are its own target
+# grammar (`session:window.pane`). See `tmux_session_name`.
+_TMUX_TARGET_SYNTAX_RE = re.compile(r"[.:]")
+
+
+def tmux_session_name(name: str) -> str:
+    """``name`` as tmux would spell it — tmux's own ``session_check_name``.
+
+    tmux rewrites ``.`` and ``:`` to ``_`` when it creates a session, because
+    both are its target grammar (``session:window.pane``). Asking for
+    ``loop-github-octo-foo.js-15`` therefore *creates* ``loop-…foo_js-15``, and
+    handing the dotted spelling back is worse than a miss: tmux re-parses it into
+    a different kind of target (``has-session -t loop-a.b-15`` answers ``can't
+    find pane: b-15``). So the-loop never holds the pre-rewrite spelling — it
+    applies tmux's rule at the two points a name enters: where one is minted
+    (:meth:`the_loop.runner.TmuxRunner.target_for`) and where one is admitted
+    from the registry (:meth:`Session.__post_init__`), which is what makes a
+    record written before issue-154 address the session tmux actually created.
+
+    Pure, total and idempotent. Note the rewrite is *not* injective — work items
+    whose slugs differ only in a ``.``/``_`` position share one name — but neither
+    is tmux's own namespace, which cannot host both at once either
+    (docs/specs/issue-154/bugfix.md § Out of scope).
+    """
+    return _TMUX_TARGET_SYNTAX_RE.sub("_", name)
+
 
 def host_from_url(url: str, default: str = DEFAULT_GITHUB_HOST) -> str:
     """The host in an ``html_url``/``clone_url``, or ``default`` when there is none.
@@ -225,6 +251,15 @@ class Session:
     runner: str = "process"  # process | tmux (issue-32)
     tmux_target: str = ""  # tmux session name when runner == "tmux"
     recent_deliveries: List[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        # `tmuxTarget` is the name **tmux uses**, never the one the-loop asked
+        # for. Normalising here rather than only where names are minted is what
+        # makes a record written before issue-154 — holding the pre-rewrite
+        # spelling of a session tmux had already renamed — address the real
+        # session on the next read, with no migration and nothing to rename.
+        if self.tmux_target:
+            self.tmux_target = tmux_session_name(self.tmux_target)
 
     def to_dict(self) -> dict:
         item = self.work_item

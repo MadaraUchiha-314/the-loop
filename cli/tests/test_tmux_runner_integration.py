@@ -51,6 +51,14 @@ AUTO_LABEL = "the-loop: auto-execute"
 # $STUB_TMUX_SLOW_SECONDS before answering — a tmux server too busy to reply,
 # which is how the-loop's probe times out (issue-146) without a test waiting out
 # the real ten seconds.
+#
+# It also **renames like tmux** (issue-154): `session_check_name()` rewrites `.`
+# and `:` to `_` on creation, so `new-session -s loop-a.b-15` creates
+# `loop-a_b-15` — while a *target* carrying either character is re-parsed as
+# `session:window.pane` and answers `can't find pane: …` rather than resolving.
+# Without this the stub happily hosted a name real tmux never would, which is why
+# a defect of this shape could ship: verified against tmux 3.4 while writing
+# docs/specs/issue-154/bugfix.md.
 STUB_TMUX = """#!/usr/bin/env python3
 import json, os, sys, time
 argv = sys.argv[1:]
@@ -68,11 +76,17 @@ def named(call, flag):
     return call[call.index(flag) + 1] if flag in call else ""
 
 
+def check(name):  # tmux's session_check_name(): '.' and ':' become '_'
+    return name.replace(".", "_").replace(":", "_")
+
+
 def existing(calls):  # reads `fail`, assigned below before any call
-    names = set(n for n in os.environ.get("STUB_TMUX_EXISTING", "").split(",") if n)
+    names = set(
+        check(n) for n in os.environ.get("STUB_TMUX_EXISTING", "").split(",") if n
+    )
     for call in calls:
         if call[0] == "new-session":
-            names.add(named(call, "-s"))
+            names.add(check(named(call, "-s")))
         elif call[0] == "kill-session" and "kill-session" not in fail:
             names.discard(named(call, "-t"))
     return names
@@ -83,6 +97,12 @@ slow = set(v for v in os.environ.get("STUB_TMUX_SLOW", "").split(",") if v)
 if argv and argv[0] in slow:
     time.sleep(float(os.environ.get("STUB_TMUX_SLOW_SECONDS", "0.5")))
 past = history()[:-1]  # state BEFORE this call
+target = named(argv, "-t")
+if target and ("." in target or ":" in target):
+    # tmux's target grammar, not a session name: `-t loop-a.b-15` is a *pane*
+    # lookup inside a session called `loop-a`. Never a match, never a rename.
+    sys.stderr.write("can't find pane: " + target.split(".")[-1] + "\\n")
+    sys.exit(1)
 if argv and argv[0] == "list-panes":
     dead = bool(os.environ.get("STUB_TMUX_PANE_DEAD"))
     if os.environ.get("STUB_TMUX_PANE_DEAD_ONCE"):
@@ -95,13 +115,18 @@ if argv and argv[0] == "list-panes":
     print(pid + " " + flag if "pane_pid" in argv[-1] else flag)
 if argv and argv[0] == "has-session" and named(argv, "-t") not in existing(past):
     sys.exit(1)
-if argv and argv[0] == "new-session" and named(argv, "-s") in existing(past):
-    sys.stderr.write("duplicate session: " + named(argv, "-s") + "\\n")
+if argv and argv[0] == "new-session" and check(named(argv, "-s")) in existing(past):
+    sys.stderr.write("duplicate session: " + check(named(argv, "-s")) + "\\n")
     sys.exit(1)
 sys.exit(1 if argv and argv[0] in fail else 0)
 """
 
 TARGET = "loop-github-octo-repo-15"
+# The issue-154 shape: a repo name with a dot in it. tmux rewrites the dot on
+# creation, so the target is the underscore spelling — which is exactly what
+# the-loop must record, announce and address.
+DOTTED_REF = "github:octo/foo.js#15"
+DOTTED_TARGET = "loop-github-octo-foo_js-15"
 
 
 class RecordingAnnouncer:
@@ -200,13 +225,18 @@ def pipeline(pipeline_factory):
     return pipeline_factory()
 
 
-def issue_payload(action="labeled", labels=(AUTO_LABEL,)):
+def issue_payload(action="labeled", labels=(AUTO_LABEL,), repo="octo/repo"):
     return {
         "action": action,
-        "repository": {"full_name": "octo/repo"},
+        "repository": {"full_name": repo},
         "label": {"name": AUTO_LABEL} if action == "labeled" else {},
         "issue": {"number": 15, "labels": [{"name": name} for name in labels]},
     }
+
+
+def dotted_issue_payload(action="labeled"):
+    """A work item whose slug carries a dot — tmux rewrites it (issue-154)."""
+    return issue_payload(action=action, repo="octo/foo.js")
 
 
 def test_labeled_issue_spawns_tmux_hosted_interactive_session(pipeline):
@@ -495,6 +525,42 @@ def test_spawn_announces_the_session_on_the_work_item(pipeline_factory):
     assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
     assert wait_until(lambda: announcer.calls)
     assert announcer.calls == [(REF, "loop-github-octo-repo-15")]
+
+
+def test_a_dotted_repo_name_gets_a_session_it_can_attach_to(pipeline_factory):
+    """
+    Feature: tmux-hosted interactive sessions
+    Scenario: a work item whose repo name contains a dot gets a session it can attach to
+      Given routing runs with runner=tmux against octo/foo.js#15
+      When a labeled issues event spawns a tmux-hosted session
+      Then the name tmux created is the name the registry records and announces
+      And a follow-up comment is pasted into that session rather than respawning it
+    Requirement: docs/specs/issue-154/bugfix.md#R1 #R2
+    """
+    announcer = RecordingAnnouncer()
+    deliver, registry, calls = pipeline_factory(announcer=announcer)
+    deliver("issues", dotted_issue_payload(), "d-dot-1")
+    assert wait_until(lambda: registry.find_by_work_item(DOTTED_REF) is not None)
+    assert wait_until(lambda: announcer.calls)
+
+    # The stub renames like tmux, so a name it kept verbatim is the proof the
+    # fix holds: before issue-154 the-loop asked for `…foo.js-15` and tmux made
+    # `…foo_js-15`.
+    (spawn,) = [c for c in calls() if c[0] == "new-session"]
+    assert spawn[spawn.index("-s") + 1] == DOTTED_TARGET
+    assert registry.find_by_work_item(DOTTED_REF).tmux_target == DOTTED_TARGET
+    assert announcer.calls == [(DOTTED_REF, DOTTED_TARGET)]
+
+    # …and the session is reachable: the follow-up event pastes into it. With
+    # the dotted name every probe answered `can't find pane: js-15`, so a live
+    # session read as missing and the respawn collided with it.
+    deliver("issue_comment", dotted_issue_payload(action="created"), "d-dot-2")
+    assert wait_until(
+        lambda: "d-dot-2" in registry.find_by_work_item(DOTTED_REF).recent_deliveries
+    )
+    verbs = [c[0] for c in calls()]
+    assert "paste-buffer" in verbs
+    assert verbs.count("new-session") == 1  # no respawn
 
 
 def test_respawn_does_not_re_announce(pipeline_factory, monkeypatch):

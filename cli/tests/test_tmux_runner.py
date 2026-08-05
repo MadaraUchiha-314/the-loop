@@ -24,10 +24,15 @@ from the_loop.runner import (
     stop_web_terminal,
     web_terminal_argv,
 )
-from the_loop.sessions import Session, WorkItemRef
+from the_loop.sessions import Session, WorkItemRef, tmux_session_name
 from the_loop.webhook.dispatcher import RoutingConfig, TmuxConfig
 
 REF = "github:octo/repo#15"
+# A work item whose slug carries a dot — a repo with one in its name (the same
+# shape a GitHub Enterprise host produces). tmux rewrites that dot, which is
+# issue-154.
+DOTTED_REF = "github:octo/foo.js#15"
+DOTTED_TARGET = "loop-github-octo-foo_js-15"
 
 
 def make_session(**overrides) -> Session:
@@ -116,6 +121,31 @@ class TestSessionRunnerFields:
         assert restored.runner == "tmux"
         assert restored.tmux_target == "loop-github-octo-repo-15"
 
+    def test_normalises_a_legacy_tmux_target(self):
+        # AC3 (issue-154): a record written before the fix holds the spelling
+        # the-loop *asked* for; tmux had already renamed the session. Reading it
+        # back must address the session that exists — no migration, nothing to
+        # rename.
+        data = make_session(runner="tmux").to_dict()
+        data["tmuxTarget"] = "loop-github-octo-foo.js-15"
+        assert Session.from_dict(data).tmux_target == DOTTED_TARGET
+        # …and a direct construction is normalised too, so the invariant is
+        # total rather than path-dependent.
+        assert (
+            Session(
+                work_item=WorkItemRef.parse(DOTTED_REF),
+                harness="claude",
+                harness_session_id="abc-123",
+                cwd="/work",
+                runner="tmux",
+                tmux_target="loop-github-octo-foo.js-15",
+            ).tmux_target
+            == DOTTED_TARGET
+        )
+
+    def test_a_process_session_keeps_its_empty_target(self):
+        assert Session.from_dict(make_session().to_dict()).tmux_target == ""
+
     def test_reads_pre_issue32_registry_files(self):
         data = make_session().to_dict()
         del (
@@ -161,10 +191,58 @@ class TestInteractiveResumeArgv:
             CursorAgentAdapter().interactive_resume_argv("p", "id")
 
 
+class TestTmuxSessionName:
+    """tmux's own ``session_check_name`` rewrite, mirrored (issue-154)."""
+
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [
+            ("loop-github-octo-repo-15", "loop-github-octo-repo-15"),  # untouched
+            ("loop-github-octo-foo.js-15", "loop-github-octo-foo_js-15"),
+            (
+                "loop-github-ghe.corp.example-octo-repo-15",
+                "loop-github-ghe_corp_example-octo-repo-15",
+            ),
+            ("loop-a:b", "loop-a_b"),
+            ("", ""),
+        ],
+    )
+    def test_rewrites_only_tmux_target_syntax(self, raw, expected):
+        assert tmux_session_name(raw) == expected
+
+    def test_is_idempotent(self):
+        once = tmux_session_name("loop-a.b:c-15")
+        assert tmux_session_name(once) == once
+
+
 class TestTmuxRunner:
     def test_target_is_slug_derived(self):
         target = TmuxRunner().target_for(WorkItemRef.parse(REF))
         assert target == "loop-github-octo-repo-15"
+
+    def test_target_for_unchanged_for_plain_slugs(self):
+        # AC2: no existing session, registry record or already-posted attach
+        # command is invalidated by the issue-154 fix.
+        for ref in ("github:octo/repo#15", "github:Octo-Org/the_loop#7"):
+            item = WorkItemRef.parse(ref)
+            assert TmuxRunner().target_for(item) == f"loop-{item.slug}"
+
+    def test_target_for_strips_tmux_target_syntax(self):
+        # AC1: the slug keeps its dots (it is also the registry file name), so
+        # the rewrite has to happen here — otherwise tmux creates a different
+        # session than the one the-loop records and posts.
+        item = WorkItemRef.parse(DOTTED_REF)
+        assert "." in item.slug  # the precondition this bug needs
+        assert TmuxRunner().target_for(item) == DOTTED_TARGET
+
+    def test_target_for_aliases_dot_and_underscore(self):
+        # Known and intentional (issue-154 § Out of scope): tmux itself cannot
+        # host both names at once. Pinned so a future change that makes the
+        # alias *destructive* fails here rather than shipping.
+        runner = TmuxRunner()
+        assert runner.target_for(WorkItemRef.parse("github:octo/foo.bar#15")) == (
+            runner.target_for(WorkItemRef.parse("github:octo/foo_bar#15"))
+        )
 
     def test_spawn_builds_detached_session_with_interactive_argv(self, monkeypatch):
         fake = FakeRun(per_verb={"has-session": 1})  # no stale session
@@ -242,6 +320,25 @@ class TestTmuxRunner:
         assert "-p" in paste
         assert paste[paste.index("-t") + 1] == "loop-github-octo-repo-15"
         assert fake.calls[4][-1] == "Enter"
+
+    def test_deliver_and_kill_address_the_normalised_target(self, monkeypatch):
+        # AC5: every argv built from a legacy dotted record names the session
+        # tmux created. Before issue-154 the probe here answered "can't find
+        # pane: js-15" and a live session was reported `session_missing`.
+        fake = FakeRun()
+        monkeypatch.setattr(runner_mod.subprocess, "run", fake)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        session = Session.from_dict(
+            {
+                **make_session(runner="tmux").to_dict(),
+                "workItem": {"ref": DOTTED_REF},
+                "tmuxTarget": "loop-github-octo-foo.js-15",
+            }
+        )
+        assert TmuxRunner().deliver(session, "event prompt").ok
+        assert TmuxRunner().kill(session).ok
+        targeted = [call[call.index("-t") + 1] for call in fake.calls if "-t" in call]
+        assert targeted and all(name == DOTTED_TARGET for name in targeted)
 
     def test_deliver_fails_when_session_is_gone(self, monkeypatch):
         fake = FakeRun(returncode=1)  # has-session exits non-zero
@@ -846,10 +943,25 @@ class TestTerminateHarness:
         assert runner.terminate_harness(make_session(), killer=server.killer).ok
         assert server.calls == []
 
-    @pytest.mark.parametrize("target", ["my-work", "loop", "loop-x;rm", "0"])
+    @pytest.mark.parametrize(
+        "target",
+        [
+            "my-work",
+            "loop",
+            "loop-x;rm",
+            "0",
+            # tmux target grammar (`session:window.pane`), rejected since
+            # issue-154: `loop-other.session` is not a miss, it is a *pane*
+            # lookup inside a session called `loop-other`.
+            "loop-other.session",
+            "loop-other:0.1",
+        ],
+    )
     def test_only_the_loops_own_sessions_are_ever_signalled(self, monkeypatch, target):
         # A corrupted/hand-edited registry must not be able to aim a SIGTERM at
-        # some other tmux session's processes.
+        # some other tmux session's processes. `make_session` assigns the field
+        # after construction, deliberately bypassing the normalisation, so the
+        # guard itself is what is under test here.
         server = FakeTmuxServer()
         runner = self._runner(monkeypatch, server)
         result = runner.terminate_harness(

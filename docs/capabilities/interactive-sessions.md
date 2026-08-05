@@ -17,6 +17,20 @@ the same conversation.
   session id** (`claude --session-id <uuid>`), recorded in the registry as
   `runner`/`tmuxTarget`; cursor-agent has no pre-assignable id, so tmux-mode spawns for
   it fail with a clear error.
+- WHEN a tmux session name is derived for a work item THEN it SHALL be spelled the way
+  **tmux** spells it: `.` and `:` are rewritten to `_`, because they are tmux's own
+  target grammar (`session:window.pane`) and tmux rewrites them itself on creation
+  (issue-154). The slug keeps its dots — it is also the registry *file* name — so a repo
+  like `octo/foo.js`, or any work item on a non-default host, is affected; before this
+  the-loop recorded, logged and **posted on the ticket** a name tmux had already renamed,
+  so the published `tmux attach -t …` command answered `can't find pane: …`, every
+  liveness probe read the live session as absent, and the respawn collided with it. A
+  `tmuxTarget` read back from the registry is normalised the same way, so a record
+  written before the fix addresses the session that exists — no migration, and nothing is
+  renamed in tmux. A slug without `.`/`:` is unchanged. The rewrite is not injective:
+  two work items whose slugs differ only in a `.`/`_` position share one name, which is
+  tmux's own limitation (it cannot host both at once either) and is bounded by the rule
+  below that a live occupant is never spawned over.
 - WHEN an event concerns a **PR that is linked to a GitHub issue** THEN it SHALL be
   delivered into the tmux session of that **issue** (one tmux session per work item, not
   one per GitHub object), and a from-scratch spawn SHALL be keyed to the issue's slug —
@@ -45,8 +59,9 @@ the same conversation.
   sent live sessions into the respawn path, where they collided with themselves.
 - WHEN a spawn or respawn would create `loop-<slug>` AND a session already holds that
   name THEN the-loop SHALL decide by what holds it, never by killing blindly
-  (issue-146). `loop-<slug>` is derived from the work item, so an occupant is always
-  that work item's own agent: a **live** occupant is therefore NEVER killed or spawned
+  (issue-146). `loop-<slug>` is derived from the work item, so an occupant is almost
+  always that work item's own agent — the exception being the `.`/`_` alias above, which
+  this rule is what keeps harmless: a **live** occupant is NEVER killed or spawned
   over — on the respawn path the pending event is delivered into it and the averted
   respawn recorded as `session.respawn_averted` (the registry already points there, so
   nothing is re-registered); on the first-spawn path, where there is no registered
@@ -211,6 +226,7 @@ the same conversation.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-154 | Fixed the tmux session name the-loop recorded and posted not being the one tmux gave the session: a slug's `.`/`:` are now rewritten to `_` (tmux's own `session_check_name`) where the name is minted and where a registry record is loaded, so the announced `tmux attach -t …` command resolves, probes stop reading a live session as absent, and `terminate_harness`'s guard rejects the target-grammar shape outright | [spec](../specs/issue-154/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/154) |
 | issue-146 | Fixed a respawn colliding with the session it was replacing: an unanswered tmux probe is no longer read as "session gone", a **live** `loop-<slug>` occupant is delivered into rather than killed or spawned over, a `duplicate session` refusal is resolved once instead of recurring, and an unclearable dead occupant **skips** the event (`session-occupied`) instead of releasing it to fail identically forever | [spec](../specs/issue-146/), [decision-055](../decisions/decision-055.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/146) |
 | issue-143 | The pre-spawn step now also enables the-loop's own plugin (`extraKnownMarketplaces` + `enabledPlugins` in the harness's user settings, `routing.harnessPlugins`), so a spawned session has the skill, commands and hooks the work-on prompt assumes instead of running the ticket as a plain agent; existing values are never overwritten | [spec](../specs/issue-143/), [decision-054](../decisions/decision-054.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/143) |
 | issue-136 | Fixed the pre-spawn trust write missing the checkout it was for: the trust key has a second reader that does **not** walk ancestors, so the default `scope: workspace-root` left every checkout of a repo shipping `.claude/settings.json` grants on the dialog. Both keys are now written on the exact spawn directory under every scope; `scope` only widens | [spec](../specs/issue-136/), [decision-052](../decisions/decision-052.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/136) |
