@@ -25,7 +25,7 @@ status: in-progress
 
 | PR | Branch | Status |
 |----|--------|--------|
-| (opened at T15) | `claude/github-issue-156-w0x1bz` | |
+| [#158](https://github.com/MadaraUchiha-314/the-loop/pull/158) | `claude/github-issue-156-w0x1bz` | open — awaiting tier-3 human approval |
 
 ## Progress entries
 
