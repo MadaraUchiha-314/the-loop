@@ -18,9 +18,9 @@ overrides: {}
 > **Program note:** [issue #161](https://github.com/MadaraUchiha-314/the-loop/issues/161)
 > is an architecture **program**, not a single change: it re-layers ~18.5k lines of CLI
 > code and adds two new interfaces (HTTP API + MCP) and a UI. This spec defines the
-> requirements for the whole program; `tasks.md` (Phase 3) is expected to decompose
-> delivery into multiple sub-issues/PRs orchestrated as a DAG
-> (`reference/workflow.md` § DAG orchestration across work items).
+> requirements for the whole program. Delivery is a **single PR** (owner decision on
+> the phase-1 review, superseding the drafted sub-issue decomposition): `tasks.md`
+> (Phase 3) still structures the work as a DAG, executed within this one PR.
 
 ## Introduction
 
@@ -82,15 +82,20 @@ behaviour it has today, so that the re-architecture never regresses my workflows
    `critic *`, `install`, `upgrade`, `migrate-config`, `--version`) THEN the system
    SHALL provide the same behaviour, flags, exit codes and output formats as before
    the re-architecture.
-2. WHEN the CLI can serve a command locally THEN it SHALL NOT require the API
-   service to be running: local, in-process invocation of the core SHALL remain a
-   supported mode, so a plain `pip install` + one command keeps working with no
-   daemon.
-3. IF the CLI is configured/invoked to target a running API service THEN it SHALL
-   perform the operation through the service against the service's state, and the
-   outcome SHALL be equivalent to the in-process path.
-4. WHEN existing tests cover current behaviour THEN they SHALL keep passing
-   (mechanical relocations aside), and the config resolution order
+2. WHEN any CLI command invokes a core capability THEN it SHALL perform the
+   operation **through the API service** — the service is the default and ONLY
+   execution mode (owner decision,
+   [PR #162 review](https://github.com/MadaraUchiha-314/the-loop/pull/162#discussion_r3718672701));
+   the CLI SHALL carry no in-process fallback path. `design.md` SHALL define how
+   the CLI keeps today's one-command UX under this rule (service discovery, and
+   auto-managing a local service where needed), because R2.1 (same behaviour,
+   flags, exit codes) still applies.
+3. IF no service is reachable and one cannot be made available THEN the CLI SHALL
+   fail with a clear error naming the service lifecycle commands (R4) — never
+   silently degrade to executing core logic in-process.
+4. WHEN the re-architecture lands THEN existing test **coverage** SHALL be
+   preserved — tests are adapted to exercise the service path (or the core layer
+   directly) rather than deleted — and the config resolution order
    (`--config` / `$THE_LOOP_CLI_CONFIG` / repo-relative / home) SHALL be unchanged.
 
 ### Requirement 3 — durable API layer
@@ -145,7 +150,8 @@ directly.
 
 1. WHEN the core APIs exist THEN the system SHALL expose them through an MCP server
    as tools, reusing the core/API layer — MCP SHALL be an interface adapter, not a
-   reimplementation.
+   reimplementation — and the MCP transport SHALL be **HTTP only, no stdio** (owner
+   decision, [PR #162 review](https://github.com/MadaraUchiha-314/the-loop/pull/162#discussion_r3718678832)).
 2. WHEN the MCP surface is defined THEN each tool SHALL map to a core capability
    with the same authorization and the same event-log observability as the HTTP API.
 3. IF a capability is intentionally not exposed over MCP (e.g. destructive resets)
@@ -175,6 +181,10 @@ managing work items is easy without shell access.
    UI/UX design is iterated as self-contained HTML prototypes under
    `docs/specs/issue-161/design/` until locked with the designer
    (`design.uiArtifacts`, `reference/design-artifacts.md`).
+6. WHEN the UI is implemented THEN all frontend assets SHALL live under a top-level
+   `ui/` folder, SOTA tooling (e.g. Vite) MAY be used, and all frontend code SHALL
+   be **TypeScript — no exceptions** (owner decision,
+   [PR #162 review](https://github.com/MadaraUchiha-314/the-loop/pull/162#discussion_r3718677484)).
 
 ## Non-functional requirements
 
@@ -182,7 +192,9 @@ managing work items is easy without shell access.
   runtime dependency (`pyyaml`; `slack-sdk` as an extra). The API service and MCP
   server SHALL NOT change the base install's dependency footprint: anything beyond
   stdlib SHALL be an optional extra (as `slack` already is), and every new dependency
-  SHALL be justified in `design.md` (`reference/minimalism.md`).
+  SHALL be justified in `design.md` (`reference/minimalism.md`). The UI's frontend
+  toolchain (Vite/TypeScript, owner-sanctioned) is scoped to `ui/` and does not
+  affect the Python package's footprint.
 - **Observability.** dev == runtime logging; every API/MCP operation lands in the
   structured event log and is queryable via `the-loop events`.
 - **Testing.** Integration tests carry Gherkin docstrings with `Requirement:` links;
@@ -255,14 +267,26 @@ managing work items is easy without shell access.
    a framework (e.g. FastAPI) is acceptable; the design phase picks one on its
    merits. The base install keeps its footprint — the framework lands behind an
    optional extra.
-2. Should the CLI *prefer* the service when one is running (auto-discovery), or only
-   target it when explicitly told to?
-3. UI stack: how much UI is buildable as dependency-free static assets vs. a
-   frontend toolchain (which would be the repo's first `package.json`)?
-4. MCP transport: stdio server spawned by the host (wrapping core in-process) vs. an
-   adapter over the running HTTP service — or both?
-5. Delivery decomposition: which slices become sub-issues (suggested: core
-   extraction, API service, CLI-as-client, MCP, UI scaffold, UI features)?
+2. ~~Should the CLI *prefer* the service when one is running (auto-discovery), or only
+   target it when explicitly told to?~~ **Answered** (owner,
+   [PR #162 review](https://github.com/MadaraUchiha-314/the-loop/pull/162#discussion_r3718672701)):
+   the CLI only uses the service — the default and ONLY mode. Folded into R2.2/R2.3.
+3. ~~UI stack: how much UI is buildable as dependency-free static assets vs. a
+   frontend toolchain (which would be the repo's first `package.json`)?~~ **Answered**
+   (owner, [PR #162 review](https://github.com/MadaraUchiha-314/the-loop/pull/162#discussion_r3718677484)):
+   SOTA tooling (e.g. Vite) is fine; all frontend assets under `ui/`; all frontend
+   code is TypeScript, no exceptions. Folded into R6.6.
+4. ~~MCP transport: stdio server spawned by the host (wrapping core in-process) vs. an
+   adapter over the running HTTP service — or both?~~ **Answered** (owner,
+   [PR #162 review](https://github.com/MadaraUchiha-314/the-loop/pull/162#discussion_r3718678832)):
+   HTTP only, no stdio. Folded into R5.1.
+5. ~~Delivery decomposition: which slices become sub-issues (suggested: core
+   extraction, API service, CLI-as-client, MCP, UI scaffold, UI features)?~~
+   **Answered** (owner,
+   [PR #162 review](https://github.com/MadaraUchiha-314/the-loop/pull/162#discussion_r3718684765)):
+   the breakdown shape is fine, but everything is delivered **in this single PR** —
+   no sub-issue decomposition. `tasks.md` still structures the work as a DAG; the
+   DAG just executes within one PR.
 
 ## Review comments
 
@@ -275,3 +299,20 @@ managing work items is easy without shell access.
   resolves Q1: the API layer may use a framework, chosen in the design phase; the
   non-functional dependency-budget requirement (optional extra, base install
   unchanged) still applies.
+- **2026-08-05 · @MadaraUchiha-314 ·
+  [PR #162 review comment](https://github.com/MadaraUchiha-314/the-loop/pull/162#discussion_r3718672701)**
+  (on Q2): "Yes. CLI only uses the service :) it's the default and ONLY mode." —
+  changes R2: no in-process execution path; R2.2/R2.3 rewritten accordingly.
+- **2026-08-05 · @MadaraUchiha-314 ·
+  [PR #162 review comment](https://github.com/MadaraUchiha-314/the-loop/pull/162#discussion_r3718677484)**
+  (on Q3): "Feel free to use SOTA tooling like vite etc for this. Create a ui/
+  folder where all the frontend assets will sit. All frontend code is TS - no
+  exceptions." — adds R6.6.
+- **2026-08-05 · @MadaraUchiha-314 ·
+  [PR #162 review comment](https://github.com/MadaraUchiha-314/the-loop/pull/162#discussion_r3718678832)**
+  (on Q4): "HTTP only. No stdio." — folded into R5.1: the MCP transport is HTTP.
+- **2026-08-05 · @MadaraUchiha-314 ·
+  [PR #162 review comment](https://github.com/MadaraUchiha-314/the-loop/pull/162#discussion_r3718684765)**
+  (on Q5): "task breakdown looks ok. but i need all this done in a single PR." —
+  delivery is this single PR; the program note updated, and the loop continues on
+  PR #162 through design → tasks → implementation.
