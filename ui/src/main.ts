@@ -8,6 +8,7 @@ import {
   api,
   apiBase,
   getToken,
+  setApiBase,
   setToken,
   type AttentionItem,
   type SessionInfo,
@@ -23,10 +24,16 @@ type View =
 
 let view: View = { name: "items" };
 
+// HTML-escapes for use in both text and double/single-quoted attribute
+// contexts: the ampersand/angle-bracket set plus both quote characters, so a
+// value interpolated into `attr="${esc(v)}"` cannot break out of the attribute.
 function esc(text: string): string {
-  const div = document.createElement("div");
-  div.textContent = text;
-  return div.innerHTML;
+  return String(text)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 function chip(text: string, kind = ""): string {
@@ -62,7 +69,14 @@ function shell(content: string): void {
   });
   const baseInput = document.getElementById("api-base") as HTMLInputElement;
   baseInput.addEventListener("change", () => {
-    localStorage.setItem("the-loop:apiBase", baseInput.value.trim());
+    if (!setApiBase(baseInput.value.trim())) {
+      window.alert(
+        "API base refused: the token is only sent to a loopback address or " +
+          "the origin pinned at build time (VITE_API_BASE).",
+      );
+      baseInput.value = apiBase();
+      return;
+    }
     void render();
   });
 }

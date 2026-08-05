@@ -56,20 +56,69 @@ export interface EventRecord {
 const API_BASE_KEY = "the-loop:apiBase";
 const TOKEN_KEY = "the-loop:token";
 
-/** ?api= wins and is remembered; then localStorage; then the build-time
- * default; then the service's default local address. One static bundle
- * serves any deployment (R6.1). */
+const DEFAULT_API_BASE = "http://127.0.0.1:4114";
+
+/** Origins the bearer token may ever be sent to: loopback, plus the build-time
+ * VITE_API_BASE when the deployment pins one. A `?api=` override or a stored
+ * value is honored ONLY if it resolves to one of these — otherwise it is
+ * ignored and the default is used.
+ *
+ * Why: the token is the full control-plane credential (the service can spawn
+ * harness sessions). Without this gate, a single crafted same-origin link like
+ * `…/?api=https://evil.example` would persist an attacker origin and make every
+ * request attach `Authorization: Bearer <token>` to it — a one-click token
+ * exfiltration (issue-161 security review). An allowlist keeps the token from
+ * ever leaving a trusted origin. */
+function allowedOrigin(candidate: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(candidate);
+  } catch {
+    return false;
+  }
+  if (url.hostname === "127.0.0.1" || url.hostname === "localhost" || url.hostname === "[::1]") {
+    return true;
+  }
+  const pinned = import.meta.env.VITE_API_BASE as string | undefined;
+  if (pinned) {
+    try {
+      return new URL(pinned).origin === url.origin;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+/** ?api= wins and is remembered, then localStorage, then the build-time
+ * default, then loopback — but only an allowlisted origin (loopback or the
+ * pinned VITE_API_BASE) is ever accepted, so the token cannot be sent to an
+ * attacker-chosen host. One static bundle still serves any deployment (R6.1):
+ * pin its own origin at build time via VITE_API_BASE. */
 export function apiBase(): string {
   const fromQuery = new URLSearchParams(window.location.search).get("api");
-  if (fromQuery) {
+  if (fromQuery && allowedOrigin(fromQuery)) {
     localStorage.setItem(API_BASE_KEY, fromQuery);
     return fromQuery;
   }
-  return (
-    localStorage.getItem(API_BASE_KEY) ??
-    (import.meta.env.VITE_API_BASE as string | undefined) ??
-    "http://127.0.0.1:4114"
-  );
+  const stored = localStorage.getItem(API_BASE_KEY);
+  if (stored && allowedOrigin(stored)) {
+    return stored;
+  }
+  const pinned = import.meta.env.VITE_API_BASE as string | undefined;
+  return pinned ?? DEFAULT_API_BASE;
+}
+
+/** Persist an operator-entered API base, but only if it is an allowlisted
+ * origin (loopback or the pinned VITE_API_BASE). Returns whether it was
+ * accepted, so the UI can tell the operator when a value was refused rather
+ * than silently ignoring it. */
+export function setApiBase(candidate: string): boolean {
+  if (!allowedOrigin(candidate)) {
+    return false;
+  }
+  localStorage.setItem(API_BASE_KEY, candidate);
+  return true;
 }
 
 export function getToken(): string {

@@ -111,7 +111,7 @@ status: in-progress
 | 2 | self (implementation re-read: client/config resolution, error mapping, subprocess spawns) | harness | new finding — `connect()` with no config ignored the operator's CLI config (custom `service.port` unread); fixed with `_resolved()` | commit on PR #162 |
 | 3 | self (security-focused: CORS, token handling, argv spawns, MCP exclusions, audit records) | harness | zero new (remote-token limitation recorded, not a defect) | — |
 | 4 | critic | — | **unavailable** — `reviews.critics` is empty in this repo's config; does not count toward `criticReviewCount` | — |
-| 5 | security (gate) | security-review skill / checklist | see Security review section | — |
+| 5 | security (gate) | security-review skill (adversarial sub-agent) | one HIGH (UI token exfil via `?api=`) — **fixed**; `esc()` quote-hardening applied | see Security review section |
 
 ## Security review (gate)
 
@@ -119,9 +119,24 @@ status: in-progress
 > threat model itself is in `requirements.md` § Security considerations. Tier 4 ⇒ a
 > named human security sign-off will be required on the implementation.
 
-- **Mechanism:** _(pending — implementation phase)_
-- **Outcome:** _(pending)_
-- **Human sign-off:** _(required at tier 4; pending)_
+- **Mechanism:** built-in `security-review` skill (`security.review.mechanism:
+  auto`), run against the branch diff by an adversarial sub-agent.
+- **Outcome:** one HIGH finding, **fixed**. The UI's `apiBase()` trusted and
+  persisted the `?api=` query param, then attached the bearer token to that
+  origin — a one-click token-exfiltration via a poisoned same-origin link
+  (`…/?api=https://evil`). Fixed in `ui/src/api.ts`: the token is now sent only
+  to an **allowlisted origin** (loopback, or the build-time `VITE_API_BASE`);
+  `?api=`, stored, and operator-entered bases are all gated through
+  `allowedOrigin()`/`setApiBase()`, and a refused base tells the operator
+  instead of silently leaking. Also hardened `esc()` to escape quotes (the
+  sub-threshold attribute-context note) so no interpolated value can break out
+  of an HTML attribute. Everything else cleared: all `/api/v1` routes except
+  the intentional `/health` carry the auth dependency; `/mcp` authenticates
+  before parsing; CORS is pinned with credentials off and the token is
+  header-not-cookie; `token_matches` is constant-time and fails closed; the
+  subprocess argvs are fixed lists, no shell, authenticated callers only.
+- **Human sign-off:** required at tier 4 (`security.review.humanSignOffMinTier:
+  4`) — **pending** the owner's named sign-off on PR #162.
 
 ## Final validation evidence
 
