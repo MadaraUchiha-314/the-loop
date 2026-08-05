@@ -1,3 +1,9 @@
+## v7.1.0 (2026-08-05)
+
+### Feat
+
+- **issue-152**: `the-loop install` / `upgrade` — the CLI and the Claude Code plugin, at user or project scope (#153)
+
 ## v7.0.0 (2026-08-05)
 
 ### BREAKING CHANGE
