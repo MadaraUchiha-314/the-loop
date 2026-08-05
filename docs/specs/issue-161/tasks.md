@@ -37,7 +37,7 @@ overrides: {}
   - _Requirements:_ R1.1, R6.3
   - _Test:_ `cli/tests/test_core_sessions.py`, `test_core_daemons.py`,
     `test_core_attention.py`
-- [x] 4. OpenAPI contract — `specs/openapi/the-loop.v1.yaml`
+- [x] 4. OpenAPI contract — `docs/api-specs/openapi/the-loop.v1.yaml`
   - Author the v1 contract for every endpoint in design §HTTP API.
   - _Depends on:_ none
   - _Requirements:_ R3.2

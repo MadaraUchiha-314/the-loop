@@ -50,7 +50,7 @@ Reports `not running`, or `running (pid …, http://…, healthy|unresponsive)`.
 ## The API surface
 
 The contract is authored in
-[`specs/openapi/the-loop.v1.yaml`](https://github.com/MadaraUchiha-314/the-loop/blob/main/specs/openapi/the-loop.v1.yaml)
+[`docs/api-specs/openapi/the-loop.v1.yaml`](https://github.com/MadaraUchiha-314/the-loop/blob/main/docs/api-specs/openapi/the-loop.v1.yaml)
 — a parity test fails the build when the served schema drifts from it. Interactive
 docs are served at `/api/docs`. Work items, graph check/advance/complete/force,
 sessions and their control verbs, the event log, daemon lifecycle, needs-attention,

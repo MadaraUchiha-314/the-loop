@@ -1,6 +1,6 @@
-"""The OpenAPI contract in specs/openapi/ is the source of truth (issue-161, T6).
+"""The OpenAPI contract in docs/api-specs/openapi/ is the source of truth (issue-161).
 
-`specs/openapi/the-loop.v1.yaml` is the authored contract (R3.2); the app must
+`docs/api-specs/openapi/the-loop.v1.yaml` is the authored contract (R3.2); the app must
 serve exactly it. Comparing paths, methods and operationIds catches surface
 drift (an added/renamed/removed route) without failing on cosmetic schema-title
 churn between FastAPI versions.
@@ -25,7 +25,7 @@ def test_served_schema_matches_the_authored_contract():
     """
     Feature: contract-first control-plane API
       Scenario: the served schema drifts from the authored contract
-        Given the checked-in specs/openapi/the-loop.v1.yaml
+        Given the checked-in docs/api-specs/openapi/the-loop.v1.yaml
         When the app's generated OpenAPI schema is compared to it
         Then every path, method and operationId matches exactly
 
@@ -33,7 +33,8 @@ def test_served_schema_matches_the_authored_contract():
     """
     contract_path = (
         pathlib.Path(__file__).resolve().parents[2]
-        / "specs"
+        / "docs"
+        / "api-specs"
         / "openapi"
         / "the-loop.v1.yaml"
     )

@@ -20,8 +20,11 @@ MCP is HTTP-only, no stdio; and delivery is a single PR.
 1. **Three layers.** A transport-agnostic `the_loop.core` facade (one module per
    capability, delegating to the existing modules) is the single implementation;
    `the_loop.api` (FastAPI) exposes it at `/api/v1` per an authored OpenAPI
-   contract in `specs/openapi/`; the CLI, the MCP endpoint and the UI are thin
-   clients of that surface.
+   contract in this repo's `apiSpecs.rest.dir` (`docs/api-specs/openapi/`, an
+   override of the shipped `specs/openapi` default — owner decision on PR #162);
+   the CLI and the MCP endpoint are thin clients of that surface. *(A UI client
+   was part of this decision as drafted; it was descoped from issue-161 on owner
+   review and deferred to a follow-up work item.)*
 2. **`[service]` extra.** `fastapi`/`uvicorn` are an optional extra; the base
    install keeps exactly `pyyaml`. Hosting a service requires the extra; a base
    install can still be a client of a running one (stdlib `urllib`).

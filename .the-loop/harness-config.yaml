@@ -65,7 +65,14 @@ testing:
   linkRequirements: true
   integrationTestGlobs:
     - cli/tests/test_*_integration.py   # webhook→session routing scenarios (issue-15)
-# apiSpecs: omitted — the-loop ships a CLI + docs, not a REST/GraphQL API.
+apiSpecs:                       # the-loop's own control-plane API (issue-161)
+  rest:
+    # Overrides the shipped default (`specs/openapi`): this repo keeps its API
+    # contract inside the docs tree, and `docs/specs/` already means per-work-item
+    # specs — hence `api-specs` (owner decision, PR #162).
+    dir: docs/api-specs/openapi
+    format: openapi-3.1
+    generateDocs: true
 
 design:
   uiArtifacts:                  # UI/UX (visual) design artifacts — see reference/design-artifacts.md

@@ -19,7 +19,7 @@ and an agent host are thin clients of that surface.
   daemons, attention) SHALL be implemented once there, delegating to the modules
   that already carry the behaviour.
 - The API service SHALL expose the core at `/api/v1` per the **authored OpenAPI
-  contract** (`specs/openapi/the-loop.v1.yaml`); a parity test SHALL fail the build
+  contract** (`docs/api-specs/openapi/the-loop.v1.yaml`); a parity test SHALL fail the build
   when the served schema's paths/methods/operationIds drift from it. Interactive
   docs are served at `/api/docs`, generated, never hand-written.
 - The service SHALL carry **no in-app authentication** — a gateway terminates auth
@@ -53,7 +53,7 @@ and an agent host are thin clients of that surface.
 ## Design
 
 [`docs/specs/issue-161/design.md`](../specs/issue-161/design.md) ·
-[`specs/openapi/the-loop.v1.yaml`](../../specs/openapi/the-loop.v1.yaml) ·
+[`docs/api-specs/openapi/the-loop.v1.yaml`](../api-specs/openapi/the-loop.v1.yaml) ·
 [CLI: service](../cli/commands/service.md) ·
 [config: service options](../config/cli/service-options.md)
 

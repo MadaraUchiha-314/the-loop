@@ -121,6 +121,25 @@ status: in-progress
 - **Next:** owner review of the reduced scope (services + CLI + MCP); tier-4
   named security sign-off still pending.
 
+### 2026-08-05 — API contract relocated under docs/
+
+- **Phase:** needs-review (review feedback)
+- **Owner decision (PR #162 review):** "This should live inside `docs/` folder.
+  since `specs` already exists within `docs`, let's call this `api-specs`."
+- **Did:** moved `specs/openapi/the-loop.v1.yaml` →
+  `docs/api-specs/openapi/the-loop.v1.yaml` and pointed this repo's
+  `apiSpecs.rest.dir` at it (replacing the now-stale "apiSpecs: omitted — the-loop
+  ships a CLI + docs, not a REST/GraphQL API" comment, which this work item made
+  untrue). Updated the parity test, the capability doc, the `service` command page,
+  decision-058 and the issue-161 spec artifacts.
+- **Scoping call:** the **shipped default stays `specs/openapi`** for consuming
+  projects — many have no `docs/` tree, so relocating the default would impose a
+  docs layout on them. `apiSpecs.rest.dir` exists precisely for this per-project
+  choice, so this repo overrides it. Raised on the PR in case the owner wants the
+  default changed too.
+- **Checkpoint/tests:** `make check` — full CI parity, green.
+- **Next:** tier-4 named security sign-off; the T9 remainder decision.
+
 ## Review cycles
 
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
@@ -132,6 +151,7 @@ status: in-progress
 | 5 | security (gate) | security-review skill (adversarial sub-agent) | one HIGH (UI token exfil via `?api=`) — first fixed by origin-pinning, then **resolved at root** by removing in-app auth (decision-059, owner); `esc()` quote-hardening kept | see Security review section |
 | 6 | owner direction (PR #162) | @MadaraUchiha-314 | remove in-app authentication — the gateway owns auth (decision-059); implemented, 1310 tests green | [comment](https://github.com/MadaraUchiha-314/the-loop/pull/162#issuecomment-5194359297) |
 | 7 | owner direction (PR #162) | @MadaraUchiha-314 | remove the UI from this PR — services, CLI and MCP only; R6/R4.2 descoped to a follow-up work item, frontend + CORS removed | PR #162 |
+| 8 | owner review (PR #162) | @MadaraUchiha-314 | move the API contract under `docs/` as `api-specs`; done via a repo-local `apiSpecs.rest.dir` override, shipped default untouched | PR #162 |
 
 ## Security review (gate)
 

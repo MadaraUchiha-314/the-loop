@@ -111,7 +111,8 @@ any client — not just the bundled CLI — can drive the-loop programmatically.
    gateway's responsibility (owner decision); the service binds loopback-only by
    default and refuses a non-loopback bind without explicit exposure config.
 2. WHEN the API contract is authored THEN it SHALL be contract-first: an OpenAPI
-   document under `specs/openapi/` SHALL be the source of truth, and API
+   document under the configured `apiSpecs.rest.dir` SHALL be the source of
+   truth (this repo: `docs/api-specs/openapi/`), and API
    documentation SHALL be generated from it, never hand-written
    (`config.apiSpecs`, `reference/testing.md`).
 3. WHEN the service restarts THEN no accepted operation SHALL be lost: API-visible

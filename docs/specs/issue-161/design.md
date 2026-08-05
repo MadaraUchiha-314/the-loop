@@ -56,7 +56,7 @@ flowchart TD
 | `cli/the_loop/api/` | API | FastAPI `app.py` + one router per capability, `serve.py` (uvicorn entry + exposure guard), `mcp.py` (MCP endpoint). Transport/serialization only — **no in-app auth** (the gateway owns it, owner decision PR #162). |
 | `cli/the_loop/client/` | client | Stdlib (`urllib.request`) HTTP client the CLI commands call; reads the same config. No new base-install dependency. |
 | `cli/the_loop/commands/service_cmd.py` | client | `the-loop service start\|stop\|status`. |
-| `specs/openapi/the-loop.v1.yaml` | contract | The authored OpenAPI source of truth (R3.2); a parity test asserts the served schema matches it. |
+| `docs/api-specs/openapi/the-loop.v1.yaml` | contract | The authored OpenAPI source of truth (R3.2); a parity test asserts the served schema matches it. |
 
 ## Key decisions (recorded in decision-058)
 
@@ -112,7 +112,7 @@ REST route and MCP tool all call (R1.1–R1.4). Surface (v1):
 
 ### HTTP API (`/api/v1`)
 
-Contract-first: `specs/openapi/the-loop.v1.yaml` is authored; a pytest asserts the
+Contract-first: `docs/api-specs/openapi/the-loop.v1.yaml` is authored; a pytest asserts the
 FastAPI-generated schema's paths/methods/operationIds match it (drift fails CI). API
 docs are the contract (served at `/api/docs`), never hand-written (R3.2).
 Mutations are idempotent per R3.4: lifecycle starts/stops report `already` outcomes
@@ -200,7 +200,7 @@ service:
 - **TDD per task** (`tdd.mode: standard`); red→green recorded in the execution log.
 - **API**: FastAPI `TestClient` (httpx as dev-only dep) per router; the
   exposure-guard and validation-rejection negative tests are the abuse-case tests;
-  contract-parity test against `specs/openapi/the-loop.v1.yaml`.
+  contract-parity test against `docs/api-specs/openapi/the-loop.v1.yaml`.
 - **CLI-as-client**: command tests run against an in-process test service; the
   no-service failure path is a unit test.
 - **Lifecycle**: reuse issue-159's lock/idempotency test patterns for
