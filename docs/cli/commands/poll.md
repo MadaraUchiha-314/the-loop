@@ -5,9 +5,9 @@ infrastructure with no inbound route.
 
 ```bash
 the-loop poll start [--interval 60] [--once] [--max-retries 3] \
-                    [--state-file .the-loop/sessions/poll-state.json] \
+                    [--state-dir .the-loop/portable] \
                     [--pidfile .the-loop/poll.pid]
-the-loop poll stop  [--pidfile .the-loop/poll.pid]
+the-loop poll stop  [--pidfile .the-loop/poll.pid] [--timeout 30]
 ```
 
 Every `--interval` seconds it asks each configured **provider** for the label-gated work
@@ -23,16 +23,32 @@ adapters and prompt templates are all reused unchanged.
 | `--once` | off | Run a single cycle and exit — for a cron job or systemd timer. |
 | `--max-retries` | [`polling.maxRetries`](/config/cli/polling-options#maxretries) | Per-event delivery attempts before giving up. |
 | `--state-dir` | `<state.root>/portable` | Portable work-item records — the cross-poll, cross-restart comment dedup lives in each item's `poll` section ([state on disk](/cli/state)). |
-| `--pidfile` | `<state.root>/poll.pid` | Where the PID is recorded, for `stop`. |
+| `--pidfile` | `<state.root>/poll.pid` | Where the PID is recorded, and the file the single-instance lock is held on. |
 
 Without `--once` it loops until `poll stop` (or SIGINT/SIGTERM), writing a pidfile like the
 receiver.
+
+**One poller per state root.** `start` takes an exclusive lock on the pidfile and holds it
+for the whole run — `--once` included, so two overlapping cron invocations cannot interleave.
+A second `start` against the same state refuses, names the pid holding it, and exits `1`
+without touching the ledger (`poller.blocked` in the event log). Two pollers configured with
+different `state.root` values are independent and both run. A pidfile left behind by a crash
+is *unlocked*, so the next `start` simply takes it — a `SIGKILL` never needs manual cleanup.
 
 ## `stop`
 
 | Flag | Default | Meaning |
 |------|---------|---------|
 | `--pidfile` | `<state.root>/poll.pid` | The pidfile written by `start`. |
+| `--timeout` | `30` | Seconds to wait for the poller to actually exit. |
+
+`stop` sends `SIGTERM` and then **waits until the poller has exited**, so `poll stop &&
+poll start` cannot overlap the shutdown it just asked for. It signals a pid only when the
+lock proves a poller holds it: a pidfile left behind by a killed poller is reported as stale
+and removed, and nothing is signalled — previously that pid was signalled blindly, which on a
+busy host meant `SIGTERM` to whichever process had inherited it. A poller still draining when
+`--timeout` runs out is reported and `stop` exits `1` rather than claiming a success that has
+not happened.
 
 ## Provider-agnostic
 
@@ -68,6 +84,30 @@ GitHub is reached only through your own authenticated `gh` — the daemon holds 
   up to `--max-retries`; after that the poller logs a terminal failure (`poll.spawn_failed` /
   `poll.comment_failed`) and ignores the event until new activity re-arms it. An in-flight
   dispatch is not counted as a failed attempt.
+
+### Stopping and restarting
+
+Restarting is meant to be **invisible**: a poller that was stopped and started behaves like
+one that never stopped. Four things make that true, on top of the durable per-item ledger.
+
+- **One at a time.** The [single-instance lock](#start) is what stops two pollers from
+  interleaving read-modify-write over the same records and re-forwarding each other's
+  comments.
+- **`stop` is true when it returns.** It waits for the process to exit (see [`stop`](#stop)),
+  so a scripted restart is deterministic rather than lucky.
+- **Progress is durable per work item.** Each item's record is written as soon as that item is
+  done, not at the end of the cycle, so a `SIGKILL` mid-cycle loses the item in flight and
+  nothing else.
+- **A stop is honoured inside a cycle.** `SIGTERM` ends the cycle after the work item in
+  flight rather than after every remaining item — each of which could otherwise block for up
+  to [`dispatchTimeoutSeconds`](/config/cli/routing-options#dispatchtimeoutseconds). An
+  interrupted cycle is marked `interrupted` in `poll.cycle`, and **skips closure
+  reconciliation**: a partial listing is not evidence that the unlisted items ended, the same
+  rule a failed listing already follows.
+- **Restarts cost no retry budget.** Events still queued when the dispatcher shuts down are
+  reported (`dispatch.abandoned`) and the attempts they spent are handed back
+  (`poll.attempts_released`), so they are retried by the next start with the budget they
+  started with instead of accumulating toward `--max-retries` across restarts.
 
 ### Closing finished work items
 

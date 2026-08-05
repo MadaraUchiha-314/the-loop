@@ -5,6 +5,7 @@ Spec: docs/specs/issue-15/ (requirements R2–R5).
 
 import json
 import logging
+import threading
 import time
 from pathlib import Path
 
@@ -672,6 +673,41 @@ def test_dispatcher_serializes_events_for_one_session_in_order(tmp_path):
     bodies = [prompt for _, prompt in tmux.delivers]
     assert [f"event {i}" in body for i, body in enumerate(bodies)] == [True] * 3
     assert tmux.max_in_flight == 1  # same session never dispatches concurrently
+
+
+def test_stop_reports_events_it_abandoned_undelivered(tmp_path):
+    """A shutdown says what it dropped, so the poller can hand the budget back.
+
+    The sentinel goes at the TAIL of the queue, so a graceful stop still
+    delivers what is already queued. Only what the join timeout cuts off is
+    reported — and on the poll path each of those had already spent one of its
+    `polling.maxRetries` (issue-159).
+    """
+    tmux = FakeTmux()
+    tmux.deliver_gate = threading.Event()  # wedges the worker inside d-1
+    registry, dispatcher = make_dispatcher(tmp_path, tmux)
+    registry.register(make_session())
+    try:
+        dispatcher.handle(routed_issue_comment(delivery="d-1"))
+        dispatcher.handle(routed_issue_comment(delivery="d-2"))
+        dispatcher.handle(routed_issue_comment(delivery="d-3"))
+
+        abandoned = dispatcher.stop(timeout=0.2)
+
+        assert abandoned == ["d-2", "d-3"]  # d-1 is in flight, not queued
+        assert tmux.delivers == []
+    finally:
+        tmux.deliver_gate.set()
+
+
+def test_stop_reports_nothing_when_every_event_was_delivered(tmp_path):
+    tmux = FakeTmux()
+    registry, dispatcher = make_dispatcher(tmp_path, tmux)
+    registry.register(make_session())
+    dispatcher.handle(routed_issue_comment(delivery="d-1"))
+    assert wait_until(lambda: len(tmux.delivers) == 1)
+
+    assert dispatcher.stop() == []
 
 
 def test_dispatcher_dispatches_different_sessions_in_parallel(tmp_path):

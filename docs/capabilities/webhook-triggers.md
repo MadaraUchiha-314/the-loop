@@ -197,6 +197,38 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   (`Dispatcher.delivery_status`: done/inflight/unhandled) rather than assuming success at
   enqueue time. (The webhook path relies on GitHub redelivery, repaired for dead tmux
   sessions by the respawn above — see [interactive-sessions](interactive-sessions.md).)
+- **Stopping and restarting the poller SHALL have no observable effect** (issue-159): a
+  poller that was stopped and started behaves as one that never stopped. Five rules make
+  that true, on top of the durable per-item ledger.
+  - **At most one poller per state root.** `poll start` SHALL take an exclusive advisory
+    lock on its pidfile — `--once` included — and a second `start` against the same state
+    SHALL refuse, name the holding pid and exit non-zero (`poller.blocked`) without
+    touching the ledger. Two pollers sharing one ledger interleave read-modify-write over
+    the same records and re-forward each other's comments, which is the sharpest form of a
+    restart being visible. The lock is the pidfile itself, so "who is running" and "how do
+    I signal them" cannot disagree; it is scoped per state root (two roots, two pollers),
+    and the kernel releases it however the process dies — so a pidfile left by a `SIGKILL`
+    is simply unlocked and needs no manual cleanup.
+  - **`poll stop` SHALL be verified and blocking.** It signals a pid only when the lock
+    proves a poller holds it (a stale pidfile is reported and removed, never signalled —
+    under pid reuse the old behaviour sent `SIGTERM` to an unrelated process), and it
+    returns only once the poller has actually exited, bounded by `--timeout` (default 30s);
+    a poller that outlives the timeout is reported and the command exits non-zero.
+  - **Progress SHALL be durable per work item.** Each item's record is written as soon as
+    that item is done — including when processing it raised, so an attempt already spent
+    cannot be spent twice — instead of at the end of the cycle. A hard kill then loses the
+    item in flight rather than everything the cycle learned.
+  - **A stop SHALL be honoured inside a cycle.** The poller finishes the work item in
+    flight, persists it, and processes no further items or providers; the summary and
+    `poll.cycle` carry `interrupted`. An interrupted cycle SHALL NOT run closure
+    reconciliation — a partial listing is not evidence that the unlisted items ended, and
+    reconciling on one would close live sessions (the same rule issue-94 applies to a
+    *failed* listing).
+  - **A shutdown SHALL return unspent retry budget.** `Dispatcher.stop` reports the
+    deliveries it abandoned undelivered (`dispatch.abandoned`) and the poller un-counts the
+    attempt each of them spent (`poll.attempts_released`), leaving the event **unresolved**
+    rather than baselined. Without this, restarts accumulate toward `polling.maxRetries`
+    and can permanently abandon a comment nothing ever tried to deliver.
 - On the poll path the linked issues of a labelled PR SHALL be read from GitHub inside the
   PR listing the poller already performs (`gh pr list --json …,closingIssuesReferences` —
   no extra API round-trip per cycle), and WHEN the installed `gh` predates that field THEN
@@ -298,6 +330,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-159 | Stopping and restarting the poller became invisible (2026-08-05): an exclusive lock on the pidfile makes two pollers on one ledger impossible (`--once` included), `poll stop` verifies the pid against that lock and waits for the process to exit, each work item's record is persisted as it finishes, a stop ends the cycle after the item in flight (and an interrupted cycle never reconciles closures), and a shutdown hands back the retry budget of dispatches it abandoned | [spec](../specs/issue-159/), [poll](../cli/commands/poll.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/159) |
 | issue-156 | Process runner removed; tmux is the only runner (2026-08-05): dispatch always pastes into a tmux-hosted session, the `cli`-under-process interaction warning went with the runner choice, and the tmux-hosting requirement is unconditional | [spec](../specs/issue-156/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/156) |
 | issue-142 | `routing` promoted out from under `webhooks.ghWebhook` to a top-level key: the block was never the receiver's — the poller reads it verbatim for dispatch and `the-loop sessions` reads it again — so its scope is now legible from the config's shape rather than from a comment. A relocation only: same options, same defaults, same behaviour, with the cross-command import replaced by one shared accessor and the old path refused rather than ignored (schema `0.4.0`) | [spec](../specs/issue-142/), [decision-053](../decisions/decision-053.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/142) |
 | issue-136 | Pre-spawn trust reached the checkout it was for: `hasTrustDialogAccepted` is written on the exact spawn directory under every `scope` (the gate that decides whether the dialog appears for a repo shipping `.claude/settings.json` grants has no ancestor walk), so `scope` now only widens | [spec](../specs/issue-136/), [decision-052](../decisions/decision-052.md), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/136) |

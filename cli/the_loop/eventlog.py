@@ -103,6 +103,12 @@ EVENT_TYPES: Dict[str, str] = {
     "dispatch.error": (
         "A dispatch worker crashed on an event (work_item, error; will_retry)."
     ),
+    "dispatch.abandoned": (
+        "The dispatcher shut down with events still queued; they were never "
+        "delivered and are left for the next start to retry (count, "
+        "delivery_ids) — issue-159. On the poll path the attempts they spent "
+        "are handed back (`poll.attempts_released`)."
+    ),
     "reaction.added": (
         "A dispatch-lifecycle emoji reaction was added to the triggering "
         "comment/issue/PR (work_item, state: started | completed | error, "
@@ -277,6 +283,11 @@ EVENT_TYPES: Dict[str, str] = {
         "is picked up instead of staying stuck. Never emitted for a give-up the "
         "running version recorded."
     ),
+    "poll.attempts_released": (
+        "A shutdown returned the retry budget of dispatches that were still "
+        "queued and never delivered (released) — issue-159, so restarting the "
+        "poller does not accumulate toward `polling.maxRetries`."
+    ),
     "poll.comment_failed": (
         "The poller gave up forwarding a comment after exhausting the retry "
         "budget (polling.maxRetries); later polls ignore it (work_item, "
@@ -287,6 +298,12 @@ EVENT_TYPES: Dict[str, str] = {
     "server.stopped": "The webhook receiver shut down.",
     "poller.started": "The poller started (interval_seconds, sources).",
     "poller.stopped": "The poller shut down.",
+    "poller.blocked": (
+        "A poller refused to start because another one already holds the "
+        "single-instance lock on the state root (pidfile, holder) — issue-159. "
+        "Two pollers on one ledger interleave read-modify-write and "
+        "re-forward each other's comments, so the second one does not run."
+    ),
     "config.reloaded": (
         "A config edit was hot-reloaded into a running process (detail)."
     ),

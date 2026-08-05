@@ -10,10 +10,14 @@ for ``gh-webhook start``.
 Spec: docs/specs/issue-34/design.md (poller shares the webhook routing stack).
 """
 
+import os
+from pathlib import Path
+
 from the_loop import runner as runner_mod
 from the_loop.cli import build_parser
 from the_loop.commands import gh_webhook, poll
 from the_loop.poller import github as gh_mod
+from the_loop.runlock import RunLock
 
 CONFIG = """
 routing:
@@ -131,3 +135,162 @@ def test_poll_start_fails_fast_when_ttyd_missing(tmp_path, monkeypatch):
 
     assert exit_code == 1
     assert FakePopen.instances == []
+
+
+# -- single-instance guarantee and a truthful `stop` (issue-159) ---------------
+
+
+def _pidfile(tmp_path):
+    """Where `poll start` records its pid — and now takes its lock.
+
+    The configured default is relative to the process's working directory, which
+    `_configure` has already pointed at ``tmp_path``.
+    """
+    return tmp_path / ".the-loop" / "poll.pid"
+
+
+def test_poll_start_takes_the_lock_even_for_a_single_cycle(tmp_path, monkeypatch):
+    """
+    Feature: at most one poller per state root
+    Scenario: `--once` participates in the exclusion
+        Given a poller is started with `--once`
+        When the cycle runs and the process exits
+        Then the lock was held for the run and the pidfile is removed afterwards
+    Requirement: github issue #159 (AC1.2)
+    """
+    _configure(tmp_path, monkeypatch)
+    held = []
+    real_acquire = RunLock.acquire
+
+    def watching_acquire(self):
+        ok = real_acquire(self)
+        held.append((str(self.path), ok))
+        return ok
+
+    monkeypatch.setattr(RunLock, "acquire", watching_acquire)
+
+    args = build_parser().parse_args(["poll", "start", "--once"])
+    assert args._action(args) == 0
+
+    assert [(Path(path).resolve(), ok) for path, ok in held] == [
+        (_pidfile(tmp_path).resolve(), True)
+    ]
+    assert not _pidfile(tmp_path).exists()  # released on the way out
+
+
+def test_poll_start_refuses_while_another_poller_holds_the_lock(tmp_path, monkeypatch):
+    """
+    Feature: at most one poller per state root
+    Scenario: a restart that overlaps the poller it is replacing
+        Given a poller already holds the lock on the state root's pidfile
+        When a second `poll start` is invoked against the same config
+        Then it refuses, names the holder, and touches nothing
+    Requirement: github issue #159 (AC1.1)
+    """
+    _configure(tmp_path, monkeypatch)
+    _pidfile(tmp_path).parent.mkdir(parents=True, exist_ok=True)
+    holder = RunLock(_pidfile(tmp_path))
+    assert holder.acquire()
+    try:
+        args = build_parser().parse_args(["poll", "start", "--once"])
+        assert args._action(args) == 1
+        # Refused before anything was built: no ttyd, no ledger, and the
+        # holder's own pidfile is intact.
+        assert FakePopen.instances == []
+        assert not (tmp_path / ".the-loop" / "portable").exists()
+        assert _pidfile(tmp_path).read_text().strip() == str(os.getpid())
+    finally:
+        holder.release()
+
+
+def test_poll_start_recovers_from_a_pidfile_left_by_a_crash(tmp_path, monkeypatch):
+    """
+    Feature: at most one poller per state root
+    Scenario: the previous poller was SIGKILLed
+        Given a pidfile naming a process that is not running
+        When `poll start --once` is invoked
+        Then it starts normally — a crash needs no manual cleanup
+    Requirement: github issue #159 (AC1.4)
+    """
+    _configure(tmp_path, monkeypatch)
+    _pidfile(tmp_path).parent.mkdir(parents=True, exist_ok=True)
+    _pidfile(tmp_path).write_text("424242\n")
+
+    args = build_parser().parse_args(["poll", "start", "--once"])
+    assert args._action(args) == 0
+
+
+def test_poll_stop_refuses_to_signal_a_stale_pidfile(tmp_path, monkeypatch):
+    """
+    Feature: `stop` is verified before it signals
+        Scenario: a pidfile whose pid now belongs to somebody else
+        Given a pidfile left behind by a killed poller
+        When `poll stop` runs
+        Then no signal is sent, the stale pidfile is removed, and it exits non-zero
+    Requirement: github issue #159 (AC2.1)
+    """
+    _configure(tmp_path, monkeypatch)
+    pidfile = _pidfile(tmp_path)
+    pidfile.parent.mkdir(parents=True, exist_ok=True)
+    pidfile.write_text(f"{os.getpid()}\n")  # a LIVE pid that is not a poller
+
+    signalled = []
+    monkeypatch.setattr(poll.os, "kill", lambda pid, sig: signalled.append((pid, sig)))
+
+    args = build_parser().parse_args(["poll", "stop"])
+    assert args._action(args) == 1
+    assert signalled == []
+    assert not pidfile.exists()
+
+
+def test_poll_stop_signals_the_holder_and_waits_for_it_to_go(tmp_path, monkeypatch):
+    """
+    Feature: `stop` blocks until the poller has actually exited
+        Scenario: a scripted `stop && start`
+        Given a running poller holding the lock
+        When `poll stop` signals it and the poller releases the lock
+        Then `stop` returns success only after the release
+    Requirement: github issue #159 (AC2.2)
+    """
+    _configure(tmp_path, monkeypatch)
+    pidfile = _pidfile(tmp_path)
+    pidfile.parent.mkdir(parents=True, exist_ok=True)
+    holder = RunLock(pidfile)
+    assert holder.acquire()
+
+    # The "poller" reacts to the signal the way the real one does: it exits,
+    # which releases the lock.
+    monkeypatch.setattr(poll.os, "kill", lambda pid, sig: holder.release())
+
+    args = build_parser().parse_args(["poll", "stop"])
+    assert args._action(args) == 0
+    assert not pidfile.exists()
+
+
+def test_poll_stop_reports_a_poller_that_outlives_the_timeout(tmp_path, monkeypatch):
+    """
+    Feature: `stop` blocks until the poller has actually exited
+        Scenario: the poller is draining a long dispatch
+        Given a running poller that does not exit
+        When `poll stop --timeout` runs out
+        Then it exits non-zero rather than reporting a success that has not happened
+    Requirement: github issue #159 (AC2.3)
+    """
+    _configure(tmp_path, monkeypatch)
+    pidfile = _pidfile(tmp_path)
+    pidfile.parent.mkdir(parents=True, exist_ok=True)
+    holder = RunLock(pidfile)
+    assert holder.acquire()
+    monkeypatch.setattr(poll.os, "kill", lambda pid, sig: None)  # ignores it
+    try:
+        args = build_parser().parse_args(["poll", "stop", "--timeout", "0.2"])
+        assert args._action(args) == 1
+        assert pidfile.exists()  # still running — nothing is cleaned up
+    finally:
+        holder.release()
+
+
+def test_poll_stop_without_a_pidfile_is_unchanged(tmp_path, monkeypatch):
+    _configure(tmp_path, monkeypatch)
+    args = build_parser().parse_args(["poll", "stop"])
+    assert args._action(args) == 1

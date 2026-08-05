@@ -3,6 +3,7 @@
 import threading
 import time
 import uuid
+from typing import Optional
 
 import pytest
 
@@ -41,12 +42,16 @@ class FakeTmux(TmuxRunner):
     the old FakeAdapter recorded; the concurrency accounting
     (``max_in_flight``) is kept so the serialization tests still measure it.
     Knobs: ``session_missing`` fails every delivery as "session gone" (driving
-    the respawn path); ``deliver_ok=False`` fails it transiently.
+    the respawn path); ``deliver_ok=False`` fails it transiently;
+    ``deliver_gate`` (a ``threading.Event``) wedges every delivery until it is
+    set, which is how a test gets an event to sit in a worker's queue — set it
+    in a ``finally`` so no thread is left blocked (issue-159).
     """
 
     def __init__(self, delay=0.0):
         super().__init__(binary="tmux-double-never-run")
         self.delay = delay
+        self.deliver_gate: Optional[threading.Event] = None
         self.delivers = []  # (work_item_ref, prompt)
         self.spawns = []  # (work_item_ref, prompt, cwd, resume)
         self.kills = []
@@ -86,6 +91,8 @@ class FakeTmux(TmuxRunner):
         try:
             if self.delay:
                 time.sleep(self.delay)
+            if self.deliver_gate is not None:
+                self.deliver_gate.wait(timeout=30)
             if self.session_missing:
                 return TmuxResult(
                     ok=False, session_missing=True, error="tmux session gone"
