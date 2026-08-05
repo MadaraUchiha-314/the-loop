@@ -15,7 +15,7 @@ status: in-progress
 | Phase | Entered | Reviewed/approved by | Notes |
 |-------|---------|----------------------|-------|
 | requirements-definition | 2026-08-05 | _(pending — tier-4 program: this phase gate is human-reviewed on the spec PR)_ | Issue #161: re-architect into core / API layer / clients (CLI, MCP, UI). |
-| design |  |  | Starts only after requirements lock (`status: approved`). |
+| design | 2026-08-05 | _(consolidated on PR #162 — single-PR delivery, owner decision)_ | Derived from locked requirements incl. the five answered forks. |
 | tasks-breakdown |  |  | Expected to decompose delivery into sub-issues (DAG across work items). |
 | implementation |  |  |  |
 | needs-review |  |  |  |
@@ -55,6 +55,21 @@ status: in-progress
   `design.md` from the locked requirements, including UI design artifacts under
   `design/`.
 - **Blockers:** phase gate — human review of Phase 1 (tier 4).
+
+### 2026-08-05 — phase-1 feedback folded in; design drafted
+
+- **Phase:** requirements-definition → design
+- **Did:** owner answered all five open questions on PR #162 (FastAPI sanctioned;
+  CLI is service-only; `ui/` with Vite + TS-only; MCP HTTP-only; single-PR
+  delivery) — folded into R2/R5/R6 + program note, appended to §Review comments,
+  threads resolved. Drafted `design.md` (three layers, `[service]` extra,
+  auto-start lifecycle, minimal JSON-RPC MCP endpoint, Vite+vanilla-TS UI,
+  fail-closed security design), `design/control-plane.html` prototype, and
+  decision-058.
+- **Checkpoint/tests:** markdownlint clean; `the-loop check issue-161 --recompute
+  --fail-on block` exit 0.
+- **Next:** derive `tasks.md` (DAG, single-PR execution), then implement in
+  dependency order (TDD per task).
 
 ## Review cycles
 

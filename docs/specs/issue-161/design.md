@@ -1,0 +1,236 @@
+---
+type: design
+phase: design
+workItem: "issue-161"
+status: approved             # drafting-side lock; the human phase gate is the PR approval (single-PR delivery, owner decision)
+approvedBy: []
+riskTier: 4
+collaborators: [architect, engineer, designer]
+overrides: {}
+---
+
+# Design: control plane and API layer for the-loop
+
+> Phase 2 of 3, derived from the locked `requirements.md` (all five open questions
+> answered by the owner on PR #162). Delivery is a single PR.
+
+## Overview
+
+the-loop's executable functionality is re-layered into **core → API → clients**
+without changing what any capability does. The existing modules (`poller/`,
+`webhook/`, `sessions/`, `graph/`, `eventlog`, `workitem`, …) already carry the
+behaviour; what is missing is one **explicit, transport-agnostic core surface** over
+them, one **HTTP service** exposing that surface, and clients (CLI, MCP, UI) that
+consume it. The re-architecture is therefore an *extraction and rewiring*, not a
+rewrite (R1.5).
+
+## Architecture
+
+```mermaid
+flowchart TD
+  subgraph clients["Clients (no business logic — R1.3)"]
+    CLI["CLI commands<br/>(argparse handlers)"]
+    UI["Control-plane UI<br/>ui/ · Vite + TS · static build"]
+    AGENT["Agent harness<br/>(Claude etc.)"]
+  end
+  subgraph service["API service — the-loop service start"]
+    HTTP["HTTP API /api/v1<br/>FastAPI · OpenAPI contract"]
+    MCP["MCP endpoint /mcp<br/>HTTP transport only"]
+    CORE["the_loop.core facade<br/>(workitems · sessions · graph · events · daemons · repo)"]
+    HTTP --> CORE
+    MCP --> CORE
+  end
+  subgraph state["Durable state (unchanged, R3.3)"]
+    STORES["portable/<slug>.json · local/ registry<br/>event log · pidfiles"]
+  end
+  CLI -->|"stdlib HTTP client + bearer token"| HTTP
+  UI -->|"fetch + bearer token"| HTTP
+  AGENT -->|"JSON-RPC over HTTP"| MCP
+  CORE --> STORES
+  CORE -.->|delegates to| EXISTING["existing modules<br/>poller/ · webhook/ · sessions/ · graph/ …"]
+```
+
+### Package layout
+
+| Path | Layer | Contents |
+|------|-------|----------|
+| `cli/the_loop/core/` | core | The facade: one module per capability (`workitems`, `sessions`, `graphs`, `events`, `daemons`, `repo`), each a set of plain functions/dataclasses delegating to the existing modules. Importable with no CLI/HTTP context (R1.1). |
+| `cli/the_loop/api/` | API | FastAPI `app.py` + one router per capability, `auth.py` (bearer token), `serve.py` (uvicorn entry), `mcp.py` (MCP endpoint). Transport/serialization/authn only (R1.2). |
+| `cli/the_loop/client/` | client | Stdlib (`urllib.request`) HTTP client the CLI commands call; reads the same config + token file. No new base-install dependency. |
+| `cli/the_loop/commands/service_cmd.py` | client | `the-loop service start\|stop\|status` and `the-loop ui dev\|build`. |
+| `specs/openapi/the-loop.v1.yaml` | contract | The authored OpenAPI source of truth (R3.2); a parity test asserts the served schema matches it. |
+| `ui/` | client | Vite + TypeScript control-plane UI (R6); static build, configurable API base. |
+
+## Key decisions (recorded in decision-058)
+
+1. **FastAPI behind a `[service]` extra.** Owner-sanctioned (PR #162). `fastapi` +
+   `uvicorn` live in a new optional extra `the-loopy-one[service]`; the base install
+   keeps exactly `pyyaml` (NFR). A base install can *talk to* a service (stdlib
+   client); *hosting* one needs the extra, and `service start` without it fails
+   closed naming the install line.
+2. **Service-only CLI with auto-start.** Every core-capability command routes
+   through the HTTP API (R2.2) — no in-process fallback (R2.3). To preserve the
+   one-command UX (R2.1), the CLI auto-starts a local service (same discipline as
+   `service start`: pidfile + flock, issue-159's `RunLock`) when none is reachable
+   and the `[service]` extra is installed; `service.autoStart: false` disables it.
+3. **Bootstrap exclusions.** Commands that manage *the installation or the service
+   process itself* stay local, because they must work when no service can exist
+   yet: `install`, `upgrade`, `migrate-config`, `service *`, `ui *`, `--version`.
+   Everything else — work items, sessions, graph/check, events, scenarios,
+   instructions, critics, poller/webhook lifecycle — goes through the API.
+4. **MCP implemented as a minimal JSON-RPC endpoint on the same app** (`/mcp`,
+   streamable-HTTP style: POST of `initialize` / `tools/list` / `tools/call`,
+   plain-JSON responses). HTTP only, no stdio (owner decision). The minimalism
+   ladder stops before the `mcp` SDK: the SDK would add httpx/sse-starlette et al.
+   for a protocol subset that is ~150 lines over FastAPI, and the tool registry is
+   *generated from the same core surface* the REST routers use (R1.4, R5.1).
+5. **UI: Vite + vanilla TypeScript, no framework.** All code TS (owner rule). Three
+   views over the API need no component framework; `ui/` carries the repo's first
+   `package.json`, scoped there. The build emits static assets with a configurable
+   API base (build-time `VITE_API_BASE`, runtime `?api=` / localStorage override) —
+   statically hostable per R6.1.
+6. **Repo-scoped operations take an explicit `repo` path parameter.** `check`,
+   `scenarios`, `instructions`, `critic` are repo-scoped; the CLI passes its cwd.
+   The service validates the path exists and is a directory before any core call.
+   The purity property of `check` (no network/subprocess/mutation) now holds of the
+   **core function**; the CLI↔service hop is transport.
+
+## Components & interfaces
+
+### Core facade (`the_loop/core/`)
+
+Plain functions, typed payloads in/out (dicts/dataclasses), no I/O other than the
+stores they already use. Each function is the single implementation its CLI command,
+REST route and MCP tool all call (R1.1–R1.4). Surface (v1):
+
+| Module | Operations (delegating to) |
+|--------|---------------------------|
+| `workitems` | `list()`, `get(ref)` (`WorkItemStore`, portable index) |
+| `graphs` | `check(repo, item, recompute)`, `show/status/advance/run/force/complete` (`graph.runtime`) |
+| `sessions` | `list()`, `register/attach/close`, `start/pause/resume/stop` (`sessions.registry`, dispatcher), `reset` (**not exposed** over HTTP/MCP — see Security) |
+| `events` | `query(filters)` (`eventlog.read_events`) |
+| `daemons` | `poller_status/start/stop`, `webhook_status/start/stop` (poll/webhook run paths + `RunLock`) |
+| `repo` | `scenarios(repo)`, `instructions(repo)`, `critics(repo)`, `critic_run(repo, name, prompt_file)` |
+| `attention` | `list()` — derives "needs attention" (waiting human gates, failed dispatches) from graph state + event log, for R6.3 |
+
+### HTTP API (`/api/v1`)
+
+Contract-first: `specs/openapi/the-loop.v1.yaml` is authored; a pytest asserts the
+FastAPI-generated schema's paths/methods/operationIds match it (drift fails CI). API
+docs are the contract (served at `/api/docs`), never hand-written (R3.2).
+Mutations are idempotent per R3.4: lifecycle starts/stops report `already` outcomes
+(the `RunLock` discipline), session control verbs re-apply safely (issue-106 path),
+and every operation lands in the event log as `api.<op>` (R3.5).
+
+### Service lifecycle (`service_cmd.py`)
+
+`service start` acquires `RunLock` on `<state.root>/local/service.pid`, binds
+loopback by default, generates a per-boot bearer token into
+`<state.root>/local/service.token` (mode 0600), spawns uvicorn (argv, no shell).
+`service stop` signals and waits (issue-159 semantics); `service status` reports.
+Both are idempotent (R4.1/R4.3).
+
+### CLI client (`the_loop/client/`)
+
+Resolves base URL from CLI config (`service.host`/`service.port`), reads the token
+file, performs the call, maps HTTP errors to today's exit codes/messages. When the
+service is unreachable: auto-start if permitted, else fail closed naming
+`the-loop service start` (R2.3).
+
+### MCP (`/mcp`)
+
+Tools mirror the read + manage surface: `list_work_items`, `get_work_item`,
+`check_work_item`, `graph_status`, `graph_advance`, `list_sessions`,
+`control_session` (start/pause/resume/stop), `query_events`, `daemon_status`.
+Excluded: `sessions reset` (destructive, R5.3), `graph force` (operator escape
+hatch; requires a human-attributed reason — exposing it to a prompt-injectable
+agent would forge that attribution). Same bearer token, same event log
+(`mcp.tools/call` events) (R5.2).
+
+### UI (`ui/`)
+
+Views: **Work items** (list + phase badge), **Detail** (graph node states from
+`check`, recent events, session controls per R6.4), **Attention** (R6.3). Token
+entered in the UI, held in localStorage, sent as `Authorization: Bearer`.
+`the-loop ui dev|build` shells (argv, no shell=True) to `npm --prefix ui run
+dev|build`, reporting a clear skip when npm is absent (R4.2, R6.2).
+
+## Error handling (fail closed)
+
+| Condition | Behaviour |
+|-----------|-----------|
+| No/bad bearer token | 401 before any core call; logged `api.auth.denied` |
+| Non-loopback bind without `service.exposed: true` + token | `service start` refuses to boot |
+| Malformed ref / repo path | 400/422 from validation, core never invoked |
+| Service unreachable from CLI, auto-start off/impossible | exit non-zero, message names `service start` / the `[service]` extra |
+| Unknown MCP method/tool | JSON-RPC error, no side effect |
+| Config schema violation | refused with the replacement named (existing migration discipline) |
+
+## Security design
+
+> Enforces every trust boundary and abuse case from `requirements.md`
+> §Security considerations.
+
+- **API = RCE-equivalent** → default bind `127.0.0.1`; `service.exposed: true`
+  required for any other bind, and token auth is mandatory in both cases (abuse
+  case 1–2). Token: 32-byte urandom hex, per-boot, 0600 file under `local/`
+  (machine-local, never tracked — extends `GENERATED_PATHS`).
+- **Input validation** at the transport edge: refs via the existing
+  `workitem` ref parser, repo paths must resolve to existing directories, critic
+  invocations remain argv-no-shell through the existing critic runner (abuse case 3).
+- **CORS** pinned to `service.ui.origins` (default: the Vite dev origin only);
+  no wildcard (abuse case 4).
+- **MCP exclusions** as above (abuse case 5). No API response ever includes the
+  token, webhook secrets, or any credential; responses are built from the stores,
+  which hold none.
+- **Existing ingress boundaries unchanged**: webhook HMAC verification and
+  authorized-user gating are untouched by the re-layering (R1.5).
+
+## Data models & config
+
+No new durable stores (R3.3). New CLI-config block (schema-validated, documented
+under `docs/config/cli/`):
+
+```yaml
+service:
+  host: 127.0.0.1        # non-loopback requires exposed: true
+  port: 4114
+  exposed: false
+  autoStart: true        # CLI may boot a local service on demand
+  ui:
+    origins: ["http://localhost:5173"]
+```
+
+## Testing strategy
+
+- **TDD per task** (`tdd.mode: standard`); red→green recorded in the execution log.
+- **API**: FastAPI `TestClient` (httpx as dev-only dep) per router; auth-denied and
+  validation-rejection negative tests are the abuse-case tests; contract-parity
+  test against `specs/openapi/the-loop.v1.yaml`.
+- **CLI-as-client**: command tests run against an in-process test service; the
+  no-service failure path is a unit test.
+- **Lifecycle**: reuse issue-159's lock/idempotency test patterns for
+  `service start|stop`.
+- **Integration tests** carry Gherkin docstrings with `Requirement:` links.
+- **UI**: `tsc --noEmit` + `vite build` in CI (a `ui` job); behaviour smoke-tested
+  against the dev service.
+
+## UI/UX design artifacts
+
+`docs/specs/issue-161/design/control-plane.html` — self-contained HTML prototype
+(inlined CSS/JS, no network deps) of the three views; the visual contract the
+implementation matches (`design.uiArtifacts`).
+
+## Dependency justification (minimalism ladder)
+
+| Dependency | Where | Why not less |
+|------------|-------|--------------|
+| `fastapi`, `uvicorn` | `[service]` extra | Owner-sanctioned; contract generation, validation, ASGI lifecycle vs. re-implementing on `http.server` |
+| `httpx` | dev/test only | required by Starlette's TestClient |
+| Vite + TypeScript toolchain | `ui/` only | Owner-directed (SOTA tooling, TS-only) |
+| — (MCP SDK rejected) | — | ~150-line JSON-RPC subset over the existing app beats a multi-dep SDK (decision-058) |
+
+## Review comments
+
+> Appended by the-loop's `record-feedback` hook when a human gate approves with
+> comments. Append-only and attributed.
