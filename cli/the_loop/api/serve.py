@@ -15,8 +15,9 @@ import sys
 
 from .. import eventlog
 from ..cli_config import default_cli_config_path, load_cli_config
+from ..runlock import RunLock
 from .auth import mint_token
-from .config import is_loopback, service_config, token_path
+from .config import is_loopback, service_config, service_pidfile, token_path
 
 logger = logging.getLogger("the-loop.service")
 
@@ -36,6 +37,14 @@ def main() -> int:
         )
         return 2
 
+    lock = RunLock(service_pidfile(cli_config), name="service")
+    if not lock.acquire():
+        logger.error(
+            "another control-plane service is already running (pid %s)",
+            lock.holder(),
+        )
+        return 1
+
     token = mint_token(token_path(cli_config))
     eventlog.configure_from_file("service")
 
@@ -49,6 +58,7 @@ def main() -> int:
         uvicorn.run(app, host=conf["host"], port=conf["port"], log_level="info")
     finally:
         eventlog.emit("service.stopped")
+        lock.release()
     return 0
 
 

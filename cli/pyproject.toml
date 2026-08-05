@@ -69,3 +69,6 @@ target-version = "py39"
 # Let `pytest` find the package without an editable install (run from cli/).
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = [
+    "routed: exercises the CLI→service transport path against a live service (issue-161)",
+]

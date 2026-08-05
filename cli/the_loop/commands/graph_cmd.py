@@ -1,8 +1,11 @@
 """``the-loop check`` and ``the-loop graph`` — the runtime's CLI surface.
 
-``check`` is **pure**: no network, no subprocess, no mutation (R8.8). That is
-what lets it run on every harness turn *and* in CI, and it is why CI runs the
-same code the runtime does rather than a reimplementation of it.
+The **core** check operation is pure: no network, no subprocess, no mutation
+(R8.8) — which is what lets the same code run on every harness turn *and* in
+CI. Since issue-161 the purity lives in :mod:`the_loop.core.graphs`; this
+command routes through the control-plane service (the CLI's only execution
+path for core capabilities, decision-058), and the one hop to loopback is
+transport, not evaluation.
 """
 
 from __future__ import annotations
@@ -11,9 +14,10 @@ import argparse
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
 from .base import Command, register
+from ..client.routing import via_service as _routing_via_service
 
 logger = logging.getLogger("the-loop.graph")
 
@@ -136,11 +140,38 @@ class CheckCommand(Command):
             print("error: give a work item id, or --all")
             return 2
 
+        # The service is the CLI's only execution path for core capabilities
+        # (issue-161, decision-058); the runtime built above is used only for
+        # spec_root discovery on this path.
+        fetch: Optional[Callable[[str], Dict[str, Any]]] = None
+        if _routing_via_service():
+            from .. import client
+
+            try:
+                connection = client.connect()
+            except client.ServiceUnavailable as exc:
+                print(f"error: {exc}")
+                return 2
+
+            def _fetch_via_service(item: str) -> Dict[str, Any]:
+                return connection.post(
+                    "/graph/check",
+                    {
+                        "repo": str(root),
+                        "workItem": item,
+                        "recompute": bool(args.recompute),
+                    },
+                )
+
+            fetch = _fetch_via_service
+
         payload = []
         failing = 0
         for item in items:
-            report = runtime.status(item, recompute=args.recompute)
-            data = report.as_dict()
+            if fetch is not None:
+                data = fetch(item)
+            else:
+                data = runtime.status(item, recompute=args.recompute).as_dict()
             payload.append(data)
             if _fails(data, args.fail_on):
                 failing += 1

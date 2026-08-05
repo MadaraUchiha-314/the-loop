@@ -27,6 +27,7 @@ from pathlib import Path
 
 from .base import Command, register
 from .. import eventlog
+from ..client.routing import via_service as _routing_via_service
 
 # Envelope keys rendered as their own table columns; everything else lands in
 # the free-form "detail" column.
@@ -161,7 +162,15 @@ class EventsCommand(Command):
             min_level=args.level,
             since=since,
         )
-        records = list(eventlog.read_events(args.file, **filters))
+        try:
+            records = self._fetch(args, filters)
+        except Exception as exc:
+            from ..client import ServiceUnavailable
+
+            if isinstance(exc, ServiceUnavailable):
+                print(f"error: {exc}", file=sys.stderr)
+                return 2
+            raise
         if args.limit and args.limit > 0:
             records = records[-args.limit :]
 
@@ -176,6 +185,36 @@ class EventsCommand(Command):
         if not args.follow:
             return 0
         return self._follow(args.file, filters, args.format)
+
+    def _fetch(self, args: argparse.Namespace, filters: dict) -> list:
+        """The matching records — via the service (issue-161, decision-058).
+
+        Two deliberate local escapes: an **explicit** ``--file`` reads that file
+        in-process (the service only ever serves its own configured log —
+        arbitrary paths over HTTP would be a file-disclosure surface), and an
+        invocation the service itself makes into this CLI stays local.
+        """
+        default_file = str(eventlog.load_config().get("path", eventlog.DEFAULT_PATH))
+        explicit_file = args.file != default_file
+        if _routing_via_service() and not explicit_file:
+            from .. import client
+
+            connection = client.connect()  # ServiceUnavailable handled in run()
+            return list(
+                connection.get(
+                    "/events",
+                    params={
+                        "type": filters["types"],
+                        "workItem": filters["work_item"],
+                        "deliveryId": filters["delivery_id"],
+                        "source": filters["source"],
+                        "level": filters["min_level"],
+                        "since": filters["since"],
+                        "limit": 0,
+                    },
+                )
+            )
+        return list(eventlog.read_events(args.file, **filters))
 
     def _follow(self, path: str, filters: dict, fmt: str) -> int:
         """Poll the file for appended lines and print matches until Ctrl-C."""

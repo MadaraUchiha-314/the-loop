@@ -760,6 +760,49 @@
           }
         }
       }
+    },
+    "service": {
+      "type": "object",
+      "description": "The control-plane API service (issue-161, decision-058): the HTTP layer over the-loop's core that the CLI, the MCP endpoint and the UI consume. Fail-closed posture: loopback-only unless `exposed` is explicitly true, per-boot bearer token, CORS pinned to `ui.origins`. Hosting the service requires the [service] extra (`pip install 'the-loopy-one[service]'`).",
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "Bind host. Non-loopback values refuse to boot unless `exposed` is true \u2014 the API can spawn harness sessions with the operator's credentials."
+        },
+        "port": {
+          "type": "integer",
+          "default": 4114,
+          "description": "Bind port."
+        },
+        "exposed": {
+          "type": "boolean",
+          "default": false,
+          "description": "Explicit opt-in to serving beyond loopback. Client authentication stays mandatory either way."
+        },
+        "autoStart": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether a CLI command may boot a local service on demand when none is reachable (the service is the CLI's only execution path for core capabilities)."
+        },
+        "ui": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "origins": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [
+                "http://localhost:5173"
+              ],
+              "description": "Browser origins allowed by CORS \u2014 pin to where the control-plane UI is actually served; never a wildcard."
+            }
+          }
+        }
+      }
     }
   }
 }

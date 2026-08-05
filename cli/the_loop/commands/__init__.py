@@ -12,6 +12,7 @@ from . import instructions_cmd  # noqa: F401,E402
 from . import migrate_cmd  # noqa: F401,E402
 from . import poll  # noqa: F401,E402
 from . import scenarios  # noqa: F401,E402
+from . import service_cmd  # noqa: F401,E402
 from . import sessions_cmd  # noqa: F401,E402
 
 __all__ = ["Command", "iter_commands", "register"]
