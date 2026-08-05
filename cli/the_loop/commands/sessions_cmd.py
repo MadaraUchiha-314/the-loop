@@ -220,11 +220,11 @@ def attach_session(
             "its retained tmux session",
             file=sys.stderr,
         )
-    if session.runner != "tmux":
+    if not session.tmux_target:
         print(
-            f"error: the session for {ref.ref} is a headless process session "
-            "(runner=process) — there is no terminal to attach. Steer it via "
-            "GitHub comments, or run it with routing.runner: tmux",
+            f"error: no tmux session recorded yet for {ref.ref} — one is "
+            "spawned when its next event is dispatched (a self-registered or "
+            "pre-tmux-only record starts without one)",
             file=sys.stderr,
         )
         return 1
@@ -232,7 +232,7 @@ def attach_session(
     if not runner.is_available():
         from ..runner import check_dependencies
 
-        for line in check_dependencies("tmux", web_enabled=False):
+        for line in check_dependencies(web_enabled=False):
             print(f"error: {line}", file=sys.stderr)
         return 1
     if not runner.has_session(session.tmux_target):
@@ -460,7 +460,6 @@ class SessionsCommand(Command):
                 "Work item",
                 "Harness",
                 "Session id",
-                "Runner",
                 "Tmux",
                 "Status",
                 "Control",
@@ -473,7 +472,6 @@ class SessionsCommand(Command):
                     s.work_item.ref,
                     s.harness,
                     s.harness_session_id,
-                    s.runner,
                     s.tmux_target or "-",
                     s.status,
                     control_of(s),
@@ -632,8 +630,8 @@ class SessionsCommand(Command):
         try:
             dispatcher.handle(routed)
         finally:
-            # Drains the work item's queue: the spawn runs to completion (a
-            # process-runner spawn is the whole task, hence the dispatch timeout).
+            # Drains the work item's queue so the spawn runs to completion
+            # before the registry is read back.
             dispatcher.stop(timeout=routing.dispatch_timeout_seconds)
         session = SessionRegistry(args.registry_dir).find_by_work_item(work_item)
         if session is None:
@@ -648,7 +646,7 @@ class SessionsCommand(Command):
             return "failed", 1
         print(
             f"started {session.harness} session for {work_item.ref} "
-            f"(runner={session.runner})"
+            f"(tmux: {session.tmux_target})"
         )
         return "spawned", 0
 
@@ -843,7 +841,7 @@ class SessionsCommand(Command):
         if not registry.close(work_item):
             print(f"no active session for {work_item.ref}", file=sys.stderr)
             return 1
-        if session is not None and session.runner == "tmux":
+        if session is not None and session.tmux_target:
             tmux = _tmux_config()
             keep = (
                 tmux.keep_session_on_close if args.keep_tmux is None else args.keep_tmux

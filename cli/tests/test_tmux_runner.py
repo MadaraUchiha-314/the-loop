@@ -7,6 +7,7 @@ parsing, dependency preflight, and the sessions CLI helpers.
 Spec: docs/specs/issue-32/design.md.
 """
 
+import logging
 import os
 import signal
 
@@ -107,18 +108,18 @@ class FakeRun:
 
 
 class TestSessionRunnerFields:
-    def test_defaults_to_process_runner(self):
+    def test_defaults_to_no_tmux_target(self):
+        # "" means no tmux session spawned yet — the record heals on its next
+        # dispatched event (issue-156).
         session = make_session()
-        assert session.runner == "process"
         assert session.tmux_target == ""
 
-    def test_round_trips_runner_fields(self):
-        session = make_session(runner="tmux", tmux_target="loop-github-octo-repo-15")
+    def test_round_trips_tmux_target_without_a_runner_field(self):
+        session = make_session(tmux_target="loop-github-octo-repo-15")
         data = session.to_dict()
-        assert data["runner"] == "tmux"
+        assert "runner" not in data  # the selector was removed (issue-156)
         assert data["tmuxTarget"] == "loop-github-octo-repo-15"
         restored = Session.from_dict(data)
-        assert restored.runner == "tmux"
         assert restored.tmux_target == "loop-github-octo-repo-15"
 
     def test_normalises_a_legacy_tmux_target(self):
@@ -148,13 +149,17 @@ class TestSessionRunnerFields:
 
     def test_reads_pre_issue32_registry_files(self):
         data = make_session().to_dict()
-        del (
-            data["runner"],
-            data["tmuxTarget"],
-        )  # a registry file written before issue-32
+        del data["tmuxTarget"]  # a registry file written before issue-32
         restored = Session.from_dict(data)
-        assert restored.runner == "process"
         assert restored.tmux_target == ""
+
+    def test_ignores_a_legacy_runner_field(self):
+        # The reported bug (issue-156): a record whose runner said "process"
+        # silently rerouted dispatch. The key is now ignored entirely.
+        data = make_session().to_dict()
+        data["runner"] = "process"
+        restored = Session.from_dict(data)
+        assert not hasattr(restored, "runner")
 
 
 class TestInteractiveArgv:
@@ -304,7 +309,7 @@ class TestTmuxRunner:
         fake = FakeRun()
         monkeypatch.setattr(runner_mod.subprocess, "run", fake)
         monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
-        session = make_session(runner="tmux", tmux_target="loop-github-octo-repo-15")
+        session = make_session(tmux_target="loop-github-octo-repo-15")
         result = TmuxRunner().deliver(session, "event prompt")
         assert result.ok, result.error
         # liveness (has-session + list-panes), then load-buffer, paste-buffer
@@ -344,7 +349,7 @@ class TestTmuxRunner:
         fake = FakeRun(returncode=1)  # has-session exits non-zero
         monkeypatch.setattr(runner_mod.subprocess, "run", fake)
         monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
-        session = make_session(runner="tmux", tmux_target="loop-gone")
+        session = make_session(tmux_target="loop-gone")
         result = TmuxRunner().deliver(session, "event prompt")
         assert not result.ok
         assert "loop-gone" in result.error
@@ -402,7 +407,7 @@ class TestTmuxRunner:
         fake = FakeRun(per_verb={"paste-buffer": 1})
         monkeypatch.setattr(runner_mod.subprocess, "run", fake)
         monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
-        session = make_session(runner="tmux", tmux_target="loop-alive")
+        session = make_session(tmux_target="loop-alive")
         result = TmuxRunner().deliver(session, "event prompt")
         assert not result.ok
         assert result.session_missing is False
@@ -414,7 +419,7 @@ class TestTmuxRunner:
         fake = FakeRun(stdout_per_verb={"list-panes": "1\n"})
         monkeypatch.setattr(runner_mod.subprocess, "run", fake)
         monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
-        session = make_session(runner="tmux", tmux_target="loop-retained")
+        session = make_session(tmux_target="loop-retained")
         result = TmuxRunner().deliver(session, "event prompt")
         assert not result.ok
         assert result.session_missing is True
@@ -459,7 +464,7 @@ class TestTmuxRunner:
         fake = FakeRun()
         monkeypatch.setattr(runner_mod.subprocess, "run", fake)
         monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
-        session = make_session(runner="tmux", tmux_target="loop-x")
+        session = make_session(tmux_target="loop-x")
         assert TmuxRunner().kill(session).ok
         (cmd,) = fake.calls
         assert cmd[1] == "kill-session"
@@ -580,9 +585,7 @@ class TestSessionState:
         runner, _ = self._runner(
             monkeypatch, timeout_verbs={"has-session"}, per_verb={"load-buffer": 1}
         )
-        result = runner.deliver(
-            make_session(runner="tmux", tmux_target="loop-busy"), "p"
-        )
+        result = runner.deliver(make_session(tmux_target="loop-busy"), "p")
         assert not result.ok
         assert result.session_missing is False
 
@@ -1002,15 +1005,18 @@ class TestLivePanePids:
 class TestCheckDependencies:
     def test_silent_when_satisfied(self, monkeypatch):
         monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/x")
-        assert check_dependencies("tmux", web_enabled=True) == []
+        assert check_dependencies(web_enabled=True) == []
 
-    def test_process_runner_needs_nothing(self, monkeypatch):
+    def test_tmux_is_always_required(self, monkeypatch):
+        # The process runner is gone (issue-156): the daemon cannot start
+        # without tmux even with the web terminal off.
         monkeypatch.setattr(runner_mod.shutil, "which", lambda _: None)
-        assert check_dependencies("process", web_enabled=False) == []
+        missing = check_dependencies(web_enabled=False)
+        assert len(missing) == 1 and "tmux" in missing[0]
 
     def test_reports_missing_tmux_and_ttyd_with_guidance(self, monkeypatch):
         monkeypatch.setattr(runner_mod.shutil, "which", lambda _: None)
-        missing = check_dependencies("tmux", web_enabled=True)
+        missing = check_dependencies(web_enabled=True)
         text = "\n".join(missing)
         assert "tmux" in text and "ttyd" in text
         assert "brew install" in text and "apt" in text
@@ -1019,7 +1025,7 @@ class TestCheckDependencies:
 class TestRoutingConfigRunner:
     def test_defaults(self):
         config = RoutingConfig.from_mapping({})
-        assert config.runner == "process"
+        assert not hasattr(config, "runner")  # the selector is gone (issue-156)
         assert config.web_terminal.enabled is False
         assert config.web_terminal.host == "127.0.0.1"
         assert config.web_terminal.port == 7681
@@ -1053,17 +1059,24 @@ class TestRoutingConfigRunner:
         assert config.tmux.kill_harness_on_close is False
         assert config.tmux.harness_kill_grace_seconds == 0.0
 
-    def test_parses_runner_and_web_terminal(self):
+    def test_parses_web_terminal(self):
         config = RoutingConfig.from_mapping(
-            {
-                "runner": "tmux",
-                "webTerminal": {"enabled": True, "host": "10.0.0.5", "port": 9000},
-            }
+            {"webTerminal": {"enabled": True, "host": "10.0.0.5", "port": 9000}}
         )
-        assert config.runner == "tmux"
         assert config.web_terminal.enabled is True
         assert config.web_terminal.host == "10.0.0.5"
         assert config.web_terminal.port == 9000
+
+    def test_leftover_runner_key_warns_and_is_ignored(self, caplog):
+        # An un-edited config must not brick the daemon (issue-156): the
+        # removed key is tolerated, loudly, unless it already says tmux.
+        with caplog.at_level(logging.WARNING):
+            RoutingConfig.from_mapping({"runner": "process"})
+        assert any("routing.runner" in r.message for r in caplog.records)
+        caplog.clear()
+        with caplog.at_level(logging.WARNING):
+            RoutingConfig.from_mapping({"runner": "tmux"})
+        assert not caplog.records
 
 
 class TestReceiverPreflight:
@@ -1137,7 +1150,7 @@ class TestSharedWebTerminalLifecycle:
 
 class TestSessionsCli:
     def test_attach_argv_read_write_and_read_only(self):
-        session = make_session(runner="tmux", tmux_target="loop-x")
+        session = make_session(tmux_target="loop-x")
         assert sessions_cmd._attach_argv(session, read_only=False) == [
             "tmux",
             "attach-session",
@@ -1146,7 +1159,11 @@ class TestSessionsCli:
         ]
         assert "-r" in sessions_cmd._attach_argv(session, read_only=True)
 
-    def test_attach_rejects_process_sessions(self, tmp_path, capsys, monkeypatch):
+    def test_attach_rejects_sessions_without_a_tmux_target(
+        self, tmp_path, capsys, monkeypatch
+    ):
+        # A self-registered (or pre-tmux-only) record has no tmux session yet;
+        # it gets one on its next dispatched event (issue-156).
         from the_loop.sessions import SessionRegistry
 
         registry = SessionRegistry(tmp_path)
@@ -1155,13 +1172,13 @@ class TestSessionsCli:
             registry, REF, read_only=False, execvp=lambda *_: None
         )
         assert code == 1
-        assert "process" in capsys.readouterr().err
+        assert "no tmux session recorded" in capsys.readouterr().err
 
     def test_attach_reports_missing_tmux_binary(self, tmp_path, capsys, monkeypatch):
         from the_loop.sessions import SessionRegistry
 
         registry = SessionRegistry(tmp_path)
-        registry.register(make_session(runner="tmux", tmux_target="loop-x"))
+        registry.register(make_session(tmux_target="loop-x"))
         monkeypatch.setattr(TmuxRunner, "is_available", lambda self: False)
         monkeypatch.setattr(runner_mod.shutil, "which", lambda _: None)
         code = sessions_cmd.attach_session(
@@ -1174,7 +1191,7 @@ class TestSessionsCli:
         from the_loop.sessions import SessionRegistry
 
         registry = SessionRegistry(tmp_path)
-        registry.register(make_session(runner="tmux", tmux_target="loop-x"))
+        registry.register(make_session(tmux_target="loop-x"))
         monkeypatch.setattr(TmuxRunner, "is_available", lambda self: True)
         monkeypatch.setattr(TmuxRunner, "has_session", lambda self, target: True)
         execs = []
@@ -1188,7 +1205,7 @@ class TestSessionsCli:
         from the_loop.sessions import SessionRegistry
 
         registry = SessionRegistry(tmp_path)
-        registry.register(make_session(runner="tmux", tmux_target="loop-x"))
+        registry.register(make_session(tmux_target="loop-x"))
         monkeypatch.setattr(TmuxRunner, "is_available", lambda self: True)
         monkeypatch.setattr(TmuxRunner, "has_session", lambda self, target: False)
         code = sessions_cmd.attach_session(
@@ -1205,7 +1222,7 @@ class TestSessionsCli:
         from the_loop.sessions import SessionRegistry
 
         registry = SessionRegistry(tmp_path)
-        registry.register(make_session(runner="tmux", tmux_target="loop-x"))
+        registry.register(make_session(tmux_target="loop-x"))
         registry.close(REF)
         monkeypatch.setattr(TmuxRunner, "is_available", lambda self: True)
         monkeypatch.setattr(TmuxRunner, "has_session", lambda self, target: True)
@@ -1225,7 +1242,7 @@ class TestSessionsCli:
         from the_loop.sessions import SessionRegistry
 
         registry = SessionRegistry(tmp_path)
-        registry.register(make_session(runner="tmux", tmux_target="loop-x"))
+        registry.register(make_session(tmux_target="loop-x"))
         registry.close(REF)
         monkeypatch.setattr(TmuxRunner, "is_available", lambda self: True)
         monkeypatch.setattr(TmuxRunner, "has_session", lambda self, target: True)
@@ -1242,7 +1259,7 @@ class TestSessionsCli:
         from the_loop.sessions import SessionRegistry
 
         registry = SessionRegistry(tmp_path)
-        registry.register(make_session(runner="tmux", tmux_target="loop-x"))
+        registry.register(make_session(tmux_target="loop-x"))
         monkeypatch.setattr(TmuxRunner, "is_available", lambda self: True)
         monkeypatch.setattr(TmuxRunner, "has_session", lambda self, target: True)
         execs = []
@@ -1259,7 +1276,7 @@ class TestSessionsCli:
         from the_loop.sessions import SessionRegistry
 
         registry = SessionRegistry(tmp_path)
-        registry.register(make_session(runner="tmux", tmux_target="loop-x"))
+        registry.register(make_session(tmux_target="loop-x"))
         monkeypatch.setattr(sessions_cmd, "_tmux_config", TmuxConfig)
         killed = []
         monkeypatch.setattr(
@@ -1288,7 +1305,7 @@ class TestSessionsCli:
         from the_loop.sessions import SessionRegistry
 
         registry = SessionRegistry(tmp_path)
-        registry.register(make_session(runner="tmux", tmux_target="loop-x"))
+        registry.register(make_session(tmux_target="loop-x"))
         monkeypatch.setattr(
             sessions_cmd,
             "_tmux_config",
@@ -1314,7 +1331,7 @@ class TestSessionsCli:
         from the_loop.sessions import SessionRegistry
 
         registry = SessionRegistry(tmp_path)
-        registry.register(make_session(runner="tmux", tmux_target="loop-x"))
+        registry.register(make_session(tmux_target="loop-x"))
         monkeypatch.setattr(sessions_cmd, "_tmux_config", TmuxConfig)
         monkeypatch.setattr(runner_mod.subprocess, "run", FakeRun())
         monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
@@ -1324,20 +1341,21 @@ class TestSessionsCli:
         assert sessions_cmd.SessionsCommand()._close(args) == 0
         assert "killed tmux session loop-x" in capsys.readouterr().out
 
-    def test_list_shows_runner_and_tmux_columns(self, tmp_path, capsys):
+    def test_list_shows_the_tmux_column(self, tmp_path, capsys):
         import argparse
 
         from the_loop.sessions import SessionRegistry
 
         registry = SessionRegistry(tmp_path)
-        registry.register(make_session(runner="tmux", tmux_target="loop-x"))
+        registry.register(make_session(tmux_target="loop-x"))
         cmd = sessions_cmd.SessionsCommand()
         args = argparse.Namespace(
             registry_dir=str(tmp_path), status=None, format="table"
         )
         assert cmd._list(args) == 0
         out = capsys.readouterr().out
-        assert "Runner" in out and "tmux" in out and "loop-x" in out
+        assert "Tmux" in out and "loop-x" in out
+        assert "Runner" not in out  # the per-record selector is gone (issue-156)
 
 
 if __name__ == "__main__":  # pragma: no cover

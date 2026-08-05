@@ -33,7 +33,7 @@ fails closed and does nothing.
 graph TD
   Q{"What are you changing?"}
   Q -->|"phases, specs, reviews,<br/>autonomy, tooling, security"| H["<b>harness config</b><br/>.the-loop/harness-config.yaml<br/>in the repo"]
-  Q -->|"webhook port, polling,<br/>who may trigger, session runner,<br/>event log, GitHub/Slack transport"| C["<b>CLI config</b><br/>cli-config.yaml<br/>on your machine"]
+  Q -->|"webhook port, polling,<br/>who may trigger,<br/>event log, GitHub/Slack transport"| C["<b>CLI config</b><br/>cli-config.yaml<br/>on your machine"]
   H --> H2["written by <code>/the-loop:init</code>"]
   C --> C2["copied from<br/>skills/the-loop/templates/cli-config.yaml"]
 ```

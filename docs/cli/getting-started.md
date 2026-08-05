@@ -7,8 +7,8 @@ spawns for it, every later comment and CI result on that item is routed to the s
 session, and the session closes itself when the item does.
 
 ::: tip Prerequisites
-An authenticated `gh` (`gh auth login`), and the harness you want to spawn — `claude` or
-`cursor-agent` — on your `PATH`. Add `tmux` if you want to watch sessions work.
+An authenticated `gh` (`gh auth login`), `tmux` (every spawned session is hosted in it),
+and the harness you want to spawn — `claude` or `cursor-agent` — on your `PATH`.
 :::
 
 ## 1. Install
@@ -52,7 +52,6 @@ webhooks:
       spawnOnUnmatched: labeled
       autoExecuteLabel: "the-loop: auto-execute"
       defaultHarness: claude
-      runner: tmux                                # so you can attach and watch
       control:
         enabled: true
         requireStartCommand: true                 # a label arms; a comment starts
@@ -92,7 +91,7 @@ A config that predates a breaking change is **refused**, naming the key and the 
 ## 3. Pick an ingress
 
 Two ways for GitHub activity to reach the daemon. They share the whole dispatch stack —
-sessions, runner, guards, prompts — and differ only in how events arrive.
+sessions, tmux hosting, guards, prompts — and differ only in how events arrive.
 
 ::: code-group
 

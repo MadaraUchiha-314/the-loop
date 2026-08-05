@@ -24,7 +24,6 @@ def make_session(**overrides) -> Session:
         harness="claude",
         harness_session_id="9f1c-secret-session-id",
         cwd="/home/operator/work/checkouts/repo",
-        runner="tmux",
         tmux_target=TARGET,
     )
     for key, value in overrides.items():
@@ -147,10 +146,11 @@ def test_disabled_is_a_noop(gh_present):
     assert fake.calls == []
 
 
-def test_process_runner_sessions_are_not_announced(gh_present):
+def test_sessions_without_a_tmux_target_are_not_announced(gh_present):
+    # Nothing spawned yet (a self-registered record) — nothing to attach to.
     fake = FakeRun()
     announcer = SessionAnnouncer(AnnounceConfig(), runner=fake)
-    session = make_session(runner="process", tmux_target="")
+    session = make_session(tmux_target="")
     assert announcer.announce(session) is False
     assert fake.calls == []
 

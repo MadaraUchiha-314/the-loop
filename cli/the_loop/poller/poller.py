@@ -638,8 +638,8 @@ class Poller:
         if self._awaiting_start(item):
             return
         # A prior presence still enqueued/processing? Wait — don't pile a second
-        # spawn behind it, and don't count it a failure (a process-runner spawn
-        # runs the whole task and can outlast a poll cycle).
+        # spawn behind it, and don't count it a failure (a spawn can outlast a
+        # poll cycle).
         last_did = self.state.spawn_delivery_id(ref)
         if last_did:
             status = self.dispatcher.delivery_status(last_did, refs)

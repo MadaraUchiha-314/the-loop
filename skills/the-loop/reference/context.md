@@ -99,9 +99,9 @@ The protocol is harness-portable; only the reset verb differs:
 |---|---|---|---|
 | Claude Code (interactive) | `/clear` | `/compact <focus instructions>` | subagents via `Task` |
 | Cursor | new chat (`@Past Chats` to recover selectively) | built-in summarization of older messages | scoped `@` context |
-| Headless / CLI-spawned sessions (webhook, poller, tmux runner) | end the session at the boundary; the next session starts fresh and resumes from the checkpoint | harness auto-compaction (safety net) | spawn-per-task |
+| Daemon-spawned tmux sessions (webhook, poller) | end the session at the boundary; the next session starts fresh and resumes from the checkpoint | harness auto-compaction (safety net) | spawn-per-task |
 
-An agent that cannot invoke a reset on itself (headless runs) still follows the
+An agent that cannot invoke a reset on itself (daemon-spawned runs) still follows the
 protocol: checkpoint at every boundary and prefer ending the session at a phase
 boundary over grinding on with a bloated window — the-loop's resumability guarantees
 the next session continues exactly where the log says.

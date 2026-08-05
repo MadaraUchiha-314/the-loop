@@ -248,8 +248,11 @@ class Session:
     status: str = "active"  # active | paused (issue-106) | closed
     created_at: str = ""
     last_event_at: Optional[str] = None
-    runner: str = "process"  # process | tmux (issue-32)
-    tmux_target: str = ""  # tmux session name when runner == "tmux"
+    # tmux session name hosting this session; "" until one is spawned (a
+    # self-registered record gets its tmux session on first dispatch). The
+    # per-record runner selector was removed with the process runner
+    # (issue-156): tmux is the only runner.
+    tmux_target: str = ""
     recent_deliveries: List[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
@@ -277,7 +280,6 @@ class Session:
             "status": self.status,
             "createdAt": self.created_at,
             "lastEventAt": self.last_event_at,
-            "runner": self.runner,
             "tmuxTarget": self.tmux_target,
             "recentDeliveries": self.recent_deliveries,
         }
@@ -292,7 +294,8 @@ class Session:
             status=data.get("status", "active"),
             created_at=data.get("createdAt", ""),
             last_event_at=data.get("lastEventAt"),
-            runner=data.get("runner", "process"),
+            # A legacy record's "runner" key (pre-issue-156) is ignored: there
+            # is nothing left to branch on.
             tmux_target=data.get("tmuxTarget", ""),
             recent_deliveries=list(data.get("recentDeliveries") or []),
         )
@@ -373,7 +376,6 @@ class SessionRegistry:
             work_item=session.work_item.ref,
             harness=session.harness,
             harness_session_id=session.harness_session_id,
-            runner=session.runner,
             cwd=session.cwd,
             replaced=bool(existing is not None and force) or None,
         )

@@ -5,14 +5,13 @@ programmatic surface reachable from a zero-dependency Python process is their
 CLI, invoked as a subprocess.
 """
 
-from .base import DispatchResult, HarnessAdapter, Usage  # noqa: F401
+from .base import HarnessAdapter, Usage  # noqa: F401
 from .claude_code import ClaudeCodeAdapter  # noqa: F401
 from .cursor_agent import CursorAgentAdapter  # noqa: F401
 
 __all__ = [
     "ClaudeCodeAdapter",
     "CursorAgentAdapter",
-    "DispatchResult",
     "HarnessAdapter",
     "Usage",
 ]

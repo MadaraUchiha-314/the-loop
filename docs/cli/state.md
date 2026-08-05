@@ -66,7 +66,7 @@ them, is what makes the `.gitignore` recipe three lines instead of a puzzle
 |---|---|---|---|
 | `<root>/portable/<slug>.json` | execution control + the poller | what was armed, and which comments are already seen | **portable** |
 | `<root>/portable/index.json` | the same store, derived | one entry per record: ref, url, file, sections | **portable** |
-| `<root>/local/<slug>.json` | the session registry | conversation id, `cwd`, runner, tmux target, status | **local** |
+| `<root>/local/<slug>.json` | the session registry | conversation id, `cwd`, tmux target, status | **local** |
 | `<root>/logs/events.jsonl` | every ingress, and `sessions` | one JSON object per decision | **local** |
 | `<root>/gh-webhook.pid` | `gh-webhook start` | the receiver's pid | **local** |
 
@@ -240,7 +240,6 @@ One file per work item that has a session.
   "status": "active",
   "createdAt": "2026-07-31T09:12:04Z",
   "lastEventAt": "2026-07-31T10:41:55Z",
-  "runner": "tmux",
   "tmuxTarget": "loop-github-octo-repo-15",
   "recentDeliveries": ["8f2c…"]
 }
@@ -251,7 +250,7 @@ One file per work item that has a session.
 | `harness` / `harnessSessionId` | which harness, and the conversation to resume |
 | `cwd` | where a resume must run (the work item's checkout) |
 | `status` | `active`, `paused` (suppressed, not gone) or `closed` |
-| `runner` / `tmuxTarget` | how the session is hosted; the tmux session to attach to |
+| `tmuxTarget` | the tmux session to attach to; `""` until one is spawned (issue-156) |
 | `recentDeliveries` | the last 50 delivery ids, so a restart does not re-deliver |
 
 **Lifecycle.** Written on spawn or `sessions register`; updated on every delivered event;

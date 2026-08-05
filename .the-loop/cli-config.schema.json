@@ -225,7 +225,7 @@
         },
         "interaction": {
           "type": "object",
-          "description": "Where a session the daemon drives takes its answers FROM (issue-134). Until this existed, a spawned session was never told whether a human was at its terminal, so the model guessed \u2014 and both guesses fail: a `process`-runner session asking interactively asks into a pipe nobody reads, while an operator sitting in an attached tmux pane gets round-tripped through GitHub for no reason. The resolved mode is rendered into every event and spawn prompt through the `$interaction_directive` placeholder; a custom promptTemplate that omits the placeholder gets the directive APPENDED, so the rule cannot be stripped by a template edit. Independent of the mode, iteration on a generated artifact (brainstorm.md, requirements.md/bugfix.md, design.md, tasks.md) always happens in pull-request review \u2014 an invariant of the loop, not a setting (decision-052).",
+          "description": "Where a session the daemon drives takes its answers FROM (issue-134). Until this existed, a spawned session was never told whether a human was at its terminal, so the model guessed \u2014 and both guesses fail: a session asking interactively when nobody ever attaches to its tmux pane asks into a void, while an operator sitting in an attached tmux pane gets round-tripped through GitHub for no reason. The resolved mode is rendered into every event and spawn prompt through the `$interaction_directive` placeholder; a custom promptTemplate that omits the placeholder gets the directive APPENDED, so the rule cannot be stripped by a template edit. Independent of the mode, iteration on a generated artifact (brainstorm.md, requirements.md/bugfix.md, design.md, tasks.md) always happens in pull-request review \u2014 an invariant of the loop, not a setting (decision-052).",
           "additionalProperties": false,
           "properties": {
             "mode": {
@@ -235,7 +235,7 @@
                 "cli"
               ],
               "default": "work-item",
-              "description": "`work-item`: every question the agent needs answered is posted as a comment on the work item (or its PR) and the session waits for the reply to arrive as a new event. `cli`: a human is attached to the session's terminal, so questions are asked there \u2014 the decision's OUTCOME still lands on the work item, because the paper trail is not waived by asking in a terminal. Default `work-item` because it fails safe: a tmux session is attachable, not attended (the-loop announces the attach command precisely because nobody is there yet), so the default must be the channel that reaches a human who was not watching. An unrecognised value resolves to `work-item` with a warning, never to `cli`. `cli` combined with `runner: process` also warns: a headless one-shot session has no terminal for a human to answer in. That one is a warning rather than a refusal \u2014 the operator may be piping the harness somewhere the-loop cannot see."
+              "description": "`work-item`: every question the agent needs answered is posted as a comment on the work item (or its PR) and the session waits for the reply to arrive as a new event. `cli`: a human is attached to the session's terminal, so questions are asked there \u2014 the decision's OUTCOME still lands on the work item, because the paper trail is not waived by asking in a terminal. Default `work-item` because it fails safe: a tmux session is attachable, not attended (the-loop announces the attach command precisely because nobody is there yet), so the default must be the channel that reaches a human who was not watching. An unrecognised value resolves to `work-item` with a warning, never to `cli`. That one is a warning rather than a refusal \u2014 the operator may be piping the harness somewhere the-loop cannot see."
             }
           }
         },
@@ -314,18 +314,9 @@
             }
           }
         },
-        "runner": {
-          "type": "string",
-          "enum": [
-            "process",
-            "tmux"
-          ],
-          "default": "process",
-          "description": "How spawned sessions are hosted (receiver-global): 'process' = headless one-shot subprocess; 'tmux' = interactive harness TUI in a named tmux session (loop-<slug>) humans can attach to (issue-32, decision-021)."
-        },
         "tmux": {
           "type": "object",
-          "description": "Lifetime of the tmux-hosted sessions (runner: tmux) \u2014 issue-86. Both defaults keep a finished session readable: a human most wants the transcript of what the agent did exactly when the work item completes.",
+          "description": "Lifetime of the tmux-hosted sessions every dispatch runs in \u2014 issue-86. Both defaults keep a finished session readable: a human most wants the transcript of what the agent did exactly when the work item completes.",
           "additionalProperties": false,
           "properties": {
             "keepSessionOnClose": {
@@ -364,7 +355,7 @@
         },
         "webTerminal": {
           "type": "object",
-          "description": "Optional ttyd-served browser terminal onto the tmux sessions (runner: tmux). No auth of its own \u2014 access control is environmental: localhost, VPN, or the hosting provider's network (decision-021).",
+          "description": "Optional ttyd-served browser terminal onto the tmux sessions. No auth of its own \u2014 access control is environmental: localhost, VPN, or the hosting provider's network (decision-021).",
           "additionalProperties": false,
           "properties": {
             "enabled": {
@@ -402,7 +393,7 @@
           "type": "integer",
           "minimum": 1,
           "default": 1800,
-          "description": "Timeout for a single harness resume/spawn subprocess."
+          "description": "Timeout for a single dispatch (tmux spawn/paste, including workspace preparation)."
         },
         "promptTemplate": {
           "type": "string",
@@ -543,7 +534,7 @@
         },
         "announce": {
           "type": "object",
-          "description": "Announce a spawned interactive session on its work item (issue-86): when a tmux-mode session is first spawned for a work item, the-loop posts a comment carrying the tmux session name and the `tmux attach -t loop-<slug>` command, so a human reading the ticket can watch it work without digging through daemon logs. Best-effort via the operator's own `gh` CLI: a failure never affects the dispatch, and a missing `gh`, a non-GitHub work item, or a process-runner session is a no-op. The body is built only from registry fields (work-item ref, tmux target, harness) \u2014 never from event payloads, and it carries no paths, session ids or hostnames. A respawn (issue-80) posts nothing further: it reuses the same loop-<slug> name, so the comment already on the ticket stays correct.",
+          "description": "Announce a spawned interactive session on its work item (issue-86): when a tmux-mode session is first spawned for a work item, the-loop posts a comment carrying the tmux session name and the `tmux attach -t loop-<slug>` command, so a human reading the ticket can watch it work without digging through daemon logs. Best-effort via the operator's own `gh` CLI: a failure never affects the dispatch, and a missing `gh`, a non-GitHub work item, or a session with no tmux target yet is a no-op. The body is built only from registry fields (work-item ref, tmux target, harness) \u2014 never from event payloads, and it carries no paths, session ids or hostnames. A respawn (issue-80) posts nothing further: it reuses the same loop-<slug> name, so the comment already on the ticket stays correct.",
           "additionalProperties": false,
           "properties": {
             "enabled": {

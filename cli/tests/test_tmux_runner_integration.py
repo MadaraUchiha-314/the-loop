@@ -182,7 +182,6 @@ def pipeline_factory(tmp_path, stub_tmux):
         registry = SessionRegistry(tmp_path / "sessions")
         config = RoutingConfig.from_mapping(
             {
-                "runner": "tmux",
                 "spawnOnUnmatched": "labeled",
                 "spawnWorkdir": str(tmp_path),
                 # Never wait out the resume probe in tests (issue-89); the stub
@@ -255,7 +254,6 @@ def test_labeled_issue_spawns_tmux_hosted_interactive_session(pipeline):
     assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
 
     session = registry.find_by_work_item(REF)
-    assert session.runner == "tmux"
     assert session.tmux_target == "loop-github-octo-repo-15"
     assert session.harness_session_id  # the pre-assigned uuid
 
@@ -285,7 +283,6 @@ def test_followup_event_is_pasted_into_the_running_session(pipeline, monkeypatch
             harness="claude",
             harness_session_id="uuid-1",
             cwd=".",
-            runner="tmux",
             tmux_target="loop-github-octo-repo-15",
         )
     )
@@ -350,11 +347,54 @@ def register_tmux_session(registry, harness_session_id="uuid-1"):
             harness="claude",
             harness_session_id=harness_session_id,
             cwd=".",
-            runner="tmux",
             tmux_target="loop-github-octo-repo-15",
         ),
         force=True,
     )
+
+
+def test_legacy_record_without_a_tmux_target_heals_via_respawn(pipeline):
+    """
+    Feature: tmux-only dispatch (the process runner is removed)
+    Scenario: a legacy session record with no tmux session heals on its next event
+      Given a registered session with no tmuxTarget (self-registered, or written
+            by the removed process runner — the issue-156 bug's stale record)
+      When an issue_comment event for that work item arrives
+      Then a tmux session is spawned resuming the RECORDED conversation id
+      And the registry now carries the loop-<slug> tmux target
+      And the delivery is recorded as processed
+    Requirement: docs/specs/issue-156/bugfix.md#AC2.4
+    """
+    deliver, registry, calls = pipeline
+    registry.register(
+        Session(
+            work_item=WorkItemRef.parse(REF),
+            harness="claude",
+            harness_session_id="legacy-conv-1",
+            cwd=".",
+        )
+    )
+    deliver("issue_comment", issue_payload(action="created"), "d-legacy-1")
+    assert wait_until(
+        lambda: (
+            (
+                registry.find_by_work_item(REF)
+                or Session(
+                    work_item=WorkItemRef.parse(REF),
+                    harness="",
+                    harness_session_id="",
+                    cwd="",
+                )
+            ).tmux_target
+            == TARGET
+        )
+    )
+    healed = registry.find_by_work_item(REF)
+    assert healed.harness_session_id == "legacy-conv-1"  # same conversation
+    assert "d-legacy-1" in healed.recent_deliveries
+    (spawn,) = [c for c in calls() if c[0] == "new-session"]
+    tail = spawn[spawn.index("--") + 1 :]
+    assert tail[1] == "--resume" and tail[2] == "legacy-conv-1"
 
 
 def test_pr_close_keeps_the_tmux_session_by_default(pipeline):
@@ -599,7 +639,7 @@ def test_a_failed_announcement_does_not_change_the_dispatch(pipeline_factory):
     deliver("issues", issue_payload(), "d-announce-3")
     assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
     session = registry.find_by_work_item(REF)
-    assert session.runner == "tmux"
+    assert session.tmux_target == TARGET
     assert wait_until(
         lambda: "d-announce-3" in registry.find_by_work_item(REF).recent_deliveries
     )
@@ -624,7 +664,6 @@ def test_dead_session_is_respawned_with_the_event_as_boot_prompt(pipeline, monke
             harness="claude",
             harness_session_id="uuid-1",
             cwd=".",
-            runner="tmux",
             tmux_target="loop-github-octo-repo-15",
         )
     )
@@ -653,7 +692,7 @@ def test_dead_session_is_respawned_with_the_event_as_boot_prompt(pipeline, monke
 
     assert wait_until(respawned_and_recorded)
     respawned = registry.find_by_work_item(REF)
-    assert respawned is not None and respawned.runner == "tmux"
+    assert respawned is not None and respawned.tmux_target == TARGET
     assert respawned.tmux_target == "loop-github-octo-repo-15"
     assert "d-dead-1" in respawned.recent_deliveries  # marked processed
 
@@ -921,7 +960,6 @@ def test_non_missing_delivery_failure_does_not_respawn(pipeline, monkeypatch):
             harness="claude",
             harness_session_id="uuid-1",
             cwd=".",
-            runner="tmux",
             tmux_target="loop-github-octo-repo-15",
         )
     )

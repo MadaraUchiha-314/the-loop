@@ -355,7 +355,7 @@ def test_workspace_config_parses_overrides():
 
 import time  # noqa: E402
 
-from the_loop.harness import DispatchResult  # noqa: E402
+from conftest import FakeTmux, StubInteractiveAdapter  # noqa: E402
 from the_loop.sessions import Session, SessionRegistry, WorkItemRef  # noqa: E402
 from the_loop.webhook.dispatcher import (  # noqa: E402
     Dispatcher,
@@ -363,24 +363,6 @@ from the_loop.webhook.dispatcher import (  # noqa: E402
     WorkspaceConfig,
 )
 from the_loop.webhook.router import RoutedEvent, extract_work_items  # noqa: E402
-
-
-class _RecordingAdapter:
-    name = "claude"
-
-    def __init__(self, spawn_id="spawned-1"):
-        self.spawn_id = spawn_id
-        self.spawns = []
-
-    def is_available(self):
-        return True
-
-    def resume(self, session, prompt, timeout=None):
-        return DispatchResult(ok=True, session_id=session.harness_session_id)
-
-    def spawn(self, work_item, prompt, cwd, timeout=None):
-        self.spawns.append((work_item.ref, cwd))
-        return DispatchResult(ok=True, session_id=self.spawn_id)
 
 
 def _wait(pred, timeout=5.0):
@@ -392,13 +374,19 @@ def _wait(pred, timeout=5.0):
     return pred()
 
 
-def _make_dispatcher(registry, adapter, config):
-    # `adapter` is intentionally unannotated so the in-process double satisfies
-    # the HarnessAdapter parameter without a subclass (mirrors test_routing).
-    return Dispatcher(registry=registry, adapters={"claude": adapter}, config=config)
+def _make_dispatcher(registry, config, tmux):
+    # The observable seam is the injected FakeTmux (issue-156): every spawn is
+    # a tmux spawn, and its recorded (ref, prompt, cwd, resume) tuples carry
+    # the cwd these tests assert on.
+    return Dispatcher(
+        registry=registry,
+        adapters={"claude": StubInteractiveAdapter()},
+        config=config,
+        tmux_runner=tmux,
+    )
 
 
-def _dispatcher(tmp_path, bare, adapter, **ws_over):
+def _dispatcher(tmp_path, bare, **ws_over):
     registry = SessionRegistry(tmp_path / "sessions")
     config = RoutingConfig(
         spawn_on_unmatched="always",
@@ -406,7 +394,8 @@ def _dispatcher(tmp_path, bare, adapter, **ws_over):
         # Pre-issue-106 spawn behaviour (the start gate has its own tests).
         control=ControlConfig(require_start_command=False),
     )
-    return registry, _make_dispatcher(registry, adapter, config)
+    tmux = FakeTmux()
+    return registry, _make_dispatcher(registry, config, tmux), tmux
 
 
 def _issue_event(bare, number=15, delivery="d-1"):
@@ -455,12 +444,11 @@ def _pr_close_event(bare, number=16, branch="claude/github-issue-15-x", delivery
 
 def test_dispatcher_spawns_into_a_worktree_cwd(tmp_path):
     bare = make_origin(tmp_path)
-    adapter = _RecordingAdapter()
-    registry, dispatcher = _dispatcher(tmp_path, bare, adapter)
+    registry, dispatcher, tmux = _dispatcher(tmp_path, bare)
     dispatcher.handle(_issue_event(bare))
-    assert _wait(lambda: len(adapter.spawns) == 1)
+    assert _wait(lambda: len(tmux.spawns) == 1)
     dispatcher.stop()
-    _, cwd = adapter.spawns[0]
+    _, _, cwd, _ = tmux.spawns[0]
     item = WorkItemRef.parse("github:octo/repo#15")
     ws = Workspace(tmp_path / "root")
     target = target_for(bare)
@@ -474,8 +462,7 @@ def test_dispatcher_spawns_into_a_worktree_cwd(tmp_path):
 
 def test_dispatcher_pr_close_removes_worktree(tmp_path):
     bare = make_origin(tmp_path)
-    adapter = _RecordingAdapter()
-    registry, dispatcher = _dispatcher(tmp_path, bare, adapter)
+    registry, dispatcher, _ = _dispatcher(tmp_path, bare)
     item = WorkItemRef.parse("github:octo/repo#16")  # the PR is the work item
     ws = Workspace(tmp_path / "root")
     target = target_for(bare)
@@ -501,8 +488,7 @@ def test_dispatcher_pr_close_keeps_the_linked_work_items_worktree(tmp_path):
     # issue-101: the work item may have further PRs, so its checkout must
     # outlive any one of them closing.
     bare = make_origin(tmp_path)
-    adapter = _RecordingAdapter()
-    registry, dispatcher = _dispatcher(tmp_path, bare, adapter)
+    registry, dispatcher, _ = _dispatcher(tmp_path, bare)
     item = WorkItemRef.parse("github:octo/repo#15")  # the issue PR #16 links
     ws = Workspace(tmp_path / "root")
     target = target_for(bare)
@@ -524,10 +510,7 @@ def test_dispatcher_pr_close_keeps_the_linked_work_items_worktree(tmp_path):
 
 def test_dispatcher_pr_close_keeps_worktree_when_configured(tmp_path):
     bare = make_origin(tmp_path)
-    adapter = _RecordingAdapter()
-    registry, dispatcher = _dispatcher(
-        tmp_path, bare, adapter, keep_checkout_on_close=True
-    )
+    registry, dispatcher, _ = _dispatcher(tmp_path, bare, keep_checkout_on_close=True)
     item = WorkItemRef.parse("github:octo/repo#16")
     ws = Workspace(tmp_path / "root")
     target = target_for(bare)
@@ -547,12 +530,11 @@ def test_dispatcher_pr_close_keeps_worktree_when_configured(tmp_path):
 
 def test_dispatcher_clone_strategy_spawns_into_work_item_folder(tmp_path):
     bare = make_origin(tmp_path)
-    adapter = _RecordingAdapter()
-    registry, dispatcher = _dispatcher(tmp_path, bare, adapter, strategy="clone")
+    registry, dispatcher, tmux = _dispatcher(tmp_path, bare, strategy="clone")
     dispatcher.handle(_issue_event(bare))
-    assert _wait(lambda: len(adapter.spawns) == 1)
+    assert _wait(lambda: len(tmux.spawns) == 1)
     dispatcher.stop()
-    _, cwd = adapter.spawns[0]
+    _, _, cwd, _ = tmux.spawns[0]
     item = WorkItemRef.parse("github:octo/repo#15")
     ws = Workspace(tmp_path / "root", strategy="clone")
     target = target_for(bare)
@@ -564,8 +546,7 @@ def test_dispatcher_clone_strategy_spawns_into_work_item_folder(tmp_path):
 
 def test_dispatcher_clone_strategy_pr_close_removes_work_item_folder(tmp_path):
     bare = make_origin(tmp_path)
-    adapter = _RecordingAdapter()
-    registry, dispatcher = _dispatcher(tmp_path, bare, adapter, strategy="clone")
+    registry, dispatcher, _ = _dispatcher(tmp_path, bare, strategy="clone")
     item = WorkItemRef.parse("github:octo/repo#16")  # the PR is the work item
     ws = Workspace(tmp_path / "root", strategy="clone")
     target = target_for(bare)
@@ -592,7 +573,7 @@ def test_close_session_reports_that_it_removed_the_checkout(tmp_path):
     went, so the answer has to come back from the close path itself.
     """
     bare = make_origin(tmp_path)
-    registry, dispatcher = _dispatcher(tmp_path, bare, _RecordingAdapter())
+    registry, dispatcher, _ = _dispatcher(tmp_path, bare)
     item = WorkItemRef.parse("github:octo/repo#16")
     ws = Workspace(tmp_path / "root")
     worktree = ws.ensure_worktree(target_for(bare), item.slug)
@@ -613,9 +594,7 @@ def test_close_session_reports_that_it_removed_the_checkout(tmp_path):
 
 def test_close_session_reports_no_removal_when_the_checkout_is_kept(tmp_path):
     bare = make_origin(tmp_path)
-    registry, dispatcher = _dispatcher(
-        tmp_path, bare, _RecordingAdapter(), keep_checkout_on_close=True
-    )
+    registry, dispatcher, _ = _dispatcher(tmp_path, bare, keep_checkout_on_close=True)
     item = WorkItemRef.parse("github:octo/repo#16")
     ws = Workspace(tmp_path / "root")
     worktree = ws.ensure_worktree(target_for(bare), item.slug)
@@ -636,17 +615,17 @@ def test_close_session_reports_no_removal_when_the_checkout_is_kept(tmp_path):
 
 def test_dispatcher_without_workspace_uses_spawn_workdir(tmp_path):
     # Legacy behaviour preserved: no workspace.root => static spawnWorkdir.
-    adapter = _RecordingAdapter()
     registry = SessionRegistry(tmp_path / "sessions")
     config = RoutingConfig(
         spawn_on_unmatched="always",
         spawn_workdir=str(tmp_path),
         control=ControlConfig(require_start_command=False),
     )
-    dispatcher = _make_dispatcher(registry, adapter, config)
+    tmux = FakeTmux()
+    dispatcher = _make_dispatcher(registry, config, tmux)
     assert dispatcher.workspace is None
     dispatcher.handle(_issue_event(tmp_path / "unused.git"))
-    assert _wait(lambda: len(adapter.spawns) == 1)
+    assert _wait(lambda: len(tmux.spawns) == 1)
     dispatcher.stop()
-    _, cwd = adapter.spawns[0]
+    _, _, cwd, _ = tmux.spawns[0]
     assert cwd == str(tmp_path)

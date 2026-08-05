@@ -60,8 +60,8 @@ to that item's registered session:
 - **Dedup** — on `X-GitHub-Delivery`, through a bounded LRU
   ([`dedupCacheSize`](/config/cli/routing-options#dedupcachesize)), so GitHub's redeliveries
   are processed at most once.
-- **Dispatch** — the matched session is resumed through its official CLI
-  (`claude -p … --resume <session-id>` / `cursor-agent -p … --resume <chat-id>`), one event
+- **Dispatch** — the rendered prompt is pasted into the matched session's tmux-hosted
+  TUI (respawning it first when it has died), one event
   at a time per session, in parallel across sessions
   ([`maxConcurrentDispatches`](/config/cli/routing-options#maxconcurrentdispatches)).
 - **Unmatched** events follow
@@ -108,7 +108,7 @@ start before anything spawns.
 
 While the receiver runs, edits to `routing` and `events` are picked up on the **next
 received event** — no restart. The soft policy swaps live: events filter, label, spawn
-policy, harness and runner, per-harness args, prompt templates. The dedup cache, per-session
+policy, harness, per-harness args, prompt templates. The dedup cache, per-session
 queues and registry are preserved.
 
 Infrastructural settings still need a restart: `host`, `port`, `path`, `secretEnv`,

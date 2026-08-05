@@ -168,10 +168,9 @@ def _build_routing(routing_config: dict, gh_webhook_config: dict):
         router.auto_execute_label = new.auto_execute_label
         router.authorized_users = resolve_authorized_users(new.authorized_users)
         logger.info(
-            "hot-reloaded gh-webhook routing: spawnOnUnmatched=%s runner=%s "
+            "hot-reloaded gh-webhook routing: spawnOnUnmatched=%s "
             "label=%r events=%d authorizedUsers=%d",
             new.spawn_on_unmatched,
-            new.runner,
             new.auto_execute_label,
             len(router.events),
             len(router.authorized_users),
@@ -180,7 +179,7 @@ def _build_routing(routing_config: dict, gh_webhook_config: dict):
             "config.reloaded",
             detail=(
                 f"gh-webhook routing: spawnOnUnmatched={new.spawn_on_unmatched} "
-                f"runner={new.runner} events={len(router.events)} "
+                f"events={len(router.events)} "
                 f"authorizedUsers={len(router.authorized_users)}"
             ),
         )
@@ -208,12 +207,11 @@ def _build_routing(routing_config: dict, gh_webhook_config: dict):
             dispatcher.handle(routed)
 
     logger.info(
-        "routing enabled: registry=%s defaultHarness=%s spawnOnUnmatched=%s runner=%s "
+        "routing enabled: registry=%s defaultHarness=%s spawnOnUnmatched=%s "
         "requireStartCommand=%s (routing config hot-reloads on change)",
         config.registry_dir,
         config.default_harness,
         config.spawn_on_unmatched,
-        config.runner,
         config.control.require_start_command and config.control.enabled,
     )
     if config.control.enabled and config.control.require_start_command:
@@ -295,9 +293,7 @@ class GhWebhookCommand(Command):
             on_event, dispatcher, routing_config = _build_routing(
                 cli_config.load_routing_config(_CONFIG_PATH), _load_config_defaults()
             )
-            missing = check_dependencies(
-                routing_config.runner, routing_config.web_terminal.enabled
-            )
+            missing = check_dependencies(routing_config.web_terminal.enabled)
             if missing:  # R6.1: fail with per-platform guidance; R6.2: else silent
                 for line in missing:
                     logger.error(line)

@@ -5,16 +5,16 @@ Run with: pytest (from the cli/ directory).
 
 import json
 
-from the_loop.harness import DispatchResult, Usage
+from the_loop.harness import Usage
 from the_loop.harness.base import usage_from_output
 
 
 def test_default_usage_is_absent():
-    # A DispatchResult with no reported usage must read as "not present",
-    # so telemetry never logs a misleading zero.
-    result = DispatchResult(ok=True)
-    assert result.usage.present is False
-    assert result.usage.total_tokens == 0
+    # A fresh Usage must read as "not present", so telemetry never logs a
+    # misleading zero.
+    usage = Usage()
+    assert usage.present is False
+    assert usage.total_tokens == 0
 
 
 def test_parses_claude_style_usage_and_cost():

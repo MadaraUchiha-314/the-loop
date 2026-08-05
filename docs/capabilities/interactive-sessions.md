@@ -1,22 +1,23 @@
 # Capability: interactive-sessions
 
-> Webhook-spawned harness sessions humans can watch and steer live — hosted in tmux,
+> Daemon-spawned harness sessions humans can watch and steer live — hosted in tmux,
 > attachable from a local terminal, SSH, or a browser.
 
 ## What it is
 
-The tmux runner: instead of the headless one-shot subprocess of the `process` runner,
-`routing.runner: tmux` hosts each auto-executed work item as the harness's
-**interactive TUI inside a named tmux session**, while webhook events keep flowing into
-the same conversation.
+How every daemon-spawned session runs: each auto-executed work item is hosted as the
+harness's **interactive TUI inside a named tmux session**, while events keep flowing
+into the same conversation. tmux is the **only** runner — issue-156 removed the
+headless one-shot `process` runner and the `routing.runner` choice with it (a config
+still carrying the key is warned about and otherwise ignored).
 
 ## Current behaviour
 
-- WHEN routing spawns a session and `routing.runner` is `tmux` THEN the harness TUI
+- WHEN routing spawns a session THEN the harness TUI
   SHALL start detached in tmux session `loop-<work-item-slug>` with a **pre-assigned
   session id** (`claude --session-id <uuid>`), recorded in the registry as
-  `runner`/`tmuxTarget`; cursor-agent has no pre-assignable id, so tmux-mode spawns for
-  it fail with a clear error.
+  `tmuxTarget`; cursor-agent has no pre-assignable id, so spawns for
+  it fail with a clear error (cursor remains usable as a critic harness only).
 - WHEN a tmux session name is derived for a work item THEN it SHALL be spelled the way
   **tmux** spells it: `.` and `:` are rewritten to `_`, because they are tmux's own
   target grammar (`session:window.pane`) and tmux rewrites them itself on creation
@@ -36,7 +37,7 @@ the same conversation.
   one per GitHub object), and a from-scratch spawn SHALL be keyed to the issue's slug —
   see [webhook-triggers](webhook-triggers.md) for how the linkage is resolved
   (issue-93, [decision-036](../decisions/decision-036.md)).
-- WHEN a routed event matches a tmux-mode session THEN the rendered prompt SHALL be
+- WHEN a routed event matches a session THEN the rendered prompt SHALL be
   **bracketed-pasted** into the TUI (`load-buffer` → `paste-buffer -p` → `send-keys
   Enter`), FIFO per session; a delivery that fails while the session is alive discards
   the delivery id so the next redelivery/poll retries.
@@ -92,7 +93,7 @@ the same conversation.
   (tmux failed, or the pane came up dead) THEN the respawn SHALL fall back to a fresh
   conversation with a newly minted id, emitting `session.resume_failed` and
   `resumed: false` — never a silently-successful dispatch into a dead pane
-  (issue-89). The `process` runner already resumed on every event and is unchanged.
+  (issue-89).
 - WHEN a tmux session is spawned THEN tmux's `remain-on-exit` SHALL be set on it
   (`routing.tmux.remainOnExit`, best-effort — an older tmux that rejects it only
   warns), so the pane and its scrollback survive the harness process exiting. A
@@ -137,23 +138,24 @@ the same conversation.
   process or a refused signal is logged (`session.harness_terminated`) and the close
   completes regardless. `killHarnessOnClose: false` keeps the pre-issue-94 behaviour
   (a retained session keeps its harness running).
-- WHEN a tmux-mode session is spawned THEN the-loop SHALL comment on the work item
+- WHEN a session is spawned THEN the-loop SHALL comment on the work item
   with the tmux session name and the `tmux attach -t loop-<slug>` command
   (`routing.announce`, default on), so the attach details reach the humans on the
   ticket. A **respawn** SHALL post nothing further — it reuses the same name, so the
   existing comment stays correct and a flapping session cannot bury the thread.
   Best-effort through the operator's own `gh` CLI: a failure never affects the
-  dispatch, and a process-runner session, a non-GitHub work item or a missing `gh` is
+  dispatch, and a non-GitHub work item or a missing `gh` is
   a no-op. The body is built only from registry fields — never from event payloads —
   and carries no filesystem paths, harness session ids or hostnames, and it SHALL carry
   the loop-prevention marker plus a visible attribution line
   (`the_loop.authz.mark_self_authored`) so neither trigger path feeds the announcement
   back into the session it announces (issue-104).
-- `the-loop sessions list` SHALL show `Runner`/`Tmux` columns; `the-loop sessions
+- `the-loop sessions list` SHALL show a `Tmux` column; `the-loop sessions
   attach --work-item <ref> [--read-only]` SHALL attach the caller's terminal to the
   session's tmux session — including one **retained after the work item closed**, which
   SHALL always be attached **read-only** (with a note) whether or not `--read-only` was
-  passed — with clear errors for process-mode or genuinely absent sessions.
+  passed — with a clear error for a genuinely absent session, and for a record with no
+  `tmuxTarget` yet ("no tmux session recorded yet…" — see the lazy-healing rule below).
 - WHEN `gh-webhook start --route` or `poll start` runs THEN the native dependencies
   (`tmux`; `ttyd` if `routing.webTerminal.enabled`) SHALL be verified with
   per-platform install guidance — silent when satisfied. Both ingress paths drive
@@ -165,7 +167,7 @@ the same conversation.
   stopped on shutdown; the-loop implements **no auth** — access control is
   environmental (localhost / VPN / hosting provider network).
 - WHEN a session is spawned **or respawned** THEN — before **any** harness start,
-  meaning either runner and both halves of a respawn (the conversation-resume attempt
+  meaning both halves of a respawn (the conversation-resume attempt
   above as well as the fresh-conversation fallback) — the harness's own user config
   SHALL be pre-seeded so the session does not
   open on an interactive dialog (`routing.harnessTrust`, default on). For Claude Code
@@ -212,10 +214,12 @@ the same conversation.
   independent of `harnessTrust` (either may be off without the other), shares its write
   discipline and its `workspace.trusted` / `workspace.trust_failed` events, and is a
   silent no-op for cursor-agent.
-- WHEN `routing.runner` is `process` or unset THEN behaviour SHALL be identical to the
-  pre-issue-32 receiver; registry files from before issue-32 remain readable, and a
-  registry may mix process- and tmux-mode sessions (the session's recorded runner
-  wins).
+- A registry record SHALL carry no `runner` field (issue-156). A record with an empty
+  `tmuxTarget` — one self-registered via `the-loop sessions register`, or written
+  before issue-156, an old `runner: "process"` record included — SHALL be healed
+  **lazily**: its next dispatched event takes the respawn path above, resuming the
+  recorded conversation when possible and starting a fresh one otherwise. There is no
+  migration tool, and pre-issue-156 registry files remain readable as they are.
 
 ## Design
 
@@ -226,6 +230,7 @@ the same conversation.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-156 | Process runner removed; tmux is the only runner (2026-08-05): `routing.runner` left the schema (ignored with a warning), tmux became a required daemon dependency, registry records dropped their `runner` field, and a record without a `tmuxTarget` heals lazily through the respawn path on its next event | [spec](../specs/issue-156/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/156) |
 | issue-154 | Fixed the tmux session name the-loop recorded and posted not being the one tmux gave the session: a slug's `.`/`:` are now rewritten to `_` (tmux's own `session_check_name`) where the name is minted and where a registry record is loaded, so the announced `tmux attach -t …` command resolves, probes stop reading a live session as absent, and `terminate_harness`'s guard rejects the target-grammar shape outright | [spec](../specs/issue-154/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/154) |
 | issue-146 | Fixed a respawn colliding with the session it was replacing: an unanswered tmux probe is no longer read as "session gone", a **live** `loop-<slug>` occupant is delivered into rather than killed or spawned over, a `duplicate session` refusal is resolved once instead of recurring, and an unclearable dead occupant **skips** the event (`session-occupied`) instead of releasing it to fail identically forever | [spec](../specs/issue-146/), [decision-055](../decisions/decision-055.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/146) |
 | issue-143 | The pre-spawn step now also enables the-loop's own plugin (`extraKnownMarketplaces` + `enabledPlugins` in the harness's user settings, `routing.harnessPlugins`), so a spawned session has the skill, commands and hooks the work-on prompt assumes instead of running the ticket as a plain agent; existing values are never overwritten | [spec](../specs/issue-143/), [decision-054](../decisions/decision-054.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/143) |

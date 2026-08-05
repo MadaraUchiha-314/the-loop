@@ -1,7 +1,7 @@
 # Token economy reference — spend fewer tokens, never less rigor
 
-the-loop iterates, is verbose by design, and (in the default `process` runner) re-primes
-the harness on every webhook event — so it is inherently token-hungry (issue-37). This
+the-loop iterates, is verbose by design, and keeps each work item's harness TUI resident
+across the item's whole event stream — so it is inherently token-hungry (issue-37). This
 reference is the loop's **opinion on token economy**: a set of config-driven levers
 (`tokenEconomy` in `.the-loop/harness-config.yaml`) plus the guidance that makes them real.
 
@@ -107,13 +107,14 @@ disk, keep the window lean. For long runs: checkpoint state to the execution log
 compact/reset the window with a "preserve the spec + open threads" instruction rather than
 letting the window grow unbounded ("context rot").
 
-### 10. Prefer resident sessions over cold re-priming
+### 10. Manage the resident session's window
 
-In the **`tmux` runner (issue-32)** the harness TUI stays resident and each webhook event is
-**forwarded into the existing session** — no re-spawn, no cold re-prime. That makes
-`runner: tmux` a token lever over long chains of `process`-runner `-p --resume` spawns.
-Where `process` runner is used, prefer **fresh context per work item** over one giant
-mega-session (which re-sends the whole growing conversation every turn).
+Every daemon-spawned session is a resident tmux-hosted TUI (issue-32; the only runner
+since issue-156): each event is **forwarded into the existing session** — no re-spawn, no
+cold re-prime — so context amortizes across a work item's whole event stream. The flip
+side is a window that only grows: manage context **inside** the session — compaction and
+clears at phase boundaries per `reference/context.md` — rather than letting one giant
+mega-session re-send the whole growing conversation every turn.
 
 ### 11. Measure it (`tokenEconomy.telemetry`) — the prerequisite
 
@@ -136,7 +137,7 @@ one.
 | 7 | Thinking-effort control | §7 |
 | 8 | Sub-agents w/ fresh context for verbose work | §8 |
 | 9 | Compaction + structured note-taking | §9 |
-| 10 | Resident sessions / fresh-context-per-item | §10 |
+| 10 | Resident sessions / in-session context management | §10 |
 | 11 | Per-work-item token/cost telemetry | §11 |
 
 ## References

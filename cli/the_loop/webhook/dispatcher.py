@@ -231,7 +231,9 @@ class RoutingConfig:
     enabled: bool = False
     registry_dir: str = ".the-loop/local"
     default_harness: str = "claude"
-    runner: str = "process"  # process | tmux (issue-32, decision-021)
+    # Sessions are always hosted in tmux (issue-32, decision-021). The
+    # `routing.runner` selector was removed with the process runner
+    # (issue-156, decision-056).
     tmux: TmuxConfig = field(default_factory=TmuxConfig)
     web_terminal: WebTerminalConfig = field(default_factory=WebTerminalConfig)
     spawn_on_unmatched: str = "never"  # never | always | labeled
@@ -283,13 +285,22 @@ class RoutingConfig:
         """
         data = data or {}
         layout = layout or StateLayout()
+        leftover = str(data.get("runner", "tmux") or "tmux")
+        if leftover != "tmux":
+            # The key was removed with the process runner (issue-156). Warn,
+            # never fail: an un-edited config must not brick a daemon.
+            logger.warning(
+                "routing.runner (%r) was removed: the process runner no longer "
+                "exists and sessions are always hosted in tmux — delete the key "
+                "from cli-config.yaml",
+                leftover,
+            )
         return cls(
             enabled=bool(data.get("enabled", False)),
             registry_dir=str(data.get("registryDir") or layout.local_dir),
             portable_dir=layout.portable_dir,
             legacy=legacy_layout(layout),
             default_harness=str(data.get("defaultHarness", "claude")),
-            runner=str(data.get("runner", "process")),
             tmux=TmuxConfig.from_mapping(data.get("tmux") or {}),
             web_terminal=WebTerminalConfig.from_mapping(data.get("webTerminal") or {}),
             spawn_on_unmatched=str(data.get("spawnOnUnmatched", "never")),
@@ -313,9 +324,7 @@ class RoutingConfig:
             announce=AnnounceConfig.from_mapping(data.get("announce") or {}),
             control=ControlConfig.from_mapping(data.get("control") or {}),
             graph=GraphLinkConfig.from_mapping(data.get("graph") or {}),
-            interaction=InteractionConfig.from_mapping(
-                data.get("interaction") or {}, runner=str(data.get("runner", "process"))
-            ),
+            interaction=InteractionConfig.from_mapping(data.get("interaction") or {}),
         )
 
 
@@ -372,27 +381,6 @@ def _pr_head_ref(routed: RoutedEvent) -> Optional[str]:
     return ref or None
 
 
-def _log_usage(usage, harness: str, ref: str) -> None:
-    """Emit per-dispatch token/cost telemetry when the harness reported any.
-
-    Advisory (issue-37, tokenEconomy.telemetry): stays silent when a harness
-    omits usage, so it never implies a false zero.
-    """
-    if usage is None or not usage.present:
-        return
-    logger.info(
-        "usage %s %s: in=%d out=%d cache_r=%d cache_w=%d total=%d cost=$%.4f",
-        harness,
-        ref,
-        usage.input_tokens,
-        usage.output_tokens,
-        usage.cache_read_tokens,
-        usage.cache_write_tokens,
-        usage.total_tokens,
-        usage.cost_usd,
-    )
-
-
 def _repo_payload(session: Session) -> dict:
     """The minimal payload naming a session's repository.
 
@@ -438,8 +426,7 @@ class Dispatcher:
         self.control_store = control_store or ControlStore(
             self.config.portable_dir, legacy=self.config.legacy
         )
-        # Built unconditionally: a registry may hold tmux-mode sessions even
-        # when config.runner is "process" (the session's recorded runner wins).
+        # The one runner every session is hosted in (issue-156).
         self._tmux_override = tmux_runner is not None
         self.tmux = (
             tmux_runner
@@ -499,7 +486,7 @@ class Dispatcher:
     def reload(self, config: RoutingConfig) -> None:
         """Hot-swap the *soft* routing policy without disturbing running work.
 
-        Live-reloaded: spawn policy, default harness, runner, spawn workdir,
+        Live-reloaded: spawn policy, default harness, spawn workdir,
         the clone-and-worktree workspace (issue-76), the tmux session lifetime
         and announcement policy (issue-86), dispatch timeout, per-harness args
         and the pre-spawn trust policy (issue-90 — one adapter rebuild carries
@@ -883,7 +870,7 @@ class Dispatcher:
         # (issue-148, D6). Best-effort — a failure leaves a stale binding the
         # next spawn re-records; the registry above stays the authority.
         self.graphlink.on_close(session.work_item, session.cwd)
-        if session.runner == "tmux":
+        if session.tmux_target:
             self._close_tmux(session)
         payload = routed.payload if routed is not None else _repo_payload(session)
         cleaned = self._cleanup_workspace(session, payload)
@@ -1122,46 +1109,20 @@ class Dispatcher:
                 verdict=(gate_report.outcome if gate_report else ""),
             ),
         )
-        if session.runner == "tmux":
-            # The session's recorded runner wins (mixed fleets, decision-021).
-            result = self.tmux.deliver(
-                session, prompt, timeout=self.config.dispatch_timeout_seconds
+        result = self.tmux.deliver(
+            session, prompt, timeout=self.config.dispatch_timeout_seconds
+        )
+        if not result.ok and result.session_missing:
+            # The tmux session crashed/was killed — or the record predates
+            # tmux-only dispatch and never had one (issue-156). Either way a
+            # *terminal* fault for that session: respawn a fresh one and
+            # deliver this event into it, instead of releasing for a
+            # redelivery that would hit the same missing session forever
+            # (issue-80).
+            return self._respawn_tmux(
+                session, routed, prompt, advance_after=gate_report is None
             )
-            if not result.ok and result.session_missing:
-                # The tmux session crashed/was killed — a *terminal* fault for
-                # that session. Respawn a fresh one and deliver this event into
-                # it, instead of releasing for a redelivery that would hit the
-                # same missing session forever (issue-80).
-                return self._respawn_tmux(
-                    session, routed, prompt, advance_after=gate_report is None
-                )
-            ok, error, verb = result.ok, result.error, "delivered into tmux session"
-        else:
-            adapter = self.adapters.get(session.harness)
-            if adapter is None:
-                logger.error(
-                    "no adapter for harness %r (session %s); event dropped",
-                    session.harness,
-                    key,
-                )
-                eventlog.emit(
-                    "dispatch.dropped",
-                    level="error",
-                    reason="no-adapter",
-                    work_item=key,
-                    harness=session.harness,
-                    gh_event=routed.event,
-                    delivery_id=routed.delivery_id or None,
-                )
-                if routed.delivery_id:
-                    self.deduper.discard(routed.delivery_id)
-                return False
-            resumed = adapter.resume(
-                session, prompt, timeout=self.config.dispatch_timeout_seconds
-            )
-            ok, error, verb = resumed.ok, resumed.error, "resumed"
-            if ok:
-                _log_usage(resumed.usage, session.harness, key)
+        ok, error, verb = result.ok, result.error, "delivered into tmux session"
 
         if ok:
             logger.info("%s %s for %s", verb, session.harness, key)
@@ -1169,7 +1130,7 @@ class Dispatcher:
                 "dispatch.succeeded",
                 work_item=key,
                 harness=session.harness,
-                via=session.runner,
+                via="tmux",
                 gh_event=routed.event,
                 delivery_id=routed.delivery_id or None,
             )
@@ -1187,7 +1148,7 @@ class Dispatcher:
             level="error",
             work_item=key,
             harness=session.harness,
-            via=session.runner,
+            via="tmux",
             gh_event=routed.event,
             delivery_id=routed.delivery_id or None,
             error=error,
@@ -1242,65 +1203,10 @@ class Dispatcher:
                 ctx, spec_id_for(work_item) or work_item.ref
             ),
         )
-        # Before ANY runner starts the harness: make sure the harness will not
+        # Before the runner starts the harness: make sure the harness will not
         # open on a trust dialog nobody is there to answer (issue-90).
         self._prepare_environment(adapter, work_item, cwd)
-        if self.config.runner == "tmux":
-            return self._spawn_tmux(work_item, routed, adapter, prompt, cwd)
-        result = adapter.spawn(
-            work_item,
-            prompt,
-            cwd=cwd,
-            timeout=self.config.dispatch_timeout_seconds,
-        )
-        if not result.ok:
-            logger.error("spawn for %s failed: %s", work_item.ref, result.error)
-            eventlog.emit(
-                "session.spawn_failed",
-                level="error",
-                work_item=work_item.ref,
-                harness=self.config.default_harness,
-                error=result.error,
-                will_retry=bool(routed.delivery_id),
-            )
-            if routed.delivery_id:
-                self.deduper.discard(routed.delivery_id)
-            return False
-        _log_usage(result.usage, self.config.default_harness, work_item.ref)
-        session = Session(
-            work_item=work_item,
-            harness=self.config.default_harness,
-            harness_session_id=result.session_id,
-            cwd=cwd,
-        )
-        self.registry.register(session, force=True)
-        self.registry.touch(work_item, delivery_id=routed.delivery_id or None)
-        logger.info(
-            "spawned %s session %s for %s",
-            self.config.default_harness,
-            result.session_id,
-            work_item.ref,
-        )
-        eventlog.emit(
-            "session.spawned",
-            work_item=work_item.ref,
-            harness=self.config.default_harness,
-            harness_session_id=result.session_id,
-            runner="process",
-            interaction=self.config.interaction.mode,
-            gh_event=routed.event,
-            action=routed.action or None,
-            delivery_id=routed.delivery_id or None,
-        )
-        # The work item is now being worked, so it enters the graph (issue-113).
-        # After the spawn succeeded, never before: a failed spawn must not leave
-        # a labelled ticket pointing at a node nobody is standing on. The
-        # session id rides along so `session: inherit` gates know their target
-        # (issue-148, D6).
-        self.graphlink.on_spawn(
-            work_item, cwd, session_id=result.session_id or "", runner="process"
-        )
-        return True
+        return self._spawn_tmux(work_item, routed, adapter, prompt, cwd)
 
     def _spawn_tmux(
         self,
@@ -1313,8 +1219,7 @@ class Dispatcher:
         """Spawn the harness TUI in a tmux session with a pre-assigned id (R1/R2)."""
         if not adapter.is_available():
             # tmux new-session would "succeed" (the pane exists briefly) and
-            # register a session doomed to die — fail honestly instead, like
-            # the process runner does (HarnessAdapter._run).
+            # register a session doomed to die — fail honestly instead.
             logger.error(
                 "harness CLI %r not found on PATH; cannot spawn a tmux session "
                 "for %s — install it or point the %s adapter at the binary",
@@ -1391,7 +1296,6 @@ class Dispatcher:
             harness=self.config.default_harness,
             harness_session_id=session_id,
             cwd=cwd,
-            runner="tmux",
             tmux_target=self.tmux.target_for(work_item),
         )
         self.registry.register(session, force=True)
@@ -1416,10 +1320,8 @@ class Dispatcher:
             action=routed.action or None,
             delivery_id=routed.delivery_id or None,
         )
-        # The tmux runner enters the graph too (issue-148): before this, only
-        # process-runner spawns ever called `on_spawn`, so a tmux deployment
-        # had phase labels that never moved — the exact defect issue-113 fixed,
-        # surviving on one of the two runners.
+        # The spawned session enters the graph (issue-113/148): a failed spawn
+        # must not leave a labelled ticket pointing at a node nobody stands on.
         self.graphlink.on_spawn(work_item, cwd, session_id=session_id, runner="tmux")
         # Tell the humans on the ticket that the session exists and how to
         # attach (issue-86). Best-effort: never affects the dispatch outcome.
@@ -1540,7 +1442,6 @@ class Dispatcher:
             harness=session.harness,
             harness_session_id=session_id,
             cwd=session.cwd,
-            runner="tmux",
             tmux_target=self.tmux.target_for(work_item),
             # Carry the processed-delivery history so restart-surviving dedup
             # still holds after a respawn.

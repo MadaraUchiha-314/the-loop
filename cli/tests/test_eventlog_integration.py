@@ -13,7 +13,6 @@ triggered this session, what was rejected, and what failed?".
 import hashlib
 import hmac
 import json
-import stat
 import threading
 import time
 import urllib.error
@@ -21,10 +20,10 @@ import urllib.request
 
 import pytest
 
+from conftest import FakeTmux, StubInteractiveAdapter
 from the_loop.control import ControlConfig
 from the_loop import eventlog
 from the_loop.cli import main
-from the_loop.harness import ClaudeCodeAdapter
 from the_loop.sessions import Session, SessionRegistry, WorkItemRef
 from the_loop.webhook import serve
 from the_loop.webhook.dispatcher import Dispatcher, RoutingConfig
@@ -32,14 +31,6 @@ from the_loop.webhook.router import Router
 
 SECRET = "s3cret"
 REF = "github:octo/repo#15"
-
-STUB_TEMPLATE = """#!/usr/bin/env python3
-import json, sys
-if {exit_code}:
-    sys.stderr.write("stub harness error\\n")
-    sys.exit({exit_code})
-print(json.dumps({{"session_id": "spawned-1", "result": "ok"}}))
-"""
 
 
 def wait_until(predicate, timeout=5.0, interval=0.02):
@@ -53,16 +44,15 @@ def wait_until(predicate, timeout=5.0, interval=0.02):
 
 @pytest.fixture()
 def stack(tmp_path):
-    """A live receiver + stub harness, with the event log configured the way
-    `gh-webhook start` configures it — writing to a tmp events.jsonl."""
+    """A live receiver over the FakeTmux seam, with the event log configured
+    the way `gh-webhook start` configures it — writing to a tmp events.jsonl."""
     log_path = tmp_path / "events.jsonl"
     eventlog.configure("gh-webhook", path=log_path)
     started = []
 
-    def start(exit_code=0, register_session=True, **routing_overrides):
-        binary = tmp_path / "claude"
-        binary.write_text(STUB_TEMPLATE.format(exit_code=exit_code))
-        binary.chmod(binary.stat().st_mode | stat.S_IXUSR)
+    def start(deliver_ok=True, register_session=True, **routing_overrides):
+        tmux = FakeTmux()
+        tmux.deliver_ok = deliver_ok
         registry = SessionRegistry(tmp_path / "sessions")
         if register_session:
             registry.register(
@@ -71,6 +61,7 @@ def stack(tmp_path):
                     harness="claude",
                     harness_session_id="sess-1",
                     cwd=str(tmp_path),
+                    tmux_target="loop-github-octo-repo-15",
                 )
             )
         config = RoutingConfig(
@@ -84,8 +75,9 @@ def stack(tmp_path):
         )
         dispatcher = Dispatcher(
             registry=registry,
-            adapters={"claude": ClaudeCodeAdapter(binary=str(binary))},
+            adapters={"claude": StubInteractiveAdapter()},
             config=config,
+            tmux_runner=tmux,
         )
         router = Router(
             events=["issue_comment"],
@@ -236,16 +228,16 @@ def test_rejections_are_recorded_with_reasons(stack):
 def test_failed_dispatch_is_recorded_as_retryable(stack):
     """
     Feature: End-to-end observability of the-loop's CLI actions
-    Scenario: A failed harness dispatch is recorded with its retry semantics
-        Given a running receiver whose harness CLI exits non-zero
+    Scenario: A failed tmux delivery is recorded with its retry semantics
+        Given a running receiver whose tmux paste fails transiently
         When a signed issue_comment webhook is POSTed
         Then events.jsonl records dispatch.failed at level error
-        And the record carries the harness error and will_retry=true
+        And the record carries the error and will_retry=true
              (the delivery id was released for GitHub redelivery)
     Requirement: docs/specs/issue-50/requirements.md#R3
     """
     start, events, _ = stack
-    port, _ = start(exit_code=3)
+    port, _ = start(deliver_ok=False)
     assert (
         post_webhook(port, "issue_comment", issue_comment_payload("go"), "d-f") == 202
     )
@@ -278,7 +270,8 @@ def test_spawn_and_session_lifecycle_are_recorded(stack):
     assert spawned["work_item"] == REF
     assert spawned["gh_event"] == "issue_comment"
     assert spawned["delivery_id"] == "d-s"
-    assert spawned["harness_session_id"] == "spawned-1"
+    assert spawned["harness_session_id"]  # the pre-assigned uuid
+    assert spawned["runner"] == "tmux"
     assert events(types=["session.registered"], work_item=REF)
 
 

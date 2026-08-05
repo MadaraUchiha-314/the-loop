@@ -9,7 +9,7 @@ Options under `polling` — the pull-based ingress run by
 or a firewall, a laptop, infrastructure with no inbound route.
 
 Only the **run loop** is configured here. Everything the poller does with an item it
-discovers — spawning, session mapping, the runner, harness args, prompt templates, the
+discovers — spawning, session mapping, harness args, prompt templates, the
 guards — is reused verbatim from [routing options](/config/cli/routing-options). One
 dispatch stack, two ingresses.
 
