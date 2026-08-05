@@ -2,8 +2,8 @@
 type: requirements
 phase: requirements-definition
 workItem: "issue-161"
-status: in-review
-approvedBy: []
+status: approved             # drafting-side lock; the human phase gate is the spec-PR approval (tier 4)
+approvedBy: []               # filled from the PR approval (paper trail)
 riskTier: 4                  # re-architects the whole CLI surface; adds a network API, an MCP surface and a UI (new attack surface)
 collaborators: [product-manager, architect, engineer, designer]
 overrides: {}
