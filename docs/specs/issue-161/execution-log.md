@@ -111,7 +111,8 @@ status: in-progress
 | 2 | self (implementation re-read: client/config resolution, error mapping, subprocess spawns) | harness | new finding — `connect()` with no config ignored the operator's CLI config (custom `service.port` unread); fixed with `_resolved()` | commit on PR #162 |
 | 3 | self (security-focused: CORS, token handling, argv spawns, MCP exclusions, audit records) | harness | zero new (remote-token limitation recorded, not a defect) | — |
 | 4 | critic | — | **unavailable** — `reviews.critics` is empty in this repo's config; does not count toward `criticReviewCount` | — |
-| 5 | security (gate) | security-review skill (adversarial sub-agent) | one HIGH (UI token exfil via `?api=`) — **fixed**; `esc()` quote-hardening applied | see Security review section |
+| 5 | security (gate) | security-review skill (adversarial sub-agent) | one HIGH (UI token exfil via `?api=`) — first fixed by origin-pinning, then **resolved at root** by removing in-app auth (decision-059, owner); `esc()` quote-hardening kept | see Security review section |
+| 6 | owner direction (PR #162) | @MadaraUchiha-314 | remove in-app authentication — the gateway owns auth (decision-059); implemented, 1310 tests green | [comment](https://github.com/MadaraUchiha-314/the-loop/pull/162#issuecomment-5194359297) |
 
 ## Security review (gate)
 
@@ -121,22 +122,28 @@ status: in-progress
 
 - **Mechanism:** built-in `security-review` skill (`security.review.mechanism:
   auto`), run against the branch diff by an adversarial sub-agent.
-- **Outcome:** one HIGH finding, **fixed**. The UI's `apiBase()` trusted and
-  persisted the `?api=` query param, then attached the bearer token to that
-  origin — a one-click token-exfiltration via a poisoned same-origin link
-  (`…/?api=https://evil`). Fixed in `ui/src/api.ts`: the token is now sent only
-  to an **allowlisted origin** (loopback, or the build-time `VITE_API_BASE`);
-  `?api=`, stored, and operator-entered bases are all gated through
-  `allowedOrigin()`/`setApiBase()`, and a refused base tells the operator
-  instead of silently leaking. Also hardened `esc()` to escape quotes (the
-  sub-threshold attribute-context note) so no interpolated value can break out
-  of an HTML attribute. Everything else cleared: all `/api/v1` routes except
-  the intentional `/health` carry the auth dependency; `/mcp` authenticates
-  before parsing; CORS is pinned with credentials off and the token is
-  header-not-cookie; `token_matches` is constant-time and fails closed; the
-  subprocess argvs are fixed lists, no shell, authenticated callers only.
+- **Outcome (first pass, on the token design):** one HIGH — the UI's `apiBase()`
+  trusted and persisted the `?api=` query param, then attached the bearer token
+  to that origin (one-click token-exfiltration via a poisoned same-origin link).
+  Fixed at the time by pinning the token to allowlisted origins and hardening
+  `esc()` to escape quotes.
+- **Superseded by decision-059 (owner):** the owner then directed **removing
+  in-app authentication entirely** — the deploying gateway owns auth. The bearer
+  token is gone end to end (no minting, no `Authorization` check, no token in the
+  client or UI), which **resolves the HIGH at its root**: there is no credential
+  to exfiltrate. The `esc()` quote-hardening is kept (defense-in-depth for
+  rendering API data). The service's own boundary is now **network scoping** —
+  loopback-by-default plus the `service.exposed` guard — with the gateway
+  responsible for authentication on any exposed deployment. CORS pinning, input
+  validation (ref parser, repo-path directory check), the argv-no-shell critic
+  runner, and the MCP exclusions (`sessions reset`, `graph force`) are unchanged.
+- **Residual risk (recorded):** an operator who sets `service.exposed: true`
+  **without** a fronting gateway would publish an unauthenticated RCE-equivalent
+  endpoint. The exposure guard makes that a deliberate act and the docs state it
+  plainly; it is the gateway's job by design (decision-059).
 - **Human sign-off:** required at tier 4 (`security.review.humanSignOffMinTier:
-  4`) — **pending** the owner's named sign-off on PR #162.
+  4`) — **pending** the owner's named sign-off on PR #162; the posture to sign
+  off is now "network boundary + gateway", not a token scheme.
 
 ## Final validation evidence
 

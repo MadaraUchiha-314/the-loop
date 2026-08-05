@@ -38,5 +38,5 @@ def test_served_schema_matches_the_authored_contract():
         / "the-loop.v1.yaml"
     )
     contract = yaml.safe_load(contract_path.read_text())
-    served = create_app({}, token="x").openapi()
+    served = create_app({}).openapi()
     assert _surface(served) == _surface(contract)

@@ -49,7 +49,10 @@ MCP is HTTP-only, no stdio; and delivery is a single PR.
 - `check`'s purity contract moves to the core function; the CLI↔service hop is
   transport. CI environments run with the extra installed.
 - The API is an RCE-equivalent surface and is treated as such: loopback-only by
-  default, mandatory per-boot bearer token (0600, machine-local), pinned CORS.
+  default, pinned CORS. *(The per-boot bearer-token auth this decision originally
+  specified was **superseded by [decision-059](decision-059.md)**: the service
+  carries no in-app auth — a gateway owns it — and its own boundary is network
+  scoping via the exposure guard.)*
 
 ## Alternatives considered
 

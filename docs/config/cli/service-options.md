@@ -6,8 +6,9 @@ configBase: service
 
 Options under `service` — the control-plane API service started by
 [`the-loop service start`](/cli/commands/service) (issue-161, decision-058). The
-posture is fail-closed: loopback-only unless `exposed` is explicitly true, a per-boot
-bearer token on every route, CORS pinned to `ui.origins`.
+service carries **no in-app authentication** — a gateway owns that — so its own
+posture is network scoping: loopback-only unless `exposed` is explicitly true, with
+CORS pinned to `ui.origins`.
 
 ```yaml
 service:
@@ -44,8 +45,9 @@ Bind port. Also where the CLI and UI look for the service
 - **Type:** `boolean`
 - **Default:** `false`
 
-Explicit opt-in to serving beyond loopback. Client authentication (the per-boot
-bearer token) stays mandatory either way; this flag only unlocks the bind.
+Explicit opt-in to serving beyond loopback. There is no in-app authentication, so
+only set this when an auth-terminating gateway fronts the service; this flag only
+unlocks the bind.
 
 ## Behaviour
 

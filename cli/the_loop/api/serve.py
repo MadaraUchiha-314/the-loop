@@ -1,11 +1,12 @@
 """Boot the control-plane service: ``python -m the_loop.api.serve`` (issue-161).
 
-This is what ``the-loop service start`` spawns (argv, no shell). The exposure
-guard lives here, before anything binds: a non-loopback host without
-``service.exposed: true`` refuses to boot — the API is an RCE-equivalent
-surface and "accidentally on the network" must be impossible (requirements
-§Security, abuse case 2). The per-boot bearer token is minted before binding,
-so there is no unauthenticated window.
+This is what ``the-loop service start`` spawns (argv, no shell). The service
+carries **no in-app authentication** — it is deployed behind a gateway that
+owns auth (owner decision, PR #162). The **exposure guard** below is therefore
+the sole network boundary the service enforces itself: a non-loopback host
+without ``service.exposed: true`` refuses to boot, so the API — which can spawn
+harness sessions — is never accidentally on the network. A real deployment sets
+``exposed: true`` and puts the auth-terminating gateway in front.
 """
 
 from __future__ import annotations
@@ -16,8 +17,7 @@ import sys
 from .. import eventlog
 from ..cli_config import default_cli_config_path, load_cli_config
 from ..runlock import RunLock
-from .auth import mint_token
-from .config import is_loopback, service_config, service_pidfile, token_path
+from .config import is_loopback, service_config, service_pidfile
 
 logger = logging.getLogger("the-loop.service")
 
@@ -32,7 +32,8 @@ def main() -> int:
     if not is_loopback(conf["host"]) and not conf["exposed"]:
         logger.error(
             "refusing to bind %s: set service.exposed: true to serve beyond "
-            "loopback (the API can spawn harness sessions)",
+            "loopback, and front it with an auth-terminating gateway "
+            "(the API can spawn harness sessions)",
             conf["host"],
         )
         return 2
@@ -45,12 +46,11 @@ def main() -> int:
         )
         return 1
 
-    token = mint_token(token_path(cli_config))
     eventlog.configure_from_file("service")
 
     from .app import create_app
 
-    app = create_app(cli_config, token=token)
+    app = create_app(cli_config)
     eventlog.emit("service.started", host=conf["host"], port=conf["port"])
     try:
         import uvicorn

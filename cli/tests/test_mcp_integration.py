@@ -9,21 +9,19 @@ from the_loop.state import layout_from_config, legacy_layout
 from the_loop.workitem import WorkItemStore
 
 
-TOKEN = "t" * 64
-AUTH = {"Authorization": f"Bearer {TOKEN}"}
 REF = "github:octo/repo#7"
 
 
 def _client(tmp_path):
     config = {"state": {"root": str(tmp_path / ".the-loop")}}
-    return TestClient(create_app(config, token=TOKEN)), config
+    return TestClient(create_app(config)), config
 
 
 def _rpc(client, method, params=None, id_=1):
     message = {"jsonrpc": "2.0", "id": id_, "method": method}
     if params is not None:
         message["params"] = params
-    return client.post("/mcp", json=message, headers=AUTH)
+    return client.post("/mcp", json=message)
 
 
 def test_initialize_and_tools_list(tmp_path):
@@ -93,18 +91,19 @@ def test_unknown_tool_and_method_are_rpc_errors(tmp_path):
     assert unknown_method["error"]["code"] == -32601
 
 
-def test_mcp_requires_the_same_bearer_token(tmp_path):
+def test_mcp_needs_no_credential(tmp_path):
     """
-    Feature: MCP authentication
-      Scenario: an unauthenticated agent host calls the endpoint
-        Given a running service
-        When a JSON-RPC message arrives without the bearer token
-        Then it is rejected 401 before any parsing of the payload
+    Feature: MCP over the control plane
+      Scenario: an agent host calls the endpoint with no credential
+        Given a running service (auth is the gateway's job, PR #162)
+        When a JSON-RPC tools/list arrives with no Authorization header
+        Then it is served normally
 
-    Requirement: docs/specs/issue-161/requirements.md R5.2, abuse case 5
+    Requirement: docs/specs/issue-161/requirements.md R5.1
     """
     client, _ = _client(tmp_path)
     response = client.post(
         "/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
     )
-    assert response.status_code == 401
+    assert response.status_code == 200
+    assert response.json()["result"]["tools"]

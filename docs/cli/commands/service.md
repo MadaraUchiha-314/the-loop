@@ -16,6 +16,15 @@ pip install 'the-loopy-one[service]'   # or: uv tool install 'the-loopy-one[serv
 A base install (no extra) can still *talk to* a running service — the client is
 stdlib-only — and `service start` without the extra fails with the install line above.
 
+## Authentication
+
+The service carries **no in-app authentication**. It is meant to run behind a
+gateway that terminates auth, and locally it binds **loopback only** by default,
+so the network boundary — not a token — is what protects it. Do not expose it on a
+network without an auth-terminating gateway in front
+([`service.exposed`](/config/cli/service-options#exposed) is the explicit opt-in
+that lets it bind beyond loopback at all).
+
 ## `service start`
 
 Starts the service in the background and waits for `/api/v1/health` to answer.
@@ -23,14 +32,10 @@ Starts the service in the background and waits for `/api/v1/health` to answer.
 - The pidfile **is** the lock (`<state.root>/local/service.pid`, flock — the
   issue-159 lifecycle discipline): a second `start` reports `already running` and
   starts nothing.
-- A fresh **bearer token** is minted per boot into `<state.root>/local/service.token`
-  (mode 0600, machine-local, never tracked). Every route except `/api/v1/health`
-  requires it; the CLI and UI read/receive it out of band. No API response ever
-  contains it.
 - Binding beyond loopback refuses to boot unless
   [`service.exposed`](/config/cli/service-options#exposed) is explicitly true — the
   API can spawn harness sessions with the operator's credentials, so "accidentally on
-  the network" is made impossible.
+  the network" is made impossible. Set it only when a gateway fronts the service.
 
 ## `service stop`
 
@@ -55,12 +60,12 @@ and repo-scoped queries (scenarios / instructions / critics) are all exposed;
 ## MCP
 
 The same app serves an MCP endpoint at `/mcp` (HTTP transport only): the tools mirror
-the read + manage surface with the same token and the same event-log audit trail.
-Destructive or attribution-forging operations (`sessions reset`, `graph force`) are
-not exposed as tools.
+the read + manage surface with the same event-log audit trail. Destructive or
+attribution-forging operations (`sessions reset`, `graph force`) are not exposed as
+tools.
 
 ## Observability
 
 Every API operation lands in the [event log](/cli/commands/events) as an
-`api.request` record (source `service`); authentication failures land as
-`api.auth.denied`. `the-loop events --source service` is the query.
+`api.request` record (source `service`). `the-loop events --source service` is the
+query.

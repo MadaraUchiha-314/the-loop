@@ -35,11 +35,6 @@ def is_loopback(host: str) -> bool:
     return host in _LOOPBACK_HOSTS
 
 
-def token_path(cli_config: Optional[dict] = None) -> Path:
-    """Machine-local, never tracked (extends the local half of the state root)."""
-    return Path(layout_from_config(cli_config or {}).local_dir) / "service.token"
-
-
 def service_pidfile(cli_config: Optional[dict] = None) -> Path:
     return Path(layout_from_config(cli_config or {}).local_dir) / "service.pid"
 

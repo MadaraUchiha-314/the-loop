@@ -107,7 +107,9 @@ any client — not just the bundled CLI — can drive the-loop programmatically.
 
 1. WHEN the API service runs THEN it SHALL expose the core capabilities (work items,
    sessions, graph state, poller/webhook lifecycle and status, event-log queries)
-   over HTTP to authorized clients.
+   over HTTP. Authentication is out of the service's scope — it is the deploying
+   gateway's responsibility (owner decision); the service binds loopback-only by
+   default and refuses a non-loopback bind without explicit exposure config.
 2. WHEN the API contract is authored THEN it SHALL be contract-first: an OpenAPI
    document under `specs/openapi/` SHALL be the source of truth, and API
    documentation SHALL be generated from it, never hand-written
@@ -153,7 +155,8 @@ directly.
    reimplementation — and the MCP transport SHALL be **HTTP only, no stdio** (owner
    decision, [PR #162 review](https://github.com/MadaraUchiha-314/the-loop/pull/162#discussion_r3718678832)).
 2. WHEN the MCP surface is defined THEN each tool SHALL map to a core capability
-   with the same authorization and the same event-log observability as the HTTP API.
+   with the same access model (no in-app auth; the gateway's job) and the same
+   event-log observability as the HTTP API.
 3. IF a capability is intentionally not exposed over MCP (e.g. destructive resets)
    THEN that exclusion SHALL be recorded and justified in `design.md`.
 
@@ -210,26 +213,36 @@ managing work items is easy without shell access.
 > MCP, UI) over capabilities that can spawn agent sessions on the operator's machine.
 > Risk tier 4 → the security review requires a named human sign-off
 > (`security.review.humanSignOffMinTier: 4`).
+>
+> **Authentication model (owner decision, [PR #162](https://github.com/MadaraUchiha-314/the-loop/pull/162#issuecomment-5194359297)):**
+> the service carries **no in-app authentication**. It is deployed behind a
+> **gateway that terminates auth**, and locally it binds loopback-only by default.
+> The service's own boundary is therefore **network scoping** (the exposure guard),
+> not a credential. This deliberately supersedes the earlier bearer-token design
+> (abuse case 1 below is retired accordingly).
 
-- **Actors & trust:** the operator (trusted, owns the machine); local clients (CLI,
-  UI, MCP host — trusted only after authn); remote network peers (untrusted);
-  webhook payloads and work-item comments (untrusted, already HMAC-verified /
-  authorized-user-gated today — those existing boundaries must survive the
-  re-layering unchanged).
+- **Actors & trust:** the operator (trusted, owns the machine); the **gateway**
+  fronting any exposed deployment (owns authn/authz); local clients on loopback
+  (CLI, UI, MCP host); remote network peers (untrusted — reach the service only
+  through the gateway); webhook payloads and work-item comments (untrusted, already
+  HMAC-verified / authorized-user-gated today — those existing boundaries must
+  survive the re-layering unchanged).
 - **Trust boundaries & data:** the API service is a **remote-code-execution
   equivalent** — starting a session runs an agent harness with the operator's
   credentials. The service therefore SHALL bind to loopback by default; any
-  non-loopback bind SHALL require explicit configuration plus mandatory client
-  authentication. State it serves (portable records, session registry, event log)
-  can embed repo paths and work-item metadata; no secrets/tokens SHALL ever be
-  returned by any API. The static UI holds no secrets: it authenticates to the API
-  per-deployment, and a UI hosted on GitHub Pages against a non-exposed API simply
-  shows nothing.
+  non-loopback bind SHALL require explicit `service.exposed` configuration AND an
+  auth-terminating gateway in front (the service does not authenticate callers
+  itself). State it serves (portable records, session registry, event log) can
+  embed repo paths and work-item metadata; no secrets/tokens SHALL ever be returned
+  by any API. The static UI holds no credential of its own; it talks to whatever
+  API base it is pointed at, and against a loopback-only service reached from
+  elsewhere it simply shows nothing.
 - **Abuse cases (EARS):**
-  1. WHEN an unauthenticated request reaches any mutating API endpoint THEN the
-     system SHALL reject it before any core call is made.
+  1. *(Retired — the service no longer authenticates; the gateway does. See the
+     authentication-model note above.)*
   2. WHEN a request arrives on a non-loopback interface without the explicit
-     exposure configuration THEN the system SHALL refuse to serve it.
+     exposure configuration THEN the system SHALL refuse to serve it (the exposure
+     guard, enforced before binding).
   3. WHEN a hostile client attempts to use the API to run arbitrary commands (e.g.
      via crafted work-item refs, paths, or critic/config injection) THEN the system
      SHALL validate inputs against the same rules the CLI enforces today (argv
@@ -241,10 +254,11 @@ managing work items is easy without shell access.
   5. WHEN MCP tools are invoked by an agent THEN destructive operations SHALL be
      excluded or gated per R5.3, so a prompt-injected agent cannot silently wipe
      state.
-- **Fail closed:** missing/ambiguous authentication or exposure configuration means
-  loopback-only and reject; an unrecognised API version or malformed body is
-  rejected, never best-effort interpreted; authorization failures are logged to the
-  event log.
+- **Fail closed:** ambiguous/missing exposure configuration means loopback-only and
+  refuse to bind beyond it; an unrecognised API version or malformed body is
+  rejected, never best-effort interpreted. Because the service does not
+  authenticate, exposing it without a gateway is the operator's responsibility — the
+  exposure guard makes that a deliberate, explicit act.
 
 ## Out of scope
 

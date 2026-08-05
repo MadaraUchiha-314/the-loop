@@ -21,12 +21,11 @@ an agent host and the `ui/` frontend are thin clients of that surface.
   contract** (`specs/openapi/the-loop.v1.yaml`); a parity test SHALL fail the build
   when the served schema's paths/methods/operationIds drift from it. Interactive
   docs are served at `/api/docs`, generated, never hand-written.
-- The service SHALL bind loopback by default and refuse a non-loopback bind unless
-  `service.exposed: true`; every route except `/api/v1/health` SHALL require the
-  per-boot bearer token (32-byte urandom, 0600 under `<state.root>/local/`,
-  constant-time compared, never returned by any API); CORS SHALL be pinned to
-  `service.ui.origins`. An empty token SHALL reject everything — fail closed, never
-  open.
+- The service SHALL carry **no in-app authentication** — a gateway terminates auth
+  for any exposed deployment (owner decision, PR #162). Its own boundary SHALL be
+  network scoping: it SHALL bind loopback by default and refuse a non-loopback bind
+  unless `service.exposed: true`; CORS SHALL be pinned to `service.ui.origins`. No
+  credential SHALL be minted, stored, or required.
 - `the-loop service start|stop|status` SHALL manage the service with the issue-159
   lifecycle discipline: the pidfile is the flock, a second start reports `already
   running`, stop signals and waits. Hosting requires the `[service]` extra
@@ -42,15 +41,14 @@ an agent host and the `ui/` frontend are thin clients of that surface.
   switched over — the service-side surface is complete.)*
 - `/mcp` SHALL serve the MCP interface over **HTTP transport only** (no stdio):
   `initialize`, `tools/list` and `tools/call` over the same core facade, with the
-  same bearer token. `sessions reset` (destructive) and `graph force` (requires a
-  human-attributed reason) SHALL NOT be exposed as tools.
-- Every API operation SHALL land in the event log (`api.request`; rejections as
-  `api.auth.denied`; tool calls as `mcp.call`), queryable via
-  `the-loop events --source service`.
+  same (no-auth) access model. `sessions reset` (destructive) and `graph force`
+  (requires a human-attributed reason) SHALL NOT be exposed as tools.
+- Every API operation SHALL land in the event log (`api.request`; tool calls as
+  `mcp.call`), queryable via `the-loop events --source service`.
 - The UI under `ui/` SHALL be TypeScript only, built with Vite to **static assets**
   (relative base) with the API base configurable at build time (`VITE_API_BASE`)
-  and runtime (`?api=`, remembered); the bearer token is entered in the UI and held
-  in localStorage. It SHALL surface the work items in flight, a work item's detail
+  and runtime (`?api=`, remembered); it holds no credential (auth is the gateway's
+  job). It SHALL surface the work items in flight, a work item's detail
   (session controls + event trail), and the needs-attention list. `the-loop ui
   dev|build` delegate to `npm --prefix ui` as an argv list, never a shell.
 
@@ -65,4 +63,4 @@ an agent host and the `ui/` frontend are thin clients of that surface.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
-| issue-161 | Capability minted: core facade extracted, API service + OpenAPI contract, token-auth + loopback-default security posture, service lifecycle commands, service-routed CLI (check/events first), HTTP-only MCP endpoint, Vite+TS control-plane UI | [spec](../specs/issue-161/), [decision-058](../decisions/decision-058.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/161) |
+| issue-161 | Capability minted: core facade extracted, API service + OpenAPI contract, loopback-default network posture (no in-app auth — the gateway owns it), service lifecycle commands, service-routed CLI (check/events first), HTTP-only MCP endpoint, Vite+TS control-plane UI | [spec](../specs/issue-161/), [decision-058](../decisions/decision-058.md), [decision-059](../decisions/decision-059.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/161) |

@@ -9,14 +9,12 @@ from the_loop.state import layout_from_config, legacy_layout
 from the_loop.workitem import WorkItemStore
 
 
-TOKEN = "t" * 64
-AUTH = {"Authorization": f"Bearer {TOKEN}"}
 REF = "github:octo/repo#7"
 
 
 def _client(tmp_path):
     config = {"state": {"root": str(tmp_path / ".the-loop")}}
-    return TestClient(create_app(config, token=TOKEN)), config
+    return TestClient(create_app(config)), config
 
 
 def test_work_items_round_trip(tmp_path):
@@ -34,11 +32,11 @@ def test_work_items_round_trip(tmp_path):
     store = WorkItemStore(layout.portable_dir, legacy=legacy_layout(layout))
     store.write_section(REF, "control", {"command": "start"})
 
-    listed = client.get("/api/v1/work-items", headers=AUTH)
+    listed = client.get("/api/v1/work-items")
     assert listed.status_code == 200
     assert [r["ref"] for r in listed.json()] == [REF]
 
-    one = client.get("/api/v1/work-items/one", params={"ref": REF}, headers=AUTH)
+    one = client.get("/api/v1/work-items/one", params={"ref": REF})
     assert one.status_code == 200
     assert one.json()["control"]["command"] == "start"
 
@@ -55,12 +53,10 @@ def test_missing_work_item_is_404_and_malformed_ref_is_400(tmp_path):
     """
     client, _ = _client(tmp_path)
     missing = client.get(
-        "/api/v1/work-items/one", params={"ref": "github:octo/repo#404"}, headers=AUTH
+        "/api/v1/work-items/one", params={"ref": "github:octo/repo#404"}
     )
     assert missing.status_code == 404
-    malformed = client.get(
-        "/api/v1/work-items/one", params={"ref": "not-a-ref"}, headers=AUTH
-    )
+    malformed = client.get("/api/v1/work-items/one", params={"ref": "not-a-ref"})
     assert malformed.status_code == 400
 
 
@@ -81,7 +77,6 @@ def test_graph_check_runs_against_a_repo_path(tmp_path):
     response = client.post(
         "/api/v1/graph/check",
         json={"repo": repo_root, "workItem": "issue-161", "recompute": True},
-        headers=AUTH,
     )
     assert response.status_code == 200
     assert response.json()["workItem"] == "issue-161"
@@ -92,7 +87,6 @@ def test_graph_check_rejects_a_bad_repo_path(tmp_path):
     response = client.post(
         "/api/v1/graph/check",
         json={"repo": str(tmp_path / "nope"), "workItem": "issue-1"},
-        headers=AUTH,
     )
     assert response.status_code == 400
 
@@ -108,12 +102,12 @@ def test_sessions_daemons_attention_and_events(tmp_path):
     Requirement: docs/specs/issue-161/requirements.md R6.3
     """
     client, _ = _client(tmp_path)
-    assert client.get("/api/v1/sessions", headers=AUTH).json() == []
-    daemons = client.get("/api/v1/daemons", headers=AUTH).json()
+    assert client.get("/api/v1/sessions").json() == []
+    daemons = client.get("/api/v1/daemons").json()
     assert {d["daemon"] for d in daemons} == {"poller", "gh-webhook"}
     assert all(d["running"] is False for d in daemons)
-    assert isinstance(client.get("/api/v1/attention", headers=AUTH).json(), list)
-    assert "api.request" in client.get("/api/v1/events/types", headers=AUTH).json()
+    assert isinstance(client.get("/api/v1/attention").json(), list)
+    assert "api.request" in client.get("/api/v1/events/types").json()
 
 
 def test_session_control_rejects_unknown_verb(tmp_path):
@@ -121,7 +115,6 @@ def test_session_control_rejects_unknown_verb(tmp_path):
     response = client.post(
         "/api/v1/sessions/control",
         json={"ref": REF, "verb": "detonate"},
-        headers=AUTH,
     )
     assert response.status_code == 400
 
@@ -142,7 +135,7 @@ def test_api_operations_are_audited(tmp_path, monkeypatch):
     eventlog.configure("service", path=log)
     try:
         client, _ = _client(tmp_path)
-        client.get("/api/v1/work-items", headers=AUTH)
+        client.get("/api/v1/work-items")
     finally:
         eventlog.reset()
     records = [json.loads(line) for line in log.read_text().splitlines()]

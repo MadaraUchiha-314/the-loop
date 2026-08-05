@@ -11,14 +11,14 @@ The tool registry is **generated from the core surface** (R1.4): each entry
 names its handler; there is no second implementation to drift. Exclusions are
 policy (R5.3, design §Security design): ``sessions reset`` is destructive and
 stays a local decision; ``graph force`` requires a human-attributed reason an
-agent must not forge. Same bearer token as REST; every call lands in the event
-log as ``mcp.call``.
+agent must not forge. No in-app auth (owner decision, PR #162 — the gateway
+owns it); every call lands in the event log as ``mcp.call``.
 """
 
 from __future__ import annotations
 
 import json
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
@@ -187,16 +187,13 @@ def _rpc_result(id_: Any, result: Dict[str, Any]) -> JSONResponse:
     return JSONResponse({"jsonrpc": "2.0", "id": id_, "result": result})
 
 
-def add_mcp(
-    app: FastAPI,
-    cli_config: Optional[dict],
-    authenticate: Callable[[Request], None],
-) -> None:
+def add_mcp(app: FastAPI, cli_config: Optional[dict]) -> None:
     tools = _tools(cli_config)
 
     @app.post("/mcp", include_in_schema=False)
     async def mcp_endpoint(request: Request) -> Response:
-        authenticate(request)  # 401 before anything is parsed further
+        # No in-app auth: the deployment's gateway owns it, and locally the
+        # service binds loopback-only by default (owner decision, PR #162).
         try:
             message = await request.json()
         except Exception:

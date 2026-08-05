@@ -7,7 +7,7 @@ import sys
 
 import pytest
 
-from the_loop.api.config import service_pidfile, token_path
+from the_loop.api.config import service_pidfile
 from the_loop.runlock import RunLock
 
 
@@ -54,7 +54,7 @@ def test_start_stop_and_idempotency(service_env):
       Scenario: an operator starts, re-starts and stops the service
         Given no service is running
         When `the-loop service start` runs twice and then `service stop`
-        Then the first start boots a healthy service and mints a 0600 token,
+        Then the first start boots a healthy service,
              the second reports it is already running without a second boot,
              and stop waits until the process has actually exited
 
@@ -66,10 +66,6 @@ def test_start_stop_and_idempotency(service_env):
     assert first.returncode == 0, first.stderr
     assert "service started" in first.stdout
     assert client.healthy(service_env)
-
-    token_file = token_path(service_env)
-    assert token_file.is_file()
-    assert oct(token_file.stat().st_mode & 0o777) == "0o600"
 
     second = _run_cli("service", "start")
     assert second.returncode == 0

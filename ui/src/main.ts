@@ -7,9 +7,7 @@ import "./style.css";
 import {
   api,
   apiBase,
-  getToken,
   setApiBase,
-  setToken,
   type AttentionItem,
   type SessionInfo,
   type WorkItemRecord,
@@ -46,7 +44,6 @@ function shell(content: string): void {
       <h1>the-loop · control plane</h1>
       <span class="api">
         API <input id="api-base" size="20" value="${esc(apiBase())}" />
-        token <input id="api-token" type="password" size="10" value="${esc(getToken())}" />
       </span>
     </header>
     <nav>
@@ -62,21 +59,9 @@ function shell(content: string): void {
     view = { name: "attention" };
     void render();
   });
-  const tokenInput = document.getElementById("api-token") as HTMLInputElement;
-  tokenInput.addEventListener("change", () => {
-    setToken(tokenInput.value.trim());
-    void render();
-  });
   const baseInput = document.getElementById("api-base") as HTMLInputElement;
   baseInput.addEventListener("change", () => {
-    if (!setApiBase(baseInput.value.trim())) {
-      window.alert(
-        "API base refused: the token is only sent to a loopback address or " +
-          "the origin pinned at build time (VITE_API_BASE).",
-      );
-      baseInput.value = apiBase();
-      return;
-    }
+    setApiBase(baseInput.value.trim());
     void render();
   });
 }
@@ -84,9 +69,8 @@ function shell(content: string): void {
 function errorBox(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return `<div class="error">Cannot reach the control plane: ${esc(message)}.
-    Check the API base, the bearer token
-    (<code>&lt;state.root&gt;/local/service.token</code> on the service's
-    machine), and that <code>the-loop service start</code> has run.</div>`;
+    Check the API base and that <code>the-loop service start</code> has run
+    (and, for a remote deployment, that its gateway is routing to it).</div>`;
 }
 
 async function render(): Promise<void> {

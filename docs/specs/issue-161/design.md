@@ -43,8 +43,8 @@ flowchart TD
   subgraph state["Durable state (unchanged, R3.3)"]
     STORES["portable/<slug>.json · local/ registry<br/>event log · pidfiles"]
   end
-  CLI -->|"stdlib HTTP client + bearer token"| HTTP
-  UI -->|"fetch + bearer token"| HTTP
+  CLI -->|"stdlib HTTP client"| HTTP
+  UI -->|"fetch"| HTTP
   AGENT -->|"JSON-RPC over HTTP"| MCP
   CORE --> STORES
   CORE -.->|delegates to| EXISTING["existing modules<br/>poller/ · webhook/ · sessions/ · graph/ …"]
@@ -55,8 +55,8 @@ flowchart TD
 | Path | Layer | Contents |
 |------|-------|----------|
 | `cli/the_loop/core/` | core | The facade: one module per capability (`workitems`, `sessions`, `graphs`, `events`, `daemons`, `repo`), each a set of plain functions/dataclasses delegating to the existing modules. Importable with no CLI/HTTP context (R1.1). |
-| `cli/the_loop/api/` | API | FastAPI `app.py` + one router per capability, `auth.py` (bearer token), `serve.py` (uvicorn entry), `mcp.py` (MCP endpoint). Transport/serialization/authn only (R1.2). |
-| `cli/the_loop/client/` | client | Stdlib (`urllib.request`) HTTP client the CLI commands call; reads the same config + token file. No new base-install dependency. |
+| `cli/the_loop/api/` | API | FastAPI `app.py` + one router per capability, `serve.py` (uvicorn entry + exposure guard), `mcp.py` (MCP endpoint). Transport/serialization only — **no in-app auth** (the gateway owns it, owner decision PR #162). |
+| `cli/the_loop/client/` | client | Stdlib (`urllib.request`) HTTP client the CLI commands call; reads the same config. No new base-install dependency. |
 | `cli/the_loop/commands/service_cmd.py` | client | `the-loop service start\|stop\|status` and `the-loop ui dev\|build`. |
 | `specs/openapi/the-loop.v1.yaml` | contract | The authored OpenAPI source of truth (R3.2); a parity test asserts the served schema matches it. |
 | `ui/` | client | Vite + TypeScript control-plane UI (R6); static build, configurable API base. |
@@ -125,17 +125,18 @@ and every operation lands in the event log as `api.<op>` (R3.5).
 ### Service lifecycle (`service_cmd.py`)
 
 `service start` acquires `RunLock` on `<state.root>/local/service.pid`, binds
-loopback by default, generates a per-boot bearer token into
-`<state.root>/local/service.token` (mode 0600), spawns uvicorn (argv, no shell).
-`service stop` signals and waits (issue-159 semantics); `service status` reports.
-Both are idempotent (R4.1/R4.3).
+loopback by default (the exposure guard refuses a non-loopback bind without
+`service.exposed`), spawns uvicorn (argv, no shell). `service stop` signals and
+waits (issue-159 semantics); `service status` reports. Both are idempotent
+(R4.1/R4.3).
 
 ### CLI client (`the_loop/client/`)
 
-Resolves base URL from CLI config (`service.host`/`service.port`), reads the token
-file, performs the call, maps HTTP errors to today's exit codes/messages. When the
-service is unreachable: auto-start if permitted, else fail closed naming
-`the-loop service start` (R2.3).
+Resolves base URL from CLI config (`service.host`/`service.port`), performs the
+call, maps HTTP errors to today's exit codes/messages. When the service is
+unreachable: auto-start if permitted, else fail closed naming
+`the-loop service start` (R2.3). No credential is attached — the service carries
+no in-app auth.
 
 ### MCP (`/mcp`)
 
@@ -144,23 +145,23 @@ Tools mirror the read + manage surface: `list_work_items`, `get_work_item`,
 `control_session` (start/pause/resume/stop), `query_events`, `daemon_status`.
 Excluded: `sessions reset` (destructive, R5.3), `graph force` (operator escape
 hatch; requires a human-attributed reason — exposing it to a prompt-injectable
-agent would forge that attribution). Same bearer token, same event log
-(`mcp.tools/call` events) (R5.2).
+agent would forge that attribution). No in-app auth; same event log
+(`mcp.call` events) (R5.2).
 
 ### UI (`ui/`)
 
 Views: **Work items** (list + phase badge), **Detail** (graph node states from
-`check`, recent events, session controls per R6.4), **Attention** (R6.3). Token
-entered in the UI, held in localStorage, sent as `Authorization: Bearer`.
-`the-loop ui dev|build` shells (argv, no shell=True) to `npm --prefix ui run
-dev|build`, reporting a clear skip when npm is absent (R4.2, R6.2).
+`check`, recent events, session controls per R6.4), **Attention** (R6.3). It talks
+to the configured API base (build-time `VITE_API_BASE`, runtime `?api=`); no
+credential to hold. `the-loop ui dev|build` shells (argv, no shell=True) to
+`npm --prefix ui run dev|build`, reporting a clear skip when npm is absent
+(R4.2, R6.2).
 
 ## Error handling (fail closed)
 
 | Condition | Behaviour |
 |-----------|-----------|
-| No/bad bearer token | 401 before any core call; logged `api.auth.denied` |
-| Non-loopback bind without `service.exposed: true` + token | `service start` refuses to boot |
+| Non-loopback bind without `service.exposed: true` | `service start` refuses to boot |
 | Malformed ref / repo path | 400/422 from validation, core never invoked |
 | Service unreachable from CLI, auto-start off/impossible | exit non-zero, message names `service start` / the `[service]` extra |
 | Unknown MCP method/tool | JSON-RPC error, no side effect |
@@ -171,18 +172,18 @@ dev|build`, reporting a clear skip when npm is absent (R4.2, R6.2).
 > Enforces every trust boundary and abuse case from `requirements.md`
 > §Security considerations.
 
-- **API = RCE-equivalent** → default bind `127.0.0.1`; `service.exposed: true`
-  required for any other bind, and token auth is mandatory in both cases (abuse
-  case 1–2). Token: 32-byte urandom hex, per-boot, 0600 file under `local/`
-  (machine-local, never tracked — extends `GENERATED_PATHS`).
+- **No in-app authentication** (owner decision, PR #162): a gateway terminates auth
+  for any exposed deployment. The service's own boundary is **network scoping** —
+  default bind `127.0.0.1`, and `service.exposed: true` required (plus a fronting
+  gateway) for any other bind (abuse case 2). No credential is minted, stored, or
+  sent, so there is none to leak.
 - **Input validation** at the transport edge: refs via the existing
   `workitem` ref parser, repo paths must resolve to existing directories, critic
   invocations remain argv-no-shell through the existing critic runner (abuse case 3).
 - **CORS** pinned to `service.ui.origins` (default: the Vite dev origin only);
   no wildcard (abuse case 4).
-- **MCP exclusions** as above (abuse case 5). No API response ever includes the
-  token, webhook secrets, or any credential; responses are built from the stores,
-  which hold none.
+- **MCP exclusions** as above (abuse case 5). No API response ever includes webhook
+  secrets or any credential; responses are built from the stores, which hold none.
 - **Existing ingress boundaries unchanged**: webhook HMAC verification and
   authorized-user gating are untouched by the re-layering (R1.5).
 
@@ -204,9 +205,9 @@ service:
 ## Testing strategy
 
 - **TDD per task** (`tdd.mode: standard`); red→green recorded in the execution log.
-- **API**: FastAPI `TestClient` (httpx as dev-only dep) per router; auth-denied and
-  validation-rejection negative tests are the abuse-case tests; contract-parity
-  test against `specs/openapi/the-loop.v1.yaml`.
+- **API**: FastAPI `TestClient` (httpx as dev-only dep) per router; the
+  exposure-guard and validation-rejection negative tests are the abuse-case tests;
+  contract-parity test against `specs/openapi/the-loop.v1.yaml`.
 - **CLI-as-client**: command tests run against an in-process test service; the
   no-service failure path is a unit test.
 - **Lifecycle**: reuse issue-159's lock/idempotency test patterns for

@@ -363,10 +363,6 @@ EVENT_TYPES: Dict[str, str] = {
         "One control-plane API operation completed (method, path, status). "
         "Every mutating and reading route lands here; /health is exempt."
     ),
-    "api.auth.denied": (
-        "A control-plane request failed authentication and was rejected before "
-        "any core call (path). Fail closed (issue-161 abuse case 1)."
-    ),
     "mcp.call": (
         "An MCP tool call was served over the control-plane's HTTP endpoint "
         "(tool, ok). Same authorization and audit trail as the REST surface."

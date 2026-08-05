@@ -20,8 +20,7 @@ import urllib.parse
 import urllib.request
 from typing import Any, Dict, Optional
 
-from ..api.config import base_url, service_config, token_path
-from ..api.auth import read_token
+from ..api.config import base_url, service_config
 
 #: How long auto-start waits for /health before giving up.
 _AUTOSTART_TIMEOUT = 15.0
@@ -66,13 +65,13 @@ class ApiError(RuntimeError):
 def _request(
     method: str,
     url: str,
-    token: str,
     body: Optional[dict] = None,
     timeout: float = 120.0,
 ) -> Any:
+    # No auth header: the service carries no in-app auth (the gateway owns it,
+    # owner decision PR #162), and locally it is loopback-only.
     data = json.dumps(body).encode() if body is not None else None
     request = urllib.request.Request(url, data=data, method=method)
-    request.add_header("Authorization", f"Bearer {token}")
     if data is not None:
         request.add_header("Content-Type", "application/json")
     try:
@@ -134,12 +133,11 @@ def ensure_service(config: Optional[dict] = None) -> None:
 
 
 class Client:
-    """One configured connection: base URL + bearer token."""
+    """One configured connection to the service's base URL."""
 
     def __init__(self, config: Optional[dict] = None):
         self._config = _resolved(config)
         self._base = base_url(self._config)
-        self._token = read_token(token_path(self._config))
 
     def get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
         query = ""
@@ -147,10 +145,10 @@ class Client:
             filtered = {k: v for k, v in params.items() if v not in (None, "", [])}
             if filtered:
                 query = "?" + urllib.parse.urlencode(filtered, doseq=True)
-        return _request("GET", f"{self._base}/api/v1{path}{query}", self._token)
+        return _request("GET", f"{self._base}/api/v1{path}{query}")
 
     def post(self, path: str, body: dict) -> Any:
-        return _request("POST", f"{self._base}/api/v1{path}", self._token, body=body)
+        return _request("POST", f"{self._base}/api/v1{path}", body=body)
 
 
 def connect(config: Optional[dict] = None) -> Client:
