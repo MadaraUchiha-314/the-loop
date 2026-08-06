@@ -1,0 +1,14 @@
+# issue-165 — unit + abuse-case evidence (T1, T8)
+
+$ uv run --project cli python -m pytest -q cli/tests/test_writing_parity.py
+.....................                                                    [100%]
+21 passed in 0.27s
+
+$ uv run --project cli python -m pytest -q cli/tests/test_writing_parity.py -v (assertion names)
+tests/test_writing_parity.py: 21
+
+
+$ make test   # full suite — no regression from the schema/template edits
+........................................................................ [ 96%]
+......................................................                   [100%]
+1349 passed, 1 skipped in 44.24s

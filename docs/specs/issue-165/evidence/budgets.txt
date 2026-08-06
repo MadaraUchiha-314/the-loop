@@ -1,0 +1,26 @@
+# issue-165 — budget report (dogfooding: this work item's own artifacts)
+
+$ prose_words() from cli/tests/test_writing_parity.py, applied to what this PR ships
+
+artifact                                       words  budget  status
+docs/specs/issue-165/brainstorm.md               659       0  unbudgeted by design
+docs/specs/issue-165/requirements.md             453     500  ok
+docs/specs/issue-165/design.md                   886     900  ok
+docs/specs/issue-165/testing-plan.md             133     400  ok
+docs/specs/issue-165/tasks.md                    264     400  ok
+docs/specs/issue-165/execution-log.md            577       0  unbudgeted by design
+docs/decisions/decision-061.md                   236     400  ok
+docs/decisions/decision-062.md                   389     400  ok
+docs/capabilities/writing-style.md               344     700  ok
+skills/writing/SKILL.md                          544     600  ok
+
+Shipped templates (P6 — the scaffold must fit the budget it declares):
+template                                       words  budget  status
+skills/the-loop/templates/bugfix.md              114     500  ok
+skills/the-loop/templates/capability.md           85     700  ok
+skills/the-loop/templates/decision.md             69     400  ok
+skills/the-loop/templates/design.md              286     900  ok
+skills/the-loop/templates/pr-briefing.md         102     400  ok
+skills/the-loop/templates/requirements.md        143     500  ok
+skills/the-loop/templates/tasks.md               274     400  ok
+skills/the-loop/templates/testing-plan.md        126     400  ok

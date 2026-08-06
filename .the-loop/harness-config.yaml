@@ -224,6 +224,27 @@ userInteraction:
     includeDiagrams: true         # mermaid diagrams explaining the low-level details
     documentInsightsAndDecisions: true
   educateUser: true               # mandatory, not optional
+  writingStyle:                   # how the artifacts a HUMAN reads are written (issue-165)
+    enabled: true                 # judgement lives in the bundled `the-loop:writing` skill
+    skill: the-loop:writing
+    diagramFirst: true            # RULE: 3+ named parts -> draw it, don't describe it
+    budgets:                      # PROSE words; tables/code/mermaid/EARS are free. 0 = unbudgeted.
+      brainstorm: 0               # a scratchpad — capping exploration is the wrong lever
+      requirements: 500
+      design: 900
+      testingPlan: 400
+      tasks: 400
+      executionLog: 0             # append-only record; grows with the work item
+      prBriefing: 400
+      decision: 400
+      capability: 700
+      comment: 200
+    formalRegisters:              # never relaxed into informal prose — these are contracts
+      - ears-acceptance-criteria
+      - abuse-cases
+      - api-contracts
+      - schema-descriptions
+      - rfc-2119
 
 # People (formerly `personas`/`messaging`) live in .the-loop/collaborators.yaml —
 # the single source for collaborators and their notification channels (issue-82,
@@ -263,7 +284,33 @@ externalTools:                    # inline registry — one YAML for easy onboar
         dep → one-liner). the-loop expresses this natively via
         reference/minimalism.md / config.minimalism — install if you prefer the
         packaged skill. (issue-37)
+    - name: avoid-ai-writing
+      kind: skill
+      url: https://github.com/conorbronsdon/avoid-ai-writing
+      notes: >-
+        Audits 21 categories of machine writing in 7 buckets, severity-tiered
+        P0/P1/P2, modes detect/rewrite/edit. the-loop takes its tiering and its
+        detect-before-rewrite order into the bundled `the-loop:writing` skill,
+        and its own warning about false positives (>60% on non-native speakers)
+        is why our mechanical check asserts P0 tells only. Its word-tier
+        ban-lists are deliberately NOT adopted. (issue-165, decision-062)
+    - name: anti-ai-slop-writing
+      kind: skill
+      url: https://github.com/jalaalrd/anti-ai-slop-writing
+      notes: >-
+        50+ flagged words, 35+ phrases, 16 banned openers plus structural rules,
+        shipped as a short core file with a separate vocabulary reference —
+        the two-file shape `the-loop:writing` uses (SKILL.md + reference/tells.md).
+        Vocabulary bans not adopted. (issue-165, decision-062)
+    - name: stop-slop
+      kind: skill
+      url: https://mcpmarket.com/tools/skills/stop-slop
+      notes: >-
+        Editor pass that cuts filler, jargon and throat-clearing openers while
+        preserving voice. Overlaps the two above; registered for operators who
+        prefer a packaged editor. (issue-165, decision-062)
   notes: >-
-    caveman and ponytail are registered, not vendored — the-loop implements
-    their techniques natively (tokenEconomy / minimalism) and bundles no runtime
-    (decision-005). Register-only: the harness may use them if installed.
+    caveman, ponytail and the three writing skills are registered, not vendored —
+    the-loop implements their techniques natively (tokenEconomy / minimalism /
+    the bundled `the-loop:writing` skill) and bundles no runtime
+    (decision-005, decision-062). Register-only: the harness may use them if installed.

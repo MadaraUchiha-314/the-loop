@@ -2,6 +2,11 @@
      before requesting human review — a required item of the ready-to-ship gate. Keep it
      condensed and prioritized; educating the reviewer is mandatory, not optional. -->
 
+<!-- writing: budget=400 skill=the-loop:writing —
+     prose words only — front matter, headings, tables, code,
+     mermaid and EARS criteria are free. Advisory, never a gate: over budget is a
+     review comment. Cut before you justify. See the `the-loop:writing` skill. -->
+
 # <PR title> — reviewer briefing
 
 ## TL;DR

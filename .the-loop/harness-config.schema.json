@@ -968,6 +968,117 @@
           "type": "boolean",
           "default": true,
           "description": "RULE: intentionally and mandatorily educate the user on low-level design decisions as their familiarity with the codebase decreases. Not optional."
+        },
+        "writingStyle": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "How the-loop writes the artifacts a HUMAN reads (issue-165). Distinct from `tokenEconomy.outputVerbosity`, which compresses chat narration and explicitly preserves specs — this governs the documents themselves. The judgement lives in the bundled `the-loop:writing` skill; this block carries the policy it reads.",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true,
+              "description": "Apply the writing contract when authoring or revising a human-read artifact."
+            },
+            "skill": {
+              "type": "string",
+              "default": "the-loop:writing",
+              "description": "The skill carrying the contract (document spine, budgets, diagram-first rule, formal carve-out, revise pass). Bundled with the-loop; set another name to override with your own."
+            },
+            "diagramFirst": {
+              "type": "boolean",
+              "default": true,
+              "description": "RULE: where prose would describe a structure, sequence or state change with three or more named parts, author a `userInteraction.diagramFormat` diagram instead and let the prose say only what the diagram cannot. `design.md` carries at least one."
+            },
+            "budgets": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Per-artifact PROSE budgets in words. Front matter, headings, tables, fenced code, mermaid blocks, blockquote callouts and EARS acceptance criteria are excluded, so a budget can never argue against a diagram or a contract. ADVISORY: an over-budget artifact is a review comment, never a blocked phase (`test_docs_parity`'s reasoning — a gate that misfires is one people route around). 0 means unbudgeted by design. Every non-zero budget is mirrored by a `<!-- writing: budget=N -->` marker in the matching template, and `cli/tests/test_writing_parity.py` holds the two together in both directions.",
+              "properties": {
+                "brainstorm": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 0,
+                  "description": "brainstorm.md — unbudgeted: the root artifact is a scratchpad, and capping exploration is the wrong lever."
+                },
+                "requirements": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 500,
+                  "description": "requirements.md / bugfix.md (two names for one artifact, decision-045). Excludes the EARS criteria themselves."
+                },
+                "design": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 900,
+                  "description": "design.md — the largest budget, because it is the artifact a reviewer spends real time in. Diagrams are free."
+                },
+                "testingPlan": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 400,
+                  "description": "testing-plan.md — the matrix, environment and results tables are free; only the surrounding prose counts."
+                },
+                "tasks": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 400,
+                  "description": "tasks.md — a DAG, not an essay. The number leaves room above the shipped template's own guidance prose; `test_writing_parity.py` P6 keeps every budget reachable from its scaffold."
+                },
+                "executionLog": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 0,
+                  "description": "execution-log.md — unbudgeted: an append-only record grows with the work item by design."
+                },
+                "prBriefing": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 400,
+                  "description": "The reviewer briefing (`userInteraction.prSummary`). Condensed and prioritized is already required; this is the number behind it."
+                },
+                "decision": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 400,
+                  "description": "docs/decisions/decision-<nnn>.md — context, decision, consequences."
+                },
+                "capability": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 700,
+                  "description": "A living capability doc — current behaviour, read far more often than it is written."
+                },
+                "comment": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "default": 200,
+                  "description": "A ticket or PR comment, including review findings and escalations. Authored inline, so there is no template to carry the marker."
+                }
+              }
+            },
+            "formalRegisters": {
+              "type": "array",
+              "uniqueItems": true,
+              "default": [
+                "ears-acceptance-criteria",
+                "abuse-cases",
+                "api-contracts",
+                "schema-descriptions",
+                "rfc-2119"
+              ],
+              "description": "Registers the writing contract must NOT relax into informal prose. These are testable contracts, not prose: softening one breaks the gate that reads it. Explanation AROUND them is ordinary prose and follows the skill.",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "ears-acceptance-criteria",
+                  "abuse-cases",
+                  "api-contracts",
+                  "schema-descriptions",
+                  "rfc-2119"
+                ]
+              }
+            }
+          }
         }
       }
     },

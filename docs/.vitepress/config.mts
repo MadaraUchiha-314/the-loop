@@ -77,6 +77,7 @@ const capabilitiesItems = [
   { text: "Release & publishing", link: "/capabilities/release-publishing" },
   { text: "Documentation", link: "/capabilities/documentation" },
   { text: "Token economy", link: "/capabilities/token-economy" },
+  { text: "Writing style", link: "/capabilities/writing-style" },
 ];
 
 // The CLI is documented as a product in its own right (issue-117): an onboarding path,

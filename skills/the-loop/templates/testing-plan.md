@@ -7,6 +7,11 @@ approvedBy: []
 overrides: {}
 ---
 
+<!-- writing: budget=400 skill=the-loop:writing —
+     prose words only — front matter, headings, tables, code,
+     mermaid and EARS criteria are free. Advisory, never a gate: over budget is a
+     review comment. Cut before you justify. See the `the-loop:writing` skill. -->
+
 # Testing plan: <work item title>
 
 > Derived from the approved `requirements.md`/`bugfix.md` and `design.md`, **before**
