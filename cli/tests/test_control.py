@@ -244,7 +244,12 @@ def test_clear_forgets_the_record(tmp_path):
 def test_an_unreadable_record_is_skipped_not_raised(tmp_path):
     store = ControlStore(tmp_path / "control")
     store.record(REF, START)
-    path = next((tmp_path / "control").glob("*.json"))
+    # Corrupt THIS work item's record, resolved by path — not `next(glob("*.json"))`.
+    # The directory also holds the derived `index.json` (issue-130), so the glob
+    # returned whichever of the two the filesystem listed first: locally the record,
+    # on CI the index. Corrupting the index left the record intact and `get()`
+    # rightly returned it, failing an assertion about a file the test never touched.
+    path = store.store.path_for(REF)
     path.write_text("{not json")
     assert store.get(REF) is None
     assert store.start_requested(REF) is False  # fails closed
