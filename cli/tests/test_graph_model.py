@@ -219,6 +219,43 @@ class TestTestingIsPlannedAndVerifiedAsNodes:
         }
 
 
+class TestTheDesignGateDemandsTheModuleStructure:
+    """Where the code will land is a design decision, so it is gated (issue-164).
+
+    `design.md` said what the components are and how they interact, and never
+    said which files, packages or directories the work item would produce — a
+    reviewer learned the layout from the diff, after approving the design.
+    `Module structure` is the section that answers it, and it is a gate
+    condition rather than a template suggestion for the reason issue-124 and
+    issue-148 both recorded: a rule the graph does not hold is a rule that goes
+    missing.
+    """
+
+    def test_the_section_is_required_beside_the_other_three(self):
+        graph = load_graph()
+        gate = next(
+            spec
+            for spec in graph.node("design").exit
+            if isinstance(spec, dict) and spec["hook"] == "validate-artifacts"
+        )
+        assert gate["with"]["locked"] is True
+        assert set(gate["with"]["sections"]) == {
+            "Architecture",
+            "Module structure",
+            "Security design",
+            "Testing strategy",
+        }
+
+    def test_it_is_gated_where_the_design_is_authored(self):
+        """Not at `tasks-breakdown`: by then the shape is already approved.
+
+        Placement is a design decision, so the node that locks `design.md` is
+        the node that has to see it.
+        """
+        graph = load_graph()
+        assert "design.md" in graph.node("design").produces
+
+
 def test_the_shipped_graph_has_no_dead_ends():
     graph = load_graph()
     for node in graph.ordered():

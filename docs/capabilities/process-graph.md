@@ -92,6 +92,13 @@ There are exactly **two** runtime concepts and **one** contract between them.
 - `validate-artifacts` SHALL check front matter, required sections and the security
   boundary mapping (`enforces-boundaries-from`) — the design's Security design section
   must answer every abuse case the requirements raised.
+- The `design` node's `validate-artifacts` SHALL require **Architecture**,
+  **Module structure**, **Security design** and **Testing strategy**. `Module structure`
+  (issue-164, [decision-063](../decisions/decision-063.md)) is where the delivered code will
+  land — the tree of paths the work item creates, changes or removes. It is a gate condition
+  rather than a template suggestion for the reason issue-124 and issue-148 both recorded: a
+  rule the graph does not hold is a rule that goes missing. A work item that changes no code
+  says so in one sentence, which is non-empty and passes.
 - `classify-feedback` SHALL turn a human's free-text review into one of the decisive
   outcomes via a schema-constrained harness call, and SHALL only accept feedback from
   **authorized authors**; anything indecisive keeps the gate `wait`ing rather than
@@ -268,6 +275,7 @@ There are exactly **two** runtime concepts and **one** contract between them.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-164 | The `design` gate gained a fourth required section, `Module structure` — the tree of paths the work item creates, changes or removes — so placement is a claim the graph holds rather than something a reviewer reconstructs from the diff | [spec](../specs/issue-164/), [decision-063](../decisions/decision-063.md), [spec-workflow](spec-workflow.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/164) |
 | issue-163 | Testing became two nodes: `test-planning` produces `testing-plan.md` before the task DAG that references it, `verification` re-gates the same artifact after implementation and before the review chain; a `skip` stopped short-circuiting a chain, which is what had left `implementation` parking at `no_edge` | [spec](../specs/issue-163/), [decision-060](../decisions/decision-060.md), [testing-and-contracts](testing-and-contracts.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/163) |
 | issue-156 | Process runner removed; tmux is the only runner (2026-08-05): every spawn is tmux-hosted, so "every spawn enters the graph" no longer needs a per-runner qualifier, and the gate-session binding's `runner` is always `"tmux"` | [spec](../specs/issue-156/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/156) |
 | issue-148 | The graph went from observer to authority: `the-loop graph complete` (the node-completion claim — idempotent, node-named, never a verdict), `GraphContext` resolved read-only before every delivery and spawn, the `$graph_context` prompt block, consult-first ordering at human gates (no consume-only routes), `resolve_session` gained its caller (`graph.gate_session`), tmux spawns finally enter the graph, two-writer state locking, and P4 phase parity — `pdlc.yaml` defines the sequence, the prose renders it | [spec](../specs/issue-148/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/148) |

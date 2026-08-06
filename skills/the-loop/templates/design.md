@@ -32,6 +32,34 @@ and add sub-component docs if needed. Include diagrams where helpful.
 
 For each component: responsibility, inputs/outputs, public interface/contract.
 
+## Module structure
+
+> **Where the delivered code will land.** The reviewer has just read what the components
+> are; this says which files, modules and packages the work item creates, changes or
+> removes, before any of them exist. Scoped to **this work item's delta** — the standing
+> view is `docs/architecture/architecture.md`, and repeating it here buries the change.
+> Not a second *Components & interfaces*: that section carries responsibility and
+> contract, this one carries **placement**.
+
+```text
+<repo>/
+├── <path/to/new/module>         new       <one line: what lives here>
+├── <path/to/changed/module>     changed   <one line: what changes>
+└── <path/to/removed/module>     removed   <one line: what replaces it>
+```
+
+| Path | Responsibility | Status | Requirement |
+|------|----------------|--------|-------------|
+| `<path>` | <one line> | new \| changed \| removed | R<n> |
+
+Draw the dependency direction when three or more of these modules depend on one another
+(`userInteraction.writingStyle.diagramFirst`) — a mermaid graph of who imports whom, which
+is the part a reviewer argues with.
+
+**A work item that changes no code** (docs-only, process-only) says so in one sentence and
+names the files it does change. The section stays: a gated section is never deleted to
+shorten a document.
+
 ## UI/UX design
 
 > Only for work items with a **user-facing surface** (skip for backend/CLI/infra — write

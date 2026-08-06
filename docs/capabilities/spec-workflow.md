@@ -47,6 +47,16 @@ the `/the-loop:work-on` superset command and granular per-step commands
   executes it after implementation and before the review chain, with results and
   committed evidence recorded in the same artifact. An activity that could not run is
   never ticked.
+- **`design.md` SHALL state where the delivered code will land** (issue-164,
+  [decision-063](../decisions/decision-063.md)): a gated `Module structure` section holding
+  the tree of repository-relative paths the work item creates, changes or removes, each with
+  a one-line responsibility and the requirement it serves, plus a mermaid dependency diagram
+  once three or more of them depend on one another. It is scoped to the work item's **delta**
+  — `docs/architecture/architecture.md` keeps the standing view — and it is not a second
+  *Components & interfaces*: that section carries responsibility and contract, this one
+  carries placement. WHERE a work item changes no code THEN the section SHALL say so in one
+  sentence and name the files it does change; an empty section blocks the `design` node, and
+  existing specs are not retro-fitted because gates run forward.
 - **Security SHALL be a gated concern of each phase** (`config.security`):
   requirements/bugfix carry a Security considerations threat-model-lite (untrusted
   actors, trust boundaries, abuse cases, fail-closed — "no new attack surface" is
@@ -116,6 +126,7 @@ the `/the-loop:work-on` superset command and granular per-step commands
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-164 | `design.md` gained a gated `Module structure` section — the tree of paths the work item creates, changes or removes — so a reviewer judges placement at the design gate instead of in the diff | [spec](../specs/issue-164/), [decision-063](../decisions/decision-063.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/164) |
 | issue-163 | The chain gained `testing-plan.md` between design and tasks, and the state machine gained the `test-planning` and `verification` phases — how a work item is proved is now planned, gated and evidenced rather than assumed | [spec](../specs/issue-163/), [decision-060](../decisions/decision-060.md), [testing-and-contracts](testing-and-contracts.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/163) |
 | issue-124 | A bug's `bugfix.md` clears the phase-1 gate it always should have: the two documented names became alternatives for one artifact, both present blocks, and the bundled bugfix template gained the `## Requirements` heading the gate asks for | [spec](../specs/issue-124/), [decision-045](../decisions/decision-045.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/124) |
 | issue-109 | The phase state machine became executable: every phase is a node in the shipped process graph, with hook chains deciding completion and declared edges routing on the outcome | [spec](../specs/issue-109/), [process-graph](process-graph.md), [decision-041](../decisions/decision-041.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/109) |

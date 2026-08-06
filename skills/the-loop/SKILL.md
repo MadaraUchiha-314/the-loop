@@ -48,8 +48,12 @@ it is **locked** (`status: approved`), and only then is the next one derived. Sp
    leave the gate with no defined source of truth, so it blocks (decision-045). Whichever
    name it carries, the artifact needs the same `## Requirements` and
    `## Security considerations` sections; both bundled templates provide them.
-2. **`design.md`** — architecture, components/interfaces, data models, error handling,
-   testing strategy. Phase: `design`. For a **user-facing** work item the design phase also
+2. **`design.md`** — architecture, components/interfaces, **module structure**, data
+   models, error handling, testing strategy. Phase: `design`. The module structure is the
+   tree of paths the work item creates, changes or removes — where the delivered code will
+   land, gated at this node so a reviewer sees the layout before approving it rather than
+   in the diff afterwards (issue-164); the template carries the rules.
+   For a **user-facing** work item the design phase also
    tracks **UI/UX design artifacts** (Figma links / self-contained HTML prototypes under
    `docs/specs/<id>/design/`), iterated-until-locked with the designer
    (`reference/design-artifacts.md`).

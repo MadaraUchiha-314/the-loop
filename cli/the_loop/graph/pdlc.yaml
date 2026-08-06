@@ -68,7 +68,11 @@ nodes:
     stage: design
     entry: [set-phase-label, log-entry]
     exit:
-      - {hook: validate-artifacts, with: {locked: true, sections: ["Architecture", "Security design", "Testing strategy"]}}
+      # `Module structure` (issue-164) is where the code will land: the tree of
+      # paths the work item creates, changes or removes. It is gated rather than
+      # suggested because a reviewer who cannot see the layout at this node sees
+      # it in the diff instead — after approving the design.
+      - {hook: validate-artifacts, with: {locked: true, sections: ["Architecture", "Module structure", "Security design", "Testing strategy"]}}
       # Same two names as phase 1. Naming only requirements.md here meant this
       # check resolved to nothing for every bug, skipped, and passed the chain —
       # a security gate reporting success without running (issue-124).

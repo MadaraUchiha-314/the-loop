@@ -22,7 +22,11 @@ spec chain. A slice of `/the-loop:work-on`; `work-on` remains the superset.
    (`${CLAUDE_PLUGIN_ROOT}` = the installed plugin's root; same in Cursor),
    derived from the requirements: overview, architecture, components/interfaces, data
    models, error handling, the testing **strategy** (a paragraph; the executable detail
-   belongs to `testing-plan.md`), plus the **Security design** section —
+   belongs to `testing-plan.md`), the **Module structure** section — the tree of paths this
+   work item creates, changes or removes, with a one-line responsibility and requirement
+   per entry, so the reviewer sees where the code will land before approving the design
+   (gated; a work item that changes no code says so in one sentence, per the template) —
+   plus the **Security design** section —
    how each trust boundary from the requirements' Security considerations is enforced
    (`security.design.required`; a boundary left unenforced fails the gate, see
    `reference/security.md`). Map each requirement to a component. RULE:

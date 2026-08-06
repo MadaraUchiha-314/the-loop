@@ -93,7 +93,11 @@ requirements.
 
 5. **Phase 2 — Design** (`design`). Create `docs/specs/<id>/design.md` derived from the
    approved requirements: architecture, components/interfaces, data models, error
-   handling, testing strategy — **including the Security design section** stating how
+   handling, testing strategy — **including the Module structure section** (the tree of
+   paths this work item creates, changes or removes, each with a one-line responsibility
+   and the requirement it serves, so the reviewer sees where the code will land before
+   approving the design; a work item that changes no code says so in one sentence) and
+   **the Security design section** stating how
    each requirements-phase trust boundary is enforced (`security.design.required`; a
    boundary left unenforced fails the gate). **If the work item has a user-facing
    surface**, also

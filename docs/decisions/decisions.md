@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [063](decision-063.md) | Where the code will land is a gated section of `design.md`, not a new artifact | proposed | 2026-08-06 |
 | [062](decision-062.md) | Third-party writing skills are registered, not vendored — and their ban-lists are not adopted | proposed | 2026-08-06 |
 | [061](decision-061.md) | Writing for humans is a sibling skill — with no length limits | proposed | 2026-08-06 |
 | [060](decision-060.md) | Testing is planned and verified as two nodes; the plan is the record, and a skip is not a decision | proposed | 2026-08-06 |

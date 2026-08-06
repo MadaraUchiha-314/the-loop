@@ -58,8 +58,15 @@ until the current phase is approved; record the approver (paper trail).
    actors, trust boundaries, abuse cases, fail-closed expectations) captured with the
    requirements (`security.threatModel.required`); an empty section fails the gate,
    "no new attack surface" is written and justified. See `reference/security.md`.
-2. **`design.md`** — overview, architecture, components/interfaces, data models, error
-   handling, testing strategy. Derived from approved requirements. Phase: `design`.
+2. **`design.md`** — overview, architecture, components/interfaces, module structure, data
+   models, error handling, testing strategy. Derived from approved requirements. Phase: `design`.
+   Includes the **Module structure** section — the tree of repository-relative paths the
+   work item creates, changes or removes, each with a one-line responsibility and the
+   requirement it serves, so a reviewer can judge *placement* at the design gate instead of
+   in the diff (issue-164). Scoped to the work item's delta; the standing view stays in
+   `docs/architecture/architecture.md`. It is a gate condition, and an empty one fails —
+   a work item that changes no code says so in one sentence. The bundled template holds the
+   authoring rules.
    Includes the **Security design** section — how each requirements-phase trust
    boundary is enforced (authn/authz, input validation, secrets, least privilege,
    injection surfaces, fail-closed behaviour) (`security.design.required`); a boundary

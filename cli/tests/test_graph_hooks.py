@@ -9,6 +9,7 @@ from the_loop.graph.contract import BLOCK, PASS, SKIP, HookContext, WorkItem
 from the_loop.graph.frontmatter import mermaid_blocks, sections, split_front_matter
 from the_loop.graph.hooks.artifacts import enforces_boundaries_from, validate_artifacts
 from the_loop.graph.hooks.lint import lint_artifacts
+from the_loop.graph.model import load_graph
 
 #: The phase-1 entry as the shipped graph declares it (issue-124).
 PHASE_1 = "requirements.md|bugfix.md"
@@ -119,6 +120,74 @@ def test_a_satisfied_artifact_passes(tmp_path):
 def test_a_node_with_no_artifacts_is_skipped(tmp_path):
     ctx, _ = _ctx(tmp_path, [])
     assert validate_artifacts(ctx).status == SKIP
+
+
+# -- the shipped design gate: module structure (issue-164) ---------------------
+
+
+def _design_gate_params():
+    """The `design` node's `validate-artifacts` params, as the plugin ships them.
+
+    Read rather than restated: these cases prove the gate a work item actually
+    meets, not a locally-declared imitation of it.
+    """
+    node = load_graph().node("design")
+    spec = next(
+        s
+        for s in node.exit
+        if isinstance(s, dict) and s["hook"] == "validate-artifacts"
+    )
+    return dict(spec["with"])
+
+
+def _design(module_structure: str) -> str:
+    """A locked design carrying every gated section, module structure last."""
+    return (
+        "---\nstatus: approved\n---\n\n# D\n\n"
+        "## Architecture\n\nthe shape\n\n"
+        "## Security design\n\nno new attack surface, and why\n\n"
+        "## Testing strategy\n\nunit plus review\n"
+        f"{module_structure}"
+    )
+
+
+def test_a_design_without_a_module_structure_blocks(tmp_path):
+    """Where the code will land is not optional (R2.1, R2.2)."""
+    ctx, spec = _ctx(tmp_path, ["design.md"], _design_gate_params())
+    (spec / "design.md").write_text(_design(""))
+    result = validate_artifacts(ctx)
+    assert result.status == BLOCK
+    assert "missing: Module structure" in " | ".join(m.text for m in result.messages)
+
+
+def test_a_module_structure_heading_with_nothing_under_it_blocks(tmp_path):
+    """A bare heading does not tick this box (R2.2).
+
+    The box-ticking abuse case from `design.md` §Security design: a required
+    section that could be satisfied by its own heading would be a gate reporting
+    success without running.
+    """
+    ctx, spec = _ctx(tmp_path, ["design.md"], _design_gate_params())
+    (spec / "design.md").write_text(_design("\n## Module structure\n\n"))
+    result = validate_artifacts(ctx)
+    assert result.status == BLOCK
+    assert "empty: Module structure" in " | ".join(m.text for m in result.messages)
+
+
+def test_a_work_item_that_changes_no_code_still_clears_the_gate(tmp_path):
+    """R1.6 — a gated section is never deleted to shorten a document.
+
+    A docs-only work item records that in one sentence, which is non-empty, so
+    the gate does not become a reason to invent a module tree.
+    """
+    ctx, spec = _ctx(tmp_path, ["design.md"], _design_gate_params())
+    (spec / "design.md").write_text(
+        _design(
+            "\n## Module structure\n\nNo code changes: this work item edits "
+            "`README.md` and `docs/guide/index.md` only.\n"
+        )
+    )
+    assert validate_artifacts(ctx).status == PASS
 
 
 # -- lint-artifacts ------------------------------------------------------------
