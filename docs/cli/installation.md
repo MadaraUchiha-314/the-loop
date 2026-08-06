@@ -49,26 +49,30 @@ outcomes.
 
 ## Extras
 
-### `slack` — notifications through the official SDK
+**There are none, by design.** Everything the CLI can do resolves from a single
+`pip install the-loopy-one`: hosting the [control-plane service](/cli/commands/service)
+and its MCP endpoint (`fastapi`, `uvicorn`, the official `mcp` SDK), reading YAML
+config (`pyyaml`), and the [Slack `sdk` transport](/config/cli/integrations-options#slack-transport)
+(`slack-sdk`). Extras were removed on owner review — *"it creates a nightmare when
+installing"* — so there is nothing to remember and nothing that silently degrades
+when it is missing.
+
+The previously documented names still resolve as **empty, deprecated no-ops**:
 
 ```bash
-pip install "the-loopy-one[slack]"
+pip install "the-loopy-one[service]"   # still works, adds nothing
+pip install "the-loopy-one[slack]"     # still works, adds nothing
+pip install "the-loopy-one[config]"    # still works, adds nothing
 ```
 
-Adds `slack-sdk`, which has zero required dependencies of its own. It is optional so that a
-plain `pip install the-loopy-one` stays a one-package install — the dependency-free
-`webhook` transport works without it. See
-[integrations options](/config/cli/integrations-options#slack-transport).
+They are kept only so pinned install lines in existing scripts and Dockerfiles keep
+resolving without pip's "does not provide the extra" warning. Do not use them in new
+scripts.
 
-### `config` — deprecated no-op
-
-```bash
-pip install "the-loopy-one[config]"   # still works, adds nothing
-```
-
-This extra used to carry PyYAML. PyYAML is now a required dependency, so the extra is an
-empty, deprecated no-op — kept only so previously documented install lines keep resolving
-without a pip warning. Do not use it in new scripts.
+::: tip Python 3.10 or newer
+The official MCP SDK requires Python 3.10+, so the-loop does too. Python 3.9 reached
+end of life in October 2025.
+:::
 
 ## For local development
 

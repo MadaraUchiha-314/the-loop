@@ -16,43 +16,31 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import sys
 from pathlib import Path
-from typing import List, Sequence
+from typing import Any, List, Mapping, Sequence
 
 from .base import Command, register
-from ..harness_config import load as load_harness_config
-from ..scenarios import DEFAULT_GLOBS, Scenario, collect_scenarios
+from ..client.routing import routed, service_error
+from ..core import repo as core_repo
 
 logger = logging.getLogger("the-loop.scenarios")
 
 
-def _load_config_globs(root: Path) -> List[str]:
-    """Best-effort read of testing.integrationTestGlobs from the harness config.
-
-    Where the integration tests live is a fact about this repository's layout, which is
-    why it is the repository's to declare and not the operator's (decision-044). Returns
-    ``[]`` when there is no config, or it does not parse — the command still has its
-    built-in globs.
-    """
-    data = load_harness_config(root)
-    globs = ((data.get("testing") or {}).get("integrationTestGlobs")) or []
-    return [str(g) for g in globs]
+def render_json(scenarios: Sequence[Mapping[str, Any]]) -> str:
+    return json.dumps(list(scenarios), indent=2)
 
 
-def render_json(scenarios: Sequence[Scenario]) -> str:
-    return json.dumps([s.as_dict() for s in scenarios], indent=2)
-
-
-def _rows(scenarios: Sequence[Scenario]) -> List[List[str]]:
+def _rows(scenarios: Sequence[Mapping[str, Any]]) -> List[List[str]]:
     rows: List[List[str]] = []
     for i, s in enumerate(scenarios, start=1):
-        location = f"{s.file}:{s.line}" if s.file else str(s.line)
+        location = f"{s['file']}:{s['line']}" if s.get("file") else str(s.get("line"))
         rows.append(
             [
                 str(i),
-                s.feature or "—",
-                s.scenario or "—",
-                s.requirement or "—",
+                s.get("feature") or "—",
+                s.get("scenario") or "—",
+                s.get("requirement") or "—",
                 location,
             ]
         )
@@ -62,7 +50,7 @@ def _rows(scenarios: Sequence[Scenario]) -> List[List[str]]:
 _HEADERS = ["#", "Feature", "Scenario", "Requirement", "Location"]
 
 
-def render_table(scenarios: Sequence[Scenario]) -> str:
+def render_table(scenarios: Sequence[Mapping[str, Any]]) -> str:
     """A plain, aligned ASCII table (no third-party dependency)."""
     rows = _rows(scenarios)
     widths = [len(h) for h in _HEADERS]
@@ -78,7 +66,7 @@ def render_table(scenarios: Sequence[Scenario]) -> str:
     return "\n".join(lines)
 
 
-def render_markdown(scenarios: Sequence[Scenario]) -> str:
+def render_markdown(scenarios: Sequence[Mapping[str, Any]]) -> str:
     """A GitHub-flavoured Markdown table (pipes escaped)."""
 
     def esc(text: str) -> str:
@@ -126,11 +114,27 @@ class ScenariosCommand(Command):
         )
 
     def run(self, args: argparse.Namespace) -> int:
-        root = Path(args.root)
-        globs = args.globs or _load_config_globs(root) or DEFAULT_GLOBS
-        scenarios = collect_scenarios(root, globs)
-        output = _RENDERERS[args.format](scenarios)
-        print(output)
+        root = str(Path(args.root))
+        globs = list(args.globs or [])
+        try:
+            report = routed(
+                lambda connection: connection.get(
+                    "/repo/scenarios", params={"repo": root, "glob": globs}
+                ),
+                lambda: core_repo.scenarios(root, globs=globs),
+            )
+        except Exception as exc:  # noqa: BLE001 — mapped, or re-raised below
+            mapped = service_error(exc)
+            if mapped is None:
+                mapped = (f"error: {exc}", 2)
+            print(mapped[0], file=sys.stderr)
+            return mapped[1]
+        scenarios = report["scenarios"]
+        print(_RENDERERS[args.format](scenarios))
         if args.format != "json" and not scenarios:
-            logger.warning("no scenarios found under %s for globs %s", root, globs)
+            logger.warning(
+                "no scenarios found under %s for globs %s",
+                report["repo"],
+                report["globs"],
+            )
         return 0

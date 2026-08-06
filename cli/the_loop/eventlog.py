@@ -358,6 +358,17 @@ EVENT_TYPES: Dict[str, str] = {
         "inherit` — inherited, or fresh-with-artifacts when the producing "
         "session is gone (work_item, node, resolution, session). issue-148."
     ),
+    # -- control-plane API service (source: service) — issue-161 --------------
+    "api.request": (
+        "One control-plane API operation completed (method, path, status). "
+        "Every mutating and reading route lands here; /health is exempt."
+    ),
+    "mcp.call": (
+        "An MCP tool call was served over the control-plane's HTTP endpoint "
+        "(tool, ok). Same authorization and audit trail as the REST surface."
+    ),
+    "service.started": "The control-plane API service came up (host, port).",
+    "service.stopped": "The control-plane API service shut down.",
 }
 
 

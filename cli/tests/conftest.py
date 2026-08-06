@@ -8,10 +8,28 @@ from typing import Optional
 import pytest
 
 from the_loop import eventlog
+from the_loop.client.routing import SERVICE_LOCAL_ENV
 from the_loop.harness import HarnessAdapter
 from the_loop.runner import SESSION_ABSENT, TmuxResult, TmuxRunner
 from the_loop.trust import TrustResult
 from the_loop.webhook import dispatcher as dispatcher_mod
+
+
+@pytest.fixture(autouse=True)
+def _local_execution(monkeypatch, request):
+    """Run command tests on the local execution path (issue-161).
+
+    The service-only rule routes core-capability commands through the
+    control-plane service. The in-process path runs the *same* core facade the
+    service calls, so covering it here is behaviour coverage without standing a
+    server up per test. Routed-transport tests opt out with the ``routed``
+    marker and exercise a real service end-to-end
+    (test_service_lifecycle_integration.py).
+    """
+    if "routed" in request.keywords:
+        monkeypatch.delenv(SERVICE_LOCAL_ENV, raising=False)
+    else:
+        monkeypatch.setenv(SERVICE_LOCAL_ENV, "1")
 
 
 class StubInteractiveAdapter(HarnessAdapter):

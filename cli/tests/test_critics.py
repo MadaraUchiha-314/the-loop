@@ -411,7 +411,7 @@ def test_list_reports_availability(tmp_path: Path, capsys):
     )
     assert run_cli(["critic", "list", "--root", str(tmp_path), "--format", "json"]) == 0
     rows = json.loads(capsys.readouterr().out)
-    by_name = {row["critic"]: row for row in rows}
+    by_name = {row["name"]: row for row in rows}
     assert by_name["cursor-gpt"]["binary"] == "cursor-agent"
     assert by_name["cursor-gpt"]["available"] is False  # not installed in CI
     assert by_name["paused"]["enabled"] is False

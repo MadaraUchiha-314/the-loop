@@ -35,9 +35,9 @@ the-loop install claude --scope project --project-dir .   # one repository only
 `upgrade` uses the installer that owns the copy you are running (`uv tool`, `pipx`,
 `pip`), and `--dry-run` prints the exact commands first.
 
-Optional extras: `the-loopy-one[slack]` for the official Slack SDK transport.
-(`[config]` is a deprecated no-op — PyYAML is a required dependency now — kept so pinned
-install lines keep resolving.)
+No extras: one `pip install the-loopy-one` brings everything, including hosting the
+control-plane service and its MCP endpoint. (`[service]`, `[slack]` and `[config]` are
+deprecated no-ops, kept so pinned install lines keep resolving.) Needs Python 3.10+.
 
 ## In one minute
 

@@ -196,25 +196,38 @@ def test_scenarios_command_table_output(capsys):
     assert "Checkout pricing" in out
 
 
-def test_load_config_globs_prefers_harness_config_with_config_yaml_fallback(tmp_path):
+def test_scenario_globs_prefer_harness_config_with_config_yaml_fallback(tmp_path):
     """harness-config.yaml wins; the pre-rename config.yaml is still honored
-    (issue-82, decision-035) so un-upgraded repos keep working."""
-    from the_loop.commands.scenarios import _load_config_globs
+    (issue-82, decision-035) so un-upgraded repos keep working.
+
+    Glob resolution moved into the core facade with issue-161, so the report
+    names the globs it searched and every surface reads the same answer.
+    """
+    from the_loop.core import repo as core_repo
+    from the_loop.scenarios import DEFAULT_GLOBS
+
+    def globs():
+        return core_repo.scenarios(str(tmp_path))["globs"]
 
     cfg_dir = tmp_path / ".the-loop"
     cfg_dir.mkdir()
 
-    # nothing configured -> []
-    assert _load_config_globs(tmp_path) == []
+    # nothing configured -> the built-in set
+    assert globs() == list(DEFAULT_GLOBS)
 
     # only the pre-rename file -> its globs are used
     (cfg_dir / "config.yaml").write_text(
         "testing:\n  integrationTestGlobs: [old/**/*.py]\n"
     )
-    assert _load_config_globs(tmp_path) == ["old/**/*.py"]
+    assert globs() == ["old/**/*.py"]
 
     # harness-config.yaml present -> it wins over config.yaml
     (cfg_dir / "harness-config.yaml").write_text(
         "testing:\n  integrationTestGlobs: [new/**/*.py]\n"
     )
-    assert _load_config_globs(tmp_path) == ["new/**/*.py"]
+    assert globs() == ["new/**/*.py"]
+
+    # an explicit override beats both
+    assert core_repo.scenarios(str(tmp_path), globs=["cli/**/*.py"])["globs"] == [
+        "cli/**/*.py"
+    ]

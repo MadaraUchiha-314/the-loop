@@ -9,7 +9,7 @@ name = "the-loopy-one"
 version = "7.1.1"
 description = "Lightweight, extensible CLI for the-loop — quality-of-life commands the the-loop plugin can use (e.g. a GitHub webhook receiver)."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"   # the official MCP SDK requires 3.10+; 3.9 is EOL (Oct 2025)
 license = { text = "MIT" }
 authors = [{ name = "MadaraUchiha-314" }]
 keywords = ["the-loop", "cli", "webhook", "pdlc"]
@@ -27,18 +27,28 @@ classifiers = [
 # config and the harness config) is YAML, so reading it is not optional — it used
 # to be a `[config]` extra whose absence silently degraded every read to empty
 # (issue-97, decision-038). Everything else stays stdlib to keep this lightweight.
-dependencies = ["pyyaml>=6"]
+# RULE: no extras (owner decision, PR #162 — "No extras pls. It creates a
+# nightmare when installing. All deps get installed when one installs
+# the-loopy-one."). Everything the CLI can do works from a single
+# `pip install the-loopy-one`: hosting the control-plane service, the MCP
+# interface, and the Slack transport all resolve on that one install.
+dependencies = [
+    "pyyaml>=6",        # the whole configuration surface is YAML (issue-97)
+    "fastapi>=0.110",   # the control-plane API service (issue-161)
+    "uvicorn>=0.29",    # its ASGI server
+    "mcp>=1.2",         # the OFFICIAL MCP SDK — no hand-rolled protocol code
+    "slack-sdk>=3",     # the `sdk` Slack notification transport
+]
 
 [project.optional-dependencies]
-# The `sdk` Slack transport. Official, and zero required deps of its own —
-# but optional here so `pip install the-loopy-one` stays a one-package install
-# and the dependency-free `webhook` transport still works.
-slack = ["slack-sdk>=3"]
-# Deprecated no-op, kept so the previously documented
-# `pip install "the-loopy-one[config]"` keeps working without pip's "does not
-# provide the extra" warning. PyYAML is a required dependency now (issue-97).
+# Deprecated no-ops, kept so previously documented installs
+# (`pip install "the-loopy-one[config]"`, `[slack]`, `[service]`) keep working
+# without pip's "does not provide the extra" warning. Everything they used to
+# gate is a required dependency now — see the no-extras rule above.
 config = []
-dev = ["pytest>=8", "commitizen>=3"]
+slack = []
+service = []
+dev = ["pytest>=8", "commitizen>=3", "httpx>=0.27"]
 
 [project.scripts]
 the-loop = "the_loop.__main__:main"
@@ -57,9 +67,12 @@ packages = ["the_loop"]
 
 [tool.ruff]
 line-length = 88
-target-version = "py39"
+target-version = "py310"
 
 [tool.pytest.ini_options]
 # Let `pytest` find the package without an editable install (run from cli/).
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = [
+    "routed: exercises the CLI→service transport path against a live service (issue-161)",
+]

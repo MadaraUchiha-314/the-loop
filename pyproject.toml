@@ -15,6 +15,11 @@ dev = [
     "commitizen>=3",
     "jsonschema",
     "pyyaml",
+    # the control-plane service extra + its test client (issue-161): CI and the
+    # dev env host the API service, so the [service] deps are dev tooling here.
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "httpx>=0.27",
 ]
 
 # Test modules import shared doubles from their sibling conftest.py (pytest puts

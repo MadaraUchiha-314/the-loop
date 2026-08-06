@@ -1,0 +1,76 @@
+# Capability: control plane
+
+> The API layer over the-loop's core, and its clients: the service-routed CLI
+> and the MCP endpoint (issue-161, decision-058). A control-plane UI over the
+> same API is future work — descoped from issue-161 on owner review.
+
+## What it is
+
+the-loop's executable functionality is layered as **core → API → clients**: a
+transport-agnostic core facade (`the_loop.core`, one module per capability) is the
+single implementation; the API service (`the_loop.api`, FastAPI) exposes it at
+`/api/v1` plus an MCP endpoint at `/mcp`; the CLI and an agent host are thin
+clients of that surface. Everything needed to host the service ships with the
+package — there are no install extras (owner decision, PR #162).
+
+## Current behaviour
+
+- The core facade SHALL be importable and invocable with no CLI or HTTP context;
+  every capability (work items, events, graphs, repo-scoped queries, sessions,
+  daemons, attention) SHALL be implemented once there, delegating to the modules
+  that already carry the behaviour.
+- The API service SHALL expose the core at `/api/v1` per the **authored OpenAPI
+  contract** (`docs/api-specs/openapi/the-loop.v1.yaml`); a parity test SHALL fail the build
+  when the served schema's paths/methods/operationIds drift from it. Interactive
+  docs are served at `/api/docs`, generated, never hand-written.
+- The service SHALL carry **no in-app authentication** — a gateway terminates auth
+  for any exposed deployment (owner decision, PR #162). Its own boundary SHALL be
+  network scoping: it SHALL bind loopback by default and refuse a non-loopback bind
+  unless `service.exposed: true`; no CORS headers are sent, so the same-origin
+  default denies cross-origin browser access. No
+  credential SHALL be minted, stored, or required.
+- `the-loop service start|stop|status` SHALL manage the service with the issue-159
+  lifecycle discipline: the pidfile is the flock, a second start reports `already
+  running`, stop signals and waits. Hosting needs no extra: `fastapi`, `uvicorn`
+  and the official `mcp` SDK are required dependencies, so `pip install
+  the-loopy-one` is always enough to run the service.
+- The service SHALL be the CLI's **only execution path** for core capabilities
+  (owner decision, PR #162): a command auto-starts a local service when
+  `service.autoStart` allows and otherwise fails closed naming `the-loop service
+  start` — never an in-process fallback. Every core-capability command routes:
+  `check`, `events`, `graph` (show/status/advance/complete/force/run), `sessions`
+  (register/list/close/start/pause/resume/stop), `scenarios`, `instructions` and
+  `critic` (list/run). Four commands stay local **by nature**: `sessions attach`
+  replaces the caller's terminal with tmux, `sessions reset` is a recovery action
+  that must work when nothing is running, `poll start` / `gh-webhook start` run a
+  daemon in the foreground because cron and systemd units depend on it (the same
+  daemons start and stop *detached* through the API), and the bootstrap commands
+  (`install`, `upgrade`, `migrate-config`, `service`, `--version`) precede any
+  service. `THE_LOOP_SERVICE_LOCAL=1` is a test seam, not an operator switch.
+- The CLI SHALL NOT re-implement any routed operation: commands render the
+  `messages` and `exitCode` the core facade returns, so an operator's `sessions
+  pause` and an agent's `control_session` tool call produce identical words.
+- `/mcp` SHALL serve the MCP interface over **HTTP transport only** (no stdio),
+  built on the **official MCP Python SDK** (`mcp`) rather than a hand-rolled
+  protocol implementation (owner decision, PR #162). The SDK's DNS-rebinding
+  protection stays on, pinned to the hosts the service answers on. `sessions
+  reset` (destructive) and `graph force` (requires a human-attributed reason)
+  SHALL NOT be exposed as tools.
+- Every API operation SHALL land in the event log (`api.request`; tool calls as
+  `mcp.call`), queryable via `the-loop events --source service`.
+- A **control-plane UI is not part of this capability yet** (descoped from
+  issue-161 on owner review). The `attention` surface and the read/manage API it
+  would consume are in place; the UI arrives as its own work item.
+
+## Design
+
+[`docs/specs/issue-161/design.md`](../specs/issue-161/design.md) ·
+[`docs/api-specs/openapi/the-loop.v1.yaml`](../api-specs/openapi/the-loop.v1.yaml) ·
+[CLI: service](../cli/commands/service.md) ·
+[config: service options](../config/cli/service-options.md)
+
+## History
+
+| Work item | What changed | Links |
+|-----------|--------------|-------|
+| issue-161 | Capability minted: core facade extracted, API service + OpenAPI contract, loopback-default network posture (no in-app auth — the gateway owns it, decision-059), service lifecycle commands, every core-capability command routed through the service, HTTP-only MCP endpoint on the official SDK, no install extras. The UI was descoped on owner review | [spec](../specs/issue-161/), [decision-058](../decisions/decision-058.md), [decision-059](../decisions/decision-059.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/161) |

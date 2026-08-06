@@ -15,6 +15,7 @@ import pytest
 
 from the_loop import runner as runner_mod
 from the_loop.commands import sessions_cmd
+from the_loop.core import sessions as core_sessions
 from the_loop.harness import ClaudeCodeAdapter, CursorAgentAdapter
 from the_loop.runner import (
     TmuxResult,
@@ -1276,7 +1277,9 @@ class TestSessionsCli:
 
         registry = SessionRegistry(tmp_path)
         registry.register(make_session(tmux_target="loop-x"))
-        monkeypatch.setattr(sessions_cmd, "_tmux_config", TmuxConfig)
+        monkeypatch.setattr(
+            core_sessions, "_tmux_config", lambda config=None: TmuxConfig()
+        )
         killed = []
         monkeypatch.setattr(
             TmuxRunner, "kill", lambda self, s, timeout=None: killed.append(s)
@@ -1289,7 +1292,10 @@ class TestSessionsCli:
             lambda self, s, **kw: ended.append((s.tmux_target, kw)) or TmuxResult(True),
         )
         args = argparse.Namespace(
-            work_item=REF, registry_dir=str(tmp_path), keep_tmux=None
+            work_item=REF,
+            registry_dir=str(tmp_path),
+            portable_dir=str(tmp_path),
+            keep_tmux=None,
         )
         assert sessions_cmd.SessionsCommand()._close(args) == 0
         assert killed == []
@@ -1306,9 +1312,9 @@ class TestSessionsCli:
         registry = SessionRegistry(tmp_path)
         registry.register(make_session(tmux_target="loop-x"))
         monkeypatch.setattr(
-            sessions_cmd,
+            core_sessions,
             "_tmux_config",
-            lambda: TmuxConfig(kill_harness_on_close=False),
+            lambda config=None: TmuxConfig(kill_harness_on_close=False),
         )
         ended = []
         monkeypatch.setattr(
@@ -1317,7 +1323,10 @@ class TestSessionsCli:
             lambda self, s, **kw: ended.append(s) or TmuxResult(True),
         )
         args = argparse.Namespace(
-            work_item=REF, registry_dir=str(tmp_path), keep_tmux=None
+            work_item=REF,
+            registry_dir=str(tmp_path),
+            portable_dir=str(tmp_path),
+            keep_tmux=None,
         )
         assert sessions_cmd.SessionsCommand()._close(args) == 0
         assert ended == []
@@ -1331,11 +1340,16 @@ class TestSessionsCli:
 
         registry = SessionRegistry(tmp_path)
         registry.register(make_session(tmux_target="loop-x"))
-        monkeypatch.setattr(sessions_cmd, "_tmux_config", TmuxConfig)
+        monkeypatch.setattr(
+            core_sessions, "_tmux_config", lambda config=None: TmuxConfig()
+        )
         monkeypatch.setattr(runner_mod.subprocess, "run", FakeRun())
         monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
         args = argparse.Namespace(
-            work_item=REF, registry_dir=str(tmp_path), keep_tmux=False
+            work_item=REF,
+            registry_dir=str(tmp_path),
+            portable_dir=str(tmp_path),
+            keep_tmux=False,
         )
         assert sessions_cmd.SessionsCommand()._close(args) == 0
         assert "killed tmux session loop-x" in capsys.readouterr().out
@@ -1349,7 +1363,10 @@ class TestSessionsCli:
         registry.register(make_session(tmux_target="loop-x"))
         cmd = sessions_cmd.SessionsCommand()
         args = argparse.Namespace(
-            registry_dir=str(tmp_path), status=None, format="table"
+            registry_dir=str(tmp_path),
+            portable_dir=str(tmp_path),
+            status=None,
+            format="table",
         )
         assert cmd._list(args) == 0
         out = capsys.readouterr().out
