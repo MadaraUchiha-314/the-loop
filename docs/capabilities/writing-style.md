@@ -71,4 +71,4 @@ neighbouring, output-side lever)
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
-| issue-165 | Introduced the capability: the `the-loop:writing` skill and its tells catalogue, `userInteraction.writingStyle` (budgets, diagram-first, formal carve-out), budget markers in eight templates, and `test_writing_parity.py` | [spec](../specs/issue-165/), [decision-061](../decisions/decision-061.md), [decision-062](../decisions/decision-062.md), PR #167 |
+| issue-165 | Introduced the capability: the `the-loop:writing` skill and its tells catalogue, `userInteraction.writingStyle` (budgets, diagram-first, formal carve-out), budget markers in eight templates, and `test_writing_parity.py` | [spec](../specs/issue-165/), [decision-061](../decisions/decision-061.md), [decision-062](../decisions/decision-062.md), PR #168 |

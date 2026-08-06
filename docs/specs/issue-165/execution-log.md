@@ -28,7 +28,7 @@ status: in-progress          # in-progress | complete
 
 | PR | Scope / tasks | Status |
 |----|---------------|--------|
-| #167 | all tasks (1–7) | open |
+| #168 | all tasks (1–7) | open |
 
 ## Progress entries
 
