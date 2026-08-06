@@ -1,5 +1,22 @@
-# issue-165 — budget report (dogfooding: this work item's own artifacts)
-
+# issue-165 — the budget experiment (REJECTED APPROACH, kept as the record)
+#
+# This work item first shipped per-artifact word budgets. The owner rejected them in
+# review on PR #168 — "we don't know the scope of each work item, so how can we put
+# budgets on requirements.md or design.md?" — and they are gone from the schema, the
+# configs, the templates and the test.
+#
+# The measurement is kept because it is the evidence FOR that call, not against it.
+# Three of eight budgets had to be renegotiated before the change could merge:
+#   * tasks: 200 was unreachable from its own empty template (274 words of guidance),
+#     and was raised to 400;
+#   * requirements.md ran 682 against 500 and design.md 1017 against 900, both cut;
+#   * the PR briefing ran ~530 against 400 carrying only the mandated education, and
+#     was recorded as a deliberate overrun.
+# A number renegotiated by every artifact that meets it is not a policy.
+#
+# `prose_words()` no longer exists — it was removed with the budgets. The figures below
+# are the run from before that removal, at commit b74f0fd. See decision-061 §D2.
+#
 $ prose_words() from cli/tests/test_writing_parity.py, applied to what this PR ships
 
 artifact                                       words  budget  status

@@ -19,30 +19,29 @@ overrides: {}
 
 | # | Type | Applies? | Scope / what it proves | Where it runs |
 |---|------|----------|------------------------|---------------|
-| T1 | Unit | yes | `test_writing_parity.py` P1–P6: skill present, markers well-formed, markers == schema defaults, skill and every template within their own budgets, no P0 tell in shipped prose | `make test` |
+| T1 | Unit | yes | `test_writing_parity.py` P1–P4: skill present and parsing, every human-read template points at it, the pointer names the skill the schema declares and no length limits have returned, no P0 tell in shipped prose | `make test` |
 | T2 | Integration (scenario) | n/a — the change adds no runtime path. Nothing is dispatched, routed or spawned; there is no cross-module behaviour to document with a Gherkin scenario. | | |
 | T3 | Contract (OpenAPI / GraphQL SDL) | n/a — no API surface added. `docs/api-specs/openapi` is untouched. | | |
 | T4 | End-to-end | n/a — no user-invocable flow. The skill is read by an agent, not executed. | | |
 | T5 | UI / visual | n/a — no user-facing surface (`design.uiArtifacts` produces nothing for docs/CLI work). | | |
 | T6 | Snapshot | n/a — no rendered output to freeze. | | |
 | T7 | Performance / load | n/a — filesystem reads in a test; no runtime cost. | | |
-| T8 | Security / abuse case | yes | the abuse cases in `design.md` §Security design: a style pass cannot rewrite a record (P5's glob excludes `docs/specs/` and `evidence/`), and a malformed marker fails rather than skips | `make test` |
+| T8 | Security / abuse case | yes | the abuse cases in `design.md` §Security design: a style pass cannot rewrite a record (P4's glob excludes `docs/specs/` and `evidence/`), and a missing or wrong-skill pointer fails rather than skips | `make test` |
 | T9 | Accessibility | n/a — no UI. | | |
 | T10 | Migration / upgrade | yes | a project scaffolded before this change has no `writingStyle` block; schema defaults must make absence and default the same state | `make validate` |
-| T11 | Manual exploratory | yes | read the rendered `SKILL.md` and one budgeted template as a reviewer would, and confirm the contract is findable without reading the spec | manual |
+| T11 | Manual exploratory | yes | read the rendered `SKILL.md` and one human-read template as a reviewer would, and confirm the contract is findable without reading the spec | manual |
 
 ## Scenarios & requirement trace
 
 | Row | Requirement(s) | Scenario / case |
 |-----|----------------|-----------------|
 | T1 | R1.1, R1.3 | the writing skill exists, front-matter parses, `reference/tells.md` present |
-| T1 | R2.1 | every budgeted template declares a well-formed marker |
-| T1 | R2.1, R5.1 | marker values equal the schema's `writingStyle.budgets` defaults |
-| T1 | R1.2, NFR | `SKILL.md` prose is within its own declared budget |
-| T1 | R2.1, R2.3 | every template's own prose fits the budget it declares — a budget the scaffold busts is unreachable |
+| T1 | R2.1 | every human-read template names the governing skill |
+| T1 | R2.1, R5.1 | the pointer names the skill `writingStyle.skill` declares |
+| T1 | R2.2, R5.1 | `writingStyle.budgets` is absent — length limits cannot return unremarked |
 | T1 | R5.2 | no P0 tell in shipped prose — `skills/`, `commands/`, `rules/`, `README.md` and `docs/` minus the historical (`docs/specs/`) and generated trees |
-| T8 | R2.4, abuse case 2 | budgeted templates still carry their gated sections |
-| T8 | abuse case 1 | P5's scan excludes `docs/specs/` and `evidence/` |
+| T8 | R2.4, abuse case 2 | human-read templates still carry their gated sections |
+| T8 | abuse case 1 | P4's scan excludes `docs/specs/` and `evidence/` |
 | T10 | R5.1 | `.the-loop/harness-config.yaml` and the shipped template both validate against the schema |
 
 ## Verification environment
@@ -71,8 +70,7 @@ overrides: {}
 - [x] T10 — `make validate`, plus the absent-block and rejected-key cases
 - [x] all — `make lint`, `make format-check`, `make typecheck`
 - [x] T11 — read `skills/writing/SKILL.md` and `skills/the-loop/templates/design.md` as a
-      reviewer; record whether the budget and the skill are findable without the spec
-- [x] extra — measure every artifact this PR ships against the budgets it introduces
+      reviewer; record whether the contract is findable without the spec
 
 ## Verification results
 
@@ -80,18 +78,22 @@ overrides: {}
 |----------|--------------------|---------|----------|
 | T1 | `uv run --project cli python -m pytest -q cli/tests/test_writing_parity.py` | 21 passed | [`evidence/unit.txt`](evidence/unit.txt) |
 | T1/T8 | `make test` | 1349 passed, 1 skipped | [`evidence/unit.txt`](evidence/unit.txt) |
-| T10 | `make validate` + a config with `writingStyle` removed, an unknown budget key, and a typo'd formal register | both configs valid; the pre-issue-165 shape still validates; the unknown key and the typo'd register are both rejected | [`evidence/validate.txt`](evidence/validate.txt) |
+| T10 | `make validate` + a config with `writingStyle` removed, an unknown key under `writingStyle`, and a typo'd formal register | both configs valid; the pre-issue-165 shape still validates; the unknown key and the typo'd register are both rejected | [`evidence/validate.txt`](evidence/validate.txt) |
 | all | `make lint`, `make format-check`, `make typecheck` | ruff clean · markdownlint 0 errors over 420 files · pyright 0 errors | [`evidence/checks.txt`](evidence/checks.txt) |
-| T11 | read `SKILL.md` and `templates/design.md` as a reviewer | the budget is visible where the artifact is authored (first lines of the template) and names the skill governing it; no need to open the spec. Finding recorded below. | this table |
-| extra | `prose_words()` over every artifact this PR ships | all inside budget after one revise pass; two overruns found and cut | [`evidence/budgets.txt`](evidence/budgets.txt) |
+| T11 | read `SKILL.md` and `templates/design.md` as a reviewer | the contract is visible where the artifact is authored (first lines of the template) and names the skill governing it; no need to open the spec | this table |
+| — | the budget experiment that preceded the current design | recorded for the record: it is what showed the numbers to be unworkable | [`evidence/budgets.txt`](evidence/budgets.txt) |
 
-**T11 finding (fixed during verification):** the first draft set `tasks: 200` against a
-`tasks.md` template whose own guidance prose is 274 words — every `tasks.md` would have
-opened over budget. The budget is now 400, and **P6** was added so an unreachable budget is
-a red build rather than a discovery. Two further overruns (`requirements.md` at 682,
-`design.md` at 1017) were cut rather than excused; see `evidence/budgets.txt`.
+**T11 finding, and what it cost the design.** Verification measured every artifact this PR
+ships against the budgets it then proposed, and three of them did not hold: `tasks: 200`
+was unreachable from its own 274-word empty template, `requirements.md` ran 682/500 and
+`design.md` 1017/900. The numbers were corrected and a sixth assertion added to keep
+budgets reachable — and then the owner rejected budgets outright on PR #168, for the
+underlying reason those corrections were evidence of. Length limits are gone; the record
+of the experiment is [`evidence/budgets.txt`](evidence/budgets.txt) and
+[decision-061](../../decisions/decision-061.md) §D2.
 
-**Not executed:** none. Every in-scope activity ran.
+**Not executed:** none. Every in-scope activity ran, and re-ran after the budgets were
+removed.
 
 ## Review comments
 

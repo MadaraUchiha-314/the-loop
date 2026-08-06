@@ -1,34 +1,32 @@
 """Writing-contract parity (issue-165).
 
 the-loop's artifacts are read by a human who has to approve them, and nothing in the
-harness used to say how long they were allowed to be or how they should read. issue-165
-added a writing contract: a bundled ``the-loop:writing`` skill, per-artifact prose budgets
-declared in ``userInteraction.writingStyle``, and a budget marker in each template that
-produces a human-read artifact.
+harness used to say how they should read. issue-165 added a writing contract: a bundled
+``the-loop:writing`` skill, the ``userInteraction.writingStyle`` policy it reads, and a
+pointer to that skill in every template producing a human-read artifact.
+
+**There are no length budgets, deliberately.** The first draft of this work item shipped
+per-artifact word budgets; the owner rejected them on PR #168 for the reason that settles
+it — a work item's scope is not known in advance, so any number is wrong for half the work
+items, and a cap only pushes prose into an appendix. The skill's test is *density* (can a
+sentence come out without losing information?), which is a review judgement and is
+deliberately NOT asserted here. See decision-061.
 
 Prose describing a rule does not execute it — that is what issue-124 and issue-148 both
 cost. So the mechanical parts of the contract are asserted here:
 
 ======  =========================================================  =========================
 P1      the writing skill exists and its front-matter parses       the skill is renamed or dropped
-P2      every budgeted template declares a well-formed marker      a template ships with no budget
-P3      marker values equal the schema's budget defaults,          the two numbers drift apart
-        in both directions
-P4      SKILL.md's own prose fits its own declared budget          the contract stops obeying itself
-P5      no P0 writing tell appears in shipped prose                a chatbot tic reaches a user-facing doc
-P6      each template's own prose fits the budget it declares      a budget the scaffold alone cannot meet
+P2      every human-read template points at the writing skill      a template ships with no contract
+P3      the pointer names the skill the schema declares            the two drift apart
+P4      no P0 writing tell appears in shipped prose                a chatbot tic reaches a user-facing doc
 ======  =========================================================  =========================
 
-P6 exists because the first draft of this work item set ``tasks: 200`` against a template
-whose own guidance prose was 274 words: every tasks.md would have opened over budget, and
-an unreachable budget teaches authors to ignore the reachable ones. It also keeps the
-templates themselves lean, which is the same goal one level up.
-
-What is deliberately NOT asserted: whether a document is *well written*. R5.3 of
-``docs/specs/issue-165/requirements.md`` draws that line — presence is mechanical,
-quality is a review item — and the surveyed prior art
+What is deliberately NOT asserted: whether a document is *well written*, or how long it
+is. R5.3 of ``docs/specs/issue-165/requirements.md`` draws that line — presence is
+mechanical, quality is a review item — and the surveyed prior art
 (https://github.com/conorbronsdon/avoid-ai-writing) reports false-positive rates above
-60% on non-native speakers for exactly this kind of pattern matching. P5 is therefore
+60% on non-native speakers for exactly this kind of pattern matching. P4 is therefore
 limited to tells with no legitimate technical reading, and it scans **shipped prose only**
 — never ``docs/specs/`` or the evidence under it, because a build that can go red over the
 style of a committed record is the "a style pass rewrites a record" abuse case from
@@ -58,36 +56,29 @@ pytestmark = pytest.mark.skipif(
     reason="plugin skills not present (source distribution)",
 )
 
-#: ``<!-- writing: budget=500 skill=the-loop:writing -->`` — invisible when the markdown
-#: renders, greppable, and it sits where the author is already looking. ``budget`` must be
-#: an integer: a malformed value fails P2 rather than being skipped, because a marker that
-#: silently disables itself is the defect shape issue-124 was about.
-_MARKER = re.compile(r"<!--\s*writing:\s*budget=(\d+)\s+skill=([\w:.-]+)[^>]*?-->")
+#: The pointer each human-read template carries: an HTML comment naming the skill that
+#: governs it. Invisible when the markdown renders, greppable, and it sits where the
+#: author is already looking. A comment rather than visible prose because the template's
+#: own text is a cost to every reader of every artifact made from it.
+_POINTER = re.compile(r"<!--[^>]*?`(the-loop:[\w.-]+)`\s+skill", re.DOTALL)
 
-#: template filename -> ``userInteraction.writingStyle.budgets`` key.
-#:
-#: Explicit rather than derived: ``testing-plan.md`` -> ``testingPlan`` needs a
-#: kebab-to-camel convention nothing else in the repo has, and a mapping you can read is
-#: worth more than one you have to infer. ``bugfix.md`` shares ``requirements``' budget
-#: because the two are alternative names for ONE artifact (decision-045), not two.
-BUDGETED_TEMPLATES: Dict[str, str] = {
-    "requirements.md": "requirements",
-    "bugfix.md": "requirements",
-    "design.md": "design",
-    "testing-plan.md": "testingPlan",
-    "tasks.md": "tasks",
-    "pr-briefing.md": "prBriefing",
-    "decision.md": "decision",
-    "capability.md": "capability",
-}
+#: Templates producing an artifact a human reads and approves. ``execution-log.md`` and
+#: ``brainstorm.md`` are excluded on purpose: the log is an append-only record and the
+#: brainstorm is a scratchpad, so neither is written *at* a reviewer. ``bugfix.md`` is
+#: listed beside ``requirements.md`` because they are two accepted names for ONE artifact
+#: (decision-045), and a rule that reached only one of them is the issue-124 shape.
+HUMAN_READ_TEMPLATES = [
+    "requirements.md",
+    "bugfix.md",
+    "design.md",
+    "testing-plan.md",
+    "tasks.md",
+    "pr-briefing.md",
+    "decision.md",
+    "capability.md",
+]
 
-#: Budget keys with no template behind them, so P3's reverse direction can tell "nobody
-#: declared this" from "this legitimately has no file".
-_NO_TEMPLATE = {
-    "comment",  # ticket/PR comments are authored inline; there is no template to mark.
-}
-
-#: Files exempt from P5. The tells catalogue quotes the tells it bans — it is the one
+#: Files exempt from P4. The tells catalogue quotes the tells it bans — it is the one
 #: place in the repository where they are the subject rather than the voice.
 _TELL_EXEMPT = {WRITING_TELLS}
 
@@ -124,46 +115,6 @@ _EMOJI_HEADING = re.compile(
 )
 
 _FRONT_MATTER = re.compile(r"\A---\n.*?\n---\n", re.DOTALL)
-_FENCED = re.compile(r"^```.*?^```", re.DOTALL | re.MULTILINE)
-_HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
-#: EARS acceptance criteria are a contract, not prose (R4). They are excluded from the
-#: count so the budget can never pressure an author into softening one.
-_EARS = re.compile(
-    r"^\s*(?:\d+\.\s*)?(?:WHEN|IF|WHILE|WHERE)\b.*?\bSHALL\b", re.IGNORECASE
-)
-
-
-def prose_words(text: str) -> int:
-    """Count the words a reader actually reads as prose.
-
-    Front-matter, HTML comments, fenced blocks (code AND mermaid), headings, tables,
-    blockquote callouts and EARS criteria are excluded. Counting them would make the
-    budget punish the diagram it exists to encourage, and would set the writing rule
-    against the requirements gate.
-    """
-    text = _FRONT_MATTER.sub("", text)
-    text = _HTML_COMMENT.sub("", text)
-    text = _FENCED.sub("", text)
-    words = 0
-    in_ears = False
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped:
-            in_ears = False
-            continue
-        # A criterion that wraps is still one criterion. Its continuation lines are
-        # indented, so they are skipped until the blank line or the unindented line that
-        # ends the item — otherwise the budget would count half of every wrapped SHALL and
-        # quietly pressure an author into shortening a contract.
-        if in_ears and line[:1].isspace():
-            continue
-        in_ears = bool(_EARS.match(stripped) or _EARS.match(stripped.lstrip("-*+ ")))
-        if in_ears:
-            continue
-        if stripped.startswith(("#", ">", "|")):
-            continue
-        words += len(stripped.split())
-    return words
 
 
 def _writing_style_schema() -> Dict[str, Any]:
@@ -173,17 +124,12 @@ def _writing_style_schema() -> Dict[str, Any]:
     ]
 
 
-def _schema_budgets() -> Dict[str, int]:
-    budgets = _writing_style_schema()["budgets"]["properties"]
-    return {key: leaf["default"] for key, leaf in budgets.items()}
-
-
 def _schema_skill_name() -> str:
-    """The skill the markers must name — read, not hardcoded, so a rename is one edit."""
+    """The skill the pointers must name — read, not hardcoded, so a rename is one edit."""
     return str(_writing_style_schema()["skill"]["default"])
 
 
-#: Doc trees P5 does not scan.
+#: Doc trees P4 does not scan.
 #:
 #: ``docs/specs`` is the historical record: a build that could go red over the style of a
 #: committed spec is the "a style pass rewrites a record" abuse case, and the pressure it
@@ -234,96 +180,54 @@ def test_p1_writing_skill_exists_and_parses() -> None:
 # ---------------------------------------------------------------------------- P2
 
 
-@pytest.mark.parametrize("filename", sorted(BUDGETED_TEMPLATES))
-def test_p2_budgeted_template_declares_its_budget(filename: str) -> None:
-    """Every human-read artifact template carries a well-formed marker (R2.1)."""
+@pytest.mark.parametrize("filename", HUMAN_READ_TEMPLATES)
+def test_p2_human_read_template_points_at_the_skill(filename: str) -> None:
+    """Every artifact a human approves is authored under the contract (R2.1)."""
     template = TEMPLATES / filename
-    assert template.is_file(), f"budgeted template is missing: {template}"
+    assert template.is_file(), f"human-read template is missing: {template}"
 
-    marker = _MARKER.search(template.read_text(encoding="utf-8"))
-    assert marker, (
-        f"{filename} declares no writing budget. Add "
-        "`<!-- writing: budget=<N> skill=the-loop:writing -->` near the top."
-    )
-    assert int(marker.group(1)) > 0, (
-        f"{filename}: a budgeted template needs a budget > 0"
-    )
-    expected = _schema_skill_name()
-    assert marker.group(2) == expected, (
-        f"{filename}: the marker names skill={marker.group(2)!r} but "
-        f"writingStyle.skill defaults to {expected!r}"
+    assert _POINTER.search(template.read_text(encoding="utf-8")), (
+        f"{filename} does not name the writing skill. Add the pointer comment near the "
+        "top — an author starting from this template should not have to know the skill "
+        "exists to be governed by it."
     )
 
 
 # ---------------------------------------------------------------------------- P3
 
 
-def test_p3_markers_match_schema_defaults() -> None:
-    """Template markers and schema defaults are two statements of one number (R5.1)."""
-    budgets = _schema_budgets()
-
-    for filename, key in sorted(BUDGETED_TEMPLATES.items()):
-        assert key in budgets, f"{filename} maps to `{key}`, absent from the schema"
-        marker = _MARKER.search((TEMPLATES / filename).read_text(encoding="utf-8"))
-        assert marker, f"{filename}: no marker (P2 covers this)"
-        assert int(marker.group(1)) == budgets[key], (
-            f"{filename} declares budget={marker.group(1)} but "
-            f"writingStyle.budgets.{key} defaults to {budgets[key]}"
+def test_p3_pointers_name_the_configured_skill() -> None:
+    """The templates and the schema are two statements of one name (R5.1)."""
+    expected = _schema_skill_name()
+    for filename in HUMAN_READ_TEMPLATES:
+        pointer = _POINTER.search((TEMPLATES / filename).read_text(encoding="utf-8"))
+        assert pointer, f"{filename}: no pointer (P2 covers this)"
+        assert pointer.group(1) == expected, (
+            f"{filename} names skill={pointer.group(1)!r} but writingStyle.skill "
+            f"defaults to {expected!r}"
         )
 
 
-def test_p3_every_schema_budget_is_claimed() -> None:
-    """Reverse direction: a budget nobody declares is a budget nobody honours."""
-    claimed = set(BUDGETED_TEMPLATES.values()) | _NO_TEMPLATE
-    for key, default in sorted(_schema_budgets().items()):
-        if default == 0:  # 0 means "unbudgeted by design" (brainstorm, execution log)
-            continue
-        assert key in claimed, (
-            f"writingStyle.budgets.{key} has no template in BUDGETED_TEMPLATES and is "
-            "not listed in _NO_TEMPLATE — add one or the other"
-        )
+def test_p3_the_schema_declares_no_length_limits() -> None:
+    """Budgets were rejected on PR #168; a re-added cap must be a deliberate decision.
+
+    Not a style preference — the reason is recorded in decision-061: scope is not known
+    in advance, so a fixed number is wrong for half the work items. If a future work item
+    wants length limits back, it changes this test and says why, rather than reintroducing
+    them by accident alongside an unrelated schema edit.
+    """
+    style = _writing_style_schema()
+    assert "budgets" not in style, (
+        "userInteraction.writingStyle.budgets is back. Length limits were removed "
+        "deliberately (decision-061) — re-adding them is a decision to record, not a "
+        "detail to slip in."
+    )
 
 
 # ---------------------------------------------------------------------------- P4
 
 
-def test_p4_skill_obeys_its_own_budget() -> None:
-    """A writing contract that cannot keep to its own budget is not a contract (NFR)."""
-    text = WRITING_SKILL.read_text(encoding="utf-8")
-    marker = _MARKER.search(text)
-    assert marker, "SKILL.md must declare its own budget — it is the worked example"
-
-    budget = int(marker.group(1))
-    actual = prose_words(text)
-    assert actual <= budget, (
-        f"skills/writing/SKILL.md is {actual} prose words against its own {budget}-word "
-        "budget. Move detail to reference/tells.md rather than raising the number."
-    )
-
-
-# ---------------------------------------------------------------------------- P5
-
-
-@pytest.mark.parametrize("filename", sorted(BUDGETED_TEMPLATES))
-def test_p6_template_prose_fits_its_own_budget(filename: str) -> None:
-    """A budget the empty scaffold cannot meet is a budget nobody can meet (R2.1)."""
-    text = (TEMPLATES / filename).read_text(encoding="utf-8")
-    marker = _MARKER.search(text)
-    assert marker, f"{filename}: no marker (P2 covers this)"
-
-    budget = int(marker.group(1))
-    actual = prose_words(text)
-    assert actual <= budget, (
-        f"skills/the-loop/templates/{filename} is {actual} prose words against the "
-        f"{budget}-word budget it declares. Either the template's guidance is too long or "
-        "the budget is unreachable — an author starting from it would open over budget."
-    )
-
-
-# ---------------------------------------------------------------------------- P5
-
-
-def test_p5_no_p0_tell_in_shipped_prose() -> None:
+def test_p4_no_p0_tell_in_shipped_prose() -> None:
     """No unambiguous machine-writing artifact reaches a user-facing document (R5.2)."""
     findings: List[str] = []
     for path in _shipped_prose():

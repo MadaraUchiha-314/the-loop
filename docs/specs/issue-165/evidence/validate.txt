@@ -1,4 +1,5 @@
 # issue-165 — schema/config validation evidence (T10)
+# Re-run after the owner's review removed length budgets (PR #168).
 
 $ make validate
 uv run python scripts/validate_config.py
@@ -13,7 +14,9 @@ VALID   skills/the-loop/templates/cli-config.yaml
 # (not in the schema's `required`), so a project scaffolded before this change
 # validates unchanged and inherits the schema defaults.
 
-$ python -c '<validate a config with userInteraction but no writingStyle>'
+writingStyle keys: ['diagramFirst', 'enabled', 'formalRegisters', 'skill']
+no `budgets` key — length limits removed on the owner's call (decision-061)
+
 VALID   pre-issue-165 config (no writingStyle block)
-REJECTED unknown budget key -> Additional properties are not allowed ('nonsense' was unexpected)
-REJECTED typo'd formalRegisters -> 'typo-register' is not one of ['ears-acceptance-criteria', 'abuse-cases', 'api-contracts', 'schema-descriptions', 'rfc-2119']
+REJECTED unknown key under writingStyle -> Additional properties are not allowed ('budgets' was unexpected)
+REJECTED typo'd formalRegisters value -> 'typo-register' is not one of ['ears-acceptance-criteria', 'abuse-cases', 'api-contracts', 'schema-descriptions', 'rfc-2119']

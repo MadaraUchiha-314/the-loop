@@ -21,7 +21,7 @@ status: in-progress          # in-progress | complete
 | tasks-breakdown | 2026-08-06 | pending (PR) | 7 tasks |
 | implementation | 2026-08-06 | — | |
 | verification | 2026-08-06 | — | Every in-scope activity ticked; results and evidence recorded |
-| needs-review | 2026-08-06 | pending (PR) | 3 self-review rounds; critic rounds unavailable; security review passed, human sign-off pending |
+| needs-review | 2026-08-06 | pending (PR) | 3 self-review rounds; critic rounds unavailable; security review passed, human sign-off pending. the owner's review round then removed length budgets — see below |
 | complete |  |  |  |
 
 ## Pull requests
@@ -65,6 +65,20 @@ status: in-progress          # in-progress | complete
 - **Blockers:** named human security sign-off required
   (`security.review.humanSignOffMinTier: 4`) — requested in the PR briefing.
 
+### 2026-08-06 — owner review: length budgets removed
+
+- **Phase:** needs-review (iterating on the PR, per the artifact-iteration invariant)
+- **Did:** the owner rejected per-artifact word budgets on PR #168. Removed them from the
+  schema, both configs, the eight templates, the skill and the test; replaced the budget
+  markers with a pointer naming the governing skill; rewrote requirements R2, the design,
+  the testing plan and decision-061 to match, and added P3's guard against budgets
+  returning unremarked. Also fixed the `gate` CI failure: `brainstorm.md` had renamed the
+  `Problem / opportunity` section the process graph requires.
+- **Checkpoint/tests:** `make check` green; `the-loop check issue-165 --recompute` now
+  reaches `requirements-approval` (WAIT — the normal state of an open PR).
+- **Next:** the human gate.
+- **Blockers:** approval + named security sign-off (risk tier 4).
+
 ## Review cycles
 
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
@@ -74,6 +88,7 @@ status: in-progress          # in-progress | complete
 | 3 | self | the-loop | zero new — stop (`reviews.stopOnNoNewFindings`) | this PR |
 | — | critic | — | unavailable (`reviews.critics: []` — none configured, so the round does not count toward `criticReviewCount`) | — |
 | 4 | security | the-loop checklist | pass; human sign-off pending | this PR |
+| 5 | human (owner) | @MadaraUchiha-314 | 1 finding — budgets rejected; implemented | [PR #168](https://github.com/MadaraUchiha-314/the-loop/pull/168) |
 
 **Round 1 — measuring this work item's own artifacts against the budgets it ships.** Three
 findings, in order of severity:
@@ -105,6 +120,25 @@ findings, in order of severity:
 (`Dict[str, object]` where the values are indexed) — fixed, and it is a check result rather
 than a review finding.
 
+**Round 5 — the owner's review on PR #168. One finding, and it removed a third of the
+change:**
+
+> We don't know the scope of each work item, so how can we put budgets on requirements.md
+> or design.md? Let's not enforce budgets.
+
+Accepted without argument, because round 1's own findings were the evidence for it: three
+of the eight budgets had to be renegotiated before the change could even merge. Removed
+the `budgets` block from the schema and both configs, replaced each template's
+`<!-- writing: budget=N -->` marker with a pointer naming the governing skill, cut P2/P3/P6
+down to a pointer-parity pair, and dropped the word counter. What survives is
+scope-independent: the spine, the revise pass, the density test, diagram-first, the formal
+carve-out and the tells catalogue.
+
+P3 gained a second assertion in exchange — `writingStyle.budgets` must stay **absent**, so
+re-adding length limits is a decision someone records rather than a detail that arrives
+beside an unrelated schema edit. Rationale and evidence:
+[decision-061](../../decisions/decision-061.md) §D2.
+
 ## Security review (gate)
 
 - **Mechanism:** the-loop checklist (`security.review.mechanism: auto`; no
@@ -128,14 +162,13 @@ committed artifact under [`evidence/`](evidence/):
   present. R1.4 (register, don't vendor) — the three surveyed skills are registered under
   `externalTools` in this repository's own config, with notes recording what was and was
   not taken from each; the shipped template keeps its minimal starter registry.
-- **R2** (budgets) — P2, P3 and P6: eight budgeted templates, each marker well-formed,
-  equal to its schema default, and reachable from its own scaffold. R2.3 (advisory) is
-  shown by `evidence/budgets.txt`: three overruns were found by measuring and cut by
-  editing, with nothing blocked.
+- **R2** (the contract reaches the author) — P2 and P3: eight human-read templates, each
+  naming the skill the schema declares. R2.2 (no length limits) is asserted by P3's second
+  half; `evidence/budgets.txt` is the record of the rejected approach that produced it.
 - **R3** (diagram-first) — asserted by review, not by the test (R5.3). `design.md` and
   `tasks.md` for this work item each carry one.
 - **R4** (formal carve-out) — the five registers are enum values in the schema; the skill
   states the carve-out; this work item's own EARS criteria are unchanged in form.
 - **R5** (config + test) — `make validate` on both configs, plus the absent-block and
-  rejected-key cases; P1–P6 green in `make test`.
-- **NFR** — no new dependency; `SKILL.md` is inside its own 600-word budget (P4).
+  rejected-key cases; P1–P4 green in `make test`.
+- **NFR** — no new dependency; `SKILL.md` stays short enough to read in full before use.

@@ -197,14 +197,15 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   reads — `requirements.md`, `design.md`, `testing-plan.md`, the PR briefing, decision and
   capability docs, ticket and review comments — follows the bundled **`the-loop:writing`**
   skill (`userInteraction.writingStyle`): a four-part spine (what was broken → what we did
-  → what it costs → what to check), a per-artifact **prose budget** declared in each
-  template's `<!-- writing: budget=N -->` marker, and **draw it rather than describe it**
-  where three or more named parts are involved (`writingStyle.diagramFirst`). Budgets are
-  **advisory** — over budget is a review comment, never a blocked phase. Two things they
-  never buy: a **gated section is never deleted to meet one** (say it is empty, and why),
-  and the **formal registers stay formal** — EARS criteria, abuse cases, RFC-2119
-  keywords, API contracts and schema descriptions
-  (`writingStyle.formalRegisters`) are contracts, not prose. Distinct from
+  → what it costs → what to check), conclusion-first sections, and **draw it rather than
+  describe it** where three or more named parts are involved
+  (`writingStyle.diagramFirst`). **There is no length limit** — scope is not knowable in
+  advance, so the test is *density* (can a sentence come out without losing information?),
+  and that is a review judgement, never a gate. Two things concision never buys: a **gated
+  section is never deleted to shorten a document** (say it is empty, and why), and the
+  **formal registers stay formal** — EARS criteria, abuse cases, RFC-2119 keywords, API
+  contracts and schema descriptions (`writingStyle.formalRegisters`) are contracts, not
+  prose. Distinct from
   `tokenEconomy.outputVerbosity`, which compresses chat narration and preserves specs; this
   governs the specs themselves. Rules and the tells catalogue live in the skill — do not
   restate them here.

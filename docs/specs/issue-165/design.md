@@ -11,18 +11,22 @@ overrides: {}
 
 > Phase 2. Derives from [`requirements.md`](requirements.md). Prior art and rejected
 > options: [`brainstorm.md`](brainstorm.md).
+>
+> **Revised in review (PR #168):** the budgets this design originally specified were
+> rejected by the owner and removed. See [decision-061](../../decisions/decision-061.md)
+> §D2.
 
 ## Overview
 
-Four pieces. A **skill** carries the judgement, a **config block** the policy, **template
-markers** put the budget where the author is already looking, and a **parity test** catches
-the drift prose cannot.
+Four pieces. A **skill** carries the judgement, a **config block** the policy, a **pointer
+in each template** puts the contract where the author is already looking, and a **parity
+test** catches the drift prose cannot. No piece carries a length limit.
 
 ```mermaid
 flowchart LR
   subgraph authoring["Authoring an artifact"]
     S["the-loop:writing skill<br/>SKILL.md + reference/tells.md"]
-    T["template<br/>&lt;!-- writing: budget=N --&gt;"]
+    T["template pointer<br/>&lt;!-- per the-loop:writing --&gt;"]
     A["docs/specs/&lt;id&gt;/design.md"]
     S --> A
     T --> A
@@ -32,10 +36,10 @@ flowchart LR
     H["harness-config.schema.json"]
     C -.validated by.-> H
   end
-  C -->|budgets, carve-out| S
-  H -->|schema defaults| P
-  T -->|markers| P["test_writing_parity.py"]
-  S -->|own budget| P
+  C -->|skill, carve-out| S
+  H -->|declared skill| P
+  T -->|pointers| P["test_writing_parity.py"]
+  S -->|front matter| P
   A -.reviewed by.-> R([human reviewer])
 ```
 
@@ -50,10 +54,10 @@ plugin, it resolves as `the-loop:writing`.
 
 Two files, the shape both surveyed skills converged on:
 
-| File | Role | Budget |
-|---|---|---|
-| `skills/writing/SKILL.md` | The contract: reader, spine, budgets, diagram-first, carve-out, revise pass | 600 words |
-| `skills/writing/reference/tells.md` | The catalogue of tells, tiered P0/P1/P2, each with a fix | none (reference) |
+| File | Role |
+|---|---|
+| `skills/writing/SKILL.md` | The contract: reader, spine, density test, diagram-first, carve-out, revise pass |
+| `skills/writing/reference/tells.md` | The catalogue of tells, tiered P0/P1/P2, each with a fix; loaded only for a revise pass |
 
 `skills/the-loop/SKILL.md` gains one operating-principle bullet pointing here, and no copy
 of the rules: single-source-of-truth applies to the-loop's own documents too.
@@ -69,17 +73,7 @@ userInteraction:
     enabled: true
     skill: the-loop:writing
     diagramFirst: true
-    budgets:                    # prose words; 0 = unbudgeted
-      requirements: 500
-      design: 900
-      testingPlan: 400
-      tasks: 400
-      brainstorm: 0
-      executionLog: 0
-      prBriefing: 400
-      decision: 400
-      capability: 700
-      comment: 200
+    # No length limits, deliberately (decision-061 §D2).
     formalRegisters:            # never relaxed into informal prose
       - ears-acceptance-criteria
       - abuse-cases
@@ -91,25 +85,20 @@ userInteraction:
 Both copies change: `.the-loop/harness-config.yaml` (this repo's own) and
 `skills/the-loop/templates/harness-config.yaml` (what `/the-loop:init` scaffolds).
 
-**What counts.** Prose words only. Front-matter, headings, tables, fenced code, mermaid
-blocks, blockquote callouts and EARS criteria are excluded — including the wrapped
-continuation lines of a criterion, so the budget can never pressure an author into
-shortening a contract.
+**No numbers, on purpose.** The first draft of this design specified per-artifact word
+budgets. They were rejected in review, and the implementation had already made the case:
+`tasks: 200` was unreachable from its own empty template, and the PR briefing ran ~530
+against 400 while carrying only the education the R10 gate requires. A number renegotiated
+by every artifact that meets it is not a policy. What replaces it is the **density test** —
+can a sentence come out without losing information — which is scope-independent and is what
+a reviewer judges anyway.
 
-**Advisory, not blocking.** `tokenEconomy`'s stance, for `test_docs_parity`'s reason: a
-gate that misfires is one people route around. Over budget is a review comment, not a red
-build.
+### Template pointers (R2)
 
-### Template markers (R2)
-
-Each budgeted template gains one HTML comment near the top:
-
-```markdown
-<!-- writing: budget=500 skill=the-loop:writing -->
-```
-
-Invisible when rendered, greppable, and where the author already is. The schema default
-and the marker are two statements of one number, so the test holds them together.
+Each template producing a human-read artifact gains one HTML comment near the top, naming
+the skill that governs it and summarising the contract in four lines. Invisible when
+rendered, greppable, and where the author already is. An author starting from the template
+is governed without having to know the skill exists.
 
 ### The parity test (R5)
 
@@ -119,18 +108,16 @@ no network, no subprocess, skipped when `skills/` is absent.
 | # | Assertion | Defect it catches |
 |---|---|---|
 | P1 | The writing skill exists with `name` + `description` front-matter | The skill is renamed or dropped and nothing notices |
-| P2 | Every budgeted template carries a well-formed `<!-- writing: budget=N -->` marker | A template is added with no budget |
-| P3 | Marker values equal the schema's `writingStyle.budgets` defaults | The two numbers drift apart |
-| P4 | `SKILL.md`'s own prose is within its declared budget | The contract stops obeying itself |
-| P5 | No P0 tell appears in shipped prose (`skills/`, `commands/`, `rules/`, `README.md`, `docs/` minus the historical and generated trees) | Chatbot tics reach a user-facing document |
-| P6 | Each template's own prose fits the budget it declares | A budget the empty scaffold already busts |
+| P2 | Every human-read template points at the writing skill | A template is added with no contract |
+| P3 | The pointer names the skill the schema declares, and no length limits have returned | The two drift apart; budgets creep back in unremarked |
+| P4 | No P0 tell appears in shipped prose (`skills/`, `commands/`, `rules/`, `README.md`, `docs/` minus the historical and generated trees) | Chatbot tics reach a user-facing document |
 
-P3's template→schema-key mapping is an explicit dict, not inferred from filenames:
-`testing-plan.md` → `testingPlan` needs a convention nobody else has. The expected skill
-name is read from the schema's `writingStyle.skill` default rather than hardcoded, so
-renaming the skill is one edit.
+P3 reads the expected skill name from the schema's `writingStyle.skill` default rather than
+hardcoding it, so renaming the skill is one edit. Its second half asserts that
+`writingStyle.budgets` is absent: re-adding length limits should be a decision someone
+records, not a detail that arrives beside an unrelated schema edit.
 
-P5 is deliberately narrow. The survey's own warning — over 60% false positives on
+P4 is deliberately narrow. The survey's own warning — over 60% false positives on
 non-native speakers — is why only unambiguous tells are asserted: chatbot artifacts, the
 "delve into" family, cutoff disclaimers, emoji in headings. Word-tier lists stay in
 `tells.md` as judgement, not in the test as a rule.
@@ -147,9 +134,6 @@ pass so it stays out of the default window (`tokenEconomy.progressiveDisclosure`
 **`test_writing_parity.py`** — in: `skills/`, `commands/`, `rules/`, `docs/` (minus the
 historical and generated trees), `README.md`, the schema. Out: pass/fail. No fixtures.
 
-**Word counter** — a module-level helper in the test. Kept private because nothing else
-needs it (minimalism ladder: inline over new abstraction).
-
 ## Data models
 
 One schema addition under `userInteraction` (`additionalProperties: false`, so the block
@@ -160,14 +144,14 @@ must be declared to be accepted):
 | `writingStyle.enabled` | boolean | `true` |
 | `writingStyle.skill` | string | `the-loop:writing` |
 | `writingStyle.diagramFirst` | boolean | `true` |
-| `writingStyle.budgets.<artifact>` | integer ≥ 0 | per the table above |
 | `writingStyle.formalRegisters[]` | enum array | the five registers |
 
 ## Error handling
 
-- A malformed marker fails P2 rather than being skipped — R5's fail-closed criterion.
-  Silent skipping is how issue-124's gate reported success without running.
-- A missing budgeted template fails P2; the mapping is the source of truth.
+- A missing or wrong-skill pointer fails P2/P3 rather than being skipped — R5's
+  fail-closed criterion. Silent skipping is how issue-124's gate reported success without
+  running.
+- A missing human-read template fails P2; the list in the test is the source of truth.
 - `writingStyle` absent from a project's config: the schema's defaults are the contract,
   so absence and default are the same state.
 
@@ -177,19 +161,19 @@ must be declared to be accepted):
 - **Input validation & injection surfaces:** the test reads repository files with
   `Path.read_text()` and matches literal regexes. No `eval`, subprocess, network or user
   input.
-- **Secrets handling:** none touched. P5 scans for style tells, not credentials — secret
+- **Secrets handling:** none touched. P4 scans for style tells, not credentials — secret
   scanning and the security-review gate keep that job.
 - **Least privilege:** the added config keys are declarative. Unlike `reviews.critics[]`,
   no value here becomes an argv.
-- **Fail-closed behaviour:** an unparseable marker fails; an unknown budget key is rejected
-  by `additionalProperties: false`.
+- **Fail-closed behaviour:** a missing or wrong-skill pointer fails; an unknown key under
+  `writingStyle` is rejected by `additionalProperties: false`.
 - **Abuse-case coverage:**
   - *A style pass rewrites a record.* Defeated by the skill's protected-content rule
     (quoted material, code, evidence and third-party text are out of scope for a revise
     pass) and by the catalogue being guidance, never an automated rewriter. Negative test:
-    P5's scan excludes `docs/specs/` and `evidence/`, so a historical record cannot be
+    P4's scan excludes `docs/specs/` and `evidence/`, so a historical record cannot be
     "fixed" into a green build.
-  - *A budget is met by deleting a gated section.* Defeated by the gates, which are
+  - *A document is shortened by deleting a gated section.* Defeated by the gates, which are
     unchanged: the requirements node still demands `## Security considerations`, and an
     empty one still fails. The skill states the rule explicitly.
 - **Effective risk tier: 4** — both `.the-loop/harness-config.yaml` and its schema are in
@@ -213,8 +197,9 @@ Executable detail: [`testing-plan.md`](testing-plan.md).
   work item. Cost: two skills to keep in step, mitigated by the-loop's holding no copy of
   the rules. decision-061.
 - **Register the surveyed skills, do not vendor them.** decision-062.
-- **Budgets advisory.** Argued above; the reviewer is asked to confirm (open question 1).
-- **P5 narrow by construction.** The surveyed ban-lists would flag legitimate technical
+- **No length limits.** Proposed, implemented, then rejected in review — decision-061 §D2
+  carries the reasoning and the evidence.
+- **P4 narrow by construction.** The surveyed ban-lists would flag legitimate technical
   prose across this repository on day one.
 
 ## Open questions

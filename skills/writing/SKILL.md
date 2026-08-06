@@ -1,9 +1,7 @@
 ---
 name: writing
-description: How the-loop writes for a human reader. Use when authoring or revising any artifact a person will read — requirements.md, design.md, testing-plan.md, tasks.md, a PR briefing or PR description, a decision record, a capability doc, a ticket or review comment, a README. Carries the document spine, the per-artifact word budgets, the prefer-a-diagram rule, the formal-language carve-out that keeps EARS and API contracts intact, and a revise pass for cutting a draft down. Not for code, code comments, log messages or test names.
+description: How the-loop writes for a human reader. Use when authoring or revising any artifact a person will read — requirements.md, design.md, testing-plan.md, tasks.md, a PR briefing or PR description, a decision record, a capability doc, a ticket or review comment, a README. Carries the document spine, the prefer-a-diagram rule, the formal-language carve-out that keeps EARS and API contracts intact, and a revise pass for cutting a draft down. Not for code, code comments, log messages or test names.
 ---
-
-<!-- writing: budget=600 skill=the-loop:writing -->
 
 # Writing for a human reader
 
@@ -32,26 +30,20 @@ Front-load each one. A section's first sentence carries its conclusion; the rest
 support the reader may skip. Read only the first sentence of every section — if that alone
 tells the story, the document is shaped right.
 
-## Budgets
+## Length follows the change
 
-Each template declares its prose budget in a marker near the top:
+**There is no word limit, and there should not be.** A two-line bug fix and a new
+subsystem are both `design.md`, and a number that fits one is wrong for the other. A cap
+would only teach you to move prose into an appendix.
 
-```markdown
-<!-- writing: budget=500 skill=the-loop:writing -->
-```
+The test is not length, it is **density**: can any sentence come out without losing
+information? While the answer is yes, the document is too long — at 200 words or 2000.
+Three cuts nearly always find the slack: the sentence restating the heading, the sentence
+restating the sentence before it, and the adjective a number would replace.
 
-Defaults live in `userInteraction.writingStyle.budgets`. A budget counts **prose** —
-front-matter, headings, tables, code, mermaid and EARS criteria are free, because the
-budget must never argue against a diagram or a contract.
-
-Budgets are **advisory**. Over budget is a review comment, never a blocked phase. But cut
-before you justify: three cuts nearly always get there — the sentence restating the
-heading, the sentence restating the previous sentence, and the adjective that a number
-would replace.
-
-**Brevity is about words, not coverage.** A gated section stays even when it is empty; say
-so in one sentence and why. Deleting `## Security considerations` to make a budget is
-fraud, not editing.
+**Concision is about words, not coverage.** A gated section stays even when it is empty;
+say so in one sentence, and why. Deleting `## Security considerations` to shorten a
+document is fraud, not editing.
 
 ## Prefer a diagram
 
@@ -80,7 +72,8 @@ Draft first, cut second — never both at once.
 2. Delete every sentence the reader could reconstruct from the one before it.
 3. Replace each evaluative adjective with the number or example behind it.
 4. Convert any run of prose that is really a list, a table or a diagram.
-5. Count against the budget. Still over? Something is in the wrong document — move it.
+5. Read the first sentence of each section in order. If that alone tells the story, stop.
+   If it does not, the problem is the structure, not the wording.
 
 For the catalogue of writing tells and what to do about each,
 read [`reference/tells.md`](reference/tells.md).

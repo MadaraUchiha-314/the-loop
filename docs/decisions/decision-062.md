@@ -34,14 +34,14 @@ word "leverage" — it gets better by being 3 KB.
   throat-clearing openers as the highest-yield cut from Stop Slop; front-load-the-conclusion
   and one-idea-per-paragraph from the style guides; from Diátaxis, the *diagnosis* that
   documents bloat when they mix explanation with reference — which is why the-loop's answer
-  is a per-artifact shape and budget rather than a per-sentence rule.
+  is a per-artifact shape rather than a per-sentence rule.
 - **Not taken:** the word-tier ban-lists, the blanket em-dash ban, and the four-mode
   taxonomy. "Leverage" and "robust" are ordinary technical English; a build that goes red
   over them is a build people route around. the-loop's artifacts already have names and
   gates, so they do not need Diátaxis's.
 - **Taken as a constraint:** `avoid-ai-writing`'s own warning that these patterns are
   signals, not proof, with false-positive rates above 60% on non-native speakers. It is the
-  reason `test_writing_parity.py`'s P5 asserts only tells with no legitimate technical
+  reason `test_writing_parity.py`'s P4 asserts only tells with no legitimate technical
   reading, and why the rest of the catalogue stays in `skills/writing/reference/tells.md`
   as judgement.
 

@@ -46,7 +46,7 @@ setting.
 | `tokenEconomy` | Model routing, thinking effort, output verbosity and other cost levers (advisory only) — see [token-economy reference](/operating-model/reference/token-economy). |
 | `selfImprovement` | Learnings index cap and write-gate occurrence threshold. |
 | `contextManagement` | Checkpoint-then-reset behaviour at phase/task boundaries — see [context reference](/operating-model/reference/context). |
-| `userInteraction` | Diagram format, mandatory PR briefing/education requirements, and `writingStyle` — the per-artifact prose budgets, diagram-first rule and formal-language carve-out the bundled `the-loop:writing` skill reads. See [writing-style](/capabilities/writing-style). |
+| `userInteraction` | Diagram format, mandatory PR briefing/education requirements, and `writingStyle` — the diagram-first rule and formal-language carve-out the bundled `the-loop:writing` skill reads (no length limits, by decision). See [writing-style](/capabilities/writing-style). |
 | `notifications` | Which harness-raised events notify which roles (recipients resolve from `.the-loop/collaborators.yaml`). |
 | `externalTools` | Inline registry of MCPs/CLIs/skills the harness may use. |
 

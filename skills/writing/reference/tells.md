@@ -84,15 +84,16 @@ A revise pass **never** rewrites:
 - historical specs under `docs/specs/`. They are the record of what was written then.
   Editing one to match today's style destroys the evidence it exists to hold.
 
-## When the budget still will not close
+## When it is still too long after a revise pass
 
 Not a writing problem. One of these is true:
 
 1. **Content is in the wrong document.** Verification detail belongs to
    `testing-plan.md`, not `design.md`. Durable rationale belongs to
-   `docs/decisions/decision-<nnn>.md`, not the spec.
-2. **The work item is too big.** A design that cannot be described in its budget is
-   usually two designs. Split the ticket.
-3. **The budget is genuinely wrong for this artifact.** Say so in the document, in one
-   sentence, and raise it on the PR. `userInteraction.writingStyle.budgets` is
-   configurable; quietly running over it is what makes budgets meaningless.
+   `docs/decisions/decision-<nnn>.md`, not the spec. Moving it costs nothing and helps
+   two readers.
+2. **The work item is too big.** A design nobody can hold in their head is usually two
+   designs. Split the ticket.
+3. **It is genuinely that big.** Some changes are. A long document that survives the
+   density test — no sentence removable without losing information — is the right
+   length, and no rule here says otherwise.

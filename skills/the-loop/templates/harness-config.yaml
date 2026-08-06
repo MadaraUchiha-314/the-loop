@@ -258,17 +258,9 @@ userInteraction:
     enabled: true                 # judgement lives in the bundled `the-loop:writing` skill
     skill: the-loop:writing
     diagramFirst: true            # RULE: 3+ named parts -> draw it, don't describe it
-    budgets:                      # PROSE words; tables/code/mermaid/EARS are free. 0 = unbudgeted.
-      brainstorm: 0               # a scratchpad — capping exploration is the wrong lever
-      requirements: 500
-      design: 900
-      testingPlan: 400
-      tasks: 400
-      executionLog: 0             # append-only record; grows with the work item
-      prBriefing: 400
-      decision: 400
-      capability: 700
-      comment: 200
+    # No length limits, on purpose (PR #168, decision-061): scope is not known in
+    # advance, so any number is wrong for half the work items. The skill's test is
+    # density, not word count — and that is a review judgement, never a gate.
     formalRegisters:              # never relaxed into informal prose — these are contracts
       - ears-acceptance-criteria
       - abuse-cases

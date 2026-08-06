@@ -145,11 +145,12 @@ Granular commands run the same flow one step at a time:
   `instructions`, `design-artifacts`, `reviewing`, `security`, `tooling`, `testing`,
   `minimalism`, `token-economy`, `collaboration`, `observability`, and `automation`.
 - **How the artifacts read** is a second bundled skill,
-  [`the-loop:writing`](skills/writing/SKILL.md): the four-part spine, a per-artifact
-  **prose budget** each template declares in a `<!-- writing: budget=N -->` marker
-  (`userInteraction.writingStyle`), *draw it rather than describe it*, and a carve-out
-  keeping EARS criteria and API contracts formal. Budgets are advisory — over budget is a
-  review comment, never a blocked phase.
+  [`the-loop:writing`](skills/writing/SKILL.md): a four-part spine (what was broken → what
+  we did → what it costs → what to check), *draw it rather than describe it*, and a
+  carve-out keeping EARS criteria and API contracts formal
+  (`userInteraction.writingStyle`). Deliberately **no length limits** — scope is not
+  knowable in advance, so the test is density: can a sentence come out without losing
+  information?
 
 ## CLI companion (`the-loop`)
 

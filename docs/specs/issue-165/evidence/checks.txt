@@ -1,4 +1,5 @@
 # issue-165 — lint / format / typecheck evidence
+# Re-run after the owner's review removed length budgets (PR #168).
 
 $ make lint
 uv run ruff check cli hooks
@@ -16,3 +17,9 @@ uv run ruff format --check cli hooks
 $ make typecheck
 uv run pyright cli
 0 errors, 0 warnings, 0 informations
+
+$ uv run the-loop check issue-165 --recompute   # the-loop's own gate, as CI runs it
+issue-165: UNMET (at requirements-approval)
+  WAIT   requirements-approval
+         · no authorized feedback yet
+  ····   3 node(s) not reached yet

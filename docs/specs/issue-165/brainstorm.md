@@ -14,7 +14,7 @@ overrides: {}
 > [issue #165](https://github.com/MadaraUchiha-314/the-loop/issues/165) asks for, and the
 > reasoning that produced `requirements.md`.
 
-## Problem
+## Problem / opportunity
 
 the-loop's artifacts are written for the agent that produced them, not the human who has
 to approve them. `docs/specs/issue-163/requirements.md` is 30 KB. `SKILL.md` is 307
