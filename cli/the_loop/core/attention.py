@@ -20,14 +20,15 @@ def list_attention(config: Optional[dict] = None) -> List[Dict[str, Any]]:
     items: List[Dict[str, Any]] = []
 
     sessions = core_sessions.list_sessions(config=config)
-    by_ref = {s["workItem"]: s for s in sessions}
+    by_ref = {s["ref"]: s for s in sessions}
     for session in sessions:
         if session["status"] == "paused":
+            last = (session.get("control") or {}).get("command") or "unknown"
             items.append(
                 {
-                    "workItem": session["workItem"],
+                    "workItem": session["ref"],
                     "kind": "session-paused",
-                    "detail": f"session paused (last control: {session['control'] or 'unknown'})",
+                    "detail": f"session paused (last control: {last})",
                 }
             )
 

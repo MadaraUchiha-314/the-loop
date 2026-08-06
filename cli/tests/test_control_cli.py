@@ -5,6 +5,10 @@ authorized user issues by keyword, and mirrors it back to the work item as a
 comment carrying that keyword — marked as the-loop's own so the daemon never
 reads it back. Driven through ``the_loop.cli.main`` with the ``gh``-shelling
 comment poster stubbed; the registry and control store are real, on tmp paths.
+
+Since issue-161 the implementation lives in :mod:`the_loop.core.sessions` and
+the command renders it, so the seams stubbed here are core's: the comment
+poster it imported, and the dispatcher factory it borrows from the poller.
 """
 
 import json
@@ -14,7 +18,8 @@ import pytest
 from the_loop.authz import is_self_authored
 from the_loop.control import ControlStore, parse_command, ControlConfig
 from the_loop.cli import main
-from the_loop.commands import sessions_cmd
+from the_loop.commands import poll as poll_cmd
+from the_loop.core import sessions as core_sessions
 from the_loop.sessions import Session, SessionRegistry, WorkItemRef
 
 REF = "github:octo/repo#15"
@@ -29,7 +34,7 @@ def posted(monkeypatch):
         calls.append((item.ref, body, gh_binary))
         return True, ""
 
-    monkeypatch.setattr(sessions_cmd, "post_issue_comment", fake_post)
+    monkeypatch.setattr(core_sessions, "post_issue_comment", fake_post)
     return calls
 
 
@@ -120,7 +125,7 @@ def test_start_resumes_a_paused_session_rather_than_spawning(
     def explode(*args, **kwargs):  # pragma: no cover - must not be reached
         raise AssertionError("a paused session must be resumed, not re-spawned")
 
-    monkeypatch.setattr(sessions_cmd, "_build_dispatcher", explode)
+    monkeypatch.setattr(poll_cmd, "_build_dispatcher", explode)
     register(registry, status="paused")
     assert run("start", tmp_path) == 0
     session = registry.find_by_work_item(REF)
@@ -130,7 +135,7 @@ def test_start_resumes_a_paused_session_rather_than_spawning(
 
 def test_start_on_a_running_session_is_a_no_op(tmp_path, registry, posted, monkeypatch):
     monkeypatch.setattr(
-        sessions_cmd,
+        poll_cmd,
         "_build_dispatcher",
         lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not spawn")),
     )
@@ -157,7 +162,7 @@ def test_stop_closes_the_session_through_the_dispatcher(
             pass
 
     monkeypatch.setattr(
-        sessions_cmd, "_build_dispatcher", lambda *a, **k: (FakeDispatcher(), None)
+        poll_cmd, "_build_dispatcher", lambda *a, **k: (FakeDispatcher(), None)
     )
     register(registry)
     assert run("stop", tmp_path) == 0
@@ -204,7 +209,7 @@ def test_a_failing_gh_does_not_undo_the_local_action(
     tmp_path, registry, monkeypatch, capsys
 ):
     monkeypatch.setattr(
-        sessions_cmd,
+        core_sessions,
         "post_issue_comment",
         lambda *a, **k: (False, "gh exited 1: nope"),
     )

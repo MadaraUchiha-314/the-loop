@@ -70,15 +70,19 @@ def build_server(cli_config: Optional[dict] = None) -> MCPServer:
         artifacts (pure read; the same report `the-loop check` prints)."""
         return core_graphs.check(repo, work_item, recompute=recompute)
 
-    def graph_advance(repo: str, work_item: str) -> Dict[str, Any]:
+    def graph_show(repo: str) -> Dict[str, Any]:
+        """The process graph this repo runs on: its nodes and edges."""
+        return core_graphs.show(repo)
+
+    def graph_advance(repo: str, work_item: str, ref: str = "") -> Dict[str, Any]:
         """Evaluate the current node's exit chain and take the matching edge."""
-        return core_graphs.advance(repo, work_item)
+        return core_graphs.advance(repo, work_item, ref=ref)
 
     def graph_complete(
-        repo: str, work_item: str, node: str = "", actor: str = ""
+        repo: str, work_item: str, node: str = "", actor: str = "", ref: str = ""
     ) -> Dict[str, Any]:
         """File a completion claim for the current (or named) graph node."""
-        return core_graphs.complete(repo, work_item, node=node, actor=actor)
+        return core_graphs.complete(repo, work_item, node=node, actor=actor, ref=ref)
 
     def list_sessions(status: Optional[str] = None) -> List[Dict[str, Any]]:
         """Registered harness sessions with their last control command."""
@@ -90,6 +94,28 @@ def build_server(cli_config: Optional[dict] = None) -> MCPServer:
         return core_sessions.control_session(
             ref, verb, comment=comment, config=cli_config
         )
+
+    def register_session(
+        ref: str,
+        harness: str,
+        harness_session_id: str,
+        cwd: str = ".",
+        force: bool = False,
+    ) -> Dict[str, Any]:
+        """Link a work item to the harness session working it, so ingress
+        events route to that session."""
+        return core_sessions.register_session(
+            ref,
+            harness,
+            harness_session_id,
+            cwd=cwd,
+            force=force,
+            config=cli_config,
+        )
+
+    def close_session(ref: str, keep_tmux: Optional[bool] = None) -> Dict[str, Any]:
+        """Close a work item's registration and settle its tmux session."""
+        return core_sessions.close_session(ref, keep_tmux=keep_tmux, config=cli_config)
 
     def query_events(
         work_item: Optional[str] = None,
@@ -124,26 +150,53 @@ def build_server(cli_config: Optional[dict] = None) -> MCPServer:
         live session, recent errors."""
         return core_attention.list_attention(cli_config)
 
-    def repo_scenarios(repo: str) -> List[Dict[str, Any]]:
-        """Gherkin scenarios covered by a repo's integration tests."""
-        return core_repo.scenarios(repo)
+    def repo_scenarios(repo: str, globs: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Gherkin scenarios covered by a repo's integration tests, with the
+        globs they were collected from."""
+        return core_repo.scenarios(repo, globs=globs)
 
-    def repo_instructions(repo: str) -> List[Dict[str, Any]]:
-        """A repo's registered custom-instruction docs and their resolution state."""
+    def repo_instructions(repo: str) -> Dict[str, Any]:
+        """A repo's registered custom-instruction docs, their resolution state
+        and the onMissing policy that grades them."""
         return core_repo.instructions(repo)
 
     def repo_critics(repo: str) -> List[Dict[str, Any]]:
         """A repo's configured critic harnesses."""
         return core_repo.critics(repo)
 
+    def repo_critic_run(
+        repo: str,
+        name: str,
+        prompt: str = "",
+        prompt_file: str = "",
+        work_item: str = "",
+        spec_dir: str = "",
+        timeout: Optional[float] = None,
+        cwd: str = "",
+    ) -> Dict[str, Any]:
+        """Run ONE critic-review round and return its JSON envelope."""
+        return core_repo.critic_run(
+            repo,
+            name,
+            prompt,
+            prompt_file,
+            work_item=work_item,
+            spec_dir=spec_dir,
+            timeout=timeout,
+            cwd=cwd,
+        )
+
     for fn in (
         list_work_items,
         get_work_item,
         check_work_item,
+        graph_show,
         graph_advance,
         graph_complete,
         list_sessions,
         control_session,
+        register_session,
+        close_session,
         query_events,
         daemon_status,
         control_daemon,
@@ -151,6 +204,7 @@ def build_server(cli_config: Optional[dict] = None) -> MCPServer:
         repo_scenarios,
         repo_instructions,
         repo_critics,
+        repo_critic_run,
     ):
         server.add_tool(fn, name=fn.__name__)
 

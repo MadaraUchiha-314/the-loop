@@ -32,30 +32,57 @@ def check(repo: str, work_item: str, recompute: bool = False) -> Dict[str, Any]:
 
 
 def complete(
-    repo: str, work_item: str, node: str = "", actor: str = ""
+    repo: str, work_item: str, node: str = "", actor: str = "", ref: str = ""
 ) -> Dict[str, Any]:
     """A completion claim for the current (or named) node — issue-148 semantics."""
     runtime = build_runtime(resolve_repo(repo))
-    return runtime.complete(work_item, node=node, actor=actor)
+    return runtime.complete(work_item, ref=ref, node=node, actor=actor)
 
 
-def advance(repo: str, work_item: str) -> Dict[str, Any]:
+def advance(repo: str, work_item: str, ref: str = "") -> Dict[str, Any]:
     """Evaluate the current node's exit chain and take the matching edge."""
     runtime = build_runtime(resolve_repo(repo))
-    return runtime.advance(work_item).as_dict()
+    return runtime.advance(work_item, ref=ref).as_dict()
 
 
 def force(
-    repo: str, work_item: str, to_node: str, reason: str, actor: str = ""
+    repo: str,
+    work_item: str,
+    to_node: str,
+    reason: str,
+    actor: str = "",
+    ref: str = "",
 ) -> Dict[str, Any]:
     """The authorized-operator escape hatch. Requires a reason; never forges a
     verdict. Not exposed over MCP (design §Security)."""
     runtime = build_runtime(resolve_repo(repo))
-    result = graph_runtime.force(runtime, work_item, to_node, reason, actor=actor)
+    result = graph_runtime.force(
+        runtime, work_item, to_node, reason, actor=actor, ref=ref
+    )
     return {
         "workItem": result.work_item,
         "fromNode": result.from_node,
         "toNode": result.to_node,
         "reason": result.reason,
         "warnings": list(result.warnings),
+    }
+
+
+def show(repo: str) -> Dict[str, Any]:
+    """The process graph this repo runs on: its nodes and edges, as data.
+
+    A read of *which* graph is in force — the shipped one, or the override the
+    repo configures — so it belongs on the same surface as the reports derived
+    from it rather than being re-resolved by each client.
+    """
+    runtime = build_runtime(resolve_repo(repo))
+    graph = runtime.graph
+    return {
+        "version": graph.version,
+        "start": graph.start,
+        # Where this repo keeps its specs — the directory `check --all` walks,
+        # so a client never has to build a runtime just to learn the layout.
+        "specRoot": runtime.spec_root,
+        "nodes": [n.as_mapping() for n in graph.ordered()],
+        "edges": [{"from": e.source, "to": e.target, "on": e.on} for e in graph.edges],
     }

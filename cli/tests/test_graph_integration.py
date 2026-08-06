@@ -261,17 +261,15 @@ def test_a_node_ahead_of_the_pointer_is_not_reported_as_a_blocker():
     """
     from the_loop.commands.graph_cmd import _render_table, _split_at_pointer
 
-    class R:
-        def __init__(self, node, status):
-            self.node = node
-            self.status = status
-            self.messages = []
-            self.forced = False
+    # Node reports reach the renderers as dicts since issue-161 — the command
+    # reads whatever the service returned, never a runtime object.
+    def R(node, status):
+        return {"node": node, "status": status, "messages": [], "forced": False}
 
     nodes = [R("a", "pass"), R("b", "wait"), R("c", "block"), R("d", "pass")]
     reached, ahead = _split_at_pointer(nodes, "b")
-    assert [r.node for r in reached] == ["a", "b"]
-    assert [r.node for r in ahead] == ["c", "d"]
+    assert [r["node"] for r in reached] == ["a", "b"]
+    assert [r["node"] for r in ahead] == ["c", "d"]
 
     rendered = _render_table(reached, ahead)
     assert "wait   b" in rendered
@@ -286,12 +284,8 @@ def test_a_pointer_that_names_no_known_node_reports_everything():
     """Fail visible, not silent: an unknown pointer must not hide findings."""
     from the_loop.commands.graph_cmd import _split_at_pointer
 
-    class R:
-        def __init__(self, node):
-            self.node = node
-            self.status = "block"
-            self.messages = []
-            self.forced = False
+    def R(node):
+        return {"node": node, "status": "block", "messages": [], "forced": False}
 
     nodes = [R("a"), R("b")]
     reached, ahead = _split_at_pointer(nodes, "nonexistent")

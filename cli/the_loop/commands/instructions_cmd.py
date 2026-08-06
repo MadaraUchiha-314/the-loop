@@ -21,35 +21,44 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import sys
 from pathlib import Path
-from typing import List, Sequence
+from typing import Any, List, Mapping, Sequence
 
 from .base import Command, register
-from ..harness_config import load as load_harness_config
-from ..instructions import InstructionDoc, collect_docs, on_missing, unresolved
+from ..client.routing import routed, service_error
+from ..core import repo as core_repo
 
 logger = logging.getLogger("the-loop.instructions")
 
 _HEADERS = ["#", "State", "Path", "Resolved", "Notes"]
 
 
-def _rows(docs: Sequence[InstructionDoc]) -> List[List[str]]:
+def _rows(docs: Sequence[Mapping[str, Any]]) -> List[List[str]]:
     rows: List[List[str]] = []
     for i, doc in enumerate(docs, start=1):
         # `detail` rides along with the state so the one-line reason an entry failed is
         # visible without a second command.
-        state = f"{doc.state} ({doc.detail})" if doc.detail else doc.state
+        state = doc["state"]
+        if doc.get("detail"):
+            state = f"{state} ({doc['detail']})"
         rows.append(
-            [str(i), state, doc.path or "—", doc.resolved or "—", doc.notes or "—"]
+            [
+                str(i),
+                state,
+                doc.get("path") or "—",
+                doc.get("resolved") or "—",
+                doc.get("notes") or "—",
+            ]
         )
     return rows
 
 
-def render_json(docs: Sequence[InstructionDoc]) -> str:
-    return json.dumps([doc.as_dict() for doc in docs], indent=2)
+def render_json(docs: Sequence[Mapping[str, Any]]) -> str:
+    return json.dumps(list(docs), indent=2)
 
 
-def render_table(docs: Sequence[InstructionDoc]) -> str:
+def render_table(docs: Sequence[Mapping[str, Any]]) -> str:
     """A plain, aligned ASCII table (no third-party dependency)."""
     rows = _rows(docs)
     widths = [len(h) for h in _HEADERS]
@@ -65,7 +74,7 @@ def render_table(docs: Sequence[InstructionDoc]) -> str:
     return "\n".join(lines)
 
 
-def render_markdown(docs: Sequence[InstructionDoc]) -> str:
+def render_markdown(docs: Sequence[Mapping[str, Any]]) -> str:
     """A GitHub-flavoured Markdown table.
 
     Pipes are escaped: `notes` is operator-authored free text, and a crafted value must
@@ -110,22 +119,37 @@ class InstructionsCommand(Command):
         )
 
     def run(self, args: argparse.Namespace) -> int:
-        root = Path(args.root)
-        config = load_harness_config(root)
-        docs = collect_docs(root, config)
+        root = str(Path(args.root))
+        try:
+            report = routed(
+                lambda connection: connection.get(
+                    "/repo/instructions", params={"repo": root}
+                ),
+                lambda: core_repo.instructions(root),
+            )
+        except Exception as exc:  # noqa: BLE001 — mapped, or re-raised below
+            mapped = service_error(exc)
+            if mapped is None:
+                mapped = (f"error: {exc}", 2)
+            print(mapped[0], file=sys.stderr)
+            return mapped[1]
+
+        docs = report["docs"]
         print(_RENDERERS[args.format](docs))
 
-        gaps = unresolved(docs)
+        gaps = [doc for doc in docs if not doc["resolvedOk"]]
         if not gaps:
             return 0
 
-        policy = on_missing(config)
+        policy = report["onMissing"]
         if policy == "ignore":
             return 0
 
         # Composed from the-loop's own vocabulary plus configured paths — never from a
         # doc's contents.
-        summary = ", ".join(f"{doc.path or '(no path)'} [{doc.state}]" for doc in gaps)
+        summary = ", ".join(
+            f"{doc.get('path') or '(no path)'} [{doc['state']}]" for doc in gaps
+        )
         if policy == "error":
             logger.error(
                 "%d of %d registered instruction doc(s) did not resolve: %s "

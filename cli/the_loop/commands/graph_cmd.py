@@ -14,19 +14,114 @@ import argparse
 import json
 import logging
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List
 
 from .base import Command, register
-from ..client.routing import via_service as _routing_via_service
+from ..client.routing import routed, service_error
+from ..core import graphs as core_graphs
 
 logger = logging.getLogger("the-loop.graph")
 
 
-def _runtime(root: Path):
-    """The runtime `check`/`graph` drive, assembled from the configs on disk."""
-    from ..graph.bootstrap import build_runtime
+def _report(exc: Exception) -> int:
+    """A client-side failure as the CLI's ``(message, exit code)``.
 
-    return build_runtime(root)
+    Graph commands print bare ``error: …`` on stdout (they predate the split),
+    so the mapping is shared but the stream is theirs.
+    """
+    mapped = service_error(exc)
+    if mapped is None:
+        mapped = (f"error: {exc}", 2)
+    print(mapped[0])
+    return mapped[1]
+
+
+def _is_bad_request(exc: Exception) -> bool:
+    """Whether ``exc`` is core saying "you asked for something invalid".
+
+    A refused ``force`` looks the same either way: ``ValueError`` in-process,
+    HTTP 400 over the service, because that is exactly how the API maps it.
+    """
+    from ..client import ApiError
+
+    return isinstance(exc, ValueError) or (
+        isinstance(exc, ApiError) and exc.status == 400
+    )
+
+
+def _detail(exc: Exception) -> str:
+    from ..client import ApiError
+
+    return exc.detail if isinstance(exc, ApiError) and exc.detail else str(exc)
+
+
+def _show(root: Path) -> Dict[str, Any]:
+    """The repo's graph, its start node and its spec root — one round trip."""
+    return routed(
+        lambda connection: connection.get("/graph", params={"repo": str(root)}),
+        lambda: core_graphs.show(str(root)),
+    )
+
+
+def _check(root: Path, work_item: str, recompute: bool = False) -> Dict[str, Any]:
+    return routed(
+        lambda connection: connection.post(
+            "/graph/check",
+            {"repo": str(root), "workItem": work_item, "recompute": bool(recompute)},
+        ),
+        lambda: core_graphs.check(str(root), work_item, recompute=recompute),
+    )
+
+
+def _advance(root: Path, work_item: str, ref: str = "") -> Dict[str, Any]:
+    return routed(
+        lambda connection: connection.post(
+            "/graph/advance",
+            {"repo": str(root), "workItem": work_item, "ref": ref},
+        ),
+        lambda: core_graphs.advance(str(root), work_item, ref=ref),
+    )
+
+
+def _complete(
+    root: Path, work_item: str, node: str = "", actor: str = "", ref: str = ""
+) -> Dict[str, Any]:
+    return routed(
+        lambda connection: connection.post(
+            "/graph/complete",
+            {
+                "repo": str(root),
+                "workItem": work_item,
+                "node": node,
+                "actor": actor,
+                "ref": ref,
+            },
+        ),
+        lambda: core_graphs.complete(
+            str(root), work_item, node=node, actor=actor, ref=ref
+        ),
+    )
+
+
+def _force(
+    root: Path, work_item: str, to_node: str, reason: str, actor: str, ref: str
+) -> Dict[str, Any]:
+    return routed(
+        lambda connection: connection.post(
+            "/graph/force",
+            {
+                "repo": str(root),
+                "workItem": work_item,
+                "toNode": to_node,
+                "reason": reason,
+                "actor": actor,
+                "ref": ref,
+            },
+        ),
+        lambda: core_graphs.force(
+            str(root), work_item, to_node, reason, actor=actor, ref=ref
+        ),
+    )
 
 
 def _discover_work_items(root: Path, spec_root: str) -> List[str]:
@@ -36,7 +131,7 @@ def _discover_work_items(root: Path, spec_root: str) -> List[str]:
     return sorted(p.name for p in base.iterdir() if p.is_dir())
 
 
-def _split_at_pointer(nodes, current: str):
+def _split_at_pointer(nodes: List[Dict[str, Any]], current: str):
     """Split node reports into those up to the pointer and those beyond it.
 
     A node the work item has not reached yet is *expected* to be unmet — that is
@@ -45,7 +140,7 @@ def _split_at_pointer(nodes, current: str):
     a wall of BLOCK lines), so the two are kept visually distinct.
     """
     for index, report in enumerate(nodes):
-        if report.node == current:
+        if report["node"] == current:
             return nodes[: index + 1], nodes[index + 1 :]
     return list(nodes), []
 
@@ -75,18 +170,19 @@ def _fails(report: Dict[str, Any], fail_on: str) -> bool:
 def _render_table(reports, ahead=()) -> str:
     lines = []
     for report in reports:
+        status = report["status"]
         mark = {"pass": "ok", "skip": "--", "wait": "wait", "block": "BLOCK"}.get(
-            report.status, report.status.upper()
+            status, status.upper()
         )
-        flag = " (forced)" if report.forced else ""
-        lines.append(f"  {mark:<6} {report.node}{flag}")
-        for message in report.messages:
+        flag = " (forced)" if report.get("forced") else ""
+        lines.append(f"  {mark:<6} {report['node']}{flag}")
+        for message in report.get("messages") or []:
             lines.append(f"         · {message}")
-    pending = [r for r in ahead if r.status not in ("pass", "skip")]
+    pending = [r for r in ahead if r["status"] not in ("pass", "skip")]
     if pending:
         lines.append(
             f"  ····   {len(pending)} node(s) not reached yet: "
-            + ", ".join(r.node for r in pending)
+            + ", ".join(r["node"] for r in pending)
         )
     return "\n".join(lines)
 
@@ -127,51 +223,23 @@ class CheckCommand(Command):
     def run(self, args: argparse.Namespace) -> int:
         root = Path(args.repo).resolve()
         try:
-            runtime = _runtime(root)
-        except Exception as exc:  # noqa: BLE001
-            print(f"error: {exc}")
-            return 2
+            return self._report_on(root, args)
+        except Exception as exc:  # noqa: BLE001 — every failure is a message
+            return _report(exc)
 
+    def _report_on(self, root: Path, args: argparse.Namespace) -> int:
         if args.all:
-            items = _discover_work_items(root, runtime.spec_root)
+            items = _discover_work_items(root, _show(root)["specRoot"])
         elif args.work_item:
             items = [args.work_item]
         else:
             print("error: give a work item id, or --all")
             return 2
 
-        # The service is the CLI's only execution path for core capabilities
-        # (issue-161, decision-058); the runtime built above is used only for
-        # spec_root discovery on this path.
-        fetch: Optional[Callable[[str], Dict[str, Any]]] = None
-        if _routing_via_service():
-            from .. import client
-
-            try:
-                connection = client.connect()
-            except client.ServiceUnavailable as exc:
-                print(f"error: {exc}")
-                return 2
-
-            def _fetch_via_service(item: str) -> Dict[str, Any]:
-                return connection.post(
-                    "/graph/check",
-                    {
-                        "repo": str(root),
-                        "workItem": item,
-                        "recompute": bool(args.recompute),
-                    },
-                )
-
-            fetch = _fetch_via_service
-
         payload = []
         failing = 0
         for item in items:
-            if fetch is not None:
-                data = fetch(item)
-            else:
-                data = runtime.status(item, recompute=args.recompute).as_dict()
+            data = _check(root, item, recompute=args.recompute)
             payload.append(data)
             if _fails(data, args.fail_on):
                 failing += 1
@@ -273,90 +341,85 @@ class GraphCommand(Command):
     def run(self, args: argparse.Namespace) -> int:
         root = Path(args.repo).resolve()
         try:
-            runtime = _runtime(root)
-        except Exception as exc:  # noqa: BLE001
-            print(f"error: {exc}")
-            return 2
+            return self._dispatch(root, args)
+        except Exception as exc:  # noqa: BLE001 — every failure is a message
+            return _report(exc)
 
+    def _dispatch(self, root: Path, args: argparse.Namespace) -> int:
         if args.action == "show":
-            graph = runtime.graph
+            graph = _show(root)
             if args.format == "json":
+                # ``specRoot`` is a layout fact the runtime carries, not part of
+                # the graph an operator asked to see, so it stays out of here.
                 print(
                     json.dumps(
-                        {
-                            "version": graph.version,
-                            "start": graph.start,
-                            "nodes": [n.as_mapping() for n in graph.ordered()],
-                            "edges": [
-                                {"from": e.source, "to": e.target, "on": e.on}
-                                for e in graph.edges
-                            ],
-                        },
-                        indent=2,
+                        {k: v for k, v in graph.items() if k != "specRoot"}, indent=2
                     )
                 )
-            else:
-                print(f"graph v{graph.version}, start: {graph.start}")
-                for node in graph.ordered():
-                    flags = []
-                    if node.required:
-                        flags.append("required")
-                    if node.actor == "human":
-                        flags.append("human")
-                    if node.terminal:
-                        flags.append("terminal")
-                    suffix = f"  [{', '.join(flags)}]" if flags else ""
-                    print(f"  {node.id}{suffix}")
-                    for edge in graph.edges_from(node.id):
-                        print(f"      --{edge.on}--> {edge.target}")
+                return 0
+            print(f"graph v{graph['version']}, start: {graph['start']}")
+            edges = graph["edges"]
+            for node in graph["nodes"]:
+                flags = []
+                if node.get("required"):
+                    flags.append("required")
+                if node.get("actor") == "human":
+                    flags.append("human")
+                if node.get("terminal"):
+                    flags.append("terminal")
+                suffix = f"  [{', '.join(flags)}]" if flags else ""
+                print(f"  {node['id']}{suffix}")
+                for edge in edges:
+                    if edge["from"] == node["id"]:
+                        print(f"      --{edge['on']}--> {edge['to']}")
             return 0
 
         if args.action == "status":
-            report = runtime.status(args.work_item)
-            reached, ahead = _split_at_pointer(report.nodes, report.current_node)
-            print(f"{report.work_item}: at {report.current_node}")
+            report = _check(root, args.work_item)
+            reached, ahead = _split_at_pointer(report["nodes"], report["currentNode"])
+            print(f"{report['workItem']}: at {report['currentNode']}")
             print(_render_table(reached, ahead))
-            return 0 if report.ok else 1
+            return 0 if report["ok"] else 1
 
         if args.action == "advance":
-            result = runtime.advance(args.work_item, ref=args.ref)
-            print(f"{args.work_item}: {result.node} → {result.status}")
-            for message in result.messages:
+            result = _advance(root, args.work_item, ref=args.ref)
+            print(f"{args.work_item}: {result['node']} → {result['status']}")
+            for message in result["messages"]:
                 print(f"  · {message}")
-            return 0 if result.status in ("pass", "wait") else 1
+            return 0 if result["status"] in ("pass", "wait") else 1
 
         if args.action == "complete":
             # One JSON envelope on stdout, machine-readable (R1.3). A refusal
             # or a block is a *result* the agent acts on, not a CLI error —
             # exit 0 either way; non-zero is reserved for not being able to
             # answer at all.
-            result = runtime.complete(
-                args.work_item, ref=args.ref, node=args.node, actor=args.actor
+            result = _complete(
+                root, args.work_item, node=args.node, actor=args.actor, ref=args.ref
             )
             print(json.dumps(result, indent=2))
             return 0
 
         if args.action == "run":
-            return self._run_loop(runtime, args)
+            return self._run_loop(root, args)
 
         if args.action == "force":
-            from ..graph.runtime import force
-
             try:
-                result = force(
-                    runtime,
-                    args.work_item,
-                    args.to,
-                    args.reason,
-                    actor=args.actor,
-                    ref=args.ref,
+                result = _force(
+                    root, args.work_item, args.to, args.reason, args.actor, args.ref
                 )
             except Exception as exc:  # noqa: BLE001
-                print(f"refused: {exc}")
+                # A refused force is the runtime's verdict, not a broken CLI —
+                # it keeps its own word. Only a transport failure (unreachable
+                # service) falls through to the shared "error:" mapping.
+                if not _is_bad_request(exc) and service_error(exc) is not None:
+                    raise
+                print(f"refused: {_detail(exc)}")
                 return 2
-            print(f"forced {result.work_item}: {result.from_node} → {result.to_node}")
-            print(f"  reason: {result.reason}")
-            for warning in result.warnings:
+            print(
+                f"forced {result['workItem']}: {result['fromNode']} → {result['toNode']}"
+            )
+            print(f"  reason: {result['reason']}")
+            for warning in result["warnings"]:
                 print(f"  WARNING: {warning}")
             print(
                 "  note: this moved the pointer only — the bypassed gate keeps its "
@@ -367,7 +430,7 @@ class GraphCommand(Command):
         return 2
 
     @staticmethod
-    def _run_loop(runtime, args) -> int:
+    def _run_loop(root: Path, args) -> int:
         """Advance until the work item waits, escalates or reaches a terminal node.
 
         Bounded by ``--max-nodes`` — a runaway loop is the one failure mode a
@@ -375,30 +438,32 @@ class GraphCommand(Command):
         rather than trust.
         """
         if args.dry_run:
-            report = runtime.status(args.work_item)
-            reached, ahead = _split_at_pointer(report.nodes, report.current_node)
+            report = _check(root, args.work_item)
+            reached, ahead = _split_at_pointer(report["nodes"], report["currentNode"])
             print(
-                f"{args.work_item}: at {report.current_node} (dry run — nothing written)"
+                f"{args.work_item}: at {report['currentNode']} (dry run — nothing written)"
             )
             print(_render_table(reached, ahead))
-            return 0 if report.ok else 1
+            return 0 if report["ok"] else 1
 
+        terminal = {n["id"] for n in _show(root)["nodes"] if n.get("terminal")}
         seen: List[str] = []
         for _ in range(max(1, args.max_nodes)):
-            result = runtime.advance(args.work_item, ref=args.ref)
-            print(f"  {result.node}: {result.status}")
-            for message in result.messages:
+            result = _advance(root, args.work_item, ref=args.ref)
+            print(f"  {result['node']}: {result['status']}")
+            for message in result["messages"]:
                 print(f"      · {message}")
-            if result.status in ("wait", "block", "escalated"):
-                print(f"{args.work_item}: stopped at {result.node} ({result.status})")
-                return 0 if result.status == "wait" else 1
-            node = runtime.graph.node(result.node)
-            if node.terminal:
+            if result["status"] in ("wait", "block", "escalated"):
+                print(
+                    f"{args.work_item}: stopped at {result['node']} ({result['status']})"
+                )
+                return 0 if result["status"] == "wait" else 1
+            if result["node"] in terminal:
                 print(f"{args.work_item}: complete")
                 return 0
-            seen.append(result.node)
-            if seen.count(result.node) > 2:
-                print(f"{args.work_item}: looping on {result.node}; stopping")
+            seen.append(result["node"])
+            if seen.count(result["node"]) > 2:
+                print(f"{args.work_item}: looping on {result['node']}; stopping")
                 return 1
         print(f"{args.work_item}: hit --max-nodes ({args.max_nodes}); stopping")
         return 1

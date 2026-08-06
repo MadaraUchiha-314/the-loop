@@ -1,16 +1,19 @@
 """Core capability: the ingress daemons' lifecycle and status (issue-161).
 
-Status is read straight off each daemon's pidfile lock (the flock discipline of
-issue-159 — ``is_held`` answers race-free, ``holder`` is advisory). Start/stop
-run through the CLI's own verbs as the same transitional adapter
-:mod:`the_loop.core.sessions` uses, for the same reason: those verbs already
-carry the whole lifecycle contract (lock acquisition, graceful stop-and-wait,
-`already` outcomes) and must not be re-implemented.
+Status reads the daemon's pidfile lock directly (the flock discipline of
+issue-159 — ``is_held`` answers race-free under pid reuse). **Stop** signals
+and waits here, in core, with no subprocess at all. **Start** spawns
+:mod:`the_loop.daemon_entry`, a core-owned entry point, rather than shelling
+out to the-loop's own CLI verb — the transitional adapter the owner asked us to
+remove (PR #162). A daemon is a long-lived process by nature, so a detached
+spawn is inherent; what changed is that it no longer round-trips through the
+command surface.
 """
 
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -18,20 +21,11 @@ from typing import Any, Dict, Optional
 
 from ..runlock import RunLock
 from ..state import layout_from_config
-from .sessions import SERVICE_LOCAL_ENV
 
 DAEMONS = ("poller", "gh-webhook")
 
-_VERBS: Dict[str, Dict[str, list]] = {
-    "poller": {
-        "start": ["poll", "start"],
-        "stop": ["poll", "stop"],
-    },
-    "gh-webhook": {
-        "start": ["gh-webhook", "start"],
-        "stop": ["gh-webhook", "stop"],
-    },
-}
+#: How long ``stop`` waits for the daemon to actually exit.
+STOP_TIMEOUT_SECONDS = 30.0
 
 
 def _pidfile(daemon: str, config: Optional[dict] = None) -> str:
@@ -57,49 +51,74 @@ def daemon_status(daemon: str, config: Optional[dict] = None) -> Dict[str, Any]:
 
 
 def control_daemon(
-    daemon: str, verb: str, config: Optional[dict] = None, timeout: float = 120.0
+    daemon: str,
+    verb: str,
+    config: Optional[dict] = None,
+    timeout: float = STOP_TIMEOUT_SECONDS,
 ) -> Dict[str, Any]:
-    """Start or stop a daemon through its own CLI verb (argv, no shell).
-
-    Both daemons run in the foreground by design (operators background them), so
-    ``start`` spawns **detached** — its own session, output to the daemon's own
-    logging — and reports the spawn; the daemon's pidfile lock remains the truth
-    about whether it stayed up (poll it via :func:`daemon_status`). ``stop`` is
-    the daemon's own graceful stop-and-wait verb and is waited on.
-    """
+    """Start or stop a daemon. Idempotent in both directions (issue-159)."""
     if verb not in ("start", "stop"):
         raise ValueError(f"unknown daemon verb {verb!r} (start|stop)")
     pidfile = _pidfile(daemon, config)  # validates the daemon name
-    argv = [sys.executable, "-m", "the_loop", *_VERBS[daemon][verb]]
-    env = {**os.environ, SERVICE_LOCAL_ENV: "1"}
+    lock = RunLock(pidfile, name=daemon)
+
     if verb == "start":
-        if RunLock(pidfile, name=daemon).is_held():
+        if lock.is_held():
             return {
                 "daemon": daemon,
                 "verb": verb,
+                "running": True,
+                "pid": lock.holder(),
                 "exitCode": 0,
                 "output": "already running",
             }
         proc = subprocess.Popen(  # noqa: S603 — fixed argv, no shell
-            argv,
+            [sys.executable, "-m", "the_loop.daemon_entry", daemon],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             stdin=subprocess.DEVNULL,
             start_new_session=True,
-            env=env,
         )
         return {
             "daemon": daemon,
             "verb": verb,
+            "running": True,
+            "pid": proc.pid,
             "exitCode": 0,
             "output": f"spawned pid {proc.pid}",
         }
-    proc = subprocess.run(  # noqa: S603 — fixed argv, no shell
-        argv, capture_output=True, text=True, timeout=timeout, env=env
-    )
+
+    # stop — signal the holder and wait for the lock to clear. No subprocess.
+    if not lock.is_held():
+        return {
+            "daemon": daemon,
+            "verb": verb,
+            "running": False,
+            "pid": 0,
+            "exitCode": 0,
+            "output": f"{daemon} is not running",
+        }
+    pid = lock.holder()
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    except PermissionError as exc:
+        raise ValueError(f"cannot signal {daemon} (pid {pid}): {exc}") from exc
+    if lock.wait_until_free(timeout):
+        return {
+            "daemon": daemon,
+            "verb": verb,
+            "running": False,
+            "pid": pid,
+            "exitCode": 0,
+            "output": f"stopped {daemon} (pid {pid})",
+        }
     return {
         "daemon": daemon,
         "verb": verb,
-        "exitCode": proc.returncode,
-        "output": (proc.stdout + proc.stderr).strip(),
+        "running": True,
+        "pid": pid,
+        "exitCode": 1,
+        "output": f"{daemon} (pid {pid}) did not exit within {timeout:.0f}s",
     }

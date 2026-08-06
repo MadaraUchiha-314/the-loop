@@ -8,7 +8,7 @@ from typing import Optional
 import pytest
 
 from the_loop import eventlog
-from the_loop.core.sessions import SERVICE_LOCAL_ENV
+from the_loop.client.routing import SERVICE_LOCAL_ENV
 from the_loop.harness import HarnessAdapter
 from the_loop.runner import SESSION_ABSENT, TmuxResult, TmuxRunner
 from the_loop.trust import TrustResult
@@ -20,10 +20,10 @@ def _local_execution(monkeypatch, request):
     """Run command tests on the local execution path (issue-161).
 
     The service-only rule routes core-capability commands through the
-    control-plane service; the local path is what the service itself executes,
-    so in-process tests of it are service-path behaviour coverage without a
-    live server per test. Routed-transport tests opt out with the
-    ``routed`` marker and exercise a real service end-to-end
+    control-plane service. The in-process path runs the *same* core facade the
+    service calls, so covering it here is behaviour coverage without standing a
+    server up per test. Routed-transport tests opt out with the ``routed``
+    marker and exercise a real service end-to-end
     (test_service_lifecycle_integration.py).
     """
     if "routed" in request.keywords:

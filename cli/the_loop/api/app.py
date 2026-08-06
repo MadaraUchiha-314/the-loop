@@ -43,11 +43,13 @@ class GraphCompleteBody(BaseModel):
     workItem: str
     node: str = ""
     actor: str = ""
+    ref: str = ""
 
 
 class GraphAdvanceBody(BaseModel):
     repo: str
     workItem: str
+    ref: str = ""
 
 
 class GraphForceBody(BaseModel):
@@ -56,12 +58,26 @@ class GraphForceBody(BaseModel):
     toNode: str
     reason: str
     actor: str = ""
+    ref: str = ""
 
 
 class SessionControlBody(BaseModel):
     ref: str
     verb: str
     comment: bool = True
+
+
+class SessionRegisterBody(BaseModel):
+    ref: str
+    harness: str
+    harnessSessionId: str
+    cwd: str = "."
+    force: bool = False
+
+
+class SessionCloseBody(BaseModel):
+    ref: str
+    keepTmux: Optional[bool] = None
 
 
 class DaemonControlBody(BaseModel):
@@ -77,6 +93,7 @@ class CriticRunBody(BaseModel):
     workItem: str = ""
     specDir: str = ""
     timeout: Optional[float] = None
+    cwd: str = ""
 
 
 def create_app(cli_config: Optional[dict] = None) -> FastAPI:
@@ -154,6 +171,10 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
     def get_work_item(ref: str = Query(...)) -> Dict[str, Any]:
         return core_workitems.get_work_item(ref, cli_config)
 
+    @app.get(f"{API_PREFIX}/graph", operation_id="graphShow")
+    def graph_show(repo: str = Query(...)) -> Dict[str, Any]:
+        return core_graphs.show(repo)
+
     @app.post(
         f"{API_PREFIX}/graph/check",
         operation_id="graphCheck",
@@ -167,7 +188,7 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
     )
     def graph_complete(body: GraphCompleteBody) -> Dict[str, Any]:
         return core_graphs.complete(
-            body.repo, body.workItem, node=body.node, actor=body.actor
+            body.repo, body.workItem, node=body.node, actor=body.actor, ref=body.ref
         )
 
     @app.post(
@@ -175,7 +196,7 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
         operation_id="graphAdvance",
     )
     def graph_advance(body: GraphAdvanceBody) -> Dict[str, Any]:
-        return core_graphs.advance(body.repo, body.workItem)
+        return core_graphs.advance(body.repo, body.workItem, ref=body.ref)
 
     @app.post(
         f"{API_PREFIX}/graph/force",
@@ -183,7 +204,12 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
     )
     def graph_force(body: GraphForceBody) -> Dict[str, Any]:
         return core_graphs.force(
-            body.repo, body.workItem, body.toNode, body.reason, actor=body.actor
+            body.repo,
+            body.workItem,
+            body.toNode,
+            body.reason,
+            actor=body.actor,
+            ref=body.ref,
         )
 
     @app.get(f"{API_PREFIX}/sessions", operation_id="listSessions")
@@ -204,6 +230,29 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
     def control_session(body: SessionControlBody) -> Dict[str, Any]:
         return core_sessions.control_session(
             body.ref, body.verb, comment=body.comment, config=cli_config
+        )
+
+    @app.post(
+        f"{API_PREFIX}/sessions/register",
+        operation_id="registerSession",
+    )
+    def register_session(body: SessionRegisterBody) -> Dict[str, Any]:
+        return core_sessions.register_session(
+            body.ref,
+            body.harness,
+            body.harnessSessionId,
+            cwd=body.cwd,
+            force=body.force,
+            config=cli_config,
+        )
+
+    @app.post(
+        f"{API_PREFIX}/sessions/close",
+        operation_id="closeSession",
+    )
+    def close_session(body: SessionCloseBody) -> Dict[str, Any]:
+        return core_sessions.close_session(
+            body.ref, keep_tmux=body.keepTmux, config=cli_config
         )
 
     @app.get(f"{API_PREFIX}/events", operation_id="queryEvents")
@@ -259,14 +308,16 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
         f"{API_PREFIX}/repo/scenarios",
         operation_id="repoScenarios",
     )
-    def repo_scenarios(repo: str = Query(...)) -> List[Dict[str, Any]]:
-        return core_repo.scenarios(repo)
+    def repo_scenarios(
+        repo: str = Query(...), glob: List[str] = Query(default=[])
+    ) -> Dict[str, Any]:
+        return core_repo.scenarios(repo, globs=glob)
 
     @app.get(
         f"{API_PREFIX}/repo/instructions",
         operation_id="repoInstructions",
     )
-    def repo_instructions(repo: str = Query(...)) -> List[Dict[str, Any]]:
+    def repo_instructions(repo: str = Query(...)) -> Dict[str, Any]:
         return core_repo.instructions(repo)
 
     @app.get(
@@ -289,6 +340,7 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
             work_item=body.workItem,
             spec_dir=body.specDir,
             timeout=body.timeout,
+            cwd=body.cwd,
         )
 
     return app

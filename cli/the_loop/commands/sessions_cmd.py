@@ -19,8 +19,16 @@ its session record, its control and poll sections, its checkout — so an item
 mid-flight when the CLI was fixed starts over on the new code. It posts nothing
 to the ticket: there is no `reset` keyword, deliberately (decision-050).
 
+Since issue-161 this module is a **renderer**: register, list, close and the
+four control verbs all execute in :mod:`the_loop.core.sessions`, reached
+through the control-plane service (R2.2). What is left here is argument
+parsing, table/JSON formatting, and the two actions that cannot leave this
+process — ``attach`` replaces the caller's terminal with tmux, and ``reset``
+is a bootstrap-and-recovery action that must work when nothing is running.
+
 Spec: docs/specs/issue-15/design.md §5 (requirement R2.2);
-docs/specs/issue-106/design.md §6; docs/specs/issue-137/design.md.
+docs/specs/issue-106/design.md §6; docs/specs/issue-137/design.md;
+docs/specs/issue-161/design.md §2.
 """
 
 from __future__ import annotations
@@ -30,40 +38,24 @@ import getpass
 import json
 import logging
 import os
-import shutil
 import sys
-import uuid
 from pathlib import Path
-from typing import Callable, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
 
 from .base import Command, register
-from .gh_webhook import _state_layout
+from .gh_webhook import _CONFIG_PATH, _state_layout
 from .poll import _build_dispatcher
 from .. import cli_config, eventlog
-from ..comments import post_issue_comment
-from ..control import (
-    PAUSE,
-    RESUME,
-    START,
-    STOP,
-    ControlConfig,
-    ControlStore,
-    command_comment,
-)
-from ..harness import ClaudeCodeAdapter, CursorAgentAdapter
+from ..client.routing import routed, service_error
+from ..control import PAUSE, RESUME, START, STOP, ControlStore
+from ..core import sessions as core_sessions
 from ..reset import WORKSPACE, reset_work_item, work_items_with_state
 from ..runner import TmuxRunner
-from ..sessions import RegistryError, Session, SessionRegistry, WorkItemRef
+from ..sessions import Session, SessionRegistry, WorkItemRef
 from ..state import legacy_layout
-from ..webhook.dispatcher import RoutingConfig, TmuxConfig
-from ..webhook.router import RoutedEvent
+from ..webhook.dispatcher import RoutingConfig
 
 logger = logging.getLogger("the-loop.sessions")
-
-_HARNESS_BINARIES = {
-    "claude": ClaudeCodeAdapter.default_binary,
-    "cursor": CursorAgentAdapter.default_binary,
-}
 
 
 def _routing_config() -> RoutingConfig:
@@ -92,10 +84,23 @@ def _control_store(args: argparse.Namespace) -> ControlStore:
     return ControlStore(root, legacy=legacy_layout(layout))
 
 
-def _control_config() -> ControlConfig:
-    """``routing.control`` — the keyword vocabulary (issue-106)."""
-    routing = cli_config.load_routing_config()
-    return ControlConfig.from_mapping(routing.get("control") or {})
+def _cli_config() -> dict:
+    """The operator's CLI config, as core's surfaces expect to receive it."""
+    return cli_config.load_cli_config(_CONFIG_PATH)
+
+
+def _render(result: Dict[str, Any]) -> int:
+    """Print core's ``messages`` on the streams they name; its exit code back.
+
+    Core never prints (the same call serves HTTP and MCP), so the words an
+    operator reads travel as data and this is the only place they reach a
+    terminal — which is what keeps the CLI's output identical whether the work
+    ran in-process or over the service.
+    """
+    for message in result.get("messages") or []:
+        stream = sys.stderr if message.get("stream") == "err" else sys.stdout
+        print(message.get("text", ""), file=stream)
+    return int(result.get("exitCode") or 0)
 
 
 def _dispatcher_for(args: argparse.Namespace):
@@ -174,12 +179,6 @@ def _local_actor() -> str:
         return getpass.getuser()
     except Exception:  # noqa: BLE001 — no controlling user (container/cron)
         return ""
-
-
-def _tmux_config() -> TmuxConfig:
-    """``routing.tmux`` — retention/termination policy (issue-86, issue-94)."""
-    routing = cli_config.load_routing_config()
-    return TmuxConfig.from_mapping(routing.get("tmux") or {})
 
 
 def _attach_argv(session: Session, read_only: bool) -> List[str]:
@@ -266,7 +265,9 @@ class SessionsCommand(Command):
             required=True,
             help="Work-item ref, e.g. github:OWNER/REPO#15",
         )
-        reg.add_argument("--harness", required=True, choices=sorted(_HARNESS_BINARIES))
+        reg.add_argument(
+            "--harness", required=True, choices=sorted(core_sessions.HARNESS_BINARIES)
+        )
         reg.add_argument(
             "--harness-session-id",
             required=True,
@@ -403,57 +404,49 @@ class SessionsCommand(Command):
 
     def _register(self, args: argparse.Namespace) -> int:
         try:
-            work_item = WorkItemRef.parse(args.work_item)
-        except ValueError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 2
-        binary = _HARNESS_BINARIES[args.harness]
-        if shutil.which(binary) is None:
-            # Registration still succeeds — dispatch will hard-error if the
-            # binary is still missing when an event arrives.
-            print(
-                f"warning: harness CLI {binary!r} not found on PATH; events for "
-                f"{work_item.ref} cannot be dispatched until it is installed",
-                file=sys.stderr,
+            result = routed(
+                lambda connection: connection.post(
+                    "/sessions/register",
+                    {
+                        "ref": args.work_item,
+                        "harness": args.harness,
+                        "harnessSessionId": args.harness_session_id,
+                        "cwd": args.cwd,
+                        "force": bool(args.force),
+                    },
+                ),
+                lambda: core_sessions.register_session(
+                    args.work_item,
+                    args.harness,
+                    args.harness_session_id,
+                    cwd=args.cwd,
+                    force=args.force,
+                    config=_cli_config(),
+                    registry_dir=args.registry_dir,
+                ),
             )
-        session = Session(
-            work_item=work_item,
-            harness=args.harness,
-            harness_session_id=args.harness_session_id,
-            cwd=str(Path(args.cwd).resolve()),
-        )
-        try:
-            SessionRegistry(args.registry_dir).register(session, force=args.force)
-        except RegistryError as exc:
-            print(f"error: {exc} (pass --force to replace)", file=sys.stderr)
-            return 1
-        print(f"registered {work_item.ref} -> {args.harness}:{args.harness_session_id}")
-        return 0
+        except Exception as exc:  # noqa: BLE001 — mapped, or re-raised below
+            return self._report(exc)
+        return _render(result)
 
     def _list(self, args: argparse.Namespace) -> int:
-        sessions = SessionRegistry(args.registry_dir).list_sessions(status=args.status)
-        store = _control_store(args)
-
-        def control_of(session: Session) -> str:
-            record = store.get(session.work_item)
-            return f"{record.command} ({record.source})" if record else "-"
+        try:
+            sessions = routed(
+                lambda connection: connection.get(
+                    "/sessions", params={"status": args.status}
+                ),
+                lambda: core_sessions.list_sessions(
+                    status=args.status,
+                    config=_cli_config(),
+                    registry_dir=args.registry_dir,
+                    portable_dir=args.portable_dir,
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001 — mapped, or re-raised below
+            return self._report(exc)
 
         if args.format == "json":
-            print(
-                json.dumps(
-                    [
-                        {
-                            **s.to_dict(),
-                            "control": (
-                                record.to_dict()
-                                if (record := store.get(s.work_item))
-                                else None
-                            ),
-                        }
-                        for s in sessions
-                    ]
-                )
-            )
+            print(json.dumps(sessions))
             return 0
         rows = [
             (
@@ -467,15 +460,16 @@ class SessionsCommand(Command):
             )
         ]
         for s in sessions:
+            record = s.get("control")
             rows.append(
                 (
-                    s.work_item.ref,
-                    s.harness,
-                    s.harness_session_id,
-                    s.tmux_target or "-",
-                    s.status,
-                    control_of(s),
-                    s.last_event_at or "-",
+                    s["workItem"]["ref"],
+                    s["harness"],
+                    s["harnessSessionId"],
+                    s["tmuxTarget"] or "-",
+                    s["status"],
+                    f"{record['command']} ({record['source']})" if record else "-",
+                    s["lastEventAt"] or "-",
                 )
             )
         widths = [max(len(row[i]) for row in rows) for i in range(len(rows[0]))]
@@ -484,6 +478,22 @@ class SessionsCommand(Command):
         if not sessions:
             print("(no registered sessions)", file=sys.stderr)
         return 0
+
+    @staticmethod
+    def _report(exc: Exception) -> int:
+        """A client-side failure as the CLI's ``(message, exit code)``.
+
+        ``ValueError`` is core's "caller mistake" on the local path and arrives
+        as a 400 on the routed one, so both land on the same exit code.
+        """
+        mapped = service_error(exc)
+        if mapped is None:
+            if isinstance(exc, ValueError):
+                mapped = (f"error: {exc}", 2)
+            else:
+                raise exc
+        print(mapped[0], file=sys.stderr)
+        return mapped[1]
 
     def _attach(self, args: argparse.Namespace) -> int:
         return attach_session(
@@ -495,187 +505,34 @@ class SessionsCommand(Command):
     # -- execution control (issue-106) ------------------------------------------
 
     def _control(self, args: argparse.Namespace) -> int:
-        """Apply one control command locally, then record it on the ticket.
+        """Render one control verb, applied by :mod:`the_loop.core.sessions`.
 
-        Order matters: the local effect first, the control record with it, and
-        the comment last — the comment is a *report* of what happened, so a
-        failing `gh` never leaves the ticket claiming something the-loop did not
-        do (and never undoes what it did).
+        The whole sequence — local effect, control record, ticket comment, in
+        that order — lives in core, so an operator's ``sessions pause`` and an
+        agent's MCP ``control_session`` are the same code path and cannot drift.
         """
-        command = args._command
         try:
-            work_item = WorkItemRef.parse(args.work_item)
-        except ValueError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 2
-        store = _control_store(args)
-        actor = _local_actor()
-        # A **disarming** command (pause/stop) is recorded whether or not there
-        # was anything to act on — a stopped work item must not re-spawn on the
-        # next event. An **arming** one (start/resume) is recorded only when it
-        # actually acted, so a start that could not run leaves nothing standing
-        # (owner decision on PR #107): the same rule the comment path follows.
-        if command in (PAUSE, STOP):
-            store.record(work_item, command, source="cli", actor=actor)
-
-        effect, code = self._apply_control(command, work_item, args)
-        if command in (START, RESUME) and effect in ("resumed", "running"):
-            store.record(work_item, command, source="cli", actor=actor)
-        eventlog.emit(
-            "control.command",
-            work_item=work_item.ref,
-            command=command,
-            source="cli",
-            actor=actor,
-            effect=effect,
-        )
-        if args.comment:
-            self._post_control_comment(work_item, command, actor)
-        return code
-
-    def _apply_control(
-        self, command: str, work_item: WorkItemRef, args: argparse.Namespace
-    ) -> Tuple[str, int]:
-        """``(effect, exit code)`` of applying ``command`` to ``work_item``."""
-        registry = SessionRegistry(args.registry_dir)
-        session = registry.find_by_work_item(work_item)
-
-        if command in (START, RESUME):
-            if session is not None and session.is_paused:
-                registry.resume(work_item)
-                print(f"resumed session for {work_item.ref}")
-                return "resumed", 0
-            if command == RESUME:
-                where = "is not paused" if session is not None else "has no session"
-                print(f"nothing to resume: {work_item.ref} {where}", file=sys.stderr)
-                return "noop", 1
-            if session is not None:
-                print(f"{work_item.ref} is already running ({session.harness})")
-                return "running", 0
-            return self._spawn_for_start(work_item, args)
-
-        if command == PAUSE:
-            if registry.pause(work_item) is None:
-                print(
-                    f"no running session for {work_item.ref} to pause; recorded "
-                    "the pause, so it will not spawn on its own",
-                    file=sys.stderr,
-                )
-                return "noop", 1
-            print(
-                f"paused session for {work_item.ref} — events are held until "
-                "you resume it"
+            result = routed(
+                lambda connection: connection.post(
+                    "/sessions/control",
+                    {
+                        "ref": args.work_item,
+                        "verb": args._command,
+                        "comment": bool(args.comment),
+                    },
+                ),
+                lambda: core_sessions.control_session(
+                    args.work_item,
+                    args._command,
+                    comment=args.comment,
+                    config=_cli_config(),
+                    registry_dir=args.registry_dir,
+                    portable_dir=args.portable_dir,
+                ),
             )
-            return "paused", 0
-
-        # STOP
-        if session is None:
-            print(
-                f"no live session for {work_item.ref}; recorded the stop, so it "
-                "will not spawn on its own",
-                file=sys.stderr,
-            )
-            return "noop", 1
-        dispatcher, _ = _dispatcher_for(args)
-        try:
-            dispatcher.close_session(session, reason="stopped from the CLI")
-        finally:
-            dispatcher.stop(timeout=5)
-        print(f"stopped execution for {work_item.ref} (session closed)")
-        return "stopped", 0
-
-    def _spawn_for_start(self, work_item: WorkItemRef, args: argparse.Namespace):
-        """Spawn a session for a start issued from the CLI.
-
-        Runs through the *daemon's* dispatcher rather than a second spawn
-        implementation, so the workspace checkout, the harness trust pre-flight,
-        the configured runner and the session announcement all behave exactly as
-        they do for a start issued by comment.
-
-        The synthesised event is marked ``labeled=True``: shell access to the
-        machine running the-loop is a strictly higher privilege than commenting
-        on an issue, so the CLI does not additionally require the auto-execute
-        label (which it cannot see without an API call anyway).
-
-        The start requirement is satisfied by recording the request first — that
-        is what the dispatcher's gate reads — and the record is **cleared again
-        if no session came up**, so a start that could not run leaves nothing
-        standing to be picked up by a later event (owner decision on PR #107).
-        """
-        store = _control_store(args)
-        dispatcher, routing = _dispatcher_for(args)
-        if routing.spawn_on_unmatched == "never":
-            print(
-                "error: routing.spawnOnUnmatched is 'never', so the-loop will "
-                "not spawn sessions; set it to 'labeled' (or 'always') first",
-                file=sys.stderr,
-            )
-            dispatcher.stop(timeout=5)
-            return "rejected", 1
-        store.record(work_item, START, source="cli", actor=_local_actor())
-        payload = {
-            "action": "control-start",
-            "repository": {"full_name": f"{work_item.owner}/{work_item.repo}"},
-            "issue": {"number": work_item.number},
-        }
-        routed = RoutedEvent(
-            event="issues",
-            action="control-start",
-            delivery_id=f"cli-start-{uuid.uuid4()}",
-            work_items=[work_item],
-            payload=payload,
-            labeled=True,
-        )
-        print(f"starting a session for {work_item.ref}…")
-        try:
-            dispatcher.handle(routed)
-        finally:
-            # Drains the work item's queue so the spawn runs to completion
-            # before the registry is read back.
-            dispatcher.stop(timeout=routing.dispatch_timeout_seconds)
-        session = SessionRegistry(args.registry_dir).find_by_work_item(work_item)
-        if session is None:
-            # Nothing came up, so leave nothing armed: the operator re-runs the
-            # command rather than the work item starting itself on a later event.
-            store.clear(work_item)
-            print(
-                f"error: could not start a session for {work_item.ref} — see the "
-                "log above (and `the-loop events --work-item …`) for why",
-                file=sys.stderr,
-            )
-            return "failed", 1
-        print(
-            f"started {session.harness} session for {work_item.ref} "
-            f"(tmux: {session.tmux_target})"
-        )
-        return "spawned", 0
-
-    def _post_control_comment(
-        self, work_item: WorkItemRef, command: str, actor: str
-    ) -> None:
-        """Record the action on the ticket (best-effort — never fails the action)."""
-        config = _control_config()
-        ok, error = post_issue_comment(
-            work_item,
-            command_comment(command, config, actor=actor),
-            gh_binary=config.gh_binary,
-        )
-        if ok:
-            print(f"commented {config.keyword(command)!r} on {work_item.ref}")
-            eventlog.emit("control.announced", work_item=work_item.ref, command=command)
-            return
-        print(
-            f"note: could not comment on {work_item.ref} ({error}); the command "
-            "was still applied locally",
-            file=sys.stderr,
-        )
-        eventlog.emit(
-            "control.announce_failed",
-            level="warning",
-            work_item=work_item.ref,
-            command=command,
-            error=error,
-        )
+        except Exception as exc:  # noqa: BLE001 — mapped, or re-raised below
+            return self._report(exc)
+        return _render(result)
 
     # -- reset (issue-137) -------------------------------------------------------
 
@@ -832,43 +689,18 @@ class SessionsCommand(Command):
 
     def _close(self, args: argparse.Namespace) -> int:
         try:
-            work_item = WorkItemRef.parse(args.work_item)
-        except ValueError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 2
-        registry = SessionRegistry(args.registry_dir)
-        session = registry.find_by_work_item(work_item)
-        if not registry.close(work_item):
-            print(f"no active session for {work_item.ref}", file=sys.stderr)
-            return 1
-        if session is not None and session.tmux_target:
-            tmux = _tmux_config()
-            keep = (
-                tmux.keep_session_on_close if args.keep_tmux is None else args.keep_tmux
+            result = routed(
+                lambda connection: connection.post(
+                    "/sessions/close",
+                    {"ref": args.work_item, "keepTmux": args.keep_tmux},
+                ),
+                lambda: core_sessions.close_session(
+                    args.work_item,
+                    keep_tmux=args.keep_tmux,
+                    config=_cli_config(),
+                    registry_dir=args.registry_dir,
+                ),
             )
-            if keep:
-                # Same rule as an auto-close: retain the transcript, end the
-                # conversation, so nothing can be typed into it (issue-94).
-                if tmux.kill_harness_on_close:
-                    result = TmuxRunner().terminate_harness(
-                        session, grace=tmux.harness_kill_grace_seconds
-                    )
-                    if result.ok and not result.session_missing:
-                        print(
-                            f"ended the harness in tmux session {session.tmux_target}"
-                        )
-                    elif not result.ok:
-                        print(f"note: {result.error}", file=sys.stderr)
-                print(
-                    f"kept tmux session {session.tmux_target} — attach: "
-                    f"tmux attach -r -t {session.tmux_target} (pass --kill-tmux to "
-                    "end it)"
-                )
-            else:
-                result = TmuxRunner().kill(session)  # best-effort (R7.2/R7.3)
-                if result.ok:
-                    print(f"killed tmux session {session.tmux_target}")
-                else:
-                    print(f"note: tmux session {session.tmux_target} was already gone")
-        print(f"closed session for {work_item.ref}")
-        return 0
+        except Exception as exc:  # noqa: BLE001 — mapped, or re-raised below
+            return self._report(exc)
+        return _render(result)

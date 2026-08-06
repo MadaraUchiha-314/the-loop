@@ -22,9 +22,10 @@ def test_scenarios_collects_from_configured_globs(tmp_path):
     (tests_dir / "test_thing_integration.py").write_text(
         'def test_x():\n    """\n    Feature: f\n      Scenario: s\n        Given g\n        When w\n        Then t\n    """\n'
     )
-    scenarios = core_repo.scenarios(str(tmp_path))
-    assert len(scenarios) == 1
-    assert scenarios[0]["scenario"] == "s"
+    report = core_repo.scenarios(str(tmp_path))
+    assert report["globs"] == ["tests/test_*_integration.py"]
+    assert len(report["scenarios"]) == 1
+    assert report["scenarios"][0]["scenario"] == "s"
 
 
 def test_instructions_reports_registered_docs(tmp_path):
@@ -32,10 +33,13 @@ def test_instructions_reports_registered_docs(tmp_path):
         tmp_path,
         "version: '0.2.0'\ncustomInstructions:\n  docs:\n    - path: docs/house.md\n  onMissing: warn\n",
     )
-    docs = core_repo.instructions(str(tmp_path))
+    report = core_repo.instructions(str(tmp_path))
+    assert report["onMissing"] == "warn"
+    docs = report["docs"]
     assert len(docs) == 1
     assert docs[0]["path"] == "docs/house.md"
     assert docs[0]["state"] == "missing"
+    assert docs[0]["resolvedOk"] is False
 
 
 def test_critics_lists_configured_entries_without_argv(tmp_path):
@@ -44,7 +48,18 @@ def test_critics_lists_configured_entries_without_argv(tmp_path):
         "version: '0.2.0'\nreviews:\n  critics:\n    - name: c1\n      harness: cursor\n      model: gpt-5.5\n",
     )
     critics = core_repo.critics(str(tmp_path))
-    assert critics == [{"name": "c1", "harness": "cursor", "model": "gpt-5.5"}]
+    assert critics == [
+        {
+            "name": "c1",
+            "harness": "cursor",
+            "model": "gpt-5.5",
+            # The executable and whether it resolves — never the composed argv.
+            "binary": "cursor-agent",
+            "available": False,
+            "enabled": True,
+            "error": "",
+        }
+    ]
 
 
 def test_critic_run_unknown_name_is_config_error(tmp_path):

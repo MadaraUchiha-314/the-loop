@@ -22,21 +22,12 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import tempfile
 from pathlib import Path
-from typing import Dict, List, Sequence, Tuple
-
-import yaml
+from typing import Any, Mapping, Sequence
 
 from .base import Command, register
-from ..critics import (
-    Critic,
-    CriticConfigError,
-    config_path,
-    find_critic,
-    load_critics,
-    run_critic,
-)
+from ..client.routing import routed, service_error
+from ..core import repo as core_repo
 
 logger = logging.getLogger("the-loop.critics")
 
@@ -47,40 +38,10 @@ _EXIT_MISCONFIGURED = 2
 _LIST_HEADERS = ["Critic", "Harness", "Model", "Executable", "Available", "Enabled"]
 
 
-def _spec_dir(root: Path, work_item: str) -> str:
-    """``<workflow.specDir>/<work item>`` for the ``{specDir}`` placeholder."""
-    if not work_item:
-        return ""
-    spec_root = "docs/specs"
-    path = config_path(root)
-    if path is not None:
-        try:
-            data = yaml.safe_load(path.read_text()) or {}
-            spec_root = ((data.get("workflow") or {}).get("specDir")) or spec_root
-        except Exception:  # noqa: BLE001 - a default is fine here
-            logger.debug("could not read workflow.specDir from %s", path)
-    return str(root / spec_root / work_item)
-
-
-def _rows(critics: Sequence[Critic]) -> List[Dict[str, object]]:
-    return [
-        {
-            "critic": critic.name,
-            "harness": critic.harness,
-            "model": critic.model,
-            "binary": critic.binary,
-            "available": critic.available,
-            "enabled": critic.enabled,
-            "error": critic.error,
-        }
-        for critic in critics
-    ]
-
-
-def _render_table(rows: Sequence[Dict[str, object]]) -> str:
+def _render_table(rows: Sequence[Mapping[str, Any]]) -> str:
     cells = [
         [
-            str(row["critic"]),
+            str(row["name"]),
             str(row["harness"] or "—"),
             str(row["model"] or "—"),
             str(row["binary"] or "—"),
@@ -170,13 +131,15 @@ class CriticCommand(Command):
     # ------------------------------------------------------------------ list
 
     def _list(self, args: argparse.Namespace) -> int:
-        root = Path(args.root)
         try:
-            critics = load_critics(root)
-        except CriticConfigError as exc:
-            logger.error("%s", exc)
-            return _EXIT_MISCONFIGURED
-        rows = _rows(critics)
+            rows = routed(
+                lambda connection: connection.get(
+                    "/repo/critics", params={"repo": str(Path(args.root))}
+                ),
+                lambda: core_repo.critics(str(Path(args.root))),
+            )
+        except Exception as exc:  # noqa: BLE001 — mapped below
+            return self._fail(exc)
         if args.format == "json":
             print(json.dumps(rows, indent=2))
             return _EXIT_OK
@@ -194,59 +157,70 @@ class CriticCommand(Command):
     # ------------------------------------------------------------------- run
 
     def _run(self, args: argparse.Namespace) -> int:
-        root = Path(args.root)
+        """Render one critic round, executed by :mod:`the_loop.core.repo`.
+
+        The prompt travels as **text**: ``--prompt-file`` is read here, in the
+        caller's working directory, because that is where the operator's path
+        means what they typed. Its absolute path rides along so
+        ``{promptFile}`` still interpolates to the file the operator named;
+        with only an inline prompt, core mints a scratch file instead.
+        """
+        root = str(Path(args.root))
+        prompt_file = str(Path(args.prompt_file).resolve()) if args.prompt_file else ""
         try:
-            critic = find_critic(root, args.critic)
-        except CriticConfigError as exc:
-            logger.error("%s", exc)
+            prompt = Path(prompt_file).read_text() if prompt_file else args.prompt
+        except OSError as exc:
+            logger.error("could not read the prompt: %s", exc)
             return _EXIT_MISCONFIGURED
+        try:
+            result = routed(
+                lambda connection: connection.post(
+                    "/repo/critics/run",
+                    {
+                        "repo": root,
+                        "name": args.critic,
+                        "prompt": prompt,
+                        "promptFile": prompt_file,
+                        "workItem": args.work_item,
+                        "specDir": args.spec_dir or "",
+                        "timeout": args.timeout,
+                        "cwd": args.cwd or "",
+                    },
+                ),
+                lambda: core_repo.critic_run(
+                    root,
+                    args.critic,
+                    prompt,
+                    prompt_file,
+                    work_item=args.work_item,
+                    spec_dir=args.spec_dir or "",
+                    timeout=args.timeout,
+                    cwd=args.cwd or "",
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001 — mapped below
+            return self._fail(exc)
 
-        with tempfile.TemporaryDirectory(prefix="the-loop-critic-") as scratch:
-            try:
-                prompt, prompt_file = self._prompt_sources(args, Path(scratch))
-            except OSError as exc:
-                logger.error("could not read the prompt: %s", exc)
-                return _EXIT_MISCONFIGURED
-            cwd = args.cwd or critic.cwd or str(root)
-            values = {
-                "prompt": prompt,
-                "promptFile": prompt_file,
-                "model": critic.model,
-                "workItem": args.work_item,
-                "specDir": args.spec_dir or _spec_dir(root, args.work_item),
-                "cwd": cwd,
-            }
-            try:
-                result = run_critic(critic, values, cwd=cwd, timeout=args.timeout)
-            except CriticConfigError as exc:
-                # Nothing was spawned, so there is no round to report — the
-                # envelope would be a record of something that never happened.
-                logger.error("%s", exc)
-                return _EXIT_MISCONFIGURED
-
-        envelope = json.dumps(result.as_dict(), indent=2)
+        envelope = json.dumps(result, indent=2)
         print(envelope)  # stdout is the envelope and nothing else
         if args.output_file:
             self._write_envelope(Path(args.output_file), envelope)
-        if not result.ok:
-            logger.error("critic round %r failed: %s", critic.name, result.error)
+        if not result.get("ok"):
+            logger.error("critic round %r failed: %s", args.critic, result.get("error"))
             return _EXIT_ROUND_FAILED
         return _EXIT_OK
 
     @staticmethod
-    def _prompt_sources(args: argparse.Namespace, scratch: Path) -> Tuple[str, str]:
-        """The round's prompt as both text and a file path.
+    def _fail(exc: Exception) -> int:
+        """Always ``_EXIT_MISCONFIGURED``: nothing ran, so there is no round.
 
-        Both placeholders always resolve: a critic CLI that only accepts a file
-        works with ``--prompt``, and one that only accepts an argument works with
-        ``--prompt-file``. The scratch file lives for the length of the round.
+        An unknown critic, a broken entry and an unreachable service differ in
+        cause and not in consequence — the envelope a caller parses was never
+        produced, and exit 2 has always been how this command says so.
         """
-        if args.prompt_file:
-            path = Path(args.prompt_file)
-            return path.read_text(), str(path)
-        scratch_file = scratch / "critic-prompt.md"
-        scratch_file.write_text(args.prompt)
-        return args.prompt, str(scratch_file)
+        mapped = service_error(exc)
+        logger.error("%s", mapped[0].removeprefix("error: ") if mapped else exc)
+        return _EXIT_MISCONFIGURED
 
     @staticmethod
     def _write_envelope(path: Path, envelope: str) -> None:

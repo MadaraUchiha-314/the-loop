@@ -32,8 +32,12 @@ def test_list_sessions_reports_registered_sessions(tmp_path):
     _register(tmp_path)
     sessions = core_sessions.list_sessions(config=_config(tmp_path))
     assert len(sessions) == 1
-    assert sessions[0]["workItem"] == REF
+    # ``ref`` is the flat string every caller keys on; ``workItem`` stays the
+    # registry's own object, so nothing is projected away.
+    assert sessions[0]["ref"] == REF
+    assert sessions[0]["workItem"]["ref"] == REF
     assert sessions[0]["status"] == "active"
+    assert sessions[0]["control"] is None
 
 
 def test_get_session_missing_is_lookup_error(tmp_path):

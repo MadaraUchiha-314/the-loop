@@ -2,11 +2,10 @@ openapi: 3.1.0
 info:
   title: the-loop control plane
   version: '1'
-  description: 'the-loop''s control-plane API (issue-161). This file is the authored
-    contract: cli/tests/test_api_contract_parity.py asserts the served schema matches
-    it, so drift fails CI. Docs are served at /api/docs. The service carries no in-app
-    auth (a gateway owns it, owner decision PR #162); locally it binds loopback-only
-    by default.'
+  description: 'the-loop''s control-plane API (issue-161). This file is the authored contract:
+    cli/tests/test_api_contract_parity.py asserts the served schema matches it, so drift fails
+    CI. Docs are served at /api/docs. The service carries no in-app auth (a gateway owns it,
+    owner decision PR #162); locally it binds loopback-only by default.'
 paths:
   /api/v1/health:
     get:
@@ -57,6 +56,32 @@ paths:
                 type: object
                 additionalProperties: true
                 title: Response Getworkitem
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/graph:
+    get:
+      summary: Graph Show
+      operationId: graphShow
+      parameters:
+      - name: repo
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Repo
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Graphshow
         '422':
           description: Validation Error
           content:
@@ -244,6 +269,56 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sessions/register:
+    post:
+      summary: Register Session
+      operationId: registerSession
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionRegisterBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Registersession
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sessions/close:
+    post:
+      summary: Close Session
+      operationId: closeSession
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionCloseBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Closesession
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/events:
     get:
       summary: Query Events
@@ -403,16 +478,23 @@ paths:
         schema:
           type: string
           title: Repo
+      - name: glob
+        in: query
+        required: false
+        schema:
+          type: array
+          items:
+            type: string
+          default: []
+          title: Glob
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  type: object
-                  additionalProperties: true
+                type: object
+                additionalProperties: true
                 title: Response Reposcenarios
         '422':
           description: Validation Error
@@ -437,10 +519,8 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  type: object
-                  additionalProperties: true
+                type: object
+                additionalProperties: true
                 title: Response Repoinstructions
         '422':
           description: Validation Error
@@ -532,6 +612,10 @@ components:
           - type: number
           - type: 'null'
           title: Timeout
+        cwd:
+          type: string
+          title: Cwd
+          default: ''
       type: object
       required:
       - repo
@@ -558,6 +642,10 @@ components:
         workItem:
           type: string
           title: Workitem
+        ref:
+          type: string
+          title: Ref
+          default: ''
       type: object
       required:
       - repo
@@ -596,6 +684,10 @@ components:
           type: string
           title: Actor
           default: ''
+        ref:
+          type: string
+          title: Ref
+          default: ''
       type: object
       required:
       - repo
@@ -619,6 +711,10 @@ components:
           type: string
           title: Actor
           default: ''
+        ref:
+          type: string
+          title: Ref
+          default: ''
       type: object
       required:
       - repo
@@ -635,6 +731,20 @@ components:
           title: Detail
       type: object
       title: HTTPValidationError
+    SessionCloseBody:
+      properties:
+        ref:
+          type: string
+          title: Ref
+        keepTmux:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Keeptmux
+      type: object
+      required:
+      - ref
+      title: SessionCloseBody
     SessionControlBody:
       properties:
         ref:
@@ -652,6 +762,31 @@ components:
       - ref
       - verb
       title: SessionControlBody
+    SessionRegisterBody:
+      properties:
+        ref:
+          type: string
+          title: Ref
+        harness:
+          type: string
+          title: Harness
+        harnessSessionId:
+          type: string
+          title: Harnesssessionid
+        cwd:
+          type: string
+          title: Cwd
+          default: .
+        force:
+          type: boolean
+          title: Force
+          default: false
+      type: object
+      required:
+      - ref
+      - harness
+      - harnessSessionId
+      title: SessionRegisterBody
     ValidationError:
       properties:
         loc:
