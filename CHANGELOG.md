@@ -1,3 +1,9 @@
+## v7.3.0 (2026-08-06)
+
+### Feat
+
+- **issue-163**: test and verification as nodes in the PDLC (#166)
+
 ## v7.2.0 (2026-08-06)
 
 ### Feat
