@@ -60,6 +60,25 @@ status: in-progress          # in-progress | complete
   `human-approves-pr`).
 - **Blockers:** none.
 
+### 2026-08-06 — merged main; the decision is now 064
+
+- **Phase:** needs-review
+- **Did:** [PR #170](https://github.com/MadaraUchiha-314/the-loop/pull/170) (issue-167)
+  landed on main while this was open and claimed `decision-063`, plus the same regions of
+  `test_graph_hooks.py`, `process-graph.md` and `decisions.md`. Merged main twice (through
+  the 7.4.1 bump) and resolved: **this work item's decision is `decision-064`**, every
+  reference followed, and both sides of the code and doc conflicts are kept — issue-167's
+  `validates:` cases sit beside the module-structure cases in the same test file.
+- **Checkpoint/tests:** `make test` 1385 passed / 1 skipped · lint 0 errors · pyright 0
+  errors · `the-loop check issue-164 --recompute --fail-on block` exit 0 (waits at
+  `requirements-approval`). On the PR: **CI green, the-loop gate green.**
+- **Note for the record:** no check ran until the conflict was resolved. GitHub cannot
+  build `refs/pull/<n>/merge` for a conflicted PR, so no `pull_request` workflow is
+  scheduled at all — the checks are absent, not red. Scheduling then lags the push by
+  about five minutes.
+- **Next:** human review on the PR (tier 3, `human-approves-pr`).
+- **Blockers:** none.
+
 ## Review cycles
 
 > Outcome is one of: new findings · zero (converged) · escalated · **unavailable** (the
