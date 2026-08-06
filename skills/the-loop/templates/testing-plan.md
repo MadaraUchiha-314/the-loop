@@ -81,7 +81,8 @@ overrides: {}
 
 > What will be captured, and where. Evidence is committed under
 > `<specDir>/<id>/evidence/`; a link to a CI run that expires or to a local path is not
-> evidence.
+> evidence. **Textual evidence is markdown (`.md`), never `.txt`** — titled, one section
+> per command, raw output in fenced blocks. Binary captures keep their own formats.
 >
 > **Redact before committing.** Captured output and screenshots routinely contain tokens,
 > cookies, personal data and internal hostnames, and this directory is as public as the
@@ -90,8 +91,8 @@ overrides: {}
 
 | Row | Evidence | Path under `evidence/` |
 |-----|----------|------------------------|
-| T1 | test summary (counts, duration) | `unit.txt` |
-| T2 | scenario table + run output | `integration.txt` |
+| T1 | test summary (counts, duration) | `unit.md` |
+| T2 | scenario table + run output | `integration.md` |
 | T5 | screenshots of each verified state; an animated capture (GIF) when the behaviour is a **flow** rather than a state | `ui/<state>.png`, `ui/<flow>.gif` |
 
 ## Verification activities

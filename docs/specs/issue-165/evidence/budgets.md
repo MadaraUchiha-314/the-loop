@@ -1,22 +1,33 @@
-# issue-165 — the budget experiment (REJECTED APPROACH, kept as the record)
-#
-# This work item first shipped per-artifact word budgets. The owner rejected them in
-# review on PR #168 — "we don't know the scope of each work item, so how can we put
-# budgets on requirements.md or design.md?" — and they are gone from the schema, the
-# configs, the templates and the test.
-#
-# The measurement is kept because it is the evidence FOR that call, not against it.
-# Three of eight budgets had to be renegotiated before the change could merge:
-#   * tasks: 200 was unreachable from its own empty template (274 words of guidance),
-#     and was raised to 400;
-#   * requirements.md ran 682 against 500 and design.md 1017 against 900, both cut;
-#   * the PR briefing ran ~530 against 400 carrying only the mandated education, and
-#     was recorded as a deliberate overrun.
-# A number renegotiated by every artifact that meets it is not a policy.
-#
-# `prose_words()` no longer exists — it was removed with the budgets. The figures below
-# are the run from before that removal, at commit b74f0fd. See decision-061 §D2.
-#
+# Evidence: the budget experiment (rejected approach, kept as the record)
+
+Work item: issue-165. This measurement is **not** a passing check — it is the record of an
+approach that was tried and rejected, kept because it is the evidence *for* rejecting it.
+
+## What happened
+
+This work item first shipped per-artifact word budgets. The owner rejected them in review
+on PR #168 — *"we don't know the scope of each work item, so how can we put budgets on
+requirements.md or design.md?"* — and they are gone from the schema, the configs, the
+templates and the test.
+
+Three of the eight budgets had to be renegotiated before the change could merge, which is
+the argument in miniature:
+
+| Budget | What the measurement showed |
+|---|---|
+| `tasks: 200` | Unreachable from its own empty template — 274 words of guidance prose. Raised to 400. |
+| `requirements: 500` · `design: 900` | The actual artifacts ran 682 and 1017. Both cut. |
+| `prBriefing: 400` | The PR briefing ran ~530 carrying only the education the R10 gate requires. Recorded as a deliberate overrun. |
+
+A number renegotiated by every artifact that meets it is not a policy. See
+[decision-061](../../../decisions/decision-061.md) §D2.
+
+## The run
+
+`prose_words()` no longer exists — it was removed with the budgets. The figures below are
+the run from before that removal, at commit `b74f0fd`.
+
+```console
 $ prose_words() from cli/tests/test_writing_parity.py, applied to what this PR ships
 
 artifact                                       words  budget  status
@@ -41,3 +52,4 @@ skills/the-loop/templates/pr-briefing.md         102     400  ok
 skills/the-loop/templates/requirements.md        143     500  ok
 skills/the-loop/templates/tasks.md               274     400  ok
 skills/the-loop/templates/testing-plan.md        126     400  ok
+```

@@ -95,6 +95,14 @@ a record. It re-gates the **same** `testing-plan.md` — every activity ticked
 Evidence is **committed** under `<specDir>/<id>/evidence/`, alongside the spec. A link to
 a CI run that expires, or to a path on the machine that ran it, is not evidence.
 
+**Textual evidence is markdown** (`.md`), never `.txt` — every other artifact the loop
+writes is markdown, it renders on the repository host and the docs site, and a reviewer
+opening it gets headings and fenced blocks rather than a wall of console output. Give each
+file a title, a line saying which work item and which activity it belongs to, a section per
+command, and the raw output inside a fenced block so it is never reflowed. It is linted
+like every other markdown file (`tooling.lint.markdown`). Binary captures — screenshots,
+GIFs, recordings — stay in their own formats and are *referenced* from the markdown.
+
 - **Test output** — the summary that shows counts and the red→green transitions.
 - **UI verification** — rendered screenshots of each verified state, and an **animated
   capture (GIF or equivalent) when the behaviour under test is a *flow*** rather than a

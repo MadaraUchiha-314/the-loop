@@ -102,7 +102,7 @@ findings, in order of severity:
    pressure D3 exists to prevent. The counter now skips an item's continuation lines.
 3. **Two artifacts were over budget** — `requirements.md` at 682/500 and `design.md` at
    1017/900. Cut with the skill's own revise pass rather than excused; final numbers in
-   `evidence/budgets.txt`.
+   `evidence/budgets.md`.
 
 **Round 2 — reading the test as a reviewer would.** Two findings:
 
@@ -164,7 +164,7 @@ committed artifact under [`evidence/`](evidence/):
   not taken from each; the shipped template keeps its minimal starter registry.
 - **R2** (the contract reaches the author) — P2 and P3: eight human-read templates, each
   naming the skill the schema declares. R2.2 (no length limits) is asserted by P3's second
-  half; `evidence/budgets.txt` is the record of the rejected approach that produced it.
+  half; `evidence/budgets.md` is the record of the rejected approach that produced it.
 - **R3** (diagram-first) — asserted by review, not by the test (R5.3). `design.md` and
   `tasks.md` for this work item each carry one.
 - **R4** (formal carve-out) — the five registers are enum values in the schema; the skill

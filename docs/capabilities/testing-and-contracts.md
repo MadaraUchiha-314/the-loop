@@ -48,7 +48,10 @@ every API is authored contract-first with docs generated from the contract).
   recorded and the matrix replanned (with the reason) or the item escalated. IF the
   environment cannot be brought up THEN the loop SHALL escalate rather than pass the gate.
 - Evidence SHALL be **committed** under `docs/specs/<id>/evidence/` — a link to a CI run
-  that expires or to a local path is not evidence. WHEN UI verification runs THEN it SHALL
+  that expires or to a local path is not evidence. WHEN textual evidence is written THEN
+  it SHALL be **markdown (`.md`), never `.txt`** — titled, one section per command, raw
+  output in fenced blocks, and linted like every other markdown file; binary captures keep
+  their own formats and are referenced from it. WHEN UI verification runs THEN it SHALL
   capture screenshots of each verified state and an **animated capture (GIF or equivalent)
   when the behaviour under test is a *flow*** rather than a state. Evidence SHALL be
   redacted (tokens, cookies, personal data, internal hostnames) before it is committed,
@@ -83,4 +86,5 @@ every API is authored contract-first with docs generated from the contract).
 | Work item | What changed | Links |
 |-----------|--------------|-------|
 | issue-163 | Testing became part of the process rather than an assumption: the `testing-plan.md` artifact and the `test-planning` / `verification` nodes, the test-type matrix with `n/a`-with-a-reason, the declared-not-managed verification environment, and committed, redacted evidence (screenshots and GIFs for UI flows) | [spec](../specs/issue-163/), [decision-060](../decisions/decision-060.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/163) |
+| issue-165 | Textual evidence is markdown (`.md`), never `.txt` — titled, one section per command, output in fenced blocks, linted like every other markdown file | [spec](../specs/issue-165/), PR #168 |
 | issue-11 | Introduced Gherkin scenario docstrings, the `scenarios` command and contract-first API conventions | [spec](../specs/issue-11/), [decision-014](../decisions/decision-014.md) |

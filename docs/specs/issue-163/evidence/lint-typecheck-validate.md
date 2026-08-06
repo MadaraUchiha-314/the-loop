@@ -1,3 +1,9 @@
+# Evidence: lint, type-check, format and schema validation (T4, T5)
+
+Work item: issue-163. Converted from `.txt` to markdown in PR #168, when textual
+evidence became markdown by rule. The recorded output below is unchanged.
+
+```console
 $ make lint       # ruff check cli hooks + markdownlint-cli2 '**/*.md'
 uv run ruff check cli hooks
 All checks passed!
@@ -23,3 +29,4 @@ VALID   .the-loop/collaborators.yaml
 VALID   skills/the-loop/templates/collaborators.yaml
 VALID   .the-loop/cli-config.yaml
 VALID   skills/the-loop/templates/cli-config.yaml
+```

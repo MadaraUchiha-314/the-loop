@@ -58,9 +58,9 @@ overrides: {}
 
 | Row | Evidence | Path under `evidence/` |
 |-----|----------|------------------------|
-| T1, T8 | pytest summary for the new test plus the full suite | `unit.txt` |
-| T10 | `make validate` output (both configs against the schema) | `validate.txt` |
-| all | `make lint` + `make typecheck` + `make format-check` output | `checks.txt` |
+| T1, T8 | pytest summary for the new test plus the full suite | `unit.md` |
+| T10 | `make validate` output (both configs against the schema) | `validate.md` |
+| all | `make lint` + `make typecheck` + `make format-check` output, plus the-loop's own gate | `checks.md` |
 | T11 | the manual read-through finding | Verification results, below |
 
 ## Verification activities
@@ -76,12 +76,12 @@ overrides: {}
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| T1 | `uv run --project cli python -m pytest -q cli/tests/test_writing_parity.py` | 21 passed | [`evidence/unit.txt`](evidence/unit.txt) |
-| T1/T8 | `make test` | 1349 passed, 1 skipped | [`evidence/unit.txt`](evidence/unit.txt) |
-| T10 | `make validate` + a config with `writingStyle` removed, an unknown key under `writingStyle`, and a typo'd formal register | both configs valid; the pre-issue-165 shape still validates; the unknown key and the typo'd register are both rejected | [`evidence/validate.txt`](evidence/validate.txt) |
-| all | `make lint`, `make format-check`, `make typecheck` | ruff clean · markdownlint 0 errors over 420 files · pyright 0 errors | [`evidence/checks.txt`](evidence/checks.txt) |
+| T1 | `uv run --project cli python -m pytest -q cli/tests/test_writing_parity.py` | 21 passed | [`evidence/unit.md`](evidence/unit.md) |
+| T1/T8 | `make test` | 1349 passed, 1 skipped | [`evidence/unit.md`](evidence/unit.md) |
+| T10 | `make validate` + a config with `writingStyle` removed, an unknown key under `writingStyle`, and a typo'd formal register | both configs valid; the pre-issue-165 shape still validates; the unknown key and the typo'd register are both rejected | [`evidence/validate.md`](evidence/validate.md) |
+| all | `make lint`, `make format-check`, `make typecheck` | ruff clean · markdownlint 0 errors over 420 files · pyright 0 errors | [`evidence/checks.md`](evidence/checks.md) |
 | T11 | read `SKILL.md` and `templates/design.md` as a reviewer | the contract is visible where the artifact is authored (first lines of the template) and names the skill governing it; no need to open the spec | this table |
-| — | the budget experiment that preceded the current design | recorded for the record: it is what showed the numbers to be unworkable | [`evidence/budgets.txt`](evidence/budgets.txt) |
+| — | the budget experiment that preceded the current design | recorded for the record: it is what showed the numbers to be unworkable | [`evidence/budgets.md`](evidence/budgets.md) |
 
 **T11 finding, and what it cost the design.** Verification measured every artifact this PR
 ships against the budgets it then proposed, and three of them did not hold: `tasks: 200`
@@ -89,7 +89,7 @@ was unreachable from its own 274-word empty template, `requirements.md` ran 682/
 `design.md` 1017/900. The numbers were corrected and a sixth assertion added to keep
 budgets reachable — and then the owner rejected budgets outright on PR #168, for the
 underlying reason those corrections were evidence of. Length limits are gone; the record
-of the experiment is [`evidence/budgets.txt`](evidence/budgets.txt) and
+of the experiment is [`evidence/budgets.md`](evidence/budgets.md) and
 [decision-061](../../decisions/decision-061.md) §D2.
 
 **Not executed:** none. Every in-scope activity ran, and re-ran after the budgets were
