@@ -97,6 +97,18 @@ behaviour it has today, so that the re-architecture never regresses my workflows
    preserved — tests are adapted to exercise the service path (or the core layer
    directly) rather than deleted — and the config resolution order
    (`--config` / `$THE_LOOP_CLI_CONFIG` / repo-relative / home) SHALL be unchanged.
+5. WHERE a command's deliverable **is** a local process, or must survive the
+   absence of a service, it SHALL stay local, and that SHALL be recorded as
+   inherent rather than transitional: `sessions attach` (it replaces the caller's
+   terminal with tmux), `sessions reset` (recovery must work when what is broken is
+   the thing being recovered), `poll start` / `gh-webhook start` (foreground
+   daemons that cron and systemd units depend on — the same daemons SHALL still be
+   startable and stoppable **detached** through the API), and the bootstrap
+   commands (`install`, `upgrade`, `migrate-config`, `service *`, `--version`),
+   which precede the existence of any service.
+6. WHEN a routed command reports the outcome of an operation THEN the words it
+   prints SHALL come from the core facade, not from the command, so that the CLI,
+   the HTTP API and the MCP tools cannot describe the same operation differently.
 
 ### Requirement 3 — durable API layer
 
@@ -156,6 +168,11 @@ directly.
    as tools, reusing the core/API layer — MCP SHALL be an interface adapter, not a
    reimplementation — and the MCP transport SHALL be **HTTP only, no stdio** (owner
    decision, [PR #162 review](https://github.com/MadaraUchiha-314/the-loop/pull/162#discussion_r3718678832)).
+   The protocol itself SHALL come from the **official MCP Python SDK** — the-loop
+   SHALL NOT carry its own protocol implementation (owner decision, PR #162: _"Don't
+   want to maintain custom implementation. Follow official SDKs."_) — and the
+   endpoint SHALL answer on `/mcp` **without a redirect**, so a client that does not
+   follow redirects on POST can reach it.
 2. WHEN the MCP surface is defined THEN each tool SHALL map to a core capability
    with the same access model (no in-app auth; the gateway's job) and the same
    event-log observability as the HTTP API.
@@ -202,13 +219,18 @@ managing work items is easy without shell access.
 
 ## Non-functional requirements
 
-- **Minimalism / dependency budget.** The base CLI install currently has one required
-  runtime dependency (`pyyaml`; `slack-sdk` as an extra). The API service and MCP
-  server SHALL NOT change the base install's dependency footprint: anything beyond
-  stdlib SHALL be an optional extra (as `slack` already is), and every new dependency
-  SHALL be justified in `design.md` (`reference/minimalism.md`). The UI's frontend
-  toolchain (Vite/TypeScript, owner-sanctioned) is scoped to `ui/` and does not
-  affect the Python package's footprint.
+- **Minimalism / dependency budget.** ~~Anything beyond stdlib SHALL be an optional
+  extra (as `slack` already is).~~ **Superseded on owner review**
+  ([PR #162](https://github.com/MadaraUchiha-314/the-loop/pull/162)): _"No extras
+  pls. It creates a nightmare when installing. All deps get installed when one
+  installs the-loopy-one."_ The package SHALL have **no optional extras**: every
+  dependency the CLI needs to do anything it documents — including hosting the
+  control-plane service and serving MCP — SHALL be a required dependency, so one
+  `pip install the-loopy-one` is always sufficient and nothing degrades silently
+  when an extra was forgotten. Previously published extra names SHALL remain as
+  empty no-ops so pinned install lines keep resolving. Every dependency SHALL still
+  be justified in `design.md` (`reference/minimalism.md`) — the ladder now decides
+  "required or absent" rather than "required or optional".
 - **Observability.** dev == runtime logging; every API/MCP operation lands in the
   structured event log and is queryable via `the-loop events`.
 - **Testing.** Integration tests carry Gherkin docstrings with `Requirement:` links;
@@ -249,8 +271,8 @@ managing work items is easy without shell access.
   API base it is pointed at, and against a loopback-only service reached from
   elsewhere it simply shows nothing.
 - **Abuse cases (EARS):**
-  1. *(Retired — the service no longer authenticates; the gateway does. See the
-     authentication-model note above.)*
+  1. _(Retired — the service no longer authenticates; the gateway does. See the
+     authentication-model note above.)_
   2. WHEN a request arrives on a non-loopback interface without the explicit
      exposure configuration THEN the system SHALL refuse to serve it (the exposure
      guard, enforced before binding).
@@ -259,11 +281,11 @@ managing work items is easy without shell access.
      SHALL validate inputs against the same rules the CLI enforces today (argv
      lists, no shell; ref shape validation; schema-validated config) and reject
      what fails them.
-  4. *(Superseded with the UI descope: the service ships no browser client and
+  4. _(Superseded with the UI descope: the service ships no browser client and
      sends **no CORS headers at all** — the browser's same-origin default
      therefore denies cross-origin access, which is stricter than the pinned
      allowlist this case originally required. A future UI work item reintroduces
-     a pinned CORS policy with it.)*
+     a pinned CORS policy with it.)_
   5. WHEN MCP tools are invoked by an agent THEN destructive operations SHALL be
      excluded or gated per R5.3, so a prompt-injected agent cannot silently wipe
      state.
@@ -276,7 +298,7 @@ managing work items is easy without shell access.
 ## Out of scope
 
 - **Agentic management of work items** — explicitly future scope in the issue.
-- Changing what any core capability *does* (poller semantics, routing policy, graph
+- Changing what any core capability _does_ (poller semantics, routing policy, graph
   gates); this is a re-layering.
 - New ticketing providers (Jira APIs beyond what exists today).
 - Hosting/deployment of the API service beyond the operator's machine (no SaaS).
@@ -292,9 +314,10 @@ managing work items is easy without shell access.
    required deps) vs. an optional-extra framework — where does the minimalism ladder
    land?~~ **Answered** (owner, [PR #162 review](https://github.com/MadaraUchiha-314/the-loop/pull/162#discussion_r3718668715)):
    a framework (e.g. FastAPI) is acceptable; the design phase picks one on its
-   merits. The base install keeps its footprint — the framework lands behind an
-   optional extra.
-2. ~~Should the CLI *prefer* the service when one is running (auto-discovery), or only
+   merits. ~~The base install keeps its footprint — the framework lands behind an
+   optional extra.~~ Superseded later in the same review: there are no extras, and
+   the framework is a required dependency (see §Non-functional requirements).
+2. ~~Should the CLI _prefer_ the service when one is running (auto-discovery), or only
    target it when explicitly told to?~~ **Answered** (owner,
    [PR #162 review](https://github.com/MadaraUchiha-314/the-loop/pull/162#discussion_r3718672701)):
    the CLI only uses the service — the default and ONLY mode. Folded into R2.2/R2.3.

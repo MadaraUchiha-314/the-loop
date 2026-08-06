@@ -6,6 +6,16 @@ the-loop --version
 the-loop --config path/to/cli-config.yaml <command>   # must precede the subcommand
 ```
 
+## The control plane
+
+Since issue-161 every command below that touches the-loop's state runs **through the
+control-plane service**, which is the single implementation of each capability. It is
+started for you on first use, so nothing here needs setting up first.
+
+| Command | What it does |
+|---------|--------------|
+| [`service`](/cli/commands/service) | Start, stop and inspect the control-plane API service — and the `/mcp` endpoint an agent connects to. |
+
 ## Daemon commands
 
 Long-running or machine-scoped. Their **own** settings come from the
@@ -65,7 +75,7 @@ Consistent across commands:
 |------|---------|
 | `0` | Success |
 | `1` | Ran, and the answer is negative — a failed round, an unmet gate, a stopped run |
-| `2` | Could not run — bad arguments, missing work item, unreadable config |
+| `2` | Could not run — bad arguments, missing work item, unreadable config, or no reachable [service](/cli/commands/service) |
 
 ## Adding one
 

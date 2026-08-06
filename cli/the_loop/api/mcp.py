@@ -34,7 +34,7 @@ from ..core import sessions as core_sessions
 from ..core import workitems as core_workitems
 from .config import service_config
 
-#: Mount point for the SDK's streamable-HTTP app on the control-plane service.
+#: The path the MCP endpoint answers on, exactly — no trailing-slash redirect.
 MCP_PATH = "/mcp"
 
 
@@ -225,7 +225,7 @@ def build_app(cli_config: Optional[dict] = None):
         allowed_hosts += [f"localhost:{port}", "localhost", f"127.0.0.1:{port}"]
     server = build_server(cli_config)
     return server.streamable_http_app(
-        streamable_http_path="/",
+        streamable_http_path=MCP_PATH,
         transport_security=TransportSecuritySettings(
             allowed_hosts=sorted(set(allowed_hosts)),
             allowed_origins=[f"http://{h}" for h in sorted(set(allowed_hosts))],

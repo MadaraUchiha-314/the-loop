@@ -60,27 +60,48 @@ flowchart TD
 
 ## Key decisions (recorded in decision-058)
 
-1. **FastAPI behind a `[service]` extra.** Owner-sanctioned (PR #162). `fastapi` +
-   `uvicorn` live in a new optional extra `the-loopy-one[service]`; the base install
-   keeps exactly `pyyaml` (NFR). A base install can *talk to* a service (stdlib
-   client); *hosting* one needs the extra, and `service start` without it fails
-   closed naming the install line.
+1. **FastAPI, and no extras at all.** Owner-sanctioned (PR #162) for the framework,
+   and then superseded on packaging: *"No extras pls. It creates a nightmare when
+   installing. All deps get installed when one installs the-loopy-one."* `fastapi`,
+   `uvicorn` and the official `mcp` SDK are **required** dependencies, so one
+   `pip install the-loopy-one` can always host a service. The previously published
+   extra names (`[service]`, `[slack]`, `[config]`) survive as empty no-ops so
+   pinned install lines keep resolving. The SDK's floor raises the package to
+   Python 3.10+ (3.9 is EOL).
 2. **Service-only CLI with auto-start.** Every core-capability command routes
    through the HTTP API (R2.2) — no in-process fallback (R2.3). To preserve the
    one-command UX (R2.1), the CLI auto-starts a local service (same discipline as
-   `service start`: pidfile + flock, issue-159's `RunLock`) when none is reachable
-   and the `[service]` extra is installed; `service.autoStart: false` disables it.
-3. **Bootstrap exclusions.** Commands that manage *the installation or the service
-   process itself* stay local, because they must work when no service can exist
-   yet: `install`, `upgrade`, `migrate-config`, `service *`, `--version`.
-   Everything else — work items, sessions, graph/check, events, scenarios,
-   instructions, critics, poller/webhook lifecycle — goes through the API.
-4. **MCP implemented as a minimal JSON-RPC endpoint on the same app** (`/mcp`,
-   streamable-HTTP style: POST of `initialize` / `tools/list` / `tools/call`,
-   plain-JSON responses). HTTP only, no stdio (owner decision). The minimalism
-   ladder stops before the `mcp` SDK: the SDK would add httpx/sse-starlette et al.
-   for a protocol subset that is ~150 lines over FastAPI, and the tool registry is
-   *generated from the same core surface* the REST routers use (R1.4, R5.1).
+   `service start`: pidfile + flock, issue-159's `RunLock`) when none is reachable;
+   `service.autoStart: false` disables it. There is nothing to install first.
+3. **Local-by-nature exclusions.** Four kinds of command stay local, none of them
+   transitional:
+   - **Bootstrap** — `install`, `upgrade`, `migrate-config`, `service *`,
+     `--version` manage the installation or the service process itself, so they
+     must work when no service can exist yet.
+   - **`sessions attach`** replaces the caller's terminal with tmux via `execvp`.
+     There is nothing to send over HTTP: the deliverable *is* the local process.
+   - **`sessions reset`** is the destructive recovery action, and recovery must
+     work when the thing being recovered is what is broken.
+   - **`poll start` / `gh-webhook start`** run a daemon in the **foreground**,
+     which is exactly what cron units and systemd `Type=simple` services depend
+     on. The same daemons start and stop *detached* through `/api/v1/daemons` —
+     `the_loop.daemon_entry` is the core-owned entry point that path spawns, so
+     there is still one daemon startup sequence.
+
+   Everything else routes: work items, sessions (register/list/close and the four
+   control verbs), graph (show/status/advance/complete/force/run), check, events,
+   scenarios, instructions and critic (list/run).
+4. **MCP on the official Python SDK**, mounted on the same app at `/mcp`. The
+   hand-rolled JSON-RPC subset this design originally chose was rejected on owner
+   review: *"I hope we are using the official python SDK for MCP… Don't want to
+   maintain custom implementation. Follow official SDKs."* The protocol is entirely
+   `mcp.server.MCPServer`'s; `mcp.py` is only the binding — one thin function per
+   tool, registered with `add_tool`, whose input schema the SDK derives from the
+   annotations. Transport stays streamable HTTP only, no stdio (owner decision),
+   and the SDK's DNS-rebinding protection is left on, pinned to the configured
+   bind host. The SDK app is mounted at the app **root** with its own path set to
+   `/mcp`, so `/mcp` answers directly rather than 307-ing to `/mcp/` — a redirect
+   some MCP clients will not follow on a POST.
 5. **UI: descoped from this work item** (owner decision on PR #162 — services,
    CLI and MCP only). The Vite + vanilla-TypeScript design that was built here is
    recorded in this file's history for the follow-up UI work item; nothing under
@@ -157,7 +178,8 @@ picks up from the recorded R6 scope.
 |-----------|-----------|
 | Non-loopback bind without `service.exposed: true` | `service start` refuses to boot |
 | Malformed ref / repo path | 400/422 from validation, core never invoked |
-| Service unreachable from CLI, auto-start off/impossible | exit non-zero, message names `service start` / the `[service]` extra |
+| Service unreachable from CLI, auto-start off/impossible | exit 2, message names `the-loop service start` — never an in-process fallback |
+| Core rejects a routed call (bad ref, duplicate registration) | 400 → the CLI's exit 2, rendering core's own words |
 | Unknown MCP method/tool | JSON-RPC error, no side effect |
 | Config schema violation | refused with the replacement named (existing migration discipline) |
 
@@ -218,9 +240,13 @@ history for the follow-up UI work item to resurrect.
 
 | Dependency | Where | Why not less |
 |------------|-------|--------------|
-| `fastapi`, `uvicorn` | `[service]` extra | Owner-sanctioned; contract generation, validation, ASGI lifecycle vs. re-implementing on `http.server` |
+| `fastapi`, `uvicorn` | required | Owner-sanctioned; contract generation, validation, ASGI lifecycle vs. re-implementing on `http.server` |
+| `mcp` (official SDK) | required | Owner-directed: follow official SDKs rather than maintain a protocol implementation |
+| `slack-sdk` | required | Was the `[slack]` extra; extras are gone, and it has no dependencies of its own |
 | `httpx` | dev/test only | required by Starlette's TestClient |
-| — (MCP SDK rejected) | — | ~150-line JSON-RPC subset over the existing app beats a multi-dep SDK (decision-058) |
+
+Nothing is optional: extras were removed on owner review, so the ladder's rungs are
+"required" or "not present at all".
 
 ## Review comments
 

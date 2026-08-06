@@ -13,6 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from the_loop.api.app import create_app
+from the_loop.api.mcp import MCP_PATH
 from the_loop.state import layout_from_config, legacy_layout
 from the_loop.workitem import WorkItemStore
 
@@ -55,7 +56,7 @@ class McpClient:
         headers = dict(HEADERS)
         if getattr(self, "session_id", None):
             headers["mcp-session-id"] = self.session_id
-        return self._client.post("/mcp/", json=message, headers=headers)
+        return self._client.post(MCP_PATH, json=message, headers=headers)
 
     def request(self, method, params=None, id_=99):
         message = {"jsonrpc": "2.0", "id": id_, "method": method}
@@ -147,3 +148,33 @@ def test_unknown_tool_is_an_error(mcp):
     client, _ = mcp
     payload = client.request("tools/call", {"name": "sessions_reset", "arguments": {}})
     assert "error" in payload or payload["result"]["isError"] is True
+
+
+def test_the_endpoint_answers_on_mcp_without_a_redirect():
+    """
+    Feature: MCP over HTTP
+      Scenario: a client posts to the documented endpoint URL
+        Given the control-plane service
+        When a client POSTs an initialize request to /mcp exactly
+        Then it is answered there — never 307'd to /mcp/, which a client that
+             does not follow redirects on POST would fail to complete
+
+    Requirement: docs/specs/issue-161/requirements.md R5.1
+    """
+    with TestClient(create_app({}), base_url=BASE_URL, follow_redirects=False) as http:
+        response = http.post(
+            MCP_PATH,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": {"name": "probe", "version": "1"},
+                },
+            },
+            headers=HEADERS,
+        )
+    assert response.status_code == 200
+    assert _sse_payloads(response.text)[0]["result"]["serverInfo"]["name"] == "the-loop"

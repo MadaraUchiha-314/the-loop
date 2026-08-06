@@ -106,7 +106,7 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
 
     The official MCP SDK's streamable-HTTP app is mounted at ``/mcp``; its
     session manager needs its own lifespan running, so this app adopts it."""
-    from .mcp import MCP_PATH, build_app as build_mcp_app
+    from .mcp import build_app as build_mcp_app
 
     mcp_app = build_mcp_app(cli_config)
 
@@ -124,7 +124,6 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
         openapi_url="/api/openapi.json",
         lifespan=lifespan,
     )
-    app.mount(MCP_PATH, mcp_app)
 
     @app.exception_handler(ValueError)
     async def _value_error(request: Request, exc: ValueError):
@@ -342,5 +341,12 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
             timeout=body.timeout,
             cwd=body.cwd,
         )
+
+    # Mounted last, at the root, so the MCP app owns exactly ``/mcp`` and every
+    # /api/v1 route above still wins. Mounting it *at* ``/mcp`` instead would
+    # make the SDK's own path ``/mcp/`` and leave ``/mcp`` a 307 — a redirect
+    # some MCP clients will not follow on a POST, so the URL an operator pastes
+    # into Claude or Cursor would work in one client and not the next.
+    app.mount("/", mcp_app)
 
     return app

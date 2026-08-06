@@ -72,34 +72,49 @@ overrides: {}
 - [x] 8. CLI client seam — `the_loop/client/`
   - Stdlib urllib client: base URL + token resolution, error→exit-code mapping,
     auto-start (config-gated) when unreachable, fail-closed message naming
-    `service start` / the `[service]` extra otherwise.
+    `the-loop service start` otherwise (there is no extra to install).
   - _Depends on:_ 7
   - _Requirements:_ R2.2, R2.3
   - _Test:_ `cli/tests/test_client.py` — unreachable + autoStart off → clear
     error, non-zero exit; unreachable + autoStart on → boots then succeeds
-- [ ] 9. Rewire core-capability commands through the client
-  - `sessions` (register/list/attach/close/start/pause/resume/stop), `check`,
-    `graph`, `events`, `scenarios`, `instructions`, `critic`, `poll`,
-    `gh-webhook` → client calls; flags/output/exit codes unchanged (R2.1);
+- [x] 9. Rewire core-capability commands through the client
+  - **Complete** (owner decision on PR #162: _"Implement everything in this PR
+    itself"_). Routed: `sessions` (register/list/close/start/pause/resume/stop),
+    `check`, `graph` (show/status/advance/complete/force/run), `events`,
+    `scenarios`, `instructions`, `critic` (list/run). Flags, wording and exit
+    codes unchanged (R2.1) — the CLI renders the `messages`/`exitCode` core
+    returns, so there is one set of words per operation.
+  - `client/routing.py` gained `routed()` (the decision + the connection) and
+    `service_error()` (HTTP status → exit code), so no command re-types either.
+  - Local **by nature**, not transitionally: `sessions attach` (execs tmux onto
+    the caller's terminal), `sessions reset` (recovery must work when nothing is
+    running), `poll start` / `gh-webhook start` (foreground daemons, which cron
+    and systemd depend on — the detached path is `/api/v1/daemons`), and the
     bootstrap commands (`install`, `upgrade`, `migrate-config`, `service`,
-    `--version`) stay local; `sessions reset` stays local-only (R5.3 rationale).
-  - **Progress:** `check` and `events` route through the service (the pattern:
-    routing seam + fail-closed + auto-start + `--file` local escape). Remaining
-    commands are the same mechanical seam; every one already _serves_ through
-    the API/MCP (the service-side surface is complete) — the outstanding half
-    is only their CLI entry points switching transport.
+    `--version`).
+  - New API operations this needed: `graphShow` (carries the graph _and_ the
+    repo's spec root, so `check --all` stops building a local runtime),
+    `registerSession`, `closeSession`.
   - _Depends on:_ 6, 8
   - _Requirements:_ R2.1, R2.2, R1.3
-  - _Test:_ existing command tests adapted to run against an in-process test
-    service; coverage preserved (R2.4)
-- [x] 10. MCP endpoint — `/mcp` (HTTP only)
-  - Minimal JSON-RPC subset (initialize, tools/list, tools/call) on the same
-    app; tool registry generated from the core surface; exclusions per design
-    (`sessions reset`, `graph force`); same auth + `mcp.*` event-log records.
+  - _Test:_ `cli/tests/test_service_lifecycle_integration.py` — every routed
+    command against a **live** service, plus fail-closed with auto-start off;
+    the command suites keep their coverage on the in-process core seam (R2.4),
+    and R2.5's local-by-nature list is what those integration tests do not cover
+- [x] 10. MCP endpoint — `/mcp` (HTTP only), on the **official** SDK
+  - Owner decision on PR #162: _"I hope we are using the official python SDK for
+    MCP… Don't want to maintain custom implementation."_ The hand-rolled JSON-RPC
+    subset was replaced by `mcp.server.MCPServer`; `api/mcp.py` is now only the
+    binding (one thin function per tool, `add_tool`, schemas derived from
+    annotations). Streamable HTTP, no stdio; the SDK's DNS-rebinding protection
+    stays on, pinned to the configured bind host. Mounted at the app root with
+    its path set to `/mcp`, so `/mcp` answers directly instead of 307-ing.
+  - Exclusions unchanged (`sessions reset`, `graph force`).
   - _Depends on:_ 6
   - _Requirements:_ R5.1, R5.2, R5.3; abuse case 5
-  - _Test:_ `cli/tests/test_mcp_integration.py` — tools/list matches registry;
-    tools/call round-trips; excluded tools absent; unauth → JSON-RPC error
+  - _Test:_ `cli/tests/test_mcp_integration.py` — drives the **real** protocol
+    (initialize → initialized → tools/list → tools/call); excluded tools absent;
+    `/mcp` answers without a redirect
 - [x] 11. ~~UI scaffold — `ui/` (Vite + TypeScript)~~ **DESCOPED** (owner
   decision on PR #162: services, CLI and MCP only). Built, then removed from
   this PR; deferred with R6 to the follow-up UI work item.
@@ -108,9 +123,12 @@ overrides: {}
 - [x] 13. ~~`the-loop ui dev|build` + CI~~ **DESCOPED** (same decision; the CI
   `ui` job and the command were removed with the frontend).
 - [x] 14. Docs + capability folds
-  - `docs/cli/commands/service.md` page; `docs/config/cli/service-options.md`;
-    capability docs: update `cli.md`, mint `control-plane.md`, update index;
-    parity tests stay green. (The `ui.md` page was removed with the UI descope.)
+  - `docs/cli/commands/service.md` page — including **how to install, run and
+    connect an agent** (Claude Code, Claude Desktop, Cursor) to `/mcp`, which the
+    owner asked for on PR #162; `docs/config/cli/service-options.md`; capability
+    docs: update `cli.md`, mint `control-plane.md`, update index; the extras
+    pages rewritten now that there are none. (The `ui.md` page was removed with
+    the UI descope.)
   - _Depends on:_ 9, 10, 13
   - _Requirements:_ NFR Docs
   - _Test:_ existing docs/config parity tests

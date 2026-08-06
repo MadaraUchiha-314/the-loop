@@ -23,6 +23,16 @@ the-loop sessions stop   --work-item github:OWNER/REPO#N [--no-comment]
 Every subcommand accepts `--registry-dir`, defaulting to
 [`routing.registryDir`](/config/cli/routing-options#registrydir).
 
+::: warning `--registry-dir` / `--portable-dir` and the service
+Since issue-161 these commands run through the
+[control-plane service](/cli/commands/service), which reads **its own** configured
+state directories. The two path flags therefore only take effect on the in-process
+path the test suite uses; to point real invocations at other state, point the
+service at it — `the-loop --config other.yaml service start`, or set
+`routing.registryDir` / `state.root` in the config the service runs on. Arbitrary
+filesystem paths are deliberately not accepted over HTTP.
+:::
+
 ## The registry
 
 One human-inspectable JSON file per session under `<registryDir>` (default

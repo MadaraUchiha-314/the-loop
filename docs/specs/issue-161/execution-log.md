@@ -140,6 +140,66 @@ status: in-progress
 - **Checkpoint/tests:** `make check` — full CI parity, green.
 - **Next:** tier-4 named security sign-off; the T9 remainder decision.
 
+### 2026-08-06 — no extras, official MCP SDK, and T9 completed
+
+- **Phase:** needs-review (review feedback)
+- **Owner decisions (PR #162 review), four in one comment thread:**
+  1. _"No extras pls. It creates a nightmare when installing. All deps get
+     installed when one installs the-loopy-one."_
+  2. _"I hope we are using the official python SDK for MCP … Don't want to
+     maintain custom implementation. Follow official SDKs."_
+  3. On T9 being partial: _"Implement everything in this PR itself."_
+  4. On the session/daemon control adapter: _"Do it in this PR itself."_
+- **Did (1):** `fastapi`, `uvicorn`, `mcp` and `slack-sdk` became **required**
+  dependencies; `[service]`, `[slack]` and `[config]` remain as empty no-ops so
+  pinned install lines keep resolving. The MCP SDK requires Python 3.10+, so
+  `requires-python` moved from `>=3.9` (EOL October 2025) — flagged BREAKING in
+  its commit. The client's fail-closed message no longer names an install line,
+  because an unreachable service is now only ever a lifecycle problem.
+- **Did (2):** replaced the hand-rolled JSON-RPC endpoint with the official SDK.
+  `api/mcp.py` is now the binding only — one thin function per tool, registered
+  with `add_tool`, schemas derived from the annotations — and the SDK's
+  DNS-rebinding protection is configured rather than reimplemented. The SDK app
+  is mounted at the app **root** with its own path set to `/mcp`, so `/mcp`
+  answers directly; mounting it _at_ `/mcp` left the real endpoint on `/mcp/` and
+  a 307 on `/mcp`, which an MCP client that does not follow redirects on POST
+  would fail to complete. `test_mcp_integration.py` now drives the real protocol
+  (initialize → initialized → tools/list → tools/call).
+- **Did (4):** the control verbs and daemon lifecycle moved **into** core.
+  `core/sessions.py` owns register, close and start/pause/resume/stop end to end;
+  it never prints, returning the lines it would have printed as tagged `messages`
+  plus an `exitCode`, so the CLI is a renderer and all three surfaces produce the
+  same words. `core/daemons.py` stops a daemon in-process (SIGTERM +
+  `RunLock.wait_until_free`) and starts one via the new `the_loop.daemon_entry`
+  module instead of shelling back into the-loop's own CLI verb. With no adapter
+  left, `THE_LOOP_SERVICE_LOCAL` has no loop to prevent and is documented as what
+  it now is: a test seam.
+- **Did (3):** every remaining core-capability command routes — `sessions`
+  (register/list/close/start/pause/resume/stop), `graph`
+  (show/status/advance/complete/force/run), `scenarios`, `instructions`, `critic`
+  (list/run), joining `check` and `events`. New API operations: `graphShow`
+  (carrying the repo's spec root so `check --all` stops building a local
+  runtime), `registerSession`, `closeSession`. `client/routing.py` gained
+  `routed()` and `service_error()` so the routing decision and the HTTP-status →
+  exit-code mapping are written once.
+- **Judgment call, flagged:** `poll start` and `gh-webhook start` deliberately
+  stay **foreground** process commands, because cron units and systemd
+  `Type=simple` services depend on that; the same daemons start and stop detached
+  through `/api/v1/daemons`. Likewise `sessions attach` (it execs tmux onto the
+  caller's terminal) and `sessions reset` (recovery must work when nothing is
+  running). These are local by nature, not leftovers.
+- **Also:** on the owner's follow-up request, the `service` command page now
+  documents installing and running the service and connecting an agent to `/mcp`
+  from Claude Code, Claude Desktop and Cursor, with the tool table; the extras
+  pages were rewritten now that there are none, and `service` was added to the
+  docs sidebar (it had no entry).
+- **Checkpoint/tests:** `make check` — lint, markdownlint, format, pyright,
+  config validation and 1311 tests, green. Two new integration tests drive the
+  **real** CLI against a **live** service: every routed command end to end, and
+  fail-closed (exit 2, naming `the-loop service start`) with auto-start off.
+- **Next:** tier-4 named security sign-off; whether the shipped `apiSpecs`
+  default should move too (open question on the PR).
+
 ## Review cycles
 
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
@@ -152,6 +212,8 @@ status: in-progress
 | 6 | owner direction (PR #162) | @MadaraUchiha-314 | remove in-app authentication — the gateway owns auth (decision-059); implemented, 1310 tests green | [comment](https://github.com/MadaraUchiha-314/the-loop/pull/162#issuecomment-5194359297) |
 | 7 | owner direction (PR #162) | @MadaraUchiha-314 | remove the UI from this PR — services, CLI and MCP only; R6/R4.2 descoped to a follow-up work item, frontend + CORS removed | PR #162 |
 | 8 | owner review (PR #162) | @MadaraUchiha-314 | move the API contract under `docs/` as `api-specs`; done via a repo-local `apiSpecs.rest.dir` override, shipped default untouched | PR #162 |
+| 9 | owner direction (PR #162) | @MadaraUchiha-314 | four directives: no extras; official MCP SDK; finish T9; fold the control adapter into core. All four implemented, 1311 tests green | PR #162 |
+| 10 | owner request (PR #162) | @MadaraUchiha-314 | document installing/running the service and wiring `/mcp` into Claude and Cursor; `docs/cli/commands/service.md` rewritten and added to the sidebar | PR #162 |
 
 ## Security review (gate)
 

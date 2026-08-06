@@ -218,10 +218,13 @@ self-learning/ML capabilities.
   declared key is undocumented, or when any other module opens the file.
 
 - `the-loop service start|stop|status` SHALL manage the control-plane API service
-  (issue-161); core-capability commands SHALL execute through that service as
-  their only mode (`check` and `events` route today; the rest are being
-  switched — see [control-plane](control-plane.md), the capability that owns
-  this behaviour).
+  (issue-161); every core-capability command SHALL execute through that service as
+  its only mode. The exceptions are inherent, not transitional: `sessions attach`
+  hands the terminal to tmux, `sessions reset` must work when nothing is running,
+  `poll start` / `gh-webhook start` run a daemon in the foreground for cron and
+  systemd, and the bootstrap commands (`install`, `upgrade`, `migrate-config`,
+  `service`, `--version`) precede any service. See
+  [control-plane](control-plane.md), the capability that owns this behaviour.
 
 ## Design
 
@@ -233,7 +236,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
-| issue-161 | Re-layered as core → API → clients: `the_loop.core` facade, the control-plane service (`service start\|stop\|status`, `[service]` extra), service-routed `check`/`events`, and the `/mcp` endpoint. The UI was descoped from this work item on owner review | [spec](../specs/issue-161/), [decision-058](../decisions/decision-058.md), [control-plane](control-plane.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/161) |
+| issue-161 | Re-layered as core → API → clients: `the_loop.core` facade, the control-plane service (`service start\|stop\|status`, no extras — it ships in the base install), every core-capability command routed through it, and the `/mcp` endpoint on the official MCP SDK. The UI was descoped from this work item on owner review | [spec](../specs/issue-161/), [decision-058](../decisions/decision-058.md), [control-plane](control-plane.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/161) |
 | issue-156 | Process runner removed; tmux is the only runner (2026-08-05): `sessions start` spawns tmux-hosted sessions unconditionally — there is no configured runner to pick | [spec](../specs/issue-156/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/156) |
 | issue-152 | Added `install` and `upgrade`: one plan-then-execute implementation, two verbs, covering the CLI and the **Claude Code** plugin at user or project scope. Drives the harness's own plugin CLI (probed, not assumed — a marketplace command without a working `plugin install` counts as no surface), falls back to the decision-054 settings keys, detects how the running CLI was installed, and reports every step's argv and outcome — `--dry-run` being the same plan minus the execution. Cursor parked on review and split out as issue-157 | [spec](../specs/issue-152/), [decision-057](../decisions/decision-057.md), [distribution](distribution.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/152) |
 | issue-142 | `webhooks.ghWebhook.routing` promoted to a top-level `routing` through the version-gated config migration (`0.4.0`), and the import seam that expressed the same misfiling removed: `poll` and `sessions` read dispatch policy through `cli_config.load_routing_config` instead of importing the webhook command's helper. A relocation only — no option's name, default or behaviour changed | [spec](../specs/issue-142/), [decision-053](../decisions/decision-053.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/142) |

@@ -92,10 +92,10 @@ This is the key that replaced the three `ghBinary` declarations.
 - **Type:** `'auto' | 'sdk' | 'webhook'`
 - **Default:** `sdk`
 
-- `sdk` — the official `slack-sdk`. Zero required dependencies of its own, but it is an
-  **optional extra**: `pip install "the-loopy-one[slack]"`.
-- `webhook` — a raw POST to an incoming-webhook URL. No dependency at all, so the base
-  install stays a one-package install.
+- `sdk` — the official `slack-sdk`, a required dependency since the extras were removed
+  (owner decision, PR #162), so it is always present.
+- `webhook` — a raw POST to an incoming-webhook URL, using nothing but the standard
+  library.
 
 ### `slack.urlEnv`
 

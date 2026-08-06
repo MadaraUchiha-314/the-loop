@@ -8,9 +8,10 @@
 
 the-loop's executable functionality is layered as **core → API → clients**: a
 transport-agnostic core facade (`the_loop.core`, one module per capability) is the
-single implementation; the API service (`the_loop.api`, FastAPI behind the
-`[service]` extra) exposes it at `/api/v1` plus an MCP endpoint at `/mcp`; the CLI
-and an agent host are thin clients of that surface.
+single implementation; the API service (`the_loop.api`, FastAPI) exposes it at
+`/api/v1` plus an MCP endpoint at `/mcp`; the CLI and an agent host are thin
+clients of that surface. Everything needed to host the service ships with the
+package — there are no install extras (owner decision, PR #162).
 
 ## Current behaviour
 
@@ -25,25 +26,36 @@ and an agent host are thin clients of that surface.
 - The service SHALL carry **no in-app authentication** — a gateway terminates auth
   for any exposed deployment (owner decision, PR #162). Its own boundary SHALL be
   network scoping: it SHALL bind loopback by default and refuse a non-loopback bind
-  unless `service.exposed: true`; CORS SHALL be pinned to `service.ui.origins`. No
+  unless `service.exposed: true`; no CORS headers are sent, so the same-origin
+  default denies cross-origin browser access. No
   credential SHALL be minted, stored, or required.
 - `the-loop service start|stop|status` SHALL manage the service with the issue-159
   lifecycle discipline: the pidfile is the flock, a second start reports `already
-  running`, stop signals and waits. Hosting requires the `[service]` extra
-  (fastapi + uvicorn); the base install keeps exactly `pyyaml`.
+  running`, stop signals and waits. Hosting needs no extra: `fastapi`, `uvicorn`
+  and the official `mcp` SDK are required dependencies, so `pip install
+  the-loopy-one` is always enough to run the service.
 - The service SHALL be the CLI's **only execution path** for core capabilities
   (owner decision, PR #162): a command auto-starts a local service when
   `service.autoStart` allows and otherwise fails closed naming `the-loop service
-  start` and the install line — never an in-process fallback. Bootstrap commands
-  (`install`, `upgrade`, `migrate-config`, `service`, `ui`, `--version`) and the
-  destructive `sessions reset` stay local. `THE_LOOP_SERVICE_LOCAL=1` marks the
-  service's own invocations into its CLI (loop prevention). *(Transitional:
-  `check` and `events` route today; the remaining commands' entry points are being
-  switched over — the service-side surface is complete.)*
-- `/mcp` SHALL serve the MCP interface over **HTTP transport only** (no stdio):
-  `initialize`, `tools/list` and `tools/call` over the same core facade, with the
-  same (no-auth) access model. `sessions reset` (destructive) and `graph force`
-  (requires a human-attributed reason) SHALL NOT be exposed as tools.
+  start` — never an in-process fallback. Every core-capability command routes:
+  `check`, `events`, `graph` (show/status/advance/complete/force/run), `sessions`
+  (register/list/close/start/pause/resume/stop), `scenarios`, `instructions` and
+  `critic` (list/run). Four commands stay local **by nature**: `sessions attach`
+  replaces the caller's terminal with tmux, `sessions reset` is a recovery action
+  that must work when nothing is running, `poll start` / `gh-webhook start` run a
+  daemon in the foreground because cron and systemd units depend on it (the same
+  daemons start and stop *detached* through the API), and the bootstrap commands
+  (`install`, `upgrade`, `migrate-config`, `service`, `--version`) precede any
+  service. `THE_LOOP_SERVICE_LOCAL=1` is a test seam, not an operator switch.
+- The CLI SHALL NOT re-implement any routed operation: commands render the
+  `messages` and `exitCode` the core facade returns, so an operator's `sessions
+  pause` and an agent's `control_session` tool call produce identical words.
+- `/mcp` SHALL serve the MCP interface over **HTTP transport only** (no stdio),
+  built on the **official MCP Python SDK** (`mcp`) rather than a hand-rolled
+  protocol implementation (owner decision, PR #162). The SDK's DNS-rebinding
+  protection stays on, pinned to the hosts the service answers on. `sessions
+  reset` (destructive) and `graph force` (requires a human-attributed reason)
+  SHALL NOT be exposed as tools.
 - Every API operation SHALL land in the event log (`api.request`; tool calls as
   `mcp.call`), queryable via `the-loop events --source service`.
 - A **control-plane UI is not part of this capability yet** (descoped from
@@ -61,4 +73,4 @@ and an agent host are thin clients of that surface.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
-| issue-161 | Capability minted: core facade extracted, API service + OpenAPI contract, loopback-default network posture (no in-app auth — the gateway owns it, decision-059), service lifecycle commands, service-routed CLI (check/events first), HTTP-only MCP endpoint. The UI was descoped on owner review | [spec](../specs/issue-161/), [decision-058](../decisions/decision-058.md), [decision-059](../decisions/decision-059.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/161) |
+| issue-161 | Capability minted: core facade extracted, API service + OpenAPI contract, loopback-default network posture (no in-app auth — the gateway owns it, decision-059), service lifecycle commands, every core-capability command routed through the service, HTTP-only MCP endpoint on the official SDK, no install extras. The UI was descoped on owner review | [spec](../specs/issue-161/), [decision-058](../decisions/decision-058.md), [decision-059](../decisions/decision-059.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/161) |
