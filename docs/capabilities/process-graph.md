@@ -103,10 +103,15 @@ There are exactly **two** runtime concepts and **one** contract between them.
 
 ### Testing is planned and verified as nodes (issue-163)
 
-- **`test-planning`** SHALL sit between `design-approval` and `tasks-breakdown` and
-  produce `testing-plan.md`, gating on the artifact being locked and carrying non-empty
+- **`test-planning`** SHALL sit between `design` and `design-approval` and produce
+  `testing-plan.md`, gating on the artifact being locked and carrying non-empty
   **Test matrix**, **Verification environment**, **Evidence plan** and **Verification
-  results** sections. The results heading is gated at *planning* time deliberately:
+  results** sections. Placing it *before* the human gate means **one approval covers
+  `design.md` and the plan derived from it** — the plan gets human review without a stop
+  of its own, and is still locked before the `tasks.md` that references its rows.
+  `design-approval` SHALL record feedback into **both** artifacts, because a reviewer's
+  note about the test matrix belongs in the plan rather than filed under the design, and
+  `changes-requested` SHALL return to `design`, which re-derives the plan. The results heading is gated at *planning* time deliberately:
   `validate-artifacts` treats an empty required section as a finding, so the heading is
   authored up front holding "not yet executed" and the verification node fills a section
   rather than inventing one.

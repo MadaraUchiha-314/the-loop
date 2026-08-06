@@ -15,12 +15,12 @@ status: in-progress
 | Phase | Entered | Reviewed/approved by | Notes |
 |-------|---------|----------------------|-------|
 | requirements-definition | 2026-08-06 | *pending — on the PR* | Six requirements drawn from the ticket's six bullets. Risk tier raised to 4 by `autonomy.inferFromChange`: the change touches `.the-loop/harness-config.yaml` and `**/*schema*`, both `autonomy.sensitivePaths`. |
-| design | 2026-08-06 | *pending — on the PR* | Six decisions (D1–D6); all three open questions from requirements resolved. Two nodes, one new artifact, no new runtime concepts. |
+| design | 2026-08-06 | *pending — on the PR* | Six decisions (D1–D6); all three open questions from requirements resolved. Two nodes, one new artifact, no new runtime concepts. D1/D2 revised on PR #166: the plan is reviewed at the design gate. |
 | test-planning | 2026-08-06 | *pending — on the PR* | 15-row matrix, 7 applicable + 8 `n/a`-with-reason. This work item is the first to carry the artifact it introduces. |
 | tasks-breakdown | 2026-08-06 | *pending — on the PR* | 11 tasks; a 12th (the chain-semantics fix, T11) was added during implementation, see below. |
 | implementation | 2026-08-06 | — | All tasks complete. |
 | verification | 2026-08-06 | — | All 8 planned activities executed and ticked; results + evidence in `testing-plan.md`. |
-| needs-review | 2026-08-06 | *pending* | Suite 1326 passed / 1 skipped; ruff, pyright, markdownlint, schema validation clean. Tier 4 (`human-approves-pr`) plus a named human security sign-off (`security.review.humanSignOffMinTier: 4`). |
+| needs-review | 2026-08-06 | *pending* | Suite 1328 passed / 1 skipped; ruff, pyright, markdownlint, schema validation clean. Tier 4 (`human-approves-pr`) plus a named human security sign-off (`security.review.humanSignOffMinTier: 4`). |
 | complete | | | |
 
 ## Pull requests
@@ -124,6 +124,36 @@ status: in-progress
   - **`uv.lock`** — accepted.
 - **Checkpoint/tests:** no code change; `make lint` clean.
 
+### 2026-08-06 — PR review: one gate for the design and the testing plan
+
+- **Phase:** needs-review
+- **Did:** Owner asked on [PR #166](https://github.com/MadaraUchiha-314/the-loop/pull/166)
+  whether `testing-plan.md` could be produced with `design.md` so the design approval gate
+  also covers the plan. Yes — implemented as a **reorder rather than a merge**:
+  `design → test-planning → design-approval → tasks-breakdown`.
+  - The plan is still its own node, so it keeps its `phase`, its `loop:test-planning`
+    label and a `validate-artifacts` call whose `sections:` list is about *that* artifact.
+    Folding it into the `design` node (the literal suggestion) would have given one
+    sections list for two files, so a missing **Test matrix** and a missing
+    **Architecture** would be indistinguishable in the block message.
+  - `design-approval` now declares `record-feedback` **twice**, into `design.md` and into
+    `testing-plan.md`: a reviewer's note about the test matrix belongs in the plan, and
+    feedback travelling with the document it concerns is what the hook exists for.
+  - `changes-requested` returns to **`design`**, not to `test-planning`, so a changed
+    design re-derives the plan on the way back through — the plan can never be approved
+    against a design that moved under it.
+  - Nothing in the config, schema, manifest or template needed to change: node
+    *declaration* order still puts `test-planning` between `design` and `tasks-breakdown`,
+    which is all P4 reads, and `design-approval` carries no phase.
+- **Spec updated, not re-stated:** requirements R1.1 / out-of-scope / open question 2,
+  design D1–D2, decision-060 (D1, D2 and a new rejected alternative), the skill, the
+  workflow and testing references, `create-design` / `create-testing-plan` / `work-on`,
+  and three capability docs.
+- **Checkpoint/tests:** three new assertions in `TestTestingIsPlannedAndVerifiedAsNodes`
+  (the edge order, the `changes-requested` target, both feedback targets) — red→green.
+  Full suite **1328 passed, 1 skipped**; lint, typecheck, format and validate clean.
+  Evidence re-captured from this second pass.
+
 ### 2026-08-06 — self-review and the ready-to-ship gate
 
 - **Phase:** needs-review
@@ -206,12 +236,12 @@ Summarised from [`testing-plan.md`](testing-plan.md) § Verification results (th
 
 | Requirement | Proved by | Result |
 |---|---|---|
-| R1 — the plan is a first-class, locked artifact | `test-planning` node + P1–P3 parity + 4 integration scenarios | pass |
+| R1 — the plan is a first-class, locked artifact, reviewed at the design gate | `test-planning` node + P1–P3 parity + 4 integration scenarios + the three shared-gate assertions | pass |
 | R2 — the matrix records a decision per testing type | the bundled template's 11-row catalogue and the `n/a`-with-a-reason rule; this work item's own 15-row matrix is the worked example | pass (review-enforced by design, D5) |
 | R3 — verification is a node executed against the plan | `verification` node, `checkmarks: complete` gate, 3 integration scenarios, `implementation → verification` reachability | pass |
 | R4 — evidence is captured, not described | three committed evidence files under `evidence/`, referenced per activity in the results table | pass |
 | R5 — facilitate without owning | no runner, orchestrator or dependency added; the environment is a declared markdown section | pass |
 | R6 — one process, described once | P4 parity over both harness configs; `SKILL.md` and `reference/workflow.md` render the graph rather than redefining it; stage entries added for both new stages | pass |
 
-Suite: **1326 passed, 1 skipped** (1322 before). ruff, pyright, `ruff format --check`,
+Suite: **1328 passed, 1 skipped** (1322 before). ruff, pyright, `ruff format --check`,
 markdownlint (406 files) and `scripts/validate_config.py` all clean.

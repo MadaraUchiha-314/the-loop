@@ -7,9 +7,16 @@ conventions and the API-contract conventions (issue #11) so the essence is not l
 ## The testing plan (`testing-plan.md`) — phase `test-planning`
 
 A work item is only *done* when the-loop can **prove** it is done. The proof is planned
-as a first-class artifact, derived from the approved requirements and design and locked
-before `tasks.md` is written — each task's `_Test:_` names a row of the plan's matrix, so
-the DAG and the plan cannot describe different work.
+as a first-class artifact, derived from `design.md` and locked before `tasks.md` is
+written — each task's `_Test:_` names a row of the plan's matrix, so the DAG and the plan
+cannot describe different work.
+
+**It is reviewed with the design, not separately.** The `test-planning` node sits between
+`design` and `design-approval`, so the one human gate approves `design.md` and the plan
+together and `record-feedback` writes the reviewer's notes into **both** — a note about
+the test matrix belongs in the plan, not filed under the design. `changes-requested`
+returns to `design`, which re-derives the plan on the way back through. The plan is a
+visible phase (`loop:test-planning`) without being an extra stop.
 
 Authored from `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/testing-plan.md`. The
 `test-planning` node gates on four sections being present and non-empty: **Test matrix**,

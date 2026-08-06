@@ -38,7 +38,7 @@ multi-repository system, and pretend a single test command covers every work ite
 **Two nodes, one new artifact, no new runtime concepts.**
 
 ```text
-design-approval → test-planning → tasks-breakdown → implementation → verification → self-review
+design → test-planning → design-approval → tasks-breakdown → implementation → verification → self-review
 ```
 
 1. **`test-planning`** produces `testing-plan.md`, locked, carrying **Test matrix**,
@@ -48,8 +48,8 @@ design-approval → test-planning → tasks-breakdown → implementation → ver
 
 | Sub-decision | What was chosen | Why |
 |---|---|---|
-| **D1 — plan before tasks** | `test-planning` sits between `design-approval` and `tasks-breakdown` | Each task's `_Test:_` names a matrix row. Planning after the DAG would reverse-engineer the plan from the tasks it is meant to constrain. |
-| **D2 — no approval node** | The plan is locked and reviewed on the PR, with no human gate of its own | `tasks-breakdown` has no gate either, and the plan is closer in kind to the task DAG than to the design. A sixth stop would cost an approval round on every work item. |
+| **D1 — plan before tasks** | `test-planning` is locked before `tasks-breakdown` | Each task's `_Test:_` names a matrix row. Planning after the DAG would reverse-engineer the plan from the tasks it is meant to constrain. |
+| **D2 — no approval node of its own; the design gate covers it** | `test-planning` sits between `design` and `design-approval`, so the one human gate approves `design.md` **and** the plan derived from it, and feedback is recorded into both | Owner's call on PR #166, and the better answer than the original "no gate at all": the plan is significant enough to want human approval, but not a sixth stop. `changes-requested` returns to `design`, which re-derives the plan — the plan can never be approved against a design that moved under it. |
 | **D3 — the plan is the record** | `verification` re-gates `testing-plan.md` rather than minting a `verification-report.md` | One artifact, one diff: a reviewer reads intent beside outcome. A second artifact would need its own template, manifest entry and parity coverage, and would duplicate both the plan and the execution log's Final validation evidence. It is the shape `implementation` already uses to re-gate `tasks.md`. |
 | **D4 — real phases** | Both nodes carry a `phase:`, so both get `loop:` labels | A node the ticket cannot show is not a node in the PDLC. The nodes that share `needs-review` do so because they are review *rounds* on one state; test-planning and verification are distinct states. |
 | **D5 — catalogue, not enum** | The testing types live in the bundled template and `reference/testing.md`; the schema gains nothing | An enum would have to be exhaustive to be useful, and adding "chaos testing" would become a schema migration. The gate checks the section exists and is non-empty; the reviewer judges the content — the same footing as "no new attack surface is written and justified". |
@@ -111,7 +111,17 @@ have been a gate that reports success without ever running.
   hook is left in the chain as the declared seam for a future graph revision or a
   user-authored graph.
 - **A `test-plan-approval` human node** — consistent with requirements and design.
-  Rejected as D2.
+  Rejected as D2: the design gate covers the plan instead, which buys the same human
+  approval without a sixth stop.
+- **Produce `testing-plan.md` from the `design` node itself** (`produces: [design.md,
+  testing-plan.md]`, no `test-planning` node at all) — the owner's literal suggestion on
+  PR #166, and it would also put the plan under the design gate. Rejected in favour of
+  keeping the node one step earlier in the chain: a node is what gives the plan a `phase`,
+  a `loop:test-planning` label and a shape gate of its own, and folding two artifacts into
+  one node means one `validate-artifacts` call whose `sections:` list cannot distinguish
+  which file is missing what. Ordering the node before the gate gets the shared approval
+  the owner asked for while keeping the state visible on the ticket — which is D4's whole
+  argument.
 - **Make specific testing types mandatory by risk tier** (e.g. tier ≥ 4 requires
   performance testing) — rejected. It would force work items to run kinds of testing their
   change cannot exercise, and the-loop's existing answer to "prove you considered it" is a

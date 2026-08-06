@@ -9,8 +9,10 @@ overrides: {}
 
 # Design: test and verification as nodes in the PDLC
 
-> Phase 2 of 3. Derives from the locked
-> [`requirements.md`](requirements.md).
+> Phase 2. Derives from the locked [`requirements.md`](requirements.md).
+> **D1/D2 revised on [PR #166](https://github.com/MadaraUchiha-314/the-loop/pull/166)**
+> at the owner's request: `test-planning` moved before `design-approval` so one human
+> gate approves the design and the testing plan together.
 
 ## Overview
 
@@ -20,16 +22,16 @@ Two nodes, one new artifact, no new runtime code paths.
 flowchart LR
   RD[requirements-definition] --> RA{{requirements-approval}}
   RA --> D[design]
-  D --> DA{{design-approval}}
-  DA --> TP[["test-planning<br/>produces testing-plan.md"]]
-  TP --> TB[tasks-breakdown]
+  D --> TPN[["test-planning<br/>produces testing-plan.md"]]
+  TPN --> DA
+  DA --> TB[tasks-breakdown]
   TB --> IMPL[implementation]
   IMPL --> V[["verification<br/>re-gates testing-plan.md"]]
   V --> SR[self-review]
   SR --> CR[critic-review] --> SEC[security-review] --> EV[evidence]
   EV --> CD[capability-docs] --> RB[reviewer-briefing] --> HA{{human-approval}} --> C[complete]
 
-  style TP fill:#e8f4ff,stroke:#3b82f6
+  style TPN fill:#e8f4ff,stroke:#3b82f6
   style V fill:#e8f4ff,stroke:#3b82f6
 ```
 
@@ -42,12 +44,16 @@ implement.
 
 ## Architecture
 
-### D1 — `test-planning` sits between `design-approval` and `tasks-breakdown`
+### D1 — `test-planning` sits between `design` and `design-approval`
 
 The plan is derived from *what must be true* (requirements) and *how it is built*
 (design), and `tasks.md` is derived from all three: each task's `_Test:_` names a matrix
 row (R1.3). Putting planning after the task DAG would invert that — the plan would be
 reverse-engineered from the tasks it is supposed to constrain.
+
+**Revised on PR #166 (owner's call):** the node originally sat *after* `design-approval`.
+It now sits before it, so the single human gate approves `design.md` and the plan
+together — see D2.
 
 `design.md`'s **Testing strategy** section stays and keeps its gate; its role narrows to
 the *strategy in a paragraph* (how requirements map to test levels, which contracts are
@@ -56,13 +62,31 @@ the plan into `design.md` — was rejected: the artifact has a second life at
 `verification`, and an artifact that is edited after implementation cannot also be a
 design artifact locked before it.
 
-### D2 — no `test-plan-approval` node
+### D2 — no approval node of its own; the `design-approval` gate covers the plan
 
-`requirements-definition` and `design` each have a human gate; `tasks-breakdown` does
-not, and the testing plan is closer in kind to the task DAG than to the design. Adding a
-sixth stop would cost an approval round on every work item for an artifact that is
-reviewed anyway as part of the PR. The plan is locked (`status: approved`) like every
-artifact, and reviewed on the PR that carries it.
+**Revised on PR #166.** The original call was "no human gate at all" — the plan would be
+locked like every artifact and reviewed on the PR. The owner asked whether the plan could
+instead be produced with `design.md` so the design gate covers both, and that is the
+better answer: the plan is significant enough to want an explicit human approval, but not
+significant enough to earn a sixth stop.
+
+So `test-planning` is ordered **before** `design-approval`, and the gate now:
+
+- reviews **two** artifacts, `design.md` and the `testing-plan.md` derived from it;
+- records feedback into **both** (`record-feedback` is declared twice, once per
+  artifact) — a reviewer's note about the test matrix belongs in the plan, not filed
+  under the design, and travelling-with-the-document is the whole point of the hook;
+- routes `changes-requested` back to **`design`**, not to `test-planning`, so a changed
+  design re-derives the plan on the way back through. The plan can never be approved
+  against a design that moved under it.
+
+The alternative the owner literally proposed — folding the artifact into the `design`
+node (`produces: [design.md, testing-plan.md]`, no `test-planning` node) — reaches the
+same gate but loses what D4 argues for: the node is what gives the plan a `phase`, a
+`loop:test-planning` label, and a `validate-artifacts` call whose `sections:` list is
+about *that* artifact. One node producing two artifacts has one sections list for both,
+so a missing **Test matrix** and a missing **Architecture** are indistinguishable in the
+block message.
 
 ### D3 — `verification` re-gates `testing-plan.md`, it does not mint a report
 
@@ -112,7 +136,7 @@ planning stage has them in hand.
 
 | Component | Change | Contract |
 |-----------|--------|----------|
-| `cli/the_loop/graph/pdlc.yaml` | +2 nodes, edges rerouted | `design-approval → test-planning → tasks-breakdown`; `implementation → verification → self-review` |
+| `cli/the_loop/graph/pdlc.yaml` | +2 nodes, edges rerouted, `design-approval` records feedback into both artifacts | `design → test-planning → design-approval → tasks-breakdown`; `implementation → verification → self-review` |
 | `skills/the-loop/templates/testing-plan.md` | new | Must satisfy both nodes' required sections (P3) |
 | `.the-loop/manifest.yaml` | +2 entries | `testing-plan.md` @ `test-planning`; `evidence/` optional directory |
 | `.the-loop/harness-config.schema.json` | phases enum/default; stage defaults | P4 parity |
@@ -126,6 +150,7 @@ planning stage has them in hand.
 ### Node declarations
 
 ```yaml
+# ordered between `design` and `design-approval`, so one human gate covers both
 - id: test-planning
   phase: test-planning
   actor: agent

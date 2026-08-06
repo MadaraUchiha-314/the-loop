@@ -42,9 +42,11 @@ the `/the-loop:work-on` superset command and granular per-step commands
   current during implementation.
 - **How the work item will be proved SHALL be planned, then executed as its own phase**
   ([testing-and-contracts](testing-and-contracts.md), issue-163): `test-planning` locks
-  `testing-plan.md` before the task DAG, and `verification` executes it after
-  implementation and before the review chain, with results and committed evidence
-  recorded in the same artifact. An activity that could not run is never ticked.
+  `testing-plan.md` before the task DAG — and sits before `design-approval`, so **one
+  human gate approves the design and the plan derived from it** — and `verification`
+  executes it after implementation and before the review chain, with results and
+  committed evidence recorded in the same artifact. An activity that could not run is
+  never ticked.
 - **Security SHALL be a gated concern of each phase** (`config.security`):
   requirements/bugfix carry a Security considerations threat-model-lite (untrusted
   actors, trust boundaries, abuse cases, fail-closed — "no new attack surface" is

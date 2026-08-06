@@ -17,9 +17,13 @@ every API is authored contract-first with docs generated from the contract).
 
 ### The testing plan and the verification node (issue-163)
 
-- A work item SHALL carry a `testing-plan.md` in its spec folder, derived from the
-  approved requirements and design and locked at the **`test-planning`** phase — **before**
-  `tasks.md`, because each task's `_Test:_` names a row of the plan's matrix.
+- A work item SHALL carry a `testing-plan.md` in its spec folder, derived from
+  `design.md` and locked at the **`test-planning`** phase — **before** `tasks.md`, because
+  each task's `_Test:_` names a row of the plan's matrix.
+- The plan SHALL be **reviewed at the same human gate as the design it derives from**:
+  `test-planning` sits between `design` and `design-approval`, so one approval covers both
+  artifacts, feedback is recorded into each, and `changes-requested` returns to `design`,
+  which re-derives the plan.
 - The plan SHALL present a **test matrix** whose rows are candidate testing types (unit,
   integration, contract, end-to-end, UI/visual, snapshot, performance, security/abuse-case,
   accessibility, migration/upgrade, manual exploratory, plus anything the work item needs).

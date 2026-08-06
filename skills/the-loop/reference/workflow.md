@@ -68,9 +68,10 @@ until the current phase is approved; record the approver (paper trail).
    artifacts** — Figma links and/or self-contained HTML+CSS+JS prototypes checked in under
    `docs/specs/<id>/design/` (`design.uiArtifacts`) — inventoried in `design.md` and
    iterated-until-locked with the **designer**. See `reference/design-artifacts.md`.
-3. **`testing-plan.md`** — how the work item will be **proved**. Derived from the
-   approved requirements and design, **before** `tasks.md`, because each task's
-   `_Test:_` names a row of its matrix. Phase: `test-planning`. It carries the test
+3. **`testing-plan.md`** — how the work item will be **proved**. Derived from
+   `design.md` and **reviewed at the same human gate as it** (`design-approval` covers
+   both artifacts and records feedback into each), then locked **before** `tasks.md`,
+   because each task's `_Test:_` names a row of its matrix. Phase: `test-planning`. It carries the test
    matrix (one row per testing type, `n/a` **with a reason** where a type does not
    apply), the verification environment, the evidence plan, the activities checklist and
    an empty **Verification results** section that the `verification` node fills in later.
@@ -111,7 +112,7 @@ their superset), one per step:
 | Draft requirements (pre-ticket, temp folder; converts a brainstorm if present) | `new-requirement <title>` | requirements-definition |
 | Create the ticket; promote `draft-<slug>/` → `docs/specs/<id>/` | `create-ticket <path>` | requirements-definition |
 | Requirements → design | `create-design <id>` | design |
-| Requirements + design → testing plan | `create-testing-plan <id>` | test-planning |
+| Design → testing plan (reviewed with the design, one gate) | `create-testing-plan <id>` | test-planning |
 | Requirements + design + testing plan → tasks DAG | `create-tasks-plan <id>` | tasks-breakdown |
 | Implement, self-check, self/critic-review | `execute-tasks <id>` | implementation |
 | Execute the testing plan; record results + evidence | `verify-work <id>` | verification → needs-review |

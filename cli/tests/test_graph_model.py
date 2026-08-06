@@ -146,11 +146,33 @@ class TestTestingIsPlannedAndVerifiedAsNodes:
                 "show is not a node in the PDLC"
             )
 
-    def test_planning_precedes_the_task_dag_that_references_it(self):
-        """Each task's `_Test:_` names a matrix row, so the plan must exist first."""
+    def test_planning_is_reviewed_by_the_design_gate(self):
+        """One human gate covers `design.md` and the plan derived from it.
+
+        The plan is still locked before `tasks-breakdown` — each task's
+        `_Test:_` names a matrix row — but it does not get an approval stop of
+        its own: `design → test-planning → design-approval → tasks-breakdown`
+        (owner's call on PR #166).
+        """
         graph = load_graph()
-        assert graph.next_node("design-approval", "approved") == "test-planning"
-        assert graph.next_node("test-planning", "pass") == "tasks-breakdown"
+        assert graph.next_node("design", "pass") == "test-planning"
+        assert graph.next_node("test-planning", "pass") == "design-approval"
+        assert graph.next_node("design-approval", "approved") == "tasks-breakdown"
+
+    def test_changes_requested_returns_to_design_so_the_plan_is_re_derived(self):
+        """The plan derives from the design; a design change re-derives it."""
+        graph = load_graph()
+        assert graph.next_node("design-approval", "changes-requested") == "design"
+
+    def test_the_design_gate_records_feedback_into_both_artifacts(self):
+        """A note about the test matrix belongs in the plan, not in the design."""
+        graph = load_graph()
+        targets = [
+            spec["with"]["into"]
+            for spec in graph.node("design-approval").exit
+            if isinstance(spec, dict) and spec["hook"] == "record-feedback"
+        ]
+        assert targets == ["design.md", "testing-plan.md"]
 
     def test_verification_runs_after_implementation_and_before_review(self):
         graph = load_graph()

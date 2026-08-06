@@ -100,7 +100,7 @@ requirements.
    produce **UI/UX design artifacts** under `docs/specs/<id>/design/` (self-contained
    HTML+CSS+JS prototypes and/or a linked Figma file), inventory them in `design.md`, and
    iterate them with the **designer** until locked (`reference/design-artifacts.md`).
-   Request human review; do not proceed until approved.
+   **Do not request review yet** — the testing plan (next step) is reviewed with it.
 
 6. **Testing plan** (`test-planning`). Create `docs/specs/<id>/testing-plan.md` from the
    approved requirements + design: the **test matrix** (one row per candidate testing
@@ -113,7 +113,10 @@ requirements.
    every row gets a decision. the-loop **facilitates** verification and owns no runner:
    name the project's own commands, and link the operator's `customInstructions` docs
    rather than restating them. Lock it (`status: approved`); it names commands an agent
-   will run, so review it like code. See `reference/testing.md`.
+   will run, so review it like code. See `reference/testing.md`. **Then request the one
+   human review covering both `design.md` and this plan** — feedback is recorded into
+   each, and `changes-requested` returns to the design step, which re-derives the plan.
+   Do not proceed until approved.
 
 7. **Tasks** (`tasks-breakdown`). Create `docs/specs/<id>/tasks.md`: a DAG of
    small, verifiable tasks, each referencing the requirement(s) it satisfies, the

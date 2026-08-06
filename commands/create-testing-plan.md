@@ -7,7 +7,9 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 # the-loop: create-testing-plan `$ARGUMENTS`
 
 Decide **how this work item will be proved**, before the task DAG that references it —
-the `test-planning` node. A slice of `/the-loop:work-on`; `work-on` remains the superset.
+the `test-planning` node, which sits between `design` and `design-approval` so the plan
+is reviewed *with* the design it derives from. A slice of `/the-loop:work-on`; `work-on`
+remains the superset.
 
 **Read the `the-loop` skill and `reference/testing.md` first.** Load
 `.the-loop/harness-config.yaml`, and read every doc registered in
@@ -17,8 +19,10 @@ what this artifact should reference rather than restate.
 ## Steps
 
 1. **Locate the spec.** Resolve `$ARGUMENTS` to `docs/specs/<id>/` and read
-   `requirements.md` (or `bugfix.md`) and `design.md`. Both should be approved; if not,
-   say so and stop — a testing plan derived from an unlocked design plans the wrong work.
+   `requirements.md` (or `bugfix.md`) and `design.md`. Both should be locked
+   (`status: approved`); if not, say so and stop — a testing plan derived from an
+   unlocked design plans the wrong work. The design's *human* approval comes after this
+   step, at the gate that reviews the pair.
 
 2. **Write `testing-plan.md`** from
    `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/testing-plan.md`
@@ -51,7 +55,10 @@ what this artifact should reference rather than restate.
    mirror `phase: test-planning` in the execution log.
 
 5. **Reference on the ticket** (link the checked-in `testing-plan.md`; later changes are
-   edits to that file, not new comments).
+   edits to that file, not new comments) and **request the human review** — one gate,
+   **both artifacts**: `design.md` and this plan. Reviewer feedback is recorded into each
+   of them, and `changes-requested` returns to `design`, which re-derives the plan. Do
+   not proceed until approved — record the approver (paper trail).
 
 6. **Next step:** `/the-loop:create-tasks-plan <id>` — each task's `_Test:_` names a row
    of this matrix.

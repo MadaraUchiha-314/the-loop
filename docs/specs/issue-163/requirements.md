@@ -57,7 +57,8 @@ decided and reviewed before code is written, not improvised afterwards.
 
 1. WHEN a work item's `design.md` is locked THEN the loop SHALL derive
    `<specDir>/<id>/testing-plan.md` from the locked requirements and design before
-   `tasks.md` is written.
+   `tasks.md` is written, and **before the design's human approval gate**, so that one
+   gate reviews the design and the plan derived from it (revised on PR #166).
 2. The `test-planning` node SHALL block until `testing-plan.md` exists, is locked
    (`status: approved`), and carries a non-empty **Test matrix**, **Verification
    environment**, **Evidence plan** and **Verification results** section.
@@ -222,8 +223,9 @@ not grow a second, divergent description of its own process.
   the-loop (R5.3 is explicit that this stays with the project).
 - Automated redaction tooling for evidence — the rule is stated and reviewed; enforcing
   it mechanically is a separate work item.
-- A human-approval node for the testing plan. `tasks-breakdown` has none either; the plan
-  is reviewed with the PR that carries it.
+- A human-approval node *of its own* for the testing plan. Revised on PR #166: rather
+  than no gate at all, the plan is ordered before `design-approval` so that existing gate
+  covers it — one approval, two artifacts, no sixth stop.
 - Retro-fitting testing plans onto completed work items.
 - Changing `the-loop scenarios`, the Gherkin docstring rule, or the contract-first API
   conventions — the plan *references* them.
@@ -232,8 +234,9 @@ not grow a second, divergent description of its own process.
 
 1. Should `test-planning` sit before or after `tasks-breakdown`? **Resolved in design
    (D1):** before, so `tasks.md` can reference matrix rows.
-2. Should the testing plan get its own human-approval node? **Resolved (D2):** no —
-   consistent with `tasks-breakdown`, reviewed on the PR.
+2. Should the testing plan get its own human-approval node? **Resolved (D2):** no node
+   of its own — and, revised at the owner's request on PR #166, it is ordered *before*
+   `design-approval` so that gate reviews the design and the plan together.
 3. Should `verification` produce a separate `verification-report.md`? **Resolved (D3):**
    no — it re-gates `testing-plan.md`, mirroring how `implementation` re-gates `tasks.md`.
 

@@ -97,10 +97,20 @@ overrides: {}
   - _Requirements:_ R3.1
   - _Test:_ T1 — `pytest cli/tests/test_graph_chain.py -k Skip`; T2 —
     `test_implementation_reaches_verification_rather_than_parking` (red→green)
+- [x] 13. **Added in PR review:** one gate for the design and the plan
+  - Owner's call on PR #166: move `test-planning` between `design` and `design-approval`
+    so the single human gate approves both artifacts; `design-approval` records feedback
+    into each; `changes-requested` returns to `design`, which re-derives the plan.
+    Spec (D1/D2), decision-060, skill, references, commands and capability docs updated
+    to match.
+  - _Depends on:_ 2
+  - _Requirements:_ R1.1
+  - _Test:_ T1 — `pytest cli/tests/test_graph_model.py -k Testing` (red→green on the three
+    edge/feedback assertions)
 - [x] 12. Dogfood: this work item's own testing plan, executed
   - `docs/specs/issue-163/testing-plan.md` authored at planning and completed at
     verification with results + evidence under `docs/specs/issue-163/evidence/`.
-  - _Depends on:_ 1–11
+  - _Depends on:_ 1–11, 13
   - _Requirements:_ R4.1, R4.2, R4.5
   - _Test:_ T1, T2, T3 — the full suite, recorded as evidence
 
@@ -112,10 +122,11 @@ overrides: {}
       → 5
       → 6 (also ← 1)
       → 11
+      → 13
       → 7 → 8
       → 9
         7 → 10
-1..11 → 12
+1..11, 13 → 12
 ```
 
 ## Checkpoints

@@ -43,9 +43,9 @@ spec chain. A slice of `/the-loop:work-on`; `work-on` remains the superset.
    `phase: design` in the spec/execution log.
 
 5. **Reference on the ticket** (link the checked-in `design.md` and any `design/`
-   artifacts; edits go to the files, not new comments) and **request human review** — the
-   designer reviews the UI/UX artifacts. Do not proceed until approved — record the
-   approver (paper trail).
+   artifacts; edits go to the files, not new comments). **Do not request review yet** —
+   the testing plan is derived from this design and reviewed *with* it at the single
+   `design-approval` gate.
 
-6. **Next step:** `/the-loop:create-testing-plan <id>` — the testing plan is derived
-   from this design, before the task DAG that references it.
+6. **Next step:** `/the-loop:create-testing-plan <id>`, which derives the plan and then
+   requests the one human review covering both artifacts.

@@ -49,12 +49,12 @@ and `verification` sits before the review chain.
 
 | Row | Requirement(s) | Scenario / case |
 |-----|----------------|-----------------|
-| T1 | R3.1, R3.2, R6.1 | `TestTestingIsPlannedAndVerifiedAsNodes` (5 cases); `TestASkipIsNotADecision` (3 cases) |
+| T1 | R1.1, R3.1, R3.2, R6.1 | `TestTestingIsPlannedAndVerifiedAsNodes` (7 cases, incl. the shared design gate); `TestASkipIsNotADecision` (3 cases) |
 | T2 | R1.1, R1.2, R1.4, R3.1, R3.2, R3.3 | `Scenario: the test-planning node will not pass without a locked plan` · `…a locked plan carrying the gated sections clears the planning node` · `…the results heading must be authored holding something` · `…an activity that was planned but not executed keeps the gate shut` · `…an executed plan with recorded results clears the verification node` · `…the implementation node routes to verification on a pass` · `…the template an agent authors from can pass its own gate` |
 | T3 | R1.4, R6.1, R6.2 | P1–P4 in `test_graph_parity.py` |
 | T4 | R6.1, R6.4 | `scripts/validate_config.py` over both harness configs |
-| T5 | R6.3 | markdownlint over 406 files; ruff + pyright over `cli`/`hooks` |
-| T6 | all | 1326 tests |
+| T5 | R6.3 | markdownlint over 409 files; ruff + pyright over `cli`/`hooks` |
+| T6 | all | 1328 tests |
 | T12 | R-sec (abuse case 4) | `test_the_verification_gate_is_not_a_silent_skip`, `test_the_shipped_graph_splits_the_needs_review_label` |
 
 ## Verification environment
@@ -100,12 +100,14 @@ local test runners over this repository — so no redaction was required.
 | T2 | `uv run pytest cli/tests/test_graph_verification_integration.py` | pass — 7 scenarios | [unit-and-integration.txt](evidence/unit-and-integration.txt), [scenarios.md](evidence/scenarios.md) |
 | T3 | `uv run pytest cli/tests/test_graph_parity.py` | pass — P1–P4 | [unit-and-integration.txt](evidence/unit-and-integration.txt) |
 | T4 | `make validate` | pass — 6 config files VALID | [lint-typecheck-validate.txt](evidence/lint-typecheck-validate.txt) |
-| T5 | `make lint`, `make typecheck`, `make format-check` | pass — ruff clean, markdownlint 0 errors over 406 files, pyright 0 errors, 165 files formatted | [lint-typecheck-validate.txt](evidence/lint-typecheck-validate.txt) |
-| T6 | `make test` | pass — **1326 passed, 1 skipped** (1322 before this work item; +4 net from the new suites and cases) | [unit-and-integration.txt](evidence/unit-and-integration.txt) |
+| T5 | `make lint`, `make typecheck`, `make format-check` | pass — ruff clean, markdownlint 0 errors over 409 files, pyright 0 errors, 165 files formatted | [lint-typecheck-validate.txt](evidence/lint-typecheck-validate.txt) |
+| T6 | `make test` | pass — **1328 passed, 1 skipped** (1322 before this work item; +6 net from the new suites and cases) | [unit-and-integration.txt](evidence/unit-and-integration.txt) |
 | T12 | `uv run pytest cli/tests/test_graph_model.py -k Testing` | pass — the verification gate declares `produces` and is not a skip; no existing gate weakened | [unit-and-integration.txt](evidence/unit-and-integration.txt) |
 | T14 | Reviewed the upgrade path for work items whose spec folder predates this change | blocks at `test-planning` as designed; `the-loop graph force --to <node> --reason <why>` is the audited override, and it never forges the verdict | [design.md §Error handling](design.md) |
 
-**Not executed:** none. Every planned activity ran.
+**Not executed:** none. Every planned activity ran. Re-run in full after the PR #166
+review change that moved `test-planning` before `design-approval`; the counts above are
+from that second pass.
 
 **Found during verification, not planned:** T6 surfaced nothing, but writing T2 surfaced a
 real defect outside the original matrix — `run_chain` short-circuited on `skip`, so

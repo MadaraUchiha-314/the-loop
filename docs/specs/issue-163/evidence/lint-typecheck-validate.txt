@@ -4,7 +4,7 @@ All checks passed!
 npx --yes markdownlint-cli2@0.18.1 "**/*.md"
 markdownlint-cli2 v0.18.1 (markdownlint v0.38.0)
 Finding: **/*.md !**/node_modules/** !cli/node_modules/** !**/.venv/** !docs/.vitepress/dist/** !docs/.vitepress/cache/** !docs/operating-model/reference/**
-Linting: 406 file(s)
+Linting: 409 file(s)
 Summary: 0 error(s)
 
 $ make typecheck  # pyright cli

@@ -51,9 +51,11 @@ it is **locked** (`status: approved`), and only then is the next one derived. Sp
    (`reference/design-artifacts.md`).
 3. **`testing-plan.md`** — how this work item will be **proved**: a matrix of testing
    types (each either in scope, or `n/a` *with a reason*), the verification environment,
-   the evidence to capture, and the activities checklist. Phase: `test-planning`. It is
-   authored here and **completed at the `verification` node** — one artifact, written
-   once as a plan and once as a record. See `reference/testing.md`.
+   the evidence to capture, and the activities checklist. Phase: `test-planning`.
+   Derived from `design.md` and **reviewed together with it** — one human gate approves
+   the pair, so the plan gets human review without a stop of its own. It is authored
+   here and **completed at the `verification` node** — one artifact, written once as a
+   plan and once as a record. See `reference/testing.md`.
 4. **`tasks.md`** — a **DAG** of small, verifiable tasks referencing requirements; each
    task's `_Test:_` names a row of the testing plan. Phase: `tasks-breakdown`.
 
