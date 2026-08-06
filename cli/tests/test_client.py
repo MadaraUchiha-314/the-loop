@@ -19,8 +19,8 @@ def test_unreachable_with_autostart_off_fails_closed(tmp_path):
       Scenario: no service and auto-start disabled
         Given service.autoStart is false and nothing listens
         When the client ensures a service
-        Then it raises naming `the-loop service start` and the [service] extra,
-             and never falls back to in-process execution
+        Then it raises pointing at `the-loop service start`, and never falls
+             back to in-process execution
 
     Requirement: docs/specs/issue-161/requirements.md R2.3
     """
@@ -28,16 +28,20 @@ def test_unreachable_with_autostart_off_fails_closed(tmp_path):
         client.ensure_service(_unreachable_config(tmp_path, auto_start=False))
     message = str(excinfo.value)
     assert "the-loop service start" in message
-    assert "the-loopy-one[service]" in message
+    # No extras any more (owner decision, PR #162): an unreachable service is a
+    # lifecycle problem, so the message must not send anyone to `pip install`.
+    assert "pip install" not in message
 
 
-def test_unreachable_with_autostart_but_no_extra_fails_closed(tmp_path, monkeypatch):
-    monkeypatch.setattr(client, "_service_extra_available", lambda: False)
+def test_autostart_attempts_a_spawn_then_still_fails_closed(tmp_path, monkeypatch):
+    """With autoStart on, the client spawns a service; if it never becomes
+    healthy it still raises rather than degrading to local execution."""
     spawned = []
     monkeypatch.setattr(client, "_spawn_service", lambda: spawned.append(True))
+    monkeypatch.setattr(client, "_AUTOSTART_TIMEOUT", 0.3)
     with pytest.raises(client.ServiceUnavailable):
         client.ensure_service(_unreachable_config(tmp_path, auto_start=True))
-    assert spawned == []
+    assert spawned == [True]
 
 
 def test_api_error_carries_status_and_detail():

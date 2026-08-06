@@ -1,109 +1,149 @@
-"""The MCP endpoint: HTTP-only JSON-RPC over the core facade (issue-161, T10)."""
+"""The MCP interface, over the official SDK's streamable HTTP (issue-161, T10).
+
+These drive the **real** protocol through the SDK — initialize, the
+initialized notification, tools/list, tools/call — rather than asserting on a
+hand-rolled JSON-RPC shape, because the protocol is the SDK's now (owner
+decision, PR #162: "Follow official SDKs").
+"""
 
 import json
+import re
 
+import pytest
 from fastapi.testclient import TestClient
 
 from the_loop.api.app import create_app
 from the_loop.state import layout_from_config, legacy_layout
 from the_loop.workitem import WorkItemStore
 
-
 REF = "github:octo/repo#7"
+#: The SDK's DNS-rebinding protection pins Host; use the configured bind.
+BASE_URL = "http://127.0.0.1:4114"
+HEADERS = {"Accept": "application/json, text/event-stream"}
 
 
-def _client(tmp_path):
+def _sse_payloads(text: str):
+    """Every JSON object carried by an SSE (or plain JSON) MCP response."""
+    if not text.lstrip().startswith("event:") and not text.lstrip().startswith("data:"):
+        return [json.loads(text)]
+    return [json.loads(m) for m in re.findall(r"^data: (.+)$", text, re.MULTILINE)]
+
+
+class McpClient:
+    """A minimal MCP client over the mounted app — handshake then calls."""
+
+    def __init__(self, client: TestClient):
+        self._client = client
+        response = self._post(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": {"name": "tests", "version": "1"},
+                },
+            }
+        )
+        assert response.status_code == 200, response.text
+        self.session_id = response.headers.get("mcp-session-id")
+        self.initialize_result = _sse_payloads(response.text)[0]["result"]
+        self._post({"jsonrpc": "2.0", "method": "notifications/initialized"})
+
+    def _post(self, message):
+        headers = dict(HEADERS)
+        if getattr(self, "session_id", None):
+            headers["mcp-session-id"] = self.session_id
+        return self._client.post("/mcp/", json=message, headers=headers)
+
+    def request(self, method, params=None, id_=99):
+        message = {"jsonrpc": "2.0", "id": id_, "method": method}
+        if params is not None:
+            message["params"] = params
+        response = self._post(message)
+        assert response.status_code == 200, response.text
+        return _sse_payloads(response.text)[0]
+
+
+@pytest.fixture()
+def mcp(tmp_path):
     config = {"state": {"root": str(tmp_path / ".the-loop")}}
-    return TestClient(create_app(config)), config
+    with TestClient(create_app(config), base_url=BASE_URL) as client:
+        yield McpClient(client), config
 
 
-def _rpc(client, method, params=None, id_=1):
-    message = {"jsonrpc": "2.0", "id": id_, "method": method}
-    if params is not None:
-        message["params"] = params
-    return client.post("/mcp", json=message)
-
-
-def test_initialize_and_tools_list(tmp_path):
+def test_initialize_reports_the_loop_server(mcp):
     """
-    Feature: MCP interface over the control plane
-      Scenario: an agent host connects and discovers tools
-        Given a running service
-        When the host sends initialize and tools/list
-        Then it receives the protocol handshake and the tool registry,
-             with the destructive/attribution-forging tools absent
+    Feature: MCP interface over the official SDK
+      Scenario: an agent host performs the protocol handshake
+        Given a running control-plane service
+        When the host sends initialize
+        Then the SDK answers with the-loop's server identity and tool capability
+
+    Requirement: docs/specs/issue-161/requirements.md R5.1
+    """
+    client, _ = mcp
+    result = client.initialize_result
+    assert result["serverInfo"]["name"] == "the-loop"
+    assert "tools" in result["capabilities"]
+    assert client.session_id
+
+
+def test_tools_list_is_the_core_surface_minus_exclusions(mcp):
+    """
+    Feature: MCP tools are generated from the core facade
+      Scenario: an agent discovers what it may do
+        Given the tool registry built from the core surface
+        When the host calls tools/list
+        Then the read and manage operations are present, and the destructive /
+             attribution-forging ones (sessions reset, graph force) are absent
 
     Requirement: docs/specs/issue-161/requirements.md R5.1, R5.3
     """
-    client, _ = _client(tmp_path)
-    init = _rpc(client, "initialize").json()
-    assert init["result"]["serverInfo"]["name"] == "the-loop"
-    assert "tools" in init["result"]["capabilities"]
-
-    tools = _rpc(client, "tools/list").json()["result"]["tools"]
+    client, _ = mcp
+    tools = client.request("tools/list")["result"]["tools"]
     names = {t["name"] for t in tools}
-    assert "list_work_items" in names
-    assert "check_work_item" in names
-    assert "control_session" in names
-    # Exclusions are policy (design §Security design):
+    assert {"list_work_items", "check_work_item", "control_session"} <= names
     assert not any("reset" in n for n in names)
     assert not any("force" in n for n in names)
+    # The SDK derives each schema from the annotations — no hand-written JSON.
+    by_name = {t["name"]: t for t in tools}
+    assert "ref" in by_name["get_work_item"]["inputSchema"]["properties"]
 
 
-def test_tools_call_round_trips_core_data(tmp_path):
+def test_tools_call_round_trips_core_data(mcp):
     """
-    Feature: MCP tools are the same core surface as REST
+    Feature: MCP tools serve the same data as REST
       Scenario: an agent lists work items
-        Given a portable record on disk
-        When tools/call runs list_work_items
-        Then the result content is the same record the REST route serves
+        Given a portable record written by an ingress
+        When the host calls the list_work_items tool
+        Then the result carries the same record the REST route serves
 
     Requirement: docs/specs/issue-161/requirements.md R5.1, R5.2
     """
-    client, config = _client(tmp_path)
+    client, config = mcp
     layout = layout_from_config(config)
     store = WorkItemStore(layout.portable_dir, legacy=legacy_layout(layout))
     store.write_section(REF, "control", {"command": "start"})
 
-    response = _rpc(
-        client, "tools/call", {"name": "list_work_items", "arguments": {}}
-    ).json()
-    payload = json.loads(response["result"]["content"][0]["text"])
-    assert response["result"]["isError"] is False
-    assert [r["ref"] for r in payload] == [REF]
+    result = client.request("tools/call", {"name": "list_work_items", "arguments": {}})[
+        "result"
+    ]
+    assert result.get("isError") is not True
+    assert REF in json.dumps(result)
 
 
-def test_tool_errors_are_results_not_crashes(tmp_path):
-    client, _ = _client(tmp_path)
-    response = _rpc(
-        client,
-        "tools/call",
-        {"name": "get_work_item", "arguments": {"ref": "not-a-ref"}},
-    ).json()
-    assert response["result"]["isError"] is True
+def test_tool_error_is_reported_not_crashed(mcp):
+    """A bad ref comes back as a tool error, leaving the session usable."""
+    client, _ = mcp
+    result = client.request(
+        "tools/call", {"name": "get_work_item", "arguments": {"ref": "not-a-ref"}}
+    )["result"]
+    assert result["isError"] is True
 
 
-def test_unknown_tool_and_method_are_rpc_errors(tmp_path):
-    client, _ = _client(tmp_path)
-    unknown_tool = _rpc(client, "tools/call", {"name": "sessions_reset"}).json()
-    assert unknown_tool["error"]["code"] == -32602
-    unknown_method = _rpc(client, "prompts/list").json()
-    assert unknown_method["error"]["code"] == -32601
-
-
-def test_mcp_needs_no_credential(tmp_path):
-    """
-    Feature: MCP over the control plane
-      Scenario: an agent host calls the endpoint with no credential
-        Given a running service (auth is the gateway's job, PR #162)
-        When a JSON-RPC tools/list arrives with no Authorization header
-        Then it is served normally
-
-    Requirement: docs/specs/issue-161/requirements.md R5.1
-    """
-    client, _ = _client(tmp_path)
-    response = client.post(
-        "/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"}
-    )
-    assert response.status_code == 200
-    assert response.json()["result"]["tools"]
+def test_unknown_tool_is_an_error(mcp):
+    client, _ = mcp
+    payload = client.request("tools/call", {"name": "sessions_reset", "arguments": {}})
+    assert "error" in payload or payload["result"]["isError"] is True

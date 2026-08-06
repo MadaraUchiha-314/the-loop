@@ -13,6 +13,7 @@ auto-start loop hammers).
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, Query, Request
@@ -84,13 +85,29 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
     The service carries **no in-app authentication** (owner decision, PR #162):
     it is deployed behind a gateway that handles auth, and locally it binds
     loopback-only by default (the exposure guard in ``serve.py`` is the network
-    boundary). Adding a token layer here would duplicate what the gateway owns."""
+    boundary). Adding a token layer here would duplicate what the gateway owns.
+
+    The official MCP SDK's streamable-HTTP app is mounted at ``/mcp``; its
+    session manager needs its own lifespan running, so this app adopts it."""
+    from .mcp import MCP_PATH, build_app as build_mcp_app
+
+    mcp_app = build_mcp_app(cli_config)
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        # The SDK's session manager runs a task group for the duration of the
+        # process; without adopting its lifespan, /mcp 500s on first use.
+        async with mcp_app.router.lifespan_context(mcp_app):
+            yield
+
     app = FastAPI(
         title="the-loop control plane",
         version="1",
         docs_url="/api/docs",
         openapi_url="/api/openapi.json",
+        lifespan=lifespan,
     )
+    app.mount(MCP_PATH, mcp_app)
 
     @app.exception_handler(ValueError)
     async def _value_error(request: Request, exc: ValueError):
@@ -273,9 +290,5 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
             spec_dir=body.specDir,
             timeout=body.timeout,
         )
-
-    from .mcp import add_mcp
-
-    add_mcp(app, cli_config)
 
     return app

@@ -1,12 +1,13 @@
 """The CLI's HTTP client for the control-plane service (issue-161, R2.2).
 
-Stdlib only (``urllib``) so the base install stays one-dependency: a plain
-install can *talk to* a service even where the ``[service]`` extra that *hosts*
-one is absent. The service is the CLI's only execution path for core
+Stdlib only (``urllib``) for the transport itself — nothing here needs a
+third-party HTTP client. The service is the CLI's only execution path for core
 capabilities (owner decision, PR #162): when none is reachable this module
-auto-starts a local one if the config allows and the extra is importable, and
-otherwise **fails closed** naming the lifecycle command and the install line —
-it never quietly falls back to executing core logic in-process (R2.3).
+auto-starts a local one if the config allows, and otherwise **fails closed**
+naming the lifecycle command — it never quietly falls back to executing core
+logic in-process (R2.3). Everything needed to host a service ships with the
+package (no extras), so an unreachable service is a lifecycle problem, never a
+missing-install one.
 """
 
 from __future__ import annotations
@@ -25,10 +26,10 @@ from ..api.config import base_url, service_config
 #: How long auto-start waits for /health before giving up.
 _AUTOSTART_TIMEOUT = 15.0
 
-INSTALL_HINT = (
+UNAVAILABLE_HINT = (
     "the control-plane service is not running and could not be started. "
-    "Start it with `the-loop service start` (requires `pip install "
-    "'the-loopy-one[service]'`)."
+    "Start it with `the-loop service start`, or check "
+    "`the-loop events --source service` for why it exited."
 )
 
 
@@ -97,15 +98,6 @@ def healthy(config: Optional[dict] = None, timeout: float = 2.0) -> bool:
         return False
 
 
-def _service_extra_available() -> bool:
-    try:
-        import fastapi  # noqa: F401
-        import uvicorn  # noqa: F401
-    except ImportError:
-        return False
-    return True
-
-
 def _spawn_service() -> None:
     subprocess.Popen(  # noqa: S603 — fixed argv, no shell
         [sys.executable, "-m", "the_loop.api.serve"],
@@ -122,14 +114,14 @@ def ensure_service(config: Optional[dict] = None) -> None:
     if healthy(config):
         return
     conf = service_config(config)
-    if conf["autoStart"] and _service_extra_available():
+    if conf["autoStart"]:
         _spawn_service()
         deadline = time.monotonic() + _AUTOSTART_TIMEOUT
         while time.monotonic() < deadline:
             if healthy(config):
                 return
             time.sleep(0.25)
-    raise ServiceUnavailable(INSTALL_HINT)
+    raise ServiceUnavailable(UNAVAILABLE_HINT)
 
 
 class Client:

@@ -24,20 +24,6 @@ from ..runlock import RunLock
 _STOP_TIMEOUT_SECONDS = 30.0
 _START_TIMEOUT_SECONDS = 15.0
 
-_INSTALL_HINT = (
-    "the [service] extra is not installed; run "
-    "`pip install 'the-loopy-one[service]'` (or the uv/pipx equivalent)"
-)
-
-
-def _service_extra_available() -> bool:
-    try:
-        import fastapi  # noqa: F401
-        import uvicorn  # noqa: F401
-    except ImportError:
-        return False
-    return True
-
 
 def _healthy(config: dict) -> bool:
     from .. import client
@@ -78,9 +64,6 @@ class ServiceCommand(Command):
         if lock.is_held():
             print(f"service already running (pid {lock.holder()})")
             return 0
-        if not _service_extra_available():
-            print(f"error: {_INSTALL_HINT}", file=sys.stderr)
-            return 1
         subprocess.Popen(  # noqa: S603 — fixed argv, no shell
             [sys.executable, "-m", "the_loop.api.serve"],
             stdout=subprocess.DEVNULL,

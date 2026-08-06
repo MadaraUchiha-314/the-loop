@@ -1,29 +1,30 @@
-"""The MCP interface: ``POST /mcp`` on the control-plane app (issue-161, R5).
+"""The MCP interface, on the **official** MCP Python SDK (issue-161, R5).
 
-HTTP transport **only** — no stdio (owner decision, PR #162). A deliberate
-minimal implementation of the streamable-HTTP shape rather than the SDK
-(decision-058): the protocol subset an agent host needs — ``initialize``,
-``notifications/initialized``, ``tools/list``, ``tools/call`` — is a few
-JSON-RPC handlers over the same core facade the REST routers use, and every
-tool result is the same JSON the corresponding REST route serves.
+Owner decision (PR #162): *"I hope we are using the official python SDK for
+MCP… Don't want to maintain custom implementation. Follow official SDKs."* —
+so the protocol is entirely the SDK's (`mcp.server.MCPServer`), and this module
+is only the **binding** from the-loop's core facade to it: one thin function
+per tool, registered with `add_tool`, which derives each tool's input schema
+from the annotations. There is no hand-rolled JSON-RPC here any more.
 
-The tool registry is **generated from the core surface** (R1.4): each entry
-names its handler; there is no second implementation to drift. Exclusions are
-policy (R5.3, design §Security design): ``sessions reset`` is destructive and
-stays a local decision; ``graph force`` requires a human-attributed reason an
-agent must not forge. No in-app auth (owner decision, PR #162 — the gateway
-owns it); every call lands in the event log as ``mcp.call``.
+Transport is **streamable HTTP only — no stdio** (owner decision): the SDK's
+`streamable_http_app()` is mounted on the same FastAPI app that serves
+`/api/v1`, so one `the-loop service start` exposes both. The SDK's DNS-rebinding
+protection is left **on** and pinned to the service's configured host, which
+matches the loopback-by-default posture the exposure guard enforces.
+
+Exclusions are policy (R5.3): ``sessions reset`` is destructive and stays a
+local decision; ``graph force`` requires a human-attributed reason an agent
+must not forge. Neither is registered as a tool.
 """
 
 from __future__ import annotations
 
-import json
 from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, Response
+from mcp.server import MCPServer
+from mcp.server.transport_security import TransportSecuritySettings
 
-from .. import eventlog
 from ..core import attention as core_attention
 from ..core import daemons as core_daemons
 from ..core import events as core_events
@@ -31,225 +32,148 @@ from ..core import graphs as core_graphs
 from ..core import repo as core_repo
 from ..core import sessions as core_sessions
 from ..core import workitems as core_workitems
+from .config import service_config
 
-PROTOCOL_VERSION = "2025-06-18"
-
-_STR = {"type": "string"}
-_BOOL = {"type": "boolean"}
-
-
-def _schema(properties: Dict[str, Any], required: List[str]) -> Dict[str, Any]:
-    return {
-        "type": "object",
-        "properties": properties,
-        "required": required,
-        "additionalProperties": False,
-    }
+#: Mount point for the SDK's streamable-HTTP app on the control-plane service.
+MCP_PATH = "/mcp"
 
 
-def _tools(cli_config: Optional[dict]) -> Dict[str, Dict[str, Any]]:
-    """name → {description, inputSchema, handler}. Read + manage; no reset, no force."""
-    return {
-        "list_work_items": {
-            "description": "Every work item's portable record (control + poll state).",
-            "inputSchema": _schema({}, []),
-            "handler": lambda a: core_workitems.list_work_items(cli_config),
-        },
-        "get_work_item": {
-            "description": "One work item's portable record by ref "
-            "(e.g. github:OWNER/REPO#7).",
-            "inputSchema": _schema({"ref": _STR}, ["ref"]),
-            "handler": lambda a: core_workitems.get_work_item(a["ref"], cli_config),
-        },
-        "check_work_item": {
-            "description": "Evaluate a work item's process-graph gates against its "
-            "checked-in artifacts (pure read; same report as `the-loop check`).",
-            "inputSchema": _schema(
-                {"repo": _STR, "workItem": _STR, "recompute": _BOOL},
-                ["repo", "workItem"],
-            ),
-            "handler": lambda a: core_graphs.check(
-                a["repo"], a["workItem"], recompute=bool(a.get("recompute"))
-            ),
-        },
-        "graph_advance": {
-            "description": "Evaluate the current node's exit chain and take the "
-            "matching edge.",
-            "inputSchema": _schema(
-                {"repo": _STR, "workItem": _STR}, ["repo", "workItem"]
-            ),
-            "handler": lambda a: core_graphs.advance(a["repo"], a["workItem"]),
-        },
-        "graph_complete": {
-            "description": "File a completion claim for the current (or named) node.",
-            "inputSchema": _schema(
-                {"repo": _STR, "workItem": _STR, "node": _STR, "actor": _STR},
-                ["repo", "workItem"],
-            ),
-            "handler": lambda a: core_graphs.complete(
-                a["repo"],
-                a["workItem"],
-                node=a.get("node", ""),
-                actor=a.get("actor", ""),
-            ),
-        },
-        "list_sessions": {
-            "description": "Registered harness sessions with their last control "
-            "command.",
-            "inputSchema": _schema({"status": _STR}, []),
-            "handler": lambda a: core_sessions.list_sessions(
-                status=a.get("status") or None, config=cli_config
-            ),
-        },
-        "control_session": {
-            "description": "Apply a session control verb "
-            "(start | pause | resume | stop) with the full paper trail.",
-            "inputSchema": _schema(
-                {"ref": _STR, "verb": _STR, "comment": _BOOL}, ["ref", "verb"]
-            ),
-            "handler": lambda a: core_sessions.control_session(
-                a["ref"],
-                a["verb"],
-                comment=bool(a.get("comment", True)),
-                config=cli_config,
-            ),
-        },
-        "query_events": {
-            "description": "Query the structured event log (routing, dispatch, "
-            "sessions, API operations).",
-            "inputSchema": _schema(
-                {
-                    "workItem": _STR,
-                    "source": _STR,
-                    "level": _STR,
-                    "since": _STR,
-                    "limit": {"type": "integer"},
-                },
-                [],
-            ),
-            "handler": lambda a: core_events.query_events(
-                None,
-                work_item=a.get("workItem"),
-                source=a.get("source"),
-                min_level=a.get("level"),
-                since=a.get("since"),
-                limit=int(a.get("limit", 50)),
-            ),
-        },
-        "daemon_status": {
-            "description": "The ingress daemons (poller, gh-webhook) and whether "
-            "each is running.",
-            "inputSchema": _schema({}, []),
-            "handler": lambda a: [
-                core_daemons.daemon_status(name, cli_config)
-                for name in core_daemons.DAEMONS
-            ],
-        },
-        "control_daemon": {
-            "description": "Start or stop an ingress daemon (poller | gh-webhook).",
-            "inputSchema": _schema({"daemon": _STR, "verb": _STR}, ["daemon", "verb"]),
-            "handler": lambda a: core_daemons.control_daemon(
-                a["daemon"], a["verb"], cli_config
-            ),
-        },
-        "list_attention": {
-            "description": "Work items needing human attention: paused sessions, "
-            "armed items with no live session, recent errors.",
-            "inputSchema": _schema({}, []),
-            "handler": lambda a: core_attention.list_attention(cli_config),
-        },
-        "repo_scenarios": {
-            "description": "Gherkin scenarios covered by a repo's integration tests.",
-            "inputSchema": _schema({"repo": _STR}, ["repo"]),
-            "handler": lambda a: core_repo.scenarios(a["repo"]),
-        },
-        "repo_instructions": {
-            "description": "A repo's registered custom-instruction docs and their "
-            "resolution state.",
-            "inputSchema": _schema({"repo": _STR}, ["repo"]),
-            "handler": lambda a: core_repo.instructions(a["repo"]),
-        },
-        "repo_critics": {
-            "description": "A repo's configured critic harnesses.",
-            "inputSchema": _schema({"repo": _STR}, ["repo"]),
-            "handler": lambda a: core_repo.critics(a["repo"]),
-        },
-    }
+def build_server(cli_config: Optional[dict] = None) -> MCPServer:
+    """An :class:`MCPServer` whose tools are the core facade's operations.
 
-
-def _rpc_error(id_: Any, code: int, message: str) -> JSONResponse:
-    return JSONResponse(
-        {"jsonrpc": "2.0", "id": id_, "error": {"code": code, "message": message}}
+    Every tool body is a one-liner delegating to ``the_loop.core`` — the same
+    functions the REST routers call, so the two interfaces cannot drift.
+    """
+    server = MCPServer(
+        name="the-loop",
+        title="the-loop control plane",
+        version="1",
+        instructions=(
+            "Inspect and steer the-loop's work items: read portable records, "
+            "evaluate process-graph gates, control harness sessions and the "
+            "ingress daemons, and query the structured event log."
+        ),
     )
 
+    def list_work_items() -> List[Dict[str, Any]]:
+        """Every work item's portable record (control + poll state)."""
+        return core_workitems.list_work_items(cli_config)
 
-def _rpc_result(id_: Any, result: Dict[str, Any]) -> JSONResponse:
-    return JSONResponse({"jsonrpc": "2.0", "id": id_, "result": result})
+    def get_work_item(ref: str) -> Dict[str, Any]:
+        """One work item's portable record by ref (e.g. github:OWNER/REPO#7)."""
+        return core_workitems.get_work_item(ref, cli_config)
+
+    def check_work_item(
+        repo: str, work_item: str, recompute: bool = False
+    ) -> Dict[str, Any]:
+        """Evaluate a work item's process-graph gates against its checked-in
+        artifacts (pure read; the same report `the-loop check` prints)."""
+        return core_graphs.check(repo, work_item, recompute=recompute)
+
+    def graph_advance(repo: str, work_item: str) -> Dict[str, Any]:
+        """Evaluate the current node's exit chain and take the matching edge."""
+        return core_graphs.advance(repo, work_item)
+
+    def graph_complete(
+        repo: str, work_item: str, node: str = "", actor: str = ""
+    ) -> Dict[str, Any]:
+        """File a completion claim for the current (or named) graph node."""
+        return core_graphs.complete(repo, work_item, node=node, actor=actor)
+
+    def list_sessions(status: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Registered harness sessions with their last control command."""
+        return core_sessions.list_sessions(status=status, config=cli_config)
+
+    def control_session(ref: str, verb: str, comment: bool = True) -> Dict[str, Any]:
+        """Apply a session control verb (start | pause | resume | stop) with
+        the full paper trail."""
+        return core_sessions.control_session(
+            ref, verb, comment=comment, config=cli_config
+        )
+
+    def query_events(
+        work_item: Optional[str] = None,
+        source: Optional[str] = None,
+        level: Optional[str] = None,
+        since: Optional[str] = None,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        """Query the structured event log (routing, dispatch, sessions, API)."""
+        return core_events.query_events(
+            None,
+            work_item=work_item,
+            source=source,
+            min_level=level,
+            since=since,
+            limit=limit,
+        )
+
+    def daemon_status() -> List[Dict[str, Any]]:
+        """The ingress daemons (poller, gh-webhook) and whether each is running."""
+        return [
+            core_daemons.daemon_status(name, cli_config)
+            for name in core_daemons.DAEMONS
+        ]
+
+    def control_daemon(daemon: str, verb: str) -> Dict[str, Any]:
+        """Start or stop an ingress daemon (poller | gh-webhook)."""
+        return core_daemons.control_daemon(daemon, verb, cli_config)
+
+    def list_attention() -> List[Dict[str, Any]]:
+        """Work items needing attention: paused sessions, armed items with no
+        live session, recent errors."""
+        return core_attention.list_attention(cli_config)
+
+    def repo_scenarios(repo: str) -> List[Dict[str, Any]]:
+        """Gherkin scenarios covered by a repo's integration tests."""
+        return core_repo.scenarios(repo)
+
+    def repo_instructions(repo: str) -> List[Dict[str, Any]]:
+        """A repo's registered custom-instruction docs and their resolution state."""
+        return core_repo.instructions(repo)
+
+    def repo_critics(repo: str) -> List[Dict[str, Any]]:
+        """A repo's configured critic harnesses."""
+        return core_repo.critics(repo)
+
+    for fn in (
+        list_work_items,
+        get_work_item,
+        check_work_item,
+        graph_advance,
+        graph_complete,
+        list_sessions,
+        control_session,
+        query_events,
+        daemon_status,
+        control_daemon,
+        list_attention,
+        repo_scenarios,
+        repo_instructions,
+        repo_critics,
+    ):
+        server.add_tool(fn, name=fn.__name__)
+
+    return server
 
 
-def add_mcp(app: FastAPI, cli_config: Optional[dict]) -> None:
-    tools = _tools(cli_config)
+def build_app(cli_config: Optional[dict] = None):
+    """The SDK's streamable-HTTP ASGI app, ready to mount at :data:`MCP_PATH`.
 
-    @app.post("/mcp", include_in_schema=False)
-    async def mcp_endpoint(request: Request) -> Response:
-        # No in-app auth: the deployment's gateway owns it, and locally the
-        # service binds loopback-only by default (owner decision, PR #162).
-        try:
-            message = await request.json()
-        except Exception:
-            return _rpc_error(None, -32700, "parse error")
-        if not isinstance(message, dict) or message.get("jsonrpc") != "2.0":
-            return _rpc_error(None, -32600, "invalid request")
-
-        method = message.get("method", "")
-        id_ = message.get("id")
-        params = message.get("params") or {}
-
-        if method == "initialize":
-            return _rpc_result(
-                id_,
-                {
-                    "protocolVersion": PROTOCOL_VERSION,
-                    "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "the-loop", "version": "1"},
-                },
-            )
-        if method == "notifications/initialized":
-            return Response(status_code=202)
-        if method == "tools/list":
-            return _rpc_result(
-                id_,
-                {
-                    "tools": [
-                        {
-                            "name": name,
-                            "description": tool["description"],
-                            "inputSchema": tool["inputSchema"],
-                        }
-                        for name, tool in sorted(tools.items())
-                    ]
-                },
-            )
-        if method == "tools/call":
-            name = params.get("name", "")
-            tool = tools.get(name)
-            if tool is None:
-                return _rpc_error(id_, -32602, f"unknown tool: {name}")
-            arguments = params.get("arguments") or {}
-            try:
-                result = tool["handler"](arguments)
-                ok = True
-            except (ValueError, LookupError, KeyError) as exc:
-                result = {"error": str(exc)}
-                ok = False
-            eventlog.emit("mcp.call", tool=name, ok=ok)
-            return _rpc_result(
-                id_,
-                {
-                    "content": [
-                        {"type": "text", "text": json.dumps(result, default=str)}
-                    ],
-                    "isError": not ok,
-                },
-            )
-        return _rpc_error(id_, -32601, f"method not found: {method}")
+    DNS-rebinding protection stays enabled (the SDK's default) with the hosts
+    the service actually answers on — the same loopback-by-default posture the
+    exposure guard enforces for the REST surface.
+    """
+    conf = service_config(cli_config)
+    host, port = conf["host"], conf["port"]
+    allowed_hosts = [f"{host}:{port}", host]
+    if host in ("127.0.0.1", "localhost"):
+        allowed_hosts += [f"localhost:{port}", "localhost", f"127.0.0.1:{port}"]
+    server = build_server(cli_config)
+    return server.streamable_http_app(
+        streamable_http_path="/",
+        transport_security=TransportSecuritySettings(
+            allowed_hosts=sorted(set(allowed_hosts)),
+            allowed_origins=[f"http://{h}" for h in sorted(set(allowed_hosts))],
+        ),
+    )
