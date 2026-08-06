@@ -61,8 +61,10 @@ __all__ = [
     "PluginConfig",
 ]
 
-#: Names from the shipped manifests (``.claude-plugin/{marketplace,plugin}.json``).
-#: A fork keeps them; only the repository it is served from changes.
+#: Names from the shipped manifests — ``.claude-plugin/{marketplace,plugin}.json`` and
+#: ``.cursor-plugin/{marketplace,plugin}.json``, which carry the same two names, so these
+#: constants are correct for either harness (issue-157). A fork keeps them; only the
+#: repository it is served from changes.
 MARKETPLACE_NAME = "the-loop"
 PLUGIN_NAME = "the-loop"
 PLUGIN_KEY = f"{PLUGIN_NAME}@{MARKETPLACE_NAME}"

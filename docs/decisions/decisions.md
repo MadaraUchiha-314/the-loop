@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [064](decision-064.md) | Cursor is installed by the same probe as Claude Code, and falls back to the documented local checkout | proposed | 2026-08-07 |
 | [063](decision-063.md) | A node may `validates:` an artifact it did not author — and a content gate with nothing to read fails closed | proposed | 2026-08-06 |
 | [062](decision-062.md) | Third-party writing skills are registered, not vendored — and their ban-lists are not adopted | proposed | 2026-08-06 |
 | [061](decision-061.md) | Writing for humans is a sibling skill — with no length limits | proposed | 2026-08-06 |

@@ -20,7 +20,7 @@ from typing import Dict, List, Optional
 import pytest
 
 from the_loop import install
-from the_loop.harness_plugins import MARKETPLACE_NAME, PLUGIN_KEY
+from the_loop.harness_plugins import MARKETPLACE_NAME, PLUGIN_KEY, PLUGIN_NAME
 
 
 # -- fakes ---------------------------------------------------------------------
@@ -400,6 +400,281 @@ def test_the_claude_fallback_is_idempotent(tmp_path):
     assert [r.outcome for r in again] == ["already"]
 
 
+# -- Cursor (issue-157: R1-R5) -------------------------------------------------
+
+
+def _cursor_env(
+    tmp_path,
+    *,
+    surface: bool = True,
+    install_help: bool = True,
+    scope_flag: bool = True,
+    git: bool = True,
+):
+    """A machine with `cursor-agent` answering the probe however the test needs.
+
+    ``surface``/``install_help`` are the two halves of :func:`the_loop.install.probe`:
+    a binary can advertise ``plugin marketplace`` and still have no working
+    ``plugin install`` (Cursor 2.5 is the documented example), and that combination has
+    to route to the fallback rather than to a command that cannot work.
+    """
+    runner = FakeRunner(
+        {
+            "plugin install --help": completed(
+                0 if install_help else 1,
+                "  -s, --scope <scope>" if scope_flag else "  -h, --help",
+            ),
+            "plugin --help": completed(
+                0 if surface else 1, "  marketplace  Manage marketplaces"
+            ),
+        }
+    )
+    binaries = ["cursor-agent"] + (["git"] if git else [])
+    return env_for(tmp_path / "home", binaries=tuple(binaries), runner=runner), runner
+
+
+def _clone_dir(tmp_path) -> Path:
+    return install.cursor_plugin_dir(env_for(tmp_path / "home"))
+
+
+def _make_checkout(tmp_path) -> Path:
+    """A directory that looks like a checkout this command created."""
+    directory = _clone_dir(tmp_path)
+    (directory / ".git").mkdir(parents=True)
+    return directory
+
+
+def test_cursor_is_an_accepted_component(tmp_path):
+    """R2.4 — no longer rejected as unknown (it was, until issue-157)."""
+    env = env_for(tmp_path / "home")
+    assert install.resolve_components(["cursor"], env) == ["cursor"]
+
+
+def test_cursor_joins_the_default_set_when_its_binary_is_present(tmp_path):
+    """R2.1/R2.2 — detected on PATH, and only then."""
+    present = env_for(tmp_path / "home", binaries=("claude", "cursor-agent"))
+    assert install.resolve_components([], present) == ["cli", "claude", "cursor"]
+
+    absent = env_for(tmp_path / "home", binaries=("claude",))
+    assert install.resolve_components([], absent) == ["cli", "claude"]
+
+
+def test_cursor_drives_its_own_plugin_cli_when_the_binary_has_one(tmp_path):
+    """R1.1/R5.1 — the same two steps Claude gets, off what the binary reported."""
+    env, _ = _cursor_env(tmp_path)
+    steps = install.plan(["cursor"], marketplace_repo="me/loop", env=env)
+    assert argv_of(steps) == [
+        [
+            "/usr/bin/cursor-agent",
+            "plugin",
+            "marketplace",
+            "add",
+            "me/loop",
+            "--scope",
+            "user",
+        ],
+        ["/usr/bin/cursor-agent", "plugin", "install", PLUGIN_KEY, "--scope", "user"],
+    ]
+
+
+def test_cursor_upgrade_via_its_plugin_cli_refreshes_the_marketplace_first(tmp_path):
+    """R1.2 — the R2.4 rule of issue-152 applies to every harness that has a CLI."""
+    env, _ = _cursor_env(tmp_path)
+    steps = install.plan(["cursor"], upgrade=True, env=env)
+    assert argv_of(steps) == [
+        ["/usr/bin/cursor-agent", "plugin", "marketplace", "update", MARKETPLACE_NAME],
+        ["/usr/bin/cursor-agent", "plugin", "update", PLUGIN_KEY, "--scope", "user"],
+    ]
+
+
+def test_cursor_project_scope_passes_through_a_scope_the_binary_accepts(tmp_path):
+    """R3.1 — the moment cursor-agent expresses scope, the-loop stops skipping."""
+    env, _ = _cursor_env(tmp_path)
+    project = tmp_path / "repo"
+    project.mkdir()
+    steps = install.plan(["cursor"], scope="project", project_dir=project, env=env)
+    assert all(step.cwd == project for step in steps)
+    assert all("--scope" in step.argv and "project" in step.argv for step in steps)
+
+
+def test_cursor_falls_back_to_the_documented_local_clone(tmp_path):
+    """R4.1/R4.2 — the route docs/guide/installation.md already describes."""
+    env, _ = _cursor_env(tmp_path, surface=False)
+    steps = install.plan(["cursor"], marketplace_repo="me/loop", env=env)
+    assert argv_of(steps) == [
+        [
+            "/usr/bin/git",
+            "clone",
+            "--",
+            "https://github.com/me/loop.git",
+            str(_clone_dir(tmp_path)),
+        ]
+    ]
+
+
+def test_cursor_marketplace_without_a_working_install_takes_the_fallback(tmp_path):
+    """R5.2 — the split the issue-152 probe was hardened for, now exercised on Cursor."""
+    env, _ = _cursor_env(tmp_path, install_help=False)
+    steps = install.plan(["cursor"], env=env)
+    assert [step.argv[:2] for step in steps] == [["/usr/bin/git", "clone"]]
+
+
+def test_cursor_probe_failure_falls_back_rather_than_propagating(tmp_path):
+    """R5.3 — a hanging binary is 'no surface', not an error."""
+
+    def hang(argv, cwd=None, timeout=None):
+        raise subprocess.TimeoutExpired(argv, timeout or 1)
+
+    env, _ = _cursor_env(tmp_path)
+    env.run = hang  # type: ignore[assignment]
+    steps = install.plan(["cursor"], env=env)
+    assert [step.argv[1] for step in steps] == ["clone"]
+
+
+def test_cursor_upgrade_pulls_the_existing_checkout(tmp_path):
+    """R1.2/R4.1 — fast-forward only, so a developer's commits are never merged over."""
+    directory = _make_checkout(tmp_path)
+    env, _ = _cursor_env(tmp_path, surface=False)
+    steps = install.plan(["cursor"], upgrade=True, env=env)
+    assert argv_of(steps) == [
+        ["/usr/bin/git", "-C", str(directory), "pull", "--ff-only"]
+    ]
+
+
+def test_cursor_install_over_an_existing_checkout_reports_already(tmp_path):
+    """R4.3 — a checkout the command owns is a state it can determine itself."""
+    directory = _make_checkout(tmp_path)
+    env, runner = _cursor_env(tmp_path, surface=False)
+    steps = install.plan(["cursor"], env=env)
+    before = len(runner.calls)
+    results = install.execute(steps, dry_run=False)
+    assert [r.outcome for r in results] == ["already"]
+    assert str(directory) in results[0].command
+    assert len(runner.calls) == before  # nothing was run
+
+
+def test_cursor_upgrade_without_a_checkout_is_skipped_not_installed(tmp_path):
+    """R1.3 — an upgrade never becomes an install behind the operator's back."""
+    env, _ = _cursor_env(tmp_path, surface=False)
+    steps = install.plan(["cursor"], upgrade=True, env=env)
+    assert [step.state for step in steps] == ["skipped"]
+    assert "the-loop install cursor" in steps[0].detail
+    assert not argv_of(steps)
+
+
+def test_cursor_leaves_an_occupied_destination_exactly_as_it_found_it(tmp_path):
+    """R4.4 / abuse case 2 — never delete, never overwrite, never write inside."""
+    directory = _clone_dir(tmp_path)
+    directory.mkdir(parents=True)
+    occupant = directory / "notes.txt"
+    occupant.write_text("someone else's files\n", encoding="utf-8")
+    stamp = occupant.stat().st_mtime_ns
+
+    env, runner = _cursor_env(tmp_path, surface=False)
+    steps = install.plan(["cursor"], env=env)
+    before = len(runner.calls)
+    results = install.execute(steps, dry_run=False)
+
+    assert [r.outcome for r in results] == ["skipped"]
+    assert str(directory) in results[0].detail
+    assert len(runner.calls) == before
+    assert occupant.read_text(encoding="utf-8") == "someone else's files\n"
+    assert occupant.stat().st_mtime_ns == stamp
+    assert list(directory.iterdir()) == [occupant]
+
+
+def test_cursor_without_git_is_skipped_with_the_manual_command(tmp_path):
+    """R4.5 — a missing precondition names the binary and prints the way out."""
+    env, _ = _cursor_env(tmp_path, surface=False, git=False)
+    steps = install.plan(["cursor"], marketplace_repo="me/loop", env=env)
+    assert [step.state for step in steps] == ["skipped"]
+    assert "git" in steps[0].detail
+    assert "https://github.com/me/loop" in steps[0].detail
+
+
+def test_cursor_project_scope_is_skipped_never_widened(tmp_path):
+    """R3.2/R3.3 / abuse case 4 — no path leads from --scope project to a clone."""
+    env, _ = _cursor_env(tmp_path, surface=False)
+    project = tmp_path / "repo"
+    project.mkdir()
+    steps = install.plan(["cursor"], scope="project", project_dir=project, env=env)
+    assert [step.state for step in steps] == ["skipped"]
+    assert not argv_of(steps)
+    assert "--scope user" in steps[0].detail
+    assert not _clone_dir(tmp_path).exists()
+
+
+def test_cursor_dry_run_creates_nothing_and_runs_no_git(tmp_path):
+    """R4.6 / abuse case 3 — the same plan, with the execution left out."""
+    env, runner = _cursor_env(tmp_path, surface=False)
+    steps = install.plan(["cursor"], env=env)
+    before = len(runner.calls)
+    results = install.execute(steps, dry_run=True)
+    assert [r.outcome for r in results] == ["planned"]
+    assert len(runner.calls) == before
+    assert not _clone_dir(tmp_path).exists()
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "not-a-repo",
+        "owner/repo; rm -rf /",
+        "https://github.com/owner/repo",
+        "--upload-pack=touch /tmp/pwned",
+        "$(whoami)/repo",
+    ],
+)
+def test_an_invalid_marketplace_repo_refuses_the_cursor_steps(tmp_path, value):
+    """Abuse case 1 — validated before it can become a URL, let alone an argv."""
+    env, runner = _cursor_env(tmp_path, surface=False)
+    with pytest.raises(install.InvalidMarketplace) as excinfo:
+        install.plan(["cursor"], marketplace_repo=value, env=env)
+    assert value in str(excinfo.value)
+    assert not any("git" in " ".join(argv) for argv in runner.argvs)
+
+
+def test_the_clone_url_is_built_only_from_the_validated_repo(tmp_path):
+    """Security §1 — the URL has one variable part, and it is `owner/repo`."""
+    env, _ = _cursor_env(tmp_path, surface=False)
+    steps = install.plan(["cursor"], marketplace_repo="acme/fork", env=env)
+    assert "https://github.com/acme/fork.git" in steps[0].argv
+
+
+def test_the_cursor_clone_lives_under_the_documented_path(tmp_path):
+    """The path the installation guide prints, and the one the code uses, are one."""
+    home = tmp_path / "home"
+    assert install.cursor_plugin_dir(env_for(home)) == (
+        home / ".cursor" / "plugins" / "local" / "the-loop"
+    )
+
+
+def test_the_documented_clone_path_is_the_one_the_code_uses():
+    """What makes the fallback *documented* rather than invented (R4.1).
+
+    ``CURSOR_PLUGIN_PARENT`` carries a comment claiming the code and
+    ``docs/guide/installation.md`` cannot drift apart. Claims in comments do not hold
+    themselves up — this is what holds it.
+    """
+    guide = (
+        Path(__file__).resolve().parents[2] / "docs" / "guide" / "installation.md"
+    ).read_text(encoding="utf-8")
+    documented = f"~/{install.CURSOR_PLUGIN_PARENT.as_posix()}/{PLUGIN_NAME}"
+    assert documented in guide, f"{documented} is no longer the route the guide prints"
+
+
+def test_a_skipped_cursor_does_not_stop_the_other_components(tmp_path):
+    """R1.4 — components are independent, whichever one cannot run."""
+    env, _ = _cursor_env(tmp_path, surface=False, git=False)
+    steps = install.plan(["claude", "cursor"], marketplace_repo="me/loop", env=env)
+    results = install.execute(steps, dry_run=False)
+    assert [(r.component, r.outcome) for r in results] == [
+        ("claude", "applied"),
+        ("cursor", "skipped"),
+    ]
+    assert install.exit_code(results) == 0
+
+
 # -- components, outcomes, dry-run, exit code (R1.3, R1.4, R4, R5) -------------
 
 
@@ -415,13 +690,7 @@ def test_an_undetected_harness_is_not_in_the_default_set(tmp_path):
 
 def test_components_all_selects_every_component_even_when_undetected(tmp_path):
     env = env_for(tmp_path / "home", binaries=())
-    assert install.resolve_components(["all"], env) == ["cli", "claude"]
-
-
-def test_cursor_is_not_a_component_yet(tmp_path):
-    """Parked on the owner's call (PR #153); tracked as issue-157."""
-    with pytest.raises(ValueError):
-        install.resolve_components(["cursor"], env_for(tmp_path / "home"))
+    assert install.resolve_components(["all"], env) == ["cli", "claude", "cursor"]
 
 
 def test_an_unknown_component_is_rejected(tmp_path):

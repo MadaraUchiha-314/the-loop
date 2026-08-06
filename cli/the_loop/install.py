@@ -8,35 +8,41 @@ had to teach the daemon to install the plugin before a spawn, because a session 
 the plugin has no loop at all; this module is the same capability for a human or a CI job,
 with a scope they can choose.
 
-**Claude Code only, deliberately** (owner decision on PR #153). the-loop is also shipped
-as a Cursor plugin, but Cursor's plugin *installation* is a separate problem — as of
-Cursor 2.5 the documented routes are the marketplace site and ``/add-plugin`` in the
-editor, with ``cursor-agent plugin marketplace add`` reported to exist but no documented
-CLI install — so it is tracked on its own (issue-157) rather than half-supported here.
-:data:`BINARIES` plus a per-harness planner is the whole extension point.
+**Both harnesses, by the same mechanism** (issue-157). Cursor was parked on PR #153
+because the first cut *hard-coded* a local clone, and as of Cursor 2.5 no CLI install
+command was documented — "clone-and-hope with a permanently skipped project scope". It is
+back on different terms, and :data:`BINARIES` plus a per-harness planner was the whole
+extension point decision-057 promised: the clone is now the **fallback**, reached only
+after :func:`probe` asks ``cursor-agent`` and it answers that it has no plugin surface. If
+Cursor ships one, the-loop drives it with no release of ours.
 
 Two rules shape everything here:
 
-* **the-loop does not re-implement a harness's installer.** Where ``claude`` exposes a
+* **the-loop does not re-implement a harness's installer.** Where a harness exposes a
   plugin surface, we shell out to it and let the harness own fetching, versioning and
   scope. The surface is *asked for* (``<binary> plugin --help``), never assumed from a
   version number. Only when the binary is absent, or has no such surface, do we fall
-  back — and only to a route this repository already documents: the settings keys
-  ``/plugin marketplace add`` + ``/plugin install`` write (the same two
-  ``routing.harnessPlugins`` writes before a spawn).
+  back — and only to a route this repository already documents: for Claude Code, the
+  settings keys ``/plugin marketplace add`` + ``/plugin install`` write (the same two
+  ``routing.harnessPlugins`` writes before a spawn); for Cursor, the local checkout under
+  ``~/.cursor/plugins/local/`` that ``docs/guide/installation.md`` prints.
 * **A plan, then its execution.** Everything becomes an ordered list of :class:`Step`,
   each carrying the exact argv (or the file it writes). ``--dry-run`` is "build the plan,
   print it, stop" rather than a second code path that could drift, and a step that cannot
   run says so at *plan* time, so a preview shows the skips too.
 
-Security (see ``docs/specs/issue-152/requirements.md`` § Security considerations):
-installing is code execution, so the marketplace ``owner/repo`` is validated with
-``harness_plugins``' own pattern before it can reach an argv, a URL or a settings file;
-every command is an argv list executed without a shell; the settings fallback goes
-through :func:`the_loop.trust.update_json`, the single non-destructive writer; and a scope
-that cannot be expressed is skipped rather than widened.
+Security (see ``docs/specs/issue-152/requirements.md`` and
+``docs/specs/issue-157/requirements.md`` § Security considerations): installing is code
+execution, so the marketplace ``owner/repo`` is validated with ``harness_plugins``' own
+pattern before it can reach an argv, a URL or a settings file; every command is an argv
+list executed without a shell; the settings fallback goes through
+:func:`the_loop.trust.update_json`, the single non-destructive writer; the Cursor fallback
+writes exactly one path and never deletes, overwrites or writes inside a directory it did
+not create as a checkout; and a scope that cannot be expressed is skipped rather than
+widened.
 
-Spec: docs/specs/issue-152/design.md (decision-057).
+Spec: docs/specs/issue-152/design.md (decision-057) · docs/specs/issue-157/design.md
+(decision-064).
 """
 
 from __future__ import annotations
@@ -54,6 +60,7 @@ from .harness_plugins import (
     DEFAULT_MARKETPLACE_REPO,
     MARKETPLACE_NAME,
     PLUGIN_KEY,
+    PLUGIN_NAME,
     ClaudePluginStore,
     _REPO_RE,
 )
@@ -63,6 +70,7 @@ logger = logging.getLogger("the-loop.install")
 
 __all__ = [
     "COMPONENTS",
+    "CURSOR_PLUGIN_PARENT",
     "DEFAULT_MARKETPLACE_REPO",
     "DISTRIBUTION",
     "Env",
@@ -71,6 +79,7 @@ __all__ = [
     "Step",
     "StepResult",
     "cli_method",
+    "cursor_plugin_dir",
     "default_env",
     "execute",
     "exit_code",
@@ -80,14 +89,21 @@ __all__ = [
     "resolve_marketplace_repo",
 ]
 
-#: What can be installed. ``cli`` is this package; ``claude`` is the harness plugin.
-#: Cursor is deliberately not here yet — see the module docstring and issue-157.
-COMPONENTS = ("cli", "claude")
+#: What can be installed. ``cli`` is this package; ``claude`` and ``cursor`` are the same
+#: plugin, in the harness that hosts it.
+COMPONENTS = ("cli", "claude", "cursor")
 
 #: The harness binaries, by component. A mapping rather than a constant because the
-#: plan/report machinery is harness-shaped: adding Cursor (issue-157) is an entry here
-#: plus its own planner, not a new command.
-BINARIES: Dict[str, str] = {"claude": "claude"}
+#: plan/report machinery is harness-shaped: a third harness is an entry here plus its own
+#: planner, not a new command. It is also what makes a harness *detected* for the default
+#: component set, and what triggers marketplace validation in :func:`plan`.
+BINARIES: Dict[str, str] = {"claude": "claude", "cursor": "cursor-agent"}
+
+#: Where Cursor keeps locally checked-out plugins, relative to the operator's home. The
+#: path lives here rather than inline so the code and ``docs/guide/installation.md``
+#: cannot drift: the guide printing this exact command is what makes the clone a
+#: *documented* fallback rather than an invented one.
+CURSOR_PLUGIN_PARENT = Path(".cursor") / "plugins" / "local"
 
 #: The PyPI distribution name — see decision-019 for why it is not ``the-loop``.
 DISTRIBUTION = "the-loopy-one"
@@ -442,6 +458,152 @@ def plan_claude(
     ]
 
 
+def cursor_plugin_dir(env: Env) -> Path:
+    """Where the local-clone fallback puts the plugin.
+
+    ``env.home`` rather than :meth:`Path.home` because every test drives a fake HOME —
+    the directory under test would otherwise be the developer's own Cursor installation.
+    """
+    return Path(env.home) / CURSOR_PLUGIN_PARENT / PLUGIN_NAME
+
+
+def plan_cursor(
+    *, scope: str, upgrade: bool, project_dir: Path, repo: str, env: Env
+) -> List[Step]:
+    """Cursor: its own plugin CLI when it has one, else the documented local clone.
+
+    The first branch is *literally* the Claude path — same helper, same two commands,
+    same ``--scope`` pass-through — which is the point of asking the binary rather than
+    reading a docs page: the day ``cursor-agent`` grows ``plugin install``, this takes it
+    with no change here. Until then the probe reports no surface (a ``marketplace``
+    command without a working ``install`` counts as none, R5.2) and the clone runs.
+    """
+    surface = probe(BINARIES["cursor"], env)
+    if surface.has_plugin_cli and surface.path:
+        return _harness_cli_steps(
+            "cursor",
+            surface,
+            scope=scope,
+            upgrade=upgrade,
+            project_dir=project_dir,
+            repo=repo,
+        )
+    reason = (
+        "cursor-agent not found on PATH"
+        if not surface.path
+        else "this cursor-agent build exposes no usable `plugin` command"
+    )
+    return _cursor_clone_steps(
+        scope=scope, upgrade=upgrade, repo=repo, env=env, reason=reason
+    )
+
+
+def _cursor_clone_steps(
+    *, scope: str, upgrade: bool, repo: str, env: Env, reason: str
+) -> List[Step]:
+    """The fallback route, as one step whose outcome is decided at *plan* time.
+
+    Deciding here rather than during execution is what lets ``--dry-run`` show the skips
+    and the ``already``, and it is why nothing below touches the filesystem beyond
+    reading it.
+    """
+    verb = "upgrade" if upgrade else "install"
+    summary = f"{verb} the the-loop plugin for cursor"
+    directory = cursor_plugin_dir(env)
+    url = f"https://github.com/{repo}.git"
+    manual = f"git clone {url} {directory}"
+
+    # Cursor's local plugins directory is user-level; nothing documented expresses a
+    # project-scoped Cursor plugin. A scope that cannot be honoured is reported, never
+    # widened to the whole machine (R3.2/R3.3).
+    if scope != "user":
+        return [
+            Step(
+                "cursor",
+                summary,
+                state="skipped",
+                detail=(
+                    f"{reason}, and Cursor documents no project-local plugin directory, "
+                    "so a project-scoped install cannot be expressed; re-run with "
+                    "--scope user, or install it from Cursor with /add-plugin in that "
+                    "workspace"
+                ),
+            )
+        ]
+
+    git = env.which("git")
+    if not git:
+        return [
+            Step(
+                "cursor",
+                summary,
+                state="skipped",
+                detail=f"{reason}, and git is not on PATH; install git, then: {manual}",
+            )
+        ]
+
+    if directory.exists():
+        # A checkout this command owns is a state the-loop can determine itself, so it
+        # answers rather than delegating (R4.3). Anything else in that directory belongs
+        # to somebody else: report it and touch nothing (R4.4).
+        if not (directory / ".git").is_dir():
+            return [
+                Step(
+                    "cursor",
+                    summary,
+                    state="skipped",
+                    target=str(directory),
+                    detail=(
+                        f"{directory} exists but is not a git checkout; leaving it "
+                        "untouched — move it aside and re-run, or install it from "
+                        "Cursor with /add-plugin"
+                    ),
+                )
+            ]
+        if not upgrade:
+            return [
+                Step(
+                    "cursor",
+                    summary,
+                    state="already",
+                    target=str(directory),
+                    detail=f"{directory} is already a checkout; nothing to do",
+                )
+            ]
+        return [
+            Step(
+                "cursor",
+                f"update the Cursor plugin checkout in {directory}",
+                argv=[str(git), "-C", str(directory), "pull", "--ff-only"],
+                detail=reason,
+            )
+        ]
+
+    if upgrade:
+        return [
+            Step(
+                "cursor",
+                summary,
+                state="skipped",
+                detail=(
+                    f"nothing to upgrade: no checkout at {directory}; run "
+                    "`the-loop install cursor` first"
+                ),
+            )
+        ]
+    # `--` closes the question of whether the URL could be read as an option. It cannot
+    # — `repo` is validated as owner/repo before the plan exists, and the URL is built
+    # around it — but the guarantee is worth one argv element.
+    return [
+        Step(
+            "cursor",
+            f"clone {repo} into {directory}",
+            argv=[str(git), "clone", "--", url, str(directory)],
+            detail=reason,
+        )
+    ]
+
+
 def _harness_cli_steps(
     component: str,
     surface: HarnessSurface,
@@ -499,6 +661,14 @@ def _harness_cli_steps(
     ]
 
 
+#: The per-harness planner, by component. Every planner takes the same keyword
+#: arguments, so :func:`plan` stays one call and a third harness is a row here.
+PLANNERS: Dict[str, Callable[..., List[Step]]] = {
+    "claude": plan_claude,
+    "cursor": plan_cursor,
+}
+
+
 # -- plan & execute ------------------------------------------------------------
 
 
@@ -531,7 +701,7 @@ def plan(
                 scope=scope, upgrade=upgrade, project_dir=project, env=env
             )
         else:
-            steps += plan_claude(
+            steps += PLANNERS[name](
                 scope=scope,
                 upgrade=upgrade,
                 project_dir=project,

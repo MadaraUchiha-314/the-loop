@@ -8,7 +8,10 @@
 - **Extends:** [decision-054](decision-054.md) (the settings keys the daemon writes before
   a spawn, reused here as the Claude fallback) · [decision-019](decision-019.md) (the
   `the-loopy-one` distribution name)
-- **Deferred:** Cursor installation — issue-157 (owner decision on PR #153)
+- **Deferred:** Cursor installation — issue-157 (owner decision on PR #153).
+  **Discharged** by [decision-064](decision-064.md): `cursor` is now a component, probed
+  the same way, with the local checkout as its documented fallback. Point 0 below is
+  historical; everything else in this decision stands.
 
 ## Context
 
@@ -34,9 +37,10 @@ knows how — decision-054), or the-loop drives the harness's own plugin CLI.
 build a plan of steps and drive the harness's own installer, falling back only to a route
 this repository already documents.**
 
-0. **Claude Code only, for now.** `cli` and `claude` are the components; `cursor` is
-   rejected as unknown rather than half-supported. the-loop *is* a Cursor plugin
-   (decision-015), but installing one from a terminal is a different problem — see
+0. **Claude Code only, for now.** *(Superseded by [decision-064](decision-064.md) —
+   `cursor` is a component as of issue-157.)* `cli` and `claude` are the components;
+   `cursor` is rejected as unknown rather than half-supported. the-loop *is* a Cursor
+   plugin (decision-015), but installing one from a terminal is a different problem — see
    *Cursor, parked* below — and it is tracked as issue-157. The module is harness-shaped,
    so adding it later is a `BINARIES` entry plus a planner, not a new command.
 1. **The harness owns installing.** Where `claude` exposes a plugin surface, the-loop
@@ -78,7 +82,7 @@ marketplace source; and every step is auditable before it runs.
 - **A shipped command that executes package managers.** Bounded deliberately: argv lists
   with no shell, a validated marketplace source, no privilege elevation, and writes
   confined to the harness's own config files or the named project.
-- **Cursor, parked (issue-157).** The first cut supported it through a local clone under
+- **Cursor, parked (issue-157 — since discharged, decision-064).** The first cut supported it through a local clone under
   `~/.cursor/plugins/local/`. Review parked that: as of Cursor 2.5 (Feb 2026) plugins are
   installed from the marketplace site or with `/add-plugin` in the editor;
   `cursor-agent plugin marketplace add` is reported to exist, but no CLI install command

@@ -51,15 +51,16 @@ opening a session — at user scope, or for one project only:
 
 ```bash
 pip install the-loopy-one                                  # once
-the-loop install                                           # CLI + the Claude Code plugin
+the-loop install                                           # CLI + every harness on PATH
+the-loop install cursor                                    # Cursor only
 the-loop install claude --scope project --project-dir .    # this repository only
 the-loop upgrade                                           # when a release lands
 ```
 
-It drives Claude Code's own plugin installer, prints every command before running it
-(`--dry-run` previews), and says what it skipped and why. Cursor is not covered yet
-([#157](https://github.com/MadaraUchiha-314/the-loop/issues/157)). The in-session routes
-below are unchanged, and are the shortest path if you would rather not install the CLI.
+It drives each harness's own plugin installer where there is one — asking the binary
+rather than assuming — prints every command before running it (`--dry-run` previews), and
+says what it skipped and why. The in-session routes below are unchanged, and are the
+shortest path if you would rather not install the CLI.
 
 ### Claude Code
 
