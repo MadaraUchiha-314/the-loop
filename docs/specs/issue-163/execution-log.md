@@ -103,6 +103,27 @@ status: in-progress
 - **Next:** self-review rounds, security review, capability-doc fold-in check, reviewer
   briefing on the PR.
 
+### 2026-08-06 — owner feedback on PR #166, actioned
+
+- **Phase:** needs-review
+- **Did:** Owner answered all four open questions on
+  [PR #166](https://github.com/MadaraUchiha-314/the-loop/pull/166):
+  - **Labels** — `loop:test-planning` (`#6f42c1`) and `loop:verification` (`#1f883d`)
+    created in this repository with the descriptions and colours
+    `docs/reports/labels-and-dashboards.md` documents, so the report and the repository
+    now agree.
+  - **The skipping-gates gap** — filed as
+    [issue-167](https://github.com/MadaraUchiha-314/the-loop/issues/167). Enumerating it
+    for the ticket corrected the count I gave in round 1: it is **six** nodes, not four —
+    `critic-review` and `security-review` are also affected, and `security-review` is
+    `required: true`. A latent second defect rides along: `capability-docs` gates on a
+    `Capability docs` section the execution-log template does not offer, invisible only
+    because the node skips.
+  - **Fail-closed upgrade behaviour** for in-flight items with no `testing-plan.md` —
+    confirmed as intended.
+  - **`uv.lock`** — accepted.
+- **Checkpoint/tests:** no code change; `make lint` clean.
+
 ### 2026-08-06 — self-review and the ready-to-ship gate
 
 - **Phase:** needs-review
@@ -110,12 +131,15 @@ status: in-progress
   1. *Correctness of the gates.* Checked that each new gate actually runs rather than
      skipping — which is how `verification` came to re-declare `produces`, and how the
      `skip` short-circuit was found. Re-read `validate-artifacts`: a node with no
-     `produces` returns `skipped`, so the four post-implementation nodes that gate on
-     execution-log sections (`self-review`, `evidence`, `capability-docs`,
-     `reviewer-briefing`) are *also* skipping today. **Deliberately left alone** — it is a
-     pre-existing gap in issue-109/148 territory, four nodes wide, and fixing it means
-     deciding what artifact each of them produces. Not folded into a testing work item;
-     it wants its own ticket. This change neither worsens nor depends on it.
+     `produces` returns `skipped`, so **all six** post-implementation nodes that gate on
+     execution-log sections (`self-review`, `critic-review`, `security-review`,
+     `evidence`, `capability-docs`, `reviewer-briefing`) are *also* skipping today —
+     `security-review` among them, despite `required: true`. **Deliberately left alone**
+     — it is a pre-existing gap in issue-109/148 territory, and fixing it means deciding
+     what these nodes validate against (their output is sections of the execution log,
+     not a spec artifact). Not folded into a testing work item; filed as
+     [issue-167](https://github.com/MadaraUchiha-314/the-loop/issues/167) at the owner's
+     request on PR #166. This change neither worsens nor depends on it.
   2. *Blast radius of the chain fix.* The chain-semantics change touches every node
      evaluation in the product, which is why T6 (full suite) is in the matrix rather than
      just the graph suites. 1326 pass. Blocking and waiting semantics are untouched; only
