@@ -62,6 +62,44 @@ There are exactly **two** runtime concepts and **one** contract between them.
   `cli/tests/test_graph_parity.py` — including that a bundled template offers every section
   the node it is authored for requires.
 
+### What a node `validates` (issue-167)
+
+`produces` means *this node authored it*. A node that gates an artifact it did **not**
+author — the six review-chain nodes each own one section of the shared
+`execution-log.md` — declares it on the hook entry instead
+([decision-063](../decisions/decision-063.md)):
+
+```yaml
+exit:
+  - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Security review (gate)"]}}
+```
+
+- `validates` SHALL be a **hook parameter**, not a node field: it describes one assertion,
+  not the node's ownership, and only `validate-artifacts` reads it.
+- It SHALL resolve through the **same** resolver as `produces`, so alternation, the
+  absent-artifact block and the two-files-one-slot ambiguity block are identical for both
+  and cannot drift apart. Every declared check (`locked`, `frontMatter`, `sections`,
+  `checkmarks`) applies to a validated artifact exactly as to a produced one.
+- A validated artifact that is **absent** SHALL block, naming the file. It is never a skip:
+  the node asserted the file would be there.
+- **A gate with nothing to read SHALL fail closed.** When a `validate-artifacts` entry
+  declares any content check and resolves *no* artifact — neither `produces` nor
+  `validates` — it SHALL `block`, and the block SHALL be **not retriable**: re-running a
+  node cannot repair the graph that declared it, and a retriable block would burn
+  `maxAttempts` before anyone was told.
+- `cli/tests/test_graph_parity.py`'s **P5** SHALL enforce all three questions against the
+  shipped graph: every content gate resolves a target (P5a), every validated name is
+  tracked by the manifest (P5b), and every section it demands exists in that artifact's
+  bundled template (P5c).
+- What this proves SHALL be stated rather than implied: the section check is **structural**,
+  so a heading holding placeholder text passes it. The gate proves the *record exists*; the
+  reviewer judges whether the review was any good.
+
+Before this, those six nodes declared `sections:` and no artifact at all — so their
+`validate-artifacts` resolved nothing, returned *skipped*, and (a skip not being a
+decision) the chain passed straight through every one of them, `security-review`
+included, however empty the log was.
+
 ### The hook contract
 
 - Every hook SHALL have one signature — `(HookContext) -> HookResult` — where
@@ -268,6 +306,7 @@ There are exactly **two** runtime concepts and **one** contract between them.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-167 | Six gates stopped reporting success without running: `validate-artifacts` gained `validates:` for an artifact a node asserts against but did not author, so the six review-chain nodes gate their sections of the shared `execution-log.md`; a content gate that resolves no artifact now blocks (not retriable) instead of skipping; the bundled execution-log template gained the `Capability docs` section `capability-docs` had always demanded; P5 asserts all three against the shipped graph | [spec](../specs/issue-167/), [decision-063](../decisions/decision-063.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/167) |
 | issue-163 | Testing became two nodes: `test-planning` produces `testing-plan.md` before the task DAG that references it, `verification` re-gates the same artifact after implementation and before the review chain; a `skip` stopped short-circuiting a chain, which is what had left `implementation` parking at `no_edge` | [spec](../specs/issue-163/), [decision-060](../decisions/decision-060.md), [testing-and-contracts](testing-and-contracts.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/163) |
 | issue-156 | Process runner removed; tmux is the only runner (2026-08-05): every spawn is tmux-hosted, so "every spawn enters the graph" no longer needs a per-runner qualifier, and the gate-session binding's `runner` is always `"tmux"` | [spec](../specs/issue-156/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/156) |
 | issue-148 | The graph went from observer to authority: `the-loop graph complete` (the node-completion claim — idempotent, node-named, never a verdict), `GraphContext` resolved read-only before every delivery and spawn, the `$graph_context` prompt block, consult-first ordering at human gates (no consume-only routes), `resolve_session` gained its caller (`graph.gate_session`), tmux spawns finally enter the graph, two-writer state locking, and P4 phase parity — `pdlc.yaml` defines the sequence, the prose renders it | [spec](../specs/issue-148/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/148) |
