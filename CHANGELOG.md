@@ -1,3 +1,9 @@
+## v7.2.0 (2026-08-06)
+
+### Feat
+
+- **issue-161**: control plane and API layer — core → API → clients (#162)
+
 ## v7.1.1 (2026-08-05)
 
 ### Fix
