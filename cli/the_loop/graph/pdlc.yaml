@@ -13,7 +13,12 @@
 # `needs-review` label before this graph existed — which is exactly where the
 # measured drift piled up (23 of 26 execution logs stopped there).
 #
-# Spec: docs/specs/issue-109/  ·  Decisions: 041, 042
+# `test-planning` and `verification` (issue-163) are the same argument applied to
+# testing: how a work item will be proved is planned before the task DAG that
+# references it, and the plan is executed at a node of its own rather than being
+# asserted in prose at review time.
+#
+# Spec: docs/specs/issue-109/, docs/specs/issue-163/  ·  Decisions: 041, 042, 060
 
 version: 1
 start: brainstorming
@@ -70,6 +75,39 @@ nodes:
       - {hook: enforces-boundaries-from, with: {upstream: "requirements.md|bugfix.md", markers: ["trust boundary", "abuse case"]}}
       - lint-artifacts
 
+  # Planning HOW the work item will be proved. It sits between `design` and
+  # `design-approval` on purpose (owner's call on PR #166): the plan is derived
+  # from the design and reviewed WITH it, so one human gate approves both rather
+  # than the plan getting a stop of its own — and it is still locked before the
+  # task DAG that references it, since each task's `_Test:_` names a row of the
+  # matrix (issue-163, decision-060).
+  #
+  # `Verification results` is gated here too — `validate-artifacts` treats an
+  # empty required section as a finding, so the heading is authored up front
+  # holding "not yet executed", and the `verification` node fills a section
+  # rather than inventing one.
+  - id: test-planning
+    phase: test-planning
+    actor: agent
+    produces: [testing-plan.md]
+    command: create-testing-plan
+    stage: test-planning
+    entry: [set-phase-label, log-entry]
+    exit:
+      - hook: validate-artifacts
+        with:
+          locked: true
+          sections:
+            - Test matrix
+            - Verification environment
+            - Evidence plan
+            - Verification results
+      - lint-artifacts
+
+  # One gate, two artifacts: `design.md` and the `testing-plan.md` derived from
+  # it. Feedback is recorded into BOTH, because a reviewer's note about the test
+  # matrix belongs in the plan, not filed under the design — the whole point of
+  # record-feedback is that feedback travels with the document it concerns.
   - id: design-approval
     actor: human
     session: inherit
@@ -77,6 +115,7 @@ nodes:
     exit:
       - classify-feedback
       - {hook: record-feedback, with: {into: design.md}}
+      - {hook: record-feedback, with: {into: testing-plan.md}}
 
   - id: tasks-breakdown
     phase: tasks-breakdown
@@ -98,6 +137,29 @@ nodes:
     entry: [set-phase-label, log-entry]
     exit:
       - {hook: validate-artifacts, with: {checkmarks: complete}}
+      - verify-tests
+
+  # Executing the plan the `test-planning` node locked. It re-declares the SAME
+  # artifact — the shape `implementation` already uses for `tasks.md` — because
+  # `validate-artifacts` returns *skipped* for a node that declares none, and a
+  # gate that reports success without running is the issue-124 failure mode.
+  # It sits before the review chain so a failed verification is visible to the
+  # reviewers rather than discovered after them (issue-163).
+  - id: verification
+    phase: verification
+    actor: agent
+    produces: [testing-plan.md]
+    command: verify-work
+    stage: verification
+    entry: [set-phase-label, log-entry]
+    exit:
+      - hook: validate-artifacts
+        with:
+          checkmarks: complete
+          sections: [Verification results]
+      # No-op unless a graph revision binds a command, exactly as on
+      # `implementation`: the obvious seam for a project's own verification entry
+      # point, without the-loop owning a runner.
       - verify-tests
 
   # --- everything below was ONE `needs-review` label before this graph -------
@@ -168,12 +230,16 @@ edges:
   - {from: requirements-approval, to: design, on: approved}
   - {from: requirements-approval, to: design, on: approved-with-comments}
   - {from: requirements-approval, to: requirements-definition, on: changes-requested}
-  - {from: design, to: design-approval, on: pass}
+  - {from: design, to: test-planning, on: pass}
+  - {from: test-planning, to: design-approval, on: pass}
   - {from: design-approval, to: tasks-breakdown, on: approved}
   - {from: design-approval, to: tasks-breakdown, on: approved-with-comments}
+  # Back to `design`, not to `test-planning`: the plan is derived from the design,
+  # so a change to the design re-derives the plan on the way back through.
   - {from: design-approval, to: design, on: changes-requested}
   - {from: tasks-breakdown, to: implementation, on: pass}
-  - {from: implementation, to: self-review, on: pass}
+  - {from: implementation, to: verification, on: pass}
+  - {from: verification, to: self-review, on: pass}
   - {from: self-review, to: critic-review, on: pass}
   - {from: critic-review, to: security-review, on: pass}
   - {from: security-review, to: evidence, on: pass}

@@ -25,7 +25,7 @@ labels sit unused precisely because past work bypassed the loop.)
    work is done here; [`skills/the-loop/reference/workflow.md`](skills/the-loop/reference/workflow.md)
    has the phase-by-phase detail. Follow them — don't re-derive the process.
 2. **Every change is a work item with a ticket.** Nothing is worked without a GitHub issue.
-   Create and lock the Kiro 3-phase spec (`requirements → design → tasks`) under
+   Create and lock the spec chain (`requirements → design → testing-plan → tasks`) under
    `docs/specs/<id>/` before writing code, **scaling rigor to the change** per
    `config.autonomy` tiers: a trivial (tier 1–2) change is autonomous-complete and needs no
    full spec; a tier 3+ change does. When unsure which, follow the skill.

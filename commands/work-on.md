@@ -1,5 +1,5 @@
 ---
-description: Run "the-loop" on a work item (GitHub issue or Jira id) via the 3-phase spec workflow — requirements → design → tasks → execute, with self/critic review.
+description: Run "the-loop" on a work item (GitHub issue or Jira id) end-to-end — requirements → design → testing plan → tasks → execute → verify, with self/critic review.
 argument-hint: "<ticket-id> (e.g. 12 | issue-12 | PROJ-42)"
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Task
 ---
@@ -36,7 +36,7 @@ transition (label = `<workflow.phaseLabelPrefix><phase>`, e.g. `loop:design`), a
 mirror it in the execution log's `phase` front-matter (`brainstorming` is optional — enter
 it only when the work needs a scratchpad; otherwise start at `requirements-definition`):
 
-`not-started → brainstorming → requirements-definition → design → tasks-breakdown → implementation → needs-review → complete`
+`not-started → brainstorming → requirements-definition → design → test-planning → tasks-breakdown → implementation → verification → needs-review → complete`
 
 **Iterate, then advance.** Every artifact — starting from the optional `brainstorm.md`
 root — is refined with human feedback until it is **locked** (`status: approved`); only
@@ -100,17 +100,34 @@ requirements.
    produce **UI/UX design artifacts** under `docs/specs/<id>/design/` (self-contained
    HTML+CSS+JS prototypes and/or a linked Figma file), inventory them in `design.md`, and
    iterate them with the **designer** until locked (`reference/design-artifacts.md`).
-   Request human review; do not proceed until approved.
+   **Do not request review yet** — the testing plan (next step) is reviewed with it.
 
-6. **Phase 3 — Tasks** (`tasks-breakdown`). Create `docs/specs/<id>/tasks.md`: a DAG of
-   small, verifiable tasks, each referencing the requirement(s) it satisfies and its
-   dependencies. Request human review; do not proceed until approved.
+6. **Testing plan** (`test-planning`). Create `docs/specs/<id>/testing-plan.md` from the
+   approved requirements + design: the **test matrix** (one row per candidate testing
+   type — unit, integration, contract, e2e, UI/visual, snapshot, performance,
+   security/abuse-case, accessibility, migration, manual — each either in scope or `n/a`
+   **with a written reason**), the requirement trace, the **verification environment**
+   (repos, services, fixtures, bring-up commands, credentials **by reference only**), the
+   **evidence plan**, the activities checklist, and an empty **Verification results**
+   heading. Nothing here is mandatory in itself — the matrix is work-item dependent — but
+   every row gets a decision. the-loop **facilitates** verification and owns no runner:
+   name the project's own commands, and link the operator's `customInstructions` docs
+   rather than restating them. Lock it (`status: approved`); it names commands an agent
+   will run, so review it like code. See `reference/testing.md`. **Then request the one
+   human review covering both `design.md` and this plan** — feedback is recorded into
+   each, and `changes-requested` returns to the design step, which re-derives the plan.
+   Do not proceed until approved.
+
+7. **Tasks** (`tasks-breakdown`). Create `docs/specs/<id>/tasks.md`: a DAG of
+   small, verifiable tasks, each referencing the requirement(s) it satisfies, the
+   testing-plan row that proves it, and its dependencies. Request human review; do not
+   proceed until approved.
 
    **After each phase doc is established, update the ticket with a reference (link) to
    the checked-in artifact** — single source of truth, not a copy. Later changes to a
    spec doc are made as **edits to that file, not new comments**.
 
-7. **Implementation** (`implementation`). Entering implementation crosses the big phase
+8. **Implementation** (`implementation`). Entering implementation crosses the big phase
    boundary: **reset context per `contextManagement.phaseBoundary` (default `clear`)**
    and execute against the locked spec files read from disk, not the drafting
    conversation (plan-mode style; `reference/context.md`). Execute the task DAG
@@ -122,7 +139,17 @@ requirements.
    `compact`); mid-task compact only, never clear; never reset without the
    checkpoint.** Same tooling as CI; logging/observability identical to runtime.
 
-8. **Review** (`needs-review`). Run up to `reviews.selfReviewCount` self-reviews and
+9. **Verification** (`verification`). Execute `testing-plan.md`: bring up the declared
+   environment, run each planned activity, and tick it **only** once it has run and its
+   evidence is recorded. Fill **Verification results** with the per-activity command,
+   outcome and evidence link, and commit the evidence under `docs/specs/<id>/evidence/`,
+   **redacted** (tokens, cookies, personal data, internal hostnames) — that directory is
+   as public as the repository. UI verification captures screenshots of each verified
+   state and an animated capture (GIF) when the behaviour is a *flow*. An activity that
+   cannot run stays unticked: record why, then replan (with the reason) or escalate; an
+   environment that will not come up escalates rather than passing the gate.
+
+10. **Review** (`needs-review`). Run up to `reviews.selfReviewCount` self-reviews and
    `reviews.criticReviewCount` critic reviews (configured critics, e.g. a different
    harness/model) BEFORE escalating to the human reviewer. Then run the **security
    review gate** (`security.review`): the built-in security-review skill when
@@ -133,8 +160,9 @@ requirements.
    `notifications.events` filters (harness-config.yaml), resolving recipients by role
    from `.the-loop/collaborators.yaml`, when a human action is pending.
 
-9. **Complete** (`complete`). Present validated evidence that the acceptance criteria
-   are met (tests, screenshots, logs) on the PR; record it in the execution log.
+11. **Complete** (`complete`). Present validated evidence that the acceptance criteria
+   are met — **summarised from the verification results** rather than re-derived — on the
+   PR; record it in the execution log.
    **Before requesting human review, post/update the R10 reviewer briefing in the PR**
    (required gate item — `userInteraction.prSummary.required`), produced from
    `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/pr-briefing.md`: a **condensed,
@@ -144,7 +172,7 @@ requirements.
    enough context to decide, and **educate the user on the low-level design decisions —
    this is mandatory, not optional.**
 
-10. **Capture learnings.** Add to `learnings/learnings.md` (+ a `learning-<nnn>.md`) for
+12. **Capture learnings.** Add to `learnings/learnings.md` (+ a `learning-<nnn>.md`) for
    any user/system feedback worth remembering. Log durable decisions under
    `docs/decisions/`.
 

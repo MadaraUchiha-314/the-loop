@@ -172,3 +172,66 @@ def test_a_chain_of_plain_passes_still_routes_on_pass(ctx):
         return HookResult.ok("t-plain-b")
 
     assert run_chain(["t-plain-a", "t-plain-b"], ctx).outcome == PASS
+
+
+class TestASkipIsNotADecision:
+    """A hook that declines to run has said nothing about the node (issue-163).
+
+    Short-circuiting on `skip` produced two failures with one cause. Hooks
+    *after* a skipping one never ran — `design`'s chain is
+    `validate-artifacts, enforces-boundaries-from, lint-artifacts`, and the
+    middle one skips whenever the upstream artifact is absent, taking the lint
+    gate down with it. And a chain *ending* in a skip routed on the outcome
+    `"skip"`, for which no edge is declared, so `implementation` — whose chain
+    ends in a `verify-tests` that is a no-op unless a command is bound — parked
+    at `no_edge` and escalated instead of advancing to the next node.
+    """
+
+    def test_the_chain_runs_on_past_a_skipping_hook(self, ctx):
+        calls = []
+
+        @registry.hook("t-skips")
+        def _skip(c):
+            calls.append("skip")
+            return HookResult.skipped("t-skips", "nothing to do")
+
+        @registry.hook("t-gate")
+        def _gate(c):
+            calls.append("gate")
+            return HookResult.blocked("t-gate", [Message("the real finding")])
+
+        outcome = run_chain(["t-skips", "t-gate"], ctx)
+        assert calls == ["skip", "gate"], "a skip must not hide the gates behind it"
+        assert outcome.status == BLOCK
+        assert "the real finding" in outcome.render()
+
+    def test_a_chain_ending_in_a_skip_still_routes_on_pass(self, ctx):
+        """The `implementation → verification` edge depends on this."""
+
+        @registry.hook("t-ok")
+        def _ok(c):
+            return HookResult.ok("t-ok")
+
+        @registry.hook("t-noop")
+        def _noop(c):
+            return HookResult.skipped("t-noop", "no command declared")
+
+        outcome = run_chain(["t-ok", "t-noop"], ctx)
+        assert outcome.status == PASS
+        assert outcome.outcome == PASS
+        assert outcome.blocking is None
+
+    def test_a_skip_does_not_override_an_earlier_declared_outcome(self, ctx):
+        """A human gate's verdict must survive a later no-op hook."""
+
+        @registry.hook("t-verdict")
+        def _verdict(c):
+            return HookResult(
+                status=PASS, hook="t-verdict", data={"outcome": "approved"}
+            )
+
+        @registry.hook("t-nothing")
+        def _nothing(c):
+            return HookResult.skipped("t-nothing")
+
+        assert run_chain(["t-verdict", "t-nothing"], ctx).outcome == "approved"

@@ -1,8 +1,114 @@
 # Testing & API-spec reference
 
 Config: `testing` and `apiSpecs` in `.the-loop/harness-config.yaml`. This file codifies the
-integration-test scenario conventions and the API-contract conventions (issue #11) so
-the essence is not lost.
+testing plan and the verification node (issue-163), the integration-test scenario
+conventions and the API-contract conventions (issue #11) so the essence is not lost.
+
+## The testing plan (`testing-plan.md`) — phase `test-planning`
+
+A work item is only *done* when the-loop can **prove** it is done. The proof is planned
+as a first-class artifact, derived from `design.md` and locked before `tasks.md` is
+written — each task's `_Test:_` names a row of the plan's matrix, so the DAG and the plan
+cannot describe different work.
+
+**It is reviewed with the design, not separately.** The `test-planning` node sits between
+`design` and `design-approval`, so the one human gate approves `design.md` and the plan
+together and `record-feedback` writes the reviewer's notes into **both** — a note about
+the test matrix belongs in the plan, not filed under the design. `changes-requested`
+returns to `design`, which re-derives the plan on the way back through. The plan is a
+visible phase (`loop:test-planning`) without being an extra stop.
+
+Authored from `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/testing-plan.md`. The
+`test-planning` node gates on four sections being present and non-empty: **Test matrix**,
+**Verification environment**, **Evidence plan** and **Verification results** (the last
+one authored up front holding "not yet executed", so the `verification` node fills a
+section rather than inventing one).
+
+### The test matrix — every type gets a decision
+
+One row per candidate testing type. The catalogue below is the starting set; add rows for
+anything it does not cover (chaos, load-soak, i18n, data-migration dry-run…).
+
+| Type | Proves |
+|------|--------|
+| Unit | a unit behaves as specified, in isolation |
+| Integration (scenario) | components together, Gherkin-documented (see below) |
+| Contract | request/response shapes match the OpenAPI / GraphQL SDL contract |
+| End-to-end | a whole user journey through a running system |
+| UI / visual | rendered states match the locked design artifacts |
+| Snapshot | serialized output does not change unintentionally |
+| Performance / load | latency/throughput/resource budgets hold |
+| Security / abuse case | each trust boundary from `design.md` §Security design resists its abuse case |
+| Accessibility | keyboard, contrast, semantics, assistive-tech behaviour |
+| Migration / upgrade | existing data/config survives the change |
+| Manual exploratory | what automation cannot reach, with the procedure written down |
+
+**Nothing here is mandatory in itself — the matrix is work-item dependent.** A CLI flag
+does not get a performance suite; a docs change does not get an e2e run. What *is*
+mandatory is the decision: a type that does not apply is marked `n/a` **with a written
+reason**. An unexplained blank is not a decision, and the reviewer's job is to notice
+reasons, not absences — the same footing as "no new attack surface", which is written
+and justified rather than implied (`reference/security.md`).
+
+Security-relevant work items are the one place the matrix is effectively forced: a trust
+boundary named in `design.md` §Security design needs its negative test named here, and
+abuse cases are tests like any other.
+
+### The verification environment — the-loop facilitates, it does not own
+
+Real systems are not one repository with one test command: several checkouts, a staging
+environment, seeded databases, a bespoke harness. **the-loop does not model any of
+that.** It owns the *declaration* — the plan states what the verification needs, and the
+loop runs the project's own commands:
+
+- **Repositories** to check out (and at which ref), **services/containers** to run,
+  **fixtures and data** to seed.
+- **Credentials by reference only** — the env var name or secret-store key, never the
+  value. A literal secret in a committed plan is a leaked secret: rotate it, do not
+  merely edit it out.
+- **Bring-up and tear-down commands**, which are the project's, not the-loop's.
+- Where the operator has already written this down, **link the doc registered in
+  `customInstructions.docs`** instead of restating it — the loop reads those docs when
+  work on the item starts (`reference/instructions.md`), so planning has them in hand.
+
+A testing plan **names commands an agent will run**, which makes it executable content:
+review it like code, exactly as `reviews.critics[]` entries are reviewed (decision-043).
+If the environment cannot be brought up, that is recorded, the dependent activities stay
+unticked, and the item escalates — a gate is never passed on an environment that never
+came up.
+
+## Verification — phase `verification`
+
+After implementation, the `verification` node executes the locked plan and turns it into
+a record. It re-gates the **same** `testing-plan.md` — every activity ticked
+(`checkmarks: complete`) and a non-empty **Verification results** section — the shape
+`implementation` already uses to re-gate `tasks.md`.
+
+- **Tick only what ran**, and only once its evidence is recorded. An activity that cannot
+  be executed is left unticked; record why, then replan the matrix (with the reason) or
+  escalate.
+- **Results are per activity:** the exact command or manual procedure, the outcome, and a
+  link to the committed evidence.
+
+### Evidence
+
+Evidence is **committed** under `<specDir>/<id>/evidence/`, alongside the spec. A link to
+a CI run that expires, or to a path on the machine that ran it, is not evidence.
+
+- **Test output** — the summary that shows counts and the red→green transitions.
+- **UI verification** — rendered screenshots of each verified state, and an **animated
+  capture (GIF or equivalent) when the behaviour under test is a *flow*** rather than a
+  state. Screenshots of the *locked design artifacts* remain a design-phase concern
+  (`reference/design-artifacts.md`); these are of the *implementation*, and the pair is
+  what makes "implementation matches the visual contract" checkable.
+- **Scenario coverage** — when the change adds or alters integration behaviour, the
+  reviewer briefing embeds `the-loop scenarios --format markdown` (below); the plan
+  references it rather than duplicating the list.
+
+**Redact before committing.** The directory is as public as the repository, and captured
+output and screenshots routinely contain tokens, cookies, personal data and internal
+hostnames. Strip them; if a capture cannot be redacted, do not commit it — say so in the
+results row instead.
 
 ## RULE: Gherkin docstrings on integration tests
 
@@ -86,10 +192,19 @@ The GraphQL equivalent of contract-first OpenAPI (`apiSpecs.graphql`):
 
 ## How this feeds the loop
 
-- **Design phase**: `design.md`'s testing strategy names the integration scenarios
-  (their `Scenario:` titles) and, for API work, links the OpenAPI/SDL files under
-  `specs/`.
+- **Design phase**: `design.md`'s testing strategy is the strategy *in a paragraph* — how
+  requirements map to test levels and, for API work, links to the OpenAPI/SDL files under
+  `specs/`. The executable detail belongs to `testing-plan.md`.
+- **Test-planning phase**: the matrix decides which types apply and which are `n/a` and
+  why; the integration rows name their Gherkin `Scenario:` titles; the environment and
+  the evidence plan are declared.
+- **Tasks phase**: each task's `_Test:_` names a matrix row, so the DAG and the plan
+  agree by construction.
 - **Implementation phase**: each `tasks.md` task's `_Test:_` for integration behaviour
   is a Gherkin scenario; red→green evidence references the scenario title.
+- **Verification phase**: the plan's activities are executed and ticked; results and
+  committed evidence are recorded in the plan itself.
 - **Review/evidence**: `the-loop scenarios --format markdown` output goes into the
-  reviewer briefing so the human sees coverage at a glance, mapped to requirements.
+  reviewer briefing so the human sees coverage at a glance, mapped to requirements, and
+  the `evidence` node summarises the verification results against the acceptance criteria
+  rather than re-deriving them.

@@ -69,10 +69,15 @@ Failure modes and how they are surfaced (observability identical at dev-time/run
 
 ## Testing strategy
 
-How requirements map to unit/integration tests, and what evidence proves acceptance.
-Name the integration scenarios by their Gherkin `Scenario:` titles (each test's
-docstring links back here via `Requirement:`); for API work, link the OpenAPI/SDL
-contract files under `specs/`. See `reference/testing.md`.
+The strategy **in a paragraph**: how requirements map to unit/integration tests, which
+contracts are involved (for API work, link the OpenAPI/SDL files under `specs/`), and
+what evidence proves acceptance. Name the integration scenarios by their Gherkin
+`Scenario:` titles (each test's docstring links back here via `Requirement:`).
+
+The **executable detail** — which testing types apply and which are `n/a` and why, the
+verification environment, the evidence to capture — belongs to `testing-plan.md`, derived
+from this design at the `test-planning` node and executed at `verification`. Do not
+duplicate it here. See `reference/testing.md`.
 
 ## Trade-offs & decisions
 

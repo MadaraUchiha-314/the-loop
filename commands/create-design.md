@@ -1,5 +1,5 @@
 ---
-description: Create design.md for a work item from its approved requirements.md (Phase 2 of the loop).
+description: Create design.md for a work item from its approved requirements.md (Phase 2 of the spec chain).
 argument-hint: "<ticket-id | spec-dir> (e.g. 42 | issue-42 | docs/specs/issue-42)"
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 ---
@@ -7,7 +7,7 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 # the-loop: create-design `$ARGUMENTS`
 
 Produce the **design** for a work item from its approved requirements — Phase 2 of the
-3-phase spec workflow. A slice of `/the-loop:work-on`; `work-on` remains the superset.
+spec chain. A slice of `/the-loop:work-on`; `work-on` remains the superset.
 
 **Read the `the-loop` skill and `reference/workflow.md` first.** Load
 `.the-loop/harness-config.yaml`.
@@ -21,7 +21,8 @@ Produce the **design** for a work item from its approved requirements — Phase 
 2. **Write `design.md`** from `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/design.md`
    (`${CLAUDE_PLUGIN_ROOT}` = the installed plugin's root; same in Cursor),
    derived from the requirements: overview, architecture, components/interfaces, data
-   models, error handling, testing strategy, plus the **Security design** section —
+   models, error handling, the testing **strategy** (a paragraph; the executable detail
+   belongs to `testing-plan.md`), plus the **Security design** section —
    how each trust boundary from the requirements' Security considerations is enforced
    (`security.design.required`; a boundary left unenforced fails the gate, see
    `reference/security.md`). Map each requirement to a component. RULE:
@@ -42,8 +43,9 @@ Produce the **design** for a work item from its approved requirements — Phase 
    `phase: design` in the spec/execution log.
 
 5. **Reference on the ticket** (link the checked-in `design.md` and any `design/`
-   artifacts; edits go to the files, not new comments) and **request human review** — the
-   designer reviews the UI/UX artifacts. Do not proceed until approved — record the
-   approver (paper trail).
+   artifacts; edits go to the files, not new comments). **Do not request review yet** —
+   the testing plan is derived from this design and reviewed *with* it at the single
+   `design-approval` gate.
 
-6. **Next step:** `/the-loop:create-tasks-plan <id>`.
+6. **Next step:** `/the-loop:create-testing-plan <id>`, which derives the plan and then
+   requests the one human review covering both artifacts.

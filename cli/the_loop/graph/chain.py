@@ -1,14 +1,26 @@
 """Chain execution — run a node's hooks in order and decide what happens.
 
-The rule (issue-109, R3): hooks run in declared order and the **first non-pass
-short-circuits**. Aggregating many findings is the *hook's* job, not the
-chain's — ``validate-artifacts`` returns every unmet requirement in one result
-so the agent repairs in one round rather than discovering failures one at a
-time.
+The rule (issue-109, R3): hooks run in declared order and the **first hook that
+does not pass short-circuits**. Aggregating many findings is the *hook's* job,
+not the chain's — ``validate-artifacts`` returns every unmet requirement in one
+result so the agent repairs in one round rather than discovering failures one at
+a time.
 
 A hook that raises or times out becomes ``block``, never ``pass`` (R2.6): the
 only safe reading of "the check itself is broken" is "the gate is not
 satisfied".
+
+**A skip is not a decision** (issue-163). A hook that declines to run — no test
+command declared, an optional node with no artifact, an absent upstream — has
+said nothing about the node, so the chain carries on to the hooks after it and,
+if none of them objects, the node passes. Short-circuiting on ``skip`` had two
+consequences, both of them the same defect in different clothes: hooks *after* a
+skipping one never ran (``design``'s ``lint-artifacts`` sits behind an
+``enforces-boundaries-from`` that skips whenever the upstream is absent), and a
+chain ending in a skip routed on the outcome ``"skip"``, for which no edge is
+declared — so ``implementation``, whose chain ends in a ``verify-tests`` that is
+a no-op unless a command is bound, parked at ``no_edge`` and escalated instead
+of advancing.
 """
 
 from __future__ import annotations
@@ -17,7 +29,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, List, Mapping, Sequence
 
-from .contract import PASS, HookContext, HookResult, Message
+from .contract import PASS, SKIP, HookContext, HookResult, Message
 from .registry import get_hook
 
 logger = logging.getLogger("the-loop.graph")
@@ -94,7 +106,8 @@ def _normalise_spec(spec: Any) -> tuple[str, Mapping[str, Any]]:
 
 
 def run_chain(specs: Sequence[Any], ctx: HookContext) -> ChainOutcome:
-    """Run ``specs`` in order against ``ctx``; stop at the first non-``pass``."""
+    """Run ``specs`` in order against ``ctx``; stop at the first hook that does
+    not pass. A ``skip`` is not a verdict, so the chain runs on past it."""
     results: List[HookResult] = []
     for spec in specs:
         name, params = _normalise_spec(spec)
@@ -111,6 +124,6 @@ def run_chain(specs: Sequence[Any], ctx: HookContext) -> ChainOutcome:
                 retriable=False,
             )
         results.append(result)
-        if result.status != PASS:
+        if result.status not in (PASS, SKIP):
             return ChainOutcome(status=result.status, results=results, blocking=result)
     return ChainOutcome(status=PASS, results=results)

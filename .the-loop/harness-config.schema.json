@@ -55,7 +55,7 @@
         "id": "workflow",
         "title": "Workflow & phases",
         "ask": "confirm",
-        "explain": "The Kiro-style 3-phase spec workflow (requirements → design → tasks), where specs and capability docs live, and the phase labels tracked on the ticket.",
+        "explain": "The spec workflow (Kiro-style requirements → design → tasks, plus the testing plan between design and tasks), where specs and capability docs live, and the phase labels tracked on the ticket.",
         "keys": ["workflow"]
       },
       {
@@ -160,7 +160,7 @@
     },
     "workflow": {
       "type": "object",
-      "description": "The Kiro-style 3-phase spec workflow and the phase state machine tracked on the ticket.",
+      "description": "The Kiro-style 3-phase spec workflow (plus the testing plan) and the phase state machine tracked on the ticket.",
       "additionalProperties": false,
       "properties": {
         "specApproach": {
@@ -191,14 +191,16 @@
         },
         "phases": {
           "type": "array",
-          "description": "Ordered phase state machine for a work item. Each maps to a ticket label. `brainstorming` is optional — a work item may enter it or start directly at `requirements-definition`.",
+          "description": "Ordered phase state machine for a work item. Each maps to a ticket label. `brainstorming` is optional — a work item may enter it or start directly at `requirements-definition`. `test-planning` produces testing-plan.md before the task DAG that references it, and `verification` executes that plan after implementation (issue-163).",
           "default": [
             "not-started",
             "brainstorming",
             "requirements-definition",
             "design",
+            "test-planning",
             "tasks-breakdown",
             "implementation",
+            "verification",
             "needs-review",
             "complete"
           ],
@@ -209,8 +211,10 @@
               "brainstorming",
               "requirements-definition",
               "design",
+              "test-planning",
               "tasks-breakdown",
               "implementation",
+              "verification",
               "needs-review",
               "complete"
             ]
@@ -756,13 +760,15 @@
             "stages": {
               "type": "object",
               "additionalProperties": { "type": "string", "enum": ["economy", "standard", "frontier"] },
-              "description": "Stage → tier assignment. Keys are pipeline stages (brainstorm, requirements, design, tasks, implementation, self-review, critic-review, evidence, capability-docs, reviewer-briefing, status, learnings). Reasoning-heavy stages default to frontier; mechanical/formatting stages to economy.",
+              "description": "Stage → tier assignment. Keys are pipeline stages (brainstorm, requirements, design, test-planning, tasks, implementation, verification, self-review, critic-review, evidence, capability-docs, reviewer-briefing, status, learnings). Reasoning-heavy stages default to frontier; mechanical/formatting stages to economy.",
               "default": {
                 "brainstorm": "frontier",
                 "requirements": "frontier",
                 "design": "frontier",
+                "test-planning": "standard",
                 "tasks": "standard",
                 "implementation": "standard",
+                "verification": "standard",
                 "self-review": "standard",
                 "critic-review": "frontier",
                 "evidence": "economy",
@@ -796,7 +802,9 @@
               "default": {
                 "design": "high",
                 "critic-review": "high",
+                "test-planning": "medium",
                 "implementation": "medium",
+                "verification": "low",
                 "evidence": "none",
                 "capability-docs": "low",
                 "reviewer-briefing": "low",

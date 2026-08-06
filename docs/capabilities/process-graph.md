@@ -70,10 +70,16 @@ There are exactly **two** runtime concepts and **one** contract between them.
 - Hooks SHALL be discovered through a name registry (`@hook("validate-artifacts")`),
   mirroring the CLI's existing `Command`/`@register` pattern, so the shipped graph refers
   to hooks by name and never by import path.
-- A chain SHALL **short-circuit** on the first non-`pass` result. Aggregation is therefore
-  the *hook's* job: a validating hook reports every finding in one result rather than
-  failing on the first and hiding the rest — a gate that reveals problems one at a time
-  is a gate people learn to route around.
+- A chain SHALL **short-circuit** on the first result that is neither `pass` nor `skip`.
+  Aggregation is therefore the *hook's* job: a validating hook reports every finding in
+  one result rather than failing on the first and hiding the rest — a gate that reveals
+  problems one at a time is a gate people learn to route around.
+- **A `skip` SHALL NOT be a decision** (issue-163): a hook that declines to run has said
+  nothing about the node, so the chain continues past it and, if nothing objects, the
+  node passes on the outcome `pass`. Short-circuiting on `skip` hid the hooks behind a
+  skipping one and routed a chain ending in a skip on the outcome `"skip"`, for which no
+  edge is declared — which is why `implementation` (whose chain ends in a `verify-tests`
+  that is a no-op unless a command is bound) parked at `no_edge` instead of advancing.
 - A hook that raises SHALL become a `block` with `retriable=False`, never a silent pass.
 - Hook results SHALL carry secret **handles**, never secret values (R2.7).
 
@@ -94,6 +100,35 @@ There are exactly **two** runtime concepts and **one** contract between them.
   `## Review comments` section, append-only and attributed. An approval never silently
   discards a reviewer's suggestions, and the feedback travels with the document it
   concerns instead of living in a side-channel tracker.
+
+### Testing is planned and verified as nodes (issue-163)
+
+- **`test-planning`** SHALL sit between `design` and `design-approval` and produce
+  `testing-plan.md`, gating on the artifact being locked and carrying non-empty
+  **Test matrix**, **Verification environment**, **Evidence plan** and **Verification
+  results** sections. Placing it *before* the human gate means **one approval covers
+  `design.md` and the plan derived from it** — the plan gets human review without a stop
+  of its own, and is still locked before the `tasks.md` that references its rows.
+  `design-approval` SHALL record feedback into **both** artifacts, because a reviewer's
+  note about the test matrix belongs in the plan rather than filed under the design, and
+  `changes-requested` SHALL return to `design`, which re-derives the plan. The results heading is gated at *planning* time deliberately:
+  `validate-artifacts` treats an empty required section as a finding, so the heading is
+  authored up front holding "not yet executed" and the verification node fills a section
+  rather than inventing one.
+- **`verification`** SHALL sit between `implementation` and `self-review` and re-declare
+  the **same** artifact, gating on `checkmarks: complete` plus a non-empty **Verification
+  results** section — the produce-then-re-gate shape `implementation` already uses for
+  `tasks.md`. Re-declaring `produces` is what makes the gate run at all: a node that
+  declares no artifacts gets a *skipped* `validate-artifacts`, which is a gate reporting
+  success without running.
+- Both nodes SHALL carry their own `phase`, so a work item's ticket label says
+  `loop:test-planning` / `loop:verification` rather than hiding the state inside a
+  neighbouring phase.
+- The plan's content rules — which testing types are candidates, `n/a` **with a reason**,
+  the declared-not-managed verification environment, committed and redacted evidence —
+  live in [`reference/testing.md`](../../skills/the-loop/reference/testing.md) and the
+  bundled template, not in the graph. The graph gates the *shape*; the reviewer judges the
+  content.
 
 ### The human gate
 
@@ -233,6 +268,7 @@ There are exactly **two** runtime concepts and **one** contract between them.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-163 | Testing became two nodes: `test-planning` produces `testing-plan.md` before the task DAG that references it, `verification` re-gates the same artifact after implementation and before the review chain; a `skip` stopped short-circuiting a chain, which is what had left `implementation` parking at `no_edge` | [spec](../specs/issue-163/), [decision-060](../decisions/decision-060.md), [testing-and-contracts](testing-and-contracts.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/163) |
 | issue-156 | Process runner removed; tmux is the only runner (2026-08-05): every spawn is tmux-hosted, so "every spawn enters the graph" no longer needs a per-runner qualifier, and the gate-session binding's `runner` is always `"tmux"` | [spec](../specs/issue-156/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/156) |
 | issue-148 | The graph went from observer to authority: `the-loop graph complete` (the node-completion claim — idempotent, node-named, never a verdict), `GraphContext` resolved read-only before every delivery and spawn, the `$graph_context` prompt block, consult-first ordering at human gates (no consume-only routes), `resolve_session` gained its caller (`graph.gate_session`), tmux spawns finally enter the graph, two-writer state locking, and P4 phase parity — `pdlc.yaml` defines the sequence, the prose renders it | [spec](../specs/issue-148/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/148) |
 | issue-124 | `produces` names an artifact rather than a filename: `\|`-separated alternatives, one resolver shared by every hook that reads them, ambiguity fails closed, malformed entries fail at compile; `enforces-boundaries-from` resolves `upstream` the same way, which turned a security gate that had been silently skipping for every bug work item into one that runs; graph ↔ manifest ↔ template parity is now a test | [spec](../specs/issue-124/), [decision-045](../decisions/decision-045.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/124) |

@@ -124,6 +124,101 @@ def test_the_shipped_graph_splits_the_needs_review_label():
         assert node_id in graph.nodes, f"{node_id} should be its own node"
 
 
+class TestTestingIsPlannedAndVerifiedAsNodes:
+    """Testing is a planned, gated step of the process (issue-163, decision-060).
+
+    Before this, how a work item would be *proved* lived in one paragraph of
+    `design.md` and a `_Test:_` line per task, and nothing gated either. Two
+    nodes make it structural: `test-planning` derives `testing-plan.md` before
+    the task DAG that references it, and `verification` executes that plan
+    before the review chain sees the work.
+    """
+
+    def test_both_nodes_are_declared_with_their_own_phase(self):
+        graph = load_graph()
+        for node_id, phase in (
+            ("test-planning", "test-planning"),
+            ("verification", "verification"),
+        ):
+            assert node_id in graph.nodes, f"{node_id} should be its own node"
+            assert graph.node(node_id).phase == phase, (
+                f"{node_id} needs a phase of its own — a node the ticket cannot "
+                "show is not a node in the PDLC"
+            )
+
+    def test_planning_is_reviewed_by_the_design_gate(self):
+        """One human gate covers `design.md` and the plan derived from it.
+
+        The plan is still locked before `tasks-breakdown` — each task's
+        `_Test:_` names a matrix row — but it does not get an approval stop of
+        its own: `design → test-planning → design-approval → tasks-breakdown`
+        (owner's call on PR #166).
+        """
+        graph = load_graph()
+        assert graph.next_node("design", "pass") == "test-planning"
+        assert graph.next_node("test-planning", "pass") == "design-approval"
+        assert graph.next_node("design-approval", "approved") == "tasks-breakdown"
+
+    def test_changes_requested_returns_to_design_so_the_plan_is_re_derived(self):
+        """The plan derives from the design; a design change re-derives it."""
+        graph = load_graph()
+        assert graph.next_node("design-approval", "changes-requested") == "design"
+
+    def test_the_design_gate_records_feedback_into_both_artifacts(self):
+        """A note about the test matrix belongs in the plan, not in the design."""
+        graph = load_graph()
+        targets = [
+            spec["with"]["into"]
+            for spec in graph.node("design-approval").exit
+            if isinstance(spec, dict) and spec["hook"] == "record-feedback"
+        ]
+        assert targets == ["design.md", "testing-plan.md"]
+
+    def test_verification_runs_after_implementation_and_before_review(self):
+        graph = load_graph()
+        assert graph.next_node("implementation", "pass") == "verification"
+        assert graph.next_node("verification", "pass") == "self-review"
+
+    def test_the_verification_gate_is_not_a_silent_skip(self):
+        """`validate-artifacts` skips a node that declares no artifacts.
+
+        That is how a gate reports success without running (the issue-124
+        failure mode), and it is why `verification` re-declares the same
+        `testing-plan.md` the planning node produced — the shape
+        `implementation` already uses to re-gate `tasks.md`.
+        """
+        graph = load_graph()
+        node = graph.node("verification")
+        assert "testing-plan.md" in node.produces
+        gate = next(
+            spec
+            for spec in node.exit
+            if isinstance(spec, dict) and spec["hook"] == "validate-artifacts"
+        )
+        assert gate["with"]["checkmarks"] == "complete"
+        assert "Verification results" in gate["with"]["sections"]
+
+    def test_the_planning_gate_demands_the_results_heading_up_front(self):
+        """An empty required section is a finding, so the heading is authored early.
+
+        `verification` then fills a section rather than inventing one, and a
+        reader of the locked plan sees the shape of the record it will become.
+        """
+        graph = load_graph()
+        gate = next(
+            spec
+            for spec in graph.node("test-planning").exit
+            if isinstance(spec, dict) and spec["hook"] == "validate-artifacts"
+        )
+        assert gate["with"]["locked"] is True
+        assert set(gate["with"]["sections"]) == {
+            "Test matrix",
+            "Verification environment",
+            "Evidence plan",
+            "Verification results",
+        }
+
+
 def test_the_shipped_graph_has_no_dead_ends():
     graph = load_graph()
     for node in graph.ordered():

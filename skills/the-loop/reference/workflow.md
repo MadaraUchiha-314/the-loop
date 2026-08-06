@@ -9,7 +9,8 @@ NO user intervention.
 Every work item is a chain of artifacts, each **derived from the one before it**:
 
 ```
-brainstorm.md (optional, root) → requirements.md → design.md → tasks.md → implementation
+brainstorm.md (optional, root) → requirements.md → design.md → testing-plan.md
+                               → tasks.md → implementation → verification
 ```
 
 The core rule holds at **every** link, not just requirements: an artifact is **iterated
@@ -37,10 +38,11 @@ A work item must have a well-defined **description**, detailed **goal**, and
 **acceptance criteria** before specs begin. If missing, draft them (a `brainstorm.md` is a
 good place to converge on them) and confirm via a ticket comment.
 
-## The 3-phase spec (Kiro-style — https://kiro.dev/docs/specs/)
+## The spec artifacts (Kiro-style — https://kiro.dev/docs/specs/)
 
-Stored in `<workflow.specDir>/<id>/` (default `docs/specs/<id>/`). Each phase ends with
-a **human review** (`workflow.requireHumanReviewPerPhase`, default true). Do not advance
+The Kiro 3-phase spec (requirements → design → tasks) plus the **testing plan** that
+sits between design and tasks (issue-163). Stored in `<workflow.specDir>/<id>/` (default
+`docs/specs/<id>/`). Each of the first two phases ends with a **human review** (`workflow.requireHumanReviewPerPhase`, default true). Do not advance
 until the current phase is approved; record the approver (paper trail).
 
 1. **`requirements.md`** (or **`bugfix.md`** for bugs) — introduction, user stories, and
@@ -66,8 +68,18 @@ until the current phase is approved; record the approver (paper trail).
    artifacts** — Figma links and/or self-contained HTML+CSS+JS prototypes checked in under
    `docs/specs/<id>/design/` (`design.uiArtifacts`) — inventoried in `design.md` and
    iterated-until-locked with the **designer**. See `reference/design-artifacts.md`.
-3. **`tasks.md`** — a **DAG** of small, verifiable tasks. Each task references the
-   requirement(s) it satisfies and declares dependencies. Phase: `tasks-breakdown`.
+3. **`testing-plan.md`** — how the work item will be **proved**. Derived from
+   `design.md` and **reviewed at the same human gate as it** (`design-approval` covers
+   both artifacts and records feedback into each), then locked **before** `tasks.md`,
+   because each task's `_Test:_` names a row of its matrix. Phase: `test-planning`. It carries the test
+   matrix (one row per testing type, `n/a` **with a reason** where a type does not
+   apply), the verification environment, the evidence plan, the activities checklist and
+   an empty **Verification results** section that the `verification` node fills in later.
+   Full detail — the type catalogue, the evidence and redaction rules, and the
+   facilitate-don't-own boundary — in `reference/testing.md`.
+4. **`tasks.md`** — a **DAG** of small, verifiable tasks. Each task references the
+   requirement(s) it satisfies, names the testing-plan row that proves it, and declares
+   dependencies. Phase: `tasks-breakdown`.
 
 ## Phase state machine (tracked on the ticket via labels)
 
@@ -83,8 +95,8 @@ Label = `<workflow.phaseLabelPrefix><phase>` (e.g. `loop:design`). Keep the labe
 sync at every transition and mirror it in the execution log's `phase` front-matter.
 
 ```
-not-started → brainstorming → requirements-definition → design → tasks-breakdown
-            → implementation → needs-review → complete
+not-started → brainstorming → requirements-definition → design → test-planning
+            → tasks-breakdown → implementation → verification → needs-review → complete
 ```
 
 `brainstorming` is **optional**: a work item either enters it (when it needs a scratchpad)
@@ -100,8 +112,10 @@ their superset), one per step:
 | Draft requirements (pre-ticket, temp folder; converts a brainstorm if present) | `new-requirement <title>` | requirements-definition |
 | Create the ticket; promote `draft-<slug>/` → `docs/specs/<id>/` | `create-ticket <path>` | requirements-definition |
 | Requirements → design | `create-design <id>` | design |
-| Requirements + design → tasks DAG | `create-tasks-plan <id>` | tasks-breakdown |
-| Implement, self-check, self/critic-review | `execute-tasks <id>` | implementation → needs-review |
+| Design → testing plan (reviewed with the design, one gate) | `create-testing-plan <id>` | test-planning |
+| Requirements + design + testing plan → tasks DAG | `create-tasks-plan <id>` | tasks-breakdown |
+| Implement, self-check, self/critic-review | `execute-tasks <id>` | implementation |
+| Execute the testing plan; record results + evidence | `verify-work <id>` | verification → needs-review |
 | Cleanup after all tasks (close ticket; extensible) | `finish-tasks <id>` | complete |
 | Read-only status report | `work-status <id>` | — |
 
@@ -115,7 +129,8 @@ Once each spec document is established (requirements, design, tasks), **update t
 item (GitHub issue / Jira) with a reference (link) to the checked-in artifact** — not a
 copy of its contents. The checked-in file is the single source of truth.
 
-- Reference, don't duplicate: link to `docs/specs/<id>/{requirements,design,tasks}.md`.
+- Reference, don't duplicate: link to
+  `docs/specs/<id>/{requirements,design,testing-plan,tasks}.md`.
 - **Subsequent changes to a spec doc happen as EDITS to that file (and, where the ticket
   embeds a summary, an edit to that comment/description) — NOT as new comments.** This
   keeps one canonical version and a clean history.
@@ -144,6 +159,39 @@ copy of its contents. The checked-in file is the single source of truth.
   compact after each completed task (`contextManagement.taskBoundary`, default
   `compact`), compact (never clear) mid-task if the window nears its limit, and run
   high-volume exploration in subagents so it never enters the main window.
+
+## Verification — executing the plan
+
+`implementation` ends when the task DAG is done; the work item then enters
+**`verification`**, which runs the plan `test-planning` locked and turns it into a
+record. The node re-gates the **same** `testing-plan.md`: every activity ticked, and a
+non-empty **Verification results** section — the produce-then-re-gate shape
+`tasks-breakdown` → `implementation` already uses for `tasks.md`.
+
+- **Tick only what ran.** An activity is ticked when it has been executed *and* its
+  evidence recorded. An activity that cannot be executed is left unticked: record why
+  under **Verification results**, then either replan the matrix (with the reason) or
+  escalate. Silently dropping a planned activity is not permitted, and the unticked box
+  blocks the gate until one of those two things happens.
+- **Record the command, not the intention.** Each row of the results table carries the
+  exact command (or manual procedure), the outcome, and a link to the committed evidence.
+- **Evidence is committed** under `<specDir>/<id>/evidence/` — test output, screenshots,
+  recordings, reports. A link to a CI run that expires or to a local path is not
+  evidence. For a **user-facing** change, UI verification presents screenshots of the
+  verified states and an animated capture (GIF or equivalent) when the behaviour under
+  test is a *flow* rather than a state.
+- **Redact before committing.** That directory is as public as the repository; strip
+  tokens, cookies, personal data and internal hostnames from captured output and
+  screenshots. A capture that cannot be redacted is not committed — say so in the results
+  row instead.
+- **Environment failures do not pass the gate.** If the verification environment cannot
+  be brought up, record it, leave the dependent activities unticked, and escalate
+  (`reference/testing.md` § the verification environment).
+
+Verification sits **before** the review chain deliberately: a failed verification should
+be visible to the reviewers, not discovered after them. The later `evidence` node then
+*summarises* the verification results against the acceptance criteria rather than
+re-deriving them.
 
 ## Context-window management (checkpoint, then reset)
 
@@ -212,7 +260,9 @@ must ALL hold:
 
 - green checks;
 - **all review threads resolved**;
-- validated evidence recorded;
+- validated evidence recorded — the **verification** node has passed, so the testing
+  plan's activities are all ticked and its results table names each command, outcome
+  and committed artifact;
 - the **security review has passed** (`security.review.required`, default true) — run
   via the built-in security-review skill or the-loop's checklist
   (`security.review.mechanism`), recorded in the execution log's Security review

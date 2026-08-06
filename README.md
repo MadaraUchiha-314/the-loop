@@ -34,7 +34,8 @@ free-form `brainstorm.md` scratchpad (the root artifact); then it is specified w
 [Kiro-style](https://kiro.dev/docs/specs/) 3-phase spec (`requirements.md` → `design.md` →
 `tasks.md`), each gated by a human review, then executed autonomously. Each work item's
 phase is tracked on the ticket via labels: `not-started → brainstorming (optional) →
-requirements-definition → design → tasks-breakdown → implementation → needs-review →
+requirements-definition → design → test-planning → tasks-breakdown → implementation →
+verification → needs-review →
 complete`.
 
 ## Install
@@ -99,7 +100,7 @@ in the slash menu by filename (e.g. `/init`, `/work-on`).
 | Command | What it does |
 |---------|--------------|
 | `/the-loop:init` | Scaffold the-loop into the current repo (config, docs) via a guided, schema-driven onboarding with sensible defaults (`--defaults` skips the interaction). Idempotent. |
-| `/the-loop:work-on <ticket>` | Run the whole 3-phase spec workflow (requirements → design → tasks → execute) on a GitHub issue / Jira id. Resumable per phase. **Superset of the granular commands below.** |
+| `/the-loop:work-on <ticket>` | Run the whole loop (requirements → design → testing plan → tasks → execute → verify) on a GitHub issue / Jira id. Resumable per phase. **Superset of the granular commands below.** |
 | `/the-loop:upgrade-the-loop` | Reconcile a project's the-loop files with the installed plugin version. |
 
 Granular commands run the same flow one step at a time:
@@ -110,8 +111,10 @@ Granular commands run the same flow one step at a time:
 | `/the-loop:new-requirement <title>` | Draft a `requirements.md` in a temporary `docs/specs/draft-<slug>/` folder **before a ticket exists** (converts a sibling `brainstorm.md` if present). |
 | `/the-loop:create-ticket <path>` | Create the ticket from a `requirements.md`; promote `draft-<slug>/` → `docs/specs/<id>/`. |
 | `/the-loop:create-design <id>` | Create `design.md` from the approved requirements (Phase 2). |
-| `/the-loop:create-tasks-plan <id>` | Create the `tasks.md` DAG from requirements + design (Phase 3). |
-| `/the-loop:execute-tasks <id>` | Implement the task DAG; self-check; self/critic-review; present evidence. |
+| `/the-loop:create-testing-plan <id>` | Create `testing-plan.md` from requirements + design — which kinds of testing apply, the verification environment, the evidence to capture. |
+| `/the-loop:create-tasks-plan <id>` | Create the `tasks.md` DAG from requirements + design + testing plan. |
+| `/the-loop:execute-tasks <id>` | Implement the task DAG; verify against the testing plan; self-check; self/critic-review; present evidence. |
+| `/the-loop:verify-work <id>` | Execute the testing plan after implementation: run the planned activities, record results, commit the evidence. |
 | `/the-loop:finish-tasks <id>` | Cleanup after all tasks complete (close the ticket; extensible). |
 | `/the-loop:work-status <id>` | Read-only status from the specs, task checkmarks and execution log. |
 
@@ -125,7 +128,8 @@ Granular commands run the same flow one step at a time:
 - **Everything the-loop manages** is tracked in
   [`.the-loop/manifest.yaml`](.the-loop/manifest.yaml).
 - **Templates** for epics, stories, bugs, the optional `brainstorm` root artifact and the
-  3-phase spec artifacts (`requirements`/`bugfix`, `design`, `tasks`, `execution-log`) are
+  spec artifacts (`requirements`/`bugfix`, `design`, `testing-plan`, `tasks`,
+  `execution-log`) are
   **internal to the-loop** — they ship with the plugin under
   [`skills/the-loop/templates/`](skills/the-loop/templates/) and are read from there when
   an artifact is authored, rather than being copied into every project.
@@ -172,7 +176,7 @@ Full documentation: **[the-loop CLI](https://madarauchiha-314.github.io/the-loop
 
 ## Rules the loop enforces
 
-- Every work item has a ticket. Its 3-phase spec is **reviewed and approved per phase
+- Every work item has a ticket. Its spec is **reviewed and approved per phase
   before execution**.
 - Collaborators are identified up-front; not every task needs every persona.
 - Every human decision leaves a **paper trail** on the ticket or PR.

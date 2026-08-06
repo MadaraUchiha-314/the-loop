@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [060](decision-060.md) | Testing is planned and verified as two nodes; the plan is the record, and a skip is not a decision | proposed | 2026-08-06 |
 | [059](decision-059.md) | The control-plane service carries no in-app authentication — the gateway owns auth | proposed | 2026-08-05 |
 | [058](decision-058.md) | Re-layer the CLI as core → HTTP API → clients; the service is the CLI's only execution path | proposed | 2026-08-05 |
 | [057](decision-057.md) | `the-loop install`/`upgrade` drive the harness's own installer (Claude Code first); fallback only to a documented route | proposed | 2026-08-05 |

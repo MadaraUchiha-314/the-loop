@@ -40,8 +40,9 @@ The workflow's phase state machine. One label per `workflow.phases`, prefixed wi
 commands as an item advances:
 
 ```text
-not-started → brainstorming → requirements-definition → design → tasks-breakdown
-            → implementation → needs-review → complete
+not-started → brainstorming → requirements-definition → design → test-planning
+            → tasks-breakdown → implementation → verification
+            → needs-review → complete
 ```
 
 | Label | Set by | Means |
@@ -50,8 +51,10 @@ not-started → brainstorming → requirements-definition → design → tasks-b
 | `loop:brainstorming` | `/the-loop:brainstorm` | Optional Phase 0 — free-form `brainstorm.md`. |
 | `loop:requirements-definition` | `/the-loop:create-ticket` | Requirements being iterated/locked. |
 | `loop:design` | `/the-loop:create-design` | Design being iterated/locked. |
+| `loop:test-planning` | `/the-loop:create-testing-plan` | `testing-plan.md` being written/locked — how the item will be proved. |
 | `loop:tasks-breakdown` | `/the-loop:create-tasks-plan` | Task DAG being built. |
 | `loop:implementation` | `/the-loop:execute-tasks` | Tasks being executed. |
+| `loop:verification` | `/the-loop:verify-work` | The testing plan being executed; results + evidence recorded. |
 | `loop:needs-review` | `/the-loop:execute-tasks` | Self/critic review + human review pending. |
 | `loop:complete` | `/the-loop:finish-tasks` | Shipped; ticket closed. |
 
@@ -125,8 +128,10 @@ gh label create "loop:not-started"             -c ededed -d "the-loop: ticket ex
 gh label create "loop:brainstorming"           -c c5def5 -d "the-loop: Phase 0 — brainstorm.md"               -f
 gh label create "loop:requirements-definition" -c bfdadc -d "the-loop: requirements being locked"             -f
 gh label create "loop:design"                  -c 5319e7 -d "the-loop: design being locked"                    -f
+gh label create "loop:test-planning"           -c 6f42c1 -d "the-loop: testing plan being locked"              -f
 gh label create "loop:tasks-breakdown"         -c 1d76db -d "the-loop: task DAG being built"                   -f
 gh label create "loop:implementation"          -c 0e8a16 -d "the-loop: tasks being executed"                   -f
+gh label create "loop:verification"            -c 1f883d -d "the-loop: testing plan being executed"            -f
 gh label create "loop:needs-review"            -c fbca04 -d "the-loop: waiting on a human (review/approval/answer)" -f
 gh label create "loop:complete"                -c 0e4429 -d "the-loop: shipped and closed"                      -f
 

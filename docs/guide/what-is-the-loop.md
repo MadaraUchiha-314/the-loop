@@ -27,7 +27,8 @@ Each work item's phase is tracked on the ticket via labels:
 
 ```text
 not-started → brainstorming (optional) → requirements-definition → design
-  → tasks-breakdown → implementation → needs-review → complete
+  → test-planning → tasks-breakdown → implementation → verification → needs-review
+  → complete
 ```
 
 ## Rules the loop enforces
