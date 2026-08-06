@@ -1,14 +1,14 @@
 ---
-description: Execute the task DAG for a work item from its requirements.md, design.md and tasks.md — implement, self-check, self/critic-review (implementation phase).
+description: Execute the task DAG for a work item — implement, verify against the testing plan, self-check, self/critic-review (implementation → verification → review).
 argument-hint: "<ticket-id | spec-dir> (e.g. 42 | issue-42)"
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Task
 ---
 
 # the-loop: execute-tasks `$ARGUMENTS`
 
-Implement a work item by executing its approved **tasks.md** against **requirements.md**
-and **design.md** — the implementation → review portion of the loop. A slice of
-`/the-loop:work-on`; `work-on` remains the superset.
+Implement a work item by executing its approved **tasks.md** against **requirements.md**,
+**design.md** and **testing-plan.md** — the implementation → verification → review
+portion of the loop. A slice of `/the-loop:work-on`; `work-on` remains the superset.
 
 **Read the `the-loop` skill, `reference/workflow.md`, `reference/context.md` and
 `reference/tooling.md` first.**
@@ -24,7 +24,8 @@ locked spec files read from disk, not the drafting conversation (plan-mode style
 ## Steps
 
 1. **Locate & load the spec.** Resolve `$ARGUMENTS` to `docs/specs/<id>/` and read
-   `requirements.md`, `design.md`, `tasks.md`, and `execution-log.md`. Use the log's
+   `requirements.md`, `design.md`, `testing-plan.md`, `tasks.md`, and
+   `execution-log.md`. Use the log's
    `phase` and tasks' checkmarks to **resume** rather than restart.
 
 2. **Implementation** (`implementation`). Execute the task DAG autonomously in dependency
@@ -47,7 +48,19 @@ locked spec files read from disk, not the drafting conversation (plan-mode style
    one of them and list them all in the execution log's **Pull requests** table — one
    PR merging does not end the work item.
 
-3. **Review** (`needs-review`). Run up to `reviews.selfReviewCount` self-reviews then
+3. **Verification** (`verification`). Once every task is ticked, execute
+   `testing-plan.md`: bring up the declared environment, run each planned activity, and
+   tick it **only** once it has run and its evidence is recorded. Write the per-activity
+   command, outcome and evidence link into the plan's **Verification results**, and commit
+   the evidence itself under `docs/specs/<id>/evidence/` — redacted (tokens, cookies,
+   personal data, internal hostnames), because that directory is as public as the
+   repository. UI verification captures screenshots of each verified state and an
+   animated capture (GIF) when the behaviour is a *flow*. An activity that cannot run
+   stays unticked: record why, then replan the matrix (with the reason) or escalate; if
+   the environment will not come up, escalate rather than passing the gate. See
+   `reference/testing.md`. (Runnable on its own as `/the-loop:verify-work <id>`.)
+
+4. **Review** (`needs-review`). Run up to `reviews.selfReviewCount` self-reviews then
    `reviews.criticReviewCount` critic reviews (configured critics) BEFORE escalating to a
    human. Then run the **security review gate** (`security.review` — built-in
    security-review skill when available, else the-loop's checklist in
@@ -58,8 +71,9 @@ locked spec files read from disk, not the drafting conversation (plan-mode style
    recipients by role from `.the-loop/collaborators.yaml`, when a human action is
    pending.
 
-4. **Evidence + reviewer briefing (required gate).** Present validated evidence that the
-   acceptance criteria are met (tests, screenshots, logs). BEFORE requesting human
+5. **Evidence + reviewer briefing (required gate).** Present validated evidence that the
+   acceptance criteria are met — **summarised from the verification results** rather than
+   re-derived (tests, screenshots, logs). BEFORE requesting human
    review, **post/update the R10 reviewer briefing in the PR** — produced from
    `userInteraction.prSummary.templatePath` (the-loop's internal
    `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/pr-briefing.md`): a
@@ -68,6 +82,6 @@ locked spec files read from disk, not the drafting conversation (plan-mode style
    (`userInteraction.prSummary.required`) — educating the reviewer is mandatory, not
    optional; do not request review without it.
 
-5. **Next step:** once every task is checked and reviewed, `/the-loop:finish-tasks <id>`.
+6. **Next step:** once every task is checked and reviewed, `/the-loop:finish-tasks <id>`.
 
 Capture learnings (`learnings/`) and durable decisions (`docs/decisions/`) as you go.

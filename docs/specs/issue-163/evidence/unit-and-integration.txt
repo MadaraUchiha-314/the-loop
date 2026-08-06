@@ -1,0 +1,8 @@
+$ make test   # uv run --project cli python -m pytest -q cli
+........................................................................ [ 97%]
+...............................                                          [100%]
+1326 passed, 1 skipped in 48.70s
+
+$ uv run pytest cli/tests/test_graph_parity.py cli/tests/test_graph_model.py cli/tests/test_graph_chain.py cli/tests/test_graph_verification_integration.py -q
+.............................................................            [100%]
+61 passed in 0.22s

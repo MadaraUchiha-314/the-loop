@@ -1,14 +1,14 @@
 ---
 name: the-loop
-description: The operating model for delivering product work items end-to-end with an agent harness. Use whenever working a ticket/issue under the-loop — to write the 3-phase spec (requirements/design/tasks), execute the task DAG, self/critic-review, escalate, present evidence, and record decisions and learnings under the project's PDLC rules and tooling.
+description: The operating model for delivering product work items end-to-end with an agent harness. Use whenever working a ticket/issue under the-loop — to write the spec chain (requirements/design/testing-plan/tasks), execute the task DAG, verify against the testing plan, self/critic-review, escalate, present evidence, and record decisions and learnings under the project's PDLC rules and tooling.
 ---
 
 # the-loop
 
 "the-loop" is an opinionated product-development-lifecycle (PDLC) harness, shipped as a
-plugin for Claude Code and Cursor. Once a work item's 3-phase spec (requirements →
-design → tasks) is approved, the harness executes it end-to-end with MINIMAL or NO human
-intervention, escalating only when a decision/opinion is genuinely required.
+plugin for Claude Code and Cursor. Once a work item's spec chain (requirements → design
+→ testing plan → tasks) is approved, the harness executes it end-to-end with MINIMAL or
+NO human intervention, escalating only when a decision/opinion is genuinely required.
 
 > **Read the relevant reference file before acting** — they carry the full detail so the
 > essence is not lost:
@@ -20,14 +20,14 @@ intervention, escalating only when a decision/opinion is genuinely required.
 > - `reference/reviewing.md` — the self/critic review procedure the review counts drive.
 > - `reference/security.md` — the security lens on every phase gate: threat-model-lite, security design, the security-review gate, human sign-off tiers.
 > - `reference/tooling.md` — repo management, per-language tooling matrix, hooks, CI parity.
-> - `reference/testing.md` — Gherkin scenario docstrings on integration tests, the queryable scenario view, OpenAPI/GraphQL contract conventions.
+> - `reference/testing.md` — the testing plan and the verification node (test-type matrix, verification environment, evidence and redaction), Gherkin scenario docstrings on integration tests, the queryable scenario view, OpenAPI/GraphQL contract conventions.
 > - `reference/minimalism.md` — generation-time decision ladder to counter code bloat.
 > - `reference/token-economy.md` — token/cost levers (model routing, verbosity, disclosure, sub-agents, telemetry); advisory, never at the expense of rigor.
 > - `reference/collaboration.md` — collaborators/roles, paper trail, **the self-comment loop-prevention marker (every reply MUST carry it)**, conflict log, notifications, MCP.
 > - `reference/observability.md` — dev==runtime logging, levels, browser logging.
 > - `reference/automation.md` — distribution, the CLI, webhooks, predictability, learnings lifecycle.
 
-## The artifact chain (optional brainstorm → 3-phase spec, Kiro-style)
+## The artifact chain (optional brainstorm → spec → testing plan, Kiro-style)
 
 Every work item is a chain of artifacts, each **derived from and iterated after** the one
 before it. The rule holds at every link: an artifact is refined with human feedback until
@@ -49,16 +49,21 @@ it is **locked** (`status: approved`), and only then is the next one derived. Sp
    tracks **UI/UX design artifacts** (Figma links / self-contained HTML prototypes under
    `docs/specs/<id>/design/`), iterated-until-locked with the designer
    (`reference/design-artifacts.md`).
-3. **`tasks.md`** — a **DAG** of small, verifiable tasks referencing requirements.
-   Phase: `tasks-breakdown`.
+3. **`testing-plan.md`** — how this work item will be **proved**: a matrix of testing
+   types (each either in scope, or `n/a` *with a reason*), the verification environment,
+   the evidence to capture, and the activities checklist. Phase: `test-planning`. It is
+   authored here and **completed at the `verification` node** — one artifact, written
+   once as a plan and once as a record. See `reference/testing.md`.
+4. **`tasks.md`** — a **DAG** of small, verifiable tasks referencing requirements; each
+   task's `_Test:_` names a row of the testing plan. Phase: `tasks-breakdown`.
 
 The work item's **phase** is tracked on the ticket via a label
 (`<workflow.phaseLabelPrefix><phase>`) and mirrored in the execution log (`brainstorming`
 is optional):
 
 ```
-not-started → brainstorming → requirements-definition → design → tasks-breakdown
-            → implementation → needs-review → complete
+not-started → brainstorming → requirements-definition → design → test-planning
+            → tasks-breakdown → implementation → verification → needs-review → complete
 ```
 
 This sequence is **defined by the shipped process graph**
@@ -73,7 +78,7 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
 
 - **Every work item has a ticket.** Nothing the harness works on lacks a GH issue (or
   Jira) ticket.
-- **Spec before execution.** Create the 3-phase spec and get each phase
+- **Spec before execution.** Create the spec chain and get each phase
   reviewed/approved by the required collaborators before writing code.
 - **Iterate each artifact until locked, then advance.** Starting from the optional
   `brainstorm.md` root, every artifact is refined with human feedback until it is **locked**
@@ -81,8 +86,9 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   Never write a downstream artifact against an unlocked upstream one. Brainstorming is
   optional — a well-defined work item starts at requirements.
 - **Human review per phase** (`workflow.requireHumanReviewPerPhase`, default true).
-- **Reference, don't duplicate (single source of truth).** Once requirements/design/
-  tasks exist, update the ticket with a **link** to each checked-in artifact. Subsequent
+- **Reference, don't duplicate (single source of truth).** Once
+  requirements/design/testing-plan/tasks exist, update the ticket with a **link** to each
+  checked-in artifact. Subsequent
   changes are **edits to those files, not new comments**.
 - **Capability docs are the organized view of specs.** Raw specs under
   `docs/specs/<id>/` are the per-work-item record (*deltas*); living capability docs
@@ -141,6 +147,27 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   justified, never implied. See `reference/security.md`.
 - **Test-first.** `tdd.mode` (default `standard`): no production code without a failing
   test that motivates it; record the red→green transition as evidence.
+- **Plan the proof, then execute the plan.** How a work item will be verified is an
+  artifact (`testing-plan.md`), not an afterthought: the `test-planning` node decides
+  which kinds of testing apply — unit, integration, contract, e2e, UI/visual, snapshot,
+  performance, security/abuse-case, accessibility, migration, manual — and records
+  `n/a` **with a reason** for the ones that do not. The `verification` node then runs it,
+  ticks each activity only once it has actually run, and records per-activity command,
+  outcome and evidence. An activity that cannot run is **not** ticked: say why, replan or
+  escalate. See `reference/testing.md`.
+- **Evidence is captured, committed, and redacted.** Test output, screenshots and
+  recordings live under `<specDir>/<id>/evidence/` and are committed with the work item —
+  a link to a CI run that expires is not evidence. UI verification presents screenshots
+  of the verified states, and an animated capture (GIF) when the behaviour is a *flow*.
+  Because the directory is as public as the repository, redact tokens, cookies, personal
+  data and internal hostnames before committing; a capture that cannot be redacted is not
+  committed.
+- **the-loop facilitates verification; it does not own it.** For anything beyond a single
+  repository — several checkouts, a staging environment, a bespoke harness — the plan's
+  **Verification environment** section *declares* what is needed (repos, services,
+  fixtures, credentials **by reference only**) and names the project's own commands. the-loop
+  brings no runner or environment manager of its own, and reads the operator's
+  `customInstructions` docs rather than restating them.
 - **Scenario-documented integration tests.** Every integration test carries a
   Gherkin-syntax docstring (`Feature:`/`Scenario:`/Given-When-Then) naming the scenario
   under test, with a `Requirement:` link when tied to a `requirements.md`
@@ -241,8 +268,10 @@ Granular commands (one step at a time; same flow `work-on` runs end-to-end):
 - `/the-loop:create-ticket <path>` — create the ticket from a `requirements.md` and
   promote `draft-<slug>/` → `docs/specs/<id>/`.
 - `/the-loop:create-design <id>` — `requirements.md` → `design.md` (Phase 2).
-- `/the-loop:create-tasks-plan <id>` — requirements + design → `tasks.md` DAG (Phase 3).
+- `/the-loop:create-testing-plan <id>` — requirements + design → `testing-plan.md`.
+- `/the-loop:create-tasks-plan <id>` — requirements + design + testing plan → `tasks.md` DAG.
 - `/the-loop:execute-tasks <id>` — implement the DAG, self-check, self/critic-review.
+- `/the-loop:verify-work <id>` — execute the testing plan; record results and evidence.
 - `/the-loop:finish-tasks <id>` — cleanup after all tasks (close the ticket; extensible).
 - `/the-loop:work-status <id>` — read-only status from the specs, tasks checkmarks and log.
 
@@ -250,6 +279,8 @@ Granular commands (one step at a time; same flow `work-on` runs end-to-end):
 
 - `docs/specs/<id>/brainstorm.md` — *(optional)* the root scratchpad a work item was
   explored in before requirements.
+- `docs/specs/<id>/testing-plan.md` + `docs/specs/<id>/evidence/` — how the work item is
+  proved, and the committed proof.
 - `docs/architecture/architecture.md` — architecture index → sub-component docs.
 - `docs/capabilities/capabilities.md` + `<capability>.md` — living capability docs:
   the organized view of specs; current behaviour per capability with history links.

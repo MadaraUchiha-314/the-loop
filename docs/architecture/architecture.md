@@ -45,7 +45,8 @@ implementation (+self-check) → self-review → critic-review → needs-review 
 complete → learn`.
 
 The work item's phase is tracked on the ticket via labels and mirrored in the execution
-log: `not-started → requirements-definition → design → tasks-breakdown → implementation
+log: `not-started → requirements-definition → design → test-planning → tasks-breakdown
+→ implementation → verification
 → needs-review → complete`. Per-work-item specs live in `docs/specs/<id>/`. Implemented
 as commands/skills today; hooks add predictability where a step must always run.
 

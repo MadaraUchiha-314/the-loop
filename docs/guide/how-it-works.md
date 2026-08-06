@@ -7,7 +7,7 @@
   [configuration reference](/config/).
 - **Everything the-loop manages** is tracked in `.the-loop/manifest.yaml`.
 - **Templates** for epics, stories, bugs, the optional `brainstorm` root artifact and
-  the 3-phase spec artifacts (`requirements`/`bugfix`, `design`, `tasks`,
+  the spec artifacts (`requirements`/`bugfix`, `design`, `testing-plan`, `tasks`,
   `execution-log`) are **internal to the-loop** — they ship with the plugin under
   `skills/the-loop/templates/` and are read from there when an artifact is authored,
   rather than being copied into every project.

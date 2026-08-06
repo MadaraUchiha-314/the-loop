@@ -16,7 +16,7 @@ same detail, up front.
 | [Reviewing](/operating-model/reference/reviewing) | The self/critic review procedure the review counts drive. |
 | [Security](/operating-model/reference/security) | The security lens on every phase gate: threat-model-lite, security design, the security-review gate, human sign-off tiers. |
 | [Tooling](/operating-model/reference/tooling) | Repo management, per-language tooling matrix, hooks, CI parity. |
-| [Testing](/operating-model/reference/testing) | Gherkin scenario docstrings on integration tests, the queryable scenario view, OpenAPI/GraphQL contract conventions. |
+| [Testing](/operating-model/reference/testing) | The testing plan and the verification node (test-type matrix, verification environment, evidence and redaction), Gherkin scenario docstrings on integration tests, the queryable scenario view, OpenAPI/GraphQL contract conventions. |
 | [Minimalism](/operating-model/reference/minimalism) | The generation-time decision ladder to counter code bloat. |
 | [Token economy](/operating-model/reference/token-economy) | Token/cost levers (model routing, verbosity, disclosure, sub-agents, telemetry); advisory, never at the expense of rigor. |
 | [Collaboration](/operating-model/reference/collaboration) | Personas/roles, paper trail, conflict log, messaging, MCP. |

@@ -1,7 +1,8 @@
 # Capability: spec-workflow
 
 > The core loop: a work item is specified as a chain of artifacts — optional brainstorm,
-> then a Kiro-style 3-phase spec — each iterated with human feedback until locked, then
+> then a Kiro-style 3-phase spec plus a testing plan — each iterated with human feedback
+> until locked, then
 > executed end-to-end with minimal intervention.
 
 ## What it is
@@ -15,8 +16,8 @@ the `/the-loop:work-on` superset command and granular per-step commands
 
 - Every work item SHALL have a ticket; nothing is worked without one.
 - A work item's spec SHALL live in `docs/specs/<id>/` as the artifact chain
-  `brainstorm.md (optional) → requirements.md|bugfix.md → design.md → tasks.md`, plus
-  `execution-log.md`.
+  `brainstorm.md (optional) → requirements.md|bugfix.md → design.md → testing-plan.md →
+  tasks.md`, plus `execution-log.md` and, once verification has run, `evidence/`.
 - `requirements.md` and `bugfix.md` SHALL be two accepted names for the **same** phase-1
   artifact, not two artifacts. Either clears the `requirements-definition` gate, held to
   the identical standard; **both present blocks**, because two phase-1 artifacts in one
@@ -34,10 +35,16 @@ the `/the-loop:work-on` superset command and granular per-step commands
 - The work item's phase SHALL be tracked on the ticket via labels
   (`<workflow.phaseLabelPrefix><phase>`) through the state machine
   `not-started → brainstorming (optional) → requirements-definition → design →
-  tasks-breakdown → implementation → needs-review → complete`, mirrored in the
-  execution log.
-- `tasks.md` SHALL be a DAG of small verifiable tasks referencing requirements;
-  checkmarks are kept current during implementation.
+  test-planning → tasks-breakdown → implementation → verification → needs-review →
+  complete`, mirrored in the execution log.
+- `tasks.md` SHALL be a DAG of small verifiable tasks referencing requirements, each
+  task's `_Test:_` naming a row of `testing-plan.md`'s matrix; checkmarks are kept
+  current during implementation.
+- **How the work item will be proved SHALL be planned, then executed as its own phase**
+  ([testing-and-contracts](testing-and-contracts.md), issue-163): `test-planning` locks
+  `testing-plan.md` before the task DAG, and `verification` executes it after
+  implementation and before the review chain, with results and committed evidence
+  recorded in the same artifact. An activity that could not run is never ticked.
 - **Security SHALL be a gated concern of each phase** (`config.security`):
   requirements/bugfix carry a Security considerations threat-model-lite (untrusted
   actors, trust boundaries, abuse cases, fail-closed — "no new attack surface" is
@@ -45,7 +52,7 @@ the `/the-loop:work-on` superset command and granular per-step commands
   enforcing every boundary; security-relevant tasks name the negative test proving the
   boundary holds.
 - Completion SHALL be gated by the ready-to-ship gate (green checks, threads resolved,
-  evidence, **a passed security review** — built-in security-review skill or the-loop's
+  evidence — summarised from the verification results, **a passed security review** — built-in security-review skill or the-loop's
   checklist per `security.review.mechanism` — PR briefing, capability docs folded in)
   and risk-tiered autonomy (`config.autonomy`); an effective risk tier ≥
   `security.review.humanSignOffMinTier` (default 4) SHALL wait for a named human
@@ -107,6 +114,7 @@ the `/the-loop:work-on` superset command and granular per-step commands
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-163 | The chain gained `testing-plan.md` between design and tasks, and the state machine gained the `test-planning` and `verification` phases — how a work item is proved is now planned, gated and evidenced rather than assumed | [spec](../specs/issue-163/), [decision-060](../decisions/decision-060.md), [testing-and-contracts](testing-and-contracts.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/163) |
 | issue-124 | A bug's `bugfix.md` clears the phase-1 gate it always should have: the two documented names became alternatives for one artifact, both present blocks, and the bundled bugfix template gained the `## Requirements` heading the gate asks for | [spec](../specs/issue-124/), [decision-045](../decisions/decision-045.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/124) |
 | issue-109 | The phase state machine became executable: every phase is a node in the shipped process graph, with hook chains deciding completion and declared edges routing on the outcome | [spec](../specs/issue-109/), [process-graph](process-graph.md), [decision-041](../decisions/decision-041.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/109) |
 | issue-101 | The execution log tracks a **list** of the PRs delivering a work item; each is labelled for routing and all must be merged/closed before `finish-tasks` completes the item | [spec](../specs/issue-101/), [decision-039](../decisions/decision-039.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/101) |

@@ -66,7 +66,7 @@ deprecated:
     removeIn: "1.0.0"
 
 # Per-work-item artifacts: an optional brainstorm scratchpad, the Kiro-style 3-phase spec,
-# plus the execution log. <id> is the ticket id (e.g. issue-1, PROJ-42) — before a ticket
+# the testing plan, plus the execution log. <id> is the ticket id (e.g. issue-1, PROJ-42) — before a ticket
 # exists these live under docs/specs/draft-<slug>/. These MUST be checked in.
 # A bug uses bugfix.md in place of requirements.md. They are two accepted names for ONE
 # artifact, not two artifacts: the process graph's requirements-definition node declares
@@ -92,9 +92,18 @@ workItemArtifacts:
     role: spec-design-artifacts
     phase: design
     optional: true            # UI/UX (visual) design artifacts — html prototypes / figma exports; only when the work item has a user-facing surface
+  - pathPattern: docs/specs/<id>/testing-plan.md
+    role: spec-testing-plan
+    phase: test-planning
+    # Authored at `test-planning` and completed at `verification` — one artifact,
+    # two gates, the shape tasks.md already has (issue-163, decision-060).
   - pathPattern: docs/specs/<id>/tasks.md
     role: spec-tasks
     phase: tasks-breakdown
+  - pathPattern: docs/specs/<id>/evidence/
+    role: spec-evidence
+    phase: verification
+    optional: true            # committed verification evidence — test output, screenshots, recordings; only when the work item captured any
   - pathPattern: docs/specs/<id>/execution-log.md
     role: execution-log
 

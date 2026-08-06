@@ -32,8 +32,10 @@ workflow:
     - brainstorming          # optional Phase 0 (root artifact: brainstorm.md)
     - requirements-definition
     - design
+    - test-planning           # testing-plan.md — how the item will be proved (issue-163)
     - tasks-breakdown
     - implementation
+    - verification            # the plan, executed; results + evidence recorded
     - needs-review
     - complete
 
@@ -163,8 +165,10 @@ tokenEconomy:                     # token/cost levers (issue-37) — advisory, n
       brainstorm: frontier
       requirements: frontier
       design: frontier
+      test-planning: standard
       tasks: standard
       implementation: standard
+      verification: standard
       self-review: standard
       critic-review: frontier
       evidence: economy
@@ -180,7 +184,9 @@ tokenEconomy:                     # token/cost levers (issue-37) — advisory, n
     stages:
       design: high
       critic-review: high
+      test-planning: medium
       implementation: medium
+      verification: low
       capability-docs: low
       reviewer-briefing: low
       evidence: none

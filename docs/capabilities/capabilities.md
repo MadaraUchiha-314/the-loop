@@ -9,7 +9,7 @@ PR** as the work item that changes behaviour (a ready-to-ship gate item).
 
 | Capability | What it covers |
 |------------|----------------|
-| [spec-workflow](spec-workflow.md) | The (brainstorm →) requirements → design → tasks → implementation loop, phase state machine, commands. |
+| [spec-workflow](spec-workflow.md) | The (brainstorm →) requirements → design → testing plan → tasks → implementation → verification loop, phase state machine, commands. |
 | [process-graph](process-graph.md) | The same loop made executable: nodes, entry/exit hooks, declared edges, the human gate, and the forced-transition escape hatch. |
 | [review-loop](review-loop.md) | Self and critic review rounds before a human: the procedure, and how a configured critic harness is actually invoked. |
 | [capability-docs](capability-docs.md) | This layer itself: the organized view of specs and its fold-in gate. |
@@ -19,7 +19,7 @@ PR** as the work item that changes behaviour (a ready-to-ship gate item).
 | [webhook-triggers](webhook-triggers.md) | GitHub webhook receiver and event → session routing. |
 | [interactive-sessions](interactive-sessions.md) | tmux-hosted harness sessions humans can watch/steer live (local, SSH, browser). |
 | [observability](observability.md) | Structured JSONL event log of the CLI's actions and the `events` query command. |
-| [testing-and-contracts](testing-and-contracts.md) | Gherkin scenario docstrings, the queryable scenario view, contract-first APIs. |
+| [testing-and-contracts](testing-and-contracts.md) | The testing plan and the verification node (test-type matrix, environment, committed evidence), Gherkin scenario docstrings, the queryable scenario view, contract-first APIs. |
 | [design-artifacts](design-artifacts.md) | UI/UX design artifacts (Figma / HTML prototypes) in the design phase. |
 | [release-publishing](release-publishing.md) | Automatic semantic releases and PyPI publishing of the CLI. |
 | [documentation](documentation.md) | The docs site: its information architecture, the authored-not-generated rule, and the docs↔code parity test. |

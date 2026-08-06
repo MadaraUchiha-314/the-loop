@@ -1,7 +1,7 @@
 ---
 type: execution-log
 workItem: ""
-phase: not-started           # not-started | brainstorming | requirements-definition | design | tasks-breakdown | implementation | needs-review | complete
+phase: not-started           # not-started | brainstorming | requirements-definition | design | test-planning | tasks-breakdown | implementation | verification | needs-review | complete
 status: in-progress          # in-progress | complete
 ---
 
@@ -21,8 +21,10 @@ status: in-progress          # in-progress | complete
 |-------|---------|----------------------|-------|
 | requirements-definition |  |  |  |
 | design |  |  |  |
+| test-planning |  |  |  |
 | tasks-breakdown |  |  |  |
 | implementation |  |  |  |
+| verification |  |  |  |
 | needs-review |  |  |  |
 | complete |  |  |  |
 
@@ -68,4 +70,8 @@ status: in-progress          # in-progress | complete
 
 ## Final validation evidence
 
-The evidence presented to the user proving acceptance criteria are met.
+The evidence presented to the user proving acceptance criteria are met. **Summarised
+from `testing-plan.md`'s Verification results** (the `verification` node produced the
+raw record — command, outcome, committed evidence per activity); this section maps it
+onto the acceptance criteria rather than re-deriving it. Committed evidence files live
+under `<specDir>/<id>/evidence/`.

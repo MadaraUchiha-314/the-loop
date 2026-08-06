@@ -66,7 +66,7 @@ names its requirements, so late tasks rarely need the full `requirements.md` re-
 Configured under `contextManagement` in `.the-loop/harness-config.yaml`; defaults below.
 
 - **Phase boundaries → clear** (`contextManagement.phaseBoundary`, default `clear`).
-  The big one is **tasks-breakdown → implementation**: once the 3-phase spec is locked,
+  The big one is **tasks-breakdown → implementation**: once the spec chain is locked,
   the drafting/iteration history is pure noise for implementation — the approved files
   *are* the contract. Start implementation on a fresh window that reads
   `requirements.md`, `design.md`, `tasks.md` and the execution log from disk. This is

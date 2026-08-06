@@ -55,7 +55,8 @@ docs/specs/<id>/
 ```
 
 The ticket's phase label moves through `not-started → requirements-definition → design
-→ tasks-breakdown → implementation → needs-review → complete` as the loop advances —
+→ test-planning → tasks-breakdown → implementation → verification → needs-review →
+complete` as the loop advances —
 `work-status` reads it back out for you at any point.
 
 ## Next
