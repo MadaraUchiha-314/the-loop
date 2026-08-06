@@ -27,7 +27,7 @@ status: in-progress
 
 | PR | Scope / tasks | Status |
 |----|---------------|--------|
-| [#164](https://github.com/MadaraUchiha-314/the-loop/pull/164) | The whole work item — spec chain, graph nodes, template, configs, tests, docs | open, in review |
+| [#166](https://github.com/MadaraUchiha-314/the-loop/pull/166) | The whole work item — spec chain, graph nodes, template, configs, tests, docs | open, in review |
 
 ## Progress entries
 
