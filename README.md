@@ -144,6 +144,13 @@ Granular commands run the same flow one step at a time:
   [reference docs](skills/the-loop/reference/) — `workflow`, `context`, `onboarding`,
   `instructions`, `design-artifacts`, `reviewing`, `security`, `tooling`, `testing`,
   `minimalism`, `token-economy`, `collaboration`, `observability`, and `automation`.
+- **How the artifacts read** is a second bundled skill,
+  [`the-loop:writing`](skills/writing/SKILL.md): a four-part spine (what was broken → what
+  we did → what it costs → what to check), *draw it rather than describe it*, and a
+  carve-out keeping EARS criteria and API contracts formal
+  (`userInteraction.writingStyle`). Deliberately **no length limits** — scope is not
+  knowable in advance, so the test is density: can a sentence come out without losing
+  information?
 
 ## CLI companion (`the-loop`)
 
@@ -212,6 +219,7 @@ Full documentation: **[the-loop CLI](https://madarauchiha-314.github.io/the-loop
 .the-loop/             config schema, default config, manifest, templates, registries
 commands/              init, work-on, upgrade-the-loop
 skills/the-loop/       operating-model skill (+ reference/ docs), Agent Skills standard
+skills/writing/        the-loop:writing — how the artifacts a human reads are written
 rules/                 the-loop.mdc (Cursor always-applied reminder rule)
 hooks/                 hooks.json (Claude Code SessionStart reminder)
 cli/                   the-loop Python CLI (the_loop package; gh-webhook receiver)

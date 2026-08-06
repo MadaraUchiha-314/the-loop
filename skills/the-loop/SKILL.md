@@ -26,6 +26,10 @@ NO human intervention, escalating only when a decision/opinion is genuinely requ
 > - `reference/collaboration.md` — collaborators/roles, paper trail, **the self-comment loop-prevention marker (every reply MUST carry it)**, conflict log, notifications, MCP.
 > - `reference/observability.md` — dev==runtime logging, levels, browser logging.
 > - `reference/automation.md` — distribution, the CLI, webhooks, predictability, learnings lifecycle.
+>
+> One rule lives in a **sibling skill** rather than a reference file, because it applies
+> outside a work item too: **`the-loop:writing`** (`skills/writing/`) — how every artifact
+> a human reads is written.
 
 ## The artifact chain (optional brainstorm → spec → testing plan, Kiro-style)
 
@@ -159,7 +163,10 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   escalate. See `reference/testing.md`.
 - **Evidence is captured, committed, and redacted.** Test output, screenshots and
   recordings live under `<specDir>/<id>/evidence/` and are committed with the work item —
-  a link to a CI run that expires is not evidence. UI verification presents screenshots
+  a link to a CI run that expires is not evidence. **Textual evidence is markdown
+  (`.md`), never `.txt`** — titled, sectioned per command, with the raw output in fenced
+  blocks; binary captures keep their own formats and are referenced from it. UI
+  verification presents screenshots
   of the verified states, and an animated capture (GIF) when the behaviour is a *flow*.
   Because the directory is as public as the repository, redact tokens, cookies, personal
   data and internal hostnames before committing; a capture that cannot be redacted is not
@@ -189,6 +196,22 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
 - **Minimalism.** Apply the `reference/minimalism.md` decision ladder (YAGNI → stdlib →
   native → existing dep → inline → new abstraction); justify every new dependency in
   `design.md`. Never trade away validation/error-handling/security/accessibility.
+- **Write the artifacts for the human who has to approve them.** Every document a person
+  reads — `requirements.md`, `design.md`, `testing-plan.md`, the PR briefing, decision and
+  capability docs, ticket and review comments — follows the bundled **`the-loop:writing`**
+  skill (`userInteraction.writingStyle`): a four-part spine (what was broken → what we did
+  → what it costs → what to check), conclusion-first sections, and **draw it rather than
+  describe it** where three or more named parts are involved
+  (`writingStyle.diagramFirst`). **There is no length limit** — scope is not knowable in
+  advance, so the test is *density* (can a sentence come out without losing information?),
+  and that is a review judgement, never a gate. Two things concision never buys: a **gated
+  section is never deleted to shorten a document** (say it is empty, and why), and the
+  **formal registers stay formal** — EARS criteria, abuse cases, RFC-2119 keywords, API
+  contracts and schema descriptions (`writingStyle.formalRegisters`) are contracts, not
+  prose. Distinct from
+  `tokenEconomy.outputVerbosity`, which compresses chat narration and preserves specs; this
+  governs the specs themselves. Rules and the tells catalogue live in the skill — do not
+  restate them here.
 - **Token economy.** Apply the `reference/token-economy.md` levers (`config.tokenEconomy`):
   progressive/phase-scoped disclosure, dense prompts, model routing + thinking-effort by
   stage/risk tier, narration-only output compression (with its preservation list),

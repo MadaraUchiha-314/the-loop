@@ -103,7 +103,7 @@ workItemArtifacts:
   - pathPattern: docs/specs/<id>/evidence/
     role: spec-evidence
     phase: verification
-    optional: true            # committed verification evidence — test output, screenshots, recordings; only when the work item captured any
+    optional: true            # committed verification evidence — test output, screenshots, recordings; only when the work item captured any. Textual evidence is markdown (.md), never .txt (PR #168); binary captures keep their own formats.
   - pathPattern: docs/specs/<id>/execution-log.md
     role: execution-log
 

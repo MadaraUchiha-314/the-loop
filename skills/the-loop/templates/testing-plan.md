@@ -7,6 +7,13 @@ approvedBy: []
 overrides: {}
 ---
 
+<!-- Written per the `the-loop:writing` skill: front-load each section's
+     conclusion, draw it rather than describe it (3+ named parts -> a mermaid
+     diagram), and keep the formal registers formal (EARS, abuse cases,
+     RFC-2119, API contracts, schema descriptions). No length limit — length
+     follows the change; the test is whether a sentence can come out without
+     losing information. A gated section stays even when it is empty. -->
+
 # Testing plan: <work item title>
 
 > Derived from the approved `requirements.md`/`bugfix.md` and `design.md`, **before**
@@ -74,7 +81,8 @@ overrides: {}
 
 > What will be captured, and where. Evidence is committed under
 > `<specDir>/<id>/evidence/`; a link to a CI run that expires or to a local path is not
-> evidence.
+> evidence. **Textual evidence is markdown (`.md`), never `.txt`** — titled, one section
+> per command, raw output in fenced blocks. Binary captures keep their own formats.
 >
 > **Redact before committing.** Captured output and screenshots routinely contain tokens,
 > cookies, personal data and internal hostnames, and this directory is as public as the
@@ -83,8 +91,8 @@ overrides: {}
 
 | Row | Evidence | Path under `evidence/` |
 |-----|----------|------------------------|
-| T1 | test summary (counts, duration) | `unit.txt` |
-| T2 | scenario table + run output | `integration.txt` |
+| T1 | test summary (counts, duration) | `unit.md` |
+| T2 | scenario table + run output | `integration.md` |
 | T5 | screenshots of each verified state; an animated capture (GIF) when the behaviour is a **flow** rather than a state | `ui/<state>.png`, `ui/<flow>.gif` |
 
 ## Verification activities

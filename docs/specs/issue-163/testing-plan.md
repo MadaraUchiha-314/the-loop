@@ -74,8 +74,8 @@ This repository only — no second checkout, no service, no fixture data, no cre
 
 | Row | Evidence | Path under `evidence/` |
 |-----|----------|------------------------|
-| T1, T2, T3, T6 | test run summaries (full suite + the four graph suites) | `unit-and-integration.txt` |
-| T4, T5 | lint, typecheck, format and schema-validation output | `lint-typecheck-validate.txt` |
+| T1, T2, T3, T6 | test run summaries (full suite + the four graph suites) | `unit-and-integration.md` |
+| T4, T5 | lint, typecheck, format and schema-validation output | `lint-typecheck-validate.md` |
 | T2 | the scenario rows this work item adds, from `the-loop scenarios --format markdown` | `scenarios.md` |
 
 Nothing captured here touches a credential, a hostname or personal data — the commands are
@@ -96,13 +96,13 @@ local test runners over this repository — so no redaction was required.
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|---------------------|---------|----------|
-| T1 | `uv run pytest cli/tests/test_graph_model.py cli/tests/test_graph_chain.py` | pass | [unit-and-integration.txt](evidence/unit-and-integration.txt) |
-| T2 | `uv run pytest cli/tests/test_graph_verification_integration.py` | pass — 7 scenarios | [unit-and-integration.txt](evidence/unit-and-integration.txt), [scenarios.md](evidence/scenarios.md) |
-| T3 | `uv run pytest cli/tests/test_graph_parity.py` | pass — P1–P4 | [unit-and-integration.txt](evidence/unit-and-integration.txt) |
-| T4 | `make validate` | pass — 6 config files VALID | [lint-typecheck-validate.txt](evidence/lint-typecheck-validate.txt) |
-| T5 | `make lint`, `make typecheck`, `make format-check` | pass — ruff clean, markdownlint 0 errors over 409 files, pyright 0 errors, 165 files formatted | [lint-typecheck-validate.txt](evidence/lint-typecheck-validate.txt) |
-| T6 | `make test` | pass — **1328 passed, 1 skipped** (1322 before this work item; +6 net from the new suites and cases) | [unit-and-integration.txt](evidence/unit-and-integration.txt) |
-| T12 | `uv run pytest cli/tests/test_graph_model.py -k Testing` | pass — the verification gate declares `produces` and is not a skip; no existing gate weakened | [unit-and-integration.txt](evidence/unit-and-integration.txt) |
+| T1 | `uv run pytest cli/tests/test_graph_model.py cli/tests/test_graph_chain.py` | pass | [unit-and-integration.md](evidence/unit-and-integration.md) |
+| T2 | `uv run pytest cli/tests/test_graph_verification_integration.py` | pass — 7 scenarios | [unit-and-integration.md](evidence/unit-and-integration.md), [scenarios.md](evidence/scenarios.md) |
+| T3 | `uv run pytest cli/tests/test_graph_parity.py` | pass — P1–P4 | [unit-and-integration.md](evidence/unit-and-integration.md) |
+| T4 | `make validate` | pass — 6 config files VALID | [lint-typecheck-validate.md](evidence/lint-typecheck-validate.md) |
+| T5 | `make lint`, `make typecheck`, `make format-check` | pass — ruff clean, markdownlint 0 errors over 409 files, pyright 0 errors, 165 files formatted | [lint-typecheck-validate.md](evidence/lint-typecheck-validate.md) |
+| T6 | `make test` | pass — **1328 passed, 1 skipped** (1322 before this work item; +6 net from the new suites and cases) | [unit-and-integration.md](evidence/unit-and-integration.md) |
+| T12 | `uv run pytest cli/tests/test_graph_model.py -k Testing` | pass — the verification gate declares `produces` and is not a skip; no existing gate weakened | [unit-and-integration.md](evidence/unit-and-integration.md) |
 | T14 | Reviewed the upgrade path for work items whose spec folder predates this change | blocks at `test-planning` as designed; `the-loop graph force --to <node> --reason <why>` is the audited override, and it never forges the verdict | [design.md §Error handling](design.md) |
 
 **Not executed:** none. Every planned activity ran. Re-run in full after the PR #166
