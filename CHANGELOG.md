@@ -1,3 +1,9 @@
+## v7.4.0 (2026-08-06)
+
+### Feat
+
+- **issue-165**: write the-loop's artifacts for a human reader (#168)
+
 ## v7.3.0 (2026-08-06)
 
 ### Feat
