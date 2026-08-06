@@ -25,6 +25,14 @@ P2  every gated name is tracked by the manifest              the graph gates an 
 P3  every gated name has a template that can satisfy it      the template cannot pass its own gate
 ==  =======================================================  ==========================
 
+P5 (issue-167) is the same three questions asked of ``validates:`` — the artifacts a node
+*asserts against* without authoring, which is how the six review-chain nodes gate their
+sections of the shared ``execution-log.md``. It also asks the question whose absence let
+issue-167 through in the first place: **a gate that declares content checks must resolve
+something to check them against.** Six nodes declared ``sections:`` and no artifact at
+all, so their ``validate-artifacts`` returned *skipped* on every run — including
+``security-review``, which the graph itself calls "never skippable, at any risk tier".
+
 The exclusions in P1 are data-driven, not an allow-list: an entry with no ``phase``
 (``execution-log.md``) is outside the node-artifact contract because the manifest itself
 says so, and a ``pathPattern`` ending in ``/`` is a directory of design artifacts, not a
@@ -86,15 +94,38 @@ def _tracked() -> List[Tuple[str, str]]:
     return out
 
 
+#: The ``with:`` params that make ``validate-artifacts`` an assertion rather than a
+#: no-op. Mirrors ``hooks.artifacts._CHECKS`` — a gate declaring any of them needs an
+#: artifact to apply it to.
+_CHECKS = ("locked", "frontMatter", "sections", "checkmarks")
+
+
+def _validate_entries(node) -> List[Mapping[str, Any]]:
+    """Every ``validate-artifacts`` entry in a node's chains, as raw specs."""
+    return [
+        spec
+        for boundary in (node.entry, node.exit)
+        for spec in boundary
+        if isinstance(spec, Mapping) and spec.get("hook") == "validate-artifacts"
+    ]
+
+
+def _sections(spec: Mapping[str, Any]) -> Set[str]:
+    return {str(s) for s in (spec.get("with") or {}).get("sections") or []}
+
+
 def _required_sections(node) -> Set[str]:
-    """The sections a node's ``validate-artifacts`` exit hook demands."""
-    wanted: Set[str] = set()
-    for spec in node.exit:
-        if isinstance(spec, Mapping) and spec.get("hook") == "validate-artifacts":
-            wanted.update(
-                str(s) for s in (spec.get("with") or {}).get("sections") or []
-            )
-    return wanted
+    """The sections a node demands **of its own ``produces``**.
+
+    An entry carrying ``validates:`` is asking them of a *different* file, so its
+    sections belong to that artifact's template, not to this node's — P5 checks those.
+    """
+    return {
+        section
+        for spec in _validate_entries(node)
+        if not (spec.get("with") or {}).get("validates")
+        for section in _sections(spec)
+    }
 
 
 def _front_matter_phase(text: str) -> str:
@@ -196,6 +227,98 @@ def test_p3_every_gated_name_has_a_template_that_can_satisfy_it() -> None:
 
     assert not problems, (
         "a bundled template cannot satisfy the gate it is authored for: "
+        + "; ".join(problems)
+    )
+
+
+def _validated() -> Dict[str, List[Tuple[Any, Set[str]]]]:
+    """Artifact name → ``(node, demanded sections)`` for every ``validates:`` target."""
+    out: Dict[str, List[Tuple[Any, Set[str]]]] = {}
+    for node in _graph().ordered():
+        for spec in _validate_entries(node):
+            target = (spec.get("with") or {}).get("validates")
+            if not target:
+                continue
+            for name in artifact_names(target):
+                out.setdefault(name, []).append((node, _sections(spec)))
+    return out
+
+
+def _declared_checks(spec: Mapping[str, Any]) -> Set[str]:
+    """Which content checks an entry declares — what makes it an assertion."""
+    return {check for check in _CHECKS if (spec.get("with") or {}).get(check)}
+
+
+def test_p5a_every_content_gate_resolves_an_artifact_to_read() -> None:
+    """The assertion whose absence let issue-167 through.
+
+    Six nodes declared ``sections:`` and no artifact — so ``validate-artifacts``
+    returned *skipped* on every run, and since a skip is not a decision the chain
+    passed straight through them. One of them is ``security-review``, which the graph
+    itself annotates "never skippable, at any risk tier".
+    """
+    inert = [
+        f"{node.id} (gates on {sorted(_sections(spec)) or sorted(_declared_checks(spec))})"
+        for node in _graph().ordered()
+        for spec in _validate_entries(node)
+        if _declared_checks(spec)
+        and not node.produces
+        and not (spec.get("with") or {}).get("validates")
+    ]
+    assert not inert, (
+        "these nodes gate on artifact content but name no artifact to read it from, so "
+        "their validate-artifacts skips and the gate reports success without ever "
+        "running — declare `produces:` on the node or `validates:` on the hook entry: "
+        + "; ".join(sorted(inert))
+    )
+
+
+def test_p5b_every_validated_artifact_is_tracked_by_the_manifest() -> None:
+    """P2's question, asked of the artifacts a node asserts against.
+
+    Phase-insensitive on purpose: a validated artifact is *shared* — ``execution-log.md``
+    is gated by six nodes and authored by none — which is exactly why the manifest tracks
+    it without a ``phase`` and why P1/P2 exclude it. Tracked at all is the requirement.
+    """
+    tracked = {
+        match.group("name")
+        for entry in _work_item_artifacts()
+        if (match := _SPEC_FILE.match(str(entry.get("pathPattern") or "")))
+    }
+    untracked = sorted(set(_validated()) - tracked)
+    assert not untracked, (
+        "the graph validates artifacts that .the-loop/manifest.yaml does not track: "
+        + ", ".join(untracked)
+    )
+
+
+def test_p5c_every_validated_section_exists_in_that_artifacts_template() -> None:
+    """P3's question, asked of the artifacts a node asserts against.
+
+    This is the latent half of issue-167: ``capability-docs`` gates a ``Capability docs``
+    section that ``templates/execution-log.md`` did not offer. Invisible while the node
+    skipped — and a block for *every* work item the moment it stopped.
+    """
+    problems: List[str] = []
+    for name, gates in sorted(_validated().items()):
+        template = TEMPLATES / name
+        if not template.is_file():
+            problems.append(
+                f"{name}: the graph validates it, but no template authors it"
+            )
+            continue
+        headings = set(
+            sections(split_front_matter(template.read_text(encoding="utf-8"))[1])
+        )
+        for node, wanted in gates:
+            for section in sorted(wanted - headings):
+                problems.append(
+                    f"{name}: node {node.id!r} requires a {section!r} section the "
+                    "template does not offer"
+                )
+    assert not problems, (
+        "a node gates a section of a shared artifact that the bundled template does not "
+        "offer, so every work item authored from the template blocks there: "
         + "; ".join(problems)
     )
 

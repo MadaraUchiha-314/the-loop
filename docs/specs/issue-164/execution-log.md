@@ -51,7 +51,7 @@ status: in-progress          # in-progress | complete
 - **Did:** landed the gate assertions red (3 failed), added `"Module structure"` to the
   `design` node's `validate-artifacts` sections, added the section to the bundled template,
   named it in `SKILL.md`, `reference/workflow.md`, `create-design.md` and `work-on.md`, and
-  folded in `spec-workflow.md`, `process-graph.md` and decision-063. Then executed the
+  folded in `spec-workflow.md`, `process-graph.md` and decision-064. Then executed the
   testing plan and committed the evidence.
 - **Checkpoint/tests:** `make test` 1345 passed / 1 skipped · `make lint` 0 errors over 432
   files · `make format-check` clean · `make typecheck` 0 errors · `make validate` all six

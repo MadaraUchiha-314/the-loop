@@ -167,44 +167,61 @@ nodes:
       - verify-tests
 
   # --- everything below was ONE `needs-review` label before this graph -------
+  #
+  # These six do not *author* an artifact — each owns one section of the SHARED
+  # `execution-log.md`. So they declare `validates:` rather than `produces:`,
+  # which keeps "produces" meaning "this node wrote it" while still giving each
+  # gate a file to read (issue-167, decision-063).
+  #
+  # Without it they declared no artifact at all, so `validate-artifacts` returned
+  # *skipped* on every run and — a skip not being a decision (decision-060) — the
+  # chain passed straight through all six, `security-review` included, however
+  # empty the log was. `locked:` is deliberately absent: the execution log is
+  # append-only and carries `status: in-progress | complete`, never `approved`.
 
   - id: self-review
     phase: needs-review
     actor: agent
     stage: self-review
     entry: [set-phase-label, log-entry]
-    exit: [{hook: validate-artifacts, with: {sections: ["Review cycles"]}}]
+    exit:
+      - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Review cycles"]}}
 
   - id: critic-review
     actor: agent
     stage: critic-review
     entry: [log-entry]
-    exit: [{hook: validate-artifacts, with: {sections: ["Review cycles"]}}]
+    exit:
+      - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Review cycles"]}}
 
   - id: security-review
     actor: agent
     required: true          # never skippable, at any risk tier
     stage: security-review
     entry: [log-entry]
-    exit: [{hook: validate-artifacts, with: {sections: ["Security review (gate)"]}}]
+    exit:
+      - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Security review (gate)"]}}
 
   - id: evidence
     actor: agent
     stage: evidence
     entry: [log-entry]
-    exit: [{hook: validate-artifacts, with: {sections: ["Final validation evidence"]}}]
+    exit:
+      - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Final validation evidence"]}}
 
   - id: capability-docs
     actor: agent
     stage: capability-docs
     entry: [log-entry]
-    exit: [{hook: validate-artifacts, with: {sections: ["Capability docs"]}}]
+    exit:
+      - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Capability docs"]}}
 
   - id: reviewer-briefing
     actor: agent
     stage: reviewer-briefing
     entry: [log-entry]
-    exit: [{hook: validate-artifacts, with: {sections: ["Pull requests"]}}]
+    exit:
+      - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Pull requests"]}}
 
   - id: human-approval
     actor: human

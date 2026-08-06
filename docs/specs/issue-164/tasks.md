@@ -37,7 +37,7 @@ overrides: {}
   - _Test:_ `T13 — manual read`; `make lint`
 - [x] 5. Fold in the docs
   - `docs/capabilities/spec-workflow.md` (current behaviour + history row),
-    `docs/decisions/decision-063.md` + index
+    `docs/decisions/decision-064.md` + index
   - _Depends on:_ 4 · _Requirements:_ R3.3
   - _Test:_ `make lint`
 - [x] 6. Execute `testing-plan.md` and commit the evidence

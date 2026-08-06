@@ -120,7 +120,7 @@ the-loop/
 │   └── test_graph_parity.py             unchanged P3 covers template↔gate agreement already
 └── docs/
     ├── capabilities/spec-workflow.md    changed   current behaviour + history row
-    ├── decisions/decision-063.md        new       why the section is gated, not advisory
+    ├── decisions/decision-064.md        new       why the section is gated, not advisory
     ├── decisions/decisions.md           changed   index row
     └── specs/issue-164/                 new       this work item's spec chain and evidence
 ```
@@ -133,7 +133,7 @@ the-loop/
 | `cli/tests/test_graph_parity.py` | Asserts the bundled template can satisfy every gated section (pre-existing, no edit) | unchanged | R2.3 |
 | `skills/the-loop/SKILL.md`, `reference/workflow.md`, `commands/create-design.md` | Name the section where an agent looks for the design phase; reference the template for the rules | changed | R3.1, R3.2, R3.4 |
 | `docs/capabilities/spec-workflow.md` | Records the section as current behaviour of the spec workflow, with a history row | changed | R3.3 |
-| `docs/decisions/decision-063.md` | Records why the section is gated rather than advisory, and why it is not a new artifact | new | R2.1 |
+| `docs/decisions/decision-064.md` | Records why the section is gated rather than advisory, and why it is not a new artifact | new | R2.1 |
 
 No dependency diagram: the modules above have no runtime dependency on one another — the
 YAML is data read by an existing loader, and the rest is prose. The one relationship worth
@@ -210,7 +210,7 @@ Executable detail: [`testing-plan.md`](testing-plan.md).
 
 ## Trade-offs & decisions
 
-- **Gated, not advisory** ([decision-063](../../decisions/decision-063.md)). The cost is a
+- **Gated, not advisory** ([decision-064](../../decisions/decision-064.md)). The cost is a
   hard stop on a design that omits the section, including for work items whose structure is
   a single file. The alternative — a template section nothing checks — is the shape that
   produced issue-124 and issue-148, and this repository has paid for it twice.
