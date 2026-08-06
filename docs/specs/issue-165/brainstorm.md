@@ -58,9 +58,10 @@ Surveyed August 2026. Four skills, one style-guide tradition, one docs framework
 **What the survey settles.** Every existing skill treats this as a *vocabulary* problem —
 ban words, rewrite sentences. That is the wrong altitude for us. A 30 KB requirements
 document does not get better by removing "leverage" from it; it gets better by being 3 KB.
-So the-loop's skill is about **shape and budget** first (what a document is allowed to
-contain, and how long), and about tells second — and the tells chapter borrows from the
-prior art rather than re-deriving it.
+So the-loop's skill is about **shape** first (what a document is expected to contain, and
+in what order), and about tells second — and the tells chapter borrows from the prior art
+rather than re-deriving it. *(The first draft also said "and how long"; that half was
+rejected in review — see the amendment below.)*
 
 **Register, don't vendor.** decision-005 already settled this pattern for `caveman` and
 `ponytail`: the-loop implements the technique natively and lists the third-party skill in
@@ -80,10 +81,18 @@ MIT skills above get the same treatment.
 - **Option C — a skill plus budgets in the templates, with a narrow mechanical test.**
   The skill carries the judgement; the templates carry the budget where the author is
   already looking; the test guards only what is mechanical (the contract is present, the
-  P0 tells are absent, the skill obeys its own budget). **Chosen.**
+  P0 tells are absent, the skill obeys its own budget). **Chosen — then amended, see
+  below.**
 - **Option D — a `the-loop writing lint` CLI command.** *Deferred:* it needs a core →
   API → client slice (issue-161's contract) to earn its place, and nothing yet says the
   advisory test is insufficient. Revisit if the budgets are ignored in practice.
+
+> **Amended after review (PR #168).** The budgets half of Option C did not survive: the
+> owner rejected per-artifact word limits because a work item's scope is not knowable in
+> advance. What shipped is Option C minus the numbers — the skill, the template pointers
+> and the mechanical test, with a *density* test in place of a word count. The reasoning
+> above is left as written because it is the record of what was thought at the time; the
+> superseding decision is [decision-061](../../decisions/decision-061.md) §D2.
 
 ## Open questions
 
@@ -97,9 +106,10 @@ MIT skills above get the same treatment.
 ## Hand-off → requirements
 
 Carried forward: a bundled writing skill (contract + tells catalogue), a
-`userInteraction.writingStyle` config block with per-artifact budgets, the diagram-first
-rule, the formal carve-out, budgets written into the templates, and a parity test. Left
-behind: word ban-lists, blocking gates, a CLI linter.
+`userInteraction.writingStyle` config block, the diagram-first rule, the formal carve-out,
+a pointer to the skill in each human-read template, and a parity test. Left behind: word
+ban-lists, blocking gates, a CLI linter — and, after review, per-artifact word budgets
+(decision-061 §D2).
 
 ## Review comments
 
