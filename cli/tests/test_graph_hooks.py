@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 
 from the_loop.graph.contract import BLOCK, PASS, SKIP, HookContext, WorkItem
 from the_loop.graph.frontmatter import mermaid_blocks, sections, split_front_matter
@@ -116,8 +117,138 @@ def test_a_satisfied_artifact_passes(tmp_path):
     assert validate_artifacts(ctx).status == PASS
 
 
-def test_a_node_with_no_artifacts_is_skipped(tmp_path):
+def test_a_node_with_no_artifacts_and_nothing_to_check_is_skipped(tmp_path):
+    """Unchanged: no artifact and no assertion is a no-op, and stays one."""
     ctx, _ = _ctx(tmp_path, [])
+    assert validate_artifacts(ctx).status == SKIP
+
+
+# -- gating an artifact the node did not author (issue-167) ---------------------
+#
+# The six nodes between `implementation` and `complete` each own one section of
+# the SHARED execution log. They declared `sections:` and no `produces:`, so the
+# hook resolved nothing, returned `skipped`, and — a skip not being a decision —
+# the chain passed straight through all six. Including `security-review`, whose
+# own graph comment reads "never skippable, at any risk tier".
+
+_LOG_SECTION = "Security review (gate)"
+_GATE = {"validates": "execution-log.md", "sections": [_LOG_SECTION]}
+
+
+def _log(spec: Path, body: str) -> None:
+    (spec / "execution-log.md").write_text(
+        f"---\ntype: execution-log\nstatus: in-progress\n---\n\n# Log\n\n{body}",
+        encoding="utf-8",
+    )
+
+
+def test_the_shipped_security_gate_shape_no_longer_skips(tmp_path):
+    """The headline defect, as the graph declares it: no log, no pass."""
+    ctx, _ = _ctx(tmp_path, [], dict(_GATE))
+    result = validate_artifacts(ctx)
+    assert result.status == BLOCK
+    assert result.messages[0].path.endswith("docs/specs/issue-1/execution-log.md")
+
+
+def test_a_validated_target_missing_its_section_blocks(tmp_path):
+    ctx, spec = _ctx(tmp_path, [], dict(_GATE))
+    _log(spec, "## Review cycles\n\nthree rounds\n")
+    result = validate_artifacts(ctx)
+    assert result.status == BLOCK
+    assert f"required section is missing: {_LOG_SECTION}" == result.messages[0].text
+
+
+def test_a_validated_targets_empty_section_blocks(tmp_path):
+    """The same standard `produces` targets are held to — a heading is not a record."""
+    ctx, spec = _ctx(tmp_path, [], dict(_GATE))
+    _log(spec, f"## {_LOG_SECTION}\n\n")
+    result = validate_artifacts(ctx)
+    assert result.status == BLOCK
+    assert "required section is empty" in result.messages[0].text
+
+
+def test_a_validated_target_carrying_its_section_passes(tmp_path):
+    ctx, spec = _ctx(tmp_path, [], dict(_GATE))
+    _log(spec, f"## {_LOG_SECTION}\n\n- Outcome: pass\n")
+    result = validate_artifacts(ctx)
+    assert result.status == PASS
+    assert result.data["artifacts"][0].endswith("execution-log.md")
+
+
+def test_produced_and_validated_findings_arrive_in_one_result(tmp_path):
+    """Aggregation (R3.5) spans both kinds of target, produced first."""
+    ctx, spec = _ctx(
+        tmp_path,
+        ["design.md"],
+        {"validates": "execution-log.md", "sections": ["Architecture"]},
+    )
+    (spec / "design.md").write_text("# D\n")
+    _log(spec, "## Elsewhere\n\nbody\n")
+    result = validate_artifacts(ctx)
+    assert result.status == BLOCK
+    paths = [m.path for m in result.messages]
+    assert len(paths) == 2
+    assert paths[0].endswith("design.md") and paths[1].endswith("execution-log.md")
+
+
+def test_a_validated_target_accepts_the_same_alternation_as_produces(tmp_path):
+    """One resolver for both, so the vocabulary cannot drift (R1.4)."""
+    ctx, spec = _ctx(
+        tmp_path, [], {"validates": "run-log.md|execution-log.md", "sections": ["Log"]}
+    )
+    _log(spec, "## Log\n\nan entry\n")
+    assert validate_artifacts(ctx).status == PASS
+
+
+def test_two_names_for_one_validated_slot_block_as_ambiguous(tmp_path):
+    ctx, spec = _ctx(
+        tmp_path, [], {"validates": "run-log.md|execution-log.md", "sections": ["Log"]}
+    )
+    _log(spec, "## Log\n\nan entry\n")
+    (spec / "run-log.md").write_text("# R\n\n## Log\n\nan entry\n")
+    result = validate_artifacts(ctx)
+    assert result.status == BLOCK
+    assert "keep one of" in result.messages[0].text
+
+
+def test_a_gate_with_checks_and_nothing_to_read_blocks_and_is_final(tmp_path):
+    """Option 3, the backstop: this is the branch that would have caught issue-167
+    the day it shipped. Not retriable — re-running a node cannot repair the graph
+    that declared it, and pretending otherwise burns maxAttempts silently."""
+    ctx, _ = _ctx(tmp_path, [], {"sections": ["Review cycles"]})
+    result = validate_artifacts(ctx)
+    assert result.status == BLOCK
+    assert result.retriable is False
+    assert "names no artifact" in result.messages[0].text
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"locked": True},
+        {"frontMatter": {"status": "approved"}},
+        {"sections": ["Anything"]},
+        {"checkmarks": "complete"},
+    ],
+    ids=["locked", "frontMatter", "sections", "checkmarks"],
+)
+def test_every_kind_of_check_fails_closed_without_a_target(tmp_path, params):
+    """All four params make the hook an assertion, so all four need a target."""
+    ctx, _ = _ctx(tmp_path, [], params)
+    assert validate_artifacts(ctx).status == BLOCK
+
+
+def test_an_optional_node_is_judged_on_what_it_authored_not_what_it_validates(tmp_path):
+    """A shared artifact says nothing about whether *this* node ran — and the
+    execution log exists for every work item, so reading it as evidence of entry
+    would gate a brainstorm nobody asked for."""
+    ctx, spec = _ctx(
+        tmp_path,
+        ["brainstorm.md"],
+        {"validates": "execution-log.md", "sections": ["Problem / opportunity"]},
+        node={"optional": True},
+    )
+    _log(spec, "## Progress entries\n\nan entry\n")
     assert validate_artifacts(ctx).status == SKIP
 
 

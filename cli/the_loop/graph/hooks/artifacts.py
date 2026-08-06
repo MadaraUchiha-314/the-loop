@@ -10,6 +10,15 @@ called ``bugfix.md`` and always has been (issue-124, decision-045). Resolution
 lives in :mod:`the_loop.graph.model`; what lives here is the *policy* — what to
 do when none of the accepted names is present, and what to do when more than one
 is.
+
+Some nodes gate an artifact they did **not** author. The six nodes between
+``implementation`` and ``complete`` each own one section of the *shared*
+``execution-log.md``, so ``produces`` — which means "this node wrote it" — has
+nothing to say about them. They declare ``validates:`` instead (issue-167,
+decision-063), and a gate that declares content checks but resolves no artifact
+at all now **blocks**: those six nodes previously reported ``skipped`` on every
+run, and since a skip is not a decision (decision-060) the chain passed straight
+through them — including the ``required: true`` security review.
 """
 
 from __future__ import annotations
@@ -24,9 +33,24 @@ from ..registry import hook
 
 NAME = "validate-artifacts"
 
+#: The params that make this hook an assertion rather than a no-op. If any of
+#: them is declared, the hook has something to check and therefore needs
+#: something to check it against.
+_CHECKS = ("locked", "frontMatter", "sections", "checkmarks")
+
 
 def _slots(ctx: HookContext) -> List[ArtifactSlot]:
     return resolve_produces(ctx.node.get("produces"), ctx.work_item.spec_dir)
+
+
+def _validated(ctx: HookContext) -> List[ArtifactSlot]:
+    """Artifacts this hook *asserts against*, which the node did not author.
+
+    Same resolver as ``produces``, deliberately: alternation, presence and the
+    ambiguity policy are then identical for both, and cannot drift apart the way
+    two private copies of the resolver did before issue-124.
+    """
+    return resolve_produces((ctx.params or {}).get("validates"), ctx.work_item.spec_dir)
 
 
 def _rel(ctx: HookContext, path: Path) -> str:
@@ -40,8 +64,31 @@ def validate_artifacts(ctx: HookContext) -> HookResult:
     params: Mapping[str, Any] = ctx.params or {}
     findings: List[Message] = []
 
-    slots = _slots(ctx)
+    produced = _slots(ctx)
+    slots = produced + _validated(ctx)
     if not slots:
+        # Fail closed. A gate that declares sections and resolves no file to
+        # look for them in reports success without ever running — the shape
+        # decision-045 named, and the shape six of this graph's own nodes shipped
+        # in (issue-167). Not retriable: re-running the node cannot repair a
+        # graph-authoring fault, and pretending it might would burn maxAttempts
+        # before anyone was told.
+        if any(params.get(check) for check in _CHECKS):
+            return HookResult.blocked(
+                NAME,
+                [
+                    Message(
+                        text=(
+                            "this node gates on artifact content but names no "
+                            "artifact to read it from — the graph must declare "
+                            "`produces:` on the node or `validates:` on this hook "
+                            "entry"
+                        ),
+                        path=_rel(ctx, ctx.work_item.spec_dir),
+                    )
+                ],
+                retriable=False,
+            )
         return HookResult.skipped(NAME, "this node declares no artifacts")
 
     # An *optional* node that produced nothing was simply not entered. The
@@ -49,7 +96,12 @@ def validate_artifacts(ctx: HookContext) -> HookResult:
     # item whose scope is already clear starts directly at
     # requirements-definition" — so a missing artifact there is a skip, not a
     # finding. Once the artifact exists, every gate applies normally.
-    if ctx.node.get("optional") and not any(slot.present for slot in slots):
+    #
+    # Judged on what the node *authored* when it declares any: a shared artifact
+    # it merely validates says nothing about whether this node ran, and the
+    # execution log exists for every work item.
+    entered = produced or slots
+    if ctx.node.get("optional") and not any(slot.present for slot in entered):
         return HookResult.skipped(NAME, "optional node; no artifact was produced")
 
     paths: List[Path] = []

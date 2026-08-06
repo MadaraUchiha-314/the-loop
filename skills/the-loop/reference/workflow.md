@@ -228,7 +228,10 @@ indexed by `capabilities.md`, template
 - **Fold-in happens in the same PR** as the work item: when implementation changes a
   capability's behaviour, update the affected capability doc(s) (minting new ones for
   first-touched capabilities and updating the index) before requesting review. A work
-  item that affects no capability records "none affected" in its execution log.
+  item that affects no capability records "none affected" in its execution log. That
+  record lives in the log's **`## Capability docs`** section, which the `capability-docs`
+  node gates (issue-167) — so it is written, not implied, and the section is never
+  deleted to shorten the log.
 - **The taxonomy is emergent and review-driven:** structure/organization feedback
   arrives as PR review comments on the capability-doc diffs and is handled like any
   other finding (reply-first-then-fix).
