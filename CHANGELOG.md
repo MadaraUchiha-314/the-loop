@@ -1,3 +1,9 @@
+## v7.4.1 (2026-08-06)
+
+### Fix
+
+- **issue-167**: six review gates stopped reporting success without running (#170)
+
 ## v7.4.0 (2026-08-06)
 
 ### Feat
