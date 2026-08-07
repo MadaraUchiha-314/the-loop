@@ -168,6 +168,10 @@ also the most wrong.
 6. WHEN the diagram's geometry is produced THEN it SHALL be **computed by a committed
    generator** rather than hand-placed, so the next regeneration is a command rather than a
    re-derivation — the diagram went stale in part because reproducing it was work.
+7. WHEN the documentation site shows the same two loops THEN it SHALL embed the **same**
+   SVG rather than maintaining a second rendering. One drawing, one source: two copies of
+   one process is the divergence this work item exists to remove, and a twin that starts
+   accurate does not stay that way.
 
 ## Non-functional requirements
 

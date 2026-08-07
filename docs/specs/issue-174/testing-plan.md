@@ -48,6 +48,7 @@ overrides: {}
 | T11 | R1.1–R1.3, R2.1–R2.4, R3.1–R3.2 | A first-time reader meets the graph before the plugin, the two loops before the phase list, and a working link out to the site |
 | T13 | R5.1, R5.2 | The rendered diagram names the same nodes as `pdlc-work-item-loop.yaml` and `pdlc-pr-loop.yaml`, starts the inner loop at `implementation`, and omits the two nodes the inner loop does not declare |
 | T13 | R5.3, R5.4, R5.5, R5.6 | One diagram in the README (no mermaid twin); the SVG is self-contained and script-free; both artifacts re-open in Excalidraw; the generator is committed |
+| T13 | R5.7 | The site embeds the same SVG: `bun run docs:build` succeeds and emits the asset, and the built page references it at the correct base path |
 | T12 | all | No regression in the 1400+ test suite |
 
 ## Verification environment
@@ -86,6 +87,7 @@ blocks.
 - [x] T10 — `grep -L '^## Documentation' docs/specs/*/execution-log.md`
 - [x] T11 — manual read of `README.md`, `docs/index.md`, `docs/guide/what-is-the-loop.md`, `docs/guide/how-it-works.md`
 - [x] T13 — headless-Chromium render of `docs/assets/the-loop-workflow.svg` + self-containment greps
+- [x] T13b — `bun run docs:build` (the site build, to prove the shared asset resolves)
 - [x] T12 — `make check`
 
 ## Verification results
@@ -100,6 +102,7 @@ blocks.
 | T10 | `grep -L '^## Documentation' docs/specs/*/execution-log.md` | **pass, with a finding recorded** — 55 of 56 logs lack the section, but all 55 belong to closed work items; the only other open item has no spec directory at all | [`evidence/tests.md`](evidence/tests.md) |
 | T11 | manual read of the README and the three changed site pages | **pass** — ordering per R1, all 20 links resolved to files, phase sequence identical to the graph's | [`evidence/docs-review.md`](evidence/docs-review.md) |
 | T13 | headless-Chromium render + `grep` for scripts, external URLs, embedded font and scene payload | **pass** — every node matches the shipped graphs; 0 scripting constructs; the only URL is the SVG namespace; 1 data-URI `@font-face`; scene payload present; scene parses (72 elements) | [`evidence/diagram.md`](evidence/diagram.md) |
+| T13b | `bun run docs:build` | **pass** — build complete in 46s; the SVG is emitted to `assets/the-loop-workflow.<hash>.svg` at its full 143 002 bytes and the built page references it as `/the-loop/assets/…`, so the shared asset resolves under the site's base path | [`evidence/diagram.md`](evidence/diagram.md) |
 | T12 | `make check` | **pass** — ruff, ruff-format, markdownlint, pyright (0 errors), schema validation (6 files VALID), 1424 passed / 1 skipped | [`evidence/lint-and-types.md`](evidence/lint-and-types.md) |
 
 **Not executed:** none. Every row the matrix marks `yes` ran; every `n/a` row carries its

@@ -106,9 +106,31 @@ status: in-progress
   resolve to nothing on GitHub, so the hand-drawn look would have degraded to a system font
   with nothing failing.
 - **Next:** re-run the full verification pass, then back to the human gate.
-- **Blockers:** none. One question is put back to the reviewer rather than decided here:
-  the site's `what-is-the-loop.md` keeps a mermaid rendering of the same two loops, which
-  is two copies of one process — the divergence this work item otherwise argues against.
+- **Blockers:** none. One question was put back to the reviewer rather than decided —
+  whether the site should keep its own mermaid rendering of the same two loops — and
+  answered in the next entry.
+
+### 2026-08-07 — the site stops keeping a twin
+
+- **Phase:** verification
+- **Did:** the owner answered the open question and widened it: *"Can we use excalidraw for
+  all diagrams on the doc site as well?"* Measured the surface first rather than assuming
+  what "all" reaches: **5** diagrams on authored site pages, and **117** in
+  harness-produced documents (`docs/specs/` 115, `docs/decisions/` 1,
+  `docs/capabilities/` 1). Took the part that is unambiguously this work item's — the
+  two-loop twin in `docs/guide/what-is-the-loop.md` — and pointed it at the same SVG
+  (**R5.7**). One drawing, one source.
+- **Checkpoint/tests:** proved with a real `bun run docs:build` (T13b) rather than by
+  inspection, because `ignoreDeadLinks: true` means the build does not police references:
+  the asset is emitted at its full 143 002 bytes and the built page references it under the
+  site's `/the-loop/` base path.
+- **Next:** the human gate.
+- **Blockers:** none. The remaining 4 authored diagrams and the 117 harness-produced ones
+  are **not** converted here. That is a separate work item with a real design question in
+  it (`cli/getting-started.md` is a sequence diagram, which Excalidraw has no primitive
+  for) and a `diagramFormat` rule change that would put a headless-Chromium export in the
+  path of every agent drawing a picture mid-task. Costs named in the PR thread, and a
+  follow-up ticket offered rather than the scope quietly absorbed.
 
 ## Review cycles
 
@@ -190,7 +212,7 @@ Acceptance criteria, each mapped to the thing that proves it.
 | `docs/assets/the-loop-workflow.svg` + `.excalidraw` | **Regenerated** (was the issue-150 scene: one loop, three spec artifacts). Now three column-aligned bands — the spec chain including `testing-plan.md`, the outer `pdlc-work-item-loop`, and the inner `pdlc-pr-loop` starting at `implementation` — joined by the two seam arrows. Virgil inlined; the scene embedded so both files re-open in Excalidraw |
 | `README.md` | Rewritten. Leads with the executable process graph and the daemon; then the two loops, the regenerated Excalidraw diagram and the `await-inner-loops` seam; then the four-artifact chain including `testing-plan.md`; then the CLI; then the plugins. The per-command tables, install matrix, layout tree, rules list, v0 status block and roadmap are gone — delegated to the site or deleted as drift generators. 265 → 166 lines |
 | `docs/index.md` | Hero tagline leads with the graph; the four feature cards become *Two loops, one process* · *The process is executable* · *A CLI that drives it* · *Gated, reviewed, documented* |
-| `docs/guide/what-is-the-loop.md` | Both loops with their sequences and a mermaid diagram; the four-artifact table with `testing-plan.md`'s plan-then-record role; the "v0 foundation" status block removed; the rules list gained test-planning, security gating and the documentation rule |
+| `docs/guide/what-is-the-loop.md` | Both loops with their sequences, embedding the **same** regenerated Excalidraw SVG as the README rather than a mermaid twin; the four-artifact table with `testing-plan.md`'s plan-then-record role; the "v0 foundation" status block removed; the rules list gained test-planning, security gating and the documentation rule |
 | `docs/guide/how-it-works.md` | New leading section "The process is data" — both shipped graph YAMLs, the node/hook/edge model, and four consequences (internal to the-loop, gates read artifacts, a force never forges a verdict, the graph assigns). Repository layout refreshed with `cli/the_loop/graph/`, `docs/api-specs/`, `skills/writing/`, `testing-plan.md` and `evidence/` |
 | `skills/the-loop/SKILL.md` | New operating principle: the user-facing docs ship with the change, recorded in the log's `## Documentation` section |
 | `skills/the-loop/reference/workflow.md` | New "User-facing docs" fold-in section, and the ready-to-ship gate's documentation item |

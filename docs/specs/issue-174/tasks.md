@@ -81,10 +81,12 @@ overrides: {}
     `testing-plan.md`, the inner loop starting at `implementation`, the two seam arrows);
     export via Excalidraw's own `exportToSvg` with `exportEmbedScene`; inline Virgil as a
     data URI and drop the unused faces; remove the README's mermaid twin so one diagram
-    remains; commit the generator
-  - _Depends on:_ 4
-  - _Requirements:_ R5.1–R5.6
-  - _Test:_ `T13 — headless-Chromium render + self-containment greps`; `T6 — markdownlint`
+    remains; commit the generator. Point `docs/guide/what-is-the-loop.md` at the **same**
+    SVG so the site keeps no second rendering, and prove it with a real site build
+  - _Depends on:_ 4, 5
+  - _Requirements:_ R5.1–R5.7
+  - _Test:_ `T13 — headless-Chromium render + self-containment greps`; `T13b — bun run
+    docs:build`; `T6 — markdownlint`
 
 ## Dependency graph (DAG)
 

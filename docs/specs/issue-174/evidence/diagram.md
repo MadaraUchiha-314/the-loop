@@ -63,11 +63,42 @@ from it.
 The mermaid two-loop block this PR had added to the README is removed; the SVG stands in
 its place, above the phase list. `grep -c '```mermaid' README.md` → `0`.
 
-The site's `docs/guide/what-is-the-loop.md` keeps its own mermaid rendering.
-`userInteraction.diagramFormat: mermaid` is the standing rule and issue-150's exception was
-scoped to the README hero image — but that does leave two renderings of one process, which
-is the divergence this work item otherwise argues against. Raised for the reviewer in the
-PR thread rather than settled here.
+## R5.7 — the site embeds the same SVG, not a twin
+
+Raised in the PR thread and answered by the owner (*"Can we use excalidraw for all diagrams
+on the doc site as well?"*): `docs/guide/what-is-the-loop.md` no longer carries its own
+mermaid rendering of the two loops. It embeds the **same** file. One drawing, one source —
+a twin that starts accurate does not stay that way, which is this work item's whole thesis.
+
+`ignoreDeadLinks: true` means the build does not police links, so the shared asset was
+proved with a real build rather than by inspection:
+
+```console
+$ cd docs && bun install && bun run docs:build
+docs: synced skills/the-loop/reference/ -> docs/operating-model/reference/
+  vitepress v1.6.4
+✓ building client + server bundles...
+✓ rendering pages...
+build complete in 46.33s.
+
+$ ls docs/.vitepress/dist/assets/*.svg
+docs/.vitepress/dist/assets/the-loop-workflow.DmLEvmbr.svg
+
+$ grep -o 'src="[^"]*the-loop-workflow[^"]*"' docs/.vitepress/dist/guide/what-is-the-loop.html
+src="/the-loop/assets/the-loop-workflow.DmLEvmbr.svg"
+```
+
+The emitted asset is the full 143 002 bytes — the self-contained file, font and all — and
+the built page references it under the site's `/the-loop/` base path. A relative
+`../assets/…` reference from a guide page therefore resolves correctly once deployed.
+
+**Still mermaid, and deliberately so:** four authored site pages (`cli/index.md`,
+`cli/concepts.md`, `cli/getting-started.md`, `config/index.md`) and 117 harness-produced
+diagrams under `docs/specs/`, `docs/decisions/` and `docs/capabilities/`. Converting those
+is a separate work item with a real design question in it — `cli/getting-started.md` is a
+**sequence diagram**, a shape Excalidraw has no primitive for — and a `diagramFormat` rule
+change that would put a headless-Chromium export in the path of every agent that draws a
+picture mid-task. Raised in the PR thread with those costs named.
 
 ## R5.4, R5.5 — self-contained, script-free, round-trips
 
