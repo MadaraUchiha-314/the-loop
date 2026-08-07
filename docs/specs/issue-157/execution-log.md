@@ -105,3 +105,22 @@ parser, no input the operator did not type. Stated, not implied.
 - **Next:** self-review rounds, then the human gate (risk tier 3 → human-approves-PR).
 - **Blockers:** none. Critic rounds cannot run here (`reviews.critics` is empty and no
   second harness is installed) — recorded above rather than claimed.
+
+### 2026-08-07 — rebased on main; the decision was renumbered 063 → 064
+
+- **Phase:** needs-review (iterating on the PR)
+- **Did:** the owner asked for a rebase on PR #171. Rebased onto `main`
+  (`be7afdf`, 7.4.1), which had meanwhile merged
+  [#170](https://github.com/MadaraUchiha-314/the-loop/pull/170) — and that PR had already
+  taken the number **063**. Renumbered this work item's decision to
+  [decision-064](../../decisions/decision-064.md) and updated all thirteen references
+  (`install.py`, both capability docs, both command pages, decision-057's discharge note,
+  and this spec). The merge commit is gone; history is linear. The `uv.lock` sync commit
+  dropped itself — main had since fixed the same drift.
+- **Checkpoint/tests:** `make check` green on the rebased branch — 1406 tests (issue-167
+  added 40), lint 0, pyright 0, all six configs valid, and the-loop's own gate still
+  `WAIT` at `requirements-approval`. GitHub queued the workflows on the force-push, which
+  is what the owner's second request asked for; before the rebase it had registered none
+  at all across four pushes.
+- **Next:** the human gate.
+- **Blockers:** none.
