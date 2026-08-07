@@ -248,3 +248,89 @@ def test_default_components_are_the_cli_plus_detected_harnesses(machine, capsys)
     out = capsys.readouterr().out
     assert "components: cli, claude" in out
     assert not machine["log"].exists()
+
+
+# -- Cursor (issue-157) --------------------------------------------------------
+#
+# Feature: Installing the-loop's Cursor plugin from the same command
+# Requirement: docs/specs/issue-157/requirements.md
+
+
+def test_a_detected_cursor_joins_the_default_set_and_drives_its_own_cli(
+    machine, capsys
+):
+    """
+    Scenario: A machine with both harnesses, and a Cursor that manages plugins
+      Given `claude` and `cursor-agent` on PATH, both exposing a plugin surface
+      When the operator runs `the-loop install` naming no component
+      Then the plan covers the CLI and both harnesses
+      And running it drives cursor-agent's own marketplace-add and plugin-install
+      And no clone is made under Cursor's local plugins directory
+    """
+    fake_harness(machine["bin"], "claude", machine["log"])
+    cursor_log = machine["log"].parent / "cursor.log"
+    fake_harness(machine["bin"], "cursor-agent", cursor_log)
+
+    # Naming no component selects `cli` too, and the CLI step is a real package
+    # install — so the default set is asserted under --dry-run, and the harness steps
+    # are then executed by naming them.
+    assert main(["install", "--dry-run"]) == 0
+    assert "components: cli, claude, cursor" in capsys.readouterr().out
+    assert not cursor_log.exists()
+
+    assert main(["install", "claude", "cursor", "--from", "acme/loop"]) == 0
+
+    assert cursor_log.read_text(encoding="utf-8").splitlines() == [
+        "plugin marketplace add acme/loop --scope user",
+        f"plugin install {PLUGIN_KEY} --scope user",
+    ]
+    assert not (machine["home"] / ".cursor").exists()
+
+
+def test_without_a_cursor_plugin_cli_the_documented_clone_is_planned(machine, capsys):
+    """
+    Scenario: A Cursor build with no CLI install command
+      Given no `cursor-agent` on PATH and a `git` that records what it was asked to do
+      When the operator runs `the-loop install cursor --format json`
+      Then the single step is a git clone of the resolved marketplace into
+           ~/.cursor/plugins/local/the-loop
+      And re-running it reports `already` without running git again
+    """
+    # The fake PATH holds only our stubs, so the stub restores a real one for `mkdir`.
+    _script(machine["bin"] / "git", 'PATH=/usr/bin:/bin mkdir -p "$4/.git"\n')
+    directory = machine["home"] / ".cursor" / "plugins" / "local" / "the-loop"
+
+    assert main(["install", "cursor", "--from", "acme/loop", "--format", "json"]) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert [entry["component"] for entry in payload] == ["cursor"]
+    assert payload[0]["outcome"] == "applied"
+    assert payload[0]["command"] == (
+        f"{machine['bin']}/git clone -- https://github.com/acme/loop.git {directory}"
+    )
+    assert (directory / ".git").is_dir()
+
+    assert main(["install", "cursor", "--format", "json"]) == 0
+    assert json.loads(capsys.readouterr().out)[0]["outcome"] == "already"
+
+
+def test_a_cursor_destination_that_is_not_a_checkout_is_left_alone(machine, capsys):
+    """
+    Scenario: Something else already occupies Cursor's local plugin directory
+      Given ~/.cursor/plugins/local/the-loop holding files this command did not create
+      When the operator runs `the-loop install cursor`
+      Then the component is reported skipped, naming the path
+      And the directory's contents are unchanged
+    """
+    _script(machine["bin"] / "git", f'echo "git ran" >> "{machine["log"]}"\n')
+    directory = machine["home"] / ".cursor" / "plugins" / "local" / "the-loop"
+    directory.mkdir(parents=True)
+    occupant = directory / "notes.txt"
+    occupant.write_text("mine\n", encoding="utf-8")
+
+    assert main(["install", "cursor"]) == 0
+
+    assert "skipped" in capsys.readouterr().out
+    assert not machine["log"].exists()
+    assert occupant.read_text(encoding="utf-8") == "mine\n"
+    assert list(directory.iterdir()) == [occupant]

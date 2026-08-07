@@ -166,11 +166,11 @@ self-learning/ML capabilities.
 - `the-loop events` SHALL query the structured JSONL event log of the CLI's own
   routing/dispatch/session decisions (see [observability](observability.md)).
 - `the-loop install` / `the-loop upgrade` SHALL install and upgrade **the-loop itself** —
-  this CLI and the **Claude Code** plugin — at `--scope user` (default) or
-  `--scope project`, naming `cli`, `claude` or `all` (default: the CLI plus every harness
-  found on `PATH`). Cursor SHALL NOT be a component until issue-157 establishes how a
-  Cursor plugin is installed from a terminal (owner decision on PR #153); `the_loop.install`
-  is harness-shaped, so adding it is a `BINARIES` entry plus a planner, not a new command. Both verbs SHALL build an ordered **plan of steps**,
+  this CLI and the plugin, in **Claude Code** and in **Cursor** — at `--scope user`
+  (default) or `--scope project`, naming `cli`, `claude`, `cursor` or `all` (default: the
+  CLI plus every harness found on `PATH`, i.e. `claude` and `cursor-agent`).
+  `the_loop.install` is harness-shaped: a further harness is a `BINARIES` entry plus a
+  planner in `PLANNERS`, not a new command. Both verbs SHALL build an ordered **plan of steps**,
   print the exact argv (or file) of each, and report one outcome per step (`applied` ·
   `already` · `skipped` · `failed`, and `planned` under `--dry-run`), exiting non-zero
   only when a step failed; `--dry-run` SHALL be that same plan with the execution left
@@ -182,11 +182,20 @@ self-learning/ML capabilities.
   `plugin marketplace` but no working `plugin install` SHALL count as **no surface** —
   the split is real (Cursor 2.5) and running an install that cannot work would report a
   failure for an absent feature. WHERE no usable surface exists it SHALL fall back only to
-  an already-documented route — the decision-054 settings keys, in the user file or
-  `<project>/.claude/settings.json` at project scope, through the same non-destructive
-  writer — and WHERE a requested scope cannot be expressed it SHALL report the component
-  **skipped** with the manual instruction rather than install at a scope that was not
-  asked for.
+  an already-documented route — for `claude`, the decision-054 settings keys, in the user
+  file or `<project>/.claude/settings.json` at project scope, through the same
+  non-destructive writer; for `cursor`, the local checkout at
+  `~/.cursor/plugins/local/the-loop` that the installation guide prints — and WHERE a
+  requested scope cannot be expressed it SHALL report the component **skipped** with the
+  manual instruction rather than install at a scope that was not asked for.
+- The **Cursor** fallback SHALL be a `git` checkout and nothing more: `git clone -- <url>
+  <dir>` at install, `git -C <dir> pull --ff-only` at upgrade, `already` when the checkout
+  is present at install, and **skipped** when `git` is absent, when an upgrade finds no
+  checkout (an upgrade SHALL NOT install), or when the directory exists without a `.git`
+  — in which case it SHALL be left byte-for-byte as found. The URL SHALL be built only
+  from the already-validated `owner/repo`. `--scope project` SHALL be skipped with the
+  manual instruction for as long as `cursor-agent` expresses no scope of its own
+  (issue-157, decision-064).
 - `the-loop upgrade` SHALL determine how the **running** CLI was installed from where its
   package lives (`uv tool` / `pipx` / `pip`) and use that method's upgrade command; a
   source checkout SHALL be reported skipped, naming the checkout, never installed over
@@ -236,6 +245,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-157 | `cursor` became a component of `install`/`upgrade`, unparking the half issue-152 left out: `cursor-agent` is probed exactly as `claude` is, and where it reports a plugin surface the *same* two harness-CLI steps run with the scope passed through. Where it does not, the fallback is the local checkout `docs/guide/installation.md` already prints — clone, `pull --ff-only`, `already` for a checkout that exists, and a reported skip for a missing `git`, an upgrade with nothing to upgrade, or an occupied non-checkout path. Project scope stays skipped-with-instructions until Cursor expresses one. The dispatch in `plan()` became a `PLANNERS` mapping | [spec](../specs/issue-157/), [decision-064](../decisions/decision-064.md), [distribution](distribution.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/157) |
 | issue-161 | Re-layered as core → API → clients: `the_loop.core` facade, the control-plane service (`service start\|stop\|status`, no extras — it ships in the base install), every core-capability command routed through it, and the `/mcp` endpoint on the official MCP SDK. The UI was descoped from this work item on owner review | [spec](../specs/issue-161/), [decision-058](../decisions/decision-058.md), [control-plane](control-plane.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/161) |
 | issue-156 | Process runner removed; tmux is the only runner (2026-08-05): `sessions start` spawns tmux-hosted sessions unconditionally — there is no configured runner to pick | [spec](../specs/issue-156/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/156) |
 | issue-152 | Added `install` and `upgrade`: one plan-then-execute implementation, two verbs, covering the CLI and the **Claude Code** plugin at user or project scope. Drives the harness's own plugin CLI (probed, not assumed — a marketplace command without a working `plugin install` counts as no surface), falls back to the decision-054 settings keys, detects how the running CLI was installed, and reports every step's argv and outcome — `--dry-run` being the same plan minus the execution. Cursor parked on review and split out as issue-157 | [spec](../specs/issue-152/), [decision-057](../decisions/decision-057.md), [distribution](distribution.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/152) |

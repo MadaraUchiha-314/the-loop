@@ -1,7 +1,7 @@
 # `install`
 
-Put the-loop on a machine: the **CLI** and the **Claude Code plugin**, at user or project
-scope.
+Put the-loop on a machine: the **CLI** and the plugin, in **Claude Code**, **Cursor** or
+both, at user or project scope.
 
 ```bash
 the-loop install [COMPONENT ...] [--scope user|project] [--project-dir .]
@@ -10,26 +10,18 @@ the-loop install [COMPONENT ...] [--scope user|project] [--project-dir .]
 
 ```text
 $ the-loop install --dry-run
-the-loop install · components: cli, claude · scope: user · marketplace: MadaraUchiha-314/the-loop · dry run
+the-loop install · components: cli, claude, cursor · scope: user · marketplace: MadaraUchiha-314/the-loop · dry run
 Component  Outcome  Step                                            Command / file
 ---------  -------  ----------------------------------------------  --------------------------------------------------------
 cli        planned  install the the-loopy-one CLI                   /usr/bin/uv tool install the-loopy-one
 claude     planned  register the the-loop marketplace (…/the-loop)  claude plugin marketplace add MadaraUchiha-314/the-loop …
 claude     planned  install the-loop@the-loop                       claude plugin install the-loop@the-loop --scope user
+cursor     planned  clone …/the-loop into ~/.cursor/plugins/…       /usr/bin/git clone -- https://github.com/…/the-loop.git …
 ```
 
-Components are `cli`, `claude`, or `all`. **Naming none** means the CLI plus every
-harness actually found on `PATH` — the useful default when setting a machine up.
+Components are `cli`, `claude`, `cursor`, or `all`. **Naming none** means the CLI plus
+every harness actually found on `PATH` — the useful default when setting a machine up.
 
-> **Cursor is not a component yet.** the-loop ships as a Cursor plugin
-> ([decision-015](/decisions/decision-015)), but installing it from a terminal is its own
-> problem — as of Cursor 2.5 the documented routes are the
-> [marketplace site](https://cursor.com/marketplace) and `/add-plugin` *in the editor*,
-> and no CLI install command appears to be documented. Tracked as
-> [issue #157](https://github.com/MadaraUchiha-314/the-loop/issues/157); until then,
-> install the Cursor plugin the way the [installation guide](/guide/installation)
-> describes.
->
 > This installs **software**. Scaffolding a repository is
 > [`/the-loop:init`](/reference/commands), and reconciling a project's the-loop files with
 > a newer plugin is `/the-loop:upgrade-the-loop`. Different jobs, deliberately different
@@ -83,6 +75,49 @@ A binary that offers `plugin marketplace` but no working `plugin install` counts
 surface**, and takes the fallback — running an install that cannot work would report
 `failed` for what is really an absent feature.
 
+### `cursor` — the same probe, a different fallback
+
+Cursor is asked the same question in the same way (`cursor-agent plugin --help`, then
+`plugin install --help`). **Which of the two routes runs on your machine is decided by
+that answer**, so `--dry-run` tells you before anything happens:
+
+| What `cursor-agent` reports | What runs |
+|---|---|
+| a plugin surface with `--scope` | `cursor-agent plugin marketplace add …` + `plugin install …`, with your scope passed through |
+| a plugin surface without `--scope` | the same two commands at user scope; `--scope project` is **skipped** |
+| `plugin marketplace` but no working `plugin install` | the fallback below |
+| no `cursor-agent` on `PATH`, or the probe fails | the fallback below |
+
+**The fallback is the local checkout the [installation guide](/guide/installation) already
+prints** — nothing invented:
+
+```bash
+git clone -- https://github.com/MadaraUchiha-314/the-loop.git ~/.cursor/plugins/local/the-loop
+```
+
+| Situation | Outcome |
+|---|---|
+| the directory does not exist, `install` | `applied` — cloned |
+| the directory is already a checkout, `install` | `already` — nothing run, nothing written |
+| the directory is already a checkout, `upgrade` | `applied` — `git -C … pull --ff-only` |
+| the directory does not exist, `upgrade` | `skipped` — "run `the-loop install cursor` first"; an upgrade never becomes an install |
+| the directory exists but is **not** a checkout | `skipped` — naming the path; nothing there is deleted, overwritten or written into |
+| `git` is not on `PATH` | `skipped` — with the command above, to run by hand |
+
+`--ff-only` is deliberate: this is also the route the guide calls *"locally, for
+development"*, so a clone you have committed on reports `failed` with git's own message
+rather than acquiring a merge commit the-loop invented.
+
+**Project scope has no Cursor mechanism today**, so `--scope project` is reported
+`skipped` with the manual instruction (`/add-plugin` in that workspace). It is not
+permanent: the moment `cursor-agent` reports a `--scope` flag, the probe passes yours
+straight through.
+
+The clone route assumes the marketplace repository **is** the-loop (or a fork of it) —
+that is the only shape `--from` is meant to take, since Cursor loads the checkout as a
+plugin from its root manifest. The resolved repository is printed in the plan header
+before anything is fetched.
+
 ### `cli` — the-loopy-one from PyPI
 
 The installer is read off the copy you are running rather than asked for as a flag:
@@ -104,6 +139,7 @@ It deliberately does not run `uv add` — installing a tool must not rewrite you
 | | `--scope user` (default) | `--scope project` |
 |---|---|---|
 | Claude Code | the harness's user scope / `<config dir>/settings.json` | the harness's project scope, run in `--project-dir` / that repo's `.claude/settings.json` |
+| Cursor | the harness's user scope / `~/.cursor/plugins/local/the-loop` | the harness's project scope if `cursor-agent` expresses one — otherwise **skipped** |
 | CLI | `uv tool` / `pipx` / `pip` | the project's `.venv` |
 
 A scope that cannot be expressed is **skipped, never widened** — an install asked for one
@@ -126,7 +162,7 @@ argv list with no shell.
 
 | Flag | Default | Meaning |
 |------|---------|---------|
-| *(positional)* | `cli` + detected harnesses | `cli`, `claude`, `all` |
+| *(positional)* | `cli` + detected harnesses | `cli`, `claude`, `cursor`, `all` |
 | `--scope` | `user` | `user` or `project` |
 | `--project-dir` | `.` | The project for `--scope project` |
 | `--from` | config, else `MadaraUchiha-314/the-loop` | Marketplace `owner/repo` |
@@ -145,5 +181,7 @@ argv list with no shell.
 
 - [`upgrade`](/cli/commands/upgrade) — the same plan, moving what is installed forward.
 - [Installing the CLI](/cli/installation) · [Installing the-loop](/guide/installation)
-- [decision-057](/decisions/decision-057) — why the harness's own installer, why the
-  fallback is exactly that one, and why Cursor is parked.
+- [decision-057](/decisions/decision-057) — why the harness's own installer, and why the
+  Claude fallback is exactly that one.
+- [decision-064](/decisions/decision-064) — why Cursor came back, and why its fallback is
+  a clone.
