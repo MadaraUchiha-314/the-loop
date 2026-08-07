@@ -251,6 +251,25 @@ def test_an_unmerged_close_leaves_the_inner_loop_where_it_was(checkout):
     assert await_inner_loops(_ctx_for(spec)).status == "wait"
 
 
+def test_an_inner_loop_prompt_claims_with_pr(checkout):
+    """The report-back channel addresses the loop the session walks: an
+    inner-loop prompt's claim command carries --pr <n>, or the PR session
+    would evaluate the work item's OUTER gates when it reports done."""
+    from the_loop.graphlink import render_graph_context
+
+    link = _real_link()
+    link.on_pr_spawn(WI, PR, str(checkout), session_id="s-1", runner="tmux")
+    ctx = link.pr_context(WI, PR, str(checkout))
+    assert ctx is not None and ctx.current_node == "implementation"
+
+    block = render_graph_context(ctx, "issue-15", pr_number=16)
+    assert "the-loop graph complete issue-15 --pr 16" in block
+    assert "pdlc-pr-loop" in block
+    # ...and the outer block is byte-identical to what it always was.
+    outer = render_graph_context(ctx, "issue-15")
+    assert "the-loop graph complete issue-15`" in outer and "--pr" not in outer
+
+
 def _ctx_for(spec_dir):
     item = WorkItem(ref=WI.ref, id="issue-15", spec_dir=spec_dir)
     return HookContext(

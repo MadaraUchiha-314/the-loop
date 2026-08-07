@@ -210,7 +210,10 @@ class GraphContext:
 
 
 def render_graph_context(
-    ctx: Optional["GraphContext"], item_id: str, verdict: str = ""
+    ctx: Optional["GraphContext"],
+    item_id: str,
+    verdict: str = "",
+    pr_number: Optional[int] = None,
 ) -> str:
     """The ``$graph_context`` prompt block (issue-148, D3).
 
@@ -219,11 +222,21 @@ def render_graph_context(
     prompts modulo this empty substitution (R3.4). ``verdict`` carries a
     gate-first outcome (D4) so the session knows what the gate just decided
     about the event it is receiving.
+
+    ``pr_number`` marks an **inner-loop** prompt (issue-172): the block then
+    names the PR's own loop and its claim command carries ``--pr <n>`` — the
+    report-back channel must address the loop the session is actually walking,
+    or a PR session's claim would evaluate the work item's outer gates instead.
     """
     if ctx is None or not ctx.current_node:
         return ""
+    scope = (
+        f"pull request #{pr_number}'s pdlc-pr-loop on {item_id}"
+        if pr_number is not None
+        else item_id
+    )
     lines = [
-        f"the-loop process state for {item_id}:",
+        f"the-loop process state for {scope}:",
         f"  node: {ctx.current_node}"
         + (f" (phase: {ctx.phase})" if ctx.phase else "")
         + f" — status: {ctx.status}",
@@ -236,8 +249,10 @@ def render_graph_context(
         lines.append(f"  this event was classified by the gate first: {verdict}")
     if ctx.next_command:
         lines.append(f"  resume with: `/the-loop:{ctx.next_command} {item_id}`")
+    claim_suffix = f" --pr {pr_number}" if pr_number is not None else ""
     lines.append(
-        f"  when this node's work is done, run: `the-loop graph complete {item_id}`"
+        "  when this node's work is done, run: "
+        f"`the-loop graph complete {item_id}{claim_suffix}`"
     )
     lines.append(
         "  (this block is the-loop's own state, not part of the event payload)"
@@ -556,11 +571,18 @@ class GraphLink:
 
     @staticmethod
     def _context_from(rt: Any, item_id: str) -> Optional[GraphContext]:
-        """Derive a :class:`GraphContext` from state + graph, mutating nothing."""
+        """Derive a :class:`GraphContext` from state + graph, mutating nothing.
+
+        Reads the runtime's OWN state location (issue-172): an inner-loop
+        runtime's context comes from its ``pr-loops/pr-<n>/`` state, so a PR
+        session's prompt describes the loop that session is walking — never the
+        outer pointer.
+        """
         from .graph.state import GraphState
 
-        spec_dir = rt.work_item(item_id).spec_dir
-        state = GraphState.load(spec_dir, item_id)
+        item = rt.work_item(item_id)
+        state_dir = rt.state_dir(item) if hasattr(rt, "state_dir") else item.spec_dir
+        state = GraphState.load(state_dir, item_id)
         if not state.current_node:
             return None  # never entered — a fresh item starts, it doesn't resume
         node = rt.graph.node(state.current_node)

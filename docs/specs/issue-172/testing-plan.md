@@ -114,9 +114,9 @@ rebuild's.
 | T2/T2b (negative) | seven regression tests against a registry whose `record_owning` is the bare `find_by_work_item` and recording a no-op | **7 failed, as they must** — the second PR event reaches nothing, the poller arms a spawn against the PR | [`evidence/tests.md`](evidence/tests.md) |
 | T8 | the abuse cases in `tests/test_routing.py` | pass — a corrupt entry is skipped per entry, a tree is flattened, a self-recording refused | [`evidence/tests.md`](evidence/tests.md) |
 | T10 | `pytest tests/test_reset.py tests/test_state_portability.py -q` | pass — 32 tests; no new generated path, no new reset piece | [`evidence/tests.md`](evidence/tests.md) |
-| T12 | `pytest tests/test_graph_loops.py -q` | pass — 13 tests, all new | [`evidence/tests.md`](evidence/tests.md) |
+| T12 | `pytest tests/test_graph_loops.py -q` | pass — 14 tests, all new | [`evidence/tests.md`](evidence/tests.md) |
 | T11 | the ticket's reproduction through a real dispatcher | before: the second event reaches nothing and the registry holds one bare file. After: the PR is on the record with its own session, and the second event lands in it | [`evidence/reproduction.md`](evidence/reproduction.md) |
-| Full suite | `pytest -q` | pass — 1416 passed, 1 skipped (pre-existing; baseline before this work item was 1379 passed, 1 skipped) | [`evidence/tests.md`](evidence/tests.md) |
+| Full suite | `pytest -q` | pass — 1417 passed, 1 skipped (pre-existing; baseline before this work item was 1379 passed, 1 skipped) | [`evidence/tests.md`](evidence/tests.md) |
 | Lint + types | `ruff check`, `ruff format --check`, `pyright`, `markdownlint-cli2`, `validate_config.py` | clean | [`evidence/lint-and-types.md`](evidence/lint-and-types.md) |
 
 **Not executed:** none.
