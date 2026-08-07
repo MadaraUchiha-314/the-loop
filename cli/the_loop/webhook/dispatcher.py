@@ -676,11 +676,23 @@ class Dispatcher:
                     # (issue-172): the conversation delivered its PR, and the
                     # work item's own session carries on. issue-101's rule,
                     # falling out of the model.
+                    merged = reason == "pr-merged"
                     for closed_ref in sorted(closing):
                         endpoint = self.registry.close_endpoint(
                             session.work_item, closed_ref
                         )
-                        if endpoint is not None and endpoint.tmux_target:
+                        if endpoint is None:
+                            continue
+                        # A merge is the PR's approval: drive its inner loop to
+                        # `complete` (audited as a forced move) so the outer
+                        # `await-inner-loops` gate sees it finished (issue-172).
+                        self.graphlink.on_pr_close(
+                            session.work_item,
+                            endpoint.work_item,
+                            session.cwd,
+                            merged=merged,
+                        )
+                        if endpoint.tmux_target:
                             self._close_tmux(endpoint)
                     logger.info(
                         "%s (%s) is linked to %s, which is still open; leaving "
@@ -1185,21 +1197,48 @@ class Dispatcher:
             )
             return True
 
+        # Which conversation receives it (issue-172). The record is the work
+        # item; the endpoint is the PR's own session when there is one and
+        # `sessionPerPr` is on. Everything below operates on the endpoint —
+        # `Session` is one type for both roles precisely so it can. Decided
+        # BEFORE the graph consult, because the loops split here too: a work
+        # item's events walk the OUTER loop, a PR's events walk ITS inner
+        # pdlc-pr-loop, and the outer loop hears about inner ones only through
+        # the checked-in state `await-inner-loops` reads.
+        endpoint = self._endpoint_for(session, routed)
+        inner = endpoint is not session
+
         # Graph state is resolved BEFORE anything is rendered or delivered
         # (issue-148, R3.1) — and an item parked at a human gate has its gate
         # classify the event FIRST (D4), so approval and reaction cannot race.
         # Both reads/advances are best-effort: a graph fault delivers with the
         # context unknown, never not at all.
-        ctx = self.graphlink.context(session.work_item, session.cwd)
+        if inner:
+            ctx = self.graphlink.pr_context(
+                session.work_item, endpoint.work_item, session.cwd
+            )
+        else:
+            ctx = self.graphlink.context(session.work_item, session.cwd)
         gate_report = None
         if ctx is not None and ctx.at_human_gate:
-            gate_report = self.graphlink.on_event(
-                session.work_item, session.cwd, routed
+            gate_report = (
+                self.graphlink.on_pr_event(
+                    session.work_item, endpoint.work_item, session.cwd, routed
+                )
+                if inner
+                else self.graphlink.on_event(session.work_item, session.cwd, routed)
             )
-            ctx = self.graphlink.context(session.work_item, session.cwd) or ctx
+            refreshed = (
+                self.graphlink.pr_context(
+                    session.work_item, endpoint.work_item, session.cwd
+                )
+                if inner
+                else self.graphlink.context(session.work_item, session.cwd)
+            )
+            ctx = refreshed or ctx
         prompt = self._render_prompt(
             routed,
-            session.work_item,
+            endpoint.work_item,
             self._event_template,
             graph_context=render_graph_context(
                 ctx,
@@ -1207,11 +1246,6 @@ class Dispatcher:
                 verdict=(gate_report.outcome if gate_report else ""),
             ),
         )
-        # Which conversation receives it (issue-172). The record is the work
-        # item; the endpoint is the PR's own session when there is one and
-        # `sessionPerPr` is on. Everything below operates on the endpoint —
-        # `Session` is one type for both roles precisely so it can.
-        endpoint = self._endpoint_for(session, routed)
         if endpoint is not session and not endpoint.tmux_target:
             # A PR that has been recorded but never worked: its first event is
             # what spawns its session, exactly as a work item's first event is.
@@ -1263,9 +1297,15 @@ class Dispatcher:
             # The session has the event; now let the graph see it too
             # (issue-113) — unless a human gate already consumed it first
             # (issue-148, D4), in which case advancing again would feed the
-            # same comments to the next node's chain.
+            # same comments to the next node's chain. An endpoint's event
+            # advances ITS loop, never the work item's (issue-172).
             if gate_report is None:
-                self.graphlink.on_event(session.work_item, session.cwd, routed)
+                if inner:
+                    self.graphlink.on_pr_event(
+                        session.work_item, endpoint.work_item, session.cwd, routed
+                    )
+                else:
+                    self.graphlink.on_event(session.work_item, session.cwd, routed)
             return True
         logger.error("%s of %s for %s failed: %s", verb, session.harness, key, error)
         eventlog.emit(
@@ -1473,10 +1513,11 @@ class Dispatcher:
         the first event that actually needs it, so a PR that is merely *linked*
         costs nothing until something happens on it.
 
-        Deliberately **not** a graph entry: the graph is keyed to the work item,
-        and the record entered it when its own session spawned. A PR opening a
-        second graph on the same spec directory is the one thing this must not
-        do.
+        The spawned endpoint enters its own **inner loop** (`pdlc-pr-loop`,
+        issue-172): state under the work item's `pr-loops/pr-<n>/`, never the
+        outer `graph-state.json` — so a PR walks its component-scoped subset of
+        the process while the work item's own pointer is untouched until the
+        `await-inner-loops` seam reads the inner states back.
         """
         adapter = self.adapters.get(record.harness)
         if adapter is None or not adapter.is_available():
@@ -1544,6 +1585,15 @@ class Dispatcher:
             tmux_target=endpoint.tmux_target,
             gh_event=routed.event,
             delivery_id=routed.delivery_id or None,
+        )
+        # The endpoint enters its inner loop (issue-172) — pdlc-pr-loop, state
+        # under pr-loops/pr-<n>/. Best-effort like every graph coupling.
+        self.graphlink.on_pr_spawn(
+            record.work_item,
+            endpoint.work_item,
+            record.cwd,
+            session_id=session_id,
+            runner="tmux",
         )
         self.announcer.announce(endpoint)
         return True

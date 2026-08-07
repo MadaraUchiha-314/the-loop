@@ -73,8 +73,10 @@ not-started → brainstorming → requirements-definition → design → test-pl
 ```
 
 This sequence is **defined by the shipped process graph**
-(`cli/the_loop/graph/pdlc.yaml`); the prose here renders it, never redefines it
-(issue-148). When a node's work is done, tell the graph so —
+(`cli/the_loop/graph/pdlc-work-item-loop.yaml` — the **outer loop**; each PR
+delivering a work item walks its own `pdlc-pr-loop` in its own session, and the
+outer `implementation` node waits for those inner loops to finish); the prose
+here renders it, never redefines it (issue-148). When a node's work is done, tell the graph so —
 `the-loop graph complete <id>` — rather than only narrating the transition.
 
 See `reference/workflow.md` for what each phase contains, the review gates, the

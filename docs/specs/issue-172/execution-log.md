@@ -24,6 +24,8 @@ status: in-progress          # in-progress | complete
 | design (revisited) | 2026-08-07 | @MadaraUchiha-314 (PR #173 review) | owner rejected the link-record shape; rebuilt to the single-record `pullRequests[]` endpoint model with `sessionPerPr`, and set the inner/outer-loop direction |
 | verification (re-run) | 2026-08-07 | — | every activity re-executed against the rebuilt model; 7-test negative run |
 | needs-review (again) | 2026-08-07 | pending | 2 further self-review rounds on the rebuild |
+| design (revisited again) | 2026-08-07 | @MadaraUchiha-314 (PR #173 review) | owner pulled the inner/outer-loop implementation into this PR: pdlc-work-item-loop + pdlc-pr-loop, fully implemented — decision-065 |
+| verification (re-run again) | 2026-08-07 | — | full suite 1416/1; 13 new loop tests; P5 over both graphs |
 | complete | — | — | |
 
 ## Pull requests
@@ -90,6 +92,27 @@ status: in-progress          # in-progress | complete
   `validate_config.py` clean.
 - **Next:** self-review of the rebuild, then update the PR briefing.
 
+### 2026-08-07 — the owner pulls the two loops into this PR; built
+
+- **Phase:** design (revisited) → implementation → verification
+- **Did:** the owner's third review round — *"Let's build it in this PR itself … Let's
+  try to represent these loops as pdlc-PR-loop and pdlc-work-item-loop. … I want this PR
+  to fully implement the PDLC PR and Work Item Loops."* Built per
+  [decision-065](../../decisions/decision-065.md): `pdlc.yaml` renamed to
+  `pdlc-work-item-loop.yaml` (content unchanged plus the `await-inner-loops` seam on
+  `implementation`); `pdlc-pr-loop.yaml` shipped (implementation → verification → review
+  chain → `pr-approval` → `complete`); `Runtime.state_subpath` splits an inner loop's
+  state to `docs/specs/<id>/pr-loops/pr-<n>/` while artifacts stay on the one spec
+  chain; graphlink gained `on_pr_spawn`/`on_pr_event`/`pr_context`/`on_pr_close`
+  (merge = audited force to `complete`; unmerged close leaves the pointer); the
+  dispatcher enters/advances a PR's loop from its endpoint and never advances the outer
+  loop from PR events; `--pr` threads CLI → core → API → the authored OpenAPI contract;
+  P5 parity now asserts over both graphs. R2.9 flipped accordingly (a PR endpoint enters
+  its OWN graph, never the outer) and R6 was added.
+- **Checkpoint/tests:** `pytest -q` → 1416 passed, 1 skipped. `ruff`, `pyright`,
+  `markdownlint`, `validate_config.py` clean.
+- **Next:** self-review of the loops, update the PR briefing, reply to the owner.
+
 ## Review cycles
 
 > Outcome is one of: new findings · zero (converged) · escalated · **unavailable** (the
@@ -105,7 +128,9 @@ status: in-progress          # in-progress | complete
 | 6 | self (rebuild) | the-loop (agent) | **new findings** — (a) a corrupt `pullRequests` entry initially poisoned the whole record in `from_dict`, taking the work item's own session down with a hand-edited PR entry; parsing became per-entry, matching `_read`'s unreadable-file posture. (b) The re-link case surfaced a real edge: two records can claim one PR, and their endpoints contend for the PR's single deterministic `loop-<slug>` tmux name — the loser falls back to its record's session. Written down as decision-064 § Known edge and tested in collapsed mode rather than hidden. | this PR |
 | 7 | self (rebuild) | the-loop (agent) | **new finding, scoped not fixed** — a PR endpoint deliberately enters no process graph (`_spawn_endpoint` skips `graphlink.on_spawn`): letting it in would open a second graph on the work item's spec directory. Promoted to R2.9 and the § The two loops boundary, so the inner-loop follow-up starts from a stated invariant rather than an accident. | this PR |
 | 8 | self (rebuild) | the-loop (agent) | zero (converged) | this PR |
-| 9 | critic | — | **unavailable** — `reviews.critics: []`; no critic harness is configured in this repository, so no critic round could run. Does not count toward `criticReviewCount`; the human PR review is the backstop. | [`.the-loop/harness-config.yaml`](../../../.the-loop/harness-config.yaml) |
+| 9 | self (loops) | the-loop (agent) | **new findings** — (a) `_bind_session`/`on_close` wrote the graph-session binding to the spec dir unconditionally, so an inner loop's binding landed in (and partially created) the OUTER `graph-state.json`, making a PR's conversation the inheritance target for the work item's human gates; both now follow the runtime's own `state_dir`. (b) The blanket `state_dir` refactor leaked `self.` into the module-level `force()` — caught by the existing runtime tests, fixed to `runtime.state_dir`. One posture worth naming though it was designed in rather than found: an unreadable inner-loop state counts as *pending* (holding the outer gate, naming the PR), never as "no inner loop" — a silent pass over a damaged record is the issue-124 shape, and there is a test pinning it. | this PR |
+| 10 | self (loops) | the-loop (agent) | zero (converged) | this PR |
+| 11 | critic | — | **unavailable** — `reviews.critics: []`; no critic harness is configured in this repository, so no critic round could run. Does not count toward `criticReviewCount`; the human PR review is the backstop. | [`.the-loop/harness-config.yaml`](../../../.the-loop/harness-config.yaml) |
 
 ## Security review (gate)
 

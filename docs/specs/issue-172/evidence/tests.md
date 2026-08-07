@@ -12,7 +12,7 @@
 
 ```console
 $ uv run --directory cli pytest -q
-1403 passed, 1 skipped in 49.05s
+1416 passed, 1 skipped in 58.94s
 ```
 
 The one skip is pre-existing and unrelated; the baseline before this work item was
@@ -92,6 +92,40 @@ re-check), and the R2.3 both-records scenario runs in collapsed mode
 (`sessionPerPr: false`) so its both-deliver assertion stays sharp — under per-PR sessions
 the two records' endpoints would contend for the PR's one `loop-<slug>` tmux name
 (decision-064 § Known edge).
+
+## T12 — the two loops
+
+```console
+$ uv run --directory cli pytest tests/test_graph_loops.py -q
+13 passed in 0.60s
+```
+
+All new, pinning the seam from both sides (decision-065):
+
+```text
+test_both_loops_ship_compiled_and_named
+test_the_outer_implementation_node_awaits_the_inner_loops
+test_no_inner_loops_passes_vacuously
+test_an_unfinished_inner_loop_holds_the_outer_gate
+test_all_inner_loops_complete_releases_the_gate
+test_a_corrupt_inner_state_holds_the_gate_rather_than_passing_it
+test_bootstrap_selects_the_loop_and_the_state_location
+test_starting_an_inner_loop_leaves_the_outer_pointer_untouched
+test_two_inner_loops_keep_separate_pointers
+test_on_pr_spawn_enters_the_inner_loop_only
+test_on_pr_event_advances_the_inner_loop_not_the_outer
+test_a_merged_pr_completes_its_inner_loop_audited_as_forced
+test_an_unmerged_close_leaves_the_inner_loop_where_it_was
+```
+
+Three pin invariants rather than behaviours: the outer pointer is untouched by an
+inner loop's start and events (the one-way flow, decision-065 D5); a merged PR's
+completion is recorded as **forced** with the reason, so `check --recompute` still
+shows which inner gates never ran (D6); and an unreadable inner state **holds** the
+outer gate naming the PR — a silent pass over a damaged record is the issue-124
+shape. The P5 parity assertions (`test_graph_parity.py`) now iterate both shipped
+graphs, so an inner-loop node gating a section with nothing to read fails the build
+exactly as an outer one does.
 
 ## T2b — the poll path
 

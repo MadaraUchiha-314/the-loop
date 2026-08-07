@@ -160,10 +160,39 @@ reach the right conversation.
    first-sight detection SHALL treat a recorded PR as a known, owned item.
 8. Verbs that name a work item **explicitly** — `sessions pause|resume|stop|attach|reset`
    — SHALL NOT resolve through the PR list.
-9. A pull-request endpoint SHALL NOT enter or advance the work item's process graph: the
-   graph stays keyed to the work item (the **outer loop**); the per-PR **inner-loop**
-   graph is defined and built as its own work item (decision-064 § the direction this
-   sets).
+9. A pull-request endpoint SHALL NOT advance the work item's **outer** process graph.
+   It SHALL enter and advance its own **inner loop** instead (Requirement 6) — the outer
+   loop hears about inner ones only through the checked-in state its
+   `await-inner-loops` gate reads.
+
+### Requirement 6 — the PDLC is two loops, and this PR ships both
+
+**User story:** As the owner, I want the process represented as `pdlc-work-item-loop`
+(outer, per work item) and `pdlc-pr-loop` (inner, per PR, in service of the work item's
+delivery) — the same loop with steps skipped — fully implemented in this PR
+([decision-065](../../decisions/decision-065.md)).
+
+#### Acceptance criteria (EARS)
+
+1. The CLI SHALL ship two named graphs: `pdlc-work-item-loop.yaml` (the existing PDLC,
+   renamed) and `pdlc-pr-loop.yaml` (implementation → verification → review chain →
+   `pr-approval` (human) → `complete`; `security-review` still `required`), compiled by
+   the same loader and executed by the same runtime.
+2. The outer `implementation` node SHALL wait (`await-inner-loops`) until every started
+   inner loop under `docs/specs/<id>/pr-loops/` reaches `complete`. WHERE none was
+   started the gate SHALL pass vacuously — a single-session work item behaves exactly
+   as before.
+3. Each inner loop's state SHALL live at `docs/specs/<id>/pr-loops/pr-<n>/graph-state.json`;
+   artifact gates SHALL resolve against the work item's one spec chain (a PR gets no
+   spec chain of its own). An unreadable inner state SHALL hold the outer gate, naming
+   the PR.
+4. The daemon SHALL enter a PR's inner loop when its endpoint spawns and advance it on
+   the endpoint's events. WHEN the PR merges THEN its loop SHALL be driven to
+   `complete` as a **forced** transition with the reason recorded; closed-unmerged
+   SHALL leave the pointer where it was.
+5. Every graph verb SHALL address either loop — `--pr <n>` on the CLI, `pr` on the API
+   bodies and in the authored OpenAPI contract.
+6. The P5 parity assertions SHALL hold over **both** shipped graphs.
 
 ### Requirement 3 — a PR closing ends its endpoint; the work item's close is unchanged
 

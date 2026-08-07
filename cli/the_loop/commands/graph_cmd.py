@@ -55,36 +55,53 @@ def _detail(exc: Exception) -> str:
     return exc.detail if isinstance(exc, ApiError) and exc.detail else str(exc)
 
 
-def _show(root: Path) -> Dict[str, Any]:
+def _show(root: Path, pr: "int | None" = None) -> Dict[str, Any]:
     """The repo's graph, its start node and its spec root — one round trip."""
+    params: Dict[str, Any] = {"repo": str(root)}
+    if pr is not None:
+        params["pr"] = pr
     return routed(
-        lambda connection: connection.get("/graph", params={"repo": str(root)}),
-        lambda: core_graphs.show(str(root)),
+        lambda connection: connection.get("/graph", params=params),
+        lambda: core_graphs.show(str(root), pr=pr),
     )
 
 
-def _check(root: Path, work_item: str, recompute: bool = False) -> Dict[str, Any]:
+def _check(
+    root: Path, work_item: str, recompute: bool = False, pr: "int | None" = None
+) -> Dict[str, Any]:
     return routed(
         lambda connection: connection.post(
             "/graph/check",
-            {"repo": str(root), "workItem": work_item, "recompute": bool(recompute)},
+            {
+                "repo": str(root),
+                "workItem": work_item,
+                "recompute": bool(recompute),
+                "pr": pr,
+            },
         ),
-        lambda: core_graphs.check(str(root), work_item, recompute=recompute),
+        lambda: core_graphs.check(str(root), work_item, recompute=recompute, pr=pr),
     )
 
 
-def _advance(root: Path, work_item: str, ref: str = "") -> Dict[str, Any]:
+def _advance(
+    root: Path, work_item: str, ref: str = "", pr: "int | None" = None
+) -> Dict[str, Any]:
     return routed(
         lambda connection: connection.post(
             "/graph/advance",
-            {"repo": str(root), "workItem": work_item, "ref": ref},
+            {"repo": str(root), "workItem": work_item, "ref": ref, "pr": pr},
         ),
-        lambda: core_graphs.advance(str(root), work_item, ref=ref),
+        lambda: core_graphs.advance(str(root), work_item, ref=ref, pr=pr),
     )
 
 
 def _complete(
-    root: Path, work_item: str, node: str = "", actor: str = "", ref: str = ""
+    root: Path,
+    work_item: str,
+    node: str = "",
+    actor: str = "",
+    ref: str = "",
+    pr: "int | None" = None,
 ) -> Dict[str, Any]:
     return routed(
         lambda connection: connection.post(
@@ -95,16 +112,23 @@ def _complete(
                 "node": node,
                 "actor": actor,
                 "ref": ref,
+                "pr": pr,
             },
         ),
         lambda: core_graphs.complete(
-            str(root), work_item, node=node, actor=actor, ref=ref
+            str(root), work_item, node=node, actor=actor, ref=ref, pr=pr
         ),
     )
 
 
 def _force(
-    root: Path, work_item: str, to_node: str, reason: str, actor: str, ref: str
+    root: Path,
+    work_item: str,
+    to_node: str,
+    reason: str,
+    actor: str,
+    ref: str,
+    pr: "int | None" = None,
 ) -> Dict[str, Any]:
     return routed(
         lambda connection: connection.post(
@@ -116,10 +140,11 @@ def _force(
                 "reason": reason,
                 "actor": actor,
                 "ref": ref,
+                "pr": pr,
             },
         ),
         lambda: core_graphs.force(
-            str(root), work_item, to_node, reason, actor=actor, ref=ref
+            str(root), work_item, to_node, reason, actor=actor, ref=ref, pr=pr
         ),
     )
 
@@ -287,13 +312,31 @@ class GraphCommand(Command):
 
         show = sub.add_parser("show", help="print the shipped graph")
         show.add_argument("--format", choices=["text", "json"], default="text")
+        show.add_argument(
+            "--pr",
+            type=int,
+            default=None,
+            help="walk this pull request's inner loop (pdlc-pr-loop, state under pr-loops/pr-<n>/) instead of the work item's outer loop",
+        )
 
         status = sub.add_parser("status", help="where a work item is")
         status.add_argument("work_item")
+        status.add_argument(
+            "--pr",
+            type=int,
+            default=None,
+            help="walk this pull request's inner loop (pdlc-pr-loop, state under pr-loops/pr-<n>/) instead of the work item's outer loop",
+        )
 
         advance = sub.add_parser("advance", help="evaluate and take the matching edge")
         advance.add_argument("work_item")
         advance.add_argument("--ref", default="", help="work item ref for integrations")
+        advance.add_argument(
+            "--pr",
+            type=int,
+            default=None,
+            help="walk this pull request's inner loop (pdlc-pr-loop, state under pr-loops/pr-<n>/) instead of the work item's outer loop",
+        )
 
         complete = sub.add_parser(
             "complete",
@@ -313,6 +356,12 @@ class GraphCommand(Command):
             "--ref", default="", help="work item ref for integrations"
         )
         complete.add_argument("--actor", default="", help="who is claiming completion")
+        complete.add_argument(
+            "--pr",
+            type=int,
+            default=None,
+            help="walk this pull request's inner loop (pdlc-pr-loop, state under pr-loops/pr-<n>/) instead of the work item's outer loop",
+        )
 
         forced = sub.add_parser(
             "force",
@@ -323,6 +372,12 @@ class GraphCommand(Command):
         forced.add_argument("--reason", required=True, help="why (required)")
         forced.add_argument("--actor", default="", help="who is forcing this")
         forced.add_argument("--ref", default="")
+        forced.add_argument(
+            "--pr",
+            type=int,
+            default=None,
+            help="walk this pull request's inner loop (pdlc-pr-loop, state under pr-loops/pr-<n>/) instead of the work item's outer loop",
+        )
 
         run = sub.add_parser(
             "run", help="drive a work item until it waits, escalates or completes"
@@ -347,7 +402,7 @@ class GraphCommand(Command):
 
     def _dispatch(self, root: Path, args: argparse.Namespace) -> int:
         if args.action == "show":
-            graph = _show(root)
+            graph = _show(root, pr=args.pr)
             if args.format == "json":
                 # ``specRoot`` is a layout fact the runtime carries, not part of
                 # the graph an operator asked to see, so it stays out of here.
@@ -375,14 +430,14 @@ class GraphCommand(Command):
             return 0
 
         if args.action == "status":
-            report = _check(root, args.work_item)
+            report = _check(root, args.work_item, pr=args.pr)
             reached, ahead = _split_at_pointer(report["nodes"], report["currentNode"])
             print(f"{report['workItem']}: at {report['currentNode']}")
             print(_render_table(reached, ahead))
             return 0 if report["ok"] else 1
 
         if args.action == "advance":
-            result = _advance(root, args.work_item, ref=args.ref)
+            result = _advance(root, args.work_item, ref=args.ref, pr=args.pr)
             print(f"{args.work_item}: {result['node']} → {result['status']}")
             for message in result["messages"]:
                 print(f"  · {message}")
@@ -394,7 +449,12 @@ class GraphCommand(Command):
             # exit 0 either way; non-zero is reserved for not being able to
             # answer at all.
             result = _complete(
-                root, args.work_item, node=args.node, actor=args.actor, ref=args.ref
+                root,
+                args.work_item,
+                node=args.node,
+                actor=args.actor,
+                ref=args.ref,
+                pr=args.pr,
             )
             print(json.dumps(result, indent=2))
             return 0
@@ -405,7 +465,13 @@ class GraphCommand(Command):
         if args.action == "force":
             try:
                 result = _force(
-                    root, args.work_item, args.to, args.reason, args.actor, args.ref
+                    root,
+                    args.work_item,
+                    args.to,
+                    args.reason,
+                    args.actor,
+                    args.ref,
+                    pr=args.pr,
                 )
             except Exception as exc:  # noqa: BLE001
                 # A refused force is the runtime's verdict, not a broken CLI —

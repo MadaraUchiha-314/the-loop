@@ -1,4 +1,13 @@
-# the-loop's product-development lifecycle, as an explicit graph (issue-109).
+# the-loop's product-development lifecycle, as an explicit graph (issue-109) —
+# the OUTER of the two loops (issue-172): pdlc-work-item-loop walks a WORK ITEM
+# through the PDLC, and pdlc-pr-loop (its sibling file) walks each PULL REQUEST
+# delivering it through the component-scoped subset. They meet at one seam: the
+# `implementation` node here waits for every started inner loop to finish
+# (`await-inner-loops`) before the work item moves on to verification across
+# all the PRs. A work item with no inner loops — one agent, one session, the
+# whole pre-issue-172 world — passes that gate vacuously and behaves exactly as
+# before. (pdlc-project-management-loop is anticipated by the naming and not
+# yet shipped.)
 #
 # This file ships WITH THE PLUGIN and is the-loop's own. A repository cannot
 # define or override it — a repo-supplied graph is ignored with a warning.
@@ -21,6 +30,7 @@
 # Spec: docs/specs/issue-109/, docs/specs/issue-163/  ·  Decisions: 041, 042, 060
 
 version: 1
+name: pdlc-work-item-loop
 start: brainstorming
 
 nodes:
@@ -137,6 +147,12 @@ nodes:
     entry: [set-phase-label, log-entry]
     exit:
       - {hook: validate-artifacts, with: {checkmarks: complete}}
+      # The seam between the loops (issue-172): the work item waits here until
+      # every started pdlc-pr-loop under docs/specs/<id>/pr-loops/ reaches its
+      # `complete` node — "wait for tasks to be complete (inner loop start and
+      # finish)". No inner loops started = vacuous pass, the pre-issue-172
+      # behaviour for single-session work items.
+      - await-inner-loops
       - verify-tests
 
   # Executing the plan the `test-planning` node locked. It re-declares the SAME

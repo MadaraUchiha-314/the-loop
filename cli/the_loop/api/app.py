@@ -36,6 +36,9 @@ class GraphCheckBody(BaseModel):
     repo: str
     workItem: str
     recompute: bool = False
+    # A PR number selects that pull request's INNER loop (pdlc-pr-loop,
+    # issue-172); None is the work item's outer pdlc-work-item-loop.
+    pr: Optional[int] = None
 
 
 class GraphCompleteBody(BaseModel):
@@ -44,12 +47,14 @@ class GraphCompleteBody(BaseModel):
     node: str = ""
     actor: str = ""
     ref: str = ""
+    pr: Optional[int] = None
 
 
 class GraphAdvanceBody(BaseModel):
     repo: str
     workItem: str
     ref: str = ""
+    pr: Optional[int] = None
 
 
 class GraphForceBody(BaseModel):
@@ -59,6 +64,7 @@ class GraphForceBody(BaseModel):
     reason: str
     actor: str = ""
     ref: str = ""
+    pr: Optional[int] = None
 
 
 class SessionControlBody(BaseModel):
@@ -171,15 +177,19 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
         return core_workitems.get_work_item(ref, cli_config)
 
     @app.get(f"{API_PREFIX}/graph", operation_id="graphShow")
-    def graph_show(repo: str = Query(...)) -> Dict[str, Any]:
-        return core_graphs.show(repo)
+    def graph_show(
+        repo: str = Query(...), pr: Optional[int] = Query(None)
+    ) -> Dict[str, Any]:
+        return core_graphs.show(repo, pr=pr)
 
     @app.post(
         f"{API_PREFIX}/graph/check",
         operation_id="graphCheck",
     )
     def graph_check(body: GraphCheckBody) -> Dict[str, Any]:
-        return core_graphs.check(body.repo, body.workItem, recompute=body.recompute)
+        return core_graphs.check(
+            body.repo, body.workItem, recompute=body.recompute, pr=body.pr
+        )
 
     @app.post(
         f"{API_PREFIX}/graph/complete",
@@ -187,7 +197,12 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
     )
     def graph_complete(body: GraphCompleteBody) -> Dict[str, Any]:
         return core_graphs.complete(
-            body.repo, body.workItem, node=body.node, actor=body.actor, ref=body.ref
+            body.repo,
+            body.workItem,
+            node=body.node,
+            actor=body.actor,
+            ref=body.ref,
+            pr=body.pr,
         )
 
     @app.post(
@@ -195,7 +210,7 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
         operation_id="graphAdvance",
     )
     def graph_advance(body: GraphAdvanceBody) -> Dict[str, Any]:
-        return core_graphs.advance(body.repo, body.workItem, ref=body.ref)
+        return core_graphs.advance(body.repo, body.workItem, ref=body.ref, pr=body.pr)
 
     @app.post(
         f"{API_PREFIX}/graph/force",
@@ -209,6 +224,7 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
             body.reason,
             actor=body.actor,
             ref=body.ref,
+            pr=body.pr,
         )
 
     @app.get(f"{API_PREFIX}/sessions", operation_id="listSessions")

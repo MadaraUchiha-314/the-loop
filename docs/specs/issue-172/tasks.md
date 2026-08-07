@@ -26,9 +26,11 @@ flowchart LR
   T1 --> T5["T5 config: sessionPerPr<br/>schema + docs"]
   T3 --> T6["T6 regression scenarios"]
   T4 --> T6
-  T5 --> T7["T7 spec/decision/capability docs<br/>+ the two-loop definition"]
+  T5 --> T7["T7 spec/decision/capability docs"]
+  T3 --> T9["T9 the two loops:<br/>pdlc-work-item-loop + pdlc-pr-loop"]
   T6 --> T8["T8 verification + evidence"]
   T7 --> T8
+  T9 --> T8
 ```
 
 - [x] **T1 — the registry learns endpoints**
@@ -83,12 +85,24 @@ flowchart LR
 - [x] **T7 — the paper trail, and the two-loop definition**
   `decision-064` rewritten (the reversal recorded, not erased); spec chain revised;
   `docs/capabilities/webhook-triggers.md` clause + history row;
-  `docs/cli/state.md` session-record section. The **inner/outer-loop** definition the
-  owner asked for: outer loop = the work item's PDLC graph (unchanged, keyed to the work
-  item); inner loop = a PR's sub-graph running in its endpoint, defined as follow-up —
-  this change ships the substrate and the boundary (a PR endpoint has no graph).
-  _Requirements: R2.9, R4.1, R4.2, and the loop's same-PR capability-docs rule_
+  `docs/cli/state.md` session-record section; decision-065, the process-graph
+  capability doc's two-loops behaviour, and the `--pr` section of the graph command
+  page. (T7 originally scoped the loops as follow-up; the owner's second review round
+  pulled them into this PR — they are T9.)
+  _Requirements: R4.1, R4.2, and the loop's same-PR capability-docs rule_
   _Test: T11_
+
+- [x] **T9 — the two loops** ([decision-065](../../decisions/decision-065.md))
+  `pdlc.yaml` → `pdlc-work-item-loop.yaml` (+ `name:`, + `await-inner-loops` on
+  `implementation`); new `pdlc-pr-loop.yaml`; `Graph.name` + `load_graph(name=…)`;
+  the `await-inner-loops` hook (`graph/hooks/loops.py`) over
+  `pr-loops/*/graph-state.json`; `Runtime.state_subpath`; graphlink
+  `on_pr_spawn`/`on_pr_event`/`pr_context`/`on_pr_close` (merge → audited force to
+  `complete`); dispatcher wiring (endpoint spawn enters the loop, endpoint events
+  advance it, outer loop never advanced by PR events); `--pr` through CLI → core →
+  API → the authored OpenAPI contract; P5 parity over both graphs.
+  _Requirements: R6.1–R6.6, R2.9_
+  _Test: T12 (tests/test_graph_loops.py), T2 (wiring), parity P5_
 
 - [x] **T8 — execute the testing plan and commit the evidence**
   Every activity in [`testing-plan.md`](testing-plan.md) § Verification activities,
