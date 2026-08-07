@@ -7,95 +7,91 @@ approvedBy: []
 overrides: {}
 ---
 
-# Tasks: a link record beside the session record
+# Tasks: the work item's record owns its pull requests
 
 > Phase 4 of 4. Derived from the locked [`design.md`](design.md) and
 > [`testing-plan.md`](testing-plan.md) — each task's `_Test:_` names a row of the matrix.
+> Revised with the design after owner review on
+> [PR #173](https://github.com/MadaraUchiha-314/the-loop/pull/173); T1–T8 below are the
+> rebuild's tasks (the link-record version's tasks are in this file's git history).
 
 ## Task list
 
 ```mermaid
 flowchart LR
-  T1["T1 registry: the link record"] --> T2["T2 router: pr_work_item"]
-  T1 --> T3["T3 dispatcher: resolve + record"]
+  T1["T1 registry: pullRequests[] endpoints"] --> T2["T2 router: pr_work_item"]
+  T1 --> T3["T3 dispatcher: match by record,<br/>deliver to endpoint, lazy spawn"]
   T2 --> T3
-  T1 --> T4["T4 reset: the LINK piece"]
-  T1 --> T5["T5 state: classify + document"]
-  T3 --> T6["T6 regression scenario"]
-  T3 --> T7["T7 capability + decision docs"]
-  T4 --> T7
-  T5 --> T7
+  T3 --> T4["T4 close: endpoint ends,<br/>record survives"]
+  T1 --> T5["T5 config: sessionPerPr<br/>schema + docs"]
+  T3 --> T6["T6 regression scenarios"]
+  T4 --> T6
+  T5 --> T7["T7 spec/decision/capability docs<br/>+ the two-loop definition"]
   T6 --> T8["T8 verification + evidence"]
   T7 --> T8
 ```
 
-- [x] **T1 — the registry learns a second record type**
-  `cli/the_loop/sessions/registry.py`: `SessionLink`, `_link_path_for`, and the five verbs
-  `link` / `resolve_link` / `unlink` / `links_to` / `list_links`, exported from
-  `sessions/__init__.py`. Atomic writes through the existing `_write`-shaped path; `link`
-  refuses a self-binding and returns `None` when the record already names the same target;
-  `resolve_link` is single-hop and swallows `OSError`/`ValueError` as "no binding". Add
-  `session.linked`, `session.unlinked` and `session.link_failed` to `eventlog.EVENT_TYPES`.
-  _Requirements: R1.3, R1.4, R1.5, R2.3, R4.1, R4.5_
-  _Test: T1 (unit), T8 (abuse cases)_ — write the failing tests first.
+- [x] **T1 — the registry learns endpoints**
+  `cli/the_loop/sessions/registry.py`: `Session.pull_requests` (+ `endpoint_for`/`owns`,
+  one-level nesting and per-entry degradation in `from_dict`, absent-key round-trip in
+  `to_dict`), and the verbs `record_owning`, `session_for(ref, session_per_pr)`,
+  `link_pull_request`, `save_endpoint`, `close_endpoint`, per-endpoint `touch`. Events
+  `session.pr_linked` / `session.pr_spawned` / `session.pr_closed` /
+  `session.link_failed` in `eventlog.EVENT_TYPES`.
+  _Requirements: R1.1–R1.6, R2.3, R2.4, R4.3_
+  _Test: T1 (unit), T8 (abuse cases)_
 
 - [x] **T2 — the router names a PR's own ref**
-  `cli/the_loop/webhook/router.py`: `pr_work_item(event, payload)`, composed from
-  `_repo_parts`, `_host` and `_pr_entity` so it cannot drift from the ref
-  `extract_work_items` emits last. Returns `None` for an event that concerns no pull
-  request.
+  `cli/the_loop/webhook/router.py`: `pr_work_item(event, payload)`, composed from the same
+  helpers `extract_work_items` uses so the recorded ref cannot drift from the routed one.
   _Requirements: R1.1, R1.5_
   _Test: T1 (unit)_
 
-- [x] **T3 — every ingress resolves through the binding, and dispatch records it**
-  `SessionRegistry.session_for(item)` (own record, then stored binding) replaces the bare
-  `find_by_work_item` at all four call sites that ask "which session owns this ref's
-  events": `handle()`'s match loop, `_live_session_for`, `delivery_status` (poll-path retry
-  accounting) and the poller's `has_session` (first-sight detection). The verbs that name a
-  work item explicitly — `sessions pause|resume|stop|attach|reset` — are deliberately left
-  direct. `Dispatcher._record_pr_binding(routed, target)` is called per matched session in
-  `handle()` before enqueue, and in `_spawn_tmux()` **after** `registry.register` succeeds;
-  a write failure logs and continues — the dispatch is never lost to bookkeeping.
-  _Requirements: R1.1, R1.2, R2.1, R2.2, R2.4–R2.10, R3.1, R3.2_
+- [x] **T3 — the dispatcher matches by record and delivers to the endpoint**
+  `cli/the_loop/webhook/dispatcher.py`: `handle()` matches via `record_owning`;
+  `_record_pr_binding` records the PR on each matched record (never on close);
+  `_endpoint_for` picks the conversation per `sessionPerPr`; `_spawn_endpoint` gives a
+  recorded PR its session lazily (no graph entry — R2.9) with fallback to the record;
+  `_dispatch_one` delivers per endpoint with per-endpoint dedup and touch; respawn goes
+  through `save_endpoint`. Poll path: `delivery_status` and `has_session` resolve through
+  the record.
+  _Requirements: R1.1, R1.2, R2.1–R2.9_
   _Test: T2 (integration), T2b (poll path), T1 (resolver ordering)_
 
-- [x] **T4 — `sessions reset` removes bindings in both directions**
-  `cli/the_loop/reset.py`: a `LINK` piece between `SESSION` and `CONTROL`;
-  `reset_work_item` removes the item's own record and every record naming it as target;
-  `work_items_with_state` adds link sources to its union so `reset --all` reaches a PR whose
-  only state is a binding. `close_session` is deliberately **not** touched.
-  _Requirements: R4.3, R4.4_
-  _Test: T10 (migration/upgrade)_
+- [x] **T4 — a PR closing ends its endpoint, not the record**
+  The close branch: a closed object that is a recorded PR of a still-open record →
+  `close_endpoint` + tmux teardown for that endpoint (`session.pr_closed`), record kept
+  (`session.kept_open`). A PR with its own record still auto-closes.
+  _Requirements: R3.1, R3.2_
+  _Test: T2_
 
-- [x] **T5 — classify the new path, and document it**
-  `cli/the_loop/state.py`: a `GENERATED_PATHS` entry (`attr="local_dir"`,
-  `<root>/local/<slug>.link.json`, `portable=False`) with the `why` the portability test
-  requires. `docs/cli/state.md`: the classification table row, a record section describing
-  the four fields and the "if you delete it" consequence, and the reset table row.
-  _Requirements: R4.2_
-  _Test: T10 (`test_state_portability.py` S1–S3)_
+- [x] **T5 — `routing.tmux.sessionPerPr`, declared and documented**
+  `.the-loop/cli-config.schema.json` (+ `TmuxConfig.session_per_pr`, default true) and
+  `docs/config/cli/routing-options.md`. Sensitive path (`**/*schema*`): flagged for the
+  owner's sign-off on the PR.
+  _Requirements: R2.1, R2.2_
+  _Test: T10 (docs parity P3/P4, `validate_config.py`)_
 
-- [x] **T6 — the ticket's reproduction, as a test that fails without T3**
-  `cli/tests/test_webhook_routing_integration.py`: a Gherkin-documented scenario driving
-  two signed POSTs — the first carrying `Closes #<issue>`, the second carrying nothing —
-  and asserting the second is delivered into the issue's session. Plus the
-  binding-does-not-suppress case (R2.5), the control-command case (R2.7) and the close cases
-  (R3.1, R3.2). On the poll path, `test_delivery_status_follows_a_binding` (R2.8) and
-  `test_a_stored_binding_suppresses_presence_when_the_linkage_is_gone` (R2.9).
-  _Requirements: R5.1, R5.2, R2.5, R2.7, R2.8, R2.9, R3.1, R3.2_
+- [x] **T6 — the ticket's reproduction, as tests that fail without T3**
+  Seven Gherkin-documented scenarios across
+  `test_webhook_routing_integration.py`/`test_poller.py`: the linkage-removed sequence,
+  both recording paths, the re-link both-records case, control-command resolution, both
+  close cases, and the poll-path pair. All seven fail against a pre-fix resolver.
+  _Requirements: R5.1, R5.2_
   _Test: T2, T2b_
 
-- [x] **T7 — capability doc and decision record, in this PR**
-  `docs/capabilities/webhook-triggers.md`: the durable-binding behaviour beside the
-  linked-issue routing bullet it repairs, plus a history row.
-  `docs/decisions/decision-064.md` (indexed in `decisions.md`): the three record shapes and
-  why the separate link record won.
-  _Requirements: R4.2, and the loop's own same-PR capability-docs rule_
+- [x] **T7 — the paper trail, and the two-loop definition**
+  `decision-064` rewritten (the reversal recorded, not erased); spec chain revised;
+  `docs/capabilities/webhook-triggers.md` clause + history row;
+  `docs/cli/state.md` session-record section. The **inner/outer-loop** definition the
+  owner asked for: outer loop = the work item's PDLC graph (unchanged, keyed to the work
+  item); inner loop = a PR's sub-graph running in its endpoint, defined as follow-up —
+  this change ships the substrate and the boundary (a PR endpoint has no graph).
+  _Requirements: R2.9, R4.1, R4.2, and the loop's same-PR capability-docs rule_
   _Test: T11_
 
 - [x] **T8 — execute the testing plan and commit the evidence**
-  Run every activity in [`testing-plan.md`](testing-plan.md) § Verification activities,
-  including the regression test against the un-fixed resolver. Record per-activity command,
-  outcome and evidence under `evidence/`; tick each activity only once it has run.
+  Every activity in [`testing-plan.md`](testing-plan.md) § Verification activities,
+  including the seven-test negative run and the re-captured reproduction.
   _Requirements: R5.1_
-  _Test: T1, T2, T8, T10, T11_
+  _Test: T1, T2, T2b, T8, T10, T11_

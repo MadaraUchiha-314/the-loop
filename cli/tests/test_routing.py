@@ -186,136 +186,173 @@ def test_registry_lists_every_name_it_can_write(tmp_path, ref):
     assert [s.work_item.ref for s in registry.list_sessions()] == [item.ref]
 
 
-# -- durable session bindings (issue-172) -------------------------------------
+# -- pull-request endpoints on the session record (issue-172) -----------------
 
 PR_REF = "github:octo/repo#16"
 
 
-def bound_ref(registry, source):
-    """The ref ``source`` is bound to — asserted present, so a miss fails here."""
-    target = registry.resolve_link(source)
-    assert target is not None, f"no binding recorded for {source}"
-    return target.ref
-
-
-def test_registry_link_binds_a_ref_to_another_items_session(tmp_path):
+def test_link_pull_request_records_the_pr_on_the_work_items_record(tmp_path):
     """The routing decision, on disk, readable by a process that did not make it."""
     registry = SessionRegistry(tmp_path)
-    record = registry.link(PR_REF, REF)
+    registry.register(make_session())
+    endpoint = registry.link_pull_request(REF, PR_REF)
 
-    assert record is not None and record.session_ref.ref == REF
-    assert (tmp_path / "github-octo-repo-16.link.json").is_file()
+    assert endpoint is not None and endpoint.work_item.ref == PR_REF
+    # One file per work item — the PR lives INSIDE it, not beside it (PR #173).
+    assert [p.name for p in tmp_path.glob("*.json")] == ["github-octo-repo-15.json"]
     # A fresh instance — the restart property, as a filesystem fact (R1.4).
-    assert bound_ref(SessionRegistry(tmp_path), PR_REF) == REF
+    fresh = SessionRegistry(tmp_path).find_by_work_item(REF)
+    assert fresh is not None
+    assert [pr.work_item.ref for pr in fresh.pull_requests] == [PR_REF]
 
 
-def test_registry_link_is_idempotent_and_keeps_created_at(tmp_path):
-    """An unchanged binding is not rewritten (R1.3), a re-pointed one keeps its age."""
-    registry = SessionRegistry(tmp_path)
-    first = registry.link(PR_REF, REF)
-    assert first is not None
-    path = tmp_path / "github-octo-repo-16.link.json"
-    before = path.read_text()
-
-    assert registry.link(PR_REF, REF) is None  # same target: nothing to write
-    assert path.read_text() == before
-
-    repointed = registry.link(PR_REF, "github:octo/repo#20")
-    assert repointed is not None
-    assert repointed.session_ref.ref == "github:octo/repo#20"
-    assert repointed.created_at == first.created_at  # how long it has been bound
-    assert bound_ref(registry, PR_REF) == "github:octo/repo#20"
-
-
-def test_registry_refuses_to_bind_a_ref_to_itself(tmp_path):
-    """R1.5 — enforced in the store, so no caller has to remember to check."""
-    registry = SessionRegistry(tmp_path)
-    assert registry.link(REF, REF) is None
-    assert registry.resolve_link(REF) is None
-    assert list(tmp_path.glob("*.link.json")) == []
-
-
-def test_registry_resolve_link_does_not_follow_a_chain(tmp_path):
-    """Single-hop (R2.3): no cycle can be built, so no depth has to be bounded."""
-    registry = SessionRegistry(tmp_path)
-    registry.link(PR_REF, "github:octo/repo#20")
-    registry.link("github:octo/repo#20", REF)
-
-    assert bound_ref(registry, PR_REF) == "github:octo/repo#20"
-
-
-def test_registry_treats_an_unparseable_binding_as_absent(tmp_path, caplog):
-    """A hand-edited record must read as 'no binding', never reach a lookup.
-
-    Both ends go back through ``WorkItemRef.parse``, so a ``sessionRef`` holding
-    a path or a shell fragment fails there — and failing there means the caller
-    falls back to deriving the linkage, which is the pre-issue-172 behaviour.
-    """
-    registry = SessionRegistry(tmp_path)
-    (tmp_path / "github-octo-repo-16.link.json").write_text(
-        json.dumps({"ref": PR_REF, "sessionRef": "../../etc/passwd"})
-    )
-    with caplog.at_level(logging.DEBUG, logger="the-loop.sessions"):
-        assert registry.resolve_link(PR_REF) is None
-    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
-    assert registry.list_links() == []
-
-
-def test_registry_binding_file_names_cannot_escape_the_directory(tmp_path):
-    """The name is derived through ``WorkItemRef.slug``, which has no separators."""
-    registry = SessionRegistry(tmp_path)
-    registry.link("github:ghe.corp.example/octo/repo#16", REF)
-
-    written = [p.name for p in tmp_path.glob("*.link.json")]
-    assert written == ["github-ghe.corp.example-octo-repo-16.link.json"]
-    assert all("/" not in name and ".." not in name for name in written)
-
-
-def test_registry_bindings_are_invisible_to_the_session_listing(tmp_path, caplog):
-    """R4.1 — the suffix keeps them out of the session-record namespace.
-
-    ``_REGISTRY_FILE_RE`` wants a name ending ``-<number>.json``; a binding ends
-    ``.link.json``. So nothing had to be taught about them: no phantom session,
-    and no "skipping unreadable registry file" warning.
-    """
+def test_link_pull_request_is_idempotent(tmp_path):
+    """An already-listed PR is a no-op (R1.3): a poll cycle must not rewrite the
+    record, or re-emit the event, once per comment."""
     registry = SessionRegistry(tmp_path)
     registry.register(make_session())
-    registry.link(PR_REF, REF)
-    with caplog.at_level(logging.DEBUG, logger="the-loop.sessions"):
-        sessions = registry.list_sessions()
-    assert [s.work_item.ref for s in sessions] == [REF]
-    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert registry.link_pull_request(REF, PR_REF) is not None
+    before = (tmp_path / "github-octo-repo-15.json").read_text()
+
+    assert registry.link_pull_request(REF, PR_REF) is None
+    assert (tmp_path / "github-octo-repo-15.json").read_text() == before
 
 
-def test_registry_links_to_and_unlink(tmp_path):
-    registry = SessionRegistry(tmp_path)
-    registry.link(PR_REF, REF)
-    registry.link("github:octo/repo#17", REF)
-    registry.link("github:octo/repo#18", "github:octo/repo#20")
-
-    assert sorted(link.source.ref for link in registry.links_to(REF)) == [
-        PR_REF,
-        "github:octo/repo#17",
-    ]
-    assert registry.unlink(PR_REF) is True
-    assert registry.unlink(PR_REF) is False  # nothing left to remove
-    assert [link.source.ref for link in registry.links_to(REF)] == [
-        "github:octo/repo#17"
-    ]
-
-
-def test_registry_binding_survives_closing_the_session_it_names(tmp_path):
-    """R4.4 — a closed session is reopenable, and the binding is still true.
-
-    Removing bindings on close would lose them across exactly the close/reopen
-    cycle they exist to survive. ``sessions reset`` is what removes one.
-    """
+def test_link_pull_request_refuses_the_work_item_itself(tmp_path):
+    """R1.5 — a work item does not deliver itself; enforced in the store."""
     registry = SessionRegistry(tmp_path)
     registry.register(make_session())
-    registry.link(PR_REF, REF)
+    assert registry.link_pull_request(REF, REF) is None
+    found = registry.find_by_work_item(REF)
+    assert found is not None and found.pull_requests == []
+
+
+def test_record_owning_resolves_a_pr_to_its_work_items_record(tmp_path):
+    registry = SessionRegistry(tmp_path)
+    registry.register(make_session())
+    registry.link_pull_request(REF, PR_REF)
+
+    record = registry.record_owning(PR_REF)
+    assert record is not None and record.work_item.ref == REF
+    # A ref with its own record resolves to itself, never through a scan.
+    own = registry.record_owning(REF)
+    assert own is not None and own.work_item.ref == REF
+
+
+def test_session_for_prefers_the_prs_own_endpoint(tmp_path):
+    """Per-PR sessions (the default): the PR's endpoint receives its events."""
+    registry = SessionRegistry(tmp_path)
+    registry.register(make_session())
+    endpoint = registry.link_pull_request(REF, PR_REF)
+    assert endpoint is not None
+    endpoint.tmux_target = "loop-github-octo-repo-16"
+    endpoint.harness_session_id = "pr-sess"
+    registry.save_endpoint(REF, endpoint)
+
+    resolved = registry.session_for(PR_REF)
+    assert resolved is not None and resolved.work_item.ref == PR_REF
+    assert resolved.tmux_target == "loop-github-octo-repo-16"
+    # sessionPerPr: false collapses onto the work item's single session — the
+    # pre-issue-172 behaviour, kept as a configured choice.
+    collapsed = registry.session_for(PR_REF, session_per_pr=False)
+    assert collapsed is not None and collapsed.work_item.ref == REF
+
+
+def test_a_closed_endpoint_falls_back_to_the_work_items_session(tmp_path):
+    """A merged PR's endpoint is closed, but the work item still owns the work —
+    a late event on that PR reaches the work item's session, not nothing."""
+    registry = SessionRegistry(tmp_path)
+    registry.register(make_session())
+    registry.link_pull_request(REF, PR_REF)
+    assert registry.close_endpoint(REF, PR_REF) is not None
+
+    resolved = registry.session_for(PR_REF)
+    assert resolved is not None and resolved.work_item.ref == REF
+
+
+def test_close_endpoint_leaves_the_record_live(tmp_path):
+    """issue-101's rule, in the model: one PR merging is not the item ending."""
+    registry = SessionRegistry(tmp_path)
+    registry.register(make_session())
+    registry.link_pull_request(REF, PR_REF)
+
+    closed = registry.close_endpoint(REF, PR_REF)
+    assert closed is not None and closed.status == "closed"
+    record = registry.find_by_work_item(REF)
+    assert record is not None and record.is_live
+    # Closing the work item itself through close_endpoint is refused: that is
+    # `close`'s job, and it ends the whole record.
+    assert registry.close_endpoint(REF, REF) is None
+
+
+def test_touch_records_deliveries_per_endpoint(tmp_path):
+    """Dedup must not leak between conversations: an id delivered into a PR's
+    session is not already-processed for the work item's."""
+    registry = SessionRegistry(tmp_path)
+    registry.register(make_session())
+    registry.link_pull_request(REF, PR_REF)
+    registry.touch(REF, delivery_id="d-pr", endpoint_ref=PR_REF)
+    registry.touch(REF, delivery_id="d-wi")
+
+    record = registry.find_by_work_item(REF)
+    assert record is not None
+    assert record.recent_deliveries == ["d-wi"]
+    assert record.pull_requests[0].recent_deliveries == ["d-pr"]
+
+
+def test_an_unreadable_pull_request_entry_does_not_take_the_record_down(tmp_path):
+    """A hand-edited entry degrades to "that PR is unrecorded" — the work item's
+    own session must survive it, and nothing may reach a lookup unparsed."""
+    registry = SessionRegistry(tmp_path)
+    registry.register(make_session())
+    path = tmp_path / "github-octo-repo-15.json"
+    data = json.loads(path.read_text())
+    data["pullRequests"] = [
+        {"workItem": {"ref": "../../etc/passwd"}, "harness": "claude"},
+        None,
+    ]
+    path.write_text(json.dumps(data))
+
+    record = registry.find_by_work_item(REF)
+    assert record is not None and record.pull_requests == []
+    assert registry.session_for(REF) is not None
+
+
+def test_a_nested_pull_request_tree_is_flattened_on_read(tmp_path):
+    """One level only: a hand-edited record cannot build a tree to walk (R2.3)."""
+    registry = SessionRegistry(tmp_path)
+    registry.register(make_session())
+    registry.link_pull_request(REF, PR_REF)
+    path = tmp_path / "github-octo-repo-15.json"
+    data = json.loads(path.read_text())
+    data["pullRequests"][0]["pullRequests"] = [
+        {
+            "workItem": {"ref": "github:octo/repo#99"},
+            "harness": "claude",
+            "harnessSessionId": "",
+            "cwd": ".",
+        }
+    ]
+    path.write_text(json.dumps(data))
+
+    record = registry.find_by_work_item(REF)
+    assert record is not None
+    assert record.pull_requests[0].pull_requests == []
+    assert registry.record_owning("github:octo/repo#99") is None
+
+
+def test_endpoints_survive_closing_and_reopening_the_record(tmp_path):
+    """The PR list is part of the record, so a close does not lose it (R4.4)."""
+    registry = SessionRegistry(tmp_path)
+    registry.register(make_session())
+    registry.link_pull_request(REF, PR_REF)
     registry.close(REF)
 
-    assert bound_ref(registry, PR_REF) == REF
+    closed = registry.find_by_work_item(REF, include_closed=True)
+    assert closed is not None
+    assert [pr.work_item.ref for pr in closed.pull_requests] == [PR_REF]
+    # ...and a closed record is not a routing target, PRs included.
+    assert registry.record_owning(PR_REF) is None
 
 
 # -- paused sessions (issue-106) ----------------------------------------------
@@ -783,9 +820,15 @@ def test_router_deduper_is_bounded_lru():
 # -- dispatcher (R3.2/R3.3, R5) -----------------------------------------------
 
 
-def make_dispatcher(tmp_path, tmux, **config_overrides):
-    """A dispatcher whose observable seam is the injected FakeTmux (issue-156)."""
+def make_dispatcher(tmp_path, tmux, tmux_config=None, **config_overrides):
+    """A dispatcher whose observable seam is the injected FakeTmux (issue-156).
+
+    ``tmux_config`` maps to ``RoutingConfig.tmux`` — named apart because the
+    positional ``tmux`` is the runner double.
+    """
     registry = SessionRegistry(tmp_path / "sessions")
+    if tmux_config is not None:
+        config_overrides["tmux"] = tmux_config
     # Pre-issue-106 spawn behaviour by default: these cover the spawn mechanics,
     # while the start-command gate has its own tests below.
     config_overrides.setdefault("control", ControlConfig(require_start_command=False))
@@ -1061,16 +1104,41 @@ def test_dispatcher_pr_close_never_spawns(tmp_path):
     assert tmux.spawns == []  # never spawn a session to handle a close
 
 
-def test_dispatcher_still_resumes_on_pr_events_that_are_not_close(tmp_path):
+def test_dispatcher_still_routes_pr_events_that_are_not_close(tmp_path):
+    """A non-close PR event routes normally — under sessionPerPr (the default)
+    that now means the PR's own endpoint is spawned for it (issue-172)."""
     tmux = FakeTmux()
     registry, dispatcher = make_dispatcher(tmp_path, tmux)
     registry.register(make_session())
     open_pr = routed_pr_closed(delivery="o-1", merged=False)
     open_pr.action = "synchronize"  # a non-close PR event still routes normally
     dispatcher.handle(open_pr)
+    assert wait_until(lambda: len(tmux.spawns) == 1)
+    dispatcher.stop()
+    ((spawn_ref, _, _, _),) = tmux.spawns
+    assert spawn_ref == "github:octo/repo#16"  # the PR's endpoint, not a record
+    record = registry.find_by_work_item(REF)
+    assert record is not None  # not closed
+    assert [pr.work_item.ref for pr in record.pull_requests] == [spawn_ref]
+
+
+def test_dispatcher_delivers_pr_events_into_the_work_items_session_when_collapsed(
+    tmp_path,
+):
+    """sessionPerPr: false — the pre-issue-172 shape, kept as a configured choice."""
+    from the_loop.webhook.dispatcher import TmuxConfig
+
+    tmux = FakeTmux()
+    registry, dispatcher = make_dispatcher(
+        tmp_path, tmux, tmux_config=TmuxConfig(session_per_pr=False)
+    )
+    registry.register(make_session())
+    open_pr = routed_pr_closed(delivery="o-2", merged=False)
+    open_pr.action = "synchronize"
+    dispatcher.handle(open_pr)
     assert wait_until(lambda: len(tmux.delivers) == 1)
     dispatcher.stop()
-    assert registry.find_by_work_item(REF) is not None  # not closed
+    assert tmux.delivers[0][0] == REF and tmux.spawns == []
 
 
 def routed_issue_closed(delivery="ic-1", number=15):
@@ -1161,20 +1229,27 @@ def test_delivery_status_done_inflight_unhandled(tmp_path):
     assert dispatcher.delivery_status("d-done", refs) == "done"
 
 
-def test_delivery_status_follows_a_binding(tmp_path):
-    """A delivery that succeeded *through* a binding is `done`, not `unhandled`.
+def test_delivery_status_resolves_a_prs_endpoint(tmp_path):
+    """A delivery that succeeded into a PR's endpoint is `done`, not `unhandled`.
 
-    The id is recorded on the bound session's record, and the refs the poller
-    asks about are the PR's — so asking the registry directly would call a
-    successful delivery unhandled, and the poller would re-forward the same
-    comment until its retry budget was spent (issue-172 self-review).
+    The id is recorded on that endpoint inside the work item's record, and the
+    refs the poller asks about are the PR's — so a resolver that only knew about
+    whole records would call a successful delivery unhandled, and the poller
+    would re-forward the same comment until its retry budget was spent
+    (issue-172 self-review).
     """
     registry, dispatcher = make_dispatcher(tmp_path, FakeTmux())
     registry.register(make_session())
-    registry.link(PR_REF, REF)
-    registry.touch(REF, delivery_id="d-bound")
+    registry.link_pull_request(REF, PR_REF)
+    registry.touch(REF, delivery_id="d-pr", endpoint_ref=PR_REF)
+    registry.touch(REF, delivery_id="d-wi")
 
-    assert dispatcher.delivery_status("d-bound", [WorkItemRef.parse(PR_REF)]) == "done"
+    assert dispatcher.delivery_status("d-pr", [WorkItemRef.parse(PR_REF)]) == "done"
+    assert dispatcher.delivery_status("d-wi", [WorkItemRef.parse(REF)]) == "done"
+    # Dedup does not leak between the two conversations.
+    assert (
+        dispatcher.delivery_status("d-wi", [WorkItemRef.parse(PR_REF)]) == "unhandled"
+    )
 
 
 # -- `the-loop sessions` command (R2.2) ----------------------------------------

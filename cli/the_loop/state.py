@@ -17,7 +17,6 @@ two negations to express one idea. This one groups them by **what they are**:
 ===================  =========================================  ==========
 portable state       ``<root>/portable/<slug>.json``            travels
 session handles      ``<root>/local/<slug>.json``               local
-session bindings     ``<root>/local/<slug>.link.json``          local
 event log            ``<root>/logs/events.jsonl``               local
 receiver pidfile     ``<root>/gh-webhook.pid``                  local
 ===================  =========================================  ==========
@@ -188,8 +187,9 @@ GENERATED_PATHS: Tuple[GeneratedPath, ...] = (
         default="<root>/local/<slug>.json",
         portable=False,
         holds=(
-            "harnessSessionId, cwd, runner, tmuxTarget, status, recentDeliveries — "
-            "one file per work item with a session"
+            "harnessSessionId, cwd, runner, tmuxTarget, status, recentDeliveries, "
+            "and (issue-172) pullRequests — every PR delivering this work item "
+            "with its own tmux session and conversation. One file per work item"
         ),
         why=(
             "a handle to a conversation and a directory that exist on one machine. "
@@ -198,24 +198,6 @@ GENERATED_PATHS: Tuple[GeneratedPath, ...] = (
             "and events are routed to a conversation that is not there. It also "
             "carries an absolute path from the operator's filesystem and a resumable "
             "session id, neither of which belongs in a repository."
-        ),
-    ),
-    GeneratedPath(
-        name="session binding",
-        attr="local_dir",
-        default="<root>/local/<slug>.link.json",
-        portable=False,
-        holds=(
-            "sessionRef — the work item whose session owns this ref's events — "
-            "plus when the binding was first recorded and last re-pointed. One "
-            "file per pull request that delivers another work item"
-        ),
-        why=(
-            "it names a session, and sessions are local. Copied to a machine that "
-            "does not have that session, it points routing at a record that is not "
-            "there — the same failure carrying a session record causes, one "
-            "indirection further out. Nothing upstream needs rebuilding either: "
-            "the binding is re-recorded by the first event that routes."
         ),
     ),
     GeneratedPath(

@@ -21,6 +21,9 @@ status: in-progress          # in-progress | complete
 | implementation | 2026-08-07 | — | T1–T7 |
 | verification | 2026-08-07 | — | T8; every activity ran |
 | needs-review | 2026-08-07 | pending | 5 self-review rounds (round 1 found two poll-path regressions); critic rounds unavailable (none configured) |
+| design (revisited) | 2026-08-07 | @MadaraUchiha-314 (PR #173 review) | owner rejected the link-record shape; rebuilt to the single-record `pullRequests[]` endpoint model with `sessionPerPr`, and set the inner/outer-loop direction |
+| verification (re-run) | 2026-08-07 | — | every activity re-executed against the rebuilt model; 7-test negative run |
+| needs-review (again) | 2026-08-07 | pending | 2 further self-review rounds on the rebuild |
 | complete | — | — | |
 
 ## Pull requests
@@ -65,6 +68,28 @@ status: in-progress          # in-progress | complete
 - **Checkpoint/tests:** `testing-plan.md` § Verification results.
 - **Next:** self-review, then the PR briefing.
 
+### 2026-08-07 — owner review overturns the storage model; rebuild
+
+- **Phase:** design (revisited) → implementation → verification
+- **Did:** the owner rejected decision-064's D1 on the PR — *"We should have a single
+  session file for one work-item with links to all the PRs … along with all the tmux and
+  claude/cursor session. It should be a config whether to create multiple tmux sessions
+  for each PR … Default: separate tmux session for each PR."* Rebuilt accordingly: the
+  link records are gone; `Session` now serves as record **and** endpoint, a record carries
+  `pullRequests[]`, each PR gets its own lazily-spawned tmux session and conversation
+  (`routing.tmux.sessionPerPr`, default true, `false` = the pre-issue-172 single-session
+  shape), a PR close ends its endpoint only, and dedup/touch became per-endpoint.
+  `reset.py` got simpler — the entries live inside the record, so no `LINK` piece and no
+  new generated path. Spec chain, decision-064 (reversal recorded, not erased),
+  capability doc and `state.md` rewritten to match. The owner's follow-up comment set the
+  **inner/outer-loop** direction: definition captured in `design.md` § The two loops and
+  decision-064; per-PR graph execution declared follow-up, and this change enforces the
+  boundary (a PR endpoint enters no graph).
+- **Checkpoint/tests:** `pytest -q` → 1403 passed, 1 skipped. All seven regression tests
+  fail against a pre-fix resolver. `ruff`, `pyright`, `markdownlint`,
+  `validate_config.py` clean.
+- **Next:** self-review of the rebuild, then update the PR briefing.
+
 ## Review cycles
 
 > Outcome is one of: new findings · zero (converged) · escalated · **unavailable** (the
@@ -76,60 +101,59 @@ status: in-progress          # in-progress | complete
 | 2 | self | the-loop (agent) | **new findings, both about consistency with neighbouring code.** (a) `unlink()` emits `session.unlinked` while `forget()` deliberately emits nothing, which looked like an oversight; kept and justified instead — a reset also removes bindings filed under **other** work items' names, which the single `session.reset` event does not mention. Written into `unlink`'s docstring. (b) `design.md` claimed the record involves "no read-modify-write at all", which is not true: `link()` reads the existing record to preserve `createdAt` and to decide idempotence. Corrected to the property that actually holds — the only writer of a PR's file is a binding for that PR, and `os.replace` means a same-PR race can only write the same record twice. | this PR |
 | 3 | self | the-loop (agent) | **new finding, scoped not fixed** — `sessions pause\|resume\|stop\|attach\|reset` still resolve directly, not through bindings. Deliberate: those name a work item explicitly, and acting on a different one ("I asked to stop #16 and you stopped #15") is worse than making the operator name what they meant. Promoted from an unstated assumption to R2.10 and a row in `design.md`, so the boundary is a decision rather than an omission. | this PR |
 | 4 | self | the-loop (agent) | **new finding — a test writing into the checkout it runs from.** A full run left an untracked `.the-loop/portable/github-octo-repo-15.json` behind, bisected to the new control-command scenario: `ServerFactory` never set `portable_dir`, and `RoutingConfig`'s default is the *process's* own `.the-loop/portable`. Nothing had exercised the control path in that file before, so the gap was latent. Fixed in the factory rather than the one test, so the next control scenario cannot reintroduce it. | this PR |
-| 5 | self | the-loop (agent) | zero (converged) | this PR |
-| 6 | critic | — | **unavailable** — `reviews.critics: []`; no critic harness is configured in this repository, so no critic round could run. Does not count toward `criticReviewCount`; the human PR review is the backstop. | [`.the-loop/harness-config.yaml`](../../../.the-loop/harness-config.yaml) |
+| 5 | self | the-loop (agent) | zero (converged) — on the link-record version | this PR |
+| 6 | self (rebuild) | the-loop (agent) | **new findings** — (a) a corrupt `pullRequests` entry initially poisoned the whole record in `from_dict`, taking the work item's own session down with a hand-edited PR entry; parsing became per-entry, matching `_read`'s unreadable-file posture. (b) The re-link case surfaced a real edge: two records can claim one PR, and their endpoints contend for the PR's single deterministic `loop-<slug>` tmux name — the loser falls back to its record's session. Written down as decision-064 § Known edge and tested in collapsed mode rather than hidden. | this PR |
+| 7 | self (rebuild) | the-loop (agent) | **new finding, scoped not fixed** — a PR endpoint deliberately enters no process graph (`_spawn_endpoint` skips `graphlink.on_spawn`): letting it in would open a second graph on the work item's spec directory. Promoted to R2.9 and the § The two loops boundary, so the inner-loop follow-up starts from a stated invariant rather than an accident. | this PR |
+| 8 | self (rebuild) | the-loop (agent) | zero (converged) | this PR |
+| 9 | critic | — | **unavailable** — `reviews.critics: []`; no critic harness is configured in this repository, so no critic round could run. Does not count toward `criticReviewCount`; the human PR review is the backstop. | [`.the-loop/harness-config.yaml`](../../../.the-loop/harness-config.yaml) |
 
 ## Security review (gate)
 
 > Required before ready-to-ship (`security.review.required`). See `reference/security.md`.
 
 - **Mechanism:** the-loop checklist, cross-checked against `design.md` § Security design
-  (`security.review.mechanism: auto`).
-- **Outcome:** **pass.** The change adds no network reach, no new privilege and no new
-  external input format. Both ends of every record are `WorkItemRef`s the router already
-  constructed; they are re-parsed on read, so a hand-edited record holding a path or a shell
-  fragment fails `WorkItemRef.parse` and is treated as absent. The file name is derived
-  through `WorkItemRef.slug`, whose final `re.sub(r"[^A-Za-z0-9._-]+", "-", …)` makes
-  directory traversal unrepresentable. Only the dispatcher writes bindings, and only for a
-  session an event **already routed into** under the existing guards
-  (`authorizedUsers`, the self-comment marker, the auto-execute label,
-  `requireStartCommand`) — so no binding can name a session the un-fixed the-loop would not
-  already have delivered into. Resolution is single-hop and self-binding is refused, so
-  there is no chain or cycle to bound. The records are classified **local**, which is what
-  keeps them outside the "a tracked record is an input" surface that portable state has.
-  Every failure mode degrades to the pre-fix behaviour and none past it. The two poll-path
-  findings from self-review round 1 are availability, not security: both made the-loop do
-  *less* than it should (drop a delivery, re-forward one), never more.
-- **Human sign-off:** n/a — risk tier 3, below `security.review.humanSignOffMinTier: 4`.
+  (`security.review.mechanism: auto`). Re-run in full after the rebuild — the first
+  pass's subject (link records) no longer exists.
+- **Outcome:** **pass.** No new network reach and no new external input format. Every
+  `pullRequests` entry's ends are `WorkItemRef`s the router constructed, re-parsed on
+  read; a hand-edited entry is skipped **per entry** (never fatal to the record), nesting
+  is one level by construction, and a self-recording is refused in the store. Only the
+  dispatcher records PRs, downstream of the self-comment marker, `authorizedUsers`, the
+  label and `requireStartCommand` — so a PR can only be recorded against a record an
+  event already routed into under those guards. What **does** grow is the number of
+  harness processes (one per active PR, by default): each is spawned by the same guarded
+  path with the same trust pre-flight in the same checkout, the growth is bounded by open
+  recorded PRs and gated by the same start controls, and it is operator-visible
+  (`sessions list`, spawn announcements). Every failure mode degrades to a behaviour
+  the-loop already had: unreadable entry → that PR unrecorded; unspawnable endpoint →
+  deliver to the record; recording failed → derivation alone.
+- **Human sign-off:** risk tier **4** — the change adds a key to
+  `.the-loop/cli-config.schema.json`, which matches `autonomy.sensitivePaths`
+  (`**/*schema*`), and `security.review.humanSignOffMinTier: 4` therefore applies.
+  **Pending: the owner's PR review is the sign-off**, requested in the PR briefing.
 
 ## Final validation evidence
 
 Every acceptance criterion is proved by a committed artifact under
 [`evidence/`](evidence/); the per-activity record is in
-[`testing-plan.md`](testing-plan.md) § Verification results.
+[`testing-plan.md`](testing-plan.md) § Verification results. All of it re-captured after
+the rebuild.
 
-- **The ticket's reproduction is fixed** (R2.1, R5.1) — two PR events, the second carrying
-  no linkage at all, both delivered into the issue's session:
-  [`evidence/reproduction.md`](evidence/reproduction.md).
-- **The regression tests test something** (R5.1) — all six fail against a registry whose
-  `session_for` is the bare `find_by_work_item`, and the 16 that still pass are the close and
-  linked-issue scenarios this work item must not change:
+- **The ticket's reproduction is fixed** (R2, R5.1) — the linkage-removed second event is
+  delivered into the PR's recorded session; the registry holds one file per work item and
+  the PR is on it: [`evidence/reproduction.md`](evidence/reproduction.md).
+- **The regression tests test something** (R5.1) — all seven fail against a resolver
+  restored to pre-issue-172 behaviour: [`evidence/tests.md`](evidence/tests.md).
+- **Per-PR sessions work, and collapse works** (R2.1, R2.2) — the endpoint spawn, the
+  fallbacks, and `sessionPerPr: false` delivering into the work item's single session:
   [`evidence/tests.md`](evidence/tests.md).
-- **The poll ingress is fixed too** (R2.8, R2.9) — a binding-resolved delivery reports `done`
-  rather than being re-forwarded, and a polled PR with a stored binding is a known item
-  rather than first sight (which would baseline its whole thread and arm a spawn against the
-  PR): [`evidence/tests.md`](evidence/tests.md) § T2b.
-- **The binding is durable and inspectable** (R1.3, R1.4, R4.1) — the record survives a
-  fresh `SessionRegistry`, is not rewritten when unchanged, and is invisible to
-  `list_sessions`: [`evidence/tests.md`](evidence/tests.md).
-- **The abuse cases hold** (R1.5, R2.3, security design) — a corrupt record reads as absent,
-  a self-binding is refused, a chained binding is not followed:
+- **issue-101 is now the model** (R3.1, R3.2) — a PR close ends its endpoint and keeps
+  the record; a PR with its own record still auto-closes:
   [`evidence/tests.md`](evidence/tests.md).
-- **issue-101 is unchanged** (R3.1, R3.2) — a PR close matched through a binding leaves the
-  session open; a PR with its own session is still auto-closed:
-  [`evidence/tests.md`](evidence/tests.md).
-- **Nothing else moved** — 1404 passed, 1 skipped (pre-existing, unrelated; baseline
-  1379/1); `ruff`, `ruff format --check`, `pyright` and `markdownlint` clean:
+- **The abuse cases hold** (R1.5, R1.6) — per-entry degradation, flattened nesting,
+  refused self-recording: [`evidence/tests.md`](evidence/tests.md).
+- **Nothing else moved** — 1403 passed, 1 skipped (baseline 1379/1); `ruff`,
+  `ruff format --check`, `pyright`, `markdownlint` and `validate_config.py` clean:
   [`evidence/tests.md`](evidence/tests.md),
   [`evidence/lint-and-types.md`](evidence/lint-and-types.md).
 
@@ -141,9 +165,10 @@ Every acceptance criterion is proved by a committed artifact under
 
 | Capability doc | What changed | History row |
 |----------------|--------------|-------------|
-| [`docs/capabilities/webhook-triggers.md`](../../capabilities/webhook-triggers.md) | new behaviour clause beside the linked-issue routing bullet it repairs: the binding is recorded when the routing decision is made, resolution order (own record, then binding, single hop), what it does **not** change (issue-93's derivation, issue-101's close rule), and where the record lives | issue-172 · [decision-064](../../decisions/decision-064.md) |
+| [`docs/capabilities/webhook-triggers.md`](../../capabilities/webhook-triggers.md) | the linked-issue routing bullet gained the recorded-PR behaviour: the PR on the work item's single record, per-PR sessions under `sessionPerPr` (default on) with lazy spawn and fallback, additive resolution, the endpoint-close rule, the new event types, and the stated inner/outer-loop boundary | issue-172 · [decision-064](../../decisions/decision-064.md) |
 
-No other capability doc changed. `interactive-sessions.md` describes the recovery ladder,
-which this work item makes *reachable* for PR-keyed events without altering a rung of it;
-`cli.md` describes `sessions reset`, whose new `link` piece is documented where the reset
-table lives (`docs/cli/state.md`) rather than restated in the capability doc.
+`docs/cli/state.md` (the session record's shape and lifecycle) and
+`docs/config/cli/routing-options.md` (`tmux.sessionPerPr`) changed in the same PR;
+they are reference pages rather than capability docs, listed here for the reviewer's
+completeness. `interactive-sessions.md` is untouched: the recovery ladder it describes
+now applies per endpoint, without a rung changing.

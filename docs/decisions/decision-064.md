@@ -1,16 +1,17 @@
-# Decision 064: The PR → session binding is persisted as its own record, not as a field on the session
+# Decision 064: One session record per work item carries its pull requests — each PR an endpoint with its own session
 
 - **Status:** proposed
-- **Date:** 2026-08-07
-- **Deciders:** @MadaraUchiha-314 (issue #172)
+- **Date:** 2026-08-07 (revised the same day — see § How this decision changed)
+- **Deciders:** @MadaraUchiha-314 (issue #172, PR #173 review)
 - **Work item:** issue-172
 - **Spec:** `docs/specs/issue-172/`
 - **Refines:** [decision-036](decision-036.md) (an event on a PR resolves the PR's linked
   issues first), [decision-039](decision-039.md) (a work item may be delivered by several
   PRs, so only the object that closed is ended) and [decision-046](decision-046.md)
   (generated state is grouped by whether it travels). Nothing in any of them is reversed:
-  this persists decision-036's *outcome* instead of recomputing it, leaves decision-039's
-  close rule untouched, and classifies the new file by decision-046's own test.
+  this persists decision-036's *outcome* instead of recomputing it, expresses
+  decision-039's close rule in the data model, and adds no new generated path for
+  decision-046 to classify.
 
 ## Context
 
@@ -18,76 +19,91 @@
 an event on a PR routes to the issue the PR is linked to. The decision is correct. What was
 missing is that it was never written down — it existed only as the return value of
 `linked_issue_numbers()`, recomputed from `gh`'s `closingIssuesReferences` on every single
-event.
+event. Unlinking the PR in GitHub's Development panel, editing out the closing keyword, a
+`gh` too old for the field, or one transient GraphQL error re-pointed routing at the PR
+itself — past a session that was still running — and the event was dropped or answered
+with a duplicate session.
 
-```mermaid
-flowchart TD
-  E["event on PR #7"] --> D{"re-derive the linkage,<br/>every cycle"}
-  D -->|"gh answers #5"| OK["→ issue #5's session"]
-  D -->|"link removed from the<br/>Development panel"| N
-  D -->|"gh too old for the field"| N
-  D -->|"GraphQL 502 this cycle"| N
-  N["no registry record for #7"] --> X["dropped, or a duplicate<br/>session spawned"]
-  style X fill:#fde2e2,stroke:#c0392b
-```
-
-Three ways for the answer to change after the session was created, and no stored state to
-contradict any of them. Worse, the whole session-recovery ladder — deliver into the live
-tmux session, else respawn resuming the recorded conversation ([decision on
-issue-89](../specs/issue-89/)), else start fresh — hangs off *finding a registry entry*. A
-failed derivation does not degrade through the ladder; it skips it entirely.
-
-The ticket named two acceptable shapes and left the choice open.
+A second fact, latent until now: the-loop had **one conversation per work item**, however
+many PRs delivered it. A spec PR and an implementation PR — decision-039's own scenario —
+interleaved their events into a single session.
 
 ## Decision
 
-**A link record: one file per bound ref, beside the session records, under a `.link.json`
-suffix.**
+**The work item's session record is the single source of truth for everything about its
+sessions.** One file per work item, carrying the item's own session *and* a
+`pullRequests[]` list — one entry per PR delivering it, each an **endpoint**: its own
+tmux session and its own harness conversation, recorded the moment the routing decision
+is made.
 
 ```json
 {
-  "ref": "github:octo/repo#16",
-  "url": "https://github.com/octo/repo/issues/16",
-  "sessionRef": "github:octo/repo#15",
-  "createdAt": "2026-08-07T16:40:11Z",
-  "updatedAt": "2026-08-07T16:40:11Z"
+  "workItem": {"ref": "github:octo/repo#15", "…": "…"},
+  "harnessSessionId": "0f1c…", "tmuxTarget": "loop-github-octo-repo-15",
+  "pullRequests": [
+    {"workItem": {"ref": "github:octo/repo#16"}, "harnessSessionId": "77ab…",
+     "tmuxTarget": "loop-github-octo-repo-16", "status": "active"}
+  ]
 }
 ```
 
 | Sub-decision | What was chosen | Why |
 |---|---|---|
-| **D1 — a separate record, not a field** | `<slug>.link.json` beside `<slug>.json` | A `linkedRefs` array on the *issue's* session record makes "which session owns PR #16?" a reverse scan of every session file, on the one path that must be cheap. It also puts the binding inside a record two ingresses read-modify-write (`touch` fires on every delivered event), so a poll cycle and a webhook delivery racing on one work item could drop a binding that was just added. |
-| **D2 — a distinct suffix, not the PR's own slug** | `.link.json`, not `<pr-slug>.json` | An alias file under the PR's own slug collides with the namespace a PR's **own** session needs — the supported non-GitHub-ticketing case, where a labelled PR is its own work item. `_REGISTRY_FILE_RE` wants a name ending `-<number>.json`; `.link.json` does not match it, so `list_sessions`, the unreadable-file warning and `reset --all` needed nothing taught about the new type. |
-| **D3 — written where the decision is made** | on delivery into a matched session, and on spawn (after registration) | These are the two moments routing actually decides. Writing it at spawn only would miss a session registered by hand or by `work-on`; writing it on delivery only would miss the spawn the ticket calls "when the session spawned". Recording after registration, not before, keeps a binding from naming a session that failed to start. |
-| **D4 — the binding adds a resolution, never removes one** | own record first, then the binding | Preferring the binding outright would make a deliberate re-link unactionable without a manual `sessions reset`. As chosen, a PR re-linked to a different live issue delivers to **both** — loud, and recoverable. The failure it replaces is silent. |
-| **D5 — single hop** | `resolve_link` never follows its target's own binding | There is no legitimate chain to express. Refusing to traverse means no cycle can be constructed and no depth has to be bounded — a structural answer instead of a guard. |
-| **D6 — `close` does not remove bindings; `reset` does, both directions** | see `docs/cli/state.md` | A closed session is reopenable and respawnable, and the binding is still true; removing it on close would lose it across exactly the close/reopen cycle it exists to survive. `sessions reset` is the verb that means "forget everything", and it gains a `link` piece. |
-| **D7 — local, not portable** | `GENERATED_PATHS`, `portable=False` | It names a session record, and sessions are local (decision-046). Copied to another machine it points routing at a record that is not there — the session record's own failure, one indirection out. It also keeps these records outside the "a tracked record is an input" surface that portable state has. |
+| **D1 — the PRs live on the work item's record** | `pullRequests[]`, one file per work item | Owner decision (PR #173 review). Everything about a work item — every PR delivering it, every tmux session and conversation involved — is answerable by reading one record. The reverse-scan cost this repo's first draft avoided is real but small: it is paid only by a ref with no record of its own, over the handful of live work items on one machine — never anything that grows with history. |
+| **D2 — each PR is an endpoint, one type** | a PR entry is a `Session` whose `work_item` is the PR's ref | Record and endpoint share one type, so the whole dispatch path — deliver, respawn, resume, close — operates on either without knowing which it has. Nesting is one level and stays that way: a PR does not have pull requests, and a hand-edited tree is flattened on read. |
+| **D3 — per-PR sessions are configured, on by default** | `routing.tmux.sessionPerPr: true` | Owner decision. A work item with two PRs has three tmux sessions: its own (which receives issue events) and one per PR, spawned lazily by the first event that needs it. `false` collapses every PR's events into the work item's single session — the pre-issue-172 behaviour, kept as a choice rather than discarded. |
+| **D4 — recorded where the decision is made** | on dispatch into a matched record, and on spawn (after registration) | The binding is established by the same act that establishes the session, never re-derived from `gh` afterwards. A close event records nothing — it has nothing to bind. |
+| **D5 — a PR closing ends its endpoint only** | `close_endpoint`: the entry flips to `closed`, its tmux session is torn down per the existing retention rules, the record stays live | decision-039's rule falling out of the model instead of being special-cased. A late event on a closed-endpoint PR falls back to the work item's session — the work item still owns the work. |
+| **D6 — additive resolution** | a ref's own record first; the scan only where there is none | A recorded PR never suppresses a work item the derived linkage still finds, so a deliberate re-link delivers to both records — loud and recoverable, where the failure it replaces was silent. |
+| **D7 — degradation is per-entry** | an unreadable `pullRequests` entry is skipped, never fatal | A hand-edited entry reads as "that PR is unrecorded" (the pre-issue-172 state for that PR); the work item's own session survives. Both ends of every entry re-parse through `WorkItemRef.parse`, so nothing unparsed reaches a lookup. |
 
-### What this does not change
+### Known edge, stated rather than hidden
 
-Stated explicitly, because the ticket asks for it: **the routing decision itself.**
-`linked_issue_numbers()` is untouched, `extract_work_items` still emits linked issues before
-the PR's own number, and decision-039's rule that a `pull_request` close ends only that PR's
-own session holds — a session matched *through a binding* is left open exactly as one matched
-through the derived linkage is.
+Two records can both claim one PR (a re-linked PR whose old and new work items both
+match). Their endpoints would contend for the PR's one deterministic `loop-<slug>` tmux
+name; the loser's spawn fails and that record's copy of events falls back to its work-item
+session. Loud, bounded, and inherent in D6's both-deliver choice.
+
+## The direction this sets: inner and outer loops
+
+The owner's review names where this model goes
+([PR #173](https://github.com/MadaraUchiha-314/the-loop/pull/173)): the **outer loop** is
+the work item's process graph — the PDLC the-loop already executes
+([decision-041](decision-041.md)). The **inner loop** is a PR's own, smaller graph — in
+service of delivering the work item, with a subset of the nodes (testing and review
+certainly; requirements definition certainly not). The endpoint model built here is the
+substrate: an inner loop needs a per-PR conversation to run in, and that is exactly what a
+`pullRequests[]` entry is. Defining the inner-loop graph — its nodes, its artifacts, and
+how it reports into the outer loop — is follow-up work with its own work item and spec;
+**in this change a PR endpoint deliberately has no graph**, so a PR cannot advance, or
+open, a second graph on the work item's spec directory.
+
+## How this decision changed
+
+The first version of this record chose a **separate link file per PR**
+(`<slug>.link.json`) over a list on the session record, on two grounds: the reverse scan,
+and a read-modify-write race between the two ingresses. The owner rejected it in review,
+and the grounds did not survive re-examination: the scan is over live work items only
+(small, bounded), and the race is real but is a locking concern — not a reason to shape
+the data model around it — with the worst same-PR outcome being the same entry written
+twice through an atomic replace. The single-record model also answers a question the link
+files never could: *everything* about a work item's sessions in one place. This is the
+paper trail of that reversal, kept rather than rewritten.
 
 ## Alternatives considered
 
-- **`linkedRefs: []` on the issue's session record** (the ticket's second suggestion) —
-  rejected as D1: reverse scan on the hot path, and a read-modify-write two ingresses race
-  on.
-- **An alias file under the PR's own slug** (the ticket's first suggestion) — rejected as
-  D2: it collides with the session-record namespace.
-- **Cache the derivation rather than the decision** — store `closingIssuesReferences` per PR
-  and fall back to it when `gh` fails. Rejected: it caches the *input*, so it needs
+- **A separate link record per PR** (`<slug>.link.json`) — this record's own first
+  version. Rejected in owner review; see § How this decision changed.
+- **`linkedRefs` as bare strings on the record** — the ticket's original sketch. Subsumed:
+  once each PR can carry its own session, the entry must hold more than a ref, and a
+  `Session`-shaped entry is what lets one dispatch path serve both.
+- **Cache the derivation rather than the decision** — store `closingIssuesReferences` per
+  PR and reuse it when `gh` fails. Rejected: it caches the *input*, so it still needs
   invalidation, and it answers nothing when the panel link is deliberately removed — the
-  ticket's own reproduction. The decision is the stable fact; the input is not.
-- **Have the poller pass its linkage through to the registry** — rejected: it fixes one
-  ingress. The webhook path derives linkage from the PR body and head branch and fails the
-  same way on a body edit. The binding belongs where both ingresses meet, which is dispatch.
-- **Reap bindings when their target session closes** — rejected as D6.
-- **Surface bindings in `sessions list` / the `/sessions` API** — rejected by the minimalism
-  ladder: the records are human-readable JSON beside the session records, and
-  `the-loop events --type session.linked` already answers "what is bound to what". A column
-  would mean a new field in the OpenAPI contract for a fact the event log states.
+  ticket's own reproduction.
+- **Eager per-PR spawn** — give a PR its session when it is recorded, not on first use.
+  Rejected: a PR that is merely linked would cost a tmux session and a harness process
+  before anything happens on it.
+- **Reap PR entries when their endpoint closes** — rejected: a closed endpoint is the
+  record that the PR delivered this work item, and the fallback target for late events on
+  it. The entry goes when the record goes.

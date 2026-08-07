@@ -144,39 +144,45 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   linked issue** (reusing its tmux session) rather than spawning a second one, and WHEN
   nothing matches and the spawn policy allows it THEN the session SHALL be spawned
   against the **issue's** ref, not the PR's (issue-93, decision-036).
-- **That routing decision is recorded, not recomputed** (issue-172,
-  [decision-064](../decisions/decision-064.md)). WHEN an event carrying a pull request is
-  dispatched into a session registered against a **different** work item — delivered into an
-  existing one, or spawning one — THEN the system SHALL persist the binding
-  `PR → that work item` as a link record in the registry directory
-  (`<registryDir>/<pr-slug>.link.json`, see [state on disk](../cli/state.md)), rewriting it
-  only when the target actually changes.
-  - WHEN a later event's ref has **no session record of its own** THEN the system SHALL
-    resolve it through that stored binding, and deliver into the bound session. Resolution
-    is ordered — the ref's own record first, the binding second — and **single-hop**: a
-    binding whose target is itself bound is not followed.
-  - Consequently a PR whose linkage GitHub no longer reports SHALL still reach the session
-    that owns the work. Before issue-172 the binding existed only as a value re-derived from
-    `gh` on every event, so **unlinking the PR in the Development panel, editing the closing
-    keyword out of its body, a `gh` too old for `closingIssuesReferences`, or one transient
-    GraphQL error** silently re-pointed routing at the PR itself — past a running session —
-    and the event was dropped or answered with a duplicate session. Storing the decision is
-    also what makes the recovery ladder (deliver → respawn resuming the recorded
-    conversation → fresh session) reachable for a PR-keyed event at all.
-  - The binding **adds** a resolution and never removes one: a session the derived linkage
-    still finds is matched as before, so a PR deliberately re-linked to a different live
-    work item delivers to both. Control commands (`the-loop start|stop|pause|resume` on a
-    PR) resolve through the same order.
-  - The binding SHALL NOT change **what a close ends**: a session matched through a binding
-    is left open on a `pull_request` `closed` exactly as one matched through the derived
-    linkage is (`session.kept_open`, issue-101 above). Closing a session SHALL NOT remove
-    its bindings — a closed session is reopenable, and the binding is still true;
-    `the-loop sessions reset` removes them, in both directions.
-  - `session.linked` records each binding as it is made (and `session.unlinked` as it goes),
-    so `the-loop events --type session.linked` answers "which PR is bound to what" without
-    opening a file. A record that is missing, unreadable or hand-edited into something that
-    is not a work-item ref reads as **no binding** — the pre-issue-172 behaviour, never an
-    error into a dispatch.
+- **That routing decision is recorded, not recomputed — and each PR is a session of its
+  own** (issue-172, [decision-064](../decisions/decision-064.md)). WHEN an event carrying a
+  pull request is dispatched to a work item's session — delivered into an existing one, or
+  spawning one — THEN the PR SHALL be durably recorded on that work item's **single
+  session record** (`pullRequests[]`, see [state on disk](../cli/state.md)), so which work
+  item owns a PR's events is read from the record on later events and never re-derived
+  from `gh`. Before issue-172 the binding was recomputed per event, so **unlinking the PR
+  in the Development panel, editing the closing keyword out of its body, a `gh` too old
+  for `closingIssuesReferences`, or one transient GraphQL error** silently re-pointed
+  routing at the PR itself — past a running session — and the event was dropped or
+  answered with a duplicate session.
+  - WHEN `routing.tmux.sessionPerPr` is true (**the default**) THEN each recorded PR
+    SHALL work in its **own** tmux session with its **own** harness conversation, spawned
+    lazily by the first event that needs it and announced like any other spawn — so a
+    work item with two PRs has three sessions: its own (which receives the issue's
+    events) and one per PR. WHEN it is false THEN every PR's events SHALL be delivered
+    into the work item's single session — the pre-issue-172 behaviour, kept as a
+    configured choice.
+  - Resolution is **additive**: a ref with its own record resolves to it, and only a ref
+    with none is looked up across the live records' PR lists — so a recorded PR never
+    suppresses a work item the derived linkage still finds, and a deliberate re-link
+    delivers to both (loud, where the failure it replaces was silent). A PR whose
+    endpoint is closed, or unspawnable, falls back to the work item's session — an event
+    is never lost to endpoint bookkeeping.
+  - WHEN the closed object of a `pull_request` `closed` event is a **recorded PR** of a
+    still-open work item THEN that PR's endpoint SHALL be closed (its tmux session
+    handled per the same retention rules as any close, `session.pr_closed`) and the work
+    item's session left running (`session.kept_open`) — issue-101's several-PRs rule,
+    now expressed in the model. Control commands on a PR resolve to its work item's
+    record, so a `the-loop stop` commented on a PR whose linkage broke still stops the
+    session that owns the work.
+  - `session.pr_linked` records each PR as it is recorded and `session.pr_spawned` each
+    endpoint spawn, so `the-loop events` answers "which PRs deliver what" without opening
+    a file. An unreadable `pullRequests` entry reads as "that PR is unrecorded" — never
+    an error into a dispatch, and never fatal to the work item's own session.
+  - **Deliberately out of scope here:** a PR endpoint has no process graph. The graph
+    stays keyed to the work item; the per-PR **inner-loop** graph the endpoint model
+    enables is defined and built as its own work item (decision-064 § the direction this
+    sets).
 - The auto-execute label SHALL work on **PRs directly**: a labelled PR linked to no
   GitHub issue is routed as its own work item (`github:OWNER/REPO#<pr-number>`), so PRs
   stay monitorable when the ticketing system is not GitHub (Jira, …) — `work-on` adds
@@ -363,7 +369,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
-| issue-172 | The PR → session binding stopped being recomputed from `gh` on every event (2026-08-07): dispatching a PR event into a linked work item's session records a durable link record beside the session record, and a ref with no session of its own resolves through it — so unlinking the PR, editing out the closing keyword, an older `gh` or one failed listing no longer strands a running session. Additive and single-hop; issue-93's derivation and issue-101's close rule are unchanged | [spec](../specs/issue-172/), [decision-064](../decisions/decision-064.md), [state](../cli/state.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/172) |
+| issue-172 | Which session owns a PR's events stopped being recomputed from `gh` per event (2026-08-07): the work item's single session record now carries its `pullRequests[]`, each an endpoint with its own tmux session and harness conversation (`routing.tmux.sessionPerPr`, default on — `false` collapses to the pre-issue-172 single session), spawned lazily and closed individually when its PR closes. Additive resolution; issue-93's derivation and issue-101's close rule unchanged | [spec](../specs/issue-172/), [decision-064](../decisions/decision-064.md), [state](../cli/state.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/172) |
 | issue-159 | Stopping and restarting the poller became invisible (2026-08-05): an exclusive lock on the pidfile makes two pollers on one ledger impossible (`--once` included), `poll stop` verifies the pid against that lock and waits for the process to exit, each work item's record is persisted as it finishes, a stop ends the cycle after the item in flight (and an interrupted cycle never reconciles closures), and a shutdown hands back the retry budget of dispatches it abandoned | [spec](../specs/issue-159/), [poll](../cli/commands/poll.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/159) |
 | issue-156 | Process runner removed; tmux is the only runner (2026-08-05): dispatch always pastes into a tmux-hosted session, the `cli`-under-process interaction warning went with the runner choice, and the tmux-hosting requirement is unconditional | [spec](../specs/issue-156/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/156) |
 | issue-142 | `routing` promoted out from under `webhooks.ghWebhook` to a top-level key: the block was never the receiver's — the poller reads it verbatim for dispatch and `the-loop sessions` reads it again — so its scope is now legible from the config's shape rather than from a comment. A relocation only: same options, same defaults, same behaviour, with the cross-command import replaced by one shared accessor and the old path refused rather than ignored (schema `0.4.0`) | [spec](../specs/issue-142/), [decision-053](../decisions/decision-053.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/142) |

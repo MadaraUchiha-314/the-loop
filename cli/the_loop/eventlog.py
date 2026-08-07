@@ -149,21 +149,28 @@ EVENT_TYPES: Dict[str, str] = {
         "A work item ↔ harness session link was recorded in the registry "
         "(work_item, harness, harness_session_id, cwd)."
     ),
-    "session.linked": (
-        "A work item's events were durably bound to another work item's session "
-        "(work_item: the session's own ref; linked_ref: the bound ref, in "
-        "practice a PR; previous: the target this binding replaced, when it "
-        "replaced one) — issue-172. Emitted only when the binding actually "
-        "changes, so an unchanged one is silent."
+    "session.pr_linked": (
+        "A pull request was durably recorded as delivering a work item "
+        "(work_item, pull_request) — issue-172. Written when the routing "
+        "decision is made, so which session owns the PR's events stops being "
+        "recomputed from `gh`. Emitted only when the PR is newly listed."
     ),
-    "session.unlinked": (
-        "A durable session binding was removed (work_item: the bound ref) — "
-        "`sessions reset`, the only thing that removes one."
+    "session.pr_spawned": (
+        "A recorded pull request got its own tmux session and harness "
+        "conversation (work_item, pull_request, harness, harness_session_id, "
+        "tmux_target) — `routing.tmux.sessionPerPr`, on by default. The work "
+        "item's own session is untouched; this is an additional endpoint."
+    ),
+    "session.pr_closed": (
+        "A pull request's endpoint was closed while its work item's session "
+        "kept running (work_item, pull_request) — a work item may be delivered "
+        "by several PRs, so one merging ends only that conversation "
+        "(issue-101, issue-172)."
     ),
     "session.link_failed": (
-        "Recording a session binding failed (work_item, linked_ref, error). "
-        "Best-effort: the event was still dispatched, and routing falls back to "
-        "deriving the linkage as it did before issue-172."
+        "Recording a pull request against its work item failed (work_item, "
+        "linked_ref, error). Best-effort: the event was still dispatched, and "
+        "routing falls back to deriving the linkage as it did before issue-172."
     ),
     "session.spawned": (
         "A new harness session was spawned for a work item — this is the "

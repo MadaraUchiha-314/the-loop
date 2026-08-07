@@ -350,6 +350,11 @@
               "minimum": 0,
               "default": 2,
               "description": "How long a resume-on-respawn waits before checking that the harness is still running. `tmux new-session -d` succeeds as soon as the pane forks, while a harness that cannot resume (e.g. `claude --resume <unknown-id>`) exits within a fraction of a second \u2014 without this probe such a respawn would report success forever while events went nowhere. 0 checks immediately without waiting."
+            },
+            "sessionPerPr": {
+              "type": "boolean",
+              "default": true,
+              "description": "Give each pull request delivering a work item its OWN tmux session and harness conversation (issue-172). A work item with two PRs then has three sessions: its own (which receives issue events) and one per PR, each recorded on the work item's single session record and spawned lazily by the first event that needs it. A PR closing ends only that PR's session; the work item's session keeps running until the item itself ends. false delivers every PR's events into the work item's single session \u2014 the pre-issue-172 behaviour."
             }
           }
         },

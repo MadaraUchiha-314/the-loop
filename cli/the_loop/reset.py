@@ -1,8 +1,8 @@
 """Forget everything the-loop's CLI knows about a work item (issue-137).
 
-The CLI remembers a work item in five places, and every one of them survives an
-upgrade: the session record (the harness conversation and where it runs), the
-session **binding** (issue-172 — which item's session owns this PR's events), the
+The CLI remembers a work item in four places, and every one of them survives an
+upgrade: the session record (the harness conversation and where it runs, plus —
+since issue-172 — every pull request delivering it and their own sessions), the
 ``control`` section (what an authorized user last armed), the ``poll`` section
 (which comments have already been seen) and the workspace checkout. That memory
 is the point — it is what makes a ``stop`` durable and what stops a redelivery
@@ -23,11 +23,10 @@ had: deleting a session record. Order matters and is not incidental:
 
 1. close the live session, so no harness is left running against records that
    have gone;
-2. delete the session record, so a crash mid-reset leaves an item with no
-   session rather than an *armed* item whose session the registry forgot;
-3. remove the bindings in both directions, once the session they pointed at is
-   gone;
-4. clear ``control`` (which disarms it), then ``poll`` (which makes the thread
+2. delete the session record — and with it every pull-request endpoint inside
+   it — so a crash mid-reset leaves an item with no session rather than an
+   *armed* item whose session the registry forgot;
+3. clear ``control`` (which disarms it), then ``poll`` (which makes the thread
    first-sight again).
 
 Every step is wrapped: an unwritable record lands in :attr:`ResetOutcome.errors`
@@ -51,7 +50,6 @@ logger = logging.getLogger("the-loop.reset")
 
 __all__ = [
     "CONTROL",
-    "LINK",
     "PIECES",
     "POLL",
     "SESSION",
@@ -61,14 +59,15 @@ __all__ = [
     "work_items_with_state",
 ]
 
-#: The three pieces that are not portable sections, named so the report and the
+#: The two pieces that are not portable sections, named so the report and the
 #: event log speak the same vocabulary as ``docs/cli/state.md``.
 WORKSPACE = "workspace"
 SESSION = "session"
-LINK = "link"
 
-#: Everything a reset can remove, in removal order.
-PIECES: Tuple[str, ...] = (WORKSPACE, SESSION, LINK, CONTROL, POLL)
+#: Everything a reset can remove, in removal order. A work item's pull-request
+#: endpoints need no piece of their own (issue-172): they live *inside* the
+#: session record, so deleting it takes them with it.
+PIECES: Tuple[str, ...] = (WORKSPACE, SESSION, CONTROL, POLL)
 
 #: Ends a live session and reports whether a workspace checkout went with it.
 #: ``Dispatcher.close_session`` is the production implementation.
@@ -154,24 +153,6 @@ def reset_work_item(
             except OSError as exc:
                 errors.append(f"could not remove the session record: {exc}")
 
-    # Bindings, both directions (issue-172): the item's own — this work item is a
-    # PR whose events belonged to another item's session — and every binding
-    # naming it as the owner. Not tied to `close`, which leaves them alone
-    # precisely so a reopened work item keeps them; a reset is the verb that says
-    # "forget everything this machine holds about this item", and a binding is
-    # part of that everything.
-    try:
-        bound = registry.resolve_link(ref) is not None
-        inbound = registry.links_to(ref)
-        if bound or inbound:
-            if not dry_run:
-                registry.unlink(ref)
-                for link in inbound:
-                    registry.unlink(link.source)
-            removed.append(LINK)
-    except OSError as exc:
-        errors.append(f"could not remove the session binding: {exc}")
-
     for section in (CONTROL, POLL):
         try:
             if store.section(ref, section) is None:
@@ -215,12 +196,15 @@ def work_items_with_state(
 ) -> List[WorkItemRef]:
     """Every work item this machine holds any state for, sorted by ref.
 
-    The union of what the stores themselves recognise as records — the registry
-    matches only the files it wrote (session records and, since issue-172,
-    bindings), and the work-item store skips the index, the atomic writer's
-    leftovers and anything naming no work item. A stranger's file in a shared
-    state directory is therefore not enumerated, and so is never removed by
-    ``--all``.
+    The union of what the two stores themselves recognise as records — the
+    registry matches only the files it wrote, and the work-item store skips the
+    index, the atomic writer's leftovers and anything naming no work item. A
+    stranger's file in a shared state directory is therefore not enumerated, and
+    so is never removed by ``--all``.
+
+    Pull requests are deliberately **not** enumerated: they are endpoints inside
+    their work item's record, not work items this machine holds state for, and
+    listing one would offer ``--all`` a reset that removes half a record.
 
     A record holding **no** section is not state: a ``sealed`` tombstone marks a
     work item the-loop has already ended (it exists only so a pre-issue-128 tree
@@ -230,13 +214,6 @@ def work_items_with_state(
     found: Dict[str, WorkItemRef] = {}
     for session in registry.list_sessions():
         found.setdefault(session.work_item.ref, session.work_item)
-    # A PR whose only state is a binding is still state this machine holds
-    # (issue-172), so `--all` reaches it. Only the *source* is enumerated: the
-    # target already appears above if it has a session, and enumerating it from
-    # here would make `--all` claim a work item whose sole trace is someone
-    # else's file.
-    for link in registry.list_links():
-        found.setdefault(link.source.ref, link.source)
     for ref in store.refs():
         if ref in found:
             continue

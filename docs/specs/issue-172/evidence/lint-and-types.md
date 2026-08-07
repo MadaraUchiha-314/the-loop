@@ -1,7 +1,7 @@
 # Evidence — lint, formatting, types, markdown
 
 > Work item: [issue #172](https://github.com/MadaraUchiha-314/the-loop/issues/172) ·
-> captured 2026-08-07.
+> captured 2026-08-07, re-run after the owner-review rebuild to the endpoint model.
 >
 > The same four tools CI runs, invoked through the repository's own `Makefile` targets
 > (`make lint`, `make format-check`, `make typecheck`) — local and CI parity is the point
@@ -32,11 +32,10 @@ $ uv run pyright cli
 0 errors, 0 warnings, 0 informations
 ```
 
-Pyright's first run over the new tests flagged seven `reportOptionalMemberAccess` errors —
-`resolve_link()` returns `Optional[WorkItemRef]`, and the tests were reading `.ref` off it
-directly. Fixed at the assertion rather than by silencing the rule: the unit tests go through
-a `bound_ref()` helper that asserts the binding is present and returns its `.ref`, so a
-missing binding now fails with *"no binding recorded for …"* instead of an `AttributeError`.
+Pyright's first run over the new tests flagged `reportOptionalMemberAccess` errors —
+the registry's resolvers return `Optional[Session]`, and early drafts read attributes off
+them directly. Fixed at the assertions (explicit `is not None` narrowing), not by
+silencing the rule.
 
 ## `markdownlint` — documentation
 
@@ -63,6 +62,8 @@ VALID   .the-loop/cli-config.yaml
 VALID   skills/the-loop/templates/cli-config.yaml
 ```
 
-No schema changed in this work item — the binding introduces no configuration key. This runs
-because `make check` runs it, and a clean result is the assertion that nothing was added that
-should have been declared.
+One schema entry was added in this work item — `routing.tmux.sessionPerPr`
+(`.the-loop/cli-config.schema.json`), documented in
+`docs/config/cli/routing-options.md`; the docs-parity tests (P3/P4) pin the two against
+each other, and this validation run is the assertion the schema still parses and every
+shipped config still conforms.

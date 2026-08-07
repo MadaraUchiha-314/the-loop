@@ -652,7 +652,7 @@ class Poller:
         # directly would call it session-less — so a running item would be
         # treated as first sight, its whole thread baselined away, and a second
         # session armed against the PR.
-        has_session = any(self.registry.session_for(wi) is not None for wi in refs)
+        has_session = any(self.registry.record_owning(wi) is not None for wi in refs)
 
         # First sight: baseline the existing thread (the spawned session reads it
         # itself, matching webhook "only events going forward"), arm the spawn,

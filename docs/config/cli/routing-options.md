@@ -373,6 +373,27 @@ the scrollback survives the process.
 
 How long the harness gets to exit after SIGTERM before SIGKILL. `0` escalates immediately.
 
+### `tmux.sessionPerPr`
+
+- **Type:** `boolean`
+- **Default:** `true`
+
+Give each pull request delivering a work item its **own** tmux session and harness
+conversation (issue-172). A work item with two PRs then has three sessions: its own, which
+receives the issue's events, and one per PR — all recorded on the work item's single
+session record (`sessions list --format json` shows them under `pullRequests`), each
+spawned lazily by the first event that needs it and announced on the work item like any
+other spawn.
+
+A PR closing (merged or not) ends only **that PR's** session, through the same
+`keepSessionOnClose`/`killHarnessOnClose` rules as any close; the work item's session
+keeps running until the item itself ends. This is issue-101's several-PRs rule expressed
+in the model rather than special-cased.
+
+`false` delivers every PR's events into the work item's single session — the
+pre-issue-172 behaviour. Either way, *which* work item owns a PR's events is read from
+the session record, never re-derived from GitHub on each event.
+
 ### `webTerminal.enabled`
 
 - **Type:** `boolean`

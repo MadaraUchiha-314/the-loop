@@ -7,242 +7,166 @@ approvedBy: []
 overrides: {}
 ---
 
-# Design: a link record beside the session record
+# Design: the work item's record owns its pull requests, and each PR is a session
 
-> Phase 2 of 4. Derived from the locked [`bugfix.md`](bugfix.md). Ticket:
+> Phase 2 of 4. Derived from the locked [`bugfix.md`](bugfix.md), revised in owner review
+> on [PR #173](https://github.com/MadaraUchiha-314/the-loop/pull/173). Ticket:
 > [issue #172](https://github.com/MadaraUchiha-314/the-loop/issues/172).
 
 ## Architecture
 
-**One new record type, one new resolution step, and one new write on a path that already
-decided the answer.** No new component, no new configuration key, no schema change, no
-change to how linkage is *derived*.
-
-The registry gains a second kind of file. Session records stay exactly what they are — one
-per work item that has a session. Link records sit beside them — one per ref that is
-*delivered by* another ref's session:
+**One record per work item, carrying everything about its sessions.** The record holds the
+work item's own session and a `pullRequests[]` list — one entry per PR delivering it, each
+an **endpoint**: its own tmux session and its own harness conversation
+(`routing.tmux.sessionPerPr`, default on). The list is the routing decision written down,
+so which work item owns a PR's events stops being a value recomputed from `gh` per event.
 
 ```mermaid
 flowchart LR
-  subgraph disk["&lt;state.root&gt;/local/"]
-    SR["github-octo-repo-5.json<br/><i>session record</i><br/>harness, cwd, tmuxTarget"]
-    LR["github-octo-repo-7.link.json<br/><i>link record</i><br/>sessionRef → …#5"]
+  subgraph rec["local/github-octo-repo-15.json — ONE file"]
+    WI["work item #15's session<br/>tmux: loop-…-15"]
+    PR16["pullRequests[0] — PR #16<br/>tmux: loop-…-16, own conversation"]
+    PR17["pullRequests[1] — PR #17<br/>tmux: loop-…-17, own conversation"]
   end
-  EV["event on PR #7"] --> RES
-  RES{"resolve #7"} -->|"1. own record"| MISS["none"]
-  MISS -->|"2. link record"| LR
-  LR -->|"single hop"| SR
-  SR --> LADDER["the recovery ladder,<br/>unchanged: live tmux →<br/>respawn+resume → fresh"]
+  EI["issue #15 event"] --> WI
+  E16["PR #16 event<br/>(linkage present or not)"] --> PR16
+  E17["PR #17 event"] --> PR17
+  PR16 -. "closed with its PR;<br/>late events fall back" .-> WI
 ```
 
-The resolution is two reads of two known paths. Nothing scans, nothing is derived, nothing
-asks GitHub.
+### The choice, and how it changed
 
-### The choice: a link record, not a `linkedRefs` field
+The first version of this design chose a **separate link file per PR** and was rejected in
+owner review; the reversal and its reasoning are the decision record's job —
+[decision-064](../../decisions/decision-064.md) § How this decision changed. The load-bearing
+points for the code:
 
-The ticket offers two shapes and leaves the choice open. **A separate link record is taken**;
-the reasoning is recorded in [decision-064](../../decisions/decision-064.md), and the short
-form is:
+- **One file per work item** answers "everything about this work item's sessions" in one
+  read, which the link files never could.
+- The reverse lookup ("which record owns PR #16?") is a scan — but only for a ref with
+  **no record of its own**, over the live work items on one machine. Nothing that grows
+  with history.
+- The same-record write race between the two ingresses is real but bounded: the only
+  writer of a PR entry is an event *for that PR*, and `os.replace` means the worst
+  same-PR race writes the same entry twice.
 
-| Option | Verdict | Why |
-|---|---|---|
-| A — `linkedRefs: []` on the **issue's** session record | rejected | Lookup by PR becomes a reverse scan: to answer "which session owns PR #7?" the dispatcher must open every session file. It also puts the binding inside a record two ingresses already read-modify-write (`touch` fires on every delivered event), so a poll cycle and a webhook delivery racing on the same work item can drop a binding that was just added. |
-| B — an alias file under the PR's own slug, `github-octo-repo-7.json` | rejected | It collides with the session-record namespace. A PR that later gets a session **of its own** (the supported case for non-GitHub ticketing — `webhook-triggers`, "the auto-execute label works on PRs directly") needs that exact filename, and `list_sessions` would have to tell two record types apart inside one name. |
-| **C — a link record under a distinct suffix, `github-octo-repo-7.link.json`** | **taken** | Same file-per-key, atomic-write shape the registry already uses. The only writer of a given PR's file is a binding *for that PR*, so two ingresses working different work items never contend, and the worst a same-PR race can produce is the same record written twice — `os.replace` guarantees a reader never sees a partial one. The suffix is what keeps it out of the session-record namespace — see below. |
+### Record and endpoint: one type
 
-**Why the suffix is load-bearing.** `_REGISTRY_FILE_RE` is `[A-Za-z0-9._-]+-\d+\.json` — the
-deliberate superset of what `_write` produces, so that a session record can never fail it
-(issue-111). `github-octo-repo-7.link.json` does not match: it ends in `.link.json`, not
-`-<number>.json`. So `list_sessions` ignores link records without being taught anything, the
-"skipping unreadable registry file" warning never fires on one, and `reset --all`'s
-enumeration is unaffected until it is *deliberately* extended (R4.3).
+A PR entry is a `Session` whose `work_item` is the PR's ref. One type for both roles is
+what lets deliver, respawn, resume and close operate on either without knowing which they
+have. Invariants, enforced structurally:
 
-### Components and interfaces
+- **One level deep.** Only a record carries `pull_requests`; a nested entry's own list is
+  dropped on read, so a hand-edited record cannot build a tree for any resolver to walk.
+- **Per-entry degradation.** An entry that does not parse is skipped
+  (`from_dict`, same posture as `_read`'s unreadable-file skip): a hand-edited PR entry
+  reads as "that PR is unrecorded" and never takes the work item's own session down. Both
+  ends re-parse through `WorkItemRef.parse`, so nothing unparsed reaches a lookup.
+- **A work item does not deliver itself** — `link_pull_request(owner, owner)` is refused
+  in the store, so no caller has to remember to check.
 
-Four files change. Two are the mechanism, one is where it is used, one is the reset path.
+## Components and interfaces
 
-**`cli/the_loop/sessions/registry.py`** — the record and its five verbs.
+**`cli/the_loop/sessions/registry.py`** — the endpoint API.
 
 ```python
-@dataclass
-class SessionLink:
-    """A durable binding from one work-item ref to the ref whose session owns it."""
-
-    source: WorkItemRef          # the PR
-    session_ref: WorkItemRef     # the work item whose session receives its events
-    created_at: str = ""
-    updated_at: str = ""
+class Session:
+    pull_requests: List["Session"]            # empty on an endpoint
+    def endpoint_for(self, ref) -> Optional["Session"]   # itself, or a PR entry
+    def owns(self, ref) -> bool
 
 class SessionRegistry:
-    def _link_path_for(self, item: WorkItemRef) -> Path:   # <slug>.link.json
-    def link(self, source, target) -> Optional[SessionLink]:
-        """Bind source → target. Idempotent: an unchanged binding is not rewritten."""
-    def resolve_link(self, source) -> Optional[WorkItemRef]:
-        """The bound target, or None. Single hop — never follows the target's own link."""
-    def session_for(self, work_item) -> Optional[Session]:
-        """The live session that owns this ref's events — record, then binding."""
-    def unlink(self, source) -> bool:
-    def links_to(self, target) -> List[SessionLink]:       # inbound, for reset
-    def list_links(self) -> List[SessionLink]:
+    def record_owning(self, ref) -> Optional[Session]:
+        """The live record serving ref — its own, else a scan of live records."""
+    def session_for(self, ref, session_per_pr=True) -> Optional[Session]:
+        """The ENDPOINT that owns ref's events; the record itself when collapsed."""
+    def link_pull_request(self, owner, pr) -> Optional[Session]:
+        """Record pr on owner's record; None when already listed / self / no record."""
+    def save_endpoint(self, owner, endpoint) -> None
+    def close_endpoint(self, owner, ref) -> Optional[Session]:
+        """Close ONE PR's endpoint; the record stays live (issue-101 in the model)."""
+    def touch(self, work_item, delivery_id=None, endpoint_ref=None) -> None
+        # dedup is PER ENDPOINT: an id delivered into a PR's conversation is not
+        # already-processed for the work item's
 ```
 
-`link()` refuses a self-binding (R1.5) and returns `None` when the record already names the
-same target, which is what makes R1.3 a property of the store rather than of every caller.
+Policy stays out of the store: `session_for` is *told* whether per-PR sessions are wanted;
+it never reads configuration.
 
-**`session_for` lives on the registry, not the dispatcher.** It is the question *both*
-ingresses ask, and putting it anywhere else means the poller reaching through the dispatcher
-for something the registry knows. There are four callers, and the fourth and fifth are the
-reason this was not left as a private dispatcher helper:
+**`cli/the_loop/webhook/router.py`** — `pr_work_item(event, payload)`, composed from the
+same helpers `extract_work_items` uses so the ref a PR is recorded under is byte-identical
+to the one routing emits last.
 
-| Caller | Why it resolves through the binding |
+**`cli/the_loop/webhook/dispatcher.py`** — matching, endpoint selection, lazy spawn, close.
+
+| Piece | Behaviour |
 |---|---|
-| `Dispatcher.handle`, the match loop | the delivery itself (R2.1) |
-| `Dispatcher._live_session_for` | a control command commented on a PR (R2.7) |
-| `Dispatcher.delivery_status` | poll-path retry accounting. The delivery id is recorded on the **bound** session's record, and the refs the poller asks about are the PR's — so asking the registry directly would report a *successful* delivery as `unhandled`, and the poller would re-forward the same comment until its retry budget was spent |
-| `Poller._process_item`, `has_session` | first-sight detection. A PR whose linkage is no longer reported has only its own ref, so a direct lookup calls it session-less — which **baselines the entire existing thread as read** and arms a spawn against the PR, past a session that is still running. The more damaging half of the same defect |
+| `handle()` match loop | matches by **record** (`record_owning`), so an event naming an issue and its PR matches once; `_record_pr_binding` then records the PR on each matched record (never on a close event, never when the PR is the record itself; an `OSError` logs `session.link_failed` and the dispatch proceeds) |
+| `_endpoint_for(record, routed)` | the PR's live endpoint when the event carries a PR and `sessionPerPr` is on; the record otherwise. Never `None` — a missing or closed endpoint falls back to the record, so an event is never lost to endpoint bookkeeping |
+| `_spawn_endpoint` | a recorded PR's first event spawns its session — lazily, so a merely-linked PR costs nothing until something happens on it. Spawn failure falls back to delivering into the record's session. Emits `session.pr_spawned`; announces like any spawn. **Deliberately no graph entry** — see § The two loops |
+| `_dispatch_one` | delivers into the endpoint; per-endpoint dedup; `touch(..., endpoint_ref=...)`; respawn of a dead endpoint goes through `save_endpoint` (keyed by the owning record) so respawning a PR's conversation never mints a second record |
+| close branch | the closed object being a **recorded PR** of a still-open record → `close_endpoint` + tmux teardown for that endpoint, `session.pr_closed`, record kept (`session.kept_open`). The record's own close is unchanged |
+| `_live_session_for` / `delivery_status` / poller `has_session` | resolve through `record_owning` / `session_for`, so control commands, poll-path retry accounting and first-sight detection all see a recorded PR as owned (the two poll-path cases were regressions caught in self-review — see the execution log) |
 
-**Deliberately *not* resolved through bindings:** `sessions pause|resume|stop|attach` and
-`sessions reset` (`core/sessions.py`, `commands/sessions_cmd.py`, `reset.py`). Those name a
-work item explicitly, and silently acting on a *different* one — "I asked to stop #16 and you
-stopped #15" — is worse than making the operator name the item they meant.
-`Dispatcher._dispatch_one` is not resolved either: its key is already a resolved session's
-own ref.
+**Deliberately *not* resolved through the PR list:** `sessions pause|resume|stop|attach`
+and `sessions reset` name a work item explicitly, and acting on a different one than the
+operator named is worse than making them name the one they meant.
 
-**`cli/the_loop/webhook/router.py`** — one new pure function, so the dispatcher does not
-re-implement repo/host parsing:
+### Data model
 
-```python
-def pr_work_item(event: str, payload: dict) -> Optional[WorkItemRef]:
-    """The PR's **own** ref for an event that concerns one, else None."""
-```
-
-It composes the three private helpers the module already has (`_repo_parts`, `_host`,
-`_pr_entity`), so the ref it returns is byte-identical to the one `extract_work_items` puts
-last — the two cannot drift.
-
-**`cli/the_loop/webhook/dispatcher.py`** — the resolver, the two write points, and the
-control path.
-
-```python
-def _record_pr_binding(self, routed: RoutedEvent, target: WorkItemRef) -> None:
-    """Persist PR → target when this event carries a PR that is not the target."""
-```
-
-Its three read sites swap `find_by_work_item` for `registry.session_for` (table above).
-`_record_pr_binding` is called from two places, which are the two moments a routing decision
-is actually made:
-
-| Call site | When | Requirement |
-|---|---|---|
-| `handle()`, per matched session, before enqueue | an event was dispatched into an existing session | R1.1 |
-| `_spawn_tmux()`, after `registry.register` succeeds | a session was spawned for the linked issue | R1.2 |
-
-The spawn site is *after* registration on purpose: a binding to a session that failed to
-spawn is a binding to nothing. Neither site is reached by a **close** event: `handle()`
-returns from the close branch before the match loop's write, so a merging PR does not record
-a binding on its way out.
-
-**`cli/the_loop/poller/poller.py`** — one call site, `has_session`, per the table above.
-
-**`cli/the_loop/reset.py`** — a fifth piece, `LINK`, removed between the session record and
-the control section:
-
-```python
-PIECES = (WORKSPACE, SESSION, LINK, CONTROL, POLL)
-```
-
-`reset_work_item` removes the item's own link record and every link record naming it as
-target; `work_items_with_state` adds link **sources** to its union, so `reset --all` reaches
-a PR whose only state is a binding.
-
-### Data models
-
-One file, five fields, all of them derived from values the router already validated:
-
-```json
-{
-  "ref": "github:octo/repo#7",
-  "url": "https://github.com/octo/repo/issues/7",
-  "sessionRef": "github:octo/repo#5",
-  "createdAt": "2026-08-07T16:40:11Z",
-  "updatedAt": "2026-08-07T16:40:11Z"
-}
-```
-
-| Field | Meaning |
-|---|---|
-| `ref` | the bound work item — the PR. Also the file name's source, via `WorkItemRef.slug` |
-| `url` | the same fact as a link, by the same derive-never-guess rule the portable record uses (absent when none can be derived) |
-| `sessionRef` | the work item whose session receives this ref's events |
-| `createdAt` / `updatedAt` | when the binding was first recorded, and when it last changed target |
-
-`createdAt` is preserved across a re-point, so the record answers *"how long has this PR been
-bound, and when did that last change?"* — which is the question an operator debugging a
-mis-routed event actually has.
-
-**Classification.** `GENERATED_PATHS` gains one entry, `attr="local_dir"`,
-`default="<root>/local/<slug>.link.json"`, `portable=False`. It shares `local_dir` with the
-session record, which the portability test permits (S2 accepts any default sitting under its
-`attr`), and it is local for the same reason: it names a session handle on this machine, and
-copied elsewhere it would point the new machine's routing at a session that is not there.
+See [`docs/cli/state.md`](../../cli/state.md) § Session record for the on-disk shape and
+the operator-facing lifecycle. No new generated path: the PR entries live inside the
+existing `local/<slug>.json`, so `GENERATED_PATHS` and the `.gitignore` recipe are
+untouched — the session record's `holds` text now names them.
 
 ### Error handling
 
-Every failure degrades to the pre-fix behaviour. That is the whole error policy, and it is
-stated as a table because there are four independent failure points:
+Every failure degrades to a behaviour the-loop already had, never past it:
 
 | Failure | Behaviour |
 |---|---|
-| the link record cannot be written (disk full, permissions) | logged at `warning`, `session.link_failed` emitted, **the dispatch proceeds** — a delivery is never lost because bookkeeping failed |
-| the link record cannot be read or does not parse | treated as "no binding", logged at `debug`; derivation alone decides, exactly as today |
-| `sessionRef` names a work item with no live session | `find_by_work_item` returns `None` → falls through to the spawn policy, exactly as today |
-| `sessionRef` is itself a bound ref | not followed (single hop, R2.3); resolution ends there |
+| recording a PR fails (disk) | `session.link_failed`, dispatch proceeds; routing for that PR depends on derivation, as before issue-172 |
+| a `pullRequests` entry is unreadable | skipped per entry; that PR is unrecorded, the record lives |
+| a PR endpoint cannot spawn | the event is delivered into the work item's session |
+| two records claim one PR (re-link) | both matched (additive resolution); their endpoints contend for the PR's one `loop-<slug>` tmux name, the loser falls back to its record's session — loud, bounded (decision-064 § Known edge) |
 
-Nothing in this change can raise into a dispatch path. `resolve_link` catches
-`OSError`/`ValueError` the way `_read` already does; `link` catches on write.
+## The two loops (definition — built as follow-up)
 
-### Testing strategy
+The owner's review sets the direction this model serves: the **outer loop** is the work
+item's process graph — the PDLC the-loop already executes, keyed to the work item and its
+spec directory. The **inner loop** is a PR's own smaller graph, in service of delivering
+the work item: a subset of nodes (implementation, testing, review — not requirements
+definition, which is the outer loop's), running in the PR's endpoint, reporting its
+outcome to the outer loop rather than advancing it directly.
 
-The reproduction in the ticket is a *sequence* — link present, then link absent — so the
-proof has to be an integration test that drives two events through one dispatcher and asserts
-on what the tmux runner was asked to do. That is `test_webhook_routing_integration.py`'s
-existing shape (`FakeTmux.delivers` / `.spawns`), and it is where the regression test lives.
-Unit tests cover the store's five verbs and the resolver's ordering; the fail-closed branches
-get their own cases. Full matrix in [`testing-plan.md`](testing-plan.md).
+What this change contributes, and deliberately stops at:
+
+- **The substrate.** An inner loop needs a per-PR conversation to run in; a
+  `pullRequests[]` endpoint is exactly that.
+- **The boundary.** A PR endpoint has **no** graph in this change: `_spawn_endpoint` does
+  not call `graphlink.on_spawn`, and endpoint deliveries do not advance the work item's
+  graph on the PR's behalf. This is what keeps a PR from opening a second graph on the
+  work item's spec directory — the one thing the inner loop must never do by accident.
+- **The follow-up.** Defining the inner-loop graph — its nodes, its artifacts, how its
+  completion reports into the outer loop's verification — is its own work item with its
+  own spec chain; it changes the shipped process graph, which is sensitive-path territory.
 
 ## Security design
 
-The requirements' threat model names five boundaries. Here is how each is enforced, in the
-code rather than in prose:
-
-| Boundary from `bugfix.md` | Enforcement |
+| Boundary | Enforcement |
 |---|---|
-| **Record content is never payload text** | Both ends are `WorkItemRef` objects the router constructed; `to_dict` writes `.ref` (a rendered form of validated fields) and `from_dict` re-parses through `WorkItemRef.parse`, which rejects anything that is not `<provider>:[<host>/]<owner>/<repo>#<number>`. A record hand-edited to hold a path or a shell fragment fails to parse and is treated as absent. |
-| **The file name cannot escape the registry directory** | The name comes from `WorkItemRef.slug`, whose final step is `re.sub(r"[^A-Za-z0-9._-]+", "-", raw)` — no `/`, no `..`, no absolute path can survive it. This is the same sanitiser every session record's name goes through. |
-| **Only the dispatcher creates bindings** | `_record_pr_binding` is called from `handle()` and `_spawn_tmux()`, both downstream of the self-comment marker check, the `authorizedUsers` guard, the auto-execute label and `requireStartCommand`. A binding can only name a session an event **already routed into** under those guards. |
-| **No chain, no cycle** | `resolve_link` performs exactly one lookup and never recurses; `link` refuses `source == target`. There is no traversal to bound. |
-| **Local, not portable** | Classified `portable=False` (R4.2), so it falls inside the existing `.the-loop/local/` ignore rule and cannot arrive by pull request. The "a tracked control section is an input" analysis in `docs/cli/state.md` does not extend to it. |
+| **Record content is never payload text** | Both ends of every PR entry are `WorkItemRef`s the router constructed, re-parsed on read; an entry hand-edited into a path or shell fragment fails `WorkItemRef.parse` and is skipped. Tmux names derive from `WorkItemRef.slug` (sanitised, no separators). |
+| **Only the dispatcher records PRs** | `_record_pr_binding` runs downstream of the self-comment marker, `authorizedUsers`, the label and `requireStartCommand` — a PR can only be recorded against a record an event already routed into under those guards. |
+| **No tree, no cycle** | One-level nesting enforced on read; self-recording refused in the store. |
+| **More processes, same trust** | `sessionPerPr` multiplies harness processes (one per active PR), each spawned by the same guarded path, in the same checkout, with the same trust pre-flight as the work item's own session. No new privilege; the cost is operator-visible (`sessions list`, announcements). |
+| **Fail-closed** | A missing/unreadable entry is "unrecorded" (pre-issue-172 behaviour for that PR); an unspawnable endpoint delivers to the record. Nothing new returns an event to nowhere. |
 
-**Fail-closed, restated for the one case that matters:** a *missing* binding is safe (today's
-behaviour). A *present* binding can only widen delivery to a session the same guards already
-admitted. There is no state of this record that admits an event the un-fixed the-loop would
-have refused.
+## Testing strategy
 
-## Alternatives considered
-
-- **Cache the derivation instead of the decision.** Store `closingIssuesReferences` per PR
-  and reuse it when `gh` fails. Rejected: it caches the *input*, so it still has to be
-  invalidated, and it answers nothing when the panel link is deliberately removed — the
-  ticket's own reproduction. The decision is the stable fact; the input is not.
-- **Have the poller pass its linkage through to the registry.** Rejected: it fixes one
-  ingress. The webhook path derives linkage from the PR body and head branch, and has the
-  same failure (a body edit). The binding belongs where both ingresses meet, which is
-  dispatch.
-- **Prefer the binding over derivation outright (R2.5 inverted).** Rejected: it would make a
-  deliberate re-link unactionable without a manual `sessions reset`, and it trades a loud
-  failure (two sessions see one comment) for a silent one (the new issue's session never
-  hears about its own PR).
-- **Reap bindings when their target closes.** Rejected: a closed session is reopenable and
-  respawnable, and the binding remains true. Removing it on close would lose the binding
-  across exactly the close/reopen cycle it exists to survive. Removal is `sessions reset`'s
-  job (R4.4).
+The proof is still a *sequence* — linkage present, then gone — now asserting the PR's
+recorded endpoint receives the second event. Integration scenarios drive real signed
+POSTs through a live receiver with `FakeTmux` as the seam; unit tests pin the store's
+invariants (idempotence, one-level nesting, per-entry degradation, per-endpoint dedup,
+collapsed mode); the close scenario asserts the endpoint ends and the record survives.
+All seven regression tests fail against a resolver restored to pre-issue-172 behaviour.
+Full matrix in [`testing-plan.md`](testing-plan.md).

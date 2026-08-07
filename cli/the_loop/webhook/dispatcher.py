@@ -173,6 +173,14 @@ class TmuxConfig:
     ``kill_harness_on_close`` (issue-94) is what makes a *retained* session a
     record rather than a live agent: the harness process is ended when the work
     item closes, leaving a dead — readable, un-typeable — pane behind.
+
+    ``session_per_pr`` (issue-172, PR #173 review) decides how many
+    conversations one work item gets: on (**the default**) each pull request
+    delivering it works in its own tmux session with its own harness
+    conversation, so a work item with two PRs has three sessions — its own, which
+    receives issue events, and one per PR. Off, every PR's events are delivered
+    into the work item's single session, which is what the-loop did before
+    issue-172.
     """
 
     keep_session_on_close: bool = True
@@ -181,6 +189,7 @@ class TmuxConfig:
     resume_probe_seconds: float = 2.0
     kill_harness_on_close: bool = True
     harness_kill_grace_seconds: float = 5.0
+    session_per_pr: bool = True
 
     @classmethod
     def from_mapping(cls, data: dict) -> "TmuxConfig":
@@ -192,6 +201,7 @@ class TmuxConfig:
             resume_probe_seconds=float(data.get("resumeProbeSeconds", 2.0)),
             kill_harness_on_close=bool(data.get("killHarnessOnClose", True)),
             harness_kill_grace_seconds=float(data.get("harnessKillGraceSeconds", 5.0)),
+            session_per_pr=bool(data.get("sessionPerPr", True)),
         )
 
 
@@ -640,9 +650,13 @@ class Dispatcher:
             self._apply_control(control.command, routed)
             return
 
+        # Matching is by **record** — the work item — not by endpoint (issue-172,
+        # PR #173 review). One record owns a work item and every PR delivering
+        # it, so an event naming both an issue and its PR matches once, and the
+        # endpoint that actually receives it is chosen at dispatch.
         matched = []
         for item in routed.work_items:
-            session = self.registry.session_for(item)
+            session = self.registry.record_owning(item)
             if session is not None and session.work_item.ref not in {
                 s.work_item.ref for s in matched
             }:
@@ -657,6 +671,17 @@ class Dispatcher:
             closing = _closing_refs(routed)
             for session in matched:
                 if session.work_item.ref not in closing:
+                    # The record stays live — but when the closed object is one
+                    # of ITS pull requests, that PR's endpoint ends with it
+                    # (issue-172): the conversation delivered its PR, and the
+                    # work item's own session carries on. issue-101's rule,
+                    # falling out of the model.
+                    for closed_ref in sorted(closing):
+                        endpoint = self.registry.close_endpoint(
+                            session.work_item, closed_ref
+                        )
+                        if endpoint is not None and endpoint.tmux_target:
+                            self._close_tmux(endpoint)
                     logger.info(
                         "%s (%s) is linked to %s, which is still open; leaving "
                         "its session active — a work item may be delivered by "
@@ -745,8 +770,27 @@ class Dispatcher:
 
     # -- durable PR → session bindings (issue-172) -------------------------------
 
+    def _endpoint_for(self, record: Session, routed: RoutedEvent) -> Session:
+        """The endpoint of ``record`` that should receive ``routed``.
+
+        The PR's own endpoint when the event carries a pull request and
+        ``sessionPerPr`` is on; the work item's own session otherwise — which is
+        every issue event, and every event at all when the toggle is off.
+
+        Never ``None``: an event whose PR has no endpoint yet (the record was
+        registered by hand, or the link write failed) falls back to the work
+        item's session rather than being dropped.
+        """
+        if not self.config.tmux.session_per_pr:
+            return record
+        pr = pr_work_item(routed.event, routed.payload)
+        if pr is None or pr.ref == record.work_item.ref:
+            return record
+        endpoint = record.endpoint_for(pr)
+        return endpoint if endpoint is not None and endpoint.is_live else record
+
     def _record_pr_binding(self, routed: RoutedEvent, target: WorkItemRef) -> None:
-        """Persist "this PR's events belong to ``target``'s session".
+        """Persist "this PR delivers ``target``'s work item".
 
         Called at the two moments a routing decision is actually made — an event
         delivered into an existing session, and a session spawned for a linked
@@ -754,15 +798,15 @@ class Dispatcher:
         the session, rather than re-derived from ``gh`` afterwards.
 
         Writes nothing when the event carries no pull request, or when the PR
-        *is* the target (a work item does not need a binding to itself). A write
-        failure is logged and swallowed: a delivery is never lost because a piece
-        of bookkeeping could not be written.
+        *is* the target (a work item does not deliver itself). A write failure is
+        logged and swallowed: a delivery is never lost because a piece of
+        bookkeeping could not be written.
         """
         pr = pr_work_item(routed.event, routed.payload)
         if pr is None or pr.ref == target.ref:
             return
         try:
-            self.registry.link(pr, target)
+            self.registry.link_pull_request(target, pr)
         except OSError as exc:
             logger.warning(
                 "could not record the session binding %s -> %s: %s; routing for "
@@ -789,9 +833,9 @@ class Dispatcher:
         actually running.
         """
         for item in routed.work_items:
-            session = self.registry.session_for(item)
-            if session is not None:
-                return session
+            record = self.registry.record_owning(item)
+            if record is not None:
+                return record
         return None
 
     def _apply_control(self, command: str, routed: RoutedEvent) -> None:
@@ -1163,8 +1207,24 @@ class Dispatcher:
                 verdict=(gate_report.outcome if gate_report else ""),
             ),
         )
+        # Which conversation receives it (issue-172). The record is the work
+        # item; the endpoint is the PR's own session when there is one and
+        # `sessionPerPr` is on. Everything below operates on the endpoint —
+        # `Session` is one type for both roles precisely so it can.
+        endpoint = self._endpoint_for(session, routed)
+        if endpoint is not session and not endpoint.tmux_target:
+            # A PR that has been recorded but never worked: its first event is
+            # what spawns its session, exactly as a work item's first event is.
+            return self._spawn_endpoint(session, endpoint, routed, prompt)
+        if routed.delivery_id and routed.delivery_id in endpoint.recent_deliveries:
+            logger.info(
+                "delivery %s already processed by %s; skipping",
+                routed.delivery_id,
+                endpoint.work_item.ref,
+            )
+            return True
         result = self.tmux.deliver(
-            session, prompt, timeout=self.config.dispatch_timeout_seconds
+            endpoint, prompt, timeout=self.config.dispatch_timeout_seconds
         )
         if not result.ok and result.session_missing:
             # The tmux session crashed/was killed — or the record predates
@@ -1174,7 +1234,11 @@ class Dispatcher:
             # redelivery that would hit the same missing session forever
             # (issue-80).
             return self._respawn_tmux(
-                session, routed, prompt, advance_after=gate_report is None
+                endpoint,
+                routed,
+                prompt,
+                advance_after=gate_report is None,
+                owner=session.work_item,
             )
         ok, error, verb = result.ok, result.error, "delivered into tmux session"
 
@@ -1183,12 +1247,19 @@ class Dispatcher:
             eventlog.emit(
                 "dispatch.succeeded",
                 work_item=key,
+                # Which conversation actually got it, when that is not the work
+                # item's own (issue-172).
+                endpoint=(endpoint.work_item.ref if endpoint is not session else None),
                 harness=session.harness,
                 via="tmux",
                 gh_event=routed.event,
                 delivery_id=routed.delivery_id or None,
             )
-            self.registry.touch(key, delivery_id=routed.delivery_id or None)
+            self.registry.touch(
+                key,
+                delivery_id=routed.delivery_id or None,
+                endpoint_ref=endpoint.work_item,
+            )
             # The session has the event; now let the graph see it too
             # (issue-113) — unless a human gate already consumed it first
             # (issue-148, D4), in which case advancing again would feed the
@@ -1388,12 +1459,138 @@ class Dispatcher:
         self.announcer.announce(session)
         return True
 
+    def _spawn_endpoint(
+        self,
+        record: Session,
+        endpoint: Session,
+        routed: RoutedEvent,
+        prompt: str,
+    ) -> bool:
+        """Give a recorded pull request its own tmux session (issue-172).
+
+        The PR is already known — ``_record_pr_binding`` listed it when its first
+        event routed — but has no conversation yet. This is where it gets one, on
+        the first event that actually needs it, so a PR that is merely *linked*
+        costs nothing until something happens on it.
+
+        Deliberately **not** a graph entry: the graph is keyed to the work item,
+        and the record entered it when its own session spawned. A PR opening a
+        second graph on the same spec directory is the one thing this must not
+        do.
+        """
+        adapter = self.adapters.get(record.harness)
+        if adapter is None or not adapter.is_available():
+            logger.warning(
+                "cannot give %s its own session (%s unavailable); delivering into "
+                "%s's session instead",
+                endpoint.work_item.ref,
+                record.harness,
+                record.work_item.ref,
+            )
+            return self._deliver_into(record, record, routed, prompt)
+        self._prepare_environment(adapter, endpoint.work_item, record.cwd)
+        session_id = str(uuid.uuid4())
+        result = self.tmux.spawn(
+            endpoint.work_item,
+            adapter,
+            prompt,
+            cwd=record.cwd,
+            session_id=session_id,
+            timeout=self.config.dispatch_timeout_seconds,
+        )
+        if not result.ok:
+            logger.error(
+                "spawning a session for %s failed: %s; delivering into %s's "
+                "session instead so the event is not lost",
+                endpoint.work_item.ref,
+                result.error,
+                record.work_item.ref,
+            )
+            eventlog.emit(
+                "session.spawn_failed",
+                level="warning",
+                work_item=record.work_item.ref,
+                endpoint=endpoint.work_item.ref,
+                harness=record.harness,
+                error=result.error,
+                will_retry=False,
+            )
+            return self._deliver_into(record, record, routed, prompt)
+        endpoint.harness_session_id = session_id
+        endpoint.tmux_target = self.tmux.target_for(endpoint.work_item)
+        endpoint.cwd = record.cwd
+        self.registry.save_endpoint(record.work_item, endpoint)
+        self.registry.touch(
+            record.work_item,
+            delivery_id=routed.delivery_id or None,
+            endpoint_ref=endpoint.work_item,
+        )
+        logger.info(
+            "spawned tmux session %s (%s %s) for pull request %s on %s — "
+            "attach: tmux attach -t %s",
+            endpoint.tmux_target,
+            record.harness,
+            session_id,
+            endpoint.work_item.ref,
+            record.work_item.ref,
+            endpoint.tmux_target,
+        )
+        eventlog.emit(
+            "session.pr_spawned",
+            work_item=record.work_item.ref,
+            pull_request=endpoint.work_item.ref,
+            harness=record.harness,
+            harness_session_id=session_id,
+            tmux_target=endpoint.tmux_target,
+            gh_event=routed.event,
+            delivery_id=routed.delivery_id or None,
+        )
+        self.announcer.announce(endpoint)
+        return True
+
+    def _deliver_into(
+        self,
+        record: Session,
+        endpoint: Session,
+        routed: RoutedEvent,
+        prompt: str,
+    ) -> bool:
+        """Paste ``prompt`` into ``endpoint``, recording the delivery on it."""
+        result = self.tmux.deliver(
+            endpoint, prompt, timeout=self.config.dispatch_timeout_seconds
+        )
+        if not result.ok:
+            logger.error(
+                "delivery into %s failed: %s", endpoint.work_item.ref, result.error
+            )
+            eventlog.emit(
+                "dispatch.failed",
+                level="error",
+                work_item=record.work_item.ref,
+                harness=record.harness,
+                via="tmux",
+                gh_event=routed.event,
+                delivery_id=routed.delivery_id or None,
+                error=result.error,
+                will_retry=bool(routed.delivery_id),
+            )
+            if routed.delivery_id:
+                self.deduper.discard(routed.delivery_id)
+            return False
+        self.registry.touch(
+            record.work_item,
+            delivery_id=routed.delivery_id or None,
+            endpoint_ref=endpoint.work_item,
+        )
+        return True
+
     def _respawn_tmux(
         self,
         session: Session,
         routed: RoutedEvent,
         prompt: str,
         advance_after: bool = True,
+        owner: Optional[WorkItemRef] = None,
     ) -> bool:
         """Respawn a crashed/killed tmux session and deliver the pending event.
 
@@ -1507,8 +1704,17 @@ class Dispatcher:
             # still holds after a respawn.
             recent_deliveries=list(session.recent_deliveries),
         )
-        self.registry.register(respawned, force=True)
-        self.registry.touch(work_item, delivery_id=routed.delivery_id or None)
+        # `owner` names the record this endpoint belongs to (issue-172): the work
+        # item itself for its own session, and the *issue* for a PR's endpoint —
+        # which is why this goes through `save_endpoint` rather than `register`,
+        # so respawning a PR's conversation does not mint a second record.
+        owner_ref = owner or work_item
+        self.registry.save_endpoint(owner_ref, respawned)
+        self.registry.touch(
+            owner_ref,
+            delivery_id=routed.delivery_id or None,
+            endpoint_ref=work_item,
+        )
         logger.info(
             "respawned tmux session %s (%s %s) for %s after it was found dead; "
             "%s and delivered the pending event as its boot prompt — attach: "
@@ -1746,7 +1952,9 @@ class Dispatcher:
         if not delivery_id:
             return "unhandled"
         for ref in refs:
-            existing = self.registry.session_for(ref)
+            existing = self.registry.session_for(
+                ref, session_per_pr=self.config.tmux.session_per_pr
+            )
             if existing is not None and delivery_id in existing.recent_deliveries:
                 return "done"
         if delivery_id in self.deduper:

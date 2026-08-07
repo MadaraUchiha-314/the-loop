@@ -100,156 +100,150 @@ A failed derivation does not degrade through the ladder. It skips the whole thin
 
 ## Requirements
 
-### Requirement 1 — the PR → session binding is written down
+> Revised in owner review on [PR #173](https://github.com/MadaraUchiha-314/the-loop/pull/173):
+> the binding is stored **on the work item's single session record**, and each recorded PR
+> gets **its own session** by default. The original requirements (a separate binding
+> record, one conversation per work item) are superseded, not amended — the paper trail is
+> [decision-064](../../decisions/decision-064.md) § How this decision changed.
 
-**User story:** As an operator whose PR is delivering an issue's work item, I want the
-routing decision recorded when it is made, so that the binding survives GitHub changing its
-mind and survives a daemon restart.
+### Requirement 1 — the work item's record carries its pull requests
+
+**User story:** As an operator, I want everything about a work item's sessions — every PR
+delivering it, every tmux session and conversation involved — recorded on that work item's
+one session record, so the routing decision survives GitHub changing its mind and a
+restart, and is readable in one file.
 
 #### Acceptance criteria (EARS)
 
-1. WHEN an event whose payload carries a pull-request entity is dispatched to a session
-   whose work item is **not** the PR's own ref THEN the system SHALL persist a binding from
-   the PR's ref to that session's work-item ref.
+1. WHEN an event whose payload carries a pull-request entity is dispatched to a work
+   item's record that is **not** the PR's own ref THEN the system SHALL record the PR in
+   that record's `pullRequests` list.
 2. WHEN a session is **spawned** for a linked issue in response to such an event THEN the
-   binding SHALL be persisted on that path too — the spawn is the moment the binding is
-   established.
-3. WHEN the persisted binding already names that same target THEN the system SHALL NOT
-   rewrite the record and SHALL NOT emit an event: a poll cycle must not churn the
-   filesystem or the audit trail once per comment.
-4. The persisted binding SHALL be readable without any GitHub API call, and SHALL survive a
-   restart of the receiver or the poller.
-5. A ref SHALL NOT be bound to itself, and a binding SHALL NOT be written for an event that
-   carries no pull-request entity.
+   PR SHALL be recorded on that path too — after registration, so a failed spawn records
+   nothing.
+3. WHEN the PR is already listed THEN the system SHALL NOT rewrite the record and SHALL
+   NOT emit an event: a poll cycle must not churn the file once per comment.
+4. The record SHALL be readable without any GitHub API call and SHALL survive a restart of
+   the receiver or the poller.
+5. A work item SHALL NOT be recorded as its own pull request, and nothing SHALL be
+   recorded for an event carrying no pull-request entity or for a close event.
+6. A `pullRequests` entry that cannot be parsed SHALL be skipped — never fatal to the
+   record — and nesting SHALL be one level: an entry's own `pullRequests` is dropped on
+   read.
 
-### Requirement 2 — routing resolves through the stored binding
+### Requirement 2 — each recorded PR is a session of its own, and resolution uses the record
 
-**User story:** As an operator, I want an event on a PR whose linkage has gone to still
-reach the session that owns the work, so that removing a link (or `gh` failing once) does
-not strand a running agent.
-
-#### Acceptance criteria (EARS)
-
-1. WHEN a routed ref has no session record of its own AND has a stored binding whose target
-   **does** have a live session THEN the event SHALL be delivered into that session.
-2. Resolution SHALL be ordered per ref: the ref's own record first, the stored binding
-   second. WHERE the ref has its own live session, the binding SHALL NOT be consulted.
-3. Resolution SHALL be **single-hop**: a binding whose target is itself bound SHALL NOT be
-   followed further, so no chain of records can loop or lengthen.
-4. WHEN a ref resolves through a binding THEN the whole session-recovery ladder SHALL apply
-   unchanged — live tmux session, else respawn resuming the recorded conversation
-   (`resumeOnRespawn`), else a fresh session.
-5. A stored binding SHALL NOT suppress a session that derivation *does* find: the binding
-   adds a resolution and never removes one. WHERE a PR is re-linked to a different issue
-   that has its own live session, both sessions receive the event, as two matched sessions
-   do today.
-6. WHEN neither the ref nor its binding resolves to a live session THEN the spawn policy
-   SHALL apply exactly as it does today, against `work_items[0]` — this change adds a
-   lookup, not a spawn path.
-7. Control commands (`the-loop start|stop|pause|resume` on a PR) SHALL resolve their target
-   session through the same order, so a `stop` commented on a PR whose linkage broke still
-   stops the session that is running.
-8. **Poll-path retry accounting SHALL resolve identically.** WHEN a delivery succeeded into a
-   session reached through a binding THEN the poller's status query SHALL report it `done`,
-   not `unhandled` — otherwise a successful delivery is re-forwarded until the retry budget
-   is spent.
-9. **First-sight detection SHALL resolve identically.** WHEN a polled pull request has a
-   stored binding to a work item with a live session THEN the poller SHALL treat it as a
-   known, session-owning item — not as first sight, which would baseline its entire existing
-   thread as read and arm a spawn against the PR while that session is still running.
-10. Verbs that name a work item **explicitly** — `sessions pause|resume|stop|attach|reset` —
-    SHALL NOT resolve through a binding: acting on a different work item than the one the
-    operator named is worse than making them name the one they meant.
-
-### Requirement 3 — what a close ends is unchanged
-
-**User story:** As a maintainer, I want issue-101's rule to survive this change, so that
-merging one of several PRs does not end the work item.
+**User story:** As an operator, I want each PR delivering a work item to work in its own
+tmux session and harness conversation, and events on a PR whose linkage has gone to still
+reach the right conversation.
 
 #### Acceptance criteria (EARS)
 
-1. WHEN a `pull_request` `closed` event matches a session **through a binding** THEN that
-   session SHALL be left open and logged as `session.kept_open`, exactly as a session
-   matched through the derived linkage is today — a PR merging is not the work item ending
-   ([decision-039](../../decisions/decision-039.md)).
-2. WHEN the closing PR has a session registered against its **own** ref THEN that session
-   SHALL still be auto-closed.
+1. WHEN `routing.tmux.sessionPerPr` is true (**the default**) THEN each recorded PR's
+   events SHALL be delivered into that PR's **own** endpoint — its own tmux session and
+   harness conversation — spawned lazily by the first event that needs it, announced like
+   any spawn. A work item with two PRs therefore has three sessions.
+2. WHEN `sessionPerPr` is false THEN every PR's events SHALL be delivered into the work
+   item's single session — the pre-issue-172 behaviour, kept as a configured choice.
+3. Resolution SHALL be ordered per ref: the ref's **own record** first; only a ref with no
+   record of its own SHALL be looked up across the live records' PR lists. A recorded PR
+   SHALL NOT suppress a work item the derived linkage still finds — a re-linked PR
+   delivers to both records.
+4. WHEN a PR's endpoint is closed, or cannot spawn, THEN its events SHALL fall back to the
+   work item's own session — an event is never lost to endpoint bookkeeping.
+5. WHEN neither a record nor a recorded PR resolves THEN the spawn policy SHALL apply
+   exactly as today, against `work_items[0]`.
+6. Control commands on a PR SHALL resolve to its work item's record, so a `stop` commented
+   on a PR whose linkage broke still stops the session that owns the work.
+7. Poll-path retry accounting SHALL resolve per endpoint (`done` for an id recorded on the
+   PR's endpoint, and dedup SHALL NOT leak between a work item's conversations), and
+   first-sight detection SHALL treat a recorded PR as a known, owned item.
+8. Verbs that name a work item **explicitly** — `sessions pause|resume|stop|attach|reset`
+   — SHALL NOT resolve through the PR list.
+9. A pull-request endpoint SHALL NOT enter or advance the work item's process graph: the
+   graph stays keyed to the work item (the **outer loop**); the per-PR **inner-loop**
+   graph is defined and built as its own work item (decision-064 § the direction this
+   sets).
 
-### Requirement 4 — the binding is inspectable, classified, and removable
+### Requirement 3 — a PR closing ends its endpoint; the work item's close is unchanged
 
-**User story:** As an operator, I want the new file to behave like every other thing
-the-loop writes under `state.root`, so that backup, `.gitignore` and `sessions reset` need
-no new special cases.
+**User story:** As a maintainer, I want issue-101's rule to hold in the model: one of
+several PRs merging ends that PR's conversation, never the work item.
 
 #### Acceptance criteria (EARS)
 
-1. Binding records SHALL be written into the registry directory with a name the
-   session-record scan does not admit, so `sessions list`, `reset --all` enumeration and the
-   "skipping unreadable registry file" warning are untouched by their presence.
-2. The record SHALL be classified in `the_loop.state.GENERATED_PATHS` as **local** (it names
-   a session handle on this machine) and documented in `docs/cli/state.md`'s classification
-   table with the same verdict.
-3. `the-loop sessions reset` SHALL remove the work item's own binding record **and** every
-   binding record naming it as target, and SHALL report it as a removed piece.
-4. Closing a session SHALL **not** remove its bindings: a closed session is reopenable and
-   respawnable, and the binding is still the truth about which work item the PR delivers.
-5. `session.linked` and `session.unlinked` SHALL be registered in `eventlog.EVENT_TYPES`, so
-   `the-loop events --type session.linked` answers "which PR is bound to what" without
-   opening a file.
+1. WHEN a `pull_request` `closed` event's closed object is a **recorded PR** of a
+   still-open work item THEN that PR's endpoint SHALL be closed (its tmux session handled
+   per the existing retention rules, `session.pr_closed`) and the work item's record left
+   live (`session.kept_open`).
+2. WHEN the closing PR has a record registered against its **own** ref THEN that record
+   SHALL still be auto-closed, exactly as today.
+
+### Requirement 4 — inspectable, classified, removable — with nothing new to classify
+
+**User story:** As an operator, I want the new state to behave like the session record it
+lives in, so backup, `.gitignore` and `sessions reset` need no new special cases.
+
+#### Acceptance criteria (EARS)
+
+1. The PR entries SHALL live **inside** `local/<slug>.json` — no new generated path, so
+   `GENERATED_PATHS`, the portability classification and the `.gitignore` recipe are
+   unchanged; the session record's documented contents SHALL name them.
+2. `the-loop sessions reset` (and `close`-then-`forget`) SHALL remove the PR entries with
+   the record they live in — no separate piece, nothing left behind.
+3. `session.pr_linked`, `session.pr_spawned`, `session.pr_closed` and
+   `session.link_failed` SHALL be registered in `eventlog.EVENT_TYPES`, so
+   `the-loop events` answers "which PRs deliver what" without opening a file.
 
 ### Requirement 5 — a regression test that fails before the fix
 
-**User story:** As a maintainer, I want the ticket's own reproduction encoded as a test, so
-this cannot silently return.
+**User story:** As a maintainer, I want the ticket's own reproduction encoded as a test,
+so this cannot silently return.
 
 #### Acceptance criteria (EARS)
 
-1. An integration test SHALL drive the ticket's reproduction — a session registered against
-   the issue, a first PR event carrying the linkage, then a second PR event carrying **no**
-   linkage — and SHALL assert the second event is delivered into the issue's session. It
-   SHALL fail against the unfixed dispatcher.
+1. An integration test SHALL drive the ticket's reproduction — a session registered
+   against the issue, a first PR event carrying the linkage, then a second PR event
+   carrying **no** linkage — and SHALL assert the second event is delivered into the PR's
+   recorded endpoint. It SHALL fail against the unfixed resolver.
 2. It SHALL carry a Gherkin docstring naming the scenario and linking this requirement
    (`config.testing.gherkinDocstrings: required`).
 
 ## Security considerations
 
-**Threat model:** this change adds a locally-written, locally-read record that binds one
-work-item ref to another. No new network reach, no new privilege, no new external input
-format.
+**Threat model:** this change adds locally-written, locally-read entries on an existing
+record, and (by default) additional harness processes — one per active PR.
 
 | | |
 |---|---|
-| **Untrusted actors** | Anyone who can comment on, or open, a PR in a watched repository. They already control the linkage this change *records*; what changes is that the-loop now remembers the linkage it acted on instead of re-asking. The record's **content** is never free-form payload text: both ends are `WorkItemRef`s the router already constructed and validated, re-parsed on read, so nothing attacker-shaped reaches a path, an argv or a prompt. |
-| **Trust boundaries** | Unchanged. The record is written under `routing.registryDir` (default `<state.root>/local/`), the directory that already holds session records, and its file name is derived from `WorkItemRef.slug` — the same sanitiser (`[^A-Za-z0-9._-]+` → `-`) that names every session record. A ref that does not parse yields no record and no lookup. |
-| **Abuse case — binding a PR to a session it should not reach** | Bounded by *who may create a binding*: only the dispatcher, and only for a session an event **already routed to** under the existing guards (`authorizedUsers`, the self-comment marker, the auto-execute label, `requireStartCommand`). A stranger cannot cause a binding the un-fixed the-loop would not already have delivered into. |
-| **Abuse case — a stale binding outliving its purpose** | A binding to a work item whose session is closed resolves to nothing (`find_by_work_item` refuses a closed record for dispatch), so the worst case is the pre-fix behaviour. `sessions reset` removes bindings in both directions (R4.3), which is the escape hatch. |
-| **Abuse case — a chain or cycle of bindings** | Prevented structurally: resolution is single-hop (R2.3) and self-binding is refused (R1.5). There is no recursion to bound. |
-| **Abuse case — the record as an input carried between machines** | These records are **local**, classified as such in `GENERATED_PATHS` (R4.2) and therefore inside the existing `.the-loop/local/` ignore rule. They cannot arrive by pull request the way a portable record can, so the "a tracked control section is an input" analysis in `docs/cli/state.md` does not extend to them. |
-| **Fail-closed** | Every failure degrades to today's behaviour, never past it. An unreadable, unparseable or absent binding is "no binding": derivation alone decides, exactly as now. A write failure is logged and the dispatch proceeds — a delivery is never lost because a bookkeeping write failed. |
-| **Secrets** | None. The record holds two work-item refs and two timestamps. Nothing in it is a credential, a path or a conversation id. |
+| **Untrusted actors** | Anyone who can comment on, or open, a PR in a watched repository. They already control the linkage this change *records*; what changes is that the-loop remembers the linkage it acted on instead of re-asking. Entry **content** is never free-form payload text: both ends are `WorkItemRef`s the router constructed and validated, re-parsed on read. |
+| **Trust boundaries** | Unchanged in kind. Each PR endpoint is spawned by the same guarded path as the work item's own session — downstream of the self-comment marker, `authorizedUsers`, the auto-execute label and `requireStartCommand` — in the same checkout, with the same pre-flight trust handling. What multiplies is the **number of harness processes**, which is operator-visible (`sessions list`, spawn announcements) and bounded by the number of open recorded PRs. |
+| **Abuse case — recording a PR against a session it should not reach** | Bounded by *who may record*: only the dispatcher, only for a record an event already routed into under the existing guards. |
+| **Abuse case — a hand-edited entry** | Skipped per entry (`WorkItemRef.parse` on both ends); the work item's own session survives. One-level nesting is enforced on read, so no tree or cycle is constructible. |
+| **Abuse case — event flooding spawning processes** | A spawn per recorded PR requires the PR to pass the label/start gates that any spawn requires; an unauthorized actor's comment never reaches dispatch. The lazy spawn means a merely-linked PR costs nothing. |
+| **Fail-closed** | Every failure degrades to a behaviour the-loop already had: unreadable entry → that PR unrecorded; endpoint unspawnable → deliver to the record; recording fails → derivation alone, as before issue-172. |
+| **Secrets** | None. The entries hold work-item refs, a conversation id and a tmux name — the same classes of value the record already held, in the same local, never-tracked file. |
 
-**Blast radius, stated plainly:** an event that reaches no session today can reach one after
-this change, and an event that reaches one session can reach two (R2.5) when a PR has been
-deliberately re-linked to a *different* issue that also has a live session. That second case
-is the accepted cost of never losing the first binding, and it is loud — both sessions see
-the same comment on the same PR — where the failure it replaces is silent.
+**Blast radius, stated plainly:** the default behaviour changes — a PR's events now land
+in a PR-specific session rather than the work item's, and a work item with N open PRs runs
+N+1 harness processes. `sessionPerPr: false` restores the old shape. And a deliberately
+re-linked PR delivers to both records (loud), where the failure it replaces was silent.
 
 ## Out of scope
 
-- **Changing the routing decision.** issue-93's order (linked issues before the PR's own
-  number) is correct and is untouched. This ticket persists the decision's outcome.
-- **A new CLI or HTTP surface for bindings.** The records are human-readable JSON beside the
-  session records, and `session.linked` is queryable through `the-loop events`. Adding a
-  column to `sessions list` would mean a new field in the OpenAPI contract for a fact the
-  event log already answers.
-- **Jira and other providers.** `WorkItemRef` is provider-qualified and the mechanism is
-  provider-agnostic, but only the GitHub ingresses create bindings, because only they have a
-  linkage to record.
-- **Garbage-collecting bindings on a schedule.** Removal is tied to `sessions reset`
-  (R4.3); a per-PR record of ~200 bytes does not justify a reaper.
+- **Changing how linkage is derived.** issue-93's order (linked issues before the PR's own
+  number) is untouched. This ticket records the decision's outcome.
+- **The inner-loop graph.** This change builds the substrate (per-PR endpoints) and the
+  boundary (a PR endpoint has no graph); defining the PR's own sub-graph of nodes and how
+  it reports into the outer loop is follow-up with its own work item (R2.9,
+  decision-064).
+- **A new CLI/HTTP surface.** `sessions list --format json` already returns the record
+  verbatim, `pullRequests` included; `the-loop events` answers the rest.
+- **Jira and other providers.** The mechanism is provider-agnostic; only the GitHub
+  ingresses record PRs, because only they have a linkage to record.
 
 ## Open questions
 
-None. The ticket named two acceptable shapes ("an alias file under the PR's slug, or a
-`linkedRefs` field on the issue's session record") and left the choice open; it is taken in
-[`design.md`](design.md) and recorded as a decision record.
+None standing. The ticket left the storage shape open; the first draft's choice (a
+separate link record) was overturned in owner review, and the record of both positions is
+[decision-064](../../decisions/decision-064.md).
