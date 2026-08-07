@@ -1,3 +1,15 @@
+## v8.0.0 (2026-08-07)
+
+### BREAKING CHANGE
+
+- PR events now land in a PR-specific session by default
+rather than the work item's; set routing.tmux.sessionPerPr: false for the
+previous shape.
+
+### Feat
+
+- **issue-172**: one record per work item, one session per PR — and the PDLC as two loops (#173)
+
 ## v7.4.1 (2026-08-06)
 
 ### Fix
