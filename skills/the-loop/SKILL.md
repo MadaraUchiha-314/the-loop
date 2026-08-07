@@ -107,6 +107,15 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   item — a ready-to-ship gate item. Mint docs emergently (product-feature and
   architecture shaped both valid) and evolve the taxonomy through PR-review feedback.
   See `reference/workflow.md`.
+- **The user-facing docs ship with the change too.** Capability docs serve a reader who
+  already uses the project; `README.md`, the documentation site and this skill with its
+  `reference/` docs are what a reader meets *first*, and they rot the same way. Update
+  whichever of them the change makes wrong **in the same PR** — also a ready-to-ship gate
+  item — and record what changed in the execution log's **`## Documentation`** section,
+  which the `capability-docs` node gates alongside `## Capability docs` (issue-174,
+  decision-066). A work item that changed no user-facing doc says so **with the reason**;
+  a blank is not an answer. The rule exists because the process itself changed shape —
+  two loops, a fourth spec artifact — while the front page went on describing the old one.
 - **Keep `tasks.md` checkmarks current** as tasks complete (`- [ ]` → `- [x]`).
 - **Identify collaborators up-front.** Each work item names the personas it needs; not
   every task needs every persona (a bug fix needs the engineer; a content fix may not).

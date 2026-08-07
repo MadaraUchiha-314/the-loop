@@ -238,6 +238,31 @@ indexed by `capabilities.md`, template
   arrives as PR review comments on the capability-doc diffs and is handled like any
   other finding (reply-first-then-fix).
 
+## User-facing docs — the surface a reader meets first (fold-in step)
+
+Capability docs are written for someone who already uses the project. **`README.md`, the
+documentation site and the operating-model skill are what everyone else reads**, and they
+go stale by exactly the same mechanism — a change ships, the description does not. So they
+fold in the same way, in the same PR:
+
+- **What counts:** `README.md`; the published site under `docs/` (its home page, guide and
+  any page the change contradicts); and `skills/the-loop/SKILL.md` with its `reference/`
+  docs when the change is to the operating model itself.
+- **The record is the execution log's `## Documentation` section**, which the
+  `capability-docs` node gates alongside `## Capability docs` (issue-174,
+  [decision-066](../../../docs/decisions/decision-066.md)) — so it is written, not implied.
+  A work item that changed no user-facing doc records that **with the reason**; the
+  section is never deleted to shorten the log.
+- **Delegate rather than duplicate.** The README summarises and links the site; the site
+  carries the detail. Two copies of a fact is one copy that rots — which is why the gate is
+  "update what the change made wrong", not "restate everything everywhere".
+- **What the gate proves, and what it does not.** The check is structural: the section
+  exists and is non-empty. Whether the prose is *true* is a review judgement, the same
+  limit every section gate carries.
+
+This rule was written after the-loop shipped two loops and a fourth spec artifact while
+its own front page still described one loop and three.
+
 ## Self-review & critic-review (before a human)
 
 - After the work is done, run **self-reviews** then **critic reviews** using configured

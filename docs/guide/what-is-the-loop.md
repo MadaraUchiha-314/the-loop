@@ -1,29 +1,51 @@
 # What is the-loop?
 
-**the-loop** is an opinionated product-development-lifecycle (PDLC) harness, shipped as
-a plugin for [Claude Code](https://claude.com/claude-code) **and Cursor**. Once a plan
-is approved, an agent harness delivers a work item end-to-end with minimal or no human
-intervention, escalating to humans only when a decision is genuinely needed.
+**the-loop** is an opinionated product-development lifecycle (PDLC), shipped as an
+**executable process graph** and a daemon that runs it. Nodes are the steps, hooks are the
+checks and side effects at their boundaries, and declared edges route on hook outcomes.
+Prose describes a process; here the graph *is* the process.
 
-> **Status: v0 foundation.** This release establishes the plugin skeleton, the
-> configuration contract, templates, commands, the operating skill, and the
-> documentation/knowledge structure. Runtime automation (webhooks, remote execution, DAG
-> orchestration, language-specific tooling) continues to land as follow-up work — see the
-> [decision log](/decisions/decision-003).
+The `the-loop` CLI turns ticket and pull-request activity into agent sessions and drives
+each of them through that graph. Plugins for [Claude Code](https://claude.com/claude-code)
+and Cursor are how an agent picks up the operating model — one delivery surface, not the
+product. Once a plan is approved, the harness delivers a work item end-to-end with minimal
+or no human intervention, escalating only when a decision is genuinely needed.
 
-## The loop, in one line
+## Two loops
 
-```text
-(brainstorm) → requirements → design → tasks (each iterated until locked + human-reviewed)
-  → implement (+self-check) → self/critic review → evidence → complete → learn
+The PDLC is **two** graphs, both shipped as package data inside the CLI:
+
+- **`pdlc-work-item-loop`** — the **outer** loop: one *work item*, from a fuzzy idea to a
+  closed ticket.
+- **`pdlc-pr-loop`** — the **inner** loop: one *pull request* delivering that work item,
+  running in its own session, through the component-scoped subset. Everything before
+  implementation is skipped — those steps are the work item's, decided once at the outer
+  level, and a pull request re-deciding them would fork the spec.
+
+They meet at exactly **one seam**: the outer `implementation` node waits at
+`await-inner-loops` until every inner loop that was started reaches `complete`, after which
+verification runs across all the pull requests. A work item delivered by a single session
+starts no inner loops and passes that gate vacuously — it behaves exactly as it did before
+the split.
+
+```mermaid
+flowchart TB
+  subgraph outer["pdlc-work-item-loop — one per work item"]
+    direction LR
+    b["brainstorming<br/>(optional)"] --> r[requirements] --> ra{{human}} --> d[design]
+    d --> tp[test-planning] --> da{{human}} --> tb[tasks-breakdown] --> impl[implementation]
+    impl --> v[verification] --> rev["self · critic · security<br/>evidence · capability-docs<br/>reviewer-briefing"]
+    rev --> ha{{human}} --> done([complete])
+  end
+  subgraph inner["pdlc-pr-loop — one per pull request"]
+    direction LR
+    i2[implementation] --> v2[verification] --> rev2["self · critic<br/>security · briefing"] --> pa{{"PR review"}} --> done2([complete])
+  end
+  impl -. "await-inner-loops<br/>waits for every started inner loop" .- done2
 ```
 
-A work item is a chain of artifacts, each derived from the one before it and **iterated
-with feedback until it is locked** before the loop advances. Optionally it starts with a
-free-form `brainstorm.md` scratchpad (the root artifact); then it is specified with a
-[Kiro-style](https://kiro.dev/docs/specs/) 3-phase spec (`requirements.md` →
-`design.md` → `tasks.md`), each gated by a human review, then executed autonomously.
-Each work item's phase is tracked on the ticket via labels:
+A work item's position in the outer loop is tracked on the ticket by a `loop:<phase>` label
+and mirrored in its execution log:
 
 ```text
 not-started → brainstorming (optional) → requirements-definition → design
@@ -31,30 +53,64 @@ not-started → brainstorming (optional) → requirements-definition → design
   → complete
 ```
 
+Full detail: [the process-graph capability](/capabilities/process-graph).
+
+## The artifact chain
+
+A work item is a chain of documents, each derived from the one before it and **iterated
+with feedback until it is locked** (`status: approved`) — only then is the next one written
+and the phase advanced. They live under `docs/specs/<id>/`, in the
+[Kiro](https://kiro.dev/docs/specs/) spirit:
+
+| Artifact | What it settles |
+|----------|-----------------|
+| `brainstorm.md` *(optional)* | A free-form scratchpad for a fuzzy idea: problem, options, open questions. A well-defined work item starts at requirements |
+| `requirements.md` (or `bugfix.md` for bugs) | User stories and **EARS** acceptance criteria, plus a threat-model-lite **Security considerations** section |
+| `design.md` | Architecture, components, data models, error handling, and a **Security design** section enforcing every boundary the requirements raised |
+| `testing-plan.md` | **How the work item will be proved**: which kinds of testing apply and which are `n/a` *with a reason*, the verification environment, the evidence to capture, and the activities checklist |
+| `tasks.md` | A DAG of small, verifiable tasks; each names the requirement it satisfies and the testing-plan row that proves it |
+
+`testing-plan.md` is worth its own note. It is authored at the `test-planning` node —
+*before* the task DAG that references its rows — and reviewed together with the design, so
+it gets human review without a stop of its own. It is then **completed** at the
+`verification` node: the same file is written once as a plan and once as a record, so
+intent and outcome sit in one diff. Evidence is committed under
+`docs/specs/<id>/evidence/`; a link to a CI run that expires is not evidence. See the
+[testing reference](/operating-model/reference/testing).
+
 ## Rules the loop enforces
 
-- Every work item has a ticket. Its 3-phase spec is **reviewed and approved per phase
-  before execution**.
+- Every work item has a ticket. Its spec chain is **reviewed and approved per phase before
+  execution**.
 - Collaborators are identified up-front; not every task needs every persona.
-- Every human decision leaves a **paper trail** on the ticket or PR.
+- Every human decision leaves a **paper trail** on the ticket or pull request.
 - Self-checks run tests at logical checkpoints; progress is logged for visibility.
 - Configured self-reviews and critic reviews run **before** escalating to a human.
+- **Testing is planned, then executed**: `test-planning` decides which kinds of testing
+  apply and records `n/a` *with a reason* for the rest; `verification` runs the plan and
+  ticks an activity only once it has actually run.
+- **Security is gated, not bolted on**: a threat-model-lite in the requirements, enforcing
+  mechanisms in the design, and a security review that cannot be skipped at any risk tier.
 - The same tooling runs locally and in CI; logging is identical at dev-time and runtime.
-- Integration tests document their scenario in **Gherkin** docstrings, queryable as a
-  table via `the-loop scenarios`.
-- APIs are **contract-first**: REST specs in `specs/openapi/` (OpenAPI), GraphQL SDL in
-  `specs/graphql/`; docs are generated from the contracts, never hand-written.
+- Integration tests document their scenario in **Gherkin** docstrings, queryable as a table
+  via `the-loop scenarios`.
+- APIs are **contract-first**: REST specs in OpenAPI, GraphQL SDL; docs are generated from
+  the contracts, never hand-written.
 - **Capability docs are the organized view of specs**: per-work-item specs are the
   historical record; living docs under [`developer/capabilities`](/capabilities/capabilities)
-  are the single source of truth for each capability's *current* behaviour, updated in
-  the same PR as the work item.
-- **UI/UX design is a first-class artifact**: for user-facing work the design phase
-  tracks Figma links and/or self-contained HTML+CSS+JS prototypes, iterated-until-locked
-  with the designer.
+  are the single source of truth for each capability's *current* behaviour, updated in the
+  same pull request as the work item.
+- **The user-facing docs ship with the change too**: the README, this site and the
+  operating-model skill are updated in the same pull request as the change that made them
+  wrong, recorded in the execution log's `## Documentation` section — which the
+  `capability-docs` node gates.
+- **UI/UX design is a first-class artifact**: for user-facing work the design phase tracks
+  Figma links and/or self-contained HTML+CSS+JS prototypes, iterated-until-locked with the
+  designer.
 - All commits follow **Conventional Commits**.
-- PRs are written **for the reviewer**: a condensed, prioritized summary, **mermaid**
-  diagrams, and documented low-level decisions — and the loop educates the user on those
-  decisions (mandatory, not optional).
+- Pull requests are written **for the reviewer**: a condensed, prioritized summary,
+  **mermaid** diagrams, and documented low-level decisions — and the loop educates the user
+  on those decisions (mandatory, not optional).
 
-Next: [install the plugin](/guide/installation) or jump straight to the
+Next: [install the-loop](/guide/installation) or jump straight to the
 [quickstart](/guide/quickstart).

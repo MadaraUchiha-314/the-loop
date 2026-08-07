@@ -135,6 +135,18 @@ exit:
   `validates` — it SHALL `block`, and the block SHALL be **not retriable**: re-running a
   node cannot repair the graph that declared it, and a retriable block would burn
   `maxAttempts` before anyone was told.
+- A node MAY gate **several** sections of the same artifact. `capability-docs` gates two
+  (issue-174, [decision-066](../decisions/decision-066.md)): `## Capability docs` — the
+  organized view of specs, for a reader who already uses the project — and
+  `## Documentation` — the user-facing surface (`README.md`, the docs site, the
+  operating-model skill), for a reader who does not yet. They stay separate rows because
+  folding them together would lose which of the two was skipped, and they share a node
+  because a second node would cost an edge, a `stage` key and a place in both loops' entry
+  chains to read a file this one already opens. The node keeps its id and `stage`:
+  `stage: capability-docs` is a public key in operators' `tokenEconomy.modelRouting.stages`
+  and `thinkingEffort.stages` maps, so a rename would drop their configuration silently.
+  The **inner** loop gates neither — a work item's documentation is decided once, at the
+  outer level.
 - `cli/tests/test_graph_parity.py`'s **P5** SHALL enforce all three questions against the
   shipped graph: every content gate resolves a target (P5a), every validated name is
   tracked by the manifest (P5b), and every section it demands exists in that artifact's
@@ -354,6 +366,7 @@ included, however empty the log was.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-174 | `capability-docs` gates two sections of the execution log instead of one — `## Documentation` joins `## Capability docs`, so a work item cannot complete having left the README or the docs site describing the process it replaced. No new node, no hook or runtime change; the inner loop gates neither | [spec](../specs/issue-174/), [decision-066](../decisions/decision-066.md), [documentation](documentation.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/174) |
 | issue-172 | The process became two named loops (2026-08-07): `pdlc.yaml` renamed to `pdlc-work-item-loop.yaml` (unchanged content, plus the `await-inner-loops` gate on `implementation`), and `pdlc-pr-loop.yaml` added — one inner loop per PR, run in that PR's own session with state under `docs/specs/<id>/pr-loops/pr-<n>/`, merge driving it to `complete` as an audited force. Graph verbs gained `--pr`; P5 parity asserts over both loops; `deliver-assignment` makes the graph the initiator — entering an agent node pushes its assignment into the bound session | [spec](../specs/issue-172/), [decision-065](../decisions/decision-065.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/172) |
 | issue-167 | Six gates stopped reporting success without running: `validate-artifacts` gained `validates:` for an artifact a node asserts against but did not author, so the six review-chain nodes gate their sections of the shared `execution-log.md`; a content gate that resolves no artifact now blocks (not retriable) instead of skipping; the bundled execution-log template gained the `Capability docs` section `capability-docs` had always demanded; P5 asserts all three against the shipped graph | [spec](../specs/issue-167/), [decision-063](../decisions/decision-063.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/167) |
 | issue-163 | Testing became two nodes: `test-planning` produces `testing-plan.md` before the task DAG that references it, `verification` re-gates the same artifact after implementation and before the review chain; a `skip` stopped short-circuiting a chain, which is what had left `implementation` parking at `no_edge` | [spec](../specs/issue-163/), [decision-060](../decisions/decision-060.md), [testing-and-contracts](testing-and-contracts.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/163) |

@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [066](decision-066.md) | User-facing documentation is a completion gate, on the node that already reads the log | proposed | 2026-08-07 |
 | [065](decision-065.md) | The PDLC is two loops — pdlc-work-item-loop outside, pdlc-pr-loop per pull request | proposed | 2026-08-07 |
 | [064](decision-064.md) | One session record per work item carries its pull requests — each PR an endpoint with its own session | proposed | 2026-08-07 |
 | [063](decision-063.md) | A node may `validates:` an artifact it did not author — and a content gate with nothing to read fails closed | proposed | 2026-08-06 |
