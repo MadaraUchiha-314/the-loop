@@ -47,7 +47,14 @@ from ..state import LegacyLayout, StateLayout, legacy_layout
 from ..harness_plugins import PluginConfig
 from ..trust import TrustConfig, TrustResult, is_too_broad
 from ..workspace import RepoTarget, Workspace, WorkspaceError, repo_target_from_payload
-from .router import Deduper, RoutedEvent, event_actor, event_body, event_carries_label
+from .router import (
+    Deduper,
+    RoutedEvent,
+    event_actor,
+    event_body,
+    event_carries_label,
+    pr_work_item,
+)
 
 logger = logging.getLogger("the-loop.gh-webhook")
 
@@ -635,7 +642,7 @@ class Dispatcher:
 
         matched = []
         for item in routed.work_items:
-            session = self.registry.find_by_work_item(item)
+            session = self.registry.session_for(item)
             if session is not None and session.work_item.ref not in {
                 s.work_item.ref for s in matched
             }:
@@ -688,6 +695,12 @@ class Dispatcher:
         if not matched:
             self._on_unmatched(routed)
             return
+        # The routing decision, written down (issue-172). Recorded before the
+        # per-session filters below, because a binding is a fact about who owns
+        # this PR's events — true whether or not *this* particular event is
+        # suppressed by a pause or dropped as a duplicate.
+        for session in matched:
+            self._record_pr_binding(routed, session.work_item)
         for session in matched:
             if session.is_paused:
                 # Suppressed on purpose (issue-106), not a transient failure —
@@ -730,12 +743,53 @@ class Dispatcher:
             )
             self._enqueue(session.work_item.ref, routed)
 
+    # -- durable PR → session bindings (issue-172) -------------------------------
+
+    def _record_pr_binding(self, routed: RoutedEvent, target: WorkItemRef) -> None:
+        """Persist "this PR's events belong to ``target``'s session".
+
+        Called at the two moments a routing decision is actually made — an event
+        delivered into an existing session, and a session spawned for a linked
+        issue — so the binding is established by the same act that established
+        the session, rather than re-derived from ``gh`` afterwards.
+
+        Writes nothing when the event carries no pull request, or when the PR
+        *is* the target (a work item does not need a binding to itself). A write
+        failure is logged and swallowed: a delivery is never lost because a piece
+        of bookkeeping could not be written.
+        """
+        pr = pr_work_item(routed.event, routed.payload)
+        if pr is None or pr.ref == target.ref:
+            return
+        try:
+            self.registry.link(pr, target)
+        except OSError as exc:
+            logger.warning(
+                "could not record the session binding %s -> %s: %s; routing for "
+                "this PR still depends on the linkage being derivable",
+                pr.ref,
+                target.ref,
+                exc,
+            )
+            eventlog.emit(
+                "session.link_failed",
+                level="warning",
+                work_item=target.ref,
+                linked_ref=pr.ref,
+                error=str(exc),
+            )
+
     # -- execution control (issue-106) ------------------------------------------
 
     def _live_session_for(self, routed: RoutedEvent) -> Optional[Session]:
-        """The first live (active or paused) session among the event's items."""
+        """The first live (active or paused) session among the event's items.
+
+        Resolves through stored bindings too (issue-172), so a ``the-loop stop``
+        commented on a PR whose linkage has gone still stops the session that is
+        actually running.
+        """
         for item in routed.work_items:
-            session = self.registry.find_by_work_item(item)
+            session = self.registry.session_for(item)
             if session is not None:
                 return session
         return None
@@ -1300,6 +1354,12 @@ class Dispatcher:
         )
         self.registry.register(session, force=True)
         self.registry.touch(work_item, delivery_id=routed.delivery_id or None)
+        # After registration, never before (issue-172): a binding to a session
+        # that failed to spawn is a binding to nothing. A PR event that spawned
+        # against its linked issue is the clearest case there is of a decision
+        # worth remembering — it is the moment the ticket describes as "when the
+        # session spawned".
+        self._record_pr_binding(routed, work_item)
         logger.info(
             "spawned tmux session %s (%s %s) for %s — attach: tmux attach -t %s",
             session.tmux_target,
@@ -1675,11 +1735,18 @@ class Dispatcher:
         or processing — a long resume can outlast several poll cycles, so it
         must not be counted a failure), else ``"unhandled"`` (the dispatch
         failed and discarded the id, or it was never sent).
+
+        Resolves each ref the way dispatch did — through a stored binding when
+        the ref has no session of its own (issue-172). Asking the registry
+        directly would report a delivery that *succeeded* through a binding as
+        ``unhandled``, because the id was recorded on the bound session's record
+        and no ref here names it — and the poller would then re-forward the same
+        comment until its retry budget was spent.
         """
         if not delivery_id:
             return "unhandled"
         for ref in refs:
-            existing = self.registry.find_by_work_item(ref)
+            existing = self.registry.session_for(ref)
             if existing is not None and delivery_id in existing.recent_deliveries:
                 return "done"
         if delivery_id in self.deduper:

@@ -796,6 +796,31 @@ def test_linked_ref_session_suppresses_presence(tmp_path):
     assert disp.events == []  # linked issue's session matched -> no spawn
 
 
+def test_a_stored_binding_suppresses_presence_when_the_linkage_is_gone(tmp_path):
+    """The poll-path half of issue-172, and the more damaging half.
+
+    The PR's linkage is no longer reported (``linked`` is empty), so its only ref
+    is its own. Asking the registry directly would call it session-less on
+    **first sight** — which baselines the entire existing thread as read and arms
+    a spawn against the PR, past a session that is still running. Resolving
+    through the stored binding is what keeps it a known, owned item.
+    """
+    registry = SessionRegistry(tmp_path / "sessions")
+    registry.register(
+        Session(WorkItemRef.parse("github:octo/repo#15"), "claude", "s", ".")
+    )
+    registry.link("github:octo/repo#42", "github:octo/repo#15")
+    pr = WorkItem("github", OWNER, REPO, 42, "pull-request", labels=[LABEL])
+    provider = FakeProvider(items=[pr], comments={42: []}, linked={})
+    disp = RecordingDispatcher()
+
+    make_poller(
+        provider, registry, disp, PollState(WorkItemStore(tmp_path / "portable"))
+    ).poll_once()
+
+    assert disp.events == []  # bound session matched -> no spawn
+
+
 def test_provider_error_is_captured_not_raised(tmp_path):
     class Boom(FakeProvider):
         def list_work_items(self):

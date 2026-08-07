@@ -149,6 +149,22 @@ EVENT_TYPES: Dict[str, str] = {
         "A work item ↔ harness session link was recorded in the registry "
         "(work_item, harness, harness_session_id, cwd)."
     ),
+    "session.linked": (
+        "A work item's events were durably bound to another work item's session "
+        "(work_item: the session's own ref; linked_ref: the bound ref, in "
+        "practice a PR; previous: the target this binding replaced, when it "
+        "replaced one) — issue-172. Emitted only when the binding actually "
+        "changes, so an unchanged one is silent."
+    ),
+    "session.unlinked": (
+        "A durable session binding was removed (work_item: the bound ref) — "
+        "`sessions reset`, the only thing that removes one."
+    ),
+    "session.link_failed": (
+        "Recording a session binding failed (work_item, linked_ref, error). "
+        "Best-effort: the event was still dispatched, and routing falls back to "
+        "deriving the linkage as it did before issue-172."
+    ),
     "session.spawned": (
         "A new harness session was spawned for a work item — this is the "
         "'what triggered this session' record (work_item, harness, "

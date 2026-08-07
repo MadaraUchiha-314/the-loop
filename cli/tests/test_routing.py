@@ -29,6 +29,7 @@ from the_loop.webhook.router import (
     event_body,
     event_carries_label,
     extract_work_items,
+    pr_work_item,
 )
 
 LABEL = "the-loop: auto-execute"
@@ -183,6 +184,138 @@ def test_registry_lists_every_name_it_can_write(tmp_path, ref):
     registry.register(make_session(ref=ref))
     assert (tmp_path / f"{item.slug}.json").is_file()
     assert [s.work_item.ref for s in registry.list_sessions()] == [item.ref]
+
+
+# -- durable session bindings (issue-172) -------------------------------------
+
+PR_REF = "github:octo/repo#16"
+
+
+def bound_ref(registry, source):
+    """The ref ``source`` is bound to — asserted present, so a miss fails here."""
+    target = registry.resolve_link(source)
+    assert target is not None, f"no binding recorded for {source}"
+    return target.ref
+
+
+def test_registry_link_binds_a_ref_to_another_items_session(tmp_path):
+    """The routing decision, on disk, readable by a process that did not make it."""
+    registry = SessionRegistry(tmp_path)
+    record = registry.link(PR_REF, REF)
+
+    assert record is not None and record.session_ref.ref == REF
+    assert (tmp_path / "github-octo-repo-16.link.json").is_file()
+    # A fresh instance — the restart property, as a filesystem fact (R1.4).
+    assert bound_ref(SessionRegistry(tmp_path), PR_REF) == REF
+
+
+def test_registry_link_is_idempotent_and_keeps_created_at(tmp_path):
+    """An unchanged binding is not rewritten (R1.3), a re-pointed one keeps its age."""
+    registry = SessionRegistry(tmp_path)
+    first = registry.link(PR_REF, REF)
+    assert first is not None
+    path = tmp_path / "github-octo-repo-16.link.json"
+    before = path.read_text()
+
+    assert registry.link(PR_REF, REF) is None  # same target: nothing to write
+    assert path.read_text() == before
+
+    repointed = registry.link(PR_REF, "github:octo/repo#20")
+    assert repointed is not None
+    assert repointed.session_ref.ref == "github:octo/repo#20"
+    assert repointed.created_at == first.created_at  # how long it has been bound
+    assert bound_ref(registry, PR_REF) == "github:octo/repo#20"
+
+
+def test_registry_refuses_to_bind_a_ref_to_itself(tmp_path):
+    """R1.5 — enforced in the store, so no caller has to remember to check."""
+    registry = SessionRegistry(tmp_path)
+    assert registry.link(REF, REF) is None
+    assert registry.resolve_link(REF) is None
+    assert list(tmp_path.glob("*.link.json")) == []
+
+
+def test_registry_resolve_link_does_not_follow_a_chain(tmp_path):
+    """Single-hop (R2.3): no cycle can be built, so no depth has to be bounded."""
+    registry = SessionRegistry(tmp_path)
+    registry.link(PR_REF, "github:octo/repo#20")
+    registry.link("github:octo/repo#20", REF)
+
+    assert bound_ref(registry, PR_REF) == "github:octo/repo#20"
+
+
+def test_registry_treats_an_unparseable_binding_as_absent(tmp_path, caplog):
+    """A hand-edited record must read as 'no binding', never reach a lookup.
+
+    Both ends go back through ``WorkItemRef.parse``, so a ``sessionRef`` holding
+    a path or a shell fragment fails there — and failing there means the caller
+    falls back to deriving the linkage, which is the pre-issue-172 behaviour.
+    """
+    registry = SessionRegistry(tmp_path)
+    (tmp_path / "github-octo-repo-16.link.json").write_text(
+        json.dumps({"ref": PR_REF, "sessionRef": "../../etc/passwd"})
+    )
+    with caplog.at_level(logging.DEBUG, logger="the-loop.sessions"):
+        assert registry.resolve_link(PR_REF) is None
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert registry.list_links() == []
+
+
+def test_registry_binding_file_names_cannot_escape_the_directory(tmp_path):
+    """The name is derived through ``WorkItemRef.slug``, which has no separators."""
+    registry = SessionRegistry(tmp_path)
+    registry.link("github:ghe.corp.example/octo/repo#16", REF)
+
+    written = [p.name for p in tmp_path.glob("*.link.json")]
+    assert written == ["github-ghe.corp.example-octo-repo-16.link.json"]
+    assert all("/" not in name and ".." not in name for name in written)
+
+
+def test_registry_bindings_are_invisible_to_the_session_listing(tmp_path, caplog):
+    """R4.1 — the suffix keeps them out of the session-record namespace.
+
+    ``_REGISTRY_FILE_RE`` wants a name ending ``-<number>.json``; a binding ends
+    ``.link.json``. So nothing had to be taught about them: no phantom session,
+    and no "skipping unreadable registry file" warning.
+    """
+    registry = SessionRegistry(tmp_path)
+    registry.register(make_session())
+    registry.link(PR_REF, REF)
+    with caplog.at_level(logging.DEBUG, logger="the-loop.sessions"):
+        sessions = registry.list_sessions()
+    assert [s.work_item.ref for s in sessions] == [REF]
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
+def test_registry_links_to_and_unlink(tmp_path):
+    registry = SessionRegistry(tmp_path)
+    registry.link(PR_REF, REF)
+    registry.link("github:octo/repo#17", REF)
+    registry.link("github:octo/repo#18", "github:octo/repo#20")
+
+    assert sorted(link.source.ref for link in registry.links_to(REF)) == [
+        PR_REF,
+        "github:octo/repo#17",
+    ]
+    assert registry.unlink(PR_REF) is True
+    assert registry.unlink(PR_REF) is False  # nothing left to remove
+    assert [link.source.ref for link in registry.links_to(REF)] == [
+        "github:octo/repo#17"
+    ]
+
+
+def test_registry_binding_survives_closing_the_session_it_names(tmp_path):
+    """R4.4 — a closed session is reopenable, and the binding is still true.
+
+    Removing bindings on close would lose them across exactly the close/reopen
+    cycle they exist to survive. ``sessions reset`` is what removes one.
+    """
+    registry = SessionRegistry(tmp_path)
+    registry.register(make_session())
+    registry.link(PR_REF, REF)
+    registry.close(REF)
+
+    assert bound_ref(registry, PR_REF) == REF
 
 
 # -- paused sessions (issue-106) ----------------------------------------------
@@ -399,6 +532,38 @@ def test_router_ignores_a_pr_closing_reference_to_itself():
     payload = payload_pull_request(number=16, branch="feature/x", body="Closes #16")
     refs = [r.ref for r in extract_work_items("pull_request", payload)]
     assert refs == ["github:octo/repo#16"]
+
+
+def test_pr_work_item_names_the_ref_extraction_emits_last():
+    """``pr_work_item`` and ``extract_work_items`` cannot disagree (issue-172).
+
+    Both are built from the same three helpers, and this pins that: whatever
+    ``extract_work_items`` puts last for a PR event is what a binding is written
+    under. Checked on both PR shapes — a real ``pull_request`` and GitHub's
+    ``issue_comment``-carrying-a-``pull_request``-key form.
+    """
+    for event, payload in (
+        ("pull_request", payload_pull_request(body="Closes #15")),
+        ("issue_comment", payload_pr_conversation_comment()),
+    ):
+        pr = pr_work_item(event, payload)
+        assert pr is not None
+        assert pr.ref == extract_work_items(event, payload)[-1].ref
+        assert pr.ref == "github:octo/repo#16"
+
+
+def test_pr_work_item_is_none_for_events_that_concern_no_pull_request():
+    assert pr_work_item("issue_comment", payload_issue_comment()) is None
+    assert pr_work_item("workflow_run", payload_workflow_run()) is None
+    assert pr_work_item("pull_request", {"pull_request": {"number": 16}}) is None
+
+
+def test_pr_work_item_carries_the_host_off_the_payload():
+    payload = payload_pull_request(body="Closes #15")
+    payload["repository"]["html_url"] = "https://ghe.corp.example/octo/repo"
+    pr = pr_work_item("pull_request", payload)
+    assert pr is not None
+    assert pr.ref == "github:ghe.corp.example/octo/repo#16"
 
 
 def test_router_extracts_workflow_run_prs_and_branch_issue():
@@ -994,6 +1159,22 @@ def test_delivery_status_done_inflight_unhandled(tmp_path):
     registry.touch(REF, delivery_id="d-done")
     dispatcher.deduper.add("d-done")
     assert dispatcher.delivery_status("d-done", refs) == "done"
+
+
+def test_delivery_status_follows_a_binding(tmp_path):
+    """A delivery that succeeded *through* a binding is `done`, not `unhandled`.
+
+    The id is recorded on the bound session's record, and the refs the poller
+    asks about are the PR's — so asking the registry directly would call a
+    successful delivery unhandled, and the poller would re-forward the same
+    comment until its retry budget was spent (issue-172 self-review).
+    """
+    registry, dispatcher = make_dispatcher(tmp_path, FakeTmux())
+    registry.register(make_session())
+    registry.link(PR_REF, REF)
+    registry.touch(REF, delivery_id="d-bound")
+
+    assert dispatcher.delivery_status("d-bound", [WorkItemRef.parse(PR_REF)]) == "done"
 
 
 # -- `the-loop sessions` command (R2.2) ----------------------------------------

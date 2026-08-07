@@ -19,6 +19,7 @@ from the_loop.control import ControlStore
 from the_loop.poller.poller import PollState
 from the_loop.reset import (
     CONTROL,
+    LINK,
     POLL,
     SESSION,
     WORKSPACE,
@@ -309,6 +310,63 @@ def test_dry_run_never_closes_a_session(registry, store):
 
 
 # -- enumeration for --all ---------------------------------------------------------
+
+
+# -- session bindings (issue-172) ---------------------------------------------------
+
+PR = "github:octo/repo#16"
+
+
+def test_reset_removes_bindings_in_both_directions(registry, store):
+    """A reset says "forget everything this machine holds about this item".
+
+    Both directions, because a work item is on both ends of the relationship:
+    inbound bindings (PRs whose events it owns) and, when the item *is* a PR, its
+    own outbound one.
+    """
+    register(registry)
+    registry.link(PR, REF)
+    registry.link("github:octo/repo#17", REF)
+
+    outcome = reset_work_item(
+        WorkItemRef.parse(REF), registry=registry, store=store, close=lambda s: False
+    )
+
+    assert outcome.removed == (SESSION, LINK)
+    assert registry.links_to(REF) == []
+    assert registry.resolve_link(PR) is None
+
+
+def test_reset_removes_a_prs_own_binding(registry, store):
+    registry.link(PR, REF)
+    outcome = reset_work_item(
+        WorkItemRef.parse(PR), registry=registry, store=store, close=lambda s: False
+    )
+    assert outcome.removed == (LINK,) and outcome.ok
+    assert registry.resolve_link(PR) is None
+
+
+def test_a_dry_run_reports_the_binding_without_removing_it(registry, store):
+    registry.link(PR, REF)
+    outcome = reset_work_item(
+        WorkItemRef.parse(PR), registry=registry, store=store, dry_run=True
+    )
+    assert outcome.removed == (LINK,)
+    binding = registry.resolve_link(PR)
+    assert binding is not None and binding.ref == REF  # rehearsal, not the thing
+
+
+def test_work_items_with_state_reaches_a_pr_whose_only_state_is_a_binding(
+    registry, store
+):
+    """`--all` must not leave behind the one file it invented (issue-172).
+
+    Only the binding's **source** is enumerated: its target is already listed if
+    it has a session, and claiming it from here would make `--all` report a work
+    item whose sole trace is someone else's file.
+    """
+    registry.link(PR, REF)
+    assert [item.ref for item in work_items_with_state(registry, store)] == [PR]
 
 
 def test_work_items_with_state_unions_both_stores(registry, store):
