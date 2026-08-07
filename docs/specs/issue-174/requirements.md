@@ -136,6 +136,39 @@ describing the previous one.
    into it: the inner loop declares no `capability-docs` node, and the documentation of a
    work item is decided once, at the outer level.
 
+### Requirement 5 — the README's diagram shows the process that exists
+
+> Added during PR review (#175). The owner asked two questions on the README —
+> *"Why do we still have an outdated excalidraw diagram??"* and, on the two-loop mermaid
+> block, *"Can't we use excalidraw??"* — which together name a gap R1 had missed: R1.2
+> governed the README's **prose**, and the diagram beside it was still the issue-150 scene
+> drawn before `testing-plan.md` and before the split into two loops.
+
+**User story:** As a reader who looks at the picture before reading a word, I want the
+diagram to be the current process, so that the most glanceable thing on the page is not
+also the most wrong.
+
+#### Acceptance criteria (EARS)
+
+1. WHEN a reader looks at the README's diagram THEN it SHALL show **both** loops, the
+   four-artifact spec chain including `testing-plan.md`, and the `await-inner-loops` seam —
+   the same content R1.2 and R1.3 require of the prose.
+2. WHEN the diagram shows the inner loop THEN it SHALL start at `implementation`, because
+   that is the `start:` node `pdlc-pr-loop.yaml` declares, and SHALL NOT show the
+   `evidence` or `capability-docs` nodes, which the inner loop does not have.
+3. WHEN the diagram is authored THEN it SHALL be an **Excalidraw** scene, per the owner's
+   request and the precedent [issue-150](../issue-150/) set for the README hero image (a
+   tier 1–2 change, so it carries no decision record) — not a mermaid block. The README
+   SHALL carry **one** diagram, not both.
+4. WHEN the exported SVG is committed THEN it SHALL be **self-contained**: the Virgil font
+   embedded as a data URI, no external URL, and no scripting construct (`<script>`,
+   `on*=`, `javascript:`) — the fail-closed grep issue-150 established.
+5. WHEN the SVG is committed THEN the `.excalidraw` scene SHALL be committed beside it and
+   the SVG SHALL embed the scene payload, so both re-open on excalidraw.com for editing.
+6. WHEN the diagram's geometry is produced THEN it SHALL be **computed by a committed
+   generator** rather than hand-placed, so the next regeneration is a command rather than a
+   re-derivation — the diagram went stale in part because reproducing it was work.
+
 ## Non-functional requirements
 
 - **Rendering.** Every changed page MUST pass `markdownlint` and MUST respect the site's

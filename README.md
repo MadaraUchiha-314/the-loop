@@ -31,21 +31,23 @@ They meet at exactly **one seam**. The outer `implementation` node waits at
 verification runs across all the PRs. A work item delivered by a single session starts no
 inner loops and passes that gate vacuously.
 
-```mermaid
-flowchart TB
-  subgraph outer["pdlc-work-item-loop — one per work item"]
-    direction LR
-    b["brainstorming<br/>(optional)"] --> r[requirements] --> ra{{human}} --> d[design]
-    d --> tp[test-planning] --> da{{human}} --> tb[tasks-breakdown] --> impl[implementation]
-    impl --> v[verification] --> rev["self · critic · security<br/>evidence · capability-docs<br/>reviewer-briefing"]
-    rev --> ha{{human}} --> done([complete])
-  end
-  subgraph inner["pdlc-pr-loop — one per pull request"]
-    direction LR
-    i2[implementation] --> v2[verification] --> rev2["self · critic<br/>security · briefing"] --> pa{{"PR review"}} --> done2([complete])
-  end
-  impl -. "await-inner-loops<br/>waits for every started inner loop" .- done2
-```
+![the-loop's two loops. A ticket is opened, then the spec chain — optional
+brainstorm.md, requirements.md or bugfix.md, design.md, testing-plan.md, tasks.md — is
+iterated with feedback until each artifact is locked, gated by human review. Below it the
+outer pdlc-work-item-loop runs implementation, verification across all PRs, the review
+chain (self, critic and security review, evidence, capability docs, reviewer briefing), a
+human approval, then complete and learn. Below that the inner pdlc-pr-loop runs one per
+pull request in its own session, column-aligned with the outer loop and starting at
+implementation: implementation, verification of this component, self, critic and security
+review with the reviewer briefing, the PR's human review, then complete. Two dashed arrows
+join them — the outer implementation starts one inner loop per PR, and await-inner-loops
+holds the work item there until every inner loop it started
+reaches complete](docs/assets/the-loop-workflow.svg)
+
+*Drawn with [Excalidraw](https://excalidraw.com). Both the
+[SVG](docs/assets/the-loop-workflow.svg) (which embeds the scene) and the
+[`.excalidraw` source](docs/assets/the-loop-workflow.excalidraw) can be dropped into
+excalidraw.com to edit.*
 
 The work item's position is tracked by a `loop:<phase>` label on the ticket and mirrored in
 its execution log:
@@ -72,16 +74,6 @@ written. They live in `docs/specs/<id>/`, in the
 
 Evidence is committed under `docs/specs/<id>/evidence/` — a link to a CI run that expires
 is not evidence.
-
-![the-loop workflow: a ticket is opened, then the spec artifacts (optional
-brainstorm.md, requirements.md, design.md, tasks.md) are each iterated with feedback
-until locked, gated by human review; then implement + self-check, self/critic review
-and evidence run autonomously, ending in complete and learn](docs/assets/the-loop-workflow.svg)
-
-*Drawn with [Excalidraw](https://excalidraw.com). Both the
-[SVG](docs/assets/the-loop-workflow.svg) (which embeds the scene) and the
-[`.excalidraw` source](docs/assets/the-loop-workflow.excalidraw) can be dropped into
-excalidraw.com to edit.*
 
 ## The CLI
 

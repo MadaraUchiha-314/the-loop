@@ -13,7 +13,7 @@ agrees with the shipped graph.
 | R1.2 — both loops named, and the seam stated | §Two loops | `pdlc-work-item-loop` and `pdlc-pr-loop` named with their scopes; the seam is stated as "the outer `implementation` node waits at `await-inner-loops` until every inner loop that was started reaches `complete`", plus the vacuous-pass case |
 | R1.3 — four artifacts, `testing-plan.md`'s role stated | §The artifact chain | All four listed in order in a table; `testing-plan.md`'s row states it is written before the task DAG that references its rows, reviewed with the design, and completed at `verification` |
 | R1.4 — the phase sequence matches the graph | Compared below | Match |
-| R2.2 — shorter than its predecessor | `wc -l` | **265 → 174 lines**, a 34% reduction, while adding the two loops, the seam and the four-artifact table |
+| R2.2 — shorter than its predecessor | `wc -l` | **265 → 166 lines**, a 37% reduction, while adding the two loops, the seam, the four-artifact table and the regenerated diagram |
 | R2.4 — an explicit next step into the site | Second paragraph and every section footer | "**[Read the documentation](…)**" up front, plus per-section link rows |
 
 What was removed, and where the reader now finds it:
@@ -55,8 +55,9 @@ $ uv run --project cli python -c "from the_loop.graph.model import load_graph; \
  ('human-approval', ''), ('complete', 'complete'), ('escalated', '')]
 ```
 
-Both mermaid diagrams (the README's and `what-is-the-loop.md`'s) render these node ids and
-the three human gates in this order, and the inner loop's is read the same way from
+`what-is-the-loop.md`'s mermaid diagram renders these node ids and the three human gates in
+this order; the README's Excalidraw diagram is checked the same way in
+[`diagram.md`](diagram.md) (T13). The inner loop's sequence is read from
 `pdlc-pr-loop.yaml`: `implementation → verification → self-review → critic-review →
 security-review → reviewer-briefing → pr-approval → complete`.
 

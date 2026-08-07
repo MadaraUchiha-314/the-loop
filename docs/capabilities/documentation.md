@@ -83,6 +83,29 @@ alone does not fix that; structure plus a test does.
   chain — SHALL match the shipped graph, which `test_graph_parity.py`'s P4 pins for the
   phase sequence.
 
+### The README's workflow diagram
+
+- The README SHALL carry **one** diagram of the workflow, authored as an **Excalidraw**
+  scene (the exception issue-150 established for the hero image; `diagramFormat: mermaid`
+  continues to govern everything the harness produces). Two committed artifacts:
+  `docs/assets/the-loop-workflow.excalidraw` (the scene) and
+  `docs/assets/the-loop-workflow.svg` (what the README embeds, since GitHub cannot render
+  `.excalidraw`).
+- The SVG SHALL be **self-contained**: Virgil embedded as a `base64` data URI, no external
+  URL, and no scripting construct — grepped before commit. Excalidraw's exporter emits
+  `@font-face` rules pointing at *asset paths*, so the inlining step is not optional: without
+  it the hand-drawn face degrades to a system font on GitHub with nothing failing.
+- Both files SHALL round-trip into excalidraw.com — the SVG carries the embedded scene
+  payload (`exportEmbedScene`).
+- The scene's geometry SHALL be **computed by a committed generator** rather than placed by
+  hand, so a regeneration is a command rather than a re-derivation
+  (`docs/specs/issue-174/evidence/diagram/generate-scene.py`). The export tooling itself
+  (headless Chromium plus `@excalidraw/excalidraw`) stays outside the repository.
+- The diagram SHALL show what the shipped graphs declare, and is checked node-by-node
+  against them — including the inner loop's `start:` node and the nodes it does **not**
+  declare. It went stale for three releases before issue-174; being a picture is not an
+  exemption from the gate below.
+
 ### Updating the user-facing docs is a completion gate (issue-174)
 
 - A work item SHALL update the **user-facing documentation** its change made wrong — the
@@ -142,7 +165,7 @@ because nothing read them before `complete`.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
-| issue-174 | The root `README.md` rewritten to lead with the graph, the two loops and the CLI and to delegate everything else to this site; the site's three entry pages brought current (two loops, the four-artifact chain, `testing-plan.md`); and updating the user-facing docs became a completion gate — `## Documentation` joins `## Capability docs` on the `capability-docs` node | [spec](../specs/issue-174/), [decision-066](../decisions/decision-066.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/174) |
+| issue-174 | The root `README.md` rewritten to lead with the graph, the two loops and the CLI and to delegate everything else to this site; the site's three entry pages brought current (two loops, the four-artifact chain, `testing-plan.md`); the workflow diagram regenerated from a committed generator after owner review found it three releases stale; and updating the user-facing docs became a completion gate — `## Documentation` joins `## Capability docs` on the `capability-docs` node | [spec](../specs/issue-174/), [decision-066](../decisions/decision-066.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/174) |
 | issue-117 | The CLI documented as a product (onboarding path + one page per command), Config made a top-level section split by area, the `cli/README.md` → `docs/cli.md` copy retired, and the docs↔code parity test added — which is what forced `check`/`graph`/`migrate-config` and `integrations`/`workspace`/`routing.graph`/`polling.maxRetries` to be written, and `ghBinary` to be removed | [spec](../specs/issue-117/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/117) |
 | issue-73 | `CLAUDE.md` added so the-loop's own cloud/web sessions run the loop instead of shipping one-off PRs | [issue](https://github.com/MadaraUchiha-314/the-loop/issues/73) |
 | PR #71 | Established the VitePress site and the GitHub Pages deploy, including the spec sidebar generated from the filesystem | [PR](https://github.com/MadaraUchiha-314/the-loop/pull/71) |

@@ -75,6 +75,17 @@ overrides: {}
   - _Requirements:_ all
   - _Test:_ `T12 — make check` (the gate on the whole change)
 
+- [x] 8. Regenerate the workflow diagram (added at PR review — R5)
+  - Replace the stale issue-150 scene: a computed generator emits the two-loop
+    `.excalidraw` scene (three column-aligned bands, the spec chain with
+    `testing-plan.md`, the inner loop starting at `implementation`, the two seam arrows);
+    export via Excalidraw's own `exportToSvg` with `exportEmbedScene`; inline Virgil as a
+    data URI and drop the unused faces; remove the README's mermaid twin so one diagram
+    remains; commit the generator
+  - _Depends on:_ 4
+  - _Requirements:_ R5.1–R5.6
+  - _Test:_ `T13 — headless-Chromium render + self-containment greps`; `T6 — markdownlint`
+
 ## Dependency graph (DAG)
 
 ```mermaid
@@ -85,9 +96,13 @@ flowchart LR
   t5["5 · site entry pages"] --> t6
   t3 --> t6
   t6 --> t7["7 · verify + evidence"]
+  t4 --> t8["8 · regenerate the diagram<br/>(added at PR review)"]
+  t8 --> t7
 ```
 
 Tasks 1+2 are one red→green pair; 4 and 5 are independent of them and of each other.
+Task 8 arrived from the owner's review of PR #175 and re-opened task 7, which is why the
+verification results carry a second pass.
 
 ## Checkpoints
 
@@ -97,6 +112,8 @@ Tasks 1+2 are one red→green pair; 4 and 5 are independent of them and of each 
   the red, then task 1 — that order is the evidence, and it is recorded in `evidence/tests.md`.
 - **After 5:** `pre-commit run markdownlint --all-files` over the whole tree.
 - **After 6:** `make check` — the full gate before the review chain.
+- **After 8:** re-run T13 (render + greps) and T6, then re-enter task 7 — a new
+  requirement gets a new verification pass, not an amended old one.
 - **After 7:** the `verification` node's own gate: every activity ticked, every row of
   §Verification results naming a command, an outcome and committed evidence. Then the
   review phases run the self/critic rounds and the **security review gate**.

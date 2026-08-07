@@ -115,6 +115,52 @@ considered and rejected: `stage: capability-docs` is a key in every operator's
 `tokenEconomy.modelRouting.stages` and `thinkingEffort.stages` map, and a rename would
 silently drop those routings on upgrade for a cosmetic gain.
 
+### The regenerated workflow diagram (R5)
+
+`docs/assets/the-loop-workflow.svg` was drawn by issue-150 against the process as it stood
+then: one loop, three spec artifacts, no `test-planning` and no `verification`. Its own alt
+text listed *"brainstorm.md, requirements.md, design.md, tasks.md"*. It is replaced, not
+patched.
+
+**The layout is the argument.** The three bands share one left edge and one width, and the
+inner loop's boxes sit in the same columns as the outer loop's:
+
+| Column | Outer (`pdlc-work-item-loop`) | Inner (`pdlc-pr-loop`) |
+|--------|-------------------------------|------------------------|
+| 1 | `implementation` | `implementation` (this PR's slice) |
+| 2 | `verification` (across all PRs) | `verification` (this component) |
+| 3 | self · critic · security · **evidence · capability-docs** · briefing | self · critic · security · briefing |
+| 4 | human approval → `complete` | PR review → `complete` |
+
+Read down a column and the owner's own description of the inner loop — *"basically the
+same loop but with some steps skipped"* — is visible rather than asserted, including
+**which** steps: everything above `implementation`, plus `evidence` and `capability-docs`,
+which `pdlc-pr-loop.yaml` does not declare.
+
+Production, and why each piece is the way it is:
+
+- **Geometry is computed, not hand-placed** (R5.6). A generator
+  (`evidence/diagram/generate-scene.py`) emits the `.excalidraw` JSON from a table of
+  boxes; text is centred from measured Virgil metrics (`0.458 × fontSize` per character,
+  derived from the issue-150 scene's own label offsets, so both scenes agree). Committing
+  it makes the next regeneration a command. The diagram going stale was partly a cost
+  problem: reproducing it meant re-deriving it.
+- **Export is Excalidraw's own `exportToSvg`**, run in headless Chromium with
+  `exportEmbedScene: true` — the same route issue-150 used, so the SVG round-trips back
+  into excalidraw.com (R5.5). The exporter tooling stays in the scratchpad; only the two
+  artifacts and the generator enter the repository.
+- **The font is inlined afterwards** (R5.4). `exportToSvg` emits `@font-face` rules
+  pointing at asset paths, which resolve to nothing on GitHub — the hand-drawn look would
+  silently degrade to a system font. The build substitutes the Virgil `woff2` shipped in
+  the same package as a `base64` data URI and drops the two unused faces (Cascadia,
+  Assistant), leaving one self-contained rule.
+- **One diagram, not two** (R5.3). The mermaid two-loop block this PR had added to the
+  README is removed; the SVG replaces it in place, high on the page. The site's
+  `what-is-the-loop.md` keeps its mermaid — `userInteraction.diagramFormat: mermaid` is the
+  standing rule and issue-150's exception was scoped to the README hero image. That leaves
+  two renderings of one process, which is a divergence risk this work item is otherwise
+  arguing against; it is **raised for the reviewer** rather than settled unilaterally.
+
 ## Data models
 
 None added. `sections:` is already `list[str]` in the hook's parameters, and

@@ -20,7 +20,7 @@ status: in-progress
 | tasks-breakdown | 2026-08-07 | MadaraUchiha-314 | 7 tasks; 1+2 are the red→green pair |
 | implementation | 2026-08-07 | | Tasks 1–6 |
 | verification | 2026-08-07 | | Testing plan executed; one row replanned mid-flight |
-| needs-review | 2026-08-07 | pending | Awaiting the human gate on the PR |
+| needs-review | 2026-08-07 | changes requested, addressed | Owner review on PR #175 produced R5; back through implementation and verification, then re-entered |
 | complete | | | |
 
 ## Pull requests
@@ -29,7 +29,7 @@ status: in-progress
 
 | PR | Scope / tasks | Status |
 |----|---------------|--------|
-| [#175](https://github.com/MadaraUchiha-314/the-loop/pull/175) | Tasks 1–7 — the whole work item, one PR, one session (no inner loops started) | open |
+| [#175](https://github.com/MadaraUchiha-314/the-loop/pull/175) | Tasks 1–8 — the whole work item, one PR, one session (no inner loops started) | open |
 
 ## Progress entries
 
@@ -49,7 +49,7 @@ status: in-progress
 - **Did:** gated `## Documentation` on the outer loop's `capability-docs` node and added the
   section to the bundled execution-log template; wrote the rule into `SKILL.md` and
   `reference/workflow.md`; rewrote `README.md` around the graph, the two loops and the CLI
-  (265 → 174 lines); brought `docs/index.md` and the two guide pages current; recorded
+  (265 → 166 lines); brought `docs/index.md` and the two guide pages current; recorded
   decision-066 and folded in `documentation.md` and `process-graph.md`.
 - **Checkpoint/tests:** the red→green pair captured verbatim in `evidence/tests.md`. Then
   `make check` surfaced a second failure the plan had not anticipated — see the next entry.
@@ -86,6 +86,30 @@ status: in-progress
 - **Next:** the review chain.
 - **Blockers:** none.
 
+### 2026-08-07 — owner review on PR #175: the diagram was the stalest thing on the page
+
+- **Phase:** needs-review → implementation → verification
+- **Did:** two review comments — *"Why do we still have an outdated excalidraw diagram??"*
+  and, on the two-loop mermaid block, *"Can't we use excalidraw??"* — named a gap the
+  requirements had missed. R1 governed the README's **prose**; the picture beside it was
+  still the issue-150 scene, drawn before `testing-plan.md` existed and before the PDLC
+  split in two. Its own alt text listed four artifacts and one loop. The most glanceable
+  thing on the page was the most wrong.
+- Added **R5** and **task 8** rather than patching quietly: regenerated the scene from a
+  committed generator (three column-aligned bands, so the inner loop sits under the outer
+  one and the skipped steps are visible rather than asserted), exported through
+  Excalidraw's own `exportToSvg` with the scene embedded, inlined Virgil as a data URI, and
+  removed the README's mermaid twin so one diagram remains. Added **T13** to the testing
+  plan — a new requirement gets a new row.
+- **Checkpoint/tests:** T13 and T6 re-run; `make check` green. The font step was the
+  non-obvious one: `exportToSvg` emits `@font-face` rules pointing at asset paths that
+  resolve to nothing on GitHub, so the hand-drawn look would have degraded to a system font
+  with nothing failing.
+- **Next:** re-run the full verification pass, then back to the human gate.
+- **Blockers:** none. One question is put back to the reviewer rather than decided here:
+  the site's `what-is-the-loop.md` keeps a mermaid rendering of the same two loops, which
+  is two copies of one process — the divergence this work item otherwise argues against.
+
 ## Review cycles
 
 > Outcome is one of: new findings · zero (converged) · escalated · **unavailable** (the
@@ -97,6 +121,7 @@ status: in-progress
 | 2 | self | agent | **new findings** — T2 was mis-scoped `n/a`; the plan was replanned and a negative test added (entry above) | `evidence/tests.md` |
 | 3 | self | agent | **new findings** — the README claimed a line count that had not been measured (guessed 148, actual 174); every quantitative claim in the spec and evidence was re-derived from a command | `evidence/docs-review.md` |
 | 4 | critic | — | **unavailable** — `reviews.critics[]` is empty in this repository's harness config, so no critic round could be spawned. Per `reference/reviewing.md` this does **not** count toward `reviews.criticReviewCount`; the human gate on the PR is the next reviewer | `.the-loop/harness-config.yaml` |
+| 5 | human (owner) | MadaraUchiha-314 | **changes requested** — the README's Excalidraw diagram was stale, and the two-loop diagram should be Excalidraw rather than mermaid. Both accepted; became R5 / task 8 / T13 | [PR #175](https://github.com/MadaraUchiha-314/the-loop/pull/175) |
 
 ## Security review (gate)
 
@@ -105,14 +130,19 @@ status: in-progress
 - **Mechanism:** the-loop checklist (`security.review.mechanism: auto`), applied to the
   full diff.
 - **Outcome:** **pass.** The change edits checked-in markdown, one bundled template, one
-  test module and one element of a node's `sections:` list. No new ingress, parser,
+  test module, one element of a node's `sections:` list, and two diagram assets. No new ingress, parser,
   subprocess, network call, credential path or permission; `validate-artifacts` performs the
   same structural heading match on a file it already opens for five sibling gates. The one
   behavioural change is strictly **more** fail-closed than before: an execution log missing
   `## Documentation` now blocks where it previously passed. Redaction check: all three
   evidence files hold test names, lint findings, counts and repository-relative paths only —
   no tokens, cookies, personal data or internal hostnames, and none of the added
-  documentation embeds a credential or a hostname. The one abuse case the requirements
+  documentation embeds a credential or a hostname. The regenerated `the-loop-workflow.svg`
+  was held to issue-150's fail-closed rule and passes it: an SVG rendered on a public README
+  is the one asset here that could carry executable content, so it was grepped for
+  `<script>`, `on*=` handlers and `javascript:` (0 hits) and for external references (the
+  SVG namespace declaration only — the font is inlined, so the file fetches nothing). GitHub
+  additionally serves README images through its sanitizing image proxy. The one abuse case the requirements
   raised that this change does **not** defeat is stated rather than papered over: a
   `## Documentation` heading holding placeholder text passes the structural check, exactly
   as `docs/capabilities/process-graph.md` already records for every section gate.
@@ -129,13 +159,15 @@ Acceptance criteria, each mapped to the thing that proves it.
 |-------------|-----------|----------|
 | R1.1–R1.3 — README leads with the graph, names both loops and the seam, lists four artifacts | Section-by-section read against the requirement text | [`evidence/docs-review.md`](evidence/docs-review.md) |
 | R1.4, R3.3 — the phase sequence matches the shipped graph | `test_p4_the_graph_defines_the_phase_sequence` (both config variants) + the sequence printed from config and compared | [`evidence/tests.md`](evidence/tests.md), [`evidence/docs-review.md`](evidence/docs-review.md) |
-| R2.1–R2.4 — minimal, delegating, absolute site links, an explicit next step | 265 → 174 lines; a table of what moved where; all 20 links resolved to files | [`evidence/docs-review.md`](evidence/docs-review.md) |
+| R2.1–R2.4 — minimal, delegating, absolute site links, an explicit next step | 265 → 166 lines; a table of what moved where; all 20 links resolved to files | [`evidence/docs-review.md`](evidence/docs-review.md) |
 | R3.1, R3.2 — the site's three entry pages current | Per-page check table; markdownlint over 451 files, 0 errors | [`evidence/docs-review.md`](evidence/docs-review.md), [`evidence/lint-and-types.md`](evidence/lint-and-types.md) |
 | R4.1 — the ready-to-ship gate names user-facing docs | `reference/workflow.md` §User-facing docs + the gate list; `SKILL.md` operating principle | in-diff |
 | R4.2 — `## Documentation` gated alongside `## Capability docs` | `test_capability_docs_blocks_when_only_one_of_its_two_sections_is_written`, asserted both directions | [`evidence/tests.md`](evidence/tests.md) |
 | R4.3 — fail closed; "none" recorded with a reason | The absent-section block still holds (25 passed); the template preamble states the rule | [`evidence/tests.md`](evidence/tests.md) |
 | R4.4 — the bundled template satisfies the gate it declares | P5c, plus `test_the_bundled_template_can_clear_every_gate_in_the_chain[capability-docs]` | [`evidence/tests.md`](evidence/tests.md) |
 | R4.5 — the inner loop gates neither section | P5a/b/c iterate **both** shipped loops and stay green with `pdlc-pr-loop.yaml` unchanged | [`evidence/tests.md`](evidence/tests.md) |
+| R5.1, R5.2 — the diagram shows both loops, the four artifacts, and the inner loop's real start and omissions | Node-by-node comparison of the rendered SVG against both shipped graph YAMLs | [`evidence/diagram.md`](evidence/diagram.md) |
+| R5.3–R5.6 — one diagram, self-contained, round-trips, generator committed | `grep`: 0 scripting constructs, 1 data-URI `@font-face`, only the SVG namespace URL, scene payload present, scene parses (72 elements) | [`evidence/diagram.md`](evidence/diagram.md) |
 | Non-functional — lint, types, schema, no regression | `make check`: ruff, ruff-format, markdownlint, pyright 0 errors, 6 configs VALID, 1424 passed / 1 skipped | [`evidence/lint-and-types.md`](evidence/lint-and-types.md) |
 
 ## Capability docs
@@ -155,7 +187,8 @@ Acceptance criteria, each mapped to the thing that proves it.
 
 | Document | What changed |
 |----------|--------------|
-| `README.md` | Rewritten. Leads with the executable process graph and the daemon; then the two loops with a mermaid diagram and the `await-inner-loops` seam; then the four-artifact chain including `testing-plan.md`; then the CLI; then the plugins. The per-command tables, install matrix, layout tree, rules list, v0 status block and roadmap are gone — delegated to the site or deleted as drift generators. 265 → 174 lines |
+| `docs/assets/the-loop-workflow.svg` + `.excalidraw` | **Regenerated** (was the issue-150 scene: one loop, three spec artifacts). Now three column-aligned bands — the spec chain including `testing-plan.md`, the outer `pdlc-work-item-loop`, and the inner `pdlc-pr-loop` starting at `implementation` — joined by the two seam arrows. Virgil inlined; the scene embedded so both files re-open in Excalidraw |
+| `README.md` | Rewritten. Leads with the executable process graph and the daemon; then the two loops, the regenerated Excalidraw diagram and the `await-inner-loops` seam; then the four-artifact chain including `testing-plan.md`; then the CLI; then the plugins. The per-command tables, install matrix, layout tree, rules list, v0 status block and roadmap are gone — delegated to the site or deleted as drift generators. 265 → 166 lines |
 | `docs/index.md` | Hero tagline leads with the graph; the four feature cards become *Two loops, one process* · *The process is executable* · *A CLI that drives it* · *Gated, reviewed, documented* |
 | `docs/guide/what-is-the-loop.md` | Both loops with their sequences and a mermaid diagram; the four-artifact table with `testing-plan.md`'s plan-then-record role; the "v0 foundation" status block removed; the rules list gained test-planning, security gating and the documentation rule |
 | `docs/guide/how-it-works.md` | New leading section "The process is data" — both shipped graph YAMLs, the node/hook/edge model, and four consequences (internal to the-loop, gates read artifacts, a force never forges a verdict, the graph assigns). Repository layout refreshed with `cli/the_loop/graph/`, `docs/api-specs/`, `skills/writing/`, `testing-plan.md` and `evidence/` |
