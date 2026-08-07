@@ -89,16 +89,33 @@ class Runtime:
         graph: Optional[Graph] = None,
         spec_root: str = "docs/specs",
         config: Optional[Mapping[str, Any]] = None,
+        state_subpath: str = "",
     ):
         self.repo = Path(repo)
         self.graph = graph or load_graph(repo=self.repo)
         self.spec_root = spec_root
         self.config = dict(config or {})
+        # Where this runtime's graph-state lives, RELATIVE to the work item's
+        # spec directory (issue-172). "" is the outer loop's state beside the
+        # artifacts; an inner loop passes "pr-loops/pr-<n>" so each pull
+        # request's pdlc-pr-loop keeps its own pointer while every artifact
+        # gate still resolves against the work item's one spec chain.
+        self.state_subpath = state_subpath
 
     # -- helpers --------------------------------------------------------------
 
     def spec_dir(self, work_item_id: str) -> Path:
         return self.repo / self.spec_root / work_item_id
+
+    def state_dir(self, item: WorkItem) -> Path:
+        """Where this runtime's graph state lives for ``item``.
+
+        The artifacts and the state deliberately split here: hooks resolve
+        against ``item.spec_dir`` (the shared spec chain), state against this.
+        """
+        if self.state_subpath:
+            return item.spec_dir / self.state_subpath
+        return item.spec_dir
 
     def work_item(self, work_item_id: str, ref: str = "") -> WorkItem:
         spec_dir = self.spec_dir(work_item_id)
@@ -188,7 +205,7 @@ class Runtime:
         tampered or optimistic state file cannot survive review.
         """
         item = self.work_item(work_item_id)
-        state = GraphState.load(item.spec_dir, work_item_id)
+        state = GraphState.load(self.state_dir(item), work_item_id)
         reports: List[NodeReport] = []
         for node in self.graph.ordered():
             outcome = self.evaluate(node.id, item)
@@ -244,13 +261,15 @@ class Runtime:
         left untouched, so a redelivered spawn can never rewind it.
         """
         item = self.work_item(work_item_id, ref)
-        state = GraphState.load(item.spec_dir, work_item_id)
+        state = GraphState.load(self.state_dir(item), work_item_id)
         if state.current_node:
             return None
 
         node_id = self.graph.start
         state.enter(node_id)
-        state.save(item.spec_dir)  # persist BEFORE any dependent side effect (R8.2)
+        state.save(
+            self.state_dir(item)
+        )  # persist BEFORE any dependent side effect (R8.2)
         node = self.graph.node(node_id)
         run_chain(node.entry, self._context(item, node, "entry"))
         eventlog.emit("graph.started", work_item=item.ref, node=node_id)
@@ -284,7 +303,7 @@ class Runtime:
         """
         item = self.work_item(work_item_id, ref)
         try:
-            with state_lock(item.spec_dir):
+            with state_lock(self.state_dir(item)):
                 return self._complete_locked(item, work_item_id, ref, node, actor)
         except StateLockBusy:
             return {
@@ -300,7 +319,7 @@ class Runtime:
     def _complete_locked(
         self, item: WorkItem, work_item_id: str, ref: str, node: str, actor: str
     ) -> Dict[str, Any]:
-        state = GraphState.load(item.spec_dir, work_item_id)
+        state = GraphState.load(self.state_dir(item), work_item_id)
         if not state.current_node:
             return {
                 "node": node or "",
@@ -336,9 +355,9 @@ class Runtime:
                 "reason": reason,
             }
         state.completions[claimed] = {"at": utc_now(), "by": actor or "cli"}
-        state.save(item.spec_dir)
+        state.save(self.state_dir(item))
         report = self.advance(work_item_id, ref=ref)
-        after = GraphState.load(item.spec_dir, work_item_id).current_node
+        after = GraphState.load(self.state_dir(item), work_item_id).current_node
         return {
             "node": claimed,
             "status": report.status,
@@ -363,7 +382,7 @@ class Runtime:
         arrived; without it the gate has nothing to classify and waits forever.
         """
         item = self.work_item(work_item_id, ref)
-        state = GraphState.load(item.spec_dir, work_item_id)
+        state = GraphState.load(self.state_dir(item), work_item_id)
         node_id = state.current_node or self.graph.start
         node = self.graph.node(node_id)
 
@@ -378,7 +397,7 @@ class Runtime:
 
         if outcome.status == WAIT:
             state.park(node_id, outcome.render() or "awaiting a human")
-            state.save(item.spec_dir)
+            state.save(self.state_dir(item))
             eventlog.emit("graph.parked", work_item=item.ref, node=node_id)
             return report
 
@@ -386,7 +405,7 @@ class Runtime:
             rendered = outcome.render()
             repeated = state.note_block(node_id, rendered)
             rec = state.record(node_id)
-            state.save(item.spec_dir)
+            state.save(self.state_dir(item))
             if repeated or rec.attempts >= node.max_attempts:
                 eventlog.emit(
                     "graph.escalated",
@@ -412,13 +431,13 @@ class Runtime:
         if target is None:
             if node.terminal:
                 state.current_node = node_id
-                state.save(item.spec_dir)
+                state.save(self.state_dir(item))
                 eventlog.emit("graph.completed", work_item=item.ref, node=node_id)
                 return report
             state.park(
                 node_id, f"no declared edge from {node_id} on {outcome.outcome!r}"
             )
-            state.save(item.spec_dir)
+            state.save(self.state_dir(item))
             eventlog.emit(
                 "graph.no_edge",
                 level="warning",
@@ -433,7 +452,9 @@ class Runtime:
             return report
 
         state.enter(target)
-        state.save(item.spec_dir)  # persist BEFORE any dependent side effect (R8.2)
+        state.save(
+            self.state_dir(item)
+        )  # persist BEFORE any dependent side effect (R8.2)
         entry_node = self.graph.node(target)
         if entry_node.actor == "human":
             # `session: inherit` honoured for real (issue-148, R5): decide which
@@ -525,7 +546,7 @@ def force(
     target = runtime.graph.node(to_node)  # raises GraphConfigError, listing valid ids
 
     item = runtime.work_item(work_item_id, ref)
-    state = GraphState.load(item.spec_dir, work_item_id)
+    state = GraphState.load(runtime.state_dir(item), work_item_id)
     from_node = state.current_node or runtime.graph.start
 
     warnings: List[str] = []
@@ -555,7 +576,7 @@ def force(
     # Mark the destination forced — NOT the bypassed gate satisfied.
     state.enter(to_node)
     state.record(to_node).forced = True
-    state.save(item.spec_dir)
+    state.save(runtime.state_dir(item))
 
     eventlog.emit(
         "graph.forced",

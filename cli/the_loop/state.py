@@ -187,8 +187,9 @@ GENERATED_PATHS: Tuple[GeneratedPath, ...] = (
         default="<root>/local/<slug>.json",
         portable=False,
         holds=(
-            "harnessSessionId, cwd, runner, tmuxTarget, status, recentDeliveries — "
-            "one file per work item with a session"
+            "harnessSessionId, cwd, runner, tmuxTarget, status, recentDeliveries, "
+            "and (issue-172) pullRequests — every PR delivering this work item "
+            "with its own tmux session and conversation. One file per work item"
         ),
         why=(
             "a handle to a conversation and a directory that exist on one machine. "

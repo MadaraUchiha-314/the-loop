@@ -8,7 +8,7 @@ remembers to move.
 the-loop graph [--repo .] show   [--format text|json]
 the-loop graph [--repo .] status <work-item>
 the-loop graph [--repo .] advance <work-item> [--ref REF]
-the-loop graph [--repo .] complete <work-item> [--node NODE] [--actor WHO] [--ref REF]
+the-loop graph [--repo .] complete <work-item> [--node NODE] [--actor WHO] [--ref REF] [--pr N]
 the-loop graph [--repo .] run    <work-item> [--ref REF] [--max-nodes 20] [--dry-run]
 the-loop graph [--repo .] force  <work-item> --to NODE --reason TEXT [--actor WHO] [--ref REF]
 ```
@@ -134,6 +134,19 @@ truth.
 
 A refused force — an unknown node, a missing reason — exits `2` with `refused: <why>`, and
 nothing moves.
+
+## `--pr` — addressing a pull request's inner loop
+
+Every verb above (except `run`) accepts `--pr <number>` (issue-172,
+[decision-065](/decisions/decision-065)). It selects that pull request's **inner loop** —
+`pdlc-pr-loop`, the component-scoped subset of the process, with its state under the work
+item's `docs/specs/<id>/pr-loops/pr-<n>/` — instead of the work item's outer
+`pdlc-work-item-loop`. A session working a PR claims its nodes with
+`the-loop graph complete <work-item> --pr <n>`; omitted, every verb means the outer loop,
+exactly as before issue-172. The outer `implementation` node waits (`await-inner-loops`)
+until every started inner loop reaches `complete`, so `graph status <id>` shows a work
+item held at implementation while its PRs are still in flight, and
+`graph status <id> --pr <n>` shows where each PR is.
 
 ## Exit codes
 

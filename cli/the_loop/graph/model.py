@@ -23,13 +23,26 @@ import yaml
 
 from .registry import hook_names, is_registered
 
-#: The shipped graph, package data beside this module (see shipped_graph_path).
-GRAPH_FILENAME = "pdlc.yaml"
+#: The two shipped loops (issue-172, PR #173 review): the OUTER loop walks a
+#: work item through the PDLC; the INNER loop walks one pull request through
+#: the subset of it that delivers a component — in service of the work item.
+#: Same vocabulary, same hooks, same runtime; different node sets, different
+#: state files. A third, pdlc-project-management-loop, is anticipated by the
+#: naming and deliberately not shipped yet.
+PDLC_WORK_ITEM_LOOP = "pdlc-work-item-loop"
+PDLC_PR_LOOP = "pdlc-pr-loop"
+
+#: The default shipped graph — the outer loop — package data beside this module
+#: (see shipped_graph_path). Named pdlc.yaml before issue-172 split the process
+#: into the two loops.
+GRAPH_FILENAME = f"{PDLC_WORK_ITEM_LOOP}.yaml"
 
 logger = logging.getLogger("the-loop.graph")
 
 __all__ = [
     "ALTERNATIVE_SEPARATOR",
+    "PDLC_PR_LOOP",
+    "PDLC_WORK_ITEM_LOOP",
     "ArtifactSlot",
     "Edge",
     "Graph",
@@ -197,6 +210,9 @@ class Graph:
     edges: List[Edge]
     start: str
     version: int = 1
+    #: Which loop this is (issue-172): pdlc-work-item-loop | pdlc-pr-loop.
+    #: "" for an anonymous test graph — nothing branches on it being set.
+    name: str = ""
     _index: Dict[Tuple[str, str], Edge] = field(default_factory=dict, repr=False)
 
     def node(self, node_id: str) -> Node:
@@ -220,8 +236,8 @@ class Graph:
         return list(self.nodes.values())
 
 
-def shipped_graph_path() -> Path:
-    """The graph that ships with the CLI, as package data beside this module.
+def shipped_graph_path(name: str = PDLC_WORK_ITEM_LOOP) -> Path:
+    """The named shipped loop, as package data beside this module.
 
     **It belongs to the CLI, not to the plugin.** The plugin is the harness
     integration — skills, commands, hooks that teach an agent the process. The
@@ -236,11 +252,11 @@ def shipped_graph_path() -> Path:
     relative to this file, so it works identically from a wheel, an editable
     install and a repository checkout.
     """
-    candidate = Path(__file__).resolve().parent / GRAPH_FILENAME
+    candidate = Path(__file__).resolve().parent / f"{name}.yaml"
     if candidate.is_file():
         return candidate
     raise GraphConfigError(
-        f"the shipped graph is missing from the installed package "
+        f"the shipped graph {name!r} is missing from the installed package "
         f"({candidate}). This is a packaging fault, not a configuration one — "
         "reinstall the-loopy-one."
     )
@@ -381,6 +397,7 @@ def compile_graph(data: Mapping[str, Any]) -> Graph:
         edges=edges,
         start=start,
         version=int(data.get("version", 1)),
+        name=str(data.get("name", "")),
         _index=index,
     )
 
@@ -388,13 +405,23 @@ def compile_graph(data: Mapping[str, Any]) -> Graph:
 _CACHE: Dict[str, Graph] = {}
 
 
-def load_graph(path: Optional[Path] = None, repo: Optional[Path] = None) -> Graph:
-    """Load and compile the shipped graph. Cached per path — compiled once."""
+def load_graph(
+    path: Optional[Path] = None,
+    repo: Optional[Path] = None,
+    name: str = PDLC_WORK_ITEM_LOOP,
+) -> Graph:
+    """Load and compile a shipped loop. Cached per path — compiled once.
+
+    ``name`` selects which loop when no explicit ``path`` is given: the
+    work-item loop (the default, and the whole process before issue-172) or the
+    PR loop. Both are shipped, compiled by the same code, and executed by the
+    same runtime.
+    """
     from . import hooks  # noqa: F401 — registers the built-ins before resolution
 
     if repo is not None:
         _warn_on_repo_graph(repo)
-    target = Path(path) if path else shipped_graph_path()
+    target = Path(path) if path else shipped_graph_path(name)
     key = str(target)
     if key in _CACHE:
         return _CACHE[key]
@@ -418,6 +445,8 @@ def _warn_on_repo_graph(repo: Path) -> None:
     for candidate in (
         repo / ".the-loop" / "graph.yaml",
         repo / ".the-loop" / "pdlc.yaml",
+        repo / ".the-loop" / f"{PDLC_WORK_ITEM_LOOP}.yaml",
+        repo / ".the-loop" / f"{PDLC_PR_LOOP}.yaml",
     ):
         if candidate.is_file():
             logger.warning(

@@ -73,6 +73,18 @@ def _graph():
     return load_graph(shipped_graph_path())
 
 
+def _loops():
+    """Both shipped loops (issue-172): the P5 assertions hold of each.
+
+    The inner loop's review nodes gate the same shared execution log through the
+    same ``validates:`` vocabulary, so an authoring slip there would be the same
+    issue-167 defect one graph over.
+    """
+    from the_loop.graph.model import PDLC_PR_LOOP
+
+    return [load_graph(shipped_graph_path()), load_graph(name=PDLC_PR_LOOP)]
+
+
 def _accepted(node) -> Set[str]:
     """Every artifact name a node's ``produces`` accepts."""
     return {name for entry in node.produces for name in artifact_names(entry)}
@@ -234,13 +246,14 @@ def test_p3_every_gated_name_has_a_template_that_can_satisfy_it() -> None:
 def _validated() -> Dict[str, List[Tuple[Any, Set[str]]]]:
     """Artifact name → ``(node, demanded sections)`` for every ``validates:`` target."""
     out: Dict[str, List[Tuple[Any, Set[str]]]] = {}
-    for node in _graph().ordered():
-        for spec in _validate_entries(node):
-            target = (spec.get("with") or {}).get("validates")
-            if not target:
-                continue
-            for name in artifact_names(target):
-                out.setdefault(name, []).append((node, _sections(spec)))
+    for graph in _loops():
+        for node in graph.ordered():
+            for spec in _validate_entries(node):
+                target = (spec.get("with") or {}).get("validates")
+                if not target:
+                    continue
+                for name in artifact_names(target):
+                    out.setdefault(name, []).append((node, _sections(spec)))
     return out
 
 
@@ -258,8 +271,10 @@ def test_p5a_every_content_gate_resolves_an_artifact_to_read() -> None:
     itself annotates "never skippable, at any risk tier".
     """
     inert = [
-        f"{node.id} (gates on {sorted(_sections(spec)) or sorted(_declared_checks(spec))})"
-        for node in _graph().ordered()
+        f"{graph.name or 'graph'}:{node.id} "
+        f"(gates on {sorted(_sections(spec)) or sorted(_declared_checks(spec))})"
+        for graph in _loops()
+        for node in graph.ordered()
         for spec in _validate_entries(node)
         if _declared_checks(spec)
         and not node.produces

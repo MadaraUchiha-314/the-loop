@@ -73,6 +73,16 @@ paths:
         schema:
           type: string
           title: Repo
+      - name: pr
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Pr
+        description: A pull-request number selects that PR's inner loop
+          (pdlc-pr-loop, issue-172); omitted is the outer pdlc-work-item-loop.
       responses:
         '200':
           description: Successful Response
@@ -646,6 +656,14 @@ components:
           type: string
           title: Ref
           default: ''
+        pr:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Pr
+          description: A pull-request number selects that PR's inner loop
+            (pdlc-pr-loop, issue-172); null/omitted is the work item's outer
+            pdlc-work-item-loop.
       type: object
       required:
       - repo
@@ -663,6 +681,14 @@ components:
           type: boolean
           title: Recompute
           default: false
+        pr:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Pr
+          description: A pull-request number selects that PR's inner loop
+            (pdlc-pr-loop, issue-172); null/omitted is the work item's outer
+            pdlc-work-item-loop.
       type: object
       required:
       - repo
@@ -688,6 +714,14 @@ components:
           type: string
           title: Ref
           default: ''
+        pr:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Pr
+          description: A pull-request number selects that PR's inner loop
+            (pdlc-pr-loop, issue-172); null/omitted is the work item's outer
+            pdlc-work-item-loop.
       type: object
       required:
       - repo
@@ -715,6 +749,14 @@ components:
           type: string
           title: Ref
           default: ''
+        pr:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Pr
+          description: A pull-request number selects that PR's inner loop
+            (pdlc-pr-loop, issue-172); null/omitted is the work item's outer
+            pdlc-work-item-loop.
       type: object
       required:
       - repo

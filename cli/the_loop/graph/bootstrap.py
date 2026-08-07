@@ -35,6 +35,7 @@ def build_runtime(
     root: Path,
     spec_root: Optional[str] = None,
     authorized_users: Optional[Sequence[str]] = None,
+    pr_number: Optional[int] = None,
 ):
     """A runtime for ``root``, configured from the harness and CLI configs.
 
@@ -50,7 +51,15 @@ def build_runtime(
       ``routing.graph.specDir``, for a checkout that carries no harness
       config. Until issue-123 that key was never unset, so this fall-through was
       unreachable on the daemon path and no watched repository's value was ever honoured.
+
+    ``pr_number`` selects the **inner** loop (issue-172): the runtime then walks
+    ``pdlc-pr-loop`` with its state under the work item's
+    ``pr-loops/pr-<n>/``, while every artifact gate still resolves against the
+    work item's one spec chain. ``None`` — the default, and every caller before
+    issue-172 — is the outer ``pdlc-work-item-loop``.
     """
+    from .hooks.loops import PR_LOOPS_DIRNAME
+    from .model import PDLC_PR_LOOP, load_graph
     from .runtime import Runtime
 
     harness = load_harness_config(root)
@@ -74,6 +83,14 @@ def build_runtime(
                 "routing"
             ) or {}
             config["authorizedUsers"] = routing.get("authorizedUsers") or []
+    if pr_number is not None:
+        return Runtime(
+            root,
+            graph=load_graph(repo=root, name=PDLC_PR_LOOP),
+            spec_root=str(spec_root or harness_config.spec_dir(harness)),
+            config=config,
+            state_subpath=f"{PR_LOOPS_DIRNAME}/pr-{pr_number}",
+        )
     return Runtime(
         root,
         spec_root=str(spec_root or harness_config.spec_dir(harness)),

@@ -6,8 +6,9 @@
 
 ## What it is
 
-The runtime under `cli/the_loop/graph/` plus the shipped graph definition
-(`cli/the_loop/graph/pdlc.yaml`), surfaced as `the-loop check` and `the-loop graph`.
+The runtime under `cli/the_loop/graph/` plus the shipped loop definitions
+(`cli/the_loop/graph/pdlc-work-item-loop.yaml` and `pdlc-pr-loop.yaml`), surfaced as
+`the-loop check` and `the-loop graph`.
 It exists because before it, the PDLC was enforced only by prompts: there was no event
 anywhere in the-loop meaning *"this node of the process completed"*, so there was nowhere
 to hang a gate, a notification, or an advance (issue-109, [decision-041](../decisions/decision-041.md)).
@@ -19,8 +20,55 @@ There are exactly **two** runtime concepts and **one** contract between them.
 ### The graph
 
 - The PDLC SHALL be declared as data — nodes and edges in
-  `cli/the_loop/graph/pdlc.yaml`, versioned and validated against its schema — and the
-  runtime SHALL execute that declaration rather than re-deriving the process from prose.
+  `cli/the_loop/graph/pdlc-work-item-loop.yaml`, versioned and validated against its
+  schema — and the runtime SHALL execute that declaration rather than re-deriving the
+  process from prose.
+- **The process is two loops** (issue-172, [decision-065](../decisions/decision-065.md)).
+  The **outer** `pdlc-work-item-loop` walks a *work item* through the full PDLC, exactly
+  as the single graph always did. The **inner** `pdlc-pr-loop` walks one *pull request*
+  through the component-scoped subset that delivers it — starting at `implementation`
+  (everything earlier is the work item's, decided once at the outer level), through
+  verification and the same review chain, to the PR's own human gate (`pr-approval`)
+  and a terminal `complete`. Same vocabulary, same hooks, same runtime; a third,
+  `pdlc-project-management-loop`, is anticipated by the naming and not yet shipped.
+  - The loops SHALL meet at exactly **one seam**: the outer `implementation` node's
+    `await-inner-loops` exit hook. WHEN inner loops have been started under
+    `docs/specs/<id>/pr-loops/` THEN the work item SHALL `wait` at `implementation`,
+    naming the pending PRs, until every one of them reaches its `complete` node — "wait
+    for tasks to be complete (inner loop start and finish)" — after which verification
+    runs across all the PRs. WHEN none was ever started THEN the gate SHALL pass
+    vacuously: a single-session work item behaves exactly as before issue-172.
+  - Each inner loop's state SHALL live at
+    `docs/specs/<id>/pr-loops/pr-<number>/graph-state.json` — beside the outer
+    `graph-state.json`, checked in, a cache and never an authority. Artifacts SHALL
+    resolve against the work item's **one** spec chain: a PR does not get a spec chain
+    of its own. An unreadable inner state SHALL hold the outer gate (naming the PR),
+    never release it.
+  - The daemon SHALL drive each inner loop from its PR's **own session** (the
+    `pullRequests[]` endpoint, `routing.tmux.sessionPerPr`): the endpoint's spawn enters
+    the loop at `implementation`, its events advance it, and the work item's outer loop
+    is NEVER advanced by a PR's events — the outer loop hears about inner ones only
+    through the state files `await-inner-loops` reads. WHEN the PR **merges** THEN its
+    loop SHALL be driven to `complete` as a **forced** transition (reason recorded; a
+    force moves the pointer, never forges a verdict), because a merge is the PR's
+    approval delivered as a state change. A PR closed WITHOUT merging SHALL keep its
+    pointer where it was: abandoned is not finished, and the outer gate holding is the
+    process noticing.
+  - Every graph verb SHALL address either loop: `the-loop graph
+    status|advance|complete|force|show --pr <n>` (and `pr` on the corresponding API
+    bodies) selects the PR's inner loop; omitted, the work item's outer loop — the whole
+    pre-issue-172 surface, unchanged.
+  - **The graph assigns, not just judges** (decision-065 D8). WHEN either loop enters a
+    non-terminal agent node on the daemon path THEN the `deliver-assignment` entry hook
+    SHALL push that node's assignment — where the item stands, what to produce, the
+    exact claim command (`the-loop graph complete <id> [--pr <n>]`) — into the loop's
+    bound session (`graph.assignment_delivered`), so the session is told its work
+    rather than inferring it from the next GitHub event. The text is composed only from
+    the-loop's own vocabulary — no payload reaches it. WHEN there is no delivery
+    channel — a session's own `graph complete`, `the-loop check`, any CLI invocation —
+    THEN the hook SHALL skip: the claim's JSON envelope already carries the same facts.
+    A failed push SHALL be recorded (`graph.assignment_failed`) and SHALL never gate
+    the node.
 - The graph SHALL be **internal to the-loop**: it ships as package data inside the CLI —
   the thing that executes it, and where every hook it names is registered — and a consuming
   repository does not define or override it. A repo-local `.the-loop/graph.yaml` SHALL be
@@ -306,6 +354,7 @@ included, however empty the log was.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-172 | The process became two named loops (2026-08-07): `pdlc.yaml` renamed to `pdlc-work-item-loop.yaml` (unchanged content, plus the `await-inner-loops` gate on `implementation`), and `pdlc-pr-loop.yaml` added — one inner loop per PR, run in that PR's own session with state under `docs/specs/<id>/pr-loops/pr-<n>/`, merge driving it to `complete` as an audited force. Graph verbs gained `--pr`; P5 parity asserts over both loops; `deliver-assignment` makes the graph the initiator — entering an agent node pushes its assignment into the bound session | [spec](../specs/issue-172/), [decision-065](../decisions/decision-065.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/172) |
 | issue-167 | Six gates stopped reporting success without running: `validate-artifacts` gained `validates:` for an artifact a node asserts against but did not author, so the six review-chain nodes gate their sections of the shared `execution-log.md`; a content gate that resolves no artifact now blocks (not retriable) instead of skipping; the bundled execution-log template gained the `Capability docs` section `capability-docs` had always demanded; P5 asserts all three against the shipped graph | [spec](../specs/issue-167/), [decision-063](../decisions/decision-063.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/167) |
 | issue-163 | Testing became two nodes: `test-planning` produces `testing-plan.md` before the task DAG that references it, `verification` re-gates the same artifact after implementation and before the review chain; a `skip` stopped short-circuiting a chain, which is what had left `implementation` parking at `no_edge` | [spec](../specs/issue-163/), [decision-060](../decisions/decision-060.md), [testing-and-contracts](testing-and-contracts.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/163) |
 | issue-156 | Process runner removed; tmux is the only runner (2026-08-05): every spawn is tmux-hosted, so "every spawn enters the graph" no longer needs a per-runner qualifier, and the gate-session binding's `runner` is always `"tmux"` | [spec](../specs/issue-156/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/156) |

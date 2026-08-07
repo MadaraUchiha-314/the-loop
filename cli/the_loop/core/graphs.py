@@ -5,12 +5,17 @@ network, no subprocess, no mutation — now holds of these functions; a client's
 hop to the service is transport). The mutating verbs are the same runtime verbs
 the graph command exposes; ``force`` requires a human-attributed reason and is
 deliberately absent from the MCP surface (design §Security).
+
+Every verb takes an optional ``pr`` (issue-172): a pull-request number selects
+that PR's **inner loop** (``pdlc-pr-loop``, state under the work item's
+``pr-loops/pr-<n>/``); ``None`` — the default and the whole pre-issue-172
+surface — is the work item's outer ``pdlc-work-item-loop``.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from ..graph.bootstrap import build_runtime
 from ..graph import runtime as graph_runtime
@@ -25,24 +30,34 @@ def resolve_repo(repo: str) -> Path:
     return path.resolve()
 
 
-def check(repo: str, work_item: str, recompute: bool = False) -> Dict[str, Any]:
+def _runtime(repo: str, pr: Optional[int] = None):
+    return build_runtime(resolve_repo(repo), pr_number=pr)
+
+
+def check(
+    repo: str, work_item: str, recompute: bool = False, pr: Optional[int] = None
+) -> Dict[str, Any]:
     """`the-loop check` for one work item: the status report as a dict."""
-    runtime = build_runtime(resolve_repo(repo))
-    return runtime.status(work_item, recompute=recompute).as_dict()
+    return _runtime(repo, pr).status(work_item, recompute=recompute).as_dict()
 
 
 def complete(
-    repo: str, work_item: str, node: str = "", actor: str = "", ref: str = ""
+    repo: str,
+    work_item: str,
+    node: str = "",
+    actor: str = "",
+    ref: str = "",
+    pr: Optional[int] = None,
 ) -> Dict[str, Any]:
     """A completion claim for the current (or named) node — issue-148 semantics."""
-    runtime = build_runtime(resolve_repo(repo))
-    return runtime.complete(work_item, ref=ref, node=node, actor=actor)
+    return _runtime(repo, pr).complete(work_item, ref=ref, node=node, actor=actor)
 
 
-def advance(repo: str, work_item: str, ref: str = "") -> Dict[str, Any]:
+def advance(
+    repo: str, work_item: str, ref: str = "", pr: Optional[int] = None
+) -> Dict[str, Any]:
     """Evaluate the current node's exit chain and take the matching edge."""
-    runtime = build_runtime(resolve_repo(repo))
-    return runtime.advance(work_item, ref=ref).as_dict()
+    return _runtime(repo, pr).advance(work_item, ref=ref).as_dict()
 
 
 def force(
@@ -52,10 +67,11 @@ def force(
     reason: str,
     actor: str = "",
     ref: str = "",
+    pr: Optional[int] = None,
 ) -> Dict[str, Any]:
     """The authorized-operator escape hatch. Requires a reason; never forges a
     verdict. Not exposed over MCP (design §Security)."""
-    runtime = build_runtime(resolve_repo(repo))
+    runtime = _runtime(repo, pr)
     result = graph_runtime.force(
         runtime, work_item, to_node, reason, actor=actor, ref=ref
     )
@@ -68,17 +84,19 @@ def force(
     }
 
 
-def show(repo: str) -> Dict[str, Any]:
+def show(repo: str, pr: Optional[int] = None) -> Dict[str, Any]:
     """The process graph this repo runs on: its nodes and edges, as data.
 
     A read of *which* graph is in force — the shipped one, or the override the
     repo configures — so it belongs on the same surface as the reports derived
-    from it rather than being re-resolved by each client.
+    from it rather than being re-resolved by each client. With ``pr`` set it is
+    the inner ``pdlc-pr-loop`` instead.
     """
-    runtime = build_runtime(resolve_repo(repo))
+    runtime = _runtime(repo, pr)
     graph = runtime.graph
     return {
         "version": graph.version,
+        "name": graph.name,
         "start": graph.start,
         # Where this repo keeps its specs — the directory `check --all` walks,
         # so a client never has to build a runtime just to learn the layout.

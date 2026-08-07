@@ -27,7 +27,7 @@ working directory), split by whether it travels:
 │   ├── index.json                 # what this directory holds, derived — tracked
 │   └── github-octo-repo-15.json   # one per work item: control + poll state — tracked
 ├── local/
-│   └── github-octo-repo-15.json   # that item's session handle — never tracked
+│   └── github-octo-repo-15.json   # that item's session handle(s) — never tracked
 ├── logs/
 │   └── events.jsonl               # the decision trail
 └── gh-webhook.pid                 # the running receiver
@@ -66,7 +66,7 @@ them, is what makes the `.gitignore` recipe three lines instead of a puzzle
 |---|---|---|---|
 | `<root>/portable/<slug>.json` | execution control + the poller | what was armed, and which comments are already seen | **portable** |
 | `<root>/portable/index.json` | the same store, derived | one entry per record: ref, url, file, sections | **portable** |
-| `<root>/local/<slug>.json` | the session registry | conversation id, `cwd`, tmux target, status | **local** |
+| `<root>/local/<slug>.json` | the session registry | conversation id, `cwd`, tmux target, status, and the item's pull requests with their own sessions | **local** |
 | `<root>/logs/events.jsonl` | every ingress, and `sessions` | one JSON object per decision | **local** |
 | `<root>/gh-webhook.pid` | `gh-webhook start` | the receiver's pid | **local** |
 
@@ -226,7 +226,11 @@ the next write rebuilds it from the directory.
 
 ## Session record — `<root>/local/<slug>.json`
 
-One file per work item that has a session.
+One file per work item that has a session — and, since
+[issue-172](https://github.com/MadaraUchiha-314/the-loop/issues/172), everything about
+that work item's sessions: the item's own, plus one entry per **pull request** delivering
+it, each with its own tmux session and harness conversation
+([`routing.tmux.sessionPerPr`](/config/cli/routing-options#tmux-sessionperpr)).
 
 ```json
 {
@@ -241,7 +245,17 @@ One file per work item that has a session.
   "createdAt": "2026-07-31T09:12:04Z",
   "lastEventAt": "2026-07-31T10:41:55Z",
   "tmuxTarget": "loop-github-octo-repo-15",
-  "recentDeliveries": ["8f2c…"]
+  "recentDeliveries": ["8f2c…"],
+  "pullRequests": [
+    {
+      "workItem": {"ref": "github:octo/repo#16", "…": "…"},
+      "harness": "claude",
+      "harnessSessionId": "77ab…",
+      "status": "active",
+      "tmuxTarget": "loop-github-octo-repo-16",
+      "recentDeliveries": ["91d0…"]
+    }
+  ]
 }
 ```
 
@@ -252,6 +266,20 @@ One file per work item that has a session.
 | `status` | `active`, `paused` (suppressed, not gone) or `closed` |
 | `tmuxTarget` | the tmux session to attach to; `""` until one is spawned (issue-156) |
 | `recentDeliveries` | the last 50 delivery ids, so a restart does not re-deliver |
+| `pullRequests` | the PRs delivering this work item, each a session of its own — same fields, one level deep, absent until a PR event routes here |
+
+**Why the PRs are in here.** Which work item a PR delivers used to be recomputed from
+`gh`'s `closingIssuesReferences` on every single event — so unlinking the PR in GitHub's
+Development panel, editing out the closing keyword, or one transient GraphQL failure
+silently re-pointed routing at the PR itself, past a session that was still running. The
+record is now the answer: everything about a work item — every PR delivering it and every
+conversation involved — is one file. A PR entry is added when its first event routes,
+gets its own tmux session lazily from the first event that needs one, and is closed (that
+entry alone) when the PR merges or closes; the work item's session runs on, because a
+work item may be delivered by several PRs
+([issue-101](https://github.com/MadaraUchiha-314/the-loop/issues/101)). An entry that has
+been hand-edited into something unreadable degrades to "that PR is unrecorded" — it never
+takes the work item's own session down.
 
 **Lifecycle.** Written on spawn or `sessions register`; updated on every delivered event;
 flipped to `closed` when the work item itself ends. Closed records are kept — that is what
@@ -259,7 +287,8 @@ makes a finished tmux session still attachable.
 
 **If you delete it:** the daemon forgets the work item has a session and spawns a fresh
 one on the next event — a new conversation with no memory of the old one, in the same
-checkout. Recoverable, at the cost of context.
+checkout. The PR list goes with it, and is re-recorded as PR events arrive. Recoverable,
+at the cost of context.
 
 **Never carry it to another machine.** See [what must never be
 carried](#what-must-never-be-carried).
@@ -421,6 +450,10 @@ The work item ends up armed, watched, and worked on by nobody.
 There is a second reason, independent of that one: `cwd` is an absolute path from the
 operator's filesystem — username and directory layout — and `harnessSessionId` is a
 resume handle to a conversation. Neither belongs in a repository, whoever can read it.
+
+The `pullRequests` entries inside it are local for the same reason twice over: each one
+is a conversation id and tmux target of its own. They disclose nothing beyond what the
+record already does, and the daemon re-records a PR from the first event that routes.
 
 ## Security
 

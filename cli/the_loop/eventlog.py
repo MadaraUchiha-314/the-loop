@@ -149,6 +149,40 @@ EVENT_TYPES: Dict[str, str] = {
         "A work item ↔ harness session link was recorded in the registry "
         "(work_item, harness, harness_session_id, cwd)."
     ),
+    "session.pr_linked": (
+        "A pull request was durably recorded as delivering a work item "
+        "(work_item, pull_request) — issue-172. Written when the routing "
+        "decision is made, so which session owns the PR's events stops being "
+        "recomputed from `gh`. Emitted only when the PR is newly listed."
+    ),
+    "session.pr_spawned": (
+        "A recorded pull request got its own tmux session and harness "
+        "conversation (work_item, pull_request, harness, harness_session_id, "
+        "tmux_target) — `routing.tmux.sessionPerPr`, on by default. The work "
+        "item's own session is untouched; this is an additional endpoint."
+    ),
+    "session.pr_closed": (
+        "A pull request's endpoint was closed while its work item's session "
+        "kept running (work_item, pull_request) — a work item may be delivered "
+        "by several PRs, so one merging ends only that conversation "
+        "(issue-101, issue-172)."
+    ),
+    "session.link_failed": (
+        "Recording a pull request against its work item failed (work_item, "
+        "linked_ref, error). Best-effort: the event was still dispatched, and "
+        "routing falls back to deriving the linkage as it did before issue-172."
+    ),
+    "graph.assignment_delivered": (
+        "The graph entered an agent node and pushed that node's assignment "
+        "into the loop's bound session (work_item; endpoint: the PR's ref when "
+        "an inner loop was assigned) — issue-172, the deliver-assignment entry "
+        "hook. The graph assigns; the session works; the claim reports back."
+    ),
+    "graph.assignment_failed": (
+        "Pushing an entered node's assignment into its session failed "
+        "(work_item, endpoint, error). Best-effort: the node is entered "
+        "regardless, and the same state is re-rendered into every event prompt."
+    ),
     "session.spawned": (
         "A new harness session was spawned for a work item — this is the "
         "'what triggered this session' record (work_item, harness, "

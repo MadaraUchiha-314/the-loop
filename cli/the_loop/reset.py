@@ -1,7 +1,8 @@
 """Forget everything the-loop's CLI knows about a work item (issue-137).
 
 The CLI remembers a work item in four places, and every one of them survives an
-upgrade: the session record (the harness conversation and where it runs), the
+upgrade: the session record (the harness conversation and where it runs, plus —
+since issue-172 — every pull request delivering it and their own sessions), the
 ``control`` section (what an authorized user last armed), the ``poll`` section
 (which comments have already been seen) and the workspace checkout. That memory
 is the point — it is what makes a ``stop`` durable and what stops a redelivery
@@ -22,8 +23,9 @@ had: deleting a session record. Order matters and is not incidental:
 
 1. close the live session, so no harness is left running against records that
    have gone;
-2. delete the session record, so a crash mid-reset leaves an item with no
-   session rather than an *armed* item whose session the registry forgot;
+2. delete the session record — and with it every pull-request endpoint inside
+   it — so a crash mid-reset leaves an item with no session rather than an
+   *armed* item whose session the registry forgot;
 3. clear ``control`` (which disarms it), then ``poll`` (which makes the thread
    first-sight again).
 
@@ -62,7 +64,9 @@ __all__ = [
 WORKSPACE = "workspace"
 SESSION = "session"
 
-#: Everything a reset can remove, in removal order.
+#: Everything a reset can remove, in removal order. A work item's pull-request
+#: endpoints need no piece of their own (issue-172): they live *inside* the
+#: session record, so deleting it takes them with it.
 PIECES: Tuple[str, ...] = (WORKSPACE, SESSION, CONTROL, POLL)
 
 #: Ends a live session and reports whether a workspace checkout went with it.
@@ -197,6 +201,10 @@ def work_items_with_state(
     index, the atomic writer's leftovers and anything naming no work item. A
     stranger's file in a shared state directory is therefore not enumerated, and
     so is never removed by ``--all``.
+
+    Pull requests are deliberately **not** enumerated: they are endpoints inside
+    their work item's record, not work items this machine holds state for, and
+    listing one would offer ``--all`` a reset that removes half a record.
 
     A record holding **no** section is not state: a ``sealed`` tombstone marks a
     work item the-loop has already ended (it exists only so a pre-issue-128 tree

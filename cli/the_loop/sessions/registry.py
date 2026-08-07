@@ -10,7 +10,18 @@ That directory is **shared** session-related state rather than this module's own
 recognises the files the registry wrote — ``<slug>.json`` — and leaves the rest
 alone (issue-111).
 
-Spec: docs/specs/issue-15/design.md §1 (requirement R2).
+A work item's record also carries its **pull requests** (issue-172): one entry
+per PR that delivers it, each an endpoint in its own right — its own tmux session
+and its own harness conversation, unless ``routing.tmux.sessionPerPr`` is off.
+That list is the routing decision written down, so which session owns a PR's
+events stops being a value recomputed from ``gh`` on every event.
+
+One file per work item is the point: everything about a work item — its own
+session, every PR delivering it, and every tmux/harness conversation involved —
+is answerable by reading one record (PR #173 review).
+
+Spec: docs/specs/issue-15/design.md §1 (requirement R2),
+docs/specs/issue-172/design.md.
 """
 
 from __future__ import annotations
@@ -239,7 +250,20 @@ class WorkItemRef:
 
 @dataclass
 class Session:
-    """One harness session working one work item (see design.md data model)."""
+    """One harness session, and the work item or pull request it serves.
+
+    Two roles, one type, on purpose (issue-172, PR #173 review). A **record** is
+    a work item's session — the file in the registry directory. An **endpoint**
+    is one addressable harness conversation, and a record holds one for the work
+    item itself plus one per pull request in :attr:`pull_requests`. A PR endpoint
+    is a ``Session`` whose ``work_item`` is the PR's ref, which is what lets the
+    whole dispatch path — deliver, respawn, resume, close — operate on either
+    without knowing which it has.
+
+    Only a record carries :attr:`pull_requests`; endpoints nested inside one
+    always have it empty. The nesting is one level deep and stays that way: a PR
+    does not have pull requests.
+    """
 
     work_item: WorkItemRef
     harness: str  # "claude" | "cursor"
@@ -254,6 +278,9 @@ class Session:
     # (issue-156): tmux is the only runner.
     tmux_target: str = ""
     recent_deliveries: List[str] = field(default_factory=list)
+    #: Endpoints for the pull requests delivering this work item (issue-172).
+    #: Empty on an endpoint; empty on a record until a PR event routes here.
+    pull_requests: List["Session"] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         # `tmuxTarget` is the name **tmux uses**, never the one the-loop asked
@@ -266,7 +293,7 @@ class Session:
 
     def to_dict(self) -> dict:
         item = self.work_item
-        return {
+        data = {
             "workItem": {
                 "ref": item.ref,
                 "provider": item.provider,
@@ -283,9 +310,31 @@ class Session:
             "tmuxTarget": self.tmux_target,
             "recentDeliveries": self.recent_deliveries,
         }
+        url = item.url
+        if url:
+            # The human's link to the thing this endpoint serves — same
+            # derive-never-guess rule the portable record follows.
+            data["url"] = url
+        if self.pull_requests:
+            # Absent rather than `[]` on a record with no PRs, so every session
+            # file written before issue-172 round-trips byte-identically.
+            data["pullRequests"] = [pr.to_dict() for pr in self.pull_requests]
+        return data
 
     @classmethod
     def from_dict(cls, data: dict) -> "Session":
+        # One level only: a nested endpoint's own `pullRequests` is dropped
+        # rather than recursed into, so a hand-edited record cannot build a
+        # tree for the resolver to walk. An entry that does not parse is
+        # skipped for the same reason `_read` skips an unreadable file — a
+        # hand-edited PR entry must degrade to "that PR is unrecorded", never
+        # take the work item's own session down with it.
+        pull_requests = []
+        for pr in data.get("pullRequests") or []:
+            try:
+                pull_requests.append(cls.from_dict({**(pr or {}), "pullRequests": []}))
+            except (ValueError, KeyError, TypeError) as exc:
+                logger.debug("skipping unreadable pullRequests entry: %s", exc)
         return cls(
             work_item=WorkItemRef.parse(data["workItem"]["ref"]),
             harness=data["harness"],
@@ -298,6 +347,7 @@ class Session:
             # is nothing left to branch on.
             tmux_target=data.get("tmuxTarget", ""),
             recent_deliveries=list(data.get("recentDeliveries") or []),
+            pull_requests=pull_requests,
         )
 
     @property
@@ -308,6 +358,24 @@ class Session:
     @property
     def is_paused(self) -> bool:
         return self.status == "paused"
+
+    def endpoint_for(self, ref: Union[str, WorkItemRef]) -> Optional["Session"]:
+        """The endpoint serving ``ref`` — this session itself, or one of its PRs.
+
+        ``None`` when ``ref`` is neither. Identity is by ref string, so a caller
+        holding a freshly-parsed ref finds the endpoint a previous cycle wrote.
+        """
+        wanted = _as_ref(ref).ref
+        if self.work_item.ref == wanted:
+            return self
+        for pr in self.pull_requests:
+            if pr.work_item.ref == wanted:
+                return pr
+        return None
+
+    def owns(self, ref: Union[str, WorkItemRef]) -> bool:
+        """Whether this record serves ``ref`` — as itself or as one of its PRs."""
+        return self.endpoint_for(ref) is not None
 
 
 def _as_ref(work_item: Union[str, WorkItemRef]) -> WorkItemRef:
@@ -327,13 +395,13 @@ class SessionRegistry:
     def _path_for(self, item: WorkItemRef) -> Path:
         return self.root / f"{item.slug}.json"
 
-    def _write(self, session: Session) -> None:
+    def _write_json(self, target: Path, payload: dict) -> None:
+        """Atomically replace ``target`` with ``payload`` (tempfile + rename)."""
         self.root.mkdir(parents=True, exist_ok=True)
-        target = self._path_for(session.work_item)
         fd, tmp_name = tempfile.mkstemp(dir=str(self.root), suffix=".tmp")
         try:
             with os.fdopen(fd, "w") as handle:
-                json.dump(session.to_dict(), handle, indent=2)
+                json.dump(payload, handle, indent=2)
                 handle.write("\n")
             os.replace(tmp_name, target)
         except BaseException:
@@ -342,6 +410,9 @@ class SessionRegistry:
             except FileNotFoundError:
                 pass
             raise
+
+    def _write(self, session: Session) -> None:
+        self._write_json(self._path_for(session.work_item), session.to_dict())
 
     def _read(self, path: Path) -> Optional[Session]:
         try:
@@ -504,17 +575,171 @@ class SessionRegistry:
         logger.info("forgot session record for %s", _as_ref(work_item).ref)
         return True
 
+    # -- pull-request endpoints (issue-172) --------------------------------------
+
+    def record_owning(self, ref: Union[str, WorkItemRef]) -> Optional[Session]:
+        """The live record serving ``ref`` — as its work item, or as one of its PRs.
+
+        Two lookups, cheapest first. A ref with its own record resolves in one
+        read of a known path, which is every issue event and every PR that is its
+        own work item. Only a ref with no record of its own costs the scan, and
+        the scan is over the live work items on this machine — a handful of small
+        files — not over anything that grows with history (PR #173 review).
+        """
+        item = _as_ref(ref)
+        own = self.find_by_work_item(item)
+        if own is not None:
+            return own
+        for session in self.list_sessions():
+            if session.is_live and session.owns(item):
+                return session
+        return None
+
+    def session_for(
+        self,
+        ref: Union[str, WorkItemRef],
+        session_per_pr: bool = True,
+    ) -> Optional[Session]:
+        """The live **endpoint** that owns this ref's events, or ``None``.
+
+        The question every ingress asks. For a work item that is its own record
+        this is unchanged from before issue-172; for a pull request it is the PR's
+        own endpoint, and ``session_per_pr=False`` collapses it onto the record's
+        own session instead — the pre-issue-172 behaviour, kept as a configured
+        choice rather than discarded (``routing.tmux.sessionPerPr``).
+
+        Policy is the caller's: the store is told which it wants and never reads
+        configuration itself.
+        """
+        record = self.record_owning(ref)
+        if record is None:
+            return None
+        endpoint = record.endpoint_for(ref) if session_per_pr else record
+        if endpoint is None or not endpoint.is_live:
+            # A PR whose endpoint was closed with its pull request falls back to
+            # the work item's own session: the work item is still open, and its
+            # session is still the one that owns the work.
+            return record if record.is_live else None
+        return endpoint
+
+    def link_pull_request(
+        self,
+        owner: Union[str, WorkItemRef],
+        pr: Union[str, WorkItemRef],
+    ) -> Optional[Session]:
+        """Record that ``pr`` delivers ``owner``'s work item.
+
+        Returns the PR's endpoint when one was added, and ``None`` when there was
+        nothing to do — the record is gone, the refs are the same work item, or
+        the PR is already listed. Making "already known is a no-op" a property of
+        the store is what stops a poll cycle rewriting the file, and re-emitting
+        the same event, once per comment.
+
+        The endpoint starts with no tmux target and no conversation id: it is a
+        statement about *which* PRs deliver this work item, and the first event
+        that needs a session for one spawns it.
+        """
+        owner_ref, pr_ref = _as_ref(owner), _as_ref(pr)
+        if owner_ref.ref == pr_ref.ref:
+            # A work item does not deliver itself.
+            return None
+        record = self.find_by_work_item(owner_ref)
+        if record is None or record.endpoint_for(pr_ref) is not None:
+            return None
+        endpoint = Session(
+            work_item=pr_ref,
+            harness=record.harness,
+            harness_session_id="",
+            cwd=record.cwd,
+            created_at=_utcnow(),
+        )
+        record.pull_requests.append(endpoint)
+        self._write(record)
+        logger.info(
+            "recorded %s as a pull request delivering %s", pr_ref.ref, owner_ref.ref
+        )
+        eventlog.emit(
+            "session.pr_linked",
+            work_item=owner_ref.ref,
+            pull_request=pr_ref.ref,
+        )
+        return endpoint
+
+    def save_endpoint(self, owner: Union[str, WorkItemRef], endpoint: Session) -> None:
+        """Persist ``endpoint`` back into ``owner``'s record.
+
+        The one write path the dispatcher needs, and the reason a PR endpoint can
+        be a plain :class:`Session` everywhere else: the caller hands back
+        whichever endpoint it was working on, and this decides whether that means
+        the record's own fields or an entry in ``pullRequests``.
+        """
+        owner_ref = _as_ref(owner)
+        record = self.find_by_work_item(owner_ref)
+        if record is None:
+            return
+        if endpoint.work_item.ref == owner_ref.ref:
+            endpoint.pull_requests = record.pull_requests
+            self._write(endpoint)
+            return
+        replaced = [
+            endpoint if pr.work_item.ref == endpoint.work_item.ref else pr
+            for pr in record.pull_requests
+        ]
+        if all(
+            pr.work_item.ref != endpoint.work_item.ref for pr in record.pull_requests
+        ):
+            replaced.append(endpoint)
+        record.pull_requests = replaced
+        self._write(record)
+
+    def close_endpoint(
+        self, owner: Union[str, WorkItemRef], ref: Union[str, WorkItemRef]
+    ) -> Optional[Session]:
+        """Mark one pull request's endpoint closed, leaving the record live.
+
+        This is issue-101's rule falling out of the model rather than being
+        special-cased: a PR merging ends *that* conversation, and the work item's
+        session keeps running because a work item may be delivered by several PRs.
+        Returns the closed endpoint so the caller can tear down its tmux session.
+        """
+        owner_ref, pr_ref = _as_ref(owner), _as_ref(ref)
+        record = self.find_by_work_item(owner_ref)
+        if record is None or owner_ref.ref == pr_ref.ref:
+            return None
+        endpoint = record.endpoint_for(pr_ref)
+        if endpoint is None or endpoint is record or not endpoint.is_live:
+            return None
+        endpoint.status = "closed"
+        self._write(record)
+        logger.info("closed the endpoint for %s on %s", pr_ref.ref, owner_ref.ref)
+        eventlog.emit(
+            "session.pr_closed",
+            work_item=owner_ref.ref,
+            pull_request=pr_ref.ref,
+            harness_session_id=endpoint.harness_session_id or None,
+        )
+        return endpoint
+
     def touch(
         self,
         work_item: Union[str, WorkItemRef],
         delivery_id: Optional[str] = None,
+        endpoint_ref: Optional[Union[str, WorkItemRef]] = None,
     ) -> None:
-        """Record a processed event (last-event timestamp + delivery id)."""
-        session = self.find_by_work_item(work_item)
-        if session is None:
+        """Record a processed event (last-event timestamp + delivery id).
+
+        ``endpoint_ref`` names which endpoint handled it; omitted means the work
+        item's own. Restart-surviving dedup is therefore per-endpoint, which is
+        what it has to be once one work item has several conversations: an id
+        delivered into a PR's session must not read as already-processed for the
+        work item's.
+        """
+        record = self.find_by_work_item(work_item)
+        if record is None:
             return
-        session.last_event_at = _utcnow()
+        endpoint = record.endpoint_for(endpoint_ref or record.work_item) or record
+        endpoint.last_event_at = _utcnow()
         if delivery_id:
-            session.recent_deliveries.append(delivery_id)
-            del session.recent_deliveries[:-_RECENT_DELIVERIES_CAP]
-        self._write(session)
+            endpoint.recent_deliveries.append(delivery_id)
+            del endpoint.recent_deliveries[:-_RECENT_DELIVERIES_CAP]
+        self._write(record)

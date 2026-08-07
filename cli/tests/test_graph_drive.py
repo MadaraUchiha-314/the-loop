@@ -147,7 +147,7 @@ class _TrustingLink(GraphLink):
     def _checkout_belongs_to(self, root, work_item):
         return True
 
-    def _build_runtime(self, cwd, spec_dir):
+    def _build_runtime(self, cwd, spec_dir, pr_number=None):
         return self._runtime
 
 

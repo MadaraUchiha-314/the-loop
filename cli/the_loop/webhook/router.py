@@ -166,6 +166,33 @@ def linked_issue_numbers(entity: dict, owner: str, repo: str) -> List[int]:
     return numbers
 
 
+def pr_work_item(event: str, payload: dict) -> Optional[WorkItemRef]:
+    """The pull request's **own** ref for an event that concerns one (issue-172).
+
+    ``None`` for everything else — an issue event, a CI event, a payload naming
+    no repository. Composed from the same three helpers
+    :func:`extract_work_items` uses, so the ref returned here is exactly the one
+    that function emits *last*; the two cannot drift into disagreeing about which
+    PR an event is about.
+
+    The dispatcher needs this to name the ref a durable binding is written under.
+    Deliberately not folded into :class:`RoutedEvent`: routing stays a pure
+    payload → work-items mapping, and only the one caller that persists a binding
+    pays for the extra parse.
+    """
+    parts = _repo_parts(payload)
+    if parts is None:
+        return None
+    entity = _pr_entity(event, payload)
+    number = (entity or {}).get("number")
+    if not isinstance(number, int):
+        return None
+    owner, repo = parts
+    return WorkItemRef(
+        provider="github", owner=owner, repo=repo, number=number, host=_host(payload)
+    )
+
+
 def event_carries_label(payload: dict, label: str) -> bool:
     """True if this event's issue/PR carries ``label`` (or is adding it now).
 

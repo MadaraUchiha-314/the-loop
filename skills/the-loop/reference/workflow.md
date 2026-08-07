@@ -84,7 +84,9 @@ until the current phase is approved; record the approver (paper trail).
 ## Phase state machine (tracked on the ticket via labels)
 
 **The sequence below is defined by the shipped process graph**
-(`cli/the_loop/graph/pdlc.yaml`) — this reference renders it, never redefines it,
+(`cli/the_loop/graph/pdlc-work-item-loop.yaml`, the **outer** of the two loops —
+see issue-172 for the per-PR `pdlc-pr-loop`) — this reference renders it, never
+redefines it,
 and `cli/tests/test_graph_parity.py` (P4) enforces the agreement in both
 directions (issue-148). On the automated path the graph's own entry hooks write
 the label and the log checkpoint at each boundary; when a node's work is done,
@@ -327,7 +329,7 @@ in `.the-loop/harness-config.yaml`). See `collaboration.md`.
 Much of this is a fixed PDLC process; the harness should not re-derive it each time.
 **Answered by [decision-041](../../../docs/decisions/decision-041.md) (issue-109): the
 process is a graph, and the graph is executable.** Everything described in this file is
-declared in `cli/the_loop/graph/pdlc.yaml` — each phase is a **node**, and each node
+declared in `cli/the_loop/graph/pdlc-work-item-loop.yaml` — each phase is a **node**, and each node
 has entry/exit **hook** chains that decide when it is complete. A node is complete when
 its exit hooks all pass, waiting when one returns `wait`, blocked when one returns
 `block`; declared edges route on those outcomes. No prose is parsed to make the decision.

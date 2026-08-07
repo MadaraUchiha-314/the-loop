@@ -647,9 +647,12 @@ class Poller:
                 work_item=ref,
                 actor=item.author,
             )
-        has_session = any(
-            self.registry.find_by_work_item(wi) is not None for wi in refs
-        )
+        # Resolved through stored bindings (issue-172): a PR whose linkage GitHub
+        # no longer reports has only its own ref here, and asking the registry
+        # directly would call it session-less — so a running item would be
+        # treated as first sight, its whole thread baselined away, and a second
+        # session armed against the PR.
+        has_session = any(self.registry.record_owning(wi) is not None for wi in refs)
 
         # First sight: baseline the existing thread (the spawned session reads it
         # itself, matching webhook "only events going forward"), arm the spawn,

@@ -210,7 +210,10 @@ class GraphContext:
 
 
 def render_graph_context(
-    ctx: Optional["GraphContext"], item_id: str, verdict: str = ""
+    ctx: Optional["GraphContext"],
+    item_id: str,
+    verdict: str = "",
+    pr_number: Optional[int] = None,
 ) -> str:
     """The ``$graph_context`` prompt block (issue-148, D3).
 
@@ -219,11 +222,21 @@ def render_graph_context(
     prompts modulo this empty substitution (R3.4). ``verdict`` carries a
     gate-first outcome (D4) so the session knows what the gate just decided
     about the event it is receiving.
+
+    ``pr_number`` marks an **inner-loop** prompt (issue-172): the block then
+    names the PR's own loop and its claim command carries ``--pr <n>`` — the
+    report-back channel must address the loop the session is actually walking,
+    or a PR session's claim would evaluate the work item's outer gates instead.
     """
     if ctx is None or not ctx.current_node:
         return ""
+    scope = (
+        f"pull request #{pr_number}'s pdlc-pr-loop on {item_id}"
+        if pr_number is not None
+        else item_id
+    )
     lines = [
-        f"the-loop process state for {item_id}:",
+        f"the-loop process state for {scope}:",
         f"  node: {ctx.current_node}"
         + (f" (phase: {ctx.phase})" if ctx.phase else "")
         + f" — status: {ctx.status}",
@@ -236,8 +249,10 @@ def render_graph_context(
         lines.append(f"  this event was classified by the gate first: {verdict}")
     if ctx.next_command:
         lines.append(f"  resume with: `/the-loop:{ctx.next_command} {item_id}`")
+    claim_suffix = f" --pr {pr_number}" if pr_number is not None else ""
     lines.append(
-        f"  when this node's work is done, run: `the-loop graph complete {item_id}`"
+        "  when this node's work is done, run: "
+        f"`the-loop graph complete {item_id}{claim_suffix}`"
     )
     lines.append(
         "  (this block is the-loop's own state, not part of the event payload)"
@@ -254,11 +269,19 @@ class GraphLink:
         control: Optional[ControlConfig] = None,
         control_store: Optional[ControlStore] = None,
         authorized_users: Optional[Sequence[str]] = None,
+        assignment_sink: Optional[Any] = None,
     ):
         self.config = config
         self.control = control or ControlConfig()
         self.control_store = control_store
         self.authorized_users = list(authorized_users or [])
+        # The graph-assigns channel (issue-172): a callable
+        # ``(work_item, pr_number, text) -> bool`` the dispatcher provides so
+        # the `deliver-assignment` entry hook can push an entered node's
+        # assignment into the loop's bound session. None on the CLI path — the
+        # hook then skips, because a claiming session already reads the same
+        # facts from its command's envelope.
+        self.assignment_sink = assignment_sink
 
     # -- entry points -----------------------------------------------------------
 
@@ -312,11 +335,12 @@ class GraphLink:
         def call(rt, item):
             from .graph.state import GraphState
 
-            spec_dir = rt.work_item(item).spec_dir
-            state = GraphState.load(spec_dir, item)
+            wi = rt.work_item(item)
+            state_dir = rt.state_dir(wi) if hasattr(rt, "state_dir") else wi.spec_dir
+            state = GraphState.load(state_dir, item)
             if state.session:
                 state.session = {**state.session, "alive": False}
-                state.save(spec_dir)
+                state.save(state_dir)
 
         self._guarded("close", work_item, cwd, call)
 
@@ -332,10 +356,107 @@ class GraphLink:
             "context", work_item, cwd, lambda rt, item: self._context_from(rt, item)
         )
 
+    # -- the inner loop (issue-172): one pdlc-pr-loop per pull request ----------
+
+    def on_pr_spawn(
+        self,
+        work_item: WorkItemRef,
+        pr: WorkItemRef,
+        cwd: str,
+        session_id: str = "",
+        runner: str = "",
+    ) -> None:
+        """A pull request's endpoint was spawned — enter its inner loop.
+
+        The inner loop starts at ``implementation``: everything before it —
+        requirements, design, the task DAG — is the work item's, decided once
+        at the outer level. Idempotent exactly as :meth:`on_spawn` is.
+        """
+
+        def call(rt, item):
+            rt.start(item, pr.ref)
+            self._bind_session(rt, item, session_id, runner)
+
+        self._guarded("start", work_item, cwd, call, pr_number=pr.number)
+
+    def on_pr_event(
+        self, work_item: WorkItemRef, pr: WorkItemRef, cwd: str, routed
+    ) -> Optional[Any]:
+        """An event reached a PR's endpoint — advance ITS loop, never the outer.
+
+        The outer loop hears about the inner ones exactly once, at the
+        ``await-inner-loops`` seam, by reading their checked-in state — not by
+        being advanced from a PR's events. That one-way flow is what keeps a PR
+        from walking the work item past gates the work item has not earned.
+        """
+        event = {"comments": comments_from(routed)}
+        return self._guarded(
+            "advance",
+            work_item,
+            cwd,
+            lambda rt, item: rt.advance(item, ref=pr.ref, event=event),
+            pr_number=pr.number,
+        )
+
+    def pr_context(
+        self, work_item: WorkItemRef, pr: WorkItemRef, cwd: str
+    ) -> Optional[GraphContext]:
+        """The inner loop's state, read-only — the PR session's prompt context."""
+        return self._guarded(
+            "context",
+            work_item,
+            cwd,
+            lambda rt, item: self._context_from(rt, item),
+            pr_number=pr.number,
+        )
+
+    def on_pr_close(
+        self, work_item: WorkItemRef, pr: WorkItemRef, cwd: str, merged: bool
+    ) -> None:
+        """The PR closed. Merged → its loop is driven to ``complete``, audited.
+
+        A merge is the PR's approval, delivered as a GitHub state change rather
+        than a reviewable comment — so the pointer is moved with the runtime's
+        ``force``, which records the transition as forced and leaves every
+        bypassed gate's verdict intact (issue-109 R10: a force moves the
+        pointer, never forges a verdict). ``await-inner-loops`` reads only the
+        pointer, so the outer loop unblocks; ``check --recompute`` still shows
+        exactly which inner gates never ran. A PR closed WITHOUT merging keeps
+        its pointer where it was: the work was abandoned, not finished, and the
+        outer gate holding on it is the process noticing.
+        """
+        if not merged:
+            return
+
+        def call(rt, item):
+            from .graph.runtime import force
+            from .graph.state import GraphState
+
+            state = GraphState.load(rt.state_dir(rt.work_item(item)), item)
+            if not state.current_node:
+                return  # never started: nothing to finish, nothing to await
+            if state.current_node == "complete":
+                return
+            force(
+                rt,
+                item,
+                "complete",
+                reason=f"pull request {pr.ref} merged",
+                actor="the-loop",
+                ref=pr.ref,
+            )
+
+        self._guarded("advance", work_item, cwd, call, pr_number=pr.number)
+
     # -- internals --------------------------------------------------------------
 
     def _guarded(
-        self, action: str, work_item: WorkItemRef, cwd: str, call
+        self,
+        action: str,
+        work_item: WorkItemRef,
+        cwd: str,
+        call,
+        pr_number: Optional[int] = None,
     ) -> Optional[Any]:
         """Run ``call`` behind every skip path, swallowing any failure.
 
@@ -396,9 +517,27 @@ class GraphLink:
             self._skipped(action, work_item, "no-spec-dir", spec_dir)
             return None
         try:
-            runtime = self._build_runtime(str(root), spec_dir)
+            # The outer loop's call keeps its pre-issue-172 shape so an injected
+            # runtime factory (tests, embedders) built for two arguments still
+            # serves every outer-path caller.
+            runtime = (
+                self._build_runtime(str(root), spec_dir)
+                if pr_number is None
+                else self._build_runtime(str(root), spec_dir, pr_number=pr_number)
+            )
             if action == "context":
                 return call(runtime, item_id)
+            if self.assignment_sink is not None:
+                # Bind the graph-assigns channel to THIS loop, so an entered
+                # node's `deliver-assignment` hook reaches the session walking
+                # it — the record's own for the outer loop, the PR's endpoint
+                # for an inner one.
+                sink, wi, prn = self.assignment_sink, work_item, pr_number
+                runtime.config = {
+                    **runtime.config,
+                    "assignmentDeliver": lambda text: sink(wi, prn, text),
+                    "assignmentPr": pr_number,
+                }
             # Write actions hold the graph-state lock (issue-148): the session's
             # `graph complete` is a second writer beside this daemon, and the
             # load→mutate→save windows must not interleave. `context` stays
@@ -408,7 +547,15 @@ class GraphLink:
             # not re-acquire it.
             from .graph.state import state_lock
 
-            with state_lock(root / spec_dir / item_id):
+            # The lock lives beside the state it serialises: the outer loop's
+            # writers contend on the spec dir, an inner loop's on its own
+            # pr-loops/pr-<n>/ — so two PRs' loops never block each other.
+            lock_dir = root / spec_dir / item_id
+            if pr_number is not None:
+                from .graph.hooks.loops import inner_loop_state_dir
+
+                lock_dir = inner_loop_state_dir(lock_dir, pr_number)
+            with state_lock(lock_dir):
                 return call(runtime, item_id)
         except Exception as exc:  # noqa: BLE001 — a graph fault must not cost a delivery
             logger.error(
@@ -428,21 +575,33 @@ class GraphLink:
         """Record which session works this item (issue-148, D6).
 
         Runs inside :meth:`_guarded`'s state lock — it must not re-acquire it.
+        The binding follows the runtime's OWN state location (issue-172): an
+        inner loop's session binds inside its pr-loops/pr-<n>/ state, never the
+        outer one — a PR's conversation must not become the inheritance target
+        for the work item's human gates.
         """
         from .graph.state import GraphState
 
-        spec_dir = rt.work_item(item_id).spec_dir
-        state = GraphState.load(spec_dir, item_id)
+        item = rt.work_item(item_id)
+        state_dir = rt.state_dir(item) if hasattr(rt, "state_dir") else item.spec_dir
+        state = GraphState.load(state_dir, item_id)
         state.session = {"id": session_id, "runner": runner, "alive": True}
-        state.save(spec_dir)
+        state.save(state_dir)
 
     @staticmethod
     def _context_from(rt: Any, item_id: str) -> Optional[GraphContext]:
-        """Derive a :class:`GraphContext` from state + graph, mutating nothing."""
+        """Derive a :class:`GraphContext` from state + graph, mutating nothing.
+
+        Reads the runtime's OWN state location (issue-172): an inner-loop
+        runtime's context comes from its ``pr-loops/pr-<n>/`` state, so a PR
+        session's prompt describes the loop that session is walking — never the
+        outer pointer.
+        """
         from .graph.state import GraphState
 
-        spec_dir = rt.work_item(item_id).spec_dir
-        state = GraphState.load(spec_dir, item_id)
+        item = rt.work_item(item_id)
+        state_dir = rt.state_dir(item) if hasattr(rt, "state_dir") else item.spec_dir
+        state = GraphState.load(state_dir, item_id)
         if not state.current_node:
             return None  # never entered — a fresh item starts, it doesn't resume
         node = rt.graph.node(state.current_node)
@@ -571,7 +730,9 @@ class GraphLink:
             return ""
         return proc.stdout.strip() if proc.returncode == 0 else ""
 
-    def _build_runtime(self, cwd: str, spec_dir: str) -> Any:
+    def _build_runtime(
+        self, cwd: str, spec_dir: str, pr_number: Optional[int] = None
+    ) -> Any:
         """The graph runtime rooted at the session's checkout.
 
         Not the daemon's cwd: with ``routing.workspace`` enabled each work item
@@ -598,4 +759,5 @@ class GraphLink:
             Path(cwd),
             spec_root=spec_dir,
             authorized_users=self.authorized_users,
+            pr_number=pr_number,
         )

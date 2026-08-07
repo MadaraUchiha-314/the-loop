@@ -1,0 +1,124 @@
+# The INNER loop (issue-172, PR #173 review): one PULL REQUEST's path through
+# the PDLC, in service of delivering a work item. Its sibling,
+# pdlc-work-item-loop.yaml, is the OUTER loop the work item itself walks.
+#
+# "It's basically the same loop but with some steps skipped and some steps
+# added" (the owner, on PR #173). Skipped here: brainstorming, requirements,
+# design, test-planning, tasks-breakdown and their human approvals — those are
+# the work item's, decided once at the outer level, and a PR re-deciding them
+# would fork the spec. Kept: implementation, verification (scoped to the
+# component this PR touches), the review chain, and a human gate — the PR's own
+# review. The `complete` node is what the outer loop's `await-inner-loops` gate
+# looks for, so an inner loop that has not finished holds the work item at
+# `implementation`.
+#
+# State lives at docs/specs/<id>/pr-loops/pr-<number>/graph-state.json — beside
+# the outer graph-state.json, checked in on the work item's branch, a cache and
+# never an authority (decision-041). Artifacts resolve against the SAME spec
+# directory as the outer loop: a PR contributes to the work item's one spec
+# chain, it does not get a spec chain of its own.
+#
+# Each inner loop runs in its PR's own session — the pullRequests[] endpoint
+# this same work item added (routing.tmux.sessionPerPr) — so two PRs advance
+# their loops without sharing a conversation.
+#
+# Spec: docs/specs/issue-172/  ·  Decisions: 041, 060, 064, 065
+
+version: 1
+name: pdlc-pr-loop
+start: implementation
+
+nodes:
+  # The PR's implementation: the component-scoped slice of the work item's task
+  # DAG. It deliberately does NOT gate tasks.md checkmarks — those are the
+  # whole work item's, and one PR delivers a subset; the outer implementation
+  # node still gates the full DAG before the work item moves on.
+  - id: implementation
+    phase: implementation
+    actor: agent
+    command: execute-tasks
+    stage: implementation
+    entry: [log-entry, deliver-assignment]
+    exit:
+      - verify-tests
+
+  # The component's own proof: the testing-plan rows this PR's tasks name,
+  # executed in this PR's checkout. Cross-PR verification stays at the outer
+  # loop's `verification` node — "testing (across all the PRs)".
+  - id: verification
+    phase: verification
+    actor: agent
+    command: verify-work
+    stage: verification
+    entry: [log-entry, deliver-assignment]
+    exit:
+      - verify-tests
+
+  # The same review chain the outer loop runs, recording into the same shared
+  # execution log (issue-167's validates: vocabulary) — a PR's review cycles
+  # are review cycles of the work item.
+  - id: self-review
+    actor: agent
+    stage: self-review
+    entry: [log-entry, deliver-assignment]
+    exit:
+      - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Review cycles"]}}
+
+  - id: critic-review
+    actor: agent
+    stage: critic-review
+    entry: [log-entry, deliver-assignment]
+    exit:
+      - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Review cycles"]}}
+
+  - id: security-review
+    actor: agent
+    required: true          # never skippable in the inner loop either
+    stage: security-review
+    entry: [log-entry, deliver-assignment]
+    exit:
+      - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Security review (gate)"]}}
+
+  - id: reviewer-briefing
+    actor: agent
+    stage: reviewer-briefing
+    entry: [log-entry, deliver-assignment]
+    exit:
+      - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Pull requests"]}}
+
+  # The PR's own human gate: its review on GitHub. `session: inherit` for the
+  # same reason as the outer approvals — feedback reaches the conversation that
+  # wrote the diff.
+  - id: pr-approval
+    actor: human
+    session: inherit
+    required: true
+    entry: [request-review, {hook: notify, with: {event: pr-review-pending}}]
+    exit: [classify-feedback]
+
+  # What `await-inner-loops` looks for. Reached when the PR's review approves;
+  # the dispatcher also drives the loop here when the PR merges — a merge IS
+  # the approval, recorded after the fact.
+  - id: complete
+    actor: agent
+    stage: complete
+    terminal: true
+    entry: [log-entry]
+    exit: []
+
+  - id: escalated
+    actor: human
+    terminal: true
+    entry: [{hook: notify, with: {event: conflict-escalated}}]
+    exit: []
+
+edges:
+  - {from: implementation, to: verification, on: pass}
+  - {from: verification, to: self-review, on: pass}
+  - {from: self-review, to: critic-review, on: pass}
+  - {from: critic-review, to: security-review, on: pass}
+  - {from: security-review, to: reviewer-briefing, on: pass}
+  - {from: reviewer-briefing, to: pr-approval, on: pass}
+  - {from: pr-approval, to: complete, on: approved}
+  - {from: pr-approval, to: complete, on: approved-with-comments}
+  - {from: pr-approval, to: implementation, on: changes-requested}
