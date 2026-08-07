@@ -193,6 +193,11 @@ delivery) — the same loop with steps skipped — fully implemented in this PR
 5. Every graph verb SHALL address either loop — `--pr <n>` on the CLI, `pr` on the API
    bodies and in the authored OpenAPI contract.
 6. The P5 parity assertions SHALL hold over **both** shipped graphs.
+7. **The graph SHALL assign, not just judge**: on the daemon path, entering a
+   non-terminal agent node SHALL push that node's assignment (state, what to produce,
+   the exact claim command) into the loop's bound session; on the CLI path the hook
+   SHALL skip (the claim envelope carries the same facts); a failed push SHALL be
+   recorded and SHALL never gate the node.
 
 ### Requirement 3 — a PR closing ends its endpoint; the work item's close is unchanged
 

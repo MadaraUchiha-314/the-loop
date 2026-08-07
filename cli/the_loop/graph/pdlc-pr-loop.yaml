@@ -38,7 +38,7 @@ nodes:
     actor: agent
     command: execute-tasks
     stage: implementation
-    entry: [log-entry]
+    entry: [log-entry, deliver-assignment]
     exit:
       - verify-tests
 
@@ -50,7 +50,7 @@ nodes:
     actor: agent
     command: verify-work
     stage: verification
-    entry: [log-entry]
+    entry: [log-entry, deliver-assignment]
     exit:
       - verify-tests
 
@@ -60,14 +60,14 @@ nodes:
   - id: self-review
     actor: agent
     stage: self-review
-    entry: [log-entry]
+    entry: [log-entry, deliver-assignment]
     exit:
       - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Review cycles"]}}
 
   - id: critic-review
     actor: agent
     stage: critic-review
-    entry: [log-entry]
+    entry: [log-entry, deliver-assignment]
     exit:
       - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Review cycles"]}}
 
@@ -75,14 +75,14 @@ nodes:
     actor: agent
     required: true          # never skippable in the inner loop either
     stage: security-review
-    entry: [log-entry]
+    entry: [log-entry, deliver-assignment]
     exit:
       - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Security review (gate)"]}}
 
   - id: reviewer-briefing
     actor: agent
     stage: reviewer-briefing
-    entry: [log-entry]
+    entry: [log-entry, deliver-assignment]
     exit:
       - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Pull requests"]}}
 

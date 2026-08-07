@@ -41,7 +41,7 @@ nodes:
     produces: [brainstorm.md]
     command: brainstorm
     stage: brainstorm
-    entry: [set-phase-label, log-entry]
+    entry: [set-phase-label, log-entry, deliver-assignment]
     exit:
       - {hook: validate-artifacts, with: {locked: true, sections: ["Problem / opportunity", "Open questions"]}}
       - lint-artifacts
@@ -57,7 +57,7 @@ nodes:
     produces: ["requirements.md|bugfix.md"]
     command: new-requirement
     stage: requirements
-    entry: [set-phase-label, log-entry]
+    entry: [set-phase-label, log-entry, deliver-assignment]
     exit:
       - {hook: validate-artifacts, with: {locked: true, sections: ["Requirements", "Security considerations"]}}
       - lint-artifacts
@@ -76,7 +76,7 @@ nodes:
     produces: [design.md]
     command: create-design
     stage: design
-    entry: [set-phase-label, log-entry]
+    entry: [set-phase-label, log-entry, deliver-assignment]
     exit:
       - {hook: validate-artifacts, with: {locked: true, sections: ["Architecture", "Security design", "Testing strategy"]}}
       # Same two names as phase 1. Naming only requirements.md here meant this
@@ -102,7 +102,7 @@ nodes:
     produces: [testing-plan.md]
     command: create-testing-plan
     stage: test-planning
-    entry: [set-phase-label, log-entry]
+    entry: [set-phase-label, log-entry, deliver-assignment]
     exit:
       - hook: validate-artifacts
         with:
@@ -133,7 +133,7 @@ nodes:
     produces: [tasks.md]
     command: create-tasks-plan
     stage: tasks
-    entry: [set-phase-label, log-entry]
+    entry: [set-phase-label, log-entry, deliver-assignment]
     exit:
       - {hook: validate-artifacts, with: {locked: true, sections: ["Task list"]}}
       - lint-artifacts
@@ -144,7 +144,7 @@ nodes:
     produces: [tasks.md]
     command: execute-tasks
     stage: implementation
-    entry: [set-phase-label, log-entry]
+    entry: [set-phase-label, log-entry, deliver-assignment]
     exit:
       - {hook: validate-artifacts, with: {checkmarks: complete}}
       # The seam between the loops (issue-172): the work item waits here until
@@ -167,7 +167,7 @@ nodes:
     produces: [testing-plan.md]
     command: verify-work
     stage: verification
-    entry: [set-phase-label, log-entry]
+    entry: [set-phase-label, log-entry, deliver-assignment]
     exit:
       - hook: validate-artifacts
         with:
@@ -195,14 +195,14 @@ nodes:
     phase: needs-review
     actor: agent
     stage: self-review
-    entry: [set-phase-label, log-entry]
+    entry: [set-phase-label, log-entry, deliver-assignment]
     exit:
       - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Review cycles"]}}
 
   - id: critic-review
     actor: agent
     stage: critic-review
-    entry: [log-entry]
+    entry: [log-entry, deliver-assignment]
     exit:
       - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Review cycles"]}}
 
@@ -210,28 +210,28 @@ nodes:
     actor: agent
     required: true          # never skippable, at any risk tier
     stage: security-review
-    entry: [log-entry]
+    entry: [log-entry, deliver-assignment]
     exit:
       - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Security review (gate)"]}}
 
   - id: evidence
     actor: agent
     stage: evidence
-    entry: [log-entry]
+    entry: [log-entry, deliver-assignment]
     exit:
       - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Final validation evidence"]}}
 
   - id: capability-docs
     actor: agent
     stage: capability-docs
-    entry: [log-entry]
+    entry: [log-entry, deliver-assignment]
     exit:
       - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Capability docs"]}}
 
   - id: reviewer-briefing
     actor: agent
     stage: reviewer-briefing
-    entry: [log-entry]
+    entry: [log-entry, deliver-assignment]
     exit:
       - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Pull requests"]}}
 

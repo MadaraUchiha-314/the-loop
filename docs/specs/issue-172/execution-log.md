@@ -113,6 +113,23 @@ status: in-progress          # in-progress | complete
   `markdownlint`, `validate_config.py` clean.
 - **Next:** self-review of the loops, update the PR briefing, reply to the owner.
 
+### 2026-08-07 — the graph becomes the initiator: deliver-assignment
+
+- **Phase:** implementation → verification
+- **Did:** the owner's "do it in this PR" on the assignment-push offer. Built per
+  decision-065 D8: `deliver-assignment` on every non-terminal agent node's entry in
+  both loops renders the node's assignment (state, artifacts to produce, the exact
+  claim command with `--pr` for inner loops) and pushes it into the loop's bound
+  session through a channel the dispatcher provides (record's session for the outer
+  loop, the PR's endpoint for an inner one). CLI paths get a skip — the claim's JSON
+  envelope already carries the same facts, and pushing there would deliver every
+  assignment twice. A failed push emits `graph.assignment_failed` and never gates the
+  node. Terminal nodes deliberately carry no assignment.
+- **Checkpoint/tests:** `pytest -q` → 1423 passed, 1 skipped; 6 new tests (hook unit,
+  inner/outer end-to-end through graphlink with a fake sink, failure never gates).
+- **Next:** reply to the owner; the PR briefing's control-flow answer now describes
+  shipped behaviour.
+
 ## Review cycles
 
 > Outcome is one of: new findings · zero (converged) · escalated · **unavailable** (the

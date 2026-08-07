@@ -269,11 +269,19 @@ class GraphLink:
         control: Optional[ControlConfig] = None,
         control_store: Optional[ControlStore] = None,
         authorized_users: Optional[Sequence[str]] = None,
+        assignment_sink: Optional[Any] = None,
     ):
         self.config = config
         self.control = control or ControlConfig()
         self.control_store = control_store
         self.authorized_users = list(authorized_users or [])
+        # The graph-assigns channel (issue-172): a callable
+        # ``(work_item, pr_number, text) -> bool`` the dispatcher provides so
+        # the `deliver-assignment` entry hook can push an entered node's
+        # assignment into the loop's bound session. None on the CLI path — the
+        # hook then skips, because a claiming session already reads the same
+        # facts from its command's envelope.
+        self.assignment_sink = assignment_sink
 
     # -- entry points -----------------------------------------------------------
 
@@ -519,6 +527,17 @@ class GraphLink:
             )
             if action == "context":
                 return call(runtime, item_id)
+            if self.assignment_sink is not None:
+                # Bind the graph-assigns channel to THIS loop, so an entered
+                # node's `deliver-assignment` hook reaches the session walking
+                # it — the record's own for the outer loop, the PR's endpoint
+                # for an inner one.
+                sink, wi, prn = self.assignment_sink, work_item, pr_number
+                runtime.config = {
+                    **runtime.config,
+                    "assignmentDeliver": lambda text: sink(wi, prn, text),
+                    "assignmentPr": pr_number,
+                }
             # Write actions hold the graph-state lock (issue-148): the session's
             # `graph complete` is a second writer beside this daemon, and the
             # load→mutate→save windows must not interleave. `context` stays

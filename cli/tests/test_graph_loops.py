@@ -270,6 +270,131 @@ def test_an_inner_loop_prompt_claims_with_pr(checkout):
     assert "the-loop graph complete issue-15`" in outer and "--pr" not in outer
 
 
+# -- the graph assigns: deliver-assignment (issue-172, "who is in charge?") -----
+
+
+def test_deliver_assignment_skips_without_a_channel(tmp_path):
+    """The CLI path: the claiming session reads the envelope; nothing pushes."""
+    from the_loop.graph.hooks.assignment import deliver_assignment
+
+    result = deliver_assignment(_ctx(tmp_path))
+    assert result.status == "skip"
+
+
+def test_deliver_assignment_renders_the_nodes_work_and_the_claim_command(tmp_path):
+    from the_loop.graph.contract import HookContext, WorkItem
+    from the_loop.graph.hooks.assignment import deliver_assignment
+
+    delivered = []
+    spec = tmp_path / "docs" / "specs" / "issue-15"
+    spec.mkdir(parents=True, exist_ok=True)
+    ctx = HookContext(
+        work_item=WorkItem(ref=WI.ref, id="issue-15", spec_dir=spec),
+        node={
+            "id": "design",
+            "phase": "design",
+            "produces": ["design.md"],
+            "command": "create-design",
+        },
+        boundary="entry",
+        repo=tmp_path,
+        config={"assignmentDeliver": lambda text: delivered.append(text) or True},
+    )
+    assert deliver_assignment(ctx).status == "pass"
+    (text,) = delivered
+    assert "you are now at node: design" in text
+    assert "produce: design.md" in text
+    assert "/the-loop:create-design issue-15" in text
+    assert "the-loop graph complete issue-15`" in text and "--pr" not in text
+
+
+def test_deliver_assignment_addresses_the_inner_loop(tmp_path):
+    from the_loop.graph.contract import HookContext, WorkItem
+    from the_loop.graph.hooks.assignment import deliver_assignment
+
+    delivered = []
+    spec = tmp_path / "docs" / "specs" / "issue-15"
+    spec.mkdir(parents=True, exist_ok=True)
+    ctx = HookContext(
+        work_item=WorkItem(ref=WI.ref, id="issue-15", spec_dir=spec),
+        node={"id": "implementation", "phase": "implementation"},
+        boundary="entry",
+        repo=tmp_path,
+        config={
+            "assignmentDeliver": lambda text: delivered.append(text) or True,
+            "assignmentPr": 16,
+        },
+    )
+    assert deliver_assignment(ctx).status == "pass"
+    (text,) = delivered
+    assert "pull request #16's pdlc-pr-loop" in text
+    assert "the-loop graph complete issue-15 --pr 16" in text
+
+
+def test_a_failing_channel_never_gates_the_node(tmp_path):
+    from the_loop.graph.contract import HookContext, WorkItem
+    from the_loop.graph.hooks.assignment import deliver_assignment
+
+    spec = tmp_path / "docs" / "specs" / "issue-15"
+    spec.mkdir(parents=True, exist_ok=True)
+
+    def boom(text):
+        raise RuntimeError("tmux went away")
+
+    ctx = HookContext(
+        work_item=WorkItem(ref=WI.ref, id="issue-15", spec_dir=spec),
+        node={"id": "design"},
+        boundary="entry",
+        repo=tmp_path,
+        config={"assignmentDeliver": boom},
+    )
+    assert deliver_assignment(ctx).status == "skip"  # reported, never a block
+
+
+def test_the_graph_assigns_on_entering_the_inner_loop(checkout):
+    """End to end through graphlink: entering a node pushes its assignment into
+    the loop's bound session — the graph assigns, the session works."""
+    pushed = []
+
+    def sink(work_item, pr_number, text):
+        pushed.append((work_item.ref, pr_number, text))
+        return True
+
+    link = GraphLink(
+        GraphLinkConfig(enabled=True),
+        control=ControlConfig(enabled=False),
+        assignment_sink=sink,
+    )
+    link.on_pr_spawn(WI, PR, str(checkout), session_id="s-1", runner="tmux")
+
+    assert len(pushed) == 1
+    ref, pr_number, text = pushed[0]
+    assert (ref, pr_number) == (WI.ref, 16)
+    assert "you are now at node: implementation" in text
+    assert "the-loop graph complete issue-15 --pr 16" in text
+
+
+def test_the_outer_loop_assigns_without_a_pr(checkout):
+    pushed = []
+
+    def sink(work_item, pr_number, text):
+        pushed.append((work_item.ref, pr_number, text))
+        return True
+
+    link = GraphLink(
+        GraphLinkConfig(enabled=True),
+        control=ControlConfig(enabled=False),
+        assignment_sink=sink,
+    )
+    link.on_spawn(WI, str(checkout), session_id="s-1", runner="tmux")
+
+    assert len(pushed) == 1
+    ref, pr_number, text = pushed[0]
+    assert (ref, pr_number) == (WI.ref, None)
+    assert "you are now at node: brainstorming" in text
+    assert "the-loop graph complete issue-15`" in text and "--pr" not in text
+
+
 def _ctx_for(spec_dir):
     item = WorkItem(ref=WI.ref, id="issue-15", spec_dir=spec_dir)
     return HookContext(

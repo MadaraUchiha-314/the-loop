@@ -172,6 +172,17 @@ EVENT_TYPES: Dict[str, str] = {
         "linked_ref, error). Best-effort: the event was still dispatched, and "
         "routing falls back to deriving the linkage as it did before issue-172."
     ),
+    "graph.assignment_delivered": (
+        "The graph entered an agent node and pushed that node's assignment "
+        "into the loop's bound session (work_item; endpoint: the PR's ref when "
+        "an inner loop was assigned) — issue-172, the deliver-assignment entry "
+        "hook. The graph assigns; the session works; the claim reports back."
+    ),
+    "graph.assignment_failed": (
+        "Pushing an entered node's assignment into its session failed "
+        "(work_item, endpoint, error). Best-effort: the node is entered "
+        "regardless, and the same state is re-rendered into every event prompt."
+    ),
     "session.spawned": (
         "A new harness session was spawned for a work item — this is the "
         "'what triggered this session' record (work_item, harness, "

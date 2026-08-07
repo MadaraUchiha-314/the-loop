@@ -12,7 +12,7 @@
 
 ```console
 $ uv run --directory cli pytest -q
-1417 passed, 1 skipped in 48.16s
+1423 passed, 1 skipped in 51.96s
 ```
 
 The one skip is pre-existing and unrelated; the baseline before this work item was
@@ -97,7 +97,7 @@ the two records' endpoints would contend for the PR's one `loop-<slug>` tmux nam
 
 ```console
 $ uv run --directory cli pytest tests/test_graph_loops.py -q
-14 passed in 0.62s
+20 passed in 0.86s
 ```
 
 All new, pinning the seam from both sides (decision-065):
@@ -117,6 +117,12 @@ test_on_pr_event_advances_the_inner_loop_not_the_outer
 test_a_merged_pr_completes_its_inner_loop_audited_as_forced
 test_an_unmerged_close_leaves_the_inner_loop_where_it_was
 test_an_inner_loop_prompt_claims_with_pr
+test_deliver_assignment_skips_without_a_channel
+test_deliver_assignment_renders_the_nodes_work_and_the_claim_command
+test_deliver_assignment_addresses_the_inner_loop
+test_a_failing_channel_never_gates_the_node
+test_the_graph_assigns_on_entering_the_inner_loop
+test_the_outer_loop_assigns_without_a_pr
 ```
 
 Three pin invariants rather than behaviours: the outer pointer is untouched by an

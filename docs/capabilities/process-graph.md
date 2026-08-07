@@ -58,6 +58,17 @@ There are exactly **two** runtime concepts and **one** contract between them.
     status|advance|complete|force|show --pr <n>` (and `pr` on the corresponding API
     bodies) selects the PR's inner loop; omitted, the work item's outer loop — the whole
     pre-issue-172 surface, unchanged.
+  - **The graph assigns, not just judges** (decision-065 D8). WHEN either loop enters a
+    non-terminal agent node on the daemon path THEN the `deliver-assignment` entry hook
+    SHALL push that node's assignment — where the item stands, what to produce, the
+    exact claim command (`the-loop graph complete <id> [--pr <n>]`) — into the loop's
+    bound session (`graph.assignment_delivered`), so the session is told its work
+    rather than inferring it from the next GitHub event. The text is composed only from
+    the-loop's own vocabulary — no payload reaches it. WHEN there is no delivery
+    channel — a session's own `graph complete`, `the-loop check`, any CLI invocation —
+    THEN the hook SHALL skip: the claim's JSON envelope already carries the same facts.
+    A failed push SHALL be recorded (`graph.assignment_failed`) and SHALL never gate
+    the node.
 - The graph SHALL be **internal to the-loop**: it ships as package data inside the CLI —
   the thing that executes it, and where every hook it names is registered — and a consuming
   repository does not define or override it. A repo-local `.the-loop/graph.yaml` SHALL be
@@ -343,7 +354,7 @@ included, however empty the log was.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
-| issue-172 | The process became two named loops (2026-08-07): `pdlc.yaml` renamed to `pdlc-work-item-loop.yaml` (unchanged content, plus the `await-inner-loops` gate on `implementation`), and `pdlc-pr-loop.yaml` added — one inner loop per PR, run in that PR's own session with state under `docs/specs/<id>/pr-loops/pr-<n>/`, merge driving it to `complete` as an audited force. Graph verbs gained `--pr`; P5 parity asserts over both loops | [spec](../specs/issue-172/), [decision-065](../decisions/decision-065.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/172) |
+| issue-172 | The process became two named loops (2026-08-07): `pdlc.yaml` renamed to `pdlc-work-item-loop.yaml` (unchanged content, plus the `await-inner-loops` gate on `implementation`), and `pdlc-pr-loop.yaml` added — one inner loop per PR, run in that PR's own session with state under `docs/specs/<id>/pr-loops/pr-<n>/`, merge driving it to `complete` as an audited force. Graph verbs gained `--pr`; P5 parity asserts over both loops; `deliver-assignment` makes the graph the initiator — entering an agent node pushes its assignment into the bound session | [spec](../specs/issue-172/), [decision-065](../decisions/decision-065.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/172) |
 | issue-167 | Six gates stopped reporting success without running: `validate-artifacts` gained `validates:` for an artifact a node asserts against but did not author, so the six review-chain nodes gate their sections of the shared `execution-log.md`; a content gate that resolves no artifact now blocks (not retriable) instead of skipping; the bundled execution-log template gained the `Capability docs` section `capability-docs` had always demanded; P5 asserts all three against the shipped graph | [spec](../specs/issue-167/), [decision-063](../decisions/decision-063.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/167) |
 | issue-163 | Testing became two nodes: `test-planning` produces `testing-plan.md` before the task DAG that references it, `verification` re-gates the same artifact after implementation and before the review chain; a `skip` stopped short-circuiting a chain, which is what had left `implementation` parking at `no_edge` | [spec](../specs/issue-163/), [decision-060](../decisions/decision-060.md), [testing-and-contracts](testing-and-contracts.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/163) |
 | issue-156 | Process runner removed; tmux is the only runner (2026-08-05): every spawn is tmux-hosted, so "every spawn enters the graph" no longer needs a per-runner qualifier, and the gate-session binding's `runner` is always `"tmux"` | [spec](../specs/issue-156/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/156) |

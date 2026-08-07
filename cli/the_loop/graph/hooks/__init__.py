@@ -5,6 +5,7 @@ imported here for its registration side effect.
 """
 
 from . import artifacts  # noqa: F401
+from . import assignment  # noqa: F401
 from . import lint  # noqa: F401
 from . import loops  # noqa: F401
 from . import tests as _tests  # noqa: F401
@@ -12,4 +13,12 @@ from . import sideeffects  # noqa: F401
 from . import feedback  # noqa: F401
 from . import mcp  # noqa: F401
 
-__all__ = ["artifacts", "feedback", "lint", "loops", "mcp", "sideeffects"]
+__all__ = [
+    "artifacts",
+    "assignment",
+    "feedback",
+    "lint",
+    "loops",
+    "mcp",
+    "sideeffects",
+]

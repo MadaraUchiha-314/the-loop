@@ -471,6 +471,7 @@ class Dispatcher:
             self.config.control,
             self.control_store,
             self.config.authorized_users,
+            assignment_sink=self._deliver_assignment,
         )
         self._event_template = self._load_template(
             self.config.prompt_template, DEFAULT_PROMPT_TEMPLATE
@@ -534,7 +535,11 @@ class Dispatcher:
         if not self._tmux_override:
             self.tmux.remain_on_exit = config.tmux.remain_on_exit
         self.graphlink = GraphLink(
-            config.graph, config.control, self.control_store, config.authorized_users
+            config.graph,
+            config.control,
+            self.control_store,
+            config.authorized_users,
+            assignment_sink=self._deliver_assignment,
         )
         self._event_template = self._load_template(
             config.prompt_template, DEFAULT_PROMPT_TEMPLATE
@@ -800,6 +805,48 @@ class Dispatcher:
             return record
         endpoint = record.endpoint_for(pr)
         return endpoint if endpoint is not None and endpoint.is_live else record
+
+    def _deliver_assignment(
+        self, work_item: WorkItemRef, pr_number: Optional[int], text: str
+    ) -> bool:
+        """The graph-assigns channel (issue-172): paste ``text`` into the session
+        bound to the loop that just entered a node.
+
+        The outer loop's assignments go to the work item's own session; an inner
+        loop's to that PR's endpoint. ``False`` — no live target, or the paste
+        failed — is a skip for the hook, never a block: the assignment is a
+        nudge, and the state it describes is durable and re-rendered into every
+        event prompt.
+        """
+        record = self.registry.find_by_work_item(work_item)
+        if record is None:
+            return False
+        target = record
+        if pr_number is not None:
+            pr_ref = WorkItemRef(
+                provider=work_item.provider,
+                owner=work_item.owner,
+                repo=work_item.repo,
+                number=pr_number,
+                host=work_item.host,
+            )
+            endpoint = record.endpoint_for(pr_ref)
+            if endpoint is None or not endpoint.is_live:
+                return False
+            target = endpoint
+        if not target.tmux_target:
+            return False
+        result = self.tmux.deliver(
+            target, text, timeout=self.config.dispatch_timeout_seconds
+        )
+        eventlog.emit(
+            "graph.assignment_delivered" if result.ok else "graph.assignment_failed",
+            level="info" if result.ok else "warning",
+            work_item=work_item.ref,
+            endpoint=(target.work_item.ref if target is not record else None),
+            error=(None if result.ok else result.error),
+        )
+        return bool(result.ok)
 
     def _record_pr_binding(self, routed: RoutedEvent, target: WorkItemRef) -> None:
         """Persist "this PR delivers ``target``'s work item".

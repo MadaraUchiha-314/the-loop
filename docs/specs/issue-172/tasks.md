@@ -104,6 +104,16 @@ flowchart LR
   _Requirements: R6.1–R6.6, R2.9_
   _Test: T12 (tests/test_graph_loops.py), T2 (wiring), parity P5_
 
+- [x] **T10 — the graph assigns: `deliver-assignment`** (decision-065 D8)
+  `graph/hooks/assignment.py` (render + push through a daemon-injected channel;
+  skip without one; a failure never gates); on every non-terminal agent node's
+  entry in both loops; `GraphLink.assignment_sink` binding the channel per loop;
+  `Dispatcher._deliver_assignment` resolving the record or the PR's endpoint and
+  pasting via tmux; `graph.assignment_delivered`/`graph.assignment_failed` in
+  `EVENT_TYPES`.
+  _Requirements: R6.7_
+  _Test: T12_
+
 - [x] **T8 — execute the testing plan and commit the evidence**
   Every activity in [`testing-plan.md`](testing-plan.md) § Verification activities,
   including the seven-test negative run and the re-captured reproduction.
