@@ -1,3 +1,17 @@
+## v9.0.0 (2026-08-08)
+
+### BREAKING CHANGE
+
+- `security-review` and `human-approval` are no longer
+`required: true` in `pdlc-work-item-loop`. An authorized human may declare them
+skipped at `phase-selection`, and `graph force` no longer emits its
+bypasses-a-required-node warning for them. The inner `pdlc-pr-loop` is
+unchanged.
+
+### Feat
+
+- **issue-179**: every phase is selectable — the floor moves from the graph to the human (#180)
+
 ## v8.1.0 (2026-08-08)
 
 ### Feat
