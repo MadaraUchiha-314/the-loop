@@ -26,14 +26,16 @@ from the_loop.graph.runtime import Runtime
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TEMPLATE = REPO_ROOT / "skills" / "the-loop" / "templates" / "execution-log.md"
 
-#: Node → the execution-log section it gates, as the shipped graph declares it.
+#: Node → the execution-log section(s) it gates, as the shipped graph declares it.
+#: A node may gate more than one: `capability-docs` gates both the organized view
+#: of specs and the user-facing docs (issue-174, decision-066).
 GATED = {
-    "self-review": "Review cycles",
-    "critic-review": "Review cycles",
-    "security-review": "Security review (gate)",
-    "evidence": "Final validation evidence",
-    "capability-docs": "Capability docs",
-    "reviewer-briefing": "Pull requests",
+    "self-review": ("Review cycles",),
+    "critic-review": ("Review cycles",),
+    "security-review": ("Security review (gate)",),
+    "evidence": ("Final validation evidence",),
+    "capability-docs": ("Capability docs", "Documentation"),
+    "reviewer-briefing": ("Pull requests",),
 }
 
 HEADER = "---\ntype: execution-log\nworkItem: issue-1\nphase: needs-review\nstatus: in-progress\n---\n\n# Execution Log\n\n"
@@ -69,11 +71,12 @@ def test_a_review_node_blocks_when_its_section_was_never_written(repo, node_id):
     _log(repo, "## Progress entries\n\n### t — did a thing\n")
     outcome = _evaluate(repo, node_id)
     assert outcome.status == "block", (
-        f"{node_id} passed an execution log with no {GATED[node_id]!r} section — "
-        "the gate is reporting success without reading anything"
+        f"{node_id} passed an execution log with none of its {GATED[node_id]!r} "
+        "sections — the gate is reporting success without reading anything"
     )
     rendered = " | ".join(m.render() for m in outcome.messages)
-    assert GATED[node_id] in rendered
+    for section in GATED[node_id]:
+        assert section in rendered
     assert "execution-log.md" in rendered
 
 
@@ -87,8 +90,41 @@ def test_a_review_node_passes_once_its_section_carries_a_record(repo, node_id):
       Then it passes
     Requirement: docs/specs/issue-167/requirements.md#R3.1
     """
-    _log(repo, f"## {GATED[node_id]}\n\na real record of what happened\n")
+    _log(
+        repo,
+        "".join(
+            f"## {section}\n\na real record of what happened\n\n"
+            for section in GATED[node_id]
+        ),
+    )
     assert _evaluate(repo, node_id).status == "pass"
+
+
+def test_capability_docs_blocks_when_only_one_of_its_two_sections_is_written(repo):
+    """
+    Feature: the review chain gates the record it is supposed to produce
+    Scenario: a node gating two sections is not satisfied by one of them
+      Given an execution log recording the capability docs but not the user-facing docs
+      When the capability-docs node's exit chain is evaluated
+      Then it blocks, naming the section that is missing and not the one that is present
+    Requirement: docs/specs/issue-174/requirements.md#R4.2
+
+    The point of issue-174: a work item that folded in its capability docs and left
+    the README describing the previous process must not reach `complete`. Asserted in
+    both directions so neither section can quietly stand in for the other.
+    """
+    for present, missing in (
+        ("Capability docs", "Documentation"),
+        ("Documentation", "Capability docs"),
+    ):
+        _log(repo, f"## {present}\n\na real record of what happened\n")
+        outcome = _evaluate(repo, "capability-docs")
+        assert outcome.status == "block", (
+            f"capability-docs passed on a log carrying only {present!r} — "
+            f"{missing!r} is gated too"
+        )
+        rendered = " | ".join(m.render() for m in outcome.messages)
+        assert missing in rendered
 
 
 @pytest.mark.parametrize("node_id", sorted(GATED))

@@ -221,12 +221,20 @@ nodes:
     exit:
       - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Final validation evidence"]}}
 
+  # Two sections, one node (issue-174, decision-066). `Capability docs` is the
+  # ORGANIZED VIEW OF SPECS — current behaviour per capability, for a reader who
+  # already uses the-loop. `Documentation` is the USER-FACING surface — README,
+  # the docs site, the operating-model skill — for a reader who does not yet.
+  # Both rot the same way and both are updated in the same PR, so one node reads
+  # both; they stay separate rows because folding them together would lose which
+  # of the two was skipped. The INNER loop gates neither: a work item's
+  # documentation is decided once, at the outer level, like its requirements.
   - id: capability-docs
     actor: agent
     stage: capability-docs
     entry: [log-entry, deliver-assignment]
     exit:
-      - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Capability docs"]}}
+      - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Capability docs", "Documentation"]}}
 
   - id: reviewer-briefing
     actor: agent

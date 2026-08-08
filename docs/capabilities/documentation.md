@@ -62,6 +62,74 @@ This exists because the failure it prevents already happened. `cli/README.md` wa
 undocumented, and removed `ghBinary` while five README references to it survived. Structure
 alone does not fix that; structure plus a test does.
 
+### The root `README.md` delegates; the site is the manual
+
+- The README SHALL open on what the-loop **is** — an executable process graph and the
+  daemon that runs it — before it names any harness. The Claude Code and Cursor plugins are
+  a delivery surface for the operating model, documented after the graph, the two loops,
+  the artifact chain and the CLI (issue-174).
+- It SHALL cover only what a reader needs before deciding to read further, and SHALL
+  **link** the site for anything the site documents in full: installation, the command
+  reference, the CLI's per-command pages, the configuration reference, the operating model.
+  Two copies of a fact is one copy that rots.
+- Its documentation links SHALL be **absolute** `https://madarauchiha-314.github.io/the-loop/…`
+  URLs, for the same reason `cli/README.md`'s are: the README renders on GitHub and on
+  PyPI-adjacent surfaces where a relative site path is dead. Repository-relative links stay
+  only for source the site does not render — `LICENSE`, `CLAUDE.md`, the graph YAMLs, the
+  skill.
+- It SHALL NOT carry a version-status block or a roadmap. Both must be re-approved every
+  release to stay true, and neither was: the README described "v0 foundation" at v8.0.0.
+- Anything it states about the process — the phase sequence, the loop names, the artifact
+  chain — SHALL match the shipped graph, which `test_graph_parity.py`'s P4 pins for the
+  phase sequence.
+
+### The README's workflow diagram
+
+- The README SHALL carry **one** diagram of the workflow, authored as an **Excalidraw**
+  scene (the exception issue-150 established for the hero image; `diagramFormat: mermaid`
+  continues to govern everything the harness produces). Two committed artifacts:
+  `docs/assets/the-loop-workflow.excalidraw` (the scene) and
+  `docs/assets/the-loop-workflow.svg` (what the README embeds, since GitHub cannot render
+  `.excalidraw`).
+- The SVG SHALL be **self-contained**: Virgil embedded as a `base64` data URI, no external
+  URL, and no scripting construct — grepped before commit. Excalidraw's exporter emits
+  `@font-face` rules pointing at *asset paths*, so the inlining step is not optional: without
+  it the hand-drawn face degrades to a system font on GitHub with nothing failing.
+- Both files SHALL round-trip into excalidraw.com — the SVG carries the embedded scene
+  payload (`exportEmbedScene`).
+- The scene's geometry SHALL be **computed by a committed generator** rather than placed by
+  hand, so a regeneration is a command rather than a re-derivation
+  (`docs/specs/issue-174/evidence/diagram/generate-scene.py`). The export tooling itself
+  (headless Chromium plus `@excalidraw/excalidraw`) stays outside the repository.
+- The diagram SHALL show what the shipped graphs declare, and is checked node-by-node
+  against them — including the inner loop's `start:` node and the nodes it does **not**
+  declare. It went stale for three releases before issue-174; being a picture is not an
+  exemption from the gate below.
+
+### Updating the user-facing docs is a completion gate (issue-174)
+
+- A work item SHALL update the **user-facing documentation** its change made wrong — the
+  root `README.md`, this site under `docs/`, and `skills/the-loop/SKILL.md` with its
+  `reference/` docs — **in the same PR** as the change, and SHALL record what it changed in
+  the execution log's **`## Documentation`** section.
+- That section SHALL be gated by the outer loop's `capability-docs` node, alongside
+  `## Capability docs` ([decision-066](../decisions/decision-066.md)). A work item that
+  changed no user-facing document SHALL say so **with the reason**; the section is never
+  deleted to shorten the log.
+- The gate SHALL live on the existing node rather than a new one, and the node SHALL keep
+  its id, `stage` and phase — `stage: capability-docs` is a public key in operators'
+  `tokenEconomy.modelRouting.stages` and `thinkingEffort.stages` maps.
+- The inner `pdlc-pr-loop` SHALL gate neither section: a work item's documentation is
+  decided once, at the outer level.
+- **What this proves SHALL be stated rather than implied**: the check is structural, so a
+  heading holding placeholder text passes it. The gate proves the record exists; the
+  reviewer judges whether the documentation is any good.
+
+This exists because the failure it prevents already happened, twice over. issue-172 split
+the PDLC into two loops and issue-163 added `testing-plan.md` to the spec chain, and the
+README and the site's entry pages went on describing one loop and three artifacts —
+because nothing read them before `complete`.
+
 ### `cli/README.md`
 
 - SHALL remain a valid **standalone** document: it is the PyPI package readme
@@ -97,6 +165,7 @@ alone does not fix that; structure plus a test does.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-174 | The root `README.md` rewritten to lead with the graph, the two loops and the CLI and to delegate everything else to this site; the site's three entry pages brought current (two loops, the four-artifact chain, `testing-plan.md`); the workflow diagram regenerated from a committed generator after owner review found it three releases stale; and updating the user-facing docs became a completion gate — `## Documentation` joins `## Capability docs` on the `capability-docs` node | [spec](../specs/issue-174/), [decision-066](../decisions/decision-066.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/174) |
 | issue-117 | The CLI documented as a product (onboarding path + one page per command), Config made a top-level section split by area, the `cli/README.md` → `docs/cli.md` copy retired, and the docs↔code parity test added — which is what forced `check`/`graph`/`migrate-config` and `integrations`/`workspace`/`routing.graph`/`polling.maxRetries` to be written, and `ghBinary` to be removed | [spec](../specs/issue-117/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/117) |
 | issue-73 | `CLAUDE.md` added so the-loop's own cloud/web sessions run the loop instead of shipping one-off PRs | [issue](https://github.com/MadaraUchiha-314/the-loop/issues/73) |
 | PR #71 | Established the VitePress site and the GitHub Pages deploy, including the spec sidebar generated from the filesystem | [PR](https://github.com/MadaraUchiha-314/the-loop/pull/71) |

@@ -88,3 +88,22 @@ under `<specDir>/<id>/evidence/`.
 | Capability doc | What changed | History row |
 |----------------|--------------|-------------|
 |                |              |             |
+
+## Documentation
+
+> Which **user-facing** documents this work item changed — `README.md`, the documentation
+> site under `docs/`, and the operating-model skill with its `reference/` docs. Capability
+> docs above are the organized view of specs, written for a reader who already uses the
+> project; this section is the surface a reader meets *before* that, and it rots the same
+> way, so it is updated **in the same PR** as the change (`reference/workflow.md`,
+> ready-to-ship gate). The `capability-docs` node gates this section alongside the one
+> above (issue-174).
+>
+> A work item that genuinely changed no user-facing documentation says so here **with the
+> reason** — "internal refactor, no described behaviour changed" is an answer; a blank is
+> not. The section is never deleted to shorten the log. A row names a **document**, never a
+> token, a credential or an internal hostname: this tree is as public as the repository.
+
+| Document | What changed |
+|----------|--------------|
+|          |              |
