@@ -105,7 +105,8 @@ def test_unknown_node_lookup_lists_the_declared_ones():
 def test_the_shipped_graph_compiles():
     """CI validates the graph the plugin ships, so a malformed one cannot release."""
     graph = load_graph()
-    assert graph.start == "brainstorming"
+    # issue-177: the loop asks which phases the item needs before walking any.
+    assert graph.start == "phase-selection"
     assert "security-review" in graph.nodes
     assert graph.node("security-review").required is True
 

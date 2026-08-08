@@ -67,6 +67,16 @@ class GraphForceBody(BaseModel):
     pr: Optional[int] = None
 
 
+class GraphSkipBody(BaseModel):
+    repo: str
+    workItem: str
+    nodes: List[str]
+    reason: str
+    actor: str = ""
+    ref: str = ""
+    pr: Optional[int] = None
+
+
 class SessionControlBody(BaseModel):
     ref: str
     verb: str
@@ -221,6 +231,21 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
             body.repo,
             body.workItem,
             body.toNode,
+            body.reason,
+            actor=body.actor,
+            ref=body.ref,
+            pr=body.pr,
+        )
+
+    @app.post(
+        f"{API_PREFIX}/graph/skip",
+        operation_id="graphSkip",
+    )
+    def graph_skip(body: GraphSkipBody) -> Dict[str, Any]:
+        return core_graphs.skip(
+            body.repo,
+            body.workItem,
+            body.nodes,
             body.reason,
             actor=body.actor,
             ref=body.ref,

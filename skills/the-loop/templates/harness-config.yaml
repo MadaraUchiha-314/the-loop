@@ -33,6 +33,7 @@ workflow:
   phaseLabelPrefix: "loop:"
   phases:
     - not-started
+    - phase-selection        # issue-177: the loop asks which phases this item needs
     - brainstorming          # optional Phase 0 (root artifact: brainstorm.md)
     - requirements-definition
     - design

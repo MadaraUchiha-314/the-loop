@@ -270,6 +270,7 @@ class GraphLink:
         control_store: Optional[ControlStore] = None,
         authorized_users: Optional[Sequence[str]] = None,
         assignment_sink: Optional[Any] = None,
+        frozen_graph_sink: Optional[Any] = None,
     ):
         self.config = config
         self.control = control or ControlConfig()
@@ -282,6 +283,12 @@ class GraphLink:
         # hook then skips, because a claiming session already reads the same
         # facts from its command's envelope.
         self.assignment_sink = assignment_sink
+        # The frozen-graph channel (issue-177): a callable
+        # ``(work_item, frozen) -> None`` the dispatcher provides so the
+        # phase-selection gate's frozen graph reaches the portable session
+        # record. None on the CLI path — `graph-state.json` is the
+        # authoritative copy and is checked in anyway.
+        self.frozen_graph_sink = frozen_graph_sink
 
     # -- entry points -----------------------------------------------------------
 
@@ -537,6 +544,13 @@ class GraphLink:
                     **runtime.config,
                     "assignmentDeliver": lambda text: sink(wi, prn, text),
                     "assignmentPr": pr_number,
+                }
+            if self.frozen_graph_sink is not None:
+                # The frozen graph is the WORK ITEM's, whichever loop froze it.
+                frozen_sink, item_ref = self.frozen_graph_sink, work_item
+                runtime.config = {
+                    **runtime.config,
+                    "frozenGraphSink": lambda frozen: frozen_sink(item_ref, frozen),
                 }
             # Write actions hold the graph-state lock (issue-148): the session's
             # `graph complete` is a second writer beside this daemon, and the

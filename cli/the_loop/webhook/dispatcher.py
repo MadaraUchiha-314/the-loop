@@ -24,7 +24,15 @@ from typing import Dict, List, Optional, Set
 from .. import eventlog
 from ..announce import AnnounceConfig, SessionAnnouncer
 from ..authz import is_authorized
-from ..control import PAUSE, RESUME, START, STOP, ControlConfig, ControlStore
+from ..control import (
+    GRAPH_COMMANDS,
+    PAUSE,
+    RESUME,
+    START,
+    STOP,
+    ControlConfig,
+    ControlStore,
+)
 from ..control import parse_command as parse_control_command
 from ..graphlink import (
     GraphLink,
@@ -472,6 +480,7 @@ class Dispatcher:
             self.control_store,
             self.config.authorized_users,
             assignment_sink=self._deliver_assignment,
+            frozen_graph_sink=self._record_frozen_graph,
         )
         self._event_template = self._load_template(
             self.config.prompt_template, DEFAULT_PROMPT_TEMPLATE
@@ -540,6 +549,7 @@ class Dispatcher:
             self.control_store,
             config.authorized_users,
             assignment_sink=self._deliver_assignment,
+            frozen_graph_sink=self._record_frozen_graph,
         )
         self._event_template = self._load_template(
             config.prompt_template, DEFAULT_PROMPT_TEMPLATE
@@ -652,8 +662,17 @@ class Dispatcher:
                     control.command, routed, actor or "", "unauthorized-actor"
                 )
                 return
-            self._apply_control(control.command, routed)
-            return
+            if control.command in GRAPH_COMMANDS:
+                # `the-loop execute` acts on the GRAPH, not the session
+                # registry (issue-177): it answers the phase-selection gate.
+                # So it is recorded here — the named-actor check above is
+                # exactly the authorization that gate needs — and then the
+                # event is allowed through, because the thing that must read
+                # the comment is the gate's own exit chain.
+                self._record_graph_command(control.command, routed, actor)
+            else:
+                self._apply_control(control.command, routed)
+                return
 
         # Matching is by **record** — the work item — not by endpoint (issue-172,
         # PR #173 review). One record owns a work item and every PR delivering
@@ -896,6 +915,42 @@ class Dispatcher:
             if record is not None:
                 return record
         return None
+
+    def _record_frozen_graph(self, work_item, frozen: dict) -> None:
+        """Store a frozen phase selection on the work item's PORTABLE record.
+
+        Portable, not local (issue-177, owner's wording): which phases a work
+        item walks is a fact about the work item, so it belongs beside
+        `control` — carried to another machine with it, not left behind with the
+        session handle.
+        """
+        self.control_store.record_frozen_graph(work_item, frozen)
+
+    def _record_graph_command(
+        self, command: str, routed: RoutedEvent, actor: str
+    ) -> None:
+        """Record a graph-directed control command and let the event continue.
+
+        Deliberately does **not** touch the session registry: `execute` neither
+        arms nor disarms anything, so recording it as a control *action* would
+        make a work item look started when all that happened is its owner chose
+        its phases. The paper trail is the event log plus the gate's own
+        confirmation comment on the ticket.
+        """
+        target = routed.work_items[0] if routed.work_items else None
+        eventlog.emit(
+            "control.command",
+            command=command,
+            work_item=target.ref if target is not None else "",
+            actor=actor,
+            source="comment",
+            effect="handed-to-graph",
+        )
+        logger.info(
+            "control command %s from %s: handed to the graph's phase-selection gate",
+            command,
+            actor,
+        )
 
     def _apply_control(self, command: str, routed: RoutedEvent) -> None:
         """Execute a control command carried by an authorized user's comment.

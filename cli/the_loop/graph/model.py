@@ -176,6 +176,11 @@ class Node:
     session: str = "new"
     required: bool = False
     optional: bool = False
+    #: May a HUMAN declare this node skipped for one work item (issue-177)?
+    #: Distinct from ``optional``, which lets the node skip itself when no
+    #: artifact was produced — ``skippable`` is a vocabulary entry for the
+    #: declared-skips mechanism, and only the shipped graph can grant it.
+    skippable: bool = False
     max_attempts: int = 3
     entry: Tuple[Any, ...] = ()
     exit: Tuple[Any, ...] = ()
@@ -192,6 +197,7 @@ class Node:
             "session": self.session,
             "required": self.required,
             "optional": self.optional,
+            "skippable": self.skippable,
             "maxAttempts": self.max_attempts,
             "terminal": self.terminal,
         }
@@ -213,6 +219,10 @@ class Graph:
     #: Which loop this is (issue-172): pdlc-work-item-loop | pdlc-pr-loop.
     #: "" for an anonymous test graph — nothing branches on it being set.
     name: str = ""
+    #: Named bundles of skippable nodes (issue-177): one label/token declares
+    #: the whole set. Compile-validated — every member is a declared, skippable
+    #: node — so no set can smuggle a protected gate into the vocabulary.
+    skip_sets: Dict[str, Tuple[str, ...]] = field(default_factory=dict)
     _index: Dict[Tuple[str, str], Edge] = field(default_factory=dict, repr=False)
 
     def node(self, node_id: str) -> Node:
@@ -234,6 +244,36 @@ class Graph:
     def ordered(self) -> List[Node]:
         """Nodes in declaration order — the order ``check`` reports them in."""
         return list(self.nodes.values())
+
+    def expand_skip_tokens(
+        self, tokens: Sequence[str]
+    ) -> Tuple[Dict[str, str], List[str]]:
+        """Resolve skip tokens — node ids or skip-set names — against the
+        vocabulary (issue-177).
+
+        Returns ``(accepted, rejected)``: accepted maps each skippable node id
+        to the token that declared it (first declaration wins, order
+        preserved); rejected keeps every token that names nothing skippable —
+        an unknown name, a protected node, a typo. The one shared resolver for
+        both declaration channels (labels and the CLI verb), so what a label
+        may declare and what the verb may declare cannot drift apart.
+        """
+        accepted: Dict[str, str] = {}
+        rejected: List[str] = []
+        for raw in tokens:
+            token = str(raw).strip()
+            if not token:
+                continue
+            if token in self.skip_sets:
+                for node_id in self.skip_sets[token]:
+                    accepted.setdefault(node_id, token)
+                continue
+            node = self.nodes.get(token)
+            if node is not None and node.skippable:
+                accepted.setdefault(token, token)
+            else:
+                rejected.append(token)
+        return accepted, rejected
 
 
 def shipped_graph_path(name: str = PDLC_WORK_ITEM_LOOP) -> Path:
@@ -325,6 +365,11 @@ def _build_node(raw: Mapping[str, Any]) -> Node:
         produces = [produces]
     for entry in produces:
         validate_produces_entry(node_id, entry)
+    if bool(raw.get("required", False)) and bool(raw.get("skippable", False)):
+        raise GraphConfigError(
+            f"node {node_id!r} is both required and skippable — a mandatory "
+            "gate cannot also be in the skip vocabulary (issue-177)"
+        )
     return Node(
         id=node_id,
         phase=str(raw.get("phase", "")),
@@ -335,6 +380,7 @@ def _build_node(raw: Mapping[str, Any]) -> Node:
         session=session,
         required=bool(raw.get("required", False)),
         optional=bool(raw.get("optional", False)),
+        skippable=bool(raw.get("skippable", False)),
         max_attempts=int(raw.get("maxAttempts", 3)),
         entry=_validate_chain(node_id, "entry", raw.get("entry") or []),
         exit=_validate_chain(node_id, "exit", raw.get("exit") or []),
@@ -392,12 +438,44 @@ def compile_graph(data: Mapping[str, Any]) -> Graph:
     if start not in nodes:
         raise GraphConfigError(f"start node {start!r} is not declared")
 
+    # Declared skips (issue-177): routing around a skippable node is authored
+    # in the graph, never inferred — a skippable node without its `on: skipped`
+    # edge would leave the runtime guessing at 2am, so it fails at load.
+    for node in nodes.values():
+        if node.skippable and (node.id, "skipped") not in index:
+            raise GraphConfigError(
+                f"node {node.id!r} is skippable but declares no edge for the "
+                "outcome 'skipped'; add '{from: "
+                f"{node.id}, to: <next>, on: skipped}}'"
+            )
+
+    skip_sets: Dict[str, Tuple[str, ...]] = {}
+    raw_sets = data.get("skipSets") or {}
+    if not isinstance(raw_sets, Mapping):
+        raise GraphConfigError("skipSets must be a mapping of name -> node list")
+    for set_name, members in raw_sets.items():
+        if not isinstance(members, Sequence) or isinstance(members, str):
+            raise GraphConfigError(f"skip set {set_name!r} must be a list of node ids")
+        resolved: List[str] = []
+        for member in members:
+            member_id = str(member)
+            node = nodes.get(member_id)
+            if node is None or not node.skippable:
+                raise GraphConfigError(
+                    f"skip set {set_name!r} names {member_id!r}, which is not "
+                    "a declared skippable node — a set cannot widen the skip "
+                    "vocabulary (issue-177)"
+                )
+            resolved.append(member_id)
+        skip_sets[str(set_name)] = tuple(resolved)
+
     return Graph(
         nodes=nodes,
         edges=edges,
         start=start,
         version=int(data.get("version", 1)),
         name=str(data.get("name", "")),
+        skip_sets=skip_sets,
         _index=index,
     )
 

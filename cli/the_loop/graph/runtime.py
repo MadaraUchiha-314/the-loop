@@ -19,12 +19,35 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 from .. import eventlog
 from .chain import ChainOutcome, run_chain
 from .contract import BLOCK, PASS, SKIP, WAIT, HookContext, WorkItem
-from .model import Graph, load_graph
+from .model import Graph, artifact_names, load_graph
 from .state import GraphState, StateLockBusy, state_lock, utc_now
 
 logger = logging.getLogger("the-loop.graph")
 
-__all__ = ["NodeReport", "Runtime", "StatusReport", "force"]
+__all__ = [
+    "NodeReport",
+    "Runtime",
+    "SkipResult",
+    "StatusReport",
+    "declare_skips",
+    "force",
+]
+
+
+def _skip_provenance(decl: Mapping[str, Any]) -> str:
+    """One line a reviewer can act on: who declared this skip, and how."""
+    via = str(decl.get("via") or "unknown")
+    token = str(decl.get("token") or "")
+    by = str(decl.get("by") or "")
+    reason = str(decl.get("reason") or "")
+    parts = [f"skipped by declaration — via {via}"]
+    if token:
+        parts.append(f"token {token!r}")
+    if by:
+        parts.append(f"by {by}")
+    if reason:
+        parts.append(f"reason: {reason}")
+    return ", ".join(parts)
 
 
 @dataclass
@@ -170,15 +193,181 @@ class Runtime:
             "fresh-with-artifacts",
         )
 
-    def _context(self, item: WorkItem, node, boundary: str, **extra) -> HookContext:
+    def _context(
+        self,
+        item: WorkItem,
+        node,
+        boundary: str,
+        decisions: Optional[Mapping[str, Any]] = None,
+        **extra,
+    ) -> HookContext:
         return HookContext(
             work_item=item,
             node=node.as_mapping(),
             boundary=boundary,
             repo=self.repo,
             config=self.config,
+            graph=self.graph,
+            decisions=dict(decisions or {}),
             **extra,
         )
+
+    # -- declared skips (issue-177) --------------------------------------------
+
+    def declared_skips(self, state: "GraphState") -> Dict[str, Dict[str, Any]]:
+        """The declarations the runtime will honour — the ONE defensive read.
+
+        ``state.skips`` is agent-writable, like everything in the state file,
+        so every consumer goes through this filter: an entry is honoured only
+        when the compiled graph marks that node skippable (and not required).
+        A hand-written declaration on ``security-review`` is therefore inert
+        everywhere at once, and :meth:`invalid_skips` surfaces it.
+        """
+        out: Dict[str, Dict[str, Any]] = {}
+        for node_id, decl in (state.skips or {}).items():
+            node = self.graph.nodes.get(node_id)
+            if node is not None and node.skippable and not node.required:
+                out[node_id] = dict(decl) if isinstance(decl, Mapping) else {}
+        return out
+
+    def invalid_skips(self, state: "GraphState") -> List[str]:
+        """Declared node ids the graph refuses — surfaced, never honoured."""
+        valid = self.declared_skips(state)
+        return [n for n in (state.skips or {}) if n not in valid]
+
+    def _skipped_artifact_names(self, skips: Mapping[str, Any]) -> frozenset:
+        """Every artifact name authored by a declared-skipped node — what lets
+        a later gate tell a planned absence from a missing deliverable."""
+        names: set = set()
+        for node_id in skips:
+            node = self.graph.nodes.get(node_id)
+            if node is None:
+                continue
+            for entry in node.produces:
+                names.update(artifact_names(entry))
+        return frozenset(names)
+
+    def _record_selected_skips(
+        self, state: "GraphState", item: WorkItem, outcome: ChainOutcome
+    ) -> bool:
+        """Record the skips a passing chain declared (issue-177).
+
+        The `phase-selection` gate reads an authorized user's reply and returns
+        the chosen skips as a **fact** in its result data; writing them is the
+        runtime's job, because the runtime is the single writer holding the
+        state. Applied only through :meth:`declared_skips`' vocabulary on every
+        later read, so a hook cannot declare a skip the graph does not permit —
+        and only for nodes still ahead of the pointer, so this can never excuse
+        a node already walked.
+        """
+        # The decision itself is durable, separately from the skips it produced:
+        # a selection that keeps every phase records nothing in `skips`, and
+        # `the-loop check` (which passes no event) must still see the gate as
+        # answered rather than re-asking forever.
+        decided = False
+        for result in outcome.results:
+            marker = result.data.get("decision")
+            if marker:
+                record: Dict[str, Any] = {"at": utc_now()}
+                frozen = result.data.get("frozenGraph")
+                if frozen:
+                    # The selection FREEZES the graph (issue-177, owner review):
+                    # what the item will walk stops being a live comment anyone
+                    # can keep editing and becomes a recorded fact — here, and
+                    # in the portable session record through the sink below.
+                    record["graph"] = frozen
+                    record["via"] = str(result.data.get("selectionSource") or "")
+                state.decisions.setdefault(str(marker), record)
+                decided = True
+                if frozen:
+                    self._publish_frozen_graph(item, frozen)
+        declared: Dict[str, Any] = {}
+        for result in outcome.results:
+            for node_id, decl in (result.data.get("declaredSkips") or {}).items():
+                node = self.graph.nodes.get(str(node_id))
+                rec = state.nodes.get(str(node_id))
+                if node is None or not node.skippable or (rec and rec.entered_at):
+                    continue
+                declared[str(node_id)] = {**dict(decl), "at": utc_now()}
+        if not declared:
+            return decided
+        for node_id, decl in declared.items():
+            state.skips.setdefault(node_id, decl)
+        eventlog.emit(
+            "graph.skips_declared",
+            work_item=item.ref,
+            via="selection",
+            nodes=sorted(declared),
+        )
+        logger.info("%s: phase selection declared skips %s", item.ref, sorted(declared))
+        return True
+
+    def _publish_frozen_graph(self, item: WorkItem, frozen: Mapping[str, Any]) -> None:
+        """Push the frozen graph to the portable work-item record, if a sink exists.
+
+        Same shape as the assignment channel (issue-172): the **daemon** injects
+        a callable, because the registry is the daemon's and the runtime is
+        repo-scoped. On the CLI path there is no sink and the frozen graph lives
+        in `graph-state.json` alone, which is checked in and reviewable anyway.
+        Best-effort: a failed publish never gates the selection.
+        """
+        sink = self.config.get("frozenGraphSink")
+        if not callable(sink):
+            return
+        try:
+            sink(dict(frozen))
+        except Exception as exc:  # noqa: BLE001 — never gate on the sink
+            logger.warning("could not publish the frozen graph: %s", exc)
+            eventlog.emit(
+                "graph.frozen_publish_failed",
+                level="warning",
+                work_item=item.ref,
+                error=str(exc),
+            )
+            return
+        eventlog.emit("graph.frozen", work_item=item.ref)
+
+    def _route_skips(
+        self,
+        state: "GraphState",
+        item: WorkItem,
+        node_id: str,
+        skips: Mapping[str, Any],
+    ) -> str:
+        """Walk declared-skipped nodes along their ``on: skipped`` edges.
+
+        Each skipped node gets outcome ``skipped`` on its record — a
+        declaration honoured, not a verdict forged — and NONE of its entry or
+        exit hooks run: no phase label, no log checkpoint, no assignment
+        (R3.1, R3.5). Returns the first non-skipped node. Compile-time
+        validation guarantees every skippable node has its edge; the visited
+        guard makes a cyclic authoring mistake land fail-closed on the node
+        itself rather than loop.
+        """
+        visited: set = set()
+        while node_id in skips and node_id not in visited:
+            visited.add(node_id)
+            target = self.graph.next_node(node_id, "skipped")
+            if target is None:
+                break  # fail closed: walk the node rather than guess an exit
+            rec = state.record(node_id)
+            rec.entered_at = rec.entered_at or utc_now()
+            rec.outcome = "skipped"
+            rec.exited_at = utc_now()
+            eventlog.emit(
+                "graph.node_skipped",
+                work_item=item.ref,
+                node=node_id,
+                **{k: v for k, v in (skips.get(node_id) or {}).items() if v},
+            )
+            logger.info(
+                "%s skipped %s (%s)",
+                item.ref,
+                node_id,
+                _skip_provenance(skips.get(node_id) or {}),
+            )
+            node_id = target
+        return node_id
 
     # -- evaluation (pure: no network, no subprocess, no mutation) -------------
 
@@ -187,15 +376,31 @@ class Runtime:
         node_id: str,
         item: WorkItem,
         event: Optional[Mapping[str, Any]] = None,
+        skips: Optional[Mapping[str, Any]] = None,
+        decisions: Optional[Mapping[str, Any]] = None,
     ) -> ChainOutcome:
         """Run one node's **exit** chain. This is what ``check`` calls.
 
         ``check`` passes no ``event`` — it reports what the artifacts alone say,
         which is what keeps it honest — so a gate awaiting human feedback reads
         as ``wait`` there and only resolves when a real event carries the reply.
+
+        ``skips`` is the validated declared-skip set (issue-177): the chain
+        needs it only to tell a *planned* absence (an artifact whose authoring
+        node was declared-skipped) from a missing deliverable.
         """
         node = self.graph.node(node_id)
-        return run_chain(node.exit, self._context(item, node, "exit", event=event))
+        return run_chain(
+            node.exit,
+            self._context(
+                item,
+                node,
+                "exit",
+                event=event,
+                skipped_artifacts=self._skipped_artifact_names(skips or {}),
+                decisions=decisions,
+            ),
+        )
 
     def status(self, work_item_id: str, recompute: bool = False) -> StatusReport:
         """Every node's verdict, in declaration order.
@@ -206,16 +411,41 @@ class Runtime:
         """
         item = self.work_item(work_item_id)
         state = GraphState.load(self.state_dir(item), work_item_id)
+        # Declared skips are honoured in BOTH modes (issue-177): a declaration
+        # is a recorded human input with an off-repo audit trail, not the state
+        # file scoring itself — while an invalid declaration is honoured in
+        # NEITHER, and called out on the node it tried to touch.
+        skips = self.declared_skips(state)
+        refused = set(self.invalid_skips(state))
         reports: List[NodeReport] = []
         for node in self.graph.ordered():
-            outcome = self.evaluate(node.id, item)
             rec = state.nodes.get(node.id)
+            if node.id in skips:
+                reports.append(
+                    NodeReport(
+                        node=node.id,
+                        status=SKIP,
+                        outcome="skipped",
+                        messages=[_skip_provenance(skips[node.id])],
+                        attempts=rec.attempts if rec else 0,
+                    )
+                )
+                continue
+            outcome = self.evaluate(
+                node.id, item, skips=skips, decisions=state.decisions
+            )
+            messages = [m.render() for m in outcome.messages]
+            if node.id in refused:
+                messages.append(
+                    "graph state declares a skip on this node, which is not "
+                    "skippable — the declaration is refused and has no effect"
+                )
             reports.append(
                 NodeReport(
                     node=node.id,
                     status=outcome.status,
                     outcome=outcome.outcome,
-                    messages=[m.render() for m in outcome.messages],
+                    messages=messages,
                     forced=bool(rec and rec.forced) and not recompute,
                     attempts=rec.attempts if rec else 0,
                 )
@@ -265,7 +495,9 @@ class Runtime:
         if state.current_node:
             return None
 
-        node_id = self.graph.start
+        node_id = self._route_skips(
+            state, item, self.graph.start, self.declared_skips(state)
+        )
         state.enter(node_id)
         state.save(
             self.state_dir(item)
@@ -383,10 +615,19 @@ class Runtime:
         """
         item = self.work_item(work_item_id, ref)
         state = GraphState.load(self.state_dir(item), work_item_id)
-        node_id = state.current_node or self.graph.start
+        skips = self.declared_skips(state)
+        if state.current_node:
+            node_id = state.current_node
+        else:
+            # The CLI-only path never calls start(), so routing past already
+            # declared skips lands here too — otherwise a fresh item would gate
+            # the very node its author declared away (issue-177).
+            node_id = self._route_skips(state, item, self.graph.start, skips)
         node = self.graph.node(node_id)
 
-        outcome = self.evaluate(node_id, item, event=event)
+        outcome = self.evaluate(
+            node_id, item, event=event, skips=skips, decisions=state.decisions
+        )
         report = NodeReport(
             node=node_id,
             status=outcome.status,
@@ -425,9 +666,17 @@ class Runtime:
                 )
             return report
 
-        # satisfied — take the edge
+        # satisfied — record any skips this chain declared, then take the edge.
+        # Order matters: the selection gate's own result decides which nodes the
+        # very next hop routes around.
+        if self._record_selected_skips(state, item, outcome):
+            skips = self.declared_skips(state)
         state.exit(node_id, outcome.outcome)
         target = self.graph.next_node(node_id, outcome.outcome)
+        if target is not None:
+            # A declared-skipped successor is walked around, not entered
+            # (issue-177) — its record says `skipped`, its hooks never run.
+            target = self._route_skips(state, item, target, skips)
         if target is None:
             if node.terminal:
                 state.current_node = node_id
@@ -504,6 +753,146 @@ def _announce_force(runtime: "Runtime", item: WorkItem, record: Dict[str, Any]) 
         resolve("github", runtime.config).call("add-comment", ref=item.ref, body=body)
     except (IntegrationError, Exception) as exc:  # noqa: BLE001
         logger.warning("could not post the force audit comment: %s", exc)
+
+
+# -- declared skips: the operator channel (issue-177) --------------------------
+
+
+@dataclass
+class SkipResult:
+    work_item: str
+    declared: List[str] = field(default_factory=list)
+    rejected: List[Dict[str, str]] = field(default_factory=list)
+    reason: str = ""
+
+
+def _announce_skips(
+    runtime: "Runtime", item: WorkItem, declared: List[str], record: Dict[str, Any]
+) -> None:
+    """Post the declaration to the ticket — the audit record a human reads.
+
+    Best-effort, like the force announcement: an integration outage must not
+    prevent the operator declaring their skips; the state record and the event
+    log are already durable.
+    """
+    from ..authz import mark_self_authored
+    from .integrations import IntegrationError, resolve
+
+    body = mark_self_authored(
+        "🤖 _the-loop_ — **declared skips**\n\n"
+        f"{', '.join(f'`{n}`' for n in declared)} declared skipped by "
+        f"{record['by']}\n\n"
+        f"**Reason:** {record['reason']}\n\n"
+        "These are declarations, not verdicts: `the-loop check` reports each "
+        "node as *skipped by declaration*, the never-skippable gates still "
+        "run, and the pointer routes around the named nodes when it reaches "
+        "them."
+    )
+    try:
+        resolve("github", runtime.config).call("add-comment", ref=item.ref, body=body)
+    except (IntegrationError, Exception) as exc:  # noqa: BLE001
+        logger.warning("could not post the skip audit comment: %s", exc)
+
+
+def declare_skips(
+    runtime: Runtime,
+    work_item_id: str,
+    tokens: List[str],
+    reason: str,
+    actor: str = "",
+    ref: str = "",
+) -> SkipResult:
+    """Declare skips for a work item — the operator channel (issue-177, R2.3).
+
+    The sibling of :func:`force`, with the same posture: human-attributed, a
+    reason required, an audit comment posted, and **never a forged verdict** —
+    a declaration makes the runtime route around a node and report it as
+    *skipped by declaration*, it does not mark any gate satisfied.
+
+    Bounded twice: a token must resolve inside the graph's skip vocabulary
+    (skippable nodes and shipped skip sets — protected gates are simply not in
+    it), and it must land ahead of the pointer — a node already entered or
+    passed is refused, because a skip is a plan, not an amnesty (R2.6).
+    """
+    if not reason or not reason.strip():
+        raise ValueError(
+            "--reason is required: an unexplained skip is refused. Record why "
+            "this work item does not walk the phase."
+        )
+    if not tokens:
+        raise ValueError("name at least one node or skip set to declare")
+
+    item = runtime.work_item(work_item_id, ref)
+    state = GraphState.load(runtime.state_dir(item), work_item_id)
+
+    accepted, bad_tokens = runtime.graph.expand_skip_tokens(tokens)
+    rejected: List[Dict[str, str]] = [
+        {"token": token, "why": "not a skippable node or shipped skip set"}
+        for token in bad_tokens
+    ]
+
+    order = [n.id for n in runtime.graph.ordered()]
+    current = state.current_node
+    declared: List[str] = []
+    at = utc_now()
+    by = actor or "(shell)"
+    for node_id, token in accepted.items():
+        rec = state.nodes.get(node_id)
+        entered = bool(rec and rec.entered_at)
+        behind = bool(
+            current
+            and node_id in order
+            and current in order
+            and order.index(node_id) < order.index(current)
+        )
+        if node_id == current or entered or behind:
+            rejected.append(
+                {
+                    "token": node_id,
+                    "why": "already entered or behind the pointer — a skip is "
+                    "a plan, not an amnesty",
+                }
+            )
+            continue
+        state.skips.setdefault(
+            node_id,
+            {
+                "via": "cli",
+                "token": token,
+                "by": by,
+                "reason": reason.strip(),
+                "at": at,
+            },
+        )
+        declared.append(node_id)
+
+    if declared:
+        state.save(runtime.state_dir(item))
+        eventlog.emit(
+            "graph.skips_declared",
+            work_item=item.ref,
+            via="cli",
+            actor=by,
+            reason=reason.strip(),
+            nodes=list(declared),
+        )
+        logger.info("%s: declared skips %s (%s)", item.ref, declared, reason.strip())
+        _announce_skips(runtime, item, declared, {"by": by, "reason": reason.strip()})
+    for entry in rejected:
+        eventlog.emit(
+            "graph.skips_rejected",
+            level="warning",
+            work_item=item.ref,
+            token=entry["token"],
+            via="cli",
+            why=entry["why"],
+        )
+    return SkipResult(
+        work_item=item.ref,
+        declared=declared,
+        rejected=rejected,
+        reason=reason.strip(),
+    )
 
 
 # -- the escape hatch ---------------------------------------------------------

@@ -55,17 +55,18 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from .authz import mark_self_authored
 from .sessions import WorkItemRef
 from .state import LegacyLayout
-from .workitem import CONTROL, WorkItemStore
+from .workitem import CONTROL, GRAPH, WorkItemStore
 
 logger = logging.getLogger("the-loop.control")
 
 __all__ = [
     "COMMANDS",
+    "GRAPH_COMMANDS",
     "DEFAULT_KEYWORDS",
     "ControlConfig",
     "ControlRecord",
@@ -75,10 +76,26 @@ __all__ = [
     "parse_command",
 ]
 
-# The four commands, in the order they are documented. `start` and `resume` mean
+# The five commands, in the order they are documented. `start` and `resume` mean
 # "execution should be running"; `pause` and `stop` mean it should not.
-START, STOP, PAUSE, RESUME = "start", "stop", "pause", "resume"
-COMMANDS = (START, STOP, PAUSE, RESUME)
+# `execute` is different in kind (issue-177): it does not touch the session at
+# all — it answers the graph's `phase-selection` gate, freezing the set of
+# phases this work item will walk. It lives here because it is a **control**
+# word an authorized human types on the ticket, so it belongs to the same
+# configurable vocabulary and the same named-actor authorization as the rest.
+START, STOP, PAUSE, RESUME, EXECUTE = (
+    "start",
+    "stop",
+    "pause",
+    "resume",
+    "execute",
+)
+COMMANDS = (START, STOP, PAUSE, RESUME, EXECUTE)
+
+#: Commands the *graph* acts on rather than the session registry. The
+#: dispatcher records them and then lets the event through, because the thing
+#: that must see the comment is the phase-selection gate.
+GRAPH_COMMANDS = (EXECUTE,)
 
 # Commands whose effect is "this work item should be running" — what
 # ControlStore.start_requested reports on.
@@ -89,6 +106,7 @@ DEFAULT_KEYWORDS: Dict[str, str] = {
     STOP: "the-loop stop",
     PAUSE: "the-loop pause",
     RESUME: "the-loop resume",
+    EXECUTE: "the-loop execute",
 }
 
 # What may NOT sit directly against a keyword for it to count as a whole token.
@@ -267,6 +285,17 @@ class ControlStore:
     @property
     def root(self) -> Path:
         return self.store.root
+
+    def record_frozen_graph(
+        self, work_item: Union[str, WorkItemRef], frozen: Dict[str, Any]
+    ) -> None:
+        """Persist the graph a work item was frozen to walk (issue-177).
+
+        Beside `control` in the same **portable** record, and for the same
+        reason: "an authorized user chose these phases" is true on any machine,
+        so it travels with the work item rather than with the session handle.
+        """
+        self.store.write_section(work_item, GRAPH, dict(frozen))
 
     def record(
         self,

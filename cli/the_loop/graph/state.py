@@ -120,6 +120,12 @@ class GraphState:
     parked: Optional[Dict[str, Any]] = None
     session: Optional[Dict[str, Any]] = None
     completions: Dict[str, Any] = field(default_factory=dict)
+    #: Declared skips (issue-177): node id -> {via, token, by, reason, at}.
+    #: A DECLARATION with provenance, never a verdict — the runtime honours an
+    #: entry only when the compiled graph marks that node skippable, so a
+    #: hand-written entry on a protected node is inert. Additive: absent in
+    #: every pre-issue-177 state file, defaulting to {} on load.
+    skips: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     version: int = STATE_VERSION
 
     # -- persistence ----------------------------------------------------------
@@ -161,6 +167,11 @@ class GraphState:
             parked=data.get("parked"),
             session=data.get("session"),
             completions=dict(data.get("completions") or {}),
+            skips={
+                k: dict(v)
+                for k, v in (data.get("skips") or {}).items()
+                if isinstance(v, dict)
+            },
             version=int(data.get("version", STATE_VERSION)),
         )
 
@@ -190,6 +201,7 @@ class GraphState:
             "parked": self.parked,
             "session": self.session,
             "completions": self.completions,
+            "skips": self.skips,
         }
 
     # -- mutation -------------------------------------------------------------

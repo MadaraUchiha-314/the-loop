@@ -81,6 +81,63 @@ There are exactly **two** runtime concepts and **one** contract between them.
 - A node MAY be declared `optional` (skipped when its artifact is absent — brainstorming)
   or `required` (never skippable, even by an optional-looking gate — security review,
   human approval).
+
+### Declared skips (issue-177)
+
+The author of a work item — never the harness — decides which phases it walks
+([decision-067](../decisions/decision-067.md)):
+
+- A node MAY be declared `skippable: true` — the **fixed vocabulary** of what a human may
+  skip. `required` and `skippable` on one node SHALL fail at compile time, as SHALL a
+  skippable node without its own `on: skipped` edge: routing around a node is authored,
+  never inferred. The outer loop marks exactly the spec chain (`brainstorming`,
+  `requirements-definition`, `requirements-approval`, `design`, `design-approval`,
+  `tasks-breakdown`); `test-planning`, `verification`, the review chain and
+  `human-approval` are the floor and carry no marker. The inner `pdlc-pr-loop` declares
+  none.
+- The graph MAY ship named `skipSets` (the outer loop ships `spec-chain`); a member that
+  is not a declared skippable node SHALL fail at compile time — a set cannot widen the
+  vocabulary.
+- **Only a human declares, at the loop's own first phase.** The outer loop SHALL start
+  at `phase-selection`, a **human** node: its entry posts a checklist of the selectable
+  phases on the ticket (idempotent — a second entry finds its own marker and does not
+  re-post), and its exit SHALL wait until an **authorized** user (`authorizedUsers`, the
+  boundary every other human gate uses) says the execute keyword
+  (`routing.control.keywords.execute`, default `the-loop execute`).
+  - The selection is **ticked in place** on the-loop's own comment; the authorized
+    execute comment is what makes that tick state theirs. A checklist inside the execute
+    comment itself SHALL win over the boxes. A selection with nothing unticked SHALL run
+    the full process.
+  - Unticked skippable phases become declared skips; a phase the reply never mentions is
+    kept; an unticked **protected** phase SHALL be refused and named in the confirmation.
+  - `execute` is a `routing.control` command like `start`, and carries the same
+    named-actor authorization — but it touches no session, and the comment carrying it is
+    still delivered, because the gate is what reads the selection.
+- **The selection freezes the graph.** WHEN the gate is answered THEN the resolved graph —
+  every node with whether it is walked, and whether it was selectable — SHALL be recorded
+  in `graph-state.json` and pushed to the work item's **portable session record**
+  (`frozenGraph`, `graph.frozen`), so what the loop will walk is a recorded fact rather
+  than a comment anyone can keep editing, readable without a checkout. A failed publish
+  SHALL be recorded (`graph.frozen_publish_failed`) and SHALL NOT gate the selection —
+  the checked-in state file is the authoritative copy.
+- An operator MAY declare the same from a shell via `the-loop graph skip <id> --node
+  <token> --reason <why>` — `force`'s sibling: reason required, audit comment posted,
+  recorded as `graph.skips_declared` — and a token naming a node the pointer has already
+  reached SHALL be refused: a skip is a plan, not an amnesty.
+- A declaration SHALL never apply to a node already entered, whichever channel it came
+  from, and SHALL be filtered through the compiled graph's `skippable` vocabulary on
+  every read — so no hook can declare a skip the graph does not permit.
+- **A skip routes and records; it never forges.** WHEN the pointer would enter a
+  declared-skipped node THEN it SHALL take that node's `skipped` edge, run **none** of
+  its hooks (no phase label, no assignment), record outcome `skipped`
+  (`graph.node_skipped`), and land on the first non-skipped node. `the-loop check` —
+  `--recompute` included — SHALL report the node as *skipped by declaration* with its
+  provenance, never as `pass`. A declaration on a non-skippable node (a hand-edited
+  state file) SHALL be inert everywhere and surfaced on the node it tried to touch.
+- WHEN a later gate reads an artifact whose authoring node was declared-skipped and the
+  artifact is **absent** THEN that slot SHALL be treated as a planned absence
+  (`implementation`'s `tasks.md` re-gate after `tasks-breakdown` was skipped); an
+  artifact that **exists** SHALL be gated normally regardless of declarations.
 - An **edge** SHALL route on a hook **outcome** only (`on: pass`, `on: changes-requested`,
   …). There is no expression language: the LLM produces facts, declared edges route on
   them. That split is what makes judgement and determinism coexist.
@@ -366,6 +423,7 @@ included, however empty the log was.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-177 | Declared skips (2026-08-08): `skippable: true` fixes the vocabulary in the shipped graph (spec-chain nodes only; compile-refused on `required` nodes, on missing `skipped` edges, and on `skipSets` members outside it); the outer loop gained a first human node `phase-selection` where the-loop posts a phase checklist, the user ticks it in place, and an authorized `the-loop execute` (a `routing.control` command) freezes the selection — the resolved graph landing in both `graph-state.json` and the portable session record (the audited `graph skip` verb is the same declaration from a shell); the runtime routes around declared nodes without running their hooks and `check` reports them as *skipped by declaration* with provenance — never a pass; a forged declaration on a protected node is inert and surfaced; later gates treat a skipped author's absent artifact as planned; `deliver-assignment` announces a human gate instead of telling the session to claim it | [spec](../specs/issue-177/), [decision-067](../decisions/decision-067.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/177) |
 | issue-174 | `capability-docs` gates two sections of the execution log instead of one — `## Documentation` joins `## Capability docs`, so a work item cannot complete having left the README or the docs site describing the process it replaced. No new node, no hook or runtime change; the inner loop gates neither | [spec](../specs/issue-174/), [decision-066](../decisions/decision-066.md), [documentation](documentation.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/174) |
 | issue-172 | The process became two named loops (2026-08-07): `pdlc.yaml` renamed to `pdlc-work-item-loop.yaml` (unchanged content, plus the `await-inner-loops` gate on `implementation`), and `pdlc-pr-loop.yaml` added — one inner loop per PR, run in that PR's own session with state under `docs/specs/<id>/pr-loops/pr-<n>/`, merge driving it to `complete` as an audited force. Graph verbs gained `--pr`; P5 parity asserts over both loops; `deliver-assignment` makes the graph the initiator — entering an agent node pushes its assignment into the bound session | [spec](../specs/issue-172/), [decision-065](../decisions/decision-065.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/172) |
 | issue-167 | Six gates stopped reporting success without running: `validate-artifacts` gained `validates:` for an artifact a node asserts against but did not author, so the six review-chain nodes gate their sections of the shared `execution-log.md`; a content gate that resolves no artifact now blocks (not retriable) instead of skipping; the bundled execution-log template gained the `Capability docs` section `capability-docs` had always demanded; P5 asserts all three against the shipped graph | [spec](../specs/issue-167/), [decision-063](../decisions/decision-063.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/167) |

@@ -61,11 +61,21 @@ from .state import LegacyLayout
 
 logger = logging.getLogger("the-loop.workitem")
 
-__all__ = ["CONTROL", "INDEX_FILE", "POLL", "SEALED", "WorkItemStore"]
+__all__ = ["CONTROL", "GRAPH", "INDEX_FILE", "POLL", "SEALED", "WorkItemStore"]
 
 #: The two sections of a work-item record.
 CONTROL = "control"
 POLL = "poll"
+#: The graph a work item was frozen to walk (issue-177): every node with whether
+#: it is walked or skipped, written when an authorized user answers the
+#: `phase-selection` gate. **Portable** on purpose — the shape of a work item's
+#: process is part of tracking the work item, not of the machine running it, so
+#: it travels with `control` and survives a hand-off to another host.
+GRAPH = "graph"
+
+#: Every section a record may carry. A record with none of them is deleted
+#: rather than kept as an empty husk.
+SECTIONS = (CONTROL, POLL, GRAPH)
 
 #: The directory's index (issue-130) — one file listing every record beside it,
 #: so ``portable/`` answers "what is being tracked?" without opening each record.
@@ -244,7 +254,7 @@ class WorkItemStore:
         ref = _as_ref(work_item)
         record = self.read(ref)
         record[name] = data  # None is a tombstone: "deliberately not recorded"
-        if not any(isinstance(record.get(s), dict) for s in (CONTROL, POLL)):
+        if not any(isinstance(record.get(s), dict) for s in SECTIONS):
             if not self._legacy_holds(ref):
                 self.drop(ref)
                 return
@@ -285,9 +295,7 @@ class WorkItemStore:
                 entry["url"] = url
             entry["file"] = path.name
             entry["sections"] = [
-                section
-                for section in (CONTROL, POLL)
-                if isinstance(record.get(section), dict)
+                section for section in SECTIONS if isinstance(record.get(section), dict)
             ]
             if record.get(SEALED):
                 entry["sealed"] = True  # explains a record with no sections

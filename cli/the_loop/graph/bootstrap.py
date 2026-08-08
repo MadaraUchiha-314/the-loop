@@ -78,6 +78,15 @@ def build_runtime(
         cli_cfg = {}
     if isinstance(cli_cfg, dict):
         config["integrations"] = cli_cfg.get("integrations") or {}
+        # The `execute` keyword is operator-configurable like every other
+        # control word (issue-177, owner review): the phase-selection gate must
+        # look for what THIS deployment declared, not a constant.
+        control = ((cli_cfg.get("webhooks") or {}).get("ghWebhook") or {}).get(
+            "routing"
+        ) or {}
+        keywords = ((control.get("control") or {}).get("keywords")) or {}
+        if keywords.get("execute") is not None:
+            config["executeKeyword"] = str(keywords["execute"])
         if authorized_users is None:
             routing = ((cli_cfg.get("webhooks") or {}).get("ghWebhook") or {}).get(
                 "routing"

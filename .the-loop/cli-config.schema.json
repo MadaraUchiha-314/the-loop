@@ -185,7 +185,7 @@
         },
         "control": {
           "type": "object",
-          "description": "Execution control: the keywords an AUTHORIZED user steers the-loop with, in a comment on the work item or its PR (issue-106). Before this, `authorizedUsers` said WHO may be an input and `autoExecuteLabel` said WHICH items may run \u2014 nothing said WHEN, so labelling an issue was itself an irreversible trigger. A comment carrying a declared keyword is interpreted by the-loop and NOT forwarded to the harness; the same four commands are available as `the-loop sessions start|pause|resume|stop`, which post the same keyword back to the ticket (marked as the-loop's own so it is never read back). Control parsing runs strictly AFTER the existing guards \u2014 the self-comment marker and authorizedUsers \u2014 so it never becomes a second, weaker way in; the parser recognises the fixed vocabulary only and yields one of four commands, never text from the comment.",
+          "description": "Execution control: the keywords an AUTHORIZED user steers the-loop with, in a comment on the work item or its PR (issue-106). Before this, `authorizedUsers` said WHO may be an input and `autoExecuteLabel` said WHICH items may run \u2014 nothing said WHEN, so labelling an issue was itself an irreversible trigger. A comment carrying a declared keyword is interpreted by the-loop and NOT forwarded to the harness; the four session commands are also available as `the-loop sessions start|pause|resume|stop`, which post the same keyword back to the ticket (marked as the-loop's own so it is never read back). Control parsing runs strictly AFTER the existing guards \u2014 the self-comment marker and authorizedUsers \u2014 so it never becomes a second, weaker way in; the parser recognises the fixed vocabulary only and yields one of the declared commands, never text from the comment.",
           "additionalProperties": false,
           "properties": {
             "enabled": {
@@ -218,6 +218,11 @@
                 "resume": {
                   "type": "string",
                   "default": "the-loop resume"
+                },
+                "execute": {
+                  "type": "string",
+                  "default": "the-loop execute",
+                  "description": "Answers the graph's `phase-selection` gate (issue-177): the authorized user has chosen which phases this work item needs, so freeze that selection and start walking. Unlike the other four it does NOT touch the session registry \u2014 it neither arms nor disarms \u2014 and the comment carrying it is still delivered, because the gate itself is what reads the selection."
                 }
               }
             }

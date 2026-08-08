@@ -118,7 +118,9 @@ plugin's root directory; in Cursor, resolve it to the plugin's install directory
    machine — one per `workflow.phases`, named `<workflow.phaseLabelPrefix><phase>`
    (e.g. `loop:requirements-definition`, `loop:design`, … `loop:complete`). On GitHub
    create issue labels; on Jira create the equivalent statuses/labels. Skip any that
-   already exist.
+   already exist. **No skip labels are needed** (issue-177): which phases a work item
+   walks is chosen on the ticket itself, at the loop's `phase-selection` phase, by an
+   authorized user replying to the-loop's checklist — nothing to create per repository.
 
 5. **Validate** the generated `.the-loop/harness-config.yaml` against
    `.the-loop/harness-config.schema.json` and `.the-loop/collaborators.yaml` against

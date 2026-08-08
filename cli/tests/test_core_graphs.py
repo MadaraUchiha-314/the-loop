@@ -37,3 +37,39 @@ def test_check_reports_this_repos_own_work_item(tmp_path, monkeypatch):
 def test_check_malformed_repo_never_reaches_the_graph(tmp_path):
     with pytest.raises(ValueError):
         graphs.check(str(tmp_path / "nope"), "issue-1")
+
+
+def test_skip_declares_against_the_shipped_vocabulary(tmp_path):
+    """
+    Feature: declared skips over the control plane (issue-177)
+      Scenario: an operator declares the spec chain skipped for a doc fix
+        Given a repository with a spec directory for a work item
+        When the core skip operation declares the spec-chain set with a reason
+        Then the six spec-chain nodes are declared and a protected node is rejected
+
+    Requirement: docs/specs/issue-177/requirements.md R2.3, R2.5
+    """
+    spec = tmp_path / "docs" / "specs" / "issue-9"
+    spec.mkdir(parents=True)
+    result = graphs.skip(
+        str(tmp_path),
+        "issue-9",
+        ["spec-chain", "security-review"],
+        reason="docs-only change",
+        actor="@owner",
+    )
+    assert set(result["declared"]) == {
+        "brainstorming",
+        "requirements-definition",
+        "requirements-approval",
+        "design",
+        "design-approval",
+        "tasks-breakdown",
+    }
+    assert [r["token"] for r in result["rejected"]] == ["security-review"]
+
+
+def test_skip_requires_a_reason(tmp_path):
+    (tmp_path / "docs" / "specs" / "issue-9").mkdir(parents=True)
+    with pytest.raises(ValueError, match="reason is required"):
+        graphs.skip(str(tmp_path), "issue-9", ["spec-chain"], reason=" ")

@@ -99,8 +99,8 @@ def test_spawning_a_session_starts_the_work_items_graph(tmp_path, checkout):
 
     dispatcher.graphlink.on_spawn(REF, str(checkout))
 
-    assert _state(checkout).current_node == "brainstorming"
-    assert "brainstorming" in log.read_text(), "the log-entry entry hook must have run"
+    assert _state(checkout).current_node == "phase-selection"
+    assert "phase-selection" in log.read_text(), "the entry chain must have run"
 
 
 def test_starting_a_graph_twice_never_rewinds_it(tmp_path, checkout):
@@ -219,7 +219,7 @@ def test_a_repository_that_moved_its_specs_still_advances(tmp_path):
     _dispatcher(tmp_path).graphlink.on_spawn(REF, str(checkout))
 
     spec = checkout / "specs" / "issue-113"
-    assert GraphState.load(spec, "issue-113").current_node == "brainstorming"
+    assert GraphState.load(spec, "issue-113").current_node == "phase-selection"
     assert (spec / "graph-state.json").is_file(), (
         "R2.2 — the runtime must write under the same directory the gate checked"
     )
@@ -246,10 +246,10 @@ def test_two_repositories_with_different_spec_dirs_are_both_driven(tmp_path):
     dispatcher.graphlink.on_spawn(REF, str(default))
     dispatcher.graphlink.on_spawn(other_ref, str(moved))
 
-    assert _state(default).current_node == "brainstorming"
+    assert _state(default).current_node == "phase-selection"
     assert (
         GraphState.load(moved / "specs" / "issue-113", "issue-113").current_node
-        == "brainstorming"
+        == "phase-selection"
     )
 
 
