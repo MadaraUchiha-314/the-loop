@@ -1,3 +1,9 @@
+## v8.1.0 (2026-08-08)
+
+### Feat
+
+- **issue-177**: declared skips — the loop asks which phases a work item needs (#178)
+
 ## v8.0.0 (2026-08-07)
 
 ### BREAKING CHANGE
