@@ -125,6 +125,64 @@ their superset), one per step:
 idea: optionally brainstorm it, define requirements (from the brainstorm or fresh), then
 mint the ticket from them.
 
+## Declared skips — the author decides which phases a work item walks (issue-177)
+
+A simple documentation fix does not need a `requirements.md` and a `design.md` — but the
+harness must never be the one deciding that, or it will skip requirements *conveniently*.
+So the decision is split three ways (decision-067):
+
+- **The shipped graph fixes the vocabulary.** A node may carry `skippable: true`; only
+  those nodes can ever be skipped, and each must declare its own `on: skipped` edge. The
+  outer loop marks exactly the spec chain — `brainstorming`, `requirements-definition`,
+  `requirements-approval`, `design`, `design-approval`, `tasks-breakdown` — and ships one
+  skip set, `spec-chain`, naming them. **The floor never moves:** `test-planning` and
+  `verification` (every change keeps a proof plan, however many `n/a` rows it holds), the
+  review chain, `security-review`, `human-approval`. A repo-supplied graph is already
+  ignored, so nothing below the package boundary can widen the vocabulary.
+- **A human selects from it, at the loop's own first phase.** `phase-selection` is where
+  every work item starts: the-loop posts a checklist of the selectable phases on the
+  ticket, the user **ticks it in place**, and an **authorized user**
+  (`routing.authorizedUsers` — the same boundary `the-loop start` and every human gate
+  answer to) says **`the-loop execute`** (configurable:
+  `routing.control.keywords.execute`). That comment is the signature: GitHub cannot say
+  who edited a comment, so the tick state is a proposal and the authorized execute is
+  what makes it theirs. A checklist inside the execute comment wins over the boxes, for
+  anyone who prefers to be explicit; executing with nothing unticked runs the full
+  process. Only then does the loop walk any phase — and the selection is **frozen**: the
+  resolved graph is recorded in `graph-state.json` and in the work item's portable
+  session record, so it stops being a live comment. Nothing to set up per repository, and
+  no second, weaker permission model — which is why this is a comment and not a label
+  (decision-067). An operator can make the same declaration from a shell with
+  `the-loop graph skip <id> --node <token> --reason <why>` — `force`'s sibling: audited,
+  reason required, refused for nodes the pointer already reached.
+  **The agent never declares a skip** — never post `the-loop execute` on a work item's
+  behalf and never run the verb from a working session; a session that believes phases
+  should be skipped says so on the ticket and lets a human decide.
+- **The runtime records; it never forges.** A declared skip routes the pointer along the
+  node's `skipped` edge without running its hooks, and `the-loop check` (recompute
+  included) reports the node as *skipped by declaration — via label/cli, token, by whom*,
+  never as a pass. A declaration on a non-skippable node — a hand-edited state file — is
+  inert everywhere and called out on the node it tried to touch. Gates over an artifact
+  whose authoring node was skipped treat its *absence* as planned (`implementation`'s
+  `tasks.md` re-gate, with `tasks-breakdown` skipped); an artifact that exists is gated
+  normally, declarations or not.
+
+Declared skips are outer-loop only: the inner `pdlc-pr-loop`'s nodes are precisely the
+never-skippable floor, so it carries no `phase-selection` node. And they compose with,
+rather than replace, the existing mechanics: `brainstorming` stays `optional` (skips
+itself when nothing was produced), and `force` remains the after-the-fact escape hatch
+where a skip is the up-front plan.
+
+```
+the-loop start          → a session spawns for the work item
+phase-selection         → the-loop posts the checklist; the loop waits
+<user ticks in place>   → boxes unticked on the-loop's own comment
+`the-loop execute`      → an AUTHORIZED user signs the selection
+                        → the unticked ones become declared skips, and the
+                          resolved graph is frozen (state + portable record)
+brainstorming …         → the loop walks the phases that survived
+```
+
 ## Link artifacts to the ticket (single source of truth)
 
 Once each spec document is established (requirements, design, tasks), **update the work

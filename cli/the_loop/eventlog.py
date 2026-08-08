@@ -387,6 +387,35 @@ EVENT_TYPES: Dict[str, str] = {
         "so `check --recompute` still reports it (work_item, from, to, actor, "
         "reason)."
     ),
+    # -- declared skips (issue-177) --------------------------------------------
+    "graph.skips_declared": (
+        "A human declared phases skipped for a work item — the `phase-selection` "
+        "gate's authorized reply, or the `graph skip` verb (work_item, "
+        "via: selection | cli, nodes; cli adds actor and reason). A declaration, "
+        "never a verdict: `check` reports the nodes as skipped-by-declaration."
+    ),
+    "graph.skips_rejected": (
+        "A skip token was refused — unknown, outside the skip vocabulary, or "
+        "(cli) naming a node the pointer already reached (work_item, token, "
+        "via, why). The declaration never takes effect; the full process runs."
+    ),
+    "graph.frozen": (
+        "A work item's phase selection was frozen: the resolved graph — every "
+        "node with whether it is walked or skipped — was recorded and pushed to "
+        "the portable session record (work_item). issue-177."
+    ),
+    "graph.frozen_publish_failed": (
+        "The frozen graph could not be written to the portable session record "
+        "(work_item, error). Best-effort: the selection itself still stands, "
+        "and graph-state.json keeps the authoritative copy. issue-177."
+    ),
+    "graph.node_skipped": (
+        "The pointer routed around a declared-skipped node along its "
+        "`on: skipped` edge — none of the node's hooks ran (work_item, node, "
+        "plus the declaration's via/token/by/reason). issue-177. Distinct from "
+        "graph.skipped, which is the ingress coupling declining to touch a "
+        "graph at all."
+    ),
     "graph.gate_session": (
         "A human gate was entered and its session resolved per `session: "
         "inherit` — inherited, or fresh-with-artifacts when the producing "

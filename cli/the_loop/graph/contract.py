@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Dict, FrozenSet, List, Mapping, Optional, Sequence
 
 __all__ = [
     "BLOCK",
@@ -94,6 +94,23 @@ class HookContext:
     results: List["HookResult"] = field(default_factory=list)
     config: Mapping[str, Any] = field(default_factory=dict)
     params: Mapping[str, Any] = field(default_factory=dict)
+    #: Artifact names whose AUTHORING node was declared-skipped (issue-177) —
+    #: computed by the runtime from the graph and the validated declarations.
+    #: A gate over one of these treats its absence as planned, never as a
+    #: finding; a present artifact is gated normally regardless.
+    skipped_artifacts: FrozenSet[str] = frozenset()
+    #: Durable decisions already recorded for this work item (issue-177):
+    #: ``GraphState.decisions``. A human gate whose answer is a *recorded fact*
+    #: rather than a live reply reads it here, so ``the-loop check`` — which
+    #: deliberately passes no event — reports the gate as answered instead of
+    #: waiting forever on a decision that was made days ago.
+    decisions: Mapping[str, Any] = field(default_factory=dict)
+    #: The compiled graph this chain is running in (issue-177). A hook that
+    #: reasons about *other* nodes — the phase-selection gate listing which
+    #: phases are selectable — must read the loop the runtime is actually
+    #: executing, not re-load the shipped default: the two differ for the inner
+    #: PR loop and for any graph a caller passed in.
+    graph: Optional[Any] = None
 
     @property
     def node_id(self) -> str:

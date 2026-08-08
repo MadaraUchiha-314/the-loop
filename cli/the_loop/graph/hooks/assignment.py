@@ -61,11 +61,22 @@ def render_assignment(ctx: HookContext) -> str:
         lines.append(f"  produce: {', '.join(produces)}")
     if node.get("command"):
         lines.append(f"  work it with: `/the-loop:{node.get('command')} {item_id}`")
-    claim_suffix = f" --pr {pr_number}" if pr_number is not None else ""
-    lines.append(
-        "  when this node's work is done, report back: "
-        f"`the-loop graph complete {item_id}{claim_suffix}`"
-    )
+    if node.get("actor") == "human":
+        # A human gate is announced, never assigned: the work here is somebody
+        # else's, and a session told to "report back when done" at one would
+        # claim a decision it does not get to make (issue-177 put the very
+        # first node of the outer loop in this position).
+        lines.append(
+            "  this node is a HUMAN gate — the loop is waiting for an "
+            "authorized person on the ticket. Do not claim it; do not start "
+            "the work it gates."
+        )
+    else:
+        claim_suffix = f" --pr {pr_number}" if pr_number is not None else ""
+        lines.append(
+            "  when this node's work is done, report back: "
+            f"`the-loop graph complete {item_id}{claim_suffix}`"
+        )
     lines.append("  (assigned by the-loop's graph — not part of any event payload)")
     return "\n".join(lines)
 

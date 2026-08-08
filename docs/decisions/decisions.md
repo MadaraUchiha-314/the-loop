@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [067](decision-067.md) | Skips are declared — the graph fixes the vocabulary, a human selects, the runtime never forges | proposed | 2026-08-08 |
 | [066](decision-066.md) | User-facing documentation is a completion gate, on the node that already reads the log | proposed | 2026-08-07 |
 | [065](decision-065.md) | The PDLC is two loops — pdlc-work-item-loop outside, pdlc-pr-loop per pull request | proposed | 2026-08-07 |
 | [064](decision-064.md) | One session record per work item carries its pull requests — each PR an endpoint with its own session | proposed | 2026-08-07 |

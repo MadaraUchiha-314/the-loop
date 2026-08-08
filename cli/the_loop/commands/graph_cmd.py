@@ -149,6 +149,34 @@ def _force(
     )
 
 
+def _skip(
+    root: Path,
+    work_item: str,
+    nodes: List[str],
+    reason: str,
+    actor: str,
+    ref: str,
+    pr: "int | None" = None,
+) -> Dict[str, Any]:
+    return routed(
+        lambda connection: connection.post(
+            "/graph/skip",
+            {
+                "repo": str(root),
+                "workItem": work_item,
+                "nodes": list(nodes),
+                "reason": reason,
+                "actor": actor,
+                "ref": ref,
+                "pr": pr,
+            },
+        ),
+        lambda: core_graphs.skip(
+            str(root), work_item, nodes, reason, actor=actor, ref=ref, pr=pr
+        ),
+    )
+
+
 def _discover_work_items(root: Path, spec_root: str) -> List[str]:
     base = root / spec_root
     if not base.is_dir():
@@ -379,6 +407,35 @@ class GraphCommand(Command):
             help="walk this pull request's inner loop (pdlc-pr-loop, state under pr-loops/pr-<n>/) instead of the work item's outer loop",
         )
 
+        skip = sub.add_parser(
+            "skip",
+            help=(
+                "declare phases skipped for a work item (issue-177). Tokens are "
+                "skippable node ids or shipped skip-set names (e.g. spec-chain); "
+                "protected gates are not in the vocabulary, and a node the "
+                "pointer already reached is refused. A declaration routes the "
+                "pointer around the node and is reported as 'skipped by "
+                "declaration' — never as a pass."
+            ),
+        )
+        skip.add_argument("work_item")
+        skip.add_argument(
+            "--node",
+            action="append",
+            required=True,
+            dest="nodes",
+            help="a skippable node id or skip-set name (repeatable)",
+        )
+        skip.add_argument("--reason", required=True, help="why (required)")
+        skip.add_argument("--actor", default="", help="who is declaring this")
+        skip.add_argument("--ref", default="", help="work item ref for integrations")
+        skip.add_argument(
+            "--pr",
+            type=int,
+            default=None,
+            help="walk this pull request's inner loop (pdlc-pr-loop, state under pr-loops/pr-<n>/) instead of the work item's outer loop",
+        )
+
         run = sub.add_parser(
             "run", help="drive a work item until it waits, escalates or completes"
         )
@@ -418,6 +475,8 @@ class GraphCommand(Command):
                 flags = []
                 if node.get("required"):
                     flags.append("required")
+                if node.get("skippable"):
+                    flags.append("skippable")
                 if node.get("actor") == "human":
                     flags.append("human")
                 if node.get("terminal"):
@@ -458,6 +517,36 @@ class GraphCommand(Command):
             )
             print(json.dumps(result, indent=2))
             return 0
+
+        if args.action == "skip":
+            try:
+                result = _skip(
+                    root,
+                    args.work_item,
+                    args.nodes,
+                    args.reason,
+                    args.actor,
+                    args.ref,
+                    pr=args.pr,
+                )
+            except Exception as exc:  # noqa: BLE001
+                # A refused declaration is the runtime's verdict, not a broken
+                # CLI — same contract as a refused force.
+                if not _is_bad_request(exc) and service_error(exc) is not None:
+                    raise
+                print(f"refused: {_detail(exc)}")
+                return 2
+            for node in result["declared"]:
+                print(f"declared: {node} will be skipped")
+            for entry in result["rejected"]:
+                print(f"rejected: {entry['token']} — {entry['why']}")
+            if result["declared"]:
+                print(
+                    "  note: these are declarations, not verdicts — `the-loop "
+                    "check` reports each node as 'skipped by declaration', and "
+                    "the never-skippable gates still run."
+                )
+            return 0 if result["declared"] else 1
 
         if args.action == "run":
             return self._run_loop(root, args)

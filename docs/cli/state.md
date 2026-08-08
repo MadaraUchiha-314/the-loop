@@ -104,6 +104,14 @@ item itself.
     "commentAttempts": {"2453…": 1},
     "spawn": {"attempts": 0, "gaveUp": false, "deliveryId": ""},
     "lastPolledAt": "2026-07-31T10:42:00Z"
+  },
+  "graph": {
+    "loop": "pdlc-work-item-loop",
+    "workItem": "issue-15",
+    "nodes": [
+      {"id": "design", "phase": "design", "skipped": true, "selectable": true},
+      {"id": "verification", "phase": "verification", "skipped": false, "selectable": false}
+    ]
   }
 }
 ```
@@ -155,6 +163,26 @@ item so it does not quietly re-spawn on the next event.
 with no error anywhere — the daemon is behaving exactly as configured, on a record that is
 no longer there. This is the state you most want to carry, and the one nothing upstream
 can rebuild.
+
+### `graph` — the phases this work item was frozen to walk
+
+| Field | Meaning |
+|---|---|
+| `loop` | which shipped loop was frozen (`pdlc-work-item-loop`) |
+| `workItem` | the spec-folder id the graph was resolved for |
+| `nodes` | every node in declaration order: `skipped` (routed around) and `selectable` (was it ever the user's to skip) |
+
+Written once, when an authorized user answers the
+[`phase-selection`](/capabilities/process-graph) gate with the execute keyword
+([issue-177](https://github.com/MadaraUchiha-314/the-loop/issues/177)). It is here rather
+than in the session record for the same reason `control` is: *which phases this work item
+needs* is true on any machine, so it travels with the work item and not with the session
+handle. It is also the answer to "what did we agree this item would do?" without a
+checkout and without re-reading a comment thread anyone can still edit.
+
+**If you delete it:** nothing breaks — `docs/specs/<id>/graph-state.json` in the
+repository is the authoritative copy, and the loop keeps walking exactly the same phases.
+You lose the portable, checkout-free view of the item's agreed shape.
 
 ### `poll` — what the poller has already seen
 

@@ -94,6 +94,18 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   Never write a downstream artifact against an unlocked upstream one. Brainstorming is
   optional — a well-defined work item starts at requirements.
 - **Human review per phase** (`workflow.requireHumanReviewPerPhase`, default true).
+- **Skips are declared by humans, never taken by the harness** (issue-177,
+  decision-067). Every work item starts at **`phase-selection`**: the-loop posts a
+  checklist of the selectable phases on the ticket and waits for an **authorized user**
+  to reply with the ones to keep plus `the-loop execute`. The shipped graph fixes which
+  nodes *may* be selected away (`skippable: true` — the spec chain; never
+  `test-planning`, `verification`, the review chain or `human-approval`); an operator can
+  make the same declaration with `the-loop graph skip <id> --node <token> --reason <why>`
+  (audited, like `force`). A declared skip is reported by `the-loop check` as
+  *skipped by declaration* with provenance — never as a pass. **Never answer the
+  selection gate or run the skip verb from a working session**: if phases seem
+  unnecessary, say so on the ticket and let a human declare it. See
+  `reference/workflow.md` § Declared skips.
 - **Reference, don't duplicate (single source of truth).** Once
   requirements/design/testing-plan/tasks exist, update the ticket with a **link** to each
   checked-in artifact. Subsequent

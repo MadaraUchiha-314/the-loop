@@ -10,6 +10,7 @@ the-loop graph [--repo .] status <work-item>
 the-loop graph [--repo .] advance <work-item> [--ref REF]
 the-loop graph [--repo .] complete <work-item> [--node NODE] [--actor WHO] [--ref REF] [--pr N]
 the-loop graph [--repo .] run    <work-item> [--ref REF] [--max-nodes 20] [--dry-run]
+the-loop graph [--repo .] skip   <work-item> --node TOKEN [--node TOKEN…] --reason TEXT [--actor WHO] [--ref REF]
 the-loop graph [--repo .] force  <work-item> --to NODE --reason TEXT [--actor WHO] [--ref REF]
 ```
 
@@ -22,16 +23,40 @@ advances at most one node boundary. `graph` is for looking, for CI, and for the 
 automation needs overriding.
 :::
 
+## The first phase: `phase-selection`
+
+Every work item now opens here (issue-177). the-loop posts a checklist of the selectable
+phases on the ticket; an **authorized** user replies with the ones this item needs and
+adds `the-loop execute`. Unticked selectable phases become declared skips; unticked
+protected phases are refused and named in the confirmation; a reply with no list runs the
+full process.
+
+```text
+- [x] brainstorming
+- [ ] requirements-definition   ← unticked: this phase will be skipped
+- [x] design
+…
+
+the-loop execute
+```
+
+Only the **reply** is read. Ticking boxes on the-loop's own comment does nothing —
+GitHub reports that a comment was edited, never by whom, and this gate exists to keep
+the harness from choosing its own workload.
+
 ## `show`
 
-Print the shipped graph: every node with its flags (`required`, `human`, `terminal`) and the
-edges leading out of it.
+Print the shipped graph: every node with its flags (`required`, `skippable`, `human`,
+`terminal`) and the edges leading out of it.
 
 ```text
 $ the-loop graph show
-graph v1, start: brainstorming
-  brainstorming
+graph v1, start: phase-selection
+  phase-selection  [required, human]
+      --selected--> brainstorming
+  brainstorming  [skippable]
       --pass--> requirements-definition
+      --skipped--> requirements-definition
   requirements-definition
       --pass--> requirements-approval
   requirements-approval  [human]
@@ -105,6 +130,35 @@ twice and stops, saying so.
 :::
 
 Exit `0` when it stops at a `wait` or completes; `1` when it stops at `block` or `escalated`.
+
+## `skip`
+
+Declare phases skipped for a work item ([issue-177](https://github.com/MadaraUchiha-314/the-loop/issues/177),
+[decision-067](/decisions/decision-067)) — the operator's shell half of **declared
+skips**. The usual half is the loop's own first phase: at `phase-selection` the-loop
+posts a checklist on the ticket and an authorized user replies with the phases to keep
+plus `the-loop execute`. Either way the *selection* is a human's; the graph fixes the
+*vocabulary* (`skippable: true` nodes and shipped skip sets such as `spec-chain`), so
+neither a repository nor a session can widen it.
+
+| Flag | Required | Meaning |
+|------|----------|---------|
+| `--node` | yes (repeatable) | A skippable node id, or a skip-set name. `--node spec-chain` is the whole spec chain — the doc-fix case in one token. |
+| `--reason` | yes | Why. There is no unexplained skip. |
+| `--actor` | no | Who is declaring it. |
+| `--ref` | no | Work-item ref for integrations — where the audit comment is posted. |
+
+Tokens outside the vocabulary, and nodes the pointer has already entered or passed, are
+**rejected** and printed as such — a skip is a plan, not an amnesty. Valid declarations
+are recorded in graph state with provenance, announced on the ticket with the self-marker,
+and honoured when the pointer reaches each node: it routes along the node's declared
+`on: skipped` edge, runs none of its hooks, and `check` reports the node as
+*skipped by declaration* — never as a pass. The never-skippable floor — `test-planning`,
+`implementation`, `verification`, the review chain, `human-approval` — gates every work
+item regardless.
+
+Exit `0` when at least one declaration landed, `1` when every token was rejected, `2`
+when the verb could not run (e.g. an empty `--reason`).
 
 ## `force`
 

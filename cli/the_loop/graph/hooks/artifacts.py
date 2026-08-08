@@ -105,9 +105,19 @@ def validate_artifacts(ctx: HookContext) -> HookResult:
         return HookResult.skipped(NAME, "optional node; no artifact was produced")
 
     paths: List[Path] = []
+    covered_absent = 0
     for slot in slots:
         present = list(slot.present)
         if not present:
+            # A planned absence is not a finding (issue-177): when EVERY name
+            # this slot accepts is authored by a node the work item's declared
+            # skips removed, the artifact was never going to exist — e.g.
+            # `implementation` re-gating `tasks.md` after `tasks-breakdown`
+            # was declared skipped. Only absence is tolerated: a present
+            # artifact is gated normally a few lines down, declarations or not.
+            if slot.names and all(name in ctx.skipped_artifacts for name in slot.names):
+                covered_absent += 1
+                continue
             # Name every accepted name: an agent cannot write the right file if
             # the block does not say what the right file may be called.
             if slot.alternatives:
@@ -206,6 +216,13 @@ def validate_artifacts(ctx: HookContext) -> HookResult:
 
     if findings:
         return HookResult.blocked(NAME, findings)
+    if covered_absent and not paths:
+        # Everything this gate would read was authored by declared-skipped
+        # nodes and none of it exists — the hook has nothing to assert against,
+        # and says so rather than minting a pass (a skip is not a decision).
+        return HookResult.skipped(
+            NAME, "artifact(s) authored by a declared-skipped node; absence is planned"
+        )
     return HookResult.ok(NAME, artifacts=[str(p) for p in paths])
 
 

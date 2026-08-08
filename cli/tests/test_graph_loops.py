@@ -39,7 +39,7 @@ PR = WorkItemRef.parse("github:octo/repo#16")
 def test_both_loops_ship_compiled_and_named():
     outer = load_graph()
     inner = load_graph(name=PDLC_PR_LOOP)
-    assert outer.name == PDLC_WORK_ITEM_LOOP and outer.start == "brainstorming"
+    assert outer.name == PDLC_WORK_ITEM_LOOP and outer.start == "phase-selection"
     assert inner.name == PDLC_PR_LOOP and inner.start == "implementation"
     # The inner loop is the same loop with steps skipped: nothing before
     # implementation — those are the work item's, decided once at the outer
@@ -391,8 +391,11 @@ def test_the_outer_loop_assigns_without_a_pr(checkout):
     assert len(pushed) == 1
     ref, pr_number, text = pushed[0]
     assert (ref, pr_number) == (WI.ref, None)
-    assert "you are now at node: brainstorming" in text
-    assert "the-loop graph complete issue-15`" in text and "--pr" not in text
+    # issue-177: the outer loop now opens on a HUMAN gate, so the session is
+    # told to wait rather than to claim it.
+    assert "you are now at node: phase-selection" in text
+    assert "HUMAN gate" in text and "Do not claim it" in text
+    assert "the-loop graph complete" not in text
 
 
 def _ctx_for(spec_dir):

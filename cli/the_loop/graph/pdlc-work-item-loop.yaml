@@ -31,13 +31,50 @@
 
 version: 1
 name: pdlc-work-item-loop
-start: brainstorming
+start: phase-selection
+
+# Declared skips (issue-177): `skippable: true` is the FIXED vocabulary of
+# nodes a HUMAN may declare skipped for one work item. The selection happens at
+# the loop's own FIRST phase (`phase-selection`): the-loop posts a checklist of
+# these phases on the ticket, an authorized user replies with the ones this item
+# needs plus `the-loop execute`, and only then does the loop start walking.
+# `the-loop graph skip` is the same declaration from an operator's shell.
+# The harness never declares a skip. A declared skip routes the pointer along
+# the node's `on: skipped` edge and is reported as *skipped by declaration*,
+# never as a pass. `test-planning` and `verification` are deliberately NOT
+# skippable — every change keeps a proof plan and its execution, however small
+# the matrix (n/a-with-a-reason rows scale it down) — and neither is anything
+# from `implementation` on: that floor is what bounds the damage of any
+# illegitimate declaration.
+skipSets:
+  # One token for the motivating case (a doc fix): `--node spec-chain`.
+  spec-chain:
+    - brainstorming
+    - requirements-definition
+    - requirements-approval
+    - design
+    - design-approval
+    - tasks-breakdown
 
 nodes:
+  # The work item's own first phase (issue-177, owner's call on PR #178): before
+  # any phase runs, the-loop asks the ticket which phases this item needs and
+  # waits for an authorized user's reply plus `the-loop execute`. A human node,
+  # like every other point where a person decides something — and deliberately
+  # NOT a label: a label rides GitHub's permission model rather than the loop's
+  # own `authorizedUsers`, and has to be created in every consuming repo first.
+  - id: phase-selection
+    phase: phase-selection
+    actor: human
+    required: true          # the selection is a human act; never skippable
+    entry: [set-phase-label, log-entry, post-phase-selection, deliver-assignment]
+    exit: [classify-phase-selection]
+
   - id: brainstorming
     phase: brainstorming
     actor: agent
     optional: true          # a work item whose scope is already clear skips it
+    skippable: true         # and its author may declare that up front (issue-177)
     produces: [brainstorm.md]
     command: brainstorm
     stage: brainstorm
@@ -49,6 +86,7 @@ nodes:
   - id: requirements-definition
     phase: requirements-definition
     actor: agent
+    skippable: true         # issue-177: the author may declare it, the harness never
     # One artifact, two accepted names: a bug's phase-1 spec is called bugfix.md,
     # and the skill, the workflow reference, the manifest and a bundled template
     # have all said so since before this graph existed. Exactly one of them may be
@@ -65,6 +103,9 @@ nodes:
   - id: requirements-approval
     actor: human
     session: inherit
+    skippable: true         # nothing to approve when phase 1 is declared away;
+                            # skipped alone, the artifact still meets the final
+                            # human-approval gate in the PR (issue-177)
     entry: [set-phase-label, request-review, {hook: notify, with: {event: phase-approval-pending}}]
     exit:
       - classify-feedback
@@ -73,6 +114,7 @@ nodes:
   - id: design
     phase: design
     actor: agent
+    skippable: true         # issue-177
     produces: [design.md]
     command: create-design
     stage: design
@@ -121,6 +163,9 @@ nodes:
   - id: design-approval
     actor: human
     session: inherit
+    skippable: true         # issue-177: with design skipped this gate has only
+                            # the testing plan to read, and that plan still gets
+                            # its human eyes at `human-approval`
     entry: [set-phase-label, request-review, {hook: notify, with: {event: phase-approval-pending}}]
     exit:
       - classify-feedback
@@ -130,6 +175,8 @@ nodes:
   - id: tasks-breakdown
     phase: tasks-breakdown
     actor: agent
+    skippable: true         # issue-177: `implementation` re-gates tasks.md and
+                            # treats this declared absence as planned
     produces: [tasks.md]
     command: create-tasks-plan
     stage: tasks
@@ -266,8 +313,17 @@ nodes:
     exit: []
 
 edges:
+  - {from: phase-selection, to: brainstorming, on: selected}
   - {from: brainstorming, to: requirements-definition, on: pass}
   - {from: requirements-definition, to: requirements-approval, on: pass}
+  # Declared-skip routing (issue-177): each skippable node's `on: skipped` edge
+  # is its ordinary forward edge — authored here, never inferred by the runtime.
+  - {from: brainstorming, to: requirements-definition, on: skipped}
+  - {from: requirements-definition, to: requirements-approval, on: skipped}
+  - {from: requirements-approval, to: design, on: skipped}
+  - {from: design, to: test-planning, on: skipped}
+  - {from: design-approval, to: tasks-breakdown, on: skipped}
+  - {from: tasks-breakdown, to: implementation, on: skipped}
   - {from: requirements-approval, to: design, on: approved}
   - {from: requirements-approval, to: design, on: approved-with-comments}
   - {from: requirements-approval, to: requirements-definition, on: changes-requested}

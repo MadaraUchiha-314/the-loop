@@ -84,6 +84,39 @@ def force(
     }
 
 
+def skip(
+    repo: str,
+    work_item: str,
+    nodes: list,
+    reason: str,
+    actor: str = "",
+    ref: str = "",
+    pr: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Declare skips for a work item (issue-177) — the operator channel.
+
+    ``force``'s sibling: human-attributed, reason required, audited on the
+    ticket, and deliberately absent from the MCP surface. Tokens outside the
+    graph's skip vocabulary, or naming nodes the pointer already reached, come
+    back in ``rejected`` rather than taking effect.
+    """
+    runtime = _runtime(repo, pr)
+    result = graph_runtime.declare_skips(
+        runtime,
+        work_item,
+        [str(n) for n in (nodes or [])],
+        reason,
+        actor=actor,
+        ref=ref,
+    )
+    return {
+        "workItem": result.work_item,
+        "declared": list(result.declared),
+        "rejected": list(result.rejected),
+        "reason": result.reason,
+    }
+
+
 def show(repo: str, pr: Optional[int] = None) -> Dict[str, Any]:
     """The process graph this repo runs on: its nodes and edges, as data.
 

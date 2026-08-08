@@ -159,6 +159,22 @@ Hold events; the session keeps its conversation.
 
 Deliver events again.
 
+### `control.keywords.execute`
+
+- **Type:** `string`
+- **Default:** `the-loop execute`
+
+Answers the graph's [`phase-selection`](/capabilities/process-graph) gate
+([issue-177](https://github.com/MadaraUchiha-314/the-loop/issues/177)): the authorized
+user has chosen which phases this work item needs, so **freeze that selection and start
+walking**. The tick state of the-loop's checklist comment at that moment is what gets
+frozen — a checklist inside the execute comment itself wins over it.
+
+Different in kind from the other four, and worth knowing why: `execute` never touches the
+session registry — it neither arms nor disarms anything — and the comment carrying it is
+still **delivered**, because the gate's own exit chain is what reads the selection. The
+authorization is identical: a named, allowlisted human, checked before anything happens.
+
 Keywords match as **whole tokens, case-insensitively, anywhere** in a comment body.
 Setting one to an empty string disables that command. A comment carrying **two different**
 keywords is refused outright — nothing executed, nothing forwarded. Commands live in

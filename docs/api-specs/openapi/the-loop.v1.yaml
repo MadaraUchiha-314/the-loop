@@ -198,6 +198,31 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/graph/skip:
+    post:
+      summary: Graph Skip
+      operationId: graphSkip
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphSkipBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Graphskip
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/sessions:
     get:
       summary: List Sessions
@@ -764,6 +789,50 @@ components:
       - toNode
       - reason
       title: GraphForceBody
+    GraphSkipBody:
+      properties:
+        repo:
+          type: string
+          title: Repo
+        workItem:
+          type: string
+          title: Workitem
+        nodes:
+          type: array
+          items:
+            type: string
+          title: Nodes
+          description: Skip tokens — skippable node ids and/or shipped skip-set
+            names (e.g. spec-chain). Tokens outside the graph's skip vocabulary,
+            or naming nodes the pointer already reached, are reported back in
+            `rejected` and never take effect (issue-177).
+        reason:
+          type: string
+          title: Reason
+        actor:
+          type: string
+          title: Actor
+          default: ''
+        ref:
+          type: string
+          title: Ref
+          default: ''
+        pr:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Pr
+          description: A pull-request number selects that PR's inner loop
+            (pdlc-pr-loop, issue-172); null/omitted is the work item's outer
+            pdlc-work-item-loop. The PR loop declares no skippable node, so
+            every token is rejected there by construction.
+      type: object
+      required:
+      - repo
+      - workItem
+      - nodes
+      - reason
+      title: GraphSkipBody
     HTTPValidationError:
       properties:
         detail:
