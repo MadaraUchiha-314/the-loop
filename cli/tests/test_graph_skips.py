@@ -173,38 +173,97 @@ def test_expand_skip_tokens_accepts_ids_and_sets_and_rejects_the_rest():
 # -- M2: the shipped loops declare exactly what the spec says -------------------
 
 
-SHIPPABLE = {
+SPEC_CHAIN = {
     "brainstorming",
     "requirements-definition",
     "requirements-approval",
     "design",
+    "test-planning",
     "design-approval",
     "tasks-breakdown",
 }
 
+REVIEW_CHAIN = {
+    "self-review",
+    "critic-review",
+    "security-review",
+    "evidence",
+    "capability-docs",
+    "reviewer-briefing",
+}
 
-def test_shipped_outer_loop_marks_exactly_the_spec_chain_skippable():
+#: issue-179 (M1): the outer loop's vocabulary is EVERY node it walks except the
+#: selection gate itself and the terminals. Written as a set equality in both
+#: directions on purpose — a node added to the graph without a decision about
+#: its skippability fails here rather than defaulting quietly either way.
+UNSKIPPABLE = {"phase-selection", "complete", "escalated"}
+
+
+def test_shipped_outer_loop_marks_every_phase_but_the_gate_skippable():
+    """M1, R1.1 — the widened vocabulary, pinned exactly."""
     graph = load_graph()
-    assert {n.id for n in graph.ordered() if n.skippable} == SHIPPABLE
-    assert set(graph.skip_sets["spec-chain"]) == SHIPPABLE
+    every = {n.id for n in graph.ordered()}
+    assert {n.id for n in graph.ordered() if n.skippable} == every - UNSKIPPABLE
 
 
-def test_shipped_floor_is_not_skippable():
+def test_shipped_skip_sets_name_the_two_chains():
+    """M4, R1.5 — one token per end of the walk."""
     graph = load_graph()
-    for node_id in (
-        "test-planning",
-        "implementation",
-        "verification",
-        "self-review",
-        "critic-review",
-        "security-review",
-        "evidence",
-        "capability-docs",
-        "reviewer-briefing",
-        "human-approval",
-        "complete",
-    ):
+    assert set(graph.skip_sets["spec-chain"]) == SPEC_CHAIN
+    assert set(graph.skip_sets["review-chain"]) == REVIEW_CHAIN
+
+
+def test_the_selection_gate_itself_can_never_be_declared_away():
+    """M2, R1.2 — the one invariant left standing (issue-179).
+
+    With the floor gone this is what keeps "everything is selectable" from
+    meaning "the harness decided": the loop starts at a node no declaration can
+    reach, so a named human always answers which phases run. `required: true`
+    is what enforces it — the compiler refuses `required` × `skippable`.
+    """
+    graph = load_graph()
+    gate = graph.node("phase-selection")
+    assert graph.start == "phase-selection"
+    assert gate.required and not gate.skippable
+    for node_id in ("complete", "escalated"):
         assert not graph.node(node_id).skippable, node_id
+
+
+def test_the_former_floor_is_now_declarable_and_carries_no_required_marker():
+    """M2, R1.1/R1.3 — decision-063's markers traded, on the record.
+
+    `security-review` and `human-approval` were `required: true` ("never
+    skippable, at any risk tier"). A node cannot be both, so making them
+    selectable meant trading the marker — the trade decision-068 records.
+    """
+    graph = load_graph()
+    for node_id in ("test-planning", "security-review", "human-approval"):
+        node = graph.node(node_id)
+        assert node.skippable and not node.required, node_id
+
+
+def test_every_skippable_node_routes_forward_on_skipped():
+    """M3, R1.4 — routing is authored, and it goes where the pass edge goes.
+
+    Compilation already refuses a skippable node with no `skipped` edge; this
+    pins the stronger property the edges are meant to have — skipping a node
+    lands exactly where completing it would, so a declaration reorders nothing.
+    """
+    graph = load_graph()
+    forward = {
+        "phase-selection": "brainstorming",  # via `selected`, not `pass`
+    }
+    for node in graph.ordered():
+        if not node.skippable:
+            continue
+        skipped = graph.next_node(node.id, "skipped")
+        assert skipped is not None, node.id
+        expected = (
+            graph.next_node(node.id, "pass")
+            or graph.next_node(node.id, "approved")
+            or forward.get(node.id)
+        )
+        assert skipped == expected, f"{node.id}: {skipped} != {expected}"
 
 
 def test_shipped_pr_loop_declares_no_skippable_node():
@@ -749,3 +808,79 @@ def test_the_frozen_graph_lands_in_the_portable_work_item_record(tmp_path):
     # and it survives beside a control record rather than replacing it
     store.record("github:octo/repo#1", "start", actor="@owner")
     assert WorkItemStore(tmp_path).section("github:octo/repo#1", GRAPH) == frozen
+
+
+# -- issue-179: every phase but the gate, and what the checklist then says ------
+
+
+def _fully_selectable(base):
+    """The shipped shape after issue-179: nothing protected but the gate."""
+    data = copy.deepcopy(base)
+    for node in data["nodes"]:
+        if node["id"] in ("phase-selection", "done"):
+            continue
+        node["skippable"] = True
+        node.pop("required", None)
+    data["edges"] += [
+        {"from": "implementation", "to": "security-review", "on": "skipped"},
+        {"from": "security-review", "to": "done", "on": "skipped"},
+    ]
+    return data
+
+
+def test_declaring_every_phase_away_walks_the_item_to_its_terminal(repo):
+    """M6, R1.8 — the widened vocabulary's end state, and it is not special.
+
+    Nothing new in the runtime handles this: each node routes along its own
+    `on: skipped` edge, and the walk ends where the edges end. What matters is
+    that every node in between is *recorded* skipped rather than passed — the
+    omissions are the record a reviewer reads.
+    """
+    runtime = Runtime(repo, graph=compile_graph(_fully_selectable(GRAPH)))
+    walked = ("requirements", "approval", "tasks", "implementation", "security-review")
+    _declare(repo, *walked, via="cli", token="everything")
+    report = runtime.start(WORK_ITEM)
+
+    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    assert report is not None and report.status == "pass", report
+    assert state.current_node == "done"
+    for node_id in walked:
+        assert state.nodes[node_id].outcome == "skipped", node_id
+    assert not (_spec_dir(repo) / "execution-log.md").exists(), (
+        "a skipped node runs none of its hooks — no log entry, no phase label"
+    )
+
+
+def test_the_checklist_says_so_when_nothing_is_protected(repo, fake_github):
+    """M12, R1.7 — an empty 'always runs' block is the wrong message.
+
+    With every phase selectable, what used to be a list of protected phases
+    becomes the sentence that replaces it: the honesty comes from the reply
+    being signed, so the comment has to say that out loud.
+    """
+    runtime = Runtime(
+        repo,
+        graph=compile_graph(_fully_selectable(SELECT_GRAPH)),
+        config={"authorizedUsers": ["@owner"]},
+    )
+    runtime.start(WORK_ITEM, ref="github:o/r#1")
+    body = fake_github.posted[0]
+
+    for node in ("requirements", "approval", "tasks", "implementation"):
+        assert f"- [x] {node}" in body
+    assert "always run and are not selectable" not in body
+    assert "Every phase of this loop is selectable" in body
+    assert "recorded against your name" in body
+
+
+def test_the_shipped_checklist_offers_every_phase_the_item_walks(repo, fake_github):
+    """M12, R1.7 — against the SHIPPED graph, not a fixture of it."""
+    runtime = Runtime(repo, graph=load_graph(), config={"authorizedUsers": ["@owner"]})
+    runtime.start(WORK_ITEM, ref="github:o/r#1")
+    body = fake_github.posted[0]
+
+    for node in load_graph().ordered():
+        if node.skippable:
+            assert f"- [x] {node.id}" in body, node.id
+    assert "- [x] phase-selection" not in body
+    assert "Every phase of this loop is selectable" in body

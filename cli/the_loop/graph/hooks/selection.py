@@ -138,9 +138,23 @@ def _checklist_body(ctx: HookContext) -> str:
         ]
         lines += [f"- {node}" for node in protected]
         lines += [""]
+    elif skippable:
+        # No protected rows is not an empty section — it is the loudest thing
+        # this comment has to say (issue-179). The outer loop protects nothing
+        # but this gate, so the honesty a floor used to provide now comes from
+        # the reply being signed: say that, rather than printing nothing.
+        lines += [
+            "**Every phase of this loop is selectable — including the reviews, the "
+            "security review and the approval gate.** Nothing but this question is "
+            "mandatory, so each box you untick is an omission recorded against your "
+            "name: in the work item's graph state, in a confirmation comment here, "
+            "and in every `the-loop check` from now on.",
+            "",
+        ]
     lines += [
-        "A doc fix usually needs none of the selectable phases; a feature "
-        f"usually needs all of them. Reply `{keyword}` with the boxes untouched "
+        "A doc fix usually needs little more than implementation and "
+        "verification; a feature usually needs every phase. Reply "
+        f"`{keyword}` with the boxes untouched "
         "to run the full process.",
         "",
         f"You can also put the list in the reply itself — a checklist in the "

@@ -59,10 +59,49 @@ def _rel(ctx: HookContext, path: Path) -> str:
     )
 
 
+def _does_not_apply(ctx: HookContext) -> str:
+    """Why this entry is dormant, or ``""`` when it applies (issue-179).
+
+    ``onlyWhenSkipped:`` makes one hook entry conditional on another artifact
+    being a **planned absence** — the artifact's authoring node declared-skipped
+    *and* nothing on disk. It exists because a gate can now outlive its subject:
+    once `test-planning` became selectable, `verification` could be walked with
+    no ``testing-plan.md`` to read, and issue-177's planned-absence tolerance
+    would have let it report success having asserted nothing (issue-124/167).
+    The conditional entry moves that gate's subject to the execution log instead
+    of losing it.
+
+    It can only ever **narrow**. The only thing it consults is
+    ``ctx.skipped_artifacts``, which the runtime derives from declarations
+    already filtered through the compiled graph's ``skippable`` vocabulary — so
+    an artifact no skippable node authors is never a planned absence and the
+    entry simply never fires. And presence wins: an artifact that exists is
+    gated by the ordinary entry, never demanded twice.
+    """
+    declared = (ctx.params or {}).get("onlyWhenSkipped")
+    if not declared:
+        return ""
+    slots = resolve_produces(declared, ctx.work_item.spec_dir)
+    if not slots:
+        return f"onlyWhenSkipped names no artifact: {declared!r}"
+    for slot in slots:
+        if not slot.names or not all(n in ctx.skipped_artifacts for n in slot.names):
+            return f"{slot.label()} was not declared skipped"
+        if slot.present:
+            return f"{slot.label()} exists; it is gated where it is declared"
+    return ""
+
+
 @hook(NAME)
 def validate_artifacts(ctx: HookContext) -> HookResult:
     params: Mapping[str, Any] = ctx.params or {}
     findings: List[Message] = []
+
+    # Before anything else, including the fail-closed block below: a dormant
+    # entry has nothing to say, and saying it loudly would block the node.
+    dormant = _does_not_apply(ctx)
+    if dormant:
+        return HookResult.skipped(NAME, dormant)
 
     produced = _slots(ctx)
     slots = produced + _validated(ctx)

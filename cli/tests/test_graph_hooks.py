@@ -450,3 +450,67 @@ def test_a_declared_but_missing_downstream_still_blocks(tmp_path):
     ctx, spec = _boundary_ctx(tmp_path, PHASE_1)
     (spec / "bugfix.md").write_text("# B\n\nA trust boundary.\n")
     assert enforces_boundaries_from(ctx).status == BLOCK
+
+
+# -- onlyWhenSkipped: a conditional entry (issue-179) ---------------------------
+
+_FALLBACK = {
+    "onlyWhenSkipped": "testing-plan.md",
+    "validates": "execution-log.md",
+    "sections": ["Verification results"],
+}
+
+
+def _fallback_ctx(tmp_path, skipped=("testing-plan.md",)):
+    ctx, spec = _ctx(tmp_path, ["testing-plan.md"], dict(_FALLBACK))
+    ctx.skipped_artifacts = frozenset(skipped)
+    return ctx, spec
+
+
+def test_only_when_skipped_gates_the_fallback_for_a_planned_absence(tmp_path):
+    """M7, R3.1 — the gate follows its proof when the plan was declared away."""
+    ctx, spec = _fallback_ctx(tmp_path)
+    (spec / "execution-log.md").write_text("## Verification results\n\n")
+    assert validate_artifacts(ctx).outcome == BLOCK
+
+    (spec / "execution-log.md").write_text(
+        "## Verification results\n\nran the linter\n"
+    )
+    assert validate_artifacts(ctx).outcome == PASS
+
+
+def test_only_when_skipped_is_dormant_when_the_artifact_exists(tmp_path):
+    """M8, R2.3 — presence wins: the proof is never demanded twice."""
+    ctx, spec = _fallback_ctx(tmp_path)
+    (spec / "testing-plan.md").write_text("# plan\n")
+    (spec / "execution-log.md").write_text("## Verification results\n\n")
+    result = validate_artifacts(ctx)
+    assert result.outcome == SKIP
+    assert "gated where it is declared" in (result.messages[0].text or "")
+
+
+def test_only_when_skipped_is_dormant_when_nothing_was_declared(tmp_path):
+    """M8, R3.1 — no declaration, no fallback: today's behaviour, unchanged."""
+    ctx, spec = _fallback_ctx(tmp_path, skipped=())
+    (spec / "execution-log.md").write_text("## Verification results\n\n")
+    result = validate_artifacts(ctx)
+    assert result.outcome == SKIP
+    assert "was not declared skipped" in (result.messages[0].text or "")
+
+
+def test_only_when_skipped_can_never_widen_what_may_be_skipped(tmp_path):
+    """M8, R3.3 — pointed at an artifact no declared skip covers, it never fires.
+
+    The parameter reads nothing but ``skipped_artifacts``, which the runtime
+    derives from declarations already filtered through the graph's ``skippable``
+    vocabulary. So the worst a mis-authored entry achieves is an entry that
+    never applies — more process, never less.
+    """
+    ctx, spec = _ctx(
+        tmp_path,
+        ["testing-plan.md"],
+        {**_FALLBACK, "onlyWhenSkipped": "requirements.md"},
+    )
+    ctx.skipped_artifacts = frozenset({"testing-plan.md"})
+    (spec / "execution-log.md").write_text("## Verification results\n\n")
+    assert validate_artifacts(ctx).outcome == SKIP

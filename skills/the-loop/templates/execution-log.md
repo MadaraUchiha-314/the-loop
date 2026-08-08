@@ -51,6 +51,18 @@ status: in-progress          # in-progress | complete
 - **Context:** *(only when this checkpoint precedes a reset)* cleared | compacted, and why
 - **Blockers:** anything waiting on a human (link the ticket comment)
 
+## Verification results
+
+> **Only when this work item declared `test-planning` away** (issue-179). With a
+> `testing-plan.md` the `verification` node records its results *there*, against the
+> matrix rows it planned, and this section stays as the template left it. Without one,
+> this is where the proof lives — and `verification` blocks until it is filled in, because
+> skipping the plan removes the document, never the verifying.
+
+| What was verified | Command | Outcome | Evidence |
+|-------------------|---------|---------|----------|
+|                   |         | pass \| fail | link or `evidence/<file>` |
+
 ## Review cycles
 
 > Outcome is one of: new findings · zero (converged) · escalated · **unavailable** (the

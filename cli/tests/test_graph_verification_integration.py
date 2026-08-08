@@ -200,3 +200,92 @@ def test_the_bundled_template_clears_the_planning_gate_once_locked(repo):
     )
     (_spec(repo) / "testing-plan.md").write_text(text, encoding="utf-8")
     assert _evaluate(repo, "test-planning").status == "pass"
+
+
+# -- issue-179: the plan is selectable, so the gate must follow the proof -------
+
+SKIPPED_PLAN = {"test-planning": {"via": "selection", "by": "@owner"}}
+
+LOG = """# Execution Log: a work item
+
+## Progress entries
+
+### t — did a thing
+
+## Verification results
+
+{results}
+
+## Review cycles
+"""
+
+
+def _log(repo, results: str) -> None:
+    (_spec(repo) / "execution-log.md").write_text(
+        LOG.format(results=results), encoding="utf-8"
+    )
+
+
+def _evaluate_skipped(repo, node_id: str):
+    runtime = _runtime(repo)
+    return runtime.evaluate(node_id, runtime.work_item("issue-1"), skips=SKIPPED_PLAN)
+
+
+def test_verification_gates_the_log_when_the_plan_was_declared_away(repo):
+    """
+    Feature: a kept gate keeps a subject (issue-179)
+    Scenario: verification is walked by a work item that skipped test-planning
+      Given a work item whose test-planning node was declared skipped
+      And no testing-plan.md, because the phase that authors it never ran
+      When the verification node's exit chain is evaluated
+      Then it blocks, naming the execution log rather than passing vacuously
+      When the log records what was verified
+      Then it passes
+    Requirement: docs/specs/issue-179/requirements.md R2.2
+    """
+    _log(repo, "")
+    empty = _evaluate_skipped(repo, "verification")
+    assert empty.status == "block", (
+        "the plan's absence is planned, so the artifact gate skips — if nothing "
+        "else asserts, a mandatory node reports success having run nothing"
+    )
+    assert any("execution-log.md" in m.render() for m in empty.messages)
+
+    _log(repo, "| markdownlint | `npx markdownlint-cli2` | pass | ci log |")
+    assert _evaluate_skipped(repo, "verification").status == "pass"
+
+
+def test_verification_gates_the_plan_alone_when_one_exists(repo):
+    """
+    Feature: a kept gate keeps a subject (issue-179)
+    Scenario: a declared skip that produced an artifact anyway
+      Given test-planning was declared skipped but a testing-plan.md exists
+      When the verification node's exit chain is evaluated
+      Then the plan is gated exactly as it would be without the declaration
+      And the execution log's Verification results are not demanded twice
+    Requirement: docs/specs/issue-179/requirements.md R2.3
+    """
+    _log(repo, "")
+    (_spec(repo) / "testing-plan.md").write_text(PLANNED, encoding="utf-8")
+    blocked = _evaluate_skipped(repo, "verification")
+    assert blocked.status == "block"
+    assert any("still unticked" in m.render() for m in blocked.messages)
+    assert not any("execution-log.md" in m.render() for m in blocked.messages)
+
+    (_spec(repo) / "testing-plan.md").write_text(EXECUTED, encoding="utf-8")
+    assert _evaluate_skipped(repo, "verification").status == "pass"
+
+
+def test_verification_ignores_the_log_when_the_plan_was_kept(repo):
+    """
+    Feature: a kept gate keeps a subject (issue-179)
+    Scenario: the ordinary path is untouched by the conditional entry
+      Given a work item that kept test-planning and executed its plan
+      And an execution log whose Verification results section is empty
+      When the verification node's exit chain is evaluated
+      Then it passes — the fallback applies only to a planned absence
+    Requirement: docs/specs/issue-179/requirements.md R2.1
+    """
+    _log(repo, "")
+    (_spec(repo) / "testing-plan.md").write_text(EXECUTED, encoding="utf-8")
+    assert _evaluate(repo, "verification").status == "pass"

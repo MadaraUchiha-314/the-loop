@@ -35,7 +35,10 @@ the single `needs-review` label *because that is where the measured drift piled 
 that fires.
 
 `security-review` is `required: true`, annotated in the graph as "never skippable, at any
-risk tier". It was skippable, and it always skipped. The review itself still happened —
+risk tier". (That marker was traded in issue-179 — [decision-068](decision-068.md) — so an
+authorized human may now *declare* the node away at `phase-selection`. What this decision
+fixed still holds: the node can no longer skip **itself** by resolving no artifact.) It was
+skippable, and it always skipped. The review itself still happened —
 the skill, `reference/security.md` and `execute-tasks` all drive it — but the gate meant
 to make it non-optional was inert, which is precisely the drift issue-109 exists to
 prevent.

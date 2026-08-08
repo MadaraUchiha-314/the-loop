@@ -92,7 +92,10 @@ intent and outcome sit in one diff. Evidence is committed under
   apply and records `n/a` *with a reason* for the rest; `verification` runs the plan and
   ticks an activity only once it has actually run.
 - **Security is gated, not bolted on**: a threat-model-lite in the requirements, enforcing
-  mechanisms in the design, and a security review that cannot be skipped at any risk tier.
+  mechanisms in the design, and a security review that is its own node with its own gate —
+  never something an agent can quietly declare unnecessary. (Since issue-179 an
+  *authorized human* may select it away up front, on the record, along with any other
+  phase; the one thing no one can skip is being asked.)
 - The same tooling runs locally and in CI; logging is identical at dev-time and runtime.
 - Integration tests document their scenario in **Gherkin** docstrings, queryable as a table
   via `the-loop scenarios`.
