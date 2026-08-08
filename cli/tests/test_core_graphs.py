@@ -45,16 +45,17 @@ def test_skip_declares_against_the_shipped_vocabulary(tmp_path):
       Scenario: an operator declares the spec chain skipped for a doc fix
         Given a repository with a spec directory for a work item
         When the core skip operation declares the spec-chain set with a reason
-        Then the six spec-chain nodes are declared and a protected node is rejected
+        Then the seven spec-chain nodes are declared and the selection gate is rejected
 
-    Requirement: docs/specs/issue-177/requirements.md R2.3, R2.5
+    Requirement: docs/specs/issue-177/requirements.md R2.3, R2.5;
+    docs/specs/issue-179/requirements.md R1.2, R1.5
     """
     spec = tmp_path / "docs" / "specs" / "issue-9"
     spec.mkdir(parents=True)
     result = graphs.skip(
         str(tmp_path),
         "issue-9",
-        ["spec-chain", "security-review"],
+        ["spec-chain", "phase-selection"],
         reason="docs-only change",
         actor="@owner",
     )
@@ -63,10 +64,13 @@ def test_skip_declares_against_the_shipped_vocabulary(tmp_path):
         "requirements-definition",
         "requirements-approval",
         "design",
+        "test-planning",
         "design-approval",
         "tasks-breakdown",
     }
-    assert [r["token"] for r in result["rejected"]] == ["security-review"]
+    # issue-179: `security-review` is declarable now; the gate that does the
+    # declaring is the one token the vocabulary still refuses.
+    assert [r["token"] for r in result["rejected"]] == ["phase-selection"]
 
 
 def test_skip_requires_a_reason(tmp_path):

@@ -41,20 +41,48 @@ start: phase-selection
 # `the-loop graph skip` is the same declaration from an operator's shell.
 # The harness never declares a skip. A declared skip routes the pointer along
 # the node's `on: skipped` edge and is reported as *skipped by declaration*,
-# never as a pass. `test-planning` and `verification` are deliberately NOT
-# skippable — every change keeps a proof plan and its execution, however small
-# the matrix (n/a-with-a-reason rows scale it down) — and neither is anything
-# from `implementation` on: that floor is what bounds the damage of any
-# illegitimate declaration.
+# never as a pass.
+#
+# issue-179 (the owner's call on the ticket) widened that vocabulary to EVERY
+# phase this loop walks. issue-177 had kept a protected floor — test-planning,
+# implementation, verification, the review chain, security-review,
+# human-approval — on the argument that a fixed floor bounds the damage of an
+# illegitimate declaration. That floor is gone, and ONE structural invariant
+# replaced it:
+#
+#   `phase-selection` is `required: true` and carries no marker, so no
+#   declaration from any channel can route around the act of choosing.
+#
+# The loop therefore cannot start without a named, authorized human saying which
+# phases it walks — and every phase that does not run is attributable to that
+# person, before the fact, with provenance in graph-state.json, in the frozen
+# graph of the portable record, in a confirmation comment on the ticket, and in
+# every `the-loop check` thereafter. The guarantee moved from "these phases
+# always ran" to "every phase that did not run has a name on it". Read
+# decision-068 before narrowing or widening this list; the residual it accepts
+# is stated there in full.
 skipSets:
-  # One token for the motivating case (a doc fix): `--node spec-chain`.
+  # One token for the motivating case (a doc fix): `--node spec-chain`. It names
+  # the chain the project's own vocabulary describes — requirements → design →
+  # testing-plan → tasks — so `test-planning` belongs in it (issue-179).
   spec-chain:
     - brainstorming
     - requirements-definition
     - requirements-approval
     - design
+    - test-planning
     - design-approval
     - tasks-breakdown
+  # The six nodes that were one `needs-review` label. One token for the other
+  # end of the walk, so declaring it away is as deliberate — and as visible —
+  # as declaring the spec chain away (issue-179).
+  review-chain:
+    - self-review
+    - critic-review
+    - security-review
+    - evidence
+    - capability-docs
+    - reviewer-briefing
 
 nodes:
   # The work item's own first phase (issue-177, owner's call on PR #178): before
@@ -141,6 +169,11 @@ nodes:
   - id: test-planning
     phase: test-planning
     actor: agent
+    skippable: true         # issue-179, the ticket's own ask: a documentation
+                            # fix has no matrix worth locking. Skipping it does
+                            # not remove the proof — `verification` below moves
+                            # its subject to the execution log rather than
+                            # losing it.
     produces: [testing-plan.md]
     command: create-testing-plan
     stage: test-planning
@@ -188,6 +221,9 @@ nodes:
   - id: implementation
     phase: implementation
     actor: agent
+    skippable: true         # issue-179: everything but the selection gate is
+                            # the human's to declare away — a work item whose
+                            # delivery already happened elsewhere included.
     produces: [tasks.md]
     command: execute-tasks
     stage: implementation
@@ -211,6 +247,7 @@ nodes:
   - id: verification
     phase: verification
     actor: agent
+    skippable: true         # issue-179
     produces: [testing-plan.md]
     command: verify-work
     stage: verification
@@ -219,6 +256,19 @@ nodes:
       - hook: validate-artifacts
         with:
           checkmarks: complete
+          sections: [Verification results]
+      # A KEPT gate keeps a subject (issue-179). Once `test-planning` became
+      # selectable, a work item can walk this node with no `testing-plan.md` to
+      # read — and issue-177's planned-absence rule would then let the gate
+      # report success having asserted nothing, which is the issue-124/167
+      # shape this repository has already fixed twice. So when (and only when)
+      # the plan is a planned absence, the proof moves to the shared execution
+      # log, beside the sections the review chain already owns. `verification`
+      # itself blocks until it is written.
+      - hook: validate-artifacts
+        with:
+          onlyWhenSkipped: testing-plan.md
+          validates: execution-log.md
           sections: [Verification results]
       # No-op unless a graph revision binds a command, exactly as on
       # `implementation`: the obvious seam for a project's own verification entry
@@ -241,6 +291,7 @@ nodes:
   - id: self-review
     phase: needs-review
     actor: agent
+    skippable: true         # issue-179
     stage: self-review
     entry: [set-phase-label, log-entry, deliver-assignment]
     exit:
@@ -248,6 +299,7 @@ nodes:
 
   - id: critic-review
     actor: agent
+    skippable: true         # issue-179
     stage: critic-review
     entry: [log-entry, deliver-assignment]
     exit:
@@ -255,7 +307,15 @@ nodes:
 
   - id: security-review
     actor: agent
-    required: true          # never skippable, at any risk tier
+    # `required: true` since decision-063 — "never skippable, at any risk tier",
+    # written after this node shipped for months silently skipping. issue-179
+    # trades that marker (a node cannot be both required and skippable): the
+    # review is now the human's to declare away at `phase-selection`, before any
+    # work starts, with their name on the omission. What decision-063 actually
+    # fixed still holds — this node can no longer skip ITSELF by resolving no
+    # artifact; it either runs and gates the log, or a person declared it away
+    # on the record.
+    skippable: true         # issue-179
     stage: security-review
     entry: [log-entry, deliver-assignment]
     exit:
@@ -263,6 +323,7 @@ nodes:
 
   - id: evidence
     actor: agent
+    skippable: true         # issue-179
     stage: evidence
     entry: [log-entry, deliver-assignment]
     exit:
@@ -278,6 +339,7 @@ nodes:
   # documentation is decided once, at the outer level, like its requirements.
   - id: capability-docs
     actor: agent
+    skippable: true         # issue-179
     stage: capability-docs
     entry: [log-entry, deliver-assignment]
     exit:
@@ -285,6 +347,7 @@ nodes:
 
   - id: reviewer-briefing
     actor: agent
+    skippable: true         # issue-179
     stage: reviewer-briefing
     entry: [log-entry, deliver-assignment]
     exit:
@@ -293,7 +356,12 @@ nodes:
   - id: human-approval
     actor: human
     session: inherit
-    required: true          # the tier-4 gate; bypassable only by an audited force
+    # Was `required: true` — the tier-4 gate, bypassable only by an audited
+    # force. issue-179 trades that marker too: a human may declare their own
+    # approval gate away at `phase-selection`, which is itself a human act by an
+    # authorized user, recorded before any work starts. `force` remains the
+    # after-the-fact hatch for the item that did NOT declare it away.
+    skippable: true         # issue-179
     entry: [set-phase-label, request-review, {hook: notify, with: {event: pr-review-pending}}]
     exit: [classify-feedback]
 
@@ -318,12 +386,25 @@ edges:
   - {from: requirements-definition, to: requirements-approval, on: pass}
   # Declared-skip routing (issue-177): each skippable node's `on: skipped` edge
   # is its ordinary forward edge — authored here, never inferred by the runtime.
+  # Every node but `phase-selection` and the terminals has one (issue-179), so a
+  # work item that declares everything away routes phase-selection → complete
+  # with each node in between recorded `skipped` and attributed.
   - {from: brainstorming, to: requirements-definition, on: skipped}
   - {from: requirements-definition, to: requirements-approval, on: skipped}
   - {from: requirements-approval, to: design, on: skipped}
   - {from: design, to: test-planning, on: skipped}
+  - {from: test-planning, to: design-approval, on: skipped}
   - {from: design-approval, to: tasks-breakdown, on: skipped}
   - {from: tasks-breakdown, to: implementation, on: skipped}
+  - {from: implementation, to: verification, on: skipped}
+  - {from: verification, to: self-review, on: skipped}
+  - {from: self-review, to: critic-review, on: skipped}
+  - {from: critic-review, to: security-review, on: skipped}
+  - {from: security-review, to: evidence, on: skipped}
+  - {from: evidence, to: capability-docs, on: skipped}
+  - {from: capability-docs, to: reviewer-briefing, on: skipped}
+  - {from: reviewer-briefing, to: human-approval, on: skipped}
+  - {from: human-approval, to: complete, on: skipped}
   - {from: requirements-approval, to: design, on: approved}
   - {from: requirements-approval, to: design, on: approved-with-comments}
   - {from: requirements-approval, to: requirements-definition, on: changes-requested}

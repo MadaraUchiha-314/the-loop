@@ -97,10 +97,13 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
 - **Skips are declared by humans, never taken by the harness** (issue-177,
   decision-067). Every work item starts at **`phase-selection`**: the-loop posts a
   checklist of the selectable phases on the ticket and waits for an **authorized user**
-  to reply with the ones to keep plus `the-loop execute`. The shipped graph fixes which
-  nodes *may* be selected away (`skippable: true` — the spec chain; never
-  `test-planning`, `verification`, the review chain or `human-approval`); an operator can
-  make the same declaration with `the-loop graph skip <id> --node <token> --reason <why>`
+  to reply with the ones to keep plus `the-loop execute`. **Every phase of the outer loop
+  is selectable** (issue-179, decision-068) — the spec chain, the testing plan, the
+  reviews, the security review and the approval gate alike — with exactly one exception:
+  `phase-selection` itself, which is `required: true` so the loop can never walk past the
+  act of choosing. That invariant is the floor now: not a list of phases that always run,
+  but a named human answering, up front, which ones do. An operator can make the same
+  declaration with `the-loop graph skip <id> --node <token> --reason <why>`
   (audited, like `force`). A declared skip is reported by `the-loop check` as
   *skipped by declaration* with provenance — never as a pass. **Never answer the
   selection gate or run the skip verb from a working session**: if phases seem

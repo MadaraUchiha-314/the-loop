@@ -63,7 +63,15 @@ any other task.
 ## Review phase — the security review gate (`security.review`)
 
 Before the ready-to-ship gate can hold, a **security review** runs as its own recorded
-round — complementing (not replacing) the self/critic rounds of `reviewing.md`:
+round — complementing (not replacing) the self/critic rounds of `reviewing.md`.
+
+> **The `security-review` node is selectable** (issue-179, decision-068): an authorized
+> human may declare it away at `phase-selection`, before any work starts, and the omission
+> is recorded against their name. The graph no longer refuses it. Nothing else changed —
+> **a session never declares it away itself**, and when the node is walked it gates the
+> execution log exactly as below. A work item at a risk tier that requires a named
+> sign-off (`security.review.humanSignOffMinTier`) still requires one; that policy is now
+> upheld by the person selecting the phases, not by the graph.
 
 - **Mechanism** (`security.review.mechanism`):
   - `auto` *(default)* — use the harness's built-in security-review skill (e.g. Claude

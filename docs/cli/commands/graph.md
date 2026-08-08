@@ -143,7 +143,7 @@ neither a repository nor a session can widen it.
 
 | Flag | Required | Meaning |
 |------|----------|---------|
-| `--node` | yes (repeatable) | A skippable node id, or a skip-set name. `--node spec-chain` is the whole spec chain — the doc-fix case in one token. |
+| `--node` | yes (repeatable) | A skippable node id, or a skip-set name. `--node spec-chain` is the whole spec chain including the testing plan — the doc-fix case in one token; `--node review-chain` is the six review nodes. |
 | `--reason` | yes | Why. There is no unexplained skip. |
 | `--actor` | no | Who is declaring it. |
 | `--ref` | no | Work-item ref for integrations — where the audit comment is posted. |
@@ -153,9 +153,11 @@ Tokens outside the vocabulary, and nodes the pointer has already entered or pass
 are recorded in graph state with provenance, announced on the ticket with the self-marker,
 and honoured when the pointer reaches each node: it routes along the node's declared
 `on: skipped` edge, runs none of its hooks, and `check` reports the node as
-*skipped by declaration* — never as a pass. The never-skippable floor — `test-planning`,
-`implementation`, `verification`, the review chain, `human-approval` — gates every work
-item regardless.
+*skipped by declaration* — never as a pass. In the outer loop the vocabulary is **every
+phase the work item walks** ([issue-179](https://github.com/MadaraUchiha-314/the-loop/issues/179),
+[decision-068](/decisions/decision-068)); the one token it will always reject is
+`phase-selection`, the gate that does the selecting — which is what keeps every omission
+attributable to the human who declared it.
 
 Exit `0` when at least one declaration landed, `1` when every token was rejected, `2`
 when the verb could not run (e.g. an empty `--reason`).

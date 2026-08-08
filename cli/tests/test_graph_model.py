@@ -106,9 +106,12 @@ def test_the_shipped_graph_compiles():
     """CI validates the graph the plugin ships, so a malformed one cannot release."""
     graph = load_graph()
     # issue-177: the loop asks which phases the item needs before walking any.
+    # issue-179: and that gate is the only node it may never be asked to skip —
+    # `security-review` traded its `required` marker to become selectable.
     assert graph.start == "phase-selection"
     assert "security-review" in graph.nodes
-    assert graph.node("security-review").required is True
+    assert graph.node("phase-selection").required is True
+    assert graph.node("security-review").skippable is True
 
 
 def test_the_shipped_graph_splits_the_needs_review_label():

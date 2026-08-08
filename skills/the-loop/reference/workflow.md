@@ -132,13 +132,27 @@ harness must never be the one deciding that, or it will skip requirements *conve
 So the decision is split three ways (decision-067):
 
 - **The shipped graph fixes the vocabulary.** A node may carry `skippable: true`; only
-  those nodes can ever be skipped, and each must declare its own `on: skipped` edge. The
-  outer loop marks exactly the spec chain — `brainstorming`, `requirements-definition`,
-  `requirements-approval`, `design`, `design-approval`, `tasks-breakdown` — and ships one
-  skip set, `spec-chain`, naming them. **The floor never moves:** `test-planning` and
-  `verification` (every change keeps a proof plan, however many `n/a` rows it holds), the
-  review chain, `security-review`, `human-approval`. A repo-supplied graph is already
-  ignored, so nothing below the package boundary can widen the vocabulary.
+  those nodes can ever be skipped, and each must declare its own `on: skipped` edge. A
+  repo-supplied graph is already ignored, so nothing below the package boundary can widen
+  the vocabulary. **In the outer loop that vocabulary is every phase it walks**
+  (issue-179, decision-068) — the spec chain, `test-planning`, `implementation`,
+  `verification`, the review chain, `security-review` and `human-approval` — with two
+  shipped skip sets naming the ends of the walk: `spec-chain` (`brainstorming` →
+  `tasks-breakdown`, including the testing plan) and `review-chain` (the six nodes that
+  were one `needs-review` label).
+- **One node is not selectable, and it is the whole floor.** `phase-selection` is
+  `required: true` and carries no marker, so no declaration from any channel can route
+  around the act of choosing. What used to be guaranteed by phases that always ran is now
+  guaranteed by *this*: a named, authorized human decides, before any work starts, and
+  every phase that does not run is attributable to them. Read decision-068 before
+  declaring the security review or the approval gate away — the trade it accepts is
+  written down there in full.
+- **A kept gate keeps a subject.** Skipping `test-planning` removes the document, never
+  the verifying: `verification` then gates the shared `execution-log.md` for a non-empty
+  `Verification results` section instead of `testing-plan.md`, and blocks until it is
+  written. (Declaratively, via `onlyWhenSkipped:` on the hook entry — it applies only
+  while the plan is a *planned absence*, so a plan that exists is gated exactly as
+  before.)
 - **A human selects from it, at the loop's own first phase.** `phase-selection` is where
   every work item starts: the-loop posts a checklist of the selectable phases on the
   ticket, the user **ticks it in place**, and an **authorized user**
@@ -167,8 +181,9 @@ So the decision is split three ways (decision-067):
   `tasks.md` re-gate, with `tasks-breakdown` skipped); an artifact that exists is gated
   normally, declarations or not.
 
-Declared skips are outer-loop only: the inner `pdlc-pr-loop`'s nodes are precisely the
-never-skippable floor, so it carries no `phase-selection` node. And they compose with,
+Declared skips are outer-loop only: a PR's path is the work item's decision, taken once at
+the outer level, so `pdlc-pr-loop` declares no skippable node (its `security-review` keeps
+`required: true`) and carries no `phase-selection` node. And they compose with,
 rather than replace, the existing mechanics: `brainstorming` stays `optional` (skips
 itself when nothing was produced), and `force` remains the after-the-fact escape hatch
 where a skip is the up-front plan.
