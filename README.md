@@ -31,6 +31,16 @@ They meet at exactly **one seam**. The outer `implementation` node waits at
 verification runs across all the PRs. A work item delivered by a single session starts no
 inner loops and passes that gate vacuously.
 
+**And they run in named places.** The outer loop runs in the repository the **ticket was
+created in**, which is where the work item's one spec chain lives. A work item that needs
+code in three repositories raises three pull requests — one per repository, each walking
+its own inner loop — and none in the origin repository unless code lands there too.
+Where the outer loop's artifacts are *iterated* is the work item's own choice, ticked at
+`phase-selection` alongside the phases: the **work item** itself (the default, Jira-style)
+or a **pull request** in that repository. No config key anywhere — one project has both a
+one-repo bugfix and a three-repo migration. A pull request's own loop is never
+configurable: it runs on its pull request.
+
 ![the-loop's two loops. A ticket is opened, then the spec chain — optional
 brainstorm.md, requirements.md or bugfix.md, design.md, testing-plan.md, tasks.md — is
 iterated with feedback until each artifact is locked, gated by human review. Below it the
@@ -90,6 +100,7 @@ the-loop events --follow    # the structured trail of every routing and dispatch
 
 the-loop graph status <id>            # where a work item sits in the outer loop
 the-loop graph status <id> --pr <n>   # …and where a PR sits in its inner loop
+the-loop graph status <id> --pr <n> --pr-repo owner/repo   # …in another repository
 the-loop graph complete <id>          # the node-completion claim: the graph verdicts, not the claim
 the-loop check <work-item>            # evaluate every node against the artifacts (pure; CI-safe)
 ```

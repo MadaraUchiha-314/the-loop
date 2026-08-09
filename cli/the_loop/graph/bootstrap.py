@@ -36,6 +36,7 @@ def build_runtime(
     spec_root: Optional[str] = None,
     authorized_users: Optional[Sequence[str]] = None,
     pr_number: Optional[int] = None,
+    pr_repo: str = "",
 ):
     """A runtime for ``root``, configured from the harness and CLI configs.
 
@@ -57,8 +58,15 @@ def build_runtime(
     ``pr-loops/pr-<n>/``, while every artifact gate still resolves against the
     work item's one spec chain. ``None`` — the default, and every caller before
     issue-172 — is the outer ``pdlc-work-item-loop``.
+
+    ``pr_repo`` qualifies that pull request by repository (issue-183), for a
+    work item whose contributions span several: the state then lives at
+    ``pr-loops/<owner>__<repo>/pr-<n>/``, still under the ONE spec directory in
+    the origin repository. ``""`` — the default, and every caller before
+    issue-183 — means the pull request is in the origin repository and keeps the
+    shipped path.
     """
-    from .hooks.loops import PR_LOOPS_DIRNAME
+    from .hooks.loops import inner_loop_state_dir
     from .model import PDLC_PR_LOOP, load_graph
     from .runtime import Runtime
 
@@ -69,6 +77,13 @@ def build_runtime(
         "notifications": harness.get("notifications") or {},
         "authorizedUsers": list(authorized_users or []),
         "integrations": {},
+        # Which repository the ticket lives in (issue-183) — the origin
+        # repository, where the outer loop runs and every inner loop's state is
+        # kept. A fact about this repository, and one a daemon watching N of
+        # them cannot know for each. (Where the outer loop is *collaborated on*
+        # is deliberately NOT here: that is the work item's own choice, frozen
+        # at `phase-selection` — owner's call on PR #184.)
+        "originRepo": harness_config.origin_repo(harness),
     }
     try:
         from .. import cli_config
@@ -93,12 +108,16 @@ def build_runtime(
             ) or {}
             config["authorizedUsers"] = routing.get("authorizedUsers") or []
     if pr_number is not None:
+        # One expression of the layout, shared with the hook that reads it back
+        # (`await-inner-loops`) and with the repo-name validation it carries —
+        # two copies of a path literal is how they came to disagree elsewhere.
+        subpath = inner_loop_state_dir(Path(), pr_number, pr_repo).as_posix()
         return Runtime(
             root,
             graph=load_graph(repo=root, name=PDLC_PR_LOOP),
             spec_root=str(spec_root or harness_config.spec_dir(harness)),
             config=config,
-            state_subpath=f"{PR_LOOPS_DIRNAME}/pr-{pr_number}",
+            state_subpath=subpath,
         )
     return Runtime(
         root,

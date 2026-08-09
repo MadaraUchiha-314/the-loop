@@ -8,7 +8,7 @@ remembers to move.
 the-loop graph [--repo .] show   [--format text|json]
 the-loop graph [--repo .] status <work-item>
 the-loop graph [--repo .] advance <work-item> [--ref REF]
-the-loop graph [--repo .] complete <work-item> [--node NODE] [--actor WHO] [--ref REF] [--pr N]
+the-loop graph [--repo .] complete <work-item> [--node NODE] [--actor WHO] [--ref REF] [--pr N] [--pr-repo OWNER/REPO]
 the-loop graph [--repo .] run    <work-item> [--ref REF] [--max-nodes 20] [--dry-run]
 the-loop graph [--repo .] skip   <work-item> --node TOKEN [--node TOKEN…] --reason TEXT [--actor WHO] [--ref REF]
 the-loop graph [--repo .] force  <work-item> --to NODE --reason TEXT [--actor WHO] [--ref REF]
@@ -36,6 +36,8 @@ full process.
 - [ ] requirements-definition   ← unticked: this phase will be skipped
 - [x] design
 …
+- [ ] outer-loop-on-pull-request  ← not a phase: where the OUTER loop happens.
+                                     Unticked (the default) = on the work item.
 
 the-loop execute
 ```
@@ -43,6 +45,15 @@ the-loop execute
 Only the **reply** is read. Ticking boxes on the-loop's own comment does nothing —
 GitHub reports that a comment was edited, never by whom, and this gate exists to keep
 the harness from choosing its own workload.
+
+The last row is not a phase (issue-183): it says where the **outer** loop is collaborated
+on. Leave it and the requirements, design, testing plan and task list are iterated on the
+work item itself — the default, so a work item whose code lands in *other* repositories
+never opens a pull request here just to hold a discussion. Tick it and they are iterated
+on a pull request in this repository instead. The answer is frozen with the phase
+selection, into `graph-state.json` and the portable record; there is deliberately no
+config key for it, in either config file. A pull request's own inner loop is never
+configurable.
 
 ## `show`
 
@@ -203,6 +214,40 @@ exactly as before issue-172. The outer `implementation` node waits (`await-inner
 until every started inner loop reaches `complete`, so `graph status <id>` shows a work
 item held at implementation while its PRs are still in flight, and
 `graph status <id> --pr <n>` shows where each PR is.
+
+### `--pr-repo` — a pull request in another repository
+
+A work item's contributions can span repositories (issue-183,
+[decision-069](/decisions/decision-069)). The outer loop stays in the **origin**
+repository — the one the ticket was created in — and each contributing repository gets one
+pull request walking its own inner loop. Since a PR number is unique only within a
+repository, an inner loop outside the origin repository is addressed by both:
+
+```bash
+the-loop graph complete issue-183 --pr 7 --pr-repo octo/infra
+```
+
+Its state lives at `docs/specs/<id>/pr-loops/octo__infra/pr-7/` — still under the **one**
+spec chain, in the origin repository's checkout. Omit `--pr-repo` for a pull request in the
+origin repository: that keeps the shipped `pr-loops/pr-<n>/` path, so nothing already in
+flight moves. `--pr-repo` without `--pr` is refused (a repository does not identify a
+loop), as is any value that is not `<owner>/<repo>` — the value becomes a directory name,
+so it is validated rather than sanitized.
+
+A work item can also **declare** the repositories it contributes to, in
+`docs/specs/<id>/execution-log.md`'s front matter:
+
+```yaml
+repos:
+  - octo/app
+  - octo/infra
+```
+
+`await-inner-loops` then holds the outer `implementation` node until each declared
+repository has an inner loop *and* every started loop has finished — so a pull request that
+was planned and never opened shows up as a held gate naming the repository, rather than as
+a pass. Declaring nothing keeps the pre-issue-183 behaviour: every started loop must
+finish, and a work item with none passes vacuously.
 
 ## Exit codes
 

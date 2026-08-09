@@ -138,8 +138,15 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   Linked issues come from three sources, most authoritative first: GitHub's own
   `closingIssuesReferences` (the Development panel), the `issue-<n>` head-branch
   convention, and closing keywords in the PR body in every form GitHub accepts
-  (`Closes #N`, `Fixes: #N`, `Closes OWNER/REPO#N`, `GH-N`, a full issue URL); a
-  qualified reference naming a **different** repository SHALL be ignored. Consequently a
+  (`Closes #N`, `Fixes: #N`, `Closes OWNER/REPO#N`, `GH-N`, a full issue URL). A
+  **qualified** reference naming a different repository SHALL resolve to the work item in
+  **that** repository (issue-183, [decision-069](../decisions/decision-069.md)) — a work
+  item's contributions may span repositories, and the pull request delivering one of them
+  lives where its code does while the ticket lives in the origin repository. The
+  head-branch convention stays local: `issue-<n>` on a branch says nothing about a
+  repository. This widens which work item an **arrived** event names, and nothing else:
+  the ingress (the operator's receiver and poll sources) and the arming gate
+  (`the-loop start`) are unchanged. Consequently a
   PR comment/review/CI result SHALL be delivered into the **existing session for the
   linked issue** (reusing its tmux session) rather than spawning a second one, and WHEN
   nothing matches and the spawn policy allows it THEN the session SHALL be spawned
@@ -369,6 +376,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-183 | Cross-repository linkage (2026-08-09): a qualified closing reference to another repository now routes to the work item **there** instead of being dropped, so a pull request delivering one repository's share of a multi-repo work item can reach its ticket; the PR's inner loop is addressed by repository as well as number, and an inner-loop prompt's claim command carries `--pr-repo` | [spec](../specs/issue-183/), [decision-069](../decisions/decision-069.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/183) |
 | issue-172 | Which session owns a PR's events stopped being recomputed from `gh` per event (2026-08-07): the work item's single session record now carries its `pullRequests[]`, each an endpoint with its own tmux session and harness conversation (`routing.tmux.sessionPerPr`, default on — `false` collapses to the pre-issue-172 single session), spawned lazily and closed individually when its PR closes. Additive resolution; issue-93's derivation and issue-101's close rule unchanged | [spec](../specs/issue-172/), [decision-064](../decisions/decision-064.md), [state](../cli/state.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/172) |
 | issue-159 | Stopping and restarting the poller became invisible (2026-08-05): an exclusive lock on the pidfile makes two pollers on one ledger impossible (`--once` included), `poll stop` verifies the pid against that lock and waits for the process to exit, each work item's record is persisted as it finishes, a stop ends the cycle after the item in flight (and an interrupted cycle never reconciles closures), and a shutdown hands back the retry budget of dispatches it abandoned | [spec](../specs/issue-159/), [poll](../cli/commands/poll.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/159) |
 | issue-156 | Process runner removed; tmux is the only runner (2026-08-05): dispatch always pastes into a tmux-hosted session, the `cli`-under-process interaction warning went with the runner choice, and the tmux-hosting requirement is unconditional | [spec](../specs/issue-156/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/156) |

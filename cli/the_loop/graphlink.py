@@ -116,6 +116,19 @@ def spec_id_for(ref: WorkItemRef) -> Optional[str]:
     return f"issue-{int(ref.number)}"
 
 
+def _pr_repo(work_item: WorkItemRef, pr: WorkItemRef) -> str:
+    """The repository qualifier for ``pr``'s inner loop — ``""`` in the origin repo.
+
+    A work item may be delivered by pull requests in several repositories
+    (issue-183), and a PR number is unique only within one. Derived from the two
+    refs the caller already holds, so nothing new has to reach the dispatcher:
+    same repository as the ticket ⇒ the shipped ``pr-loops/pr-<n>/`` path;
+    another repository ⇒ ``pr-loops/<owner>__<repo>/pr-<n>/``, still under the
+    ONE spec directory in the origin repository's checkout.
+    """
+    return "" if pr.path == work_item.path else pr.path
+
+
 def _repo_slug(remote_url: str) -> str:
     """``owner/repo`` (lowercased) from any git remote URL form.
 
@@ -202,6 +215,12 @@ class GraphContext:
     messages: Tuple[str, ...]
     next_command: str
     actor: str  # agent | human — who the current node waits on
+    #: Where the OUTER loop's artifacts are iterated for THIS work item
+    #: (issue-183): ``pull-request``, or empty for the default — the work item
+    #: itself. Chosen by its author at `phase-selection` and frozen into
+    #: `graph-state.json`, never a repository or machine setting. The INNER
+    #: loop ignores it: a pull request's loop runs on that pull request.
+    surface: str = ""
 
     @property
     def at_human_gate(self) -> bool:
@@ -209,11 +228,31 @@ class GraphContext:
         return self.actor == "human" and self.status in ("waiting", "parked")
 
 
+def _surface_line(surface: str) -> str:
+    """One sentence naming where the OUTER loop's artifacts are iterated.
+
+    Composed from the-loop's own vocabulary and a value that is one of two
+    literals — no payload text enters it (R3.6). The value is this **work
+    item's** own, chosen by its author at `phase-selection` (issue-183); an
+    unset one is the default, the work item itself.
+    """
+    if surface == "pull-request":
+        return (
+            "a pull request in the repository the ticket was created in — the "
+            "surface chosen for this work item at phase-selection"
+        )
+    return (
+        "this work item (the default) — comment on the ticket, and do not open "
+        "a pull request just to carry the spec chain"
+    )
+
+
 def render_graph_context(
     ctx: Optional["GraphContext"],
     item_id: str,
     verdict: str = "",
     pr_number: Optional[int] = None,
+    pr_repo: str = "",
 ) -> str:
     """The ``$graph_context`` prompt block (issue-148, D3).
 
@@ -227,6 +266,9 @@ def render_graph_context(
     names the PR's own loop and its claim command carries ``--pr <n>`` — the
     report-back channel must address the loop the session is actually walking,
     or a PR session's claim would evaluate the work item's outer gates instead.
+    ``pr_repo`` adds ``--pr-repo <owner>/<repo>`` for a pull request in a
+    contributing repository (issue-183), for the same reason: without it the
+    claim would address a *different* loop in the origin repository.
     """
     if ctx is None or not ctx.current_node:
         return ""
@@ -250,6 +292,17 @@ def render_graph_context(
     if ctx.next_command:
         lines.append(f"  resume with: `/the-loop:{ctx.next_command} {item_id}`")
     claim_suffix = f" --pr {pr_number}" if pr_number is not None else ""
+    if pr_number is not None and pr_repo:
+        claim_suffix += f" --pr-repo {pr_repo}"
+    if pr_number is not None:
+        lines.append(
+            "  iterate on: this pull request (the inner loop always runs on its "
+            "PR — no setting moves it)"
+        )
+    else:
+        lines.append(
+            f"  iterate the outer loop's artifacts on: {_surface_line(ctx.surface)}"
+        )
     lines.append(
         "  when this node's work is done, run: "
         f"`the-loop graph complete {item_id}{claim_suffix}`"
@@ -384,7 +437,14 @@ class GraphLink:
             rt.start(item, pr.ref)
             self._bind_session(rt, item, session_id, runner)
 
-        self._guarded("start", work_item, cwd, call, pr_number=pr.number)
+        self._guarded(
+            "start",
+            work_item,
+            cwd,
+            call,
+            pr_number=pr.number,
+            pr_repo=_pr_repo(work_item, pr),
+        )
 
     def on_pr_event(
         self, work_item: WorkItemRef, pr: WorkItemRef, cwd: str, routed
@@ -403,6 +463,7 @@ class GraphLink:
             cwd,
             lambda rt, item: rt.advance(item, ref=pr.ref, event=event),
             pr_number=pr.number,
+            pr_repo=_pr_repo(work_item, pr),
         )
 
     def pr_context(
@@ -415,6 +476,7 @@ class GraphLink:
             cwd,
             lambda rt, item: self._context_from(rt, item),
             pr_number=pr.number,
+            pr_repo=_pr_repo(work_item, pr),
         )
 
     def on_pr_close(
@@ -453,7 +515,14 @@ class GraphLink:
                 ref=pr.ref,
             )
 
-        self._guarded("advance", work_item, cwd, call, pr_number=pr.number)
+        self._guarded(
+            "advance",
+            work_item,
+            cwd,
+            call,
+            pr_number=pr.number,
+            pr_repo=_pr_repo(work_item, pr),
+        )
 
     # -- internals --------------------------------------------------------------
 
@@ -464,6 +533,7 @@ class GraphLink:
         cwd: str,
         call,
         pr_number: Optional[int] = None,
+        pr_repo: str = "",
     ) -> Optional[Any]:
         """Run ``call`` behind every skip path, swallowing any failure.
 
@@ -530,7 +600,9 @@ class GraphLink:
             runtime = (
                 self._build_runtime(str(root), spec_dir)
                 if pr_number is None
-                else self._build_runtime(str(root), spec_dir, pr_number=pr_number)
+                else self._build_runtime(
+                    str(root), spec_dir, pr_number=pr_number, pr_repo=pr_repo
+                )
             )
             if action == "context":
                 return call(runtime, item_id)
@@ -544,6 +616,7 @@ class GraphLink:
                     **runtime.config,
                     "assignmentDeliver": lambda text: sink(wi, prn, text),
                     "assignmentPr": pr_number,
+                    "assignmentPrRepo": pr_repo,
                 }
             if self.frozen_graph_sink is not None:
                 # The frozen graph is the WORK ITEM's, whichever loop froze it.
@@ -568,7 +641,7 @@ class GraphLink:
             if pr_number is not None:
                 from .graph.hooks.loops import inner_loop_state_dir
 
-                lock_dir = inner_loop_state_dir(lock_dir, pr_number)
+                lock_dir = inner_loop_state_dir(lock_dir, pr_number, pr_repo)
             with state_lock(lock_dir):
                 return call(runtime, item_id)
         except Exception as exc:  # noqa: BLE001 — a graph fault must not cost a delivery
@@ -639,6 +712,10 @@ class GraphLink:
             messages=messages,
             next_command=node.command,
             actor=node.actor,
+            # The work item's own frozen choice (issue-183) — read from the
+            # same state this context comes from, because the prompt is
+            # rendered far from the runtime and there is no config to ask.
+            surface=str(getattr(state, "surface", "") or ""),
         )
 
     @staticmethod
@@ -745,7 +822,11 @@ class GraphLink:
         return proc.stdout.strip() if proc.returncode == 0 else ""
 
     def _build_runtime(
-        self, cwd: str, spec_dir: str, pr_number: Optional[int] = None
+        self,
+        cwd: str,
+        spec_dir: str,
+        pr_number: Optional[int] = None,
+        pr_repo: str = "",
     ) -> Any:
         """The graph runtime rooted at the session's checkout.
 
@@ -774,4 +855,5 @@ class GraphLink:
             spec_root=spec_dir,
             authorized_users=self.authorized_users,
             pr_number=pr_number,
+            pr_repo=pr_repo,
         )

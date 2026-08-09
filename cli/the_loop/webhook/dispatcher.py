@@ -1347,8 +1347,15 @@ class Dispatcher:
                 spec_id_for(session.work_item) or session.work_item.ref,
                 verdict=(gate_report.outcome if gate_report else ""),
                 # An inner-loop prompt must address the loop the session is
-                # walking: its claim command carries --pr <n> (issue-172).
+                # walking: its claim command carries --pr <n> (issue-172), plus
+                # --pr-repo when the pull request is in a contributing
+                # repository rather than the ticket's own (issue-183).
                 pr_number=endpoint.work_item.number if inner else None,
+                pr_repo=(
+                    endpoint.work_item.path
+                    if inner and endpoint.work_item.path != session.work_item.path
+                    else ""
+                ),
             ),
         )
         if endpoint is not session and not endpoint.tmux_target:

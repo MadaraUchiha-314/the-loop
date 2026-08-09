@@ -83,6 +83,15 @@ paths:
           title: Pr
         description: A pull-request number selects that PR's inner loop
           (pdlc-pr-loop, issue-172); omitted is the outer pdlc-work-item-loop.
+      - name: prRepo
+        in: query
+        required: false
+        schema:
+          type: string
+          title: Prrepo
+          default: ''
+        description: The repository `pr` is in, when it is not the repository
+          the ticket was created in (issue-183).
       responses:
         '200':
           description: Successful Response
@@ -689,6 +698,14 @@ components:
           description: A pull-request number selects that PR's inner loop
             (pdlc-pr-loop, issue-172); null/omitted is the work item's outer
             pdlc-work-item-loop.
+        prRepo:
+          type: string
+          title: Prrepo
+          default: ''
+          description: The repository `pr` is in, when the work item's
+            contributions span several and this pull request is not in the
+            repository the ticket was created in (issue-183). State then lives
+            at pr-loops/<owner>__<repo>/pr-<n>/. Meaningless without `pr`.
       type: object
       required:
       - repo
@@ -714,6 +731,14 @@ components:
           description: A pull-request number selects that PR's inner loop
             (pdlc-pr-loop, issue-172); null/omitted is the work item's outer
             pdlc-work-item-loop.
+        prRepo:
+          type: string
+          title: Prrepo
+          default: ''
+          description: The repository `pr` is in, when the work item's
+            contributions span several and this pull request is not in the
+            repository the ticket was created in (issue-183). State then lives
+            at pr-loops/<owner>__<repo>/pr-<n>/. Meaningless without `pr`.
       type: object
       required:
       - repo
@@ -747,6 +772,14 @@ components:
           description: A pull-request number selects that PR's inner loop
             (pdlc-pr-loop, issue-172); null/omitted is the work item's outer
             pdlc-work-item-loop.
+        prRepo:
+          type: string
+          title: Prrepo
+          default: ''
+          description: The repository `pr` is in, when the work item's
+            contributions span several and this pull request is not in the
+            repository the ticket was created in (issue-183). State then lives
+            at pr-loops/<owner>__<repo>/pr-<n>/. Meaningless without `pr`.
       type: object
       required:
       - repo
@@ -782,6 +815,14 @@ components:
           description: A pull-request number selects that PR's inner loop
             (pdlc-pr-loop, issue-172); null/omitted is the work item's outer
             pdlc-work-item-loop.
+        prRepo:
+          type: string
+          title: Prrepo
+          default: ''
+          description: The repository `pr` is in, when the work item's
+            contributions span several and this pull request is not in the
+            repository the ticket was created in (issue-183). State then lives
+            at pr-loops/<owner>__<repo>/pr-<n>/. Meaningless without `pr`.
       type: object
       required:
       - repo
@@ -826,6 +867,14 @@ components:
             (pdlc-pr-loop, issue-172); null/omitted is the work item's outer
             pdlc-work-item-loop. The PR loop declares no skippable node, so
             every token is rejected there by construction.
+        prRepo:
+          type: string
+          title: Prrepo
+          default: ''
+          description: The repository `pr` is in, when the work item's
+            contributions span several and this pull request is not in the
+            repository the ticket was created in (issue-183). State then lives
+            at pr-loops/<owner>__<repo>/pr-<n>/. Meaningless without `pr`.
       type: object
       required:
       - repo

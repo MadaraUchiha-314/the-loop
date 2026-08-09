@@ -54,6 +54,7 @@ __all__ = [
     "config_path",
     "load",
     "load_strict",
+    "origin_repo",
     "spec_dir",
 ]
 
@@ -120,6 +121,13 @@ READS: Tuple[HarnessConfigRead, ...] = (
         "where the integration tests live is part of the repository's layout",
     ),
     HarnessConfigRead(
+        "ticketing.github",
+        "check, graph, and the daemon via graphlink",
+        "the repository the ticket was created in is what makes `pr-loops/pr-<n>/` "
+        "attributable to a repository once a work item spans several of them "
+        "(issue-183); a daemon watching N repos cannot know it for each of them",
+    ),
+    HarnessConfigRead(
         "customInstructions",
         "instructions",
         "which conventions govern work on this repository is a fact about this "
@@ -144,6 +152,25 @@ def spec_dir(harness: Mapping[str, Any]) -> str:
     if not isinstance(workflow, dict):
         return DEFAULT_SPEC_DIR
     return str(workflow.get("specDir") or DEFAULT_SPEC_DIR)
+
+
+def origin_repo(harness: Mapping[str, Any]) -> str:
+    """``<owner>/<repo>`` from ``ticketing.github``, or ``""`` (issue-183).
+
+    The **origin repository**: the one the ticket was created in, where the outer
+    loop runs and the spec chain lives. Empty when the project is not
+    GitHub-ticketed or has not said — callers treat that as "unknown" and fail
+    closed rather than guessing.
+    """
+    ticketing = harness.get("ticketing") or {}
+    if not isinstance(ticketing, dict):
+        return ""
+    github = ticketing.get("github") or {}
+    if not isinstance(github, dict):
+        return ""
+    owner = str(github.get("owner") or "").strip()
+    repo = str(github.get("repo") or "").strip()
+    return f"{owner}/{repo}" if owner and repo else ""
 
 
 def config_path(root: Path) -> Optional[Path]:

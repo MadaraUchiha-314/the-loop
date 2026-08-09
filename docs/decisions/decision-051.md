@@ -61,7 +61,13 @@ A template that does not declare the placeholder gets the directive **appended**
 `string.Template.safe_substitute` is silent about a placeholder that was never declared —
 which is exactly how a custom template would strip the rule with nobody the wiser.
 
-**5. Artifact iteration on the pull request is an invariant, not a third setting.** It
+**5. Artifact iteration on the pull request is an invariant, not a third setting.**
+*(Amended by [decision-069](decision-069.md), issue-183: the invariant is now that
+iteration happens on a **durable, reviewable** surface — the pull request **or the work
+item** — never in a terminal. Which of the two the outer loop uses is declared per work
+item at `phase-selection` (default: the work item); the inner loop still has no choice.
+The configuration this paragraph refused — specs reviewed where the reasoning dies with
+the scrollback — is still refused.)* It
 holds in both modes, and its home is the **skill** (`SKILL.md`,
 `reference/collaboration.md`) so it binds sessions the daemon never touched — including
 one a human started with `/the-loop:work-on`. The daemon prompt restates it in one

@@ -212,6 +212,16 @@ class Runtime:
             **extra,
         )
 
+    def _surface(self, state: "GraphState") -> str:
+        """This work item's collaboration surface, as frozen at selection.
+
+        Read from the state rather than from any config (issue-183, owner's call
+        on PR #184): where a work item is collaborated on is a property of that
+        work item, chosen by its author at `phase-selection`, not a setting the
+        repository or the operator's machine carries.
+        """
+        return str(getattr(state, "surface", "") or "")
+
     # -- declared skips (issue-177) --------------------------------------------
 
     def declared_skips(self, state: "GraphState") -> Dict[str, Dict[str, Any]]:
@@ -277,6 +287,12 @@ class Runtime:
                     # in the portable session record through the sink below.
                     record["graph"] = frozen
                     record["via"] = str(result.data.get("selectionSource") or "")
+                chosen = str(result.data.get("surface") or "")
+                if chosen:
+                    # Frozen by the same signed reply as the phase selection —
+                    # one human act, one record (issue-183).
+                    record["surface"] = chosen
+                    state.surface = chosen
                 state.decisions.setdefault(str(marker), record)
                 decided = True
                 if frozen:
@@ -378,6 +394,7 @@ class Runtime:
         event: Optional[Mapping[str, Any]] = None,
         skips: Optional[Mapping[str, Any]] = None,
         decisions: Optional[Mapping[str, Any]] = None,
+        surface: str = "",
     ) -> ChainOutcome:
         """Run one node's **exit** chain. This is what ``check`` calls.
 
@@ -399,6 +416,7 @@ class Runtime:
                 event=event,
                 skipped_artifacts=self._skipped_artifact_names(skips or {}),
                 decisions=decisions,
+                surface=surface,
             ),
         )
 
@@ -432,7 +450,11 @@ class Runtime:
                 )
                 continue
             outcome = self.evaluate(
-                node.id, item, skips=skips, decisions=state.decisions
+                node.id,
+                item,
+                skips=skips,
+                decisions=state.decisions,
+                surface=self._surface(state),
             )
             messages = [m.render() for m in outcome.messages]
             if node.id in refused:
@@ -503,7 +525,9 @@ class Runtime:
             self.state_dir(item)
         )  # persist BEFORE any dependent side effect (R8.2)
         node = self.graph.node(node_id)
-        run_chain(node.entry, self._context(item, node, "entry"))
+        run_chain(
+            node.entry, self._context(item, node, "entry", surface=self._surface(state))
+        )
         eventlog.emit("graph.started", work_item=item.ref, node=node_id)
         logger.info("%s entered the graph at %s", item.ref, node_id)
         return NodeReport(
@@ -626,7 +650,12 @@ class Runtime:
         node = self.graph.node(node_id)
 
         outcome = self.evaluate(
-            node_id, item, event=event, skips=skips, decisions=state.decisions
+            node_id,
+            item,
+            event=event,
+            skips=skips,
+            decisions=state.decisions,
+            surface=self._surface(state),
         )
         report = NodeReport(
             node=node_id,
@@ -718,7 +747,10 @@ class Runtime:
                 resolution=how,
                 session=(binding or {}).get("id") or None,
             )
-        run_chain(entry_node.entry, self._context(item, entry_node, "entry"))
+        run_chain(
+            entry_node.entry,
+            self._context(item, entry_node, "entry", surface=self._surface(state)),
+        )
         eventlog.emit(
             "graph.advanced",
             work_item=item.ref,

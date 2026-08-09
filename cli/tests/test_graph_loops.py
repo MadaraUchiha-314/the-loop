@@ -20,7 +20,9 @@ from the_loop.graph.bootstrap import build_runtime
 from the_loop.graph.hooks.loops import (
     PR_LOOPS_DIRNAME,
     await_inner_loops,
+    declared_repos,
     inner_loop_state_dir,
+    repo_state_key,
 )
 from the_loop.graph.contract import HookContext, WorkItem
 from the_loop.graph.model import PDLC_PR_LOOP, PDLC_WORK_ITEM_LOOP, load_graph
@@ -59,7 +61,7 @@ def test_the_outer_implementation_node_awaits_the_inner_loops():
 # -- the seam: await-inner-loops over checked-in state --------------------------
 
 
-def _ctx(tmp_path):
+def _ctx(tmp_path, config=None):
     spec = tmp_path / "docs" / "specs" / "issue-15"
     spec.mkdir(parents=True, exist_ok=True)
     item = WorkItem(ref=WI.ref, id="issue-15", spec_dir=spec)
@@ -68,6 +70,7 @@ def _ctx(tmp_path):
         node={"id": "implementation"},
         boundary="exit",
         repo=tmp_path,
+        config=config or {},
     )
 
 
@@ -112,6 +115,169 @@ def test_a_corrupt_inner_state_holds_the_gate_rather_than_passing_it(tmp_path):
     (state_dir / "graph-state.json").write_text("{not json")
     result = await_inner_loops(ctx)
     assert result.status == "wait" and result.data["pending"] == ["pr-16"]
+
+
+# -- several repositories, one work item (issue-183) -----------------------------
+
+
+def _log(spec_dir, repos=None):
+    """The work item's execution log, optionally declaring its repositories."""
+    front = ["---", "type: execution-log", "workItem: issue-15"]
+    if repos is not None:
+        front.append("repos:")
+        front.extend(f"  - {repo}" for repo in repos)
+    front += ["---", "", "# Execution Log", ""]
+    (spec_dir / "execution-log.md").write_text("\n".join(front), encoding="utf-8")
+
+
+def _inner_state_in(spec_dir, repo, pr_number, current):
+    state_dir = inner_loop_state_dir(spec_dir, pr_number, repo)
+    state_dir.mkdir(parents=True, exist_ok=True)
+    (state_dir / "graph-state.json").write_text(
+        json.dumps({"workItem": "issue-15", "currentNode": current})
+    )
+
+
+def test_repo_state_key_qualifies_a_pull_request_by_repository():
+    assert repo_state_key("octo/infra") == "octo__infra"
+    assert (
+        repo_state_key("ghe.corp.example/octo/infra") == "ghe.corp.example__octo__infra"
+    )
+
+
+@pytest.mark.parametrize(
+    "repo",
+    [
+        "../../etc",
+        "a/../b",
+        "a//b",
+        "octo",
+        "",
+        "octo/repo/../..",
+        "a\\..\\b",
+        "octo/re po",
+    ],
+)
+def test_repo_state_key_rejects_traversal_and_junk(repo):
+    """A repository name becomes a DIRECTORY name, and it arrives from a webhook
+    payload or an operator's --pr-repo. It is rejected, never sanitized: a name
+    quietly rewritten into a valid one files one repo's state under another's."""
+    with pytest.raises(ValueError):
+        repo_state_key(repo)
+
+
+def test_the_origin_repos_layout_is_unchanged_back_compat(tmp_path):
+    """No work item in flight has to be migrated to gain the feature."""
+    spec = tmp_path / "spec"
+    assert inner_loop_state_dir(spec, 16) == spec / PR_LOOPS_DIRNAME / "pr-16"
+    assert (
+        inner_loop_state_dir(spec, 7, "octo/infra")
+        == spec / PR_LOOPS_DIRNAME / "octo__infra" / "pr-7"
+    )
+
+
+def test_a_contributing_repos_loop_holds_the_outer_gate(tmp_path):
+    ctx = _ctx(tmp_path)
+    _inner_state(ctx.work_item.spec_dir, 16, "complete")
+    _inner_state_in(ctx.work_item.spec_dir, "octo/infra", 7, "verification")
+    result = await_inner_loops(ctx)
+    assert result.status == "wait"
+    assert result.data["pending"] == ["octo__infra/pr-7"]
+
+
+def test_two_repositories_pull_request_seven_do_not_collide(tmp_path):
+    ctx = _ctx(tmp_path)
+    _inner_state_in(ctx.work_item.spec_dir, "octo/infra", 7, "complete")
+    _inner_state_in(ctx.work_item.spec_dir, "octo/app", 7, "self-review")
+    result = await_inner_loops(ctx)
+    assert result.status == "wait" and result.data["pending"] == ["octo__app/pr-7"]
+    assert result.data["inner_loops"] == 2
+
+
+def test_declared_repos_are_read_from_the_execution_log(tmp_path):
+    ctx = _ctx(tmp_path)
+    _log(ctx.work_item.spec_dir, ["octo/app", "octo/infra"])
+    assert declared_repos(ctx.work_item.spec_dir) == ["octo/app", "octo/infra"]
+    _log(ctx.work_item.spec_dir)
+    assert declared_repos(ctx.work_item.spec_dir) == []
+
+
+def test_await_waits_for_a_declared_repo_with_no_loop(tmp_path):
+    """A contribution that was PLANNED and never opened is not an absent one:
+    without this, `repos:` would be prose and the gate would pass vacuously."""
+    ctx = _ctx(tmp_path, config={"originRepo": "octo/repo"})
+    _log(ctx.work_item.spec_dir, ["octo/repo", "octo/infra"])
+    _inner_state(ctx.work_item.spec_dir, 16, "complete")
+    result = await_inner_loops(ctx)
+    assert result.status == "wait"
+    assert result.data["missing_repos"] == ["octo/infra"]
+    assert "octo/infra" in result.messages[0].text
+
+
+def test_every_declared_repo_with_a_finished_loop_releases_the_gate(tmp_path):
+    ctx = _ctx(tmp_path, config={"originRepo": "octo/repo"})
+    _log(ctx.work_item.spec_dir, ["octo/repo", "octo/infra"])
+    _inner_state(ctx.work_item.spec_dir, 16, "complete")
+    _inner_state_in(ctx.work_item.spec_dir, "octo/infra", 7, "complete")
+    result = await_inner_loops(ctx)
+    assert result.status == "pass" and result.data["declared"] == 2
+
+
+def test_a_declared_origin_repo_needs_a_configured_origin(tmp_path):
+    """Without `ticketing.github`, a top-level pr-<n>/ cannot be attributed to a
+    repository — so the gate says so rather than guessing which loop was meant."""
+    ctx = _ctx(tmp_path)
+    _log(ctx.work_item.spec_dir, ["octo/repo"])
+    _inner_state(ctx.work_item.spec_dir, 16, "complete")
+    result = await_inner_loops(ctx)
+    assert result.status == "wait"
+    assert "ticketing.github" in result.messages[0].text
+
+
+def test_a_malformed_declared_repo_blocks_rather_than_waits(tmp_path):
+    """Waiting for `../../etc` would wait forever: a fault in a checked-in file
+    is a block, not work in progress."""
+    ctx = _ctx(tmp_path)
+    _log(ctx.work_item.spec_dir, ["../../etc"])
+    result = await_inner_loops(ctx)
+    assert result.status == "block"
+
+
+def test_declaring_nothing_keeps_the_pre_issue_183_behaviour(tmp_path):
+    ctx = _ctx(tmp_path)
+    _log(ctx.work_item.spec_dir)
+    assert await_inner_loops(ctx).status == "pass"
+
+
+def test_bootstrap_qualifies_the_state_path_by_repository(repo):
+    inner = build_runtime(repo, pr_number=7, pr_repo="octo/infra")
+    assert inner.state_subpath == f"{PR_LOOPS_DIRNAME}/octo__infra/pr-7"
+    item = inner.work_item("issue-15")
+    # Still the ONE spec chain, in the origin repository's checkout.
+    assert item.spec_dir == build_runtime(repo).work_item("issue-15").spec_dir
+
+
+def test_bootstrap_refuses_a_hostile_repository(repo):
+    with pytest.raises(ValueError):
+        build_runtime(repo, pr_number=7, pr_repo="../../etc")
+
+
+def test_bootstrap_resolves_the_origin_repository(tmp_path):
+    (tmp_path / ".the-loop").mkdir()
+    (tmp_path / ".the-loop" / "harness-config.yaml").write_text(
+        "ticketing:\n  github:\n    owner: octo\n    repo: repo\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "docs" / "specs" / "issue-15").mkdir(parents=True)
+    assert build_runtime(tmp_path).config["originRepo"] == "octo/repo"
+
+
+def test_the_surface_is_not_a_repository_setting(repo):
+    """issue-183, owner's call on PR #184: where a work item is collaborated on
+    is the work item's own choice at `phase-selection`, so no config key — and
+    no runtime config value — carries it."""
+    config = build_runtime(repo).config
+    assert "outerLoopSurface" not in config
 
 
 # -- the runtime: one spec chain, two state locations ---------------------------
@@ -270,6 +436,54 @@ def test_an_inner_loop_prompt_claims_with_pr(checkout):
     assert "the-loop graph complete issue-15`" in outer and "--pr" not in outer
 
 
+def test_a_cross_repo_inner_loop_prompt_claims_with_both(checkout):
+    """A claim without --pr-repo would evaluate a DIFFERENT loop: pr-7 in the
+    origin repository, not pr-7 in the contributing one (issue-183)."""
+    from the_loop.graphlink import render_graph_context
+
+    link = _real_link()
+    foreign = WorkItemRef.parse("github:octo/infra#7")
+    link.on_pr_spawn(WI, foreign, str(checkout), session_id="s-1", runner="tmux")
+    ctx = link.pr_context(WI, foreign, str(checkout))
+    assert ctx is not None
+
+    block = render_graph_context(ctx, "issue-15", pr_number=7, pr_repo="octo/infra")
+    assert "the-loop graph complete issue-15 --pr 7 --pr-repo octo/infra" in block
+    assert "the inner loop always runs on its PR" in block
+    # The origin repository's own PR keeps the shipped, unqualified claim.
+    same_repo = render_graph_context(ctx, "issue-15", pr_number=7)
+    assert "the-loop graph complete issue-15 --pr 7`" in same_repo
+
+
+def _outer_context(surface):
+    from the_loop.graphlink import GraphContext
+
+    return GraphContext(
+        current_node="design",
+        phase="design",
+        status="in-progress",
+        reason="",
+        messages=(),
+        next_command="create-design",
+        actor="agent",
+        surface=surface,
+    )
+
+
+def test_the_outer_prompt_names_the_work_items_own_surface(checkout):
+    """The session is told where to iterate, and the DEFAULT is the work item
+    itself (issue-183, owner's call on PR #184) — a work item only opens a pull
+    request in this repository when its author asked for one."""
+    from the_loop.graphlink import render_graph_context
+
+    default = render_graph_context(_outer_context(""), "issue-15")
+    assert "iterate the outer loop's artifacts on: this work item" in default
+    assert "--pr" not in default
+
+    chosen = render_graph_context(_outer_context("pull-request"), "issue-15")
+    assert "a pull request in the repository the ticket was created in" in chosen
+
+
 # -- the graph assigns: deliver-assignment (issue-172, "who is in charge?") -----
 
 
@@ -329,6 +543,58 @@ def test_deliver_assignment_addresses_the_inner_loop(tmp_path):
     (text,) = delivered
     assert "pull request #16's pdlc-pr-loop" in text
     assert "the-loop graph complete issue-15 --pr 16" in text
+
+
+def _assignment(tmp_path, node, config, surface=""):
+    from the_loop.graph.contract import HookContext, WorkItem
+    from the_loop.graph.hooks.assignment import deliver_assignment
+
+    delivered = []
+    spec = tmp_path / "docs" / "specs" / "issue-15"
+    spec.mkdir(parents=True, exist_ok=True)
+    ctx = HookContext(
+        work_item=WorkItem(ref=WI.ref, id="issue-15", spec_dir=spec),
+        node=node,
+        boundary="entry",
+        repo=tmp_path,
+        surface=surface,
+        config={
+            "assignmentDeliver": lambda text: delivered.append(text) or True,
+            **config,
+        },
+    )
+    assert deliver_assignment(ctx).status == "pass"
+    return delivered[0]
+
+
+def test_the_assignment_names_the_work_items_own_surface(tmp_path):
+    """A session is TOLD where to iterate rather than inferring it (issue-183),
+    and an unanswered surface is the work item itself — the default."""
+    node = {"id": "design", "phase": "design", "produces": ["design.md"]}
+    default = _assignment(tmp_path, node, {})
+    assert "iterate it on: the work item itself (the default)" in default
+    assert "do not open a pull request just to carry the spec chain" in default
+
+    chosen = _assignment(tmp_path, node, {}, surface="pull-request")
+    assert "a pull request in the repository the ticket was created in" in chosen
+    assert "chose at phase-selection" in chosen
+
+
+def test_an_inner_loop_assignment_has_no_surface_to_choose(tmp_path):
+    """R2.7: a pull request's loop runs on that pull request. No setting moves it."""
+    text = _assignment(
+        tmp_path,
+        {"id": "implementation", "produces": ["tasks.md"]},
+        {
+            "assignmentPr": 7,
+            "assignmentPrRepo": "octo/infra",
+            "outerLoopSurface": "issue",
+        },
+    )
+    assert "iterate it on: this pull request" in text
+    assert "in octo/infra" in text
+    # ...and the claim addresses THAT loop, not a pr-7 in the origin repository.
+    assert "the-loop graph complete issue-15 --pr 7 --pr-repo octo/infra" in text
 
 
 def test_a_failing_channel_never_gates_the_node(tmp_path):

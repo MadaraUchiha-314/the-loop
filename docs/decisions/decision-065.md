@@ -10,6 +10,11 @@
   record). 041 is unchanged in kind — there are now two declared graphs instead of one,
   executed by the same runtime; 064 built the substrate this decision runs on.
 
+> **Extended by [decision-069](decision-069.md) (issue-183):** where each loop *runs* when
+> a work item spans repositories — the outer loop in the repository the ticket was created
+> in, one inner loop per contributing repository — and where the outer loop's artifacts
+> are iterated, which each work item declares for itself at `phase-selection`.
+
 ## Context
 
 The owner's review of PR #173: *"Each PR will have to go through its own sub-graph of

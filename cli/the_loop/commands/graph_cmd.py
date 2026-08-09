@@ -55,19 +55,25 @@ def _detail(exc: Exception) -> str:
     return exc.detail if isinstance(exc, ApiError) and exc.detail else str(exc)
 
 
-def _show(root: Path, pr: "int | None" = None) -> Dict[str, Any]:
+def _show(root: Path, pr: "int | None" = None, pr_repo: str = "") -> Dict[str, Any]:
     """The repo's graph, its start node and its spec root — one round trip."""
     params: Dict[str, Any] = {"repo": str(root)}
     if pr is not None:
         params["pr"] = pr
+    if pr_repo:
+        params["prRepo"] = pr_repo
     return routed(
         lambda connection: connection.get("/graph", params=params),
-        lambda: core_graphs.show(str(root), pr=pr),
+        lambda: core_graphs.show(str(root), pr=pr, pr_repo=pr_repo),
     )
 
 
 def _check(
-    root: Path, work_item: str, recompute: bool = False, pr: "int | None" = None
+    root: Path,
+    work_item: str,
+    recompute: bool = False,
+    pr: "int | None" = None,
+    pr_repo: str = "",
 ) -> Dict[str, Any]:
     return routed(
         lambda connection: connection.post(
@@ -77,21 +83,36 @@ def _check(
                 "workItem": work_item,
                 "recompute": bool(recompute),
                 "pr": pr,
+                "prRepo": pr_repo,
             },
         ),
-        lambda: core_graphs.check(str(root), work_item, recompute=recompute, pr=pr),
+        lambda: core_graphs.check(
+            str(root), work_item, recompute=recompute, pr=pr, pr_repo=pr_repo
+        ),
     )
 
 
 def _advance(
-    root: Path, work_item: str, ref: str = "", pr: "int | None" = None
+    root: Path,
+    work_item: str,
+    ref: str = "",
+    pr: "int | None" = None,
+    pr_repo: str = "",
 ) -> Dict[str, Any]:
     return routed(
         lambda connection: connection.post(
             "/graph/advance",
-            {"repo": str(root), "workItem": work_item, "ref": ref, "pr": pr},
+            {
+                "repo": str(root),
+                "workItem": work_item,
+                "ref": ref,
+                "pr": pr,
+                "prRepo": pr_repo,
+            },
         ),
-        lambda: core_graphs.advance(str(root), work_item, ref=ref, pr=pr),
+        lambda: core_graphs.advance(
+            str(root), work_item, ref=ref, pr=pr, pr_repo=pr_repo
+        ),
     )
 
 
@@ -102,6 +123,7 @@ def _complete(
     actor: str = "",
     ref: str = "",
     pr: "int | None" = None,
+    pr_repo: str = "",
 ) -> Dict[str, Any]:
     return routed(
         lambda connection: connection.post(
@@ -113,10 +135,17 @@ def _complete(
                 "actor": actor,
                 "ref": ref,
                 "pr": pr,
+                "prRepo": pr_repo,
             },
         ),
         lambda: core_graphs.complete(
-            str(root), work_item, node=node, actor=actor, ref=ref, pr=pr
+            str(root),
+            work_item,
+            node=node,
+            actor=actor,
+            ref=ref,
+            pr=pr,
+            pr_repo=pr_repo,
         ),
     )
 
@@ -129,6 +158,7 @@ def _force(
     actor: str,
     ref: str,
     pr: "int | None" = None,
+    pr_repo: str = "",
 ) -> Dict[str, Any]:
     return routed(
         lambda connection: connection.post(
@@ -141,10 +171,18 @@ def _force(
                 "actor": actor,
                 "ref": ref,
                 "pr": pr,
+                "prRepo": pr_repo,
             },
         ),
         lambda: core_graphs.force(
-            str(root), work_item, to_node, reason, actor=actor, ref=ref, pr=pr
+            str(root),
+            work_item,
+            to_node,
+            reason,
+            actor=actor,
+            ref=ref,
+            pr=pr,
+            pr_repo=pr_repo,
         ),
     )
 
@@ -157,6 +195,7 @@ def _skip(
     actor: str,
     ref: str,
     pr: "int | None" = None,
+    pr_repo: str = "",
 ) -> Dict[str, Any]:
     return routed(
         lambda connection: connection.post(
@@ -169,10 +208,18 @@ def _skip(
                 "actor": actor,
                 "ref": ref,
                 "pr": pr,
+                "prRepo": pr_repo,
             },
         ),
         lambda: core_graphs.skip(
-            str(root), work_item, nodes, reason, actor=actor, ref=ref, pr=pr
+            str(root),
+            work_item,
+            nodes,
+            reason,
+            actor=actor,
+            ref=ref,
+            pr=pr,
+            pr_repo=pr_repo,
         ),
     )
 
@@ -329,6 +376,29 @@ class CheckCommand(Command):
         return 1 if failing else 0
 
 
+def _add_pr_flags(parser: argparse.ArgumentParser) -> None:
+    """The two flags that select an INNER loop, on every verb that has them.
+
+    ``--pr`` alone is a pull request in the **origin** repository — the one the
+    ticket was created in (issue-172). ``--pr-repo`` qualifies it for a work item
+    that contributes to several repositories (issue-183): the loop's state then
+    lives at ``pr-loops/<owner>__<repo>/pr-<n>/``, still under the one spec
+    directory in the origin repository. A repository does not identify a loop, so
+    ``--pr-repo`` without ``--pr`` is refused.
+    """
+    parser.add_argument(
+        "--pr",
+        type=int,
+        default=None,
+        help="walk this pull request's inner loop (pdlc-pr-loop, state under pr-loops/pr-<n>/) instead of the work item's outer loop",
+    )
+    parser.add_argument(
+        "--pr-repo",
+        default="",
+        help="the repository --pr is in, when it is not the repository the ticket was created in (state under pr-loops/<owner>__<repo>/pr-<n>/)",
+    )
+
+
 @register
 class GraphCommand(Command):
     name = "graph"
@@ -340,31 +410,16 @@ class GraphCommand(Command):
 
         show = sub.add_parser("show", help="print the shipped graph")
         show.add_argument("--format", choices=["text", "json"], default="text")
-        show.add_argument(
-            "--pr",
-            type=int,
-            default=None,
-            help="walk this pull request's inner loop (pdlc-pr-loop, state under pr-loops/pr-<n>/) instead of the work item's outer loop",
-        )
+        _add_pr_flags(show)
 
         status = sub.add_parser("status", help="where a work item is")
         status.add_argument("work_item")
-        status.add_argument(
-            "--pr",
-            type=int,
-            default=None,
-            help="walk this pull request's inner loop (pdlc-pr-loop, state under pr-loops/pr-<n>/) instead of the work item's outer loop",
-        )
+        _add_pr_flags(status)
 
         advance = sub.add_parser("advance", help="evaluate and take the matching edge")
         advance.add_argument("work_item")
         advance.add_argument("--ref", default="", help="work item ref for integrations")
-        advance.add_argument(
-            "--pr",
-            type=int,
-            default=None,
-            help="walk this pull request's inner loop (pdlc-pr-loop, state under pr-loops/pr-<n>/) instead of the work item's outer loop",
-        )
+        _add_pr_flags(advance)
 
         complete = sub.add_parser(
             "complete",
@@ -384,12 +439,7 @@ class GraphCommand(Command):
             "--ref", default="", help="work item ref for integrations"
         )
         complete.add_argument("--actor", default="", help="who is claiming completion")
-        complete.add_argument(
-            "--pr",
-            type=int,
-            default=None,
-            help="walk this pull request's inner loop (pdlc-pr-loop, state under pr-loops/pr-<n>/) instead of the work item's outer loop",
-        )
+        _add_pr_flags(complete)
 
         forced = sub.add_parser(
             "force",
@@ -400,12 +450,7 @@ class GraphCommand(Command):
         forced.add_argument("--reason", required=True, help="why (required)")
         forced.add_argument("--actor", default="", help="who is forcing this")
         forced.add_argument("--ref", default="")
-        forced.add_argument(
-            "--pr",
-            type=int,
-            default=None,
-            help="walk this pull request's inner loop (pdlc-pr-loop, state under pr-loops/pr-<n>/) instead of the work item's outer loop",
-        )
+        _add_pr_flags(forced)
 
         skip = sub.add_parser(
             "skip",
@@ -429,12 +474,7 @@ class GraphCommand(Command):
         skip.add_argument("--reason", required=True, help="why (required)")
         skip.add_argument("--actor", default="", help="who is declaring this")
         skip.add_argument("--ref", default="", help="work item ref for integrations")
-        skip.add_argument(
-            "--pr",
-            type=int,
-            default=None,
-            help="walk this pull request's inner loop (pdlc-pr-loop, state under pr-loops/pr-<n>/) instead of the work item's outer loop",
-        )
+        _add_pr_flags(skip)
 
         run = sub.add_parser(
             "run", help="drive a work item until it waits, escalates or completes"
@@ -459,7 +499,7 @@ class GraphCommand(Command):
 
     def _dispatch(self, root: Path, args: argparse.Namespace) -> int:
         if args.action == "show":
-            graph = _show(root, pr=args.pr)
+            graph = _show(root, pr=args.pr, pr_repo=args.pr_repo)
             if args.format == "json":
                 # ``specRoot`` is a layout fact the runtime carries, not part of
                 # the graph an operator asked to see, so it stays out of here.
@@ -489,14 +529,16 @@ class GraphCommand(Command):
             return 0
 
         if args.action == "status":
-            report = _check(root, args.work_item, pr=args.pr)
+            report = _check(root, args.work_item, pr=args.pr, pr_repo=args.pr_repo)
             reached, ahead = _split_at_pointer(report["nodes"], report["currentNode"])
             print(f"{report['workItem']}: at {report['currentNode']}")
             print(_render_table(reached, ahead))
             return 0 if report["ok"] else 1
 
         if args.action == "advance":
-            result = _advance(root, args.work_item, ref=args.ref, pr=args.pr)
+            result = _advance(
+                root, args.work_item, ref=args.ref, pr=args.pr, pr_repo=args.pr_repo
+            )
             print(f"{args.work_item}: {result['node']} → {result['status']}")
             for message in result["messages"]:
                 print(f"  · {message}")
@@ -514,6 +556,7 @@ class GraphCommand(Command):
                 actor=args.actor,
                 ref=args.ref,
                 pr=args.pr,
+                pr_repo=args.pr_repo,
             )
             print(json.dumps(result, indent=2))
             return 0
@@ -528,6 +571,7 @@ class GraphCommand(Command):
                     args.actor,
                     args.ref,
                     pr=args.pr,
+                    pr_repo=args.pr_repo,
                 )
             except Exception as exc:  # noqa: BLE001
                 # A refused declaration is the runtime's verdict, not a broken
@@ -561,6 +605,7 @@ class GraphCommand(Command):
                     args.actor,
                     args.ref,
                     pr=args.pr,
+                    pr_repo=args.pr_repo,
                 )
             except Exception as exc:  # noqa: BLE001
                 # A refused force is the runtime's verdict, not a broken CLI —

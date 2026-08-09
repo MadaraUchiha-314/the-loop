@@ -126,6 +126,13 @@ class GraphState:
     #: hand-written entry on a protected node is inert. Additive: absent in
     #: every pre-issue-177 state file, defaulting to {} on load.
     skips: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    #: The outer loop's collaboration surface for this work item (issue-183):
+    #: ``pull-request`` when its author ticked that box at `phase-selection`,
+    #: ``""`` otherwise — which reads as the default, the work item itself.
+    #: Frozen by the same signed reply that freezes the phase selection, so it
+    #: is a recorded fact rather than a live comment. Additive: absent in every
+    #: pre-issue-183 state file.
+    surface: str = ""
     version: int = STATE_VERSION
 
     # -- persistence ----------------------------------------------------------
@@ -172,6 +179,7 @@ class GraphState:
                 for k, v in (data.get("skips") or {}).items()
                 if isinstance(v, dict)
             },
+            surface=str(data.get("surface") or ""),
             version=int(data.get("version", STATE_VERSION)),
         )
 
@@ -202,6 +210,7 @@ class GraphState:
             "session": self.session,
             "completions": self.completions,
             "skips": self.skips,
+            "surface": self.surface,
         }
 
     # -- mutation -------------------------------------------------------------

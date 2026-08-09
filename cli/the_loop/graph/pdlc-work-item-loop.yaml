@@ -9,6 +9,18 @@
 # before. (pdlc-project-management-loop is anticipated by the naming and not
 # yet shipped.)
 #
+# WHERE each loop runs (issue-183): this one runs in the repository the TICKET
+# was created in — the origin repository — and that is where the work item's one
+# spec chain lives. Each contributing repository gets ONE pull request walking
+# pdlc-pr-loop, with its state under this spec directory qualified by repository
+# (pr-loops/<owner>__<repo>/pr-<n>/). A work item may declare those repositories
+# in execution-log.md's front matter (`repos:`), and `await-inner-loops` then
+# holds `implementation` until each of them has a loop — a contribution that was
+# planned and never opened is otherwise indistinguishable from one that was
+# never needed. Where THIS loop's artifacts are iterated with humans is the
+# project's declaration, `workflow.outerLoop.surface` (issue-183,
+# decision-069); the inner loop has no such setting.
+#
 # This file ships WITH THE PLUGIN and is the-loop's own. A repository cannot
 # define or override it — a repo-supplied graph is ignored with a warning.
 # It is fully declarative precisely so user-authored graphs can arrive later as

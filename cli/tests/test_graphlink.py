@@ -79,7 +79,7 @@ def _link(repo, runtime, **cfg):
     config = GraphLinkConfig(**{"enabled": True, **cfg})
     link = GraphLink(config, control=ControlConfig(enabled=False))
 
-    def _build(cwd, spec_dir, pr_number=None):
+    def _build(cwd, spec_dir, pr_number=None, pr_repo=""):
         runtime.built.append((cwd, spec_dir))
         return runtime
 
@@ -228,7 +228,9 @@ def test_an_item_nobody_started_is_skipped(repo):
         control=ControlConfig(enabled=True, require_start_command=True),
         control_store=ControlStore(repo / "control.json"),
     )
-    link._build_runtime = lambda cwd, spec_dir, pr_number=None: runtime  # noqa: SLF001
+    link._build_runtime = (  # noqa: SLF001
+        lambda cwd, spec_dir, pr_number=None, pr_repo="": runtime
+    )
     link.on_spawn(REF, str(repo))
     link.on_event(REF, str(repo), _comment_event())
     assert runtime.started == [] and runtime.advanced == []
@@ -243,7 +245,9 @@ def test_a_started_item_is_coupled(repo):
         control=ControlConfig(enabled=True, require_start_command=True),
         control_store=store,
     )
-    link._build_runtime = lambda cwd, spec_dir, pr_number=None: runtime  # noqa: SLF001
+    link._build_runtime = (  # noqa: SLF001
+        lambda cwd, spec_dir, pr_number=None, pr_repo="": runtime
+    )
     link.on_spawn(REF, str(repo))
     assert runtime.started == [("issue-113", REF.ref)]
 

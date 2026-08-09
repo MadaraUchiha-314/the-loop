@@ -22,6 +22,13 @@
 # this same work item added (routing.tmux.sessionPerPr) — so two PRs advance
 # their loops without sharing a conversation.
 #
+# A PR in ANOTHER repository walks this same loop (issue-183): its state is
+# qualified by repository (pr-loops/<owner>__<repo>/pr-<n>/) because a PR number
+# is unique only within one, and it still resolves artifacts against the origin
+# repository's one spec chain. This loop has no configurable surface: a pull
+# request's loop is iterated on that pull request, in every configuration —
+# only the OUTER loop's surface is declared (workflow.outerLoop.surface).
+#
 # Spec: docs/specs/issue-172/  ·  Decisions: 041, 060, 064, 065
 
 version: 1

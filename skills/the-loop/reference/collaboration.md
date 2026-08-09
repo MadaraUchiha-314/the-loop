@@ -41,23 +41,39 @@ A session driven by the CLI daemon is **told** where its answers come from, via
 When no daemon is involved (a human ran `/the-loop:work-on` themselves), the human is by
 definition at the terminal — that is `cli` behaviour, with the same paper-trail obligation.
 
-### 2. RULE: a generated artifact is iterated in pull-request review
+### 2. RULE: a generated artifact is iterated on a durable, reviewable surface
 
 Once an artifact of the chain exists — `brainstorm.md`, `requirements.md`/`bugfix.md`,
-`design.md`, `tasks.md` — iteration on it happens **only** through review comments and
-replies on the pull request that carries it. In **both** modes; this one is not
-configurable.
+`design.md`, `testing-plan.md`, `tasks.md` — iteration on it happens **only** through
+comments on a surface that outlives the session: the **pull request** that carries it, or
+the **ticket**. In both interaction modes. What is never permitted is iterating on it
+interactively, where the reasoning vanishes with the scrollback — that is the invariant,
+and it is not configurable (decision-051 §5, amended by decision-069).
 
-- Commit and push the artifact and open (or update) its PR; do not paste its contents into
-  a fresh ticket comment, and do not iterate on it interactively where the reasoning
-  vanishes with the scrollback.
+Which of the two durable surfaces applies is **this work item's own choice**, made by its
+author at `phase-selection` (issue-183) — and it applies to the **outer** loop only:
+
+| The `outer-loop-on-pull-request` box | Outer loop's artifacts are iterated | Typical work item |
+|---|---|---|
+| unticked — **the default** | as comments on the work item, Jira-style | work whose code lands in *other* repositories, so a PR in the origin repo would only ever hold a discussion |
+| ticked | as review comments on the PR carrying them, in the repository the ticket was created in | single-repo work, where that PR also carries the code |
+
+- Commit and push the artifact either way, and link the checked-in file from the ticket;
+  never paste its contents into a comment. The choice is where it is **discussed**,
+  not whether it is checked in — every gate in the process graph reads files.
+- It is deliberately **not** a setting in `harness-config.yaml` or `cli-config.yaml`: it
+  is a property of the work item, and it is frozen by the same signed reply that freezes
+  the phase selection.
 - This is the *reference, don't duplicate* rule (`SKILL.md`) reaching its conclusion: the
-  artifact is a checked-in file, so the review surface for a file is the PR that carries
-  it — the file, the discussion and the approval end up in one place.
+  artifact is a checked-in file, and the file, the discussion and the approval belong in
+  one place.
+- The **inner** loop has no surface to choose. A pull request's `pdlc-pr-loop` is iterated
+  on that pull request — review comments, review threads, its own approval.
 - Planning questions asked *before* any artifact exists still follow rule 1.
 
-See `docs/decisions/decision-051.md` for why the mode is a two-value enum and the artifact
-rule an invariant.
+See `docs/decisions/decision-051.md` for why the mode is a two-value enum, and
+`docs/decisions/decision-069.md` for why the artifact rule now names two surfaces rather
+than one.
 
 ## RULE: mark every comment/reply as the-loop's own (loop prevention)
 

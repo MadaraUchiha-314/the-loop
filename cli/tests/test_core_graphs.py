@@ -77,3 +77,27 @@ def test_skip_requires_a_reason(tmp_path):
     (tmp_path / "docs" / "specs" / "issue-9").mkdir(parents=True)
     with pytest.raises(ValueError, match="reason is required"):
         graphs.skip(str(tmp_path), "issue-9", ["spec-chain"], reason=" ")
+
+
+def test_pr_repo_without_a_pr_is_refused(tmp_path):
+    """A repository does not identify a loop (issue-183): `--pr-repo` alone would
+    silently resolve the OUTER loop while the caller believed it named an inner
+    one."""
+    (tmp_path / "docs" / "specs" / "issue-1").mkdir(parents=True)
+    with pytest.raises(ValueError):
+        graphs.check(str(tmp_path), "issue-1", pr_repo="octo/infra")
+
+
+@pytest.mark.parametrize("hostile", ["../../etc", "a//b", "octo", "a/../b"])
+def test_a_hostile_pr_repo_argument_is_refused(tmp_path, hostile):
+    """Abuse case 2: the value becomes a directory name, so it is validated at
+    the boundary rather than sanitized into something that resolves."""
+    (tmp_path / "docs" / "specs" / "issue-1").mkdir(parents=True)
+    with pytest.raises(ValueError):
+        graphs.check(str(tmp_path), "issue-1", pr=7, pr_repo=hostile)
+
+
+def test_a_valid_pr_repo_selects_that_repositorys_inner_loop(tmp_path):
+    (tmp_path / "docs" / "specs" / "issue-1").mkdir(parents=True)
+    report = graphs.check(str(tmp_path), "issue-1", pr=7, pr_repo="octo/infra")
+    assert report["workItem"] == "issue-1"

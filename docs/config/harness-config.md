@@ -61,11 +61,11 @@ accepts.
 ## What the CLI reads from it
 
 The file's primary reader is the agent — the `/the-loop:*` commands and the operating
-skill. But the [CLI](/cli/) reads six of its keys too, and it is worth being precise
+skill. But the [CLI](/cli/) reads seven of its keys too, and it is worth being precise
 about which, because "why is the CLI reading my harness config?" is a fair question
 ([issue #121](https://github.com/MadaraUchiha-314/the-loop/issues/121)).
 
-The answer is that these six are the **repository's own policy**, and the CLI is
+The answer is that these seven are the **repository's own policy**, and the CLI is
 executing that policy on the repository's behalf. None of them could live in
 `cli-config.yaml`: that is one machine-scoped file for a daemon watching N repositories,
 the skill already reads the same values, and `check`/`scenarios` run in bare CI checkouts
@@ -78,6 +78,7 @@ where no CLI config exists.
 | `notifications` | `check`, `graph`, and the daemon's graph coupling | Recipients resolve against this repository's own `collaborators.yaml`. |
 | `reviews.critics` | `critic` | The review bar is a property of the project — and the skill reads the same entries, so a second source could make the two disagree. |
 | `testing.integrationTestGlobs` | `scenarios` | Where the integration tests live is part of the layout. |
+| `ticketing.github` | `check`, `graph`, and the daemon's graph coupling | The repository the ticket was created in is what makes `pr-loops/pr-<n>/` attributable once a work item spans several repositories ([issue #183](https://github.com/MadaraUchiha-314/the-loop/issues/183)). |
 | `customInstructions` | `instructions` | Which conventions govern work on this repository is a fact about this repository — and the agent reads the same entries, so a check resolving a different list would verify nothing. |
 
 Everything else in this file is read by the agent alone.
