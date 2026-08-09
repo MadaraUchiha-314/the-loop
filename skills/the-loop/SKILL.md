@@ -73,8 +73,9 @@ not-started → brainstorming → requirements-definition → design → test-pl
 ```
 
 This sequence is **defined by the shipped process graph**
-(`cli/the_loop/graph/pdlc-work-item-loop.yaml` — the **outer loop**; each PR
-delivering a work item walks its own `pdlc-pr-loop` in its own session, and the
+(`cli/the_loop/graph/pdlc-work-item-loop.yaml` — the **outer loop**, walked in the
+repository the ticket was created in; each PR delivering a work item walks its own
+`pdlc-pr-loop` in its own session — one per contributing repository — and the
 outer `implementation` node waits for those inner loops to finish); the prose
 here renders it, never redefines it (issue-148). When a node's work is done, tell the graph so —
 `the-loop graph complete <id>` — rather than only narrating the transition.
@@ -138,15 +139,31 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
 - **Paper trail.** Every human decision/opinion is captured on the ticket or PR.
   Planning questions → ticket comments. PR & all reviews → PR/ticket comments.
   Notify via configured messaging channels when a human action is pending.
-- **Ask on the declared channel; iterate artifacts on the PR.** A session the CLI daemon
+- **One work item, one origin repository; one contributing repository, one PR.** The
+  outer loop runs in the repository the ticket was created in — the **origin** repository
+  — and the work item's one spec chain lives there. A work item that needs code in *n*
+  repositories raises *n* pull requests, one per repository, each walking its own
+  `pdlc-pr-loop`; the origin repository gets one only if it too receives code. Each inner
+  loop's state sits under the origin repo's spec directory, qualified by repository
+  (`pr-loops/<owner>__<repo>/pr-<n>/`), and a work item may **declare** those repositories
+  in `execution-log.md`'s front matter (`repos:`) so `await-inner-loops` holds
+  `implementation` until every one of them has finished. See `reference/workflow.md`
+  § Several repositories, one work item.
+- **Ask on the declared channel; iterate artifacts on a durable surface.** A session the CLI daemon
   drives is *told* where its answers come from (`routing.interaction.mode`, rendered into
   the prompt): `work-item` (the default) means every question is a **comment on the ticket
   or PR** and the session then waits for the reply to arrive as an event — never block on
   an interactive prompt, never read silence as consent; `cli` means a human is attached to
   this terminal, so ask here and record the *outcome* on the ticket. **Independently of
   the mode:** once an artifact exists (`brainstorm.md`, `requirements.md`/`bugfix.md`,
-  `design.md`, `tasks.md`), iterate on it **only** through pull-request review on the PR
-  that carries it — commit and push it, never re-paste it into a ticket comment. See
+  `design.md`, `testing-plan.md`, `tasks.md`), iterate on it **only** on a durable,
+  reviewable surface — never interactively, where the reasoning dies with the scrollback.
+  Which durable surface the **outer** loop uses is the project's declaration,
+  `workflow.outerLoop.surface`: `pull-request` (the default — review on the PR carrying
+  the artifact in the origin repository) or `issue` (comments on the ticket, Jira-style,
+  so a work item whose code lands elsewhere opens no discussion-only PR). Commit and push
+  the artifact either way and link it; never re-paste it into a comment. The **inner**
+  loop is not configurable — a PR's loop is iterated on that PR. See
   `reference/collaboration.md` § Where questions go.
 - **RULE: mark every comment/reply as your own (loop prevention).** You post as the
   operator's own credentials, so an unmarked reply is indistinguishable from a human

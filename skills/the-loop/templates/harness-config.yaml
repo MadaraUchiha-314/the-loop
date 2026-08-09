@@ -31,6 +31,12 @@ workflow:
   specDir: docs/specs
   capabilitiesDir: docs/capabilities  # living capability docs — organized view of specs; updated in the same PR (gate)
   phaseLabelPrefix: "loop:"
+  outerLoop:                          # the OUTER loop only — a PR's inner loop always runs on its PR
+    surface: pull-request             # pull-request | issue — where the outer loop's artifacts are
+                                      # ITERATED. `issue` keeps brainstorming/requirements/design on
+                                      # the ticket (Jira-style) so a work item whose code lands in
+                                      # OTHER repositories opens no discussion-only PR here. The
+                                      # artifacts are committed files either way (issue-183).
   phases:
     - not-started
     - phase-selection        # issue-177: the loop asks which phases this item needs

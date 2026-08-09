@@ -3,6 +3,14 @@ type: execution-log
 workItem: ""
 phase: not-started           # not-started | brainstorming | requirements-definition | design | test-planning | tasks-breakdown | implementation | verification | needs-review | complete
 status: in-progress          # in-progress | complete
+# repos:                     # OPTIONAL (issue-183). The CONTRIBUTING repositories this
+#   - <owner>/<repo>         #   work item raises pull requests in — one inner loop each,
+#   - <owner>/<other>        #   state under pr-loops/<owner>__<repo>/pr-<n>/ here in the
+                             #   ORIGIN repository (the one the ticket was created in).
+                             #   `await-inner-loops` then holds `implementation` until each
+                             #   declared repository has a loop AND every started loop has
+                             #   finished. Omit for single-repository work: the gate then
+                             #   behaves exactly as it did before the key existed.
 ---
 
 # Execution Log: <work item title>
@@ -31,8 +39,11 @@ status: in-progress          # in-progress | complete
 ## Pull requests
 
 > A work item may be delivered by **several** PRs (a spec PR then an implementation
-> PR, a stacked series, a follow-up after review, or one PR per repository) — list
-> every one of them here, not just the latest. Each PR carries the auto-execute
+> PR, a stacked series, a follow-up after review, or **one PR per contributing
+> repository** — the multi-repo shape, where the outer loop stays in the repository the
+> ticket was created in and each other repository gets its own PR and inner loop) — list
+> every one of them here, not just the latest. Name the repository in the PR column when
+> it is not this one. Each PR carries the auto-execute
 > label so its activity routes back to this work item's session, and the work item
 > is complete only once **all** of them are merged or closed (`finish-tasks`).
 

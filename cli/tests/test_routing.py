@@ -559,10 +559,53 @@ def test_router_accepts_every_closing_keyword_form(body):
     "body",
     ["Closes other/repo#15", "Closes https://github.com/other/repo/issues/15"],
 )
-def test_router_ignores_closing_references_to_another_repository(body):
+def test_router_routes_a_cross_repo_closing_reference_to_that_repository(body):
+    """A qualified closing reference names a work item in ANOTHER repository.
+
+    Reversed by issue-183, deliberately. Until then such a reference was dropped,
+    on the reasoning that "a closing reference to another repository is not
+    ours" — which holds only while a work item lives in one repository. It does
+    not: the outer loop runs where the ticket was created, and a pull request
+    delivering one contributing repository's share of the work lives *there*, so
+    dropping the link left that PR unable to reach its own work item at all.
+
+    What this does NOT widen: which events reach the router (the operator's
+    receiver and poll sources), nor which work items are armed — an unstarted
+    work item still drops at `_awaiting_start`.
+    """
     payload = payload_pull_request(branch="feature/no-number", body=body)
     refs = [r.ref for r in extract_work_items("pull_request", payload)]
-    assert refs == ["github:octo/repo#16"]
+    assert refs == ["github:other/repo#15", "github:octo/repo#16"]
+
+
+def test_router_reads_a_closing_reference_that_names_its_own_repository():
+    """`closingIssuesReferences` carries the repository in more than one shape
+    depending on how it was queried; an entry that names none is the event's
+    own repository, as it was before issue-183."""
+    payload = payload_pr_conversation_comment(body="no keyword in the body")
+    payload["issue"]["closingIssuesReferences"] = [
+        {"number": 15, "repository": {"nameWithOwner": "other/infra"}},
+        {"number": 20, "repository": {"name": "tools", "owner": {"login": "other"}}},
+        {"number": 21, "url": "https://github.com/other/docs/issues/21"},
+        {"number": 22},
+    ]
+    refs = [r.ref for r in extract_work_items("issue_comment", payload)]
+    assert refs == [
+        "github:other/infra#15",
+        "github:other/tools#20",
+        "github:other/docs#21",
+        "github:octo/repo#22",
+        "github:octo/repo#16",
+    ]
+
+
+def test_linked_issue_numbers_still_answers_only_for_this_repository():
+    """The numbers-only view is unchanged: a number cannot say which repository
+    it belongs to, so it keeps returning this repository's issues alone."""
+    from the_loop.webhook.router import linked_issue_numbers
+
+    entity = {"number": 16, "body": "Closes other/repo#15\nCloses #12"}
+    assert linked_issue_numbers(entity, "octo", "repo") == [12]
 
 
 def test_router_ignores_a_pr_closing_reference_to_itself():

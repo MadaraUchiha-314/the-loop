@@ -22,6 +22,13 @@ Consequences worth knowing before you read anything else:
   pointer and never forges a verdict: the bypassed gate keeps its real result.
 - The graph **assigns** as well as judges — entering a node pushes that node's assignment
   into the session bound to that loop.
+- Each loop runs somewhere **named**: the outer one in the repository the ticket was
+  created in — where the work item's one spec chain and every inner loop's state live —
+  and one inner loop per repository the work item contributes code to, addressed as
+  `--pr <n> --pr-repo <owner>/<repo>`. Where the outer loop's artifacts are *iterated*
+  with humans is the project's declaration,
+  [`workflow.outerLoop.surface`](/config/harness-config); a pull request's loop is not
+  configurable.
 
 Inspect it with [`the-loop graph`](/cli/commands/graph) and read the full behaviour in the
 [process-graph capability](/capabilities/process-graph).

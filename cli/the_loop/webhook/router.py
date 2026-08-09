@@ -12,7 +12,7 @@ import logging
 import re
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import List, Optional, Sequence
+from typing import List, Optional, Sequence, Tuple
 
 from .. import eventlog
 from ..authz import is_authorized, is_self_authored
@@ -129,8 +129,37 @@ def _pr_entity(event: str, payload: dict) -> Optional[dict]:
     return None
 
 
-def linked_issue_numbers(entity: dict, owner: str, repo: str) -> List[int]:
-    """Issues a PR-shaped ``entity`` is linked to, most authoritative first.
+def _reference_repo(reference: dict, owner: str, repo: str) -> Tuple[str, str]:
+    """The ``(owner, repo)`` a ``closingIssuesReferences`` entry belongs to.
+
+    ``gh`` returns the entry's repository in more than one shape depending on the
+    query, and a webhook payload omits it entirely — so the event's own
+    repository is the fallback, which is what every entry meant before
+    cross-repo links were read at all (issue-183).
+    """
+    repository = reference.get("repository")
+    if isinstance(repository, dict):
+        name_with_owner = str(repository.get("nameWithOwner") or "")
+        if name_with_owner.count("/") == 1:
+            left, right = name_with_owner.split("/")
+            if left and right:
+                return left, right
+        holder = repository.get("owner")
+        name = str(repository.get("name") or "")
+        login = str(holder.get("login") or "") if isinstance(holder, dict) else ""
+        if login and name:
+            return login, name
+    url = str(reference.get("url") or "")
+    match = re.search(r"/([\w.-]+)/([\w.-]+)/issues/\d+", url)
+    if match:
+        return match.group(1), match.group(2)
+    return owner, repo
+
+
+def linked_work_items(
+    entity: dict, owner: str, repo: str, host: str = ""
+) -> List[WorkItemRef]:
+    """Work items a PR-shaped ``entity`` is linked to, most authoritative first.
 
     Three sources, deduplicated in order (issue-93):
 
@@ -140,30 +169,72 @@ def linked_issue_numbers(entity: dict, owner: str, repo: str) -> List[int]:
     2. the head branch's ``issue-<n>`` convention (the-loop's own branches);
     3. closing keywords in the PR body, in every form GitHub accepts.
 
-    A qualified reference naming a **different** repository is ignored, as is a
-    reference to the entity itself.
+    A reference to the entity itself is ignored. A **qualified** reference naming
+    another repository is honoured (issue-183): a work item may need
+    contributions in several repositories, and the pull request that delivers one
+    of them lives in that repository while the ticket lives in the origin
+    repository. It is returned as a ref *in the repository it names* — the whole
+    reason this returns refs rather than numbers, which cannot say where they
+    belong. The branch convention stays local: ``issue-12`` on a branch says
+    nothing about a repository.
+
+    Nothing here widens which events *reach* the router — that is the operator's
+    receiver and poll sources — nor which work items are armed. It widens only
+    which work item an event that already arrived is about.
     """
-    numbers: List[int] = []
-    this_repo = f"{owner}/{repo}".lower()
+    items: List[WorkItemRef] = []
+    seen: set = set()
     own_number = entity.get("number")
 
-    def add(number: Optional[int]) -> None:
-        if number is None or number == own_number or number in numbers:
+    def add(number: Optional[int], in_owner: str = "", in_repo: str = "") -> None:
+        if number is None:
             return
-        numbers.append(number)
+        target_owner, target_repo = in_owner or owner, in_repo or repo
+        local = target_owner.lower() == owner.lower() and target_repo.lower() == (
+            repo.lower()
+        )
+        if local and number == own_number:
+            return
+        ref = WorkItemRef(
+            provider="github",
+            owner=target_owner,
+            repo=target_repo,
+            number=number,
+            host=host,
+        )
+        if ref.ref in seen:
+            return
+        seen.add(ref.ref)
+        items.append(ref)
 
     for reference in entity.get("closingIssuesReferences") or []:
-        number = (reference or {}).get("number")
+        reference = reference or {}
+        number = reference.get("number")
         if isinstance(number, int):
-            add(number)
+            add(number, *_reference_repo(reference, owner, repo))
     add(_issue_from_branch((entity.get("head") or {}).get("ref") or ""))
     for match in _CLOSING_KEYWORD_RE.finditer(entity.get("body") or ""):
         qualifier = match.group("url_repo") or match.group("repo")
-        if qualifier and qualifier.lower() != this_repo:
-            continue  # a closing reference to another repository is not ours
         raw = match.group("url_number") or match.group("number") or match.group("gh")
-        add(int(raw))
-    return numbers
+        if qualifier and qualifier.count("/") == 1:
+            other_owner, other_repo = qualifier.split("/")
+            add(int(raw), other_owner, other_repo)
+        else:
+            add(int(raw))
+    return items
+
+
+def linked_issue_numbers(entity: dict, owner: str, repo: str) -> List[int]:
+    """The same linkage, narrowed to issues in **this** repository.
+
+    Kept as the numbers-only view for callers that cannot act on another
+    repository's work item; :func:`linked_work_items` is the full answer.
+    """
+    return [
+        item.number
+        for item in linked_work_items(entity, owner, repo)
+        if item.owner.lower() == owner.lower() and item.repo.lower() == repo.lower()
+    ]
 
 
 def pr_work_item(event: str, payload: dict) -> Optional[WorkItemRef]:
@@ -256,7 +327,12 @@ def extract_work_items(event: str, payload: dict) -> List[WorkItemRef]:
     if parts is None:
         return []
     owner, repo = parts
+    host = _host(payload)
     numbers: List[int] = []
+    # A PR's linked work items may live in ANOTHER repository (issue-183), so
+    # they are carried as refs; everything else this function extracts is a
+    # number in the event's own repository and is materialised at the end.
+    linked: List[WorkItemRef] = []
 
     def add(number: Optional[int]) -> None:
         if number is not None and number not in numbers:
@@ -264,8 +340,9 @@ def extract_work_items(event: str, payload: dict) -> List[WorkItemRef]:
 
     pr = _pr_entity(event, payload)
     if pr is not None:
-        for number in linked_issue_numbers(pr, owner, repo):
-            add(number)
+        for item in linked_work_items(pr, owner, repo, host):
+            if item.ref not in {i.ref for i in linked}:
+                linked.append(item)
         add(pr.get("number"))
     elif event in ("issues", "issue_comment"):
         add((payload.get("issue") or {}).get("number"))
@@ -284,11 +361,11 @@ def extract_work_items(event: str, payload: dict) -> List[WorkItemRef]:
         for branch in payload.get("branches") or []:
             add(_issue_from_branch(branch.get("name") or ""))
 
-    host = _host(payload)
-    return [
+    own = [
         WorkItemRef(provider="github", owner=owner, repo=repo, number=n, host=host)
         for n in numbers
     ]
+    return linked + [item for item in own if item.ref not in {i.ref for i in linked}]
 
 
 class Router:

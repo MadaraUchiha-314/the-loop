@@ -26,9 +26,10 @@ features:
   - title: Two loops, one process
     details: >-
       An outer loop per work item (brainstorm → requirements → design → testing plan →
-      tasks → implementation → verification → review → complete) and an inner loop per
-      pull request, each in its own session. They meet at one seam: the work item waits
-      until every pull request delivering it has finished.
+      tasks → implementation → verification → review → complete), running in the
+      repository the ticket was created in, and an inner loop per pull request — one per
+      contributing repository, each in its own session. They meet at one seam: the work
+      item waits until every pull request delivering it has finished.
     link: /capabilities/process-graph
     linkText: How the graph works
   - title: The process is executable

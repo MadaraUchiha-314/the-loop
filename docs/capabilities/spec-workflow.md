@@ -29,6 +29,20 @@ the `/the-loop:work-on` superset command and granular per-step commands
 - Each artifact SHALL be iterated with feedback until **locked** (`status: approved`);
   no downstream artifact is written against an unlocked upstream one
   (`workflow.requireHumanReviewPerPhase`, default true).
+- The spec chain SHALL live in the **origin** repository — the one the ticket was created
+  in — however many repositories the work item touches, and each contributing repository
+  SHALL get one pull request walking its own inner loop (issue-183,
+  [decision-069](../decisions/decision-069.md)). A work item MAY declare those
+  repositories in `execution-log.md`'s front matter (`repos:`), which turns them into a
+  gate at `implementation` rather than a note.
+- Where each artifact is **iterated with humans** SHALL be a durable, reviewable surface —
+  never a terminal. For the outer loop the project declares which:
+  `workflow.outerLoop.surface: pull-request` (the default: review on the PR carrying it)
+  or `issue` (comments on the ticket, so a work item whose code lands in other
+  repositories opens no discussion-only PR). Either way the artifact SHALL be a committed
+  file linked from the ticket — the setting chooses the review surface, not whether the
+  chain is checked in. A pull request's own loop SHALL always be iterated on that pull
+  request.
 - WHEN a work item starts as a fuzzy idea THEN the loop SHALL begin with a
   `brainstorm.md` root artifact (optional Phase 0) and convert it to requirements once
   locked.
@@ -116,6 +130,7 @@ the `/the-loop:work-on` superset command and granular per-step commands
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-183 | The chain got a **place**: it lives in the repository the ticket was created in, one PR per contributing repository delivers it, and `workflow.outerLoop.surface` declares whether the outer loop's artifacts are iterated on that repository's PR or on the ticket — the inner loop deliberately not configurable. `execution-log.md` gained an optional `repos:` declaration that `await-inner-loops` gates on | [spec](../specs/issue-183/), [decision-069](../decisions/decision-069.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/183) |
 | issue-163 | The chain gained `testing-plan.md` between design and tasks, and the state machine gained the `test-planning` and `verification` phases — how a work item is proved is now planned, gated and evidenced rather than assumed | [spec](../specs/issue-163/), [decision-060](../decisions/decision-060.md), [testing-and-contracts](testing-and-contracts.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/163) |
 | issue-124 | A bug's `bugfix.md` clears the phase-1 gate it always should have: the two documented names became alternatives for one artifact, both present blocks, and the bundled bugfix template gained the `## Requirements` heading the gate asks for | [spec](../specs/issue-124/), [decision-045](../decisions/decision-045.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/124) |
 | issue-109 | The phase state machine became executable: every phase is a node in the shipped process graph, with hook chains deciding completion and declared edges routing on the outcome | [spec](../specs/issue-109/), [process-graph](process-graph.md), [decision-041](../decisions/decision-041.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/109) |

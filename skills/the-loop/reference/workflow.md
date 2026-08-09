@@ -198,6 +198,53 @@ phase-selection         → the-loop posts the checklist; the loop waits
 brainstorming …         → the loop walks the phases that survived
 ```
 
+## Several repositories, one work item (issue-183)
+
+**The outer loop runs where the ticket was created; each contributing repository gets one
+pull request and one inner loop.** A work item that needs code in three repositories
+produces three pull requests — not four, and not one per repository *plus* a
+discussion-only pull request in the repository holding the spec chain.
+
+- **Origin repository** — the one the ticket was created in (`ticketing.github`). The
+  outer loop (`pdlc-work-item-loop`) walks here and nowhere else, and the work item's ONE
+  spec chain lives here under `<specDir>/<id>/`. A pull request is opened here **only if
+  this repository also receives code**.
+- **Contributing repositories** — the *n* repositories the work item needs code in. Each
+  gets one pull request walking its own `pdlc-pr-loop`, whose state lives under the origin
+  repository's spec directory: `pr-loops/pr-<n>/` for the origin repo's own PR (unchanged),
+  `pr-loops/<owner>__<repo>/pr-<n>/` for every other. A PR number is unique only within a
+  repository, so across repositories it is qualified.
+- **A PR in a contributing repository reaches its work item** by closing it across repos
+  (`Closes <owner>/<repo>#<n>`, the URL form, or GitHub's own linkage). Routing honours a
+  qualified reference to another repository; it does not widen which events reach the
+  daemon, nor which work items are armed.
+- **Declare the repositories, and the gate holds for them.** `execution-log.md`'s front
+  matter takes `repos: [<owner>/<repo>, …]`; `await-inner-loops` then holds the outer
+  `implementation` node until each declared repository has an inner loop *and* every
+  started loop has finished. Without the declaration, a pull request that was planned and
+  never opened is indistinguishable from a work item that needed none.
+- **Verification spans the repositories.** The testing plan's **Verification environment**
+  section names the checkouts and refs it needs; the-loop facilitates verification, it does
+  not own the environment (`reference/testing.md`).
+
+### Where the outer loop is iterated (`workflow.outerLoop.surface`)
+
+The artifacts are always checked-in files linked from the ticket. What is configurable is
+where they are **iterated with humans**:
+
+| `surface` | The outer loop's artifacts are iterated | And a pull request in the origin repository |
+|---|---|---|
+| `pull-request` (default) | as review on the PR carrying them | exists from the first artifact — today's behaviour |
+| `issue` | as comments on the ticket, Jira-style | is opened only to **land** the spec chain, once the chain is locked and the inner loops have finished — never to hold the discussion |
+
+Pick `issue` when the origin repository receives no code: it is the case the rule exists
+for — a the-loop PR that stays open forever because it never contained anything to merge.
+When the origin repository *is* a contributing repository, the spec chain simply lands in
+its own contribution PR and no second PR is opened.
+
+**The inner loop has no surface.** A pull request's loop is iterated on that pull request,
+in every configuration. See [decision-069](../../../docs/decisions/decision-069.md).
+
 ## Link artifacts to the ticket (single source of truth)
 
 Once each spec document is established (requirements, design, tasks), **update the work

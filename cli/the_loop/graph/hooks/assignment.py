@@ -37,6 +37,29 @@ logger = logging.getLogger("the-loop.graph")
 __all__ = ["deliver_assignment", "render_assignment"]
 
 
+def _surface(ctx: HookContext, pr_number: object) -> str:
+    """Where the artifact this node produces is **iterated** (issue-183).
+
+    The inner loop has no choice to render — a pull request's loop runs on that
+    pull request. The outer loop's surface is the project's own declaration
+    (``workflow.outerLoop.surface``), resolved by ``build_runtime``; an
+    unresolved one renders the shipped default's sentence rather than a guess,
+    because the two possible values are the whole vocabulary here and no payload
+    text can reach this string.
+    """
+    if pr_number is not None:
+        return "this pull request (the inner loop always runs on its PR)"
+    if str(ctx.config.get("outerLoopSurface") or "") == "issue":
+        return (
+            "the ticket — comment there, and do not open a pull request just to "
+            "carry the spec chain (workflow.outerLoop.surface: issue)"
+        )
+    return (
+        "the work item's pull request in the repository the ticket was created "
+        "in (workflow.outerLoop.surface: pull-request)"
+    )
+
+
 def render_assignment(ctx: HookContext) -> str:
     """The assignment text for the node just entered — the graph's own voice.
 
@@ -46,11 +69,14 @@ def render_assignment(ctx: HookContext) -> str:
     node = ctx.node
     item_id = ctx.work_item.id
     pr_number = ctx.config.get("assignmentPr")
+    pr_repo = str(ctx.config.get("assignmentPrRepo") or "")
     scope = (
         f"pull request #{pr_number}'s pdlc-pr-loop on {item_id}"
         if pr_number is not None
         else item_id
     )
+    if pr_number is not None and pr_repo:
+        scope += f" (in {pr_repo})"
     lines = [
         f"the-loop assignment for {scope}:",
         f"  you are now at node: {ctx.node_id}"
@@ -59,6 +85,7 @@ def render_assignment(ctx: HookContext) -> str:
     produces = [str(p) for p in (node.get("produces") or [])]
     if produces:
         lines.append(f"  produce: {', '.join(produces)}")
+        lines.append(f"  iterate it on: {_surface(ctx, pr_number)}")
     if node.get("command"):
         lines.append(f"  work it with: `/the-loop:{node.get('command')} {item_id}`")
     if node.get("actor") == "human":
@@ -73,6 +100,8 @@ def render_assignment(ctx: HookContext) -> str:
         )
     else:
         claim_suffix = f" --pr {pr_number}" if pr_number is not None else ""
+        if pr_number is not None and pr_repo:
+            claim_suffix += f" --pr-repo {pr_repo}"
         lines.append(
             "  when this node's work is done, report back: "
             f"`the-loop graph complete {item_id}{claim_suffix}`"

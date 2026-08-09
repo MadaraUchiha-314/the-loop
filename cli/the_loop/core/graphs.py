@@ -9,7 +9,10 @@ deliberately absent from the MCP surface (design §Security).
 Every verb takes an optional ``pr`` (issue-172): a pull-request number selects
 that PR's **inner loop** (``pdlc-pr-loop``, state under the work item's
 ``pr-loops/pr-<n>/``); ``None`` — the default and the whole pre-issue-172
-surface — is the work item's outer ``pdlc-work-item-loop``.
+surface — is the work item's outer ``pdlc-work-item-loop``. ``pr_repo``
+qualifies that number by repository for a work item spanning several
+(issue-183): ``pr-loops/<owner>__<repo>/pr-<n>/``, still under the one spec
+directory in the origin repository. It is meaningless without ``pr``.
 """
 
 from __future__ import annotations
@@ -30,15 +33,21 @@ def resolve_repo(repo: str) -> Path:
     return path.resolve()
 
 
-def _runtime(repo: str, pr: Optional[int] = None):
-    return build_runtime(resolve_repo(repo), pr_number=pr)
+def _runtime(repo: str, pr: Optional[int] = None, pr_repo: str = ""):
+    if pr_repo and pr is None:
+        raise ValueError("pr_repo names a repository, not a loop: pass pr as well")
+    return build_runtime(resolve_repo(repo), pr_number=pr, pr_repo=pr_repo)
 
 
 def check(
-    repo: str, work_item: str, recompute: bool = False, pr: Optional[int] = None
+    repo: str,
+    work_item: str,
+    recompute: bool = False,
+    pr: Optional[int] = None,
+    pr_repo: str = "",
 ) -> Dict[str, Any]:
     """`the-loop check` for one work item: the status report as a dict."""
-    return _runtime(repo, pr).status(work_item, recompute=recompute).as_dict()
+    return _runtime(repo, pr, pr_repo).status(work_item, recompute=recompute).as_dict()
 
 
 def complete(
@@ -48,16 +57,23 @@ def complete(
     actor: str = "",
     ref: str = "",
     pr: Optional[int] = None,
+    pr_repo: str = "",
 ) -> Dict[str, Any]:
     """A completion claim for the current (or named) node — issue-148 semantics."""
-    return _runtime(repo, pr).complete(work_item, ref=ref, node=node, actor=actor)
+    return _runtime(repo, pr, pr_repo).complete(
+        work_item, ref=ref, node=node, actor=actor
+    )
 
 
 def advance(
-    repo: str, work_item: str, ref: str = "", pr: Optional[int] = None
+    repo: str,
+    work_item: str,
+    ref: str = "",
+    pr: Optional[int] = None,
+    pr_repo: str = "",
 ) -> Dict[str, Any]:
     """Evaluate the current node's exit chain and take the matching edge."""
-    return _runtime(repo, pr).advance(work_item, ref=ref).as_dict()
+    return _runtime(repo, pr, pr_repo).advance(work_item, ref=ref).as_dict()
 
 
 def force(
@@ -68,10 +84,11 @@ def force(
     actor: str = "",
     ref: str = "",
     pr: Optional[int] = None,
+    pr_repo: str = "",
 ) -> Dict[str, Any]:
     """The authorized-operator escape hatch. Requires a reason; never forges a
     verdict. Not exposed over MCP (design §Security)."""
-    runtime = _runtime(repo, pr)
+    runtime = _runtime(repo, pr, pr_repo)
     result = graph_runtime.force(
         runtime, work_item, to_node, reason, actor=actor, ref=ref
     )
@@ -92,6 +109,7 @@ def skip(
     actor: str = "",
     ref: str = "",
     pr: Optional[int] = None,
+    pr_repo: str = "",
 ) -> Dict[str, Any]:
     """Declare skips for a work item (issue-177) — the operator channel.
 
@@ -100,7 +118,7 @@ def skip(
     graph's skip vocabulary, or naming nodes the pointer already reached, come
     back in ``rejected`` rather than taking effect.
     """
-    runtime = _runtime(repo, pr)
+    runtime = _runtime(repo, pr, pr_repo)
     result = graph_runtime.declare_skips(
         runtime,
         work_item,
@@ -117,7 +135,7 @@ def skip(
     }
 
 
-def show(repo: str, pr: Optional[int] = None) -> Dict[str, Any]:
+def show(repo: str, pr: Optional[int] = None, pr_repo: str = "") -> Dict[str, Any]:
     """The process graph this repo runs on: its nodes and edges, as data.
 
     A read of *which* graph is in force — the shipped one, or the override the
@@ -125,7 +143,7 @@ def show(repo: str, pr: Optional[int] = None) -> Dict[str, Any]:
     from it rather than being re-resolved by each client. With ``pr`` set it is
     the inner ``pdlc-pr-loop`` instead.
     """
-    runtime = _runtime(repo, pr)
+    runtime = _runtime(repo, pr, pr_repo)
     graph = runtime.graph
     return {
         "version": graph.version,
