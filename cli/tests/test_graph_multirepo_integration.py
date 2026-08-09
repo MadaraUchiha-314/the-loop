@@ -57,7 +57,7 @@ def origin(tmp_path):
     (tmp_path / ".the-loop").mkdir()
     (tmp_path / ".the-loop" / "harness-config.yaml").write_text(
         "ticketing:\n  github:\n    owner: octo\n    repo: app\n"
-        "workflow:\n  specDir: docs/specs\n  outerLoop:\n    surface: issue\n",
+        "workflow:\n  specDir: docs/specs\n",
         encoding="utf-8",
     )
     return tmp_path
@@ -190,7 +190,6 @@ def test_the_origin_repos_config_reaches_the_gate(origin):
     gate can tell a top-level pr-<n>/ from a contributing repository's loop."""
     runtime = build_runtime(origin)
     assert runtime.config["originRepo"] == "octo/app"
-    assert runtime.config["outerLoopSurface"] == "issue"
 
     spec = origin / "docs" / "specs" / "issue-15"
     _declare(spec, ["octo/app"])

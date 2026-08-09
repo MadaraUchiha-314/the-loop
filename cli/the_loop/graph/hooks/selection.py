@@ -33,6 +33,18 @@ Two rules, inherited from `feedback.py` and load-bearing here:
 * **The reply produces a fact, never a destination.** It yields the set of
   phases to skip, filtered against the graph's own `skippable` vocabulary;
   protected phases named in a reply are refused and said so out loud.
+
+**The gate answers a second question too** (issue-183, owner's call on PR #184):
+*where does this work item collaborate on the outer loop* — the work item
+itself, or a pull request in this repository. It belongs here for the same
+reason the phases do: it is a property of **this** work item, not of the
+repository (one project has both a one-repo bugfix and a three-repo migration)
+and not of the operator's machine. One box, signed by the same reply, frozen
+into the same record. **The default is the work item** — leave the box alone and
+the requirements, design and testing plan are iterated on the ticket, which is
+what keeps a multi-repo item from opening a pull request that only ever holds a
+discussion. The INNER loop has no such question: a pull request's loop runs on
+that pull request.
 """
 
 from __future__ import annotations
@@ -74,6 +86,19 @@ SELECTION_MARKER = "<!-- the-loop:phase-selection -->"
 
 #: Where the answered-ness of this gate is recorded in ``GraphState.decisions``.
 DECISION_KEY = "phase-selection"
+
+#: The two surfaces the outer loop can be collaborated on (issue-183), and the
+#: one that applies when nobody says otherwise. `work-item` is the ticket —
+#: GitHub issue or Jira — and is the DEFAULT: a work item only opens a pull
+#: request in this repository when its author asks for one.
+SURFACE_PULL_REQUEST = "pull-request"
+SURFACE_WORK_ITEM = "work-item"
+DEFAULT_SURFACE = SURFACE_WORK_ITEM
+
+#: The checklist token that chooses the pull-request surface. Deliberately a
+#: sentence rather than a bare word: it sits among phase rows, and a reader
+#: unticking boxes must never wonder whether they are dropping a phase.
+SURFACE_TOKEN = "outer-loop-on-pull-request"
 
 
 def _resolve(ctx: HookContext):
@@ -152,6 +177,18 @@ def _checklist_body(ctx: HookContext) -> str:
             "",
         ]
     lines += [
+        "**Where should the outer loop happen?** This is not a phase — it is "
+        "where the requirements, design, testing plan and task list are "
+        "iterated with you:",
+        "",
+        f"- [ ] `{SURFACE_TOKEN}` — on a pull request in this repository.",
+        "",
+        "Leave it unticked (the default) and they happen **on this work item**, "
+        "here. Tick it and they happen on a pull request instead. Either way "
+        "the artifacts are committed files linked from here, and each "
+        "repository this work item contributes code to gets its own pull "
+        "request for the inner loop.",
+        "",
         "A doc fix usually needs little more than implementation and "
         "verification; a feature usually needs every phase. Reply "
         f"`{keyword}` with the boxes untouched "
@@ -224,7 +261,9 @@ def _checklist_state(ctx: HookContext) -> str:
     return ""
 
 
-def _frozen_graph(ctx: HookContext, skips: List[str]) -> Dict[str, Any]:
+def _frozen_graph(
+    ctx: HookContext, skips: List[str], surface: str = DEFAULT_SURFACE
+) -> Dict[str, Any]:
     """The graph this work item will actually walk, as a record.
 
     The owner's third requirement (PR #178): *"The graph that's executed also
@@ -248,6 +287,7 @@ def _frozen_graph(ctx: HookContext, skips: List[str]) -> Dict[str, Any]:
     return {
         "loop": getattr(graph, "name", "") or "",
         "workItem": ctx.work_item.id,
+        "surface": surface,
         "nodes": nodes,
     }
 
@@ -267,9 +307,15 @@ def _parse_selection(
     skips: List[str] = []
     refused: List[str] = []
     for match in _CHECK_LINE.finditer(body):
+        token = match.group("token")
+        if token == SURFACE_TOKEN:
+            # Not a phase (issue-183). An unticked surface row means "the work
+            # item", never "skip a node" — and it must not fall through to the
+            # refused list either, or every default selection would report a
+            # phase it never asked to drop.
+            continue
         if match.group("mark").strip():  # ticked → the phase runs
             continue
-        token = match.group("token")
         if token in skippable:
             if token not in skips:
                 skips.append(token)
@@ -278,8 +324,27 @@ def _parse_selection(
     return skips, refused
 
 
+def _parse_surface(body: str) -> str:
+    """The chosen surface from one reply's checklist — the default otherwise.
+
+    A **ticked** surface row asks for the pull request; unticked, absent, or a
+    body the-loop could not read all mean the default (the work item). Failing
+    to the work item is the safe direction: it opens nothing, and issue-183's
+    whole complaint is the pull request that gets opened and never merged.
+    """
+    for match in _CHECK_LINE.finditer(body):
+        if match.group("token") != SURFACE_TOKEN:
+            continue
+        return SURFACE_PULL_REQUEST if match.group("mark").strip() else DEFAULT_SURFACE
+    return DEFAULT_SURFACE
+
+
 def _confirmation(
-    ctx: HookContext, actor: str, skips: List[str], refused: List[str]
+    ctx: HookContext,
+    actor: str,
+    skips: List[str],
+    refused: List[str],
+    surface: str = DEFAULT_SURFACE,
 ) -> str:
     lines = ["🤖 _the-loop_ — **phase selection recorded**", ""]
     if skips:
@@ -298,7 +363,19 @@ def _confirmation(
             "**Refused** (these phases are not selectable and will run): "
             + ", ".join(f"`{r}`" for r in refused),
         ]
-    lines += ["", "Starting the loop."]
+    lines += [
+        "",
+        (
+            "The outer loop happens **on a pull request** in this repository, "
+            f"as @{actor} chose."
+            if surface == SURFACE_PULL_REQUEST
+            else "The outer loop happens **here, on this work item** (the "
+            "default). Each repository this item contributes code to gets its "
+            "own pull request for the inner loop."
+        ),
+        "",
+        "Starting the loop.",
+    ]
     return mark_self_authored("\n".join(lines))
 
 
@@ -341,13 +418,14 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
     if not _CHECK_LINE.search(body):
         body, source = _checklist_state(ctx), "checklist"
     skips, refused = _parse_selection(body, skippable, protected)
+    surface = _parse_surface(body)
     actor = str(reply["author"]).lstrip("@")
 
     try:
         _resolve(ctx).call(
             "add-comment",
             ref=ctx.work_item.ref,
-            body=_confirmation(ctx, actor, skips, refused),
+            body=_confirmation(ctx, actor, skips, refused, surface),
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("could not post the selection confirmation: %s", exc)
@@ -364,7 +442,8 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
             "declaredSkips": declared,
             "refused": refused,
             "decision": DECISION_KEY,
-            "frozenGraph": _frozen_graph(ctx, skips),
+            "surface": surface,
+            "frozenGraph": _frozen_graph(ctx, skips, surface),
             "selectionSource": source,
         },
     )

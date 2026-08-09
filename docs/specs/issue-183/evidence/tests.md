@@ -1,5 +1,10 @@
 # Evidence — tests (issue-183)
 
+> **Re-run after the PR #184 review round**, in which the outer loop's surface moved from a
+> harness-config key to a per-work-item declaration at `phase-selection`. The red section
+> below is the original transition (the mechanisms did not exist); the green figures are the
+> re-run of the whole matrix against what shipped.
+
 Committed output of the testing plan's activities. Run from the repository root against
 the checked-in tree; no network, no credentials, nothing to redact (the only external
 names in this file are the fixture repositories `octo/app`, `octo/infra`, `other/repo`,
@@ -60,7 +65,7 @@ Each red maps to the mechanism that answers it:
 
 ```console
 $ uv run --directory cli pytest -q
-1520 passed, 1 skipped in 51.30s
+1524 passed, 1 skipped in 51.63s
 ```
 
 The one skip is pre-existing and unrelated (it predates this work item). One flake worth
@@ -73,7 +78,7 @@ full re-run above.
 
 ```console
 $ uv run --directory cli pytest -q tests/test_graph_multirepo_integration.py
-6 passed in 1.19s
+6 passed in 1.23s
 ```
 
 Gherkin-documented, each with a `Requirement:` link:
@@ -90,7 +95,7 @@ cross-repo link does not arm a work item).
 
 ```console
 $ uv run --directory cli pytest -q -k "traversal or pr_repo or unarmed or declared"
-70 passed, 1451 deselected in 2.78s
+68 passed, 1457 deselected in 2.77s
 ```
 
 Covering: `../../etc`, `a/../b`, `a//b`, `octo`, `""`, `octo/repo/../..`, `a\..\b` and
@@ -102,13 +107,13 @@ and a declared repository with no inner loop holding the gate.
 
 ```console
 $ uv run --directory cli pytest -q -k "back_compat or default"
-55 passed, 1466 deselected in 2.74s
+55 passed, 1470 deselected in 2.49s
 ```
 
-`test_the_origin_repos_layout_is_unchanged_back_compat` pins `pr-loops/pr-<n>/` for a
-pull request in the origin repository, and
-`test_bootstrap_defaults_the_surface_to_pull_request` pins the surface a repository with
-no `workflow.outerLoop` resolves.
+`test_the_origin_repos_layout_is_unchanged_back_compat` pins `pr-loops/pr-<n>/` for a pull
+request in the origin repository, and `test_the_surface_defaults_to_the_work_item` pins
+what an untouched checklist resolves to. A `graph-state.json` written before this change
+carries no `surface` field, which reads as that same default.
 
 ## Green — T3 (OpenAPI contract)
 
@@ -121,10 +126,22 @@ The authored `docs/api-specs/openapi/the-loop.v1.yaml` gained an optional `prRep
 five graph request bodies and on the `graphShow` query; no path, method or `operationId`
 changed, which is what this assertion compares.
 
+## Green — the surface at `phase-selection` (added in the review round)
+
+```console
+$ uv run --directory cli pytest -q -k surface
+15 passed, 1510 deselected in 2.04s
+```
+
+Four of them are the gate itself (`tests/test_graph_skips.py`): the default is the work
+item and the confirmation says so; ticking `outer-loop-on-pull-request` moves it; an
+**unticked** surface row is neither a declared skip nor a refused phase; and the posted
+checklist offers the row under its own heading.
+
 ## Green — T12 (parity: docs ↔ code ↔ schema)
 
 ```console
 $ uv run --directory cli pytest -q tests/test_docs_parity.py tests/test_harness_config.py \
-    tests/test_graph_parity.py
-31 passed in 0.29s
+    tests/test_graph_parity.py tests/test_api_contract_parity.py
+32 passed in 1.66s
 ```

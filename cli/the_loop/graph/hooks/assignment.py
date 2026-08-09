@@ -41,22 +41,22 @@ def _surface(ctx: HookContext, pr_number: object) -> str:
     """Where the artifact this node produces is **iterated** (issue-183).
 
     The inner loop has no choice to render — a pull request's loop runs on that
-    pull request. The outer loop's surface is the project's own declaration
-    (``workflow.outerLoop.surface``), resolved by ``build_runtime``; an
-    unresolved one renders the shipped default's sentence rather than a guess,
-    because the two possible values are the whole vocabulary here and no payload
-    text can reach this string.
+    pull request. The outer loop's surface is whatever **this work item's
+    author** chose at `phase-selection`, carried on the context from the frozen
+    state; anything else is the default, the work item itself. Composed from
+    the-loop's own vocabulary plus one of two literals — no payload text reaches
+    this string.
     """
     if pr_number is not None:
         return "this pull request (the inner loop always runs on its PR)"
-    if str(ctx.config.get("outerLoopSurface") or "") == "issue":
+    if str(getattr(ctx, "surface", "") or "") == "pull-request":
         return (
-            "the ticket — comment there, and do not open a pull request just to "
-            "carry the spec chain (workflow.outerLoop.surface: issue)"
+            "a pull request in the repository the ticket was created in — the "
+            "surface this work item chose at phase-selection"
         )
     return (
-        "the work item's pull request in the repository the ticket was created "
-        "in (workflow.outerLoop.surface: pull-request)"
+        "the work item itself (the default) — comment on the ticket, and do "
+        "not open a pull request just to carry the spec chain"
     )
 
 

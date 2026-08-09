@@ -105,6 +105,12 @@ class HookContext:
     #: deliberately passes no event — reports the gate as answered instead of
     #: waiting forever on a decision that was made days ago.
     decisions: Mapping[str, Any] = field(default_factory=dict)
+    #: Where THIS work item collaborates on the outer loop (issue-183): the
+    #: ``surface`` its author chose at ``phase-selection`` — ``pull-request``,
+    #: or ``""``/``work-item`` for the ticket, which is the default when nobody
+    #: chose. A property of the work item, not of the repository: one project
+    #: has both a one-repo bugfix and a three-repo migration.
+    surface: str = ""
     #: The compiled graph this chain is running in (issue-177). A hook that
     #: reasons about *other* nodes — the phase-selection gate listing which
     #: phases are selectable — must read the loop the runtime is actually

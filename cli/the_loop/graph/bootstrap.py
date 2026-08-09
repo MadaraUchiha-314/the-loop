@@ -77,10 +77,12 @@ def build_runtime(
         "notifications": harness.get("notifications") or {},
         "authorizedUsers": list(authorized_users or []),
         "integrations": {},
-        # Where the OUTER loop's artifacts are iterated, and which repository the
-        # ticket lives in (issue-183). Both are the repository's own facts, and
-        # both reach hooks that have no other way to learn them.
-        "outerLoopSurface": harness_config.outer_loop_surface(harness),
+        # Which repository the ticket lives in (issue-183) — the origin
+        # repository, where the outer loop runs and every inner loop's state is
+        # kept. A fact about this repository, and one a daemon watching N of
+        # them cannot know for each. (Where the outer loop is *collaborated on*
+        # is deliberately NOT here: that is the work item's own choice, frozen
+        # at `phase-selection` — owner's call on PR #184.)
         "originRepo": harness_config.origin_repo(harness),
     }
     try:

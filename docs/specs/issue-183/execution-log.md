@@ -24,7 +24,7 @@ status: in-progress          # in-progress | complete
 | tasks-breakdown | 2026-08-09 | pending (PR) | 10 tasks; 1→2/3, 5→6, then docs, integration, capability docs, verification |
 | implementation | 2026-08-09 | — | T1–T9 |
 | verification | 2026-08-09 | — | T10; every planned activity ran, red recorded before green |
-| needs-review | 2026-08-09 | pending | 3 self-review rounds; critic rounds unavailable (no critic configured in `reviews.critics`) |
+| needs-review | 2026-08-09 | @MadaraUchiha-314 (changes requested, PR #184) | 3 self-review rounds; critic rounds unavailable (no critic configured in `reviews.critics`); then the owner's review moved the surface out of the config — implemented and re-verified |
 
 ## Pull requests
 
@@ -33,6 +33,28 @@ status: in-progress          # in-progress | complete
 | [#184](https://github.com/MadaraUchiha-314/the-loop/pull/184) | the whole work item — T1–T10, in `MadaraUchiha-314/the-loop` (this work item's origin **and** only contributing repository) | open |
 
 ## Progress entries
+
+### 2026-08-09 — review round on PR #184: the surface moves to the work item
+
+- **Phase:** needs-review
+- **Did:** the owner's two review comments answered the question this PR left open, and
+  reversed part of it. `workflow.outerLoop.surface` is gone — the schema block, both YAML
+  files, the reader, its constants, its `READS` row and its documentation section — and the
+  outer loop's surface is now **the work item's own declaration**, made on one extra
+  `phase-selection` checklist row (`outer-loop-on-pull-request`) and defaulting to the
+  **work item** when nobody ticks it. `selection.py` posts the row, parses it from the same
+  signed body as the phase selection, excludes it from the phase vocabulary, names it in
+  the confirmation and freezes it into the graph record; `GraphState.surface` and
+  `HookContext.surface` carry it; the runtime records it and passes it into every hook
+  context; the assignment and the prompt context read it from there. Then the spec chain,
+  decision-069 (D7–D9 and four alternatives), the capability docs, README, the guide and
+  the CLI docs were rewritten to what shipped rather than to what was proposed.
+- **Checkpoint/tests:** whole matrix re-run — 1524 passed, 1 skipped; `-k surface` → 15
+  passed; parity 32 passed; ruff, ruff format, pyright, markdownlint (482 files) and
+  `validate_config.py` clean. Evidence refreshed under `evidence/`.
+- **Next:** the human approval gate and the security sign-off (both still pending).
+- **Blockers:** none. The reversal is recorded in decision-069's alternatives table, not
+  hidden: the first draft's key is named there with why it was wrong.
 
 ### 2026-08-09 — spec chain
 
@@ -91,6 +113,7 @@ walked rather than declared away.
 | 1 | self | the-loop (this session) | new findings — `linked_issue_numbers` had become dead weight as a numbers-only view; kept deliberately as the same-repo narrowing, with a test pinning it, rather than deleted (three call sites in other projects could rely on it) | this PR |
 | 2 | self | the-loop (this session) | new findings — `await-inner-loops` originally *waited* on a malformed `repos:` entry, which waits forever; changed to `block`, with the reason written into the message and a test | this PR |
 | 3 | self | the-loop (this session) | zero new findings (converged) — the surface line, the claim suffix and the state path each have one expression, and the two path-building call sites both go through `repo_state_key` | this PR |
+| 4 | human | @MadaraUchiha-314 | **changes requested** — the surface belongs on the `phase-selection` checklist, per work item, defaulting to the work item itself; no key in the harness config or the CLI config. Implemented; both threads answered before the change | [#184 review](https://github.com/MadaraUchiha-314/the-loop/pull/184) |
 | — | critic | none configured | **unavailable** — `reviews.critics` is empty in this repository, so no critic round ran; it does not count toward `criticReviewCount` | — |
 
 ## Security review (gate)
@@ -110,6 +133,12 @@ walked rather than declared away.
     actually gate the blast radius are untouched: the ingress (an event only arrives from a
     repository the operator's receiver or poll source covers) and arming (`_awaiting_start`
     still drops an unstarted work item — tested).
+  - **Comment → surface (new, after the review round).** The surface now arrives through
+    the `phase-selection` gate, so it inherits that gate's authorization unchanged: only an
+    authorized user's execute reply is read, the-loop's own comments are dropped before
+    authorization is considered, and the answer is frozen so a later edit changes nothing.
+    The parsed value is one of two literals. An unreadable checklist resolves to the
+    default — the work item — which opens nothing.
   - **No new secret, subprocess, template or network call.** The new state files record a
     repository name and a pull-request number; the assignment/prompt lines are composed from
     the-loop's own vocabulary plus one of two literals.
@@ -130,8 +159,8 @@ Every acceptance criterion of `requirements.md` is proved by a committed artifac
 | R1.1–R1.4 (topology, state layout, back-compat) | `evidence/tests.md` (T1, T10), `evidence/multirepo-scenario.md` steps 2–3 |
 | R1.5 (cross-repo routing) | `evidence/tests.md` (T1 router cases), scenario step 1 |
 | R1.6 + abuse cases 1–2 (path boundary) | `evidence/tests.md` (T8), scenario step 8 |
-| R2.1–R2.3 (the declared surface and its fallbacks) | `evidence/tests.md` (T1, T12), scenario step 2 |
-| R2.6–R2.7 (the session is told; the inner loop has no surface) | `evidence/tests.md` (T1), scenario steps 2 and 7 |
+| R2.1–R2.5, R2.9 (the checklist row, the default, the freeze, the parser guard) | `evidence/tests.md` (T1 — `-k surface`) |
+| R2.7–R2.8 (the session is told; the inner loop has no surface) | `evidence/tests.md` (T1), scenario steps 2 and 7 |
 | R3.1–R3.3 (artifacts always checked in and landed) | rules in `SKILL.md`, `reference/workflow.md`, `reference/collaboration.md`; gated as a record by `## Pull requests` above |
 | R4.1–R4.4 (declared repositories as a gate) | `evidence/tests.md` (T1, T2, T8), scenario steps 4–6 |
 
@@ -139,8 +168,8 @@ Every acceptance criterion of `requirements.md` is proved by a committed artifac
 
 | Capability doc | What changed | History row |
 |----------------|--------------|-------------|
-| [`process-graph.md`](../../capabilities/process-graph.md) | new behaviour block: where each loop runs, the repo-qualified inner-loop state, the validated repository name, cross-repo linkage, the declared-repos gate, and `workflow.outerLoop.surface`; the graph-verb bullet gained `--pr-repo`/`prRepo` | issue-183 row added |
-| [`spec-workflow.md`](../../capabilities/spec-workflow.md) | the chain now has a **place** (the origin repository) and a declared iteration surface; `repos:` named as a gate input | issue-183 row added |
+| [`process-graph.md`](../../capabilities/process-graph.md) | new behaviour block: where each loop runs, the repo-qualified inner-loop state, the validated repository name, cross-repo linkage, the declared-repos gate, and the per-work-item surface declared at `phase-selection`; the graph-verb bullet gained `--pr-repo`/`prRepo` | issue-183 row added |
+| [`spec-workflow.md`](../../capabilities/spec-workflow.md) | the chain now has a **place** (the origin repository) and an iteration surface each work item declares for itself; `repos:` named as a gate input | issue-183 row added |
 | [`webhook-triggers.md`](../../capabilities/webhook-triggers.md) | the linked-issue rule reversed for qualified cross-repo references, with what it does *not* widen stated | issue-183 row added |
 
 ## Documentation
@@ -150,12 +179,12 @@ Every acceptance criterion of `requirements.md` is proved by a committed artifac
 | `README.md` | the *Two loops* section gained "and they run in named places" — the origin repository, one PR per contributing repository, and the surface option; the CLI cheat-sheet gained `--pr-repo` |
 | `docs/index.md` | the *Two loops, one process* feature card names where each loop runs |
 | `docs/guide/how-it-works.md` | a consequence bullet for the loops' locations and the outer surface |
-| `docs/config/harness-config.md` | new option section for `workflow.outerLoop.surface`; the CLI-read table grew from six keys to eight |
-| `docs/cli/commands/graph.md` | `--pr-repo` documented beside `--pr`, with the `repos:` declaration and what the gate does with it |
-| `skills/the-loop/SKILL.md` | a new operating rule for the multi-repo topology, and the artifact-iteration rule rewritten around the declared surface |
-| `skills/the-loop/reference/workflow.md` | new section *Several repositories, one work item*, including the surface table |
+| `docs/config/harness-config.md` | the CLI-read table grew from six keys to seven (`ticketing.github`). The `workflow.outerLoop.surface` option section added earlier in this work item was **removed** in the review round — the surface is not a config key |
+| `docs/cli/commands/graph.md` | `--pr-repo` documented beside `--pr`, with the `repos:` declaration and what the gate does with it; the `phase-selection` section gained the surface row and what unticking it means |
+| `skills/the-loop/SKILL.md` | a new operating rule for the multi-repo topology, and the artifact-iteration rule rewritten around the surface the work item declares at `phase-selection` |
+| `skills/the-loop/reference/workflow.md` | new section *Several repositories, one work item*, including the checklist row and what each state of it means |
 | `skills/the-loop/reference/collaboration.md` | rule 2 rewritten: a durable, reviewable surface — the PR **or** the ticket — never a terminal |
 | `skills/the-loop/templates/execution-log.md` | the optional `repos:` front-matter key, and the PR table's multi-repo shape |
-| `skills/the-loop/templates/harness-config.yaml` | `workflow.outerLoop.surface` with its default |
+| `skills/the-loop/templates/harness-config.yaml` | no net change — the `workflow.outerLoop` block added earlier in this work item was removed again in the review round |
 | `docs/api-specs/openapi/the-loop.v1.yaml` | `prRepo` on the five graph bodies and the `graphShow` query |
-| `docs/decisions/decision-069.md` (+ index, and pointers from 051 and 065) | the decision record; decision-051 §5's invariant amended in place |
+| `docs/decisions/decision-069.md` (+ index, and pointers from 051 and 065) | the decision record; D7–D9 and four alternatives rewritten in the review round, with the config-key draft kept in the alternatives table rather than erased; decision-051 §5's invariant amended in place |

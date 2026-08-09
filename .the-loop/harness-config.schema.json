@@ -189,19 +189,6 @@
           "default": "loop:",
           "description": "Prefix for the labels/tags created in the ticketing system to track phase."
         },
-        "outerLoop": {
-          "type": "object",
-          "additionalProperties": false,
-          "description": "The OUTER loop (pdlc-work-item-loop) — the one the work item itself walks, in the repository the ticket was created in. The INNER loop (pdlc-pr-loop) is not configurable here or anywhere: a pull request's loop runs on that pull request (issue-183).",
-          "properties": {
-            "surface": {
-              "type": "string",
-              "enum": ["issue", "pull-request"],
-              "default": "pull-request",
-              "description": "Where the outer loop's artifacts (brainstorm/requirements/design/testing-plan/tasks) are ITERATED with humans. `pull-request`: review on the pull request carrying them in the origin repository — the behaviour of every repository before this key existed, hence the default. `issue`: comments on the ticket, Jira-style — for a work item whose code lands in other repositories, so no pull request is opened in the origin repository merely to hold a discussion. Either way the artifacts are still committed files linked from the ticket: this chooses the review surface, not whether they are checked in."
-            }
-          }
-        },
         "phases": {
           "type": "array",
           "description": "Ordered phase state machine for a work item. Each maps to a ticket label. `phase-selection` is where every work item starts: the-loop asks which phases this item needs and waits for an authorized user's `the-loop execute` (issue-177). `brainstorming` is optional — a work item may enter it or start directly at `requirements-definition`. `test-planning` produces testing-plan.md before the task DAG that references it, and `verification` executes that plan after implementation (issue-163).",

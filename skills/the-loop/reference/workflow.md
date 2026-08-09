@@ -227,23 +227,33 @@ discussion-only pull request in the repository holding the spec chain.
   section names the checkouts and refs it needs; the-loop facilitates verification, it does
   not own the environment (`reference/testing.md`).
 
-### Where the outer loop is iterated (`workflow.outerLoop.surface`)
+### Where the outer loop is iterated — the work item's own choice
 
-The artifacts are always checked-in files linked from the ticket. What is configurable is
-where they are **iterated with humans**:
+The artifacts are always checked-in files linked from the ticket. What varies is where
+they are **iterated with humans**, and that is decided **per work item** at
+`phase-selection` — not in any config file, because one repository has both a one-repo
+bugfix and a three-repo migration. The checklist carries one extra box beside the phases:
 
-| `surface` | The outer loop's artifacts are iterated | And a pull request in the origin repository |
+```text
+- [ ] `outer-loop-on-pull-request` — on a pull request in this repository.
+```
+
+| The box | The outer loop's artifacts are iterated | And a pull request in the origin repository |
 |---|---|---|
-| `pull-request` (default) | as review on the PR carrying them | exists from the first artifact — today's behaviour |
-| `issue` | as comments on the ticket, Jira-style | is opened only to **land** the spec chain, once the chain is locked and the inner loops have finished — never to hold the discussion |
+| unticked — **the default** | as comments on the work item, Jira-style | is opened only to **land** the spec chain, once the chain is locked and the inner loops have finished — never to hold the discussion |
+| ticked | as review on the pull request carrying them | is the discussion surface, as for any single-repo change |
 
-Pick `issue` when the origin repository receives no code: it is the case the rule exists
-for — a the-loop PR that stays open forever because it never contained anything to merge.
-When the origin repository *is* a contributing repository, the spec chain simply lands in
-its own contribution PR and no second PR is opened.
+The default is the work item because that is the case the rule exists for: a the-loop PR
+that stays open forever because it never contained anything to merge. When the origin
+repository *is* a contributing repository, the spec chain simply lands in its own
+contribution PR and no second PR is opened.
 
-**The inner loop has no surface.** A pull request's loop is iterated on that pull request,
-in every configuration. See [decision-069](../../../docs/decisions/decision-069.md).
+The answer is signed by the same authorized `the-loop execute` that freezes the phase
+selection, recorded in `graph-state.json` and in the portable record, and rendered into
+every assignment and prompt from then on.
+
+**The inner loop has no such choice.** A pull request's loop is iterated on that pull
+request, always. See [decision-069](../../../docs/decisions/decision-069.md).
 
 ## Link artifacts to the ticket (single source of truth)
 

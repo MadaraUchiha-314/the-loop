@@ -7,7 +7,7 @@ approvedBy: []                # pending — human gate on the PR (risk tier 4)
 overrides: {}
 ---
 
-# Design: multi-repo work items — the outer loop stays in the origin repo, and its surface is a choice
+# Design: multi-repo work items — the outer loop stays in the origin repo, and each work item chooses its surface
 
 > Phase 2. Derives from `requirements.md`. Ticket:
 > [#183](https://github.com/MadaraUchiha-314/the-loop/issues/183).
@@ -24,7 +24,7 @@ are iterated. Nothing in the phase graph changes: no node, no edge, no artifact.
 |---|---|---|---|
 | F1 | An inner loop belongs to a **repository**, not only to a number | `pr-loops/<owner>__<repo>/pr-<n>/` | `graphlink`, `bootstrap`, `graph` CLI, `await-inner-loops` |
 | F2 | A pull request may close a ticket in **another** repository | `router.linked_work_items` | `extract_work_items` → the whole ingress |
-| F3 | The outer loop has a **surface** | `workflow.outerLoop.surface` | `bootstrap` → assignment + prompt context |
+| F3 | Each **work item** chooses its outer-loop **surface** | one `phase-selection` checklist row → `GraphState.surface` | the runtime → assignment + prompt context |
 | F4 | A work item may **declare** the repositories it contributes to | `execution-log.md` front matter `repos:` | `await-inner-loops` |
 
 ```mermaid
@@ -141,28 +141,32 @@ linked numbers today (decision-036's ordering is untouched).
 webhook receiver and poll sources; an event from a repository nobody watches never arrives,
 and an unarmed work item still drops at `_awaiting_start` (abuse case 3).
 
-### C5 — the outer loop's surface (`harness_config`, `bootstrap`, `assignment`, `graphlink`)
+### C5 — the surface, declared at `phase-selection` (`selection`, `state`, `runtime`, `assignment`, `graphlink`)
 
-```yaml
-workflow:
-  outerLoop:
-    surface: pull-request      # issue | pull-request   (default: pull-request)
+*(Revised in review, PR #184. The first draft made this a repository config key,
+`workflow.outerLoop.surface`. It is now the work item's own declaration — see D7 of
+[decision-069](../../decisions/decision-069.md) for why, and § Trade-offs below.)*
+
+The `phase-selection` checklist gains **one row that is not a phase**:
+
+```text
+**Where should the outer loop happen?** …
+
+- [ ] `outer-loop-on-pull-request` — on a pull request in this repository.
 ```
 
-- `harness_config.outer_loop_surface(harness) -> str` resolves the value, falling back to
-  `pull-request` for absent/unknown/non-string (R2.2, R2.3), and is declared in `READS` —
-  the CLI reads it because it renders it into what a session is told.
-- `bootstrap` puts `outerLoopSurface` (and `originRepo`) into the runtime config.
-- `render_assignment` adds one line to an **outer-loop agent** node that produces an
-  artifact:
-  `iterate this artifact on: the ticket (workflow.outerLoop.surface: issue)` — or
-  `… on: the work item's pull request in the origin repository`.
-  An **inner-loop** node's line names its pull request and says the inner loop has no
-  surface setting (R2.7).
-- `render_graph_context` carries the same fact into the event prompt, via a new
-  `GraphContext.surface` field, and its claim command gains `--pr-repo` when the PR is in
-  another repository — a session told to report back with the wrong command is a session
-  whose claim evaluates the wrong loop.
+| Piece | Change |
+|---|---|
+| `hooks/selection.py` | posts the row in its own section; `_parse_surface(body)` reads it from the same body the phase selection is read from; `_parse_selection` **excludes** the token before phase resolution, so an unticked row is neither a skip nor a refusal (R2.9); the confirmation names the resolved surface; `_frozen_graph` carries it |
+| `graph/state.py` | `GraphState.surface` — additive, absent in every existing state file, `""` reading as the default |
+| `graph/runtime.py` | records `result.data["surface"]` beside the frozen graph, and passes `state.surface` into **every** hook context (entry and exit) |
+| `graph/contract.py` | `HookContext.surface` — the one channel a hook reads it through |
+| `hooks/assignment.py` | one line on an outer-loop node that produces an artifact, naming the resolved surface; an inner-loop node's line names its pull request and says the choice does not exist there (R2.8) |
+| `graphlink.py` | `GraphContext.surface` from `state.surface`, rendered into the event prompt; the claim command gains `--pr-repo` for a cross-repo loop |
+
+Resolution is a two-value function with a default, and the default is **the work item**:
+`pull-request` only when the row is ticked in the body an authorized user signed.
+Nothing in `harness-config.yaml` or `cli-config.yaml` participates.
 
 ### C6 — what stays a rule rather than becoming code
 
@@ -188,6 +192,17 @@ repos:                        # OPTIONAL. The contributing repositories this wor
 ---
 ```
 
+**`graph-state.json`** gains one optional field, written by the same signed reply that
+freezes the phase selection — `""` on an existing state file reads as the default, so
+nothing has to be migrated:
+
+```json
+{
+  "surface": "work-item",
+  "decisions": {"phase-selection": {"surface": "work-item", "graph": {"surface": "work-item"}}}
+}
+```
+
 **`pr-loops/` layout** (in the origin repository, under the work item's spec directory):
 
 ```text
@@ -207,7 +222,7 @@ docs/specs/issue-183/
 | Declared repo with no inner loop | `wait`, naming the repository | R4.2 — a missing contribution is not an absent one |
 | Declared repo but `ticketing.github` unknown | `wait`, naming the missing config | Guessing which loop was meant is how a gate passes on the wrong evidence |
 | Unreadable inner state | counts as unfinished (unchanged) | issue-124's silent-pass shape |
-| `surface` unknown/malformed | resolves `pull-request` | R2.3 — `check` must still work in a half-edited repo |
+| Surface row unticked, absent, or a checklist the-loop could not read | resolves to the work item | R2.3 — the default opens nothing, which is the safe direction |
 
 ## Security design
 
@@ -232,13 +247,20 @@ enforces it and the negative test that proves it.
   and prompt lines added in C5 are composed from the-loop's own vocabulary plus the
   resolved surface (one of two literals) and the PR's already-parsed `owner/repo` —
   the same "no payload text in a graph message" rule R3.6 states.
+- **The checklist row inherits the gate's authorization.** The surface now arrives in a
+  comment, so its trust boundary is `phase-selection`'s, unchanged: only an authorized
+  user's execute reply is read, the-loop's own comments are dropped before authorization is
+  considered, and the answer is frozen — a later edit of the checklist changes nothing. The
+  parsed value is one of two literals, never the comment's text.
 - **Secrets handling.** None added. No new file records anything but a repository name and
   a pull-request number.
 - **Least privilege.** Unchanged: the daemon writes only inside the origin repository's
   spec directory. A foreign PR's inner state is written *there*, so no credential, remote
   or checkout for the contributing repository is required by any code in this work item.
 - **Fail-closed behaviour.** Every ambiguity above resolves to `wait`, `ValueError` or the
-  shipped default — never to "proceed as if it were fine".
+  default — never to "proceed as if it were fine". For the surface the default direction is
+  the one that *opens nothing*: an unreadable checklist means the work item, not a pull
+  request.
 - **Abuse-case coverage.**
 
   | Abuse case | Mechanism | Negative test |
@@ -266,13 +288,15 @@ Recorded as [decision-069](../../decisions/decision-069.md). In short:
 
 1. **Two state layouts instead of one.** A single repo-qualified layout would be tidier;
    migrating live work items to get it is not worth the tidiness.
-2. **`surface` is harness config, not CLI config.** Where a *human sits* is the operator's
-   machine (`interaction.mode`, decision-051); where a *project reviews its specs* is the
-   project's process. Different axes, different files.
+2. **The surface is neither harness config nor CLI config** (revised in review, PR #184).
+   Where a *human sits* is the operator's machine (`interaction.mode`, decision-051);
+   where *this work item* is collaborated on is the work item's own, declared at
+   `phase-selection` and frozen there. A repository-wide key would be wrong for half of
+   any repository's work items.
 3. **decision-051 §5 is amended, not overturned.** Its invariant becomes: artifacts are
-   iterated on a **durable, reviewable surface** — the pull request or the ticket — never in
-   a terminal. The configuration it refused (specs discussed in scrollback) is still
-   refused.
+   iterated on a **durable, reviewable surface** — the pull request or the work item —
+   never in a terminal. The configuration it refused (specs discussed in scrollback) is
+   still refused.
 4. **Cross-repo linkage is unconditional**, not a new config toggle. The ingress and the
    arming gate already bound it, and a toggle would be a second name for "the operator
    configured this repository".

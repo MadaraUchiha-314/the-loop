@@ -36,6 +36,8 @@ full process.
 - [ ] requirements-definition   ← unticked: this phase will be skipped
 - [x] design
 …
+- [ ] outer-loop-on-pull-request  ← not a phase: where the OUTER loop happens.
+                                     Unticked (the default) = on the work item.
 
 the-loop execute
 ```
@@ -43,6 +45,15 @@ the-loop execute
 Only the **reply** is read. Ticking boxes on the-loop's own comment does nothing —
 GitHub reports that a comment was edited, never by whom, and this gate exists to keep
 the harness from choosing its own workload.
+
+The last row is not a phase (issue-183): it says where the **outer** loop is collaborated
+on. Leave it and the requirements, design, testing plan and task list are iterated on the
+work item itself — the default, so a work item whose code lands in *other* repositories
+never opens a pull request here just to hold a discussion. Tick it and they are iterated
+on a pull request in this repository instead. The answer is frozen with the phase
+selection, into `graph-state.json` and the portable record; there is deliberately no
+config key for it, in either config file. A pull request's own inner loop is never
+configurable.
 
 ## `show`
 

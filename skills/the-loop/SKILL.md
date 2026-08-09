@@ -158,12 +158,14 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   the mode:** once an artifact exists (`brainstorm.md`, `requirements.md`/`bugfix.md`,
   `design.md`, `testing-plan.md`, `tasks.md`), iterate on it **only** on a durable,
   reviewable surface — never interactively, where the reasoning dies with the scrollback.
-  Which durable surface the **outer** loop uses is the project's declaration,
-  `workflow.outerLoop.surface`: `pull-request` (the default — review on the PR carrying
-  the artifact in the origin repository) or `issue` (comments on the ticket, Jira-style,
-  so a work item whose code lands elsewhere opens no discussion-only PR). Commit and push
-  the artifact either way and link it; never re-paste it into a comment. The **inner**
-  loop is not configurable — a PR's loop is iterated on that PR. See
+  Which durable surface the **outer** loop uses is **this work item's own choice**,
+  made by its author at `phase-selection` and frozen there: the **work item** itself
+  (the default — comments on the ticket, Jira-style, so an item whose code lands
+  elsewhere opens no discussion-only PR) or a **pull request** in the origin repository
+  (the `outer-loop-on-pull-request` box). It is deliberately not a config key in any
+  file: one project has both a one-repo bugfix and a three-repo migration. Commit and
+  push the artifact either way and link it; never re-paste it into a comment. The
+  **inner** loop has no such choice — a PR's loop is iterated on that PR. See
   `reference/collaboration.md` § Where questions go.
 - **RULE: mark every comment/reply as your own (loop prevention).** You post as the
   operator's own credentials, so an unmarked reply is indistinguishable from a human

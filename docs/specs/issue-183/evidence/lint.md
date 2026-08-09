@@ -1,7 +1,8 @@
 # Evidence — lint, format, types, schema and markdown (issue-183)
 
-Activity T13 of the testing plan, run from the repository root. Same commands CI runs
-(via pre-commit) — local == CI is the-loop's own rule.
+Activity T13 of the testing plan, run from the repository root **after the PR #184 review
+round** (the surface moved from the harness config to `phase-selection`). Same commands CI
+runs (via pre-commit) — local == CI is the-loop's own rule.
 
 ```console
 $ uv run ruff check cli hooks
@@ -24,6 +25,6 @@ VALID   skills/the-loop/templates/cli-config.yaml
 $ npx markdownlint-cli2 "**/*.md"
 markdownlint-cli2 v0.18.1 (markdownlint v0.38.0)
 Finding: **/*.md !**/node_modules/** !cli/node_modules/** !**/.venv/** !docs/.vitepress/dist/** !docs/.vitepress/cache/** !docs/operating-model/reference/**
-Linting: 479 file(s)
+Linting: 482 file(s)
 Summary: 0 error(s)
 ```

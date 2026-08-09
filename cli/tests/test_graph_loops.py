@@ -262,21 +262,22 @@ def test_bootstrap_refuses_a_hostile_repository(repo):
         build_runtime(repo, pr_number=7, pr_repo="../../etc")
 
 
-def test_bootstrap_resolves_the_outer_loop_surface_and_origin(tmp_path):
+def test_bootstrap_resolves_the_origin_repository(tmp_path):
     (tmp_path / ".the-loop").mkdir()
     (tmp_path / ".the-loop" / "harness-config.yaml").write_text(
-        "ticketing:\n  github:\n    owner: octo\n    repo: repo\n"
-        "workflow:\n  outerLoop:\n    surface: issue\n",
+        "ticketing:\n  github:\n    owner: octo\n    repo: repo\n",
         encoding="utf-8",
     )
     (tmp_path / "docs" / "specs" / "issue-15").mkdir(parents=True)
-    runtime = build_runtime(tmp_path)
-    assert runtime.config["outerLoopSurface"] == "issue"
-    assert runtime.config["originRepo"] == "octo/repo"
+    assert build_runtime(tmp_path).config["originRepo"] == "octo/repo"
 
 
-def test_bootstrap_defaults_the_surface_to_pull_request(repo):
-    assert build_runtime(repo).config["outerLoopSurface"] == "pull-request"
+def test_the_surface_is_not_a_repository_setting(repo):
+    """issue-183, owner's call on PR #184: where a work item is collaborated on
+    is the work item's own choice at `phase-selection`, so no config key — and
+    no runtime config value — carries it."""
+    config = build_runtime(repo).config
+    assert "outerLoopSurface" not in config
 
 
 # -- the runtime: one spec chain, two state locations ---------------------------
@@ -454,16 +455,10 @@ def test_a_cross_repo_inner_loop_prompt_claims_with_both(checkout):
     assert "the-loop graph complete issue-15 --pr 7`" in same_repo
 
 
-def test_the_outer_prompt_names_the_declared_surface(checkout):
-    from the_loop.graph.bootstrap import build_runtime as _build
-    from the_loop.graphlink import GraphContext, render_graph_context
+def _outer_context(surface):
+    from the_loop.graphlink import GraphContext
 
-    (checkout / ".the-loop").mkdir(exist_ok=True)
-    (checkout / ".the-loop" / "harness-config.yaml").write_text(
-        "workflow:\n  outerLoop:\n    surface: issue\n", encoding="utf-8"
-    )
-    surface = _build(checkout).config["outerLoopSurface"]
-    ctx = GraphContext(
+    return GraphContext(
         current_node="design",
         phase="design",
         status="in-progress",
@@ -473,9 +468,20 @@ def test_the_outer_prompt_names_the_declared_surface(checkout):
         actor="agent",
         surface=surface,
     )
-    block = render_graph_context(ctx, "issue-15")
-    assert "iterate the outer loop's artifacts on: the ticket" in block
-    assert "--pr" not in block
+
+
+def test_the_outer_prompt_names_the_work_items_own_surface(checkout):
+    """The session is told where to iterate, and the DEFAULT is the work item
+    itself (issue-183, owner's call on PR #184) — a work item only opens a pull
+    request in this repository when its author asked for one."""
+    from the_loop.graphlink import render_graph_context
+
+    default = render_graph_context(_outer_context(""), "issue-15")
+    assert "iterate the outer loop's artifacts on: this work item" in default
+    assert "--pr" not in default
+
+    chosen = render_graph_context(_outer_context("pull-request"), "issue-15")
+    assert "a pull request in the repository the ticket was created in" in chosen
 
 
 # -- the graph assigns: deliver-assignment (issue-172, "who is in charge?") -----
@@ -539,7 +545,7 @@ def test_deliver_assignment_addresses_the_inner_loop(tmp_path):
     assert "the-loop graph complete issue-15 --pr 16" in text
 
 
-def _assignment(tmp_path, node, config):
+def _assignment(tmp_path, node, config, surface=""):
     from the_loop.graph.contract import HookContext, WorkItem
     from the_loop.graph.hooks.assignment import deliver_assignment
 
@@ -551,6 +557,7 @@ def _assignment(tmp_path, node, config):
         node=node,
         boundary="entry",
         repo=tmp_path,
+        surface=surface,
         config={
             "assignmentDeliver": lambda text: delivered.append(text) or True,
             **config,
@@ -560,18 +567,17 @@ def _assignment(tmp_path, node, config):
     return delivered[0]
 
 
-def test_the_assignment_names_the_declared_outer_surface(tmp_path):
-    """A session is TOLD where to iterate rather than inferring it (issue-183)."""
+def test_the_assignment_names_the_work_items_own_surface(tmp_path):
+    """A session is TOLD where to iterate rather than inferring it (issue-183),
+    and an unanswered surface is the work item itself — the default."""
     node = {"id": "design", "phase": "design", "produces": ["design.md"]}
-    on_issue = _assignment(tmp_path, node, {"outerLoopSurface": "issue"})
-    assert "iterate it on: the ticket" in on_issue
-    assert "do not open a pull request just to carry the spec chain" in on_issue
+    default = _assignment(tmp_path, node, {})
+    assert "iterate it on: the work item itself (the default)" in default
+    assert "do not open a pull request just to carry the spec chain" in default
 
-    on_pr = _assignment(tmp_path, node, {"outerLoopSurface": "pull-request"})
-    assert (
-        "the work item's pull request in the repository the ticket was created in"
-        in (on_pr)
-    )
+    chosen = _assignment(tmp_path, node, {}, surface="pull-request")
+    assert "a pull request in the repository the ticket was created in" in chosen
+    assert "chose at phase-selection" in chosen
 
 
 def test_an_inner_loop_assignment_has_no_surface_to_choose(tmp_path):

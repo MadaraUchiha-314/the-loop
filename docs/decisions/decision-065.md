@@ -12,8 +12,8 @@
 
 > **Extended by [decision-069](decision-069.md) (issue-183):** where each loop *runs* when
 > a work item spans repositories — the outer loop in the repository the ticket was created
-> in, one inner loop per contributing repository — and `workflow.outerLoop.surface`, which
-> declares where the outer loop's artifacts are iterated.
+> in, one inner loop per contributing repository — and where the outer loop's artifacts
+> are iterated, which each work item declares for itself at `phase-selection`.
 
 ## Context
 

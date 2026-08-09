@@ -46,28 +46,32 @@ overrides: {}
   - _Requirements:_ R1.5, abuse case 3
   - _Test:_ `T1/T8 — pytest tests/test_poller.py tests/test_webhook*.py -k "linked or cross_repo"` (red→green)
 
-- [x] 5. `workflow.outerLoop.surface` — schema, reader, runtime config
-  - `.the-loop/harness-config.schema.json`, `harness_config.outer_loop_surface` + a `READS`
-    row, `graph/bootstrap` (`outerLoopSurface`, `originRepo`), and this repo's own
-    `.the-loop/harness-config.yaml` + the bundled template.
+- [x] 5. The surface, declared by the work item at `phase-selection`
+  - _(Rewritten in review, PR #184: shipped first as `workflow.outerLoop.surface` in the
+    harness config, then moved — the config key, its reader, its `READS` row, its schema
+    block and both YAML files were removed again.)_
+  - `hooks/selection.py`: the checklist row, `_parse_surface`, the phase-parser exclusion,
+    the confirmation line and the frozen record; `GraphState.surface`;
+    `HookContext.surface`; the runtime recording it and passing it into every hook context;
+    `graph/bootstrap` keeps `originRepo` only.
   - _Depends on:_ none
-  - _Requirements:_ R2.1–R2.3
-  - _Test:_ `T1/T12 — pytest tests/test_harness_config.py -k surface` (red→green)
+  - _Requirements:_ R2.1–R2.5, R2.9
+  - _Test:_ `T1 — pytest tests/test_graph_skips.py -k surface` (red→green)
 
 - [x] 6. Tell the session where to iterate, and how to claim
   - `graph/hooks/assignment.render_assignment` and `graphlink.render_graph_context`
-    (+ `GraphContext.surface`): the surface line for an outer-loop node, the pull-request
-    line for an inner one, and `--pr-repo` in the claim command for a cross-repo loop; the
-    dispatcher passes the endpoint's repository.
+    (+ `GraphContext.surface`, read from `GraphState.surface`): the surface line for an
+    outer-loop node, the pull-request line for an inner one, and `--pr-repo` in the claim
+    command for a cross-repo loop; the dispatcher passes the endpoint's repository.
   - _Depends on:_ 3, 5
-  - _Requirements:_ R2.6, R2.7
-  - _Test:_ `T1 — pytest tests/test_graph_hooks.py tests/test_graphlink.py -k "surface or claim"` (red→green)
+  - _Requirements:_ R2.7, R2.8
+  - _Test:_ `T1 — pytest tests/test_graph_loops.py -k "surface or claim"` (red→green)
 
 - [x] 7. The rules: skill, references, templates, config docs
   - `skills/the-loop/SKILL.md`, `reference/workflow.md`, `reference/collaboration.md`,
-    `reference/testing.md` (multi-repo verification environment pointer),
-    `templates/execution-log.md` (`repos:`), `docs/config/harness-config.md` (the option and
-    the CLI-read row), `docs/cli/commands/graph.md` (`--pr-repo`).
+    `templates/execution-log.md` (`repos:`), `docs/config/harness-config.md` (the
+    `ticketing.github` CLI-read row), `docs/cli/commands/graph.md` (`--pr-repo`, and the
+    surface row on the `phase-selection` checklist).
   - _Depends on:_ 1–6
   - _Requirements:_ R1.1, R1.2, R2.4, R2.5, R2.7, R3.1–R3.3
   - _Test:_ `T12 — pytest tests/test_docs_parity.py tests/test_harness_config.py`
@@ -93,26 +97,39 @@ overrides: {}
   - _Requirements:_ all
   - _Test:_ `T1, T2, T8, T10, T12, T13 — the whole matrix`
 
+- [x] 11. Review round (PR #184): move the surface out of the config
+  - The owner's two review comments: the surface belongs on the `phase-selection`
+    checklist, per work item, defaulting to the work item itself; no key in either config
+    file. Removed `workflow.outerLoop` from the schema, both YAML files, `harness_config`
+    (reader, constants, `READS` row) and `docs/config/harness-config.md`; added the
+    checklist row and its plumbing; rewrote R2, design C5/F3, decision-069 D7–D9 and its
+    alternatives, the capability docs, the README, the guide and this file.
+  - _Depends on:_ 1–10
+  - _Requirements:_ R2 (revised)
+  - _Test:_ `T1/T12/T13 — the whole matrix, re-run`
+
 ## Dependency graph (DAG)
 
 ```mermaid
 graph LR
   T1[1 repo key] --> T2[2 await gate]
   T1 --> T3[3 thread pr_repo]
-  T5[5 surface config] --> T6[6 assignment/prompt]
+  T5[5 surface at phase-selection] --> T6[6 assignment/prompt]
   T3 --> T6
   T4[4 cross-repo routing]
   T2 & T3 & T4 & T6 --> T7[7 rules & docs]
   T2 & T3 & T4 & T6 --> T8[8 integration]
   T7 --> T9[9 capability docs & decision]
   T8 & T9 --> T10[10 verification]
+  T10 --> T11[11 review round: surface moves out of config]
 ```
 
 ## Checkpoints
 
 Tests run after each task (red→green recorded in `execution-log.md`), the full suite plus
 lint/typecheck after task 9, and the whole matrix at task 10 — after which the review chain
-and the security-review gate run before the work item can be marked ready.
+and the security-review gate run before the work item can be marked ready. Task 11 is the
+owner's review round on PR #184: the whole matrix ran again after it.
 
 ## Review comments
 

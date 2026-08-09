@@ -215,11 +215,11 @@ class GraphContext:
     messages: Tuple[str, ...]
     next_command: str
     actor: str  # agent | human — who the current node waits on
-    #: Where the OUTER loop's artifacts are iterated for this project
-    #: (``workflow.outerLoop.surface``, issue-183): ``issue`` or
-    #: ``pull-request``. Empty when it could not be resolved, which renders
-    #: nothing rather than guessing. The INNER loop ignores it — a pull
-    #: request's loop runs on that pull request.
+    #: Where the OUTER loop's artifacts are iterated for THIS work item
+    #: (issue-183): ``pull-request``, or empty for the default — the work item
+    #: itself. Chosen by its author at `phase-selection` and frozen into
+    #: `graph-state.json`, never a repository or machine setting. The INNER
+    #: loop ignores it: a pull request's loop runs on that pull request.
     surface: str = ""
 
     @property
@@ -232,16 +232,18 @@ def _surface_line(surface: str) -> str:
     """One sentence naming where the OUTER loop's artifacts are iterated.
 
     Composed from the-loop's own vocabulary and a value that is one of two
-    literals — no payload text enters it (R3.6).
+    literals — no payload text enters it (R3.6). The value is this **work
+    item's** own, chosen by its author at `phase-selection` (issue-183); an
+    unset one is the default, the work item itself.
     """
-    if surface == "issue":
+    if surface == "pull-request":
         return (
-            "the ticket (workflow.outerLoop.surface: issue) — comment there, and "
-            "do not open a pull request just to carry the spec chain"
+            "a pull request in the repository the ticket was created in — the "
+            "surface chosen for this work item at phase-selection"
         )
     return (
-        "the work item's pull request in the repository the ticket was created "
-        "in (workflow.outerLoop.surface: pull-request)"
+        "this work item (the default) — comment on the ticket, and do not open "
+        "a pull request just to carry the spec chain"
     )
 
 
@@ -297,7 +299,7 @@ def render_graph_context(
             "  iterate on: this pull request (the inner loop always runs on its "
             "PR — no setting moves it)"
         )
-    elif ctx.surface:
+    else:
         lines.append(
             f"  iterate the outer loop's artifacts on: {_surface_line(ctx.surface)}"
         )
@@ -710,12 +712,10 @@ class GraphLink:
             messages=messages,
             next_command=node.command,
             actor=node.actor,
-            # Resolved by `build_runtime` from the repository's own harness
-            # config (issue-183). Carried on the context because the prompt is
-            # rendered far from the runtime that read it.
-            surface=str(
-                (getattr(rt, "config", None) or {}).get("outerLoopSurface") or ""
-            ),
+            # The work item's own frozen choice (issue-183) — read from the
+            # same state this context comes from, because the prompt is
+            # rendered far from the runtime and there is no config to ask.
+            surface=str(getattr(state, "surface", "") or ""),
         )
 
     @staticmethod

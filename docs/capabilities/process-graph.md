@@ -72,13 +72,18 @@ There are exactly **two** runtime concepts and **one** contract between them.
     repository name THEN the gate SHALL **block** — waiting on it would wait forever. IF no
     repositories are declared THEN the gate SHALL behave exactly as it did before
     issue-183.
-  - Where the **outer** loop's artifacts are iterated with humans SHALL be the project's
-    declaration, `workflow.outerLoop.surface` (`issue` \| `pull-request`, default
-    `pull-request`); the artifacts SHALL be committed files linked from the ticket in
-    either case. The **inner** loop SHALL have no such setting: a pull request's loop is
-    iterated on that pull request. WHEN a session enters a node THEN its assignment SHALL
-    name the surface it is working on, and a cross-repo claim command SHALL carry
-    `--pr-repo`.
+  - Where the **outer** loop's artifacts are iterated with humans SHALL be declared **per
+    work item** at `phase-selection`, by the same authorized reply that freezes the phase
+    selection: one extra checklist row (`outer-loop-on-pull-request`) whose resolved value
+    is written to `graph-state.json` and to the portable record. IF it is unticked or
+    absent THEN the surface SHALL be the **work item itself** — the default, because a
+    work item only opens a pull request in the origin repository when its author asks for
+    one. It SHALL NOT be a key in the harness config or the CLI config: one repository has
+    both a one-repo bugfix and a three-repo migration (owner's call, PR #184). The
+    artifacts SHALL be committed files linked from the ticket in either case, and the
+    **inner** loop SHALL have no such choice: a pull request's loop is iterated on that
+    pull request. WHEN a session enters a node THEN its assignment SHALL name the surface
+    it is working on, and a cross-repo claim command SHALL carry `--pr-repo`.
   - The daemon SHALL drive each inner loop from its PR's **own session** (the
     `pullRequests[]` endpoint, `routing.tmux.sessionPerPr`): the endpoint's spawn enters
     the loop at `implementation`, its events advance it, and the work item's outer loop
@@ -477,7 +482,7 @@ included, however empty the log was.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
-| issue-183 | Multi-repo topology named (2026-08-09): the outer loop runs in the repository the ticket was created in and each contributing repository gets one PR and one inner loop, whose state is qualified by repository (`pr-loops/<owner>__<repo>/pr-<n>/`) with the origin repo's shipped path unchanged; repository names are validated at the path boundary, never sanitized; a qualified cross-repo closing reference now routes to its work item; `execution-log.md` front matter takes `repos:` and `await-inner-loops` holds `implementation` until each declared repository has a finished loop (blocking on a malformed entry); `workflow.outerLoop.surface` declares where the OUTER loop's artifacts are iterated (`issue` \| `pull-request`), with the inner loop deliberately not configurable; graph verbs and the API gained `--pr-repo`/`prRepo` | [spec](../specs/issue-183/), [decision-069](../decisions/decision-069.md), [spec-workflow](spec-workflow.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/183) |
+| issue-183 | Multi-repo topology named (2026-08-09): the outer loop runs in the repository the ticket was created in and each contributing repository gets one PR and one inner loop, whose state is qualified by repository (`pr-loops/<owner>__<repo>/pr-<n>/`) with the origin repo's shipped path unchanged; repository names are validated at the path boundary, never sanitized; a qualified cross-repo closing reference now routes to its work item; `execution-log.md` front matter takes `repos:` and `await-inner-loops` holds `implementation` until each declared repository has a finished loop (blocking on a malformed entry); the surface the OUTER loop is collaborated on became a **per-work-item** choice at `phase-selection` (one extra checklist row, frozen by the same signed reply; default: the work item itself), deliberately not a config key anywhere, with the inner loop not configurable at all; graph verbs and the API gained `--pr-repo`/`prRepo` | [spec](../specs/issue-183/), [decision-069](../decisions/decision-069.md), [spec-workflow](spec-workflow.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/183) |
 | issue-179 | Every phase is selectable (2026-08-08): the outer loop's skip vocabulary widened from the spec chain to **every node it walks** except `phase-selection` (which keeps `required: true` and is now the whole floor — the loop cannot walk past the act of choosing) and the terminals; `security-review` and `human-approval` traded their `required` markers to become declarable; ten new `on: skipped` edges and a second shipped set, `review-chain`, beside a `spec-chain` that now includes `test-planning`; `validate-artifacts` gained `onlyWhenSkipped:` so a *kept* gate keeps a subject — `verification` gates the execution log's `Verification results` when the plan was declared away, and blocks until it is written; the `phase-selection` checklist says what an empty protected list means | [spec](../specs/issue-179/), [decision-068](../decisions/decision-068.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/179) |
 | issue-177 | Declared skips (2026-08-08): `skippable: true` fixes the vocabulary in the shipped graph (spec-chain nodes only; compile-refused on `required` nodes, on missing `skipped` edges, and on `skipSets` members outside it); the outer loop gained a first human node `phase-selection` where the-loop posts a phase checklist, the user ticks it in place, and an authorized `the-loop execute` (a `routing.control` command) freezes the selection — the resolved graph landing in both `graph-state.json` and the portable session record (the audited `graph skip` verb is the same declaration from a shell); the runtime routes around declared nodes without running their hooks and `check` reports them as *skipped by declaration* with provenance — never a pass; a forged declaration on a protected node is inert and surfaced; later gates treat a skipped author's absent artifact as planned; `deliver-assignment` announces a human gate instead of telling the session to claim it | [spec](../specs/issue-177/), [decision-067](../decisions/decision-067.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/177) |
 | issue-174 | `capability-docs` gates two sections of the execution log instead of one — `## Documentation` joins `## Capability docs`, so a work item cannot complete having left the README or the docs site describing the process it replaced. No new node, no hook or runtime change; the inner loop gates neither | [spec](../specs/issue-174/), [decision-066](../decisions/decision-066.md), [documentation](documentation.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/174) |

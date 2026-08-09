@@ -634,6 +634,61 @@ def test_the_selection_freezes_the_graph_and_publishes_it(selecting, repo, fake_
     assert published == [frozen]
 
 
+def test_the_surface_defaults_to_the_work_item(selecting, repo, fake_github):
+    """issue-183, owner's call on PR #184: a work item only opens a pull request
+    in this repository when its author asks for one, so an untouched checklist
+    leaves the outer loop on the work item."""
+    selecting.start(WORK_ITEM, ref="github:o/r#1")
+    selecting.advance(WORK_ITEM, ref="github:o/r#1", event=_reply("the-loop execute"))
+    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    assert state.surface == "work-item"
+    assert state.decisions["phase-selection"]["surface"] == "work-item"
+    assert state.decisions["phase-selection"]["graph"]["surface"] == "work-item"
+    # ...and the confirmation says which, so the choice is legible on the ticket.
+    assert "on this work item" in fake_github.posted[-1]
+
+
+def test_ticking_the_surface_row_moves_the_outer_loop_to_a_pull_request(
+    selecting, repo, fake_github
+):
+    selecting.start(WORK_ITEM, ref="github:o/r#1")
+    selecting.advance(
+        WORK_ITEM,
+        ref="github:o/r#1",
+        event=_reply("- [x] outer-loop-on-pull-request\nthe-loop execute"),
+    )
+    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    assert state.surface == "pull-request"
+    assert "on a pull request" in fake_github.posted[-1]
+
+
+def test_the_surface_row_is_never_read_as_a_phase(selecting, repo, fake_github):
+    """The checklist now carries two kinds of line, and a mis-parse would either
+    skip a phase or flip a surface. An unticked surface row is neither a skip nor
+    a refusal — it is the default."""
+    selecting.start(WORK_ITEM, ref="github:o/r#1")
+    selecting.advance(
+        WORK_ITEM,
+        ref="github:o/r#1",
+        event=_reply(
+            "- [ ] outer-loop-on-pull-request\n- [ ] requirements\nthe-loop execute"
+        ),
+    )
+    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    assert set(state.skips) == {"requirements"}
+    assert state.surface == "work-item"
+    assert (
+        "outer-loop-on-pull-request" not in fake_github.posted[-1].split("Refused")[-1]
+    )
+
+
+def test_the_posted_checklist_offers_the_surface_row(selecting, repo, fake_github):
+    selecting.start(WORK_ITEM, ref="github:o/r#1")
+    posted = fake_github.posted[0]
+    assert "- [ ] `outer-loop-on-pull-request`" in posted
+    assert "Where should the outer loop happen?" in posted
+
+
 def test_a_failing_frozen_graph_sink_never_gates_the_selection(
     selecting, repo, fake_github
 ):

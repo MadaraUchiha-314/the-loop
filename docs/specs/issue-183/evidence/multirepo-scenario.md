@@ -2,7 +2,10 @@
 
 A work item in `acme/app` needing contributions in `acme/app` **and** `acme/infra`, walked
 through the shipped router, runtime and hooks — no test doubles for anything under test.
-The script is reproduced under the transcript.
+Re-run after the PR #184 review round, so step 2 shows what actually shipped: the origin
+repository comes from the harness config, and the **surface** comes from the work item's
+own `phase-selection` answer, defaulting to the work item. The script is reproduced under
+the transcript.
 
 Two notes on the output:
 
@@ -10,8 +13,8 @@ Two notes on the output:
   for a GitHub API that this scratch repository does not have (and `acme/app` does not
   exist). Best-effort by contract: it is reported and the transition still stands, which is
   exactly what the transcript shows. No credential was used and none appears here.
-- Nothing in this transcript needed redaction: the only names in it are the invented
-  `acme/app`, `acme/infra` and `acme/docs`, and a `tmp` working directory that is not printed.
+- Nothing here needed redaction: the only names are the invented `acme/app`, `acme/infra`
+  and `acme/docs`, and a `tmp` working directory that is not printed.
 
 ## Transcript
 
@@ -21,12 +24,24 @@ $ uv run python scenario.py
 --- 1. the ticket lives in acme/app; a PR in acme/infra closes it 
 routed to: ['github:acme/app#42', 'github:acme/infra#7']
 
---- 2. the outer loop's surface and origin, read from acme/app's own config 
-outerLoopSurface: issue | originRepo: acme/app
+--- 2. the origin repo is config; the SURFACE is the work item's own choice 
+originRepo: acme/app | surface in config: False
+checklist parses to → skips: ['requirements-definition'] | surface: work-item
+...and with the box ticked → surface: pull-request
+
+[surface=unset → default]
 the-loop assignment for issue-42:
   you are now at node: design (phase: design)
   produce: design.md
-  iterate it on: the ticket — comment there, and do not open a pull request just to carry the spec chain (workflow.outerLoop.surface: issue)
+  iterate it on: the work item itself (the default) — comment on the ticket, and do not open a pull request just to carry the spec chain
+  when this node's work is done, report back: `the-loop graph complete issue-42`
+  (assigned by the-loop's graph — not part of any event payload)
+
+[surface=pull-request]
+the-loop assignment for issue-42:
+  you are now at node: design (phase: design)
+  produce: design.md
+  iterate it on: a pull request in the repository the ticket was created in — the surface this work item chose at phase-selection
   when this node's work is done, report back: `the-loop graph complete issue-42`
   (assigned by the-loop's graph — not part of any event payload)
 
@@ -69,12 +84,12 @@ legitimate: acme__infra → docs/specs/issue-42/pr-loops/acme__infra/pr-7
 | Step | Shows | Requirement |
 |---|---|---|
 | 1 | a PR in `acme/infra` closing `acme/app#42` routes to the work item in the **origin** repository, before the PR's own ref | R1.5 |
-| 2 | the surface and the origin repository are read from the origin repo's own harness config, and the session is **told** where to iterate | R2.1, R2.4, R2.6 |
+| 2 | the origin repository is read from config; the **surface is not** — it is parsed from the checklist, defaults to the work item, and the session is told which either way | R2.2, R2.3, R2.5, R2.7, R2.9 |
 | 3 | two pull requests both numbered #7 keep separate state — `pr-loops/pr-7/` for the origin repository, `pr-loops/acme__infra/pr-7/` for the contributing one — under the one spec chain | R1.3, R1.4 |
 | 4 | the outer `implementation` gate holds while a contributing repository's loop is unfinished, naming it | R4.1 |
 | 5 | …and passes once every declared repository has finished | R4.1 |
 | 6 | a declared repository nobody opened a pull request for holds the gate rather than passing it | R4.2 |
-| 7 | the inner-loop session's claim command addresses **its** loop: `--pr 7 --pr-repo acme/infra` | R2.7 |
+| 7 | the inner-loop session's claim command addresses **its** loop: `--pr 7 --pr-repo acme/infra` | R2.8 |
 | 8 | a hostile repository name is refused at the path boundary, never sanitized | R1.6, abuse case 1 |
 
 ## The script
@@ -89,6 +104,7 @@ from the_loop.control import ControlConfig
 from the_loop.graph.bootstrap import build_runtime
 from the_loop.graph.contract import HookContext, WorkItem
 from the_loop.graph.hooks.assignment import render_assignment
+from the_loop.graph.hooks.selection import _parse_selection, _parse_surface
 from the_loop.graph.hooks.loops import await_inner_loops, inner_loop_state_dir, repo_state_key
 from the_loop.graphlink import GraphLink, GraphLinkConfig, render_graph_context
 from the_loop.sessions import WorkItemRef
@@ -107,7 +123,7 @@ spec.mkdir(parents=True)
 (root / ".the-loop").mkdir()
 (root / ".the-loop" / "harness-config.yaml").write_text(
     "ticketing:\n  github:\n    owner: acme\n    repo: app\n"
-    "workflow:\n  specDir: docs/specs\n  outerLoop:\n    surface: issue\n")
+    "workflow:\n  specDir: docs/specs\n")
 (spec / "execution-log.md").write_text(
     "---\ntype: execution-log\nworkItem: issue-42\nrepos:\n"
     "  - acme/app\n  - acme/infra\n---\n\n# Execution Log\n")
@@ -121,13 +137,23 @@ payload = {"repository": {"full_name": "acme/infra"},
                             "head": {"ref": "feature/multi-repo"}}}
 print("routed to:", [r.ref for r in extract_work_items("pull_request", payload)])
 
-show("2. the outer loop's surface and origin, read from acme/app's own config")
+show("2. the origin repo is config; the SURFACE is the work item's own choice")
 rt = build_runtime(root)
-print("outerLoopSurface:", rt.config["outerLoopSurface"], "| originRepo:", rt.config["originRepo"])
-ctx = HookContext(work_item=WorkItem(ref=WI.ref, id="issue-42", spec_dir=spec),
-                  node={"id": "design", "phase": "design", "produces": ["design.md"]},
-                  boundary="entry", repo=root, config=dict(rt.config))
-print(render_assignment(ctx))
+print("originRepo:", rt.config["originRepo"],
+      "| surface in config:", "outerLoopSurface" in rt.config)
+checklist = ("- [x] design\n"
+             "- [ ] requirements-definition\n"
+             "- [ ] outer-loop-on-pull-request\n")
+print("checklist parses to → skips:", _parse_selection(checklist, ["requirements-definition"], [])[0],
+      "| surface:", _parse_surface(checklist))
+print("...and with the box ticked → surface:",
+      _parse_surface(checklist.replace("- [ ] outer-loop", "- [x] outer-loop")))
+for surface in ("", "pull-request"):
+    ctx = HookContext(work_item=WorkItem(ref=WI.ref, id="issue-42", spec_dir=spec),
+                      node={"id": "design", "phase": "design", "produces": ["design.md"]},
+                      boundary="entry", repo=root, surface=surface, config=dict(rt.config))
+    print(f"\n[surface={surface or 'unset → default'}]")
+    print(render_assignment(ctx))
 
 show("3. two pull requests, both #7, one per contributing repository")
 link = GraphLink(GraphLinkConfig(enabled=True), control=ControlConfig(enabled=False))

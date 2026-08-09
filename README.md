@@ -35,10 +35,11 @@ inner loops and passes that gate vacuously.
 created in**, which is where the work item's one spec chain lives. A work item that needs
 code in three repositories raises three pull requests — one per repository, each walking
 its own inner loop — and none in the origin repository unless code lands there too.
-`workflow.outerLoop.surface` says where the outer loop's artifacts are *iterated*:
-`pull-request` (the default) or `issue`, for the Jira-style case where opening a pull
-request in the origin repository would only ever hold a discussion. A pull request's own
-loop is never configurable — it runs on its pull request.
+Where the outer loop's artifacts are *iterated* is the work item's own choice, ticked at
+`phase-selection` alongside the phases: the **work item** itself (the default, Jira-style)
+or a **pull request** in that repository. No config key anywhere — one project has both a
+one-repo bugfix and a three-repo migration. A pull request's own loop is never
+configurable: it runs on its pull request.
 
 ![the-loop's two loops. A ticket is opened, then the spec chain — optional
 brainstorm.md, requirements.md or bugfix.md, design.md, testing-plan.md, tasks.md — is

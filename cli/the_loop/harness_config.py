@@ -46,18 +46,15 @@ import yaml
 logger = logging.getLogger("the-loop.harness-config")
 
 __all__ = [
-    "DEFAULT_OUTER_LOOP_SURFACE",
     "DEFAULT_SPEC_DIR",
     "FILENAMES",
     "HarnessConfigError",
     "HarnessConfigRead",
-    "OUTER_LOOP_SURFACES",
     "READS",
     "config_path",
     "load",
     "load_strict",
     "origin_repo",
-    "outer_loop_surface",
     "spec_dir",
 ]
 
@@ -72,14 +69,6 @@ DEFAULT_SPEC_DIR = "docs/specs"
 #: wins?" became three separate answers. Renamed in issue-82 (decision-035); the old name
 #: stays readable for repositories that have not run ``/the-loop:upgrade-the-loop``.
 FILENAMES: Tuple[str, ...] = ("harness-config.yaml", "config.yaml")
-
-#: Where a project iterates the OUTER loop's artifacts (issue-183). ``issue`` is
-#: the ticket, Jira-style; ``pull-request`` is a pull request in the origin
-#: repository, which is what every repository did before the key existed — hence
-#: the default. The INNER loop has no surface: a pull request's loop runs on that
-#: pull request, and no configuration moves it.
-OUTER_LOOP_SURFACES: Tuple[str, ...] = ("issue", "pull-request")
-DEFAULT_OUTER_LOOP_SURFACE = "pull-request"
 
 
 class HarnessConfigError(ValueError):
@@ -132,13 +121,6 @@ READS: Tuple[HarnessConfigRead, ...] = (
         "where the integration tests live is part of the repository's layout",
     ),
     HarnessConfigRead(
-        "workflow.outerLoop.surface",
-        "graph, and the daemon via graphlink",
-        "where a project iterates its outer-loop artifacts — the ticket or a pull "
-        "request in the origin repository — is a property of that project's process, "
-        "and the CLI renders it into what a session is told to do",
-    ),
-    HarnessConfigRead(
         "ticketing.github",
         "check, graph, and the daemon via graphlink",
         "the repository the ticket was created in is what makes `pr-loops/pr-<n>/` "
@@ -170,28 +152,6 @@ def spec_dir(harness: Mapping[str, Any]) -> str:
     if not isinstance(workflow, dict):
         return DEFAULT_SPEC_DIR
     return str(workflow.get("specDir") or DEFAULT_SPEC_DIR)
-
-
-def outer_loop_surface(harness: Mapping[str, Any]) -> str:
-    """``workflow.outerLoop.surface`` — ``issue`` or ``pull-request`` (issue-183).
-
-    Anything else resolves to :data:`DEFAULT_OUTER_LOOP_SURFACE`: absent (the
-    only case that is not a mistake), a non-mapping ``outerLoop``, a non-string
-    value, or a string outside the two the schema accepts. Resolving rather than
-    raising is the same rule :func:`load` follows — ``the-loop check`` must still
-    report a phase in a repository whose config someone is halfway through
-    editing — and the fallback is the *more* review-bearing of the two options.
-    """
-    workflow = harness.get("workflow") or {}
-    if not isinstance(workflow, dict):
-        return DEFAULT_OUTER_LOOP_SURFACE
-    outer = workflow.get("outerLoop") or {}
-    if not isinstance(outer, dict):
-        return DEFAULT_OUTER_LOOP_SURFACE
-    surface = outer.get("surface")
-    if isinstance(surface, str) and surface in OUTER_LOOP_SURFACES:
-        return surface
-    return DEFAULT_OUTER_LOOP_SURFACE
 
 
 def origin_repo(harness: Mapping[str, Any]) -> str:
