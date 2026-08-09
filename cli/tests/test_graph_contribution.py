@@ -440,9 +440,7 @@ def _git(repo, *args):
     )
 
 
-def test_the_walk_runs_and_stays_out_of_git_in_an_unadopted_repo(
-    tmp_path, fake_github
-):
+def test_the_walk_runs_and_stays_out_of_git_in_an_unadopted_repo(tmp_path, fake_github):
     """
     Feature: joining an existing work item as a contributor
     Scenario: the target repository never ran the-loop's setup
