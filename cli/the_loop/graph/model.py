@@ -23,14 +23,25 @@ import yaml
 
 from .registry import hook_names, is_registered
 
-#: The two shipped loops (issue-172, PR #173 review): the OUTER loop walks a
+#: The three shipped loops. The OUTER loop (issue-172, PR #173 review) walks a
 #: work item through the PDLC; the INNER loop walks one pull request through
 #: the subset of it that delivers a component — in service of the work item.
-#: Same vocabulary, same hooks, same runtime; different node sets, different
-#: state files. A third, pdlc-project-management-loop, is anticipated by the
-#: naming and deliberately not shipped yet.
+#: The CONTRIBUTION loop (issue-185) is the path walked when the-loop is
+#: invited into an EXISTING, in-progress work item as a contributor: it cannot
+#: start without an authorized human's goal and success criteria, and its
+#: phases are sized for a scoped intervention. Same vocabulary, same hooks,
+#: same runtime; different node sets, different state files. A fourth,
+#: pdlc-project-management-loop, is anticipated by the naming and deliberately
+#: not shipped yet.
 PDLC_WORK_ITEM_LOOP = "pdlc-work-item-loop"
 PDLC_PR_LOOP = "pdlc-pr-loop"
+PDLC_CONTRIBUTION_LOOP = "pdlc-contribution-loop"
+
+#: Every loop name :func:`load_graph` accepts. The membership check is a
+#: security seam, not bookkeeping: `graph-state.json` is agent-writable and its
+#: `loop` field feeds graph selection (issue-185), so a reader resolving that
+#: field must accept only these names and fall back to the default otherwise.
+SHIPPED_LOOPS = (PDLC_WORK_ITEM_LOOP, PDLC_PR_LOOP, PDLC_CONTRIBUTION_LOOP)
 
 #: The default shipped graph — the outer loop — package data beside this module
 #: (see shipped_graph_path). Named pdlc.yaml before issue-172 split the process
@@ -41,8 +52,10 @@ logger = logging.getLogger("the-loop.graph")
 
 __all__ = [
     "ALTERNATIVE_SEPARATOR",
+    "PDLC_CONTRIBUTION_LOOP",
     "PDLC_PR_LOOP",
     "PDLC_WORK_ITEM_LOOP",
+    "SHIPPED_LOOPS",
     "ArtifactSlot",
     "Edge",
     "Graph",
@@ -525,6 +538,7 @@ def _warn_on_repo_graph(repo: Path) -> None:
         repo / ".the-loop" / "pdlc.yaml",
         repo / ".the-loop" / f"{PDLC_WORK_ITEM_LOOP}.yaml",
         repo / ".the-loop" / f"{PDLC_PR_LOOP}.yaml",
+        repo / ".the-loop" / f"{PDLC_CONTRIBUTION_LOOP}.yaml",
     ):
         if candidate.is_file():
             logger.warning(

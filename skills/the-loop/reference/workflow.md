@@ -255,6 +255,59 @@ every assignment and prompt from then on.
 **The inner loop has no such choice.** A pull request's loop is iterated on that pull
 request, always. See [decision-069](../../../docs/decisions/decision-069.md).
 
+## The contribution loop — joining an existing work item (issue-185)
+
+The third shipped graph, **`pdlc-contribution-loop`**, is walked instead of the outer
+loop when the-loop is **invited into an issue or PR that already exists and is already
+in progress** — possibly created by a bespoke process it has never seen. Do not assume
+any spec-chain artifact exists before joining. The trigger gestures are the ones every
+work item uses — the auto-execute label, an arming comment, phase selection, `the-loop
+execute` — with one difference: the arming keyword is **`the-loop contribute`**
+(configurable, `routing.control.keywords.contribute`), which both arms the item exactly
+as `start` would and selects this loop for its outer walk. The choice is recorded
+durably (the portable control record, then `graph-state.json`'s `loop` field), so every
+later reader addresses the same graph.
+
+Two required nodes are the loop's structural invariants:
+
+- **`goal-definition`** — *no goal, no start.* The gate waits until an **authorized**
+  user's comment states a `Goal:` line plus a `Success criteria:` bullet list (the
+  `the-loop contribute` comment itself qualifies — the gate re-reads the thread). The
+  goal is frozen into graph state with provenance and confirmed in a comment; the-loop
+  never invents, infers or completes one. The criteria are the intervention's
+  **definition of done**.
+- **`phase-selection`** — the same human act as everywhere (issue-179): every other
+  phase of this loop is selectable, so a contained instruction can keep as little as
+  implementation + verification, with each omission attributed.
+
+The walk:
+`goal-definition → phase-selection → context-intake → scoped-plan → plan-approval →
+implementation → verification → self/critic/security review → reviewer-briefing →
+human-approval → complete` (skip sets: `plan`, `review-chain`).
+
+Two rules keep the intervention light without losing rigor:
+
+- **One artifact, not four.** `context-intake` and `scoped-plan` author a single
+  `contribution.md` (goal, success criteria, context, approach, verification plan —
+  bundled template), locked at `scoped-plan` and iterated with the human at
+  `plan-approval`. Requirements-and-design thinking still happens; it lands in sections
+  rather than files. The review chain gates the shared execution log exactly as the
+  other loops do. **Never bloat the existing item's thread**: gates' comments only,
+  each self-marked; work products live in the repository.
+- **Done means the criteria are met.** The frozen criteria are checkboxes in
+  `contribution.md`; `verification` blocks until every one is ticked and
+  `Verification results` records how each was proved — in the execution log instead
+  when the planning phases were declared away (a kept gate keeps a subject).
+- **An unadopted repository stays clean.** The target may carry no
+  `.the-loop/harness-config.yaml` at all: everything then runs on the defaults
+  (specs at `docs/specs/`, labels `loop:`-prefixed), and the spec tree is **working
+  state only** — the runtime excludes it from git at start, and you must never
+  commit or push it; the contribution PR contains only the intervention. The
+  `publish-artifact` hook posts the plan (at `plan-approval`) and its verification
+  results (at `human-approval`) to the thread, which is the review surface such a
+  repository offers. In an adopted repository the hook skips — link the checked-in
+  file instead, as ever.
+
 ## Link artifacts to the ticket (single source of truth)
 
 Once each spec document is established (requirements, design, tasks), **update the work

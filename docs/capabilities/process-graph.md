@@ -7,8 +7,8 @@
 ## What it is
 
 The runtime under `cli/the_loop/graph/` plus the shipped loop definitions
-(`cli/the_loop/graph/pdlc-work-item-loop.yaml` and `pdlc-pr-loop.yaml`), surfaced as
-`the-loop check` and `the-loop graph`.
+(`cli/the_loop/graph/pdlc-work-item-loop.yaml`, `pdlc-pr-loop.yaml` and
+`pdlc-contribution-loop.yaml`), surfaced as `the-loop check` and `the-loop graph`.
 It exists because before it, the PDLC was enforced only by prompts: there was no event
 anywhere in the-loop meaning *"this node of the process completed"*, so there was nowhere
 to hang a gate, a notification, or an advance (issue-109, [decision-041](../decisions/decision-041.md)).
@@ -29,8 +29,38 @@ There are exactly **two** runtime concepts and **one** contract between them.
   through the component-scoped subset that delivers it — starting at `implementation`
   (everything earlier is the work item's, decided once at the outer level), through
   verification and the same review chain, to the PR's own human gate (`pr-approval`)
-  and a terminal `complete`. Same vocabulary, same hooks, same runtime; a third,
+  and a terminal `complete`. Same vocabulary, same hooks, same runtime; a fourth,
   `pdlc-project-management-loop`, is anticipated by the naming and not yet shipped.
+- **The third loop is the contribution loop** (issue-185,
+  [decision-070](../decisions/decision-070.md)). `pdlc-contribution-loop` SHALL be
+  walked instead of the outer loop when an authorized user arms a work item with the
+  `contribute` control keyword — the-loop joining an **existing, in-progress** issue or
+  PR as a contributor, with no assumption that any spec-chain artifact exists.
+  - The loop SHALL NOT start until an authorized user's comment states a goal and at
+    least one success criterion (`Goal:` + a `Success criteria:` bullet list); the
+    `goal-definition` node is `required: true`, the parsed goal is frozen into
+    `graph-state.json`'s decisions with provenance and confirmed in a comment, and
+    unauthorized or self-authored text SHALL NOT be read at all.
+  - Its planning nodes (`context-intake`, `scoped-plan`, `plan-approval`) SHALL author
+    **one** artifact — `contribution.md` — in place of the four-file spec chain; its
+    `verification` node SHALL block until every success-criterion checkbox is complete
+    and `Verification results` is recorded (in the execution log when the plan was
+    declared away). Every node but `goal-definition` and `phase-selection` is
+    skippable (skip sets `plan` and `review-chain`).
+  - Which loop a work item walks SHALL be recorded durably: `GraphState.loop`, written
+    once at start from the compiled graph's name, resolved state-first (then the
+    portable control record, then the default) by the daemon and every CLI verb. Only
+    shipped loop names SHALL be honoured — an invented value in the agent-writable
+    state file reads as the default, never as a graph choice.
+  - The target repository need not have **adopted** the-loop (PR #187 review). WHEN it
+    carries no `.the-loop/harness-config.yaml` THEN every harness-config read SHALL
+    degrade to the built-in defaults (decision-044), the spec tree SHALL be kept out
+    of the repository's history structurally (`Runtime.start` writes the spec root
+    into the checkout's git exclude file — the contribution PR carries only the
+    intervention), and the `publish-artifact` hook SHALL post `contribution.md`'s
+    content to the thread at `plan-approval` and `human-approval` — the review surface
+    such a repository offers. In an adopted repository the hook SHALL skip: the
+    checked-in artifact is the surface, and no extra comment is posted.
   - The loops SHALL meet at exactly **one seam**: the outer `implementation` node's
     `await-inner-loops` exit hook. WHEN inner loops have been started under
     `docs/specs/<id>/pr-loops/` THEN the work item SHALL `wait` at `implementation`,
@@ -482,6 +512,7 @@ included, however empty the log was.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-185 | The contribution loop (2026-08-09): a third shipped graph, `pdlc-contribution-loop`, walked when the-loop is invited into an existing, in-progress work item as a contributor — armed by the new `contribute` control keyword (a spawn-arming sibling of `start`, `routing.control.keywords.contribute`); a required `goal-definition` gate (`post-goal-request`/`classify-goal` hooks) that refuses to start until an authorized human states a goal and success criteria, frozen into graph state with provenance; one lightweight `contribution.md` artifact (bundled template) in place of the four-file spec chain; verification gating on every criterion checkbox being met; `GraphState.loop` recording which loop a state walks, resolved state-first everywhere with non-shipped names failing closed to the default | [spec](../specs/issue-185/), [decision-070](../decisions/decision-070.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/185) |
 | issue-183 | Multi-repo topology named (2026-08-09): the outer loop runs in the repository the ticket was created in and each contributing repository gets one PR and one inner loop, whose state is qualified by repository (`pr-loops/<owner>__<repo>/pr-<n>/`) with the origin repo's shipped path unchanged; repository names are validated at the path boundary, never sanitized; a qualified cross-repo closing reference now routes to its work item; `execution-log.md` front matter takes `repos:` and `await-inner-loops` holds `implementation` until each declared repository has a finished loop (blocking on a malformed entry); the surface the OUTER loop is collaborated on became a **per-work-item** choice at `phase-selection` (one extra checklist row, frozen by the same signed reply; default: the work item itself), deliberately not a config key anywhere, with the inner loop not configurable at all; graph verbs and the API gained `--pr-repo`/`prRepo` | [spec](../specs/issue-183/), [decision-069](../decisions/decision-069.md), [spec-workflow](spec-workflow.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/183) |
 | issue-179 | Every phase is selectable (2026-08-08): the outer loop's skip vocabulary widened from the spec chain to **every node it walks** except `phase-selection` (which keeps `required: true` and is now the whole floor — the loop cannot walk past the act of choosing) and the terminals; `security-review` and `human-approval` traded their `required` markers to become declarable; ten new `on: skipped` edges and a second shipped set, `review-chain`, beside a `spec-chain` that now includes `test-planning`; `validate-artifacts` gained `onlyWhenSkipped:` so a *kept* gate keeps a subject — `verification` gates the execution log's `Verification results` when the plan was declared away, and blocks until it is written; the `phase-selection` checklist says what an empty protected list means | [spec](../specs/issue-179/), [decision-068](../decisions/decision-068.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/179) |
 | issue-177 | Declared skips (2026-08-08): `skippable: true` fixes the vocabulary in the shipped graph (spec-chain nodes only; compile-refused on `required` nodes, on missing `skipped` edges, and on `skipSets` members outside it); the outer loop gained a first human node `phase-selection` where the-loop posts a phase checklist, the user ticks it in place, and an authorized `the-loop execute` (a `routing.control` command) freezes the selection — the resolved graph landing in both `graph-state.json` and the portable session record (the audited `graph skip` verb is the same declaration from a shell); the runtime routes around declared nodes without running their hooks and `check` reports them as *skipped by declaration* with provenance — never a pass; a forged declaration on a protected node is inert and surfaced; later gates treat a skipped author's absent artifact as planned; `deliver-assignment` announces a human gate instead of telling the session to claim it | [spec](../specs/issue-177/), [decision-067](../decisions/decision-067.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/177) |

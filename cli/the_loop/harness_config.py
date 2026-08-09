@@ -52,6 +52,7 @@ __all__ = [
     "HarnessConfigRead",
     "READS",
     "config_path",
+    "initialized",
     "load",
     "load_strict",
     "origin_repo",
@@ -180,6 +181,19 @@ def config_path(root: Path) -> Optional[Path]:
         if candidate.is_file():
             return candidate
     return None
+
+
+def initialized(root: Path) -> bool:
+    """Whether ``root`` has adopted the-loop — i.e. carries a harness config.
+
+    The contribution loop (issue-185) can be invited into a repository that never
+    ran the-loop's setup. Every read still degrades to defaults (:func:`load`), but
+    some behaviour is *about* the distinction rather than about any one key: a
+    repository that never adopted the-loop must not have the-loop's spec tree
+    committed into it, and its review surface is the work item's thread. Those
+    callers ask this question, not "what does the config say".
+    """
+    return config_path(root) is not None
 
 
 def load(root: Path) -> Dict[str, Any]:

@@ -37,6 +37,7 @@ def build_runtime(
     authorized_users: Optional[Sequence[str]] = None,
     pr_number: Optional[int] = None,
     pr_repo: str = "",
+    loop: str = "",
 ):
     """A runtime for ``root``, configured from the harness and CLI configs.
 
@@ -65,9 +66,17 @@ def build_runtime(
     the origin repository. ``""`` — the default, and every caller before
     issue-183 — means the pull request is in the origin repository and keeps the
     shipped path.
+
+    ``loop`` names the **outer-path** graph to walk (issue-185): the
+    contribution loop, for a work item the-loop joins as a contributor rather
+    than owns. Meaningless with ``pr_number`` (a pull request's loop is always
+    ``pdlc-pr-loop``). Only shipped loop names are honoured — the value can
+    originate in the agent-writable ``graph-state.json``, so anything else
+    falls back to the default outer loop with a warning rather than reaching
+    ``load_graph``.
     """
     from .hooks.loops import inner_loop_state_dir
-    from .model import PDLC_PR_LOOP, load_graph
+    from .model import PDLC_PR_LOOP, PDLC_WORK_ITEM_LOOP, SHIPPED_LOOPS, load_graph
     from .runtime import Runtime
 
     harness = load_harness_config(root)
@@ -77,6 +86,14 @@ def build_runtime(
         "notifications": harness.get("notifications") or {},
         "authorizedUsers": list(authorized_users or []),
         "integrations": {},
+        # Whether this repository has adopted the-loop at all (issue-185, PR #187
+        # review). A contribution can join a repository that never ran setup:
+        # every key above already degrades to a default, but the *distinction*
+        # drives behaviour of its own — an uninitialized repository's spec tree
+        # is kept out of git (`Runtime.start`) and its plan is posted to the
+        # thread (`publish-artifact`), because the repository offers no place to
+        # review a checked-in artifact.
+        "repoInitialized": harness_config.initialized(root),
         # Which repository the ticket lives in (issue-183) — the origin
         # repository, where the outer loop runs and every inner loop's state is
         # kept. A fact about this repository, and one a daemon watching N of
@@ -119,8 +136,18 @@ def build_runtime(
             config=config,
             state_subpath=subpath,
         )
+    chosen = loop or PDLC_WORK_ITEM_LOOP
+    if chosen not in SHIPPED_LOOPS or chosen == PDLC_PR_LOOP:
+        # Fail closed to the default: `loop` can come from the agent-writable
+        # state file, and an invented name must never choose the graph — nor
+        # may the inner loop be addressed without the pr-loops state layout.
+        logger.warning(
+            "ignoring unknown outer loop %r; walking %s", chosen, PDLC_WORK_ITEM_LOOP
+        )
+        chosen = PDLC_WORK_ITEM_LOOP
     return Runtime(
         root,
+        graph=load_graph(repo=root, name=chosen),
         spec_root=str(spec_root or harness_config.spec_dir(harness)),
         config=config,
     )

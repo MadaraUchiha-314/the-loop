@@ -34,6 +34,58 @@ __all__ = [
 ]
 
 
+def _exclude_spec_root(repo: Path, spec_root: str) -> str:
+    """Keep the spec tree out of an **uninitialized** repository's history.
+
+    A contribution can join a repository that never adopted the-loop (issue-185,
+    PR #187 review). Its working checkout still needs the spec tree —
+    ``graph-state.json``, ``execution-log.md``, ``contribution.md`` are how the
+    runtime and its gates work at all — but none of that may reach the
+    repository's history: the contribution PR carries only the intervention.
+    Rather than trusting every session to remember not to ``git add`` it, the
+    tree is excluded structurally, in ``info/exclude`` — git's checkout-local
+    ignore file, itself never committed. Resolved via ``rev-parse --git-path``
+    so a worktree checkout (the workspace default) lands on the shared file.
+
+    Best-effort by contract: a non-git root or an unwritable exclude file
+    degrades to a warning — the guarantee then rests on the session
+    instructions, and starting the loop still must not fail.
+
+    Returns ``"added"``, ``"present"`` or ``""`` (could not / nothing to do).
+    """
+    import subprocess
+
+    entry = "/" + spec_root.strip("/") + "/"
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(repo), "rev-parse", "--git-path", "info/exclude"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.debug("could not resolve %s's exclude file: %s", repo, exc)
+        return ""
+    if proc.returncode != 0:
+        return ""  # not a git checkout — nothing to keep out of history
+    path = Path(proc.stdout.strip())
+    if not path.is_absolute():
+        path = repo / path
+    try:
+        existing = path.read_text(encoding="utf-8") if path.is_file() else ""
+        if entry in existing.splitlines():
+            return "present"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as fh:
+            if existing and not existing.endswith("\n"):
+                fh.write("\n")
+            fh.write(entry + "\n")
+    except OSError as exc:
+        logger.warning("could not exclude %s from git: %s", spec_root, exc)
+        return ""
+    return "added"
+
+
 def _skip_provenance(decl: Mapping[str, Any]) -> str:
     """One line a reviewer can act on: who declared this skip, and how."""
     via = str(decl.get("via") or "unknown")
@@ -293,6 +345,13 @@ class Runtime:
                     # one human act, one record (issue-183).
                     record["surface"] = chosen
                     state.surface = chosen
+                goal = result.data.get("goal")
+                if goal:
+                    # The contribution loop's goal gate (issue-185): the goal
+                    # and success criteria are frozen with provenance, exactly
+                    # as a phase selection is — a recorded fact, not a live
+                    # comment.
+                    record["goal"] = dict(goal)
                 state.decisions.setdefault(str(marker), record)
                 decided = True
                 if frozen:
@@ -517,10 +576,35 @@ class Runtime:
         if state.current_node:
             return None
 
+        # A repository that never adopted the-loop must not have the spec tree
+        # committed into it (issue-185, PR #187 review): exclude it from git
+        # BEFORE the first state write creates it. `is False` on purpose — only
+        # a bootstrap that positively established "uninitialized" triggers this;
+        # a hand-built runtime config without the key changes nothing.
+        if self.config.get("repoInitialized") is False:
+            outcome = _exclude_spec_root(self.repo, self.spec_root)
+            if outcome == "added":
+                eventlog.emit(
+                    "graph.spec_tree_excluded",
+                    work_item=ref or work_item_id,
+                    path=self.spec_root,
+                )
+                logger.info(
+                    "%s: %s excluded from git — this repository has not adopted "
+                    "the-loop, so its spec tree stays out of history",
+                    ref or work_item_id,
+                    self.spec_root,
+                )
+
         node_id = self._route_skips(
             state, item, self.graph.start, self.declared_skips(state)
         )
         state.enter(node_id)
+        # Which loop this state walks (issue-185): recorded once, at the only
+        # moment the choice is made, so every later reader — the daemon, `the-loop
+        # check`, the graph verbs — resolves the same graph without re-deriving
+        # it from a control record that may live on another machine.
+        state.loop = self.graph.name or state.loop
         state.save(
             self.state_dir(item)
         )  # persist BEFORE any dependent side effect (R8.2)

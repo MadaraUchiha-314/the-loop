@@ -170,10 +170,30 @@ user has chosen which phases this work item needs, so **freeze that selection an
 walking**. The tick state of the-loop's checklist comment at that moment is what gets
 frozen — a checklist inside the execute comment itself wins over it.
 
-Different in kind from the other four, and worth knowing why: `execute` never touches the
-session registry — it neither arms nor disarms anything — and the comment carrying it is
-still **delivered**, because the gate's own exit chain is what reads the selection. The
-authorization is identical: a named, allowlisted human, checked before anything happens.
+Different in kind from the session commands, and worth knowing why: `execute` never
+touches the session registry — it neither arms nor disarms anything — and the comment
+carrying it is still **delivered**, because the gate's own exit chain is what reads the
+selection. The authorization is identical: a named, allowlisted human, checked before
+anything happens.
+
+### `control.keywords.contribute`
+
+- **Type:** `string`
+- **Default:** `the-loop contribute`
+
+Arms the work item exactly as `start` does — same spawn policy, same durable record,
+same named-actor authorization — and additionally selects the **contribution loop**
+(`pdlc-contribution-loop`,
+[issue-185](https://github.com/MadaraUchiha-314/the-loop/issues/185)) for its outer
+walk: the-loop joins an **existing, in-progress** issue or PR as a contributor rather
+than owning it from scratch.
+
+That loop refuses to begin until an authorized user has stated a **goal and success
+criteria** — a `Goal:` line plus a `Success criteria:` bullet list, in one comment; the
+comment carrying this keyword qualifies, so stating both there costs no extra round
+trip. The criteria become the intervention's definition of done: its verification gate
+holds until every one is met. See the
+[process graph](/capabilities/process-graph) capability for the loop's phases.
 
 Keywords match as **whole tokens, case-insensitively, anywhere** in a comment body.
 Setting one to an empty string disables that command. A comment carrying **two different**

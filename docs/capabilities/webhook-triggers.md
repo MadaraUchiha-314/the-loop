@@ -70,10 +70,14 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
     skill (`reference/collaboration.md`), restated in every rendered prompt.
 - **Execution control: the label is necessary, not sufficient** (issue-106,
   `routing.control`). The label says *which* items may run and `authorizedUsers` says
-  *who* may be an input; four declared keywords say *when*:
-  `the-loop start`, `the-loop stop`, `the-loop pause`, `the-loop resume`
-  (all configurable; issue-135 — the pre-issue-135 defaults were
-  `the-loop:start-execution` and its three siblings).
+  *who* may be an input; the declared keywords say *when*:
+  `the-loop start`, `the-loop stop`, `the-loop pause`, `the-loop resume`, plus
+  `the-loop contribute` (issue-185) — a spawn-arming sibling of `start` that also
+  selects the **contribution loop** for the item's outer walk: the-loop joining an
+  existing, in-progress issue or PR as a contributor, which then refuses to begin
+  until an authorized user has stated a goal and success criteria
+  (see [process-graph](process-graph.md)). All configurable (issue-135 — the
+  pre-issue-135 defaults were `the-loop:start-execution` and its three siblings).
   - WHEN an **authorized** user's comment on the work item or its PR carries one of
     them THEN the-loop SHALL execute that command and SHALL NOT forward the comment to
     the harness; keywords match as whole tokens, case-insensitively, and a comment
@@ -376,6 +380,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-185 | A sixth control keyword, `contribute` (`the-loop contribute`, `routing.control.keywords.contribute`): arms and spawns exactly as `start` at both spawn seams (same durable record, same named-actor authorization, same ambiguity refusal) and selects `pdlc-contribution-loop` for the work item's outer walk — resolved by the GraphLink state-first, then from the portable control record | [spec](../specs/issue-185/), [decision-070](../decisions/decision-070.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/185) |
 | issue-183 | Cross-repository linkage (2026-08-09): a qualified closing reference to another repository now routes to the work item **there** instead of being dropped, so a pull request delivering one repository's share of a multi-repo work item can reach its ticket; the PR's inner loop is addressed by repository as well as number, and an inner-loop prompt's claim command carries `--pr-repo` | [spec](../specs/issue-183/), [decision-069](../decisions/decision-069.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/183) |
 | issue-172 | Which session owns a PR's events stopped being recomputed from `gh` per event (2026-08-07): the work item's single session record now carries its `pullRequests[]`, each an endpoint with its own tmux session and harness conversation (`routing.tmux.sessionPerPr`, default on — `false` collapses to the pre-issue-172 single session), spawned lazily and closed individually when its PR closes. Additive resolution; issue-93's derivation and issue-101's close rule unchanged | [spec](../specs/issue-172/), [decision-064](../decisions/decision-064.md), [state](../cli/state.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/172) |
 | issue-159 | Stopping and restarting the poller became invisible (2026-08-05): an exclusive lock on the pidfile makes two pollers on one ledger impossible (`--once` included), `poll stop` verifies the pid against that lock and waits for the process to exit, each work item's record is persisted as it finishes, a stop ends the cycle after the item in flight (and an interrupted cycle never reconciles closures), and a shutdown hands back the retry budget of dispatches it abandoned | [spec](../specs/issue-159/), [poll](../cli/commands/poll.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/159) |

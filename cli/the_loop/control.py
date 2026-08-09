@@ -7,13 +7,14 @@ label answers **which** work items may run autonomously — but nothing answered
 could only ever become **harness input** (text the agent reads), never an
 instruction to the-loop itself.
 
-This module is that missing vocabulary: four commands — ``start``, ``stop``,
-``pause``, ``resume`` — declared in the CLI config
+This module is that missing vocabulary: the session commands — ``start``,
+``stop``, ``pause``, ``resume``, plus ``contribute`` (issue-185: start's
+sibling that selects the contribution loop) — declared in the CLI config
 (``routing.control.keywords``), recognised in a comment on
 the work item or its PR, and *executed by the-loop* rather than forwarded to the
-agent. The same four are available from the CLI (``the-loop sessions start|stop|
-pause|resume``), which posts the same keyword back to the ticket so the thread
-stays a complete record of who asked for what.
+agent. The first four are also available from the CLI (``the-loop sessions
+start|stop|pause|resume``), which posts the same keyword back to the ticket so
+the thread stays a complete record of who asked for what.
 
 ## Why the parser is this narrow
 
@@ -22,7 +23,7 @@ now cause a *daemon action* (spawn/pause/resume/close), not just agent input.
 The boundary is kept narrow by construction rather than by review:
 
 * the vocabulary is **fixed and configured** — :func:`parse_command` returns one
-  of four constants or nothing, never a substring of the body, so no
+  of the declared constants or nothing, never a substring of the body, so no
   payload-derived text can reach an argv, a path, a prompt or a work-item ref
   (the item acted on comes from the router's own extraction);
 * a comment carrying **two different** commands is refused outright rather than
@@ -67,6 +68,7 @@ logger = logging.getLogger("the-loop.control")
 __all__ = [
     "COMMANDS",
     "GRAPH_COMMANDS",
+    "SPAWN_COMMANDS",
     "DEFAULT_KEYWORDS",
     "ControlConfig",
     "ControlRecord",
@@ -76,21 +78,25 @@ __all__ = [
     "parse_command",
 ]
 
-# The five commands, in the order they are documented. `start` and `resume` mean
-# "execution should be running"; `pause` and `stop` mean it should not.
-# `execute` is different in kind (issue-177): it does not touch the session at
-# all — it answers the graph's `phase-selection` gate, freezing the set of
-# phases this work item will walk. It lives here because it is a **control**
-# word an authorized human types on the ticket, so it belongs to the same
-# configurable vocabulary and the same named-actor authorization as the rest.
-START, STOP, PAUSE, RESUME, EXECUTE = (
+# The six commands, in the order they are documented. `start`, `resume` and
+# `contribute` mean "execution should be running"; `pause` and `stop` mean it
+# should not. `execute` is different in kind (issue-177): it does not touch the
+# session at all — it answers the graph's `phase-selection` gate, freezing the
+# set of phases this work item will walk. `contribute` (issue-185) arms exactly
+# as `start` does, and additionally selects the CONTRIBUTION loop for the work
+# item's outer walk: the-loop joins an existing, in-progress item as a
+# contributor rather than owning it from scratch. All live here because they
+# are **control** words an authorized human types on the ticket, so they belong
+# to the same configurable vocabulary and the same named-actor authorization.
+START, STOP, PAUSE, RESUME, EXECUTE, CONTRIBUTE = (
     "start",
     "stop",
     "pause",
     "resume",
     "execute",
+    "contribute",
 )
-COMMANDS = (START, STOP, PAUSE, RESUME, EXECUTE)
+COMMANDS = (START, STOP, PAUSE, RESUME, EXECUTE, CONTRIBUTE)
 
 #: Commands the *graph* acts on rather than the session registry. The
 #: dispatcher records them and then lets the event through, because the thing
@@ -98,8 +104,14 @@ COMMANDS = (START, STOP, PAUSE, RESUME, EXECUTE)
 GRAPH_COMMANDS = (EXECUTE,)
 
 # Commands whose effect is "this work item should be running" — what
-# ControlStore.start_requested reports on.
-_ARMING_COMMANDS = (START, RESUME)
+# ControlStore.start_requested reports on. `contribute` arms like `start`
+# (issue-185): the mode differs, the request to be running does not.
+_ARMING_COMMANDS = (START, RESUME, CONTRIBUTE)
+
+#: The arming commands that may SPAWN a session where none exists — what the
+#: dispatcher's spawn seams check. `resume` is deliberately absent: it can only
+#: wake something that was paused, never conjure a session (issue-106).
+SPAWN_COMMANDS = (START, CONTRIBUTE)
 
 DEFAULT_KEYWORDS: Dict[str, str] = {
     START: "the-loop start",
@@ -107,6 +119,7 @@ DEFAULT_KEYWORDS: Dict[str, str] = {
     PAUSE: "the-loop pause",
     RESUME: "the-loop resume",
     EXECUTE: "the-loop execute",
+    CONTRIBUTE: "the-loop contribute",
 }
 
 # What may NOT sit directly against a keyword for it to count as a whole token.

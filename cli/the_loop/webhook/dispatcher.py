@@ -28,6 +28,7 @@ from ..control import (
     GRAPH_COMMANDS,
     PAUSE,
     RESUME,
+    SPAWN_COMMANDS,
     START,
     STOP,
     ControlConfig,
@@ -597,7 +598,7 @@ class Dispatcher:
         if (
             control.enabled
             and control.require_start_command
-            and control_command != START
+            and control_command not in SPAWN_COMMANDS
             and not self.control_store.start_requested(routed.work_items[0])
         ):
             return "awaiting-start"
@@ -969,15 +970,17 @@ class Dispatcher:
                 target, command, source="comment", actor=actor, note=note
             )
 
-        # An **arming** command (start/resume) is recorded only when it can act
-        # now; a **disarming** one (pause/stop) is recorded whether or not there
-        # was anything to act on. The asymmetry is the point (owner decision on
-        # PR #107): a start on a work item that is not armed must leave *no*
-        # standing request, or labelling the item later would start it — which
-        # is exactly the "labelling is the trigger" behaviour issue-106 removes.
-        # Disarming, by contrast, must persist: a stopped item must not
-        # re-spawn on the next event.
-        if command == START:
+        # An **arming** command (start/resume/contribute) is recorded only when
+        # it can act now; a **disarming** one (pause/stop) is recorded whether or
+        # not there was anything to act on. The asymmetry is the point (owner
+        # decision on PR #107): a start on a work item that is not armed must
+        # leave *no* standing request, or labelling the item later would start
+        # it — which is exactly the "labelling is the trigger" behaviour
+        # issue-106 removes. Disarming, by contrast, must persist: a stopped
+        # item must not re-spawn on the next event. `contribute` (issue-185) is
+        # `start` at this seam in every respect — the durable record's command
+        # value is what later selects the contribution loop.
+        if command in SPAWN_COMMANDS:
             if session is None:
                 refusal = self._spawn_refusal(routed, control_command=command)
                 if refusal:
@@ -1006,7 +1009,7 @@ class Dispatcher:
             else:
                 self.close_session(session, routed, reason="stopped")
                 effect = "stopped"
-        else:  # unreachable: parse_command only yields the four commands
+        else:  # unreachable: parse_command only yields the declared commands
             record()
             effect = "noop"
 

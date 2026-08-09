@@ -133,6 +133,14 @@ class GraphState:
     #: is a recorded fact rather than a live comment. Additive: absent in every
     #: pre-issue-183 state file.
     surface: str = ""
+    #: Which shipped loop this state walks (issue-185): recorded once by
+    #: ``Runtime.start`` from the compiled graph's own name, so a contribution
+    #: item is addressed by the right graph on every later read. Additive:
+    #: absent in every pre-issue-185 state file, and an empty value reads as
+    #: the shipped default for this state location. Agent-writable like the
+    #: whole file, so readers accept only shipped loop names (fail closed to
+    #: the default) — see ``model.SHIPPED_LOOPS``.
+    loop: str = ""
     version: int = STATE_VERSION
 
     # -- persistence ----------------------------------------------------------
@@ -180,6 +188,7 @@ class GraphState:
                 if isinstance(v, dict)
             },
             surface=str(data.get("surface") or ""),
+            loop=str(data.get("loop") or ""),
             version=int(data.get("version", STATE_VERSION)),
         )
 
@@ -211,6 +220,7 @@ class GraphState:
             "completions": self.completions,
             "skips": self.skips,
             "surface": self.surface,
+            "loop": self.loop,
         }
 
     # -- mutation -------------------------------------------------------------
