@@ -368,6 +368,12 @@ EVENT_TYPES: Dict[str, str] = {
         "parked rather than guessed at (work_item, node, outcome)."
     ),
     "graph.completed": ("A work item reached a terminal node (work_item, node)."),
+    "graph.spec_tree_excluded": (
+        "A contribution started in a repository that never adopted the-loop "
+        "(no harness config), so its spec tree was written into the "
+        "checkout's git exclude file — working state the contribution PR can "
+        "never carry (work_item, path). issue-185, PR #187 review."
+    ),
     "graph.skipped": (
         "The ingress→graph coupling declined to touch a work item's graph, so a "
         "successful delivery moved nothing (work_item, action: start | advance, "

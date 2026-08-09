@@ -56,6 +56,7 @@ status: in-progress          # in-progress | complete
 | self-2 | the-loop (session) | a session spawned for a contribution item was still steered to `/the-loop:work-on` by the spawn template; gave the two human gates `command: contribute-to` so the rendered graph context names the right command — and confirmed `graph complete` routes through `advance`, so goal freezing works on the claim path too | fixed in-place |
 | self-3 | the-loop (session) | history-table row initially landed above the separator row in `process-graph.md` (broken table) — fixed; pyright signature drift in two test fakes injecting `_build_runtime` — fixed; checked `checkmarks: complete` cannot trip on the template's comments | fixed in-place |
 | critic-1..3 | — | not run: `reviews.critics` is empty in this repository's config (no critic harness configured); recorded per the escalation rule rather than silently skipped | n/a |
+| human-1 | @MadaraUchiha-314 (PR #187) | the target repo may not have the-loop initialized at all — no `harness-config.yaml`, no specDir to depend on; writing `contribution.md` into it would make the PR unclean, so "the contribution can just be commented on the PR" | fixed: R6 added; reads already degraded to defaults (decision-044) and now the *distinction* is recorded (`repoInitialized`); the spec tree is excluded from git at `Runtime.start` (structural — `info/exclude`, worktree-aware), and a new best-effort `publish-artifact` hook posts the plan / verification results to the thread at `plan-approval` / `human-approval`, skipping in adopted repos; 7 tests added (40 total), decision-070 amended |
 
 ## Security review (gate)
 
@@ -83,9 +84,9 @@ Per `reference/security.md` and the requirements' threat model:
 
 All planned verification activities ran; results in
 [testing-plan.md § Verification results](testing-plan.md) and raw output in
-[evidence/tests.md](evidence/tests.md): new suite 33/33, full suite 1558 passed /
-1 skipped (pre-existing), ruff clean, pyright 0 errors, markdownlint 0 issues across
-the 16 changed/added markdown files.
+[evidence/tests.md](evidence/tests.md): new suite 40/40 (33 + 7 from review round
+human-1), full suite 1565 passed / 1 skipped (pre-existing), ruff clean, pyright 0
+errors, markdownlint 0 issues across the changed/added markdown files.
 
 ## Capability docs
 

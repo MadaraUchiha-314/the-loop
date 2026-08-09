@@ -107,6 +107,33 @@ reason `classify-phase-selection` re-reads its checklist comment.
   `the-loop check`/`graph` on a contribution item address the right graph with no new
   flags.
 
+### The uninitialized target repository (R6, PR #187 review)
+
+A contribution may join a repository that never adopted the-loop: no `.the-loop/`, no
+harness config, no spec-dir convention. Three seams, all small:
+
+- **Reads were already safe.** Every repo-side value on this path goes through
+  `harness_config.load`, which degrades a missing file to `{}` (decision-044):
+  `phaseLabelPrefix` → `loop:`, `specDir` → `docs/specs`, `notifications` → off. The
+  trust values — `authorizedUsers`, control keywords, integrations — come from the
+  operator's CLI config and never fell back to the checkout. `bootstrap.build_runtime`
+  now also records the *distinction* itself: `config["repoInitialized"]`, from
+  `harness_config.initialized(root)`.
+- **The spec tree becomes working state, structurally.** The runtime and its gates
+  need the tree on disk (`graph-state.json`, the execution log, `contribution.md`),
+  but none of it may reach the repository's history. At `Runtime.start`, when the
+  bootstrap positively established "uninitialized", the spec root is appended to the
+  checkout's `info/exclude` — git's checkout-local ignore file, itself never
+  committed, resolved via `rev-parse --git-path` so worktree checkouts (the workspace
+  default) land on the shared file. Not `.gitignore` (that write *is* the pollution),
+  and not agent discipline alone (a careless `git add -A` would undo it). Best-effort:
+  a non-git root degrades to a warning and the session instructions carry the rule.
+- **The thread is the review surface.** A human cannot approve a plan they cannot
+  see: a new best-effort `publish-artifact` hook posts `contribution.md`'s content to
+  the thread at `plan-approval` (the plan) and again at `human-approval` (boxes
+  ticked, `Verification results` filled). In an initialized repository the hook skips
+  — the checked-in file is the surface, and the no-bloat rule holds.
+
 ### Why not auto-detect "in-progress"?
 
 Rejected: inferring contribution mode from the item's history (has commits, has a PR,

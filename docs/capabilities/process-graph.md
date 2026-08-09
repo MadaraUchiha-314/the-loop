@@ -52,6 +52,15 @@ There are exactly **two** runtime concepts and **one** contract between them.
     portable control record, then the default) by the daemon and every CLI verb. Only
     shipped loop names SHALL be honoured — an invented value in the agent-writable
     state file reads as the default, never as a graph choice.
+  - The target repository need not have **adopted** the-loop (PR #187 review). WHEN it
+    carries no `.the-loop/harness-config.yaml` THEN every harness-config read SHALL
+    degrade to the built-in defaults (decision-044), the spec tree SHALL be kept out
+    of the repository's history structurally (`Runtime.start` writes the spec root
+    into the checkout's git exclude file — the contribution PR carries only the
+    intervention), and the `publish-artifact` hook SHALL post `contribution.md`'s
+    content to the thread at `plan-approval` and `human-approval` — the review surface
+    such a repository offers. In an adopted repository the hook SHALL skip: the
+    checked-in artifact is the surface, and no extra comment is posted.
   - The loops SHALL meet at exactly **one seam**: the outer `implementation` node's
     `await-inner-loops` exit hook. WHEN inner loops have been started under
     `docs/specs/<id>/pr-loops/` THEN the work item SHALL `wait` at `implementation`,

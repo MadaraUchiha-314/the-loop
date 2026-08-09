@@ -19,7 +19,13 @@ from ..registry import hook
 
 logger = logging.getLogger("the-loop.graph")
 
-__all__ = ["log_entry", "notify", "request_review", "set_phase_label"]
+__all__ = [
+    "log_entry",
+    "notify",
+    "publish_artifact",
+    "request_review",
+    "set_phase_label",
+]
 
 
 def _integration(ctx: HookContext, target: str):
@@ -88,6 +94,61 @@ def request_review(ctx: HookContext) -> HookResult:
         logger.warning("could not request review: %s", exc)
         return HookResult.ok(name, posted=False, error=str(exc))
     return HookResult.ok(name, posted=True)
+
+
+@hook("publish-artifact")
+def publish_artifact(ctx: HookContext) -> HookResult:
+    """Post an artifact's content to the work item's thread — the review surface
+    of a repository that never adopted the-loop (issue-185, PR #187 review).
+
+    In an initialized repository the artifact is checked in and reviewable
+    there, so this hook does nothing — the gate comment (``request-review``)
+    already points at it. In an **uninitialized** repository the spec tree is
+    excluded from git (``Runtime.start``), so the file exists only in the
+    working checkout and no human can see it: the thread is where the plan and
+    its verification results must land. Re-posting on each entry is deliberate —
+    a gate looped back through ``changes-requested`` shows the *revised*
+    artifact, and each post is one comment the requester asked for, not bloat.
+
+    Best-effort by contract: an outage or a missing file (planning declared
+    away) records and continues — ``validate-artifacts`` remains the gate.
+    """
+    name = "publish-artifact"
+    if ctx.config.get("repoInitialized") is not False:
+        return HookResult.skipped(
+            name, "the repository carries the artifact; it is reviewable there"
+        )
+    artifact = str(ctx.params.get("artifact") or "")
+    if not artifact:
+        return HookResult.skipped(name, "no artifact named")
+    path = ctx.work_item.spec_dir / artifact
+    if not path.is_file():
+        return HookResult.skipped(name, f"no {artifact} for this work item")
+    try:
+        content = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        logger.warning("could not read %s: %s", path, exc)
+        return HookResult.ok(name, posted=False, error=str(exc))
+    body = mark_self_authored(
+        f"🤖 _the-loop_ — **`{artifact}`** for `{ctx.work_item.id}`.\n\n"
+        "This repository does not carry the-loop's config, so the artifact is "
+        "working state — kept out of git — and this comment is its review "
+        "surface.\n\n---\n\n" + content
+    )
+    # Deliberately bound at call time, not import time (the goal/selection
+    # hooks' rule): the test seam and any embedder patch
+    # ``graph.integrations.resolve``, and a module-level binding would slip
+    # past them.
+    from ..integrations import resolve
+
+    try:
+        resolve("github", ctx.config).call(
+            "add-comment", ref=ctx.work_item.ref, body=body
+        )
+    except IntegrationError as exc:
+        logger.warning("could not publish %s: %s", artifact, exc)
+        return HookResult.ok(name, posted=False, error=str(exc))
+    return HookResult.ok(name, posted=True, artifact=artifact)
 
 
 def _recipients(ctx: HookContext, event: str) -> List[str]:

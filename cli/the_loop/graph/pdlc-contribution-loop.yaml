@@ -27,6 +27,13 @@
 # every loop posts. Do NOT assume the item was created by the-loop: no
 # spec-chain artifact is required to exist before this loop joins.
 #
+# Nor assume the REPOSITORY adopted the-loop (PR #187 review): with no
+# .the-loop/harness-config.yaml every read degrades to the defaults
+# (decision-044), the spec tree becomes working state only — excluded from
+# git at Runtime.start, never committed, so the contribution PR stays clean —
+# and the `publish-artifact` entries below post the plan and its verification
+# results to the thread, the one review surface such a repository offers.
+#
 # HOW IT IS CHOSEN (issue-185): an authorized user arms the work item with the
 # `contribute` control keyword (default `the-loop contribute`) instead of
 # `start`. The choice is recorded durably — in the portable control record
@@ -128,11 +135,19 @@ nodes:
       - lint-artifacts
 
   # One human gate for the one artifact — the design-approval of this loop.
+  # `publish-artifact` is the uninitialized-repository seam: when the repo
+  # carries no harness config the plan exists only in the working checkout,
+  # so the gate posts its content to the thread for the human to review;
+  # in an adopted repo the hook skips and the checked-in file is the surface.
   - id: plan-approval
     actor: human
     session: inherit
     skippable: true
-    entry: [log-entry, request-review, {hook: notify, with: {event: phase-approval-pending}}]
+    entry:
+      - log-entry
+      - {hook: publish-artifact, with: {artifact: contribution.md}}
+      - request-review
+      - {hook: notify, with: {event: phase-approval-pending}}
     exit:
       - classify-feedback
       - {hook: record-feedback, with: {into: contribution.md}}
@@ -211,12 +226,18 @@ nodes:
       - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Pull requests"]}}
 
   # The human confirms the intervention did what they asked — the success
-  # criteria they froze at goal-definition are the rubric.
+  # criteria they froze at goal-definition are the rubric. In an uninitialized
+  # repository `publish-artifact` re-posts the artifact here with its boxes
+  # ticked and `Verification results` filled — the evidence the rubric is met.
   - id: human-approval
     actor: human
     session: inherit
     skippable: true
-    entry: [set-phase-label, request-review, {hook: notify, with: {event: pr-review-pending}}]
+    entry:
+      - set-phase-label
+      - {hook: publish-artifact, with: {artifact: contribution.md}}
+      - request-review
+      - {hook: notify, with: {event: pr-review-pending}}
     exit: [classify-feedback]
 
   - id: complete

@@ -35,6 +35,21 @@ $ uv run pytest -q
 
 The one skip pre-exists this work item (environment-dependent, unrelated).
 
+## Review round human-1 (PR #187): the uninitialized repository
+
+Seven tests added for R6 (defaults with no `.the-loop/`; the walk in a never-adopted
+git repo with the spec tree excluded — `git check-ignore` + clean `status
+--porcelain`; adopted repos untouched; `publish-artifact` posting only where the
+thread is the surface), then the full suite re-run:
+
+```text
+$ uv run pytest tests/test_graph_contribution.py -q
+40 passed in 3.03s
+
+$ uv run pytest -q
+1565 passed, 1 skipped in 49.62s
+```
+
 ## Lint and type checks
 
 ```text

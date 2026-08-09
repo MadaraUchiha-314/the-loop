@@ -12,7 +12,12 @@ bespoke process — do **not** assume any spec-chain artifact exists. The proces
 **contribution loop** (`pdlc-contribution-loop`), the third shipped graph; ask
 `the-loop check <id>` / `the-loop graph show` where the item stands rather than
 re-deriving it. Load `.the-loop/harness-config.yaml` first and honor every custom
-instruction doc it registers, exactly as `work-on` does.
+instruction doc it registers, exactly as `work-on` does. **If the file does not
+exist, the repository has not adopted the-loop**: run on the defaults (specs at
+`docs/specs/`), treat the spec tree as working state only — the runtime excludes it
+from git; never commit or push it, the contribution PR carries only the
+intervention — and let the `publish-artifact` hook post the plan and verification
+results to the thread, the review surface such a repository offers.
 
 **Before acting, read the `the-loop` skill and its reference files** — this command
 follows all the same rules (paper trail, self-marked comments, reviews, context

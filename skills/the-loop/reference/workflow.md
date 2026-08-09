@@ -298,6 +298,15 @@ Two rules keep the intervention light without losing rigor:
   `contribution.md`; `verification` blocks until every one is ticked and
   `Verification results` records how each was proved — in the execution log instead
   when the planning phases were declared away (a kept gate keeps a subject).
+- **An unadopted repository stays clean.** The target may carry no
+  `.the-loop/harness-config.yaml` at all: everything then runs on the defaults
+  (specs at `docs/specs/`, labels `loop:`-prefixed), and the spec tree is **working
+  state only** — the runtime excludes it from git at start, and you must never
+  commit or push it; the contribution PR contains only the intervention. The
+  `publish-artifact` hook posts the plan (at `plan-approval`) and its verification
+  results (at `human-approval`) to the thread, which is the review surface such a
+  repository offers. In an adopted repository the hook skips — link the checked-in
+  file instead, as ever.
 
 ## Link artifacts to the ticket (single source of truth)
 

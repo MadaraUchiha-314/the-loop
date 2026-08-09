@@ -47,3 +47,9 @@ overrides: {}
   documentation gate)._ _Test: markdownlint._
 - [x] **T9 — verification.** Execute the testing plan; record results + evidence.
   _Requirements: R5._ _Test: the plan itself._
+- [x] **T10 — the uninitialized repository** (review round human-1, PR #187).
+  `harness_config.initialized`; `repoInitialized` in `build_runtime`'s config;
+  spec-tree git exclusion at `Runtime.start` (+ `graph.spec_tree_excluded` event);
+  `publish-artifact` hook wired into `plan-approval` and `human-approval`; docs
+  swept (decision-070, process-graph, workflow reference, contribute-to).
+  _Requirements: R6._ _Test: Unit + integration (uninitialized-repo rows)._

@@ -86,6 +86,14 @@ def build_runtime(
         "notifications": harness.get("notifications") or {},
         "authorizedUsers": list(authorized_users or []),
         "integrations": {},
+        # Whether this repository has adopted the-loop at all (issue-185, PR #187
+        # review). A contribution can join a repository that never ran setup:
+        # every key above already degrades to a default, but the *distinction*
+        # drives behaviour of its own — an uninitialized repository's spec tree
+        # is kept out of git (`Runtime.start`) and its plan is posted to the
+        # thread (`publish-artifact`), because the repository offers no place to
+        # review a checked-in artifact.
+        "repoInitialized": harness_config.initialized(root),
         # Which repository the ticket lives in (issue-183) — the origin
         # repository, where the outer loop runs and every inner loop's state is
         # kept. A fact about this repository, and one a daemon watching N of

@@ -26,6 +26,7 @@ overrides: {}
 | Security / abuse-case | yes | unit: self-authored goal dropped; unauthorized author dropped; unknown `loop` in state falls back to the default; both-keywords comment refused (existing test extended by the new vocabulary) |
 | Accessibility | n/a | no UI |
 | Migration | yes (unit) | a pre-issue-185 `graph-state.json` (no `loop` key) loads and resolves to the shipped default |
+| Uninitialized repo (R6, PR #187 review) | yes | `build_runtime` on a checkout with no `.the-loop/` runs on defaults and records `repoInitialized: false`; the walk runs in a git repo that never adopted the-loop with the spec tree excluded (`check-ignore` proves it, `status --porcelain` stays empty); an adopted repo is left unexcluded; `publish-artifact` posts the plan only when unadopted, skips when adopted or when the plan was declared away |
 | Manual | no | everything above is automatable in pytest |
 
 ## Verification environment
@@ -44,15 +45,19 @@ plus lint/typecheck output, redacted of nothing because nothing sensitive is emi
 
 Executed at the `verification` node — see [evidence/tests.md](evidence/tests.md).
 
-- [x] Unit: `cli/tests/test_graph_contribution.py` — 33 tests covering the matrix rows
+- [x] Unit: `cli/tests/test_graph_contribution.py` — 40 tests covering the matrix rows
   above (graph shape, goal gate, keyword, arming, loop resolution, state migration,
-  abuse cases) — all passing.
+  abuse cases, the uninitialized repository) — all passing.
 - [x] Integration: goal-definition → phase-selection walk with stubbed integration
   (same file, `TestContributionWalk`, Gherkin-docstringed) — passing.
 - [x] Security/abuse: unauthorized + self-authored goal ignored; unknown loop name
   falls back to default (state, bootstrap and GraphLink seams each) — passing.
 - [x] Migration: state without `loop` resolves to the shipped default — passing.
-- [x] Full suite: `uv run pytest` — 1558 passed, 1 skipped (the skip pre-exists this
+- [x] Uninitialized repo (R6): defaults hold with no `.the-loop/`; the walk runs in a
+  never-adopted git repo with the spec tree structurally excluded (Gherkin-docstringed
+  walk, `git check-ignore` + clean `status --porcelain`); adopted repos untouched;
+  `publish-artifact` posts only where the thread is the surface — passing.
+- [x] Full suite: `uv run pytest` — 1565 passed, 1 skipped (the skip pre-exists this
   work item).
 - [x] `ruff check` clean; `pyright` clean (0 errors, 0 warnings); `markdownlint`
-  clean on all 16 changed/added markdown files.
+  clean on all changed/added markdown files.

@@ -142,6 +142,33 @@ ideas.
   verification gate SHALL require the `Verification results` section in the execution
   log instead — a kept gate keeps a subject (the issue-124/167 rule).
 
+### Requirement 6 — the target repository need not have adopted the-loop
+
+> Added on PR #187 review (@MadaraUchiha-314): *"we can't depend on the fact that a
+> specDir might be present … Putting it in an arbitrary place might cause the PR to
+> become unclean and pollute the repo. So in those case, the contribution can just be
+> commented on the PR."*
+
+**User story:** As the owner of a repository that never ran the-loop's setup, I want a
+contribution to leave no trace of the-loop's machinery in my repository, so that the
+contribution PR contains only the intervention I asked for.
+
+- WHEN the target repository carries no `.the-loop/harness-config.yaml` THEN every
+  harness-config read on the contribution path SHALL degrade to the built-in defaults
+  (decision-044's best-effort rule) — the loop SHALL still arm, gate and walk.
+- WHEN the contribution loop starts in such a repository THEN the system SHALL keep
+  the work item's spec tree (`contribution.md`, `graph-state.json`,
+  `execution-log.md`) out of the repository's history **structurally** — the spec
+  directory is written into the checkout's git exclude file, not merely left
+  uncommitted by instruction — so the contribution PR cannot carry it.
+- WHEN a human gate needs the plan (`plan-approval`) or its verification results
+  (`human-approval`) in such a repository THEN the system SHALL post the artifact's
+  content to the work item's thread (self-marked, best-effort): the thread is the
+  review surface where the repository offers none.
+- WHEN the repository does carry the harness config THEN nothing changes: the
+  artifact is checked in and reviewable there, and no artifact-content comment is
+  posted (the no-bloat rule of Requirement 4 stands).
+
 ## Security considerations
 
 **Untrusted actors and trust boundaries.** This work item widens one existing trust

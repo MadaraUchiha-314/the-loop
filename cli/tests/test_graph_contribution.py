@@ -408,6 +408,131 @@ def test_every_shipped_loop_is_loadable():
         assert load_graph(name=name).name == name
 
 
+# -- the uninitialized repository (PR #187 review) ----------------------------
+# The target repo may never have adopted the-loop: no `.the-loop/`, no
+# harness-config.yaml, no spec-dir convention. The loop must still run — on
+# built-in defaults (decision-044) — and must not push its machinery into the
+# repository's history: the spec tree is working state, excluded from git, and
+# the thread is the plan's review surface.
+
+
+def test_build_runtime_needs_no_harness_config(tmp_path):
+    """A bare checkout yields a working contribution runtime on defaults."""
+    runtime = build_runtime(tmp_path, loop=PDLC_CONTRIBUTION_LOOP)
+    assert runtime.graph.name == PDLC_CONTRIBUTION_LOOP
+    assert runtime.spec_root == "docs/specs"
+    assert runtime.config["phaseLabelPrefix"] == "loop:"
+    assert runtime.config["notifications"] == {}
+    assert runtime.config["repoInitialized"] is False
+
+
+def test_build_runtime_knows_an_initialized_repo(tmp_path):
+    (tmp_path / ".the-loop").mkdir()
+    (tmp_path / ".the-loop" / "harness-config.yaml").write_text("workflow: {}\n")
+    assert build_runtime(tmp_path).config["repoInitialized"] is True
+
+
+def _git(repo, *args):
+    import subprocess
+
+    return subprocess.run(
+        ["git", "-C", str(repo), *args], capture_output=True, text=True, timeout=10
+    )
+
+
+def test_the_walk_runs_and_stays_out_of_git_in_an_unadopted_repo(
+    tmp_path, fake_github
+):
+    """
+    Feature: joining an existing work item as a contributor
+    Scenario: the target repository never ran the-loop's setup
+      Given a git checkout with no `.the-loop/` directory at all
+      And the arming comment states a goal and success criteria
+      When the contribution loop starts and advances
+      Then the two gates run exactly as in an adopted repository
+      And the spec tree exists only as ignored working state — nothing the
+           contribution PR could carry
+
+    Requirement: docs/specs/issue-185/requirements.md R6
+    """
+    assert _git(tmp_path, "init", "-q").returncode == 0
+    fake_github.comments = [{"user": {"login": "owner"}, "body": GOAL_COMMENT}]
+    runtime = build_runtime(
+        tmp_path, authorized_users=["@owner"], loop=PDLC_CONTRIBUTION_LOOP
+    )
+    runtime.start(WORK_ITEM, ref=REF)
+    runtime.advance(WORK_ITEM, ref=REF)
+    state = GraphState.load(tmp_path / "docs" / "specs" / WORK_ITEM, WORK_ITEM)
+    assert state.current_node == "phase-selection"
+    assert state.loop == PDLC_CONTRIBUTION_LOOP
+    # The tree is structurally uncommittable, not merely uncommitted.
+    ignored = _git(tmp_path, "check-ignore", "-q", f"docs/specs/{WORK_ITEM}/x")
+    assert ignored.returncode == 0
+    assert _git(tmp_path, "status", "--porcelain").stdout.strip() == ""
+
+
+def test_an_adopted_repos_spec_tree_is_not_excluded(tmp_path, fake_github):
+    assert _git(tmp_path, "init", "-q").returncode == 0
+    (tmp_path / ".the-loop").mkdir()
+    (tmp_path / ".the-loop" / "harness-config.yaml").write_text("workflow: {}\n")
+    runtime = build_runtime(
+        tmp_path, authorized_users=["@owner"], loop=PDLC_CONTRIBUTION_LOOP
+    )
+    runtime.start(WORK_ITEM, ref=REF)
+    ignored = _git(tmp_path, "check-ignore", "-q", f"docs/specs/{WORK_ITEM}/x")
+    assert ignored.returncode != 0
+
+
+def _publish_ctx(repo_dir, config):
+    from the_loop.graph.contract import HookContext, WorkItem
+
+    spec = repo_dir / "docs" / "specs" / WORK_ITEM
+    spec.mkdir(parents=True, exist_ok=True)
+    ctx = HookContext(
+        work_item=WorkItem(ref=REF, id=WORK_ITEM, spec_dir=spec),
+        node={"id": "plan-approval"},
+        boundary="entry",
+        repo=repo_dir,
+        config=config,
+    )
+    ctx.params = {"artifact": "contribution.md"}
+    return ctx, spec
+
+
+def test_the_plan_is_posted_to_the_thread_when_the_repo_is_unadopted(
+    tmp_path, fake_github
+):
+    from the_loop.graph.hooks.sideeffects import publish_artifact
+
+    ctx, spec = _publish_ctx(tmp_path, {"repoInitialized": False})
+    (spec / "contribution.md").write_text("## Goal\n\nship it\n")
+    result = publish_artifact(ctx)
+    assert result.status == "pass" and result.data["posted"] is True
+    assert len(fake_github.posted) == 1
+    assert "ship it" in fake_github.posted[0]
+    assert "the-loop:agent-comment" in fake_github.posted[0]
+
+
+def test_the_plan_stays_off_the_thread_in_an_adopted_repo(tmp_path, fake_github):
+    """The no-bloat rule holds where the checked-in file is the surface."""
+    from the_loop.graph.hooks.sideeffects import publish_artifact
+
+    ctx, spec = _publish_ctx(tmp_path, {"repoInitialized": True})
+    (spec / "contribution.md").write_text("## Goal\n\nship it\n")
+    assert publish_artifact(ctx).status == "skip"
+    assert fake_github.posted == []
+
+
+def test_a_declared_away_plan_publishes_nothing_and_blocks_nothing(
+    tmp_path, fake_github
+):
+    from the_loop.graph.hooks.sideeffects import publish_artifact
+
+    ctx, _ = _publish_ctx(tmp_path, {"repoInitialized": False})
+    assert publish_artifact(ctx).status == "skip"
+    assert fake_github.posted == []
+
+
 # -- the walk (integration) ---------------------------------------------------
 
 

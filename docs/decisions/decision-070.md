@@ -44,6 +44,14 @@ process — for a scoped intervention.
    locked and human-approved; the review chain gates the shared execution log as ever.
    Every node but the two gates is skippable (skip sets `plan`, `review-chain`), so a
    contained instruction runs as little as implementation + verification.
+5. **An unadopted repository stays clean** (added on PR #187 review). The target may
+   carry no `.the-loop/harness-config.yaml` at all: every read then degrades to the
+   defaults (decision-044), the spec tree is working state only — excluded from git in
+   the checkout at `Runtime.start`, so the contribution PR structurally cannot carry
+   it — and the plan and its verification results are posted to the thread
+   (`publish-artifact` at `plan-approval` and `human-approval`), the one review
+   surface such a repository offers. In an adopted repository the hook skips and
+   nothing changes.
 
 ## Alternatives considered
 
