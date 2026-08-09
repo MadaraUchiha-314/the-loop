@@ -1,0 +1,265 @@
+# The CONTRIBUTION loop (issue-185): the path the-loop walks when it is invited
+# INTO an existing, in-progress work item as a contributor, rather than owning
+# one from scratch. Its siblings: pdlc-work-item-loop (the outer loop a whole
+# work item walks) and pdlc-pr-loop (the inner loop each delivering pull
+# request walks). Same vocabulary, same hooks, same runtime; a node set sized
+# for a scoped intervention.
+#
+# WHAT MAKES THIS LOOP DIFFERENT is stated by its two required nodes:
+#
+#   `goal-definition` — the loop cannot start without an authorized human
+#   stating a GOAL and SUCCESS CRITERIA. "the-loop start" or "the-loop
+#   execute" alone never cut it for joining someone's in-progress work: the
+#   work already has a direction, and the-loop needs its own purpose and its
+#   own definition of done. The criteria become checkboxes in the one
+#   artifact, and `verification` gates on all of them being met.
+#
+#   `phase-selection` — the same invariant the outer loop carries (issue-179):
+#   every other phase is the human's to declare away, so a small contained
+#   instruction can run as little as implementation + verification, while an
+#   intervention that deserves requirements-and-design thinking keeps the
+#   planning nodes.
+#
+# NO BLOAT, by construction: the planning nodes author ONE artifact —
+# contribution.md (goal, success criteria, context, approach, verification
+# plan) — in the work item's spec directory, instead of the four-file spec
+# chain. The existing issue/PR thread receives only the same gate comments
+# every loop posts. Do NOT assume the item was created by the-loop: no
+# spec-chain artifact is required to exist before this loop joins.
+#
+# HOW IT IS CHOSEN (issue-185): an authorized user arms the work item with the
+# `contribute` control keyword (default `the-loop contribute`) instead of
+# `start`. The choice is recorded durably — in the portable control record
+# before the first start, and in graph-state.json's `loop` field from then on.
+# Joining is a declared decision, never a heuristic over the item's history.
+#
+# This file ships WITH THE CLI and is the-loop's own. A repository cannot
+# define or override it — a repo-supplied graph is ignored with a warning.
+#
+# Spec: docs/specs/issue-185/  ·  Decision: 070
+
+version: 1
+name: pdlc-contribution-loop
+start: goal-definition
+
+# The same declared-skip vocabulary as the outer loop (issue-177/179): one
+# token for the planning half, one for the review chain, so declaring either
+# away is as deliberate — and as visible — as keeping it.
+skipSets:
+  plan:
+    - context-intake
+    - scoped-plan
+    - plan-approval
+  review-chain:
+    - self-review
+    - critic-review
+    - security-review
+    - reviewer-briefing
+
+nodes:
+  # The contribution loop's own first invariant: no goal, no start. An
+  # authorized user states the goal and success criteria in a comment (the
+  # arming `the-loop contribute` comment itself qualifies — the gate re-reads
+  # the thread); the gate freezes them into graph state with provenance and
+  # confirms. It never guesses, and it never reads an unauthorized or
+  # self-authored body at all.
+  # `command:` on this human gate (and the next) is rendered into the session's
+  # graph-context block ("resume with: /the-loop:contribute-to <id>"), so a
+  # session spawned for a contribution item is steered to the contribution
+  # command rather than the spawn template's default `work-on`. Rendered only,
+  # never executed by the runtime.
+  - id: goal-definition
+    actor: human
+    required: true          # stating the purpose is a human act; never skippable
+    command: contribute-to
+    entry: [log-entry, post-goal-request, deliver-assignment]
+    exit: [classify-goal]
+
+  # The second invariant, shared with the outer loop (issue-179): a named,
+  # authorized human chooses which of THIS loop's phases the intervention
+  # needs, and every phase that does not run has their name on it. The hooks
+  # are the outer loop's own — the checklist is generated from this graph's
+  # skippable rows, so what the user reads is what the pointer will route on.
+  - id: phase-selection
+    phase: phase-selection
+    actor: human
+    required: true
+    command: contribute-to
+    entry: [set-phase-label, log-entry, post-phase-selection, deliver-assignment]
+    exit: [classify-phase-selection]
+
+  # Understand the work being joined: the item's history, its linked PRs, the
+  # bespoke process that produced it. Begins the ONE artifact rather than a
+  # spec chain. No `phase:` on purpose — no new labels for consuming repos.
+  - id: context-intake
+    actor: agent
+    skippable: true
+    produces: [contribution.md]
+    command: contribute-to
+    stage: requirements
+    entry: [log-entry, deliver-assignment]
+    exit:
+      - {hook: validate-artifacts, with: {sections: ["Goal", "Success criteria", "Context"]}}
+      - lint-artifacts
+
+  # The intervention's requirements-and-design thinking, scoped: approach and
+  # verification plan complete the artifact and lock it. `Verification
+  # results` is gated here too, authored up front holding "not yet executed",
+  # so `verification` fills a section rather than inventing one (the
+  # testing-plan.md pattern).
+  - id: scoped-plan
+    actor: agent
+    skippable: true
+    produces: [contribution.md]
+    command: contribute-to
+    stage: design
+    entry: [log-entry, deliver-assignment]
+    exit:
+      - hook: validate-artifacts
+        with:
+          locked: true
+          sections:
+            - Goal
+            - Success criteria
+            - Context
+            - Approach
+            - Verification plan
+            - Verification results
+      - lint-artifacts
+
+  # One human gate for the one artifact — the design-approval of this loop.
+  - id: plan-approval
+    actor: human
+    session: inherit
+    skippable: true
+    entry: [log-entry, request-review, {hook: notify, with: {event: phase-approval-pending}}]
+    exit:
+      - classify-feedback
+      - {hook: record-feedback, with: {into: contribution.md}}
+
+  # The intervention itself. The pdlc-pr-loop shape: no task DAG to gate —
+  # the scope is the goal, not a decomposed work item.
+  - id: implementation
+    phase: implementation
+    actor: agent
+    skippable: true
+    command: contribute-to
+    stage: implementation
+    entry: [set-phase-label, log-entry, deliver-assignment]
+    exit:
+      - verify-tests
+
+  # Done means the criteria are met (issue-185 R5): every success-criterion
+  # checkbox in contribution.md ticked, and `Verification results` recording
+  # how each was proved. When the planning half was declared away and no
+  # contribution.md exists, the proof moves to the shared execution log — a
+  # kept gate keeps a subject (the issue-124/167 rule, via issue-179).
+  - id: verification
+    phase: verification
+    actor: agent
+    skippable: true
+    produces: [contribution.md]
+    command: verify-work
+    stage: verification
+    entry: [set-phase-label, log-entry, deliver-assignment]
+    exit:
+      - hook: validate-artifacts
+        with:
+          checkmarks: complete
+          sections: [Verification results]
+      - hook: validate-artifacts
+        with:
+          onlyWhenSkipped: contribution.md
+          validates: execution-log.md
+          sections: [Verification results]
+      - verify-tests
+
+  # The same review chain the other loops run, recording into the same shared
+  # execution log (issue-167's validates: vocabulary).
+  - id: self-review
+    phase: needs-review
+    actor: agent
+    skippable: true
+    stage: self-review
+    entry: [set-phase-label, log-entry, deliver-assignment]
+    exit:
+      - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Review cycles"]}}
+
+  - id: critic-review
+    actor: agent
+    skippable: true
+    stage: critic-review
+    entry: [log-entry, deliver-assignment]
+    exit:
+      - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Review cycles"]}}
+
+  - id: security-review
+    actor: agent
+    skippable: true         # the issue-179 stance: the human's to declare away
+                            # at phase-selection, with their name on the omission
+    stage: security-review
+    entry: [log-entry, deliver-assignment]
+    exit:
+      - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Security review (gate)"]}}
+
+  - id: reviewer-briefing
+    actor: agent
+    skippable: true
+    stage: reviewer-briefing
+    entry: [log-entry, deliver-assignment]
+    exit:
+      - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Pull requests"]}}
+
+  # The human confirms the intervention did what they asked — the success
+  # criteria they froze at goal-definition are the rubric.
+  - id: human-approval
+    actor: human
+    session: inherit
+    skippable: true
+    entry: [set-phase-label, request-review, {hook: notify, with: {event: pr-review-pending}}]
+    exit: [classify-feedback]
+
+  - id: complete
+    phase: complete
+    actor: agent
+    command: finish-tasks
+    stage: complete
+    terminal: true
+    entry: [set-phase-label, log-entry]
+    exit: []
+
+  - id: escalated
+    actor: human
+    terminal: true
+    entry: [{hook: notify, with: {event: conflict-escalated}}]
+    exit: []
+
+edges:
+  - {from: goal-definition, to: phase-selection, on: defined}
+  - {from: phase-selection, to: context-intake, on: selected}
+  - {from: context-intake, to: scoped-plan, on: pass}
+  # Declared-skip routing (issue-177): each skippable node's `on: skipped`
+  # edge is its ordinary forward edge — authored here, never inferred.
+  - {from: context-intake, to: scoped-plan, on: skipped}
+  - {from: scoped-plan, to: plan-approval, on: pass}
+  - {from: scoped-plan, to: plan-approval, on: skipped}
+  - {from: plan-approval, to: implementation, on: approved}
+  - {from: plan-approval, to: implementation, on: approved-with-comments}
+  - {from: plan-approval, to: scoped-plan, on: changes-requested}
+  - {from: plan-approval, to: implementation, on: skipped}
+  - {from: implementation, to: verification, on: pass}
+  - {from: implementation, to: verification, on: skipped}
+  - {from: verification, to: self-review, on: pass}
+  - {from: verification, to: self-review, on: skipped}
+  - {from: self-review, to: critic-review, on: pass}
+  - {from: self-review, to: critic-review, on: skipped}
+  - {from: critic-review, to: security-review, on: pass}
+  - {from: critic-review, to: security-review, on: skipped}
+  - {from: security-review, to: reviewer-briefing, on: pass}
+  - {from: security-review, to: reviewer-briefing, on: skipped}
+  - {from: reviewer-briefing, to: human-approval, on: pass}
+  - {from: reviewer-briefing, to: human-approval, on: skipped}
+  - {from: human-approval, to: complete, on: approved}
+  - {from: human-approval, to: complete, on: approved-with-comments}
+  - {from: human-approval, to: implementation, on: changes-requested}
+  - {from: human-approval, to: complete, on: skipped}

@@ -293,6 +293,13 @@ class Runtime:
                     # one human act, one record (issue-183).
                     record["surface"] = chosen
                     state.surface = chosen
+                goal = result.data.get("goal")
+                if goal:
+                    # The contribution loop's goal gate (issue-185): the goal
+                    # and success criteria are frozen with provenance, exactly
+                    # as a phase selection is — a recorded fact, not a live
+                    # comment.
+                    record["goal"] = dict(goal)
                 state.decisions.setdefault(str(marker), record)
                 decided = True
                 if frozen:
@@ -521,6 +528,11 @@ class Runtime:
             state, item, self.graph.start, self.declared_skips(state)
         )
         state.enter(node_id)
+        # Which loop this state walks (issue-185): recorded once, at the only
+        # moment the choice is made, so every later reader — the daemon, `the-loop
+        # check`, the graph verbs — resolves the same graph without re-deriving
+        # it from a control record that may live on another machine.
+        state.loop = self.graph.name or state.loop
         state.save(
             self.state_dir(item)
         )  # persist BEFORE any dependent side effect (R8.2)

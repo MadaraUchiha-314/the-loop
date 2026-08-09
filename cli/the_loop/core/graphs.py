@@ -33,10 +33,36 @@ def resolve_repo(repo: str) -> Path:
     return path.resolve()
 
 
-def _runtime(repo: str, pr: Optional[int] = None, pr_repo: str = ""):
+def _recorded_loop(path: Path, work_item: str) -> str:
+    """The outer-path loop this work item's state records (issue-185).
+
+    ``""`` — the shipped default — for a fresh item, a pre-issue-185 state
+    file, or anything unreadable; only the contribution loop is ever returned,
+    because the state file is agent-writable and must not choose arbitrary
+    graphs. This is what lets `the-loop check`/`graph` address a contribution
+    item with no new flags: the recorded fact travels with the checkout.
+    """
+    from .. import harness_config
+    from ..graph.model import PDLC_CONTRIBUTION_LOOP
+    from ..graph.state import GraphState
+
+    try:
+        spec_root = harness_config.spec_dir(harness_config.load(path))
+        state = GraphState.load(path / spec_root / work_item, work_item)
+        recorded = str(getattr(state, "loop", "") or "")
+    except Exception:  # noqa: BLE001 — an unreadable state reads as the default
+        return ""
+    return PDLC_CONTRIBUTION_LOOP if recorded == PDLC_CONTRIBUTION_LOOP else ""
+
+
+def _runtime(
+    repo: str, pr: Optional[int] = None, pr_repo: str = "", work_item: str = ""
+):
     if pr_repo and pr is None:
         raise ValueError("pr_repo names a repository, not a loop: pass pr as well")
-    return build_runtime(resolve_repo(repo), pr_number=pr, pr_repo=pr_repo)
+    path = resolve_repo(repo)
+    loop = _recorded_loop(path, work_item) if pr is None and work_item else ""
+    return build_runtime(path, pr_number=pr, pr_repo=pr_repo, loop=loop)
 
 
 def check(
@@ -47,7 +73,11 @@ def check(
     pr_repo: str = "",
 ) -> Dict[str, Any]:
     """`the-loop check` for one work item: the status report as a dict."""
-    return _runtime(repo, pr, pr_repo).status(work_item, recompute=recompute).as_dict()
+    return (
+        _runtime(repo, pr, pr_repo, work_item)
+        .status(work_item, recompute=recompute)
+        .as_dict()
+    )
 
 
 def complete(
@@ -60,7 +90,7 @@ def complete(
     pr_repo: str = "",
 ) -> Dict[str, Any]:
     """A completion claim for the current (or named) node — issue-148 semantics."""
-    return _runtime(repo, pr, pr_repo).complete(
+    return _runtime(repo, pr, pr_repo, work_item).complete(
         work_item, ref=ref, node=node, actor=actor
     )
 
@@ -73,7 +103,7 @@ def advance(
     pr_repo: str = "",
 ) -> Dict[str, Any]:
     """Evaluate the current node's exit chain and take the matching edge."""
-    return _runtime(repo, pr, pr_repo).advance(work_item, ref=ref).as_dict()
+    return _runtime(repo, pr, pr_repo, work_item).advance(work_item, ref=ref).as_dict()
 
 
 def force(
@@ -88,7 +118,7 @@ def force(
 ) -> Dict[str, Any]:
     """The authorized-operator escape hatch. Requires a reason; never forges a
     verdict. Not exposed over MCP (design §Security)."""
-    runtime = _runtime(repo, pr, pr_repo)
+    runtime = _runtime(repo, pr, pr_repo, work_item)
     result = graph_runtime.force(
         runtime, work_item, to_node, reason, actor=actor, ref=ref
     )
@@ -118,7 +148,7 @@ def skip(
     graph's skip vocabulary, or naming nodes the pointer already reached, come
     back in ``rejected`` rather than taking effect.
     """
-    runtime = _runtime(repo, pr, pr_repo)
+    runtime = _runtime(repo, pr, pr_repo, work_item)
     result = graph_runtime.declare_skips(
         runtime,
         work_item,

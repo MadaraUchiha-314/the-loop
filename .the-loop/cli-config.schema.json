@@ -222,7 +222,12 @@
                 "execute": {
                   "type": "string",
                   "default": "the-loop execute",
-                  "description": "Answers the graph's `phase-selection` gate (issue-177): the authorized user has chosen which phases this work item needs, so freeze that selection and start walking. Unlike the other four it does NOT touch the session registry \u2014 it neither arms nor disarms \u2014 and the comment carrying it is still delivered, because the gate itself is what reads the selection."
+                  "description": "Answers the graph's `phase-selection` gate (issue-177): the authorized user has chosen which phases this work item needs, so freeze that selection and start walking. Unlike the session commands it does NOT touch the session registry \u2014 it neither arms nor disarms \u2014 and the comment carrying it is still delivered, because the gate itself is what reads the selection."
+                },
+                "contribute": {
+                  "type": "string",
+                  "default": "the-loop contribute",
+                  "description": "Arms the work item exactly as `start` does \u2014 same spawn policy, same durable record, same named-actor authorization \u2014 and additionally selects the CONTRIBUTION loop (`pdlc-contribution-loop`, issue-185) for its outer walk: the-loop joins an EXISTING, in-progress issue or PR as a contributor rather than owning it from scratch. That loop refuses to begin until an authorized user has stated a goal and success criteria (a `Goal:` line plus a `Success criteria:` bullet list, in one comment \u2014 the comment carrying this keyword qualifies), and its phases are sized for a scoped intervention."
                 }
               }
             }

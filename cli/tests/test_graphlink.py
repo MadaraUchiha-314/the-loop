@@ -79,7 +79,7 @@ def _link(repo, runtime, **cfg):
     config = GraphLinkConfig(**{"enabled": True, **cfg})
     link = GraphLink(config, control=ControlConfig(enabled=False))
 
-    def _build(cwd, spec_dir, pr_number=None, pr_repo=""):
+    def _build(cwd, spec_dir, pr_number=None, pr_repo="", loop=""):
         runtime.built.append((cwd, spec_dir))
         return runtime
 
@@ -229,7 +229,7 @@ def test_an_item_nobody_started_is_skipped(repo):
         control_store=ControlStore(repo / "control.json"),
     )
     link._build_runtime = (  # noqa: SLF001
-        lambda cwd, spec_dir, pr_number=None, pr_repo="": runtime
+        lambda cwd, spec_dir, pr_number=None, pr_repo="", loop="": runtime
     )
     link.on_spawn(REF, str(repo))
     link.on_event(REF, str(repo), _comment_event())
@@ -246,7 +246,7 @@ def test_a_started_item_is_coupled(repo):
         control_store=store,
     )
     link._build_runtime = (  # noqa: SLF001
-        lambda cwd, spec_dir, pr_number=None, pr_repo="": runtime
+        lambda cwd, spec_dir, pr_number=None, pr_repo="", loop="": runtime
     )
     link.on_spawn(REF, str(repo))
     assert runtime.started == [("issue-113", REF.ref)]

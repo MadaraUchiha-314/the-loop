@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [070](decision-070.md) | Joining existing work is a third loop, armed by a keyword and gated on a stated goal | proposed | 2026-08-09 |
 | [069](decision-069.md) | The outer loop runs in the origin repository, and each work item declares its surface | proposed | 2026-08-09 |
 | [068](decision-068.md) | Every phase is selectable — the floor moves from the graph to the human | proposed | 2026-08-08 |
 | [067](decision-067.md) | Skips are declared — the graph fixes the vocabulary, a human selects, the runtime never forges | proposed | 2026-08-08 |

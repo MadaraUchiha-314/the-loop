@@ -11,9 +11,9 @@ and Cursor are how an agent picks up the operating model — one delivery surfac
 product. Once a plan is approved, the harness delivers a work item end-to-end with minimal
 or no human intervention, escalating only when a decision is genuinely needed.
 
-## Two loops
+## Three loops
 
-The PDLC is **two** graphs, both shipped as package data inside the CLI:
+The PDLC is **three** graphs, all shipped as package data inside the CLI:
 
 - **`pdlc-work-item-loop`** — the **outer** loop: one *work item*, from a fuzzy idea to a
   closed ticket.
@@ -21,6 +21,13 @@ The PDLC is **two** graphs, both shipped as package data inside the CLI:
   running in its own session, through the component-scoped subset. Everything before
   implementation is skipped — those steps are the work item's, decided once at the outer
   level, and a pull request re-deciding them would fork the spec.
+- **`pdlc-contribution-loop`** — the **contribution** loop: the-loop invited *into* an
+  existing, in-progress issue or PR as a contributor (comment `the-loop contribute`
+  instead of `the-loop start`). It cannot begin until an authorized human states a
+  **goal and success criteria**; it plans in one lightweight `contribution.md` instead
+  of the four-file spec chain; and its verification gate holds until every stated
+  criterion is met. Phases are selectable as ever, so a small contained instruction can
+  run as little as implementation + verification.
 
 They meet at exactly **one seam**: the outer `implementation` node waits at
 `await-inner-loops` until every inner loop that was started reaches `complete`, after which

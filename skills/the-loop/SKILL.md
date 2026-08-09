@@ -77,7 +77,13 @@ This sequence is **defined by the shipped process graph**
 repository the ticket was created in; each PR delivering a work item walks its own
 `pdlc-pr-loop` in its own session — one per contributing repository — and the
 outer `implementation` node waits for those inner loops to finish); the prose
-here renders it, never redefines it (issue-148). When a node's work is done, tell the graph so —
+here renders it, never redefines it (issue-148). A third shipped graph,
+`pdlc-contribution-loop` (issue-185), is walked instead of the outer loop when
+the-loop is **invited into an existing, in-progress work item as a
+contributor** (`the-loop contribute`): it cannot start without an authorized
+human's **goal and success criteria**, plans in one `contribution.md` instead
+of the four-file spec chain, and completes only when every stated criterion is
+met — see `reference/workflow.md` § The contribution loop. When a node's work is done, tell the graph so —
 `the-loop graph complete <id>` — rather than only narrating the transition.
 
 See `reference/workflow.md` for what each phase contains, the review gates, the
@@ -344,6 +350,9 @@ Granular commands (one step at a time; same flow `work-on` runs end-to-end):
 - `/the-loop:verify-work <id>` — execute the testing plan; record results and evidence.
 - `/the-loop:finish-tasks <id>` — cleanup after all tasks (close the ticket; extensible).
 - `/the-loop:work-status <id>` — read-only status from the specs, tasks checkmarks and log.
+- `/the-loop:contribute-to <id>` — join an **existing, in-progress** work item as a
+  contributor: walk `pdlc-contribution-loop` toward the human-stated goal and success
+  criteria (issue-185).
 
 ## Knowledge the loop maintains
 

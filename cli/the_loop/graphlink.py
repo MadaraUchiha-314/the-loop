@@ -596,14 +596,19 @@ class GraphLink:
         try:
             # The outer loop's call keeps its pre-issue-172 shape so an injected
             # runtime factory (tests, embedders) built for two arguments still
-            # serves every outer-path caller.
-            runtime = (
-                self._build_runtime(str(root), spec_dir)
-                if pr_number is None
-                else self._build_runtime(
+            # serves every outer-path caller. A contribution item (issue-185)
+            # is the one exception: its resolved loop name rides along.
+            if pr_number is None:
+                loop = self._outer_loop_name(root, spec_dir, item_id, work_item)
+                runtime = (
+                    self._build_runtime(str(root), spec_dir, loop=loop)
+                    if loop
+                    else self._build_runtime(str(root), spec_dir)
+                )
+            else:
+                runtime = self._build_runtime(
                     str(root), spec_dir, pr_number=pr_number, pr_repo=pr_repo
                 )
-            )
             if action == "context":
                 return call(runtime, item_id)
             if self.assignment_sink is not None:
@@ -743,6 +748,41 @@ class GraphLink:
             spec_dir=spec_dir,
         )
 
+    def _outer_loop_name(
+        self, root: Path, spec_dir: str, item_id: str, work_item: WorkItemRef
+    ) -> str:
+        """Which outer-path loop this work item walks — ``""`` for the default.
+
+        State-first, control-record-second (issue-185): once a loop has
+        started, `graph-state.json`'s recorded ``loop`` is the fact and a later
+        control command cannot re-shape a walk in progress; before the first
+        start, the portable control record's ``contribute`` command is the
+        declared intent. Only the shipped contribution loop is ever returned —
+        the state file is agent-writable, so an invented name reads as the
+        default rather than choosing a graph (fail closed).
+        """
+        from .graph.model import PDLC_CONTRIBUTION_LOOP
+        from .graph.state import GraphState
+
+        try:
+            state = GraphState.load(root / spec_dir / item_id, item_id)
+            recorded = str(getattr(state, "loop", "") or "")
+        except Exception as exc:  # noqa: BLE001 — an unreadable state is the default
+            logger.debug("could not read %s's recorded loop: %s", item_id, exc)
+            recorded = ""
+        if recorded:
+            return PDLC_CONTRIBUTION_LOOP if recorded == PDLC_CONTRIBUTION_LOOP else ""
+        if self.control_store is not None:
+            try:
+                from .control import CONTRIBUTE
+
+                record = self.control_store.get(work_item)
+                if record is not None and record.command == CONTRIBUTE:
+                    return PDLC_CONTRIBUTION_LOOP
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("could not read %s's control record: %s", item_id, exc)
+        return ""
+
     def _spec_dir(self, root: Path) -> str:
         """Where this work item's specs live, as declared.
 
@@ -827,6 +867,7 @@ class GraphLink:
         spec_dir: str,
         pr_number: Optional[int] = None,
         pr_repo: str = "",
+        loop: str = "",
     ) -> Any:
         """The graph runtime rooted at the session's checkout.
 
@@ -856,4 +897,5 @@ class GraphLink:
             authorized_users=self.authorized_users,
             pr_number=pr_number,
             pr_repo=pr_repo,
+            loop=loop,
         )
