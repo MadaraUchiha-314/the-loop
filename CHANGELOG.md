@@ -1,3 +1,9 @@
+## v9.2.0 (2026-08-09)
+
+### Feat
+
+- **issue-185**: the contribution loop — join an existing work item with a goal and success criteria (#187)
+
 ## v9.1.0 (2026-08-09)
 
 ### Feat
