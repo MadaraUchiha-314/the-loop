@@ -1,15 +1,20 @@
-# Decision 069: the outer loop runs in the origin repository, and its surface is declared
+# Decision 069: the outer loop runs in the origin repository, and each work item declares its surface
 
 - **Status:** proposed
 - **Date:** 2026-08-09
-- **Deciders:** @MadaraUchiha-314 (issue #183 — the topology and the option are the owner's)
+- **Deciders:** @MadaraUchiha-314 (issue #183 and the review of PR #184 — the topology, the
+  choice, and where the choice lives are all the owner's)
 - **Work item:** issue-183
 - **Spec:** `docs/specs/issue-183/`
 - **Refines:** [decision-065](decision-065.md) (the PDLC is two loops) — this says *where*
   each of them runs when the work spans repositories.
 - **Amends:** [decision-051](decision-051.md) §5, whose invariant was "artifact iteration
   happens in pull-request review". It becomes: artifact iteration happens on a **durable,
-  reviewable surface** — the pull request or the ticket — never in a terminal.
+  reviewable surface** — the pull request or the work item — never in a terminal.
+- **Revised in review** (PR #184): the surface began here as a repository config key,
+  `workflow.outerLoop.surface`, and became a per-work-item declaration at
+  `phase-selection` before this decision shipped. D7 records what holds; the alternatives
+  table records what it replaced, and why.
 
 ## Context
 
