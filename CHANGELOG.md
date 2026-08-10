@@ -1,3 +1,9 @@
+## v9.7.0 (2026-08-10)
+
+### Feat
+
+- **issue-203**: an inline `url` for the Slack integration (#204)
+
 ## v9.6.3 (2026-08-10)
 
 ### Fix
