@@ -1,3 +1,9 @@
+## v9.6.3 (2026-08-10)
+
+### Fix
+
+- **issue-201**: adopt an unconfigured repository before the session is spawned (#202)
+
 ## v9.6.2 (2026-08-10)
 
 ### Fix
