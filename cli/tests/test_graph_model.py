@@ -157,9 +157,16 @@ class TestTestingIsPlannedAndVerifiedAsNodes:
         `_Test:_` names a matrix row — but it does not get an approval stop of
         its own: `design → test-planning → design-approval → tasks-breakdown`
         (owner's call on PR #166).
+
+        Since issue-188 the opt-in `design-critic-review` node sits between
+        `design` and `test-planning`. It is off unless a work item selects it,
+        so the *walked* sequence is unchanged for everyone who does not — its
+        `skipped` edge lands on `test-planning` exactly as `design`'s used to.
         """
         graph = load_graph()
-        assert graph.next_node("design", "pass") == "test-planning"
+        assert graph.next_node("design", "pass") == "design-critic-review"
+        assert graph.next_node("design-critic-review", "pass") == "test-planning"
+        assert graph.next_node("design-critic-review", "skipped") == "test-planning"
         assert graph.next_node("test-planning", "pass") == "design-approval"
         assert graph.next_node("design-approval", "approved") == "tasks-breakdown"
 

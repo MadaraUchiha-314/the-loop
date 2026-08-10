@@ -424,6 +424,12 @@ EVENT_TYPES: Dict[str, str] = {
         "via: selection | cli, nodes; cli adds actor and reason). A declaration, "
         "never a verdict: `check` reports the nodes as skipped-by-declaration."
     ),
+    "graph.opt_ins_selected": (
+        "A human selected one or more OPT-IN phases for a work item at the "
+        "`phase-selection` gate (work_item, via: selection, nodes). The mirror "
+        "of graph.skips_declared: those phases are off by default, so this is "
+        "the record of somebody asking for them. issue-188."
+    ),
     "graph.skips_rejected": (
         "A skip token was refused — unknown, outside the skip vocabulary, or "
         "(cli) naming a node the pointer already reached (work_item, token, "

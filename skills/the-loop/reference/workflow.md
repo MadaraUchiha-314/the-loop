@@ -198,6 +198,34 @@ phase-selection         → the-loop posts the checklist; the loop waits
 brainstorming …         → the loop walks the phases that survived
 ```
 
+### Opt-in phases — the other default (issue-188)
+
+**A phase can also be offered rather than imposed.** A node the shipped graph marks
+`optIn: true` is the mirror of a skippable one: same gate, same authorization, same
+freeze, same provenance — and the opposite default. It is rendered **unticked**, in its own
+section of the checklist, and it runs only if somebody ticks it.
+
+| Marker | Row | Left alone | The human's act |
+|---|---|---|---|
+| `skippable: true` | `- [x] <node>` | runs | untick to **remove** work |
+| `optIn: true` | `- [ ] <node>` | does not run | tick to **add** work |
+
+Everything else follows from that one difference. An opt-in phase nobody ticked — including
+on a work item that started before the phase existed — is reported by `the-loop check` as
+*not selected*, never as *skipped by declaration* (nobody declared it) and never as a pass.
+A checklist the-loop could not read, a truncated reply and a reply that never mentions the
+phase all leave it off, which is the fail-closed direction here: an opt-in phase *adds* a
+review rather than gating one. A skip set may not name one — declaring away a phase that is
+already away says nothing, so it is refused at compile time. The agent never ticks a box,
+for the same reason it never declares a skip.
+
+**The loop ships exactly one:** `design-critic-review` (`reference/reviewing.md` § The
+design critic round) — a different model reading the **locked `design.md`** against the
+requirements, after `design` and before `test-planning`, so a structural finding costs an
+edit rather than a rewrite. It records into the execution log's `## Design critic review`
+section and blocks until that section is written. Like declared skips, opt-in phases are
+outer-loop only: neither `pdlc-pr-loop` nor `pdlc-contribution-loop` declares one.
+
 ## Several repositories, one work item (issue-183)
 
 **The outer loop runs where the ticket was created; each contributing repository gets one

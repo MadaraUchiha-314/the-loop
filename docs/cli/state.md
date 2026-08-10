@@ -110,6 +110,7 @@ item itself.
     "workItem": "issue-15",
     "nodes": [
       {"id": "design", "phase": "design", "skipped": true, "selectable": true},
+      {"id": "design-critic-review", "phase": "", "skipped": true, "selectable": true, "optIn": true},
       {"id": "verification", "phase": "verification", "skipped": false, "selectable": false}
     ]
   }
@@ -170,7 +171,7 @@ can rebuild.
 |---|---|
 | `loop` | which shipped loop was frozen (`pdlc-work-item-loop`) |
 | `workItem` | the spec-folder id the graph was resolved for |
-| `nodes` | every node in declaration order: `skipped` (routed around) and `selectable` (was it ever the user's to skip) |
+| `nodes` | every node in declaration order: `skipped` (routed around), `selectable` (was it ever the user's to choose) and `optIn` (off unless selected — so `skipped: true` here means *nobody asked for it*, not *somebody removed it*) |
 
 Written once, when an authorized user answers the
 [`phase-selection`](/capabilities/process-graph) gate with the execute keyword

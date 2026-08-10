@@ -194,6 +194,17 @@ class Node:
     #: artifact was produced — ``skippable`` is a vocabulary entry for the
     #: declared-skips mechanism, and only the shipped graph can grant it.
     skippable: bool = False
+    #: Is this node OFF unless a human selects it at ``phase-selection``
+    #: (issue-188)? The mirror image of ``skippable``: same gate, same
+    #: authorization, same provenance — opposite default. ``optIn`` implies
+    #: ``skippable``, so an opt-in node is part of the declared-skip vocabulary
+    #: and declares its own ``on: skipped`` edge like every other member; what
+    #: differs is that nobody has to act for it to be skipped.
+    opt_in: bool = False
+    #: One line rendered beside this node's row on the phase-selection
+    #: checklist (issue-188). Shipped-graph text, never repo-supplied: a phase a
+    #: reader has to guess at is a phase they will not choose.
+    description: str = ""
     max_attempts: int = 3
     entry: Tuple[Any, ...] = ()
     exit: Tuple[Any, ...] = ()
@@ -211,6 +222,8 @@ class Node:
             "required": self.required,
             "optional": self.optional,
             "skippable": self.skippable,
+            "optIn": self.opt_in,
+            "description": self.description,
             "maxAttempts": self.max_attempts,
             "terminal": self.terminal,
         }
@@ -378,6 +391,15 @@ def _build_node(raw: Mapping[str, Any]) -> Node:
         produces = [produces]
     for entry in produces:
         validate_produces_entry(node_id, entry)
+    opt_in = bool(raw.get("optIn", False))
+    if bool(raw.get("required", False)) and opt_in:
+        # Checked BEFORE the skippable pair below, and separately: `optIn`
+        # implies `skippable`, so the other message would name a marker this
+        # author never wrote and send them looking for it in the wrong line.
+        raise GraphConfigError(
+            f"node {node_id!r} is both required and optIn — a mandatory gate "
+            "cannot be off until somebody asks for it (issue-188)"
+        )
     if bool(raw.get("required", False)) and bool(raw.get("skippable", False)):
         raise GraphConfigError(
             f"node {node_id!r} is both required and skippable — a mandatory "
@@ -393,7 +415,12 @@ def _build_node(raw: Mapping[str, Any]) -> Node:
         session=session,
         required=bool(raw.get("required", False)),
         optional=bool(raw.get("optional", False)),
-        skippable=bool(raw.get("skippable", False)),
+        # `optIn` implies `skippable` (issue-188): an opt-in node is routed
+        # around by the same `on: skipped` edge, reported by the same code and
+        # authorized at the same gate — only its default differs.
+        skippable=bool(raw.get("skippable", False)) or opt_in,
+        opt_in=opt_in,
+        description=str(raw.get("description", "") or "").strip(),
         max_attempts=int(raw.get("maxAttempts", 3)),
         entry=_validate_chain(node_id, "entry", raw.get("entry") or []),
         exit=_validate_chain(node_id, "exit", raw.get("exit") or []),
@@ -478,6 +505,16 @@ def compile_graph(data: Mapping[str, Any]) -> Graph:
                     f"skip set {set_name!r} names {member_id!r}, which is not "
                     "a declared skippable node — a set cannot widen the skip "
                     "vocabulary (issue-177)"
+                )
+            if node.opt_in:
+                # A skip set declares phases *away*, and an opt-in phase is
+                # already away. Naming one here would make a token that reads
+                # as "drop these" silently a no-op for one of its members
+                # (issue-188).
+                raise GraphConfigError(
+                    f"skip set {set_name!r} names {member_id!r}, which is an "
+                    "opt-in node — it does not run unless it is selected, so "
+                    "declaring it skipped says nothing (issue-188)"
                 )
             resolved.append(member_id)
         skip_sets[str(set_name)] = tuple(resolved)

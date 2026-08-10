@@ -56,3 +56,25 @@ def test_state_serialises_the_forced_ledger(tmp_path):
     state.save(tmp_path)
     data = json.loads(GraphState.path_for(tmp_path).read_text())
     assert data["forced"][0]["reason"] == "why"
+
+
+def test_state_serialises_selected_opt_in_phases(tmp_path):
+    """issue-188 — a selection is a recorded fact with provenance, like a skip."""
+    state = GraphState(work_item="issue-1")
+    state.opt_ins["design-critic-review"] = {"via": "selection", "by": "@owner"}
+    state.save(tmp_path)
+    data = json.loads(GraphState.path_for(tmp_path).read_text())
+    assert data["optIns"]["design-critic-review"]["by"] == "@owner"
+    assert GraphState.load(tmp_path, "issue-1").opt_ins == state.opt_ins
+
+
+def test_a_state_file_without_opt_ins_selects_nothing(tmp_path):
+    """issue-188, backward compatibility — every pre-issue-188 state file. A
+    work item already in flight was never offered the choice, so it made none,
+    and the opt-in node it never saw is skipped rather than blocking it."""
+    GraphState.path_for(tmp_path).write_text(
+        json.dumps({"workItem": "issue-1", "currentNode": "design"}), encoding="utf-8"
+    )
+    state = GraphState.load(tmp_path, "issue-1")
+    assert state.opt_ins == {}
+    assert state.current_node == "design"

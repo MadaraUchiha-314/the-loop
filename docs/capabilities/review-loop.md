@@ -31,6 +31,26 @@ critique it, and how that critique gets back (issue-108).
 - Every round SHALL be recorded in the execution log's review table with its outcome —
   new findings · zero · escalated · **unavailable**.
 
+### The design critic round (opt-in, issue-188)
+
+- The outer loop SHALL offer an **opt-in** `design-critic-review` node between `design` and
+  `test-planning` — a critic round whose subject is the **locked `design.md`** read against
+  `requirements.md`/`bugfix.md`, rather than a diff read against the whole spec chain.
+- It SHALL be **off unless selected**: the node is `optIn: true`, rendered unticked at
+  `phase-selection`, and it runs only when an authorized human ticks it
+  ([decision-071](../decisions/decision-071.md), [process-graph](process-graph.md)
+  § Opt-in phases). The harness SHALL never select it.
+- WHEN it runs THEN its exit gate SHALL require a non-empty **`## Design critic review`**
+  section in `execution-log.md` — a section of its own, not a row of the review table, so
+  the node cannot pass on a round another node recorded.
+- The **procedure** SHALL be unchanged: attribution prefix, own-comment marker,
+  reply-first-then-fix, stop on zero new findings, escalate on a repeated finding, and a
+  round that could not run recorded as `unavailable` with its cause.
+- Findings SHALL be applied to `design.md` in place; the node SHALL NOT route back to
+  `design`, because `design-approval` has not read the design yet.
+- The node SHALL declare `stage: critic-review`, so the existing `tokenEconomy` stage tables
+  route it to a frontier model at high thinking effort without a new configuration key.
+
 ### Declaring a critic (`reviews.critics[]`)
 
 - A critic entry SHALL be **runnable**, not merely descriptive: `name` (unique), plus either
@@ -108,11 +128,13 @@ Pointers, not copies:
   `cli/the_loop/commands/critic_cmd.py` (`the-loop critic list|run`).
 - Built-in invocations: `cli/the_loop/harness/` (`HarnessAdapter.oneshot_argv`,
   `model_flag`) — shared with session dispatch, see [cli](cli.md).
-- Where the rounds sit in the lifecycle: the `self-review` / `critic-review` /
-  `security-review` nodes of [process-graph](process-graph.md).
+- Where the rounds sit in the lifecycle: the `design-critic-review` (opt-in) /
+  `self-review` / `critic-review` / `security-review` nodes of
+  [process-graph](process-graph.md).
 
 ## History
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-188 | The design critic round (2026-08-10): an **opt-in** `design-critic-review` node between `design` and `test-planning`, reviewing the locked `design.md` against the requirements while a structural finding still costs an edit; off unless an authorized human ticks it at `phase-selection`, gating the execution log's own `## Design critic review` section, `stage: critic-review` so it routes to a frontier model; the procedure, the `unavailable` rule and the reply-first-then-fix protocol unchanged | [spec](../specs/issue-188/), [decision-071](../decisions/decision-071.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/188) |
 | issue-108 | Minted this capability. Made `reviews.critics[]` runnable — `command`/`args` with element-wise placeholders (or a built-in `harness` deriving them), `env`/`cwd`/`outputFormat`/`timeoutSeconds`/`enabled` — added `the-loop critic list\|run` returning one JSON envelope on stdout, and wrote the critic-round procedure (including the `unavailable` outcome) into `reference/reviewing.md`. | [spec](../specs/issue-108/), [decision-043](../decisions/decision-043.md) |

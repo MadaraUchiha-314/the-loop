@@ -34,6 +34,15 @@ Two rules, inherited from `feedback.py` and load-bearing here:
   phases to skip, filtered against the graph's own `skippable` vocabulary;
   protected phases named in a reply are refused and said so out loud.
 
+**Two defaults, one gate** (issue-188). Most selectable phases are *opt-out*:
+ticked by default, and unticking one removes work. A phase the shipped graph
+marks ``optIn`` is *opt-in*: rendered unticked in a section of its own, and it
+runs only if somebody ticks it. Same authorization, same freeze, same
+provenance — the difference is who has to act for the phase to run, which is why
+the two are never mixed in one list. Leaving an opt-in row alone, or never
+mentioning it, means it does not run; that is the fail-closed direction for a
+phase that *adds* a review rather than gating one.
+
 **The gate answers a second question too** (issue-183, owner's call on PR #184):
 *where does this work item collaborate on the outer loop* — the work item
 itself, or a pull request in this repository. It belongs here for the same
@@ -51,7 +60,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from ...authz import mark_self_authored
 from ..contract import HookContext, HookResult
@@ -113,21 +122,26 @@ def _resolve(ctx: HookContext):
     return resolve("github", ctx.config)
 
 
-def _phase_rows(ctx: HookContext) -> Tuple[List[str], List[str]]:
-    """(skippable, protected) node ids of the loop this work item is walking.
+def _phase_rows(ctx: HookContext) -> Tuple[List[str], List[str], List[str]]:
+    """(default-on, opt-in, protected) node ids of the loop being walked.
 
     Read from **the runtime's own compiled graph** (``ctx.graph``), never a
     re-loaded shipped default: the checklist a user sees, the vocabulary their
     reply is validated against and the nodes the pointer will route around must
     be one list, and they differ between the outer loop, the inner PR loop and
     any graph a caller passed in. With no graph in context there is nothing
-    truthful to offer, so both lists are empty and the gate simply asks for
+    truthful to offer, so the lists are empty and the gate simply asks for
     `the-loop execute`.
+
+    Opt-in nodes (issue-188) are ``skippable`` too — they share the whole
+    declared-skip mechanism — so they are split out here rather than listed
+    twice under opposite defaults.
     """
     graph = ctx.graph
     if graph is None:
-        return [], []
-    skippable = [n.id for n in graph.ordered() if n.skippable]
+        return [], [], []
+    opt_in = [n.id for n in graph.ordered() if n.opt_in]
+    skippable = [n.id for n in graph.ordered() if n.skippable and not n.opt_in]
     # Every non-skippable node the item will actually walk — deliberately NOT
     # filtered by `phase`: most of the review chain (`security-review`,
     # `human-approval`, …) carries no phase label, and listing only the ones
@@ -138,23 +152,46 @@ def _phase_rows(ctx: HookContext) -> Tuple[List[str], List[str]]:
         for n in graph.ordered()
         if not n.skippable and not n.terminal and n.id != ctx.node_id
     ]
-    return skippable, protected
+    return skippable, opt_in, protected
+
+
+def _describe(ctx: HookContext, node_id: str) -> str:
+    """The node's one-line ``description``, flattened for a checklist row."""
+    graph = ctx.graph
+    node = graph.nodes.get(node_id) if graph is not None else None
+    return " ".join(str(getattr(node, "description", "") or "").split())
 
 
 def _checklist_body(ctx: HookContext) -> str:
-    skippable, protected = _phase_rows(ctx)
+    skippable, opt_in, protected = _phase_rows(ctx)
     keyword = _execute_keyword(ctx)
     lines = [
         "🤖 _the-loop_ — **which phases does this work item need?**",
         "",
         "Before the loop starts, tell it what this item actually needs. "
-        "**Untick anything this work item does not need — right here on this "
+        "**Untick anything this work item does not need"
+        + (", tick anything optional it does want" if opt_in else "")
+        + " — right here on this "
         f"comment — then reply `{keyword}`.** The tick state at that moment is "
         "frozen and becomes the graph this item walks.",
         "",
     ]
     lines += [f"- [x] {node}" for node in skippable]
     lines += [""]
+    if opt_in:
+        # The other default (issue-188). Rendered unticked, in a section of its
+        # own, because a reader scanning boxes must never have to work out which
+        # way a given row leans: above, unticking removes work; here, ticking
+        # adds it.
+        lines += [
+            "**Optional phases — these do NOT run unless you tick them.** They "
+            "are offered, not planned:",
+            "",
+        ]
+        for node in opt_in:
+            about = _describe(ctx, node)
+            lines.append(f"- [ ] {node}" + (f" — {about}" if about else ""))
+        lines += [""]
     if protected:
         lines += [
             "These phases always run and are not selectable — they are what keeps "
@@ -192,7 +229,13 @@ def _checklist_body(ctx: HookContext) -> str:
         "A doc fix usually needs little more than implementation and "
         "verification; a feature usually needs every phase. Reply "
         f"`{keyword}` with the boxes untouched "
-        "to run the full process.",
+        "to run the full process"
+        + (
+            " — every phase above that is already ticked, and none of the "
+            "optional ones."
+            if opt_in
+            else "."
+        ),
         "",
         f"You can also put the list in the reply itself — a checklist in the "
         f"`{keyword}` comment wins over the boxes above. Either way the "
@@ -262,7 +305,10 @@ def _checklist_state(ctx: HookContext) -> str:
 
 
 def _frozen_graph(
-    ctx: HookContext, skips: List[str], surface: str = DEFAULT_SURFACE
+    ctx: HookContext,
+    skips: List[str],
+    surface: str = DEFAULT_SURFACE,
+    opt_ins: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """The graph this work item will actually walk, as a record.
 
@@ -273,15 +319,21 @@ def _frozen_graph(
     thread, and a reviewer can see what was agreed at selection time.
     """
     graph = ctx.graph
+    chosen = set(opt_ins or ())
     nodes = []
     if graph is not None:
         for node in graph.ordered():
+            # An opt-in node nobody ticked is not walked either (issue-188) —
+            # and the record says WHICH of the two it was, so a reader can tell
+            # a phase nobody asked for from a phase somebody removed.
+            skipped = node.id in skips or (node.opt_in and node.id not in chosen)
             nodes.append(
                 {
                     "id": node.id,
                     "phase": node.phase,
-                    "skipped": node.id in skips,
+                    "skipped": skipped,
                     "selectable": bool(node.skippable),
+                    "optIn": bool(node.opt_in),
                 }
             )
     return {
@@ -293,18 +345,26 @@ def _frozen_graph(
 
 
 def _parse_selection(
-    body: str, skippable: List[str], protected: List[str]
-) -> Tuple[List[str], List[str]]:
-    """(skips, refused) from one reply's checklist.
+    body: str, skippable: List[str], opt_in: List[str], protected: List[str]
+) -> Tuple[List[str], List[str], List[str]]:
+    """(skips, opt-ins, refused) from one reply's checklist.
 
     An **unticked** skippable phase is a skip. An unticked protected phase is
     refused and named back — silently running a phase the user asked to drop
-    would be as bad as silently dropping one they asked to keep. A phase the
-    reply never mentions is simply kept: the selection can only remove what it
-    explicitly unticks, so a truncated or partial list fails closed toward more
-    process.
+    would be as bad as silently dropping one they asked to keep. A default-on
+    phase the reply never mentions is simply kept: the selection can only remove
+    what it explicitly unticks, so a truncated or partial list fails closed
+    toward more process.
+
+    An **opt-in** phase inverts only the default (issue-188): ticked selects it,
+    unticked does not, and one the reply never mentions is not selected either —
+    which needs no code here, because a node absent from the returned list is
+    default-skipped by the runtime. So a truncated reply, an unreadable comment
+    and a deleted one all fail toward *off* for these, which is the closed
+    direction for a phase that adds a review rather than gating one.
     """
     skips: List[str] = []
+    opt_ins: List[str] = []
     refused: List[str] = []
     for match in _CHECK_LINE.finditer(body):
         token = match.group("token")
@@ -314,14 +374,19 @@ def _parse_selection(
             # refused list either, or every default selection would report a
             # phase it never asked to drop.
             continue
-        if match.group("mark").strip():  # ticked → the phase runs
+        ticked = bool(match.group("mark").strip())
+        if token in opt_in:
+            if ticked and token not in opt_ins:
+                opt_ins.append(token)
+            continue
+        if ticked:  # ticked → the phase runs
             continue
         if token in skippable:
             if token not in skips:
                 skips.append(token)
         elif token in protected and token not in refused:
             refused.append(token)
-    return skips, refused
+    return skips, opt_ins, refused
 
 
 def _parse_surface(body: str) -> str:
@@ -345,6 +410,8 @@ def _confirmation(
     skips: List[str],
     refused: List[str],
     surface: str = DEFAULT_SURFACE,
+    opt_ins: Optional[List[str]] = None,
+    offered: Optional[List[str]] = None,
 ) -> str:
     lines = ["🤖 _the-loop_ — **phase selection recorded**", ""]
     if skips:
@@ -356,7 +423,26 @@ def _confirmation(
             "work item.",
         ]
     else:
-        lines.append(f"@{actor} kept every phase — the full process runs.")
+        lines.append(
+            f"@{actor} kept every phase that runs by default — the full process runs."
+        )
+    # The opt-in half of the same answer (issue-188). An offered phase that
+    # nobody chose is said out loud too: silence about it would be
+    # indistinguishable from never having been offered it.
+    if opt_ins:
+        lines += [
+            "",
+            f"Also running, as @{actor} asked: "
+            + ", ".join(f"`{o}`" for o in opt_ins)
+            + " — optional phases, off unless selected.",
+        ]
+    elif offered:
+        lines += [
+            "",
+            "Not running (offered, not selected): "
+            + ", ".join(f"`{o}`" for o in offered)
+            + ".",
+        ]
     if refused:
         lines += [
             "",
@@ -409,7 +495,7 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
         )
 
     reply = decisive[-1]  # the latest instruction wins
-    skippable, protected = _phase_rows(ctx)
+    skippable, opt_in, protected = _phase_rows(ctx)
     # The execute comment's own checklist is explicit and wins; otherwise the
     # tick state of our checklist comment at THIS moment is the selection, and
     # saying the keyword is what makes it the replier's own.
@@ -417,7 +503,7 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
     body = str(reply["body"])
     if not _CHECK_LINE.search(body):
         body, source = _checklist_state(ctx), "checklist"
-    skips, refused = _parse_selection(body, skippable, protected)
+    skips, opt_ins, refused = _parse_selection(body, skippable, opt_in, protected)
     surface = _parse_surface(body)
     actor = str(reply["author"]).lstrip("@")
 
@@ -425,7 +511,9 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
         _resolve(ctx).call(
             "add-comment",
             ref=ctx.work_item.ref,
-            body=_confirmation(ctx, actor, skips, refused, surface),
+            body=_confirmation(
+                ctx, actor, skips, refused, surface, opt_ins=opt_ins, offered=opt_in
+            ),
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("could not post the selection confirmation: %s", exc)
@@ -434,16 +522,20 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
         node: {"via": "selection", "token": node, "by": f"@{actor}", "reason": ""}
         for node in skips
     }
+    chosen: Dict[str, Any] = {
+        node: {"via": "selection", "token": node, "by": f"@{actor}"} for node in opt_ins
+    }
     return HookResult(
         status="pass",
         hook=name,
         data={
             "outcome": "selected",
             "declaredSkips": declared,
+            "optIns": chosen,
             "refused": refused,
             "decision": DECISION_KEY,
             "surface": surface,
-            "frozenGraph": _frozen_graph(ctx, skips, surface),
+            "frozenGraph": _frozen_graph(ctx, skips, surface, opt_ins=opt_ins),
             "selectionSource": source,
         },
     )

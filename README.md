@@ -147,7 +147,9 @@ Details: [installation](https://madarauchiha-314.github.io/the-loop/guide/instal
 ## What the loop insists on
 
 Every work item has a ticket and a spec chain approved phase by phase. Reviews — self, then
-critic, then security — run **before** a human is asked for anything. Tests come first,
+critic, then security — run **before** a human is asked for anything, and a work item can
+opt in to one more: a critic reading the **locked design** before anything is derived from
+it. Tests come first,
 evidence is committed, and every human decision leaves a paper trail on the ticket or PR.
 Capability docs and the user-facing documentation, this README included, are updated **in
 the same PR** as the change that made them wrong. Commits follow Conventional Commits, and

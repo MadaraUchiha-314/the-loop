@@ -94,9 +94,22 @@ def _exclude_spec_root(repo: Path, spec_root: str) -> str:
     return "added"
 
 
+#: The ``via`` marker of a skip nobody declared: an **opt-in** node that was
+#: simply never selected (issue-188). Kept distinct from every human-declared
+#: provenance because the two are different facts — one names a person who
+#: removed a phase that would otherwise have run, the other names a phase that
+#: was offered and not asked for.
+NOT_SELECTED = "not-selected"
+
+
 def _skip_provenance(decl: Mapping[str, Any]) -> str:
     """One line a reviewer can act on: who declared this skip, and how."""
     via = str(decl.get("via") or "unknown")
+    if via == NOT_SELECTED:
+        return (
+            "not selected — an opt-in phase, off unless it is ticked at "
+            "`phase-selection`"
+        )
     token = str(decl.get("token") or "")
     by = str(decl.get("by") or "")
     reason = str(decl.get("reason") or "")
@@ -292,13 +305,38 @@ class Runtime:
         when the compiled graph marks that node skippable (and not required).
         A hand-written declaration on ``security-review`` is therefore inert
         everywhere at once, and :meth:`invalid_skips` surfaces it.
+
+        **An unselected opt-in node is one of these too** (issue-188). Nobody
+        declared it, so it carries ``via: not-selected`` rather than a person's
+        name — but it is not walked, and expressing that here means routing,
+        ``check``, ``--recompute`` and ``skipped_artifacts`` all learn it at
+        once, through code that already exists. A work item whose state predates
+        the node therefore skips it rather than blocking on a phase that did not
+        exist when it started.
         """
         out: Dict[str, Dict[str, Any]] = {}
         for node_id, decl in (state.skips or {}).items():
             node = self.graph.nodes.get(node_id)
             if node is not None and node.skippable and not node.required:
                 out[node_id] = dict(decl) if isinstance(decl, Mapping) else {}
+        for node in self.graph.ordered():
+            if node.opt_in and node.id not in out and not self.selected(state, node.id):
+                out[node.id] = {"via": NOT_SELECTED}
         return out
+
+    def selected(self, state: "GraphState", node_id: str) -> bool:
+        """Did a human select this opt-in node (issue-188)?
+
+        The mirror of :meth:`declared_skips`' filter, and defensive for the same
+        reason: ``state.optIns`` is agent-writable, so an entry counts only when
+        the compiled graph marks that node ``optIn``. A forged entry on any
+        other node grants nothing — a node that is not opt-in was never skipped
+        by default — which is why it needs no separate refusal report.
+        """
+        node = self.graph.nodes.get(node_id)
+        if node is None or not node.opt_in:
+            return False
+        return isinstance((state.opt_ins or {}).get(node_id), Mapping)
 
     def invalid_skips(self, state: "GraphState") -> List[str]:
         """Declared node ids the graph refuses — surfaced, never honoured."""
@@ -365,6 +403,7 @@ class Runtime:
                 if frozen:
                     self._publish_frozen_graph(item, frozen)
         declared: Dict[str, Any] = {}
+        chosen_in: Dict[str, Any] = {}
         for result in outcome.results:
             for node_id, decl in (result.data.get("declaredSkips") or {}).items():
                 node = self.graph.nodes.get(str(node_id))
@@ -372,17 +411,44 @@ class Runtime:
                 if node is None or not node.skippable or (rec and rec.entered_at):
                     continue
                 declared[str(node_id)] = {**dict(decl), "at": utc_now()}
-        if not declared:
+            # The same fact in the other direction (issue-188): an opt-in phase
+            # somebody asked for. Same two guards — the compiled graph marks the
+            # node, and the pointer has not already walked past it — because a
+            # selection is as much a recorded human input as a skip is.
+            for node_id, decl in (result.data.get("optIns") or {}).items():
+                node = self.graph.nodes.get(str(node_id))
+                rec = state.nodes.get(str(node_id))
+                if node is None or not node.opt_in or (rec and rec.entered_at):
+                    continue
+                chosen_in[str(node_id)] = {**dict(decl), "at": utc_now()}
+        if not declared and not chosen_in:
             return decided
         for node_id, decl in declared.items():
             state.skips.setdefault(node_id, decl)
-        eventlog.emit(
-            "graph.skips_declared",
-            work_item=item.ref,
-            via="selection",
-            nodes=sorted(declared),
-        )
-        logger.info("%s: phase selection declared skips %s", item.ref, sorted(declared))
+        for node_id, decl in chosen_in.items():
+            state.opt_ins.setdefault(node_id, decl)
+        if declared:
+            eventlog.emit(
+                "graph.skips_declared",
+                work_item=item.ref,
+                via="selection",
+                nodes=sorted(declared),
+            )
+            logger.info(
+                "%s: phase selection declared skips %s", item.ref, sorted(declared)
+            )
+        if chosen_in:
+            eventlog.emit(
+                "graph.opt_ins_selected",
+                work_item=item.ref,
+                via="selection",
+                nodes=sorted(chosen_in),
+            )
+            logger.info(
+                "%s: phase selection selected opt-in phases %s",
+                item.ref,
+                sorted(chosen_in),
+            )
         return True
 
     def _publish_frozen_graph(self, item: WorkItem, frozen: Mapping[str, Any]) -> None:

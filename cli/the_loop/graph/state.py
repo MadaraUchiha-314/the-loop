@@ -126,6 +126,15 @@ class GraphState:
     #: hand-written entry on a protected node is inert. Additive: absent in
     #: every pre-issue-177 state file, defaulting to {} on load.
     skips: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    #: Selected opt-in phases (issue-188): node id -> {via, by, at}. The mirror
+    #: of ``skips`` — a node the compiled graph marks ``optIn`` does NOT run
+    #: until an authorized human ticks it at `phase-selection`, and this is
+    #: where that choice is recorded with provenance. Filtered through the
+    #: compiled graph on every read, exactly as ``skips`` is, so a hand-written
+    #: entry on a node that is not opt-in is inert. Additive: absent in every
+    #: pre-issue-188 state file, defaulting to {} — which reads correctly as
+    #: "this work item was never offered the choice".
+    opt_ins: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     #: The outer loop's collaboration surface for this work item (issue-183):
     #: ``pull-request`` when its author ticked that box at `phase-selection`,
     #: ``""`` otherwise — which reads as the default, the work item itself.
@@ -187,6 +196,11 @@ class GraphState:
                 for k, v in (data.get("skips") or {}).items()
                 if isinstance(v, dict)
             },
+            opt_ins={
+                k: dict(v)
+                for k, v in (data.get("optIns") or {}).items()
+                if isinstance(v, dict)
+            },
             surface=str(data.get("surface") or ""),
             loop=str(data.get("loop") or ""),
             version=int(data.get("version", STATE_VERSION)),
@@ -219,6 +233,7 @@ class GraphState:
             "session": self.session,
             "completions": self.completions,
             "skips": self.skips,
+            "optIns": self.opt_ins,
             "surface": self.surface,
             "loop": self.loop,
         }

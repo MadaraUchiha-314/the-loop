@@ -15,6 +15,12 @@ The three-party split is the whole design, so the tests are grouped by party:
   skip with provenance in both modes, and a forged declaration on a protected
   node is inert and surfaced (M4); a later gate over an artifact whose author
   was skipped tolerates its absence but still gates it when present (M5).
+
+**M13 (issue-188) asks the same three questions with the default inverted.** A
+node marked ``optIn`` is off unless a human ticks it, so the compile group gains
+the marker's own refusals, the declare group gains a ticked row, and the report
+group gains the one distinction that matters: *not selected* is not the same
+fact as *skipped by declaration*, and neither is a pass.
 """
 
 from __future__ import annotations
@@ -26,6 +32,7 @@ import pytest
 from the_loop.graph import hooks  # noqa: F401 — registers the built-ins
 from the_loop.graph.model import (
     GraphConfigError,
+    PDLC_CONTRIBUTION_LOOP,
     PDLC_PR_LOOP,
     compile_graph,
     load_graph,
@@ -939,7 +946,381 @@ def test_the_shipped_checklist_offers_every_phase_the_item_walks(repo, fake_gith
     body = fake_github.posted[0]
 
     for node in load_graph().ordered():
-        if node.skippable:
+        if node.opt_in:
+            # issue-188: offered, not planned — the opposite default, and it
+            # must never be rendered as a ticked row.
+            assert f"- [ ] {node.id}" in body, node.id
+            assert f"- [x] {node.id}" not in body, node.id
+        elif node.skippable:
             assert f"- [x] {node.id}" in body, node.id
     assert "- [x] phase-selection" not in body
     assert "Every phase of this loop is selectable" in body
+
+
+# -- M13: opt-in phases — offered, not planned (issue-188) ----------------------
+#
+# The mirror of everything above. `skippable` means *on unless a human unticks
+# it*; `optIn` means *off unless a human ticks it*. Same gate, same
+# authorization, same freeze, same provenance — so these tests ask the same
+# three questions the declared-skip groups do (compile / declare / route &
+# report), with the default inverted.
+
+
+def _opt_in_graph(base):
+    """`base`, with an opt-in `deep-review` node wired in after `requirements`.
+
+    The edges out of `requirements` are *rewritten* rather than added to: the
+    compiler keeps the first declared edge per (node, outcome), so appending
+    would leave the new node unreachable and only warn.
+    """
+    graph = copy.deepcopy(base)
+    nodes = list(graph["nodes"])
+    at = next(i for i, n in enumerate(nodes) if n["id"] == "requirements") + 1
+    nodes.insert(
+        at,
+        {
+            "id": "deep-review",
+            "optIn": True,
+            "description": "a different model reads the locked requirements",
+            "produces": ["deep-review.md"],
+            "exit": [{"hook": "validate-artifacts", "with": {"locked": True}}],
+        },
+    )
+    graph["nodes"] = nodes
+    edges = [
+        e
+        for e in graph["edges"]
+        if not (e["from"] == "requirements" and e["to"] == "approval")
+    ]
+    graph["edges"] = [
+        {"from": "requirements", "to": "deep-review", "on": "pass"},
+        {"from": "requirements", "to": "deep-review", "on": "skipped"},
+        {"from": "deep-review", "to": "approval", "on": "pass"},
+        {"from": "deep-review", "to": "approval", "on": "skipped"},
+        *edges,
+    ]
+    return graph
+
+
+OPT_IN_GRAPH = _opt_in_graph(GRAPH)
+
+
+@pytest.fixture()
+def opting(repo):
+    return Runtime(repo, graph=compile_graph(copy.deepcopy(OPT_IN_GRAPH)))
+
+
+@pytest.fixture()
+def selecting_opt_in(repo):
+    return Runtime(
+        repo,
+        graph=compile_graph(_opt_in_graph(SELECT_GRAPH)),
+        config={"authorizedUsers": ["@owner"]},
+    )
+
+
+def _select(repo, *nodes, by="@owner"):
+    """A selection as the gate records it — through the state API."""
+    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    for node in nodes:
+        state.opt_ins[node] = {
+            "via": "selection",
+            "token": node,
+            "by": by,
+            "at": "2026-08-10T00:00:00+00:00",
+        }
+    state.save(_spec_dir(repo))
+    return state
+
+
+# -- compile: the vocabulary ----------------------------------------------------
+
+
+def test_opt_in_is_parsed_and_implies_skippable():
+    """R1.1 — one marker, and it joins the existing vocabulary."""
+    graph = compile_graph(copy.deepcopy(OPT_IN_GRAPH))
+    node = graph.node("deep-review")
+    assert node.opt_in is True
+    assert node.skippable is True  # implied: same edge, same routing, same report
+    assert node.as_mapping()["optIn"] is True
+    assert "different model" in node.as_mapping()["description"]
+    assert graph.node("requirements").opt_in is False
+
+
+def test_required_and_opt_in_is_a_compile_error():
+    """R1.2 — a mandatory gate cannot be off until somebody asks for it."""
+    graph = copy.deepcopy(OPT_IN_GRAPH)
+    for node in graph["nodes"]:
+        if node["id"] == "deep-review":
+            node["required"] = True
+    with pytest.raises(GraphConfigError) as exc:
+        compile_graph(graph)
+    assert "deep-review" in str(exc.value)
+    assert "optIn" in str(exc.value)
+
+
+def test_an_opt_in_node_needs_a_declared_skipped_edge():
+    """The implied `skippable` brings its compile check with it: routing around
+    a node is authored, never inferred — including the default route."""
+    graph = copy.deepcopy(OPT_IN_GRAPH)
+    graph["edges"] = [
+        e
+        for e in graph["edges"]
+        if not (e["from"] == "deep-review" and e["on"] == "skipped")
+    ]
+    with pytest.raises(GraphConfigError) as exc:
+        compile_graph(graph)
+    assert "deep-review" in str(exc.value)
+
+
+def test_a_skip_set_naming_an_opt_in_node_is_a_compile_error():
+    """R1.3 — declaring away a phase that is already away says nothing."""
+    graph = copy.deepcopy(OPT_IN_GRAPH)
+    graph["skipSets"] = {"spec-chain": ["requirements", "deep-review"]}
+    with pytest.raises(GraphConfigError) as exc:
+        compile_graph(graph)
+    assert "deep-review" in str(exc.value)
+    assert "opt-in" in str(exc.value)
+
+
+# -- the shipped loops ----------------------------------------------------------
+
+
+def test_the_shipped_outer_loop_offers_the_design_critic_round():
+    """R3.1, R3.3 — after the design is locked, before anything derives from it."""
+    graph = load_graph()
+    node = graph.node("design-critic-review")
+    assert node.opt_in is True
+    assert node.phase == ""  # happens WITHIN the design phase; no new label
+    assert node.stage == "critic-review"  # frontier routing, no new config key
+    assert graph.next_node("design", "pass") == "design-critic-review"
+    assert graph.next_node("design", "skipped") == "design-critic-review"
+    assert graph.next_node("design-critic-review", "pass") == "test-planning"
+    assert graph.next_node("design-critic-review", "skipped") == "test-planning"
+    gated = [
+        spec["with"]
+        for spec in node.exit
+        if isinstance(spec, dict) and spec["hook"] == "validate-artifacts"
+    ]
+    assert gated == [
+        {"validates": "execution-log.md", "sections": ["Design critic review"]}
+    ]
+
+
+def test_only_the_outer_loop_offers_an_opt_in_phase():
+    """R3.6 — a work item's design is reviewed once, at the outer level."""
+    assert [n.id for n in load_graph().ordered() if n.opt_in] == [
+        "design-critic-review"
+    ]
+    for name in (PDLC_PR_LOOP, PDLC_CONTRIBUTION_LOOP):
+        assert [n.id for n in load_graph(name=name).ordered() if n.opt_in] == []
+
+
+# -- route & report: off by default, with nobody's name on it -------------------
+
+
+def test_an_unselected_opt_in_node_is_routed_around_with_no_declaration(opting, repo):
+    """R1.4 — no `skips` entry exists, and the node is still not walked."""
+    (_spec_dir(repo) / "requirements.md").write_text(
+        "---\nstatus: approved\n---\n\n# R\n"
+    )
+    opting.start(WORK_ITEM)
+    report = opting.advance(WORK_ITEM)
+    assert report.status == "pass"
+    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    assert state.skips == {}
+    assert state.opt_ins == {}
+    assert state.current_node == "approval"
+    assert state.nodes["deep-review"].outcome == "skipped"
+
+
+def test_status_reports_an_unselected_opt_in_node_as_not_selected(opting, repo):
+    """R1.5 — not a pass, and not somebody's declaration either."""
+    for recompute in (False, True):
+        report = opting.status(WORK_ITEM, recompute=recompute)
+        node = next(n for n in report.nodes if n.node == "deep-review")
+        assert node.status == "skip"
+        assert node.outcome == "skipped"
+        message = " ".join(node.messages)
+        assert "not selected" in message
+        assert "skipped by declaration" not in message
+
+
+def test_a_selected_opt_in_node_is_walked_and_gates_its_artifact(opting, repo):
+    """R1.6 — once selected it is an ordinary node, gate and all."""
+    _select(repo, "deep-review")
+    (_spec_dir(repo) / "requirements.md").write_text(
+        "---\nstatus: approved\n---\n\n# R\n"
+    )
+    opting.start(WORK_ITEM)
+    opting.advance(WORK_ITEM)
+    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    assert state.current_node == "deep-review"  # walked, not routed around
+    report = opting.advance(WORK_ITEM)
+    assert report.node == "deep-review"
+    assert report.status == "block"  # its artifact is missing — a real gate
+    status = opting.status(WORK_ITEM, recompute=True)
+    assert next(n for n in status.nodes if n.node == "deep-review").status != "skip"
+
+
+def test_a_forged_opt_in_on_a_node_that_is_not_opt_in_is_inert(opting, repo):
+    """R1.7, abuse case 2 — the state file is agent-writable; every read is
+    filtered through the compiled graph."""
+    _select(repo, "approval", "security-review")
+    assert opting.selected(GraphState.load(_spec_dir(repo), WORK_ITEM), "approval") is (
+        False
+    )
+    report = opting.status(WORK_ITEM, recompute=True)
+    for node_id in ("approval", "security-review"):
+        node = next(n for n in report.nodes if n.node == node_id)
+        assert node.status != "skip"
+
+
+def test_deleting_a_selection_reverts_to_not_selected_never_pass(opting, repo):
+    """Abuse case 3 — removing the record removes a review, never a gate."""
+    _select(repo, "deep-review")
+    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state.opt_ins = {}
+    state.save(_spec_dir(repo))
+    node = next(
+        n
+        for n in opting.status(WORK_ITEM, recompute=True).nodes
+        if n.node == "deep-review"
+    )
+    assert node.status == "skip"
+    assert "not selected" in " ".join(node.messages)
+
+
+def test_selections_survive_a_state_round_trip(repo):
+    _select(repo, "deep-review")
+    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    assert state.opt_ins["deep-review"]["by"] == "@owner"
+    assert state.as_dict()["optIns"]["deep-review"]["via"] == "selection"
+
+
+# -- the gate: two defaults, one signed reply -----------------------------------
+
+
+def test_the_checklist_offers_opt_in_phases_unticked_and_described(
+    selecting_opt_in, repo, fake_github
+):
+    """R2.1, R2.2 — a separate section, so no row's meaning has to be guessed."""
+    selecting_opt_in.start(WORK_ITEM, ref="github:o/r#1")
+    body = fake_github.posted[0]
+    assert "- [ ] deep-review — a different model reads the locked requirements" in body
+    assert "- [x] deep-review" not in body
+    assert "do NOT run unless you tick them" in body
+    assert "- [x] requirements" in body  # the other default, untouched
+
+
+def test_ticking_an_opt_in_row_selects_it(selecting_opt_in, repo, fake_github):
+    """R2.3, R1.6 — the tick runs it, and it is never filed as a skip."""
+    selecting_opt_in.start(WORK_ITEM, ref="github:o/r#1")
+    selecting_opt_in.advance(
+        WORK_ITEM,
+        ref="github:o/r#1",
+        event=_reply("- [x] requirements\n- [x] deep-review\n\nthe-loop execute"),
+    )
+    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    assert set(state.opt_ins) == {"deep-review"}
+    assert state.opt_ins["deep-review"]["by"] == "@owner"
+    assert state.opt_ins["deep-review"]["via"] == "selection"
+    assert "deep-review" not in state.skips
+    assert any("Also running" in p and "deep-review" in p for p in fake_github.posted)
+
+
+def test_leaving_an_opt_in_row_alone_does_not_select_it(
+    selecting_opt_in, repo, fake_github
+):
+    """R2.4, R2.5 — and the confirmation says so rather than staying quiet."""
+    selecting_opt_in.start(WORK_ITEM, ref="github:o/r#1")
+    selecting_opt_in.advance(
+        WORK_ITEM,
+        ref="github:o/r#1",
+        event=_reply("- [x] requirements\n- [ ] deep-review\n\nthe-loop execute"),
+    )
+    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    assert state.opt_ins == {}
+    assert "deep-review" not in state.skips  # not a declaration; nobody removed it
+    assert state.current_node == "requirements"
+    assert any(
+        "offered, not selected" in p and "deep-review" in p for p in fake_github.posted
+    )
+
+
+def test_a_reply_that_never_mentions_an_opt_in_phase_does_not_select_it(
+    selecting_opt_in, repo, fake_github
+):
+    """R2.4, R2.6 — an untouched selection runs the default-on phases and
+    nothing more; absence fails toward off for this class of node."""
+    selecting_opt_in.start(WORK_ITEM, ref="github:o/r#1")
+    selecting_opt_in.advance(
+        WORK_ITEM, ref="github:o/r#1", event=_reply("the-loop execute")
+    )
+    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    assert state.opt_ins == {}
+    assert state.skips == {}
+    assert state.current_node == "requirements"
+
+
+def test_an_unauthorized_reply_never_selects_an_opt_in_phase(
+    selecting_opt_in, repo, fake_github
+):
+    """Abuse case 1 — ticking is a proposal; the authorized reply is what signs."""
+    selecting_opt_in.start(WORK_ITEM, ref="github:o/r#1")
+    report = selecting_opt_in.advance(
+        WORK_ITEM,
+        ref="github:o/r#1",
+        event={
+            "comments": [
+                {"author": "@stranger", "body": "- [x] deep-review\nthe-loop execute"}
+            ]
+        },
+    )
+    assert report.status == "wait"
+    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    assert state.opt_ins == {}
+
+
+def test_the_frozen_graph_distinguishes_unasked_for_from_removed(
+    selecting_opt_in, repo, fake_github
+):
+    """R1.8 — the portable record must not read the two facts as one."""
+    selecting_opt_in.start(WORK_ITEM, ref="github:o/r#1")
+    selecting_opt_in.advance(
+        WORK_ITEM,
+        ref="github:o/r#1",
+        event=_reply("- [ ] requirements\n- [ ] deep-review\n\nthe-loop execute"),
+    )
+    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    frozen = state.decisions["phase-selection"]["graph"]
+    by_id = {n["id"]: n for n in frozen["nodes"]}
+    assert by_id["deep-review"] == {
+        "id": "deep-review",
+        "phase": "",
+        "skipped": True,
+        "selectable": True,
+        "optIn": True,
+    }
+    assert by_id["requirements"]["skipped"] is True
+    assert by_id["requirements"]["optIn"] is False
+
+
+def test_a_selection_cannot_add_an_opt_in_node_already_walked(
+    selecting_opt_in, repo, fake_github
+):
+    """The same 'never retroactive' guard the skip half enforces."""
+    selecting_opt_in.start(WORK_ITEM, ref="github:o/r#1")
+    selecting_opt_in.advance(
+        WORK_ITEM, ref="github:o/r#1", event=_reply("the-loop execute")
+    )
+    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    state.record("deep-review").entered_at = "2026-08-10T00:00:00+00:00"
+    state.decisions = {}
+    state.save(_spec_dir(repo))
+    selecting_opt_in.advance(
+        WORK_ITEM,
+        ref="github:o/r#1",
+        event=_reply("- [x] deep-review\nthe-loop execute"),
+    )
+    assert GraphState.load(_spec_dir(repo), WORK_ITEM).opt_ins == {}

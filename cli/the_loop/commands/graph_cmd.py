@@ -515,7 +515,12 @@ class GraphCommand(Command):
                 flags = []
                 if node.get("required"):
                     flags.append("required")
-                if node.get("skippable"):
+                if node.get("optIn"):
+                    # issue-188: `optIn` implies `skippable`, so print the more
+                    # specific of the two — "skippable" alone would read as
+                    # on-by-default, which is the opposite of what this node is.
+                    flags.append("opt-in")
+                elif node.get("skippable"):
                     flags.append("skippable")
                 if node.get("actor") == "human":
                     flags.append("human")
