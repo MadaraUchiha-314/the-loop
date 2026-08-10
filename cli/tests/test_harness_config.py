@@ -350,6 +350,25 @@ def test_scaffold_refuses_a_forged_owner_or_repo(
     assert loaded["security"]["review"]["required"] is True
 
 
+def test_scaffold_refuses_a_the_loop_directory_that_escapes_the_checkout(
+    tmp_path: Path,
+) -> None:
+    """A cloned checkout carries whatever its contributors committed — symlinks included.
+
+    `.the-loop` is a constant, but the directory it *names* is not: committed as a symlink
+    it would point the write anywhere on the operator's disk, and `mkdir(exist_ok=True)`
+    would follow it without complaint. Found by the security review of issue-193.
+    """
+    root = tmp_path / "checkout"
+    elsewhere = tmp_path / "elsewhere"
+    root.mkdir()
+    elsewhere.mkdir()
+    (root / ".the-loop").symlink_to(elsewhere, target_is_directory=True)
+
+    assert harness_config.scaffold(root, "octo", "repo") == ""
+    assert list(elsewhere.iterdir()) == []
+
+
 def test_scaffold_degrades_when_it_cannot_write(tmp_path: Path, monkeypatch) -> None:
     """R2.5 — no delivery, spawn or transition is lost because a config was not written."""
 

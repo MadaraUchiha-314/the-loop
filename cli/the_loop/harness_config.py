@@ -306,6 +306,28 @@ def _named_for(text: str, owner: str, repo: str) -> str:
     return "".join(out)
 
 
+def _inside(root: Path, path: Path) -> bool:
+    """Whether ``path`` really lives under ``root``, symlinks resolved.
+
+    :func:`scaffold` is the-loop's first writer into a **cloned** checkout, and a clone
+    carries whatever the repository's contributors committed — including a `.the-loop`
+    that is a *symlink* to somewhere else on the operator's disk. ``mkdir(exist_ok=True)``
+    followed by a write would happily follow it, so the-loop would plant a file at a path
+    the repository chose. The write target is a constant, but the directory it names is
+    not: only ``resolve()`` can tell the difference.
+
+    The mirror of ``graphlink._is_contained``, which guards the same class of escape for
+    the spec directory, and it **fails closed** for the same reason: a path that cannot be
+    resolved has not been shown to be contained.
+    """
+    try:
+        resolved = path.resolve()
+        base = root.resolve()
+    except OSError:
+        return False
+    return base in resolved.parents
+
+
 def scaffold(root: Path, owner: str = "", repo: str = "") -> str:
     """Adopt ``root`` with the built-in default. Returns what happened; never raises.
 
@@ -343,6 +365,11 @@ def scaffold(root: Path, owner: str = "", repo: str = "") -> str:
         logger.warning("cannot adopt %s: no built-in harness config (%s)", root, exc)
         return ""
     target = root / ".the-loop" / FILENAMES[0]
+    if not _inside(root, target.parent):
+        logger.warning(
+            "not adopting %s: its .the-loop resolves outside the checkout", root
+        )
+        return ""
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(

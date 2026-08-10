@@ -28,7 +28,7 @@ overrides: {}
 | T5 | UI / visual | n/a — no user-facing surface (design § UI/UX) | | |
 | T6 | Snapshot | n/a — the one "golden file" is the packaged default, and T7 pins it by byte parity with the template rather than by a snapshot of its own output | | |
 | T7 | Parity / drift (repo-level) | yes | the packaged default vs the `/the-loop:init` template (bytes), vs the schema, vs the graph's phase sequence, vs the module's per-key default constants | `pytest cli/tests/test_graph_parity.py cli/tests/test_harness_config.py` |
-| T8 | Security / abuse case | yes | a negative test per trust boundary in `design.md` § Security design: forged owner/repo, foreign checkout, existing config, guest repository | `pytest … -k "forged or foreign or overwrite or contribution"` |
+| T8 | Security / abuse case | yes | a negative test per trust boundary in `design.md` § Security design: forged owner/repo, foreign checkout, existing config, guest repository, escaping `.the-loop` symlink | `pytest … -k "forged or foreign or overwrite or contribution or escapes"` |
 | T9 | Accessibility | n/a — no user interface | | |
 | T10 | Migration / upgrade | yes | a repository that already carries a config — current name or the pre-rename `config.yaml` — is left untouched, so upgrading the-loop never rewrites an operator's policy | `pytest cli/tests/test_harness_config.py -k present` |
 | T11 | Manual exploratory | n/a — every path is reachable from the test suite; a manual run would exercise the same two functions with less coverage | | |
@@ -54,6 +54,7 @@ overrides: {}
 | T8 | abuse 2 | `Scenario: a checkout that is not the work item's repository is never adopted` |
 | T8 | abuse 3 | `Scenario: an existing harness config is never overwritten` |
 | T8 | abuse 4 | covered by the contribution scenario above |
+| T8 | abuse 5 | `Scenario: a committed .the-loop symlink does not redirect the write` (security review) |
 | T10 | R2.4 | a pre-rename `config.yaml` counts as adopted; nothing is written beside it |
 
 ## Verification environment
@@ -82,7 +83,7 @@ overrides: {}
 - [x] T1 — `uv run --project cli python -m pytest -q cli/tests/test_harness_config.py`
 - [x] T2 — `uv run --project cli python -m pytest -q cli/tests/test_harness_config_scaffold_integration.py`
 - [x] T7 — `uv run --project cli python -m pytest -q cli/tests/test_graph_parity.py` + `uv run python scripts/validate_config.py`
-- [x] T8 — `uv run --project cli python -m pytest cli/tests/test_harness_config.py cli/tests/test_harness_config_scaffold_integration.py -k "forged or foreign or overwrite or contribution"`
+- [x] T8 — `uv run --project cli python -m pytest cli/tests/test_harness_config.py cli/tests/test_harness_config_scaffold_integration.py -k "forged or foreign or overwrite or contribution or escapes"`
 - [x] T10 — `uv run --project cli python -m pytest cli/tests/test_harness_config.py -k "present or pre_rename or overwrite"`
 - [x] T12 — `make test`
 - [x] T13 — `make lint format-check typecheck validate`
@@ -91,12 +92,12 @@ overrides: {}
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| T1 | `pytest cli/tests/test_harness_config.py` | pass — 36 passed | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
+| T1 | `pytest cli/tests/test_harness_config.py` | pass — 37 passed | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
 | T2 | `pytest cli/tests/test_harness_config_scaffold_integration.py -v` | pass — 9 passed, one per scenario | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
 | T7 | `pytest cli/tests/test_graph_parity.py` · `scripts/validate_config.py` | pass — 9 passed; the packaged default reported `VALID` against the harness schema in its own right | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
-| T8 | `pytest … -k "forged or foreign or overwrite or contribution"` | pass — 9 selected, 9 passed (one per abuse case; the forged-input row is parametrized six ways) | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
+| T8 | `pytest … -k "forged or foreign or overwrite or contribution or escapes"` | pass — 10 selected, 10 passed (one per abuse case; the forged-input row is parametrized six ways) | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
 | T10 | `pytest cli/tests/test_harness_config.py -k "present or pre_rename or overwrite"` | pass — 3 selected, 3 passed | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
-| T12 | `make test` | pass — 1714 passed, 1 skipped; 28 of those are this work item's (18 unit, 9 integration, 1 new parity parametrization) | [`evidence/regression.md`](evidence/regression.md) |
+| T12 | `make test` | pass — 1715 passed, 1 skipped; 29 of those are this work item's (19 unit, 9 integration, 1 new parity parametrization) | [`evidence/regression.md`](evidence/regression.md) |
 | T13 | `make lint` · `format-check` · `typecheck` · `validate` | pass — ruff clean, 523 markdown files 0 errors, pyright 0 errors, 7 configs VALID | [`evidence/lint-and-typecheck.md`](evidence/lint-and-typecheck.md) |
 
 **Not executed:** none — every activity in the matrix ran, and none was replanned.

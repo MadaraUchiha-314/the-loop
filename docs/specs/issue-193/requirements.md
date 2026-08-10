@@ -156,6 +156,10 @@ the intervention I asked for and nothing else.
      `reviews.critics[]` — executable config) with the-loop's defaults.
   4. WHEN the work item walks the contribution loop THEN the system SHALL write nothing
      into the host repository (R4.1) — a guest does not install itself.
+  5. WHEN the checkout's `.the-loop` resolves outside the checkout — a symlink committed
+     by whoever can push to the repository the daemon clones — THEN the system SHALL
+     write nothing, rather than plant a file at a path the repository chose. *(Added by
+     the security review; see `design.md` § Security design.)*
 - **Fail closed:** unknown/invalid owner or repo ⇒ empty `ticketing.github`, which
   `origin_repo()` already reports as "unknown" and whose callers already fail closed.
   Unprovable checkout ⇒ no write at all. Unreadable packaged default ⇒ no write, and the

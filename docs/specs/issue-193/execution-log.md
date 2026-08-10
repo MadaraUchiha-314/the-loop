@@ -1,7 +1,7 @@
 ---
 type: execution-log
 workItem: issue-193
-phase: implementation
+phase: needs-review
 status: in-progress
 ---
 
@@ -63,6 +63,21 @@ status: in-progress
   checkouts existing tests build either carry a config or are foreign.
 - **Next:** verification (task 9).
 
+### 2026-08-10 — self-review and the security gate
+
+- **Phase:** needs-review
+- **Did:** Three self-review rounds over the diff, then the security review. Round 1 found
+  that adoption ran on **all four** `_guarded` actions, including `context` — which is
+  documented as mutating nothing and runs before every delivery — and `clean`, which runs
+  while the checkout is being released; bounded it to `{start, advance}` and added two
+  scenarios. Round 2 replaced a duplicated path expression in the event with
+  `config_path()`, and dropped a redundant `deepcopy` in `defaults()`. Round 3 found
+  nothing new, so the rounds stopped there (`reviews.stopOnNoNewFindings`). The security
+  review then found one real issue — see the gate below.
+- **Checkpoint/tests:** `make test` 1715 passed, 1 skipped; `make lint format-check
+  typecheck validate` clean.
+- **Next:** the reviewer briefing on the PR, then the human gate.
+
 ### 2026-08-10 — verification
 
 - **Phase:** verification
@@ -88,26 +103,60 @@ status: in-progress
 
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
 |-------|-----------------------------|----------|---------|------|
-| | | | | |
+| 1 | self | the-loop (this session) | new findings — adoption ran on the read-only `context` action and on `clean`; bounded to the two actions that drive the graph, two scenarios added | [`design.md` § graphlink](design.md) |
+| 2 | self | the-loop (this session) | new findings — the event duplicated the config path expression (now `config_path()`); a redundant `deepcopy` in `defaults()` | commit `dc319ba`+ |
+| 3 | self | the-loop (this session) | zero (converged) — rounds stopped here per `reviews.stopOnNoNewFindings` | — |
+| 4 | critic | — | unavailable — `reviews.critics` is empty in this project's config, so no critic harness is configured to run. Does NOT count toward `reviews.criticReviewCount` | [`.the-loop/harness-config.yaml`](../../../.the-loop/harness-config.yaml) |
+| 5 | security | the-loop `security-review` skill | new findings — one MEDIUM (see the gate below), fixed with `_inside()` and a negative test; re-run clean | [`design.md` § Security design](design.md) |
 
 ## Security review (gate)
 
-- **Mechanism:** the-loop checklist (`security.review.mechanism: auto`)
-- **Outcome:** *pending*
+- **Mechanism:** the built-in `security-review` skill (`security.review.mechanism: auto`
+  resolves to it when available). Its prescribed sub-agent fan-out was not used — this
+  session runs under an environment rule against spawning agents — so the analysis was
+  performed directly over the work item's diff, which is the same diff the fan-out would
+  have read.
+- **Outcome:** **findings fixed.** One MEDIUM: `scaffold()` wrote to
+  `<root>/.the-loop/harness-config.yaml` without resolving it. The *name* is a constant,
+  but a cloned checkout carries whatever its contributors committed — a `.the-loop`
+  committed as a **symlink** would have redirected `mkdir(exist_ok=True)` + `write_text`
+  to a directory the repository chose, planting a `harness-config.yaml` outside the
+  checkout. Fixed by `harness_config._inside()`, which resolves both paths and fails
+  closed, mirroring `graphlink._is_contained`; pinned by
+  `test_scaffold_refuses_a_the_loop_directory_that_escapes_the_checkout` and recorded as
+  requirements abuse case 5. Nothing else reached the reporting bar: the write target has
+  no payload-derived path component, `owner`/`repo` are allow-listed against GitHub's
+  charset and dropped rather than escaped, an existing config is never opened, and the
+  written content is the-loop's own packaged bytes.
 - **Human sign-off:** n/a — risk tier 3, below `security.review.humanSignOffMinTier: 4`
 
 ## Final validation evidence
 
-*Pending verification.*
+Every acceptance criterion is met and proved by a committed run under
+[`evidence/`](evidence/); [`testing-plan.md`](testing-plan.md) § Verification results maps
+each activity to its command, outcome and evidence file.
+
+| Requirement | Proved by |
+|---|---|
+| R1 — one built-in default, shipped in the package, equal to the `/the-loop:init` template and valid against the schema | `test_defaults_reads_the_packaged_configuration`, `test_the_packaged_default_is_the_shipped_template`, `test_the_packaged_default_agrees_with_the_per_key_fallbacks`, `test_p4_the_graph_defines_the_phase_sequence[packaged-default]`, and `scripts/validate_config.py` reporting it `VALID` in its own right |
+| R2 — the ingress adopts, names the repository, records the event, never overwrites, never fails a delivery | `test_the_ingress_adopts_a_repository_that_never_ran_the_setup`, `test_a_repository_is_adopted_even_when_its_graph_is_skipped`, `test_an_adopted_repository_is_left_alone_on_every_later_event`, `test_scaffold_degrades_when_it_cannot_write` |
+| R3 — mutating graph verbs adopt; reads do not | `test_a_mutating_graph_verb_adopts_the_repository`, `test_a_read_only_command_writes_nothing`, plus the two self-review scenarios for `context` and `clean` |
+| R4 — a contribution never adopts its host repository | `test_a_contribution_never_adopts_its_host_repository`, with issue-185's own suite still green in `make test` |
+| Abuse cases 1–5 | the T8 selection — 10 tests, all passing |
 
 ## Capability docs
 
 | Capability doc | What changed | History row |
 |----------------|--------------|-------------|
-| | | |
+| [`webhook-triggers.md`](../../capabilities/webhook-triggers.md) | New *Current behaviour* bullet under the graph-coupling section: the ingress adopts an unconfigured repository — where in the gate order, what it writes, and the three limits (after the ownership proof, before the spec-directory gate, never for a contribution) | `issue-193` row added at the top of § History |
+| [`process-graph.md`](../../capabilities/process-graph.md) | Two edits: the CLI half — state-changing graph verbs adopt, reads never do — as a new bullet under *What drives the graph*, and the contribution loop's *need not have adopted the-loop* bullet now says explicitly that it must not adopt it either | `issue-193` row added at the top of § History |
 
 ## Documentation
 
 | Document | What changed |
 |----------|--------------|
-| | |
+| [`docs/config/harness-config.md`](../../config/harness-config.md) | New section *When a repository has no config*: what the built-in default is, the table of which surfaces adopt and which do not, the provenance header and the event, that an existing config is never opened, and that nothing about the repository is detected |
+| [`skills/the-loop/reference/automation.md`](../../../skills/the-loop/reference/automation.md) | New bullet in the CLI-companion section — the rule as an agent working under the-loop meets it, with its three limits |
+| [`skills/the-loop/SKILL.md`](../../../skills/the-loop/SKILL.md) | Two sentences in § Configuration: an unconfigured repository is worked under the built-in default, which is written to disk rather than assumed |
+| [`docs/decisions/decision-073.md`](../../decisions/decision-073.md) + [`decisions.md`](../../decisions/decisions.md) | New decision record and its index row |
+| `README.md`, the rest of the docs site | Unchanged, and deliberately: the front page describes the loop's *process*, which this work item does not touch — it changes what happens in a repository that has not configured that process |

@@ -125,7 +125,7 @@ def scaffold(root: Path, owner: str = "", repo: str = "") -> str:
     """Adopt `root` with the built-in default. Returns:
          "written"  — the file was created
          "present"  — a harness config was already there; nothing done
-         ""         — could not (unreadable default, unwritable tree)
+         ""         — could not (unreadable default, unwritable or escaping tree)
        Never raises."""
 ```
 
@@ -219,7 +219,12 @@ programming error there costs a log line and an event, never a delivery.
   newline and no colon-space, so a YAML document cannot be extended, terminated or
   re-keyed through it; a value that fails the test is dropped, not escaped, so there is
   no encoder to get wrong. No path component is payload-derived: the target is
-  `<proved root>/.the-loop/harness-config.yaml`, a constant relative to a proved root.
+  `<proved root>/.the-loop/harness-config.yaml`, a constant relative to a proved root —
+  but a constant *name* is not a constant *destination*: a cloned checkout carries
+  whatever its contributors committed, so a `.the-loop` symlink would redirect the write.
+  `_inside()` resolves both paths and refuses anything that leaves the checkout, the
+  mirror of `graphlink._is_contained`. (Raised by this work item's security review, which
+  is why the mechanism postdates the first implementation.)
 - **Secrets handling:** none. The default config contains policy only — no tokens, no
   URLs, no credentials — and the writer reads no environment.
 - **Least privilege:** the writer creates one directory and one file, and only when the
@@ -237,6 +242,7 @@ programming error there costs a log line and an event, never a delivery.
   | 2. write into a foreign checkout | adoption placed after `_checkout_belongs_to` | `T8` — `test_a_foreign_checkout_is_never_adopted` |
   | 3. overwrite an operator's policy | `config_path(root) is not None → "present"` | `T8` — `test_scaffold_never_overwrites_an_existing_config` |
   | 4. a guest installs itself | contribution carve-out at both call sites | `T2` — `test_a_contribution_never_adopts_its_host_repository` |
+  | 5. a committed `.the-loop` **symlink** redirecting the write | `_inside()` — `resolve()` both paths, fail closed | `T8` — `test_scaffold_refuses_a_the_loop_directory_that_escapes_the_checkout` |
 
 ## Testing strategy
 
