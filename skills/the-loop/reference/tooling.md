@@ -6,8 +6,9 @@ the rules and the per-language matrix so the essence is not lost.
 
 ## Repository management
 
-- **Monorepo is configurable; default is Nx.** Other supported tools: yarn workspaces,
-  pnpm workspaces, bun workspaces. Read `repository.monorepoTool`.
+- **Monorepo is configurable; the default is _not_ a monorepo** (`monorepo: false`,
+  `monorepoTool: none` — PR #195 review). Supported tools when it is one: Nx, yarn
+  workspaces, pnpm workspaces, bun workspaces. Read `repository.monorepoTool`.
 - **the-loop MUST also work in a non-monorepo setup** (`repository.monorepo: false`,
   `monorepoTool: none`). Never assume a workspace tool exists.
 - **All scripts run from the project root** (`repository.runScriptsFromRoot: true`).

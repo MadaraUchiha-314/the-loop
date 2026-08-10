@@ -21,8 +21,8 @@ ticketing:
     useProjects: true
 
 repository:
-  monorepo: true
-  monorepoTool: nx        # nx | yarn | pnpm | bun | none
+  monorepo: false         # the safe default: never assume a workspace tool exists
+  monorepoTool: none      # nx | yarn | pnpm | bun | none
   runScriptsFromRoot: true
 
 workflow:
@@ -287,12 +287,12 @@ notifications:
 
 externalTools:                    # inline registry the harness may freely use (one YAML)
   tools:                          # add MCPs / CLIs / skills / plugins the-loop should know about
-    - name: github               # e.g. GitHub issues/PRs/Actions via MCP
-      kind: mcp
-    # - name: gh                 # kind: mcp | cli | skill | plugin | other
-    #   kind: cli
-    #   url: https://cli.github.com
-    #   notes: auth via GH_TOKEN; read-only in CI.
+    - name: gh                   # GitHub issues/PRs/Actions via the `gh` CLI
+      kind: cli
+      url: https://cli.github.com
+      notes: auth via GH_TOKEN; read-only in CI.
+    # - name: github             # kind: mcp | cli | skill | plugin | other
+    #   kind: mcp                #   the GitHub MCP server, if you prefer it to the CLI
   notes: ""                       # global free-form: auth, access patterns, constraints
 
 # webhooks / polling / eventLog moved to templates/cli-config.yaml (CLI config,

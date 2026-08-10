@@ -88,6 +88,23 @@ status: in-progress
   0 errors, pyright 0 errors, 7 configs VALID).
 - **Next:** self-review, the security review gate, then the reviewer briefing on the PR.
 
+### 2026-08-10 — PR review round 1
+
+- **Phase:** needs-review
+- **Did:** Three review comments from @MadaraUchiha-314 on the packaged default, all
+  applied to **both** copies (`skills/the-loop/templates/harness-config.yaml` and
+  `cli/the_loop/harness-config.default.yaml` — byte parity is the point of the pair):
+  `repository.monorepo` `true → false`, `monorepoTool` `nx → none`, and the
+  `externalTools` GitHub entry flipped so the **`gh` CLI** is the live default and the
+  GitHub MCP server is the commented alternative. The first two also settle a
+  contradiction the reference already carried — `reference/tooling.md` says "never assume
+  a workspace tool exists" while the shipped default assumed Nx — so that bullet was
+  corrected in the same commit.
+- **Checkpoint/tests:** `make test` 1715 passed, 1 skipped; `make lint` 0 errors; all 7
+  configs `VALID`. The scope note: these edits change what `/the-loop:init --defaults`
+  writes for **every** project, not only what a scaffolded repository gets.
+- **Next:** the human gate on the PR.
+
 ## Verification results
 
 > Only when this work item declared `test-planning` away. It did not: the results live in
@@ -159,4 +176,5 @@ each activity to its command, outcome and evidence file.
 | [`skills/the-loop/reference/automation.md`](../../../skills/the-loop/reference/automation.md) | New bullet in the CLI-companion section — the rule as an agent working under the-loop meets it, with its three limits |
 | [`skills/the-loop/SKILL.md`](../../../skills/the-loop/SKILL.md) | Two sentences in § Configuration: an unconfigured repository is worked under the built-in default, which is written to disk rather than assumed |
 | [`docs/decisions/decision-073.md`](../../decisions/decision-073.md) + [`decisions.md`](../../decisions/decisions.md) | New decision record and its index row |
+| [`skills/the-loop/reference/tooling.md`](../../../skills/the-loop/reference/tooling.md) | The monorepo bullet no longer says the default is Nx — the shipped default is now `monorepo: false` / `monorepoTool: none` (PR #195 review), which is what the next bullet's "never assume a workspace tool exists" always implied |
 | `README.md`, the rest of the docs site | Unchanged, and deliberately: the front page describes the loop's *process*, which this work item does not touch — it changes what happens in a repository that has not configured that process |
