@@ -1,3 +1,9 @@
+## v9.6.0 (2026-08-10)
+
+### Feat
+
+- **issue-193**: a default harness config for repositories that never adopted the-loop (#195)
+
 ## v9.5.1 (2026-08-10)
 
 ### Fix
