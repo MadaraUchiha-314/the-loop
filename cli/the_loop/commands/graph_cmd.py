@@ -589,6 +589,10 @@ class GraphCommand(Command):
                 print(f"declared: {node} will be skipped")
             for entry in result["rejected"]:
                 print(f"rejected: {entry['token']} — {entry['why']}")
+            for warning in result.get("warnings") or []:
+                # Same voice as `force`'s: the declaration took effect, but part
+                # of its paper trail did not (issue-194).
+                print(f"  WARNING: {warning}")
             if result["declared"]:
                 print(
                     "  note: these are declarations, not verdicts — `the-loop "

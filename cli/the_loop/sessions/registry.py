@@ -50,6 +50,19 @@ _REF_RE = re.compile(r"^(?P<provider>[a-z][a-z0-9-]*):(?P<path>[^#]+)#(?P<number
 # link to the wrong repository is worse than no link.
 _GITHUB_NAME_RE = re.compile(r"[A-Za-z0-9._-]+")
 
+
+def is_github_name(value: str) -> bool:
+    """Whether ``value`` is a shape GitHub accepts as an owner or repository name.
+
+    Public because a second caller needs the same answer (issue-194): deriving a
+    ref from the harness config's ``ticketing.github`` validates owner and repo
+    before building anything, and "what GitHub accepts" must have **one**
+    definition — two copies of this expression is how one of them ends up
+    accepting a `/` and pointing a comment at the wrong repository.
+    """
+    return bool(_GITHUB_NAME_RE.fullmatch(value))
+
+
 # A host in a ref (issue-130 review). Deliberately narrow — no scheme, no
 # credentials, no path — because this value is interpolated into a URL. It must
 # also be *recognisable* as a host, because it is what distinguishes a
@@ -198,8 +211,8 @@ class WorkItemRef:
             return ""
         if not (
             _HOST_RE.fullmatch(self.host)
-            and _GITHUB_NAME_RE.fullmatch(self.owner)
-            and _GITHUB_NAME_RE.fullmatch(self.repo)
+            and is_github_name(self.owner)
+            and is_github_name(self.repo)
         ):
             return ""
         return f"https://{self.host}/{self.owner}/{self.repo}/issues/{self.number}"

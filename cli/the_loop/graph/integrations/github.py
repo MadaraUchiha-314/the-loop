@@ -41,7 +41,16 @@ def _split_ref(ref: str) -> tuple[str, str, str]:
     repo_part, _, number = body.partition("#")
     owner, _, repo = repo_part.partition("/")
     if not (owner and repo and number):
-        raise IntegrationError(f"malformed work item ref: {ref!r}")
+        # Name both remedies (issue-194). The value that lands here is almost
+        # always a bare work-item id, because no `--ref` was passed and none
+        # could be derived — and an error that says only "malformed" leaves the
+        # operator to find that out from the source.
+        raise IntegrationError(
+            f"malformed work item ref: {ref!r} — expected "
+            "'[<provider>:]<owner>/<repo>#<number>'. Pass --ref, or declare "
+            "ticketing.github in .the-loop/harness-config.yaml so the-loop can "
+            "derive it."
+        )
     return owner, repo, number
 
 

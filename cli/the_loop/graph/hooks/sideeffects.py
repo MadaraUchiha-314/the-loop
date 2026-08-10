@@ -14,7 +14,7 @@ from typing import List
 
 from ...authz import mark_self_authored
 from ..contract import HookContext, HookResult
-from ..integrations import IntegrationError, resolve
+from ..integrations import IntegrationError
 from ..registry import hook
 
 logger = logging.getLogger("the-loop.graph")
@@ -29,6 +29,17 @@ __all__ = [
 
 
 def _integration(ctx: HookContext, target: str):
+    """The provider, resolved at call time.
+
+    Imported inside the function for the reason ``selection.py`` spells out: a
+    module-level ``from ..integrations import resolve`` binds the name *here*, so
+    the seam every other caller and every test patches
+    (``the_loop.graph.integrations.resolve``) silently did not apply to this
+    module — which is how a test of ``set-phase-label`` reached the real GitHub
+    API instead of its fake (issue-194).
+    """
+    from ..integrations import resolve
+
     return resolve(target, ctx.config)
 
 

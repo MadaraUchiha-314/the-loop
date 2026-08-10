@@ -454,6 +454,48 @@ included, however empty the log was.
   to the harness** (`mcp-call`), because MCP is an agent protocol, not a daemon protocol
   ([decision-042](../decisions/decision-042.md)).
 
+### Which ticket a control-plane call reaches (issue-194)
+
+Every control-plane call needs a **work-item ref** (`github:OWNER/REPO#N`), and a graph
+verb is not required to be given one. The ref SHALL be resolved in three tiers, and
+nothing outside them SHALL be invented:
+
+1. An explicit `--ref` (or `ref=` argument) SHALL always win.
+2. Otherwise the ref SHALL be **derived** from `ticketing.github` in the repository's
+   harness config plus the work-item id: `issue-<n>` in a repository declaring
+   `<owner>/<repo>` yields `github:<owner>/<repo>#<n>`. This is the inverse of the
+   ingress's own ref → id translation, and the two SHALL agree.
+3. Otherwise the bare work-item id SHALL be used, exactly as before derivation existed.
+
+- WHEN the work-item id is not `issue-<n>`, OR the config declares no owner/repo pair, OR
+  either name is not a shape GitHub accepts, THEN the-loop SHALL derive **nothing**. A ref
+  pointing at the wrong repository is worse than no ref, so "no ref" is the fail-closed
+  direction.
+- Before this, an omitted `--ref` reached the integrations as the bare id, where every
+  operation raised `malformed work item ref` — so a work item parked at
+  `phase-selection` with the checklist never posted, the phase label never set, and a
+  clean `wait` on stdout.
+
+### Degraded side effects are reported, never swallowed
+
+Outbound hooks are **best-effort**: a GitHub outage records and continues rather than
+wedging the graph (R6.12). That is unchanged. What changed is that the record now has a
+reader.
+
+- WHEN a hook returns `pass` carrying a non-empty `error`, THEN the runtime SHALL append
+  one message naming the hook and the error to the `NodeReport` that `advance`, `start`
+  and `cleanup` return, and SHALL emit a `warning`-level `graph.hook_degraded` event —
+  the CLI surface for a human at a terminal, the event log for the daemon's operator.
+- The node's status, its outcome, the edge taken and the pointer SHALL be exactly what
+  they would have been. Surfacing a degradation SHALL NOT turn a passing chain into a
+  blocked or parked one.
+- A hook that declines to act SHALL NOT be reported: `post-phase-selection` finding its
+  own marker returns `posted=False` with a *reason* and no error, and that is idempotency,
+  not a failure.
+- WHEN `graph force` or `graph skip` cannot post its audit comment, THEN the verb SHALL
+  take effect and the failure SHALL appear in its result's `warnings`, which the CLI
+  prints.
+
 ### What drives the graph (issue-113, issue-148)
 
 - The graph SHALL be driven by the **ingress**, not only by a human at a terminal: the
@@ -565,6 +607,7 @@ included, however empty the log was.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-194 | Outbound hooks stopped being dead and silent (2026-08-10): a graph verb with no `--ref` had been handing the bare work-item id to the integrations, where every operation raised `malformed work item ref` — so nothing was posted, no label was set, and the command printed a clean answer. The ref is now **derived** from `ticketing.github` plus the `issue-<n>` id (a new `graph/refs.py`, the inverse of the ingress's `spec_id_for`, refusing anything that does not validate rather than guessing), and a best-effort hook that records an `error` while passing is reported as a warning line on the `NodeReport` plus a `graph.hook_degraded` event — without changing any node's verdict or edge. `graph force`/`graph skip` report a failed audit comment in their `warnings`; `_split_ref`'s error names both remedies; `sideeffects.py` resolves its integration at call time, so the seam every test patches finally applies to it | [spec](../specs/issue-194/), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/194) |
 | issue-188 | Opt-in phases, and the design critic round (2026-08-10): a second node marker, `optIn: true` — the mirror of `skippable`, implying it (same vocabulary, same `on: skipped` edge, same provenance) but **off unless an authorized human ticks it** at `phase-selection`; `required`×`optIn` and an opt-in `skipSets` member refused at compile time; a node `description` rendered beside its checklist row; selections recorded as `optIns` in `graph-state.json` (`graph.opt_ins_selected`), filtered through the compiled graph on every read, carried into the frozen graph per node, and named in the confirmation comment; an unselected opt-in node routed around and reported by `check` as *not selected* — never as a declaration, never as a pass — which also leaves every pre-issue-188 work item unblocked; the outer loop ships one such phase, `design-critic-review`, between `design` and `test-planning` | [spec](../specs/issue-188/), [decision-071](../decisions/decision-071.md), [review-loop](review-loop.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/188) |
 | issue-186 | A terminal `cleanup` node in both work-item-level loops (2026-08-10): the-loop enters it — via `Runtime.cleanup`, a sibling of `start` rather than a `force` — immediately before releasing a work item's local resources, so the teardown carries a `loop:cleanup` label and an execution-log checkpoint. No inbound edge (`complete` stays terminal), none in `pdlc-pr-loop`, and the one graph action exempt from the start requirement | [spec](../specs/issue-186/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/186) |
 | issue-185 | The contribution loop (2026-08-09): a third shipped graph, `pdlc-contribution-loop`, walked when the-loop is invited into an existing, in-progress work item as a contributor — armed by the new `contribute` control keyword (a spawn-arming sibling of `start`, `routing.control.keywords.contribute`); a required `goal-definition` gate (`post-goal-request`/`classify-goal` hooks) that refuses to start until an authorized human states a goal and success criteria, frozen into graph state with provenance; one lightweight `contribution.md` artifact (bundled template) in place of the four-file spec chain; verification gating on every criterion checkbox being met; `GraphState.loop` recording which loop a state walks, resolved state-first everywhere with non-shipped names failing closed to the default | [spec](../specs/issue-185/), [decision-070](../decisions/decision-070.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/185) |

@@ -507,6 +507,7 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
     surface = _parse_surface(body)
     actor = str(reply["author"]).lstrip("@")
 
+    confirmation_error = ""
     try:
         _resolve(ctx).call(
             "add-comment",
@@ -517,6 +518,11 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("could not post the selection confirmation: %s", exc)
+        # Recorded, not just logged (issue-194): the runtime reads `error` off a
+        # passing result and reports it. The selection itself stands — it was
+        # authorized and is about to be frozen into state — but the record of it
+        # that a human would read never reached the ticket.
+        confirmation_error = str(exc)
 
     declared: Dict[str, Any] = {
         node: {"via": "selection", "token": node, "by": f"@{actor}", "reason": ""}
@@ -537,5 +543,6 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
             "surface": surface,
             "frozenGraph": _frozen_graph(ctx, skips, surface, opt_ins=opt_ins),
             "selectionSource": source,
+            **({"error": confirmation_error} if confirmation_error else {}),
         },
     )

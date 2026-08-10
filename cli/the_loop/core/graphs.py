@@ -162,6 +162,10 @@ def skip(
         "declared": list(result.declared),
         "rejected": list(result.rejected),
         "reason": result.reason,
+        # Best-effort steps that did not happen — the audit comment (issue-194).
+        # A declaration whose paper trail never reached the ticket is still a
+        # declaration, and the operator has to be told so they can post it.
+        "warnings": list(result.warnings),
     }
 
 

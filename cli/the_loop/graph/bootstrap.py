@@ -129,6 +129,14 @@ def build_runtime(
         # (`await-inner-loops`) and with the repo-name validation it carries —
         # two copies of a path literal is how they came to disagree elsewhere.
         subpath = inner_loop_state_dir(Path(), pr_number, pr_repo).as_posix()
+        # The ref an inner loop's hooks post to, when the caller passed none
+        # (issue-194). It is the PULL REQUEST's, built here because this is the
+        # only place that knows which pull request this runtime walks — and it
+        # must never fall back to the work item's own ref, which would put a
+        # pull request's review comments on the ticket.
+        from .refs import ref_for
+
+        config["prRef"] = ref_for(pr_repo or config["originRepo"], pr_number)
         return Runtime(
             root,
             graph=load_graph(repo=root, name=PDLC_PR_LOOP),

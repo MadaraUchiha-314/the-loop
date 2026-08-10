@@ -16,6 +16,41 @@ the-loop graph [--repo .] force  <work-item> --to NODE --reason TEXT [--actor WH
 
 `--repo` (default `.`) precedes the action.
 
+## Resolving the work-item ref
+
+Graph hooks post comments and set labels on the ticket, so they need a **work-item ref**:
+`github:OWNER/REPO#N`. Every verb that runs hooks takes `--ref`, and none of them requires
+it — the ref is resolved in three tiers
+([issue-194](https://github.com/MadaraUchiha-314/the-loop/issues/194)):
+
+1. **`--ref`, when you pass one.** It always wins, even against a repository that declares
+   something else.
+2. **Derived** from [`ticketing.github`](/config/harness-config) in the repository's
+   harness config plus the work-item id: `issue-194` in a repo declaring `octo/repo`
+   becomes `github:octo/repo#194`. This is what makes `the-loop graph advance issue-194`
+   work with no flags.
+3. **The bare work-item id**, when neither of the above applies — a project that is not
+   GitHub-ticketed, or an id that is not `issue-<n>`. Nothing is guessed: an owner or
+   repository name that is not a shape GitHub accepts derives *nothing* rather than
+   pointing a comment at the wrong repository.
+
+In case 3 the outbound calls fail, and **they say so**. Outbound hooks are best-effort by
+design — a GitHub outage must not wedge a work item at a node — but best-effort never
+means silent: a hook that could not do its job adds a warning line to the command's
+output and records a `graph.hook_degraded` event for anyone reading
+[`the-loop events`](/cli/commands/events) instead of a terminal.
+
+```text
+issue-194: phase-selection → wait
+  · waiting for an authorized user to choose the phases and reply `the-loop execute`
+  · warning: post-phase-selection did not complete: malformed work item ref:
+    'issue-194' — expected '[<provider>:]<owner>/<repo>#<number>'. Pass --ref, or
+    declare ticketing.github in .the-loop/harness-config.yaml so the-loop can derive it.
+```
+
+The node's status, the edge taken and the exit code are unaffected — the warning reports a
+degraded side effect, not a failed verb.
+
 ::: tip You usually will not need this
 With [`routing.graph.enabled`](/config/cli/routing-options#graph-enabled) — on by default —
 the ingress drives the graph for you: a spawn enters the start node, and a delivered event
@@ -118,7 +153,7 @@ Evaluate the current node and take the matching edge — **one** boundary.
 
 | Flag | Default | Meaning |
 |------|---------|---------|
-| `--ref` | `""` | Work-item ref for integrations, e.g. `github:OWNER/REPO#N`, so hooks that post or label know where. |
+| `--ref` | derived | Work-item ref for integrations, e.g. `github:OWNER/REPO#N`, so hooks that post or label know where. Omit it and it is [derived](#resolving-the-work-item-ref) from `ticketing.github`. |
 
 Prints `<work-item>: <node> → <status>` plus any messages. Exit `0` for `pass` or `wait`,
 `1` otherwise.
@@ -135,7 +170,7 @@ it would block on anyway.
 |------|---------|---------|
 | `--node` | current | The node being claimed. A claim for a node the pointer already left is a recorded no-op (`already-past`); any other non-current node is refused naming the current one. |
 | `--actor` | `cli` | Recorded in the state's `completions` ledger. |
-| `--ref` | `""` | Work-item ref for integrations. |
+| `--ref` | derived | Work-item ref for integrations. [Derived](#resolving-the-work-item-ref) when omitted. |
 
 Output is **one JSON envelope** — `{node, status, outcome, moved, currentNode,
 messages, reason}` — and the exit code is `0` whether or not the pointer moved: a
@@ -149,7 +184,7 @@ Advance repeatedly until the work item waits, escalates, blocks, or reaches a te
 
 | Flag | Default | Meaning |
 |------|---------|---------|
-| `--ref` | `""` | As above. |
+| `--ref` | derived | As above. |
 | `--max-nodes` | `20` | Safety bound on advances. |
 | `--dry-run` | off | Report what would happen, writing no state. |
 
@@ -176,7 +211,7 @@ neither a repository nor a session can widen it.
 | `--node` | yes (repeatable) | A skippable node id, or a skip-set name. `--node spec-chain` is the whole spec chain including the testing plan — the doc-fix case in one token; `--node review-chain` is the six review nodes. |
 | `--reason` | yes | Why. There is no unexplained skip. |
 | `--actor` | no | Who is declaring it. |
-| `--ref` | no | Work-item ref for integrations — where the audit comment is posted. |
+| `--ref` | no | Work-item ref for integrations — where the audit comment is posted. [Derived](#resolving-the-work-item-ref) when omitted; if the comment still cannot be posted, the declaration stands and a `WARNING:` line says so. |
 
 Tokens outside the vocabulary, and nodes the pointer has already entered or passed, are
 **rejected** and printed as such — a skip is a plan, not an amnesty. Valid declarations
@@ -202,7 +237,7 @@ gates**.
 | `--to` | yes | Target node id. |
 | `--reason` | yes | Why. There is no unexplained force. |
 | `--actor` | no | Who is forcing it. |
-| `--ref` | no | Work-item ref for integrations. |
+| `--ref` | no | Work-item ref for integrations. [Derived](#resolving-the-work-item-ref) when omitted; a force whose audit comment fails still moves the pointer, and says so as a `WARNING:`. |
 
 ::: danger It moves the pointer; it does not forge a verdict
 `force` never writes a passing verdict for the gate it bypassed. The command says so on
