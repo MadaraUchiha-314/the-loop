@@ -1,3 +1,9 @@
+## v9.3.0 (2026-08-10)
+
+### Feat
+
+- **issue-186**: clean up a work item's local resources when it ends (#189)
+
 ## v9.2.0 (2026-08-09)
 
 ### Feat
