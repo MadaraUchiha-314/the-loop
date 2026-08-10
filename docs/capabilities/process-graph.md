@@ -61,6 +61,25 @@ There are exactly **two** runtime concepts and **one** contract between them.
     content to the thread at `plan-approval` and `human-approval` — the review surface
     such a repository offers. In an adopted repository the hook SHALL skip: the
     checked-in artifact is the surface, and no extra comment is posted.
+- **Both work-item-level loops end at a `cleanup` node** (issue-186). `pdlc-work-item-loop`
+  and `pdlc-contribution-loop` SHALL each declare a terminal `cleanup` node — phase
+  `cleanup`, `actor: code`, entry chain `set-phase-label` + `log-entry` — that the-loop
+  enters just **before** it releases the work item's local resources (its tmux sessions,
+  its workspace checkout, its machine-local session record), so the teardown is a
+  transition with a timestamp and a `loop:cleanup` label rather than a silent side
+  effect. `pdlc-pr-loop` SHALL declare none: a pull request owns no checkout of its own.
+  - It SHALL have **no inbound edge**, like `escalated`: it is not a node a work item
+    walks into by satisfying a gate, so `complete` stays terminal (which
+    `await-inner-loops` and the PR-merge path both read). Entering it from mid-walk — a
+    work item closed unfinished — is legitimate and honest: the earlier nodes keep
+    whatever they evaluated to, and `check --recompute` still reports every gate that
+    never ran.
+  - The move SHALL NOT be a `force`: no gate is bypassed and no verdict is claimed, so
+    nothing is recorded as forced and no override announcement is posted. It is
+    idempotent, and a no-op for a work item that never entered the graph.
+  - It is the **one** graph action exempt from the start requirement, because a cleanup
+    disarms the work item by the very command that asks for it — every other gate
+    (the checkout-ownership proof, spec-directory containment) still applies.
   - The loops SHALL meet at exactly **one seam**: the outer `implementation` node's
     `await-inner-loops` exit hook. WHEN inner loops have been started under
     `docs/specs/<id>/pr-loops/` THEN the work item SHALL `wait` at `implementation`,
@@ -512,6 +531,7 @@ included, however empty the log was.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-186 | A terminal `cleanup` node in both work-item-level loops (2026-08-10): the-loop enters it — via `Runtime.cleanup`, a sibling of `start` rather than a `force` — immediately before releasing a work item's local resources, so the teardown carries a `loop:cleanup` label and an execution-log checkpoint. No inbound edge (`complete` stays terminal), none in `pdlc-pr-loop`, and the one graph action exempt from the start requirement | [spec](../specs/issue-186/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/186) |
 | issue-185 | The contribution loop (2026-08-09): a third shipped graph, `pdlc-contribution-loop`, walked when the-loop is invited into an existing, in-progress work item as a contributor — armed by the new `contribute` control keyword (a spawn-arming sibling of `start`, `routing.control.keywords.contribute`); a required `goal-definition` gate (`post-goal-request`/`classify-goal` hooks) that refuses to start until an authorized human states a goal and success criteria, frozen into graph state with provenance; one lightweight `contribution.md` artifact (bundled template) in place of the four-file spec chain; verification gating on every criterion checkbox being met; `GraphState.loop` recording which loop a state walks, resolved state-first everywhere with non-shipped names failing closed to the default | [spec](../specs/issue-185/), [decision-070](../decisions/decision-070.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/185) |
 | issue-183 | Multi-repo topology named (2026-08-09): the outer loop runs in the repository the ticket was created in and each contributing repository gets one PR and one inner loop, whose state is qualified by repository (`pr-loops/<owner>__<repo>/pr-<n>/`) with the origin repo's shipped path unchanged; repository names are validated at the path boundary, never sanitized; a qualified cross-repo closing reference now routes to its work item; `execution-log.md` front matter takes `repos:` and `await-inner-loops` holds `implementation` until each declared repository has a finished loop (blocking on a malformed entry); the surface the OUTER loop is collaborated on became a **per-work-item** choice at `phase-selection` (one extra checklist row, frozen by the same signed reply; default: the work item itself), deliberately not a config key anywhere, with the inner loop not configurable at all; graph verbs and the API gained `--pr-repo`/`prRepo` | [spec](../specs/issue-183/), [decision-069](../decisions/decision-069.md), [spec-workflow](spec-workflow.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/183) |
 | issue-179 | Every phase is selectable (2026-08-08): the outer loop's skip vocabulary widened from the spec chain to **every node it walks** except `phase-selection` (which keeps `required: true` and is now the whole floor — the loop cannot walk past the act of choosing) and the terminals; `security-review` and `human-approval` traded their `required` markers to become declarable; ten new `on: skipped` edges and a second shipped set, `review-chain`, beside a `spec-chain` that now includes `test-planning`; `validate-artifacts` gained `onlyWhenSkipped:` so a *kept* gate keeps a subject — `verification` gates the execution log's `Verification results` when the plan was declared away, and blocks until it is written; the `phase-selection` checklist says what an empty protected list means | [spec](../specs/issue-179/), [decision-068](../decisions/decision-068.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/179) |

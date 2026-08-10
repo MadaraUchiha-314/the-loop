@@ -148,13 +148,13 @@ the thread once and any session for it should be re-registered
 
 | Field | Meaning |
 |---|---|
-| `command` | the **last** command recorded: `start`, `stop`, `pause` or `resume` |
+| `command` | the **last** command recorded: `start`, `stop`, `pause`, `resume` or `cleanup` |
 | `source` | `comment` (a keyword on the ticket) or `cli` (`the-loop sessions …`) |
 | `actor` | the GitHub login that asked |
 | `requestedAt` | when |
 
 Written when a control keyword is accepted (from either ingress) or a
-`sessions start|stop|pause|resume` runs; cleared when the work item ends. It answers one
+`sessions start|stop|pause|resume|cleanup` runs; cleared when the work item ends. It answers one
 question — *did an authorized user ask for this work item to be running?* — which is what
 makes a start survive a daemon restart, and what lets a `stop` durably disarm a labelled
 item so it does not quietly re-spawn on the next event.
@@ -372,6 +372,27 @@ rewrites the record of the work itself.
 `--dry-run` prints the same list without doing any of it. Reaching for `rm` instead is the
 one thing to avoid — deleting `portable/<slug>.json` by hand can *resurrect* a pre-issue-128
 record through the legacy readers, which is exactly what the `sealed` marker below prevents.
+
+## Releasing a finished work item — `sessions cleanup`
+
+The other remover, and it answers a different question:
+[`the-loop sessions cleanup`](/cli/commands/sessions#cleanup) — or the `the-loop cleanup`
+keyword, or a closure by an authorized user — is for a work item that is **over**, not one
+that needs to start again.
+
+| Path | What a cleanup does to it |
+|---|---|
+| `<root>/local/<slug>.json` | deleted, and every endpoint's tmux session killed with it (harness ended first) |
+| `<root>/portable/<slug>.json` | **untouched** — `control` (rewritten to `cleanup`, which disarms the item), `poll` and `graph` all stay. This is the whole difference from a reset: persistence and tracking are what outlive the machine |
+| `<root>/portable/index.json` | untouched |
+| `<root>/logs/events.jsonl` | **appended to** — one `session.cleaned` line naming the actor, the source and the pieces |
+| the workspace checkout | removed **regardless** of [`workspace.keepCheckoutOnClose`](/config/cli/routing-options#workspace-keepcheckoutonclose) — uncommitted work in it is gone |
+| the shared per-repository clone | untouched: it serves every work item on that repo |
+| anything remote | untouched: no branch, pull request, issue or label |
+
+It runs with or without a live session and with or without a record — a checkout stranded
+by a crash is located from the work-item ref alone — so it is also the way to reclaim
+state an older version left behind.
 
 ## Carrying state to another machine
 

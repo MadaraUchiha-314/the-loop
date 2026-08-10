@@ -24,13 +24,16 @@ from typing import Dict, List, Optional, Set
 from .. import eventlog
 from ..announce import AnnounceConfig, SessionAnnouncer
 from ..authz import is_authorized
+from ..cleanup import CleanupOutcome, cleanup_work_item
 from ..control import (
+    CLEANUP,
     GRAPH_COMMANDS,
     PAUSE,
     RESUME,
     SPAWN_COMMANDS,
     START,
     STOP,
+    TEARDOWN_COMMANDS,
     ControlConfig,
     ControlStore,
 )
@@ -407,16 +410,27 @@ def _pr_head_ref(routed: RoutedEvent) -> Optional[str]:
     return ref or None
 
 
-def _repo_payload(session: Session) -> dict:
-    """The minimal payload naming a session's repository.
+def _repo_payload(item: WorkItemRef) -> dict:
+    """The minimal payload naming a work item's repository.
 
-    Enough for :func:`the_loop.workspace.repo_target_from_payload` (which
-    reconstructs the clone URL from ``full_name`` + the configured default host),
-    so a close that has no triggering event — ``the-loop sessions stop`` — can
-    still clean the work item's checkout.
+    Enough for :func:`the_loop.workspace.repo_target_from_payload`, so an act
+    with no triggering event — ``the-loop sessions stop``, or a cleanup asked
+    for by keyword (issue-186) — can still reach that work item's checkout.
+
+    It carries ``html_url`` and not just ``full_name`` because the workspace
+    layout is keyed by **host**: a work item on GitHub Enterprise lives under
+    ``<root>/ghe.corp.example/<owner>/<repo>``, and a payload naming only
+    ``full_name`` would resolve to the configured default host and miss the
+    checkout entirely. The ref knows its own host, so the URL is *derived* from
+    it — and :attr:`WorkItemRef.url` yields ``""`` for anything it cannot derive
+    honestly, which falls back to the configured default exactly as before.
     """
-    item = session.work_item
-    return {"repository": {"full_name": f"{item.owner}/{item.repo}"}}
+    return {
+        "repository": {
+            "full_name": f"{item.owner}/{item.repo}",
+            "html_url": item.url,
+        }
+    }
 
 
 def payload_excerpt(payload: dict) -> str:
@@ -750,6 +764,7 @@ class Dispatcher:
                     merged=reason == "pr-merged",
                     delivery_id=routed.delivery_id or None,
                 )
+                self._cleanup_after_close(session.work_item, routed, reason)
             if not matched:
                 logger.debug("close event matched no active session; nothing to close")
             return
@@ -1009,6 +1024,21 @@ class Dispatcher:
             else:
                 self.close_session(session, routed, reason="stopped")
                 effect = "stopped"
+        elif command in TEARDOWN_COMMANDS:
+            # Deliberately **not** gated on a live session (issue-186 R4.1): the
+            # whole point of the retroactive path is a work item whose session is
+            # long gone but whose checkout is still on disk. Recorded first and
+            # unconditionally, like the other disarming commands — an item whose
+            # resources have been released must not re-spawn on the next event,
+            # whether or not there turned out to be anything to release.
+            record()
+            outcome = self.cleanup_work_item(
+                target, reason="cleanup requested", actor=actor, source="comment"
+            )
+            if not outcome.ok:
+                effect = "partial"
+            else:
+                effect = "cleaned" if outcome.found else "nothing-to-clean"
         else:  # unreachable: parse_command only yields the declared commands
             record()
             effect = "noop"
@@ -1087,11 +1117,158 @@ class Dispatcher:
         self.graphlink.on_close(session.work_item, session.cwd)
         if session.tmux_target:
             self._close_tmux(session)
-        payload = routed.payload if routed is not None else _repo_payload(session)
+        payload = (
+            routed.payload if routed is not None else _repo_payload(session.work_item)
+        )
         cleaned = self._cleanup_workspace(session, payload)
         if reason:
             logger.info("closed session %s (%s)", session.work_item.ref, reason)
         return cleaned
+
+    # -- cleanup (issue-186) -----------------------------------------------------
+
+    def cleanup_work_item(
+        self,
+        work_item: WorkItemRef,
+        *,
+        reason: str = "",
+        actor: str = "",
+        source: str = "",
+    ) -> CleanupOutcome:
+        """Release everything this machine holds for ``work_item`` **locally**.
+
+        The one teardown path, shared by the cleanup keyword, the CLI/API/MCP
+        verb and an authorized closure — so however cleanup is asked for, exactly
+        the same things go.
+
+        Two things it is deliberately *not*. It is not ``close_session``: that
+        transitions a record and honours the retention settings
+        (``keepSessionOnClose``, ``keepCheckoutOnClose``), which answer "what
+        should survive the end of the work". Cleanup is the operator saying they
+        are done with all of it, so it consults neither — a retention default
+        that silently made this a no-op would be a verb that lies. And it is not
+        ``sessions reset``: the **portable** record (``control``, ``poll``,
+        ``graph``) is untouched, because persistence and tracking are exactly
+        what outlive the machine.
+
+        The graph move comes first: the ``cleanup`` node's entry chain writes
+        into the checkout this call is about to delete.
+        """
+        record = self.registry.find_by_work_item(work_item, include_closed=True)
+        cwd = record.cwd if record is not None else self.config.spawn_workdir
+        self.graphlink.on_cleanup(work_item, cwd, reason=reason)
+        return cleanup_work_item(
+            work_item,
+            registry=self.registry,
+            end_session=self._end_endpoint,
+            remove_checkout=self._remove_checkout,
+            actor=actor,
+            source=source,
+        )
+
+    def _cleanup_after_close(
+        self, work_item: WorkItemRef, routed: RoutedEvent, reason: str
+    ) -> None:
+        """Clean up on a closure — but only when the closer can be **named**.
+
+        The gap the ticket names: a close action need not carry the identity of
+        whoever performed it (GitHub's does; a provider's, a bot's or an
+        automation's may not), and the-loop's authorization rule is a *named
+        allowlisted actor*. Destroying an operator's uncommitted work on an
+        unattributable event is not a trade worth making, so this fails closed
+        and the deferral is recorded — the remedy is a named human's
+        ``the-loop cleanup``, which works on a closed work item exactly as it
+        works on an open one.
+        """
+        actor = event_actor(routed.event, routed.payload) or ""
+        if not actor or not is_authorized(actor, self.config.authorized_users):
+            logger.info(
+                "not cleaning up %s: the %s event names %s, so nothing is "
+                "authorized to release its local resources — an authorized user "
+                "can still comment %r on it at any time",
+                work_item.ref,
+                reason,
+                f"an unauthorized actor ({actor})" if actor else "no actor",
+                self.config.control.keyword(CLEANUP),
+            )
+            eventlog.emit(
+                "cleanup.deferred",
+                work_item=work_item.ref,
+                reason="unauthorized-actor" if actor else "no-actor",
+                actor=actor or None,
+                closed_as=reason,
+                delivery_id=routed.delivery_id or None,
+            )
+            return
+        self.cleanup_work_item(
+            work_item, reason=reason, actor=actor, source="close-event"
+        )
+
+    def _end_endpoint(self, session: Session) -> bool:
+        """End ONE conversation for good: the harness first, then its tmux session.
+
+        Unconditional, unlike :meth:`_close_tmux` — see
+        :meth:`cleanup_work_item`. The harness is asked to exit before the
+        session is killed so it gets its grace period rather than losing its
+        pane from under it; a harness that will not go is not a reason to keep
+        the tmux session, so the kill runs either way.
+
+        Returns whether tmux had a session to end, which is what the report's
+        ``tmux`` piece means.
+        """
+        if not session.tmux_target:
+            return False
+        self._terminate_harness(session)
+        result = self.tmux.kill(session, timeout=self.config.dispatch_timeout_seconds)
+        if not result.ok:  # already gone — best-effort, as every kill here is
+            logger.info(
+                "tmux session %s was already gone: %s",
+                session.tmux_target,
+                result.error,
+            )
+            return False
+        logger.info(
+            "killed tmux session %s (%s)", session.tmux_target, session.work_item.ref
+        )
+        return True
+
+    def _remove_checkout(self, work_item: WorkItemRef) -> bool:
+        """Remove a work item's workspace checkout, from its ref alone.
+
+        Keyed by the work item rather than by a session record, so a checkout
+        left behind by a crash — or by a record an older version already deleted
+        — is still reclaimable (issue-186 R4.2). Derives no new paths: the
+        repository comes from the ref, and the layout from the same
+        :class:`the_loop.workspace.Workspace` methods the spawn path uses.
+
+        Ignores ``keepCheckoutOnClose`` on purpose (:meth:`cleanup_work_item`).
+        """
+        if self.workspace is None:
+            return False
+        target = self._repo_target(_repo_payload(work_item))
+        if target is None:
+            return False
+        try:
+            removed = self.workspace.cleanup(
+                target,
+                work_item.slug,
+                timeout=self.config.dispatch_timeout_seconds,
+            )
+        except WorkspaceError as exc:  # advisory, as every workspace teardown is
+            logger.warning("workspace cleanup for %s failed: %s", work_item.ref, exc)
+            return False
+        if removed:
+            logger.info(
+                "removed the workspace checkout for %s — uncommitted work in it "
+                "is gone",
+                work_item.ref,
+            )
+            eventlog.emit(
+                "workspace.cleaned",
+                work_item=work_item.ref,
+                strategy=self.workspace.strategy,
+            )
+        return bool(removed)
 
     def _close_tmux(self, session: Session) -> None:
         """Retain (default) or kill a tmux session whose work item is closing.

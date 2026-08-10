@@ -114,6 +114,31 @@ still carrying the key is warned about and otherwise ignored).
   directly, or cleaned up with `tmux kill-session`. A reset SHALL therefore always report
   that it ended a live session, and SHALL report a removed workspace checkout separately,
   because uncommitted work in it does not survive.
+- WHEN a work item is **cleaned up** (issue-186 — the `the-loop cleanup` keyword,
+  `the-loop sessions cleanup`, or a closure by an **authorized** user) THEN the tmux
+  session of **every** endpoint on its record SHALL be killed — the work item's own and
+  one per pull request delivering it, the harness inside each ended first with the same
+  grace period a close uses, the work item's own session **last** — AND its workspace
+  checkout SHALL be removed AND its machine-local registry record SHALL be deleted
+  (`session.cleaned`). This is the one path that ignores
+  `routing.tmux.keepSessionOnClose` and `routing.workspace.keepCheckoutOnClose`: those
+  answer what should survive the end of the *work*, and cleanup is the operator saying
+  they are done with all of it — so **uncommitted work in the checkout does not
+  survive**. The **portable** record (`control`, `poll`, the frozen graph) SHALL be
+  kept, which is the whole difference from a reset, and no remote object SHALL be
+  touched. A cleanup SHALL run with or without a live session and with or without a
+  record — a checkout left behind by a crash is located from the work-item ref alone —
+  and SHALL record `cleanup` as the item's last control command, so a torn-down item
+  cannot re-spawn on the next event.
+- WHEN a work item is closed AND the close event names an actor who is in
+  `routing.authorizedUsers` THEN the cleanup above SHALL run after the session is
+  closed; WHEN it names **no** actor, or one that is not authorized, THEN the session
+  SHALL be closed exactly as before and the cleanup SHALL be **deferred**, recorded as
+  `cleanup.deferred` with `reason: no-actor | unauthorized-actor` (issue-186). Fails
+  closed on purpose: a close action need not carry the identity of whoever performed it,
+  and destroying an operator's uncommitted work on an unattributable event is not a
+  trade worth making — an authorized user's `the-loop cleanup` is the remedy, and it
+  works on a closed work item exactly as on an open one.
 - WHEN a work item ends — the registered item itself closed or merged (one of its
   *linked* PRs closing does not end it, issue-101), or `the-loop sessions stop` /
   `the-loop sessions close` run —
@@ -230,6 +255,7 @@ still carrying the key is warned about and otherwise ignored).
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-186 | `the-loop cleanup` — a control keyword, a CLI/API/MCP verb and an authorized closure all release a finished work item's **local** resources: every endpoint's tmux session, the workspace checkout and the machine-local registry record, ignoring the two retention settings. The portable record is kept and nothing remote is touched; a closure that names no authorized actor defers to the keyword rather than destroying state on an unattributable event | [spec](../specs/issue-186/), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/186) |
 | issue-156 | Process runner removed; tmux is the only runner (2026-08-05): `routing.runner` left the schema (ignored with a warning), tmux became a required daemon dependency, registry records dropped their `runner` field, and a record without a `tmuxTarget` heals lazily through the respawn path on its next event | [spec](../specs/issue-156/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/156) |
 | issue-154 | Fixed the tmux session name the-loop recorded and posted not being the one tmux gave the session: a slug's `.`/`:` are now rewritten to `_` (tmux's own `session_check_name`) where the name is minted and where a registry record is loaded, so the announced `tmux attach -t …` command resolves, probes stop reading a live session as absent, and `terminate_harness`'s guard rejects the target-grammar shape outright | [spec](../specs/issue-154/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/154) |
 | issue-146 | Fixed a respawn colliding with the session it was replacing: an unanswered tmux probe is no longer read as "session gone", a **live** `loop-<slug>` occupant is delivered into rather than killed or spawned over, a `duplicate session` refusal is resolved once instead of recurring, and an unclearable dead occupant **skips** the event (`session-occupied`) instead of releasing it to fail identically forever | [spec](../specs/issue-146/), [decision-055](../decisions/decision-055.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/146) |

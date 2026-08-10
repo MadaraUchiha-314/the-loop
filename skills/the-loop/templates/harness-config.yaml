@@ -43,6 +43,8 @@ workflow:
     - verification           # that plan, executed; results + evidence recorded
     - needs-review
     - complete
+    - cleanup                # issue-186: the-loop released this item's LOCAL resources
+                             #   (tmux sessions, workspace checkout, local session record)
 
 tooling:
   languages: [ts]         # python | js | ts | go

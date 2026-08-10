@@ -1,0 +1,23 @@
+$ uv run pytest cli/tests/test_cleanup.py cli/tests/test_control.py -q  # T1
+.....................................................................    [100%]
+69 passed in 0.15s
+
+$ uv run pytest cli/tests/test_cleanup_integration.py -q  # T2
+................                                                         [100%]
+16 passed in 1.86s
+
+$ uv run pytest cli/tests/test_cleanup_integration.py -k abuse -q  # T8
+.....                                                                    [100%]
+5 passed, 11 deselected in 0.63s
+
+$ uv run pytest cli/tests/test_cleanup.py -k legacy -q  # T10
+..                                                                       [100%]
+2 passed, 24 deselected in 0.03s
+
+$ uv run pytest cli/tests/test_graph_cleanup.py cli/tests/test_graph_contract.py -q  # T12
+.......................                                                  [100%]
+23 passed in 0.47s
+
+$ uv run pytest cli/tests/test_api_routers_integration.py cli/tests/test_core_sessions.py -q  # T3
+...............                                                          [100%]
+15 passed in 1.55s

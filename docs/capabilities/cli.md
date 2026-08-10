@@ -27,12 +27,15 @@ self-learning/ML capabilities.
   receiver (see [webhook-triggers](webhook-triggers.md)).
 - `the-loop sessions register|list|attach|close` SHALL manage the work-item ↔
   harness-session registry used for webhook routing.
-- `the-loop sessions start|pause|resume|stop` SHALL give an operator with shell access
-  the **same four commands** an authorized user issues by keyword in a comment
-  (issue-106, see [webhook-triggers](webhook-triggers.md)): `start` spawns through the
-  same dispatcher the daemon uses — workspace checkout, harness trust, tmux hosting,
-  session announcement — or resumes a paused session; `stop` takes the normal
-  close path. Each invocation SHALL record the command in that work item's portable
+- `the-loop sessions start|pause|resume|stop|cleanup` SHALL give an operator with shell
+  access the **same five commands** an authorized user issues by keyword in a comment
+  (issue-106, issue-186, see [webhook-triggers](webhook-triggers.md)): `start` spawns
+  through the same dispatcher the daemon uses — workspace checkout, harness trust, tmux
+  hosting, session announcement — or resumes a paused session; `stop` takes the normal
+  close path; `cleanup` releases the work item's local resources through that same
+  dispatcher (every endpoint's tmux session, the workspace checkout, the machine-local
+  record), keeping the portable record and touching nothing remote, and reports each
+  irreversible fact on its own line. Each invocation SHALL record the command in that work item's portable
   record (`<state.root>/portable/<slug>.json`, `control` section — issue-128) and SHALL
   post the **same keyword** back to the work item
   so its thread stays the full record of who asked for what. That comment SHALL carry
@@ -236,6 +239,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-186 | `sessions cleanup` — a fifth control verb (CLI, HTTP and MCP) that releases a work item's local resources through the daemon's own dispatcher and keeps the portable record, unlike `reset` | [spec](../specs/issue-186/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/186) |
 | issue-161 | Re-layered as core → API → clients: `the_loop.core` facade, the control-plane service (`service start\|stop\|status`, no extras — it ships in the base install), every core-capability command routed through it, and the `/mcp` endpoint on the official MCP SDK. The UI was descoped from this work item on owner review | [spec](../specs/issue-161/), [decision-058](../decisions/decision-058.md), [control-plane](control-plane.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/161) |
 | issue-156 | Process runner removed; tmux is the only runner (2026-08-05): `sessions start` spawns tmux-hosted sessions unconditionally — there is no configured runner to pick | [spec](../specs/issue-156/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/156) |
 | issue-152 | Added `install` and `upgrade`: one plan-then-execute implementation, two verbs, covering the CLI and the **Claude Code** plugin at user or project scope. Drives the harness's own plugin CLI (probed, not assumed — a marketplace command without a working `plugin install` counts as no surface), falls back to the decision-054 settings keys, detects how the running CLI was installed, and reports every step's argv and outcome — `--dry-run` being the same plan minus the execution. Cursor parked on review and split out as issue-157 | [spec](../specs/issue-152/), [decision-057](../decisions/decision-057.md), [distribution](distribution.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/152) |

@@ -89,8 +89,12 @@ def build_server(cli_config: Optional[dict] = None) -> MCPServer:
         return core_sessions.list_sessions(status=status, config=cli_config)
 
     def control_session(ref: str, verb: str, comment: bool = True) -> Dict[str, Any]:
-        """Apply a session control verb (start | pause | resume | stop) with
-        the full paper trail."""
+        """Apply a session control verb (start | pause | resume | stop |
+        cleanup) with the full paper trail. `cleanup` is destructive: it
+        releases the work item's LOCAL resources — every endpoint's tmux
+        session, the workspace checkout (uncommitted work in it is gone) and
+        the machine-local session record — keeping the portable record and
+        touching nothing remote."""
         return core_sessions.control_session(
             ref, verb, comment=comment, config=cli_config
         )

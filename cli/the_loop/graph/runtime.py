@@ -25,6 +25,7 @@ from .state import GraphState, StateLockBusy, state_lock, utc_now
 logger = logging.getLogger("the-loop.graph")
 
 __all__ = [
+    "CLEANUP_NODE",
     "NodeReport",
     "Runtime",
     "SkipResult",
@@ -32,6 +33,13 @@ __all__ = [
     "declare_skips",
     "force",
 ]
+
+#: The node a work-item-level loop enters when the-loop releases its LOCAL
+#: resources (issue-186). Named here rather than in the graph files' shape
+#: because :meth:`Runtime.cleanup` is what enters it — the two work-item loops
+#: declare it, ``pdlc-pr-loop`` deliberately does not, and a loop without it
+#: simply has nothing to record.
+CLEANUP_NODE = "cleanup"
 
 
 def _exclude_spec_root(repo: Path, spec_root: str) -> str:
@@ -619,6 +627,68 @@ class Runtime:
             status=PASS,
             outcome=PASS,
             attempts=state.record(node_id).attempts,
+        )
+
+    def cleanup(
+        self, work_item_id: str, ref: str = "", reason: str = ""
+    ) -> Optional[NodeReport]:
+        """Enter the ``cleanup`` node — the work item's local resources are going.
+
+        A sibling of :meth:`start`, not of :func:`force`, and the distinction is
+        the whole reason this exists. A force is an operator **bypassing a gate**:
+        it warns, records the transition as forced, and posts an override
+        announcement on the ticket. Cleanup bypasses nothing — the-loop is
+        recording that it released the tmux sessions, the checkout and the local
+        record — so it enters the node the same way ``start`` enters the first
+        one: persist the pointer, then run the entry chain (issue-186, R5.2).
+
+        Entering from **anywhere** is legitimate and honest. The ordinary path is
+        from ``complete``; a work item closed as `wontfix` mid-flight is entered
+        from wherever it stood, its earlier records untouched, so
+        ``check --recompute`` still reports every gate that never ran.
+
+        Returns ``None`` — a recorded no-op — in the three cases where there is
+        nothing to record: the loop declares no ``cleanup`` node (``pdlc-pr-loop``),
+        the work item never entered the graph, or the pointer is already there.
+        """
+        node = self.graph.nodes.get(CLEANUP_NODE)
+        if node is None:
+            logger.debug(
+                "%s walks a loop with no %s node; nothing to record",
+                work_item_id,
+                CLEANUP_NODE,
+            )
+            return None
+        item = self.work_item(work_item_id, ref)
+        state = GraphState.load(self.state_dir(item), work_item_id)
+        if not state.current_node:
+            return None  # never entered the graph: there is no walk to end
+        if state.current_node == CLEANUP_NODE:
+            return None  # idempotent: a second cleanup re-runs no entry chain
+        from_node = state.current_node
+        state.enter(CLEANUP_NODE)
+        state.save(self.state_dir(item))  # persist BEFORE any side effect (R8.2)
+        run_chain(
+            node.entry,
+            self._context(item, node, "entry", surface=self._surface(state)),
+        )
+        eventlog.emit(
+            "graph.cleaned",
+            work_item=item.ref,
+            **{"from": from_node},
+            reason=reason or None,
+        )
+        logger.info(
+            "%s entered %s from %s — its local resources are being released",
+            item.ref,
+            CLEANUP_NODE,
+            from_node,
+        )
+        return NodeReport(
+            node=CLEANUP_NODE,
+            status=PASS,
+            outcome=PASS,
+            attempts=state.record(CLEANUP_NODE).attempts,
         )
 
     def complete(

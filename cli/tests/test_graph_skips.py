@@ -196,7 +196,11 @@ REVIEW_CHAIN = {
 #: selection gate itself and the terminals. Written as a set equality in both
 #: directions on purpose — a node added to the graph without a decision about
 #: its skippability fails here rather than defaulting quietly either way.
-UNSKIPPABLE = {"phase-selection", "complete", "escalated"}
+#: `cleanup` (issue-186) is one of the terminals, and not skippable for the same
+#: reason they are not: it is not a phase of *work* a human could decide this item
+#: does not need, it is where the-loop records that it released the item's local
+#: resources — and it is entered directly rather than walked into.
+UNSKIPPABLE = {"phase-selection", "complete", "cleanup", "escalated"}
 
 
 def test_shipped_outer_loop_marks_every_phase_but_the_gate_skippable():

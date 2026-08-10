@@ -9,12 +9,14 @@ instruction to the-loop itself.
 
 This module is that missing vocabulary: the session commands — ``start``,
 ``stop``, ``pause``, ``resume``, plus ``contribute`` (issue-185: start's
-sibling that selects the contribution loop) — declared in the CLI config
-(``routing.control.keywords``), recognised in a comment on
-the work item or its PR, and *executed by the-loop* rather than forwarded to the
-agent. The first four are also available from the CLI (``the-loop sessions
-start|stop|pause|resume``), which posts the same keyword back to the ticket so
-the thread stays a complete record of who asked for what.
+sibling that selects the contribution loop) and ``cleanup`` (issue-186: the
+other end of the life cycle — reclaim the local resources of a work item that
+has ended) — declared in the CLI config (``routing.control.keywords``),
+recognised in a comment on the work item or its PR, and *executed by the-loop*
+rather than forwarded to the agent. All but ``execute`` and ``contribute`` are
+also available from the CLI (``the-loop sessions
+start|stop|pause|resume|cleanup``), which posts the same keyword back to the
+ticket so the thread stays a complete record of who asked for what.
 
 ## Why the parser is this narrow
 
@@ -69,6 +71,7 @@ __all__ = [
     "COMMANDS",
     "GRAPH_COMMANDS",
     "SPAWN_COMMANDS",
+    "TEARDOWN_COMMANDS",
     "DEFAULT_KEYWORDS",
     "ControlConfig",
     "ControlRecord",
@@ -78,34 +81,47 @@ __all__ = [
     "parse_command",
 ]
 
-# The six commands, in the order they are documented. `start`, `resume` and
+# The seven commands, in the order they are documented. `start`, `resume` and
 # `contribute` mean "execution should be running"; `pause` and `stop` mean it
 # should not. `execute` is different in kind (issue-177): it does not touch the
 # session at all — it answers the graph's `phase-selection` gate, freezing the
 # set of phases this work item will walk. `contribute` (issue-185) arms exactly
 # as `start` does, and additionally selects the CONTRIBUTION loop for the work
 # item's outer walk: the-loop joins an existing, in-progress item as a
-# contributor rather than owning it from scratch. All live here because they
-# are **control** words an authorized human types on the ticket, so they belong
-# to the same configurable vocabulary and the same named-actor authorization.
-START, STOP, PAUSE, RESUME, EXECUTE, CONTRIBUTE = (
+# contributor rather than owning it from scratch. `cleanup` (issue-186) is the
+# other end of the life cycle: the work is over, so reclaim the LOCAL resources
+# the work item accumulated — the tmux sessions, the checkout, the machine-local
+# session record — and nothing else. All live here because they are **control**
+# words an authorized human types on the ticket, so they belong to the same
+# configurable vocabulary and the same named-actor authorization.
+START, STOP, PAUSE, RESUME, EXECUTE, CONTRIBUTE, CLEANUP = (
     "start",
     "stop",
     "pause",
     "resume",
     "execute",
     "contribute",
+    "cleanup",
 )
-COMMANDS = (START, STOP, PAUSE, RESUME, EXECUTE, CONTRIBUTE)
+COMMANDS = (START, STOP, PAUSE, RESUME, EXECUTE, CONTRIBUTE, CLEANUP)
 
 #: Commands the *graph* acts on rather than the session registry. The
 #: dispatcher records them and then lets the event through, because the thing
 #: that must see the comment is the phase-selection gate.
 GRAPH_COMMANDS = (EXECUTE,)
 
+#: Commands whose effect is **destruction of local state** rather than a
+#: session transition (issue-186). Named as a set so the dispatcher and the
+#: control-plane core branch on a constant rather than a string literal — the
+#: one command that removes things should be recognisable as such wherever it
+#: is handled.
+TEARDOWN_COMMANDS = (CLEANUP,)
+
 # Commands whose effect is "this work item should be running" — what
 # ControlStore.start_requested reports on. `contribute` arms like `start`
-# (issue-185): the mode differs, the request to be running does not.
+# (issue-185): the mode differs, the request to be running does not. `cleanup`
+# is deliberately absent, so recording one DISARMS the item exactly as a `stop`
+# does: nothing may re-spawn a session for work whose resources have gone.
 _ARMING_COMMANDS = (START, RESUME, CONTRIBUTE)
 
 #: The arming commands that may SPAWN a session where none exists — what the
@@ -120,6 +136,7 @@ DEFAULT_KEYWORDS: Dict[str, str] = {
     RESUME: "the-loop resume",
     EXECUTE: "the-loop execute",
     CONTRIBUTE: "the-loop contribute",
+    CLEANUP: "the-loop cleanup",
 }
 
 # What may NOT sit directly against a keyword for it to count as a whole token.

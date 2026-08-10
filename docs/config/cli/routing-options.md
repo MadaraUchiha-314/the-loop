@@ -51,7 +51,9 @@ dispatch.
 
 Each operator runs their own instance for their own logins. CI and system events, which
 carry no human instructions, still pass; and a `closed` event still auto-closes that
-item's own session regardless of who closed it.
+item's own session regardless of who closed it. Who closed it does decide one thing:
+whether that closure also [cleans up](#controlkeywordscleanup) the item's local
+resources, which only an authorized closer may cause.
 :::
 
 ### `autoExecuteLabel`
@@ -95,7 +97,8 @@ the-loop and is **not** forwarded to the agent.
 
 Control parsing runs strictly *after* the self-comment marker check and *after*
 `authorizedUsers`, so it never becomes a second, weaker way in. The parser recognises the
-fixed vocabulary only and yields one of four commands — never text from the comment.
+fixed vocabulary only and yields one of the declared commands — never text from the
+comment.
 
 ### `control.enabled`
 
@@ -194,6 +197,46 @@ comment carrying this keyword qualifies, so stating both there costs no extra ro
 trip. The criteria become the intervention's definition of done: its verification gate
 holds until every one is met. See the
 [process graph](/capabilities/process-graph) capability for the loop's phases.
+
+### `control.keywords.cleanup`
+
+- **Type:** `string`
+- **Default:** `the-loop cleanup`
+
+The other end of the life cycle
+([issue-186](https://github.com/MadaraUchiha-314/the-loop/issues/186)): release the
+**local** resources this work item accumulated on the machine running the-loop.
+
+:::danger Destructive, and deliberately unconditional
+Cleanup kills the tmux session of **every** endpoint (the work item's own, plus one per
+pull request delivering it), removes the workspace checkout — **uncommitted work in it is
+gone** — and deletes the machine-local session record. It ignores
+[`tmux.keepSessionOnClose`](#tmuxkeepsessiononclose) and
+[`workspace.keepCheckoutOnClose`](#workspacekeepcheckoutonclose): those answer "what
+should survive the end of the work", and a retention default that silently made this a
+no-op would be a verb that lies.
+:::
+
+What it does **not** touch: the portable record (`control`, `poll`, and the frozen
+graph — that is persistence and tracking, not a resource), the shared per-repository
+clone, the checked-in spec tree, the event log, and anything remote. No branch, pull
+request, issue or label is changed.
+
+It works **retroactively** on anything the-loop ever tracked, with or without a live
+session — a checkout left behind by a crash is reclaimed from the work-item ref alone —
+and it durably **disarms** the item, like `stop`, so nothing re-spawns afterwards. The
+work item's graph pointer moves to the terminal `cleanup` node first, so the teardown is
+a recorded transition with a `loop:cleanup` label rather than a silent side effect.
+
+Closing the work item does this on its own **when the close event names an authorized
+actor**. When it names none — a bot, an automation, or a ticketing system whose close
+action carries no identity — the-loop closes the session, defers the cleanup and records
+why; this keyword is the remedy, and it is exactly why it exists.
+
+That split falls along the ingress. A **webhook** `closed` event carries `sender`, so a
+closure by an authorized user cleans up by itself. A closure the **poller** detects is
+reconstructed from the item's state and names nobody — so on a polling deployment every
+closure defers, and this keyword is how cleanup happens.
 
 Keywords match as **whole tokens, case-insensitively, anywhere** in a comment body.
 Setting one to an empty string disables that command. A comment carrying **two different**

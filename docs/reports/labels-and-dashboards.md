@@ -42,7 +42,7 @@ commands as an item advances:
 ```text
 not-started → brainstorming → requirements-definition → design → test-planning
             → tasks-breakdown → implementation → verification
-            → needs-review → complete
+            → needs-review → complete → cleanup
 ```
 
 | Label | Set by | Means |
@@ -57,6 +57,7 @@ not-started → brainstorming → requirements-definition → design → test-pl
 | `loop:verification` | `/the-loop:verify-work` | The testing plan being executed; results + evidence recorded. |
 | `loop:needs-review` | `/the-loop:execute-tasks` | Self/critic review + human review pending. |
 | `loop:complete` | `/the-loop:finish-tasks` | Shipped; ticket closed. |
+| `loop:cleanup` | the-loop itself (issue-186) | The work item's **local** resources have been released — every endpoint's tmux session, the workspace checkout, the machine-local session record. Nothing remote was touched. |
 
 The label is the *ticket-visible* mirror of the phase that also lives in each work item's
 `docs/specs/<id>/execution-log.md` front-matter — single source of truth is the spec, the
@@ -134,6 +135,7 @@ gh label create "loop:implementation"          -c 0e8a16 -d "the-loop: tasks bei
 gh label create "loop:verification"            -c 1f883d -d "the-loop: testing plan being executed"            -f
 gh label create "loop:needs-review"            -c fbca04 -d "the-loop: waiting on a human (review/approval/answer)" -f
 gh label create "loop:complete"                -c 0e4429 -d "the-loop: shipped and closed"                      -f
+gh label create "loop:cleanup"                 -c 6e7781 -d "the-loop: local resources released"                 -f
 
 # Control label — CLI auto-execution gate
 gh label create "the-loop: auto-execute"       -c 5319e7 -d "the-loop: opt this item into autonomous execution" -f

@@ -56,20 +56,26 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
   new issue is received and ignored. Label presence is read from the webhook payload (no
   extra API call).
 - **Execution control — the label is necessary, not sufficient** (`routing.control`,
-  issue-106). Four declared keywords, usable by an **authorized** user
+  issue-106). Five declared keywords, usable by an **authorized** user
   (`routing.authorizedUsers`) in a comment on the work item or its PR, are interpreted
   by the-loop instead of being forwarded to the agent: `the-loop start`,
   `the-loop stop`, `the-loop pause`, `the-loop resume` (issue-135 default; an
-  operator's own explicit `keywords` override is unaffected).
+  operator's own explicit `keywords` override is unaffected) and `the-loop cleanup`
+  (issue-186).
   With `control.requireStartCommand` (default **on**) an armed work item spawns only
   once someone has started it — the request is durable across restarts, and a
   stop/pause disarms it again. `pause` holds delivery without discarding the
-  conversation; `stop` closes the session through the normal close path. The same four
-  are available to an operator with shell access as `the-loop sessions start|pause|
-  resume|stop`, which post the same keyword back to the ticket (marked as the-loop's
-  own, so the daemon never reads its own action back). A comment carrying two different
-  keywords executes nothing and forwards nothing. Decision:
-  `docs/decisions/decision-040.md`.
+  conversation; `stop` closes the session through the normal close path. `cleanup` is
+  the other end of the life cycle: it **releases the work item's local resources** —
+  every endpoint's tmux session, the workspace checkout (uncommitted work in it is
+  gone) and the machine-local session record — while keeping the portable record and
+  touching nothing remote. Closing the work item does the same, but **only** when the
+  close event names an authorized actor; otherwise it is deferred, and this keyword is
+  the remedy. The same five are available to an operator with shell access as
+  `the-loop sessions start|pause|resume|stop|cleanup`, which post the same keyword back
+  to the ticket (marked as the-loop's own, so the daemon never reads its own action
+  back). A comment carrying two different keywords executes nothing and forwards
+  nothing. Decision: `docs/decisions/decision-040.md`.
 - **Where the session takes its answers from** (`routing.interaction.mode`, issue-134):
   `work-item` (default) or `cli`. Until this existed the prompt never said, so the agent
   guessed — and a session guessing "the terminal" asks into a tmux pane nobody may be
@@ -170,7 +176,7 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
   # on completion
   the-loop sessions close --work-item github:OWNER/REPO#N
   # execution control (issue-106) — the CLI half of the comment keywords
-  the-loop sessions start|pause|resume|stop --work-item github:OWNER/REPO#N
+  the-loop sessions start|pause|resume|stop|cleanup --work-item github:OWNER/REPO#N
   ```
 
   Registration is best-effort: if it fails, routing degrades to log-and-drop (or
