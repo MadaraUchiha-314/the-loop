@@ -88,4 +88,4 @@ flowchart TD
 
 ## Unplanned work, recorded
 
-_(Anything done that no task above named, with why.)_
+None yet — anything done that no task above named is recorded here, with why.

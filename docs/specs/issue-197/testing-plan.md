@@ -90,9 +90,9 @@ summaries and tool findings over this repository's own files.
 
 ## Verification results
 
-_(Filled in at `verification`, with the exact command, the outcome and a link to the
-committed evidence for every row above.)_
+Filled in at `verification`: the exact command, the outcome and a link to the committed
+evidence, for every row above.
 
 ## Review comments
 
-_(PR review findings on this plan and their resolutions are recorded here.)_
+None yet.

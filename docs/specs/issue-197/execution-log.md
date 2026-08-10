@@ -26,7 +26,7 @@ status: in-progress
 
 | PR | Scope / tasks | Status |
 |----|---------------|--------|
-| _(opened at needs-review)_ | Tasks 1–10 — the whole work item | — |
+| opened at `needs-review` | Tasks 1–10 — the whole work item | — |
 
 ## Progress entries
 
@@ -49,14 +49,14 @@ status: in-progress
 
 ## Documentation
 
-_(Filled in with the user-facing documents this change made wrong, and how each was
-corrected — or the reason none was.)_
+Filled in at `capability-docs`: the user-facing documents this change made wrong and how
+each was corrected — or the reason none was.
 
 ## Capability docs
 
-_(Filled in with the capability doc(s) this change belongs to.)_
+Filled in at `capability-docs`: the capability doc(s) this change belongs to.
 
 ## Security review
 
-_(Filled in at `security-review`. Risk tier 4 ⇒ a named human security sign-off is required
-before `complete`, per `security.review.humanSignOffMinTier`.)_
+Filled in at `security-review`. Risk tier 4 ⇒ a named human security sign-off is required
+before `complete`, per `security.review.humanSignOffMinTier`.

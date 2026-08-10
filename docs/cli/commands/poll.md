@@ -217,12 +217,27 @@ makes it first-sight again, so work restarts.
 Identical to the receiver's, and just as load-bearing — see [concepts](/cli/concepts#guards).
 
 ::: danger Required, no fallback, fails closed
-The poller spawns only for items authored by a login in
-[`routing.authorizedUsers`](/config/cli/routing-options#authorizedusers), and forwards only
-comments from authorized authors. Everything else is ignored. CLI config only, **no**
-fallback to any repository's harness config; an **empty** list fails closed with a warning.
-[decision-023](/decisions/decision-023).
+The poller forwards only comments from authors in
+[`routing.authorizedUsers`](/config/cli/routing-options#authorizedusers). Everything else is
+ignored. CLI config only, **no** fallback to any repository's harness config; an **empty**
+list fails closed with a warning. [decision-023](/decisions/decision-023).
 :::
+
+**Who opened the work item gates one thing: whether the poller starts work on it by
+itself.** A poll listing carries an item's labels but not who applied them, so there is no
+event actor for the item — spawning is gated on the item's author being authorized, *or* on
+an authorized user having armed it (`the-loop start` / `the-loop contribute`, or
+`the-loop sessions start`; a later `stop`/`pause`/`cleanup` disarms it again).
+
+A **comment** is judged by its own author, always. So a maintainer can point the-loop at an
+outside contributor's issue or PR with one comment, and the contributor still cannot steer
+it — theirs is dropped by the same check as before. The spawned session is told in its
+prompt that the work item's title, body and thread are untrusted content.
+[decision-074](/decisions/decision-074).
+
+While a spawn is being withheld — an unauthorized author, nobody having armed the item —
+each cycle records `poll.unauthorized` naming that author. It stops as soon as the item is
+armed.
 
 The **self-reply guard** applies too: a comment the-loop itself posted is excluded from "new
 comments" and cannot retrigger a spawn, even though it was posted under an authorized login.

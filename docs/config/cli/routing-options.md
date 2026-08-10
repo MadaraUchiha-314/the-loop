@@ -39,9 +39,9 @@ spawn.
 - **Related:** [Guards](/cli/concepts#guards) · [decision-023](/decisions/decision-023)
 
 ::: danger Prompt-injection guard. Required, no fallback, fails closed.
-GitHub logins whose actions the-loop may act on. Comments, reviews, labels and items
-authored by anyone not listed are ignored by **both** the receiver and the poller, before
-dispatch.
+GitHub logins whose actions the-loop may act on. A comment, review or label from anyone not
+listed is ignored by **both** the receiver and the poller, before dispatch — judged by the
+author of the action itself, so who opened the issue or PR it sits on is irrelevant.
 
 - **REQUIRED.** There is **no** fallback to any repository's harness config. Which logins
   may drive your daemon is a property of your machine, not of a repo anyone can open a PR
@@ -54,6 +54,13 @@ carry no human instructions, still pass; and a `closed` event still auto-closes 
 item's own session regardless of who closed it. Who closed it does decide one thing:
 whether that closure also [cleans up](#controlkeywordscleanup) the item's local
 resources, which only an authorized closer may cause.
+
+**One decision does look at the work item's author, and only on the poll ingress:** whether
+the poller starts work on a labelled item *by itself*. A listing carries the item's labels
+but not who applied them, so an item opened by an unlisted login waits until an authorized
+user arms it (`the-loop start` / `the-loop contribute`, or `the-loop sessions start`) — and
+their comment gets through whoever opened the item.
+[decision-074](/decisions/decision-074).
 :::
 
 ### `autoExecuteLabel`

@@ -116,10 +116,13 @@ routing:
                                 # would otherwise govern N repos (issue-123). Set it
                                 # only for a checkout with no harness config at all.
   # SECURITY (prompt-injection guard): only these GitHub logins' actions are acted on
-  # by BOTH the webhook receiver and the poller. Comments/reviews/labels/items from
-  # anyone else are ignored. REQUIRED: no fallback to any repo's plugin config —
-  # empty means human-authored events are all ignored (fail closed). Run your own
-  # instance for your own login(s).
+  # by BOTH the webhook receiver and the poller — the actor who DID the thing, so a
+  # comment is judged by its own author. Comments/reviews/labels from anyone else are
+  # ignored. On the poll path, an item opened by someone else is not *started* on its
+  # own (a listing does not say who labelled it), but an authorized user's `the-loop
+  # start`/`contribute` on it still works — decision-074. REQUIRED: no fallback to any
+  # repo's plugin config — empty means human-authored events are all ignored (fail
+  # closed). Run your own instance for your own login(s).
   authorizedUsers: []           # e.g. ["your-github-login"]
   spawnWorkdir: "."             # used only when workspace.root is unset (below)
   # Per-work-item checkout workspace (issue-76): when `root` is set, each event's
