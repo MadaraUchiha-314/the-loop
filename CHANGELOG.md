@@ -1,3 +1,9 @@
+## v9.5.0 (2026-08-10)
+
+### Feat
+
+- **issue-191**: poll start runs as a proper daemon (#192)
+
 ## v9.4.0 (2026-08-10)
 
 ### Feat
