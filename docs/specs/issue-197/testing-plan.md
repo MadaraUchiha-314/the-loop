@@ -113,11 +113,16 @@ prompt paragraph.
 template) and one rewritten in place — `test_first_sight_ignores_the_thread_of_an_unauthorized_items_author`,
 which asserted the bug and is now `…forwards_an_authorized_start_on_a_strangers_item`.
 
-**Re-run after the rebase onto `main` @ `a8341fd` (9.6.0, which landed issue-193):**
-`make check` green again — **1771 passed, 1 skipped**. The count moved because the new base
-brings issue-193's tests with it; the eleven added here are unchanged, and the rebase
-touched only the decision number and the capability doc's history table. Appended to
-[`make-check.txt`](evidence/make-check.txt).
+**Re-run after each rebase** (both appended to [`make-check.txt`](evidence/make-check.txt)):
+
+- onto `main` @ `a8341fd` (9.6.0, which landed issue-193) — green, **1771 passed, 1
+  skipped**; the rebase touched only the decision number and the capability doc's history
+  table.
+- onto `main` @ `9d5d3b1` (9.6.1, which landed issue-199) — green, **1781 passed, 1
+  skipped**; one conflict, again the capability doc's history table, and both rows kept.
+
+The counts move because each new base brings its own tests; the eleven added here are
+unchanged throughout.
 
 ## Review comments
 

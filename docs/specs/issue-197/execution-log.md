@@ -97,6 +97,19 @@ status: in-progress
 - **Next:** human review.
 - **Blockers:** none.
 
+### 2026-08-10 — rebased again, onto 9.6.1
+
+- **Phase:** needs-review
+- **Did:** Second rebase at the reviewer's request, onto `main` @ `9d5d3b1` (issue-199 had
+  landed). One conflict — the capability doc's history table again, where issue-199 added
+  its own row; both are kept. Also reset `uv.lock` to main's and re-applied only the
+  version line: the first rebase's lock carried an unrelated `exceptiongroup` marker that
+  a local `uv run` had regenerated, which is resolver churn rather than this work item's
+  change.
+- **Checkpoint/tests:** `make check` green on the rebased branch — 1781 passed, 1 skipped.
+- **Next:** human review.
+- **Blockers:** none.
+
 ## Documentation
 
 Four user-facing documents stated the rule this change replaces, and all four ship with it:
