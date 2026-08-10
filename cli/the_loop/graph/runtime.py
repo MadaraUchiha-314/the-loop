@@ -20,6 +20,7 @@ from .. import eventlog
 from .chain import ChainOutcome, run_chain
 from .contract import BLOCK, PASS, SKIP, WAIT, HookContext, WorkItem
 from .model import Graph, artifact_names, load_graph
+from .refs import derive_ref
 from .state import GraphState, StateLockBusy, state_lock, utc_now
 
 logger = logging.getLogger("the-loop.graph")
@@ -123,6 +124,30 @@ def _skip_provenance(decl: Mapping[str, Any]) -> str:
     return ", ".join(parts)
 
 
+def _degradations(outcome: ChainOutcome) -> List[Tuple[str, str]]:
+    """``(hook, error)`` for every hook that **passed while recording a failure**.
+
+    the-loop's outbound hooks are best-effort by contract: a GitHub outage must
+    not wedge a work item, so `post-phase-selection`, `set-phase-label`,
+    `request-review`, `publish-artifact`, `log-entry` and `notify` all catch,
+    record ``data["error"]`` and return ``pass``. Nothing read that field
+    (issue-194), so the only trace of a *deterministically* failing call — an
+    unusable ref, a missing token — was a warning on a logger nothing
+    configures, and the command printed a clean answer over a ticket that never
+    received the question its gate was waiting on.
+
+    Keyed on ``error`` rather than on ``posted=False``: an entry hook that finds
+    its own marker and declines to post a second checklist returns
+    ``posted=False, reason="already asked"``, and that is a correct no-op. Only
+    a recorded error is a degradation.
+    """
+    return [
+        (result.hook, str(result.data["error"]))
+        for result in outcome.results
+        if str(result.data.get("error") or "")
+    ]
+
+
 @dataclass
 class NodeReport:
     """One node's verdict, as ``the-loop check`` reports it."""
@@ -214,6 +239,30 @@ class Runtime:
         return item.spec_dir
 
     def work_item(self, work_item_id: str, ref: str = "") -> WorkItem:
+        # Three tiers, in priority order (issue-194). An explicit `--ref` always
+        # wins. Otherwise the ref is DERIVED from what this repository already
+        # declares, because the bare id in the last tier is a value no
+        # integration can use, and handing it to one is what made every outbound
+        # hook a silent no-op. The bare id is kept as that last tier rather than
+        # "": `WorkItem.ref` is also what the event log and the audit comments
+        # call this work item, and they should print the id, not nothing.
+        #
+        # WHICH ref is derived depends on the loop. An **inner** loop (a
+        # non-empty `state_subpath`) is about a PULL REQUEST, and its ref is
+        # built by `build_runtime`, which is the only place that knows which one.
+        # It deliberately does NOT fall through to the work item's ref: putting a
+        # pull request's review comments on the ticket would be worse than the
+        # silence this change removes.
+        if ref:
+            resolved = ref
+        elif self.state_subpath:
+            resolved = str(self.config.get("prRef") or "")
+        else:
+            resolved = derive_ref(
+                work_item_id, str(self.config.get("originRepo") or "")
+            )
+        if not ref and resolved:
+            logger.debug("derived ref %s for %s", resolved, work_item_id)
         spec_dir = self.spec_dir(work_item_id)
         tags: List[str] = []
         tier = 3
@@ -232,7 +281,7 @@ class Runtime:
                     pass
                 break
         return WorkItem(
-            ref=ref or work_item_id,
+            ref=resolved or work_item_id,
             id=work_item_id,
             spec_dir=spec_dir,
             tags=tuple(tags),
@@ -284,6 +333,28 @@ class Runtime:
             decisions=dict(decisions or {}),
             **extra,
         )
+
+    def _note_degradations(
+        self, report: NodeReport, item: WorkItem, node_id: str, outcome: ChainOutcome
+    ) -> None:
+        """Surface a best-effort hook that did not do its job (issue-194).
+
+        Two readers, because the two callers of a graph verb see different
+        things: the message lands on the report the CLI prints, and the event
+        lands in the log the daemon's operator reads. Neither changes the
+        chain's verdict — the status, the outcome and the edge are whatever they
+        already were. Best-effort stays best-effort; it stops being silent.
+        """
+        for hook_name, error in _degradations(outcome):
+            report.messages.append(f"warning: {hook_name} did not complete: {error}")
+            eventlog.emit(
+                "graph.hook_degraded",
+                level="warning",
+                work_item=item.ref,
+                node=node_id,
+                hook=hook_name,
+                error=error,
+            )
 
     def _surface(self, state: "GraphState") -> str:
         """This work item's collaboration surface, as frozen at selection.
@@ -683,17 +754,19 @@ class Runtime:
             self.state_dir(item)
         )  # persist BEFORE any dependent side effect (R8.2)
         node = self.graph.node(node_id)
-        run_chain(
+        entered = run_chain(
             node.entry, self._context(item, node, "entry", surface=self._surface(state))
         )
         eventlog.emit("graph.started", work_item=item.ref, node=node_id)
         logger.info("%s entered the graph at %s", item.ref, node_id)
-        return NodeReport(
+        report = NodeReport(
             node=node_id,
             status=PASS,
             outcome=PASS,
             attempts=state.record(node_id).attempts,
         )
+        self._note_degradations(report, item, node_id, entered)
+        return report
 
     def cleanup(
         self, work_item_id: str, ref: str = "", reason: str = ""
@@ -734,7 +807,7 @@ class Runtime:
         from_node = state.current_node
         state.enter(CLEANUP_NODE)
         state.save(self.state_dir(item))  # persist BEFORE any side effect (R8.2)
-        run_chain(
+        entered = run_chain(
             node.entry,
             self._context(item, node, "entry", surface=self._surface(state)),
         )
@@ -750,12 +823,14 @@ class Runtime:
             CLEANUP_NODE,
             from_node,
         )
-        return NodeReport(
+        report = NodeReport(
             node=CLEANUP_NODE,
             status=PASS,
             outcome=PASS,
             attempts=state.record(CLEANUP_NODE).attempts,
         )
+        self._note_degradations(report, item, CLEANUP_NODE, entered)
+        return report
 
     def complete(
         self,
@@ -884,6 +959,10 @@ class Runtime:
             messages=[m.render() for m in outcome.messages],
             attempts=state.record(node_id).attempts,
         )
+        # An exit hook can degrade too — `classify-phase-selection` posts the
+        # confirmation comment — and it does so on the wait and block paths as
+        # much as on the passing one, so this is read before any of them return.
+        self._note_degradations(report, item, node_id, outcome)
 
         if outcome.status == WAIT:
             state.park(node_id, outcome.render() or "awaiting a human")
@@ -967,7 +1046,7 @@ class Runtime:
                 resolution=how,
                 session=(binding or {}).get("id") or None,
             )
-        run_chain(
+        entered = run_chain(
             entry_node.entry,
             self._context(item, entry_node, "entry", surface=self._surface(state)),
         )
@@ -979,16 +1058,25 @@ class Runtime:
             outcome=outcome.outcome,
         )
         report.messages.append(f"advanced to {target}")
+        # The entry chain of the node just ENTERED — attributed to that node,
+        # not to the one this advance left. This is where the phase-selection
+        # checklist and the phase label are posted, and where issue-194's silence
+        # was loudest: the work item parked on a question nobody was asked.
+        self._note_degradations(report, item, target, entered)
         return report
 
 
-def _announce_force(runtime: "Runtime", item: WorkItem, record: Dict[str, Any]) -> None:
+def _announce_force(runtime: "Runtime", item: WorkItem, record: Dict[str, Any]) -> str:
     """Post the force to the ticket — the audit record a human actually reads.
 
     Best-effort: an integration outage must not prevent the operator unblocking
     their work item. The other three records (graph state, execution log, event
     log) are already durable, so a failure here degrades the trail rather than
     losing it.
+
+    Returns the error when the comment did not go up, ``""`` otherwise — the
+    caller reports it as a warning (issue-194). "Best-effort" was never meant to
+    mean "the operator is told the audit trail exists when it does not".
     """
     from ..authz import mark_self_authored
     from .integrations import IntegrationError, resolve
@@ -1005,6 +1093,8 @@ def _announce_force(runtime: "Runtime", item: WorkItem, record: Dict[str, Any]) 
         resolve("github", runtime.config).call("add-comment", ref=item.ref, body=body)
     except (IntegrationError, Exception) as exc:  # noqa: BLE001
         logger.warning("could not post the force audit comment: %s", exc)
+        return str(exc)
+    return ""
 
 
 # -- declared skips: the operator channel (issue-177) --------------------------
@@ -1016,16 +1106,21 @@ class SkipResult:
     declared: List[str] = field(default_factory=list)
     rejected: List[Dict[str, str]] = field(default_factory=list)
     reason: str = ""
+    #: Best-effort steps that did not happen — today, only the audit comment
+    #: (issue-194). A declaration whose paper trail never reached the ticket is
+    #: still a declaration, but the operator has to know to post it themselves.
+    warnings: List[str] = field(default_factory=list)
 
 
 def _announce_skips(
     runtime: "Runtime", item: WorkItem, declared: List[str], record: Dict[str, Any]
-) -> None:
+) -> str:
     """Post the declaration to the ticket — the audit record a human reads.
 
     Best-effort, like the force announcement: an integration outage must not
     prevent the operator declaring their skips; the state record and the event
-    log are already durable.
+    log are already durable. Returns the error when the comment did not go up,
+    ``""`` otherwise (issue-194).
     """
     from ..authz import mark_self_authored
     from .integrations import IntegrationError, resolve
@@ -1044,6 +1139,8 @@ def _announce_skips(
         resolve("github", runtime.config).call("add-comment", ref=item.ref, body=body)
     except (IntegrationError, Exception) as exc:  # noqa: BLE001
         logger.warning("could not post the skip audit comment: %s", exc)
+        return str(exc)
+    return ""
 
 
 def declare_skips(
@@ -1118,6 +1215,7 @@ def declare_skips(
         )
         declared.append(node_id)
 
+    warnings: List[str] = []
     if declared:
         state.save(runtime.state_dir(item))
         eventlog.emit(
@@ -1129,7 +1227,11 @@ def declare_skips(
             nodes=list(declared),
         )
         logger.info("%s: declared skips %s (%s)", item.ref, declared, reason.strip())
-        _announce_skips(runtime, item, declared, {"by": by, "reason": reason.strip()})
+        failed = _announce_skips(
+            runtime, item, declared, {"by": by, "reason": reason.strip()}
+        )
+        if failed:
+            warnings.append(f"could not post the audit comment: {failed}")
     for entry in rejected:
         eventlog.emit(
             "graph.skips_rejected",
@@ -1144,6 +1246,7 @@ def declare_skips(
         declared=declared,
         rejected=rejected,
         reason=reason.strip(),
+        warnings=warnings,
     )
 
 
@@ -1236,7 +1339,13 @@ def force(
         record["reason"],
         "".join(f"\n  warning: {w}" for w in warnings),
     )
-    _announce_force(runtime, item, record)
+    failed = _announce_force(runtime, item, record)
+    if failed:
+        # Deliberately not in `record["warnings"]`: that list is the audit record
+        # of what this force BYPASSED, written to graph state before the comment
+        # was attempted. This is a warning about the reporting, and it belongs
+        # only to the result the operator is reading right now.
+        warnings = warnings + [f"could not post the audit comment: {failed}"]
     return ForceResult(
         work_item=item.ref,
         from_node=from_node,

@@ -135,7 +135,12 @@ self-learning/ML capabilities.
   loops — a runaway loop is the one failure mode a deterministic driver can still have, so
   it gets an explicit ceiling rather than trust. `force` is the authorized-operator escape
   hatch: it requires a reason and moves the pointer without ever forging the bypassed
-  gate's verdict.
+  gate's verdict. `--ref` is optional on every verb that runs hooks: omitted, it is
+  **derived** from the repository's `ticketing.github` plus the `issue-<n>` work-item id
+  (issue-194). WHEN a verb's outbound call could not be made — no derivable ref, no
+  credentials, an outage — THEN the command SHALL say so on stdout as a `warning:` /
+  `WARNING:` line and SHALL keep its exit code: a degraded side effect is not a failed
+  verb, and it is not a silent one either.
 - The CLI config SHALL carry a `version`, and the CLI SHALL **refuse to run** against a
   config older than the current schema version rather than guessing at the old shape
   (issue-109). Per-provider settings SHALL live under one `integrations` block —
@@ -265,6 +270,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-194 | `graph advance`/`run`/`skip`/`force` stopped posting nothing when `--ref` was omitted: the ref is derived from the repository's `ticketing.github` plus the `issue-<n>` id, and an outbound hook that could not do its job now prints a `warning:` line (and records `graph.hook_degraded`) instead of leaving a clean `wait` over a ticket nobody was asked | [spec](../specs/issue-194/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/194) |
 | issue-191 | `poll start --daemon` detaches for real (double-fork + `setsid`, stdout/stderr to `<state.root>/logs/poller.out`, pidfile written after the final fork under the lock), reports startup success or failure to its caller over a handshake instead of into a logfile, removes a stale pidfile instead of leaving it, and gains `poll status` — liveness from the lock, progress from a new per-cycle heartbeat, exit `0`/`1` so it is a health check. Control-plane starts log to a file instead of `/dev/null` | [spec](../specs/issue-191/), [decision-072](../decisions/decision-072.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/191) |
 | issue-186 | `sessions cleanup` — a fifth control verb (CLI, HTTP and MCP) that releases a work item's local resources through the daemon's own dispatcher and keeps the portable record, unlike `reset` | [spec](../specs/issue-186/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/186) |
 | issue-161 | Re-layered as core → API → clients: `the_loop.core` facade, the control-plane service (`service start\|stop\|status`, no extras — it ships in the base install), every core-capability command routed through it, and the `/mcp` endpoint on the official MCP SDK. The UI was descoped from this work item on owner review | [spec](../specs/issue-161/), [decision-058](../decisions/decision-058.md), [control-plane](control-plane.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/161) |

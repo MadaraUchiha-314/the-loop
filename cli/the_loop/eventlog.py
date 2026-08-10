@@ -384,6 +384,15 @@ EVENT_TYPES: Dict[str, str] = {
         "No declared edge matched a node's outcome, so the work item was "
         "parked rather than guessed at (work_item, node, outcome)."
     ),
+    "graph.hook_degraded": (
+        "A best-effort hook passed the node while recording that its outbound "
+        "call did not happen — a checklist not posted, a phase label not "
+        "synced (work_item, node, hook, error). issue-194: the node's verdict "
+        "and the edge taken are unaffected, which is the whole point of "
+        "best-effort; what is NOT acceptable is a work item parked on a "
+        "question the ticket never received. The CLI prints the same fact as "
+        "a warning line; this is where the daemon's operator finds it."
+    ),
     "graph.completed": ("A work item reached a terminal node (work_item, node)."),
     "graph.cleaned": (
         "A work item entered the terminal `cleanup` node because the-loop was "
