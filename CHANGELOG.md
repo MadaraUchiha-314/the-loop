@@ -1,3 +1,9 @@
+## v9.4.0 (2026-08-10)
+
+### Feat
+
+- **issue-188**: an opt-in critic review of the locked design (#190)
+
 ## v9.3.0 (2026-08-10)
 
 ### Feat
