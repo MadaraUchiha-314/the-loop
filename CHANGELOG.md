@@ -1,3 +1,9 @@
+## v9.5.1 (2026-08-10)
+
+### Fix
+
+- **issue-194**: derive the work-item ref, and stop swallowing outbound-hook failures (#196)
+
 ## v9.5.0 (2026-08-10)
 
 ### Feat
