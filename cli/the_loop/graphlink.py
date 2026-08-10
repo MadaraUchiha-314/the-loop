@@ -14,7 +14,8 @@ This module is the missing call. Two entry points, both invoked by the
 deployment and a polling one behave identically):
 
 * :meth:`GraphLink.on_spawn` — a session just started for a work item, so the
-  work item enters the graph;
+  work item enters the graph (and, when the node it enters is a human gate, that
+  gate is evaluated once against the spawning event — issue-199);
 * :meth:`GraphLink.on_event` — an event reached an existing session, so the
   graph takes at most one node boundary, with the event's comments attached.
 
@@ -226,11 +227,27 @@ class GraphContext:
     #: `graph-state.json`, never a repository or machine setting. The INNER
     #: loop ignores it: a pull request's loop runs on that pull request.
     surface: str = ""
+    #: Which loop this state walks, as recorded at its first entry (issue-185).
+    #: Read here for one reason (issue-199): a contribution has no outer loop,
+    #: so the prompt must not tell its session where to put one.
+    loop: str = ""
 
     @property
     def at_human_gate(self) -> bool:
         """Parked/waiting on a human node — the consult-first case (D4)."""
         return self.actor == "human" and self.status in ("waiting", "parked")
+
+
+def _is_contribution(loop: str) -> bool:
+    """Whether ``loop`` is the shipped contribution loop (issue-199).
+
+    One import, one comparison — but kept a named predicate because two very
+    different readers ask it: the prompt block here, and the phase-selection
+    gate's surface question. Both mean "this work item has no outer loop".
+    """
+    from .graph.model import PDLC_CONTRIBUTION_LOOP
+
+    return loop == PDLC_CONTRIBUTION_LOOP
 
 
 def _surface_line(surface: str) -> str:
@@ -304,6 +321,15 @@ def render_graph_context(
             "  iterate on: this pull request (the inner loop always runs on its "
             "PR — no setting moves it)"
         )
+    elif _is_contribution(ctx.loop):
+        # A contribution has no outer loop to place (issue-199), so it is not
+        # told where to put one: its single artifact and its results belong on
+        # the thread it was invited into.
+        lines.append(
+            "  iterate on: this work item (a contribution has no outer loop — "
+            "post the plan and its results here, and open no pull request but "
+            "the one carrying the code)"
+        )
     else:
         lines.append(
             f"  iterate the outer loop's artifacts on: {_surface_line(ctx.surface)}"
@@ -351,7 +377,12 @@ class GraphLink:
     # -- entry points -----------------------------------------------------------
 
     def on_spawn(
-        self, work_item: WorkItemRef, cwd: str, session_id: str = "", runner: str = ""
+        self,
+        work_item: WorkItemRef,
+        cwd: str,
+        session_id: str = "",
+        runner: str = "",
+        routed: Optional[Any] = None,
     ) -> None:
         """A session was spawned — enter the graph's start node.
 
@@ -360,11 +391,34 @@ class GraphLink:
         respawned after a crash, never rewinds it. Either way the **session
         binding** is (re)recorded (issue-148, D6): `session: inherit` gates read
         it, and a respawned session is the new inheritance target.
+
+        **A start node that is a human gate is then evaluated once** (issue-199),
+        with the spawning event's comments attached. The comment that spawns a
+        session is very often the one that answers the gate it lands on — the
+        arming ``the-loop contribute`` carries the goal, by design (issue-185) —
+        and it is the one comment a gate can never be handed later, because the
+        control path consumes it rather than forwarding it. Without this the
+        work item sits at its first node until some *unrelated* event happens to
+        arrive, which is the second half of issue-199: a contribution that
+        stated its goal up front still needed a second command to move.
+
+        Deliberately narrow. Only a **fresh** entry evaluates (a respawn's
+        ``start`` returns ``None``), and only a **human** node: an agent node's
+        exit chain gates checked-in artifacts the session has not been given a
+        chance to write, so running it here would count a failed attempt against
+        work that has not begun. Waiting is the ordinary outcome and costs
+        nothing but a parked pointer with a reason on it — which is more than the
+        gate said before.
         """
 
         def call(rt, item):
-            rt.start(item, work_item.ref)
+            report = rt.start(item, work_item.ref)
             self._bind_session(rt, item, session_id, runner)
+            if report is None or not self._entered_a_human_gate(rt, report):
+                return
+            rt.advance(
+                item, ref=work_item.ref, event={"comments": comments_from(routed)}
+            )
 
         self._guarded("start", work_item, cwd, call)
 
@@ -710,6 +764,22 @@ class GraphLink:
             return None
 
     @staticmethod
+    def _entered_a_human_gate(rt: Any, report: Any) -> bool:
+        """Whether the node just entered waits on a human (issue-199).
+
+        Read from the compiled graph the runtime is walking, so the contribution
+        loop's ``goal-definition``, the outer loop's ``phase-selection`` and any
+        graph a repository supplies all answer for themselves. Anything
+        unreadable answers *no*: not evaluating a gate leaves the work item
+        exactly where the pre-issue-199 code left it, which is the safe side.
+        """
+        try:
+            return rt.graph.node(str(getattr(report, "node", ""))).actor == "human"
+        except Exception as exc:  # noqa: BLE001 — a fake runtime, or a node that went
+            logger.debug("could not resolve the entered node's actor: %s", exc)
+            return False
+
+    @staticmethod
     def _bind_session(rt: Any, item_id: str, session_id: str, runner: str) -> None:
         """Record which session works this item (issue-148, D6).
 
@@ -768,6 +838,9 @@ class GraphLink:
             # same state this context comes from, because the prompt is
             # rendered far from the runtime and there is no config to ask.
             surface=str(getattr(state, "surface", "") or ""),
+            # And which loop it is walking (issue-185), for the one prompt line
+            # that differs between owning a work item and contributing to one.
+            loop=str(getattr(state, "loop", "") or ""),
         )
 
     @staticmethod

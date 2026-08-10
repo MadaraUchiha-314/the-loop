@@ -104,6 +104,13 @@ selection, into `graph-state.json` and the portable record; there is deliberatel
 config key for it, in either config file. A pull request's own inner loop is never
 configurable.
 
+**The row is absent on a contribution** (issue-199). `pdlc-contribution-loop` joins a work
+item somebody else is already running: it authors one artifact on that thread and owns no
+outer loop whose surface could be placed, so the question is not asked, a
+`outer-loop-on-pull-request` row typed into the reply anyway is inert, and the frozen
+record carries no surface at all — which reads back as *never asked*, not as *the default
+was kept*. The checklist says where the conversation happens instead of offering a box.
+
 ## `show`
 
 Print the shipped graph: every node with its flags (`required`, `skippable`, `opt-in`,

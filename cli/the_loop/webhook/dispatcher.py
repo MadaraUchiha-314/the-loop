@@ -1785,7 +1785,13 @@ class Dispatcher:
         )
         # The spawned session enters the graph (issue-113/148): a failed spawn
         # must not leave a labelled ticket pointing at a node nobody stands on.
-        self.graphlink.on_spawn(work_item, cwd, session_id=session_id, runner="tmux")
+        # The spawning event rides along (issue-199): when the start node is a
+        # human gate, the comment that armed this work item is an input to it —
+        # `the-loop contribute` carries the goal — and it is the one comment the
+        # control path never forwards, so this is its only chance to be read.
+        self.graphlink.on_spawn(
+            work_item, cwd, session_id=session_id, runner="tmux", routed=routed
+        )
         # Tell the humans on the ticket that the session exists and how to
         # attach (issue-86). Best-effort: never affects the dispatch outcome.
         self.announcer.announce(session)

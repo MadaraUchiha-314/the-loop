@@ -85,6 +85,12 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
     carrying **two different** ones SHALL execute nothing and forward nothing
     (`control.ambiguous`). The control surface is **comments only** — a keyword in the
     work item's own body or a PR description is not a command.
+  - A command comment is executed instead of forwarded, so it can never reach a gate as
+    an event — which is why a **spawning** one is handed to the graph with the spawn
+    (issue-199): WHEN a spawn enters a start node whose actor is `human` THEN that
+    node's exit chain SHALL be evaluated once with the spawning comment attached, so
+    `the-loop contribute` carrying a goal reaches `phase-selection` on its own. An agent
+    start node and a respawn SHALL evaluate nothing.
   - **Creating** a work item that already carries the label arms it, exactly like
     labelling an existing one: it still waits for an explicit start.
   - WHEN `routing.control.requireStartCommand` is true (**the default**) THEN a labelled
@@ -421,6 +427,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-199 | The spawning comment reaches the graph (2026-08-10): a spawn that enters a **human** start node now evaluates that node's exit chain once, with the spawning event's comments attached — so `the-loop contribute` carrying a goal moves the item to `phase-selection` without a second command, where before the arming comment (executed by the control path, never forwarded) could reach no gate at all and the item sat at its first node until some unrelated event arrived; agent start nodes and respawns evaluate nothing | [spec](../specs/issue-199/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/199) |
 | issue-193 | The ingress adopts a repository that never ran `/the-loop:init` (2026-08-10): the graph coupling writes the-loop's built-in default to `.the-loop/harness-config.yaml` — naming the work item's owner/repo so `originRepo` resolves — after the `origin`-remote ownership proof and **before** the spec-directory gate, so the session the daemon just spawned has a config to read even on the run whose graph is skipped; recorded as `harness.config_scaffolded`, never overwriting an existing config, and never for a contribution | [spec](../specs/issue-193/), [decision-073](../decisions/decision-073.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/193) |
 | issue-186 | A seventh control keyword, `cleanup` (`the-loop cleanup`, `routing.control.keywords.cleanup`): releases a work item's LOCAL resources — every endpoint's tmux session, the workspace checkout, the machine-local session record — keeping the portable record and touching nothing remote. Runs with or without a live session (the retroactive case), disarms the item like a stop, and runs automatically on a closure **only** when the close event names an authorized actor; otherwise it is deferred and recorded | [spec](../specs/issue-186/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/186) |
 | issue-185 | A sixth control keyword, `contribute` (`the-loop contribute`, `routing.control.keywords.contribute`): arms and spawns exactly as `start` at both spawn seams (same durable record, same named-actor authorization, same ambiguity refusal) and selects `pdlc-contribution-loop` for the work item's outer walk — resolved by the GraphLink state-first, then from the portable control record | [spec](../specs/issue-185/), [decision-070](../decisions/decision-070.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/185) |

@@ -175,7 +175,8 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   (the `outer-loop-on-pull-request` box). It is deliberately not a config key in any
   file: one project has both a one-repo bugfix and a three-repo migration. Commit and
   push the artifact either way and link it; never re-paste it into a comment. The
-  **inner** loop has no such choice — a PR's loop is iterated on that PR. See
+  **inner** loop has no such choice — a PR's loop is iterated on that PR — and neither
+  does a **contribution**, which owns no outer loop and is never offered the box. See
   `reference/collaboration.md` § Where questions go.
 - **RULE: mark every comment/reply as your own (loop prevention).** You post as the
   operator's own credentials, so an unmarked reply is indistinguishable from a human

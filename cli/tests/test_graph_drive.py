@@ -222,6 +222,40 @@ def test_the_render_names_node_status_and_the_complete_verb():
     assert "not part of the event payload" in block
 
 
+def test_the_render_places_the_outer_loops_artifacts():
+    ctx = GraphContext(
+        current_node="design",
+        phase="design",
+        status="in-progress",
+        reason="",
+        messages=(),
+        next_command="create-design",
+        actor="agent",
+        surface="pull-request",
+    )
+    assert "iterate the outer loop's artifacts on: a pull request" in (
+        render_graph_context(ctx, "issue-1")
+    )
+
+
+def test_a_contribution_is_not_told_where_to_put_an_outer_loop():
+    """issue-199 — a contribution has no outer loop, so the prompt does not
+    name one: its plan and results belong on the thread it was invited into."""
+    ctx = GraphContext(
+        current_node="scoped-plan",
+        phase="",
+        status="in-progress",
+        reason="",
+        messages=(),
+        next_command="contribute-to",
+        actor="agent",
+        loop="pdlc-contribution-loop",
+    )
+    block = render_graph_context(ctx, "issue-1")
+    assert "a contribution has no outer loop" in block
+    assert "outer loop's artifacts" not in block
+
+
 def test_the_render_carries_a_gate_verdict():
     ctx = GraphContext(
         current_node="gate",
@@ -244,6 +278,19 @@ def test_on_spawn_records_the_session_binding(runtime, repo):
     _link(repo, runtime).on_spawn(REF, str(repo), session_id="s-9", runner="tmux")
     bound = GraphState.load(_spec(repo), "issue-1").session
     assert bound == {"id": "s-9", "runner": "tmux", "alive": True}
+
+
+def test_a_spawn_never_evaluates_an_agent_start_node(runtime, repo):
+    """issue-199 — the spawn-time evaluation is for human gates only.
+
+    An agent node's exit chain reads artifacts the session has not been given a
+    chance to write; running it at spawn would count a failed attempt against
+    work that has not started. Here `design.md` is deliberately absent.
+    """
+    _link(repo, runtime).on_spawn(REF, str(repo), session_id="s-1", runner="tmux")
+    state = GraphState.load(_spec(repo), "issue-1")
+    assert state.current_node == "design" and state.parked is None
+    assert state.nodes["design"].attempts == 1 and not state.nodes["design"].last_block
 
 
 def test_on_close_marks_the_binding_dead(runtime, repo):
