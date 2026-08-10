@@ -42,6 +42,7 @@ from the_loop.graph.model import (
     load_graph,
 )
 from the_loop.graph.state import GraphState
+from the_loop.sessions import WorkItemRef
 
 WORK_ITEM = "issue-9"
 REF = "github:o/r#9"
@@ -606,3 +607,147 @@ class TestContributionWalk:
             "reviewer-briefing",
         }
         assert all(s["by"] == "@owner" for s in state.skips.values())
+
+
+# -- no outer loop to place (issue-199) ---------------------------------------
+
+
+class _Routed:
+    """The one shape :func:`comments_from` reads off an ingress event."""
+
+    def __init__(self, body, author="owner"):
+        self.event = "issue_comment"
+        self.payload = {"comment": {"body": body, "user": {"login": author}}}
+
+
+def _contribution_link(runtime):
+    """A GraphLink whose ownership proof passes and whose runtime is the
+    contribution loop's — the daemon seam, without a git clone."""
+    from the_loop.graphlink import GraphLink, GraphLinkConfig
+
+    class _TrustingLink(GraphLink):
+        def _checkout_belongs_to(self, root, work_item):
+            return True
+
+        def _outer_loop_name(self, root, spec_dir, item_id, work_item):
+            return PDLC_CONTRIBUTION_LOOP
+
+        def _build_runtime(self, cwd, spec_dir, pr_number=None, pr_repo="", loop=""):
+            assert loop == PDLC_CONTRIBUTION_LOOP
+            return runtime
+
+    return _TrustingLink(
+        GraphLinkConfig(enabled=True), control=ControlConfig(enabled=False)
+    )
+
+
+def test_the_contribution_checklist_offers_no_surface_row(runtime, repo, fake_github):
+    """R1 — a loop with no outer loop is not asked where to put one."""
+    from the_loop.graph.hooks.selection import SURFACE_TOKEN
+
+    fake_github.comments = [{"user": {"login": "owner"}, "body": GOAL_COMMENT}]
+    runtime.start(WORK_ITEM, ref=REF)
+    runtime.advance(WORK_ITEM, ref=REF)  # goal freezes → phase-selection asks
+    checklist = fake_github.posted[-1]
+    assert "which phases does this work item need" in checklist
+    assert SURFACE_TOKEN not in checklist
+    assert "Where should the outer loop happen?" not in checklist
+    assert "There is no outer loop to place on this one" in checklist
+
+
+def test_the_outer_loops_checklist_still_asks_the_question(repo, fake_github):
+    """The other side of R1: nothing about the work-item loop changes."""
+    from the_loop.graph.hooks.selection import SURFACE_TOKEN
+    from the_loop.graph.runtime import Runtime
+
+    outer = Runtime(
+        repo,
+        graph=load_graph(name=PDLC_WORK_ITEM_LOOP),
+        config={"authorizedUsers": ["@owner"]},
+    )
+    outer.start(WORK_ITEM, ref=REF)
+    checklist = fake_github.posted[-1]
+    assert f"- [ ] `{SURFACE_TOKEN}`" in checklist
+    assert "Where should the outer loop happen?" in checklist
+
+
+def test_a_ticked_surface_row_in_a_contributions_reply_changes_nothing(
+    runtime, repo, fake_github
+):
+    """R1.3 — not asked, not read: the token is inert on a contribution,
+    however it reaches the gate."""
+    fake_github.comments = [{"user": {"login": "owner"}, "body": GOAL_COMMENT}]
+    runtime.start(WORK_ITEM, ref=REF)
+    runtime.advance(WORK_ITEM, ref=REF)
+    runtime.advance(
+        WORK_ITEM,
+        ref=REF,
+        event=_reply("- [x] outer-loop-on-pull-request\nthe-loop execute"),
+    )
+    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    assert state.current_node == "context-intake"
+    assert state.surface == ""  # nothing chosen, because nothing was offered
+    frozen = state.decisions["phase-selection"]["graph"]
+    assert frozen["loop"] == PDLC_CONTRIBUTION_LOOP and frozen["surface"] == ""
+    assert "phase-selection" not in state.skips  # and it declared no phase away
+    confirmation = next(
+        p for p in fake_github.posted if "phase selection recorded" in p
+    )
+    assert "outer loop happens" not in confirmation
+
+
+def test_the_arming_comment_reaches_the_goal_gate_at_spawn(runtime, repo, fake_github):
+    """R2 — `the-loop contribute` alone moves the item to phase-selection.
+
+    The arming comment is the one comment a gate can never be handed later:
+    the control path executes it instead of forwarding it. So the spawn hands
+    it over, and no second command is needed.
+    """
+    fake_github.comments = [{"user": {"login": "owner"}, "body": GOAL_COMMENT}]
+    link = _contribution_link(runtime)
+    link.on_spawn(
+        WorkItemRef.parse(REF),
+        str(repo),
+        session_id="s-1",
+        runner="tmux",
+        routed=_Routed(GOAL_COMMENT),
+    )
+    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    assert state.current_node == "phase-selection"
+    assert state.decisions["goal-definition"]["goal"]["by"] == "@owner"
+    assert any("which phases does this work item need" in p for p in fake_github.posted)
+    # The binding is still recorded, and by the session that was spawned.
+    assert (state.session or {})["id"] == "s-1"
+
+
+def test_a_spawn_with_no_goal_parks_the_gate_with_its_reason(
+    runtime, repo, fake_github
+):
+    """R2.2 — waiting is the ordinary outcome, and now it says so: the pointer
+    stays put, parked with the question on it."""
+    link = _contribution_link(runtime)
+    link.on_spawn(
+        WorkItemRef.parse(REF), str(repo), routed=_Routed("thanks, looks useful")
+    )
+    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    assert state.current_node == "goal-definition"
+    assert "goal and success criteria" in str((state.parked or {}).get("reason") or "")
+
+
+def test_a_respawn_re_evaluates_nothing(runtime, repo, fake_github):
+    """R2.3 — only a FRESH entry evaluates: a respawn re-records the binding
+    and leaves the pointer exactly where it was."""
+    link = _contribution_link(runtime)
+    link.on_spawn(WorkItemRef.parse(REF), str(repo), routed=_Routed("no goal here"))
+    before = GraphState.load(_spec_dir(repo), WORK_ITEM).as_dict()
+    # Answerable now — and still not answered here: a respawn is not an event.
+    fake_github.comments = [{"user": {"login": "owner"}, "body": GOAL_COMMENT}]
+    link.on_spawn(
+        WorkItemRef.parse(REF),
+        str(repo),
+        session_id="s-2",
+        routed=_Routed(GOAL_COMMENT),
+    )
+    after = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    assert after.current_node == "goal-definition"
+    assert after.as_dict()["nodes"] == before["nodes"]

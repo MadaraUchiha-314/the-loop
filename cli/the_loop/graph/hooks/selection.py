@@ -54,6 +54,15 @@ the requirements, design and testing plan are iterated on the ticket, which is
 what keeps a multi-repo item from opening a pull request that only ever holds a
 discussion. The INNER loop has no such question: a pull request's loop runs on
 that pull request.
+
+**And a loop with no outer loop is not asked it at all** (issue-199). The
+contribution loop (issue-185) joins somebody else's in-progress work item: it
+authors one artifact, on that thread, and it never owns an outer loop whose
+surface could be placed. Offering the box there would ask a question with no
+true answer — and a ticked one would promise a pull request the loop does not
+open. So the row is not rendered, not parsed, and not confirmed for a
+contribution; the frozen record simply carries no surface, which is exactly
+what "there was nothing to choose" looks like when read back.
 """
 
 from __future__ import annotations
@@ -108,6 +117,29 @@ DEFAULT_SURFACE = SURFACE_WORK_ITEM
 #: sentence rather than a bare word: it sits among phase rows, and a reader
 #: unticking boxes must never wonder whether they are dropping a phase.
 SURFACE_TOKEN = "outer-loop-on-pull-request"
+
+#: What a work item with no outer loop to place records instead of a surface
+#: (issue-199). Empty rather than the default, because the two are different
+#: facts: `work-item` is a choice that was offered and left alone, and `""` is a
+#: question that was never asked. The runtime writes only a non-empty value into
+#: `graph-state.json`, so nothing downstream has to learn a third literal.
+NO_SURFACE = ""
+
+
+def _asks_surface(ctx: HookContext) -> bool:
+    """Whether THIS loop has an outer loop whose surface can be chosen.
+
+    Every loop but the contribution one does (issue-199). A contribution joins
+    an in-progress work item as a guest: its one artifact is iterated on that
+    thread, it opens no pull request to carry a spec chain, and `pdlc-pr-loop`
+    never reaches this gate at all — so the question has no true answer there
+    and is not asked. Derived from the runtime's own compiled graph, the same
+    source the phase rows come from, so the checklist a user reads and the
+    vocabulary their reply is validated against stay one list.
+    """
+    from ..model import PDLC_CONTRIBUTION_LOOP
+
+    return str(getattr(ctx.graph, "name", "") or "") != PDLC_CONTRIBUTION_LOOP
 
 
 def _resolve(ctx: HookContext):
@@ -213,19 +245,34 @@ def _checklist_body(ctx: HookContext) -> str:
             "and in every `the-loop check` from now on.",
             "",
         ]
+    if _asks_surface(ctx):
+        lines += [
+            "**Where should the outer loop happen?** This is not a phase — it "
+            "is where the requirements, design, testing plan and task list are "
+            "iterated with you:",
+            "",
+            f"- [ ] `{SURFACE_TOKEN}` — on a pull request in this repository.",
+            "",
+            "Leave it unticked (the default) and they happen **on this work "
+            "item**, here. Tick it and they happen on a pull request instead. "
+            "Either way the artifacts are committed files linked from here, and "
+            "each repository this work item contributes code to gets its own "
+            "pull request for the inner loop.",
+            "",
+        ]
+    else:
+        # A contribution has no outer loop to place (issue-199), so there is no
+        # box here — but say where the conversation happens anyway, rather than
+        # leaving a reader of somebody else's ticket to guess.
+        lines += [
+            "There is no outer loop to place on this one: the-loop is "
+            "**contributing** to a work item somebody else is already running, "
+            "so its plan and its results are posted on this thread, and the "
+            "code it writes arrives as an ordinary pull request on the "
+            "repository it targets.",
+            "",
+        ]
     lines += [
-        "**Where should the outer loop happen?** This is not a phase — it is "
-        "where the requirements, design, testing plan and task list are "
-        "iterated with you:",
-        "",
-        f"- [ ] `{SURFACE_TOKEN}` — on a pull request in this repository.",
-        "",
-        "Leave it unticked (the default) and they happen **on this work item**, "
-        "here. Tick it and they happen on a pull request instead. Either way "
-        "the artifacts are committed files linked from here, and each "
-        "repository this work item contributes code to gets its own pull "
-        "request for the inner loop.",
-        "",
         "A doc fix usually needs little more than implementation and "
         "verification; a feature usually needs every phase. Reply "
         f"`{keyword}` with the boxes untouched "
@@ -339,6 +386,8 @@ def _frozen_graph(
     return {
         "loop": getattr(graph, "name", "") or "",
         "workItem": ctx.work_item.id,
+        # Empty for a loop that was never asked the question (issue-199): the
+        # record says "no surface was chosen", not "the default was kept".
         "surface": surface,
         "nodes": nodes,
     }
@@ -449,16 +498,22 @@ def _confirmation(
             "**Refused** (these phases are not selectable and will run): "
             + ", ".join(f"`{r}`" for r in refused),
         ]
+    if surface:
+        lines += [
+            "",
+            (
+                "The outer loop happens **on a pull request** in this "
+                f"repository, as @{actor} chose."
+                if surface == SURFACE_PULL_REQUEST
+                else "The outer loop happens **here, on this work item** (the "
+                "default). Each repository this item contributes code to gets "
+                "its own pull request for the inner loop."
+            ),
+        ]
+    # A loop that was never asked the surface question confirms nothing about
+    # it (issue-199): claiming a default here would report a choice the human
+    # was never offered.
     lines += [
-        "",
-        (
-            "The outer loop happens **on a pull request** in this repository, "
-            f"as @{actor} chose."
-            if surface == SURFACE_PULL_REQUEST
-            else "The outer loop happens **here, on this work item** (the "
-            "default). Each repository this item contributes code to gets its "
-            "own pull request for the inner loop."
-        ),
         "",
         "Starting the loop.",
     ]
@@ -504,7 +559,10 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
     if not _CHECK_LINE.search(body):
         body, source = _checklist_state(ctx), "checklist"
     skips, opt_ins, refused = _parse_selection(body, skippable, opt_in, protected)
-    surface = _parse_surface(body)
+    # Not asked, not read (issue-199): a loop with no outer loop records no
+    # surface, so a `SURFACE_TOKEN` row typed into a contribution's reply — by
+    # habit, or by copy-paste from another ticket — changes nothing.
+    surface = _parse_surface(body) if _asks_surface(ctx) else NO_SURFACE
     actor = str(reply["author"]).lstrip("@")
 
     confirmation_error = ""

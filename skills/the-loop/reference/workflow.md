@@ -281,7 +281,11 @@ selection, recorded in `graph-state.json` and in the portable record, and render
 every assignment and prompt from then on.
 
 **The inner loop has no such choice.** A pull request's loop is iterated on that pull
-request, always. See [decision-069](../../../docs/decisions/decision-069.md).
+request, always. **Nor does a contribution** (issue-199): it joins a work item somebody
+else is running and owns no outer loop, so the box is not offered, a token typed into the
+reply anyway is inert, and the record carries no surface — its one `contribution.md` is
+iterated on the thread it was invited into. See
+[decision-069](../../../docs/decisions/decision-069.md).
 
 ## The contribution loop — joining an existing work item (issue-185)
 
@@ -303,10 +307,14 @@ Two required nodes are the loop's structural invariants:
   `the-loop contribute` comment itself qualifies — the gate re-reads the thread). The
   goal is frozen into graph state with provenance and confirmed in a comment; the-loop
   never invents, infers or completes one. The criteria are the intervention's
-  **definition of done**.
+  **definition of done**. A goal that rode in with the arming comment releases the gate
+  **at spawn** (issue-199): `the-loop contribute` alone carries the item to
+  `phase-selection`, with no second command.
 - **`phase-selection`** — the same human act as everywhere (issue-179): every other
   phase of this loop is selectable, so a contained instruction can keep as little as
-  implementation + verification, with each omission attributed.
+  implementation + verification, with each omission attributed. The checklist carries
+  **no `outer-loop-on-pull-request` row** here: a contribution owns no outer loop to
+  place, so it is not asked (issue-199).
 
 The walk:
 `goal-definition → phase-selection → context-intake → scoped-plan → plan-approval →

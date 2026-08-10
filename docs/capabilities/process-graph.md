@@ -47,6 +47,13 @@ There are exactly **two** runtime concepts and **one** contract between them.
     and `Verification results` is recorded (in the execution log when the plan was
     declared away). Every node but `goal-definition` and `phase-selection` is
     skippable (skip sets `plan` and `review-chain`).
+  - A contribution has **no outer loop**, so it SHALL NOT be asked where to put one
+    (issue-199). The `phase-selection` checklist SHALL omit the `outer-loop-on-pull-request`
+    row for this loop, the token SHALL be ignored if a reply carries it anyway, the
+    confirmation SHALL claim no surface, and the frozen record SHALL carry an **empty**
+    surface — the fact "never asked", which is not the fact "the default was kept". The
+    session's `$graph_context` SHALL likewise place its work on the work item without
+    naming an outer loop.
   - Which loop a work item walks SHALL be recorded durably: `GraphState.loop`, written
     once at start from the compiled graph's name, resolved state-first (then the
     portable control record, then the default) by the daemon and every CLI verb. Only
@@ -507,6 +514,15 @@ reader.
   work item's start node when a session is spawned for it (**every spawn enters** —
   issue-148 closed the gap where tmux-hosted spawns never entered), and SHALL advance
   it at most one node boundary when an event is delivered to an existing session.
+  WHEN the start node a spawn enters is a **human** node THEN its exit chain SHALL be
+  evaluated once, with the spawning event's comments attached (issue-199): the comment
+  that spawns a session is often the one that answers the gate it lands on — the arming
+  `the-loop contribute` carries the goal — and the control path consumes it rather than
+  forwarding it, so no later event can deliver it. A contribution that states its goal up
+  front SHALL therefore reach `phase-selection` without a second command. An **agent**
+  start node SHALL NOT be evaluated at spawn (its chain reads artifacts the session has
+  not been given a chance to write), and a **respawn** SHALL evaluate nothing: only an
+  entry that actually moved the pointer.
 - **The session drives it too** (issue-148): `the-loop graph complete <id>` is the
   node-completion claim. WHEN a claim arrives THEN the runtime SHALL evaluate the
   current node's exit chain and advance only when it passes; the claim SHALL carry no
@@ -619,6 +635,7 @@ reader.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-199 | A contribution is not asked where its outer loop goes, and does not wait for a second command (2026-08-10): `pdlc-contribution-loop` joins somebody else's in-progress work item and owns no outer loop, so `phase-selection` omits the `outer-loop-on-pull-request` row for it, ignores the token if a reply carries it, confirms no surface, and freezes an **empty** one — *never asked*, not *default kept* — with the session prompt placing the work on the thread instead of naming an outer loop; and a spawn now evaluates a **human** start node once with the spawning event attached, so the goal that rode in with `the-loop contribute` moves the item to `phase-selection` on its own (agent start nodes and respawns evaluate nothing) | [spec](../specs/issue-199/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/199) |
 | issue-194 | Outbound hooks stopped being dead and silent (2026-08-10): a graph verb with no `--ref` had been handing the bare work-item id to the integrations, where every operation raised `malformed work item ref` — so nothing was posted, no label was set, and the command printed a clean answer. The ref is now **derived** from `ticketing.github` plus the `issue-<n>` id (a new `graph/refs.py`, the inverse of the ingress's `spec_id_for`, refusing anything that does not validate rather than guessing), and a best-effort hook that records an `error` while passing is reported as a warning line on the `NodeReport` plus a `graph.hook_degraded` event — without changing any node's verdict or edge. `graph force`/`graph skip` report a failed audit comment in their `warnings`; `_split_ref`'s error names both remedies; `sideeffects.py` resolves its integration at call time, so the seam every test patches finally applies to it | [spec](../specs/issue-194/), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/194) |
 | issue-193 | An unconfigured repository is adopted, and a guest still is not (2026-08-10): the four state-changing graph verbs (`complete`, `advance`, `force`, `skip`) write the-loop's built-in default harness config into a repository carrying none, before the runtime is built — so `repoInitialized` is true on the very run that adopted it — while `check`/`status`/`show` write nothing, and `pdlc-contribution-loop` adopts nothing at all, keeping issue-185's spec-tree exclusion and thread publishing pointed at the repositories they were written for | [spec](../specs/issue-193/), [decision-073](../decisions/decision-073.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/193) |
 | issue-188 | Opt-in phases, and the design critic round (2026-08-10): a second node marker, `optIn: true` — the mirror of `skippable`, implying it (same vocabulary, same `on: skipped` edge, same provenance) but **off unless an authorized human ticks it** at `phase-selection`; `required`×`optIn` and an opt-in `skipSets` member refused at compile time; a node `description` rendered beside its checklist row; selections recorded as `optIns` in `graph-state.json` (`graph.opt_ins_selected`), filtered through the compiled graph on every read, carried into the frozen graph per node, and named in the confirmation comment; an unselected opt-in node routed around and reported by `check` as *not selected* — never as a declaration, never as a pass — which also leaves every pre-issue-188 work item unblocked; the outer loop ships one such phase, `design-critic-review`, between `design` and `test-planning` | [spec](../specs/issue-188/), [decision-071](../decisions/decision-071.md), [review-loop](review-loop.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/188) |

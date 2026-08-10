@@ -64,6 +64,10 @@ author at `phase-selection` (issue-183) — and it applies to the **outer** loop
 - It is deliberately **not** a setting in `harness-config.yaml` or `cli-config.yaml`: it
   is a property of the work item, and it is frozen by the same signed reply that freezes
   the phase selection.
+- A **contribution** is not offered the box at all (issue-199): `pdlc-contribution-loop`
+  joins a work item somebody else is already running, so there is no outer loop to place
+  — its one `contribution.md` is iterated on that thread, and the code arrives as an
+  ordinary pull request on the repository it targets.
 - This is the *reference, don't duplicate* rule (`SKILL.md`) reaching its conclusion: the
   artifact is a checked-in file, and the file, the discussion and the approval belong in
   one place.

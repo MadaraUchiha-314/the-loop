@@ -42,7 +42,9 @@ the `/the-loop:work-on` superset command and granular per-step commands
   request in the origin repository (the `outer-loop-on-pull-request` box). Either way the
   artifact SHALL be a committed file linked from the ticket — the choice is the review
   surface, not whether the chain is checked in. A pull request's own loop SHALL always be
-  iterated on that pull request.
+  iterated on that pull request, and a **contribution** SHALL NOT be asked the question at
+  all (issue-199): it joins a work item somebody else is running, so its one artifact is
+  iterated on that thread and its record carries no surface.
 - WHEN a work item starts as a fuzzy idea THEN the loop SHALL begin with a
   `brainstorm.md` root artifact (optional Phase 0) and convert it to requirements once
   locked.

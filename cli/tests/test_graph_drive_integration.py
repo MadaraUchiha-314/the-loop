@@ -59,6 +59,7 @@ class _SeqLink:
         self.ctx = ctx
         self.report = report
         self.seq = []
+        self.spawn_routed = None
 
     def context(self, work_item, cwd):
         self.seq.append("context")
@@ -68,7 +69,11 @@ class _SeqLink:
         self.seq.append("advance")
         return self.report
 
-    def on_spawn(self, work_item, cwd, session_id="", runner=""):
+    def on_spawn(self, work_item, cwd, session_id="", runner="", routed=None):
+        # `routed` is the spawning event (issue-199): the real link hands it to
+        # a human start node's gate, so the double must accept it — and record
+        # it, because "the arming comment reaches the graph" is a seam too.
+        self.spawn_routed = routed
         self.seq.append(("spawn", session_id, runner))
 
     def on_close(self, work_item, cwd):
@@ -242,6 +247,28 @@ def test_a_graph_fault_never_costs_a_delivery(tmp_path):
     dispatcher.stop()
     assert "the-loop process state" not in tmux.prompts[0]
     assert "looks good" in tmux.prompts[0]
+
+
+def test_the_spawning_event_reaches_the_graph(tmp_path):
+    """Feature: the arming comment is an input to the node it lands on (issue-199)
+
+    Scenario: a comment spawns a session for a work item
+      Given no session for a labelled work item
+      When an authorized comment spawns one
+      Then the graph is entered with that same event attached
+      And a start node that is a human gate can therefore read it
+
+    Requirement: docs/specs/issue-199/bugfix.md R2.1
+    """
+    link = _SeqLink(ctx=_ctx())
+    registry, dispatcher, tmux = _dispatcher(
+        tmp_path, link, spawn_on_unmatched="always", authorized_users=["octo"]
+    )
+    routed = _comment(body="the-loop contribute\nGoal: fix the backoff")
+    dispatcher.handle(routed)
+    assert _wait(lambda: any(isinstance(s, tuple) for s in link.seq))
+    dispatcher.stop()
+    assert link.spawn_routed is routed
 
 
 def test_a_spawn_reads_context_before_render_and_enters_after(tmp_path):
