@@ -1,3 +1,9 @@
+## v9.6.2 (2026-08-10)
+
+### Fix
+
+- **issue-197**: the item's author gates spawning, and nothing else (#198)
+
 ## v9.6.1 (2026-08-10)
 
 ### Fix
