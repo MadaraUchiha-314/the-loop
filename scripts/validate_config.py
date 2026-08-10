@@ -34,6 +34,11 @@ SCHEMA_TARGETS = [
             ROOT / ".the-loop" / "harness-config.yaml",
             # Templates are internal to the-loop and ship with the skill (issue #36).
             ROOT / "skills" / "the-loop" / "templates" / "harness-config.yaml",
+            # The CLI's built-in default — the config a repository that never ran
+            # `/the-loop:init` is worked under (issue-193). Byte-identical to the
+            # template above, but validated in its own right: it is what the-loop
+            # writes into other people's repositories.
+            ROOT / "cli" / "the_loop" / "harness-config.default.yaml",
         ],
     ),
     (

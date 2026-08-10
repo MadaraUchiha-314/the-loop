@@ -348,8 +348,12 @@ def _config_phases(path: Path) -> List[str]:
     [
         REPO_ROOT / ".the-loop" / "harness-config.yaml",
         REPO_ROOT / "skills" / "the-loop" / "templates" / "harness-config.yaml",
+        # The CLI's built-in default (issue-193): the config a repository that never ran
+        # `/the-loop:init` is worked under. A phase list the graph does not walk would be
+        # a process the-loop invents for exactly the repositories least able to notice.
+        REPO_ROOT / "cli" / "the_loop" / "harness-config.default.yaml",
     ],
-    ids=["own-config", "template-config"],
+    ids=["own-config", "template-config", "packaged-default"],
 )
 def test_p4_the_graph_defines_the_phase_sequence(config_path: Path) -> None:
     """P4 (issue-148, R6.2) — one source of truth for the process.

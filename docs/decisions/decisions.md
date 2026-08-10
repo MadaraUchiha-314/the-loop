@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [073](decision-073.md) | the-loop adopts an unconfigured repository with a packaged default — except as a guest | proposed | 2026-08-10 |
 | [072](decision-072.md) | `poll start --daemon` is opt-in, not the default | proposed | 2026-08-10 |
 | [071](decision-071.md) | A phase may be offered rather than imposed (`optIn`), and the design critic round | proposed | 2026-08-10 |
 | [070](decision-070.md) | Joining existing work is a third loop, armed by a keyword and gated on a stated goal | proposed | 2026-08-09 |

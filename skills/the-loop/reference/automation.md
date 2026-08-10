@@ -185,6 +185,20 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
   item (`pull_request` `closed`) — the receiver **auto-closes** the session, so a
   finished work item never leaves a dangling `active` session.
 
+- **A repository with no `.the-loop/` is adopted, not improvised around** (issue-193,
+  `docs/decisions/decision-073.md`). the-loop is routinely pointed at a repository that
+  never ran `/the-loop:init`. WHEN the daemon's graph coupling — or one of the
+  state-changing graph verbs (`graph complete|advance|force|skip`) — works such a
+  repository THEN the-loop writes its **built-in default harness config** (shipped inside
+  the CLI package, the same baseline `/the-loop:init --defaults` writes) to
+  `.the-loop/harness-config.yaml`, naming the work item's owner/repo, and records
+  `harness.config_scaffolded`. So a session spawned into a fresh clone reads a real
+  config rather than inventing one. Three limits: an existing config of either filename is
+  **never** opened, `the-loop check` and the other read-only commands write nothing, and a
+  **contribution** (`the-loop contribute`) adopts nothing at all — the-loop stays out of
+  the history of a repository it was invited into as a guest. Tailor a scaffolded config
+  with `/the-loop:init`.
+
 ## Predictability & execution guarantees
 
 The PDLC is largely fixed; the harness should not re-derive it each run. Steps are made

@@ -382,6 +382,20 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   watched repository. A work item skipped for want of that directory is recorded as
   `graph.skipped` — the delivery still succeeds, so without the record an inert graph had
   no explanation (issue-123). See [process-graph](process-graph.md).
+- **A repository that never adopted the-loop is adopted on the way in** (issue-193,
+  [decision-073](../decisions/decision-073.md)). WHEN the coupling handles a work item in
+  a checkout it has proved to be that work item's own repository, and the checkout carries
+  neither `.the-loop/harness-config.yaml` nor the pre-rename `config.yaml`, THEN the-loop
+  SHALL write its [built-in default](../config/harness-config.md#when-a-repository-has-no-config)
+  there — naming the work item's `owner`/`repo` under `ticketing.github` — and record it as
+  `harness.config_scaffolded`. Before this, the daemon would clone such a repository, spawn
+  a session in it, and leave that session with no workflow, tooling or phases to read.
+  Three properties hold: it happens **after** the ownership proof (a payload can never name
+  a directory, only fail to match one), **before** the spec-directory gate (a brand-new work
+  item has no spec directory, yet its session is already running in the checkout), and
+  **never for a contribution** — a repository the-loop was invited into as a guest keeps
+  the-loop out of its history. An existing config of either name is never opened, so no
+  inbound event can replace an operator's policy.
 - The `webhooks.*` and `routing.*` keys above live in the **CLI config**
   (`cli-config.yaml`, resolved via `--config`/env/cwd/home — see `cli/README.md`),
   independent of any repo's
@@ -407,6 +421,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-193 | The ingress adopts a repository that never ran `/the-loop:init` (2026-08-10): the graph coupling writes the-loop's built-in default to `.the-loop/harness-config.yaml` — naming the work item's owner/repo so `originRepo` resolves — after the `origin`-remote ownership proof and **before** the spec-directory gate, so the session the daemon just spawned has a config to read even on the run whose graph is skipped; recorded as `harness.config_scaffolded`, never overwriting an existing config, and never for a contribution | [spec](../specs/issue-193/), [decision-073](../decisions/decision-073.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/193) |
 | issue-186 | A seventh control keyword, `cleanup` (`the-loop cleanup`, `routing.control.keywords.cleanup`): releases a work item's LOCAL resources — every endpoint's tmux session, the workspace checkout, the machine-local session record — keeping the portable record and touching nothing remote. Runs with or without a live session (the retroactive case), disarms the item like a stop, and runs automatically on a closure **only** when the close event names an authorized actor; otherwise it is deferred and recorded | [spec](../specs/issue-186/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/186) |
 | issue-185 | A sixth control keyword, `contribute` (`the-loop contribute`, `routing.control.keywords.contribute`): arms and spawns exactly as `start` at both spawn seams (same durable record, same named-actor authorization, same ambiguity refusal) and selects `pdlc-contribution-loop` for the work item's outer walk — resolved by the GraphLink state-first, then from the portable control record | [spec](../specs/issue-185/), [decision-070](../decisions/decision-070.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/185) |
 | issue-183 | Cross-repository linkage (2026-08-09): a qualified closing reference to another repository now routes to the work item **there** instead of being dropped, so a pull request delivering one repository's share of a multi-repo work item can reach its ticket; the PR's inner loop is addressed by repository as well as number, and an inner-loop prompt's claim command carries `--pr-repo` | [spec](../specs/issue-183/), [decision-069](../decisions/decision-069.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/183) |

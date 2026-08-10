@@ -407,6 +407,13 @@ EVENT_TYPES: Dict[str, str] = {
         "checkout's git exclude file — working state the contribution PR can "
         "never carry (work_item, path). issue-185, PR #187 review."
     ),
+    "harness.config_scaffolded": (
+        "the-loop adopted a repository that carried no harness config, by writing "
+        "its built-in defaults to `.the-loop/harness-config.yaml` (work_item, path, "
+        "repo: the owner/repo named in it, or empty). The answer to 'who put this "
+        "file in my repository?' — nothing else the-loop does creates configuration "
+        "in a checkout, and an existing config is never overwritten. issue-193."
+    ),
     "graph.skipped": (
         "The ingress→graph coupling declined to touch a work item's graph, so a "
         "successful delivery moved nothing (work_item, action: start | advance, "
