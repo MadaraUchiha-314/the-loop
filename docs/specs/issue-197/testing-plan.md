@@ -79,19 +79,39 @@ summaries and tool findings over this repository's own files.
 
 ## Verification activities
 
-- [ ] T1 — unit tests, run and green
-- [ ] T2 — integration scenario, run and green
-- [ ] T4 — abuse cases, run and green
-- [ ] T5 — whole suite, no regression against the 1731-passing baseline
-- [ ] T6 — template parity, run and green
-- [ ] T13 — `make check` green
-- [ ] Red→green evidence captured for every new/rewritten test
-- [ ] Evidence committed and redaction-checked
+- [x] T1 — unit tests, run and green
+- [x] T2 — integration scenario, run and green
+- [x] T4 — abuse cases, run and green
+- [x] T5 — whole suite, no regression against the 1731-passing baseline
+- [x] T6 — template parity, run and green
+- [x] T13 — `make check` green
+- [x] Red→green evidence captured for every new/rewritten test
+- [x] Evidence committed and redaction-checked
 
 ## Verification results
 
-Filled in at `verification`: the exact command, the outcome and a link to the committed
-evidence, for every row above.
+Executed 2026-08-10 on branch `claude/github-issue-197-53nj83` at commit `b446761`.
+
+| Row | Command | Outcome | Evidence |
+|-----|---------|---------|----------|
+| T1 | `pytest -q cli/tests/test_poller.py` | pass — 115 passed | [`make-check.txt`](evidence/make-check.txt) |
+| T2 | `pytest -q cli/tests/test_poller_integration.py` | pass — 17 passed | [`make-check.txt`](evidence/make-check.txt) |
+| T4 | `pytest -q cli/tests/test_poller.py -k "strangers or allowlist or unauthorized"` | pass — 12 passed, 103 deselected | [`make-check.txt`](evidence/make-check.txt) |
+| T5 | `make test` (inside `make check`) | pass — **1742 passed, 1 skipped** (baseline 1731 + 11 new) | [`make-check.txt`](evidence/make-check.txt) |
+| T6 | `pytest -q cli/tests/test_interaction.py` | pass — 32 passed | [`make-check.txt`](evidence/make-check.txt) |
+| T13 | `make check` | pass — ruff clean, ruff-format clean, markdownlint 0 errors, pyright 0 errors, config valid | [`make-check.txt`](evidence/make-check.txt) |
+| red→green | the 13 new/rewritten/kept tests against the pre-fix source (`cli/the_loop` restored from `1c72315`) | **8 failed, 5 passed**; all 13 pass after the fix | [`red-before-fix.txt`](evidence/red-before-fix.txt) |
+
+The five that pass pre-fix are the guard rails — they pin behaviour this work item
+deliberately does **not** change (R2.1's refusal, R1.2's per-comment drops, R2.3's disarm,
+abuse cases A1 and A2), so passing before *and* after is the correct result for them. The
+eight that fail are the bug: an authorized user's comment on a stranger's item, the
+first-sight hold-back, the recorded-arming spawn gate, the withheld-spawn event, and the
+prompt paragraph.
+
+`make test` counts: baseline 1731 → 1742. Eleven added (nine unit, two integration, one
+template) and one rewritten in place — `test_first_sight_ignores_the_thread_of_an_unauthorized_items_author`,
+which asserted the bug and is now `…forwards_an_authorized_start_on_a_strangers_item`.
 
 ## Review comments
 

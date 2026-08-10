@@ -1,0 +1,22 @@
+# Red-before-fix evidence — issue-197
+
+The new and rewritten tests run against the PRE-FIX source (cli/the_loop restored
+from commit 1c72315, i.e. the-loop 9.5.1 behaviour), with the post-fix test files.
+8 fail, 5 pass. The 5 that pass are the guard rails — they pin behaviour this work
+item deliberately does NOT change (R2.1's refusal, R1.2's per-comment drops, R2.3's
+disarm, abuse cases A1/A2) — so passing before and after is the correct result.
+
+$ uv run --project cli python -m pytest -q <the 13 tests>
+
+
+cli/tests/test_interaction.py:186: AssertionError
+=========================== short test summary info ============================
+FAILED cli/tests/test_poller.py::test_first_sight_forwards_an_authorized_start_on_a_strangers_item
+FAILED cli/tests/test_poller.py::test_an_authorized_comment_is_forwarded_on_a_strangers_item
+FAILED cli/tests/test_poller.py::test_a_recorded_start_arms_presence_on_a_strangers_item
+FAILED cli/tests/test_poller.py::test_a_live_session_on_a_strangers_item_still_receives_events
+FAILED cli/tests/test_poller.py::test_the_withheld_spawn_is_recorded_and_stops_once_the_item_is_armed
+FAILED cli/tests/test_poller.py::test_an_empty_allowlist_arms_nothing_by_itself
+FAILED cli/tests/test_poller_integration.py::test_a_maintainer_starts_the_loop_on_an_outside_contribution
+FAILED cli/tests/test_interaction.py::test_the_spawn_prompt_frames_the_work_item_itself_as_untrusted
+8 failed, 5 passed in 5.66s
