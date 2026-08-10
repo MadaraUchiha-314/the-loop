@@ -84,6 +84,19 @@ status: in-progress
 - **Next:** the PR briefing, then human review.
 - **Blockers:** none.
 
+### 2026-08-10 — rebased onto 9.6.0, decision renumbered
+
+- **Phase:** needs-review
+- **Did:** Rebased onto `origin/main` at the reviewer's request. Two conflicts, both from
+  issue-193 landing first: it had already taken **decision-073**, so this work item's record
+  became [decision-074](../../decisions/decision-074.md) — file renamed, index row moved, and
+  every reference updated (specs, the capability doc, `poll.md`, `concepts.md`,
+  `routing-options.md`, the config template and two source comments). The other conflict was
+  the capability doc's history table, where both work items added a row; both are kept.
+- **Checkpoint/tests:** `make check` green on the rebased branch.
+- **Next:** human review.
+- **Blockers:** none.
+
 ## Documentation
 
 Four user-facing documents stated the rule this change replaces, and all four ship with it:
