@@ -60,7 +60,7 @@ routing:
   # Execution control (issue-106): the label is necessary, NOT sufficient.
   # An authorized user starts/stops/pauses/resumes a work item by commenting
   # one of these keywords (or with `the-loop sessions start|stop|pause|
-  # resume`, which posts the same keyword back to the ticket). A comment
+  # resume|cleanup`, which posts the same keyword back to the ticket). A comment
   # carrying a keyword is executed by the-loop, never forwarded to the agent.
   # Set requireStartCommand: false for the pre-issue-106 label-alone spawn.
   control:
@@ -71,6 +71,14 @@ routing:
       stop: "the-loop stop"
       pause: "the-loop pause"
       resume: "the-loop resume"
+      # DESTRUCTIVE (issue-186). Releases this work item's LOCAL resources —
+      # every endpoint's tmux session, the workspace checkout (uncommitted work
+      # in it is GONE) and the machine-local session record — ignoring the
+      # keepSessionOnClose/keepCheckoutOnClose retention settings. Keeps the
+      # portable record (control, poll, graph) and touches nothing remote.
+      # A closure by an AUTHORIZED user does this on its own; a closure naming
+      # no actor defers to this keyword. Set to "" to disable it.
+      cleanup: "the-loop cleanup"
   # Where a session the daemon drives takes its ANSWERS from (issue-134).
   # Until this existed, a spawned session was never told whether a human was
   # at its terminal, so the model guessed — and both guesses fail: asking

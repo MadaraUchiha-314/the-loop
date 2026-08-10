@@ -116,7 +116,8 @@ plugin's root directory; in Cursor, resolve it to the plugin's install directory
 
 4. **Create phase labels/tags** in the ticketing system for the workflow state
    machine — one per `workflow.phases`, named `<workflow.phaseLabelPrefix><phase>`
-   (e.g. `loop:requirements-definition`, `loop:design`, … `loop:complete`). On GitHub
+   (e.g. `loop:requirements-definition`, `loop:design`, … `loop:complete`,
+   `loop:cleanup`). On GitHub
    create issue labels; on Jira create the equivalent statuses/labels. Skip any that
    already exist. **No skip labels are needed** (issue-177): which phases a work item
    walks is chosen on the ticket itself, at the loop's `phase-selection` phase, by an

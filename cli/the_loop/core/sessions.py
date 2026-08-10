@@ -21,8 +21,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from .. import cli_config, eventlog
+from ..cleanup import SESSION, TMUX, WORKSPACE
 from ..comments import post_issue_comment
 from ..control import (
+    CLEANUP,
     PAUSE,
     RESUME,
     START,
@@ -39,7 +41,7 @@ from ..webhook.dispatcher import TmuxConfig
 from ..webhook.router import RoutedEvent
 from ..workitem import WorkItemRef
 
-CONTROL_VERBS = (START, PAUSE, RESUME, STOP)
+CONTROL_VERBS = (START, PAUSE, RESUME, STOP, CLEANUP)
 
 #: The harness CLIs a registration may name, and the binary each one needs.
 HARNESS_BINARIES = {
@@ -314,10 +316,10 @@ def control_session(
     last — the comment is a *report* of what happened, so a failing ``gh``
     never leaves the ticket claiming something the-loop did not do.
 
-    A **disarming** verb (pause/stop) is recorded whether or not there was
-    anything to act on, so a stopped work item does not re-spawn on the next
-    event. An **arming** one (start/resume) is recorded only when it actually
-    acted (owner decision on PR #107).
+    A **disarming** verb (pause/stop/cleanup) is recorded whether or not there
+    was anything to act on, so a stopped or torn-down work item does not
+    re-spawn on the next event. An **arming** one (start/resume) is recorded only
+    when it actually acted (owner decision on PR #107).
     """
     if verb not in CONTROL_VERBS:
         raise ValueError(f"unknown control verb {verb!r} (one of {CONTROL_VERBS})")
@@ -328,7 +330,7 @@ def control_session(
     actor = _local_actor()
     messages: List[Dict[str, str]] = []
 
-    if verb in (PAUSE, STOP):
+    if verb in (PAUSE, STOP, CLEANUP):
         store.record(work_item, verb, source="cli", actor=actor)
 
     effect, code = _apply(verb, work_item, config, registry_dir, portable_dir, messages)
@@ -416,6 +418,9 @@ def _apply(
         )
         return "paused", 0
 
+    if verb == CLEANUP:
+        return _cleanup(work_item, config, registry_dir, portable_dir, messages)
+
     # STOP
     if session is None:
         messages.append(
@@ -440,6 +445,86 @@ def _apply(
         }
     )
     return "stopped", 0
+
+
+def _cleanup(
+    work_item: WorkItemRef,
+    config: Optional[dict],
+    registry_dir: str,
+    portable_dir: str,
+    messages: List[Dict[str, str]],
+) -> Tuple[str, int]:
+    """Release the work item's local resources, through the *daemon's* dispatcher.
+
+    Not a second teardown implementation: the graph transition, the tmux kills
+    and the workspace removal behave exactly as they do for a cleanup issued by
+    comment. Reports each irreversible fact on its own line — losing a checkout
+    means losing whatever was uncommitted in it, and that is not something an
+    operator should have to infer from a summary count.
+
+    Exit code 0 even when nothing was found (issue-186 R4.3): "there is nothing
+    of this work item left on this machine" is the state the verb asks for, not
+    a failure.
+    """
+    dispatcher, routing = _dispatcher_for(config, registry_dir, portable_dir)
+    try:
+        outcome = dispatcher.cleanup_work_item(
+            work_item,
+            reason="cleanup requested from the CLI",
+            actor=_local_actor(),
+            source="cli",
+        )
+    finally:
+        dispatcher.stop(timeout=5)
+
+    if TMUX in outcome.removed:
+        messages.append(
+            {
+                "stream": "out",
+                "text": (
+                    "ended "
+                    + ", ".join(outcome.endpoints)
+                    + " — their tmux sessions and transcripts are gone"
+                ),
+            }
+        )
+    if WORKSPACE in outcome.removed:
+        messages.append(
+            {
+                "stream": "out",
+                "text": (
+                    f"removed the workspace checkout under {routing.workspace.root} "
+                    "— uncommitted work in it is gone"
+                ),
+            }
+        )
+    if SESSION in outcome.removed:
+        messages.append(
+            {"stream": "out", "text": "removed the machine-local session record"}
+        )
+    for error in outcome.errors:
+        messages.append({"stream": "err", "text": f"error: {error}"})
+    if not outcome.found:
+        messages.append(
+            {
+                "stream": "err",
+                "text": (
+                    f"nothing to clean up for {work_item.ref}; recorded the "
+                    "request, so it will not spawn on its own"
+                ),
+            }
+        )
+        return "nothing-to-clean", 0
+    messages.append(
+        {
+            "stream": "out",
+            "text": (
+                f"cleaned up {work_item.ref} — its portable record (control, poll, "
+                "graph) is kept, and nothing remote was touched"
+            ),
+        }
+    )
+    return ("cleaned" if outcome.ok else "partial"), (0 if outcome.ok else 1)
 
 
 def _spawn_for_start(

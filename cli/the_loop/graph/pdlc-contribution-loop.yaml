@@ -249,6 +249,18 @@ nodes:
     entry: [set-phase-label, log-entry]
     exit: []
 
+  # The teardown node (issue-186), identical to the outer loop's: a contribution
+  # is a work item too, so it accumulates the same local resources and gets the
+  # same recorded release of them. No inbound edge — the-loop enters it directly.
+  # (`pdlc-pr-loop` deliberately has none: a pull request owns no checkout of its
+  # own, and its endpoint's tmux session is torn down with the work item's.)
+  - id: cleanup
+    phase: cleanup
+    actor: code
+    terminal: true
+    entry: [set-phase-label, log-entry]
+    exit: []
+
   - id: escalated
     actor: human
     terminal: true

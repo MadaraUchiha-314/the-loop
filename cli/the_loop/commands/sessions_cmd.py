@@ -1,4 +1,4 @@
-"""``the-loop sessions register|list|start|pause|resume|stop|attach|close|reset``.
+"""``the-loop sessions register|list|start|pause|resume|stop|cleanup|attach|close|reset``.
 
 Links a work item (``github:<owner>/<repo>#<number>``) to a harness session so
 the webhook receiver can route events to it. Harnesses register themselves
@@ -18,6 +18,14 @@ transitions: `reset` forgets everything this machine holds about a work item —
 its session record, its control and poll sections, its checkout — so an item
 mid-flight when the CLI was fixed starts over on the new code. It posts nothing
 to the ticket: there is no `reset` keyword, deliberately (decision-050).
+
+Since issue-186 there is a second remover, and the two are not the same verb.
+`reset` is bootstrap-and-recovery: it forgets the **portable** record too, so
+the item starts over. `cleanup` is the end of a life cycle: it releases the
+local resources — tmux sessions, workspace checkout, the machine-local record —
+and *keeps* the portable half, because persistence and tracking are what outlive
+the machine. It is a control verb like the other four, so it does post its
+keyword back to the ticket.
 
 Since issue-161 this module is a **renderer**: register, list, close and the
 four control verbs all execute in :mod:`the_loop.core.sessions`, reached
@@ -47,7 +55,7 @@ from .gh_webhook import _CONFIG_PATH, _state_layout
 from .poll import _build_dispatcher
 from .. import cli_config, eventlog
 from ..client.routing import routed, service_error
-from ..control import PAUSE, RESUME, START, STOP, ControlStore
+from ..control import CLEANUP, PAUSE, RESUME, START, STOP, ControlStore
 from ..core import sessions as core_sessions
 from ..reset import WORKSPACE, reset_work_item, work_items_with_state
 from ..runner import TmuxRunner
@@ -318,8 +326,16 @@ class SessionsCommand(Command):
             PAUSE: "Pause delivery to a work item's session (it keeps its state)",
             RESUME: "Resume delivery to a paused session",
             STOP: "Stop execution: close the session and end its harness",
+            CLEANUP: (
+                "Release a finished work item's LOCAL resources: kill its tmux "
+                "sessions, remove its workspace checkout (uncommitted work in it "
+                "is gone) and delete its machine-local session record. Ignores "
+                "the keepSessionOnClose/keepCheckoutOnClose retention settings, "
+                "keeps the portable record (control, poll, graph), and touches "
+                "nothing remote."
+            ),
         }
-        for command in (START, PAUSE, RESUME, STOP):
+        for command in (START, PAUSE, RESUME, STOP, CLEANUP):
             sub = actions.add_parser(command, help=control_help[command])
             sub.add_argument("--work-item", required=True)
             sub.add_argument("--registry-dir", default=registry_dir)

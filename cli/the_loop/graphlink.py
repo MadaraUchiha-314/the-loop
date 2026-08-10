@@ -404,6 +404,33 @@ class GraphLink:
 
         self._guarded("close", work_item, cwd, call)
 
+    def on_cleanup(self, work_item: WorkItemRef, cwd: str, reason: str = "") -> None:
+        """The item's LOCAL resources are about to go — record it (issue-186).
+
+        Called **before** anything is torn down, because the node's entry chain
+        writes into the very checkout the cleanup then removes: the phase label
+        reaches the ticket and the execution-log checkpoint reaches the working
+        tree while that tree still exists.
+
+        One deliberate difference from every other entry point here: the
+        ``_awaiting_start`` gate is not applied. That gate exists to stop work
+        *starting* on an item nobody armed — but cleanup runs at the end of the
+        life cycle, and a work item is disarmed by the very command that asks for
+        it, so applying the gate would make the graph silently skip the one
+        transition it is meant to record.
+
+        Best-effort like everything here: a loop with no ``cleanup`` node, a
+        checkout that is gone, or a work item with no spec directory all leave
+        the teardown itself untouched.
+        """
+        self._guarded(
+            "clean",
+            work_item,
+            cwd,
+            lambda rt, item: rt.cleanup(item, ref=work_item.ref, reason=reason),
+            require_started=False,
+        )
+
     def context(self, work_item: WorkItemRef, cwd: str) -> Optional[GraphContext]:
         """Resolve the item's graph state, read-only (issue-148, D2).
 
@@ -534,8 +561,15 @@ class GraphLink:
         call,
         pr_number: Optional[int] = None,
         pr_repo: str = "",
+        require_started: bool = True,
     ) -> Optional[Any]:
         """Run ``call`` behind every skip path, swallowing any failure.
+
+        ``require_started`` is the one gate a caller may switch off, and exactly
+        one does: :meth:`on_cleanup` (issue-186). Every other action here would
+        be *starting work*, which is what the start requirement exists to hold
+        back; releasing a finished item's resources is the opposite end of the
+        life cycle, and the item is disarmed by the command that asks for it.
 
         The gate order is load-bearing: ``_checkout_belongs_to`` runs **before**
         anything reads the checkout, because resolving the spec directory reads
@@ -556,7 +590,7 @@ class GraphLink:
                 action,
             )
             return None
-        if self._awaiting_start(work_item):
+        if require_started and self._awaiting_start(work_item):
             logger.debug(
                 "%s has not been started; not %sing its graph", work_item.ref, action
             )

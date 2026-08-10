@@ -252,6 +252,22 @@ EVENT_TYPES: Dict[str, str] = {
         "poll went, found: false when there was nothing here, was_live, error). "
         "Appended like every other event: a reset can never erase its own trail."
     ),
+    "session.cleaned": (
+        "A work item's LOCAL resources were released — `the-loop cleanup`, the "
+        "same verb from the CLI/API, or a closure by an authorized user "
+        "(work_item, actor, source: comment | cli | close-event, removed: which "
+        "of tmux|workspace|session went, endpoints: the conversations ended, "
+        "found: false when there was nothing here, error). The PORTABLE record "
+        "— control, poll, graph — is deliberately untouched, and nothing remote "
+        "is changed (issue-186)."
+    ),
+    "cleanup.deferred": (
+        "A work item closed but was NOT cleaned up, because the close event "
+        "named no actor or an unauthorized one (work_item, reason: no-actor | "
+        "unauthorized-actor, actor, closed_as, delivery_id). Fails closed on "
+        "purpose: an authorized user's `the-loop cleanup` is the remedy "
+        "(issue-186)."
+    ),
     "session.harness_terminated": (
         "The harness process inside a retained tmux session was ended when the "
         "work item closed, so the pane stays readable but can no longer be "
@@ -263,8 +279,9 @@ EVENT_TYPES: Dict[str, str] = {
         "(work_item, strategy: worktree | clone, checkout, branch)."
     ),
     "workspace.cleaned": (
-        "A work item's checkout was removed after its PR merged/closed "
-        "(work_item, strategy)."
+        "A work item's checkout was removed — when its session closed, or when "
+        "its local resources were released by `the-loop cleanup` (work_item, "
+        "strategy). Uncommitted work in that checkout went with it."
     ),
     "workspace.trusted": (
         "A spawned session's environment was pre-seeded in the harness's own "
@@ -368,6 +385,13 @@ EVENT_TYPES: Dict[str, str] = {
         "parked rather than guessed at (work_item, node, outcome)."
     ),
     "graph.completed": ("A work item reached a terminal node (work_item, node)."),
+    "graph.cleaned": (
+        "A work item entered the terminal `cleanup` node because the-loop was "
+        "about to release its local resources (work_item, from: the node it "
+        "stood on, reason) — issue-186. Not a force: no gate is bypassed and no "
+        "verdict is claimed, so `check --recompute` still reports whatever never "
+        "ran."
+    ),
     "graph.spec_tree_excluded": (
         "A contribution started in a repository that never adopted the-loop "
         "(no harness config), so its spec tree was written into the "

@@ -191,7 +191,7 @@
         },
         "phases": {
           "type": "array",
-          "description": "Ordered phase state machine for a work item. Each maps to a ticket label. `phase-selection` is where every work item starts: the-loop asks which phases this item needs and waits for an authorized user's `the-loop execute` (issue-177). `brainstorming` is optional — a work item may enter it or start directly at `requirements-definition`. `test-planning` produces testing-plan.md before the task DAG that references it, and `verification` executes that plan after implementation (issue-163).",
+          "description": "Ordered phase state machine for a work item. Each maps to a ticket label. `phase-selection` is where every work item starts: the-loop asks which phases this item needs and waits for an authorized user's `the-loop execute` (issue-177). `brainstorming` is optional — a work item may enter it or start directly at `requirements-definition`. `test-planning` produces testing-plan.md before the task DAG that references it, and `verification` executes that plan after implementation (issue-163). `cleanup` is the terminal phase the-loop enters when it releases the work item's LOCAL resources — tmux sessions, workspace checkout, machine-local session record (issue-186); a work item reaches it after `complete`, or from wherever it stood when it was closed unfinished.",
           "default": [
             "not-started",
             "phase-selection",
@@ -203,7 +203,8 @@
             "implementation",
             "verification",
             "needs-review",
-            "complete"
+            "complete",
+            "cleanup"
           ],
           "items": {
             "type": "string",
@@ -218,7 +219,8 @@
               "implementation",
               "verification",
               "needs-review",
-              "complete"
+              "complete",
+              "cleanup"
             ]
           }
         }

@@ -1,6 +1,6 @@
 # `sessions`
 
-The work-item ↔ harness-session registry, the four execution-control commands, and the
+The work-item ↔ harness-session registry, the five execution-control commands, and the
 reset that forgets a work item entirely.
 
 ```bash
@@ -13,11 +13,12 @@ the-loop sessions close  --work-item github:OWNER/REPO#N [--keep-tmux|--kill-tmu
 the-loop sessions reset  --work-item github:OWNER/REPO#N [--work-item …] [--dry-run]
 the-loop sessions reset  --all [--dry-run]
 
-# execution control — the same four commands as the comment keywords
-the-loop sessions start  --work-item github:OWNER/REPO#N [--no-comment]
-the-loop sessions pause  --work-item github:OWNER/REPO#N [--no-comment]
-the-loop sessions resume --work-item github:OWNER/REPO#N [--no-comment]
-the-loop sessions stop   --work-item github:OWNER/REPO#N [--no-comment]
+# execution control — the same five commands as the comment keywords
+the-loop sessions start   --work-item github:OWNER/REPO#N [--no-comment]
+the-loop sessions pause   --work-item github:OWNER/REPO#N [--no-comment]
+the-loop sessions resume  --work-item github:OWNER/REPO#N [--no-comment]
+the-loop sessions stop    --work-item github:OWNER/REPO#N [--no-comment]
+the-loop sessions cleanup --work-item github:OWNER/REPO#N [--no-comment]
 ```
 
 Every subcommand accepts `--registry-dir`, defaulting to
@@ -169,7 +170,7 @@ one bad ref in a list resets none of them. Nothing is posted to the ticket — t
 
 ## Execution control
 
-`start` / `pause` / `resume` / `stop` apply exactly what the corresponding
+`start` / `pause` / `resume` / `stop` / `cleanup` apply exactly what the corresponding
 [comment keyword](/config/cli/routing-options#execution-control) applies, from the machine
 running the-loop:
 
@@ -179,6 +180,8 @@ running the-loop:
 - **`pause`** holds events; the session keeps its conversation.
 - **`resume`** delivers events again.
 - **`stop`** takes the normal close path.
+- **`cleanup`** [releases the work item's local resources](#cleanup) — the end of the
+  life cycle, and the only one of the five that destroys anything.
 
 | Flag | Default | Meaning |
 |------|---------|---------|
@@ -193,6 +196,59 @@ action back and re-applies it.
 
 Posting is best-effort: `--no-comment` skips it, and a missing or failing `gh` only warns —
 it never undoes the local action.
+
+## `cleanup`
+
+Release the **local** resources a finished work item accumulated on this machine, and
+nothing else. The counterpart to `start`: where that verb creates a checkout and a tmux
+session, this one reclaims them.
+
+```console
+$ the-loop sessions cleanup --work-item github:octo/repo#15
+ended github:octo/repo#16, github:octo/repo#15 — their tmux sessions and transcripts are gone
+removed the workspace checkout under /srv/the-loop/ws — uncommitted work in it is gone
+removed the machine-local session record
+cleaned up github:octo/repo#15 — its portable record (control, poll, graph) is kept, and nothing remote was touched
+commented 'the-loop cleanup' on github:octo/repo#15
+```
+
+::: danger Destructive, and deliberately unconditional
+It ignores [`tmux.keepSessionOnClose`](/config/cli/routing-options#tmux-keepsessiononclose)
+and
+[`workspace.keepCheckoutOnClose`](/config/cli/routing-options#workspace-keepcheckoutonclose).
+Those settings answer "what should survive the end of the work"; `cleanup` is you saying
+you are done with all of it, and a retention default that silently made this a no-op would
+be a verb that lies. **Uncommitted work in the checkout is gone.**
+:::
+
+| | What goes | What stays |
+|---|---|---|
+| tmux | every endpoint's session — the work item's own **and one per PR** delivering it, harness ended first | — |
+| workspace | the work item's worktree, or its whole folder under the `clone` strategy | the shared per-repository clone |
+| registry | `<state.root>/local/<slug>.json` | — |
+| portable | — | `control`, `poll` and the frozen graph: persistence and tracking outlive the machine |
+| remote | — | **everything**: no branch, pull request, issue or label is touched |
+
+The work item's graph pointer moves to the terminal
+[`cleanup` node](/capabilities/process-graph) first — so the ticket carries a
+`loop:cleanup` label and the transition is on the record — and the item is durably
+**disarmed**, like `stop`, so nothing re-spawns afterwards.
+
+It works with or without a live session, and with or without a record: a checkout left
+behind by a crash is located from the work-item ref alone. "Nothing to clean up" is a
+normal outcome, not an error.
+
+### `cleanup` vs `reset`
+
+Both remove things; they answer different questions.
+
+| | `cleanup` | `reset` |
+|---|---|---|
+| Asks | "this work is over — reclaim the machine's resources" | "start this work item over on the code I have just fixed" |
+| Portable record | **kept** | cleared (`control` + `poll`) |
+| Retention settings | ignored | honoured |
+| Trigger | a comment keyword, the CLI, or an authorized closure | the CLI only |
+| Posts to the ticket | yes — it is a control verb | no, deliberately ([decision-050](/decisions/decision-050)) |
 
 ## Label-gated auto-execution
 

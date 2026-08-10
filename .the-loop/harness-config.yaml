@@ -39,6 +39,7 @@ workflow:
     - verification            # the plan, executed; results + evidence recorded
     - needs-review
     - complete
+    - cleanup                 # issue-186: the-loop released this item's LOCAL resources
 
 tooling:
   languages: [python]      # the-loop itself: a Python CLI + markdown docs

@@ -76,7 +76,8 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   selects the **contribution loop** for the item's outer walk: the-loop joining an
   existing, in-progress issue or PR as a contributor, which then refuses to begin
   until an authorized user has stated a goal and success criteria
-  (see [process-graph](process-graph.md)). All configurable (issue-135 — the
+  (see [process-graph](process-graph.md)) — and `the-loop cleanup` (issue-186), the
+  other end of the life cycle. All configurable (issue-135 — the
   pre-issue-135 defaults were `the-loop:start-execution` and its three siblings).
   - WHEN an **authorized** user's comment on the work item or its PR carries one of
     them THEN the-loop SHALL execute that command and SHALL NOT forward the comment to
@@ -96,8 +97,25 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
     does not start it, because otherwise the label would still be the trigger, one
     event later — only a start issued while the item is armed starts it. The same
     asymmetry applies throughout: arming commands (`start`, `resume`) are remembered
-    only when they act, disarming ones (`pause`, `stop`) always.
+    only when they act, disarming ones (`pause`, `stop`, `cleanup`) always.
     `requireStartCommand: false` restores the pre-issue-106 label-alone behaviour.
+  - **cleanup** SHALL release the work item's **local** resources — every endpoint's
+    tmux session, the workspace checkout, the machine-local session record — and keep
+    the portable record and everything remote (issue-186; the mechanics are in
+    [interactive-sessions](interactive-sessions.md)). It is the one control command that
+    **destroys**, so it carries the same named-actor re-check the others do and runs
+    with or without a live session: the retroactive case — a checkout still on disk long
+    after its session went — is what the command is for. It disarms the item like a stop.
+  - WHEN a work item closes AND the close event names an **authorized** actor THEN the
+    cleanup above SHALL run after the session is auto-closed; WHEN it names none, or an
+    unauthorized one, THEN the cleanup SHALL be **deferred** (`cleanup.deferred`) and
+    the session merely closed. A close action is not obliged to say who performed it,
+    and an unattributable event must not destroy an operator's uncommitted work — the
+    `cleanup` keyword from a named human is the remedy, which is why it exists.
+    In practice this splits the two ingresses: a **webhook** closure carries `sender`,
+    so it cleans up when that login is authorized, while a **polled** closure is
+    reconstructed from the item's state and names no actor at all — so on a polling
+    deployment every closure defers, and cleanup is always the keyword's job.
   - **pause** SHALL suspend delivery for a work item's session while keeping its
     conversation (`session.paused`; suppressed events are recorded as
     `dispatch.dropped`/`session-paused` and are **not** replayed on **resume**);
@@ -380,6 +398,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-186 | A seventh control keyword, `cleanup` (`the-loop cleanup`, `routing.control.keywords.cleanup`): releases a work item's LOCAL resources — every endpoint's tmux session, the workspace checkout, the machine-local session record — keeping the portable record and touching nothing remote. Runs with or without a live session (the retroactive case), disarms the item like a stop, and runs automatically on a closure **only** when the close event names an authorized actor; otherwise it is deferred and recorded | [spec](../specs/issue-186/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/186) |
 | issue-185 | A sixth control keyword, `contribute` (`the-loop contribute`, `routing.control.keywords.contribute`): arms and spawns exactly as `start` at both spawn seams (same durable record, same named-actor authorization, same ambiguity refusal) and selects `pdlc-contribution-loop` for the work item's outer walk — resolved by the GraphLink state-first, then from the portable control record | [spec](../specs/issue-185/), [decision-070](../decisions/decision-070.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/185) |
 | issue-183 | Cross-repository linkage (2026-08-09): a qualified closing reference to another repository now routes to the work item **there** instead of being dropped, so a pull request delivering one repository's share of a multi-repo work item can reach its ticket; the PR's inner loop is addressed by repository as well as number, and an inner-loop prompt's claim command carries `--pr-repo` | [spec](../specs/issue-183/), [decision-069](../decisions/decision-069.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/183) |
 | issue-172 | Which session owns a PR's events stopped being recomputed from `gh` per event (2026-08-07): the work item's single session record now carries its `pullRequests[]`, each an endpoint with its own tmux session and harness conversation (`routing.tmux.sessionPerPr`, default on — `false` collapses to the pre-issue-172 single session), spawned lazily and closed individually when its PR closes. Additive resolution; issue-93's derivation and issue-101's close rule unchanged | [spec](../specs/issue-172/), [decision-064](../decisions/decision-064.md), [state](../cli/state.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/172) |

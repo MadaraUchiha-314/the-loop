@@ -386,6 +386,27 @@ nodes:
     entry: [set-phase-label, log-entry]
     exit: []
 
+  # The other end of the life cycle (issue-186). the-loop accumulates LOCAL
+  # resources per work item — a tmux session per endpoint, a workspace checkout,
+  # a machine-local session record — and nothing ever came back for them. This
+  # node is where that teardown is recorded: the-loop enters it (from `complete`
+  # on the ordinary path, from wherever the pointer stood on a `wontfix`) just
+  # before reclaiming them, so "the resources were released" is a transition with
+  # a timestamp rather than an invisible side effect.
+  #
+  # `actor: code` — nobody is being asked to do anything here; the-loop itself
+  # acts. And note the absence of any inbound edge, which is deliberate and has
+  # the shipped precedent of `escalated`: this is not a node a work item walks
+  # into by satisfying a gate. `complete` therefore stays terminal, which matters
+  # because `await-inner-loops`, `on_pr_close` and the dispatcher's status
+  # derivation all read it that way.
+  - id: cleanup
+    phase: cleanup
+    actor: code
+    terminal: true
+    entry: [set-phase-label, log-entry]
+    exit: []
+
   - id: escalated
     actor: human
     terminal: true

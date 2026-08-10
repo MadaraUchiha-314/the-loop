@@ -185,7 +185,7 @@
         },
         "control": {
           "type": "object",
-          "description": "Execution control: the keywords an AUTHORIZED user steers the-loop with, in a comment on the work item or its PR (issue-106). Before this, `authorizedUsers` said WHO may be an input and `autoExecuteLabel` said WHICH items may run \u2014 nothing said WHEN, so labelling an issue was itself an irreversible trigger. A comment carrying a declared keyword is interpreted by the-loop and NOT forwarded to the harness; the four session commands are also available as `the-loop sessions start|pause|resume|stop`, which post the same keyword back to the ticket (marked as the-loop's own so it is never read back). Control parsing runs strictly AFTER the existing guards \u2014 the self-comment marker and authorizedUsers \u2014 so it never becomes a second, weaker way in; the parser recognises the fixed vocabulary only and yields one of the declared commands, never text from the comment.",
+          "description": "Execution control: the keywords an AUTHORIZED user steers the-loop with, in a comment on the work item or its PR (issue-106). Before this, `authorizedUsers` said WHO may be an input and `autoExecuteLabel` said WHICH items may run \u2014 nothing said WHEN, so labelling an issue was itself an irreversible trigger. A comment carrying a declared keyword is interpreted by the-loop and NOT forwarded to the harness; the five session commands are also available as `the-loop sessions start|pause|resume|stop|cleanup`, which post the same keyword back to the ticket (marked as the-loop's own so it is never read back). Control parsing runs strictly AFTER the existing guards \u2014 the self-comment marker and authorizedUsers \u2014 so it never becomes a second, weaker way in; the parser recognises the fixed vocabulary only and yields one of the declared commands, never text from the comment.",
           "additionalProperties": false,
           "properties": {
             "enabled": {
@@ -228,6 +228,11 @@
                   "type": "string",
                   "default": "the-loop contribute",
                   "description": "Arms the work item exactly as `start` does \u2014 same spawn policy, same durable record, same named-actor authorization \u2014 and additionally selects the CONTRIBUTION loop (`pdlc-contribution-loop`, issue-185) for its outer walk: the-loop joins an EXISTING, in-progress issue or PR as a contributor rather than owning it from scratch. That loop refuses to begin until an authorized user has stated a goal and success criteria (a `Goal:` line plus a `Success criteria:` bullet list, in one comment \u2014 the comment carrying this keyword qualifies), and its phases are sized for a scoped intervention."
+                },
+                "cleanup": {
+                  "type": "string",
+                  "default": "the-loop cleanup",
+                  "description": "The other end of the life cycle (issue-186): release the LOCAL resources this work item accumulated \u2014 the tmux session of every endpoint (its own plus one per pull request), the workspace checkout, and the machine-local session record. DESTRUCTIVE and deliberately unconditional: it ignores `tmux.keepSessionOnClose` and `workspace.keepCheckoutOnClose`, so uncommitted work in the checkout is gone. It keeps the PORTABLE record (control, poll, frozen graph) \u2014 that is persistence and tracking, not a resource \u2014 and performs NO remote action: no branch, pull request, issue or label is touched. Works retroactively on any work item the-loop tracked, with or without a live session, and durably disarms the item like `stop`. A closure by an AUTHORIZED user cleans up on its own; a closure that names no actor (or an unauthorized one) defers to this keyword, which is why it exists."
                 }
               }
             }
