@@ -28,16 +28,39 @@ OPERATIONS: FrozenSet[str] = frozenset({"post-message"})
 
 
 class _SlackBase:
+    """Where the webhook URL comes from — the one thing both transports share.
+
+    Two sources, `integrations.slack.url` first (issue-203). The env-only rule
+    that preceded it made the single value that turns notifications on the one
+    value the-loop's own configuration could not hold: it had to be exported into
+    every process that might deliver one — the poll daemon, the harness sessions
+    it spawns, a fresh machine's provisioning — and a restart from a shell
+    missing the export stopped delivery with nothing louder than a log line.
+
+    An incoming-webhook URL is a bearer credential for exactly one channel, so
+    whether it is a secret is the operator's call to make, not the harness's. It
+    is still a credential: inlining it commits it, which is why `urlEnv` remains
+    the default and the documentation states the trade-off rather than the
+    choice. Precedence never depends on the environment — otherwise reading the
+    config would not tell you where a notification goes.
+    """
+
     name = "slack"
     operations = OPERATIONS
 
-    def __init__(self, url_env: str):
+    def __init__(self, url_env: str, url: str = ""):
         self.url_env = url_env
+        self.url = url
 
     def _url(self) -> str:
-        url = os.environ.get(self.url_env)
+        # Read at call time, not construction time: a provider outlives many
+        # graph transitions and must see the environment as it is when it posts.
+        url = self.url or os.environ.get(self.url_env) or ""
         if not url:
-            raise IntegrationError(f"slack has no webhook url — set {self.url_env}")
+            raise IntegrationError(
+                "slack has no webhook url — set integrations.slack.url in the "
+                f"CLI config, or export {self.url_env}"
+            )
         return url
 
 
@@ -46,8 +69,8 @@ class SlackSdk(_SlackBase):
 
     transport = "sdk"
 
-    def __init__(self, url_env: str):
-        super().__init__(url_env)
+    def __init__(self, url_env: str, url: str = ""):
+        super().__init__(url_env, url)
         from slack_sdk.webhook import (  # type: ignore[import-not-found]
             WebhookClient,  # noqa: F401 — probed here so `auto` can fall back
         )

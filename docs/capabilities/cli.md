@@ -154,6 +154,16 @@ self-learning/ML capabilities.
   extra**: it is Slack's official SDK and has zero required dependencies of its own, but
   the dependency-free `webhook` transport remains available so the base install stays
   one-dependency.
+- The Slack incoming-webhook URL SHALL be resolvable from **either** the CLI config
+  (`integrations.slack.url`) or the environment (`integrations.slack.urlEnv`, default
+  `THE_LOOP_SLACK_WEBHOOK_URL`), with the **config taking precedence** — otherwise the
+  effective configuration would depend on ambient environment and reading the file would
+  not tell you where a notification goes (issue-203, decision-075). An empty `url` counts
+  as absent and falls back. Both transports resolve through the same method, so they
+  cannot drift. WHEN neither source is set THEN the failure SHALL name **both** remedies
+  and never the URL itself. This carve-out is Slack's alone: a webhook URL is post rights
+  to one channel, so its secrecy is the operator's call to price, while
+  `github.api.tokenEnv` and `webhooks.ghWebhook.secretEnv` remain **env-only**.
 - `the-loop scenarios` SHALL output the table of every Gherkin scenario covered by the
   integration tests (`--format table|markdown|json`; see
   [testing-and-contracts](testing-and-contracts.md)).
@@ -270,6 +280,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-203 | `integrations.slack` gained an optional inline `url`, taking precedence over `urlEnv`, so the one value that turns notifications on stops living outside every config file the-loop owns — and a resolution failure now names both remedies instead of only the env var. Slack's webhook URL alone; tokens and signing secrets stay env-only | [spec](../specs/issue-203/), [decision-075](../decisions/decision-075.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/203) |
 | issue-194 | `graph advance`/`run`/`skip`/`force` stopped posting nothing when `--ref` was omitted: the ref is derived from the repository's `ticketing.github` plus the `issue-<n>` id, and an outbound hook that could not do its job now prints a `warning:` line (and records `graph.hook_degraded`) instead of leaving a clean `wait` over a ticket nobody was asked | [spec](../specs/issue-194/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/194) |
 | issue-191 | `poll start --daemon` detaches for real (double-fork + `setsid`, stdout/stderr to `<state.root>/logs/poller.out`, pidfile written after the final fork under the lock), reports startup success or failure to its caller over a handshake instead of into a logfile, removes a stale pidfile instead of leaving it, and gains `poll status` — liveness from the lock, progress from a new per-cycle heartbeat, exit `0`/`1` so it is a health check. Control-plane starts log to a file instead of `/dev/null` | [spec](../specs/issue-191/), [decision-072](../decisions/decision-072.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/191) |
 | issue-186 | `sessions cleanup` — a fifth control verb (CLI, HTTP and MCP) that releases a work item's local resources through the daemon's own dispatcher and keeps the portable record, unlike `reset` | [spec](../specs/issue-186/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/186) |
