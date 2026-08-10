@@ -211,6 +211,167 @@ def test_load_strict_raises_for_a_non_mapping(tmp_path: Path) -> None:
         harness_config.load_strict(tmp_path)
 
 
+# ------------------------------------------------------------------- the built-in default
+# issue-193. the-loop is routinely pointed at a repository that never ran
+# `/the-loop:init`: the daemon clones it, spawns a session in it, and the session finds no
+# `.the-loop/` at all. The answer is one built-in default — shipped INSIDE the package,
+# because the reader is an installed CLI with no plugin checkout to look in — and one
+# writer that puts it there.
+
+
+def test_defaults_reads_the_packaged_configuration() -> None:
+    """R1.1 — the default resolves from the installed package, not from a checkout."""
+    defaults = harness_config.defaults()
+    assert defaults, "the packaged default must ship with the CLI"
+    assert defaults["workflow"]["specDir"] == harness_config.DEFAULT_SPEC_DIR
+    assert defaults["ticketing"]["github"]["owner"] == ""
+
+
+def test_defaults_degrades_when_the_package_data_is_unreadable(monkeypatch) -> None:
+    """R1.4 — a packaging fault must not cost a webhook delivery."""
+    monkeypatch.setattr(
+        harness_config, "default_config_path", lambda: Path("/nonexistent/none.yaml")
+    )
+    assert harness_config.defaults() == {}
+
+
+def test_the_packaged_default_is_the_shipped_template() -> None:
+    """R1.2 — one default with two writers, not two defaults with one name.
+
+    Byte parity rather than data parity: `cp` is then the only correct way to move the
+    default forward, and nobody has to reason about which of the two files' comments
+    drifted.
+    """
+    template = REPO_ROOT / "skills" / "the-loop" / "templates" / "harness-config.yaml"
+    if not template.is_file():
+        pytest.skip("plugin templates not present (source distribution)")
+    assert harness_config.default_config_path().read_bytes() == template.read_bytes(), (
+        "cli/the_loop/harness-config.default.yaml and "
+        "skills/the-loop/templates/harness-config.yaml have drifted. They are the same "
+        "configuration written by two different things (`the-loop`'s ingress and "
+        "`/the-loop:init`); copy one over the other."
+    )
+
+
+def test_the_packaged_default_agrees_with_the_per_key_fallbacks(tmp_path: Path) -> None:
+    """R1.1 — the constants the CLI falls back to when it cannot write a file.
+
+    `DEFAULT_SPEC_DIR` and `build_runtime`'s `phaseLabelPrefix` fallback exist because
+    reading configuration is best-effort; they are only honest while they say what the
+    packaged default says.
+    """
+    from the_loop.graph.bootstrap import build_runtime
+
+    defaults = harness_config.defaults()
+    assert harness_config.spec_dir(defaults) == harness_config.DEFAULT_SPEC_DIR
+    fallback = build_runtime(tmp_path).config["phaseLabelPrefix"]
+    assert fallback == defaults["workflow"]["phaseLabelPrefix"]
+
+
+# --------------------------------------------------------------------------- scaffolding
+
+
+def test_scaffold_writes_the_default_into_an_unadopted_repository(
+    tmp_path: Path,
+) -> None:
+    """R2.1 — after adoption the repository configures itself like any other."""
+    assert harness_config.scaffold(tmp_path) == "written"
+    written = tmp_path / ".the-loop" / "harness-config.yaml"
+    assert written.is_file()
+    assert harness_config.initialized(tmp_path)
+    assert harness_config.load(tmp_path) == harness_config.defaults()
+
+
+def test_scaffold_says_who_wrote_the_file(tmp_path: Path) -> None:
+    """The next human to open it should not have to guess where it came from."""
+    harness_config.scaffold(tmp_path)
+    head = (tmp_path / ".the-loop" / "harness-config.yaml").read_text(encoding="utf-8")
+    assert head.startswith("#")
+    assert "the-loop" in head.split("\n\n")[0]
+    assert "issue-193" in head.split("\n\n")[0]
+
+
+def test_scaffold_names_the_repository_it_was_written_for(tmp_path: Path) -> None:
+    """R2.2 — `originRepo` resolves instead of failing closed (issue-183)."""
+    assert harness_config.scaffold(tmp_path, "octo", "repo") == "written"
+    loaded = harness_config.load(tmp_path)
+    assert harness_config.origin_repo(loaded) == "octo/repo"
+    # The template's inline comments survive: this is a config a human will edit.
+    text = (tmp_path / ".the-loop" / "harness-config.yaml").read_text(encoding="utf-8")
+    assert "# github | jira" in text
+
+
+def test_scaffold_never_overwrites_an_existing_config(tmp_path: Path) -> None:
+    """Abuse case 3 — an inbound event must not replace an operator's policy."""
+    mine = _write(tmp_path, "workflow:\n  specDir: my/specs\n")
+    assert harness_config.scaffold(tmp_path, "octo", "repo") == "present"
+    assert mine.read_text(encoding="utf-8") == "workflow:\n  specDir: my/specs\n"
+
+
+def test_scaffold_leaves_a_pre_rename_config_alone(tmp_path: Path) -> None:
+    """T10 — a repository that has not run /the-loop:upgrade-the-loop is adopted."""
+    _write(tmp_path, "workflow: {}\n", name="config.yaml")
+    assert harness_config.scaffold(tmp_path) == "present"
+    assert not (tmp_path / ".the-loop" / "harness-config.yaml").exists()
+
+
+def test_scaffold_is_idempotent(tmp_path: Path) -> None:
+    """R2.4 — every adoption path runs on every event; the second is a no-op."""
+    assert harness_config.scaffold(tmp_path) == "written"
+    assert harness_config.scaffold(tmp_path) == "present"
+
+
+@pytest.mark.parametrize(
+    "owner,repo",
+    [
+        ('x"\n\nautonomy:\n  defaultTier: 1', "repo"),
+        ("octo", "repo\nsecurity:\n  review:\n    required: false"),
+        ("../../etc", "repo"),
+        ("", "repo"),
+        ("octo", ""),
+        ("-leading-dash", "repo"),
+    ],
+)
+def test_scaffold_refuses_a_forged_owner_or_repo(
+    tmp_path: Path, owner: str, repo: str
+) -> None:
+    """Abuse case 1 — payload text reaching a YAML document is an injection surface.
+
+    Dropped rather than escaped: there is then no encoder to get wrong, and the written
+    file is the packaged default verbatim, whose `ticketing.github` is empty.
+    """
+    assert harness_config.scaffold(tmp_path, owner, repo) == "written"
+    loaded = harness_config.load(tmp_path)
+    assert harness_config.origin_repo(loaded) == ""
+    assert (
+        loaded["autonomy"]["defaultTier"]
+        == harness_config.defaults()["autonomy"]["defaultTier"]
+    )
+    assert loaded["security"]["review"]["required"] is True
+
+
+def test_scaffold_degrades_when_it_cannot_write(tmp_path: Path, monkeypatch) -> None:
+    """R2.5 — no delivery, spawn or transition is lost because a config was not written."""
+
+    def boom(*_args, **_kwargs):
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(Path, "mkdir", boom)
+    assert harness_config.scaffold(tmp_path) == ""
+    assert not (tmp_path / ".the-loop").exists()
+
+
+def test_scaffold_degrades_when_the_packaged_default_is_missing(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """R1.4 again, at the writer: nothing is written from a default nobody could read."""
+    monkeypatch.setattr(
+        harness_config, "default_config_path", lambda: Path("/nonexistent/none.yaml")
+    )
+    assert harness_config.scaffold(tmp_path) == ""
+    assert not (tmp_path / ".the-loop").exists()
+
+
 # ---------------------------------------------------------------------------- helpers
 
 

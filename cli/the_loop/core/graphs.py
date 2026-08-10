@@ -56,12 +56,35 @@ def _recorded_loop(path: Path, work_item: str) -> str:
 
 
 def _runtime(
-    repo: str, pr: Optional[int] = None, pr_repo: str = "", work_item: str = ""
+    repo: str,
+    pr: Optional[int] = None,
+    pr_repo: str = "",
+    work_item: str = "",
+    adopt: bool = False,
 ):
+    """A runtime for ``repo``, adopting it first when the caller changes state.
+
+    ``adopt`` is passed explicitly by the four verbs that write — `complete`,
+    `advance`, `force`, `skip` — and by none of the readers (issue-193). It is a
+    parameter rather than something inferred from the verb because `check`'s
+    purity is what lets CI run the real runtime (issue-109 R8.8); a filesystem
+    write hidden behind a call that reads like a lookup would leave that property
+    resting on nothing a reviewer can check.
+
+    Adoption runs **before** ``build_runtime`` so ``repoInitialized`` is true on
+    the very run that adopted the repository, and never for a contribution: the
+    repository the-loop was invited into keeps the-loop out of its history
+    (issue-185, PR #187).
+    """
+    from .. import harness_config
+    from ..graph.model import PDLC_CONTRIBUTION_LOOP
+
     if pr_repo and pr is None:
         raise ValueError("pr_repo names a repository, not a loop: pass pr as well")
     path = resolve_repo(repo)
     loop = _recorded_loop(path, work_item) if pr is None and work_item else ""
+    if adopt and loop != PDLC_CONTRIBUTION_LOOP:
+        harness_config.scaffold(path)
     return build_runtime(path, pr_number=pr, pr_repo=pr_repo, loop=loop)
 
 
@@ -90,7 +113,7 @@ def complete(
     pr_repo: str = "",
 ) -> Dict[str, Any]:
     """A completion claim for the current (or named) node — issue-148 semantics."""
-    return _runtime(repo, pr, pr_repo, work_item).complete(
+    return _runtime(repo, pr, pr_repo, work_item, adopt=True).complete(
         work_item, ref=ref, node=node, actor=actor
     )
 
@@ -103,7 +126,11 @@ def advance(
     pr_repo: str = "",
 ) -> Dict[str, Any]:
     """Evaluate the current node's exit chain and take the matching edge."""
-    return _runtime(repo, pr, pr_repo, work_item).advance(work_item, ref=ref).as_dict()
+    return (
+        _runtime(repo, pr, pr_repo, work_item, adopt=True)
+        .advance(work_item, ref=ref)
+        .as_dict()
+    )
 
 
 def force(
@@ -118,7 +145,7 @@ def force(
 ) -> Dict[str, Any]:
     """The authorized-operator escape hatch. Requires a reason; never forges a
     verdict. Not exposed over MCP (design §Security)."""
-    runtime = _runtime(repo, pr, pr_repo, work_item)
+    runtime = _runtime(repo, pr, pr_repo, work_item, adopt=True)
     result = graph_runtime.force(
         runtime, work_item, to_node, reason, actor=actor, ref=ref
     )
@@ -148,7 +175,7 @@ def skip(
     graph's skip vocabulary, or naming nodes the pointer already reached, come
     back in ``rejected`` rather than taking effect.
     """
-    runtime = _runtime(repo, pr, pr_repo, work_item)
+    runtime = _runtime(repo, pr, pr_repo, work_item, adopt=True)
     result = graph_runtime.declare_skips(
         runtime,
         work_item,

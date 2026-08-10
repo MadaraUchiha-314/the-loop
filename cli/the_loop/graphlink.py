@@ -62,6 +62,11 @@ _COMMENT_EVENTS = {
     "pull_request_review": "review",
 }
 
+#: The actions that may adopt an unconfigured repository (issue-193) — the two that
+#: *drive* the graph. ``context`` is excluded because it is documented as mutating
+#: nothing, and ``clean`` because it runs while the checkout is being released.
+_ADOPTING_ACTIONS = frozenset({"start", "advance"})
+
 
 @dataclass
 class GraphLinkConfig:
@@ -617,6 +622,15 @@ class GraphLink:
             )
             self._skipped(action, work_item, "spec-dir-outside-checkout", spec_dir)
             return None
+        # Resolved here rather than beside the runtime build (where it used to
+        # live) because adoption asks the same question: the CONTRIBUTION loop is
+        # the one walk that must not adopt its repository.
+        loop = (
+            self._outer_loop_name(root, spec_dir, item_id, work_item)
+            if pr_number is None
+            else ""
+        )
+        self._adopt(action, root, work_item, loop)
         if not (root / spec_dir / item_id).is_dir():
             logger.debug(
                 "no %s/%s under %s; not %sing its graph",
@@ -633,7 +647,6 @@ class GraphLink:
             # serves every outer-path caller. A contribution item (issue-185)
             # is the one exception: its resolved loop name rides along.
             if pr_number is None:
-                loop = self._outer_loop_name(root, spec_dir, item_id, work_item)
                 runtime = (
                     self._build_runtime(str(root), spec_dir, loop=loop)
                     if loop
@@ -816,6 +829,58 @@ class GraphLink:
             except Exception as exc:  # noqa: BLE001
                 logger.debug("could not read %s's control record: %s", item_id, exc)
         return ""
+
+    def _adopt(
+        self, action: str, root: Path, work_item: WorkItemRef, loop: str
+    ) -> None:
+        """Give an unadopted repository the-loop's built-in defaults (issue-193).
+
+        the-loop is routinely pointed at a repository that never ran
+        ``/the-loop:init``: the daemon clones it, spawns a session in it, and the
+        session finds no ``.the-loop/`` at all — no workflow, no tooling, no
+        phases. This is where that is fixed, and the placement carries three
+        decisions.
+
+        **After the ownership proof.** Writing into a checkout is a side effect
+        on the operator's disk, so it stays behind ``_checkout_belongs_to``: a
+        payload cannot name a directory, only fail to match one.
+
+        **Before the spec-directory gate.** A brand-new work item has no spec
+        directory, so the coupling declines to drive its graph — but the session
+        it was spawned for is *already running in that checkout*. Adopting only
+        where the graph moves would leave exactly the case this exists for
+        unfixed.
+
+        **Never for a contribution.** ``pdlc-contribution-loop`` joins somebody
+        else's in-progress work item, and PR #187 decided the-loop's machinery
+        stays out of that repository's history. A committed file declaring
+        the-loop's process in a repository that never asked for it would be the
+        loudest possible breach of that; a guest does not install itself.
+
+        **Only on the actions that drive the graph** (:data:`_ADOPTING_ACTIONS`).
+        ``context`` resolves a prompt's block and is documented as mutating
+        nothing — an exception for "only a config file" is how that property
+        stops being true — and ``clean`` runs as the work item's local resources
+        are released, where a newly written file would be leaving litter in a
+        checkout about to be removed.
+
+        Best-effort like everything here: :func:`harness_config.scaffold` never
+        raises, and a repository that could not be adopted is worked exactly as
+        it was before.
+        """
+        from .graph.model import PDLC_CONTRIBUTION_LOOP
+
+        if action not in _ADOPTING_ACTIONS or loop == PDLC_CONTRIBUTION_LOOP:
+            return
+        if harness_config.scaffold(root, work_item.owner, work_item.repo) != "written":
+            return
+        written = harness_config.config_path(root)
+        eventlog.emit(
+            "harness.config_scaffolded",
+            work_item=work_item.ref,
+            path=str(written) if written else "",
+            repo=f"{work_item.owner}/{work_item.repo}",
+        )
 
     def _spec_dir(self, root: Path) -> str:
         """Where this work item's specs live, as declared.

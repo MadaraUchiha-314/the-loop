@@ -325,6 +325,13 @@ references roles only. A subset of keys can be overridden per work
 item via the YAML front-matter `overrides` of the work-item / spec markdown. Managed
 files are listed in `.the-loop/manifest.yaml`.
 
+A repository that has never run `/the-loop:init` is worked under the **built-in default**
+— the same baseline `--defaults` writes, shipped inside the CLI — and the-loop writes it
+into `.the-loop/harness-config.yaml` the first time it works there, so the config is a
+file you can read and edit rather than an assumption (issue-193, decision-073). It never
+overwrites an existing config, and a **contribution** adopts nothing: see
+`reference/automation.md`.
+
 The CLI daemon (`gh-webhook`/`poll`/`sessions`/`events`) reads a separate, independent
 **CLI config** instead (`webhooks`, `polling`, `eventLog`) — it is not tied to this
 repo. See `docs/config/` (the configuration reference) and

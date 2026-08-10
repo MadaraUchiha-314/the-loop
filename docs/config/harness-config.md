@@ -24,6 +24,42 @@ A subset of keys can be **overridden per work item** through the `overrides` fro
 of that item's spec markdown, so one unusual work item does not force a project-wide
 setting.
 
+## When a repository has no config
+
+the-loop is routinely pointed at a repository that never ran `/the-loop:init` — a poller
+source, a webhook delivery, a work item somebody assigned to a cloud session. Such a
+repository is worked under the **built-in default**: the same commented baseline
+`/the-loop:init --defaults` writes, shipped inside the CLI as
+`the_loop/harness-config.default.yaml` so a bare `pip install the-loopy-one` resolves it
+with no plugin checkout in sight ([issue #193](https://github.com/MadaraUchiha-314/the-loop/issues/193),
+[decision-073](/decisions/decision-073)).
+
+The default is not only held in memory — it is **written into the repository**, once, the
+first time the-loop starts working there:
+
+| Where | Adopts? |
+|---|---|
+| The daemon's ingress→graph coupling (poller and webhook alike), after it has proved via the `origin` remote that the checkout is the work item's own repository | yes — and it fills in `ticketing.github.owner`/`repo` from the work item |
+| `the-loop graph complete` / `advance` / `force` / `skip` | yes |
+| `the-loop check`, `the-loop graph status` / `show` | **no** — reads write nothing |
+| A **contribution** (`the-loop contribute`, `pdlc-contribution-loop`) | **no** — the-loop was invited into that repository as a guest and stays out of its history ([issue #185](https://github.com/MadaraUchiha-314/the-loop/issues/185)) |
+
+The written file carries a header saying the-loop wrote it and how to replace it with a
+considered one, and each write is recorded as `harness.config_scaffolded` in
+[`the-loop events`](/cli/commands/events).
+
+Nothing about the repository is **detected** — the baseline's `repository`, `tooling` and
+`ticketing.system` values are the template's, not your project's, and only
+`ticketing.github.owner`/`repo` are filled in from the work item. Detection and the
+questions that go with it are `/the-loop:init`'s job; a scaffolded config is a working
+default meant to be tailored, not a survey of your repository.
+
+**An existing config is never opened.** A repository that already carries
+`harness-config.yaml` — or the pre-rename `config.yaml` — is left byte-for-byte as it is,
+so no inbound event can replace your `autonomy` tiers, `sensitivePaths` or
+`reviews.critics[]` with the-loop's defaults. To move an existing config forward, run
+`/the-loop:upgrade-the-loop`; to tailor a scaffolded one, run `/the-loop:init`.
+
 ## Sections
 
 | Section | Covers |

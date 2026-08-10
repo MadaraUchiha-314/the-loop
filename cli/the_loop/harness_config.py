@@ -37,6 +37,7 @@ Decision: 044  ·  Spec: docs/specs/issue-121/
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Tuple
@@ -46,16 +47,20 @@ import yaml
 logger = logging.getLogger("the-loop.harness-config")
 
 __all__ = [
+    "DEFAULT_CONFIG_FILE",
     "DEFAULT_SPEC_DIR",
     "FILENAMES",
     "HarnessConfigError",
     "HarnessConfigRead",
     "READS",
     "config_path",
+    "default_config_path",
+    "defaults",
     "initialized",
     "load",
     "load_strict",
     "origin_repo",
+    "scaffold",
     "spec_dir",
 ]
 
@@ -70,6 +75,39 @@ DEFAULT_SPEC_DIR = "docs/specs"
 #: wins?" became three separate answers. Renamed in issue-82 (decision-035); the old name
 #: stays readable for repositories that have not run ``/the-loop:upgrade-the-loop``.
 FILENAMES: Tuple[str, ...] = ("harness-config.yaml", "config.yaml")
+
+#: The built-in default harness config, shipped as package data beside this module
+#: (issue-193). It belongs to the **CLI**, for the same reason the process graphs do
+#: (``graph.model.shipped_graph_path``): the reader is an installed ``the-loopy-one``,
+#: which has no plugin checkout to find ``skills/the-loop/templates/`` in. It is a
+#: byte-for-byte copy of that template — one configuration with two writers, the-loop's
+#: ingress and ``/the-loop:init`` — and the copy is pinned by a test, so a drift is a
+#: build failure rather than two products' worth of "the defaults".
+DEFAULT_CONFIG_FILE = "harness-config.default.yaml"
+
+#: The provenance header :func:`scaffold` puts above the default it writes. A config file
+#: nobody remembers creating is a config file nobody trusts, so the written one says who
+#: wrote it, why, and how to replace it with a considered one.
+_SCAFFOLD_HEADER = """\
+# Written by the-loop: this repository carried no .the-loop/harness-config.yaml, so
+# the-loop adopted it with its BUILT-IN DEFAULTS (issue-193) rather than working it
+# under nothing. This is the same baseline `/the-loop:init --defaults` writes — run
+# `/the-loop:init` for the guided version, and edit this file freely; the-loop never
+# rewrites a config that already exists.
+
+"""
+
+#: GitHub's own owner/repo charset. Payload-derived text entering a YAML document is an
+#: injection surface, and this allow-list is the whole defence: it contains no quote, no
+#: newline and no ``": "``, so a value that passes cannot extend, terminate or re-key the
+#: document. A value that fails is **dropped, not escaped** — there is then no encoder to
+#: get wrong (issue-193, abuse case 1).
+_GH_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+#: A top-level key, i.e. the end of the ``ticketing:`` block the substitution is confined
+#: to, and the ``owner``/``repo`` placeholders inside it.
+_TOP_LEVEL_KEY = re.compile(r"^[A-Za-z]")
+_PLACEHOLDER = re.compile(r'^(?P<indent>\s+)(?P<key>owner|repo): ""(?P<trail>.*)$')
 
 
 class HarnessConfigError(ValueError):
@@ -194,6 +232,131 @@ def initialized(root: Path) -> bool:
     callers ask this question, not "what does the config say".
     """
     return config_path(root) is not None
+
+
+def default_config_path() -> Path:
+    """Where the built-in default ships — package data beside this module.
+
+    Resolved from ``__file__`` rather than from a checkout or an environment variable, so
+    a wheel, an editable install and a repository checkout all answer identically. May
+    not exist in an unusual install; every caller treats that as "no default" rather than
+    as an error.
+    """
+    return Path(__file__).resolve().parent / DEFAULT_CONFIG_FILE
+
+
+def defaults() -> Dict[str, Any]:
+    """The built-in default harness config, or ``{}`` if it cannot be read.
+
+    The named answer to "what does the-loop assume in a repository that never ran
+    ``/the-loop:init``?" — previously a scatter of per-call-site literals, of which
+    :data:`DEFAULT_SPEC_DIR` and ``build_runtime``'s ``"loop:"`` are the survivors (they
+    remain, for the case where nothing can be written, and a test pins them to this file).
+
+    Best-effort like every other read here: a packaging fault degrades to ``{}`` and the
+    per-key fallbacks carry the run, because a missing data file must not cost a webhook
+    delivery.
+    """
+    path = default_config_path()
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except Exception as exc:  # noqa: BLE001 — any failure degrades to "no default"
+        logger.warning("could not read the built-in harness config (%s): %s", path, exc)
+        return {}
+    if not isinstance(data, dict):
+        logger.warning("the built-in harness config (%s) is not a mapping", path)
+        return {}
+    return data
+
+
+def _named_for(text: str, owner: str, repo: str) -> str:
+    """``text`` with ``ticketing.github``'s placeholders filled in, when it is safe to.
+
+    Both values must pass :data:`_GH_NAME` or **neither** is written: a config naming an
+    owner but no repository resolves to no origin repository anyway
+    (:func:`origin_repo`), so a half-substitution would only make the file look more
+    configured than it is.
+
+    A line-anchored substitution rather than a ``yaml.safe_dump`` round trip, because the
+    default's value to a human is its inline comments and a round trip destroys every one
+    of them. Confined to the ``ticketing:`` block, so an ``owner:`` key elsewhere in the
+    document cannot be reached.
+    """
+    if not (_GH_NAME.match(owner or "") and _GH_NAME.match(repo or "")):
+        if owner or repo:
+            logger.warning(
+                "not naming %r/%r in the harness config: not a plain GitHub owner/repo",
+                owner,
+                repo,
+            )
+        return text
+    values = {"owner": owner, "repo": repo}
+    out, inside = [], False
+    for line in text.splitlines(keepends=True):
+        if _TOP_LEVEL_KEY.match(line):
+            inside = line.startswith("ticketing:")
+        elif inside:
+            match = _PLACEHOLDER.match(line.rstrip("\n"))
+            if match:
+                line = (
+                    f"{match['indent']}{match['key']}: "
+                    f'"{values[match["key"]]}"{match["trail"]}\n'
+                )
+        out.append(line)
+    return "".join(out)
+
+
+def scaffold(root: Path, owner: str = "", repo: str = "") -> str:
+    """Adopt ``root`` with the built-in default. Returns what happened; never raises.
+
+    ``"written"`` — the file was created · ``"present"`` — a harness config of either
+    name was already there · ``""`` — nothing could be written.
+
+    the-loop is routinely pointed at a repository that never ran ``/the-loop:init``: the
+    daemon clones it, spawns a session in it, and the session finds no ``.the-loop/`` at
+    all — so the skill has no workflow, no tooling and no phases to work from (issue-193).
+    This is the one function that fixes that by putting the default *on disk*, where the
+    agent, the CLI and the next run all read the same file instead of each inventing an
+    answer.
+
+    **It never opens an existing config.** An operator's ``autonomy`` tiers,
+    ``sensitivePaths`` and ``reviews.critics[]`` (executable config) are policy no inbound
+    event may replace, so a repository that has already configured itself — under either
+    filename — is left exactly as it is.
+
+    ``owner``/``repo`` name the repository in ``ticketing.github`` so ``originRepo``
+    resolves rather than failing closed (issue-183). They are the only payload-derived
+    text that reaches the written bytes and are allow-listed by :func:`_named_for`.
+
+    The **caller** decides whether adopting is appropriate at all: a contribution
+    (``pdlc-contribution-loop``) must not adopt the repository it was invited into, and
+    the daemon must have proved the checkout belongs to the work item first
+    (decision-044). Both are conditions about the *work item*, which this function cannot
+    see.
+    """
+    if config_path(root) is not None:
+        return "present"
+    source = default_config_path()
+    try:
+        body = source.read_text(encoding="utf-8")
+    except OSError as exc:
+        logger.warning("cannot adopt %s: no built-in harness config (%s)", root, exc)
+        return ""
+    target = root / ".the-loop" / FILENAMES[0]
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            _SCAFFOLD_HEADER + _named_for(body, owner, repo), encoding="utf-8"
+        )
+    except OSError as exc:
+        logger.warning("could not write %s: %s", target, exc)
+        return ""
+    logger.info(
+        "%s had no harness config; adopted it with the-loop's built-in defaults (%s)",
+        root,
+        target,
+    )
+    return "written"
 
 
 def load(root: Path) -> Dict[str, Any]:
