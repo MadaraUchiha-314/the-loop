@@ -297,6 +297,15 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
     attempt each of them spent (`poll.attempts_released`), leaving the event **unresolved**
     rather than baselined. Without this, restarts accumulate toward `polling.maxRetries`
     and can permanently abandon a comment nothing ever tried to deliver.
+  - **The poller SHALL be able to outlive the shell that started it** (issue-191).
+    `poll start --daemon` detaches (double-fork + `setsid`), redirects its output to
+    `<state.root>/logs/poller.out`, and writes the pidfile after the final fork so the
+    recorded pid is the surviving process's; `poll status` reports liveness from the lock
+    and progress from the per-cycle heartbeat, exiting `0`/`1`. Restarting is invisible
+    only if a poller stays up between restarts — the process being tied to a terminal's
+    process group was the last way it could vanish with no trace. Detaching remains
+    opt-in ([decision-072](../decisions/decision-072.md)) because `poll start` is also
+    what cron and systemd run.
 - On the poll path the linked issues of a labelled PR SHALL be read from GitHub inside the
   PR listing the poller already performs (`gh pr list --json …,closingIssuesReferences` —
   no extra API round-trip per cycle), and WHEN the installed `gh` predates that field THEN

@@ -29,14 +29,17 @@ working directory), split by whether it travels:
 ├── local/
 │   └── github-octo-repo-15.json   # that item's session handle(s) — never tracked
 ├── logs/
-│   └── events.jsonl               # the decision trail
-└── gh-webhook.pid                 # the running receiver
+│   ├── events.jsonl               # the decision trail
+│   └── poller.out                 # a daemonized poller's stdout/stderr
+├── gh-webhook.pid                 # the running receiver
+├── poll.pid                       # the running poller — and its lock
+└── poll-status.json               # the poller's heartbeat, read by `poll status`
 ```
 
-Everything here is JSON or JSONL, meant to be read with `jq`, `cat` and `tail -f`. The two
-record stores are rewritten atomically (`tempfile` + `os.replace`), so a crash never leaves
-half a file; the event log is appended to a line at a time, and the pidfile is written once
-at startup.
+Everything here is JSON, JSONL or plain text, meant to be read with `jq`, `cat` and
+`tail -f`. The record stores and the heartbeat are rewritten atomically (`tempfile` +
+`os.replace`), so a crash never leaves half a file; the event log and the poller log are
+appended to a line at a time, and a pidfile is written once at startup.
 
 Two paths can be pointed elsewhere explicitly —
 [`routing.registryDir`](/config/cli/routing-options#registrydir) for `local/`, and
@@ -68,7 +71,10 @@ them, is what makes the `.gitignore` recipe three lines instead of a puzzle
 | `<root>/portable/index.json` | the same store, derived | one entry per record: ref, url, file, sections | **portable** |
 | `<root>/local/<slug>.json` | the session registry | conversation id, `cwd`, tmux target, status, and the item's pull requests with their own sessions | **local** |
 | `<root>/logs/events.jsonl` | every ingress, and `sessions` | one JSON object per decision | **local** |
+| `<root>/logs/poller.out` | a daemonized poller | its stdout and stderr, appended | **local** |
 | `<root>/gh-webhook.pid` | `gh-webhook start` | the receiver's pid | **local** |
+| `<root>/poll.pid` | `poll start` | the poller's pid — and the lock proving it is the only one | **local** |
+| `<root>/poll-status.json` | `poll start`, after every cycle | the heartbeat `poll status` reads: pid, `startedAt`, `lastCycleAt`, last cycle's counters | **local** |
 
 The same table is declared in code, in
 [`the_loop/state.py`](https://github.com/MadaraUchiha-314/the-loop/blob/main/cli/the_loop/state.py)
@@ -348,7 +354,49 @@ them" cannot then disagree.
 **If you delete it while a poller is running:** the running poller keeps its lock (the lock
 lives on the open file, not the name), but a second `start` will no longer see it and can
 start alongside. Don't. **A stale file after a crash is harmless:** it is unlocked, so the
-next `start` simply takes it and `stop` removes it.
+next `start` reports it, removes it and takes a fresh one, and `stop` removes it.
+
+## Poller heartbeat — `<root>/poll-status.json`
+
+Rewritten by [`poll start`](/cli/commands/poll) after every cycle, and read by
+[`poll status`](/cli/commands/poll#status). It carries what a lock cannot: when this poller
+started, when it last finished a cycle, and what that cycle did.
+
+```json
+{
+  "pid": 48213,
+  "startedAt": "2026-08-10T09:58:03Z",
+  "lastCycleAt": "2026-08-10T10:42:00Z",
+  "intervalSeconds": 60,
+  "lastCycle": {
+    "itemsSeen": 5, "spawns": 1, "commentsForwarded": 0,
+    "closures": 0, "failures": 0, "errors": 0, "interrupted": false
+  }
+}
+```
+
+::: warning It is never the answer to "is the poller running?"
+That answer is the lock on `poll.pid`, and only the lock — the one formulation immune to
+pid reuse, and the one nobody can forge by writing a file. A recent `lastCycleAt` beside a
+lock nobody holds means the poller *stopped* after that cycle, and `poll status` says
+exactly that.
+:::
+
+It is deliberately **not** removed when the poller exits, so `poll status` can still tell
+you when the last cycle ran. **If you delete it:** `poll status` keeps reporting liveness
+and pid and loses the progress lines, until the next cycle writes a new one.
+
+## Poller log — `<root>/logs/poller.out`
+
+Where a poller started with [`--daemon`](/cli/commands/poll#start) — or by the control
+plane — sends its stdout and stderr. Plain text, appended to, and **never rotated**: point
+`logrotate` (or your platform's equivalent) at it on a long-lived host. the-loop does not
+rotate it itself, because a daemon that truncates its own log while another process is
+tailing it is a worse problem than a large file.
+
+**If you delete it:** a running daemon keeps writing to the deleted inode until it is
+restarted — the usual reason to have `logrotate` use `copytruncate` or to restart the
+poller after rotating.
 
 ## Wiping one work item — `sessions reset`
 
@@ -408,6 +456,7 @@ Track `portable/` in git. Paste this into the `.gitignore` of the repository you
 .the-loop/local/
 .the-loop/logs/
 .the-loop/*.pid
+.the-loop/poll-status.json
 .the-loop/portable/*.tmp
 ```
 

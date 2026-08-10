@@ -19,6 +19,11 @@ package — there are no install extras (owner decision, PR #162).
   every capability (work items, events, graphs, repo-scoped queries, sessions,
   daemons, attention) SHALL be implemented once there, delegating to the modules
   that already carry the behaviour.
+- A daemon the core **starts** SHALL have its stdout/stderr appended to that daemon's
+  logfile under `state.root`, never sent to `/dev/null` (issue-191) — a control-plane
+  start that runs fine and logs nowhere is the same defect a hand-backgrounded poller
+  had. `daemon_status` SHALL carry that logfile, plus the poller's `startedAt` and
+  `lastCycleAt` from its heartbeat (empty for `gh-webhook`, which keeps none).
 - The API service SHALL expose the core at `/api/v1` per the **authored OpenAPI
   contract** (`docs/api-specs/openapi/the-loop.v1.yaml`); a parity test SHALL fail the build
   when the served schema's paths/methods/operationIds drift from it. Interactive
@@ -42,9 +47,10 @@ package — there are no install extras (owner decision, PR #162).
   (register/list/close/start/pause/resume/stop), `scenarios`, `instructions` and
   `critic` (list/run). Four commands stay local **by nature**: `sessions attach`
   replaces the caller's terminal with tmux, `sessions reset` is a recovery action
-  that must work when nothing is running, `poll start` / `gh-webhook start` run a
-  daemon in the foreground because cron and systemd units depend on it (the same
-  daemons start and stop *detached* through the API), and the bootstrap commands
+  that must work when nothing is running, `poll start` / `gh-webhook start` run the
+  daemon themselves because cron and systemd units depend on it — foreground by
+  default, and detaching on their own with `--daemon` (issue-191) rather than
+  through the service — and the bootstrap commands
   (`install`, `upgrade`, `migrate-config`, `service`, `--version`) precede any
   service. `THE_LOOP_SERVICE_LOCAL=1` is a test seam, not an operator switch.
 - The CLI SHALL NOT re-implement any routed operation: commands render the

@@ -28,6 +28,10 @@ from .github import (  # noqa: F401
     check_gh_dependency,
     parse_repos,
 )
+from .heartbeat import (  # noqa: F401
+    Heartbeat,
+    PollHeartbeat,
+)
 from ..reload import Reloader  # noqa: F401
 from .poller import (  # noqa: F401
     PollConfig,
@@ -46,7 +50,9 @@ __all__ = [
     "GhItem",
     "GhItemState",
     "GitHubPollProvider",
+    "Heartbeat",
     "PollConfig",
+    "PollHeartbeat",
     "PollPlan",
     "PollProvider",
     "PollState",

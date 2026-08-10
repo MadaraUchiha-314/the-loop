@@ -1,4 +1,4 @@
-"""``the-loop poll start|stop`` — poll ticketing/PR systems and spawn/route sessions.
+"""``the-loop poll start|stop|status`` — poll ticketing/PR systems and spawn/route sessions.
 
 A pull-based, **provider-agnostic** sibling of ``gh-webhook`` for machines a
 webhook cannot reach (issue-34). ``start`` reads ``polling.sources`` from the
@@ -15,26 +15,40 @@ read through :func:`the_loop.cli_config.load_routing_config` — the same policy
 the receiver runs on, which is why issue-142 promoted it out from under
 ``webhooks``. Flags cover only the run loop.
 
-Spec: docs/specs/issue-34/design.md; docs/specs/issue-63/design.md.
+``start`` runs in the **foreground** by default — which is what cron (`--once`)
+and a systemd ``Type=simple`` unit expect — and detaches properly with
+``--daemon``: double-fork, ``setsid``, stdout/stderr redirected to a logfile, and
+the pidfile written by the process that actually survives (issue-191). ``status``
+answers "is the poller running, and is it making progress" from the lock and the
+heartbeat, so that question costs one command instead of a ps/pidfile/log
+cross-check.
+
+Spec: docs/specs/issue-34/design.md; docs/specs/issue-63/design.md;
+docs/specs/issue-191/design.md.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import signal
 import sys
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 from .base import Command, register
 from .. import cli_config, eventlog
 from ..authz import resolve_authorized_users
+from ..daemonize import daemonize, notify_ready, open_logfile
 from ..poller import (
+    Heartbeat,
     PollConfig,
     Poller,
+    PollHeartbeat,
     PollPlan,
     PollState,
     ProviderError,
@@ -92,6 +106,83 @@ def _build_dispatcher(
     return dispatcher, routing
 
 
+def _age(timestamp: str) -> str:
+    """``timestamp`` as "how long ago", or ``""`` when it cannot be read.
+
+    Rendered beside the timestamp rather than instead of it: the absolute time is
+    what an operator correlates with the log, and the relative one is what
+    answers "is it stuck?" at a glance.
+    """
+    try:
+        then = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc
+        )
+    except (TypeError, ValueError):
+        return ""
+    seconds = int((datetime.now(timezone.utc) - then).total_seconds())
+    if seconds < 0:
+        return "in the future"
+    if seconds < 60:
+        return f"{seconds}s ago"
+    if seconds < 3600:
+        return f"{seconds // 60}m ago"
+    if seconds < 86400:
+        return f"{seconds // 3600}h ago"
+    return f"{seconds // 86400}d ago"
+
+
+def _describe_cycle(counters: dict) -> str:
+    """The last cycle's counters as one line, mentioning only what happened."""
+    parts = [
+        f"{int(counters.get('itemsSeen') or 0)} item(s)",
+        f"{int(counters.get('spawns') or 0)} spawn(s)",
+        f"{int(counters.get('commentsForwarded') or 0)} comment(s) forwarded",
+    ]
+    for key, label in (
+        ("closures", "closed"),
+        ("failures", "gave up"),
+        ("errors", "error(s)"),
+    ):
+        value = int(counters.get(key) or 0)
+        if value:
+            parts.append(f"{value} {label}")
+    if counters.get("interrupted"):
+        parts.append("interrupted")
+    return ", ".join(parts)
+
+
+def _render_status(report: dict, beat: Optional[Heartbeat]) -> list:
+    """``poll status`` as lines of text."""
+    running = bool(report["running"])
+    pidfile = report["pidfile"]
+    if report["stalePidfile"]:
+        pidfile += f" (stale — pid {report['recordedPid'] or 'unknown'} is not running)"
+    liveness = f"running (pid {report['pid']})" if running else "not running"
+    lines = [
+        f"poller:     {liveness}",
+        f"pidfile:    {pidfile}",
+        f"logfile:    {report['logfile']}",
+    ]
+    if beat is None:
+        lines.append(
+            "last cycle: unknown — no heartbeat at "
+            f"{report['statusFile']} (a poller from before it existed, or one "
+            "whose heartbeat was removed)"
+        )
+        return lines
+    if beat.started_at:
+        lines.append(f"started:    {beat.started_at} ({_age(beat.started_at)})")
+    if not beat.last_cycle_at:
+        lines.append("last cycle: none recorded yet")
+        return lines
+    suffix = "" if running else ", before it stopped"
+    lines.append(
+        f"last cycle: {beat.last_cycle_at} ({_age(beat.last_cycle_at)}{suffix}) — "
+        f"{_describe_cycle(beat.last_cycle)}"
+    )
+    return lines
+
+
 @register
 class PollCommand(Command):
     name = "poll"
@@ -107,7 +198,9 @@ class PollCommand(Command):
         defaults = {
             **_DEFAULTS,
             "stateDir": layout.portable_dir,
-            "pidfile": str(Path(layout.root) / "poll.pid"),
+            "pidfile": layout.poll_pidfile,
+            "logfile": layout.poller_log,
+            "statusFile": layout.poll_status,
             **_load_polling_config(),
         }
         actions = parser.add_subparsers(dest="action", metavar="<action>")
@@ -144,6 +237,39 @@ class PollCommand(Command):
             default=str(defaults["pidfile"]),
             help="Where to record the poller PID (for `stop`).",
         )
+        # One setting, two spellings, so the last flag on the line wins. The
+        # DEFAULT stays foreground: `--once` under cron and a systemd
+        # `Type=simple` unit both require it, and a default that detaches would
+        # break them silently to save one discoverable flag (decision-072).
+        start.add_argument(
+            "--daemon",
+            dest="daemon",
+            action="store_true",
+            default=False,
+            help=(
+                "Detach: double-fork + setsid, redirect stdout/stderr to "
+                "--logfile, and leave a poller that outlives this shell."
+            ),
+        )
+        start.add_argument(
+            "--foreground",
+            dest="daemon",
+            action="store_false",
+            help="Run in the foreground (the default) — for systemd/supervisors.",
+        )
+        start.add_argument(
+            "--logfile",
+            default=str(defaults["logfile"]),
+            help=(
+                "Where a daemonized poller's stdout/stderr go "
+                "(default: <state.root>/logs/poller.out)."
+            ),
+        )
+        start.add_argument(
+            "--status-file",
+            default=str(defaults["statusFile"]),
+            help="Where the poller records its heartbeat (for `status`).",
+        )
         start.set_defaults(_action=self._start)
 
         stop = actions.add_parser("stop", help="Stop a running poller")
@@ -159,16 +285,30 @@ class PollCommand(Command):
         )
         stop.set_defaults(_action=self._stop)
 
+        status = actions.add_parser(
+            "status", help="Report whether a poller is running, and its last cycle"
+        )
+        status.add_argument("--pidfile", default=str(defaults["pidfile"]))
+        status.add_argument("--logfile", default=str(defaults["logfile"]))
+        status.add_argument("--status-file", default=str(defaults["statusFile"]))
+        status.add_argument("--format", choices=["text", "json"], default="text")
+        status.set_defaults(_action=self._status)
+
     def run(self, args: argparse.Namespace) -> int:
         return int(args._action(args) or 0)
 
     # -- actions ---------------------------------------------------------------
 
     def _start(self, args: argparse.Namespace) -> int:
+        if getattr(args, "daemon", False):
+            outcome = self._detach(args)
+            if outcome is not None:  # the original process — never the daemon
+                return outcome
         logging.basicConfig(
             level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
         )
         eventlog.configure_from_file("poll")
+        self._clear_stale_pidfile(Path(args.pidfile))
 
         # At most one poller per state root (issue-159). Taken BEFORE anything
         # else is built: a second poller must not get as far as checking
@@ -205,6 +345,89 @@ class PollCommand(Command):
             return self._run_poller(args, lock)
         finally:
             lock.release()
+
+    # -- detaching -------------------------------------------------------------
+
+    def _detach(self, args: argparse.Namespace) -> Optional[int]:
+        """Fork the poller into a daemon. ``None`` means "you are the daemon".
+
+        Everything that can be checked before forking **is**, so a refusal
+        reaches the operator's terminal rather than a logfile nobody has opened
+        yet: the conflicting flag, the unopenable logfile, and a lock another
+        poller already holds. What cannot be checked here — dependencies,
+        providers, the race for the lock — is reported back over the handshake
+        by :func:`the_loop.daemonize.notify_ready`, which the daemon calls only
+        once it is genuinely up.
+        """
+        if args.once:
+            print(
+                "--daemon and --once are contradictory: a single cycle has "
+                "nothing to detach for, and detaching would hide its exit code "
+                "from the cron job that asked for it. Use one or the other.",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            os.close(open_logfile(args.logfile))  # R2.4: prove it, then let go
+        except OSError as exc:
+            print(
+                f"cannot open the poller logfile {args.logfile}: {exc}",
+                file=sys.stderr,
+            )
+            return 1
+        lock = RunLock(args.pidfile, name="poller")
+        if lock.is_held():
+            print(
+                f"another poller is already running (pid {lock.holder() or 'unknown'}, "
+                f"pidfile {args.pidfile}); stop it first with `the-loop poll stop`",
+                file=sys.stderr,
+            )
+            return 1
+
+        try:
+            pid = daemonize(args.logfile)
+        except OSError as exc:  # fork exhausted, or the logfile vanished
+            print(f"cannot detach the poller: {exc}", file=sys.stderr)
+            return 1
+        if pid is None:
+            return None  # we are the daemon; carry on with the ordinary start
+        if pid == 0:
+            print(
+                "the poller did not come up — it exited during startup, or did "
+                f"not report itself ready in time. See {args.logfile}",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"poller started (pid {pid}); logging to {args.logfile}")
+        return 0
+
+    @staticmethod
+    def _clear_stale_pidfile(pidfile: Path) -> None:
+        """Remove a pidfile no live poller holds, and say so (issue-191, R3.2).
+
+        ``flock`` already makes a stale pidfile harmless — it is simply
+        *unlocked*, so the next start takes it — but leaving it there means every
+        `ps`/`cat` cross-check an operator does answers with a dead pid. Removing
+        it is safe against the one race it has: a poller taking the lock between
+        the probe and the unlink gets its file removed from under it, and
+        :meth:`RunLock._open_locked` detects exactly that (a stale inode) and
+        retries.
+        """
+        if not pidfile.is_file():
+            return
+        lock = RunLock(pidfile, name="poller")
+        if lock.is_held():
+            return
+        holder = lock.holder()
+        try:
+            pidfile.unlink()
+        except OSError:  # someone else got there first — nothing to clean up
+            return
+        logger.info(
+            "removed a stale pidfile %s (pid %s is not running)",
+            pidfile,
+            holder or "unknown",
+        )
 
     def _run_poller(self, args: argparse.Namespace, lock: RunLock) -> int:
         """The poll run itself, with the single-instance lock already held."""
@@ -259,6 +482,14 @@ class PollCommand(Command):
                 "or comments until you set routing.authorizedUsers in the CLI "
                 "config (prompt-injection guard)"
             )
+        # The heartbeat is written before the first cycle too, so `poll status`
+        # can answer "started, no cycle yet" rather than "never ran" during the
+        # first interval.
+        heartbeat = PollHeartbeat(
+            getattr(args, "status_file", None) or _state_layout().poll_status,
+            interval_seconds=config.interval_seconds,
+        )
+        heartbeat.record(None)
         poller = Poller(
             providers=plan.providers,
             registry=dispatcher.registry,
@@ -269,6 +500,9 @@ class PollCommand(Command):
             ),
             reloader=Reloader(_CONFIG_PATH, build_plan),
             authorized_users=authorized,
+            heartbeat=lambda summary: heartbeat.record(
+                summary, interval_seconds=config.interval_seconds
+            ),
         )
         providers = plan.providers
 
@@ -301,7 +535,13 @@ class PollCommand(Command):
             interval_seconds=config.interval_seconds,
             sources=[p.describe() for p in providers],
             once=args.once,
+            daemon=bool(getattr(args, "daemon", False)) or None,
+            logfile=str(args.logfile) if getattr(args, "daemon", False) else None,
         )
+        # Everything that can fail at startup has now either failed or passed, so
+        # this is the first honest moment to tell the process that started us we
+        # are up (issue-191, R3.5). A no-op unless we were daemonized.
+        notify_ready()
         try:
             poller.run(once=args.once, stop_event=stop_event)
         finally:
@@ -359,3 +599,45 @@ class PollCommand(Command):
             return 1
         print(f"poll process (pid {pid}) stopped")
         return 0
+
+    def _status(self, args: argparse.Namespace) -> int:
+        """Report liveness, pid and last cycle. Exit 0 running, 1 not (issue-191).
+
+        Liveness comes from the **lock** and nothing else: it is the only
+        formulation immune to pid reuse, and the only one a file cannot forge.
+        The heartbeat beside it adds progress — when this poller started, when it
+        last finished a cycle, what that cycle did — and is treated as
+        enrichment throughout: an absent or unreadable one loses those lines and
+        nothing more.
+
+        The exit code is what makes this scriptable: `poll status || …` is a
+        health check, which is the ps/pidfile/log cross-check this action exists
+        to replace.
+        """
+        pidfile = Path(args.pidfile)
+        lock = RunLock(pidfile, name="poller")
+        running = lock.is_held()
+        recorded = lock.holder() if pidfile.is_file() else 0
+        stale = pidfile.is_file() and not running
+        beat = PollHeartbeat.read(args.status_file)
+
+        report = {
+            "daemon": "poller",
+            "running": running,
+            "pid": recorded if running else 0,
+            "pidfile": str(pidfile),
+            "stalePidfile": stale,
+            "recordedPid": recorded,
+            "logfile": str(args.logfile),
+            "statusFile": str(args.status_file),
+            "startedAt": beat.started_at if beat else "",
+            "lastCycleAt": beat.last_cycle_at if beat else "",
+            "lastCycle": dict(beat.last_cycle) if beat else {},
+            "intervalSeconds": beat.interval_seconds if beat else 0,
+        }
+        if args.format == "json":
+            print(json.dumps(report, indent=2))
+        else:
+            for line in _render_status(report, beat):
+                print(line)
+        return 0 if running else 1

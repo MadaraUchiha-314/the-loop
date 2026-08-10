@@ -109,6 +109,11 @@ the-loop gh-webhook start
 
 ```bash [Poll (pull)]
 # No inbound route needed — works behind NAT, a firewall, or on a laptop.
+# Detached, so it outlives this shell; logs to .the-loop/logs/poller.out:
+the-loop poll start --daemon
+the-loop poll status        # running? pid? last cycle? (exits 1 if it is not)
+
+# In the foreground instead, for a systemd `Type=simple` unit:
 the-loop poll start
 
 # One cycle and exit, for a cron job or a systemd timer:
