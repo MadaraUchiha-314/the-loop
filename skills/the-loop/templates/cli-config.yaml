@@ -290,3 +290,8 @@ integrations:
   slack:
     transport: sdk              # sdk (official slack-sdk, 0 deps) | webhook (raw POST)
     urlEnv: THE_LOOP_SLACK_WEBHOOK_URL
+    # url: https://hooks.slack.com/services/XXX/YYY/ZZZ
+    #   The URL itself, if you have judged it non-secret. Takes precedence over
+    #   urlEnv, so reading this file tells you where a notification goes. It is
+    #   still a bearer credential for that channel: setting it here commits it,
+    #   and git history keeps it after you delete the line. Prefer urlEnv.

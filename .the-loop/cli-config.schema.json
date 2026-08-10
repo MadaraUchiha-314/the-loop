@@ -738,7 +738,11 @@
             "urlEnv": {
               "type": "string",
               "default": "THE_LOOP_SLACK_WEBHOOK_URL",
-              "description": "Env var holding the incoming-webhook URL. Never the URL itself."
+              "description": "Env var holding the incoming-webhook URL. The default source, and the one to keep where this file is shared or public."
+            },
+            "url": {
+              "type": "string",
+              "description": "The incoming-webhook URL itself, for an operator who judges it non-secret. Takes precedence over urlEnv. A Slack incoming-webhook URL is a bearer credential for one channel: setting it here commits it. Prefer urlEnv unless you have decided otherwise."
             }
           }
         },

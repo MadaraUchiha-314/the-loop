@@ -27,6 +27,7 @@ integrations:
   slack:
     transport: sdk
     urlEnv: THE_LOOP_SLACK_WEBHOOK_URL
+    # url: https://hooks.slack.com/services/…   # takes precedence; commits the credential
 ```
 
 ## Choosing a transport
@@ -102,12 +103,52 @@ This is the key that replaced the three `ghBinary` declarations.
 - **Type:** `string`
 - **Default:** `THE_LOOP_SLACK_WEBHOOK_URL`
 
-Environment variable holding the incoming-webhook URL.
+Environment variable holding the incoming-webhook URL. The default source, and the one to
+keep where this file is shared or public.
 
-::: danger A variable name, never the URL
+::: warning It is a credential
 A Slack incoming-webhook URL *is* the credential — anyone holding it can post to your
-channel. Keep it in the environment.
+channel. Keeping it in the environment keeps it out of git.
 :::
+
+### `slack.url`
+
+- **Type:** `string`
+- **Default:** none — `urlEnv` is read instead
+
+The incoming-webhook URL itself, for an operator who has judged it non-secret (a personal
+channel in a private workspace, say). **Takes precedence over `urlEnv`**, so the effective
+configuration never depends on ambient environment: reading this file tells you where a
+notification goes.
+
+```yaml
+integrations:
+  slack:
+    transport: sdk
+    url: https://hooks.slack.com/services/XXX/YYY/ZZZ
+```
+
+::: danger Setting this commits the credential
+A webhook URL is a bearer credential — for one channel, with no read access and no
+workspace scope, but a credential. Put it here and it lands in git history, where deleting
+the line does not remove it; disclosure is fixed by deleting the webhook in Slack, not by
+editing the file. **Prefer `urlEnv`** unless you have decided otherwise on purpose.
+:::
+
+The reason the key exists is the failure mode it removes. With env-only configuration, the
+variable has to be present in *every* process that might deliver a notification — the poll
+daemon (which inherits it from whichever shell ran `poll start`), the harness sessions that
+daemon spawns, and every fresh machine's provisioning. Restart the daemon from cron,
+systemd or a new SSH session without the export and notifications stop with nothing louder
+than a log line, because `notify` is best-effort by contract. An empty `url:` is treated as
+absent and falls back to `urlEnv`, so a blank key cannot silently disable a working setup.
+
+When neither source resolves, the error names both:
+
+```text
+slack has no webhook url — set integrations.slack.url in the CLI config,
+or export THE_LOOP_SLACK_WEBHOOK_URL
+```
 
 ## Jira
 
