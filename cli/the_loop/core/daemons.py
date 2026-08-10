@@ -19,6 +19,8 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from ..daemonize import open_logfile
+from ..poller.heartbeat import PollHeartbeat
 from ..runlock import RunLock
 from ..state import layout_from_config
 
@@ -31,22 +33,53 @@ STOP_TIMEOUT_SECONDS = 30.0
 def _pidfile(daemon: str, config: Optional[dict] = None) -> str:
     layout = layout_from_config(config or {})
     if daemon == "poller":
-        return str(Path(layout.root) / "poll.pid")
+        return layout.poll_pidfile
     if daemon == "gh-webhook":
         return layout.pidfile
     raise ValueError(f"unknown daemon {daemon!r} (one of {DAEMONS})")
 
 
+def _logfile(daemon: str, config: Optional[dict] = None) -> str:
+    """Where a daemon started from here sends its stdout/stderr (issue-191).
+
+    It used to be ``/dev/null``, which is the same defect the poller had when it
+    was backgrounded by hand: a daemon that runs fine and logs nowhere. The
+    receiver has no logfile of its own yet, so it lands beside the poller's under
+    ``logs/``.
+    """
+    layout = layout_from_config(config or {})
+    if daemon == "poller":
+        return layout.poller_log
+    if daemon == "gh-webhook":
+        return str(Path(layout.root) / "logs" / "gh-webhook.out")
+    raise ValueError(f"unknown daemon {daemon!r} (one of {DAEMONS})")
+
+
 def daemon_status(daemon: str, config: Optional[dict] = None) -> Dict[str, Any]:
-    """``{daemon, running, pid, pidfile}`` — pid is advisory (issue-159)."""
+    """``{daemon, running, pid, pidfile, logfile, startedAt, lastCycleAt}``.
+
+    ``pid`` is advisory (issue-159): it is what the pidfile records, and only
+    trustworthy about who is *running* when ``running`` agrees. ``startedAt`` and
+    ``lastCycleAt`` come from the poller's heartbeat (issue-191) and are empty for
+    ``gh-webhook``, which keeps none — saying so is more useful to a client than
+    omitting the keys for one daemon and not the other.
+    """
     pidfile = _pidfile(daemon, config)
     lock = RunLock(pidfile, name=daemon)
     running = lock.is_held()
+    beat = (
+        PollHeartbeat.read(layout_from_config(config or {}).poll_status)
+        if daemon == "poller"
+        else None
+    )
     return {
         "daemon": daemon,
         "running": running,
         "pid": lock.holder() if running else 0,
         "pidfile": pidfile,
+        "logfile": _logfile(daemon, config),
+        "startedAt": beat.started_at if beat else "",
+        "lastCycleAt": beat.last_cycle_at if beat else "",
     }
 
 
@@ -72,20 +105,30 @@ def control_daemon(
                 "exitCode": 0,
                 "output": "already running",
             }
-        proc = subprocess.Popen(  # noqa: S603 — fixed argv, no shell
-            [sys.executable, "-m", "the_loop.daemon_entry", daemon],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            stdin=subprocess.DEVNULL,
-            start_new_session=True,
-        )
+        logfile = _logfile(daemon, config)
+        try:
+            log_fd = open_logfile(logfile)
+        except OSError as exc:
+            raise ValueError(
+                f"cannot open the {daemon} logfile {logfile}: {exc}"
+            ) from exc
+        try:
+            proc = subprocess.Popen(  # noqa: S603 — fixed argv, no shell
+                [sys.executable, "-m", "the_loop.daemon_entry", daemon],
+                stdout=log_fd,
+                stderr=log_fd,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        finally:
+            os.close(log_fd)
         return {
             "daemon": daemon,
             "verb": verb,
             "running": True,
             "pid": proc.pid,
             "exitCode": 0,
-            "output": f"spawned pid {proc.pid}",
+            "output": f"spawned pid {proc.pid}; logging to {logfile}",
         }
 
     # stop — signal the holder and wait for the lock to clear. No subprocess.

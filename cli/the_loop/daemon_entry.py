@@ -4,9 +4,13 @@
 options its CLI command would default to, read from the CLI config. It exists
 so :mod:`the_loop.core.daemons` can start a daemon **without shelling out to
 the-loop's own CLI verb** — the transitional adapter the owner asked us to
-remove (PR #162). The CLI's ``poll start`` / ``gh-webhook start`` keep running
-the daemon in the *foreground*, which is what cron and systemd units expect;
-this module is the detached-start path the control plane uses.
+remove (PR #162). The CLI's ``poll start`` / ``gh-webhook start`` run the daemon
+in the *foreground* by default, which is what cron and systemd units expect;
+this module is the detached-start path the **control plane** uses. Since
+issue-191 ``poll start --daemon`` can also detach on its own — which is why the
+namespace built here forces ``daemon`` off: this process has already been
+detached by its spawner, and a second double-fork would orphan the pid the
+control plane reported.
 
 Both paths converge on the same command implementation, so there is exactly one
 daemon startup sequence — lock acquisition, dependency checks, the run loop.
@@ -29,7 +33,13 @@ def _namespace(daemon: str) -> argparse.Namespace:
     command = next(c for c in iter_commands() if c.name == command_name)
     parser = argparse.ArgumentParser(prog=command_name)
     command.add_arguments(parser)
-    return parser.parse_args(["start"])
+    args = parser.parse_args(["start"])
+    # Never daemonize from here (issue-191): the control plane has already
+    # detached this process with `start_new_session=True` and redirected its
+    # output, so a second double-fork would only orphan the pid it reported.
+    if hasattr(args, "daemon"):
+        args.daemon = False
+    return args
 
 
 def main(argv: Optional[List[str]] = None) -> int:

@@ -233,6 +233,7 @@ cli/.pytest_cache/
 .the-loop/local/
 .the-loop/logs/
 .the-loop/*.pid
+.the-loop/poll-status.json
 .the-loop/portable/*.tmp
 
 # the-loop: the pre-issue-128 layout, still READ once per work item so an

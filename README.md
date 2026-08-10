@@ -99,7 +99,8 @@ the graph and lets you **inspect** it:
 pip install the-loopy-one
 
 the-loop gh-webhook start   # HMAC-verified GitHub webhook receiver; routes events to sessions
-the-loop poll start         # pull-based ingress, for hosts a webhook cannot reach
+the-loop poll start --daemon  # pull-based ingress for hosts a webhook cannot reach — detached
+the-loop poll status          # running? pid? last cycle? (exit 0/1, so it is a health check)
 the-loop sessions list      # the work-item record: its session, and one endpoint per PR
 the-loop events --follow    # the structured trail of every routing and dispatch decision
 

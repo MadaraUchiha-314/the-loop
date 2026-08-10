@@ -224,10 +224,36 @@ self-learning/ML capabilities.
   (issue-161); every core-capability command SHALL execute through that service as
   its only mode. The exceptions are inherent, not transitional: `sessions attach`
   hands the terminal to tmux, `sessions reset` must work when nothing is running,
-  `poll start` / `gh-webhook start` run a daemon in the foreground for cron and
+  `poll start` / `gh-webhook start` run the daemon themselves for cron and
   systemd, and the bootstrap commands (`install`, `upgrade`, `migrate-config`,
   `service`, `--version`) precede any service. See
   [control-plane](control-plane.md), the capability that owns this behaviour.
+
+- **`poll start` SHALL run in the foreground by default and detach properly on request**
+  (issue-191, decision-072). `--daemon` SHALL double-fork with `setsid` between the forks
+  (so the poller owns its session and process group, holds no controlling terminal and is
+  reparented to init), SHALL redirect stdout/stderr in append mode to `--logfile`
+  (default `<state.root>/logs/poller.out`) and stdin to `/dev/null`, and SHALL NOT change
+  the working directory — every path the-loop resolves is relative to it. `--foreground`
+  SHALL be its inverse on the same setting, and `--daemon --once` SHALL be refused.
+  A start that cannot succeed SHALL fail **in the caller's terminal**: the logfile is
+  opened and the lock probed before any fork, and a post-fork failure SHALL be reported
+  over a startup handshake — so `poll start --daemon` exits `0` only once the daemon holds
+  the lock and has passed its dependency checks.
+- The poller's pidfile SHALL be written by the process that survives — after the final
+  fork, under the single-instance lock — and a pidfile no live poller holds SHALL be
+  reported as stale and removed by `start` rather than left for the operator.
+- **`the-loop poll status` SHALL answer "is the poller running, and is it making
+  progress"** in one command: liveness, pid, pidfile, logfile, `startedAt`, `lastCycleAt`
+  and the last cycle's counters, as text or `--format json`, exiting `0` when a poller is
+  running and `1` when none is. **Liveness SHALL come from the lock and never from the
+  heartbeat** — the only formulation immune to pid reuse, and the only one a file cannot
+  forge. The poller SHALL record that heartbeat at `<state.root>/poll-status.json` after
+  every cycle, atomically; a heartbeat that cannot be written SHALL warn once and SHALL
+  NOT interrupt polling, and an absent or unreadable one SHALL cost only the progress
+  lines. The same facts SHALL be carried by the control plane's `daemon_status`.
+- A daemon started **by the control plane** SHALL have its output redirected to that
+  daemon's logfile rather than to `/dev/null` — no start path silently discards the log.
 
 ## Design
 
@@ -239,6 +265,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-191 | `poll start --daemon` detaches for real (double-fork + `setsid`, stdout/stderr to `<state.root>/logs/poller.out`, pidfile written after the final fork under the lock), reports startup success or failure to its caller over a handshake instead of into a logfile, removes a stale pidfile instead of leaving it, and gains `poll status` — liveness from the lock, progress from a new per-cycle heartbeat, exit `0`/`1` so it is a health check. Control-plane starts log to a file instead of `/dev/null` | [spec](../specs/issue-191/), [decision-072](../decisions/decision-072.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/191) |
 | issue-186 | `sessions cleanup` — a fifth control verb (CLI, HTTP and MCP) that releases a work item's local resources through the daemon's own dispatcher and keeps the portable record, unlike `reset` | [spec](../specs/issue-186/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/186) |
 | issue-161 | Re-layered as core → API → clients: `the_loop.core` facade, the control-plane service (`service start\|stop\|status`, no extras — it ships in the base install), every core-capability command routed through it, and the `/mcp` endpoint on the official MCP SDK. The UI was descoped from this work item on owner review | [spec](../specs/issue-161/), [decision-058](../decisions/decision-058.md), [control-plane](control-plane.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/161) |
 | issue-156 | Process runner removed; tmux is the only runner (2026-08-05): `sessions start` spawns tmux-hosted sessions unconditionally — there is no configured runner to pick | [spec](../specs/issue-156/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/156) |

@@ -46,13 +46,16 @@ deprecated no-ops, kept so pinned install lines keep resolving.) Needs Python 3.
 #      routing.authorizedUsers: ["your-github-login"]
 #      polling.sources: [{ provider: github, repos: ["your-org/your-repo"] }]
 
-# 2. Start an ingress (poll needs no inbound networking)
-the-loop poll start
+# 2. Start an ingress (poll needs no inbound networking).
+#    --daemon detaches it from this shell and logs to .the-loop/logs/poller.out;
+#    drop it to run in the foreground, under systemd or cron.
+the-loop poll start --daemon
 
 # 3. Label a GitHub issue "the-loop: auto-execute", then comment:
 #      the-loop start
 
 # 4. Watch
+the-loop poll status        # running? pid? last cycle? (exit 0/1)
 the-loop sessions list
 the-loop events --follow
 ```

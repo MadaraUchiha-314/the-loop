@@ -4,10 +4,14 @@ Pull-based ingress for hosts a webhook cannot reach — behind NAT or a firewall
 infrastructure with no inbound route.
 
 ```bash
-the-loop poll start [--interval 60] [--once] [--max-retries 3] \
-                    [--state-dir .the-loop/portable] \
-                    [--pidfile .the-loop/poll.pid]
-the-loop poll stop  [--pidfile .the-loop/poll.pid] [--timeout 30]
+the-loop poll start  [--interval 60] [--once] [--max-retries 3] \
+                     [--daemon | --foreground] \
+                     [--logfile .the-loop/logs/poller.out] \
+                     [--state-dir .the-loop/portable] \
+                     [--pidfile .the-loop/poll.pid] \
+                     [--status-file .the-loop/poll-status.json]
+the-loop poll stop   [--pidfile .the-loop/poll.pid] [--timeout 30]
+the-loop poll status [--pidfile …] [--logfile …] [--status-file …] [--format text|json]
 ```
 
 Every `--interval` seconds it asks each configured **provider** for the label-gated work
@@ -22,18 +26,60 @@ adapters and prompt templates are all reused unchanged.
 | `--interval` | [`polling.intervalSeconds`](/config/cli/polling-options#intervalseconds) | Seconds between cycles. |
 | `--once` | off | Run a single cycle and exit — for a cron job or systemd timer. |
 | `--max-retries` | [`polling.maxRetries`](/config/cli/polling-options#maxretries) | Per-event delivery attempts before giving up. |
+| `--daemon` / `--foreground` | `--foreground` | Detach and run as a real daemon, or stay in the foreground. One setting; the last flag on the line wins. |
+| `--logfile` | `<state.root>/logs/poller.out` | Where a **daemonized** poller's stdout/stderr go. Ignored in the foreground, where your shell owns them. |
 | `--state-dir` | `<state.root>/portable` | Portable work-item records — the cross-poll, cross-restart comment dedup lives in each item's `poll` section ([state on disk](/cli/state)). |
 | `--pidfile` | `<state.root>/poll.pid` | Where the PID is recorded, and the file the single-instance lock is held on. |
+| `--status-file` | `<state.root>/poll-status.json` | The heartbeat [`status`](#status) reads. |
 
 Without `--once` it loops until `poll stop` (or SIGINT/SIGTERM), writing a pidfile like the
 receiver.
+
+### Foreground or daemon?
+
+`start` runs in the **foreground** by default, because that is what a supervisor wants: a
+systemd `Type=simple` unit and a `--once` cron job both need the process they launched to
+be the process that does the work.
+
+Everywhere else — a laptop, an SSH session, a tmux pane, another tool's background task —
+use `--daemon`. It does the five things the incantation used to:
+
+```bash
+# before
+setsid nohup the-loop poll start --pidfile … >> .the-loop/logs/poller.out 2>&1 &
+# now
+the-loop poll start --daemon
+```
+
+| It does | So that |
+|---|---|
+| double-fork + `setsid` | the poller owns its session and process group, has no controlling terminal, and is reparented to init — **no parent teardown can take it down** |
+| redirects stdout/stderr to `--logfile` (append), stdin to `/dev/null` | a detached poller can never *stop* logging because of how it was started |
+| writes the pidfile after the final fork | the recorded pid is the process that is actually running |
+| waits until the daemon is genuinely up before returning | `poll start --daemon && poll status` cannot race its own daemon |
+| keeps the working directory | every relative path — the CLI config, `state.root`, the workspace — still resolves as you typed it |
+
+A failed start is reported to **your terminal**, not to the log: a conflicting `--once`,
+an unopenable logfile and a lock another poller holds are all checked before forking, and
+anything that fails after it (a missing dependency, a bad provider) comes back over the
+startup handshake as `the poller did not come up … See <logfile>` with exit `1`.
+
+The logfile is never rotated by the-loop — point `logrotate` at it on a long-lived host
+([state on disk](/cli/state#poller-log-root-logs-poller-out)).
+
+::: info Supervision is still not the poller's job
+`--daemon` makes a poller survive the *shell* that started it. It does not survive a
+reboot, a suspend, or being `SIGKILL`ed — that is systemd, cron or a keepalive script, and
+`poll status`'s exit code is the health check to build one on.
+:::
 
 **One poller per state root.** `start` takes an exclusive lock on the pidfile and holds it
 for the whole run — `--once` included, so two overlapping cron invocations cannot interleave.
 A second `start` against the same state refuses, names the pid holding it, and exits `1`
 without touching the ledger (`poller.blocked` in the event log). Two pollers configured with
 different `state.root` values are independent and both run. A pidfile left behind by a crash
-is *unlocked*, so the next `start` simply takes it — a `SIGKILL` never needs manual cleanup.
+is *unlocked*, so the next `start` reports it as stale, removes it and takes a fresh one — a
+`SIGKILL` never needs manual cleanup.
 
 ## `stop`
 
@@ -49,6 +95,48 @@ and removed, and nothing is signalled — previously that pid was signalled blin
 busy host meant `SIGTERM` to whichever process had inherited it. A poller still draining when
 `--timeout` runs out is reported and `stop` exits `1` rather than claiming a success that has
 not happened.
+
+## `status`
+
+| Flag | Default | Meaning |
+|------|---------|---------|
+| `--pidfile` | `<state.root>/poll.pid` | The lock that answers "is one running?". |
+| `--logfile` | `<state.root>/logs/poller.out` | Reported so you know where to look next. |
+| `--status-file` | `<state.root>/poll-status.json` | The heartbeat the progress lines come from. |
+| `--format` | `text` | `text` or `json` — the same facts either way. |
+
+```console
+$ the-loop poll status
+poller:     running (pid 48213)
+pidfile:    .the-loop/poll.pid
+logfile:    .the-loop/logs/poller.out
+started:    2026-08-10T09:58:03Z (44m ago)
+last cycle: 2026-08-10T10:42:00Z (2m ago) — 5 item(s), 1 spawn(s), 0 comment(s) forwarded
+```
+
+**It exits `0` when a poller is running and `1` when none is**, which is what makes it a
+health check rather than a report: `the-loop poll status >/dev/null || the-loop poll start
+--daemon` is a complete keepalive.
+
+Liveness comes from the **lock**, never from the heartbeat — the only formulation immune to
+pid reuse, and the only one a file cannot forge. So a stopped poller reads:
+
+```console
+$ the-loop poll status
+poller:     not running
+pidfile:    .the-loop/poll.pid (stale — pid 48213 is not running)
+logfile:    .the-loop/logs/poller.out
+started:    2026-08-10T09:58:03Z (3h ago)
+last cycle: 2026-08-10T10:42:00Z (2h ago, before it stopped) — 5 item(s), 1 spawn(s), 0 comment(s) forwarded
+```
+
+`status` **reports** a stale pidfile without removing it — a read-only command that mutates
+is a trap for whoever ran it to find out what was there. `start` and `stop` remove it, and
+they are the commands you run next.
+
+A poller with no heartbeat yet — one started before this file existed, or one whose
+heartbeat you deleted — still reports liveness and pid; only the progress lines are
+missing, and it says so.
 
 ## Provider-agnostic
 
@@ -151,7 +239,7 @@ picked up on the next cycle — no restart. An invalid edit is logged and the pr
 kept. The shared dispatch config still needs a restart.
 
 Design: [`docs/specs/issue-34/design.md`](/specs/issue-34/design) ·
-[decision-022](/decisions/decision-022).
+[decision-022](/decisions/decision-022) · [decision-072](/decisions/decision-072).
 
 ## Observability
 

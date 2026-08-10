@@ -38,7 +38,7 @@ import logging
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
+from typing import Callable, Dict, List, Optional, Sequence
 
 from .. import __version__, eventlog
 from ..authz import is_authorized, is_self_authored
@@ -416,6 +416,7 @@ class Poller:
         authorized_users: Sequence[str] = (),
         control: Optional[ControlConfig] = None,
         control_store: Optional[ControlStore] = None,
+        heartbeat: Optional[Callable[["PollSummary"], None]] = None,
     ):
         self.providers = list(providers)
         self.registry = registry
@@ -429,6 +430,12 @@ class Poller:
         # Prompt-injection guard: only these logins' items/comments are acted on
         # (empty => fail closed for human-authored input). See the_loop.authz.
         self.authorized_users = list(authorized_users)
+        # Called with each cycle's summary so `the-loop poll status` can report
+        # progress, not just liveness (issue-191). Injected rather than owned:
+        # the run loop should not hold a file handle, and a poller under test
+        # should not write one. A raising heartbeat must never end a cycle, so
+        # it is called defensively below.
+        self._heartbeat = heartbeat
         # Execution control (issue-106). The dispatcher owns *executing* the
         # commands; the poller only needs to know whether a work item has been
         # started, so it does not keep offering presence events the dispatcher
@@ -505,7 +512,22 @@ class Poller:
             errors=summary.errors or None,
             interrupted=summary.interrupted or None,
         )
+        self._beat(summary)
         return summary
+
+    def _beat(self, summary: PollSummary) -> None:
+        """Record the cycle in the heartbeat, if one was injected.
+
+        Swallows everything: a health file that cannot be written is a reason to
+        warn, never a reason to stop delivering events (the writer itself already
+        warns once on ``OSError``).
+        """
+        if self._heartbeat is None:
+            return
+        try:
+            self._heartbeat(summary)
+        except Exception:  # noqa: BLE001 — o11y must never break ingress
+            logger.exception("recording the poll heartbeat failed; continuing")
 
     def _poll_provider(
         self,

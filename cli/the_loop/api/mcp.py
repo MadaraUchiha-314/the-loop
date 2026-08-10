@@ -139,7 +139,9 @@ def build_server(cli_config: Optional[dict] = None) -> MCPServer:
         )
 
     def daemon_status() -> List[Dict[str, Any]]:
-        """The ingress daemons (poller, gh-webhook) and whether each is running."""
+        """The ingress daemons (poller, gh-webhook): whether each is running, its
+        pid, pidfile and logfile, and — for the poller — when it started and last
+        completed a cycle. Liveness is the pidfile's lock, never the heartbeat."""
         return [
             core_daemons.daemon_status(name, cli_config)
             for name in core_daemons.DAEMONS

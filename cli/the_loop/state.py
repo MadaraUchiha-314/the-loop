@@ -18,7 +18,10 @@ two negations to express one idea. This one groups them by **what they are**:
 portable state       ``<root>/portable/<slug>.json``            travels
 session handles      ``<root>/local/<slug>.json``               local
 event log            ``<root>/logs/events.jsonl``               local
+poller log           ``<root>/logs/poller.out``                 local
 receiver pidfile     ``<root>/gh-webhook.pid``                  local
+poller pidfile       ``<root>/poll.pid``                        local
+poller heartbeat     ``<root>/poll-status.json``                local
 ===================  =========================================  ==========
 
 One file per work item on each side. ``portable/`` holds what an authorized user
@@ -94,6 +97,21 @@ class StateLayout:
     @property
     def pidfile(self) -> str:
         return str(self.root_path / "gh-webhook.pid")
+
+    @property
+    def poll_pidfile(self) -> str:
+        """The poller's pidfile — and the single-instance lock held on it (issue-159)."""
+        return str(self.root_path / "poll.pid")
+
+    @property
+    def poll_status(self) -> str:
+        """The poller's heartbeat: when it started, and what its last cycle did."""
+        return str(self.root_path / "poll-status.json")
+
+    @property
+    def poller_log(self) -> str:
+        """Where a daemonized poller's stdout/stderr go (issue-191)."""
+        return str(self.root_path / "logs" / "poller.out")
 
 
 @dataclass(frozen=True)
@@ -219,6 +237,46 @@ GENERATED_PATHS: Tuple[GeneratedPath, ...] = (
         portable=False,
         holds="the pid of the running gh-webhook receiver",
         why="a process id is meaningless on another host, and stale within a reboot.",
+    ),
+    GeneratedPath(
+        name="poller pidfile",
+        attr="poll_pidfile",
+        default="<root>/poll.pid",
+        portable=False,
+        holds="the pid of the running poller — and the lock proving it is the only one",
+        why=(
+            "a process id is meaningless on another host, and stale within a reboot. "
+            "It is also the flock the single-instance guard is held on (issue-159), "
+            "which the kernel releases with the process — a fact about this machine "
+            "and nothing else."
+        ),
+    ),
+    GeneratedPath(
+        name="poller heartbeat",
+        attr="poll_status",
+        default="<root>/poll-status.json",
+        portable=False,
+        holds=(
+            "pid, startedAt, lastCycleAt and the last cycle's counters — what "
+            "`the-loop poll status` reports beyond liveness"
+        ),
+        why=(
+            "a pid and a clock reading from one machine's poller. Carried elsewhere it "
+            "describes a process that is not there — and it is never the source of "
+            "truth for liveness anyway (that is the lock), so a copy answers nothing."
+        ),
+    ),
+    GeneratedPath(
+        name="poller log",
+        attr="poller_log",
+        default="<root>/logs/poller.out",
+        portable=False,
+        holds="a daemonized poller's stdout and stderr, appended to continuously",
+        why=(
+            "the same reason as the event log: two machines appending to one tracked "
+            "file conflict on every line, and the output is read where it was written. "
+            "Rotation is the host's job (logrotate), so it also grows without bound."
+        ),
     ),
 )
 
