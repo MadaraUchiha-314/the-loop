@@ -1,3 +1,9 @@
+## v9.6.1 (2026-08-10)
+
+### Fix
+
+- **issue-199**: a contribution has no outer loop, and its arming comment answers its first gate (#200)
+
 ## v9.6.0 (2026-08-10)
 
 ### Feat
