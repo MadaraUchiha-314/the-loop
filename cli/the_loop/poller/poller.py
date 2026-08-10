@@ -427,8 +427,9 @@ class Poller:
         # Per-event delivery attempts before the poller gives up (issue-80).
         # Read once here — like the dispatch knobs a hot reload doesn't touch.
         self.max_retries = max(1, int(config.max_retries))
-        # Prompt-injection guard: only these logins' items/comments are acted on
-        # (empty => fail closed for human-authored input). See the_loop.authz.
+        # Prompt-injection guard: only these logins' comments are acted on, and
+        # only an item one of them opened (or armed) is started (empty => fail
+        # closed for human-authored input). See the_loop.authz, decision-074.
         self.authorized_users = list(authorized_users)
         # Called with each cycle's summary so `the-loop poll status` can report
         # progress, not just liveness (issue-191). Injected rather than owned:
@@ -654,14 +655,34 @@ class Poller:
         comments = provider.list_comments(item)
         live_ids = [c.id for c in comments if c.id]
         first_sight = not self.state.is_known(ref)
-        # Authorization guard (prompt-injection remediation): only act on input
-        # authored by an authorized user.
+        # Authorization guard (prompt-injection remediation). Who OPENED the work
+        # item is evidence about exactly one thing: whether the poller may start
+        # work on it by itself — a presence event spawns a session whose *subject*
+        # is that item, and a listing carries the label but never who applied it,
+        # so the author is the only proxy available for "a human wanted this"
+        # (issue-197, decision-074). It is not evidence about a comment, which
+        # carries its own author; those are judged one by one below, exactly as
+        # the webhook path judges an event by its actor.
         item_authorized = is_authorized(item.author, self.authorized_users)
-        if item.author and not item_authorized:
+        # An authorized user's *recorded* arming command is better evidence of the
+        # same thing — it names who asked and when — so either satisfies the
+        # presence gate. Only the dispatcher writes that record, and only for a
+        # NAMED allowlisted actor; a later stop/pause/cleanup revokes it, because
+        # `start_requested` reads the last command.
+        spawn_authorized = item_authorized or self.control_store.start_requested(ref)
+        if item.author and not spawn_authorized:
             logger.warning(
-                "ignoring %s from unauthorized author %r (not in authorizedUsers)",
+                "not starting %s by myself: its author %r is not in "
+                "authorizedUsers, and nobody has started it. Everything else on "
+                "it is still acted on — an authorized user's comment is judged "
+                "by its own author, and %s starts the item",
                 ref,
                 item.author,
+                (
+                    f"commenting {self.control.keyword('start')!r} on it"
+                    if self.control.enabled and self.control.keyword("start")
+                    else "`the-loop sessions start`"
+                ),
             )
             eventlog.emit(
                 "poll.unauthorized",
@@ -678,8 +699,8 @@ class Poller:
 
         # First sight: baseline the existing thread (the spawned session reads it
         # itself, matching webhook "only events going forward"), arm the spawn,
-        # and stop. Only spawn for items an authorized user authored (the input
-        # fed to /the-loop:work-on is that item's own body).
+        # and stop. Only spawn when the item is vouched for (the input fed to
+        # /the-loop:work-on is that item's own body).
         #
         # Except for control commands nobody has processed yet (issue-119).
         # Baselining means "resolved, never look at this again" — true of an
@@ -687,16 +708,16 @@ class Poller:
         # Those flow through the ordinary comment path below instead, so a start
         # posted BEFORE the poller first saw the item behaves exactly like one
         # posted after it (which is all the webhook path ever sees, label and
-        # comment being two deliveries).
+        # comment being two deliveries). Asked unconditionally: the method's own
+        # guards are per COMMENT, so who opened the item never silences an
+        # authorized user's instruction (issue-197).
         if first_sight:
-            pending = (
-                self._pending_control_ids(ref, comments) if item_authorized else set()
-            )
+            pending = self._pending_control_ids(ref, comments)
             self.state.baseline_comments(
                 ref, [cid for cid in live_ids if cid not in pending], _utcnow()
             )
             if not pending:
-                if item_authorized and not has_session:
+                if spawn_authorized and not has_session:
                     self._try_spawn(provider, item, refs, summary)
                 return
             # Fall through to the known-item path with `pending` unbaselined: it
@@ -740,7 +761,7 @@ class Poller:
         # Spawn only when there is a reason to: genuinely new activity, or a spawn
         # already in progress (attempts recorded). A dormant known item with no
         # session and no new activity must not spontaneously spawn.
-        if item_authorized and not has_session:
+        if spawn_authorized and not has_session:
             if genuinely_new:
                 self.state.reset_spawn(ref)
             if genuinely_new or self.state.spawn_attempts(ref) > 0:
@@ -748,9 +769,11 @@ class Poller:
         elif has_session:
             self.state.reset_spawn(ref)
 
-        if item_authorized:
-            for comment in candidates:
-                self._process_comment(provider, item, comment, refs, summary)
+        # Forwarded whoever opened the item: every candidate has already passed
+        # the guards that apply to a comment — its own author is allowlisted, and
+        # it is not one of the-loop's own replies (issue-197).
+        for comment in candidates:
+            self._process_comment(provider, item, comment, refs, summary)
 
         self.state.finalize(ref, live_ids, _utcnow())
 

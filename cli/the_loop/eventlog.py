@@ -315,8 +315,9 @@ EVENT_TYPES: Dict[str, str] = {
         "(work_item, error, will_retry)."
     ),
     "poll.unauthorized": (
-        "A polled item was ignored because its author is not an authorized "
-        "user (work_item, actor)."
+        "A polled item was not started by the poller itself: its author is not "
+        "an authorized user and nobody has armed it. Its comments are still "
+        "acted on, judged by their own authors (work_item, actor)."
     ),
     "poll.comment_forwarded": (
         "A new authorized comment was forwarded to the item's session "

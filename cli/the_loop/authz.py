@@ -20,6 +20,14 @@ Model (each operator runs their own instance for themselves):
 * An **empty** allowlist fails closed for human-authored actions (and is warned
   about at startup): nothing human-authored is actioned until it is configured.
 
+The actor authorized is **whoever performed the action** — the commenter, the
+reviewer, the labeller — never a bystander. The poll path has one place where no
+such actor exists: a listing carries a work item's label but not who applied it,
+so *starting work on the item itself* is gated on the item's author instead, or
+on an authorized user's recorded arming command. That proxy governs spawning and
+nothing else; a comment is always judged by its own author (issue-197,
+decision-074).
+
 ## Self-reply guard (issue-64)
 
 The spawned harness (Claude Code / Cursor) posts its own replies through the

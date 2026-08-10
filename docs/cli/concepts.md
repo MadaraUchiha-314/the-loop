@@ -134,6 +134,14 @@ instructions to an agent running on your machine.
 CI and system events, which carry no human instructions, still pass — and a `closed` event
 still auto-closes that item's own session whoever closed it.
 
+The actor judged is **whoever performed the action** — the commenter, the reviewer, the
+labeller — never a bystander. The poll ingress has one place where no such actor exists: a
+listing carries a work item's labels but not who applied them, so *starting work on the item
+itself* is gated on the item's author instead, or on an authorized user having armed it
+(`the-loop start` / `the-loop contribute`). That proxy governs spawning and nothing else, so
+a maintainer can point the-loop at an outside contributor's issue with one comment
+([decision-074](/decisions/decision-074)).
+
 Control-keyword parsing happens strictly **after** both guards, so it never becomes a
 second, weaker way in.
 

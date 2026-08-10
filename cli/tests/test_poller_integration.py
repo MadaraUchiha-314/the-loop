@@ -96,11 +96,11 @@ class GhState:
             }
 
 
-def _comment(cid, body):
+def _comment(cid, body, author="octocat"):
     return {
         "id": cid,
         "body": body,
-        "author": {"login": "octocat"},
+        "author": {"login": author},
         "createdAt": "",
         "url": "u",
     }
@@ -115,7 +115,14 @@ def _dispatcher(registry, tmux, config):
     )
 
 
-def _make(tmp_path, gh_state, monitor_issues=True, monitor_prs=False):
+def _make(
+    tmp_path,
+    gh_state,
+    monitor_issues=True,
+    monitor_prs=False,
+    authorized=("octocat",),
+    control=None,
+):
     registry = SessionRegistry(tmp_path / "sessions")
     tmux = FakeTmux()
     dispatcher = _dispatcher(
@@ -124,7 +131,9 @@ def _make(tmp_path, gh_state, monitor_issues=True, monitor_prs=False):
         RoutingConfig(
             spawn_on_unmatched="labeled",
             # Pre-issue-106: the label alone spawns (the start gate has its own tests).
-            control=ControlConfig(require_start_command=False),
+            control=control or ControlConfig(require_start_command=False),
+            authorized_users=list(authorized),
+            portable_dir=str(tmp_path / "portable"),
         ),
     )
     provider = GitHubPollProvider(
@@ -140,7 +149,7 @@ def _make(tmp_path, gh_state, monitor_issues=True, monitor_prs=False):
         dispatcher=dispatcher,
         config=PollConfig(),
         state=PollState(WorkItemStore(tmp_path / "portable")),
-        authorized_users=["octocat"],  # the fixture author (authz guard)
+        authorized_users=list(authorized),  # default: the fixture author (authz guard)
     )
     return registry, tmux, dispatcher, poller
 
@@ -262,6 +271,61 @@ def test_the_daemons_own_announcement_is_not_forwarded(tmp_path):
 
     assert tmux.delivers == []
     assert len(tmux.spawns) == 1
+
+
+def test_a_maintainer_starts_the_loop_on_an_outside_contribution(tmp_path):
+    """Scenario: an authorized user's command works on an item they did not open.
+
+    Feature: Poll GitHub and act on authorized instructions, whoever opened the item
+    Given a labelled issue opened by a login that is not in authorizedUsers
+    And an authorized maintainer's `the-loop contribute` comment on it
+    When a poll cycle runs
+    Then the command is recorded and a session is spawned for the work item
+
+    Requirement: docs/specs/issue-197/bugfix.md#R1
+    """
+    gh = GhState()
+    gh.issues[0]["author"] = {"login": "outsider"}
+    gh.comments = [_comment("IC_1", "the-loop contribute", author="maintainer")]
+    registry, tmux, dispatcher, poller = _make(
+        tmp_path, gh, authorized=("maintainer",), control=ControlConfig()
+    )
+
+    poller.poll_once()
+    assert wait_until(lambda: len(tmux.spawns) == 1)
+    dispatcher.stop()
+
+    assert dispatcher.control_store.start_requested(REF) is True
+    assert registry.find_by_work_item(REF) is not None
+    _, prompt, _, _ = tmux.spawns[0]
+    assert "/the-loop:work-on" in prompt and "UNTRUSTED" in prompt
+
+
+def test_the_outside_contributor_cannot_start_the_loop_themselves(tmp_path):
+    """Scenario: the same command from the item's own (unauthorized) author.
+
+    Feature: Poll GitHub and act on authorized instructions, whoever opened the item
+    Given a labelled issue opened by a login that is not in authorizedUsers
+    And that same login commenting `the-loop contribute` on it
+    When a poll cycle runs
+    Then nothing is recorded, nothing is delivered and no session is spawned
+
+    Requirement: docs/specs/issue-197/bugfix.md#R1
+    """
+    gh = GhState()
+    gh.issues[0]["author"] = {"login": "outsider"}
+    gh.comments = [_comment("IC_1", "the-loop contribute", author="outsider")]
+    registry, tmux, dispatcher, poller = _make(
+        tmp_path, gh, authorized=("maintainer",), control=ControlConfig()
+    )
+
+    poller.poll_once()
+    time.sleep(0.1)
+    dispatcher.stop()
+
+    assert tmux.spawns == [] and tmux.delivers == []
+    assert dispatcher.control_store.get(REF) is None
+    assert registry.find_by_work_item(REF) is None
 
 
 def test_pr_comment_reuses_the_linked_issues_session(tmp_path):

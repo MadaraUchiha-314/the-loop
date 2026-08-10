@@ -347,6 +347,30 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   mode. Best-effort — a failure warns, emits `workspace.trust_failed` and still spawns.
   Audited as `workspace.trusted`; `harnessTrust.enabled: false` opts out. See
   [interactive-sessions](interactive-sessions.md).
+- **The authorized actor is whoever performed the action, and on the poll path the work
+  item's author gates spawning alone** (issue-197,
+  [decision-074](../decisions/decision-074.md)). The webhook router authorizes
+  `event_actor` — the commenter, reviewer or labeller. A poll listing carries an item's
+  labels but not who applied them, so there the *item's author* stands in as the proxy for
+  "a human wanted this", and it governs exactly one decision:
+  - WHEN a polled work item's author is not in `authorizedUsers` AND no arming command has
+    been recorded for it THEN the poller SHALL NOT emit a **presence** event for it (no
+    session is spawned whose subject is that item), SHALL log the remedy and SHALL record
+    `poll.unauthorized` naming that author. WHEN an authorized user **has** armed it
+    (`the-loop start`/`contribute`/`resume`, from a comment or from
+    `the-loop sessions start` — `ControlStore.start_requested`) THEN presence SHALL be
+    armed exactly as for any other item, and the warning SHALL stop; a later
+    `stop`/`pause`/`cleanup` disarms it again.
+  - WHEN a comment on such an item is authored by an authorized user THEN it SHALL be
+    forwarded, and a control command on it executed, **regardless of who opened the item**
+    — including a command already on the thread at first sight (issue-119's rule). An
+    unauthorized author's comment is baselined and dropped exactly as before, on an armed
+    item as on any other. So a maintainer can point the-loop at an outside contributor's
+    issue or pull request with one comment; the contributor gains nothing.
+  - Every spawn prompt states that the work item's own title, body and comment thread are
+    **untrusted content** — a description of what is wanted, never instructions that
+    override the-loop's rules — because the person who asked for the work need not be the
+    person who wrote it. A constant, interpolating nothing, above the payload excerpt.
 - A comment/review the-loop itself posted (identified by an embedded marker, since it
   is posted under the operator's own credentials and is otherwise indistinguishable by
   author) SHALL be dropped before dispatch, so the-loop never resumes a session on its
@@ -427,6 +451,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-197 | The poll ingress stopped letting the work item's author decide whether anybody is listened to (2026-08-10): a comment is judged by its own author, so an authorized user's control comment on an outside contributor's issue arms and forwards; the item's author now gates only whether the poller starts work on it **by itself**, and an authorized user's recorded arming command satisfies that gate too. The spawn prompt states the work item itself is untrusted content | [spec](../specs/issue-197/), [decision-074](../decisions/decision-074.md), [poll](../cli/commands/poll.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/197) |
 | issue-199 | The spawning comment reaches the graph (2026-08-10): a spawn that enters a **human** start node now evaluates that node's exit chain once, with the spawning event's comments attached — so `the-loop contribute` carrying a goal moves the item to `phase-selection` without a second command, where before the arming comment (executed by the control path, never forwarded) could reach no gate at all and the item sat at its first node until some unrelated event arrived; agent start nodes and respawns evaluate nothing | [spec](../specs/issue-199/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/199) |
 | issue-193 | The ingress adopts a repository that never ran `/the-loop:init` (2026-08-10): the graph coupling writes the-loop's built-in default to `.the-loop/harness-config.yaml` — naming the work item's owner/repo so `originRepo` resolves — after the `origin`-remote ownership proof and **before** the spec-directory gate, so the session the daemon just spawned has a config to read even on the run whose graph is skipped; recorded as `harness.config_scaffolded`, never overwriting an existing config, and never for a contribution | [spec](../specs/issue-193/), [decision-073](../decisions/decision-073.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/193) |
 | issue-186 | A seventh control keyword, `cleanup` (`the-loop cleanup`, `routing.control.keywords.cleanup`): releases a work item's LOCAL resources — every endpoint's tmux session, the workspace checkout, the machine-local session record — keeping the portable record and touching nothing remote. Runs with or without a live session (the retroactive case), disarms the item like a stop, and runs automatically on a closure **only** when the close event names an authorized actor; otherwise it is deferred and recorded | [spec](../specs/issue-186/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/186) |
