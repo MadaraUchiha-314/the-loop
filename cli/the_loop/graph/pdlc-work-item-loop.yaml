@@ -73,6 +73,12 @@ start: phase-selection
 # always ran" to "every phase that did not run has a name on it". Read
 # decision-068 before narrowing or widening this list; the residual it accepts
 # is stated there in full.
+#
+# issue-188 added the OTHER default: a node may instead be `optIn: true`, which
+# implies `skippable` (same vocabulary, same edge, same provenance) but starts
+# OFF — the checklist renders it unticked and it runs only if a human ticks it.
+# A skip set may not name one: declaring a phase away that is already away says
+# nothing, so it is refused at compile time.
 skipSets:
   # One token for the motivating case (a doc fix): `--node spec-chain`. It names
   # the chain the project's own vocabulary describes — requirements → design →
@@ -166,6 +172,31 @@ nodes:
       # a security gate reporting success without running (issue-124).
       - {hook: enforces-boundaries-from, with: {upstream: "requirements.md|bugfix.md", markers: ["trust boundary", "abuse case"]}}
       - lint-artifacts
+
+  # The one OPT-IN phase the loop ships (issue-188). `optIn: true` is the mirror
+  # of `skippable: true` — same gate, same authorization, same provenance,
+  # opposite default: this node is OFF unless an authorized human ticks it at
+  # `phase-selection`. It exists because `design.md` is the highest-leverage
+  # artifact the loop produces and the one no critic ever read: the review chain
+  # sits after `implementation`, so by the time another model looked at the
+  # design there was already a testing plan, a task DAG and a diff derived from
+  # it, and a design finding was a rewrite rather than an edit.
+  #
+  # Placed straight after `design` — after `design.md` is locked, before the
+  # plan and the DAG are derived from it. No `phase:`, for the same reason
+  # `critic-review` and `security-review` carry none: this happens WITHIN the
+  # design phase, and a new label would have to be minted in every consuming
+  # repository for a node most work items never walk.
+  - id: design-critic-review
+    actor: agent
+    optIn: true             # off unless selected — implies `skippable`
+    description: >-
+      a different model/harness reviews the LOCKED design.md against the
+      requirements, before the testing plan and the task DAG are derived from it
+    stage: critic-review
+    entry: [log-entry, deliver-assignment]
+    exit:
+      - {hook: validate-artifacts, with: {validates: execution-log.md, sections: ["Design critic review"]}}
 
   # Planning HOW the work item will be proved. It sits between `design` and
   # `design-approval` on purpose (owner's call on PR #166): the plan is derived
@@ -425,7 +456,10 @@ edges:
   - {from: brainstorming, to: requirements-definition, on: skipped}
   - {from: requirements-definition, to: requirements-approval, on: skipped}
   - {from: requirements-approval, to: design, on: skipped}
-  - {from: design, to: test-planning, on: skipped}
+  - {from: design, to: design-critic-review, on: skipped}
+  # The opt-in node's own skipped edge (issue-188) — taken by every work item
+  # that did not select it, which is the default.
+  - {from: design-critic-review, to: test-planning, on: skipped}
   - {from: test-planning, to: design-approval, on: skipped}
   - {from: design-approval, to: tasks-breakdown, on: skipped}
   - {from: tasks-breakdown, to: implementation, on: skipped}
@@ -441,7 +475,8 @@ edges:
   - {from: requirements-approval, to: design, on: approved}
   - {from: requirements-approval, to: design, on: approved-with-comments}
   - {from: requirements-approval, to: requirements-definition, on: changes-requested}
-  - {from: design, to: test-planning, on: pass}
+  - {from: design, to: design-critic-review, on: pass}
+  - {from: design-critic-review, to: test-planning, on: pass}
   - {from: test-planning, to: design-approval, on: pass}
   - {from: design-approval, to: tasks-breakdown, on: approved}
   - {from: design-approval, to: tasks-breakdown, on: approved-with-comments}

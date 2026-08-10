@@ -36,14 +36,28 @@ full process.
 - [ ] requirements-definition   ← unticked: this phase will be skipped
 - [x] design
 …
+- [ ] design-critic-review        ← an OPT-IN phase: unticked (the default) = it
+                                     does not run. Tick it to add it.
+
 - [ ] outer-loop-on-pull-request  ← not a phase: where the OUTER loop happens.
                                      Unticked (the default) = on the work item.
 
 the-loop execute
 ```
 
-Only the **reply** is read. Ticking boxes on the-loop's own comment does nothing —
-GitHub reports that a comment was edited, never by whom, and this gate exists to keep
+**Two defaults, in two sections** (issue-188). The rows above the optional block are
+*opt-out*: ticked already, and unticking one removes work. An **opt-in** phase — one the
+shipped graph marks `optIn` — is listed unticked under its own heading, and ticking it
+*adds* work. Leaving it alone, or never naming it, means it does not run; `the-loop check`
+then reports it as *not selected*, which is a different fact from *skipped by declaration*
+and is never a pass. The outer loop ships one: `design-critic-review`, a different model
+reading the locked `design.md` before the testing plan and task DAG derive from it.
+
+**The reply is the signature.** Tick the boxes in place on the-loop's own comment if you
+like — that is the natural way to answer — but the tick state is only a *proposal* until
+an authorized user says the keyword over it, because GitHub reports that a comment was
+edited and never by whom. A checklist inside the `the-loop execute` comment itself wins
+over the boxes, for anyone who prefers to be explicit. Either way the gate exists to keep
 the harness from choosing its own workload.
 
 The last row is not a phase (issue-183): it says where the **outer** loop is collaborated
@@ -57,8 +71,10 @@ configurable.
 
 ## `show`
 
-Print the shipped graph: every node with its flags (`required`, `skippable`, `human`,
-`terminal`) and the edges leading out of it.
+Print the shipped graph: every node with its flags (`required`, `skippable`, `opt-in`,
+`human`, `terminal`) and the edges leading out of it. `opt-in` is printed instead of
+`skippable` for a node that is off unless selected — the two share a mechanism, but only
+one of them runs by default.
 
 ```text
 $ the-loop graph show
@@ -75,7 +91,10 @@ graph v1, start: phase-selection
       --approved-with-comments--> design
       --changes-requested--> requirements-definition
   design
-      --pass--> design-approval
+      --pass--> design-critic-review
+  design-critic-review  [opt-in]
+      --pass--> test-planning
+      --skipped--> test-planning
   …
 ```
 

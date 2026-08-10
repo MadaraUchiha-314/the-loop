@@ -172,6 +172,9 @@ There are exactly **two** runtime concepts and **one** contract between them.
 - A node MAY be declared `optional` (skipped when its artifact is absent — brainstorming)
   or `required` (never skippable, even by an optional-looking gate). Since issue-179 the
   outer loop declares `required` on exactly one node: `phase-selection`.
+- A node MAY carry a one-line `description`, rendered beside its row on the
+  phase-selection checklist. It is shipped-graph text — a repository cannot supply it —
+  and it exists so a phase a reader has to guess at is not a phase they decline by default.
 
 ### Declared skips (issue-177, widened by issue-179)
 
@@ -242,6 +245,37 @@ The author of a work item — never the harness — decides which phases it walk
   declared away and no `testing-plan.md`, it gates the shared `execution-log.md` for a
   non-empty **Verification results** section instead, and blocks until it is written —
   skipping the plan removes the document, never the verifying.
+
+### Opt-in phases (issue-188)
+
+The other default, at the same gate and by the same person
+([decision-071](../decisions/decision-071.md)):
+
+- A node MAY be declared `optIn: true` — **off unless an authorized human selects it**.
+  It SHALL imply `skippable` (same vocabulary, same required `on: skipped` edge, same
+  routing and reporting), and `required` × `optIn` SHALL fail at compile time. A
+  `skipSets` member that is opt-in SHALL fail at compile time too: a set declares phases
+  *away*, and an opt-in phase is already away.
+- The phase-selection checklist SHALL render opt-in nodes **unticked**, in a section of
+  their own that states they do not run unless ticked, with each node's `description`.
+  Ticking one SHALL select it; leaving it unticked, or never naming it in the reply, SHALL
+  leave it unselected. Every unreadable-input path SHALL resolve to *not selected* — the
+  fail-closed direction for a phase that adds a review rather than gating one.
+- A selection SHALL be recorded in `graph-state.json` as `optIns[<node>] = {via, token,
+  by, at}` (`graph.opt_ins_selected`), filtered through the compiled graph on every read
+  exactly as `skips` is, and never applied to a node the pointer already entered. The
+  frozen graph SHALL carry `optIn` per node so the portable record distinguishes a phase
+  nobody asked for from a phase somebody removed. The confirmation comment SHALL name the
+  selected opt-in phases, or state that the offered ones were not selected.
+- WHEN an opt-in node is not selected THEN the runtime SHALL route around it on its
+  `skipped` edge, running none of its hooks, and `the-loop check` — `--recompute`
+  included — SHALL report it as **not selected**, distinct from *skipped by declaration*
+  (which names a human) and never as `pass`. A work item whose state predates the node
+  SHALL therefore skip it rather than block on it.
+- The shipped opt-in phase is **`design-critic-review`** (outer loop only), between
+  `design` and `test-planning`: a different model reading the locked `design.md` against
+  the requirements before the testing plan and task DAG derive from it, gating the
+  execution log's `Design critic review` section. See [review-loop](review-loop.md).
 - An **edge** SHALL route on a hook **outcome** only (`on: pass`, `on: changes-requested`,
   …). There is no expression language: the LLM produces facts, declared edges route on
   them. That split is what makes judgement and determinism coexist.
@@ -531,6 +565,7 @@ included, however empty the log was.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-188 | Opt-in phases, and the design critic round (2026-08-10): a second node marker, `optIn: true` — the mirror of `skippable`, implying it (same vocabulary, same `on: skipped` edge, same provenance) but **off unless an authorized human ticks it** at `phase-selection`; `required`×`optIn` and an opt-in `skipSets` member refused at compile time; a node `description` rendered beside its checklist row; selections recorded as `optIns` in `graph-state.json` (`graph.opt_ins_selected`), filtered through the compiled graph on every read, carried into the frozen graph per node, and named in the confirmation comment; an unselected opt-in node routed around and reported by `check` as *not selected* — never as a declaration, never as a pass — which also leaves every pre-issue-188 work item unblocked; the outer loop ships one such phase, `design-critic-review`, between `design` and `test-planning` | [spec](../specs/issue-188/), [decision-071](../decisions/decision-071.md), [review-loop](review-loop.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/188) |
 | issue-186 | A terminal `cleanup` node in both work-item-level loops (2026-08-10): the-loop enters it — via `Runtime.cleanup`, a sibling of `start` rather than a `force` — immediately before releasing a work item's local resources, so the teardown carries a `loop:cleanup` label and an execution-log checkpoint. No inbound edge (`complete` stays terminal), none in `pdlc-pr-loop`, and the one graph action exempt from the start requirement | [spec](../specs/issue-186/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/186) |
 | issue-185 | The contribution loop (2026-08-09): a third shipped graph, `pdlc-contribution-loop`, walked when the-loop is invited into an existing, in-progress work item as a contributor — armed by the new `contribute` control keyword (a spawn-arming sibling of `start`, `routing.control.keywords.contribute`); a required `goal-definition` gate (`post-goal-request`/`classify-goal` hooks) that refuses to start until an authorized human states a goal and success criteria, frozen into graph state with provenance; one lightweight `contribution.md` artifact (bundled template) in place of the four-file spec chain; verification gating on every criterion checkbox being met; `GraphState.loop` recording which loop a state walks, resolved state-first everywhere with non-shipped names failing closed to the default | [spec](../specs/issue-185/), [decision-070](../decisions/decision-070.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/185) |
 | issue-183 | Multi-repo topology named (2026-08-09): the outer loop runs in the repository the ticket was created in and each contributing repository gets one PR and one inner loop, whose state is qualified by repository (`pr-loops/<owner>__<repo>/pr-<n>/`) with the origin repo's shipped path unchanged; repository names are validated at the path boundary, never sanitized; a qualified cross-repo closing reference now routes to its work item; `execution-log.md` front matter takes `repos:` and `await-inner-loops` holds `implementation` until each declared repository has a finished loop (blocking on a malformed entry); the surface the OUTER loop is collaborated on became a **per-work-item** choice at `phase-selection` (one extra checklist row, frozen by the same signed reply; default: the work item itself), deliberately not a config key anywhere, with the inner loop not configurable at all; graph verbs and the API gained `--pr-repo`/`prRepo` | [spec](../specs/issue-183/), [decision-069](../decisions/decision-069.md), [spec-workflow](spec-workflow.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/183) |

@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [071](decision-071.md) | A phase may be offered rather than imposed (`optIn`), and the design critic round | proposed | 2026-08-10 |
 | [070](decision-070.md) | Joining existing work is a third loop, armed by a keyword and gated on a stated goal | proposed | 2026-08-09 |
 | [069](decision-069.md) | The outer loop runs in the origin repository, and each work item declares its surface | proposed | 2026-08-09 |
 | [068](decision-068.md) | Every phase is selectable — the floor moves from the graph to the human | proposed | 2026-08-08 |

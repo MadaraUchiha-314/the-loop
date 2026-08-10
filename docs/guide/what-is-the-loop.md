@@ -94,7 +94,10 @@ intent and outcome sit in one diff. Evidence is committed under
 - Collaborators are identified up-front; not every task needs every persona.
 - Every human decision leaves a **paper trail** on the ticket or pull request.
 - Self-checks run tests at logical checkpoints; progress is logged for visibility.
-- Configured self-reviews and critic reviews run **before** escalating to a human.
+- Configured self-reviews and critic reviews run **before** escalating to a human, and a
+  work item may **opt in** to one more: a critic reading the locked `design.md` before
+  the testing plan and the task DAG are derived from it, so a structural finding costs
+  an edit rather than a rewrite. Off unless it is ticked at `phase-selection`.
 - **Testing is planned, then executed**: `test-planning` decides which kinds of testing
   apply and records `n/a` *with a reason* for the rest; `verification` runs the plan and
   ticks an activity only once it has actually run.

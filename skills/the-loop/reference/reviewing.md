@@ -104,6 +104,41 @@ commit can propose one. Review a change to `reviews.critics[]` like code, and ne
 secrets in `env` — the critic CLI's own credentials come from the ambient environment the
 child inherits.
 
+## The design critic round (opt-in, issue-188)
+
+**A critic can also read the design — before anything is derived from it.** `design.md` is
+the highest-leverage artifact the loop produces, and the review chain above sits after
+`implementation`: by the time a different model looks at the work there is already a
+testing plan, a task DAG and a diff, so a design finding costs a rewrite rather than an
+edit. The `design-critic-review` node moves one round forward to where it is cheap.
+
+It is **opt-in**: the node is off unless an authorized human ticks it at
+`phase-selection` (`reference/workflow.md` § Opt-in phases). Nothing about it is automatic
+— the harness never selects it, exactly as it never declares a skip.
+
+What changes when it runs, and what does not:
+
+| | Design critic round | The `critic-review` node |
+|---|---|---|
+| Subject | the **locked `design.md`**, against `requirements.md`/`bugfix.md` | the diff/PR, against the whole spec chain |
+| Runs | after `design`, before `test-planning` | after `verification` |
+| Recorded in | `execution-log.md` § **Design critic review** | `execution-log.md` § Review cycles |
+| Procedure | unchanged — everything above this section | unchanged |
+
+The **prompt** carries what the critic-round prompt carries, with the subject swapped:
+the design under review and the requirements it must satisfy; the security considerations
+its Security design section claims to enforce; findings from earlier rounds; and the same
+output contract (findings only, most severe first, each with the section and why it is
+wrong). Ask it for the findings a diff review cannot produce — a boundary the design never
+crosses, a component that cannot satisfy an acceptance criterion, a data model that makes
+a stated requirement unreachable.
+
+Findings are applied to `design.md` **in place** under the reply-first-then-fix protocol;
+the node does not route back to `design`, because the design has not been approved yet —
+`design-approval` still reads it, now with the critic's findings already resolved. A round
+that could not run is recorded as **`unavailable`** with the cause and does not count as
+converged, exactly as above.
+
 ## Convergence — stop and escalate signals
 
 - **Stop early on zero new findings.** If a round surfaces **no new actionable finding**,
@@ -133,5 +168,7 @@ the full procedure and checklist):
 
 Append each round to the execution log's **review table**: round #, type
 (self/critic/**security**), reviewer (`<harness>/<model>` or the mechanism), outcome
-(new findings / zero / escalated / **unavailable**), and a link. This is the evidence that the
+(new findings / zero / escalated / **unavailable**), and a link. A **design critic** round
+is recorded in its own section (`## Design critic review`) rather than this table — it is a
+separate gate, and the node blocks until that section is written. This is the evidence that the
 configured review counts — and the security gate — were actually run.

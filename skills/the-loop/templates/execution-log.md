@@ -74,6 +74,21 @@ status: in-progress          # in-progress | complete
 |-------------------|---------|---------|----------|
 |                   |         | pass \| fail | link or `evidence/<file>` |
 
+## Design critic review
+
+> **Only when this work item selected the opt-in `design-critic-review` phase** (issue-188)
+> — a different model/harness reading the **locked `design.md`** against the requirements,
+> before the testing plan and the task DAG are derived from it. The node blocks until this
+> section is filled in; a work item that did not select the phase leaves it as the template
+> left it. Rounds follow `reference/reviewing.md` unchanged: attribution prefix, own-comment
+> marker, reply-first-then-fix, stop on zero new findings, escalate on a repeated finding.
+> A round that could not run is recorded as **`unavailable`** with the cause and does NOT
+> count toward `reviews.criticReviewCount`.
+
+| Round | Critic (`<harness>/<model>`) | Outcome | Findings → disposition | Link |
+|-------|-----------------------------|---------|------------------------|------|
+|       |                             | new findings \| zero (converged) \| escalated \| unavailable | | |
+
 ## Review cycles
 
 > Outcome is one of: new findings · zero (converged) · escalated · **unavailable** (the

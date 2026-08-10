@@ -109,7 +109,11 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   reviews, the security review and the approval gate alike — with exactly one exception:
   `phase-selection` itself, which is `required: true` so the loop can never walk past the
   act of choosing. That invariant is the floor now: not a list of phases that always run,
-  but a named human answering, up front, which ones do. An operator can make the same
+  but a named human answering, up front, which ones do. **The same gate also offers what
+  is *not* on by default** (issue-188, decision-071): a node marked `optIn` is rendered
+  unticked and runs only if somebody ticks it — the loop ships one,
+  `design-critic-review`, a different model reading the locked `design.md` before the
+  testing plan and task DAG are derived from it. An operator can make the same
   declaration with `the-loop graph skip <id> --node <token> --reason <why>`
   (audited, like `force`). A declared skip is reported by `the-loop check` as
   *skipped by declaration* with provenance — never as a pass. **Never answer the
