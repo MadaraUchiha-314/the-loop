@@ -63,9 +63,10 @@ _COMMENT_EVENTS = {
     "pull_request_review": "review",
 }
 
-#: The actions that may adopt an unconfigured repository (issue-193) — the two that
-#: *drive* the graph. ``context`` is excluded because it is documented as mutating
-#: nothing, and ``clean`` because it runs while the checkout is being released.
+#: The actions whose adoption safety net runs (issue-193, narrowed by issue-201) — the
+#: two that *drive* the graph. ``context`` is excluded because it is documented as
+#: mutating nothing, and ``clean`` because it runs while the checkout is being released.
+#: The primary adoption is :meth:`GraphLink.adopt`, called before anything is spawned.
 _ADOPTING_ACTIONS = frozenset({"start", "advance"})
 
 
@@ -903,32 +904,60 @@ class GraphLink:
                 logger.debug("could not read %s's control record: %s", item_id, exc)
         return ""
 
+    def adopt(self, work_item: WorkItemRef, cwd: str) -> None:
+        """Adopt an unconfigured checkout **before anything is spawned** (issue-201).
+
+        This is the entry point the dispatcher calls between preparing the
+        workspace and rendering the prompt, and its whole reason for existing is
+        *ordering*. issue-193 wrote the default from :meth:`on_spawn`, which the
+        dispatcher calls **after** ``tmux.spawn`` — so a session could begin, its
+        SessionStart hook included, in a checkout whose ``.the-loop/`` did not
+        exist yet. The window was short and the write is fast, but a harness whose
+        point is predictability cannot leave "did the agent read a config?" to a
+        race.
+
+        It cannot simply call :func:`harness_config.scaffold`, because at this
+        point ``cwd`` is not yet known to be the work item's own repository:
+        under the legacy ``spawnWorkdir`` setup it is a static directory that may
+        be the operator's own checkout. So the same gates run here as anywhere
+        else the coupling touches a checkout — the coupling is enabled, the work
+        item is nameable, an authorized human armed it, and ``origin`` proves the
+        directory (issue-113 A6, decision-044) — plus the contribution carve-out.
+
+        :meth:`_adopt` stays behind it, on the driving actions, as an idempotent
+        safety net: a session spawned before this existed, or any path that does
+        not come through the dispatcher, is still adopted at its next advance.
+
+        Best-effort and silent about it, like everything here.
+        """
+        if not self.config.enabled:
+            return
+        item_id = spec_id_for(work_item)
+        if item_id is None:
+            return
+        if self._awaiting_start(work_item):
+            return
+        root = Path(cwd or ".")
+        if not self._checkout_belongs_to(root, work_item):
+            logger.warning(
+                "%s is not a checkout of %s/%s; not adopting it",
+                root,
+                work_item.owner,
+                work_item.repo,
+            )
+            return
+        loop = self._outer_loop_name(root, self._spec_dir(root), item_id, work_item)
+        self._write_default(root, work_item, loop)
+
     def _adopt(
         self, action: str, root: Path, work_item: WorkItemRef, loop: str
     ) -> None:
-        """Give an unadopted repository the-loop's built-in defaults (issue-193).
+        """The driving actions' adoption — the safety net behind :meth:`adopt`.
 
-        the-loop is routinely pointed at a repository that never ran
-        ``/the-loop:init``: the daemon clones it, spawns a session in it, and the
-        session finds no ``.the-loop/`` at all — no workflow, no tooling, no
-        phases. This is where that is fixed, and the placement carries three
-        decisions.
-
-        **After the ownership proof.** Writing into a checkout is a side effect
-        on the operator's disk, so it stays behind ``_checkout_belongs_to``: a
-        payload cannot name a directory, only fail to match one.
-
-        **Before the spec-directory gate.** A brand-new work item has no spec
-        directory, so the coupling declines to drive its graph — but the session
-        it was spawned for is *already running in that checkout*. Adopting only
-        where the graph moves would leave exactly the case this exists for
-        unfixed.
-
-        **Never for a contribution.** ``pdlc-contribution-loop`` joins somebody
-        else's in-progress work item, and PR #187 decided the-loop's machinery
-        stays out of that repository's history. A committed file declaring
-        the-loop's process in a repository that never asked for it would be the
-        loudest possible breach of that; a guest does not install itself.
+        The primary moment is pre-spawn (issue-201); this one catches a work item
+        whose session started before that existed, or that reaches the graph by a
+        route the dispatcher does not own. It is idempotent, so the common case
+        here is :func:`harness_config.scaffold` reporting ``"present"``.
 
         **Only on the actions that drive the graph** (:data:`_ADOPTING_ACTIONS`).
         ``context`` resolves a prompt's block and is documented as mutating
@@ -936,14 +965,32 @@ class GraphLink:
         stops being true — and ``clean`` runs as the work item's local resources
         are released, where a newly written file would be leaving litter in a
         checkout about to be removed.
+        """
+        if action not in _ADOPTING_ACTIONS:
+            return
+        self._write_default(root, work_item, loop)
 
-        Best-effort like everything here: :func:`harness_config.scaffold` never
-        raises, and a repository that could not be adopted is worked exactly as
-        it was before.
+    def _write_default(self, root: Path, work_item: WorkItemRef, loop: str) -> None:
+        """Write the built-in default into ``root``, unless it is a guest's (issue-193).
+
+        the-loop is routinely pointed at a repository that never ran
+        ``/the-loop:init``: the daemon clones it, spawns a session in it, and the
+        session finds no ``.the-loop/`` at all — no workflow, no tooling, no
+        phases.
+
+        **Never for a contribution.** ``pdlc-contribution-loop`` joins somebody
+        else's in-progress work item, and PR #187 decided the-loop's machinery
+        stays out of that repository's history. A committed file declaring
+        the-loop's process in a repository that never asked for it would be the
+        loudest possible breach of that; a guest does not install itself.
+
+        Both callers have already proved the checkout is the work item's own.
+        Best-effort: :func:`harness_config.scaffold` never raises, and a
+        repository that could not be adopted is worked exactly as it was before.
         """
         from .graph.model import PDLC_CONTRIBUTION_LOOP
 
-        if action not in _ADOPTING_ACTIONS or loop == PDLC_CONTRIBUTION_LOOP:
+        if loop == PDLC_CONTRIBUTION_LOOP:
             return
         if harness_config.scaffold(root, work_item.owner, work_item.repo) != "written":
             return

@@ -1653,6 +1653,14 @@ class Dispatcher:
             if routed.delivery_id:
                 self.deduper.discard(routed.delivery_id)
             return False
+        # The checkout exists and nothing has started yet: the ONE moment where
+        # writing the built-in harness config is guaranteed to precede the
+        # harness reading it (issue-201). issue-193 wrote it from `on_spawn`,
+        # below `tmux.spawn`, so a session could begin — SessionStart hook and
+        # all — in a checkout whose `.the-loop/` did not exist yet. Gated and
+        # best-effort inside `adopt`; a repository that already carries a config
+        # is untouched.
+        self.graphlink.adopt(work_item, cwd)
         # Reads before the spawn, writes after it (issue-148, D5): the graph
         # context is resolved from the prepared workspace so a respawned
         # mid-graph item is told to RESUME at its current node, while entering
@@ -2006,8 +2014,11 @@ class Dispatcher:
         # Before EITHER respawn path starts a harness process — the resume
         # attempt below included — give it the same pre-flight a first spawn
         # gets, so the one path that recovers a dead session is not the one
-        # that stalls on a dialog (issue-90).
+        # that stalls on a dialog (issue-90). Adoption is part of that pre-flight
+        # (issue-201): a checkout that lost its config, or one whose session
+        # predates issue-193, is configured before the harness restarts in it.
         self._prepare_environment(adapter, work_item, session.cwd)
+        self.graphlink.adopt(work_item, session.cwd)
         resumed_id = self._try_resume(session, adapter, prompt)
         session_id = resumed_id or str(uuid.uuid4())
         if resumed_id is None:

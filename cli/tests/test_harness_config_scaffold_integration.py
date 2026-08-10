@@ -14,6 +14,7 @@ Requirement: docs/specs/issue-193/requirements.md
 from __future__ import annotations
 
 import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -174,6 +175,79 @@ def test_an_adopted_repository_is_left_alone_on_every_later_event(tmp_path, even
         for record in eventlog.read_events(events.path)
         if record["event"] == "harness.config_scaffolded"
     ]
+
+
+def test_the_repository_is_adopted_before_the_harness_is_started(tmp_path):
+    """
+    Feature: a default harness config for repositories that never adopted the-loop
+    Scenario: the daemon spawns a session into a fresh, unconfigured clone
+      Given an unadopted checkout of the work item's own repository
+      When the dispatcher spawns a session for that work item
+      Then `.the-loop/harness-config.yaml` already exists **at the moment
+           `tmux.spawn` is called**, so the harness cannot start in a checkout
+           that has no configuration to read
+
+    The assertion is deliberately made from *inside* the spawn call rather than
+    after the dispatch returns: the outcome was already right before issue-201,
+    and the ordering was not.
+
+    Requirement: docs/specs/issue-201/bugfix.md R1
+    """
+    from the_loop.control import ControlConfig
+    from the_loop.webhook.dispatcher import Dispatcher, RoutingConfig
+    from the_loop.webhook.router import RoutedEvent
+    from the_loop.sessions import SessionRegistry
+    from conftest import FakeTmux, StubInteractiveAdapter
+
+    root = _checkout(tmp_path / "repo")
+
+    class SpawnObserver(FakeTmux):
+        """Records whether the config existed when the harness was started."""
+
+        config_present_at_spawn = None
+
+        def spawn(self, *args, **kwargs):
+            SpawnObserver.config_present_at_spawn = _adopted(root).is_file()
+            return super().spawn(*args, **kwargs)
+
+    tmux = SpawnObserver()
+    dispatcher = Dispatcher(
+        registry=SessionRegistry(tmp_path / "sessions"),
+        adapters={"claude": StubInteractiveAdapter()},
+        config=RoutingConfig(
+            spawn_on_unmatched="always",
+            spawn_workdir=str(root),
+            control=ControlConfig(require_start_command=False),
+        ),
+        tmux_runner=tmux,
+    )
+    payload = {
+        "action": "created",
+        "repository": {"full_name": "octo/repo"},
+        "issue": {"number": 193},
+        "comment": {"body": "please fix", "user": {"login": "octocat"}},
+    }
+    try:
+        dispatcher.handle(
+            RoutedEvent(
+                event="issue_comment",
+                action="created",
+                delivery_id="d-201",
+                work_items=[REF],
+                payload=payload,
+            )
+        )
+        deadline = time.monotonic() + 5
+        while not tmux.spawns and time.monotonic() < deadline:
+            time.sleep(0.01)
+    finally:
+        dispatcher.stop()
+
+    assert tmux.spawns, "the dispatcher must have spawned a session"
+    assert SpawnObserver.config_present_at_spawn is True, (
+        "the harness was started in a checkout with no harness config — adoption "
+        "must precede tmux.spawn, not follow it (issue-201)"
+    )
 
 
 def test_resolving_a_prompts_graph_context_adopts_nothing(tmp_path, events):

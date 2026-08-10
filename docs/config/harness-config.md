@@ -39,7 +39,7 @@ first time the-loop starts working there:
 
 | Where | Adopts? |
 |---|---|
-| The daemon's ingress→graph coupling (poller and webhook alike), after it has proved via the `origin` remote that the checkout is the work item's own repository | yes — and it fills in `ticketing.github.owner`/`repo` from the work item |
+| The daemon's ingress→graph coupling (poller and webhook alike), after it has proved via the `origin` remote that the checkout is the work item's own repository | yes — **before the session is spawned**, and it fills in `ticketing.github.owner`/`repo` from the work item |
 | `the-loop graph complete` / `advance` / `force` / `skip` | yes |
 | `the-loop check`, `the-loop graph status` / `show` | **no** — reads write nothing |
 | A **contribution** (`the-loop contribute`, `pdlc-contribution-loop`) | **no** — the-loop was invited into that repository as a guest and stays out of its history ([issue #185](https://github.com/MadaraUchiha-314/the-loop/issues/185)) |

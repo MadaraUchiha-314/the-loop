@@ -420,12 +420,23 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   there — naming the work item's `owner`/`repo` under `ticketing.github` — and record it as
   `harness.config_scaffolded`. Before this, the daemon would clone such a repository, spawn
   a session in it, and leave that session with no workflow, tooling or phases to read.
-  Three properties hold: it happens **after** the ownership proof (a payload can never name
-  a directory, only fail to match one), **before** the spec-directory gate (a brand-new work
-  item has no spec directory, yet its session is already running in the checkout), and
-  **never for a contribution** — a repository the-loop was invited into as a guest keeps
-  the-loop out of its history. An existing config of either name is never opened, so no
-  inbound event can replace an operator's policy.
+  - **It happens before the harness starts** (issue-201): between the workspace being
+    prepared and the prompt being rendered, so the config is on disk before `tmux.spawn`
+    is called — and again in the respawn pre-flight, beside the harness-trust preparation.
+    The write is *also* attempted when the graph is driven (`start`/`advance`) as an
+    idempotent safety net for a session that predates this, but the guarantee lives at the
+    spawn. Adoption from the `context` read and from `cleanup` is deliberately excluded:
+    the first is documented as mutating nothing, the second runs while the checkout is
+    being released.
+  - It happens **after** the ownership proof (a payload can never name a directory, only
+    fail to match one) — which is why the pre-spawn path runs that proof itself rather
+    than trusting the prepared `cwd`, since under the legacy `spawnWorkdir` setup that
+    directory may be the operator's own checkout.
+  - It happens **before** the spec-directory gate: a brand-new work item has no spec
+    directory, yet its session is about to run in the checkout.
+  - It happens **never for a contribution** — a repository the-loop was invited into as a
+    guest keeps the-loop out of its history. An existing config of either name is never
+    opened, so no inbound event can replace an operator's policy.
 - The `webhooks.*` and `routing.*` keys above live in the **CLI config**
   (`cli-config.yaml`, resolved via `--config`/env/cwd/home — see `cli/README.md`),
   independent of any repo's
@@ -451,6 +462,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-201 | Adoption moved to before the spawn (2026-08-10): issue-193 wrote the built-in default from `on_spawn`, which the dispatcher calls **after** `tmux.spawn` — so a session could begin, SessionStart hook included, in a checkout whose `.the-loop/` did not exist yet. A public `GraphLink.adopt` now runs between workspace preparation and the prompt render, and again in the respawn pre-flight, carrying the coupling's own gates (the prepared `cwd` is not yet proved to be the work item's repository); `_adopt` stays on the driving actions as an idempotent safety net. The ordering is asserted from inside the spawn call, not after the dispatch returns | [spec](../specs/issue-201/), [decision-073](../decisions/decision-073.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/201) |
 | issue-197 | The poll ingress stopped letting the work item's author decide whether anybody is listened to (2026-08-10): a comment is judged by its own author, so an authorized user's control comment on an outside contributor's issue arms and forwards; the item's author now gates only whether the poller starts work on it **by itself**, and an authorized user's recorded arming command satisfies that gate too. The spawn prompt states the work item itself is untrusted content | [spec](../specs/issue-197/), [decision-074](../decisions/decision-074.md), [poll](../cli/commands/poll.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/197) |
 | issue-199 | The spawning comment reaches the graph (2026-08-10): a spawn that enters a **human** start node now evaluates that node's exit chain once, with the spawning event's comments attached — so `the-loop contribute` carrying a goal moves the item to `phase-selection` without a second command, where before the arming comment (executed by the control path, never forwarded) could reach no gate at all and the item sat at its first node until some unrelated event arrived; agent start nodes and respawns evaluate nothing | [spec](../specs/issue-199/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/199) |
 | issue-193 | The ingress adopts a repository that never ran `/the-loop:init` (2026-08-10): the graph coupling writes the-loop's built-in default to `.the-loop/harness-config.yaml` — naming the work item's owner/repo so `originRepo` resolves — after the `origin`-remote ownership proof and **before** the spec-directory gate, so the session the daemon just spawned has a config to read even on the run whose graph is skipped; recorded as `harness.config_scaffolded`, never overwriting an existing config, and never for a contribution | [spec](../specs/issue-193/), [decision-073](../decisions/decision-073.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/193) |
