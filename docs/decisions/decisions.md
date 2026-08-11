@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [076](decision-076.md) | The lock and the heartbeat are two files — and only the lock names the process | proposed | 2026-08-11 |
 | [075](decision-075.md) | A credential's secrecy is the operator's call — Slack's webhook URL may be configured inline | proposed | 2026-08-10 |
 | [074](decision-074.md) | On the poll path, the item's author gates only spawning | proposed | 2026-08-10 |
 | [073](decision-073.md) | the-loop adopts an unconfigured repository with a packaged default — except as a guest | proposed | 2026-08-10 |

@@ -1,20 +1,24 @@
 """``the-loop poll status`` — one command instead of a ps/pidfile/log cross-check
 (issue-191, T2 and the T7 abuse cases).
 
-The invariant every test here defends is the same one: **liveness comes from the
-lock, never from the heartbeat**. The lock is immune to pid reuse and cannot be
-forged by writing a file; the heartbeat is a claim, useful for progress and
-nothing else. So a heartbeat with no poller behind it reads *not running*, and a
-poller with no heartbeat still reads *running*.
+The invariant every test here defends is the same one: **liveness and the pid come
+from the lock, never from the heartbeat**. The lock is immune to pid reuse and
+cannot be forged by writing a file; the heartbeat is a claim, useful for progress
+and nothing else. So a heartbeat with no poller behind it reads *not running*, and
+a poller with no heartbeat still reads *running*. Since issue-205 the heartbeat
+carries no pid at all — the last test here pins that a leftover one from an older
+poller is still ignored.
 
 The exit code is part of the contract, not a detail: `poll status` is meant to be
 the health check a keepalive is built on, which is why it exits `1` when no
 poller holds the lock.
 
-Spec: docs/specs/issue-191/design.md; testing plan row T2.
+Spec: docs/specs/issue-191/design.md (row T2); docs/specs/issue-205/requirements.md
+(row T4).
 """
 
 import json
+import os
 
 import pytest
 
@@ -101,7 +105,7 @@ def test_a_stale_pidfile_is_reported_and_left_alone(paths, capsys):
 
 def test_a_forged_heartbeat_cannot_make_a_dead_poller_look_alive(paths, capsys):
     """T7 abuse case: liveness is the lock, never the file."""
-    _record(paths, pid=4242)  # a heartbeat with no poller behind it
+    _record(paths)  # a heartbeat with no poller behind it
 
     assert _run(paths) == 1
     out = capsys.readouterr().out
@@ -113,7 +117,7 @@ def test_a_forged_heartbeat_cannot_make_a_dead_poller_look_alive(paths, capsys):
 
 
 def test_the_last_cycle_is_reported_with_its_age_and_counters(paths, capsys):
-    _record(paths, pid=4242, interval_seconds=60)
+    _record(paths, interval_seconds=60)
     lock = RunLock(paths["pidfile"], name="poller")
     assert lock.acquire()
     try:
@@ -128,7 +132,7 @@ def test_the_last_cycle_is_reported_with_its_age_and_counters(paths, capsys):
 
 
 def test_a_started_poller_with_no_cycle_yet_says_so(paths, capsys):
-    PollHeartbeat(paths["status"], pid=4242).record(None)
+    PollHeartbeat(paths["status"]).record(None)
 
     assert _run(paths) == 1
     assert "last cycle: none recorded yet" in capsys.readouterr().out
@@ -159,7 +163,7 @@ def test_an_unreadable_heartbeat_is_treated_as_absent(paths, capsys):
 
 
 def test_json_carries_the_same_facts(paths, capsys):
-    _record(paths, pid=4242, interval_seconds=60)
+    _record(paths, interval_seconds=60)
     lock = RunLock(paths["pidfile"], name="poller")
     assert lock.acquire()
     try:
@@ -187,3 +191,32 @@ def test_json_reports_a_stale_pidfile_without_claiming_a_pid(paths, capsys):
     assert report["pid"] == 0, "pid is what is *running*, and nothing is"
     assert report["stalePidfile"] is True
     assert report["recordedPid"] == 999999
+
+
+def test_a_pid_left_in_an_older_heartbeat_is_never_reported(paths, capsys):
+    """issue-205 abuse case 2: a pid in that file names nothing, live or not.
+
+    `os.getpid()` is deliberately a **live** process — the pid an older poller
+    would have left behind, or a hostile writer would choose. It must not reach
+    the report, where an operator could signal it.
+    """
+    paths["status"].write_text(
+        json.dumps(
+            {
+                "pid": os.getpid(),
+                "startedAt": "2026-08-10T09:00:00Z",
+                "lastCycleAt": "2026-08-10T09:01:00Z",
+                "intervalSeconds": 60,
+                "lastCycle": {"itemsSeen": 3},
+            }
+        )
+    )
+
+    assert _run(paths, "--format", "json") == 1
+    report = json.loads(capsys.readouterr().out)
+    assert report["running"] is False
+    assert report["pid"] == 0
+    assert report["recordedPid"] == 0, (
+        "no pidfile — so no pid, whatever the heartbeat says"
+    )
+    assert report["lastCycle"]["itemsSeen"] == 3, "its progress facts are still used"

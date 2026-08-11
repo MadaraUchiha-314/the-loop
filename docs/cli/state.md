@@ -74,7 +74,7 @@ them, is what makes the `.gitignore` recipe three lines instead of a puzzle
 | `<root>/logs/poller.out` | a daemonized poller | its stdout and stderr, appended | **local** |
 | `<root>/gh-webhook.pid` | `gh-webhook start` | the receiver's pid | **local** |
 | `<root>/poll.pid` | `poll start` | the poller's pid — and the lock proving it is the only one | **local** |
-| `<root>/poll-status.json` | `poll start`, after every cycle | the heartbeat `poll status` reads: pid, `startedAt`, `lastCycleAt`, last cycle's counters | **local** |
+| `<root>/poll-status.json` | `poll start`, after every cycle | the heartbeat `poll status` reads: `startedAt`, `lastCycleAt`, last cycle's counters — and no pid, which is `poll.pid`'s to name | **local** |
 
 The same table is declared in code, in
 [`the_loop/state.py`](https://github.com/MadaraUchiha-314/the-loop/blob/main/cli/the_loop/state.py)
@@ -349,7 +349,10 @@ poller's **single-instance lock**: `start` holds an exclusive advisory lock on i
 whole run, so a second poller against the same state root refuses rather than sharing the
 ledger, and `stop` uses the same lock to tell a live poller from a pid left behind by a
 crash. Being one file rather than two is the point — "who is running" and "how do I signal
-them" cannot then disagree.
+them" cannot then disagree. It is the **only** place either question is answered: the
+heartbeat below deliberately carries no pid, and
+[why they stay separate files](#why-this-is-a-second-file-and-not-part-of-the-pidfile) is
+written up there.
 
 **If you delete it while a poller is running:** the running poller keeps its lock (the lock
 lives on the open file, not the name), but a second `start` will no longer see it and can
@@ -364,7 +367,6 @@ started, when it last finished a cycle, and what that cycle did.
 
 ```json
 {
-  "pid": 48213,
   "startedAt": "2026-08-10T09:58:03Z",
   "lastCycleAt": "2026-08-10T10:42:00Z",
   "intervalSeconds": 60,
@@ -385,6 +387,31 @@ exactly that.
 It is deliberately **not** removed when the poller exits, so `poll status` can still tell
 you when the last cycle ran. **If you delete it:** `poll status` keeps reporting liveness
 and pid and loses the progress lines, until the next cycle writes a new one.
+
+The file carried a `pid` until [issue-205](https://github.com/MadaraUchiha-314/the-loop/issues/205);
+nothing read it, and it is gone. A heartbeat written by an older poller still reads — the
+leftover pid is dropped rather than reported.
+
+### Why this is a second file, and not part of the pidfile
+
+It is a fair question, and the answer is three things pulling in opposite directions
+([decision-076](/decisions/decision-076)):
+
+| | `poll.pid` | `poll-status.json` |
+|---|---|---|
+| Answers | is one running, and how do I signal it? | is it making progress? |
+| Written | once, at startup, under the lock | after every cycle |
+| How | in place, into the locked file | `tempfile` + `os.replace` — a **new inode** each time |
+| On exit | removed | kept, on purpose |
+| If the write fails | the start aborts — a daemon that cannot prove exclusivity must not run | warn once, carry on — observability must never break ingress |
+
+The first row of *how* is the one that settles it. An advisory lock lives on the inode the
+daemon opened, not on the name; replacing the file at that path leaves the poller holding a
+lock on an orphan while the path goes free. Merged, the poller would unlock itself on its
+own first cycle, and the next `poll start` would happily run a **second poller against the
+same ledger** — the bug the lock exists to prevent. Writing the heartbeat in place instead
+would trade that for a `poll status` that can read a half-written document, and would still
+leave the last two rows contradictory.
 
 ## Poller log — `<root>/logs/poller.out`
 

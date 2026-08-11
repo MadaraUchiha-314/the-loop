@@ -257,13 +257,14 @@ GENERATED_PATHS: Tuple[GeneratedPath, ...] = (
         default="<root>/poll-status.json",
         portable=False,
         holds=(
-            "pid, startedAt, lastCycleAt and the last cycle's counters — what "
-            "`the-loop poll status` reports beyond liveness"
+            "startedAt, lastCycleAt and the last cycle's counters — what "
+            "`the-loop poll status` reports beyond liveness. No pid: naming the "
+            "process is the pidfile lock's job (issue-205)"
         ),
         why=(
-            "a pid and a clock reading from one machine's poller. Carried elsewhere it "
-            "describes a process that is not there — and it is never the source of "
-            "truth for liveness anyway (that is the lock), so a copy answers nothing."
+            "clock readings from one machine's poller. Carried elsewhere they describe "
+            "a process that is not there — and it is never the source of truth for "
+            "liveness anyway (that is the lock), so a copy answers nothing."
         ),
     ),
     GeneratedPath(
