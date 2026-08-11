@@ -59,13 +59,16 @@ def test_poller_status_carries_the_heartbeat(tmp_path):
     """`daemon_status` enriches liveness with when it started and last cycled."""
     config = _config(tmp_path)
     beat = PollHeartbeat(
-        tmp_path / ".the-loop" / "poll-status.json", pid=4321, interval_seconds=60
+        tmp_path / ".the-loop" / "poll-status.json", interval_seconds=60
     )
     beat.record(SimpleNamespace(items_seen=3, spawns=1, comments_forwarded=0))
 
     status = daemons.daemon_status("poller", config)
     assert status["startedAt"] and status["lastCycleAt"]
     assert status["logfile"].endswith("logs/poller.out")
+    # issue-205: the heartbeat enriches; the pid stays the lock's, and no poller
+    # holds it here.
+    assert status["pid"] == 0
 
 
 def test_gh_webhook_status_reports_no_heartbeat(tmp_path):

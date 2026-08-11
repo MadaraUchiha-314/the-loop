@@ -261,12 +261,20 @@ self-learning/ML capabilities.
 - **`the-loop poll status` SHALL answer "is the poller running, and is it making
   progress"** in one command: liveness, pid, pidfile, logfile, `startedAt`, `lastCycleAt`
   and the last cycle's counters, as text or `--format json`, exiting `0` when a poller is
-  running and `1` when none is. **Liveness SHALL come from the lock and never from the
-  heartbeat** — the only formulation immune to pid reuse, and the only one a file cannot
-  forge. The poller SHALL record that heartbeat at `<state.root>/poll-status.json` after
-  every cycle, atomically; a heartbeat that cannot be written SHALL warn once and SHALL
-  NOT interrupt polling, and an absent or unreadable one SHALL cost only the progress
-  lines. The same facts SHALL be carried by the control plane's `daemon_status`.
+  running and `1` when none is. **Liveness and the reported pid SHALL come from the lock
+  and never from the heartbeat** — the only formulation immune to pid reuse, and the only
+  one a file cannot forge. The poller SHALL record that heartbeat at
+  `<state.root>/poll-status.json` after every cycle, atomically; a heartbeat that cannot be
+  written SHALL warn once and SHALL NOT interrupt polling, and an absent or unreadable one
+  SHALL cost only the progress lines. The same facts SHALL be carried by the control
+  plane's `daemon_status`.
+- **The heartbeat SHALL NOT carry a pid** (issue-205, [decision-076](../decisions/decision-076.md)):
+  the pidfile is the single source of truth for which process is polling, and a `pid` left
+  in a heartbeat by an older poller SHALL be read without error and ignored. The two files
+  SHALL remain separate — the heartbeat's atomic rewrite replaces the inode the lock is
+  held on, their lifetimes are opposite (the pidfile is removed on release, the heartbeat
+  is kept), and so are their failure policies (a pidfile that cannot be written aborts the
+  start; a heartbeat that cannot be written is swallowed).
 - A daemon started **by the control plane** SHALL have its output redirected to that
   daemon's logfile rather than to `/dev/null` — no start path silently discards the log.
 
@@ -280,6 +288,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-205 | The poller's heartbeat stopped carrying a `pid` nothing read: `poll.pid` — the flock — is the single source of truth for which process is polling, and an older heartbeat's pid is now dropped on read. The two files stay separate because the heartbeat's atomic rewrite would free the lock it is held on | [spec](../specs/issue-205/), [decision-076](../decisions/decision-076.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/205) |
 | issue-203 | `integrations.slack` gained an optional inline `url`, taking precedence over `urlEnv`, so the one value that turns notifications on stops living outside every config file the-loop owns — and a resolution failure now names both remedies instead of only the env var. Slack's webhook URL alone; tokens and signing secrets stay env-only | [spec](../specs/issue-203/), [decision-075](../decisions/decision-075.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/203) |
 | issue-194 | `graph advance`/`run`/`skip`/`force` stopped posting nothing when `--ref` was omitted: the ref is derived from the repository's `ticketing.github` plus the `issue-<n>` id, and an outbound hook that could not do its job now prints a `warning:` line (and records `graph.hook_degraded`) instead of leaving a clean `wait` over a ticket nobody was asked | [spec](../specs/issue-194/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/194) |
 | issue-191 | `poll start --daemon` detaches for real (double-fork + `setsid`, stdout/stderr to `<state.root>/logs/poller.out`, pidfile written after the final fork under the lock), reports startup success or failure to its caller over a handshake instead of into a logfile, removes a stale pidfile instead of leaving it, and gains `poll status` — liveness from the lock, progress from a new per-cycle heartbeat, exit `0`/`1` so it is a health check. Control-plane starts log to a file instead of `/dev/null` | [spec](../specs/issue-191/), [decision-072](../decisions/decision-072.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/191) |

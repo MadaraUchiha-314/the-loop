@@ -7,19 +7,27 @@ making progress? — with three facts a lock cannot carry: when this poller
 started, when it last completed a cycle, and what that cycle did. Together they
 turn a ``ps``/pidfile/log cross-check into one command.
 
-**Never the source of truth for liveness.** A heartbeat is a claim written by a
-process that may since have died, and anyone who can write ``state.root`` can
-forge one. ``poll status`` therefore takes liveness from the lock and treats this
-file as enrichment: a recent ``lastCycleAt`` beside a lock nobody holds means the
-poller *stopped* after that cycle, which is exactly what it says.
+**Never the source of truth for liveness, and since issue-205 it does not even
+carry a pid.** A heartbeat is a claim written by a process that may since have
+died, and anyone who can write ``state.root`` can forge one. ``poll status``
+takes liveness *and* the pid from the lock, so a ``pid`` here was a second answer
+to a question the lock owns — written every cycle, read by nothing, forgeable.
+A recent ``lastCycleAt`` beside a lock nobody holds means the poller *stopped*
+after that cycle, which is exactly what ``poll status`` says.
 
-It is deliberately **not** removed when the poller stops, so ``poll status`` can
-still say when the last cycle ran, and it is rewritten atomically (``tempfile`` +
-``os.replace``) like the record stores, so a crash never leaves half a file. A
-write that fails warns once and is swallowed: observability must never break
-ingress.
+**Why this is not simply written into the pidfile.** The rewrite below is
+``tempfile`` + ``os.replace``, which swaps in a *new inode* at the same path,
+while a flock is held on the inode the daemon opened. Merging the two files would
+therefore free the lock on the poller's own first cycle, and the next
+``poll start`` would run a second poller against the same ledger — the defect
+:mod:`the_loop.runlock` exists to prevent. Their lifetimes and failure policies
+disagree too: the pidfile is unlinked on release and a pidfile that cannot be
+written aborts the start, whereas this file is deliberately **kept** after the
+poller stops (so ``poll status`` can still report the last cycle) and a write
+that fails warns once and is swallowed — observability must never break ingress.
 
-Spec: docs/specs/issue-191/design.md.
+Spec: docs/specs/issue-191/design.md; docs/specs/issue-205/requirements.md;
+docs/decisions/decision-076.md.
 """
 
 from __future__ import annotations
@@ -44,9 +52,13 @@ def _utcnow() -> str:
 
 @dataclass(frozen=True)
 class Heartbeat:
-    """One reading of ``<state.root>/poll-status.json``."""
+    """One reading of ``<state.root>/poll-status.json``.
 
-    pid: int = 0
+    Carries no pid on purpose (issue-205): the process is the lock's to name.
+    A ``pid`` written by an older poller is read and dropped like any other key
+    this class does not model.
+    """
+
     started_at: str = ""
     last_cycle_at: str = ""
     interval_seconds: int = 0
@@ -55,7 +67,6 @@ class Heartbeat:
     @classmethod
     def from_mapping(cls, data: dict) -> "Heartbeat":
         return cls(
-            pid=int(data.get("pid") or 0),
             started_at=str(data.get("startedAt") or ""),
             last_cycle_at=str(data.get("lastCycleAt") or ""),
             interval_seconds=int(data.get("intervalSeconds") or 0),
@@ -64,7 +75,6 @@ class Heartbeat:
 
     def to_mapping(self) -> Dict[str, Any]:
         return {
-            "pid": self.pid,
             "startedAt": self.started_at,
             "lastCycleAt": self.last_cycle_at,
             "intervalSeconds": self.interval_seconds,
@@ -78,12 +88,10 @@ class PollHeartbeat:
     def __init__(
         self,
         path: Union[str, os.PathLike],
-        pid: Optional[int] = None,
         interval_seconds: int = 0,
         started_at: str = "",
     ):
         self.path = Path(path)
-        self.pid = os.getpid() if pid is None else int(pid)
         self.interval_seconds = int(interval_seconds)
         self.started_at = started_at or _utcnow()
         self._warned = False
@@ -103,7 +111,6 @@ class PollHeartbeat:
         if interval_seconds is not None:
             self.interval_seconds = int(interval_seconds)
         beat = Heartbeat(
-            pid=self.pid,
             started_at=self.started_at,
             last_cycle_at=_utcnow() if summary is not None else "",
             interval_seconds=self.interval_seconds,
@@ -143,7 +150,8 @@ class PollHeartbeat:
 
         ``None`` is the honest answer for a poller started before this file
         existed, or one whose heartbeat has been deleted — ``poll status`` still
-        reports liveness and pid from the lock in both cases.
+        reports liveness and pid from the lock in both cases, which is the only
+        place either has ever come from.
         """
         try:
             data = json.loads(Path(path).read_text(encoding="utf-8"))
