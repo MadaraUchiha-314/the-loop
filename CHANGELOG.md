@@ -1,3 +1,9 @@
+## v9.7.1 (2026-08-11)
+
+### Refactor
+
+- **issue-205**: the poller's heartbeat carries no pid (#206)
+
 ## v9.7.0 (2026-08-10)
 
 ### Feat
