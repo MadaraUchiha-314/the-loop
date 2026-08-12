@@ -12,7 +12,7 @@
 # know the directory exists — it is added after `docs:build` — so nothing has to
 # be excluded from its `srcDir` scan, and the two builds stay independent.
 #
-# See docs/contributing.md, ui/README.md, and issue-70 (docs) / issue-206 (ui).
+# See docs/contributing.md, ui/README.md, and issue-70 (docs) / issue-207 (ui).
 name: Pages
 
 on:
