@@ -15,6 +15,12 @@ service:
   port: 4114
   exposed: false
   autoStart: true
+  cors:
+    allowOrigins: ["https://madarauchiha-314.github.io"]
+    allowMethods: [GET, POST, OPTIONS]
+    allowHeaders: [Accept, Content-Type]
+    allowCredentials: false
+    allowPrivateNetwork: true
 ```
 
 ## Binding
@@ -45,6 +51,80 @@ Bind port. Also where the CLI and UI look for the service
 Explicit opt-in to serving beyond loopback. There is no in-app authentication, so
 only set this when an auth-terminating gateway fronts the service; this flag only
 unlocks the bind.
+
+## Cross-origin access
+
+**Two different questions, two different blocks.** `host`/`exposed` above decide **who
+may connect**; `cors` decides **which browser page may read the answer**. Nothing under
+`cors` widens the bind, and a page on an allowed origin still has to reach the service —
+over loopback, a tunnel, or a gateway — before any of this applies.
+
+It exists because the [dashboard](/cli/commands/service) is published to GitHub Pages and
+the service it drives runs on your workstation. Without an `Access-Control-Allow-Origin`
+header the browser throws the response away, and the only alternative remedy is a proxy
+in front of a port that is already listening on your own machine.
+
+::: warning What the default admits
+The default allows one origin, `https://madarauchiha-314.github.io` — where the-loop's
+own dashboard is published. An origin is host-granular, and that host serves **every**
+GitHub Pages site under that account, so a script on any of them can read this service
+from a browser you have open. The service has no in-app auth, so "read" means "drive".
+Set `allowOrigins: []` if you do not use the hosted dashboard. See
+[decision-077](https://github.com/MadaraUchiha-314/the-loop/blob/main/docs/decisions/decision-077.md).
+:::
+
+### `cors.allowOrigins`
+
+- **Type:** `string[]`
+- **Default:** `["https://madarauchiha-314.github.io"]`
+
+Exact origins — scheme, host and port, **no path** — allowed to read responses. The
+comparison is exact-string: no prefix, suffix or regex match, so
+`https://madarauchiha-314.github.io.example.com` is not admitted by the default and
+`https://ops.example.com/app` matches nothing (the browser never sends the path).
+
+`[]` disables cross-origin access entirely — no middleware is installed and the service
+behaves exactly as it did before this option existed. `"*"` allows every origin; it is
+allowed on its own and **refused at start-up** together with `allowCredentials: true`.
+
+### `cors.allowMethods`
+
+- **Type:** `string[]`
+- **Default:** `["GET", "POST", "OPTIONS"]`
+
+Methods a cross-origin caller may use. The default is exactly what the dashboard sends;
+the API has no other verbs.
+
+### `cors.allowHeaders`
+
+- **Type:** `string[]`
+- **Default:** `["Accept", "Content-Type"]`
+
+Request headers a cross-origin caller may send beyond the browser's own safelist. Add
+`Authorization` when a gateway in front of the service expects a bearer token from the
+page.
+
+### `cors.allowCredentials`
+
+- **Type:** `boolean`
+- **Default:** `false`
+
+Whether the browser may attach cookies or HTTP credentials to cross-origin requests.
+the-loop's own client sends none, so leave this off unless a gateway authenticates the
+page itself. `true` together with `"*"` in `allowOrigins` makes the service **refuse to
+start**, naming both keys — browsers reject that pair anyway, and a deployment that
+honoured it would hand every site on the internet an authenticated read.
+
+### `cors.allowPrivateNetwork`
+
+- **Type:** `boolean`
+- **Default:** `true`
+
+Answer Chromium's private-network preflight
+(`Access-Control-Request-Private-Network` → `Access-Control-Allow-Private-Network`),
+which is what a **public HTTPS page reaching a loopback address** has to clear. It is
+answered only for an origin `allowOrigins` already admits, so this never widens the
+allowlist — it can only decline what the allowlist let through.
 
 ## Behaviour
 

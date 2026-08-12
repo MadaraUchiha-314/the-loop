@@ -240,6 +240,28 @@ polling:
     #     pullRequests: true
     #   label: ""                   # empty = reuse routing.autoExecuteLabel above
 
+# The control-plane API service (issue-161) — the HTTP layer the CLI, the MCP
+# endpoint and the web dashboard all go through. Binding stays at its loopback
+# default (`host: 127.0.0.1`, `port: 4114`, `exposed: false`); only the
+# cross-origin block is spelled out, because it is the one you may want to
+# change.
+service:
+  # Which browser ORIGINS may READ this service's responses (issue-211,
+  # decision-077). Not a network setting: `host`/`exposed` decide who may
+  # CONNECT, and nothing here widens that. The default entry is the origin
+  # the-loop publishes its dashboard to
+  # (https://madarauchiha-314.github.io/the-loop/ui/), so that page works
+  # against your local service with no gateway in between — the cost being that
+  # every Pages site under that same host shares the origin. Set
+  # `allowOrigins: []` if you do not use the hosted dashboard; add your own
+  # origin if you host a fork's copy of it.
+  cors:
+    allowOrigins: ["https://madarauchiha-314.github.io"]
+    allowMethods: [GET, POST, OPTIONS]
+    allowHeaders: [Accept, Content-Type]
+    allowCredentials: false      # `true` with "*" above refuses to boot
+    allowPrivateNetwork: true    # Chromium's public-page → loopback preflight
+
 eventLog:                           # structured JSONL o11y trail; `the-loop events`
   enabled: true
   path: .the-loop/logs/events.jsonl
