@@ -17,6 +17,7 @@ import type {
   NodeReport,
   SessionEndpoint,
   SessionRecord,
+  TranscriptEntry,
   WorkItemRecord,
 } from "./types.ts";
 
@@ -97,11 +98,12 @@ export function sessionState(session: SessionEndpoint | undefined | null): Sessi
 /**
  * Where Claude Code keeps this session's transcript.
  *
- * `~/.claude/projects/<cwd with every non-alphanumeric run replaced by ->/<session-id>.jsonl`.
- * the-loop records both halves — `cwd` and the pre-assigned `harnessSessionId` —
- * so the path is derivable without asking the harness. It is shown, not read:
- * nothing in `/api/v1` serves file contents, so the trace panel offers the path
- * for `tail`/`jq` until a transcript endpoint exists (see ui/README.md).
+ * `~/.claude/projects/<cwd with every character outside [A-Za-z0-9] replaced by ->/<session-id>.jsonl`
+ * — the munge is per character (consecutive non-alphanumerics are NOT
+ * collapsed), matching both the harness's real layout and the server-side
+ * derivation behind `GET /api/v1/sessions/transcript` (issue-209), which
+ * serves the file this path names. The path stays on screen as the caption
+ * beside the trace panel: it tells the operator where the served bytes live.
  *
  * Returns null for a harness whose transcript location is not documented —
  * Cursor keeps chats in SQLite under `~/.cursor/chats/` with no stable schema.
@@ -109,8 +111,74 @@ export function sessionState(session: SessionEndpoint | undefined | null): Sessi
 export function transcriptPath(session: SessionEndpoint | undefined | null): string | null {
   if (!session || session.harness !== "claude") return null;
   if (!session.cwd || !session.harnessSessionId) return null;
-  const slug = session.cwd.replace(/[^a-zA-Z0-9]+/g, "-");
+  const slug = session.cwd.replace(/[^a-zA-Z0-9]/g, "-");
   return `~/.claude/projects/${slug}/${session.harnessSessionId}.jsonl`;
+}
+
+/** The narrowing every unknown transcript field goes through — never a cast. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** One render-ready row of the trace panel, projected from a transcript entry. */
+export interface TranscriptTurn {
+  /** The entry's `type` (`user`, `assistant`, …), `tool result`, or `malformed`. */
+  kind: string;
+  /** The entry's timestamp, when it carried one. */
+  time: string;
+  /** The turn's text — every `text` block joined; the raw line for `malformed`. */
+  text: string;
+  /** Tool invocations in this turn (`tool_use` blocks), in order. */
+  tools: { name: string; detail: string }[];
+}
+
+/**
+ * Claude Code JSONL entries → rows the trace panel can draw.
+ *
+ * The line format is the harness's own, so this is a projection, not a parser:
+ * it reads the fields it knows (`type`, `timestamp`, `message.content` as a
+ * string or as `text`/`tool_use`/`tool_result` blocks), tolerates anything it
+ * does not, and never throws on a shape that drifted — an unknown entry
+ * degrades to its `type` with empty text, and a server-flagged `malformed`
+ * line surfaces as its own kind rather than disappearing.
+ */
+export function transcriptTurns(entries: TranscriptEntry[]): TranscriptTurn[] {
+  return entries.map((entry) => {
+    const malformed = entry["malformed"];
+    if (typeof malformed === "string") return { kind: "malformed", time: "", text: malformed, tools: [] };
+    const time = typeof entry["timestamp"] === "string" ? entry["timestamp"] : "";
+    const kind = typeof entry["type"] === "string" && entry["type"] !== "" ? entry["type"] : "entry";
+    const message = entry["message"];
+    if (!isRecord(message)) {
+      // Not a turn (e.g. a `summary` line) — show what text it does carry.
+      const summary = entry["summary"];
+      return { kind, time, text: typeof summary === "string" ? summary : "", tools: [] };
+    }
+    const content = message["content"];
+    const texts: string[] = [];
+    const tools: { name: string; detail: string }[] = [];
+    let sawToolResult = false;
+    if (typeof content === "string") texts.push(content);
+    if (Array.isArray(content)) {
+      for (const block of content as unknown[]) {
+        if (!isRecord(block)) continue;
+        if (block["type"] === "text" && typeof block["text"] === "string") texts.push(block["text"]);
+        if (block["type"] === "tool_use" && typeof block["name"] === "string") {
+          const input = block["input"];
+          tools.push({ name: block["name"], detail: input === undefined ? "" : (JSON.stringify(input) ?? "") });
+        }
+        if (block["type"] === "tool_result") sawToolResult = true;
+      }
+    }
+    // A user entry that only carries tool results is the harness feeding
+    // output back, not the human typing — label it as what it is.
+    return {
+      kind: sawToolResult && texts.length === 0 && tools.length === 0 ? "tool result" : kind,
+      time,
+      text: texts.join("\n"),
+      tools,
+    };
+  });
 }
 
 /** How a node mark is drawn on a rail. */

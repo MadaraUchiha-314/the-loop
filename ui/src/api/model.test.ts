@@ -19,6 +19,7 @@ import {
   shortRef,
   specId,
   transcriptPath,
+  transcriptTurns,
 } from "./model.ts";
 import type { GraphStatus, SessionRecord, WorkItemRecord } from "./types.ts";
 
@@ -72,6 +73,9 @@ describe("specId", () => {
 
 describe("transcriptPath", () => {
   it("derives the Claude Code JSONL from the cwd and the pre-assigned session id", () => {
+    // Per-character munge, matching the harness's real layout and the
+    // server-side derivation behind /sessions/transcript (issue-209): the
+    // `/.` in the hidden directory becomes `--`, not one collapsed dash.
     expect(
       transcriptPath({
         workItem: { ref: "github:octo/repo#15", provider: "github", owner: "octo", repo: "repo", number: 15 },
@@ -80,7 +84,7 @@ describe("transcriptPath", () => {
         cwd: "/Users/you/.the-loop/workspace/github.com/octo/repo/issue-15",
         status: "active",
       }),
-    ).toBe("~/.claude/projects/-Users-you-the-loop-workspace-github-com-octo-repo-issue-15/0f1c2d3e.jsonl");
+    ).toBe("~/.claude/projects/-Users-you--the-loop-workspace-github-com-octo-repo-issue-15/0f1c2d3e.jsonl");
   });
 
   it("has no answer for cursor, whose chat store is undocumented", () => {
@@ -93,6 +97,52 @@ describe("transcriptPath", () => {
         status: "active",
       }),
     ).toBeNull();
+  });
+});
+
+describe("transcriptTurns", () => {
+  it("projects text, tool uses and timestamps into rows", () => {
+    const turns = transcriptTurns([
+      {
+        type: "assistant",
+        timestamp: "2026-08-12T10:00:05Z",
+        message: {
+          role: "assistant",
+          content: [
+            { type: "text", text: "Reading the test first." },
+            { type: "tool_use", name: "Read", input: { file_path: "cli/tests/test_x.py" } },
+          ],
+        },
+      },
+    ]);
+    expect(turns).toEqual([
+      {
+        kind: "assistant",
+        time: "2026-08-12T10:00:05Z",
+        text: "Reading the test first.",
+        tools: [{ name: "Read", detail: '{"file_path":"cli/tests/test_x.py"}' }],
+      },
+    ]);
+  });
+
+  it("accepts string content and labels result-only user entries as tool results", () => {
+    const turns = transcriptTurns([
+      { type: "user", message: { role: "user", content: "Fix the flaky test." } },
+      { type: "user", message: { role: "user", content: [{ type: "tool_result", content: "def test_x(): ..." }] } },
+    ]);
+    expect(turns[0]).toMatchObject({ kind: "user", text: "Fix the flaky test." });
+    expect(turns[1]).toMatchObject({ kind: "tool result", text: "" });
+  });
+
+  it("surfaces malformed lines and degrades unknown shapes without throwing", () => {
+    const turns = transcriptTurns([
+      { malformed: "not json {" },
+      { type: "summary", summary: "Session compacted." },
+      { unrecognised: true },
+    ]);
+    expect(turns[0]).toEqual({ kind: "malformed", time: "", text: "not json {", tools: [] });
+    expect(turns[1]).toMatchObject({ kind: "summary", text: "Session compacted." });
+    expect(turns[2]).toMatchObject({ kind: "entry", text: "" });
   });
 });
 

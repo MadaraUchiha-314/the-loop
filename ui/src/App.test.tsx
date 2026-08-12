@@ -1,7 +1,8 @@
 /**
  * End-to-end through the React layer, against the demo transport: the board
- * renders, a row navigates, and the two surfaces the service cannot back yet
- * stay visibly disabled rather than quietly pretending to work.
+ * renders, a row navigates, and every surface behaves the way the service
+ * does — including the transcript-backed trace panel (issue-209), which
+ * shipped visibly disabled until the route existed.
  */
 
 import { render, screen, waitFor, within } from "@testing-library/react";
@@ -103,14 +104,18 @@ describe("the control plane, on demo data", () => {
     });
   });
 
-  it("does not claim to show turns and tool calls it cannot read", async () => {
+  it("renders the session's turns and tool calls from the transcript route", async () => {
     const user = userEvent.setup();
     renderApp();
 
     await user.click(await screen.findByRole("link", { name: "Open loop-lab#214" }));
 
-    expect(await screen.findByText(/Turns and tool calls are not served by/)).toBeInTheDocument();
-    // The derivable transcript path is offered instead, so the operator can tail it.
+    // The panel is live (issue-209): real turns, with tool invocations, and a
+    // server-flagged malformed line surfaced rather than dropped.
+    expect(await screen.findByText(/Reading the briefing template/)).toBeInTheDocument();
+    expect(screen.getByText("Read")).toBeInTheDocument();
+    expect(screen.getByText(/truncated by the harness mid-write/)).toBeInTheDocument();
+    // The path caption stays: it names the file the served bytes came from.
     expect(screen.getByText(/~\/\.claude\/projects\/.*\.jsonl/)).toBeInTheDocument();
   });
 

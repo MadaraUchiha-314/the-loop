@@ -27,6 +27,7 @@ import type {
   Health,
   SessionRecord,
   SessionVerb,
+  TranscriptResponse,
   WorkItemRecord,
 } from "./types.ts";
 
@@ -107,6 +108,14 @@ export interface TheLoopApi {
    * and never spawns one to answer.
    */
   replySession(ref: string, text: string, actor?: string): Promise<CoreResult>;
+  /**
+   * The harness's own transcript for a work item's (or PR endpoint's) session,
+   * resolved server-side from the registered `cwd` + session id (issue-209).
+   * 404 when there is no session, no file yet, or the harness's transcript
+   * location is undocumented (Cursor) — the trace panel falls back to the
+   * event trail with the reason.
+   */
+  transcript(ref: string, tail?: number, signal?: AbortSignal): Promise<TranscriptResponse>;
   controlDaemon(daemon: string, verb: DaemonVerb): Promise<CoreResult>;
 }
 
@@ -268,6 +277,10 @@ export class HttpApi implements TheLoopApi {
 
   replySession(ref: string, text: string, actor = ""): Promise<CoreResult> {
     return this.post<CoreResult>("/sessions/reply", { ref, text, actor });
+  }
+
+  transcript(ref: string, tail = 200, signal?: AbortSignal): Promise<TranscriptResponse> {
+    return this.request<TranscriptResponse>("/sessions/transcript", { params: { ref, tail } }, signal);
   }
 
   controlDaemon(daemon: string, verb: DaemonVerb): Promise<CoreResult> {

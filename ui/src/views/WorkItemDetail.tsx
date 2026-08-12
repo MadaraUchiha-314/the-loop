@@ -2,11 +2,14 @@
  * One work item: the outer loop, every PR delivering it with its own inner
  * loop, the trace of what the harness did, and the controls.
  *
- * One surface here is deliberately inert against a real service, and says so
- * rather than pretending: the **turns & tool calls** trace needs a transcript
- * endpoint `the_loop/api/app.py` does not serve. The reply box shipped in that
- * state too, and went live when issue-208 landed `POST /api/v1/sessions/reply`
- * (bracketed paste into the pane) — see ui/README.md.
+ * The **turns & tool calls** trace renders the session's own transcript from
+ * `GET /api/v1/sessions/transcript` (issue-209 — the JSONL resolved
+ * server-side from the recorded cwd + session id). It shipped visibly
+ * disabled in issue-207 because that route did not exist; when the route
+ * answers 404 — no session, no file yet, a Cursor session, an older service —
+ * the panel says why and falls back to the event-log trail, which is the
+ * pre-route behaviour. The reply box walked the same disabled-then-live path
+ * via issue-208's `POST /api/v1/sessions/reply`.
  */
 
 import { useState } from "react";
@@ -21,7 +24,9 @@ import {
   stampOf,
   timeOf,
   transcriptPath,
+  transcriptTurns,
   type PullRequestView,
+  type TranscriptTurn,
   type WorkItemView,
 } from "../api/model.ts";
 import type { EventRecord, SessionVerb } from "../api/types.ts";
@@ -49,6 +54,8 @@ export function WorkItemDetail({ view, title, onChanged }: DetailProps) {
     (signal) => api.events({ workItem: view.ref, limit: 200 }, signal),
     [api, view.ref],
   );
+
+  const transcript = useAsync((signal) => api.transcript(traceRef, 200, signal), [api, traceRef]);
 
   async function run(label: SessionVerb | "gate" | "reply", action: () => Promise<unknown>): Promise<void> {
     setBusy(label);
@@ -217,25 +224,47 @@ export function WorkItemDetail({ view, title, onChanged }: DetailProps) {
       </div>
 
       <Blueprint className="lp-trace">
-        <div className="lp-empty">
-          <strong>Turns and tool calls are not served by /api/v1.</strong> the-loop invokes the harness as a CLI inside
-          tmux, so the structured record of a session is the harness&rsquo;s own transcript — for Claude Code, the JSONL
-          above, whose path is fully derivable from the <code className="lp-code">cwd</code> and the pre-assigned
-          session id the service already records. Nothing reads it over HTTP today; until a transcript route exists,{" "}
-          <code className="lp-code">jq -c . &lt;path&gt;</code> on that machine is the trace. Cursor keeps its chats in
-          an undocumented SQLite store and has no equivalent. What the service <em>can</em> answer is below: the
-          event-log trail for this work item.
-        </div>
-        {events.loading && !events.data ? (
-          <div className="lp-empty">Loading events…</div>
-        ) : events.data && events.data.length > 0 ? (
-          events.data
-            .filter((event) => (traceRef === view.ref ? true : eventRef(event) === traceRef))
-            .toReversed()
-            .slice(0, 40)
-            .map((event, index) => <TraceEntry key={`${event.ts}-${index}`} event={event} />)
+        {/* `useAsync` keeps stale data across tab switches and errors, so the
+            order matters: while loading, or after an error, the held `data` is
+            the PREVIOUS tab's transcript and must not be drawn. */}
+        {transcript.loading ? (
+          <div className="lp-empty">Loading the transcript…</div>
+        ) : transcript.data && !transcript.error ? (
+          <>
+            {transcript.data.truncated ? (
+              <div className="lp-empty">
+                Tail — the last {transcript.data.entries.length} of {transcript.data.totalLines} entries.
+              </div>
+            ) : null}
+            {transcript.data.entries.length === 0 ? (
+              <div className="lp-empty">The transcript exists but holds no entries yet.</div>
+            ) : (
+              transcriptTurns(transcript.data.entries).map((turn, index) => (
+                <TurnRow key={`${turn.time}-${index}`} turn={turn} />
+              ))
+            )}
+          </>
         ) : (
-          <div className="lp-empty">No events recorded for this work item.</div>
+          <>
+            <div className="lp-empty">
+              <strong>No transcript served for this session.</strong>{" "}
+              {transcript.error instanceof ApiError && transcript.error.kind === "network"
+                ? transcript.error.advice
+                : (transcript.error?.message ?? "")}{" "}
+              Falling back to the event-log trail for this work item.
+            </div>
+            {events.loading && !events.data ? (
+              <div className="lp-empty">Loading events…</div>
+            ) : events.data && events.data.length > 0 ? (
+              events.data
+                .filter((event) => (traceRef === view.ref ? true : eventRef(event) === traceRef))
+                .toReversed()
+                .slice(0, 40)
+                .map((event, index) => <TraceEntry key={`${event.ts}-${index}`} event={event} />)
+            ) : (
+              <div className="lp-empty">No events recorded for this work item.</div>
+            )}
+          </>
         )}
       </Blueprint>
 
@@ -376,6 +405,37 @@ const KIND_CLASS: Record<string, string> = {
   poll: "",
   "gh-webhook": "",
 };
+
+/**
+ * One transcript turn: the projected kind/time in the left rail, then the
+ * turn's text and its tool invocations — the row shape (and the styles) the
+ * trace panel was designed with in issue-207, filled with real data now that
+ * the transcript route serves it.
+ */
+function TurnRow({ turn }: { turn: TranscriptTurn }) {
+  const kindClass = turn.kind === "assistant" ? "accent" : turn.kind === "malformed" ? "hot" : "";
+  return (
+    <div className="lp-trace-entry">
+      <div className={`lp-trace-kind ${kindClass}`.trim()}>
+        {turn.kind}
+        {turn.time ? <div className="lp-trace-ts">{timeOf(turn.time)}</div> : null}
+      </div>
+      <div className="lp-trace-main">
+        {turn.text ? <div className="lp-trace-text">{turn.text}</div> : null}
+        {turn.tools.length > 0 ? (
+          <div className="lp-trace-tools">
+            {turn.tools.map((tool, index) => (
+              <div className="lp-trace-tool" key={`${tool.name}-${index}`}>
+                <span className="lp-trace-tool-name">{tool.name}</span>
+                <span className="lp-trace-tool-detail">{tool.detail}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 function TraceEntry({ event }: { event: EventRecord }) {
   return (
