@@ -62,6 +62,20 @@ network without an auth-terminating gateway in front
 ([`service.exposed`](/config/cli/service-options#exposed) is the explicit opt-in
 that lets it bind beyond loopback at all).
 
+## The web dashboard, and CORS
+
+The [dashboard](https://madarauchiha-314.github.io/the-loop/ui/) is a static page on
+GitHub Pages pointed at whichever machine runs the service, so its calls are
+**cross-origin** and the browser needs the service's permission to read the answers.
+That permission is
+[`service.cors.allowOrigins`](/config/cli/service-options#cors-alloworigins), and it
+ships allowing the published dashboard's origin — so the page works against a local
+service with nothing in between.
+
+It is a *read* permission, not a network one: the loopback bind and the exposure guard
+are unchanged, and no CORS setting can loosen them. Read what the default admits before
+keeping it, and set `allowOrigins: []` if you do not use the hosted page.
+
 ## `service start`
 
 Starts the service in the background and waits for `/api/v1/health` to answer.

@@ -31,9 +31,23 @@ package — there are no install extras (owner decision, PR #162).
 - The service SHALL carry **no in-app authentication** — a gateway terminates auth
   for any exposed deployment (owner decision, PR #162). Its own boundary SHALL be
   network scoping: it SHALL bind loopback by default and refuse a non-loopback bind
-  unless `service.exposed: true`; no CORS headers are sent, so the same-origin
-  default denies cross-origin browser access. No
+  unless `service.exposed: true`. No
   credential SHALL be minted, stored, or required.
+- Which browser **origins** may read the service's responses SHALL be configuration
+  (`service.cors`, issue-211) and SHALL be a separate question from who may connect:
+  no value under `cors` widens the bind, and the exposure guard is unaffected. The
+  allowlist SHALL ship containing exactly the origin the-loop publishes its own
+  dashboard to, so the hosted page works against a local service with nothing in
+  between ([decision-077](../decisions/decision-077.md)); an empty `allowOrigins`
+  SHALL install no middleware at all, restoring same-origin-only behaviour. Origins
+  SHALL be compared exact-string — no prefix, suffix or regex matching — and
+  `"*"` together with `allowCredentials: true` SHALL refuse to start, before the bind
+  and before the run lock. Chromium's private-network preflight SHALL be answered only
+  for an origin the allowlist already admits.
+- The CORS middleware SHALL sit outside the audit middleware, so a **preflight** runs
+  no operation and emits no `api.request` event; `/mcp` SHALL keep the SDK's
+  DNS-rebinding protection with its own loopback-only origin allowlist, so no CORS
+  setting makes the MCP endpoint drivable from a page.
 - `the-loop service start|stop|status` SHALL manage the service with the issue-159
   lifecycle discipline: the pidfile is the flock, a second start reports `already
   running`, stop signals and waits. Hosting needs no extra: `fastapi`, `uvicorn`
@@ -90,10 +104,11 @@ package — there are no install extras (owner decision, PR #162).
   runs as a CLI in tmux, so the record is its own file — for Claude Code a JSONL
   whose path the dashboard derives and displays).
 - The dashboard SHALL hold no credential and mint none. The network posture is
-  unchanged and is stated in its Settings screen: the service binds loopback and
-  sends no CORS headers, so a hosted page reaches it through an SSH tunnel plus a
-  gateway that terminates auth and adds the origin — never by exposing the
-  service.
+  unchanged and is stated in its Settings screen: the service binds loopback, so a
+  service on **another** machine is reached through an SSH tunnel or a gateway that
+  terminates auth — never by exposing the service. A service on the **same** machine
+  needs neither, since this page's origin is in the shipped `service.cors.allowOrigins`
+  (issue-211).
 
 ## Design
 
@@ -109,4 +124,5 @@ package — there are no install extras (owner decision, PR #162).
 | Work item | What changed | Links |
 |-----------|--------------|-------|
 | issue-161 | Capability minted: core facade extracted, API service + OpenAPI contract, loopback-default network posture (no in-app auth — the gateway owns it, decision-059), service lifecycle commands, every core-capability command routed through the service, HTTP-only MCP endpoint on the official SDK, no install extras. The UI was descoped on owner review | [spec](../specs/issue-161/), [decision-058](../decisions/decision-058.md), [decision-059](../decisions/decision-059.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/161) |
+| issue-211 | The dashboard can actually read the service: `service.cors` makes the allowed browser origins configuration, shipping the published page's own origin as the default. Exact-string origins only; `"*"` with credentials refuses to start; an empty list installs no middleware. The bind, the exposure guard and the MCP transport's origin check are unchanged | [spec](../specs/issue-211/), [decision-077](../decisions/decision-077.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/211) |
 | issue-207 | The descoped UI lands: a static dashboard in `ui/` over the same `/api/v1`, published to `/the-loop/ui/` from the docs site's Pages artifact. Loop position joined from the session's `cwd` and the record's spec id; the inbox unions `/attention` with the repo-scoped graph gates it excludes; the two surfaces the API cannot back ship disabled and named | [spec](../specs/issue-207/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/207) |

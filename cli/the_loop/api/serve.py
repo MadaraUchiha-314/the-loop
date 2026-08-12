@@ -7,6 +7,11 @@ the sole network boundary the service enforces itself: a non-loopback host
 without ``service.exposed: true`` refuses to boot, so the API — which can spawn
 harness sessions — is never accidentally on the network. A real deployment sets
 ``exposed: true`` and puts the auth-terminating gateway in front.
+
+A second guard sits beside it (issue-211): ``service.cors`` is resolved here so
+a configuration that must never be served — every origin allowed *and*
+credentials permitted — stops the process before it binds, rather than at the
+first request.
 """
 
 from __future__ import annotations
@@ -17,7 +22,7 @@ import sys
 from .. import eventlog
 from ..cli_config import default_cli_config_path, load_cli_config
 from ..runlock import RunLock
-from .config import is_loopback, service_config, service_pidfile
+from .config import cors_config, is_loopback, service_config, service_pidfile
 
 logger = logging.getLogger("the-loop.service")
 
@@ -36,6 +41,14 @@ def main() -> int:
             "(the API can spawn harness sessions)",
             conf["host"],
         )
+        return 2
+    try:
+        cors_config(cli_config)
+    except ValueError as exc:
+        # Beside the exposure guard on purpose, and for the same reason: a
+        # configuration that must not be served is refused before anything is
+        # bound or locked, not repaired on the operator's behalf.
+        logger.error("%s", exc)
         return 2
 
     lock = RunLock(service_pidfile(cli_config), name="service")

@@ -138,6 +138,7 @@ const configSidebar = [
       { text: "Routing options", link: "/config/cli/routing-options" },
       { text: "Polling options", link: "/config/cli/polling-options" },
       { text: "Integrations options", link: "/config/cli/integrations-options" },
+      { text: "Service options", link: "/config/cli/service-options" },
       { text: "Observability options", link: "/config/cli/observability-options" },
     ],
   },

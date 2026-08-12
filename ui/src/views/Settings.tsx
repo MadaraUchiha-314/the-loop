@@ -75,10 +75,11 @@ export function Settings() {
 
         <div className="lp-note">
           The service binds loopback by default and refuses a non-loopback bind unless{" "}
-          <code>service.exposed: true</code>. It carries no in-app auth and sends no CORS headers — for a
-          statically-hosted dashboard, put a gateway in front (or an SSH tunnel:{" "}
-          <code>ssh -L 8787:127.0.0.1:8787 workstation</code>) that terminates auth and adds{" "}
-          <code>Access-Control-Allow-Origin</code> for this page&rsquo;s origin.
+          <code>service.exposed: true</code>, and it carries no in-app auth. This page&rsquo;s origin is
+          allowed to read it out of the box (<code>service.cors.allowOrigins</code>); a copy hosted
+          anywhere else has to be added there. A service on another machine still needs to reach this
+          browser — an SSH tunnel (<code>ssh -L 8787:127.0.0.1:8787 workstation</code>) or a gateway that
+          terminates auth.
         </div>
         <div className="lp-hint">
           saved in this browser (localStorage) · health check: GET {normalizeBaseUrl(draft)}/api/v1/health

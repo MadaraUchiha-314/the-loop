@@ -6,13 +6,14 @@
  * on GitHub Pages is explorable before anyone has a tunnel open. Views depend
  * on {@link TheLoopApi}, never on either concrete class.
  *
- * Two deployment facts shape the error handling. The service sends **no CORS
- * headers** and binds **loopback only** by default (`the_loop/api/app.py`,
- * decision-059), so the overwhelmingly common failure for a browser client is a
- * cross-origin block, which `fetch` reports as an opaque `TypeError` with no
- * status. {@link ApiError} carries `kind: "network"` for that case and the
- * views turn it into the tunnel/gateway instructions rather than a bare
- * "failed to fetch".
+ * Two deployment facts shape the error handling. The service allows a
+ * **configured list of origins** to read it — this page's is the shipped default
+ * (`service.cors.allowOrigins`, issue-211) — and binds **loopback only**
+ * (decision-059). So the two remaining failures are a service on another machine
+ * (nothing is listening at this base URL) and an origin the operator has not
+ * allowed; `fetch` reports both as an opaque `TypeError` with no status.
+ * {@link ApiError} carries `kind: "network"` for that case and the views turn it
+ * into the config/tunnel instructions rather than a bare "failed to fetch".
  */
 
 import type {
@@ -46,15 +47,18 @@ export class ApiError extends Error {
 
   /**
    * The sentence to put in front of an operator. A `network` failure is almost
-   * never "the server is down" — it is the same-origin policy doing its job —
-   * so it says what to change instead of what broke.
+   * never "the server errored" — nothing answered, or the browser refused to
+   * let this page read what did — so it says what to change instead of what
+   * broke, cheapest remedy first.
    */
   get advice(): string {
     if (this.kind === "network") {
       return (
-        "Could not reach the service. It binds loopback-only and sends no CORS " +
-        "headers, so a hosted page needs an SSH tunnel plus a gateway that adds " +
-        "Access-Control-Allow-Origin for this page's origin. Check the base URL in Settings."
+        "Could not reach the service. Check the base URL in Settings, and that " +
+        "`the-loop service start` is running. If this page's origin is not in " +
+        "service.cors.allowOrigins, the browser blocks the read (CORS) — add it " +
+        "there. The service binds loopback only, so one on another machine needs " +
+        "an SSH tunnel or a gateway in front."
       );
     }
     if (this.status === 404) return "The service has no such route — check it is a recent the-loop.";

@@ -30,24 +30,32 @@ fixture** — a bundled dataset in the same record shapes, always shown behind a
 
 ## Reaching a service from a hosted page
 
-The service **binds loopback by default** and sends **no CORS headers** — deliberately,
+The service **binds loopback by default** and carries **no in-app auth** — deliberately,
 both of them ([decision-059](../docs/decisions/decision-059.md); auth belongs to a
-gateway). A browser on `https://…github.io` therefore cannot call it directly, and the
-failure arrives as an opaque `TypeError`, which the app translates into this advice
-rather than "failed to fetch":
+gateway). What it no longer does is refuse to be read: since
+[issue-211](https://github.com/MadaraUchiha-314/the-loop/issues/211) the origins allowed
+to read it are configuration, and **this page's origin is the shipped default**
+([decision-077](../docs/decisions/decision-077.md)):
 
-```bash
-# 1. bring the port to the browser's machine
-ssh -L 8787:127.0.0.1:8787 workstation
-
-# 2. put a gateway in front that terminates auth and adds
-#    Access-Control-Allow-Origin for the page's origin
+```yaml
+# ~/.the-loop/cli-config.yaml
+service:
+  cors:
+    allowOrigins: ["https://madarauchiha-314.github.io"]
 ```
 
-Running the dashboard from `bun run dev` on the same machine as the service is the
-no-gateway path: the dev server proxies nothing, but `http://127.0.0.1:8787` is same-site
-enough for most browsers only when the page is also on `127.0.0.1`, so a gateway is still
-the supported answer for anything else.
+So the hosted page against a service on the **same machine** needs nothing. Two cases
+still do:
+
+```bash
+# a service on ANOTHER machine — bring the port to the browser's machine
+ssh -L 4114:127.0.0.1:4114 workstation
+
+# a copy of this page hosted somewhere else — add that origin to allowOrigins
+```
+
+When a call still fails, the browser reports it as an opaque `TypeError`; the app
+translates that into the same advice rather than "failed to fetch".
 
 ## Where the screens get their data
 

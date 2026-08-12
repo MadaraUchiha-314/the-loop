@@ -71,14 +71,15 @@ describe("HttpApi", () => {
     });
   });
 
-  it("reports a cross-origin block as `network`, with the tunnel advice", async () => {
+  it("reports an unreachable service as `network`, advising the base URL, CORS and the tunnel", async () => {
     vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new TypeError("Failed to fetch"))));
 
     const error = await new HttpApi("http://h:1").health().catch((cause: unknown) => cause);
 
     expect(error).toBeInstanceOf(ApiError);
     expect((error as ApiError).kind).toBe("network");
-    expect((error as ApiError).advice).toMatch(/CORS/);
+    expect((error as ApiError).advice).toMatch(/service\.cors\.allowOrigins/);
+    expect((error as ApiError).advice).toMatch(/Settings/);
   });
 
   it("surfaces FastAPI's `detail` on a 4xx rather than the bare status line", async () => {

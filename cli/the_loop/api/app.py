@@ -1,8 +1,12 @@
 """The control-plane FastAPI app: /api/v1 over :mod:`the_loop.core` (issue-161).
 
 Routes add transport and serialization only (R1.2) — no in-app auth (the
-deploying gateway owns it, decision-059) and no CORS headers (no browser client
-ships; the same-origin default denies cross-origin access). Work-item refs
+deploying gateway owns it, decision-059). Cross-origin reads are a configured
+allowlist (``service.cors``, issue-211): a browser page on a listed origin gets
+``Access-Control-Allow-Origin``, everything else gets nothing and is discarded
+by the browser. The list ships with one entry, the origin the-loop's own
+dashboard is published to; an empty list installs no middleware at all and
+restores the same-origin-only behaviour that predates it. Work-item refs
 travel as query/body parameters, never path segments — a ref contains ``/``
 and ``#``, and URL-encoding those into paths trades one escaping bug for
 another. Error mapping is uniform: ``ValueError`` → 400 (caller mistake),
@@ -13,12 +17,15 @@ auto-start loop hammers).
 
 from __future__ import annotations
 
+import inspect
+import logging
 from contextlib import asynccontextmanager
 from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from starlette.middleware.cors import CORSMiddleware
 
 from .. import eventlog
 from ..core import attention as core_attention
@@ -28,8 +35,57 @@ from ..core import graphs as core_graphs
 from ..core import repo as core_repo
 from ..core import sessions as core_sessions
 from ..core import workitems as core_workitems
+from .config import cors_config
 
 API_PREFIX = "/api/v1"
+
+logger = logging.getLogger("the-loop.service")
+
+
+def _install_cors(app: FastAPI, cli_config: Optional[dict]) -> None:
+    """Add the CORS middleware, if any origin is allowed to read this service.
+
+    Added **after** the audit middleware, which puts it outermost: Starlette
+    wraps the most recently added middleware around everything before it. That
+    ordering is the point — a preflight is answered by the middleware and never
+    reaches a route, so it runs no operation and emits no ``api.request`` event.
+
+    ``allow_private_network`` is newer than the package's ``fastapi>=0.110``
+    floor, and it is what lets a public HTTPS page reach a loopback address in
+    Chromium at all. Passing it only when the installed Starlette accepts it
+    keeps that floor honest; writing the header ourselves instead would
+    duplicate a security-relevant response header on every modern install.
+    """
+    conf = cors_config(cli_config)
+    if not conf["allowOrigins"]:
+        return
+    # An origin is scheme + host + port. A pasted URL — trailing slash, path —
+    # is not wrong enough to refuse, and matches nothing at all; say so once,
+    # here, rather than let it read as "CORS is broken".
+    pathful = [o for o in conf["allowOrigins"] if o != "*" and o.count("/") != 2]
+    if pathful:
+        logger.warning(
+            "service.cors.allowOrigins entries are origins, not URLs — %s "
+            "carry a path or trailing slash and will match no browser request",
+            ", ".join(pathful),
+        )
+    kwargs: Dict[str, Any] = {
+        "allow_origins": conf["allowOrigins"],
+        "allow_methods": conf["allowMethods"],
+        "allow_headers": conf["allowHeaders"],
+        "allow_credentials": conf["allowCredentials"],
+    }
+    parameters = inspect.signature(CORSMiddleware.__init__).parameters
+    if "allow_private_network" in parameters:
+        kwargs["allow_private_network"] = conf["allowPrivateNetwork"]
+    elif conf["allowPrivateNetwork"]:
+        logger.warning(
+            "installed starlette has no allow_private_network; a public-origin "
+            "page reaching this loopback service may be blocked by the browser "
+            "— upgrade starlette, or set service.cors.allowPrivateNetwork: false "
+            "to silence this"
+        )
+    app.add_middleware(CORSMiddleware, **kwargs)
 
 
 class GraphCheckBody(BaseModel):
@@ -167,6 +223,9 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
                 status=response.status_code,
             )
         return response
+
+    # Last, so it wraps the audit middleware rather than sitting inside it.
+    _install_cors(app, cli_config)
 
     @app.get(f"{API_PREFIX}/health", operation_id="health")
     def health() -> Dict[str, str]:

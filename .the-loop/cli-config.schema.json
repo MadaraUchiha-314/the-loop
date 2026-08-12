@@ -809,6 +809,41 @@
           "type": "boolean",
           "default": true,
           "description": "Whether a CLI command may boot a local service on demand when none is reachable (the service is the CLI's only execution path for core capabilities)."
+        },
+        "cors": {
+          "type": "object",
+          "description": "Which browser ORIGINS may read this service's responses (issue-211, decision-077). Orthogonal to `host`/`exposed`, which decide who may CONNECT: no value here widens the bind. Ships allowing the one origin the-loop publishes its dashboard to, so the hosted UI works against a local service with no configuration; an empty `allowOrigins` installs no middleware at all and restores same-origin-only behaviour.",
+          "additionalProperties": false,
+          "properties": {
+            "allowOrigins": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": ["https://madarauchiha-314.github.io"],
+              "description": "Exact origins (scheme + host + port, no path) allowed to read responses. Compared exact-string — no prefix, suffix or regex matching. `[]` disables cross-origin access entirely. `\"*\"` allows every origin and is refused at start-up when `allowCredentials` is true."
+            },
+            "allowMethods": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": ["GET", "POST", "OPTIONS"],
+              "description": "HTTP methods a cross-origin caller may use. The default is exactly what the shipped dashboard sends."
+            },
+            "allowHeaders": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": ["Accept", "Content-Type"],
+              "description": "Request headers a cross-origin caller may send, beyond the browser's safelist. Add `Authorization` when a gateway in front expects a bearer token from the page."
+            },
+            "allowCredentials": {
+              "type": "boolean",
+              "default": false,
+              "description": "Whether the browser may send cookies/credentials cross-origin. the-loop's own client sends none; enable only for a gateway deployment that authenticates the page. `true` with `\"*\"` in `allowOrigins` refuses to boot."
+            },
+            "allowPrivateNetwork": {
+              "type": "boolean",
+              "default": true,
+              "description": "Answer Chromium's private-network preflight (`Access-Control-Allow-Private-Network`) for an ALREADY-allowed origin — what lets a public HTTPS page reach a loopback service. Never widens the origin allowlist."
+            }
+          }
         }
       }
     }
