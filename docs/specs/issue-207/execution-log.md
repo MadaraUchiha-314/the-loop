@@ -1,14 +1,14 @@
 ---
 type: execution-log
-workItem: issue-206
+workItem: issue-207
 phase: implementation
 status: in-progress
 ---
 
 # Execution Log: a control-plane dashboard over `/api/v1`
 
-> Append-only log for issue-206. Ticket:
-> [#206](https://github.com/MadaraUchiha-314/the-loop/issues/206) — **provisional, see
+> Append-only log for issue-207. Ticket:
+> [#207](https://github.com/MadaraUchiha-314/the-loop/issues/207) — **provisional, see
 > below**.
 
 ## Provenance and what is unreconciled
@@ -21,9 +21,14 @@ anonymously, `git push` and the GitHub API do not.
 Three consequences, all for a human to close:
 
 1. **No ticket was filed.** `206` was taken as the next free number. Reconciling means
-   filing the issue, then `git mv docs/specs/issue-206 docs/specs/issue-<real>` and
+   filing the issue, then `git mv docs/specs/issue-207 docs/specs/issue-<real>` and
    updating the front-matter `workItem` and the three ticket links in this directory.
+   → **Closed.** The owner filed the work as
+   [#207](https://github.com/MadaraUchiha-314/the-loop/issues/207) and carried the branch
+   in; `206` had meanwhile been taken by an unrelated PR. This directory was renamed and
+   its `workItem` front-matter and ticket links repointed at `207`.
 2. **No `loop:<phase>` label was applied**, because there is no ticket to apply it to.
+   → **Closed.** `loop:in-review` applied to #207 on hand-off to the PR.
 3. **The spec chain was authored alongside the implementation, not before it.** The
    CLAUDE.md rule is spec-then-code; this session had one pass and no gate to wait on, so
    the artifacts are honest descriptions of what was built rather than approvals that

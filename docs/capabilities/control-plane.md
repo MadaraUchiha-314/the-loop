@@ -2,7 +2,7 @@
 
 > The API layer over the-loop's core, and its clients: the service-routed CLI,
 > the MCP endpoint (issue-161, decision-058) and the static web dashboard
-> (issue-206).
+> (issue-207).
 
 ## What it is
 
@@ -64,7 +64,7 @@ package — there are no install extras (owner decision, PR #162).
   SHALL NOT be exposed as tools.
 - Every API operation SHALL land in the event log (`api.request`; tool calls as
   `mcp.call`), queryable via `the-loop events --source service`.
-- A **static web dashboard** (`ui/`, issue-206) SHALL be the third client of the
+- A **static web dashboard** (`ui/`, issue-207) SHALL be the third client of the
   same surface, adding no state and no server of its own. It SHALL be a pure
   build artifact — published to GitHub Pages at `/the-loop/ui/`, beside the docs
   site, from the one Pages artifact both are assembled into — with the API base
@@ -98,7 +98,7 @@ package — there are no install extras (owner decision, PR #162).
 ## Design
 
 [`docs/specs/issue-161/design.md`](../specs/issue-161/design.md) ·
-[`docs/specs/issue-206/design.md`](../specs/issue-206/design.md) ·
+[`docs/specs/issue-207/design.md`](../specs/issue-207/design.md) ·
 [`docs/api-specs/openapi/the-loop.v1.yaml`](../api-specs/openapi/the-loop.v1.yaml) ·
 [CLI: service](../cli/commands/service.md) ·
 [config: service options](../config/cli/service-options.md) ·
@@ -109,4 +109,4 @@ package — there are no install extras (owner decision, PR #162).
 | Work item | What changed | Links |
 |-----------|--------------|-------|
 | issue-161 | Capability minted: core facade extracted, API service + OpenAPI contract, loopback-default network posture (no in-app auth — the gateway owns it, decision-059), service lifecycle commands, every core-capability command routed through the service, HTTP-only MCP endpoint on the official SDK, no install extras. The UI was descoped on owner review | [spec](../specs/issue-161/), [decision-058](../decisions/decision-058.md), [decision-059](../decisions/decision-059.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/161) |
-| issue-206 | The descoped UI lands: a static dashboard in `ui/` over the same `/api/v1`, published to `/the-loop/ui/` from the docs site's Pages artifact. Loop position joined from the session's `cwd` and the record's spec id; the inbox unions `/attention` with the repo-scoped graph gates it excludes; the two surfaces the API cannot back ship disabled and named | [spec](../specs/issue-206/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/206) |
+| issue-207 | The descoped UI lands: a static dashboard in `ui/` over the same `/api/v1`, published to `/the-loop/ui/` from the docs site's Pages artifact. Loop position joined from the session's `cwd` and the record's spec id; the inbox unions `/attention` with the repo-scoped graph gates it excludes; the two surfaces the API cannot back ship disabled and named | [spec](../specs/issue-207/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/207) |

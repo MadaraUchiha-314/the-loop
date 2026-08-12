@@ -1,7 +1,7 @@
 ---
 type: requirements
 phase: requirements-definition
-workItem: issue-206
+workItem: issue-207
 status: draft
 approvedBy: []
 collaborators: [engineer]
@@ -12,7 +12,7 @@ overrides: {}
 # Requirements: a control-plane dashboard over `/api/v1`
 
 > Phase 1 of the chain. Ticket:
-> [#206](https://github.com/MadaraUchiha-314/the-loop/issues/206).
+> [#207](https://github.com/MadaraUchiha-314/the-loop/issues/207).
 >
 > **The ticket number is provisional.** The session that authored this chain had no
 > GitHub write credential and could not file the issue; the number was taken as the next
