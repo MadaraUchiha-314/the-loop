@@ -520,6 +520,7 @@ class ScenarioRun:
             "events",
             "lockedBeforeImplementation",
             "executionLogSections",
+            "executionLogEntries",
         }
         unknown = set(expect) - known
         if unknown:
@@ -581,6 +582,8 @@ class ScenarioRun:
                     )
         if "executionLogSections" in expect:
             self._assert_log_sections(list(expect["executionLogSections"]))
+        if "executionLogEntries" in expect:
+            self._assert_log_entries(list(expect["executionLogEntries"]))
 
     def _assert_nodes(self, wanted: List[str]) -> None:
         actual = self.node_trace()
@@ -602,6 +605,23 @@ class ScenarioRun:
         divergence = match_subsequence(self.events(), wanted)
         if divergence:
             raise ScenarioAssertionError(f"{self.scenario.name}: {divergence}")
+
+    def _assert_log_entries(self, wanted: List[str]) -> None:
+        """The execution log mirrors the walk (R1.3): each named node's entry
+        checkpoint (the `log-entry` hook's appended heading) appears, in order."""
+        path = self.spec_dir / "execution-log.md"
+        text = path.read_text(encoding="utf-8") if path.is_file() else ""
+        cursor = 0
+        for node in wanted:
+            marker = f"— entry {node}"
+            found = text.find(marker, cursor)
+            if found < 0:
+                raise ScenarioAssertionError(
+                    f"{self.scenario.name}: the execution log has no entry "
+                    f"checkpoint for {node!r} after offset {cursor} — the log "
+                    "does not mirror the walk"
+                )
+            cursor = found + len(marker)
 
     def _assert_log_sections(self, wanted: List[str]) -> None:
         path = self.spec_dir / "execution-log.md"

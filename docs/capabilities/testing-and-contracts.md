@@ -60,6 +60,33 @@ every API is authored contract-first with docs generated from the contract).
 - The later `evidence` node SHALL **summarise** the verification results against the
   acceptance criteria rather than re-deriving them.
 
+### The process itself is integration-tested (issue-217)
+
+- the-loop's own repository SHALL carry a scenario-driven **end-to-end suite**
+  (`cli/tests/test_pdlc_e2e_integration.py` + `cli/tests/test_pdlc_e2e/`) that walks one
+  work item per scenario through the shipped `pdlc-work-item-loop` via the real runtime
+  and hooks, with the agent **mocked as fixture playback** and externals faked only at
+  transport seams (the `integrations.resolve` labels/comments provider, the event-log
+  path, the ask/reply comment poster and tmux runner). Authorization,
+  loop-prevention filtering and every artifact gate run production code.
+- Each scenario is a **fixture set** (a manifest of scripted steps — a closed vocabulary:
+  comments, emitted artifacts, completion claims, ask/reply, inner-loop state,
+  GitHub-outage knobs — plus expected trace); adding one requires a fixture directory and
+  a one-line named test, kept in lockstep by a consistency test. A malformed set is
+  refused naming the file and field, never silently skipped.
+- The assertions are **process conformance**, not run-completion: the exact walked node
+  sequence (skips marked distinctly, so a skip can never satisfy an expectation written
+  for a pass), the exact `loop:<phase>` label trail, spec-chain artifacts locked before
+  `implementation` is entered, expected events as an ordered subsequence of the log, and
+  execution-log sections present. Divergences report the first mismatch.
+- The shipped scenarios pin: the full happy path (including `await-inner-loops` parking
+  `implementation` until a simulated inner PR loop completes), the trivial-tier
+  declared-skip short-circuit (with `verification` re-targeting the execution log per
+  issue-179), ask/reply mid-flight (with the dead-pane reply refused fail-closed), gate
+  rejection on an unlocked artifact, `changes-requested` looping back a phase, GitHub-outage
+  degradation (`graph.hook_degraded`, verdicts unchanged), and loop prevention (marked and
+  unauthorized comments never release a human gate).
+
 ### Scenario docstrings and contract-first APIs
 
 - Every integration test SHALL carry a Gherkin-syntax docstring
@@ -85,6 +112,7 @@ every API is authored contract-first with docs generated from the contract).
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-217 | The process itself became integration-tested (2026-08-12): a scenario-driven e2e suite drives one work item per scenario through the shipped outer loop against a fixture-playback agent, asserting process conformance (node trace with skips distinct from passes, label trail, locks before implementation, ordered event subsequence, execution-log sections) — seven scenarios covering the happy path with the inner-loop seam, trivial-tier declared skips, ask/reply with the fail-closed dead-pane refusal, gate rejection, review rejection looping back, GitHub-outage degradation, and loop prevention; new scenarios are fixture sets kept in lockstep with named tests by a consistency test | [spec](../specs/issue-217/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/217) |
 | issue-163 | Testing became part of the process rather than an assumption: the `testing-plan.md` artifact and the `test-planning` / `verification` nodes, the test-type matrix with `n/a`-with-a-reason, the declared-not-managed verification environment, and committed, redacted evidence (screenshots and GIFs for UI flows) | [spec](../specs/issue-163/), [decision-060](../decisions/decision-060.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/163) |
 | issue-165 | Textual evidence is markdown (`.md`), never `.txt` — titled, one section per command, output in fenced blocks, linted like every other markdown file | [spec](../specs/issue-165/), PR #168 |
 | issue-11 | Introduced Gherkin scenario docstrings, the `scenarios` command and contract-first API conventions | [spec](../specs/issue-11/), [decision-014](../decisions/decision-014.md) |

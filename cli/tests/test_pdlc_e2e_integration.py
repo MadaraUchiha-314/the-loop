@@ -249,6 +249,34 @@ def test_the_event_matcher_reports_the_first_divergence():
     assert error is not None and "#0" in error
 
 
+def test_a_process_regression_fails_the_trace_assertions(tmp_path, monkeypatch):
+    """
+    Requirement: docs/specs/issue-217/requirements.md#R1.3, #R1.4
+    Scenario: a walk that diverges from the expected trace fails, naming the divergence
+        Given a world whose observed events describe a walk that skipped a phase
+        When the node-trace and label-trail expectations are asserted
+        Then each raises naming the index, the expectation and what stood in its place
+    """
+    from test_pdlc_e2e.runner import ScenarioAssertionError
+
+    scenario = Scenario.load(SCENARIOS / "gate-rejection")
+    run = ScenarioRun(scenario, tmp_path, monkeypatch)
+    # A forged log: the walk "jumped" phase-selection → design (a phase-skip
+    # regression a per-seam test would never see).
+    run.events_path.write_text(
+        '{"event": "graph.started", "node": "phase-selection"}\n'
+        '{"event": "graph.advanced", "node": "phase-selection", "to": "design"}\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(ScenarioAssertionError, match="index 1"):
+        run.assert_expect({"nodes": ["phase-selection", "requirements-definition"]})
+    run.integration.labels = ["loop:phase-selection", "loop:design"]
+    with pytest.raises(ScenarioAssertionError, match="label trail diverges"):
+        run.assert_expect(
+            {"labels": ["loop:phase-selection", "loop:requirements-definition"]}
+        )
+
+
 def test_the_fake_transport_refuses_operations_outside_its_table():
     """
     Requirement: docs/specs/issue-217/requirements.md#R3.1, security consideration 3

@@ -134,7 +134,7 @@ Composes only existing seams:
 | Step | Meaning | Real code it drives |
 |------|---------|---------------------|
 | `comment: {author, body[, fixture]}` | a human (or marked agent) comment arrives at the current gate | `Runtime.advance(event={comments:[…]})` — the dispatcher's consult path |
-| `emit: {artifact, fixture}` | the agent "produces" an artifact | copy `artifacts/<fixture>` → spec dir, commit |
+| `emit: {artifact, fixture}` | the agent "produces" an artifact | copy `artifacts/<fixture>` → spec dir |
 | `complete: {node}` | the session claims its node | `Runtime.complete(...)` — the `graph complete` envelope |
 | `advance: {}` | a non-comment event nudges the gate | `Runtime.advance(event=None)` |
 | `ask: {question}` | the agent escalates | `core.sessions.ask_session` |
@@ -196,7 +196,7 @@ def assert_trace(trace: Trace, expect: Expect) -> None
 |----------|------|-------------------------|
 | `happy-path` | full outer loop, tier 3: authorized `the-loop execute` (no skips) → emit+complete each spec phase → approvals via authorized comments → implementation/verification → review-chain log sections → human approval → complete | phase order, label trail `loop:phase-selection → … → loop:complete`, artifacts locked before `implementation`, events in order, execution-log mirror |
 | `trivial-tier` | tier 1: selection reply unticks `spec-chain` + `review-chain` boxes → implementation/verification → human approval | skipped nodes recorded `graph.node_skipped` with provenance (never `pass`), label trail contains only walked phases and still never regresses |
-| `ask-reply` | happy walk to implementation; agent `ask`s; run parks awaiting input; operator `reply` resumes; completes | `session.awaiting_input` → `session.reply_sent` ordering; attention surface opens and clears; marked question comment posted |
+| `ask-reply` | happy walk to implementation; agent `ask`s; run parks awaiting input; operator `reply` resumes; completes | `session.awaiting_input` → `session.reply_sent` ordering; the dead-pane reply refused fail-closed with no delivery recorded; marked question comment posted |
 | `gate-rejection` | requirements emitted **unlocked** (`status: draft`) → `complete` refused (block) → emit locked fixture → passes | a malformed artifact blocks (label does not move, `graph.blocked` recorded), repair advances — never a silent pass |
 | `review-rejection` | design-approval answers `changes-requested` → pointer returns to `design` → re-emit → approved | the backward edge routes (label re-enters `loop:design`), regression is explicit (`graph.advanced` with `to: design`), and the loop converges |
 | `gh-unreachable` | happy segment with `fail-github: [set-labels, add-comment]` across one transition | node verdict unchanged, `graph.hook_degraded` emitted, event log still written (R3.3) |

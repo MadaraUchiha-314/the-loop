@@ -13,6 +13,9 @@ steps:
         the-loop execute
 
         - [ ] brainstorming
+  # Emitted first so every later node's `log-entry` checkpoint lands in it —
+  # the "execution log mirrors the walk" conformance (R1.3).
+  - emit: {artifact: execution-log.md, fixture: execution-log.md}
   - emit: {artifact: requirements.md, fixture: requirements.md}
   - complete: {node: requirements-definition}
   - comment: {author: owner, body: "approved"}
@@ -23,7 +26,6 @@ steps:
   - comment: {author: owner, body: "approved"}
   - emit: {artifact: tasks.md, fixture: tasks.md}
   - complete: {node: tasks-breakdown}
-  - emit: {artifact: execution-log.md, fixture: execution-log.md}
   # The inner-loop seam: a started PR loop parks the outer `implementation`
   # gate; its `complete` releases it.
   - inner-loop: {pr: 1, node: implementation}
@@ -51,6 +53,19 @@ expect:
     [requirements.md, design.md, testing-plan.md, tasks.md]
   executionLogSections:
     ["Review cycles", "Security review (gate)", "Pull requests"]
+  executionLogEntries:
+    - design
+    - test-planning
+    - tasks-breakdown
+    - implementation
+    - verification
+    - self-review
+    - critic-review
+    - security-review
+    - evidence
+    - capability-docs
+    - reviewer-briefing
+    - complete
   nodes:
     - phase-selection
     - brainstorming~

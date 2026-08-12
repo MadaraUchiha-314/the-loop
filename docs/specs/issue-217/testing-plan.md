@@ -72,15 +72,28 @@ No screenshots — nothing visual.
 
 ## Activities checklist (ticked at `verification`, with results)
 
-- [ ] T1 all seven scenarios green
-- [ ] T2 runner meta-tests green (refusals name file+field; divergence names index)
-- [ ] T3 `the-loop scenarios` lists the e2e Feature's scenarios
-- [ ] T7 suite runtime recorded and within budget
-- [ ] T8 abuse-case negatives green
-- [ ] T12 docs parity green
-- [ ] T14 lint / format / typecheck / markdownlint clean
-- [ ] T15 whole suite green (baseline 1873 + new)
+- [x] T1 all seven scenarios green — 14 passed in 0.47s; see
+      [`evidence/verification.md`](evidence/verification.md)
+- [x] T2 runner meta-tests green (refusals name file+field; divergence names
+      index) — same run
+- [x] T3 `the-loop scenarios` lists the e2e Feature's 14 scenarios with
+      correct `Requirement:` attribution (after self-review finding 1)
+- [x] T7 suite runtime recorded: e2e module 0.47s; whole suite ~84s → 85.49s
+      — within the "a few seconds" budget
+- [x] T8 abuse-case negatives green (unknown step kind refused; marked and
+      unauthorized comments never release a gate; unknown fake-transport
+      operation raises)
+- [x] T12 docs parity green (inside the full suite)
+- [x] T14 lint / format / typecheck / markdownlint / config validation clean
+- [x] T15 whole suite green — 1886 passed + 1 skipped (baseline 1872 + 1;
+      +14 new, no regressions)
 
 ## Verification results
 
-Not yet executed.
+Executed 2026-08-12 by the implementing session. Every activity ran and
+passed; full command output in
+[`evidence/verification.md`](evidence/verification.md). The same honesty note
+as issue-208/209 on TDD: the scenarios and the runner were written together
+in one pass, red→green observed per-scenario while iterating (the first run
+of the finished suite passed whole; the red states were the intermediate
+authoring runs) rather than as a committed red state.

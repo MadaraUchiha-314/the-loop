@@ -68,6 +68,7 @@ skip.
 | `events` | an **ordered subsequence** of `{event, field: value, …}` matchers — unrelated events are permitted between matches, so new event types don't break scenarios |
 | `lockedBeforeImplementation` | the named artifacts carried `status: approved` at the moment `implementation` was entered |
 | `executionLogSections` | the named `##` sections exist and are non-empty in the work item's execution log |
+| `executionLogEntries` | the named nodes' `log-entry` checkpoints appear in the execution log, in order — the log mirrors the walk |
 
 Divergences report the first mismatch (index, expected, found) plus the
 observed trace.
