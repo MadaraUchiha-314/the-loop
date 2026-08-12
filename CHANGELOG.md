@@ -1,3 +1,9 @@
+## v9.10.0 (2026-08-12)
+
+### Feat
+
+- **issue-208**: route agent questions through `the-loop ask` + POST /api/v1/sessions/reply (#216)
+
 ## v9.9.0 (2026-08-12)
 
 ### Feat
