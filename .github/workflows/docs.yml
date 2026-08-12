@@ -1,12 +1,26 @@
-# Docs site — build the VitePress site in docs/ (docs/.vitepress/) and deploy it to
-# GitHub Pages on every push to main. See docs/contributing.md and issue-70.
-name: Docs
+# GitHub Pages — one site, two apps.
+#
+# The Pages deployment is a single artifact for the whole origin, so the docs
+# and the control-plane dashboard cannot each own a workflow: a second
+# `deploy-pages` would replace the first rather than sit beside it. They are
+# built separately and assembled here instead:
+#
+#   /the-loop/      the VitePress docs site (docs/, base "/the-loop/")
+#   /the-loop/ui/   the control-plane dashboard (ui/, base "/the-loop/ui/")
+#
+# The dashboard is copied into the docs output under `ui/`. VitePress does not
+# know the directory exists — it is added after `docs:build` — so nothing has to
+# be excluded from its `srcDir` scan, and the two builds stay independent.
+#
+# See docs/contributing.md, ui/README.md, and issue-70 (docs) / issue-207 (ui).
+name: Pages
 
 on:
   push:
     branches: [main]
     paths:
       - docs/**
+      - ui/**
       - cli/README.md
       - skills/the-loop/reference/**
       - skills/the-loop/SKILL.md
@@ -33,13 +47,39 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Install dependencies
+      - name: Install docs dependencies
         working-directory: docs
         run: bun install --frozen-lockfile
 
-      - name: Build
+      - name: Build docs
         working-directory: docs
         run: bun run docs:build
+
+      - name: Install dashboard dependencies
+        working-directory: ui
+        run: bun install --frozen-lockfile
+
+      # The gate the dashboard's own PRs run too, repeated here so a docs-path
+      # push can never publish a dashboard that does not typecheck.
+      - name: Check dashboard
+        working-directory: ui
+        run: |
+          bun run lint
+          bun run test
+
+      - name: Build dashboard
+        working-directory: ui
+        env:
+          # Must match the path it is copied to below. Vite bakes this into every
+          # asset URL, so a mismatch ships a page that 404s its own bundle.
+          UI_BASE: /the-loop/ui/
+        run: bun run build
+
+      - name: Assemble the site
+        run: |
+          mkdir -p docs/.vitepress/dist/ui
+          cp -R ui/dist/. docs/.vitepress/dist/ui/
+          test -f docs/.vitepress/dist/ui/index.html
 
       - uses: actions/configure-pages@v5
 
