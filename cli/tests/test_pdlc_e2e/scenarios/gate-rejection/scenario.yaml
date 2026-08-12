@@ -1,0 +1,41 @@
+# Error case: a malformed artifact fails the phase gate rather than silently
+# advancing. The requirements are emitted UNLOCKED (`status: draft`); the
+# completion claim blocks, the label does not move, and only the repaired
+# (locked) artifact advances the run.
+name: gate-rejection
+description: an unlocked artifact blocks its phase gate; the repaired artifact advances
+tier: 3
+workItem: issue-11
+steps:
+  - comment:
+      author: owner
+      body: |
+        the-loop execute
+
+        - [ ] brainstorming
+  - emit: {artifact: requirements.md, fixture: requirements-draft.md}
+  - complete: {node: requirements-definition, status: block}
+  - expect:
+      currentNode: requirements-definition
+      parked: false
+      labels:
+        - "loop:phase-selection"
+        - "loop:requirements-definition"
+      events:
+        - {event: graph.blocked, node: requirements-definition, hook: validate-artifacts}
+  - emit: {artifact: requirements.md, fixture: requirements.md}
+  - complete: {node: requirements-definition}
+expect:
+  finalNode: requirements-approval
+  completed: false
+  nodes:
+    - phase-selection
+    - brainstorming~
+    - requirements-definition
+    - requirements-approval
+  labels:
+    - "loop:phase-selection"
+    - "loop:requirements-definition"
+  events:
+    - {event: graph.blocked, node: requirements-definition, hook: validate-artifacts}
+    - {event: graph.advanced, node: requirements-definition, to: requirements-approval, outcome: pass}

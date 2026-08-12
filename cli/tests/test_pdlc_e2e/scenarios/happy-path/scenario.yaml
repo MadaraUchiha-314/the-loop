@@ -1,0 +1,98 @@
+# Tier-3 item, ticket → complete, no interventions — the full outer loop.
+# The one deviation from "nothing external": one inner PR loop is simulated at
+# its file seam, so `await-inner-loops` holds `implementation` and releases it —
+# ticket in, PR out, as the ticket phrases the goal.
+name: happy-path
+description: a tier-3 work item walks the full outer loop with no interventions
+tier: 3
+workItem: issue-42
+steps:
+  - comment:
+      author: owner
+      body: |
+        the-loop execute
+
+        - [ ] brainstorming
+  - emit: {artifact: requirements.md, fixture: requirements.md}
+  - complete: {node: requirements-definition}
+  - comment: {author: owner, body: "approved"}
+  - emit: {artifact: design.md, fixture: design.md}
+  - complete: {node: design}
+  - emit: {artifact: testing-plan.md, fixture: testing-plan.md}
+  - complete: {node: test-planning}
+  - comment: {author: owner, body: "approved"}
+  - emit: {artifact: tasks.md, fixture: tasks.md}
+  - complete: {node: tasks-breakdown}
+  - emit: {artifact: execution-log.md, fixture: execution-log.md}
+  # The inner-loop seam: a started PR loop parks the outer `implementation`
+  # gate; its `complete` releases it.
+  - inner-loop: {pr: 1, node: implementation}
+  - complete: {node: implementation, status: wait}
+  - expect:
+      currentNode: implementation
+      events:
+        - {event: graph.parked, node: implementation}
+  - inner-loop: {pr: 1, node: complete}
+  - complete: {node: implementation}
+  - emit: {artifact: testing-plan.md, fixture: testing-plan-verified.md}
+  - complete: {node: verification}
+  - complete: {node: self-review}
+  - complete: {node: critic-review}
+  - complete: {node: security-review}
+  - complete: {node: evidence}
+  - complete: {node: capability-docs}
+  - complete: {node: reviewer-briefing}
+  - comment: {author: owner, body: "approved"}
+  - complete: {node: complete}
+expect:
+  finalNode: complete
+  completed: true
+  lockedBeforeImplementation:
+    [requirements.md, design.md, testing-plan.md, tasks.md]
+  executionLogSections:
+    ["Review cycles", "Security review (gate)", "Pull requests"]
+  nodes:
+    - phase-selection
+    - brainstorming~
+    - requirements-definition
+    - requirements-approval
+    - design
+    - design-critic-review~
+    - test-planning
+    - design-approval
+    - tasks-breakdown
+    - implementation
+    - verification
+    - self-review
+    - critic-review
+    - security-review
+    - evidence
+    - capability-docs
+    - reviewer-briefing
+    - human-approval
+    - complete
+  labels:
+    - "loop:phase-selection"
+    - "loop:requirements-definition"
+    - "loop:design"
+    - "loop:test-planning"
+    - "loop:tasks-breakdown"
+    - "loop:implementation"
+    - "loop:verification"
+    - "loop:needs-review"
+    - "loop:complete"
+  events:
+    - {event: graph.started, node: phase-selection}
+    - {event: graph.skips_declared, via: selection}
+    - {event: graph.node_skipped, node: brainstorming, via: selection}
+    - {event: graph.advanced, node: phase-selection, to: requirements-definition, outcome: selected}
+    - {event: graph.advanced, node: requirements-definition, to: requirements-approval, outcome: pass}
+    - {event: graph.advanced, node: requirements-approval, to: design, outcome: approved}
+    - {event: graph.node_skipped, node: design-critic-review, via: not-selected}
+    - {event: graph.advanced, node: design, to: test-planning, outcome: pass}
+    - {event: graph.advanced, node: design-approval, to: tasks-breakdown, outcome: approved}
+    - {event: graph.parked, node: implementation}
+    - {event: graph.advanced, node: implementation, to: verification, outcome: pass}
+    - {event: graph.advanced, node: verification, to: self-review, outcome: pass}
+    - {event: graph.advanced, node: human-approval, to: complete, outcome: approved}
+    - {event: graph.completed, node: complete}

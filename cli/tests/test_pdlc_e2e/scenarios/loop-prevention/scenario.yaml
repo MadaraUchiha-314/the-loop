@@ -1,0 +1,49 @@
+# Loop prevention: a comment carrying the-loop's own self-authorship marker is
+# never read as human feedback — even from an authorized author — and an
+# unauthorized author's approval is not read either. The gate stays parked
+# until a real, unmarked, authorized reply arrives. This runs the PRODUCTION
+# marker (`mark_self_authored`) and the production filter, end to end.
+name: loop-prevention
+description: marked and unauthorized comments never release a human gate
+tier: 3
+workItem: issue-15
+steps:
+  - comment:
+      author: owner
+      body: |
+        the-loop execute
+
+        - [ ] brainstorming
+  - emit: {artifact: requirements.md, fixture: requirements.md}
+  - complete: {node: requirements-definition}
+  # the-loop's own voice, from the authorized author: filtered before
+  # authorization is even considered.
+  - comment: {author: owner, body: "approved", marked: true}
+  - expect:
+      currentNode: requirements-approval
+      parked: true
+      events:
+        - {event: graph.parked, node: requirements-approval}
+  # An unauthorized author's approval: not read at all.
+  - comment: {author: mallory, body: "approved"}
+  - expect:
+      currentNode: requirements-approval
+      parked: true
+  # The real thing releases the gate.
+  - comment: {author: owner, body: "approved"}
+expect:
+  finalNode: design
+  completed: false
+  nodes:
+    - phase-selection
+    - brainstorming~
+    - requirements-definition
+    - requirements-approval
+    - design
+  labels:
+    - "loop:phase-selection"
+    - "loop:requirements-definition"
+    - "loop:design"
+  events:
+    - {event: graph.parked, node: requirements-approval}
+    - {event: graph.advanced, node: requirements-approval, to: design, outcome: approved}

@@ -1,0 +1,72 @@
+# Tier-1 item: the authorized selection reply declares the spec chain and the
+# review chain away. The conformance under test: every removed phase is
+# recorded as a skip with provenance (never a pass), the label trail contains
+# only walked phases and never regresses, and `verification` — kept while its
+# subject was declared away — moves its gate to the execution log's
+# `Verification results` (issue-179's onlyWhenSkipped) instead of passing
+# vacuously.
+name: trivial-tier
+description: a trivial-tier item short-circuits with declared skips, labelled correctly
+tier: 1
+workItem: issue-7
+steps:
+  - comment:
+      author: owner
+      body: |
+        the-loop execute
+
+        - [ ] brainstorming
+        - [ ] requirements-definition
+        - [ ] requirements-approval
+        - [ ] design
+        - [ ] test-planning
+        - [ ] design-approval
+        - [ ] tasks-breakdown
+        - [ ] self-review
+        - [ ] critic-review
+        - [ ] security-review
+        - [ ] evidence
+        - [ ] capability-docs
+        - [ ] reviewer-briefing
+  - emit: {artifact: execution-log.md, fixture: execution-log.md}
+  - complete: {node: implementation}
+  - complete: {node: verification}
+  - comment: {author: owner, body: "approved"}
+  - complete: {node: complete}
+expect:
+  finalNode: complete
+  completed: true
+  nodes:
+    - phase-selection
+    - brainstorming~
+    - requirements-definition~
+    - requirements-approval~
+    - design~
+    - design-critic-review~
+    - test-planning~
+    - design-approval~
+    - tasks-breakdown~
+    - implementation
+    - verification
+    - self-review~
+    - critic-review~
+    - security-review~
+    - evidence~
+    - capability-docs~
+    - reviewer-briefing~
+    - human-approval
+    - complete
+  labels:
+    - "loop:phase-selection"
+    - "loop:implementation"
+    - "loop:verification"
+    - "loop:complete"
+  events:
+    - {event: graph.skips_declared, via: selection}
+    - {event: graph.node_skipped, node: requirements-definition, via: selection, by: "@owner"}
+    - {event: graph.advanced, node: phase-selection, to: implementation, outcome: selected}
+    - {event: graph.advanced, node: implementation, to: verification, outcome: pass}
+    - {event: graph.node_skipped, node: self-review, via: selection}
+    - {event: graph.node_skipped, node: security-review, via: selection}
+    - {event: graph.advanced, node: verification, to: human-approval, outcome: pass}
+    - {event: graph.completed, node: complete}
