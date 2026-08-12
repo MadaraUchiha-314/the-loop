@@ -116,13 +116,33 @@ package — there are no install extras (owner decision, PR #162).
   applies, so the two surfaces cannot disagree. An answer given on the **ticket**
   instead emits no `reply_sent`, so the row stays lit — a known, documented gap
   (the poller cannot know which forwarded comment answered the question).
+- A session's **transcript** SHALL be served by `GET /api/v1/sessions/transcript`
+  (issue-209): the harness runs as a CLI in tmux, so the record of a session's
+  turns and tool calls is the harness's own file — for Claude Code,
+  `<projects root>/<cwd munged per character>/<harnessSessionId>.jsonl`, resolved
+  from the registration alone (`$CLAUDE_CONFIG_DIR` or `~/.claude`; a munge miss
+  degrades to a scan of the project directories). The response is a bounded
+  **tail** by default (`tail=200`; `0` means the whole file), each line parsed as
+  a JSON object with unparseable lines returned as `{"malformed": …}`, plus the
+  resolved path, `totalLines` and `truncated`. Closed sessions and PR endpoints
+  SHALL resolve — the file outlives the registration, and review is the use case.
+  The same read SHALL be an MCP tool (`session_transcript`).
+- The transcript route SHALL be **fail-closed to transcripts**: it is the plane's
+  first route returning file contents, and only a regular `<id>.jsonl` whose
+  resolved path (symlinks followed) sits inside the resolved projects root is
+  ever opened. A session id carrying a path separator or `..` SHALL be refused
+  before any filesystem touch; an escape SHALL be indistinguishable from a
+  missing file; Cursor SHALL be refused by name (undocumented store), never
+  guessed at. No redaction is applied — the JSONL is raw harness output served
+  to the plane's existing audience under the existing posture (decision-059),
+  with every read audited as `api.request`
+  ([decision-079](../decisions/decision-079.md)).
 - Where the dashboard's design specified a surface this API cannot back, that
   surface SHALL be rendered **disabled and named**, never mocked and never
-  silently dropped. One such surface remains today: the **turns-and-tool-calls
-  trace** (needs a transcript route; the harness runs as a CLI in tmux, so the
-  record is its own file — for Claude Code a JSONL whose path the dashboard
-  derives and displays). The inline reply shipped in that state and went live
-  with issue-208.
+  silently dropped. None remains today: the inline reply shipped disabled and
+  went live with issue-208, and the **turns-and-tool-calls trace** did the same
+  with issue-209 — it renders the served transcript, keeping the event-log trail
+  as the stated fallback when the route answers 404.
 - The dashboard SHALL hold no credential and mint none. The network posture is
   unchanged and is stated in its Settings screen: the service binds loopback, so a
   service on **another** machine is reached through an SSH tunnel or a gateway that
@@ -147,3 +167,4 @@ package — there are no install extras (owner decision, PR #162).
 | issue-211 | The dashboard can actually read the service: `service.cors` makes the allowed browser origins configuration, shipping the published page's own origin as the default. Exact-string origins only; `"*"` with credentials refuses to start; an empty list installs no middleware. The bind, the exposure guard and the MCP transport's origin check are unchanged | [spec](../specs/issue-211/), [decision-077](../decisions/decision-077.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/211) |
 | issue-207 | The descoped UI lands: a static dashboard in `ui/` over the same `/api/v1`, published to `/the-loop/ui/` from the docs site's Pages artifact. Loop position joined from the session's `cwd` and the record's spec id; the inbox unions `/attention` with the repo-scoped graph gates it excludes; the two surfaces the API cannot back ship disabled and named | [spec](../specs/issue-207/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/207) |
 | issue-208 | Agent questions become a verb and get an answer route: `the-loop ask` posts the question with the marker stamped centrally and emits `session.awaiting_input`; `POST /api/v1/sessions/reply` pastes the answer into the pane (fail-closed — never spawns, refuses paused), emits `session.reply_sent`, and records a marked report on the ticket. `attention` gains the `awaiting-input` kind; the dashboard's reply box goes live | [spec](../specs/issue-208/), [decision-078](../decisions/decision-078.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/208) |
+| issue-209 | The harness's own JSONL is served: `GET /api/v1/sessions/transcript` (+ the `session_transcript` MCP tool) resolves the file from the recorded `cwd` + session id and returns a bounded tail, fail-closed to `*.jsonl` inside the projects root — the plane's first file-contents route. The dashboard's turns-and-tool-calls trace goes live, with the event trail kept as the 404 fallback; its path caption switches to the harness's per-character munge | [spec](../specs/issue-209/), [decision-079](../decisions/decision-079.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/209) |
