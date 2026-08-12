@@ -1,3 +1,9 @@
+## v9.8.0 (2026-08-12)
+
+### Feat
+
+- **issue-207**: control-plane dashboard over `/api/v1` (#210)
+
 ## v9.7.1 (2026-08-11)
 
 ### Refactor
