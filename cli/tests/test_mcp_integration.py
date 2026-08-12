@@ -105,7 +105,12 @@ def test_tools_list_is_the_core_surface_minus_exclusions(mcp):
     client, _ = mcp
     tools = client.request("tools/list")["result"]["tools"]
     names = {t["name"] for t in tools}
-    assert {"list_work_items", "check_work_item", "control_session"} <= names
+    assert {
+        "list_work_items",
+        "check_work_item",
+        "control_session",
+        "session_transcript",
+    } <= names
     assert not any("reset" in n for n in names)
     assert not any("force" in n for n in names)
     # The SDK derives each schema from the annotations — no hand-written JSON.

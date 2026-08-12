@@ -1,5 +1,8 @@
 """Unit tests for the core facade's session surface (issue-161, T3)."""
 
+import json
+import re
+
 import pytest
 
 from the_loop.core import sessions as core_sessions
@@ -398,3 +401,230 @@ def test_reply_transient_tmux_failure_is_exit_1_not_an_event(
     result = core_sessions.reply_session(REF, "Use OAuth.", config=_config(tmp_path))
     assert result["exitCode"] == 1 and result["delivered"] is False
     assert not events
+
+
+# -- transcript (issue-209) ------------------------------------------------------
+
+
+def _projects_root(tmp_path, monkeypatch):
+    """A fake Claude Code config dir, reached the way the harness itself is."""
+    config_dir = tmp_path / "claude-config"
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(config_dir))
+    root = config_dir / "projects"
+    root.mkdir(parents=True)
+    return root
+
+
+def _write_transcript(root, cwd, sid="0f1c2d3e", entries=None):
+    """A transcript where Claude Code would put it: per-character munged cwd."""
+    project = root / re.sub(r"[^A-Za-z0-9]", "-", cwd)
+    project.mkdir(parents=True, exist_ok=True)
+    path = project / f"{sid}.jsonl"
+    lines = (
+        entries if entries is not None else [{"type": "user", "n": i} for i in range(5)]
+    )
+    path.write_text(
+        "".join(
+            (line if isinstance(line, str) else json.dumps(line)) + "\n"
+            for line in lines
+        )
+    )
+    return path
+
+
+def _register_claude(tmp_path, sid="0f1c2d3e", cwd=None, harness="claude"):
+    layout = layout_from_config(_config(tmp_path))
+    registry = SessionRegistry(layout.local_dir)
+    registry.register(
+        Session(
+            work_item=WorkItemRef.parse(REF),
+            harness=harness,
+            harness_session_id=sid,
+            cwd=cwd or str(tmp_path),
+        )
+    )
+    return registry
+
+
+def test_get_transcript_serves_a_bounded_tail(tmp_path, monkeypatch):
+    """R1.1–R1.3: entries parsed per line; totalLines counts the whole file."""
+    root = _projects_root(tmp_path, monkeypatch)
+    _write_transcript(root, str(tmp_path))
+    _register_claude(tmp_path)
+    result = core_sessions.get_transcript(REF, tail=2, config=_config(tmp_path))
+    assert result["totalLines"] == 5 and result["truncated"] is True
+    assert [e["n"] for e in result["entries"]] == [3, 4]
+    assert result["path"].endswith("0f1c2d3e.jsonl")
+    assert result["harness"] == "claude"
+
+
+def test_get_transcript_tail_zero_is_the_whole_file(tmp_path, monkeypatch):
+    root = _projects_root(tmp_path, monkeypatch)
+    _write_transcript(root, str(tmp_path))
+    _register_claude(tmp_path)
+    result = core_sessions.get_transcript(REF, tail=0, config=_config(tmp_path))
+    assert len(result["entries"]) == 5 and result["truncated"] is False
+
+
+def test_get_transcript_tail_beyond_the_file_is_untruncated(tmp_path, monkeypatch):
+    root = _projects_root(tmp_path, monkeypatch)
+    _write_transcript(root, str(tmp_path))
+    _register_claude(tmp_path)
+    result = core_sessions.get_transcript(REF, tail=50, config=_config(tmp_path))
+    assert len(result["entries"]) == 5 and result["truncated"] is False
+
+
+def test_get_transcript_wraps_malformed_lines_in_place(tmp_path, monkeypatch):
+    """R1.1: a line that is not a JSON object is served flagged, never dropped."""
+    root = _projects_root(tmp_path, monkeypatch)
+    _write_transcript(
+        root,
+        str(tmp_path),
+        entries=[{"ok": 1}, "not json {", "[1, 2]", "", {"ok": 2}],
+    )
+    _register_claude(tmp_path)
+    result = core_sessions.get_transcript(REF, config=_config(tmp_path))
+    # The blank line is skipped entirely; the non-object JSON and the parse
+    # failure are both wrapped.
+    assert result["totalLines"] == 4
+    assert result["entries"][1] == {"malformed": "not json {"}
+    assert result["entries"][2] == {"malformed": "[1, 2]"}
+    assert result["entries"][3] == {"ok": 2}
+
+
+def test_get_transcript_falls_back_to_scanning_project_dirs(tmp_path, monkeypatch):
+    """R1.2: a munge-scheme drift degrades to a directory scan, not a 404."""
+    root = _projects_root(tmp_path, monkeypatch)
+    other = root / "some-other-munge-spelling"
+    other.mkdir()
+    (other / "0f1c2d3e.jsonl").write_text('{"n": 1}\n')
+    _register_claude(tmp_path)
+    result = core_sessions.get_transcript(REF, config=_config(tmp_path))
+    assert result["entries"] == [{"n": 1}]
+
+
+def test_get_transcript_serves_a_closed_session(tmp_path, monkeypatch):
+    """R1.4: the file outlives the registration — the review use case."""
+    root = _projects_root(tmp_path, monkeypatch)
+    _write_transcript(root, str(tmp_path))
+    registry = _register_claude(tmp_path)
+    registry.close(WorkItemRef.parse(REF))
+    result = core_sessions.get_transcript(REF, config=_config(tmp_path))
+    assert result["totalLines"] == 5
+
+
+def test_get_transcript_resolves_a_pr_endpoint(tmp_path, monkeypatch):
+    """A PR's own conversation is served through the record that holds it."""
+    pr_ref = "github:octo/repo#9"
+    root = _projects_root(tmp_path, monkeypatch)
+    _write_transcript(root, str(tmp_path), sid="pr-sess")
+    layout = layout_from_config(_config(tmp_path))
+    registry = SessionRegistry(layout.local_dir)
+    registry.register(
+        Session(
+            work_item=WorkItemRef.parse(REF),
+            harness="claude",
+            harness_session_id="own-sess",
+            cwd=str(tmp_path),
+            pull_requests=[
+                Session(
+                    work_item=WorkItemRef.parse(pr_ref),
+                    harness="claude",
+                    harness_session_id="pr-sess",
+                    cwd=str(tmp_path),
+                )
+            ],
+        )
+    )
+    result = core_sessions.get_transcript(pr_ref, config=_config(tmp_path))
+    assert result["harnessSessionId"] == "pr-sess"
+    assert result["workItem"] == pr_ref
+
+
+def test_get_transcript_without_a_session_is_lookup_error(tmp_path, monkeypatch):
+    _projects_root(tmp_path, monkeypatch)
+    with pytest.raises(LookupError, match="no session registered"):
+        core_sessions.get_transcript(REF, config=_config(tmp_path))
+
+
+def test_get_transcript_for_cursor_is_refused_with_the_reason(tmp_path, monkeypatch):
+    """R2.4: another tool's private storage is never guessed at."""
+    _projects_root(tmp_path, monkeypatch)
+    _register_claude(tmp_path, harness="cursor")
+    with pytest.raises(LookupError, match="undocumented"):
+        core_sessions.get_transcript(REF, config=_config(tmp_path))
+
+
+def test_get_transcript_refuses_a_crafted_session_id(tmp_path, monkeypatch):
+    """R2.2 / abuse case 1: a registry record is API-writable; traversal fails
+    closed before any filesystem touch."""
+    root = _projects_root(tmp_path, monkeypatch)
+    secret = tmp_path / "secret.jsonl"
+    secret.write_text('{"stolen": true}\n')
+    for sid in ("../../secret", "..", "a/b", "a\\b", ""):
+        layout = layout_from_config(_config(tmp_path))
+        registry = SessionRegistry(layout.local_dir)
+        registry.register(
+            Session(
+                work_item=WorkItemRef.parse(REF),
+                harness="claude",
+                harness_session_id=sid,
+                cwd=str(tmp_path),
+            ),
+            force=True,
+        )
+        with pytest.raises(LookupError):
+            core_sessions.get_transcript(REF, config=_config(tmp_path))
+    assert root.is_dir()  # nothing was created or moved
+
+
+def test_get_transcript_symlink_escape_reads_as_missing(tmp_path, monkeypatch):
+    """R2.1 / abuse case 1: a symlink planted inside the projects root that
+    points outside it is indistinguishable from no transcript."""
+    root = _projects_root(tmp_path, monkeypatch)
+    outside = tmp_path / "outside.jsonl"
+    outside.write_text('{"stolen": true}\n')
+    project = root / re.sub(r"[^A-Za-z0-9]", "-", str(tmp_path))
+    project.mkdir(parents=True)
+    (project / "0f1c2d3e.jsonl").symlink_to(outside)
+    _register_claude(tmp_path)
+    with pytest.raises(LookupError, match="no transcript at"):
+        core_sessions.get_transcript(REF, config=_config(tmp_path))
+
+
+def test_get_transcript_missing_file_names_the_derived_path(tmp_path, monkeypatch):
+    """R2.5: the operator sees where the service looked."""
+    _projects_root(tmp_path, monkeypatch)
+    _register_claude(tmp_path)
+    with pytest.raises(LookupError, match="0f1c2d3e.jsonl"):
+        core_sessions.get_transcript(REF, config=_config(tmp_path))
+
+
+def test_get_transcript_rejects_bad_arguments(tmp_path, monkeypatch):
+    _projects_root(tmp_path, monkeypatch)
+    with pytest.raises(ValueError):
+        core_sessions.get_transcript("not-a-ref", config=_config(tmp_path))
+    with pytest.raises(ValueError):
+        core_sessions.get_transcript(REF, tail=-1, config=_config(tmp_path))
+
+
+def test_get_transcript_default_root_is_the_home_claude_dir(tmp_path, monkeypatch):
+    """Without CLAUDE_CONFIG_DIR the root is ~/.claude/projects — the harness's
+    own default."""
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    root = tmp_path / "home" / ".claude" / "projects"
+    root.mkdir(parents=True)
+    _write_transcript(root, str(tmp_path), entries=[{"n": 1}])
+    _register_claude(tmp_path)
+    result = core_sessions.get_transcript(REF, config=_config(tmp_path))
+    assert result["entries"] == [{"n": 1}]
+
+
+def test_get_transcript_for_an_undispatched_pr_endpoint_says_so(tmp_path, monkeypatch):
+    """A PR endpoint is linked before its first dispatch assigns it a
+    conversation (issue-172): a normal state, reported as such."""
+    _projects_root(tmp_path, monkeypatch)
+    _register_claude(tmp_path, sid="")
+    with pytest.raises(LookupError, match="assigned on first dispatch"):
+        core_sessions.get_transcript(REF, config=_config(tmp_path))

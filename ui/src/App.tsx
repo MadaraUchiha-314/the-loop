@@ -74,9 +74,8 @@ export function App() {
       </main>
 
       <footer className="lp-footer">
-        <span>GET /work-items · /sessions · /attention · /events · /daemons</span>
+        <span>GET /work-items · /sessions · /sessions/transcript · /attention · /events · /daemons</span>
         <span>POST /graph/check · /graph/complete · /sessions/control · /sessions/reply</span>
-        <span>not served yet: session transcripts</span>
       </footer>
     </div>
   );

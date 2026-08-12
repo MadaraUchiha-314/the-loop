@@ -19,6 +19,7 @@ import type {
   GraphStatus,
   NodeReport,
   SessionRecord,
+  TranscriptEntry,
   WorkItemRecord,
 } from "../api/types.ts";
 
@@ -372,4 +373,53 @@ export const DEMO_EVENTS: EventRecord[] = [
   { ts: iso(180), event: "session.spawned", level: "info", source: "session", work_item: "github:octo/loop-lab#214", harness: "claude", harness_session_id: "0f1c214a2", tmux_target: "loop-github-octo-loop-lab-214" },
   { ts: iso(2880), event: "session.paused", level: "info", source: "session", work_item: "github:octo/loop-lab#198", actor: "maintainer" },
   { ts: iso(8640), event: "session.cleaned", level: "info", source: "session", work_item: "github:octo/loop-lab#181", actor: "maintainer", detail: "tmux killed, checkout removed" },
+];
+
+/**
+ * A short transcript in Claude Code's real line format
+ * (`type` / `timestamp` / `message.content` blocks), served by the demo
+ * transport for any session on the board — the shapes `transcriptTurns`
+ * projects, including a server-flagged malformed line so the demo shows how
+ * one renders.
+ */
+export const DEMO_TRANSCRIPT: TranscriptEntry[] = [
+  {
+    type: "user",
+    timestamp: iso(42),
+    message: { role: "user", content: "Wire the reviewer briefing into the PR before requesting review." },
+  },
+  {
+    type: "assistant",
+    timestamp: iso(41),
+    message: {
+      role: "assistant",
+      content: [
+        { type: "text", text: "Reading the briefing template and the PR body first." },
+        { type: "tool_use", name: "Read", input: { file_path: "skills/the-loop/templates/pr-briefing.md" } },
+      ],
+    },
+  },
+  {
+    type: "user",
+    timestamp: iso(41),
+    message: { role: "user", content: [{ type: "tool_result", content: "# <PR title> — reviewer briefing…" }] },
+  },
+  {
+    type: "assistant",
+    timestamp: iso(39),
+    message: {
+      role: "assistant",
+      content: [
+        { type: "text", text: "Template read. Drafting the briefing with the focus order and the mermaid map." },
+        { type: "tool_use", name: "Write", input: { file_path: "briefing.md" } },
+        { type: "tool_use", name: "Bash", input: { command: "gh pr edit --body-file briefing.md" } },
+      ],
+    },
+  },
+  { malformed: "…truncated by the harness mid-write…" },
+  {
+    type: "assistant",
+    timestamp: iso(36),
+    message: { role: "assistant", content: [{ type: "text", text: "Briefing posted; requesting review next." }] },
+  },
 ];

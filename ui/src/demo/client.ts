@@ -17,8 +17,10 @@ import type {
   GraphDefinition,
   GraphStatus,
   Health,
+  SessionEndpoint,
   SessionRecord,
   SessionVerb,
+  TranscriptResponse,
   WorkItemRecord,
 } from "../api/types.ts";
 import {
@@ -28,6 +30,7 @@ import {
   DEMO_INNER_GRAPHS,
   DEMO_OUTER_GRAPHS,
   DEMO_SESSIONS,
+  DEMO_TRANSCRIPT,
   DEMO_WORK_ITEMS,
   INNER_NODES,
   OUTER_NODES,
@@ -181,6 +184,30 @@ export class DemoApi implements TheLoopApi {
     // event is what closes the question card, exactly as the service's does.
     this.emit({ event: "session.reply_sent", level: "info", source: "service", work_item: ref, actor: "you" });
     return delay({ messages: [{ stream: "out", text: `demo: replied to ${ref}` }], exitCode: 0 });
+  }
+
+  transcript(ref: string, tail = 200, signal?: AbortSignal): Promise<TranscriptResponse> {
+    // Same convention as the control verbs: the demo behaves. Any session on
+    // the board (the work item's own or a PR endpoint's) answers with the
+    // fixture transcript; a ref with none refuses the way the service does.
+    const endpoint = this.sessionRecords
+      .flatMap((session): SessionEndpoint[] => [session, ...(session.pullRequests ?? [])])
+      .find((candidate) => candidate.workItem.ref === ref);
+    if (!endpoint) return Promise.reject(new Error(`no session registered for ${ref}, so no transcript can be resolved`));
+    const entries = tail > 0 ? DEMO_TRANSCRIPT.slice(-tail) : DEMO_TRANSCRIPT;
+    const slug = (endpoint.cwd ?? "").replace(/[^a-zA-Z0-9]/g, "-");
+    return delay(
+      {
+        workItem: ref,
+        harness: endpoint.harness,
+        harnessSessionId: endpoint.harnessSessionId,
+        path: `~/.claude/projects/${slug}/${endpoint.harnessSessionId}.jsonl`,
+        totalLines: DEMO_TRANSCRIPT.length,
+        truncated: entries.length < DEMO_TRANSCRIPT.length,
+        entries,
+      },
+      signal,
+    );
   }
 
   controlDaemon(daemon: string, verb: DaemonVerb): Promise<CoreResult> {

@@ -88,6 +88,31 @@ export interface SessionRecord extends SessionEndpoint {
   control?: ControlRecord | null;
 }
 
+/**
+ * One parsed line of a session's transcript, `GET /api/v1/sessions/transcript`.
+ *
+ * The line format is the harness's own and deliberately untyped by the
+ * contract; a line that did not parse as a JSON object arrives as
+ * `{"malformed": "<raw line>"}`. `model.ts::transcriptTurns` projects these
+ * into render-ready rows.
+ */
+export type TranscriptEntry = Record<string, unknown>;
+
+/** `GET /api/v1/sessions/transcript` — the harness's own JSONL, resolved and tailed. */
+export interface TranscriptResponse {
+  workItem: string;
+  harness: string;
+  harnessSessionId: string;
+  /** The resolved file served — the path the trace panel captions. */
+  path: string;
+  /** The whole file's line count, whatever `tail` kept. */
+  totalLines: number;
+  /** Whether `entries` is a strict tail of a longer file. */
+  truncated: boolean;
+  /** Parsed JSONL lines, oldest first. */
+  entries: TranscriptEntry[];
+}
+
 /** One node's verdict in a `graph/check` report. */
 export interface NodeReport {
   node: string;

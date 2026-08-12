@@ -85,19 +85,24 @@ Two facts shape that:
   ([issue-183](https://github.com/MadaraUchiha-314/the-loop/issues/183)); sending it
   otherwise points the call at the wrong state directory.
 
-## Not yet served by the API
+## Every approved surface is now served
 
-One surface from the approved design is built and **visibly disabled**, with the route
-that would light it up named in the UI itself. It is inert rather than absent so the
-gap is legible, and so it starts working the day the service can back it. (The inline
-reply to an agent's question shipped in this state too, and went live when
-[issue-208](https://github.com/MadaraUchiha-314/the-loop/issues/208) landed
-`the-loop ask` → `session.awaiting_input` and `POST /api/v1/sessions/reply` —
-bracketed paste into the pane.)
+The design shipped two surfaces built and **visibly disabled**, each naming the route
+that would light it up — inert rather than absent, so the gap stayed legible and each
+started working the day the service could back it. Both are live now:
 
-| Surface | Needs | Why it is not faked |
-|---|---|---|
-| Trace of turns and tool calls | a transcript route | the-loop runs the harness as a CLI in tmux, so the structured record is the harness's own file. For Claude Code that is `~/.claude/projects/<cwd-slugged>/<session-id>.jsonl`, fully derivable from what the service already records — the app **shows the path** and falls back to the event-log trail. Cursor keeps chats in an undocumented SQLite store, so it has no equivalent |
+- The inline **reply** to an agent's question went live when
+  [issue-208](https://github.com/MadaraUchiha-314/the-loop/issues/208) landed
+  `the-loop ask` → `session.awaiting_input` and `POST /api/v1/sessions/reply`
+  (bracketed paste into the pane).
+- The **trace of turns and tool calls** went live when
+  [issue-209](https://github.com/MadaraUchiha-314/the-loop/issues/209) landed
+  `GET /api/v1/sessions/transcript`: the harness's own JSONL
+  (`~/.claude/projects/<cwd, munged per character>/<session-id>.jsonl`), resolved
+  server-side from the `cwd` and session id the service already records, served as a
+  bounded tail. When the route answers 404 — no session, no file yet, a Cursor
+  session (undocumented SQLite store), an older service — the panel says why and
+  falls back to the event-log trail, which is the pre-route behaviour.
 
 One more thing the API deliberately does not serve: a work item's **title**, and a PR's
 **checks and review state**. Those are GitHub's, and the portable record keeps the `ref`
