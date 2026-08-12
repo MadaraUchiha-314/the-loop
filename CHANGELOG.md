@@ -1,3 +1,9 @@
+## v9.9.0 (2026-08-12)
+
+### Feat
+
+- **issue-211**: configurable CORS, defaulting to the published dashboard's origin (#214)
+
 ## v9.8.0 (2026-08-12)
 
 ### Feat
