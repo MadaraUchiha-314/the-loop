@@ -75,10 +75,8 @@ export function App() {
 
       <footer className="lp-footer">
         <span>GET /work-items · /sessions · /attention · /events · /daemons</span>
-        <span>POST /graph/check · /graph/complete · /sessions/control</span>
-        <span>
-          not served yet: session transcripts, and `the-loop ask` → /sessions/reply for the inline answer box
-        </span>
+        <span>POST /graph/check · /graph/complete · /sessions/control · /sessions/reply</span>
+        <span>not served yet: session transcripts</span>
       </footer>
     </div>
   );

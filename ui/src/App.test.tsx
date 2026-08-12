@@ -83,18 +83,24 @@ describe("the control plane, on demo data", () => {
     expect(screen.getByRole("link", { name: "loop-docs#47 ↗" })).toBeInTheDocument();
   });
 
-  it("shows the agent's question but keeps the reply box disabled, and says why", async () => {
+  it("shows the agent's question and sends a reply that closes the card", async () => {
     const user = userEvent.setup();
     renderApp();
 
     await user.click(await screen.findByRole("link", { name: "Open loop-lab#214" }));
 
     expect(await screen.findByText(/Agent is waiting for your input/)).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: /Reply to the agent/ })).toBeDisabled();
+    // An empty reply has nothing to deliver, so it cannot be sent.
+    expect(screen.getByRole("button", { name: /Send to session/ })).toBeDisabled();
 
-    const send = screen.getByRole("button", { name: /Send to session/ });
-    expect(send).toBeDisabled();
-    expect(send).toHaveAttribute("title", expect.stringContaining("POST /api/v1/sessions/reply"));
+    await user.type(screen.getByRole("textbox", { name: /Reply to the agent/ }), "Use OAuth.");
+    await user.click(screen.getByRole("button", { name: /Send to session/ }));
+
+    // POST /sessions/reply emits session.reply_sent (the demo transport mirrors
+    // it), and a reply newer than the question closes the card on refresh.
+    await waitFor(() => {
+      expect(screen.queryByText(/Agent is waiting for your input/)).not.toBeInTheDocument();
+    });
   });
 
   it("does not claim to show turns and tool calls it cannot read", async () => {

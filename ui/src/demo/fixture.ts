@@ -347,9 +347,8 @@ export const DEMO_DAEMONS: DaemonStatus[] = [
 ];
 
 export const DEMO_EVENTS: EventRecord[] = [
-  // The event a `the-loop ask` verb would append. Nothing emits it yet — it is
-  // here so the demo shows the card the design specified, and the card's own
-  // copy says the reply route does not exist. See ui/README.md §Not yet served.
+  // The event `the-loop ask` appends (issue-208): the question card lights up
+  // from it, and the demo's replySession emits the reply_sent that closes it.
   {
     ts: iso(4),
     event: "session.awaiting_input",

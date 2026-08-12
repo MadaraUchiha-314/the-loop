@@ -91,3 +91,49 @@ def test_unusable_coordinates_never_reach_an_argv(gh_present):
     assert ok is False
     assert "unusable repo coordinates" in error
     assert run.calls == []
+
+
+# -- post_issue_comment_with_url (issue-208) -------------------------------------
+
+
+class FakeRunStdout(FakeRun):
+    def __init__(self, stdout="", **kwargs):
+        super().__init__(**kwargs)
+        self.stdout = stdout
+
+    def __call__(self, cmd, capture_output=True, text=True, timeout=None):
+        self.calls.append(list(cmd))
+        return subprocess.CompletedProcess(
+            cmd, self.returncode, self.stdout, self.stderr
+        )
+
+
+def test_with_url_returns_the_created_comments_html_url(gh_present):
+    from the_loop.comments import post_issue_comment_with_url
+
+    run = FakeRunStdout(
+        stdout='{"id": 1, "html_url": "https://github.com/octo/repo/issues/15#issuecomment-9"}'
+    )
+    ok, error, url = post_issue_comment_with_url(REF, "hello", runner=run)
+    assert ok and error == ""
+    assert url == "https://github.com/octo/repo/issues/15#issuecomment-9"
+
+
+@pytest.mark.parametrize("stdout", ["", "not json", "[1,2]", '{"html_url": 3}'])
+def test_with_url_degrades_to_empty_never_to_a_failed_post(gh_present, stdout):
+    """The comment is on the ticket either way; parsing is best-effort."""
+    from the_loop.comments import post_issue_comment_with_url
+
+    ok, error, url = post_issue_comment_with_url(
+        REF, "hello", runner=FakeRunStdout(stdout=stdout)
+    )
+    assert ok and error == "" and url == ""
+
+
+def test_with_url_shares_the_failure_contract(gh_present):
+    from the_loop.comments import post_issue_comment_with_url
+
+    ok, error, url = post_issue_comment_with_url(
+        REF, "hello", runner=FakeRunStdout(returncode=1)
+    )
+    assert not ok and "gh exited 1" in error and url == ""

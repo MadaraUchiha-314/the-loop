@@ -102,6 +102,7 @@ const cliSidebar = [
       { text: "gh-webhook", link: "/cli/commands/gh-webhook" },
       { text: "poll", link: "/cli/commands/poll" },
       { text: "sessions", link: "/cli/commands/sessions" },
+      { text: "ask", link: "/cli/commands/ask" },
       { text: "events", link: "/cli/commands/events" },
       { text: "check", link: "/cli/commands/check" },
       { text: "graph", link: "/cli/commands/graph" },

@@ -231,15 +231,15 @@ export function innerKey(workItemRef: string, prRef: string): string {
 /**
  * The open question per work item, if any.
  *
- * Keyed on `session.awaiting_input`, which nothing emits yet: the design's
- * conclusion was that an agent should ask through a `the-loop ask` verb — routed
- * to a ticket or PR comment and recorded as that event — rather than posting
- * with `gh` itself, which is what `the_loop/interaction.py` directs it to do
- * today. Reading the event the verb *would* emit costs one filtered `/events`
- * call and means the board lights up on its own the day the verb ships. Against
- * today's service the map is simply empty.
+ * Keyed on `session.awaiting_input`, which `the-loop ask` emits (issue-208):
+ * the verb posts the agent's question to the ticket/PR with the loop-prevention
+ * marker stamped centrally, and records the wait as this event. Reading it
+ * costs one filtered `/events` call for the whole board.
  *
- * A `session.reply_sent` newer than the question closes it.
+ * A `session.reply_sent` newer than the question closes it — the SAME
+ * open/answered rule the service's attention surface applies
+ * (`cli/the_loop/core/attention.py`); change one and the other is a reviewable
+ * change, or the two surfaces disagree.
  */
 export function awaitingInput(events: EventRecord[]): Record<string, EventRecord> {
   const open: Record<string, EventRecord> = {};
@@ -429,6 +429,11 @@ export function attentionEntries(views: WorkItemView[]): AttentionEntry[] {
       });
     }
     for (const [index, item] of view.attention.entries()) {
+      // The service reports the wait as `awaiting-input` too (issue-208). When
+      // the question entry above is already on the board — same wait, richer
+      // Reply action — the raw row would be a duplicate. It is kept only when
+      // the event window missed the question the service can still see.
+      if (item.kind === "awaiting-input" && view.question) continue;
       entries.push({
         key: `${view.ref}:${item.kind}:${index}`,
         kind: item.kind.replaceAll("-", " "),

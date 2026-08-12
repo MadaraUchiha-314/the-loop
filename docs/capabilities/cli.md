@@ -44,6 +44,15 @@ self-learning/ML capabilities.
   it. Posting is best-effort — `--no-comment` skips it, and a missing/failing `gh`
   warns without undoing the local action. `sessions list` SHALL show each session's
   status (including `paused`) and its last control command.
+- `the-loop ask --work-item <ref> --question <text>|--question-file <path>` SHALL post
+  an agent's question on its work item with the loop-prevention marker stamped
+  **centrally** and SHALL record the wait as a `session.awaiting_input` event —
+  emitted (as a warning, `comment_posted: false`) even when `gh` fails, since the agent
+  is waiting either way (issue-208, [decision-078](../decisions/decision-078.md)). It
+  SHALL execute in-process rather than through the service: the escalation path must
+  not depend on anything else of the-loop running. The answer arrives as a forwarded
+  ticket comment, or straight into the pane via `POST /api/v1/sessions/reply` (see
+  [control-plane](control-plane.md)).
 - `the-loop sessions reset --work-item <ref> [--work-item …] | --all [--dry-run]` SHALL
   remove everything this machine remembers about a work item (issue-137,
   [decision-050](../decisions/decision-050.md)) — the verb for "I fixed a bug in the-loop
@@ -288,6 +297,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-208 | `the-loop ask` joins the CLI: an agent's question is posted with the loop-prevention marker stamped centrally and the wait recorded as `session.awaiting_input`; runs in-process because the escalation path must not depend on a running service | [spec](../specs/issue-208/), [decision-078](../decisions/decision-078.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/208) |
 | issue-205 | The poller's heartbeat stopped carrying a `pid` nothing read: `poll.pid` — the flock — is the single source of truth for which process is polling, and an older heartbeat's pid is now dropped on read. The two files stay separate because the heartbeat's atomic rewrite would free the lock it is held on | [spec](../specs/issue-205/), [decision-076](../decisions/decision-076.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/205) |
 | issue-203 | `integrations.slack` gained an optional inline `url`, taking precedence over `urlEnv`, so the one value that turns notifications on stops living outside every config file the-loop owns — and a resolution failure now names both remedies instead of only the env var. Slack's webhook URL alone; tokens and signing secrets stay env-only | [spec](../specs/issue-203/), [decision-075](../decisions/decision-075.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/203) |
 | issue-194 | `graph advance`/`run`/`skip`/`force` stopped posting nothing when `--ref` was omitted: the ref is derived from the repository's `ticketing.github` plus the `issue-<n>` id, and an outbound hook that could not do its job now prints a `warning:` line (and records `graph.hook_degraded`) instead of leaving a clean `wait` over a ticket nobody was asked | [spec](../specs/issue-194/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/194) |

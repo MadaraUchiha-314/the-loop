@@ -145,6 +145,15 @@ class SessionControlBody(BaseModel):
     comment: bool = True
 
 
+class SessionReplyBody(BaseModel):
+    ref: str
+    text: str
+    # Recorded on the event and the ticket for the audit trail; never trusted
+    # as authentication (decision-059: the gateway owns auth).
+    actor: str = ""
+    comment: bool = True
+
+
 class SessionRegisterBody(BaseModel):
     ref: str
     harness: str
@@ -346,6 +355,19 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
     def control_session(body: SessionControlBody) -> Dict[str, Any]:
         return core_sessions.control_session(
             body.ref, body.verb, comment=body.comment, config=cli_config
+        )
+
+    @app.post(
+        f"{API_PREFIX}/sessions/reply",
+        operation_id="replySession",
+    )
+    def reply_session(body: SessionReplyBody) -> Dict[str, Any]:
+        return core_sessions.reply_session(
+            body.ref,
+            body.text,
+            actor=body.actor,
+            comment=body.comment,
+            config=cli_config,
         )
 
     @app.post(

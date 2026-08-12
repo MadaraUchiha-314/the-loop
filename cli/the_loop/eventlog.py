@@ -220,6 +220,21 @@ EVENT_TYPES: Dict[str, str] = {
         "Posting the tmux-session announcement comment failed (work_item, "
         "tmux_target, error) — best-effort, the dispatch is unaffected."
     ),
+    "session.awaiting_input": (
+        "A session asked a human a question through `the-loop ask` and is now "
+        "waiting for the answer (work_item, question, actor, comment_url, "
+        "comment_posted: whether the question reached the ticket) — issue-208. "
+        "The verb stamps the loop-prevention marker centrally, so the wait is "
+        "recorded even when the agent forgot nothing. Closed by the next "
+        "session.reply_sent; an answer given on the ticket instead is forwarded "
+        "as usual but emits nothing, so the wait stays reported."
+    ),
+    "session.reply_sent": (
+        "An operator's answer was delivered straight into the waiting session's "
+        "tmux pane via POST /api/v1/sessions/reply (work_item, actor) — "
+        "issue-208. Closes the work item's session.awaiting_input on the "
+        "attention surface and the dashboard alike."
+    ),
     "session.closed": "A session was closed in the registry (work_item).",
     "session.paused": (
         "A session was paused, so events for its work item are held rather "

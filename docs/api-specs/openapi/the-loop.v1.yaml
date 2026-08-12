@@ -313,6 +313,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sessions/reply:
+    post:
+      summary: Reply Session
+      operationId: replySession
+      description: Deliver an operator's answer into a waiting session's tmux pane
+        (bracketed paste, then Enter), emitting `session.reply_sent` and — by default —
+        recording a marked report comment on the work item so the ticket stays the
+        paper trail (issue-208). Fail-closed — a reply never spawns, respawns or
+        resumes a session — 404 when the work item has no registered session or its
+        pane is gone; 400 when the session is paused or the text is empty.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionReplyBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Replysession
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/sessions/register:
     post:
       summary: Register Session
@@ -922,6 +953,32 @@ components:
       - ref
       - verb
       title: SessionControlBody
+    SessionReplyBody:
+      properties:
+        ref:
+          type: string
+          title: Ref
+        text:
+          type: string
+          title: Text
+        actor:
+          type: string
+          title: Actor
+          description: Who is answering — recorded on the event and the ticket for
+            the audit trail, never trusted as authentication (the gateway owns auth,
+            decision-059).
+          default: ''
+        comment:
+          type: boolean
+          title: Comment
+          description: Post the marked delivery-report comment on the work item
+            (default true; best-effort — a failing comment never fails the reply).
+          default: true
+      type: object
+      required:
+      - ref
+      - text
+      title: SessionReplyBody
     SessionRegisterBody:
       properties:
         ref:
