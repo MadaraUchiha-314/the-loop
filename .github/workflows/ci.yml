@@ -35,3 +35,31 @@ jobs:
       - name: Validate JSON artifacts parse
         run: |
           uv run python -c "import json; [json.load(open(p)) for p in ['.claude-plugin/plugin.json', '.claude-plugin/marketplace.json', '.cursor-plugin/plugin.json', '.cursor-plugin/marketplace.json', '.the-loop/harness-config.schema.json', '.the-loop/collaborators.schema.json', 'hooks/hooks.json']]; print('json ok')"
+
+  # The control-plane dashboard (ui/). Its own toolchain — bun, oxlint, vitest —
+  # so it stays out of the pre-commit hooks, which are uv-resolved by design.
+  # Same three commands the Pages workflow runs before it publishes.
+  ui:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Lint (oxlint, type-aware)
+        run: bun run lint
+
+      - name: Test (vitest)
+        run: bun run test
+
+      # `build` runs `tsc --noEmit` first, so this covers the type check too.
+      - name: Build
+        run: bun run build

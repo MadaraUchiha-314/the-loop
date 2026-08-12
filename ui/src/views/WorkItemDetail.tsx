@@ -1,0 +1,381 @@
+/**
+ * One work item: the outer loop, every PR delivering it with its own inner
+ * loop, the trace of what the harness did, and the controls.
+ *
+ * Two surfaces here are deliberately inert against a real service, and say so
+ * rather than pretending: the **reply box** needs `POST /api/v1/sessions/reply`
+ * (bracketed paste into the pane) and the **turns & tool calls** trace needs a
+ * transcript endpoint. Neither exists in `the_loop/api/app.py` today. The
+ * design specified both, so they are built and visibly disabled with the route
+ * that would light them up — see ui/README.md and the follow-up issues.
+ */
+
+import { useState } from "react";
+
+import { ApiError } from "../api/client.ts";
+import {
+  describeEvent,
+  eventRef,
+  levelTag,
+  questionOf,
+  relativeTime,
+  stampOf,
+  timeOf,
+  transcriptPath,
+  type PullRequestView,
+  type WorkItemView,
+} from "../api/model.ts";
+import type { EventRecord, SessionVerb } from "../api/types.ts";
+import { Blueprint } from "../components/Blueprint.tsx";
+import { NodeRail } from "../components/NodeRail.tsx";
+import { SessionDot, sessionLabel } from "../components/SessionDot.tsx";
+import { useApi } from "../state/ApiContext.tsx";
+import { hrefFor } from "../state/route.ts";
+import { useAsync } from "../state/useAsync.ts";
+
+const REPLY_BLOCKED =
+  "Needs POST /api/v1/sessions/reply — the service has no reply route yet, so the control plane cannot paste into the pane. Answer on the ticket and the poller will deliver it.";
+
+interface DetailProps {
+  view: WorkItemView;
+  title: string | undefined;
+  onChanged: () => void;
+}
+
+export function WorkItemDetail({ view, title, onChanged }: DetailProps) {
+  const { api } = useApi();
+  const [busy, setBusy] = useState<SessionVerb | "gate" | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [traceRef, setTraceRef] = useState<string>(view.ref);
+  const [reply, setReply] = useState("");
+
+  const events = useAsync(
+    (signal) => api.events({ workItem: view.ref, limit: 200 }, signal),
+    [api, view.ref],
+  );
+
+  async function run(label: SessionVerb | "gate", action: () => Promise<unknown>): Promise<void> {
+    setBusy(label);
+    setActionError(null);
+    try {
+      await action();
+      onChanged();
+    } catch (cause) {
+      setActionError(cause instanceof ApiError ? cause.advice : String(cause));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const verbs: SessionVerb[] =
+    view.sessionState === "active" ? ["pause", "stop"] : view.sessionState === "paused" ? ["resume", "stop"] : ["start"];
+
+  const traceSession =
+    traceRef === view.ref ? view.session : (view.pullRequests.find((pr) => pr.ref === traceRef)?.session ?? null);
+
+  return (
+    <>
+      <a className="lp-back" href={hrefFor({ name: "dashboard" })}>
+        ← All work items
+      </a>
+
+      <div className="lp-detail-head">
+        <div>
+          <div className="lp-detail-ref">
+            {view.ref}
+            {view.url ? (
+              <>
+                {" · "}
+                <a href={view.url} target="_blank" rel="noreferrer">
+                  open on GitHub ↗
+                </a>
+              </>
+            ) : null}
+          </div>
+          <h1 className="lp-detail-title">{title ?? view.shortRef}</h1>
+          <div className="lp-detail-tags">
+            {view.currentNode ? <span className="tag tag-accent">{view.currentNode}</span> : null}
+            <span className="tag tag-outline">control: {view.control?.command ?? "none"}</span>
+            {view.tmuxTarget ? (
+              <span className="lp-subtle">
+                tmux: <code className="lp-code">{view.tmuxTarget}</code>
+              </span>
+            ) : null}
+          </div>
+        </div>
+        <div className="lp-detail-actions">
+          {verbs.map((verb) => (
+            <button
+              key={verb}
+              type="button"
+              className="btn btn-secondary"
+              disabled={busy !== null}
+              onClick={() => void run(verb, () => api.controlSession(view.ref, verb))}
+            >
+              {busy === verb ? `${verb}…` : verb}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {actionError ? (
+        <div className="lp-banner lp-banner-error" role="alert">
+          <span className="lp-banner-kicker">Action failed</span>
+          <span>{actionError}</span>
+        </div>
+      ) : null}
+
+      <NeedsInputCard question={view.question} reply={reply} onReply={setReply} />
+
+      {view.parked ? (
+        <Blueprint className="lp-gate">
+          <div className="lp-gate-main">
+            <div className="lp-callout-kicker">Human gate — {view.parked.node}</div>
+            <div className="lp-gate-detail">{view.parked.reason}</div>
+            {view.parked.since ? (
+              <div className="lp-subtle">waiting since {stampOf(view.parked.since)}</div>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={busy !== null || !view.repoPath || !view.specId}
+            title={view.repoPath ? undefined : "No checkout recorded for this item on the service's machine."}
+            onClick={() =>
+              void run("gate", () =>
+                api.graphComplete({
+                  repo: view.repoPath,
+                  workItem: view.specId ?? "",
+                  node: view.parked?.node ?? "",
+                }),
+              )
+            }
+          >
+            {busy === "gate" ? "Approving…" : "Approve — advance graph"}
+          </button>
+          <a className="btn btn-ghost" href={view.url} target="_blank" rel="noreferrer">
+            Request changes on the ticket ↗
+          </a>
+        </Blueprint>
+      ) : null}
+
+      <h2 className="lp-h2">Outer loop · {view.record.graph?.loop ?? "pdlc-work-item-loop"}</h2>
+      <NodeRail
+        nodes={view.rail}
+        emptyMessage={
+          view.repoPath
+            ? "The checkout has no graph state for this item yet — it starts at phase-selection."
+            : "No session on this machine recorded a checkout, so the graph state cannot be read from here."
+        }
+      />
+
+      <h2 className="lp-h2">Pull requests · one inner loop each</h2>
+      {view.pullRequests.length === 0 ? (
+        <div className="lp-subtle">
+          No pull requests yet — the outer loop has not reached implementation, or this item is delivered in a single
+          session.
+        </div>
+      ) : (
+        <div className="lp-pr-grid">
+          {view.pullRequests.map((pr) => (
+            <PrCard key={pr.ref} pr={pr} />
+          ))}
+        </div>
+      )}
+
+      <div className="lp-trace-head">
+        <h2 className="lp-h2">Trace · turns &amp; tool calls</h2>
+        <div className="lp-filters">
+          <button
+            type="button"
+            className="lp-tab"
+            aria-current={traceRef === view.ref ? "page" : undefined}
+            onClick={() => setTraceRef(view.ref)}
+          >
+            work item session
+          </button>
+          {view.pullRequests.map((pr) => (
+            <button
+              key={pr.ref}
+              type="button"
+              className="lp-tab"
+              aria-current={traceRef === pr.ref ? "page" : undefined}
+              onClick={() => setTraceRef(pr.ref)}
+            >
+              {pr.shortRef}
+            </button>
+          ))}
+        </div>
+        <span className="lp-trace-source">{transcriptPath(traceSession) ?? "no derivable transcript path"}</span>
+      </div>
+
+      <Blueprint className="lp-trace">
+        <div className="lp-empty">
+          <strong>Turns and tool calls are not served by /api/v1.</strong> the-loop invokes the harness as a CLI inside
+          tmux, so the structured record of a session is the harness&rsquo;s own transcript — for Claude Code, the JSONL
+          above, whose path is fully derivable from the <code className="lp-code">cwd</code> and the pre-assigned
+          session id the service already records. Nothing reads it over HTTP today; until a transcript route exists,{" "}
+          <code className="lp-code">jq -c . &lt;path&gt;</code> on that machine is the trace. Cursor keeps its chats in
+          an undocumented SQLite store and has no equivalent. What the service <em>can</em> answer is below: the
+          event-log trail for this work item.
+        </div>
+        {events.loading && !events.data ? (
+          <div className="lp-empty">Loading events…</div>
+        ) : events.data && events.data.length > 0 ? (
+          events.data
+            .filter((event) => (traceRef === view.ref ? true : eventRef(event) === traceRef))
+            .toReversed()
+            .slice(0, 40)
+            .map((event, index) => <TraceEntry key={`${event.ts}-${index}`} event={event} />)
+        ) : (
+          <div className="lp-empty">No events recorded for this work item.</div>
+        )}
+      </Blueprint>
+
+      <h2 className="lp-h2">Events for this item</h2>
+      {events.error ? (
+        <div className="lp-subtle">Could not read the event log: {events.error.message}</div>
+      ) : (
+        (events.data ?? [])
+          .toReversed()
+          .slice(0, 25)
+          .map((event, index) => (
+            <div className="lp-event-row" key={`${event.ts}-row-${index}`}>
+              <span className="lp-event-ts">{stampOf(event.ts)}</span>
+              <span className={`tag ${levelTag(event.level)}`}>{event.level ?? "info"}</span>
+              <span className="lp-event-name">{event.event}</span>
+              <span className="lp-event-detail">{describeEvent(event)}</span>
+            </div>
+          ))
+      )}
+    </>
+  );
+}
+
+function PrCard({ pr }: { pr: PullRequestView }) {
+  return (
+    <Blueprint className="card lp-pr-card">
+      <div className="lp-pr-head">
+        <div className="lp-pr-ref">
+          {pr.url ? (
+            <a href={pr.url} target="_blank" rel="noreferrer">
+              {pr.shortRef} ↗
+            </a>
+          ) : (
+            pr.shortRef
+          )}
+        </div>
+        <div className="lp-pr-tags">
+          {pr.status ? (
+            <span className="tag tag-accent">{pr.status.currentNode}</span>
+          ) : (
+            <span className="tag tag-neutral">no inner-loop state</span>
+          )}
+          {pr.status?.parked ? <span className="tag tag-outline">awaiting human</span> : null}
+        </div>
+      </div>
+      {/* Checks and review state are GitHub's, and no /api/v1 route serves them —
+          the portable record deliberately keeps no copy of the ticket's mutable
+          fields. The PR link above is the honest way to reach them. */}
+      <NodeRail nodes={pr.rail} variant="inner" emptyMessage="No pdlc-pr-loop state for this PR yet." />
+      <div className="lp-pr-foot">
+        session <SessionDot state={pr.sessionState} small />
+        {sessionLabel(pr.sessionState, pr.session.harness)}
+        {pr.tmuxTarget ? (
+          <>
+            {" · tmux "}
+            <code>{pr.tmuxTarget}</code>
+          </>
+        ) : null}
+        {pr.session.lastEventAt ? ` · ${relativeTime(pr.session.lastEventAt)}` : null}
+      </div>
+    </Blueprint>
+  );
+}
+
+/**
+ * The question card.
+ *
+ * The question is derived once for the whole board (`awaitingInput` in
+ * `model.ts`) from a `session.awaiting_input` event, which the CLI does not emit
+ * yet: the design's conclusion was that the agent should ask through a
+ * `the-loop ask` verb — routed to a ticket/PR comment and recorded as that event
+ * — rather than posting with `gh` itself, which is what
+ * `the_loop/interaction.py` directs it to do today. So this card never appears
+ * against a real service, and lights up on its own once the verb ships.
+ *
+ * The reply box is rendered and **disabled** in both modes, including demo:
+ * demo data may be fake, but a control that claims the product can do something
+ * it cannot would be a lie in either mode.
+ */
+function NeedsInputCard({
+  question,
+  reply,
+  onReply,
+}: {
+  question: EventRecord | null;
+  reply: string;
+  onReply: (value: string) => void;
+}) {
+  if (!question) return null;
+  const text = questionOf(question) || "(the event carried no question text)";
+  const commentUrl = typeof question["comment_url"] === "string" ? question["comment_url"] : "";
+
+  return (
+    <Blueprint className="lp-callout">
+      <div className="lp-callout-head">
+        <div className="lp-callout-kicker">Agent is waiting for your input</div>
+        <div className="lp-callout-path">
+          via <code>the-loop ask</code> → gh comment on issue/PR + session.awaiting_input → /api/v1/attention
+        </div>
+      </div>
+      <div className="lp-callout-body">{text}</div>
+      <div className="lp-reply">
+        <textarea
+          value={reply}
+          onChange={(event) => onReply(event.target.value)}
+          placeholder="Your answer — would be pasted into the session's TUI (bracketed paste, then Enter)"
+          aria-label="Reply to the agent"
+          disabled
+        />
+        <button type="button" className="btn btn-primary" disabled title={REPLY_BLOCKED}>
+          Send to session
+        </button>
+      </div>
+      <div className="lp-hint">
+        {REPLY_BLOCKED}
+        {commentUrl ? (
+          <>
+            {" "}
+            <a href={commentUrl} target="_blank" rel="noreferrer">
+              Answer on the ticket ↗
+            </a>
+          </>
+        ) : null}
+      </div>
+    </Blueprint>
+  );
+}
+
+const KIND_CLASS: Record<string, string> = {
+  graph: "accent",
+  session: "accent",
+  poll: "",
+  "gh-webhook": "",
+};
+
+function TraceEntry({ event }: { event: EventRecord }) {
+  return (
+    <div className="lp-trace-entry">
+      <div className={`lp-trace-kind ${KIND_CLASS[event.source ?? ""] ?? ""}`.trim()}>
+        {event.event}
+        <div className="lp-trace-ts">{timeOf(event.ts)}</div>
+      </div>
+      <div className="lp-trace-main">
+        <div className="lp-trace-text">{describeEvent(event)}</div>
+      </div>
+    </div>
+  );
+}
+
+

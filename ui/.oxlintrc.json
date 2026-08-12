@@ -1,0 +1,44 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "react-perf", "typescript", "unicorn", "import", "oxc", "promise"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "warn",
+    "pedantic": "off"
+  },
+  "env": {
+    "browser": true,
+    "es2024": true
+  },
+  "rules": {
+    "eqeqeq": ["error", "always", { "null": "ignore" }],
+    "no-console": ["warn", { "allow": ["warn", "error"] }],
+    "typescript/consistent-type-imports": "error",
+    "typescript/no-explicit-any": "error",
+    "import/no-cycle": "error",
+    // Stylesheets and test-matcher registrations are imported for their side
+    // effect; there is nothing to assign.
+    "import/no-unassigned-import": ["error", { "allow": ["**/*.css", "**/jest-dom/**"] }],
+    "unicorn/prefer-node-protocol": "error",
+    "react/jsx-key": "error",
+    "react/no-array-index-key": "off",
+    "react/react-in-jsx-scope": "off",
+    "react-perf/jsx-no-new-object-as-prop": "off",
+    "react-perf/jsx-no-new-array-as-prop": "off",
+    "react-perf/jsx-no-new-function-as-prop": "off"
+  },
+  "overrides": [
+    {
+      "files": ["src/**/*.test.{ts,tsx}", "src/test/**"],
+      "rules": {
+        "no-console": "off",
+        // Tests deliberately narrow `unknown` to assert on it — that is the
+        // assertion, not an unchecked cast in shipped code.
+        "typescript/no-unsafe-type-assertion": "off",
+        "typescript/no-base-to-string": "off"
+      }
+    }
+  ],
+  "ignorePatterns": ["dist", "node_modules", "coverage"]
+}

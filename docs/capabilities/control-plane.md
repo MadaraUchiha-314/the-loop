@@ -1,8 +1,8 @@
 # Capability: control plane
 
-> The API layer over the-loop's core, and its clients: the service-routed CLI
-> and the MCP endpoint (issue-161, decision-058). A control-plane UI over the
-> same API is future work — descoped from issue-161 on owner review.
+> The API layer over the-loop's core, and its clients: the service-routed CLI,
+> the MCP endpoint (issue-161, decision-058) and the static web dashboard
+> (issue-206).
 
 ## What it is
 
@@ -64,19 +64,49 @@ package — there are no install extras (owner decision, PR #162).
   SHALL NOT be exposed as tools.
 - Every API operation SHALL land in the event log (`api.request`; tool calls as
   `mcp.call`), queryable via `the-loop events --source service`.
-- A **control-plane UI is not part of this capability yet** (descoped from
-  issue-161 on owner review). The `attention` surface and the read/manage API it
-  would consume are in place; the UI arrives as its own work item.
+- A **static web dashboard** (`ui/`, issue-206) SHALL be the third client of the
+  same surface, adding no state and no server of its own. It SHALL be a pure
+  build artifact — published to GitHub Pages at `/the-loop/ui/`, beside the docs
+  site, from the one Pages artifact both are assembled into — with the API base
+  URL chosen at runtime and persisted per browser, so one hosted copy serves any
+  number of workstations.
+- The dashboard SHALL derive a work item's loop position from `graph/check`,
+  whose `repo` comes from the session record's `cwd` and whose `workItem` comes
+  from the portable record's `graph.workItem`. Because that join spans two
+  records, an item with no session on this machine SHALL still be listed, showing
+  its frozen node list with no pointer rather than an error — the API's inability
+  to answer "where is it?" is not the same as the item not existing.
+- The dashboard's inbox SHALL be the union of `/attention` and the graph gates
+  that endpoint deliberately excludes: gate waits are repo-scoped, so
+  `core.attention` documents them as reaching a client through `graphs.check` per
+  work item, and the client that already reads those reports folds them back in.
+- Where the dashboard's design specified a surface this API cannot back, that
+  surface SHALL be rendered **disabled and named**, never mocked and never
+  silently dropped. Two such surfaces exist today: the **inline reply** to an
+  agent's question (needs a `the-loop ask` verb emitting `session.awaiting_input`,
+  and a `POST /sessions/reply` that pastes into the pane — today
+  `the_loop/interaction.py` directs the agent to post its own question with `gh`)
+  and the **turns-and-tool-calls trace** (needs a transcript route; the harness
+  runs as a CLI in tmux, so the record is its own file — for Claude Code a JSONL
+  whose path the dashboard derives and displays).
+- The dashboard SHALL hold no credential and mint none. The network posture is
+  unchanged and is stated in its Settings screen: the service binds loopback and
+  sends no CORS headers, so a hosted page reaches it through an SSH tunnel plus a
+  gateway that terminates auth and adds the origin — never by exposing the
+  service.
 
 ## Design
 
 [`docs/specs/issue-161/design.md`](../specs/issue-161/design.md) ·
+[`docs/specs/issue-206/design.md`](../specs/issue-206/design.md) ·
 [`docs/api-specs/openapi/the-loop.v1.yaml`](../api-specs/openapi/the-loop.v1.yaml) ·
 [CLI: service](../cli/commands/service.md) ·
-[config: service options](../config/cli/service-options.md)
+[config: service options](../config/cli/service-options.md) ·
+[`ui/README.md`](https://github.com/MadaraUchiha-314/the-loop/blob/main/ui/README.md)
 
 ## History
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
 | issue-161 | Capability minted: core facade extracted, API service + OpenAPI contract, loopback-default network posture (no in-app auth — the gateway owns it, decision-059), service lifecycle commands, every core-capability command routed through the service, HTTP-only MCP endpoint on the official SDK, no install extras. The UI was descoped on owner review | [spec](../specs/issue-161/), [decision-058](../decisions/decision-058.md), [decision-059](../decisions/decision-059.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/161) |
+| issue-206 | The descoped UI lands: a static dashboard in `ui/` over the same `/api/v1`, published to `/the-loop/ui/` from the docs site's Pages artifact. Loop position joined from the session's `cwd` and the record's spec id; the inbox unions `/attention` with the repo-scoped graph gates it excludes; the two surfaces the API cannot back ship disabled and named | [spec](../specs/issue-206/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/206) |
