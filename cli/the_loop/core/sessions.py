@@ -15,8 +15,12 @@ and the API/MCP surfaces get the same words.
 from __future__ import annotations
 
 import getpass
+import json
+import os
+import re
 import shutil
 import uuid
+from collections import deque
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -155,6 +159,182 @@ def get_session(
         if session["ref"] == parsed.ref:
             return session
     raise LookupError(f"no session registered for {ref}")
+
+
+# -- transcript (issue-209) ----------------------------------------------------
+
+
+def _claude_projects_root() -> Path:
+    """Where Claude Code keeps per-project session transcripts.
+
+    ``CLAUDE_CONFIG_DIR`` is honoured because it is the *harness's* own
+    relocation mechanism — the-loop reads what the harness reads, and adds no
+    config key of its own (NFR2).
+    """
+    base = os.environ.get("CLAUDE_CONFIG_DIR") or str(Path.home() / ".claude")
+    return Path(base) / "projects"
+
+
+def _project_dir_name(cwd: str) -> str:
+    """``cwd`` as Claude Code spells its project directory.
+
+    Every character outside ``[A-Za-z0-9]`` becomes ``-``, one for one —
+    verified against a real installation's layout (``/home/user/the-loop`` →
+    ``-home-user-the-loop``); consecutive non-alphanumerics are NOT collapsed
+    into one dash.
+    """
+    return re.sub(r"[^A-Za-z0-9]", "-", cwd)
+
+
+def _transcript_endpoint(
+    registry: SessionRegistry, work_item: WorkItemRef
+) -> Optional[Session]:
+    """The endpoint whose transcript ``work_item`` names — closed included.
+
+    Unlike dispatch resolution (``record_owning``), a **closed** session is a
+    valid answer here: the transcript file outlives the registration, and
+    reading what a finished agent did is the review use case (R1.4). Same
+    cheapest-first shape: the ref's own record by path, then the scan for a
+    record holding it as a pull-request endpoint.
+    """
+    record = registry.find_by_work_item(work_item, include_closed=True)
+    if record is not None:
+        endpoint = record.endpoint_for(work_item)
+        if endpoint is not None:
+            return endpoint
+    for record in registry.list_sessions():
+        endpoint = record.endpoint_for(work_item)
+        if endpoint is not None:
+            return endpoint
+    return None
+
+
+def _resolve_transcript(root: Path, candidate: Path, sid: str) -> Optional[Path]:
+    """The real file to serve, or ``None`` — fail-closed containment (R2.1).
+
+    The resolved path (symlinks followed) must sit inside the resolved projects
+    root, so a crafted registry record or a symlink planted in the root reads
+    as "no transcript", indistinguishable from a missing file. When the derived
+    directory misses, the root's immediate subdirectories are scanned for the
+    session's file (R1.2): a munge-scheme drift between harness versions
+    degrades to one directory listing, not a 404. Session ids are UUIDs, so a
+    collision across projects is not a practical concern.
+    """
+    try:
+        resolved_root = root.resolve()
+    except OSError:  # pragma: no cover — an unresolvable HOME
+        return None
+    candidates = [candidate]
+    if not candidate.is_file() and root.is_dir():
+        candidates += sorted(
+            child / f"{sid}.jsonl" for child in root.iterdir() if child.is_dir()
+        )
+    for option in candidates:
+        if not option.is_file():
+            continue
+        resolved = option.resolve()
+        if resolved.is_relative_to(resolved_root) and resolved.is_file():
+            return resolved
+    return None
+
+
+def _tail_lines(path: Path, tail: int) -> Tuple[int, List[str]]:
+    """``(total non-blank lines, the last ``tail`` of them)`` in one pass.
+
+    The deque is the only buffer (NFR3): ``tail: 0`` means keep everything, and
+    is the sole way the whole file ends up in memory. Undecodable bytes are
+    replaced rather than failing the read — the transcript is another tool's
+    output, and refusing to serve it over one byte helps nobody.
+    """
+    total = 0
+    kept: "deque[str]" = deque(maxlen=tail or None)
+    with path.open("r", encoding="utf-8", errors="replace") as handle:
+        for raw in handle:
+            line = raw.rstrip("\n")
+            if not line.strip():
+                continue
+            total += 1
+            kept.append(line)
+    return total, list(kept)
+
+
+def get_transcript(
+    ref: str,
+    tail: int = 200,
+    config: Optional[dict] = None,
+    registry_dir: str = "",
+) -> Dict[str, Any]:
+    """The harness's own transcript for a work item's session (issue-209).
+
+    the-loop runs the harness as a CLI in tmux, so a session's turns and tool
+    calls are the harness's file, not the service's: for Claude Code,
+    ``<projects root>/<munged cwd>/<harnessSessionId>.jsonl`` — both halves
+    recorded at registration, so the path is derived, never asked for.
+
+    Fail-closed by design: this is the plane's first route that returns file
+    contents from disk, and it serves transcripts, not the filesystem. The
+    session id is validated before any filesystem touch (a registry record is
+    writable through ``POST /sessions/register``), and only a regular
+    ``<id>.jsonl`` resolving inside the projects root is ever opened.
+
+    A read like :func:`get_session` — no ``messages``/``exitCode`` envelope.
+    """
+    work_item = WorkItemRef.parse(ref)  # ValueError on a malformed ref
+    if tail < 0:
+        raise ValueError("tail must be >= 0 (0 means the whole file)")
+    registry = SessionRegistry(_registry_dir(config, registry_dir))
+    endpoint = _transcript_endpoint(registry, work_item)
+    if endpoint is None:
+        raise LookupError(
+            f"no session registered for {work_item.ref}, so no transcript can "
+            "be resolved"
+        )
+    if endpoint.harness != "claude":
+        raise LookupError(
+            f"no derivable transcript for harness {endpoint.harness!r} — only "
+            "Claude Code's JSONL location is documented (Cursor keeps chats in "
+            "an undocumented SQLite store)"
+        )
+    sid = endpoint.harness_session_id
+    if not sid:
+        # A PR endpoint is linked before its first dispatch assigns it a
+        # conversation (issue-172) — a normal state, not a bad record.
+        raise LookupError(
+            f"no harness conversation recorded for {work_item.ref} yet — the "
+            "session id is assigned on first dispatch, so there is no "
+            "transcript to resolve"
+        )
+    if "/" in sid or "\\" in sid or ".." in sid:
+        raise LookupError(
+            f"the recorded session id for {work_item.ref} is not a derivable "
+            "transcript file name"
+        )
+    root = _claude_projects_root()
+    candidate = root / _project_dir_name(endpoint.cwd) / f"{sid}.jsonl"
+    path = _resolve_transcript(root, candidate, sid)
+    if path is None:
+        raise LookupError(
+            f"no transcript at {candidate} — the session may not have written one yet"
+        )
+    total, lines = _tail_lines(path, tail)
+    entries: List[Dict[str, Any]] = []
+    for line in lines:
+        try:
+            parsed = json.loads(line)
+        except ValueError:
+            parsed = None
+        # A line that is not a JSON object is served, flagged, in place —
+        # dropped data is worse than ugly data (R1.1).
+        entries.append(parsed if isinstance(parsed, dict) else {"malformed": line})
+    return {
+        "workItem": work_item.ref,
+        "harness": endpoint.harness,
+        "harnessSessionId": sid,
+        "path": str(path),
+        "totalLines": total,
+        "truncated": total > len(entries),
+        "entries": entries,
+    }
 
 
 # -- registration --------------------------------------------------------------

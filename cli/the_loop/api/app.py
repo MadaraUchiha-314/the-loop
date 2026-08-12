@@ -348,6 +348,15 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
     def get_session(ref: str = Query(...)) -> Dict[str, Any]:
         return core_sessions.get_session(ref, config=cli_config)
 
+    @app.get(
+        f"{API_PREFIX}/sessions/transcript",
+        operation_id="sessionTranscript",
+    )
+    def session_transcript(
+        ref: str = Query(...), tail: int = Query(200, ge=0)
+    ) -> Dict[str, Any]:
+        return core_sessions.get_transcript(ref, tail=tail, config=cli_config)
+
     @app.post(
         f"{API_PREFIX}/sessions/control",
         operation_id="controlSession",

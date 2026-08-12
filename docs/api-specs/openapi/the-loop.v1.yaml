@@ -288,6 +288,53 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sessions/transcript:
+    get:
+      summary: Session Transcript
+      operationId: sessionTranscript
+      description: >-
+        The harness's own transcript for a work item's session (issue-209).
+        the-loop runs the harness as a CLI in tmux, so the structured record of a
+        session's turns and tool calls is the harness's file — for Claude Code,
+        `<projects root>/<munged cwd>/<harnessSessionId>.jsonl`, both halves recorded
+        at registration. Served fail-closed — only a regular `<id>.jsonl` resolving
+        inside the harness's projects directory is ever opened. Entries are the file's
+        JSONL lines parsed as objects (a line that does not parse is returned as
+        `{"malformed": "<line>"}`); `totalLines` counts the whole file and `truncated`
+        says whether `entries` is a strict tail. 404 when the work item has no
+        registered session (closed sessions still resolve), the harness's transcript
+        location is undocumented (Cursor), or no file exists yet.
+      parameters:
+      - name: ref
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Ref
+      - name: tail
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 200
+          title: Tail
+        description: Return only the last N entries; 0 means the whole file.
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Sessiontranscript
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/sessions/control:
     post:
       summary: Control Session

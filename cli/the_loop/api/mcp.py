@@ -88,6 +88,13 @@ def build_server(cli_config: Optional[dict] = None) -> MCPServer:
         """Registered harness sessions with their last control command."""
         return core_sessions.list_sessions(status=status, config=cli_config)
 
+    def session_transcript(ref: str, tail: int = 200) -> Dict[str, Any]:
+        """The tail of a session's own harness transcript (Claude Code JSONL),
+        resolved from the registered cwd + session id and served fail-closed —
+        only `<id>.jsonl` files inside the harness's projects directory. `tail`
+        is the number of entries to return; 0 means the whole file."""
+        return core_sessions.get_transcript(ref, tail=tail, config=cli_config)
+
     def control_session(ref: str, verb: str, comment: bool = True) -> Dict[str, Any]:
         """Apply a session control verb (start | pause | resume | stop |
         cleanup) with the full paper trail. `cleanup` is destructive: it
@@ -200,6 +207,7 @@ def build_server(cli_config: Optional[dict] = None) -> MCPServer:
         graph_advance,
         graph_complete,
         list_sessions,
+        session_transcript,
         control_session,
         register_session,
         close_session,
