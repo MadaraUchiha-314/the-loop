@@ -176,6 +176,13 @@ export class DemoApi implements TheLoopApi {
     return delay({ messages: [{ stream: "out", text: `demo: ${verb} ${ref}` }], exitCode: 0 });
   }
 
+  replySession(ref: string, _text: string, _actor = ""): Promise<CoreResult> {
+    // Same convention as the control verbs: the demo behaves. The reply_sent
+    // event is what closes the question card, exactly as the service's does.
+    this.emit({ event: "session.reply_sent", level: "info", source: "service", work_item: ref, actor: "you" });
+    return delay({ messages: [{ stream: "out", text: `demo: replied to ${ref}` }], exitCode: 0 });
+  }
+
   controlDaemon(daemon: string, verb: DaemonVerb): Promise<CoreResult> {
     return delay({ messages: [{ stream: "out", text: `demo: ${verb} ${daemon}` }], exitCode: 0 });
   }

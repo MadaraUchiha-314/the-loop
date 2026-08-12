@@ -28,6 +28,7 @@ that item's own checkout, the same way the repo-scoped commands do.
 | [`gh-webhook`](/cli/commands/gh-webhook) | HMAC-verified GitHub webhook receiver; routes each event to the session working that item. |
 | [`poll`](/cli/commands/poll) | Pull-based ingress for hosts a webhook cannot reach. Same dispatch stack. |
 | [`sessions`](/cli/commands/sessions) | The work-item ↔ session registry, execution control (`start`/`pause`/`resume`/`stop`), and `reset` — forget a work item's state so it starts over. |
+| [`ask`](/cli/commands/ask) | Post an agent's question on its work item — marker stamped centrally, wait recorded as `session.awaiting_input`. |
 | [`events`](/cli/commands/events) | Query the structured event log — the answer to "why did nothing happen?". |
 
 ## Repo-scoped commands

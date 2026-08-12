@@ -242,6 +242,29 @@ describe("attentionEntries", () => {
     expect(entries.map((entry) => entry.kind)).toEqual(["human gate", "session paused"]);
     expect(entries[0]!.detail).toBe("human-approval — approval required");
   });
+
+  it("keeps one row per open question when /attention reports the same wait", () => {
+    // issue-208: the service's `awaiting-input` kind and the event-derived
+    // question entry describe the same wait; the entry with the Reply action wins.
+    const views = buildWorkItemViews({
+      workItems: [RECORD],
+      sessions: [SESSION],
+      attention: [{ workItem: RECORD.ref, kind: "awaiting-input", detail: "agent is waiting for input: ?" }],
+      awaiting: { [RECORD.ref]: { ts: "2026-08-12T10:00:00Z", event: "session.awaiting_input", question: "?" } },
+    });
+    const entries = attentionEntries(views);
+    expect(entries.map((entry) => entry.kind)).toEqual(["needs input"]);
+  });
+
+  it("keeps the raw awaiting-input row when the event window missed the question", () => {
+    const views = buildWorkItemViews({
+      workItems: [RECORD],
+      sessions: [SESSION],
+      attention: [{ workItem: RECORD.ref, kind: "awaiting-input", detail: "agent is waiting for input: ?" }],
+    });
+    const entries = attentionEntries(views);
+    expect(entries.map((entry) => entry.kind)).toEqual(["awaiting input"]);
+  });
 });
 
 describe("rowFlag", () => {

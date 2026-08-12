@@ -49,7 +49,10 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
     `$interaction_directive` placeholder, **above** the untrusted payload excerpt.
   - WHEN the mode is `work-item` (**the default**) THEN the directive SHALL tell the agent
     not to assume a human is watching its terminal: every question is a **comment on the work item or
-    its PR**, marked as the-loop's own, after which the session waits for the reply to
+    its PR**, asked by running **`the-loop ask`** (issue-208 — the verb posts the
+    comment, stamps the loop-prevention marker centrally and records the wait as a
+    `session.awaiting_input` event; manual `gh` + marker is the stated fallback when
+    the CLI is unavailable), after which the session waits for the reply to
     arrive as the next event — never blocking on an interactive prompt, never reading
     silence as consent. WHEN it is `cli` THEN the agent SHALL ask interactively **and**
     still record each decision's outcome on the work item.

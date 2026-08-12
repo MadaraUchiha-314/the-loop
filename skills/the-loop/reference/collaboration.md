@@ -30,10 +30,16 @@ A session driven by the CLI daemon is **told** where its answers come from, via
 
 - **`work-item` (default)** — do not assume a human is watching this terminal. Every
   question, clarification, decision or approval is asked as a **comment on the work item
-  or its PR** (marked as the-loop's own, per the loop-prevention rule below), and the
-  session then **stops and waits**: the reply reaches it as the next event. Never block
-  on an interactive prompt, and never read silence as consent — if genuinely blocked, log
-  the conflict, escalate once, and move to the next available work.
+  or its PR**, by running **`the-loop ask --work-item <ref> --question '…'`**
+  (issue-208): the verb posts the comment, stamps the loop-prevention marker
+  **centrally** (see the rule below — no agent memory involved), and records the wait
+  as a `session.awaiting_input` event, which is what lets the control plane surface the
+  question (`attention`, the dashboard's card) and answer it straight into the session
+  (`POST /api/v1/sessions/reply`). The session then **stops and waits**: the reply
+  reaches it as the next event. Only if the CLI is unavailable, post the comment with
+  `gh` and mark it yourself. Never block on an interactive prompt, and never read
+  silence as consent — if genuinely blocked, log the conflict, escalate once, and move
+  to the next available work.
 - **`cli`** — a human is attached to this session's terminal, so ask there. This does not
   waive the paper trail: the **outcome** of every human decision still lands on the work
   item as a comment.
@@ -105,12 +111,16 @@ metadata to a comment or review — the body text is the only channel available.
 - This applies everywhere GitHub-style credentials post on your behalf — issues, PRs,
   and (once supported) Jira or any other ticketing system — not only GitHub.
 - **It applies to both producers, not just this session.** The CLI daemon posts
-  comments of its own (today: the interactive-session announcement,
-  `the_loop.announce`) with the same credentials, so they carry the marker too — via
-  `the_loop.authz.mark_self_authored`, the producer-side counterpart of
-  `is_self_authored`. Any new daemon-side comment MUST go through that helper; an
-  unmarked one is re-ingested on the next cycle and pasted into the session it was
-  about (issue-104).
+  comments of its own (the interactive-session announcement, `the_loop.announce`;
+  the reply route's delivery report, issue-208) with the same credentials, so they
+  carry the marker too — via `the_loop.authz.mark_self_authored`, the producer-side
+  counterpart of `is_self_authored`. Any new daemon-side comment MUST go through that
+  helper; an unmarked one is re-ingested on the next cycle and pasted into the
+  session it was about (issue-104).
+- **Questions go through `the-loop ask`, which stamps for you** (issue-208): when the
+  question travels through the verb, the marker and attribution are appended
+  centrally and idempotently — the by-hand rule above is the fallback for when the
+  CLI is unavailable, not the primary path.
 - **Only ever mark text the-loop composed.** `mark_self_authored` asserts authorship
   and the trigger paths silently drop whatever carries the marker — never apply it to
   payload-derived text or another author's words.

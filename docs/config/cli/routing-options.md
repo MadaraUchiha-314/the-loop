@@ -560,7 +560,7 @@ through GitHub for no reason.
 
 | Mode | The agent asks… | Still records the decision on the ticket? |
 |------|-----------------|------------------------------------------|
-| `work-item` (default) | as a comment on the issue/PR, then **waits** — the reply arrives as the next event | yes (it *is* the comment) |
+| `work-item` (default) | as a comment on the issue/PR — via [`the-loop ask`](/cli/commands/ask), which stamps the loop-prevention marker centrally and records the wait as `session.awaiting_input` — then **waits**: the reply arrives as the next event, or straight into the pane via `POST /api/v1/sessions/reply` | yes (it *is* the comment) |
 | `cli` | interactively, in its own session | yes — the outcome, as a comment |
 
 Like every option on this page, it is **not webhook-only**: the poller reads the same

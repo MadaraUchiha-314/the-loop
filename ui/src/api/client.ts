@@ -101,6 +101,12 @@ export interface TheLoopApi {
   graphCheck(query: GraphQuery, signal?: AbortSignal): Promise<GraphStatus>;
   graphComplete(query: GraphQuery & { node?: string; actor?: string }): Promise<CoreResult>;
   controlSession(ref: string, verb: SessionVerb, comment?: boolean): Promise<CoreResult>;
+  /**
+   * Deliver an answer into a waiting session's tmux pane (issue-208). The
+   * service refuses fail-closed — 404 when no session/pane, 400 when paused —
+   * and never spawns one to answer.
+   */
+  replySession(ref: string, text: string, actor?: string): Promise<CoreResult>;
   controlDaemon(daemon: string, verb: DaemonVerb): Promise<CoreResult>;
 }
 
@@ -258,6 +264,10 @@ export class HttpApi implements TheLoopApi {
 
   controlSession(ref: string, verb: SessionVerb, comment = true): Promise<CoreResult> {
     return this.post<CoreResult>("/sessions/control", { ref, verb, comment });
+  }
+
+  replySession(ref: string, text: string, actor = ""): Promise<CoreResult> {
+    return this.post<CoreResult>("/sessions/reply", { ref, text, actor });
   }
 
   controlDaemon(daemon: string, verb: DaemonVerb): Promise<CoreResult> {

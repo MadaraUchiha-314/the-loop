@@ -94,15 +94,35 @@ package — there are no install extras (owner decision, PR #162).
   that endpoint deliberately excludes: gate waits are repo-scoped, so
   `core.attention` documents them as reaching a client through `graphs.check` per
   work item, and the client that already reads those reports folds them back in.
+- An agent's question SHALL travel through **`the-loop ask`** (issue-208): the verb
+  posts it on the work item with the loop-prevention marker stamped **centrally**
+  (no agent is trusted to remember it), records the wait as a
+  `session.awaiting_input` event — comment URL included, and emitted (as a warning)
+  even when `gh` failed, since the agent is waiting either way — and executes
+  in-process, because the escalation path must not depend on the service being up.
+  The `work-item` interaction directive names the verb; manual `gh` + marker
+  remains only as the stated fallback.
+- An operator's answer SHALL travel through **`POST /api/v1/sessions/reply`**
+  (issue-208): the text is bracketed-pasted into the session's tmux pane under a
+  provenance header, `session.reply_sent` is emitted, and a **marked** report
+  comment lands on the ticket (best-effort, `comment: false` to skip) so the thread
+  stays the paper trail without the poller delivering the answer a second time.
+  The route SHALL be fail-closed: no registered session or no live pane is 404 —
+  a reply never spawns, respawns or resumes anything — a paused session is 400,
+  and the claimed `actor` is recorded for audit, never trusted as auth.
+- `GET /attention` SHALL report the wait as kind `awaiting-input`: open while the
+  work item's newest `session.awaiting_input` is newer than its newest
+  `session.reply_sent` — the same rule the dashboard's `awaitingInput` model
+  applies, so the two surfaces cannot disagree. An answer given on the **ticket**
+  instead emits no `reply_sent`, so the row stays lit — a known, documented gap
+  (the poller cannot know which forwarded comment answered the question).
 - Where the dashboard's design specified a surface this API cannot back, that
   surface SHALL be rendered **disabled and named**, never mocked and never
-  silently dropped. Two such surfaces exist today: the **inline reply** to an
-  agent's question (needs a `the-loop ask` verb emitting `session.awaiting_input`,
-  and a `POST /sessions/reply` that pastes into the pane — today
-  `the_loop/interaction.py` directs the agent to post its own question with `gh`)
-  and the **turns-and-tool-calls trace** (needs a transcript route; the harness
-  runs as a CLI in tmux, so the record is its own file — for Claude Code a JSONL
-  whose path the dashboard derives and displays).
+  silently dropped. One such surface remains today: the **turns-and-tool-calls
+  trace** (needs a transcript route; the harness runs as a CLI in tmux, so the
+  record is its own file — for Claude Code a JSONL whose path the dashboard
+  derives and displays). The inline reply shipped in that state and went live
+  with issue-208.
 - The dashboard SHALL hold no credential and mint none. The network posture is
   unchanged and is stated in its Settings screen: the service binds loopback, so a
   service on **another** machine is reached through an SSH tunnel or a gateway that
@@ -126,3 +146,4 @@ package — there are no install extras (owner decision, PR #162).
 | issue-161 | Capability minted: core facade extracted, API service + OpenAPI contract, loopback-default network posture (no in-app auth — the gateway owns it, decision-059), service lifecycle commands, every core-capability command routed through the service, HTTP-only MCP endpoint on the official SDK, no install extras. The UI was descoped on owner review | [spec](../specs/issue-161/), [decision-058](../decisions/decision-058.md), [decision-059](../decisions/decision-059.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/161) |
 | issue-211 | The dashboard can actually read the service: `service.cors` makes the allowed browser origins configuration, shipping the published page's own origin as the default. Exact-string origins only; `"*"` with credentials refuses to start; an empty list installs no middleware. The bind, the exposure guard and the MCP transport's origin check are unchanged | [spec](../specs/issue-211/), [decision-077](../decisions/decision-077.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/211) |
 | issue-207 | The descoped UI lands: a static dashboard in `ui/` over the same `/api/v1`, published to `/the-loop/ui/` from the docs site's Pages artifact. Loop position joined from the session's `cwd` and the record's spec id; the inbox unions `/attention` with the repo-scoped graph gates it excludes; the two surfaces the API cannot back ship disabled and named | [spec](../specs/issue-207/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/207) |
+| issue-208 | Agent questions become a verb and get an answer route: `the-loop ask` posts the question with the marker stamped centrally and emits `session.awaiting_input`; `POST /api/v1/sessions/reply` pastes the answer into the pane (fail-closed — never spawns, refuses paused), emits `session.reply_sent`, and records a marked report on the ticket. `attention` gains the `awaiting-input` kind; the dashboard's reply box goes live | [spec](../specs/issue-208/), [decision-078](../decisions/decision-078.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/208) |

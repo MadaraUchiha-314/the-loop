@@ -2,12 +2,11 @@
  * One work item: the outer loop, every PR delivering it with its own inner
  * loop, the trace of what the harness did, and the controls.
  *
- * Two surfaces here are deliberately inert against a real service, and say so
- * rather than pretending: the **reply box** needs `POST /api/v1/sessions/reply`
- * (bracketed paste into the pane) and the **turns & tool calls** trace needs a
- * transcript endpoint. Neither exists in `the_loop/api/app.py` today. The
- * design specified both, so they are built and visibly disabled with the route
- * that would light them up — see ui/README.md and the follow-up issues.
+ * One surface here is deliberately inert against a real service, and says so
+ * rather than pretending: the **turns & tool calls** trace needs a transcript
+ * endpoint `the_loop/api/app.py` does not serve. The reply box shipped in that
+ * state too, and went live when issue-208 landed `POST /api/v1/sessions/reply`
+ * (bracketed paste into the pane) — see ui/README.md.
  */
 
 import { useState } from "react";
@@ -33,9 +32,6 @@ import { useApi } from "../state/ApiContext.tsx";
 import { hrefFor } from "../state/route.ts";
 import { useAsync } from "../state/useAsync.ts";
 
-const REPLY_BLOCKED =
-  "Needs POST /api/v1/sessions/reply — the service has no reply route yet, so the control plane cannot paste into the pane. Answer on the ticket and the poller will deliver it.";
-
 interface DetailProps {
   view: WorkItemView;
   title: string | undefined;
@@ -44,7 +40,7 @@ interface DetailProps {
 
 export function WorkItemDetail({ view, title, onChanged }: DetailProps) {
   const { api } = useApi();
-  const [busy, setBusy] = useState<SessionVerb | "gate" | null>(null);
+  const [busy, setBusy] = useState<SessionVerb | "gate" | "reply" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [traceRef, setTraceRef] = useState<string>(view.ref);
   const [reply, setReply] = useState("");
@@ -54,7 +50,7 @@ export function WorkItemDetail({ view, title, onChanged }: DetailProps) {
     [api, view.ref],
   );
 
-  async function run(label: SessionVerb | "gate", action: () => Promise<unknown>): Promise<void> {
+  async function run(label: SessionVerb | "gate" | "reply", action: () => Promise<unknown>): Promise<void> {
     setBusy(label);
     setActionError(null);
     try {
@@ -125,7 +121,18 @@ export function WorkItemDetail({ view, title, onChanged }: DetailProps) {
         </div>
       ) : null}
 
-      <NeedsInputCard question={view.question} reply={reply} onReply={setReply} />
+      <NeedsInputCard
+        question={view.question}
+        reply={reply}
+        onReply={setReply}
+        busy={busy}
+        onSend={() =>
+          void run("reply", async () => {
+            await api.replySession(view.ref, reply);
+            setReply("");
+          })
+        }
+      />
 
       {view.parked ? (
         <Blueprint className="lp-gate">
@@ -297,25 +304,25 @@ function PrCard({ pr }: { pr: PullRequestView }) {
  * The question card.
  *
  * The question is derived once for the whole board (`awaitingInput` in
- * `model.ts`) from a `session.awaiting_input` event, which the CLI does not emit
- * yet: the design's conclusion was that the agent should ask through a
- * `the-loop ask` verb — routed to a ticket/PR comment and recorded as that event
- * — rather than posting with `gh` itself, which is what
- * `the_loop/interaction.py` directs it to do today. So this card never appears
- * against a real service, and lights up on its own once the verb ships.
- *
- * The reply box is rendered and **disabled** in both modes, including demo:
- * demo data may be fake, but a control that claims the product can do something
- * it cannot would be a lie in either mode.
+ * `model.ts`) from the `session.awaiting_input` event `the-loop ask` emits
+ * (issue-208 — the verb the interaction directive routes agents through, so
+ * the loop-prevention marker is stamped centrally). The reply box posts to
+ * `POST /api/v1/sessions/reply`, which pastes into the session's tmux pane and
+ * emits the `session.reply_sent` that closes this card on the next refresh.
+ * It shipped disabled in issue-207 because that route did not exist yet.
  */
 function NeedsInputCard({
   question,
   reply,
   onReply,
+  busy,
+  onSend,
 }: {
   question: EventRecord | null;
   reply: string;
   onReply: (value: string) => void;
+  busy: string | null;
+  onSend: () => void;
 }) {
   if (!question) return null;
   const text = questionOf(question) || "(the event carried no question text)";
@@ -334,21 +341,27 @@ function NeedsInputCard({
         <textarea
           value={reply}
           onChange={(event) => onReply(event.target.value)}
-          placeholder="Your answer — would be pasted into the session's TUI (bracketed paste, then Enter)"
+          placeholder="Your answer — pasted into the session's TUI (bracketed paste, then Enter)"
           aria-label="Reply to the agent"
-          disabled
+          disabled={busy !== null}
         />
-        <button type="button" className="btn btn-primary" disabled title={REPLY_BLOCKED}>
-          Send to session
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={busy !== null || !reply.trim()}
+          onClick={onSend}
+        >
+          {busy === "reply" ? "Sending…" : "Send to session"}
         </button>
       </div>
       <div className="lp-hint">
-        {REPLY_BLOCKED}
+        Delivered straight into the session's tmux pane and recorded on the ticket; the wait
+        clears once the reply lands.
         {commentUrl ? (
           <>
             {" "}
             <a href={commentUrl} target="_blank" rel="noreferrer">
-              Answer on the ticket ↗
+              Answer on the ticket instead ↗
             </a>
           </>
         ) : null}

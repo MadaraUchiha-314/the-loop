@@ -36,9 +36,9 @@ import type {
 
 /**
  * The event types that put a work item in "waiting on you" — one filtered call
- * for the whole board rather than one per row. Nothing emits `awaiting_input`
- * yet (it needs the proposed `the-loop ask` verb), so against today's service
- * this returns nothing and the flag never appears. See ui/README.md.
+ * for the whole board rather than one per row. `awaiting_input` is emitted by
+ * `the-loop ask` and closed by the `reply_sent` the reply route emits
+ * (issue-208). See ui/README.md.
  */
 const QUESTION_EVENTS = ["session.awaiting_input", "session.reply_sent"];
 

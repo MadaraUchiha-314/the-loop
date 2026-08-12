@@ -21,8 +21,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from .. import cli_config, eventlog
+from ..authz import mark_self_authored
 from ..cleanup import SESSION, TMUX, WORKSPACE
-from ..comments import post_issue_comment
+from ..comments import post_issue_comment, post_issue_comment_with_url
 from ..control import (
     CLEANUP,
     PAUSE,
@@ -296,6 +297,203 @@ def close_session(
         "exitCode": 0,
         "messages": messages,
     }
+
+
+# -- ask & reply (issue-208) -----------------------------------------------------
+
+
+def ask_session(
+    ref: str, question: str, config: Optional[dict] = None
+) -> Dict[str, Any]:
+    """Post an agent's question on its work item and record the wait.
+
+    The point of the verb (issue-208): the loop-prevention marker is stamped
+    **centrally** (:func:`~the_loop.authz.mark_self_authored`, idempotent)
+    instead of each agent being trusted to remember it, and the wait becomes a
+    first-class ``session.awaiting_input`` event instead of something the
+    control plane infers.
+
+    The event is emitted on the failure path too (at ``warning``): the agent is
+    waiting whether or not GitHub was reachable, and when the comment never
+    landed, the control plane's reply route is the only surface that can carry
+    the answer. The exit code still says the post failed.
+    """
+    work_item = WorkItemRef.parse(ref)  # ValueError on a malformed ref
+    if not question or not question.strip():
+        raise ValueError("the question is empty; nothing to ask")
+    control = _control_config(config)
+    actor = _local_actor()
+    ok, error, url = post_issue_comment_with_url(
+        work_item, mark_self_authored(question), gh_binary=control.gh_binary
+    )
+    eventlog.emit(
+        "session.awaiting_input",
+        level="info" if ok else "warning",
+        work_item=work_item.ref,
+        question=question,
+        actor=actor,
+        comment_url=url or None,
+        comment_posted=ok,
+    )
+    messages: List[Dict[str, str]] = []
+    if ok:
+        where = f" — {url}" if url else ""
+        messages.append({"stream": "out", "text": f"asked on {work_item.ref}{where}"})
+        messages.append(
+            {
+                "stream": "out",
+                "text": (
+                    "recorded the wait (session.awaiting_input) — now stop and "
+                    "wait; the answer arrives as a new event in this session"
+                ),
+            }
+        )
+    else:
+        messages.append(
+            {
+                "stream": "err",
+                "text": (
+                    f"error: could not post the question on {work_item.ref} ({error})"
+                ),
+            }
+        )
+        messages.append(
+            {
+                "stream": "err",
+                "text": (
+                    "recorded the wait anyway (session.awaiting_input, "
+                    "comment_posted=false) — an operator can still answer "
+                    "through the control plane's reply route"
+                ),
+            }
+        )
+    return {
+        "workItem": work_item.ref,
+        "asked": ok,
+        "commentUrl": url,
+        "exitCode": 0 if ok else 1,
+        "messages": messages,
+    }
+
+
+def reply_session(
+    ref: str,
+    text: str,
+    actor: str = "",
+    comment: bool = True,
+    config: Optional[dict] = None,
+    registry_dir: str = "",
+    portable_dir: str = "",
+) -> Dict[str, Any]:
+    """Deliver an operator's answer into a waiting session's tmux pane (issue-208).
+
+    Fail-closed by design: a reply answers an agent that is waiting, so it must
+    never *create* one — no session, a paused session, or a dead/absent pane are
+    refusals (``LookupError``/``ValueError``, mapped to 404/400 by the API), and
+    the dispatcher's respawn machinery is deliberately not invoked.
+
+    ``actor`` is whatever the caller claims — recorded on the event and the
+    ticket for the audit trail, never trusted as authentication (the service's
+    boundary stays the exposure guard and the deploying gateway, decision-059).
+    """
+    work_item = WorkItemRef.parse(ref)  # ValueError on a malformed ref
+    if not text or not text.strip():
+        raise ValueError("the reply text is empty; nothing to deliver")
+    registry = SessionRegistry(_registry_dir(config, registry_dir))
+    session = registry.find_by_work_item(work_item)
+    if session is None:
+        raise LookupError(
+            f"no session registered for {work_item.ref} — a reply never spawns "
+            "one; answer on the ticket, or start the work item first"
+        )
+    if session.is_paused:
+        raise ValueError(
+            f"the session for {work_item.ref} is paused and delivery is held; "
+            "resume it first"
+        )
+    result = TmuxRunner().deliver(session, _framed_reply(work_item, text, actor))
+    if result.session_missing:
+        raise LookupError(
+            f"the session for {work_item.ref} has no live tmux pane to paste "
+            "into — a reply never respawns one; answer on the ticket, or "
+            "start/resume the work item first"
+        )
+    messages: List[Dict[str, str]] = []
+    if not result.ok:
+        # Transient tmux trouble (busy server, timeout): the caller may retry.
+        messages.append(
+            {
+                "stream": "err",
+                "text": f"error: could not deliver the reply: {result.error}",
+            }
+        )
+        return {
+            "workItem": work_item.ref,
+            "delivered": False,
+            "exitCode": 1,
+            "messages": messages,
+        }
+    eventlog.emit("session.reply_sent", work_item=work_item.ref, actor=actor or None)
+    messages.append(
+        {
+            "stream": "out",
+            "text": (
+                f"delivered the reply into {session.tmux_target} (session.reply_sent)"
+            ),
+        }
+    )
+    if comment:
+        posted, error = post_issue_comment(
+            work_item,
+            _reply_report(text, actor),
+            gh_binary=_control_config(config).gh_binary,
+        )
+        if posted:
+            messages.append(
+                {"stream": "out", "text": f"recorded the reply on {work_item.ref}"}
+            )
+        else:
+            messages.append(
+                {
+                    "stream": "err",
+                    "text": (
+                        f"note: could not record the reply on {work_item.ref} "
+                        f"({error}); it was still delivered"
+                    ),
+                }
+            )
+    return {
+        "workItem": work_item.ref,
+        "delivered": True,
+        "exitCode": 0,
+        "messages": messages,
+    }
+
+
+def _framed_reply(work_item: WorkItemRef, text: str, actor: str) -> str:
+    """The pasted prompt: the operator's text under a short provenance header."""
+    who = f" ({actor})" if actor else ""
+    return (
+        f"Reply from the operator via the-loop control plane{who} to your "
+        f"question on {work_item.ref}:\n\n{text}"
+    )
+
+
+def _reply_report(text: str, actor: str) -> str:
+    """The ticket's record of the delivery — the-loop's own report, marked.
+
+    The marker is licensed here because the-loop composed this comment (a
+    delivery report, quoting the operator the way control-verb comments quote
+    their actor) — and it is load-bearing: an unmarked copy of the answer would
+    be forwarded by the poller into the very session the reply route already
+    delivered it to.
+    """
+    who = f" from `{actor}`" if actor else ""
+    quoted = "\n".join(f"> {line}" for line in (text.splitlines() or [""]))
+    return mark_self_authored(
+        f"🗣️ **the-loop** delivered a reply{who} into this work item's session "
+        "via the control plane (`POST /api/v1/sessions/reply`):\n\n" + quoted
+    )
 
 
 # -- control verbs -------------------------------------------------------------

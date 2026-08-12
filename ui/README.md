@@ -87,13 +87,16 @@ Two facts shape that:
 
 ## Not yet served by the API
 
-Two surfaces from the approved design are built and **visibly disabled**, with the route
-that would light them up named in the UI itself. They are inert rather than absent so the
-gap is legible, and so they start working the day the service can back them.
+One surface from the approved design is built and **visibly disabled**, with the route
+that would light it up named in the UI itself. It is inert rather than absent so the
+gap is legible, and so it starts working the day the service can back it. (The inline
+reply to an agent's question shipped in this state too, and went live when
+[issue-208](https://github.com/MadaraUchiha-314/the-loop/issues/208) landed
+`the-loop ask` → `session.awaiting_input` and `POST /api/v1/sessions/reply` —
+bracketed paste into the pane.)
 
 | Surface | Needs | Why it is not faked |
 |---|---|---|
-| Inline reply to an agent's question | `the-loop ask` → a `session.awaiting_input` event, and `POST /api/v1/sessions/reply` (bracketed paste into the pane) | Today `the_loop/interaction.py` directs the *agent* to post its question with `gh` itself, so there is no event to key on and no route to answer through. The card reads the event the proposed verb would emit, so it appears on its own once it ships |
 | Trace of turns and tool calls | a transcript route | the-loop runs the harness as a CLI in tmux, so the structured record is the harness's own file. For Claude Code that is `~/.claude/projects/<cwd-slugged>/<session-id>.jsonl`, fully derivable from what the service already records — the app **shows the path** and falls back to the event-log trail. Cursor keeps chats in an undocumented SQLite store, so it has no equivalent |
 
 One more thing the API deliberately does not serve: a work item's **title**, and a PR's

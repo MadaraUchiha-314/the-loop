@@ -22,6 +22,7 @@ payload-derived text can leak in here by accident.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import shutil
@@ -32,7 +33,7 @@ from .sessions import WorkItemRef
 
 logger = logging.getLogger("the-loop.comments")
 
-__all__ = ["comment_argv", "post_issue_comment"]
+__all__ = ["comment_argv", "post_issue_comment", "post_issue_comment_with_url"]
 
 # Defensive validation of the API coordinates before they reach a `gh` argv.
 # They come from an already-parsed WorkItemRef rather than a payload, but the
@@ -69,18 +70,61 @@ def post_issue_comment(
     non-GitHub work item, unusable coordinates, no ``gh`` on PATH, or whatever
     ``gh`` itself said.
     """
+    ok, error, _ = _post(
+        item, body, gh_binary=gh_binary, runner=runner, timeout=timeout
+    )
+    return ok, error
+
+
+def post_issue_comment_with_url(
+    item: WorkItemRef,
+    body: str,
+    *,
+    gh_binary: str = "gh",
+    runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+    timeout: Optional[float] = 30.0,
+) -> Tuple[bool, str, str]:
+    """:func:`post_issue_comment`, plus the created comment's ``html_url``.
+
+    One shared implementation, two return shapes — the URL matters only to
+    `the-loop ask` (issue-208), which records it on the ``session.awaiting_input``
+    event so the dashboard can link "answer on the ticket" to the exact comment.
+    An unparsable ``gh`` response degrades to an empty URL, never to a failed
+    post: the comment is on the ticket either way.
+    """
+    return _post(item, body, gh_binary=gh_binary, runner=runner, timeout=timeout)
+
+
+def _post(
+    item: WorkItemRef,
+    body: str,
+    *,
+    gh_binary: str,
+    runner: Callable[..., subprocess.CompletedProcess],
+    timeout: Optional[float],
+) -> Tuple[bool, str, str]:
     if item.provider != "github":
-        return False, f"work item {item.ref} is not a GitHub one"
+        return False, f"work item {item.ref} is not a GitHub one", ""
     if not _NAME_RE.match(item.owner) or not _NAME_RE.match(item.repo):
-        return False, f"unusable repo coordinates in {item.ref}"
+        return False, f"unusable repo coordinates in {item.ref}", ""
     if shutil.which(gh_binary) is None:
-        return False, f"gh CLI {gh_binary!r} not found on PATH"
+        return False, f"gh CLI {gh_binary!r} not found on PATH", ""
     cmd = [gh_binary] + comment_argv(item, body)
     try:
         proc = runner(cmd, capture_output=True, text=True, timeout=timeout)
     except (OSError, subprocess.TimeoutExpired) as exc:
-        return False, str(exc)
+        return False, str(exc), ""
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout or "").strip()
-        return False, f"gh exited {proc.returncode}: {detail}"
-    return True, ""
+        return False, f"gh exited {proc.returncode}: {detail}", ""
+    return True, "", _html_url(proc.stdout or "")
+
+
+def _html_url(stdout: str) -> str:
+    """The ``html_url`` out of gh's JSON response, or ``""``."""
+    try:
+        data = json.loads(stdout)
+    except ValueError:
+        return ""
+    url = data.get("html_url") if isinstance(data, dict) else None
+    return url if isinstance(url, str) else ""

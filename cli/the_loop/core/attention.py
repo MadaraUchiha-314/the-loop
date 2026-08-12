@@ -1,7 +1,9 @@
 """Core capability: what needs attention (issue-161, R6.3).
 
 Derived, never stored: paused sessions, recent delivery/dispatch failures from
-the event log, and armed work items with no live session. Graph-gate waits are
+the event log, armed work items with no live session, and sessions waiting on a
+human answer (`session.awaiting_input` not yet closed by a `session.reply_sent`
+— issue-208). Graph-gate waits are
 repo-scoped (they live in each checkout's graph state), so they surface through
 ``graphs.check`` per work item; this module aggregates only what the machine's
 own state can answer.
@@ -51,6 +53,42 @@ def list_attention(config: Optional[dict] = None) -> List[Dict[str, Any]]:
     from ..state import layout_from_config
 
     log_path = layout_from_config(config or {}).event_log if config else None
+
+    # A question asked through `the-loop ask` is open until a reply through the
+    # control plane is at least as new (issue-208). The SAME open/answered rule
+    # the dashboard implements in ui/src/api/model.ts::awaitingInput — change
+    # one and the other is a reviewable change, or the two surfaces disagree.
+    asked: Dict[str, Dict[str, Any]] = {}
+    answered: Dict[str, str] = {}
+    for event in core_events.query_events(
+        log_path,
+        types=["session.awaiting_input", "session.reply_sent"],
+        limit=0,
+    ):
+        ref = str(event.get("work_item") or "")
+        if not ref:
+            continue
+        if event.get("event") == "session.awaiting_input":
+            asked[ref] = event
+        else:
+            answered[ref] = str(event.get("ts", ""))
+    for ref, event in asked.items():
+        reply_ts = answered.get(ref)
+        if reply_ts is not None and reply_ts >= str(event.get("ts", "")):
+            continue
+        question = str(event.get("question") or "").strip()
+        items.append(
+            {
+                "workItem": ref,
+                "kind": "awaiting-input",
+                "detail": (
+                    f"agent is waiting for input: {question}"
+                    if question
+                    else "agent is waiting for input"
+                ),
+            }
+        )
+
     for event in core_events.query_events(log_path, min_level="error", limit=20):
         ref = event.get("work_item") or ",".join(event.get("work_items") or [])
         items.append(
