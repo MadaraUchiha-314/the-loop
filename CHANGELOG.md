@@ -1,3 +1,9 @@
+## v9.11.0 (2026-08-12)
+
+### Feat
+
+- **issue-209**: serve the harness's own JSONL over /api/v1 — GET /sessions/transcript (#218)
+
 ## v9.10.0 (2026-08-12)
 
 ### Feat
