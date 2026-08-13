@@ -1,0 +1,49 @@
+# Error case: GitHub becomes unreachable across one transition. The production
+# contract (best-effort outbound hooks): the node's verdict and the edge taken
+# are unchanged, the degradation is recorded as `graph.hook_degraded`, and the
+# event log keeps being written — the label for the entered node is simply
+# never applied, which the label-trail assertion pins.
+name: gh-unreachable
+description: a GitHub outage degrades label/comment side effects without changing verdicts
+tier: 3
+workItem: issue-13
+steps:
+  - comment:
+      author: owner
+      body: |
+        the-loop execute
+
+        - [ ] brainstorming
+  - emit: {artifact: requirements.md, fixture: requirements.md}
+  - complete: {node: requirements-definition}
+  - fail-github: {ops: [set-labels, add-comment]}
+  - comment: {author: owner, body: "approved"}
+  - expect:
+      currentNode: design
+      events:
+        - {event: graph.advanced, node: requirements-approval, to: design, outcome: approved}
+        - {event: graph.hook_degraded, node: design, hook: set-phase-label}
+  - restore-github: {}
+  - emit: {artifact: design.md, fixture: design.md}
+  - complete: {node: design}
+expect:
+  finalNode: test-planning
+  completed: false
+  nodes:
+    - phase-selection
+    - brainstorming~
+    - requirements-definition
+    - requirements-approval
+    - design
+    - design-critic-review~
+    - test-planning
+  # `loop:design` is missing from the trail — the outage — and the trail
+  # resumes cleanly at `loop:test-planning` after recovery.
+  labels:
+    - "loop:phase-selection"
+    - "loop:requirements-definition"
+    - "loop:test-planning"
+  events:
+    - {event: graph.advanced, node: requirements-approval, to: design, outcome: approved}
+    - {event: graph.hook_degraded, node: design, hook: set-phase-label}
+    - {event: graph.advanced, node: design, to: test-planning, outcome: pass}

@@ -1,0 +1,47 @@
+# The agent escalates mid-implementation via the ask seam; the run parks
+# awaiting input; the operator's reply resumes it. Builds on issue-208's seams:
+# the question comment is posted marked (loop prevention), the wait is a
+# first-class `session.awaiting_input` event, and a reply into a dead pane
+# fails closed (never a respawn, no `session.reply_sent` recorded) before the
+# live one lands.
+name: ask-reply
+description: an agent question parks the run awaiting input; the operator's reply resumes it
+tier: 2
+workItem: issue-9
+steps:
+  - comment:
+      author: owner
+      body: |
+        the-loop execute
+
+        - [ ] brainstorming
+        - [ ] requirements-definition
+        - [ ] requirements-approval
+        - [ ] design
+        - [ ] test-planning
+        - [ ] design-approval
+        - [ ] tasks-breakdown
+  - emit: {artifact: execution-log.md, fixture: execution-log.md}
+  - ask: {question: "Which flag should the fixture feature use?"}
+  - reply: {text: "Use --fixture.", actor: onika, sessionMissing: true}
+  - reply: {text: "Use --fixture.", actor: onika}
+  - complete: {node: implementation}
+  - complete: {node: verification}
+  - complete: {node: self-review}
+  - complete: {node: critic-review}
+  - complete: {node: security-review}
+  - complete: {node: evidence}
+  - complete: {node: capability-docs}
+  - complete: {node: reviewer-briefing}
+  - comment: {author: owner, body: "approved"}
+  - complete: {node: complete}
+expect:
+  finalNode: complete
+  completed: true
+  events:
+    - {event: graph.started, node: phase-selection}
+    - {event: graph.advanced, node: phase-selection, to: implementation, outcome: selected}
+    - {event: session.awaiting_input, comment_posted: true}
+    - {event: session.reply_sent, actor: onika}
+    - {event: graph.advanced, node: implementation, to: verification, outcome: pass}
+    - {event: graph.completed, node: complete}

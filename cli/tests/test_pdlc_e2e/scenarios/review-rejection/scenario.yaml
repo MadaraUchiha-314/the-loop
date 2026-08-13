@@ -1,0 +1,59 @@
+# Error case: a human gate's `changes-requested` routes BACKWARD — the design
+# approval returns the run to `design` (the label re-enters `loop:design`, an
+# explicit regression, never a silent one), the design is revised, and the loop
+# converges through the same gate on the second pass.
+name: review-rejection
+description: changes-requested at design-approval loops back to design and converges
+tier: 3
+workItem: issue-12
+steps:
+  - comment:
+      author: owner
+      body: |
+        the-loop execute
+
+        - [ ] brainstorming
+  - emit: {artifact: requirements.md, fixture: requirements.md}
+  - complete: {node: requirements-definition}
+  - comment: {author: owner, body: "approved"}
+  - emit: {artifact: design.md, fixture: design.md}
+  - complete: {node: design}
+  - emit: {artifact: testing-plan.md, fixture: testing-plan.md}
+  - complete: {node: test-planning}
+  - comment: {author: owner, body: "changes requested: bound the input length in the security design"}
+  - expect:
+      currentNode: design
+      events:
+        - {event: graph.advanced, node: design-approval, to: design, outcome: changes-requested}
+  - emit: {artifact: design.md, fixture: design-v2.md}
+  - complete: {node: design}
+  - complete: {node: test-planning}
+  - comment: {author: owner, body: "approved"}
+expect:
+  finalNode: tasks-breakdown
+  completed: false
+  nodes:
+    - phase-selection
+    - brainstorming~
+    - requirements-definition
+    - requirements-approval
+    - design
+    - design-critic-review~
+    - test-planning
+    - design-approval
+    - design
+    - design-critic-review~
+    - test-planning
+    - design-approval
+    - tasks-breakdown
+  labels:
+    - "loop:phase-selection"
+    - "loop:requirements-definition"
+    - "loop:design"
+    - "loop:test-planning"
+    - "loop:design"
+    - "loop:test-planning"
+    - "loop:tasks-breakdown"
+  events:
+    - {event: graph.advanced, node: design-approval, to: design, outcome: changes-requested}
+    - {event: graph.advanced, node: design-approval, to: tasks-breakdown, outcome: approved}
