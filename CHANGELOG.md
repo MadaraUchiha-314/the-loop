@@ -1,3 +1,9 @@
+## v9.13.0 (2026-08-14)
+
+### Feat
+
+- **issue-222**: make the CLI config editable from the Control Plane UI (#223)
+
 ## v9.12.0 (2026-08-14)
 
 ### Feat
