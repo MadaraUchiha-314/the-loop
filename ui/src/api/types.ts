@@ -202,3 +202,41 @@ export interface CoreResult {
 
 export type SessionVerb = "start" | "pause" | "resume" | "stop" | "cleanup";
 export type DaemonVerb = "start" | "stop" | "restart" | "status";
+
+/**
+ * A JSON Schema node, as `GET /api/v1/config/schema` serves it — `$ref`s already
+ * resolved server-side, so this is a plain tree. Only the keywords the config editor
+ * renders from are named; the rest ride along in the index signature.
+ */
+export interface JsonSchema {
+  type?: string | string[];
+  title?: string;
+  description?: string;
+  default?: unknown;
+  enum?: unknown[];
+  properties?: Record<string, JsonSchema>;
+  items?: JsonSchema;
+  additionalProperties?: boolean | JsonSchema;
+  minimum?: number;
+  maximum?: number;
+  [key: string]: unknown;
+}
+
+/** `GET /api/v1/config` — the operator's CLI config, and where it lives. */
+export interface ConfigDocument {
+  /** The resolved path on the machine running the service. */
+  path: string;
+  /** False when nothing has been configured on that machine yet — not an error. */
+  exists: boolean;
+  version: string;
+  config: Record<string, unknown>;
+}
+
+/** `POST /api/v1/config` — what the save did. */
+export interface ConfigSaveResult extends ConfigDocument {
+  /** Dotted key paths whose value actually changed. */
+  changed: string[];
+  /** Of those, the ones the service reads only at boot. */
+  restartRequired: string[];
+  written: boolean;
+}

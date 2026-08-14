@@ -15,6 +15,7 @@ mistake, ``LookupError`` for a missing resource).
 
 from . import (  # noqa: F401
     attention,
+    config,
     daemons,
     events,
     graphs,
@@ -25,6 +26,7 @@ from . import (  # noqa: F401
 
 __all__ = [
     "attention",
+    "config",
     "daemons",
     "events",
     "graphs",

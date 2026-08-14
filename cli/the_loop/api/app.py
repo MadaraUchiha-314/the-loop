@@ -10,9 +10,15 @@ restores the same-origin-only behaviour that predates it. Work-item refs
 travel as query/body parameters, never path segments — a ref contains ``/``
 and ``#``, and URL-encoding those into paths trades one escaping bug for
 another. Error mapping is uniform: ``ValueError`` → 400 (caller mistake),
-``LookupError`` → 404. Every /api/v1 operation lands in the event log as
-``api.request``; /health is exempt (it is the liveness probe the CLI's
+``LookupError`` → 404, ``SpliceError`` → 500 (a config edit that could not be
+proven, and so was not written). Every /api/v1 operation lands in the event log
+as ``api.request``; /health is exempt (it is the liveness probe the CLI's
 auto-start loop hammers).
+
+The app also **watches its own CLI config** (issue-222): ``/api/v1/config`` reads
+and writes it, and :class:`_ConfigHolder` re-reads it whenever the file changes,
+so a saved change is live on the next request instead of at the next restart —
+the property the daemons have had since issue-63.
 """
 
 from __future__ import annotations
@@ -28,13 +34,17 @@ from pydantic import BaseModel
 from starlette.middleware.cors import CORSMiddleware
 
 from .. import eventlog
+from ..cli_config import default_cli_config_path, load_cli_config
 from ..core import attention as core_attention
+from ..core import config as core_config
 from ..core import daemons as core_daemons
 from ..core import events as core_events
 from ..core import graphs as core_graphs
 from ..core import repo as core_repo
 from ..core import sessions as core_sessions
 from ..core import workitems as core_workitems
+from ..reload import Reloader
+from ..yamlpatch import SpliceError
 from .config import cors_config
 
 API_PREFIX = "/api/v1"
@@ -86,6 +96,45 @@ def _install_cors(app: FastAPI, cli_config: Optional[dict]) -> None:
             "to silence this"
         )
     app.add_middleware(CORSMiddleware, **kwargs)
+
+
+class _ConfigHolder:
+    """The CLI config the app serves *now*, kept level with the file (issue-222).
+
+    The daemons have had this since issue-63: :class:`~the_loop.reload.Reloader`
+    content-hashes the config path and rebuilds on change. The service did not — it closed
+    over whatever ``create_app`` was handed — so a config edited through this very API
+    left the service answering from the old one until somebody restarted it.
+
+    Refresh is driven from the audit middleware, i.e. **once per request** rather than per
+    read: one ``sha256`` of a ~10 KB file per API call, and no watcher thread. The rebuilt
+    value replaces an attribute rather than mutating the dict in place, so a route already
+    running in Starlette's threadpool keeps reading a consistent document. A file that
+    becomes unparseable keeps the previous value — that is ``Reloader``'s documented
+    behaviour, and it is the right one: somebody is mid-edit, not asking for defaults.
+    """
+
+    def __init__(self, initial: Optional[dict], path) -> None:
+        self.path = path
+        self.current: Dict[str, Any] = dict(initial or {})
+        # Baselined to the file as it is now, so an unchanged file never rebuilds and an
+        # app built from an explicit dict keeps serving that dict.
+        self._reloader = Reloader(path, self._build)
+
+    def _build(self) -> Dict[str, Any]:
+        return load_cli_config(self.path, strict=True)
+
+    def refresh(self) -> None:
+        fresh = self._reloader.poll_for_change()
+        if fresh is not None:
+            self.current = fresh
+
+
+class ConfigUpdateBody(BaseModel):
+    # A **sparse** patch: only the keys that change. There is deliberately no `path`
+    # field — the file this route may write is the one the process already reads
+    # (requirements R1.4), so no request can name another.
+    patch: Dict[str, Any]
 
 
 class GraphCheckBody(BaseModel):
@@ -183,7 +232,7 @@ class CriticRunBody(BaseModel):
     cwd: str = ""
 
 
-def create_app(cli_config: Optional[dict] = None) -> FastAPI:
+def create_app(cli_config: Optional[dict] = None, *, config_path=None) -> FastAPI:
     """Build the app over the core facade.
 
     The service carries **no in-app authentication** (owner decision, PR #162):
@@ -192,10 +241,17 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
     boundary). Adding a token layer here would duplicate what the gateway owns.
 
     The official MCP SDK's streamable-HTTP app is mounted at ``/mcp``; its
-    session manager needs its own lifespan running, so this app adopts it."""
+    session manager needs its own lifespan running, so this app adopts it.
+
+    ``config_path`` names the CLI config this app reads, writes and watches; it defaults
+    to the same resolution every other the-loop process uses. Boot-time consumers — the
+    CORS middleware here, the bind in ``serve.py``, the MCP transport guard — keep the
+    config they were built with, which is what ``core.config``'s ``restartRequired``
+    reports back to whoever saved a change to one of them."""
     from .mcp import build_app as build_mcp_app
 
     mcp_app = build_mcp_app(cli_config)
+    holder = _ConfigHolder(cli_config, config_path or default_cli_config_path())
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -220,8 +276,16 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
     async def _lookup_error(request: Request, exc: LookupError):
         return JSONResponse(status_code=404, content={"detail": str(exc)})
 
+    @app.exception_handler(SpliceError)
+    async def _splice_error(request: Request, exc: SpliceError):
+        # Not the caller's mistake and not a missing resource: the edit could not be
+        # proven, so nothing was written. 500 with the reason, rather than a traceback.
+        logger.error("config edit refused: %s", exc)
+        return JSONResponse(status_code=500, content={"detail": str(exc)})
+
     @app.middleware("http")
     async def _audit(request: Request, call_next):
+        holder.refresh()
         response = await call_next(request)
         path = request.url.path
         if path.startswith(API_PREFIX) and path != f"{API_PREFIX}/health":
@@ -235,6 +299,10 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
 
     # Last, so it wraps the audit middleware rather than sitting inside it.
     _install_cors(app, cli_config)
+
+    # The live config, reachable without closing over this function: it is what the
+    # routes read, so a test (or a future route) can ask the app what it is running on.
+    app.state.config_holder = holder
 
     @app.get(f"{API_PREFIX}/health", operation_id="health")
     def health() -> Dict[str, str]:
@@ -251,14 +319,29 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
         operation_id="listWorkItems",
     )
     def list_work_items() -> List[Dict[str, Any]]:
-        return core_workitems.list_work_items(cli_config)
+        return core_workitems.list_work_items(holder.current)
 
     @app.get(
         f"{API_PREFIX}/work-items/one",
         operation_id="getWorkItem",
     )
     def get_work_item(ref: str = Query(...)) -> Dict[str, Any]:
-        return core_workitems.get_work_item(ref, cli_config)
+        return core_workitems.get_work_item(ref, holder.current)
+
+    @app.get(f"{API_PREFIX}/config", operation_id="getConfig")
+    def get_config() -> Dict[str, Any]:
+        return core_config.get_config(holder.path)
+
+    @app.get(f"{API_PREFIX}/config/schema", operation_id="getConfigSchema")
+    def get_config_schema() -> Dict[str, Any]:
+        return core_config.get_schema()
+
+    @app.post(f"{API_PREFIX}/config", operation_id="updateConfig")
+    def update_config(body: ConfigUpdateBody) -> Dict[str, Any]:
+        # The holder picks the new file up on the *next* request through the middleware,
+        # which is what makes a saved change live without a restart. The response's
+        # `config` is the document just written, so this response never lags the file.
+        return core_config.update_config(body.patch, holder.path)
 
     @app.get(f"{API_PREFIX}/graph", operation_id="graphShow")
     def graph_show(
@@ -339,14 +422,14 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
 
     @app.get(f"{API_PREFIX}/sessions", operation_id="listSessions")
     def list_sessions(status: Optional[str] = Query(None)) -> List[Dict[str, Any]]:
-        return core_sessions.list_sessions(status=status, config=cli_config)
+        return core_sessions.list_sessions(status=status, config=holder.current)
 
     @app.get(
         f"{API_PREFIX}/sessions/one",
         operation_id="getSession",
     )
     def get_session(ref: str = Query(...)) -> Dict[str, Any]:
-        return core_sessions.get_session(ref, config=cli_config)
+        return core_sessions.get_session(ref, config=holder.current)
 
     @app.get(
         f"{API_PREFIX}/sessions/transcript",
@@ -355,7 +438,7 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
     def session_transcript(
         ref: str = Query(...), tail: int = Query(200, ge=0)
     ) -> Dict[str, Any]:
-        return core_sessions.get_transcript(ref, tail=tail, config=cli_config)
+        return core_sessions.get_transcript(ref, tail=tail, config=holder.current)
 
     @app.post(
         f"{API_PREFIX}/sessions/control",
@@ -363,7 +446,7 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
     )
     def control_session(body: SessionControlBody) -> Dict[str, Any]:
         return core_sessions.control_session(
-            body.ref, body.verb, comment=body.comment, config=cli_config
+            body.ref, body.verb, comment=body.comment, config=holder.current
         )
 
     @app.post(
@@ -376,7 +459,7 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
             body.text,
             actor=body.actor,
             comment=body.comment,
-            config=cli_config,
+            config=holder.current,
         )
 
     @app.post(
@@ -390,7 +473,7 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
             body.harnessSessionId,
             cwd=body.cwd,
             force=body.force,
-            config=cli_config,
+            config=holder.current,
         )
 
     @app.post(
@@ -399,7 +482,7 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
     )
     def close_session(body: SessionCloseBody) -> Dict[str, Any]:
         return core_sessions.close_session(
-            body.ref, keep_tmux=body.keepTmux, config=cli_config
+            body.ref, keep_tmux=body.keepTmux, config=holder.current
         )
 
     @app.get(f"{API_PREFIX}/events", operation_id="queryEvents")
@@ -433,7 +516,7 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
     @app.get(f"{API_PREFIX}/daemons", operation_id="listDaemons")
     def list_daemons() -> List[Dict[str, Any]]:
         return [
-            core_daemons.daemon_status(name, cli_config)
+            core_daemons.daemon_status(name, holder.current)
             for name in core_daemons.DAEMONS
         ]
 
@@ -442,14 +525,14 @@ def create_app(cli_config: Optional[dict] = None) -> FastAPI:
         operation_id="controlDaemon",
     )
     def control_daemon(body: DaemonControlBody) -> Dict[str, Any]:
-        return core_daemons.control_daemon(body.daemon, body.verb, cli_config)
+        return core_daemons.control_daemon(body.daemon, body.verb, holder.current)
 
     @app.get(
         f"{API_PREFIX}/attention",
         operation_id="listAttention",
     )
     def list_attention() -> List[Dict[str, Any]]:
-        return core_attention.list_attention(cli_config)
+        return core_attention.list_attention(holder.current)
 
     @app.get(
         f"{API_PREFIX}/repo/scenarios",

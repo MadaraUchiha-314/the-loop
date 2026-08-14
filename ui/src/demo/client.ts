@@ -10,6 +10,8 @@
 import type { EventQuery, GraphQuery, TheLoopApi } from "../api/client.ts";
 import type {
   AttentionItem,
+  ConfigDocument,
+  ConfigSaveResult,
   CoreResult,
   DaemonStatus,
   DaemonVerb,
@@ -17,6 +19,7 @@ import type {
   GraphDefinition,
   GraphStatus,
   Health,
+  JsonSchema,
   SessionEndpoint,
   SessionRecord,
   SessionVerb,
@@ -25,6 +28,8 @@ import type {
 } from "../api/types.ts";
 import {
   DEMO_ATTENTION,
+  DEMO_CONFIG,
+  DEMO_CONFIG_SCHEMA,
   DEMO_DAEMONS,
   DEMO_EVENTS,
   DEMO_INNER_GRAPHS,
@@ -35,6 +40,32 @@ import {
   INNER_NODES,
   OUTER_NODES,
 } from "./fixture.ts";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** The service's patch semantics, in the demo: mappings merge, values replace. */
+function merge(base: Record<string, unknown>, patch: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(patch)) {
+    const before = out[key];
+    if (value === null) delete out[key];
+    else if (isRecord(value) && isRecord(before)) out[key] = merge(before, value);
+    else out[key] = value;
+  }
+  return out;
+}
+
+/** The dotted key paths a patch would actually change. */
+function paths(patch: Record<string, unknown>, base: Record<string, unknown>, prefix = ""): string[] {
+  return Object.entries(patch).flatMap(([key, value]) => {
+    const here = prefix ? `${prefix}.${key}` : key;
+    const before = base[key];
+    if (isRecord(value) && Object.keys(value).length) return paths(value, isRecord(before) ? before : {}, here);
+    return JSON.stringify(before ?? null) === JSON.stringify(value ?? null) ? [] : [here];
+  });
+}
 
 /** Enough latency to exercise the loading states, little enough to feel instant. */
 const LATENCY_MS = 120;
@@ -75,6 +106,7 @@ export class DemoApi implements TheLoopApi {
   private attentionItems: AttentionItem[] = clone(DEMO_ATTENTION);
   private eventRecords: EventRecord[] = clone(DEMO_EVENTS);
   private outer: Record<string, GraphStatus> = clone(DEMO_OUTER_GRAPHS);
+  private configDocument: ConfigDocument = clone(DEMO_CONFIG);
   private inner: Record<string, GraphStatus> = clone(DEMO_INNER_GRAPHS);
 
   health(signal?: AbortSignal): Promise<Health> {
@@ -212,6 +244,30 @@ export class DemoApi implements TheLoopApi {
 
   controlDaemon(daemon: string, verb: DaemonVerb): Promise<CoreResult> {
     return delay({ messages: [{ stream: "out", text: `demo: ${verb} ${daemon}` }], exitCode: 0 });
+  }
+
+  config(signal?: AbortSignal): Promise<ConfigDocument> {
+    return delay(this.configDocument, signal);
+  }
+
+  configSchema(signal?: AbortSignal): Promise<JsonSchema> {
+    return delay(DEMO_CONFIG_SCHEMA, signal);
+  }
+
+  /**
+   * The save the real service does, minus the file: the patch is merged into the
+   * in-memory config and reported back with the same fields, so the editor's
+   * saved/restart-required states are exercised without a workstation.
+   */
+  saveConfig(patch: Record<string, unknown>): Promise<ConfigSaveResult> {
+    const changed = paths(patch, this.configDocument.config);
+    this.configDocument = { ...this.configDocument, config: merge(this.configDocument.config, patch) };
+    return delay({
+      ...this.configDocument,
+      changed,
+      restartRequired: changed.filter((key) => key.startsWith("service.")),
+      written: changed.length > 0,
+    });
   }
 
   /** `issue-214` → the ref that owns it, so a graph call can be answered. */

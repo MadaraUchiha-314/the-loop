@@ -498,6 +498,12 @@ EVENT_TYPES: Dict[str, str] = {
         "An MCP tool call was served over the control-plane's HTTP endpoint "
         "(tool, ok). Same authorization and audit trail as the REST surface."
     ),
+    "config.updated": (
+        "The CLI config was changed through the control plane (path, keys). "
+        "The **key paths** are recorded and the values are not: a value names "
+        "people, hosts and binaries, and this trail is as readable as the event "
+        "log is. issue-222."
+    ),
     "service.started": "The control-plane API service came up (host, port).",
     "service.stopped": "The control-plane API service shut down.",
 }

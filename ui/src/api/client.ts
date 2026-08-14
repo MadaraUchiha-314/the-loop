@@ -18,6 +18,8 @@
 
 import type {
   AttentionItem,
+  ConfigDocument,
+  ConfigSaveResult,
   CoreResult,
   DaemonStatus,
   DaemonVerb,
@@ -25,6 +27,7 @@ import type {
   GraphDefinition,
   GraphStatus,
   Health,
+  JsonSchema,
   SessionRecord,
   SessionVerb,
   TranscriptResponse,
@@ -117,6 +120,16 @@ export interface TheLoopApi {
    */
   transcript(ref: string, tail?: number, signal?: AbortSignal): Promise<TranscriptResponse>;
   controlDaemon(daemon: string, verb: DaemonVerb): Promise<CoreResult>;
+  /** The CLI config the service is running on, and the path it lives at (issue-222). */
+  config(signal?: AbortSignal): Promise<ConfigDocument>;
+  /** Its JSON Schema, `$ref`s already resolved — what the Settings form renders from. */
+  configSchema(signal?: AbortSignal): Promise<JsonSchema>;
+  /**
+   * Save a **sparse** patch: only the keys that changed. The service merges it into the
+   * file, splicing rather than rewriting, so the operator's comments survive; an invalid
+   * result is refused with 400 and nothing is written.
+   */
+  saveConfig(patch: Record<string, unknown>): Promise<ConfigSaveResult>;
 }
 
 /** Trailing slashes make `${base}/api/v1/x` produce `//api`, so strip them. */
@@ -285,5 +298,17 @@ export class HttpApi implements TheLoopApi {
 
   controlDaemon(daemon: string, verb: DaemonVerb): Promise<CoreResult> {
     return this.post<CoreResult>("/daemons/control", { daemon, verb });
+  }
+
+  config(signal?: AbortSignal): Promise<ConfigDocument> {
+    return this.request<ConfigDocument>("/config", {}, signal);
+  }
+
+  configSchema(signal?: AbortSignal): Promise<JsonSchema> {
+    return this.request<JsonSchema>("/config/schema", {}, signal);
+  }
+
+  saveConfig(patch: Record<string, unknown>): Promise<ConfigSaveResult> {
+    return this.post<ConfigSaveResult>("/config", { patch });
   }
 }
