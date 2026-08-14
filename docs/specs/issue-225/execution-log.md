@@ -26,7 +26,7 @@ status: in-progress
 
 | PR | Scope / tasks | Status |
 |----|---------------|--------|
-| _(this PR)_ | all tasks | open |
+| [#227](https://github.com/MadaraUchiha-314/the-loop/pull/227) | all tasks | open |
 
 ## Progress entries
 
