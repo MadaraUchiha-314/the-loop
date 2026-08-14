@@ -42,10 +42,10 @@ overrides: {}
 | Contract | yes | OpenAPI parity test already enforces app ↔ `the-loop.v1.yaml`; restart route added to both |
 | Schema/docs parity | yes | existing suites: schema copies byte-identical; docs P1–P5 over the new/removed command pages and new keys |
 | e2e (PDLC) | n/a | the pdlc e2e suite exercises graph walking, untouched here |
-| UI/visual | n/a | no UI change (the dashboard may adopt restart later; not in this ticket) |
+| UI/visual | yes *(added on PR #229 review)* | the dashboard restart: client method (live+demo), Settings Service card, config-editor "Restart now" — vitest component tests, oxlint, tsc, vite build |
 | Performance | n/a | no hot path touched; start-up waits are bounded and configurable in tests |
 | Security/abuse | yes | restart body rejects non-boolean shapes (pydantic); fixed-argv assertion on the spawned process; MCP-disabled 404; auto-start refusal when `service.enabled: false` |
-| Accessibility | n/a | no UI |
+| Accessibility | n/a | the two added controls are native buttons/checkbox+label, covered by the existing component-test conventions; no new interaction pattern |
 | Migration | n/a | keys added, none removed; `migrate-config` untouched — asserted by the existing migration suite staying green |
 | Manual | yes | one scripted smoke: `the-loop start` → `status` → `restart` → `stop` in a temp HOME, transcript to evidence |
 
@@ -75,3 +75,4 @@ plan level (dry-run) — executing a real upgrade would mutate the environment.
 | T10 | ✅ Config validation (template with new keys) | `uv run python scripts/validate_config.py` (`make validate`) | all 7 configs VALID |
 | T11 | ✅ Manual smoke (temp HOME): start → status → restart → stop | scripted, transcript committed | full lifecycle against a real service; exit codes as specified |
 | T12 | ✅ Reference sweep: no live doc/code names `the-loop poll` outside history | `grep -rn "the-loop poll" …` excluding specs/decisions | 1 intended survivor (the new module's own docstring describing the move); 4 stragglers found and fixed |
+| T13 | ✅ *(added, PR #229 review)* The fold + the dashboard restart | full CLI suite again after removing `gh-webhook`/`service` (receiver via `webhook/daemon.py`); UI `vitest` + `oxlint` + `tsc` + `vite build` with the restart client/card/"Restart now" | CLI: 2034 passed, 1 skipped; UI: 91 passed (2 new), lint/typecheck clean, build ok |

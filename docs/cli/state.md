@@ -72,7 +72,7 @@ them, is what makes the `.gitignore` recipe three lines instead of a puzzle
 | `<root>/local/<slug>.json` | the session registry | conversation id, `cwd`, tmux target, status, and the item's pull requests with their own sessions | **local** |
 | `<root>/logs/events.jsonl` | every ingress, and `sessions` | one JSON object per decision | **local** |
 | `<root>/logs/poller.out` | a daemonized poller | its stdout and stderr, appended | **local** |
-| `<root>/gh-webhook.pid` | `gh-webhook start` | the receiver's pid | **local** |
+| `<root>/gh-webhook.pid` | the receiver | the receiver's pid — and its single-instance lock (issue-228) | **local** |
 | `<root>/poll.pid` | the poller | the poller's pid — and the lock proving it is the only one | **local** |
 | `<root>/poll-status.json` | the poller, after every cycle | the heartbeat `the-loop status` reads: `startedAt`, `lastCycleAt`, last cycle's counters — and no pid, which is `poll.pid`'s to name | **local** |
 
@@ -339,8 +339,11 @@ machine-readable `reason`. Query it with [`the-loop events`](/cli/commands/event
 
 ## Receiver pidfile — `<root>/gh-webhook.pid`
 
-Written by `gh-webhook start`, removed by `gh-webhook stop`. A stale file after a crash is
-harmless; `stop` reports the process is gone.
+Written by the receiver (started by [`the-loop start`](/cli/commands/start) or
+`python -m the_loop.daemon_entry gh-webhook`), removed when it exits. Since issue-228 it
+is also the receiver's **single-instance lock**, exactly as `poll.pid` is the poller's
+below. A stale file after a crash is harmless: it is unlocked, so the next start takes
+it, and [`the-loop stop`](/cli/commands/stop) reports the process is gone.
 
 ## Poller pidfile — `<root>/poll.pid`
 
@@ -497,7 +500,7 @@ The daemon never commits anything. Carrying state is a deliberate moment:
 
 ```bash
 # on the machine you are stopping
-the-loop gh-webhook stop            # or stop the poller
+the-loop stop
 git add .the-loop/portable
 git commit -m "chore: hand off the-loop state"
 git push
@@ -505,7 +508,7 @@ git push
 # on the machine you are starting
 git pull
 the-loop sessions list              # empty — sessions are local, and that is correct
-the-loop gh-webhook start
+the-loop start
 ```
 
 The new machine knows which items are armed and which comments it has already seen, and

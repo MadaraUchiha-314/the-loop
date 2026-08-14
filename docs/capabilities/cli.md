@@ -23,7 +23,7 @@ self-learning/ML capabilities.
 - `the-loop --version` SHALL report the installed package version, derived from package
   metadata (`importlib.metadata.version("the-loopy-one")`) rather than a hardcoded string,
   so it always tracks the actually-installed release (issue-78).
-- `the-loop gh-webhook start|stop` SHALL run/stop the HMAC-verified GitHub webhook
+- The lifecycle surface SHALL run/stop the HMAC-verified GitHub webhook
   receiver (see [webhook-triggers](webhook-triggers.md)).
 - `the-loop sessions register|list|attach|close` SHALL manage the work-item ↔
   harness-session registry used for webhook routing.
@@ -259,15 +259,16 @@ self-learning/ML capabilities.
   start half still runs. `POST /api/v1/restart` SHALL schedule the same restart as a
   detached, fixed-argv process and answer immediately. The `poll` command is removed;
   `python -m the_loop.daemon_entry poller [--once]` is the foreground/cron form, running
-  the same relocated loop (`the_loop.poller.daemon`).
-- `the-loop service start|stop|status` SHALL manage the control-plane API service alone
-  (issue-161), sharing its start/stop mechanics with `the-loop start` through
-  `core.lifecycle`; every core-capability command SHALL execute through that service as
-  its only mode. The exceptions are inherent, not transitional: `sessions attach`
-  hands the terminal to tmux, `sessions reset` must work when nothing is running,
-  the lifecycle commands and the daemon entry point run the processes themselves,
-  and the bootstrap commands (`install`, `upgrade`, `migrate-config`,
-  `service`, `--version`) precede any service. See
+  the same relocated loop (`the_loop.poller.daemon`); the `gh-webhook` and `service`
+  commands are removed with it (owner review on PR #229 — *"It should all fold into
+  `the-loop start`"*), the receiver's run loop relocated the same way
+  (`the_loop.webhook.daemon`, `daemon_entry gh-webhook` as its foreground form).
+- Every core-capability command SHALL execute through the control-plane service as
+  its only mode (issue-161). The exceptions are inherent, not transitional:
+  `sessions attach` hands the terminal to tmux, `sessions reset` must work when
+  nothing is running, the lifecycle commands and the daemon entry point run the
+  processes themselves, and the bootstrap commands (`install`, `upgrade`,
+  `migrate-config`, `--version`) precede any service. See
   [control-plane](control-plane.md), the capability that owns this behaviour.
 
 - **A start SHALL be honest** (issue-191, re-shaped by issue-228): `the-loop start`
@@ -310,7 +311,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
-| issue-228 | The CLI's lifecycle became one surface (2026-08-14): `the-loop start\|stop\|status\|restart` compose the control-plane service, webhook receiver and poller per new per-service `enabled` flags (service + MCP on by default, ingresses opt-in), the `poll` command was removed with its run loop relocated to `the_loop.poller.daemon` (`daemon_entry poller [--once]` is the cron form), the issue-191 double-fork went with it, `restart --with-upgrade` reuses the issue-152 installer plan, and `service.enabled: false` also refuses implicit auto-start | [spec](../specs/issue-228/), [decision-084](../decisions/decision-084.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/228) |
+| issue-228 | The CLI's lifecycle became one surface (2026-08-14): `the-loop start\|stop\|status\|restart` compose the control-plane service, webhook receiver and poller per new per-service `enabled` flags (service + MCP on by default, ingresses opt-in), the `poll`, `gh-webhook` and `service` commands were removed with the run loops relocated to `the_loop.poller.daemon` / `the_loop.webhook.daemon` (`daemon_entry <poller\|gh-webhook> [--once]` is the foreground/cron form; the fold of the latter two is the owner's PR #229 review), the issue-191 double-fork went with them, `restart --with-upgrade` reuses the issue-152 installer plan, and `service.enabled: false` also refuses implicit auto-start | [spec](../specs/issue-228/), [decision-084](../decisions/decision-084.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/228) |
 | issue-208 | `the-loop ask` joins the CLI: an agent's question is posted with the loop-prevention marker stamped centrally and the wait recorded as `session.awaiting_input`; runs in-process because the escalation path must not depend on a running service | [spec](../specs/issue-208/), [decision-078](../decisions/decision-078.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/208) |
 | issue-205 | The poller's heartbeat stopped carrying a `pid` nothing read: `poll.pid` — the flock — is the single source of truth for which process is polling, and an older heartbeat's pid is now dropped on read. The two files stay separate because the heartbeat's atomic rewrite would free the lock it is held on | [spec](../specs/issue-205/), [decision-076](../decisions/decision-076.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/205) |
 | issue-203 | `integrations.slack` gained an optional inline `url`, taking precedence over `urlEnv`, so the one value that turns notifications on stops living outside every config file the-loop owns — and a resolution failure now names both remedies instead of only the env var. Slack's webhook URL alone; tokens and signing secrets stay env-only | [spec](../specs/issue-203/), [decision-075](../decisions/decision-075.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/203) |

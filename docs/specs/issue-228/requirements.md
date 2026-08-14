@@ -151,12 +151,22 @@ optionally onto a new version — with one verb.
 - R4.5 WHEN the detached restart runs THEN its output SHALL go to a logfile under the
   state root (`logs/restart.out`), and the event log SHALL record the restart request
   and completion.
+- R4.6 *(added on owner review, PR #229: "do it")* WHEN an operator uses the
+  dashboard THEN it SHALL offer the restart: a Service card on the Settings tab
+  calling `POST /api/v1/restart` (with the upgrade as an option), and a "Restart now"
+  follow-through when a config save reports `restartRequired` keys. The UI SHALL
+  present the response as a *schedule* — the service drops and comes back — never as
+  a completed restart.
 
 ### R5 — existing surfaces keep working
 
-- R5.1 WHEN `the-loop gh-webhook …` or `the-loop service …` is invoked THEN they SHALL
-  behave as before — the granular per-service commands are kept (the ticket removes the
-  *poll* commands only; a follow-up may fold the others in).
+- R5.1 ~~WHEN `the-loop gh-webhook …` or `the-loop service …` is invoked THEN they
+  SHALL behave as before~~ **Superseded on owner review** (PR #229: *"Why is there a
+  need for this? It should all fold into `the-loop start`"*): the `gh-webhook` and
+  `service` commands SHALL be removed too. The receiver's run loop moves to
+  `the_loop.webhook.daemon` exactly as the poller's did (R2.2 applies to it verbatim),
+  `python -m the_loop.daemon_entry gh-webhook` is its foreground form, and the
+  lifecycle surface is the only operator surface.
 - R5.2 WHEN a CLI command needs the service and `service.enabled` is true THEN
   `service.autoStart` SHALL keep its existing meaning; WHEN `service.enabled` is false
   THEN auto-start SHALL refuse (fail closed) with a message naming the key — a service

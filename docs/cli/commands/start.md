@@ -52,6 +52,7 @@ unchanged (lock, dependency checks, heartbeat, config hot-reload).
 
 - [`stop`](/cli/commands/stop) · [`status`](/cli/commands/status) ·
   [`restart`](/cli/commands/restart)
-- [`service`](/cli/commands/service) and [`gh-webhook`](/cli/commands/gh-webhook) — the
-  granular single-service commands, which work regardless of the `enabled` flags
-  (typing the explicit verb *is* the enablement).
+- [The control-plane service](/cli/service) and [the webhook receiver](/cli/receiver) —
+  what each service is and how to talk to it (`/mcp`, verification, guards). The
+  granular `service`/`gh-webhook`/`poll` commands are gone (owner review on PR #229):
+  this one surface is the lifecycle.

@@ -55,35 +55,35 @@ def test_start_stop_and_idempotency(service_env):
     Feature: control-plane service lifecycle
       Scenario: an operator starts, re-starts and stops the service
         Given no service is running
-        When `the-loop service start` runs twice and then `service stop`
+        When `the-loop start` runs twice and then `the-loop stop`
         Then the first start boots a healthy service,
              the second reports it is already running without a second boot,
              and stop waits until the process has actually exited
 
-    Requirement: docs/specs/issue-161/requirements.md R4.1, R4.3
+    Requirement: docs/specs/issue-161/requirements.md R4.1, R4.3; issue-228 R1.3
     """
     from the_loop import client
 
-    first = _run_cli("service", "start")
+    first = _run_cli("start")
     assert first.returncode == 0, first.stderr
-    assert "service started" in first.stdout
+    assert "started" in first.stdout
     assert client.healthy(service_env)
 
-    second = _run_cli("service", "start")
+    second = _run_cli("start")
     assert second.returncode == 0
-    assert "already running" in second.stdout
+    assert "already-running" in second.stdout
 
-    status = _run_cli("service", "status")
+    status = _run_cli("status")
     assert "running" in status.stdout
 
-    stop = _run_cli("service", "stop")
+    stop = _run_cli("stop")
     assert stop.returncode == 0, stop.stderr
     assert "stopped" in stop.stdout
     assert not RunLock(service_pidfile(service_env), name="service").is_held()
 
-    again = _run_cli("service", "stop")
+    again = _run_cli("stop")
     assert again.returncode == 0
-    assert "not running" in again.stdout
+    assert "not-running" in again.stdout
 
 
 def test_cli_routes_through_the_service(service_env):
@@ -98,11 +98,11 @@ def test_cli_routes_through_the_service(service_env):
     """
     from the_loop import client
 
-    assert _run_cli("service", "start").returncode == 0
+    assert _run_cli("start").returncode == 0
     connection = client.connect(service_env)
     assert connection.get("/work-items") == []
     assert connection.get("/sessions") == []
-    assert _run_cli("service", "stop").returncode == 0
+    assert _run_cli("stop").returncode == 0
 
 
 @pytest.mark.routed
@@ -119,7 +119,7 @@ def test_every_routed_command_works_over_the_transport(service_env, tmp_path):
     Requirement: docs/specs/issue-161/requirements.md R2.1, R2.2, R2.3
     """
     ref = "github:octo/repo#15"
-    assert _run_cli("service", "start").returncode == 0
+    assert _run_cli("start").returncode == 0
 
     registered = _run_cli(
         "sessions",
@@ -183,7 +183,7 @@ def test_every_routed_command_works_over_the_transport(service_env, tmp_path):
     assert check.returncode in (0, 1), check.stderr
     assert json.loads(check.stdout)["workItem"] == "issue-161"
 
-    assert _run_cli("service", "stop").returncode == 0
+    assert _run_cli("stop").returncode == 0
 
 
 @pytest.mark.routed
@@ -209,4 +209,4 @@ def test_a_routed_command_fails_closed_when_no_service_can_start(
     monkeypatch.setenv("THE_LOOP_CLI_CONFIG", str(config_path))
     result = _run_cli("sessions", "list")
     assert result.returncode == 2
-    assert "the-loop service start" in result.stderr
+    assert "the-loop start" in result.stderr

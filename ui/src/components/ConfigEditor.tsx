@@ -20,7 +20,7 @@ import { useMemo, useState } from "react";
 
 import { ApiError } from "../api/client.ts";
 import { diff, getIn, isRecord, sectionsOf, setIn, type ConfigField, type ConfigGroup } from "../api/configModel.ts";
-import type { ConfigDocument, ConfigSaveResult, JsonSchema } from "../api/types.ts";
+import type { ConfigDocument, ConfigSaveResult, JsonSchema, RestartSchedule } from "../api/types.ts";
 import { Blueprint } from "./Blueprint.tsx";
 
 type Saved =
@@ -35,9 +35,15 @@ interface ConfigEditorProps {
   onSave: (patch: Record<string, unknown>) => Promise<ConfigSaveResult>;
   /** Called after a successful save so the page can re-read what the service now holds. */
   onSaved?: (result: ConfigSaveResult) => void;
+  /**
+   * Schedule the restart that makes boot-time keys take effect (issue-228:
+   * `POST /api/v1/restart`). When provided, a save whose result carries
+   * `restartRequired` keys offers a "Restart now" button beside the report.
+   */
+  onRestart?: () => Promise<RestartSchedule>;
 }
 
-export function ConfigEditor({ document, schema, onSave, onSaved }: ConfigEditorProps) {
+export function ConfigEditor({ document, schema, onSave, onSaved, onRestart }: ConfigEditorProps) {
   // `baseline` is what the service last told us the file holds; the draft is measured
   // against it, not against the prop, so a save settles the form instead of leaving it
   // reporting a change that has already landed.
@@ -113,7 +119,7 @@ export function ConfigEditor({ document, schema, onSave, onSaved }: ConfigEditor
           </button>
           <span className="lp-config-count">{summarize(changedCount, blocked)}</span>
         </div>
-        <SaveReport saved={saved} />
+        <SaveReport saved={saved} onRestart={onRestart} />
       </Blueprint>
 
       {sections.map((section) => (
@@ -133,7 +139,7 @@ function summarize(changed: number, blocked: boolean): string {
   return `${changed} section${changed === 1 ? "" : "s"} changed`;
 }
 
-function SaveReport({ saved }: { saved: Saved }) {
+function SaveReport({ saved, onRestart }: { saved: Saved; onRestart?: (() => Promise<RestartSchedule>) | undefined }) {
   if (saved.state === "failed") return <div className="lp-config-report fail">{saved.message}</div>;
   if (saved.state !== "done") return null;
   const { result } = saved;
@@ -144,7 +150,32 @@ function SaveReport({ saved }: { saved: Saved }) {
       {result.restartRequired.length
         ? ` ${result.restartRequired.join(", ")} ${result.restartRequired.length === 1 ? "takes" : "take"} effect when the service restarts.`
         : " Live now."}
+      {result.restartRequired.length && onRestart ? <RestartNow onRestart={onRestart} /> : null}
     </div>
+  );
+}
+
+/** The one-click follow-through on "…when the service restarts" (issue-228). */
+function RestartNow({ onRestart }: { onRestart: () => Promise<RestartSchedule> }) {
+  const [state, setState] = useState<"idle" | "asking" | "scheduled" | "failed">("idle");
+  async function go(): Promise<void> {
+    setState("asking");
+    try {
+      await onRestart();
+      setState("scheduled");
+    } catch {
+      setState("failed");
+    }
+  }
+  if (state === "scheduled") return <span> Restart scheduled — the service will drop and come back.</span>;
+  if (state === "failed") return <span> The restart could not be scheduled; run `the-loop restart` on the workstation.</span>;
+  return (
+    <>
+      {" "}
+      <button type="button" className="btn btn-secondary lp-restart-now" disabled={state === "asking"} onClick={() => void go()}>
+        {state === "asking" ? "Scheduling…" : "Restart now"}
+      </button>
+    </>
   );
 }
 

@@ -157,8 +157,12 @@ Code: `commands/lifecycle_cmd.py` (new), `core/lifecycle.py` (new),
 `cli.py` (`_refresh_cli_config_paths` loses the poll import), `daemon_entry.py`,
 `daemonize.py` (shrinks to `open_logfile`), `core/daemons.py` (unchanged API; reused),
 `api/app.py` + `api/config.py` + `api/mcp.py` (mcp flag, restart route),
-`client/__init__.py` (R5.2), `commands/service_cmd.py` (delegates to lifecycle
-helpers), both `cli-config.schema.json` copies, `skills/the-loop/templates/cli-config.yaml`.
+`client/__init__.py` (R5.2), both `cli-config.schema.json` copies,
+`skills/the-loop/templates/cli-config.yaml`. On owner review (PR #229):
+`commands/gh_webhook.py` and `commands/service_cmd.py` deleted,
+`webhook/daemon.py` added, and the dashboard (`ui/src`) gained the restart client
+method, the Settings Service card and the config editor's "Restart now"
+follow-through (R4.6).
 
 Tests and docs: see [`testing-plan.md`](testing-plan.md) and the Documentation section
 of the execution log.

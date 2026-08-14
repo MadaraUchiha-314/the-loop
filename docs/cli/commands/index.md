@@ -18,7 +18,6 @@ started for you on first use, so nothing here needs setting up first.
 | [`stop`](/cli/commands/stop) | Stop every running the-loop service, whatever the `enabled` flags say now. |
 | [`status`](/cli/commands/status) | Per-service liveness and the poller's progress; exit 0 iff everything enabled is running. |
 | [`restart`](/cli/commands/restart) | `stop` then `start`, optionally upgrading the CLI in between (`--with-upgrade`). Also `POST /api/v1/restart`. |
-| [`service`](/cli/commands/service) | Start, stop and inspect the control-plane API service alone — and the `/mcp` endpoint an agent connects to. |
 
 ## Daemon commands
 
@@ -29,7 +28,6 @@ that item's own checkout, the same way the repo-scoped commands do.
 
 | Command | What it does |
 |---------|--------------|
-| [`gh-webhook`](/cli/commands/gh-webhook) | HMAC-verified GitHub webhook receiver; routes each event to the session working that item. The pull-based poller has no command of its own since issue-228 — [`start`](/cli/commands/start) runs it per [`polling.enabled`](/config/cli/polling-options#enabled), and `python -m the_loop.daemon_entry poller [--once]` is the foreground/cron form. |
 | [`sessions`](/cli/commands/sessions) | The work-item ↔ session registry, execution control (`start`/`pause`/`resume`/`stop`), and `reset` — forget a work item's state so it starts over. |
 | [`ask`](/cli/commands/ask) | Post an agent's question on its work item — marker stamped centrally, wait recorded as `session.awaiting_input`. |
 | [`events`](/cli/commands/events) | Query the structured event log — the answer to "why did nothing happen?". |
@@ -79,7 +77,7 @@ Consistent across commands:
 |------|---------|
 | `0` | Success |
 | `1` | Ran, and the answer is negative — a failed round, an unmet gate, a stopped run |
-| `2` | Could not run — bad arguments, missing work item, unreadable config, or no reachable [service](/cli/commands/service) |
+| `2` | Could not run — bad arguments, missing work item, unreadable config, or no reachable [service](/cli/service) |
 
 ## Adding one
 

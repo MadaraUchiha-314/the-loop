@@ -182,3 +182,26 @@ build complete in 41.95s
 ```
 
 The new command pages, the edited option pages and the sidebar entries all render.
+
+## T13 — the PR #229 review round (the fold + the dashboard restart)
+
+Second commit on the branch, after the owner's review instructions.
+
+```console
+$ cd cli && uv run pytest -q          # gh-webhook/service commands removed,
+2034 passed, 1 skipped in 76.80s      # receiver run loop relocated to webhook/daemon.py
+
+$ cd ui && npx vitest run             # restart client (live+demo), Settings Service
+Tests  91 passed (91)                 # card, ConfigEditor "Restart now" (2 new tests)
+$ bun run lint                        # oxlint --type-aware: clean
+$ npx tsc --noEmit                    # 0 errors
+$ bun run build                       # vite build ok
+```
+
+The re-pointed scenarios of this round: `test_cli.py` (surface = the four lifecycle
+commands, nothing else), `test_cli_config.py` (both daemon modules resolve the config
+path per call; `--config` override honoured with no cached module path),
+`test_routing.py` (receiver strict/lenient config reads and hot reload via
+`webhook.daemon`), `test_webhook_routing_integration.py` (routing opt-in follows
+`routing.enabled`), `test_service_lifecycle_integration.py` (`the-loop start/stop`
+drive the real service), `test_client.py` (hints name `the-loop start`).

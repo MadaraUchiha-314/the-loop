@@ -81,3 +81,15 @@ graph LR
   _Requirements: NFR3_ · _Test: T6, T9(docs), T12_
 - [x] **12. Verification.** Execute the plan, fill its Results column, commit evidence.
   _Requirements: all_ · _Test: T7–T12_
+
+### Added on owner review (PR #229)
+
+- [x] **13. Fold `gh-webhook` and `service` away.** Receiver run loop →
+  `webhook/daemon.py`; both command modules deleted; `daemon_entry` drives both
+  daemons directly; hints, docs (pages relocated to `/cli/service` and
+  `/cli/receiver`), capability docs and tests re-pointed.
+  _Requirements: R5.1 (superseded form)_ · _Test: T3, T7, T13_
+- [x] **14. Dashboard restart.** `restart()` on the API client (live + demo), the
+  Settings Service card, the config editor's "Restart now" on `restartRequired`;
+  UI tests, lint, typecheck, build.
+  _Requirements: R4.6_ · _Test: T13_

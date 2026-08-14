@@ -28,14 +28,14 @@ _AUTOSTART_TIMEOUT = 15.0
 
 UNAVAILABLE_HINT = (
     "the control-plane service is not running and could not be started. "
-    "Start it with `the-loop start` (or `the-loop service start`), or check "
+    "Start it with `the-loop start`, or check "
     "`the-loop events --source service` for why it exited."
 )
 
 DISABLED_HINT = (
     "the control-plane service is disabled (service.enabled: false in the CLI "
-    "config) and will not be auto-started. Set service.enabled: true and run "
-    "`the-loop start`, or start one explicitly with `the-loop service start`."
+    "config) and will not be auto-started. Set service.enabled: true, then run "
+    "`the-loop start`."
 )
 
 

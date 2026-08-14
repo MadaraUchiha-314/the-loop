@@ -48,24 +48,26 @@ package — there are no install extras (owner decision, PR #162).
   no operation and emits no `api.request` event; `/mcp` SHALL keep the SDK's
   DNS-rebinding protection with its own loopback-only origin allowlist, so no CORS
   setting makes the MCP endpoint drivable from a page.
-- `the-loop service start|stop|status` SHALL manage the service with the issue-159
-  lifecycle discipline: the pidfile is the flock, a second start reports `already
-  running`, stop signals and waits. Hosting needs no extra: `fastapi`, `uvicorn`
+- The service's lifecycle SHALL be the one surface every the-loop service shares —
+  `the-loop start|stop|status|restart` over `core.lifecycle` (issue-228, PR #229
+  review: no granular `service` command) — with the issue-159 discipline: the pidfile
+  is the flock, a second start reports `already-running`, stop signals and waits.
+  Hosting needs no extra: `fastapi`, `uvicorn`
   and the official `mcp` SDK are required dependencies, so `pip install
   the-loopy-one` is always enough to run the service.
 - The service SHALL be the CLI's **only execution path** for core capabilities
   (owner decision, PR #162): a command auto-starts a local service when
-  `service.autoStart` allows and otherwise fails closed naming `the-loop service
-  start` — never an in-process fallback. Every core-capability command routes:
+  `service.autoStart` allows and otherwise fails closed naming `the-loop start`
+  — never an in-process fallback. Every core-capability command routes:
   `check`, `events`, `graph` (show/status/advance/complete/force/run), `sessions`
   (register/list/close/start/pause/resume/stop), `scenarios`, `instructions` and
   `critic` (list/run). Some commands stay local **by nature**: `sessions attach`
   replaces the caller's terminal with tmux, `sessions reset` is a recovery action
   that must work when nothing is running, the daemon entry point
-  (`python -m the_loop.daemon_entry`, and `gh-webhook start`) runs the daemon in-process
+  (`python -m the_loop.daemon_entry <poller|gh-webhook>`) runs a daemon in-process
   because cron and systemd units depend on it, and the bootstrap commands
   (`start`, `stop`, `status`, `restart`, `install`, `upgrade`, `migrate-config`,
-  `service`, `--version`) precede — or manage — any service (issue-228,
+  `--version`) precede — or manage — any service (issue-228,
   decision-084). `THE_LOOP_SERVICE_LOCAL=1` is a test seam, not an operator switch.
 - The CLI SHALL NOT re-implement any routed operation: commands render the
   `messages` and `exitCode` the core facade returns, so an operator's `sessions
@@ -203,7 +205,7 @@ package — there are no install extras (owner decision, PR #162).
 [`docs/specs/issue-161/design.md`](../specs/issue-161/design.md) ·
 [`docs/specs/issue-207/design.md`](../specs/issue-207/design.md) ·
 [`docs/api-specs/openapi/the-loop.v1.yaml`](../api-specs/openapi/the-loop.v1.yaml) ·
-[CLI: service](../cli/commands/service.md) ·
+[CLI: the service](../cli/service.md) ·
 [config: service options](../config/cli/service-options.md) ·
 [`ui/README.md`](https://github.com/MadaraUchiha-314/the-loop/blob/main/ui/README.md)
 

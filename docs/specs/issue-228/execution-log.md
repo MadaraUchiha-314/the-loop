@@ -122,6 +122,27 @@ Three rounds over the full diff, findings fixed in place:
 
 No round produced a repeated finding, so nothing escalated.
 
+### 2026-08-14 — owner review on PR #229 (the paper trail)
+
+Two instructions arrived as a PR comment from the owner, both applied in a second
+commit on the same branch:
+
+1. *"Why is there a need for this? It should all fold into `the-loop start`, right?"*
+   — the `gh-webhook` and `service` commands are **removed** after all (R5.1
+   superseded; decision-084 §7). The receiver's run loop relocated to
+   `webhook/daemon.py` exactly as the poller's had (options from config, lock, serve;
+   `daemon_entry gh-webhook` is the foreground form), `service_cmd`'s remains were
+   already in `core.lifecycle`, and with the last import-time config cache gone,
+   `cli.py`'s `_refresh_cli_config_paths` shim was deleted too. Their doc pages moved
+   out of the command namespace to `/cli/service` and `/cli/receiver` — the MCP-connect
+   and receiver-guard content is operator documentation about the *services*, which
+   outlived the commands.
+2. *"why? do it."* — the dashboard restart shipped now (R4.6): `restart()` on the API
+   client (live and demo transports), a Service card on Settings
+   (`POST /api/v1/restart`, with the upgrade as a checkbox, rendering the response as
+   a *schedule*), and a "Restart now" follow-through in the config editor whenever a
+   save reports `restartRequired` keys. Two new UI tests; 91 pass.
+
 ## Capability docs
 
 - [`docs/capabilities/cli.md`](../../capabilities/cli.md) — the lifecycle-surface
@@ -136,6 +157,8 @@ No round produced a repeated finding, so nothing escalated.
   replaced by the lock-wait rule); history row added.
 - [`docs/capabilities/interactive-sessions.md`](../../capabilities/interactive-sessions.md)
   — two ingress-naming clauses reworded; no behaviour change.
+- All three issue-228 history rows amended for the PR #229 review round (the fold and
+  the dashboard restart).
 
 ## Documentation
 

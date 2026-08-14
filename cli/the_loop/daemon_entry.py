@@ -9,11 +9,12 @@ what the control plane and ``the-loop start`` spawn (detached, with
 cycle and exits — the capability the removed ``poll start --once`` provided
 (issue-228, R2.3).
 
-The poller is driven through :mod:`the_loop.poller.daemon` — the run loop
-itself, relocated when its command was removed. ``gh-webhook`` still resolves
-its options through its surviving command's parser, so there is exactly one
-startup sequence per daemon either way (NFR1): lock acquisition, dependency
-checks, the run loop.
+Both daemons are driven through their own runtime modules —
+:mod:`the_loop.poller.daemon` and :mod:`the_loop.webhook.daemon`, the run
+loops relocated when their commands were removed (the owner's review on
+PR #229 folded ``gh-webhook`` in alongside ``poll``) — so there is exactly one
+startup sequence per daemon (NFR1): lock acquisition, dependency checks, the
+run loop.
 """
 
 from __future__ import annotations
@@ -23,18 +24,6 @@ import sys
 from typing import List, Optional
 
 DAEMONS = ("poller", "gh-webhook")
-
-
-def _run_gh_webhook() -> int:
-    """Run the receiver with the option namespace its own ``start`` parser
-    would produce (the command survives issue-228; reuse its one sequence)."""
-    from .commands.base import iter_commands
-
-    command = next(c for c in iter_commands() if c.name == "gh-webhook")
-    parser = argparse.ArgumentParser(prog="gh-webhook")
-    command.add_arguments(parser)
-    args = parser.parse_args(["start"])
-    return int(args._action(args) or 0)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -56,7 +45,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         from .poller import daemon as poller_daemon
 
         return poller_daemon.run(poller_daemon.default_options(once=args.once))
-    return _run_gh_webhook()
+    from .webhook import daemon as webhook_daemon
+
+    return webhook_daemon.run(webhook_daemon.default_options())
 
 
 if __name__ == "__main__":

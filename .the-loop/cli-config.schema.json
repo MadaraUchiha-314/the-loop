@@ -27,7 +27,7 @@
     },
     "webhooks": {
       "type": "object",
-      "description": "Config for the the-loop CLI webhook receiver(s) (e.g. `the-loop gh-webhook start`).",
+      "description": "Config for the the-loop CLI webhook receiver(s), started by `the-loop start` when `ghWebhook.enabled` is true (issue-228).",
       "additionalProperties": false,
       "properties": {
         "ghWebhook": {
@@ -37,7 +37,7 @@
             "enabled": {
               "type": "boolean",
               "default": false,
-              "description": "Whether `the-loop start` brings the GitHub webhook receiver up (issue-228, decision-084). Explicit opt-in: a receiver needs a reachable bind, a secret and GitHub-side configuration, so a config that merely DESCRIBES one must not open a port. The explicit `the-loop gh-webhook start` works regardless of this flag — typing the granular verb is the enablement.",
+              "description": "Whether `the-loop start` brings the GitHub webhook receiver up (issue-228, decision-084). Explicit opt-in: a receiver needs a reachable bind, a secret and GitHub-side configuration, so a config that merely DESCRIBES one must not open a port. The foreground entry point (`python -m the_loop.daemon_entry gh-webhook`, for systemd) runs regardless of it.",
               "examples": [true]
             },
             "host": {
@@ -164,7 +164,7 @@
         "enabled": {
           "type": "boolean",
           "default": false,
-          "description": "Default for `gh-webhook start --route/--no-route`."
+          "description": "Whether the receiver dispatches events at all (routing off = verify and log only)."
         },
         "registryDir": {
           "type": "string",
@@ -811,7 +811,7 @@
         "enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Whether `the-loop start` brings the control-plane service up (issue-228, decision-084). Default true: the service is the CLI's only execution path for core capabilities (decision-058). Setting false also refuses the implicit auto-start (`service.autoStart`) \u2014 a service the operator disabled must not resurrect because an unrelated CLI command wanted it \u2014 while the explicit `the-loop service start` still works.",
+          "description": "Whether `the-loop start` brings the control-plane service up (issue-228, decision-084). Default true: the service is the CLI's only execution path for core capabilities (decision-058). Setting false also refuses the implicit auto-start (`service.autoStart`) \u2014 a service the operator disabled must not resurrect because an unrelated CLI command wanted it.",
           "examples": [false]
         },
         "host": {

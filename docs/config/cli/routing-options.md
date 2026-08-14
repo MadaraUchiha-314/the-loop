@@ -28,7 +28,7 @@ resumed — or spawned, if policy allows and an authorized human has said so.
 - **Type:** `boolean`
 - **Default:** `false`
 
-Default for `gh-webhook start --route / --no-route`. With routing off the receiver still
+Whether the receiver dispatches at all. With routing off it still
 verifies, logs and drops — useful for confirming deliveries arrive before letting anything
 spawn.
 
@@ -406,7 +406,7 @@ Every spawned session is hosted as the interactive harness TUI in a named tmux s
 [interactive-sessions](/capabilities/interactive-sessions). There is no runner choice: the
 headless `process` runner was removed (issue-156, [decision-056](/decisions/decision-056)),
 and a leftover `runner` key in the config is ignored with a startup warning. `tmux` is
-therefore a required dependency of `gh-webhook start` / `poll start`.
+therefore a required dependency of both ingress daemons.
 
 ### `tmux.keepSessionOnClose`
 

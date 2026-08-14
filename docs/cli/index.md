@@ -20,7 +20,7 @@ You want the CLI when you stop driving the loop by hand:
 
 | You want to… | Use |
 |---|---|
-| Have a comment on a GitHub issue start an agent, unattended | [`start`](/cli/commands/start) with the [webhook receiver](/cli/commands/gh-webhook) or [polling](/config/cli/polling-options) enabled |
+| Have a comment on a GitHub issue start an agent, unattended | [`start`](/cli/commands/start) with the [webhook receiver](/cli/receiver) or [polling](/config/cli/polling-options) enabled |
 | Keep one session per work item and route later activity to it | [`sessions`](/cli/commands/sessions) |
 | Watch an agent work, live, and type into it | [`sessions attach`](/cli/commands/sessions) |
 | Answer "why did nothing happen?" | [`events`](/cli/commands/events) |

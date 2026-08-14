@@ -1,7 +1,7 @@
 # Configuring the CLI
 
 `cli-config.yaml` is read by the CLI's **daemon** commands —
-[`start`](/cli/commands/start), [`gh-webhook`](/cli/commands/gh-webhook),
+[`start`](/cli/commands/start), [the receiver](/cli/receiver),
 [`sessions`](/cli/commands/sessions) and [`events`](/cli/commands/events). It describes
 *your machine*: which port the receiver binds, who is allowed to trigger it, how sessions
 are hosted, where the log goes.
@@ -21,7 +21,7 @@ of the schema beside it.
 ## Editing it from the dashboard
 
 Since issue-222 this file is not only hand-editable. Run
-[`the-loop service start`](/cli/commands/service), open the
+[`the-loop start`](/cli/commands/start), open the
 [dashboard's](https://madarauchiha-314.github.io/the-loop/ui/) **Settings** tab, and the
 whole config is there — one section per top-level block, rendered from the schema, with
 each key's description beside it.
@@ -48,7 +48,7 @@ Resolved in priority order — the first that exists wins:
 1. **`--config` / `-c`** — an explicit flag. It must come **before** the subcommand:
 
    ```bash
-   the-loop --config path/to/cli-config.yaml gh-webhook start
+   the-loop --config path/to/cli-config.yaml start
    ```
 
 2. **`$THE_LOOP_CLI_CONFIG`** — an explicit env var, same priority as the flag. Handy in

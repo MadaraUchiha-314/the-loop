@@ -169,7 +169,7 @@ def web_terminal_argv(host: str, port: int) -> List[str]:
 def start_web_terminal(web_terminal: "WebTerminalConfig") -> subprocess.Popen:
     """Launch ttyd serving the shared tmux hub session and log its URL.
 
-    Shared by ``gh-webhook start`` and ``poll start`` (issue-65) so both
+    Shared by the receiver and the poller (issue-65) so both
     ingress paths spawn/log/terminate ttyd identically.
     """
     proc = subprocess.Popen(web_terminal_argv(web_terminal.host, web_terminal.port))

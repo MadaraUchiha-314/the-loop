@@ -12,9 +12,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ConfigEditor } from "./ConfigEditor.tsx";
 import { DEMO_CONFIG, DEMO_CONFIG_SCHEMA } from "../demo/fixture.ts";
-import type { ConfigSaveResult } from "../api/types.ts";
+import type { ConfigSaveResult, RestartSchedule } from "../api/types.ts";
 
-function renderEditor(save?: (patch: Record<string, unknown>) => Promise<ConfigSaveResult>) {
+function renderEditor(
+  save?: (patch: Record<string, unknown>) => Promise<ConfigSaveResult>,
+  restart?: () => Promise<RestartSchedule>,
+) {
   const onSave =
     save ??
     vi.fn(
@@ -26,7 +29,14 @@ function renderEditor(save?: (patch: Record<string, unknown>) => Promise<ConfigS
           written: true,
         }),
     );
-  render(<ConfigEditor document={DEMO_CONFIG} schema={DEMO_CONFIG_SCHEMA} onSave={onSave} />);
+  render(
+    <ConfigEditor
+      document={DEMO_CONFIG}
+      schema={DEMO_CONFIG_SCHEMA}
+      onSave={onSave}
+      {...(restart ? { onRestart: restart } : {})}
+    />,
+  );
   return onSave;
 }
 
@@ -107,6 +117,40 @@ describe("the CLI config editor", () => {
     await userEvent.click(screen.getByLabelText("routing.enabled"));
     await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(await screen.findByText(/service\.port takes effect when the service restarts/)).toBeInTheDocument();
+  });
+
+  it("offers Restart now when a saved key waits for one, and reports the schedule", async () => {
+    const restart = vi.fn(
+      (): Promise<RestartSchedule> =>
+        Promise.resolve({ scheduled: true, pid: 99, withUpgrade: false, logfile: "logs/restart.out" }),
+    );
+    renderEditor(
+      () =>
+        Promise.resolve({
+          ...DEMO_CONFIG,
+          changed: ["service.port"],
+          restartRequired: ["service.port"],
+          written: true,
+        }),
+      restart,
+    );
+    await userEvent.click(screen.getByLabelText("routing.enabled"));
+    await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Restart now" }));
+    expect(restart).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(/Restart scheduled/)).toBeInTheDocument();
+  });
+
+  it("keeps the report button-free when nothing waits for a restart", async () => {
+    const restart = vi.fn(
+      (): Promise<RestartSchedule> =>
+        Promise.resolve({ scheduled: true, pid: 99, withUpgrade: false, logfile: "logs/restart.out" }),
+    );
+    renderEditor(undefined, restart);
+    await userEvent.click(screen.getByLabelText("routing.enabled"));
+    await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(await screen.findByText(/Live now/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Restart now" })).not.toBeInTheDocument();
   });
 
   it("shows the service's refusal instead of pretending the save landed", async () => {

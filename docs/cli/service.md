@@ -1,12 +1,14 @@
-# `the-loop service`
+# The control-plane service
 
-Run the **control-plane API service** — the HTTP layer over the-loop's core that the
+The **control-plane API service** is the HTTP layer over the-loop's core that the
 CLI and the [MCP endpoint](#mcp-connecting-an-agent) consume
 (issue-161, decision-058). The service is the CLI's **only execution path** for core
 capabilities: `sessions`, `check`, `graph`, `events`, `scenarios`, `instructions` and
 `critic` all talk to it (auto-starting a local one when
 [`service.autoStart`](/config/cli/service-options#autostart) allows) instead of
-executing core logic in-process.
+executing core logic in-process. Its lifecycle is
+[`the-loop start|stop|status|restart`](/cli/commands/start), like every other
+the-loop service (issue-228) — there is no `service` command any more.
 
 ## Install and run it locally
 
@@ -15,18 +17,19 @@ extras** to remember:
 
 ```sh
 uv tool install the-loopy-one     # or: pip install the-loopy-one
-the-loop service start
+the-loop start
 ```
 
-That is the whole setup. `service start` boots the service, waits for
-`/api/v1/health` to answer, and prints the URL it is listening on:
+That is the whole setup. [`start`](/cli/commands/start) boots the service (with
+whatever else the config enables), waits for `/api/v1/health` to answer, and prints
+the URL it is listening on:
 
 ```console
-$ the-loop service start
-service started at http://127.0.0.1:4114
+$ the-loop start
+service     started         [enabled]  started at http://127.0.0.1:4114; /mcp exposed
 
-$ the-loop service status
-running (pid 24846, http://127.0.0.1:4114, healthy)
+$ the-loop status
+service     running (pid 24846) [enabled] — http://127.0.0.1:4114, healthy
 
 $ curl -s http://127.0.0.1:4114/api/v1/health
 {"status":"ok","version":"7.1.1"}
@@ -42,7 +45,7 @@ issue-161: ok (at pr-review)
 
 Set [`service.autoStart: false`](/config/cli/service-options#autostart) if you would
 rather manage the process yourself (a systemd unit, a container); commands then fail
-with `the-loop service start` in the message instead of booting one.
+naming `the-loop start` instead of booting one.
 
 To change the port or bind address, set
 [`service.host` / `service.port`](/config/cli/service-options) in your CLI config:
@@ -76,27 +79,22 @@ It is a *read* permission, not a network one: the loopback bind and the exposure
 are unchanged, and no CORS setting can loosen them. Read what the default admits before
 keeping it, and set `allowOrigins: []` if you do not use the hosted page.
 
-## `service start`
+## Lifecycle
 
-Starts the service in the background and waits for `/api/v1/health` to answer.
+[`the-loop start`](/cli/commands/start) boots it detached and waits for
+`/api/v1/health`; [`stop`](/cli/commands/stop) signals it (SIGTERM) and **waits** for
+the lock to be released; [`status`](/cli/commands/status) reports
+`running (pid …) — http://…, healthy|unresponsive`;
+[`restart [--with-upgrade]`](/cli/commands/restart) bounces it, and
+`POST /api/v1/restart` does the same over the API.
 
 - The pidfile **is** the lock (`<state.root>/local/service.pid`, flock — the
-  issue-159 lifecycle discipline): a second `start` reports `already running` and
-  starts nothing.
+  issue-159 lifecycle discipline): a second `start` reports `already-running` and
+  starts nothing; stop is idempotent.
 - Binding beyond loopback refuses to boot unless
   [`service.exposed`](/config/cli/service-options#exposed) is explicitly true — the
   API can spawn harness sessions with the operator's credentials, so "accidentally on
   the network" is made impossible. Set it only when a gateway fronts the service.
-
-## `service stop`
-
-Signals the running service (SIGTERM) and **waits** for the lock to be released
-(`--timeout`, default 30s). Stopping a service that is not running reports so and
-exits 0 — stop is idempotent.
-
-## `service status`
-
-Reports `not running`, or `running (pid …, http://…, healthy|unresponsive)`.
 
 ## The API surface
 
@@ -128,8 +126,11 @@ below is configured with a URL rather than a command to spawn.
 Start the service first; the endpoint is live as soon as it is:
 
 ```sh
-the-loop service start          # -> http://127.0.0.1:4114/mcp
+the-loop start                  # -> http://127.0.0.1:4114/mcp
 ```
+
+(`/mcp` is mounted while [`service.mcp.enabled`](/config/cli/service-options#mcp-enabled)
+is true — the default; set it false for a REST-only service.)
 
 ### Claude Code
 

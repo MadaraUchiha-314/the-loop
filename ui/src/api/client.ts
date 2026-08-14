@@ -20,6 +20,7 @@ import type {
   AttentionItem,
   ConfigDocument,
   ConfigSaveResult,
+  RestartSchedule,
   CoreResult,
   DaemonStatus,
   DaemonVerb,
@@ -130,6 +131,12 @@ export interface TheLoopApi {
    * result is refused with 400 and nothing is written.
    */
   saveConfig(patch: Record<string, unknown>): Promise<ConfigSaveResult>;
+  /**
+   * Schedule a whole-system restart (issue-228): the service spawns a detached
+   * `the-loop restart` and answers at once, then goes down and comes back —
+   * expect a few failed polls before /health answers again.
+   */
+  restart(withUpgrade?: boolean): Promise<RestartSchedule>;
 }
 
 /** Trailing slashes make `${base}/api/v1/x` produce `//api`, so strip them. */
@@ -306,6 +313,10 @@ export class HttpApi implements TheLoopApi {
 
   configSchema(signal?: AbortSignal): Promise<JsonSchema> {
     return this.request<JsonSchema>("/config/schema", {}, signal);
+  }
+
+  restart(withUpgrade = false): Promise<RestartSchedule> {
+    return this.post<RestartSchedule>("/restart", { withUpgrade });
   }
 
   saveConfig(patch: Record<string, unknown>): Promise<ConfigSaveResult> {

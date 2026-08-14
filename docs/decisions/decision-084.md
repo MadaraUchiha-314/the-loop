@@ -40,16 +40,24 @@ API.
 5. **`--with-upgrade` reuses the issue-152 planner**, CLI component only; an upgrade
    failure is reported but never leaves the system down (the start half still runs).
 6. **Fail closed on disablement:** `service.enabled: false` also refuses implicit
-   auto-start (`client.ensure_service`), while the explicit `the-loop service start`
-   still works. `gh-webhook` and `service` commands are kept (the ticket removes poll
-   commands only).
+   auto-start (`client.ensure_service`).
+7. **Amended on owner review (PR #229):** ~~`gh-webhook` and `service` commands are
+   kept~~ — *"Why is there a need for this? It should all fold into `the-loop
+   start`"*. Both are removed with `poll`; the receiver's run loop relocates to
+   `webhook/daemon.py` (`daemon_entry gh-webhook` is its foreground form) and the
+   lifecycle surface is the only operator surface. The same review ordered the
+   dashboard restart wired now, not as follow-up: the Settings tab gained a Service
+   card calling `POST /api/v1/restart`, and a config save reporting
+   `restartRequired` keys offers "Restart now".
 
 ## Consequences
 
-- Breaking CLI change (`poll` gone) — declared in the commit; cron/systemd users of
-  `poll start --once` move to `python -m the_loop.daemon_entry poller --once`.
+- Breaking CLI change (`poll`, `gh-webhook` and `service` gone) — declared in the
+  commits; cron/systemd users move to `python -m the_loop.daemon_entry
+  <poller|gh-webhook> [--once]`, and everything else is `the-loop
+  start|stop|status|restart`.
 - No config migration: keys are added, none removed or moved.
-- The dashboard gains a restart affordance for free (REST route); wiring it into the UI
-  is future work.
+- The dashboard restarts the deployment (Settings → Service, and the config editor's
+  "Restart now") — wired in this work item on the owner's instruction.
 
 Spec: [docs/specs/issue-228/](../specs/issue-228/requirements.md)

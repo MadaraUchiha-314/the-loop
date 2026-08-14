@@ -9,7 +9,7 @@ from the annotations. There is no hand-rolled JSON-RPC here any more.
 
 Transport is **streamable HTTP only — no stdio** (owner decision): the SDK's
 `streamable_http_app()` is mounted on the same FastAPI app that serves
-`/api/v1`, so one `the-loop service start` exposes both. The SDK's DNS-rebinding
+`/api/v1`, so one `the-loop start` exposes both. The SDK's DNS-rebinding
 protection is left **on** and pinned to the service's configured host, which
 matches the loopback-by-default posture the exposure guard enforces.
 

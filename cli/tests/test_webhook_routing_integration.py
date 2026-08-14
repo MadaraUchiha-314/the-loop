@@ -836,17 +836,23 @@ def test_a_pr_with_its_own_session_is_still_auto_closed(server_factory, tmp_path
     assert wait_until(lambda: registry.find_by_work_item(PR_REF) is None)
 
 
-def test_gh_webhook_start_accepts_route_flag():
+def test_receiver_routing_follows_the_config(tmp_path, monkeypatch):
     """
     Feature: Webhook event routing
-    Scenario: Routing is opt-in on the receiver command
-        Given the gh-webhook start command
-        When parsed with --route or --no-route
-        Then the flag round-trips (config routing.enabled is the default)
+    Scenario: Routing is opt-in on the receiver
+        Given the receiver's options resolved from the CLI config
+        When routing.enabled is true or false
+        Then the resolved `route` option follows it — the command flag it used
+             to be died with the gh-webhook command (issue-228, PR #229 review)
     Requirement: docs/specs/issue-15/requirements.md#R3
     """
-    from the_loop.cli import build_parser
+    from the_loop.webhook import daemon as webhook_daemon
 
-    parser = build_parser()
-    assert parser.parse_args(["gh-webhook", "start", "--route"]).route is True
-    assert parser.parse_args(["gh-webhook", "start", "--no-route"]).route is False
+    cfg = tmp_path / "config.yaml"
+    monkeypatch.setattr(webhook_daemon, "_config_path", lambda: cfg)
+    cfg.write_text("routing:\n  enabled: true\n")
+    assert webhook_daemon.default_options().route is True
+    cfg.write_text("routing:\n  enabled: false\n")
+    assert webhook_daemon.default_options().route is False
+    cfg.write_text("webhooks: {}\n")
+    assert webhook_daemon.default_options().route is False

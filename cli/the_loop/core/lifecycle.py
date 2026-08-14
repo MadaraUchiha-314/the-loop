@@ -10,7 +10,7 @@ functions behind ``the-loop start|stop|status|restart`` and
 Nothing here runs a service; it composes the runtimes that exist. The two
 ingress daemons go through :mod:`the_loop.core.daemons` (which spawns
 ``the_loop.daemon_entry``); the control-plane service is spawned the way
-``the-loop service start`` always has (``python -m the_loop.api.serve``) and
+it always has been (``python -m the_loop.api.serve``) and
 probed over ``/health``. A daemon's successful start is proven by **waiting for
 its pidfile lock to be held** — the honest-start property the removed
 ``poll start --daemon`` handshake provided, without the double-fork.
@@ -103,11 +103,7 @@ def spawn_service() -> "subprocess.Popen[bytes]":
 
 
 def start_service(config: Optional[dict] = None) -> Dict[str, Any]:
-    """Start the control-plane service and wait for /health (idempotent).
-
-    The explicit form ``the-loop service start`` delegates here too, so the
-    command and the composed ``the-loop start`` cannot drift.
-    """
+    """Start the control-plane service and wait for /health (idempotent)."""
     lock = _service_lock(config)
     if lock.is_held():
         return {

@@ -92,6 +92,8 @@ const cliSidebar = [
       { text: "Getting started", link: "/cli/getting-started" },
       { text: "Concepts", link: "/cli/concepts" },
       { text: "State on disk", link: "/cli/state" },
+      { text: "The control-plane service", link: "/cli/service" },
+      { text: "The webhook receiver", link: "/cli/receiver" },
     ],
   },
   {
@@ -102,8 +104,6 @@ const cliSidebar = [
       { text: "stop", link: "/cli/commands/stop" },
       { text: "status", link: "/cli/commands/status" },
       { text: "restart", link: "/cli/commands/restart" },
-      { text: "service", link: "/cli/commands/service" },
-      { text: "gh-webhook", link: "/cli/commands/gh-webhook" },
       { text: "sessions", link: "/cli/commands/sessions" },
       { text: "ask", link: "/cli/commands/ask" },
       { text: "events", link: "/cli/commands/events" },

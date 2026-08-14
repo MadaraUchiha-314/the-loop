@@ -5,8 +5,8 @@ configBase: service
 # Service options
 
 Options under `service` — the control-plane API service started by
-[`the-loop start`](/cli/commands/start) or
-[`the-loop service start`](/cli/commands/service) (issue-161, decision-058). The
+[`the-loop start`](/cli/commands/start) (issue-161, decision-058; see
+[the control-plane service](/cli/service)). The
 service carries **no in-app authentication** — a gateway owns that — so its own
 posture is network scoping: loopback-only unless `exposed` is explicitly true.
 
@@ -38,15 +38,14 @@ Whether [`the-loop start`](/cli/commands/start) brings the service up (issue-228
 [decision-084](/decisions/decision-084)). Default on: the service is the CLI's only
 execution path for core capabilities. `false` also disables `autoStart` — a service the
 operator disabled must not resurrect because an unrelated CLI command wanted it
-(fail-closed, the affected command names this key) — while the explicit
-`the-loop service start` still works.
+(fail-closed, the affected command names this key).
 
 ### `mcp.enabled`
 
 - **Type:** `boolean`
 - **Default:** `true`
 
-Whether the service mounts the [MCP endpoint](/cli/commands/service#mcp-connecting-an-agent)
+Whether the service mounts the [MCP endpoint](/cli/service#mcp-connecting-an-agent)
 at `/mcp` (issue-228). Default on — `/mcp` has been mounted unconditionally since
 issue-161 — so the flag exists to *narrow* a deployment to REST-only: with `false`, no
 MCP app is built and `/mcp` answers 404.
@@ -87,7 +86,7 @@ may connect**; `cors` decides **which browser page may read the answer**. Nothin
 `cors` widens the bind, and a page on an allowed origin still has to reach the service —
 over loopback, a tunnel, or a gateway — before any of this applies.
 
-It exists because the [dashboard](/cli/commands/service) is published to GitHub Pages and
+It exists because the [dashboard](/cli/service) is published to GitHub Pages and
 the service it drives runs on your workstation. Without an `Access-Control-Allow-Origin`
 header the browser throws the response away, and the only alternative remedy is a proxy
 in front of a port that is already listening on your own machine.

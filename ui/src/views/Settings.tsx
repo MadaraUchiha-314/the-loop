@@ -13,6 +13,7 @@
 import { useState } from "react";
 
 import { ApiError, HttpApi, normalizeBaseUrl } from "../api/client.ts";
+import type { RestartSchedule } from "../api/types.ts";
 import { useApi } from "../state/ApiContext.tsx";
 import { Blueprint } from "../components/Blueprint.tsx";
 import { ConfigEditor } from "../components/ConfigEditor.tsx";
@@ -44,7 +45,7 @@ export function Settings() {
       <h1 className="lp-h1">Settings</h1>
       <div className="lp-subtle lp-page-note">
         this dashboard is a static page — it can be hosted anywhere (GitHub Pages, S3) and pointed at any workstation
-        running <code className="lp-code">the-loop service start</code>
+        running <code className="lp-code">the-loop start</code>
       </div>
 
       <Blueprint className="lp-settings-card">
@@ -128,12 +129,78 @@ export function Settings() {
         </div>
       </Blueprint>
 
+      <RestartSection />
+
       <CliConfigSection />
 
       <div className="lp-more">
         More to come: event-log retention view, default reply actor, per-workstation profiles.
       </div>
     </>
+  );
+}
+
+/**
+ * Restart the workstation's whole the-loop deployment (issue-228).
+ *
+ * `POST /api/v1/restart` **schedules**: the service spawns a detached
+ * `the-loop restart` and answers immediately, then goes down and comes back —
+ * so this card promises the schedule (pid, logfile), not the finished restart,
+ * and the next polls are expected to fail briefly. Disabled in demo mode,
+ * where there is nothing to restart.
+ */
+function RestartSection() {
+  const { api } = useApi();
+  const [withUpgrade, setWithUpgrade] = useState(false);
+  const [state, setState] = useState<
+    { kind: "idle" } | { kind: "asking" } | { kind: "scheduled"; schedule: RestartSchedule } | { kind: "failed"; message: string }
+  >({ kind: "idle" });
+
+  async function restart(): Promise<void> {
+    setState({ kind: "asking" });
+    try {
+      const schedule = await api.restart(withUpgrade);
+      setState({ kind: "scheduled", schedule });
+    } catch (cause) {
+      setState({ kind: "failed", message: cause instanceof ApiError ? cause.advice : String(cause) });
+    }
+  }
+
+  return (
+    <Blueprint className="lp-settings-card">
+      <div className="lp-settings-kicker">Service</div>
+      <div className="lp-settings-row">
+        <button
+          type="button"
+          className="btn btn-secondary"
+          disabled={state.kind === "asking"}
+          onClick={() => void restart()}
+        >
+          {state.kind === "asking" ? "Scheduling…" : withUpgrade ? "Restart with upgrade" : "Restart the-loop"}
+        </button>
+        <label className="lp-settings-label lp-restart-upgrade">
+          <input
+            type="checkbox"
+            checked={withUpgrade}
+            onChange={(event) => setWithUpgrade(event.target.checked)}
+          />{" "}
+          upgrade the CLI first
+        </label>
+      </div>
+      {state.kind === "scheduled" ? (
+        <div className="lp-config-report ok">
+          Restart scheduled (pid {state.schedule.pid}
+          {state.schedule.withUpgrade ? ", with upgrade" : ""}) — the service will drop and come back;
+          output at <code className="lp-code">{state.schedule.logfile}</code> on the workstation.
+        </div>
+      ) : null}
+      {state.kind === "failed" ? <div className="lp-config-report fail">{state.message}</div> : null}
+      <div className="lp-note">
+        Stops every running the-loop service on the workstation, then starts every enabled one —
+        the same thing <code className="lp-code">the-loop restart</code> does. With the upgrade, the
+        CLI is upgraded in between; a failed upgrade still restarts the current version.
+      </div>
+    </Blueprint>
   );
 }
 
@@ -178,6 +245,7 @@ function CliConfigSection() {
       document={loaded.data.document}
       schema={loaded.data.schema}
       onSave={(patch) => api.saveConfig(patch)}
+      onRestart={() => api.restart()}
     />
   );
 }
