@@ -1,3 +1,9 @@
+## v9.14.0 (2026-08-14)
+
+### Feat
+
+- **issue-224**: make the learnings directory configurable and default it into docs/ (#226)
+
 ## v9.13.0 (2026-08-14)
 
 ### Feat
