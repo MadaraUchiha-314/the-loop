@@ -53,7 +53,8 @@ as commands/skills today; hooks add predictability where a step must always run.
 ### 4. Knowledge & feedback
 
 - `docs/architecture/`, `docs/decisions/`, `docs/specs/<id>/` (requirements/bugfix,
-  design, tasks, execution-log), `learnings/`.
+  design, tasks, execution-log), `docs/learnings/` — the last two placed by
+  `workflow.specDir` and `workflow.learningsDir`.
 - `docs/capabilities/` — living capability docs, the **organized view of the specs**:
   one doc per capability (product-feature and architecture shaped), the single source
   of truth for its *current* behaviour, with history rows linking the raw specs and

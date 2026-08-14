@@ -68,7 +68,7 @@ so no inbound event can replace your `autonomy` tiers, `sensitivePaths` or
 |---------|--------|
 | `ticketing` | GitHub or Jira; owner/repo, whether to use GitHub Projects. |
 | `repository` | Monorepo tooling (nx/yarn/pnpm/bun), whether scripts run from root. |
-| `workflow` | The spec approach, phase list, `specDir`/`capabilitiesDir`, phase label prefix. |
+| `workflow` | The spec approach, phase list, where the-loop's checked-in knowledge lives (`specDir`/`capabilitiesDir`/`learningsDir`), phase label prefix. |
 | `tooling` | Per-language package manager, unit/integration test runner, lint, type-check, release tooling. |
 | `customInstructions` | User-provided instruction docs the harness reads before working — see [instructions reference](/operating-model/reference/instructions). |
 | `testing` | Gherkin docstring requirement, `integrationTestGlobs` for [`the-loop scenarios`](/cli/commands/scenarios). |
@@ -82,7 +82,7 @@ so no inbound event can replace your `autonomy` tiers, `sensitivePaths` or
 | `tdd` | TDD mode: `standard` \| `tdd-first` \| `off`. |
 | `minimalism` | Generation-time bloat guard — see [minimalism reference](/operating-model/reference/minimalism). |
 | `tokenEconomy` | Model routing, thinking effort, output verbosity and other cost levers (advisory only) — see [token-economy reference](/operating-model/reference/token-economy). |
-| `selfImprovement` | Learnings index cap and write-gate occurrence threshold. |
+| `selfImprovement` | Learnings index cap and write-gate occurrence threshold. Where the learnings live is `workflow.learningsDir` (default `docs/learnings`) — note that a project which **publishes** its `docs/` tree publishes its learnings with it unless it points that key elsewhere. |
 | `contextManagement` | Checkpoint-then-reset behaviour at phase/task boundaries — see [context reference](/operating-model/reference/context). |
 | `userInteraction` | Diagram format, mandatory PR briefing/education requirements, and `writingStyle` — the diagram-first rule and formal-language carve-out the bundled `the-loop:writing` skill reads (no length limits, by decision). See [writing-style](/capabilities/writing-style). |
 | `notifications` | Which harness-raised events notify which roles (recipients resolve from `.the-loop/collaborators.yaml`). |

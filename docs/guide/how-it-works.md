@@ -77,11 +77,15 @@ docs/
   architecture/      architecture.md (index)
   capabilities/      capabilities.md (index) + <capability>.md
   decisions/         decisions.md + decision-<nnn>.md
+  learnings/         learnings.md + learning-<nnn>.md + topics/
   specs/<id>/        brainstorm.md (optional), requirements.md|bugfix.md, design.md,
                      design/ (optional UI/UX artifacts), testing-plan.md, tasks.md,
                      execution-log.md, evidence/
-learnings/         learnings.md + learning-<nnn>.md
 ```
+
+Three of those directories are the project's to place: `workflow.specDir`,
+`workflow.capabilitiesDir` and `workflow.learningsDir` (defaults `docs/specs`,
+`docs/capabilities`, `docs/learnings`). This repository states all three explicitly.
 
 ## Development (the-loop's own quality gates)
 

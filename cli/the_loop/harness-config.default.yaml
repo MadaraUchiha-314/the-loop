@@ -35,6 +35,7 @@ workflow:
   requireHumanReviewPerPhase: true
   specDir: docs/specs
   capabilitiesDir: docs/capabilities  # living capability docs — organized view of specs; updated in the same PR (gate)
+  learningsDir: docs/learnings        # the learnings tree (index + learning-<nnn>.md + topics/); move it if you publish docs/
   phaseLabelPrefix: "loop:"
   phases:
     - not-started

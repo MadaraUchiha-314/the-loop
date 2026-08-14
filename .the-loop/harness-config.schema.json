@@ -55,7 +55,7 @@
         "id": "workflow",
         "title": "Workflow & phases",
         "ask": "confirm",
-        "explain": "The spec workflow (Kiro-style requirements → design → tasks, plus the testing plan between design and tasks), where specs and capability docs live, and the phase labels tracked on the ticket.",
+        "explain": "The spec workflow (Kiro-style requirements → design → tasks, plus the testing plan between design and tasks), where the-loop's checked-in knowledge lives in this repository (specs, capability docs, learnings), and the phase labels tracked on the ticket.",
         "keys": ["workflow"]
       },
       {
@@ -183,6 +183,11 @@
           "type": "string",
           "default": "docs/capabilities",
           "description": "Living capability docs (the organized view of specs; single source of truth for a capability's current behaviour) live in <capabilitiesDir>/, indexed by <capabilitiesDir>/capabilities.md. Affected docs are updated in the same PR as the work item (ready-to-ship gate item)."
+        },
+        "learningsDir": {
+          "type": "string",
+          "default": "docs/learnings",
+          "description": "The learnings tree the self-improvement lifecycle maintains: the injected index <learningsDir>/learnings.md, one <learningsDir>/learning-<nnn>.md per durable learning, and the consolidated overflow in <learningsDir>/topics/<category>.md. Tuned by `selfImprovement`; the git-ignored write-gate queue stays under .the-loop/learnings-pending/ and is not affected by this key. Repo-relative, like specDir and capabilitiesDir. NOTE that the default places learnings inside the documentation tree: a project that PUBLISHES docs/ and would rather not publish its learnings should point this key somewhere it does not build from."
         },
         "phaseLabelPrefix": {
           "type": "string",
@@ -877,7 +882,7 @@
     },
     "selfImprovement": {
       "type": "object",
-      "description": "Lifecycle for learnings: capture → write-gate → consolidate → inject. See reference/automation.md.",
+      "description": "Lifecycle for learnings: capture → write-gate → consolidate → inject. WHERE the learnings live is `workflow.learningsDir` (with the other checked-in-knowledge directories), not a key here. See reference/automation.md.",
       "additionalProperties": false,
       "properties": {
         "enabled": { "type": "boolean", "default": true },
@@ -885,7 +890,7 @@
           "type": "integer",
           "minimum": 1,
           "default": 200,
-          "description": "Cap on the injected learnings index; overflow detail spills to learnings/topics/<category>.md, read on demand."
+          "description": "Cap on the injected learnings index; overflow detail spills to <workflow.learningsDir>/topics/<category>.md, read on demand."
         },
         "writeGateOccurrences": {
           "type": "integer",

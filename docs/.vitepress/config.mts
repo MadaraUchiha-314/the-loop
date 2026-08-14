@@ -160,6 +160,14 @@ const developerSidebar = [
     collapsed: true,
     items: [{ text: "Decision log", link: "/decisions/decisions" }],
   },
+  // Learnings moved under docs/ in issue-224 (workflow.learningsDir), which put them
+  // inside this site's srcDir. Listed rather than excluded: the whole point of checking
+  // learnings in is that a human reads them, and an unlisted page is one nobody finds.
+  {
+    text: "Learnings",
+    collapsed: true,
+    items: [{ text: "Learnings index", link: "/learnings/learnings" }],
+  },
   {
     text: "Specs",
     collapsed: true,
@@ -223,6 +231,7 @@ export default defineConfig({
           { text: "Architecture", link: "/architecture/architecture" },
           { text: "Capabilities", link: "/capabilities/capabilities" },
           { text: "Decisions", link: "/decisions/decisions" },
+          { text: "Learnings", link: "/learnings/learnings" },
           { text: "Operating model", link: "/operating-model/" },
           { text: "Specs", link: "/specs/" },
           { text: "Reports", link: "/reports/" },
@@ -261,6 +270,7 @@ export default defineConfig({
       "/architecture/": developerSidebar,
       "/capabilities/": developerSidebar,
       "/decisions/": developerSidebar,
+      "/learnings/": developerSidebar,
       "/operating-model/": developerSidebar,
       "/specs/": developerSidebar,
       "/reports/": developerSidebar,

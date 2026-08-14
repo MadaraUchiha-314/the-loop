@@ -27,6 +27,7 @@ workflow:
   requireHumanReviewPerPhase: true
   specDir: docs/specs
   capabilitiesDir: docs/capabilities   # living capability docs — the organized view of specs (issue-25)
+  learningsDir: docs/learnings         # issue-224: stated, not defaulted — the learnings sit with every other doc the loop maintains
   phaseLabelPrefix: "loop:"
   phases:
     - not-started

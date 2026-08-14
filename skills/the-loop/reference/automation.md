@@ -216,9 +216,13 @@ predictable via:
 
 the-loop is not expected to be perfect from the start; it captures learnings in your repo
 so it measurably stops repeating mistakes — without letting the index grow unbounded and
-blow the context budget. Learnings live in `learnings/learnings.md` (index) +
-`learnings/learning-<nnn>.md` (detail), with overflow in `learnings/topics/<category>.md`.
-Tuned by `config.selfImprovement` (`enabled`, `maxIndexLines`, `writeGateOccurrences`).
+blow the context budget. Learnings live in `<learningsDir>/learnings.md` (index) +
+`<learningsDir>/learning-<nnn>.md` (detail), with overflow in
+`<learningsDir>/topics/<category>.md`, where `<learningsDir>` is
+`config.workflow.learningsDir` — the same block that names the spec and capability
+directories, defaulting to `docs/learnings`. A project that **publishes** its `docs/` tree
+and would rather not publish its learnings points the key elsewhere. The lifecycle itself
+is tuned by `config.selfImprovement` (`enabled`, `maxIndexLines`, `writeGateOccurrences`).
 Sources: **user feedback** (requirements/design/tasks iteration, PR reviews) and **system
 feedback** (repeated failures or insights). The skill implements this today; the Python
 CLI can harden it later. Four stages:
@@ -232,7 +236,7 @@ CLI can harden it later. Four stages:
 3. **Consolidate.** At the end of a run, classify each candidate against the existing
    index as **ADD / UPDATE / DELETE** (on contradiction) / **NOOP**, then **prune to the
    size cap** (`maxIndexLines`) by evicting the least-important/least-recent entries into
-   `learnings/topics/<category>.md`.
+   `<learningsDir>/topics/<category>.md`.
 4. **Inject.** Load the **capped index** (first `maxIndexLines` lines) into each agent's
    prompt at the start of a run; overflow detail is read on demand from the topic files.
 
