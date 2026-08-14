@@ -205,6 +205,34 @@ trip. The criteria become the intervention's definition of done: its verificatio
 holds until every one is met. See the
 [process graph](/capabilities/process-graph) capability for the loop's phases.
 
+### `control.keywords.do`
+
+- **Type:** `string`
+- **Default:** `the-loop do`
+
+`contribute`'s sibling one loop over. Arms the work item exactly as `start` does — same
+spawn policy, same durable record, same named-actor authorization — and additionally
+selects the **ad-hoc loop** (`pdlc-adhoc-loop`,
+[issue-225](https://github.com/MadaraUchiha-314/the-loop/issues/225)) for its outer
+walk: a tactical task that runs **no PDLC process at all**.
+
+That loop has three nodes — `work`, `review`, `complete` — and no spec chain, no
+`goal-definition` gate, no phase-selection gate, no artifact gates and no review chain.
+the-loop does the work, reports back on the thread, and treats **any** authorized reply
+that is not a declaration of completion as more work, routing straight back to `work`.
+The item ends when the requester says it is done, or when they close it.
+
+:::note Typing this word is the declaration
+There is no separate setting that turns the process off for a work item. The keyword
+*is* the decision, and it is recorded like every other one — in the portable control
+record, then in `graph-state.json`'s `loop` field — so a reviewer of the resulting
+change can see that no review chain ran, and who decided that. Set this option to an
+empty string to remove the word from the vocabulary entirely.
+:::
+
+See the [process graph](/capabilities/process-graph) capability for the loop's shape and
+what it deliberately omits.
+
 ### `control.keywords.cleanup`
 
 - **Type:** `string`

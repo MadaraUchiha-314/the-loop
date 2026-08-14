@@ -74,6 +74,13 @@ routing:
       stop: "the-loop stop"
       pause: "the-loop pause"
       resume: "the-loop resume"
+      # NO PROCESS (issue-225). Arms the item exactly as `start` does and selects
+      # the AD-HOC loop: work -> review -> complete, with no spec chain, no
+      # phase-selection gate, no artifact gates and NO REVIEW CHAIN. Typing the
+      # word IS the declaration that this work item runs without the PDLC, and it
+      # is recorded (control record, then graph-state.json) so a reviewer can see
+      # who decided that. Set to "" to remove the word from the vocabulary.
+      do: "the-loop do"
       # DESTRUCTIVE (issue-186). Releases this work item's LOCAL resources —
       # every endpoint's tmux session, the workspace checkout (uncommitted work
       # in it is GONE) and the machine-local session record — ignoring the

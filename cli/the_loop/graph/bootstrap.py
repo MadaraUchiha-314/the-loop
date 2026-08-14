@@ -67,16 +67,17 @@ def build_runtime(
     issue-183 — means the pull request is in the origin repository and keeps the
     shipped path.
 
-    ``loop`` names the **outer-path** graph to walk (issue-185): the
-    contribution loop, for a work item the-loop joins as a contributor rather
-    than owns. Meaningless with ``pr_number`` (a pull request's loop is always
-    ``pdlc-pr-loop``). Only shipped loop names are honoured — the value can
-    originate in the agent-writable ``graph-state.json``, so anything else
+    ``loop`` names the **outer-path** graph to walk: the contribution loop
+    (issue-185), for a work item the-loop joins as a contributor rather than
+    owns, or the ad-hoc loop (issue-225), for a tactical task that runs no PDLC
+    process. Meaningless with ``pr_number`` (a pull request's loop is always
+    ``pdlc-pr-loop``). Only ``OUTER_PATH_LOOPS`` names are honoured — the value
+    can originate in the agent-writable ``graph-state.json``, so anything else
     falls back to the default outer loop with a warning rather than reaching
     ``load_graph``.
     """
     from .hooks.loops import inner_loop_state_dir
-    from .model import PDLC_PR_LOOP, PDLC_WORK_ITEM_LOOP, SHIPPED_LOOPS, load_graph
+    from .model import OUTER_PATH_LOOPS, PDLC_PR_LOOP, PDLC_WORK_ITEM_LOOP, load_graph
     from .runtime import Runtime
 
     harness = load_harness_config(root)
@@ -145,10 +146,11 @@ def build_runtime(
             state_subpath=subpath,
         )
     chosen = loop or PDLC_WORK_ITEM_LOOP
-    if chosen not in SHIPPED_LOOPS or chosen == PDLC_PR_LOOP:
+    if chosen not in OUTER_PATH_LOOPS:
         # Fail closed to the default: `loop` can come from the agent-writable
         # state file, and an invented name must never choose the graph — nor
         # may the inner loop be addressed without the pr-loops state layout.
+        # `OUTER_PATH_LOOPS` says both in one membership test (issue-225).
         logger.warning(
             "ignoring unknown outer loop %r; walking %s", chosen, PDLC_WORK_ITEM_LOOP
         )
