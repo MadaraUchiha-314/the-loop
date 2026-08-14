@@ -1,3 +1,9 @@
+## v9.12.0 (2026-08-14)
+
+### Feat
+
+- **issue-220**: ship the-loop's config schemas with the plugin, not with your repo (#221)
+
 ## v9.11.0 (2026-08-12)
 
 ### Feat
