@@ -8,9 +8,14 @@ This walks through taking a single GitHub issue through the whole loop.
 /the-loop:init
 ```
 
-A guided, schema-driven onboarding writes `.the-loop/harness-config.yaml` (validated against
-`.the-loop/harness-config.schema.json`) with sensible defaults. Idempotent — safe to re-run.
-Pass `--defaults` to skip the interactive walkthrough.
+A guided, schema-driven onboarding writes `.the-loop/harness-config.yaml` with sensible
+defaults. Idempotent — safe to re-run. Pass `--defaults` to skip the interactive
+walkthrough.
+
+The schema that validates it ships **with the plugin** and is never copied into your
+repository, so what you get is your configuration and nothing of the-loop's internals. The
+written file opens with a `# yaml-language-server: $schema=…` line, which is what gives
+your editor completion and validation while you edit it.
 
 ## 2. Run the whole spec workflow on a ticket
 

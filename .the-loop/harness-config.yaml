@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=./harness-config.schema.json
 # .the-loop/harness-config.yaml — HARNESS (plugin) configuration for the-loop's
 # own repository (installed here as a Claude/Cursor plugin). Formerly config.yaml
 # (renamed in issue-82, decision-035). Validated against

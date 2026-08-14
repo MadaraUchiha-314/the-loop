@@ -14,8 +14,9 @@ order — first hit wins:
 2. **Detected signal** — what init's project detection found (lock files, manifests,
    CI config, git remote — see `commands/init.md` step 1 and
    `reference/tooling.md` → "Tooling detection").
-3. **Schema default** — the `default` in `.the-loop/harness-config.schema.json` (the config
-   template mirrors these).
+3. **Schema default** — the `default` in `harness-config.schema.json`, read from the
+   plugin (`${CLAUDE_PLUGIN_ROOT}` / `manifest.schemasDir`; issue-220 — a project holds no
+   copy). The config template mirrors these.
 
 The user is only *asked* where the answer genuinely needs them: keys with no
 default and no signal (e.g. the collaborators in `.the-loop/collaborators.yaml`),
@@ -96,7 +97,9 @@ established is left untouched and never re-asked.
 
 ## After the walkthrough
 
-Validate the resulting `.the-loop/harness-config.yaml` against `harness-config.schema.json` and fold
+Validate the resulting `.the-loop/harness-config.yaml` against the plugin's
+`harness-config.schema.json` (`manifest.schemasDir` — read it from disk, never over the
+network, and never copy it into the project) and fold
 the outcome into init's final report: answered keys under **created/updated**,
 untouched ones under **skipped**, and anything still unresolved under **needs-user**
 with a pointer to the exact key and an example value.

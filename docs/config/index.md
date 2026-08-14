@@ -9,7 +9,8 @@ you want is the whole trick:
 | **Installed** | **per repository**, by `/the-loop:init` | **per operator**, wherever you keep it |
 | **Read by** | the `/the-loop:*` commands and the operating skill — the agent doing the work | the CLI daemon: `gh-webhook`, `poll`, `sessions`, `events` |
 | **Governs** | *how work is done here* — ticketing, phases, tooling, reviews, autonomy, security | *how work is triggered and hosted* — ingress, routing, sessions, integrations, logging |
-| **Schema** | `.the-loop/harness-config.schema.json` | `.the-loop/cli-config.schema.json` |
+| **Schema** | `harness-config.schema.json` | `cli-config.schema.json` |
+| **Where the schema lives** | [with the plugin](#where-the-schemas-live), never copied into your repo | [with the plugin](#where-the-schemas-live), never copied into your repo |
 | **Committed?** | yes — it is a statement about the project | usually not; it describes *your machine* |
 
 The split is deliberate ([decision-032](/decisions/decision-032)). The daemon is expected
@@ -54,6 +55,27 @@ What never happens is the reverse: no checkout supplies the daemon's *own* setti
 full list of keys the CLI reads from a repository is in
 [the harness config reference](/config/harness-config#what-the-cli-reads-from-it).
 
+## Where the schemas live
+
+**With the plugin, not with your repository.** the-loop's three JSON schemas —
+`harness-config.schema.json`, `collaborators.schema.json` and `cli-config.schema.json` —
+ship inside the installed plugin at `${CLAUDE_PLUGIN_ROOT}/.the-loop/`, declared once as
+`schemasDir` in `.the-loop/manifest.yaml`. `/the-loop:init` and
+`/the-loop:upgrade-the-loop` read them from there to validate what they write, and
+`/the-loop:upgrade-the-loop` **deletes** the copies older versions used to leave behind
+(up to 118 KB of the-loop's internals per repository — [issue #220](https://github.com/MadaraUchiha-314/the-loop/issues/220)).
+
+Your editor is not left out. Every config the-loop scaffolds opens with a modeline:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/MadaraUchiha-314/the-loop/main/.the-loop/harness-config.schema.json
+```
+
+It is a comment, and only the *editor* ever reads it — the-loop always validates against
+the installed plugin's schema on disk, so it works offline and cannot be redirected by
+editing that line. It has to stay on the **first line** to work at all; delete it if you
+prefer, and you lose completion while typing, nothing else.
+
 ## Reference
 
 - **[Harness config](/config/harness-config)** — every section of
@@ -68,6 +90,6 @@ full list of keys the CLI reads from a repository is in
   [observability](/config/cli/observability-options).
 
 Every CLI-config option on those pages is checked against
-`.the-loop/cli-config.schema.json` by a test in the repository, in **both** directions: an
+`cli-config.schema.json` by a test in the repository, in **both** directions: an
 option documented here that the schema does not define fails the build, and so does a
 schema key nobody documented.

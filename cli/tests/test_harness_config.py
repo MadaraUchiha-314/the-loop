@@ -291,6 +291,27 @@ def test_scaffold_says_who_wrote_the_file(tmp_path: Path) -> None:
     assert "issue-193" in head.split("\n\n")[0]
 
 
+def test_scaffold_keeps_the_schema_modeline_on_the_first_line(tmp_path: Path) -> None:
+    """R4.2 (issue-220) — adoption must not push the modeline out of line 1.
+
+    `# yaml-language-server: $schema=…` is the operator's editor validation now that
+    the-loop no longer copies the schema into the project, and the directive is honoured
+    on the first line only. Adoption prepends a header saying where the file came from
+    (issue-193), so the two rules collide unless the header goes *underneath* the
+    modeline — which is the whole reason `scaffold` does not simply concatenate.
+    """
+    assert harness_config.scaffold(tmp_path, "octo", "repo") == "written"
+    lines = (
+        (tmp_path / ".the-loop" / "harness-config.yaml")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    )
+    assert lines[0].startswith("# yaml-language-server: $schema=")
+    # …and the header it displaced is still there, directly below it.
+    assert "issue-193" in "\n".join(lines[1:8])
+    assert sum(line.startswith("# yaml-language-server:") for line in lines) == 1
+
+
 def test_scaffold_names_the_repository_it_was_written_for(tmp_path: Path) -> None:
     """R2.2 — `originRepo` resolves instead of failing closed (issue-183)."""
     assert harness_config.scaffold(tmp_path, "octo", "repo") == "written"

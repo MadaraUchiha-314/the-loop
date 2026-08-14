@@ -229,8 +229,9 @@ dashboard question is answered by *applying* the taxonomy, not by writing new so
 ## Pointers
 
 - Phase labels & prefix: `workflow.phases` / `workflow.phaseLabelPrefix` in
-  [`.the-loop/config.yaml`](../../.the-loop/config.yaml),
-  [`.the-loop/config.schema.json`](../../.the-loop/config.schema.json)
+  [`.the-loop/harness-config.yaml`](../../.the-loop/harness-config.yaml),
+  [`harness-config.schema.json`](../../.the-loop/harness-config.schema.json) (shipped with
+  the plugin — [`manifest.schemasDir`](../../.the-loop/manifest.yaml))
 - Label creation: [`commands/init.md`](../../commands/init.md) step 4
 - Phase sync per command: [`commands/`](../../commands/) (`create-ticket`, `create-design`,
   `create-tasks-plan`, `execute-tasks`, `finish-tasks`, `work-on`)

@@ -315,16 +315,25 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
 
 Behaviour is driven by `.the-loop/harness-config.yaml` (this repo's **harness/plugin
 config**, formerly `config.yaml` — issue-82, decision-035), validated against
-`.the-loop/harness-config.schema.json`. Sections: `ticketing`, `repository`,
+`harness-config.schema.json`. Sections: `ticketing`, `repository`,
 `workflow`, `tooling`, `customInstructions`, `testing`, `apiSpecs`, `design`,
 `localOrchestration`, `hooks`, `observability`, `reviews`, `autonomy`, `security`, `tdd`,
 `minimalism`, `tokenEconomy`, `selfImprovement`, `contextManagement`, `userInteraction`,
 `notifications`, `externalTools`. People (collaborators + their notification channels)
-live in `.the-loop/collaborators.yaml` (validated against
-`.the-loop/collaborators.schema.json`) — the single source of truth; `notifications`
+live in `.the-loop/collaborators.yaml` (validated against `collaborators.schema.json`) —
+the single source of truth; `notifications`
 references roles only. A subset of keys can be overridden per work
 item via the YAML front-matter `overrides` of the work-item / spec markdown. Managed
 files are listed in `.the-loop/manifest.yaml`.
+
+**The schemas are the plugin's, not the project's** (issue-220). All three —
+`harness-config`, `collaborators`, `cli-config` — ship under
+`${CLAUDE_PLUGIN_ROOT}/.the-loop/` (`manifest.schemasDir`, the same shape
+`manifest.templatesDir` has for templates) and are read from there whenever a config is
+validated or the onboarding walkthrough is driven. Never copy one into a project, and
+never fetch one over the network. A scaffolded config carries the schema's published URL
+in a `# yaml-language-server: $schema=…` **first line** so an operator's editor validates
+it; that comment is for the editor alone and is never what the loop validates against.
 
 A repository that has never run `/the-loop:init` is worked under the **built-in default**
 — the same baseline `--defaults` writes, shipped inside the CLI — and the-loop writes it

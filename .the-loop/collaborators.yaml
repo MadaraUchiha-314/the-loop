@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=./collaborators.schema.json
 # .the-loop/collaborators.yaml — collaborators for the-loop's own repository.
 # Validated against .the-loop/collaborators.schema.json. The single source of
 # truth for who collaborates on this project and how they are notified

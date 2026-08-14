@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=./cli-config.schema.json
 # .the-loop/cli-config.yaml — the-loop's own CLI-daemon config, checked in for
 # local dev/dogfooding. Validated against .the-loop/cli-config.schema.json.
 #

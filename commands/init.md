@@ -12,11 +12,20 @@ re-run:** it is driven entirely by the manifest, creates only what is missing, a
 
 The **authoritative** source of what to create — and which files are managed vs.
 user-owned — is `${CLAUDE_PLUGIN_ROOT}/.the-loop/manifest.yaml` (each entry's
-`managed: true|false`). Templates are **internal to the-loop** and are **not** copied
-into the project; they live with the plugin's skill under
-`${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/` (`manifest.templatesDir`) and are read
-from there when a file needs scaffolding. (`${CLAUDE_PLUGIN_ROOT}` is the installed
-plugin's root directory; in Cursor, resolve it to the plugin's install directory.)
+`managed: true|false`). Two kinds of file are **internal to the-loop** and are **never**
+copied into the project — they ship with the plugin and are read from there:
+
+- **Templates** — `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/`
+  (`manifest.templatesDir`), read when a file needs scaffolding.
+- **Config schemas** — `${CLAUDE_PLUGIN_ROOT}/.the-loop/*.schema.json`
+  (`manifest.schemasDir`), read when a config needs validating or onboarding. They are
+  the plugin's contract, not the operator's data, and a copy in the project only goes
+  stale (issue-220). Each scaffolded config instead opens with a
+  `# yaml-language-server: $schema=<published url>` line, so the operator's editor
+  validates it with nothing local on disk.
+
+(`${CLAUDE_PLUGIN_ROOT}` is the installed plugin's root directory; in Cursor, resolve it
+to the plugin's install directory.)
 
 ## Modes
 
@@ -59,8 +68,9 @@ plugin's root directory; in Cursor, resolve it to the plugin's install directory
 2. **Onboard the config with the user (guided, grouped, schema-driven).** Do not dump
    a config file and walk away — establish it together, following the skill's
    `reference/onboarding.md` procedure exactly. The schema's `x-onboarding.groups`
-   (in `harness-config.schema.json`) defines the ordered config groups (related keys that
-   interact, clubbed together) and each group's `ask` level:
+   (in the plugin's `harness-config.schema.json` — `${CLAUDE_PLUGIN_ROOT}` /
+   `manifest.schemasDir`, never a project copy) defines the ordered config groups
+   (related keys that interact, clubbed together) and each group's `ask` level:
    - `always` groups (e.g. **Project & ticketing**, **People & communication**) have
      no sensible default — establish them with the user.
    - `confirm` groups (tooling, custom instructions, workflow, quality gates,
@@ -99,17 +109,18 @@ plugin's root directory; in Cursor, resolve it to the plugin's install directory
    - **present & up to date** → skip.
    Create the following where missing (never overwrite user-owned files). Scaffold each
    from its template under `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/` — **do not**
-   copy the templates directory itself into the project (templates are internal to the-loop):
+   copy the templates directory or any `*.schema.json` into the project (both are internal
+   to the-loop):
    - `.the-loop/harness-config.yaml` — from the template, with the detected defaults and the
-     answers established in step 2 applied.
-   - `.the-loop/harness-config.schema.json` — copy of the schema.
+     answers established in step 2 applied. Keep the template's
+     `# yaml-language-server: $schema=…` **first line** intact: the directive only works
+     there, and it is the operator's editor validation (issue-220).
    - `.the-loop/manifest.yaml` — the manifest.
    - `.the-loop/collaborators.yaml` — from templates (user-owned). External tools are
      declared inline in `config.externalTools`, not a separate file (issue-37).
    - **Only if step 2 answered "track it here":** `.the-loop/cli-config.yaml` — from
-     `templates/cli-config.yaml`, and `.the-loop/cli-config.schema.json` (copy of the
-     schema, alongside `harness-config.schema.json`). Never scaffolded on the home-directory
-     answer or under `--defaults`.
+     `templates/cli-config.yaml`, and nothing else. Never scaffolded on the
+     home-directory answer or under `--defaults`.
    - `docs/architecture/architecture.md`, `docs/decisions/decisions.md`,
      `docs/specs/` (per-work-item Kiro specs + execution logs).
    - `learnings/learnings.md`.
@@ -123,11 +134,16 @@ plugin's root directory; in Cursor, resolve it to the plugin's install directory
    walks is chosen on the ticket itself, at the loop's `phase-selection` phase, by an
    authorized user replying to the-loop's checklist — nothing to create per repository.
 
-5. **Validate** the generated `.the-loop/harness-config.yaml` against
-   `.the-loop/harness-config.schema.json` and `.the-loop/collaborators.yaml` against
-   `.the-loop/collaborators.schema.json` (and, if scaffolded, `.the-loop/cli-config.yaml`
-   against `.the-loop/cli-config.schema.json`). Report any gaps the user must fill
-   (e.g. empty `collaborators`, `ticketing.github.owner`).
+5. **Validate** every config that was written, against the **plugin's** schemas under
+   `${CLAUDE_PLUGIN_ROOT}/.the-loop/` (`manifest.schemasDir`) — read them from there and
+   validate locally; never fetch a schema over the network, and never write one into the
+   project to validate against:
+   - `.the-loop/harness-config.yaml` ↔ `harness-config.schema.json`
+   - `.the-loop/collaborators.yaml` ↔ `collaborators.schema.json`
+   - if scaffolded, `.the-loop/cli-config.yaml` ↔ `cli-config.schema.json`
+
+   The absence of a project-local schema copy never weakens or skips this step. Report
+   any gaps the user must fill (e.g. empty `collaborators`, `ticketing.github.owner`).
 
 6. **Confirm collaborators.** If `.the-loop/collaborators.yaml` is still empty after
    the onboarding (step 2), ask the user (via a ticket comment if a ticket exists,

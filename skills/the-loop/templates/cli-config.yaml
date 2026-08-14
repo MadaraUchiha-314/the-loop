@@ -1,5 +1,8 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/MadaraUchiha-314/the-loop/main/.the-loop/cli-config.schema.json
 # the-loop CLI configuration (cli-config.yaml) — not tied to any one repo.
-# Validated against .the-loop/cli-config.schema.json.
+# Validated against ${CLAUDE_PLUGIN_ROOT}/.the-loop/cli-config.schema.json — the schema
+# ships with the plugin rather than being copied next to this file (issue-220). The
+# first line points your editor at the published copy of it.
 #
 # Read only by the CLI daemon (`the-loop gh-webhook`/`poll`/`sessions`/`events`),
 # which is expected to work across multiple repos (decision-032). Resolved, in

@@ -156,7 +156,7 @@ behalf.
 
 - The full list of available collaborators is defined up-front in the repo, in
   **`.the-loop/collaborators.yaml`** — the SINGLE source of truth for people and their
-  notification config, validated against `.the-loop/collaborators.schema.json`
+  notification config, validated against the plugin's `collaborators.schema.json`
   (issue-82, decision-035; the former `config.personas`/`config.messaging` keys are
   retired). CODEOWNERS-like: these are the stewards of the repository.
 - A collaborator may be an **individual** or a **group** (e.g. a GitHub team
