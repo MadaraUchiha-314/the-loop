@@ -103,6 +103,24 @@ command reconciles them.
      empty and relying on the now-removed `ticketing.github` fallback (Requirement 4) —
      those need an explicit value in the new CLI config or the daemon fails closed.
 
+   **The learnings tree moved into `docs/` (issue-224, decision-082).** `workflow.learningsDir`
+   is a new, additive harness-config key whose default is `docs/learnings` — where the old
+   hardcoded location was `learnings/` in the project root. The key itself is the ordinary
+   add-with-defaults case; **the directory is not**, because it holds the operator's data.
+   So when the project carries a root-level `learnings/` and no `workflow.learningsDir`,
+   present both supported outcomes and take neither on your own:
+   - **Move it** — `git mv learnings docs/learnings` (or wherever the project's docs live),
+     fix the relative links inside the moved files, and leave `learningsDir` at its
+     default (or set it to the chosen directory).
+   - **Pin it** — add `workflow.learningsDir: learnings` and change nothing on disk.
+
+   **Never move or delete a learnings tree without the operator's confirmation**, and if
+   they do not answer, leave it exactly as it is and report it under **needs-user**: an
+   un-migrated tree is a directory the loop stops reading, which is recoverable; a
+   relocated one they did not ask for is a diff they did not expect. This entry is
+   deliberately **not** in `manifest.deprecated` — everything there is safe-to-delete
+   plugin internals, and these files are neither.
+
    **Execution control + one state root (issue-106, decision-040).** Two purely
    additive CLI-config blocks — `state` and `routing.control` —
    but one of them **changes runtime behaviour by default**, so this one is not the

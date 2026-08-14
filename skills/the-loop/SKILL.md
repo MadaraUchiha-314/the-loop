@@ -281,7 +281,8 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
 - **Keep moving; log conflicts.** Resolvable ambiguity → assume a reasonable default and
   continue; genuine block → log to `docs/decisions/conflicts.md`, escalate once, move on.
 - **Learnings lifecycle.** Capture → write-gate (rule-of-three) → consolidate (size cap)
-  → inject a capped index (`config.selfImprovement`). See `reference/automation.md`.
+  → inject a capped index (`config.selfImprovement`), in the tree
+  `workflow.learningsDir` names (default `docs/learnings`). See `reference/automation.md`.
 - **Evidence at the end.** Present validated evidence that acceptance criteria are met.
 - **Communicate for the reviewer (required gate).** Before requesting human review,
   post/update the **reviewer briefing** in the PR — produced from the-loop's internal
@@ -387,8 +388,10 @@ Granular commands (one step at a time; same flow `work-on` runs end-to-end):
 - `docs/decisions/decisions.md` + `decision-<nnn>.md` — decision log (every durable
   decision is recorded).
 - `docs/specs/<id>/` — the per-work-item 3-phase spec + execution log.
-- `learnings/learnings.md` + `learning-<nnn>.md` — learnings from user & system
-  feedback, checked in for review. See `reference/automation.md`.
+- `<learningsDir>/learnings.md` + `learning-<nnn>.md` — learnings from user & system
+  feedback, checked in for review. `workflow.learningsDir` (default `docs/learnings`), so
+  the tree sits wherever this project keeps the documents the loop maintains. See
+  `reference/automation.md`.
 
 ## Interacting with other tools
 

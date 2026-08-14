@@ -172,9 +172,9 @@ requirements.
    enough context to decide, and **educate the user on the low-level design decisions —
    this is mandatory, not optional.**
 
-12. **Capture learnings.** Add to `learnings/learnings.md` (+ a `learning-<nnn>.md`) for
-   any user/system feedback worth remembering. Log durable decisions under
-   `docs/decisions/`.
+12. **Capture learnings.** Add to `<workflow.learningsDir>/learnings.md` (+ a
+   `learning-<nnn>.md` beside it) for any user/system feedback worth remembering. Log
+   durable decisions under `docs/decisions/`.
 
 All questions and decisions go through ticket/PR comments (paper trail). The checked-in
 specs + execution log are the single record of the work. Every such comment/reply MUST

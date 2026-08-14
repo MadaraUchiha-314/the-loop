@@ -15,9 +15,19 @@ the `/the-loop:work-on` superset command and granular per-step commands
 ## Current behaviour
 
 - Every work item SHALL have a ticket; nothing is worked without one.
-- A work item's spec SHALL live in `docs/specs/<id>/` as the artifact chain
+- A work item's spec SHALL live in `<workflow.specDir>/<id>/` (default `docs/specs`) as
+  the artifact chain
   `brainstorm.md (optional) → requirements.md|bugfix.md → design.md → testing-plan.md →
   tasks.md`, plus `execution-log.md` and, once verification has run, `evidence/`.
+- **Every tree of checked-in knowledge the loop maintains SHALL be placed by the project**,
+  through three `workflow` keys with the same shape and the same "unset means the default"
+  reading: `specDir` (`docs/specs`), `capabilitiesDir` (`docs/capabilities`) and
+  `learningsDir` (`docs/learnings`, issue-224,
+  [decision-082](../decisions/decision-082.md)). All three are repo-relative. The
+  learnings default deliberately sits **inside** the documentation tree, so a project that
+  publishes `docs/` and would rather not publish its learnings points `learningsDir`
+  elsewhere; the git-ignored write-gate queue (`.the-loop/learnings-pending/`) is harness
+  state and is not affected by the key.
 - `requirements.md` and `bugfix.md` SHALL be two accepted names for the **same** phase-1
   artifact, not two artifacts. Either clears the `requirements-definition` gate, held to
   the identical standard; **both present blocks**, because two phase-1 artifacts in one
@@ -132,6 +142,7 @@ the `/the-loop:work-on` superset command and granular per-step commands
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-224 | The learnings tree joined the other two knowledge directories as a configured location: `workflow.learningsDir`, defaulting to `docs/learnings` instead of a hardcoded top-level `learnings/`, with the-loop's own tree moved there and the upgrade command presenting (never taking) the relocation | [spec](../specs/issue-224/), [decision-082](../decisions/decision-082.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/224) |
 | issue-183 | The chain got a **place**: it lives in the repository the ticket was created in, one PR per contributing repository delivers it, and each work item declares at `phase-selection` whether the outer loop's artifacts are iterated on that repository's PR or on the work item itself (the default) — the inner loop deliberately not configurable. `execution-log.md` gained an optional `repos:` declaration that `await-inner-loops` gates on | [spec](../specs/issue-183/), [decision-069](../decisions/decision-069.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/183) |
 | issue-163 | The chain gained `testing-plan.md` between design and tasks, and the state machine gained the `test-planning` and `verification` phases — how a work item is proved is now planned, gated and evidenced rather than assumed | [spec](../specs/issue-163/), [decision-060](../decisions/decision-060.md), [testing-and-contracts](testing-and-contracts.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/163) |
 | issue-124 | A bug's `bugfix.md` clears the phase-1 gate it always should have: the two documented names became alternatives for one artifact, both present blocks, and the bundled bugfix template gained the `## Requirements` heading the gate asks for | [spec](../specs/issue-124/), [decision-045](../decisions/decision-045.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/124) |

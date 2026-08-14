@@ -1,5 +1,5 @@
 ---
-description: Initialize "the-loop" in the current repository — scaffold .the-loop/, docs/, learnings/ and a validated config, establishing the config with the user via a guided, schema-driven onboarding. Idempotent, non-clobbering, with drift detection.
+description: Initialize "the-loop" in the current repository — scaffold .the-loop/, the docs trees (specs, capabilities, decisions, learnings) and a validated config, establishing the config with the user via a guided, schema-driven onboarding. Idempotent, non-clobbering, with drift detection.
 argument-hint: "[--dry-run] [--defaults] [--monorepo-tool nx|pnpm|yarn|bun|none] [--ticketing github|jira]"
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 ---
@@ -122,8 +122,9 @@ to the plugin's install directory.)
      `templates/cli-config.yaml`, and nothing else. Never scaffolded on the
      home-directory answer or under `--defaults`.
    - `docs/architecture/architecture.md`, `docs/decisions/decisions.md`,
-     `docs/specs/` (per-work-item Kiro specs + execution logs).
-   - `learnings/learnings.md`.
+     `<workflow.specDir>/` (per-work-item Kiro specs + execution logs).
+   - `<workflow.learningsDir>/learnings.md` — the learnings index, under the directory
+     established in step 2 (default `docs/learnings`).
 
 4. **Create phase labels/tags** in the ticketing system for the workflow state
    machine — one per `workflow.phases`, named `<workflow.phaseLabelPrefix><phase>`

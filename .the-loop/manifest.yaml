@@ -165,9 +165,9 @@ knowledge:
     role: decision-record
   - path: docs/decisions/conflicts.md
     role: conflict-log
-  - path: learnings/learnings.md
-    role: learnings-index
-  - pathPattern: learnings/learning-<nnn>.md
+  - path: docs/learnings/learnings.md
+    role: learnings-index          # <workflow.learningsDir>/, default docs/learnings (issue-224)
+  - pathPattern: docs/learnings/learning-<nnn>.md
     role: learning-record
-  - pathPattern: learnings/topics/<category>.md
+  - pathPattern: docs/learnings/topics/<category>.md
     role: learning-topic-overflow

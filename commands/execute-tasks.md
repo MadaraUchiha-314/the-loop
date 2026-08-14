@@ -84,4 +84,5 @@ locked spec files read from disk, not the drafting conversation (plan-mode style
 
 6. **Next step:** once every task is checked and reviewed, `/the-loop:finish-tasks <id>`.
 
-Capture learnings (`learnings/`) and durable decisions (`docs/decisions/`) as you go.
+Capture learnings (`<workflow.learningsDir>/`, default `docs/learnings`) and durable
+decisions (`docs/decisions/`) as you go.
