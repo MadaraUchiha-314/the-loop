@@ -251,6 +251,19 @@ def _is_contribution(loop: str) -> bool:
     return loop == PDLC_CONTRIBUTION_LOOP
 
 
+def _is_adhoc(loop: str) -> bool:
+    """Whether ``loop`` is the shipped ad-hoc loop (issue-225).
+
+    Its sibling above means "no outer loop"; this one means something stronger
+    — **no process at all**, so no spec chain to place anywhere and no artifact
+    to iterate. Separate predicates because the sentence each produces differs,
+    and collapsing them would tell an ad-hoc session it is a guest.
+    """
+    from .graph.model import PDLC_ADHOC_LOOP
+
+    return loop == PDLC_ADHOC_LOOP
+
+
 def _surface_line(surface: str) -> str:
     """One sentence naming where the OUTER loop's artifacts are iterated.
 
@@ -330,6 +343,15 @@ def render_graph_context(
             "  iterate on: this work item (a contribution has no outer loop — "
             "post the plan and its results here, and open no pull request but "
             "the one carrying the code)"
+        )
+    elif _is_adhoc(ctx.loop):
+        # An ad-hoc task has no spec chain at all (issue-225), so there is
+        # nothing to place and nothing to iterate: the thread is the whole
+        # surface, and a pull request is opened only if the change needs one.
+        lines.append(
+            "  iterate on: this work item (an ad-hoc task has no spec chain — "
+            "do the work, report back here, ask follow-ups here, and open a "
+            "pull request only if the change needs one)"
         )
     else:
         lines.append(
@@ -877,12 +899,13 @@ class GraphLink:
         State-first, control-record-second (issue-185): once a loop has
         started, `graph-state.json`'s recorded ``loop`` is the fact and a later
         control command cannot re-shape a walk in progress; before the first
-        start, the portable control record's ``contribute`` command is the
-        declared intent. Only the shipped contribution loop is ever returned —
-        the state file is agent-writable, so an invented name reads as the
-        default rather than choosing a graph (fail closed).
+        start, the arming command recorded in the portable control record is
+        the declared intent (``contribute`` → the contribution loop, ``do`` →
+        the ad-hoc loop, issue-225). Only a shipped **outer-path** loop is ever
+        returned — the state file is agent-writable, so an invented name reads
+        as the default rather than choosing a graph (fail closed).
         """
-        from .graph.model import PDLC_CONTRIBUTION_LOOP
+        from .graph.model import LOOP_FOR_CONTROL_COMMAND, resolve_outer_loop
         from .graph.state import GraphState
 
         try:
@@ -892,14 +915,12 @@ class GraphLink:
             logger.debug("could not read %s's recorded loop: %s", item_id, exc)
             recorded = ""
         if recorded:
-            return PDLC_CONTRIBUTION_LOOP if recorded == PDLC_CONTRIBUTION_LOOP else ""
+            return resolve_outer_loop(recorded)
         if self.control_store is not None:
             try:
-                from .control import CONTRIBUTE
-
                 record = self.control_store.get(work_item)
-                if record is not None and record.command == CONTRIBUTE:
-                    return PDLC_CONTRIBUTION_LOOP
+                if record is not None:
+                    return LOOP_FOR_CONTROL_COMMAND.get(record.command, "")
             except Exception as exc:  # noqa: BLE001
                 logger.debug("could not read %s's control record: %s", item_id, exc)
         return ""

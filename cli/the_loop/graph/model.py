@@ -23,25 +23,52 @@ import yaml
 
 from .registry import hook_names, is_registered
 
-#: The three shipped loops. The OUTER loop (issue-172, PR #173 review) walks a
+#: The four shipped loops. The OUTER loop (issue-172, PR #173 review) walks a
 #: work item through the PDLC; the INNER loop walks one pull request through
 #: the subset of it that delivers a component — in service of the work item.
 #: The CONTRIBUTION loop (issue-185) is the path walked when the-loop is
 #: invited into an EXISTING, in-progress work item as a contributor: it cannot
 #: start without an authorized human's goal and success criteria, and its
-#: phases are sized for a scoped intervention. Same vocabulary, same hooks,
-#: same runtime; different node sets, different state files. A fourth,
+#: phases are sized for a scoped intervention. The AD-HOC loop (issue-225) is
+#: the smallest of them: a tactical task that runs NO PDLC process at all —
+#: work, talk to the requester, stop when they say stop. Same vocabulary, same
+#: hooks, same runtime; different node sets, different state files. A fifth,
 #: pdlc-project-management-loop, is anticipated by the naming and deliberately
 #: not shipped yet.
 PDLC_WORK_ITEM_LOOP = "pdlc-work-item-loop"
 PDLC_PR_LOOP = "pdlc-pr-loop"
 PDLC_CONTRIBUTION_LOOP = "pdlc-contribution-loop"
+PDLC_ADHOC_LOOP = "pdlc-adhoc-loop"
 
 #: Every loop name :func:`load_graph` accepts. The membership check is a
 #: security seam, not bookkeeping: `graph-state.json` is agent-writable and its
 #: `loop` field feeds graph selection (issue-185), so a reader resolving that
 #: field must accept only these names and fall back to the default otherwise.
-SHIPPED_LOOPS = (PDLC_WORK_ITEM_LOOP, PDLC_PR_LOOP, PDLC_CONTRIBUTION_LOOP)
+SHIPPED_LOOPS = (
+    PDLC_WORK_ITEM_LOOP,
+    PDLC_PR_LOOP,
+    PDLC_CONTRIBUTION_LOOP,
+    PDLC_ADHOC_LOOP,
+)
+
+#: The loops a WORK ITEM's outer path may walk — every shipped loop except the
+#: inner one, which is addressed by pull-request number and keeps its own state
+#: layout (``pr-loops/…``) rather than being named. Membership here is what
+#: :func:`resolve_outer_loop` answers, and every reader of the agent-writable
+#: ``GraphState.loop`` goes through it.
+OUTER_PATH_LOOPS = (PDLC_WORK_ITEM_LOOP, PDLC_CONTRIBUTION_LOOP, PDLC_ADHOC_LOOP)
+
+#: Which outer-path loop an arming CONTROL COMMAND selects (issue-185,
+#: issue-225). Keyed by the command constants in :mod:`the_loop.control` as
+#: plain strings, deliberately: ``control`` is a low-level module with no graph
+#: imports, and the loop names live here — the module that already decides
+#: which of them may be honoured. A test asserts these keys are real commands,
+#: so a rename cannot silently orphan the mapping. A command absent from this
+#: mapping (``start``, ``resume``, …) selects the default outer loop.
+LOOP_FOR_CONTROL_COMMAND: Dict[str, str] = {
+    "contribute": PDLC_CONTRIBUTION_LOOP,
+    "do": PDLC_ADHOC_LOOP,
+}
 
 #: The default shipped graph — the outer loop — package data beside this module
 #: (see shipped_graph_path). Named pdlc.yaml before issue-172 split the process
@@ -52,6 +79,9 @@ logger = logging.getLogger("the-loop.graph")
 
 __all__ = [
     "ALTERNATIVE_SEPARATOR",
+    "LOOP_FOR_CONTROL_COMMAND",
+    "OUTER_PATH_LOOPS",
+    "PDLC_ADHOC_LOOP",
     "PDLC_CONTRIBUTION_LOOP",
     "PDLC_PR_LOOP",
     "PDLC_WORK_ITEM_LOOP",
@@ -63,10 +93,33 @@ __all__ = [
     "Node",
     "artifact_names",
     "load_graph",
+    "resolve_outer_loop",
     "resolve_produces",
     "shipped_graph_path",
     "validate_produces_entry",
 ]
+
+
+def resolve_outer_loop(name: str) -> str:
+    """``name`` when it is a **non-default** outer-path loop, else ``""``.
+
+    The one place that decides whether a recorded loop name may choose a graph.
+    It exists because the value routinely arrives from somewhere the-loop does
+    not control — ``graph-state.json`` is agent-writable, and a control record
+    is written from a comment — so the check must fail closed and must not be
+    re-implemented per reader (it was, three times, before issue-225 added a
+    fourth loop and made the copies disagree about what "not the default" means).
+
+    ``""`` covers all four ways a caller has nothing to select with: an empty
+    value, the default outer loop itself, the *inner* loop (addressed by
+    pull-request number, never by name — selecting it here would walk a pull
+    request's graph with a work item's state layout), and anything invented.
+    """
+    value = str(name or "")
+    if value == PDLC_WORK_ITEM_LOOP or value not in OUTER_PATH_LOOPS:
+        return ""
+    return value
+
 
 _ACTORS = frozenset({"agent", "human", "code"})
 _SESSION_MODES = frozenset({"new", "inherit"})
@@ -569,14 +622,15 @@ def load_graph(
 
 
 def _warn_on_repo_graph(repo: Path) -> None:
-    """A repository cannot define the process — say so rather than merging it (R1.4)."""
-    for candidate in (
-        repo / ".the-loop" / "graph.yaml",
-        repo / ".the-loop" / "pdlc.yaml",
-        repo / ".the-loop" / f"{PDLC_WORK_ITEM_LOOP}.yaml",
-        repo / ".the-loop" / f"{PDLC_PR_LOOP}.yaml",
-        repo / ".the-loop" / f"{PDLC_CONTRIBUTION_LOOP}.yaml",
-    ):
+    """A repository cannot define the process — say so rather than merging it (R1.4).
+
+    The candidate list is **derived** from :data:`SHIPPED_LOOPS` plus the two
+    historical filenames, rather than written out: a hand-maintained copy is how
+    the fourth loop shipped with no warning for its own override (issue-225).
+    """
+    candidates = [repo / ".the-loop" / "graph.yaml", repo / ".the-loop" / "pdlc.yaml"]
+    candidates += [repo / ".the-loop" / f"{name}.yaml" for name in SHIPPED_LOOPS]
+    for candidate in candidates:
         if candidate.is_file():
             logger.warning(
                 "ignoring %s: the-loop's process graph ships with the CLI and "

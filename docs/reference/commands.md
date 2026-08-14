@@ -28,6 +28,16 @@ Run the same flow one step at a time:
 | `/the-loop:finish-tasks <id>` | Cleanup after all tasks complete (close the ticket; extensible). |
 | `/the-loop:work-status <id>` | Read-only status from the specs, task checkmarks and execution log. |
 
+## Loop-specific commands
+
+Two work items in three do not walk the outer loop. These drive the other two shipped
+loops:
+
+| Command | What it does |
+|---------|--------------|
+| `/the-loop:contribute-to <id>` | Join an **existing, in-progress** issue or PR as a contributor (`pdlc-contribution-loop`): one `contribution.md` instead of the spec chain, working toward a human-stated goal and success criteria. Armed with `the-loop contribute`. |
+| `/the-loop:do-task <id>` | Do an **ad-hoc, tactical** task with **no PDLC process** (`pdlc-adhoc-loop`): no spec chain, no phase gates, no review chain — work, ask follow-ups on the thread, and continue until the requester says it is done. Armed with `the-loop do`. |
+
 See the [operating model](/operating-model/) reference for what happens
 inside each phase, and the [CLI commands](/cli/commands/) for the separate `the-loop`
 companion CLI (`gh-webhook`, `poll`, `sessions`, `events`, `check`, `graph`, `critic`,

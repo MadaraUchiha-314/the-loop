@@ -7,8 +7,9 @@
 ## What it is
 
 The runtime under `cli/the_loop/graph/` plus the shipped loop definitions
-(`cli/the_loop/graph/pdlc-work-item-loop.yaml`, `pdlc-pr-loop.yaml` and
-`pdlc-contribution-loop.yaml`), surfaced as `the-loop check` and `the-loop graph`.
+(`cli/the_loop/graph/pdlc-work-item-loop.yaml`, `pdlc-pr-loop.yaml`,
+`pdlc-contribution-loop.yaml` and `pdlc-adhoc-loop.yaml`), surfaced as `the-loop check`
+and `the-loop graph`.
 It exists because before it, the PDLC was enforced only by prompts: there was no event
 anywhere in the-loop meaning *"this node of the process completed"*, so there was nowhere
 to hang a gate, a notification, or an advance (issue-109, [decision-041](../decisions/decision-041.md)).
@@ -29,7 +30,7 @@ There are exactly **two** runtime concepts and **one** contract between them.
   through the component-scoped subset that delivers it — starting at `implementation`
   (everything earlier is the work item's, decided once at the outer level), through
   verification and the same review chain, to the PR's own human gate (`pr-approval`)
-  and a terminal `complete`. Same vocabulary, same hooks, same runtime; a fourth,
+  and a terminal `complete`. Same vocabulary, same hooks, same runtime; a fifth,
   `pdlc-project-management-loop`, is anticipated by the naming and not yet shipped.
 - **The third loop is the contribution loop** (issue-185,
   [decision-070](../decisions/decision-070.md)). `pdlc-contribution-loop` SHALL be
@@ -72,8 +73,51 @@ There are exactly **two** runtime concepts and **one** contract between them.
     content to the thread at `plan-approval` and `human-approval` — the review surface
     such a repository offers. In an adopted repository the hook SHALL skip: the
     checked-in artifact is the surface, and no extra comment is posted.
-- **Both work-item-level loops end at a `cleanup` node** (issue-186). `pdlc-work-item-loop`
-  and `pdlc-contribution-loop` SHALL each declare a terminal `cleanup` node — phase
+- **The fourth loop is the ad-hoc loop** (issue-225,
+  [decision-083](../decisions/decision-083.md)). `pdlc-adhoc-loop` SHALL be walked
+  instead of the outer loop when an authorized user arms a work item with the `do`
+  control keyword — a **tactical task that runs no PDLC process at all**. It is the
+  answer to "does `contribute` fit an ad-hoc task?": it does not, because
+  `pdlc-contribution-loop` is defined by the two `required: true` gates an ad-hoc task
+  has no content for — a stated goal with success criteria, and a verification node that
+  blocks until each is proved.
+  - The loop SHALL declare exactly three walkable nodes — `work` (agent, phase
+    `implementation`), `review` (human) and `complete` (phase `complete`) — plus the
+    terminal `cleanup` and `escalated` nodes, with edges `work --pass--> review`,
+    `review --more-work--> work` and `review --done--> complete`.
+  - It SHALL declare **no** `produces` and **no** `validate-artifacts` entry (no spec
+    chain, no `contribution.md`, no evidence tree), **no** `goal-definition` and **no**
+    `phase-selection` node, and therefore **no** `skipSets` and no `skippable` or
+    `required` node. The issue-177/179 invariant — every phase that does not run carries
+    a named human's attribution — SHALL hold by construction rather than by gate: nothing
+    is skipped because the loop declares nothing to skip, and arming with `the-loop do`
+    IS that named, authorized, durably recorded declaration.
+  - The `review` node SHALL classify the requester's reply through `classify-adhoc-reply`
+    into exactly two outcomes. WHEN an authorized reply declares completion THEN the
+    outcome SHALL be `done`; WHEN an authorized reply says anything else THEN it SHALL be
+    `more-work` — the inverse of `classify-feedback`'s wait-until-decisive default, which
+    is correct for a review gate and wrong for a conversational one. WHILE no authorized,
+    non-self-authored reply exists the gate SHALL stay open. The **newest** authorized
+    comment SHALL decide, so a done-word in the arming comment ("tell me when you're
+    done") cannot end the item before any work has run. The hook SHALL reuse
+    `feedback._authorized_comments`, so self-authored text is dropped before
+    authorization is considered and an empty `authorizedUsers` reads nothing.
+  - "Until the user closes the work item" SHALL need no new machinery: the existing
+    close path (a closed issue, or a merged/closed PR) already ends the session
+    (issue-94), and this loop inherits it.
+  - It SHALL reuse the existing phase vocabulary (`implementation`, `complete`,
+    `cleanup`), so adopting it changes no repository's `workflow.phases`.
+  - Unlike a contribution, an ad-hoc item is **not a guest**: an unconfigured checkout
+    SHALL be adopted exactly as the outer loop adopts it (issue-193). The harness config
+    is what supplies the test and lint commands the ad-hoc session still runs.
+  - Which non-default outer-path loop a recorded name selects SHALL be decided in exactly
+    one place, `graph.model.resolve_outer_loop`, which returns `""` for the default, for
+    the inner loop (addressed by pull-request number, never by name) and for anything
+    invented — the fail-closed rule the state file's agent-writability demands, now
+    localized instead of copied per reader.
+- **Every work-item-level loop ends at a `cleanup` node** (issue-186). `pdlc-work-item-loop`,
+  `pdlc-contribution-loop` and `pdlc-adhoc-loop` SHALL each declare a terminal `cleanup`
+  node — phase
   `cleanup`, `actor: code`, entry chain `set-phase-label` + `log-entry` — that the-loop
   enters just **before** it releases the work item's local resources (its tmux sessions,
   its workspace checkout, its machine-local session record), so the teardown is a
@@ -635,6 +679,7 @@ reader.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-225 | The ad-hoc loop (2026-08-14): a fourth shipped graph, `pdlc-adhoc-loop`, walked when a requester wants a tactical task done and no PDLC process run — armed by the new `do` control keyword (`routing.control.keywords.do`), driven by `/the-loop:do-task`. Three walkable nodes (`work` -> `review` -> `complete`, with `review` routing back to `work` on `more-work`) and deliberately no `goal-definition`, no `phase-selection`, no `produces`/`validate-artifacts`, no `skipSets` and no review chain — the issue-177/179 attribution invariant holding by construction, because nothing is skipped when the loop declares nothing to skip. A new `classify-adhoc-reply` hook inverts the review gate's default (any authorized reply that is not a declaration of completion is more work; the newest comment decides; self-authored and unauthorized text is never read), and `graph.model.resolve_outer_loop` becomes the single fail-closed decision point the three copied "contribution or default" comparisons used to be | [spec](../specs/issue-225/), [decision-083](../decisions/decision-083.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/225) |
 | issue-199 | A contribution is not asked where its outer loop goes, and does not wait for a second command (2026-08-10): `pdlc-contribution-loop` joins somebody else's in-progress work item and owns no outer loop, so `phase-selection` omits the `outer-loop-on-pull-request` row for it, ignores the token if a reply carries it, confirms no surface, and freezes an **empty** one — *never asked*, not *default kept* — with the session prompt placing the work on the thread instead of naming an outer loop; and a spawn now evaluates a **human** start node once with the spawning event attached, so the goal that rode in with `the-loop contribute` moves the item to `phase-selection` on its own (agent start nodes and respawns evaluate nothing) | [spec](../specs/issue-199/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/199) |
 | issue-194 | Outbound hooks stopped being dead and silent (2026-08-10): a graph verb with no `--ref` had been handing the bare work-item id to the integrations, where every operation raised `malformed work item ref` — so nothing was posted, no label was set, and the command printed a clean answer. The ref is now **derived** from `ticketing.github` plus the `issue-<n>` id (a new `graph/refs.py`, the inverse of the ingress's `spec_id_for`, refusing anything that does not validate rather than guessing), and a best-effort hook that records an `error` while passing is reported as a warning line on the `NodeReport` plus a `graph.hook_degraded` event — without changing any node's verdict or edge. `graph force`/`graph skip` report a failed audit comment in their `warnings`; `_split_ref`'s error names both remedies; `sideeffects.py` resolves its integration at call time, so the seam every test patches finally applies to it | [spec](../specs/issue-194/), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/194) |
 | issue-193 | An unconfigured repository is adopted, and a guest still is not (2026-08-10): the four state-changing graph verbs (`complete`, `advance`, `force`, `skip`) write the-loop's built-in default harness config into a repository carrying none, before the runtime is built — so `repoInitialized` is true on the very run that adopted it — while `check`/`status`/`show` write nothing, and `pdlc-contribution-loop` adopts nothing at all, keeping issue-185's spec-tree exclusion and thread publishing pointed at the repositories they were written for | [spec](../specs/issue-193/), [decision-073](../decisions/decision-073.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/193) |

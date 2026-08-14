@@ -1,0 +1,133 @@
+# The AD-HOC loop (issue-225): a tactical task that runs NO PDLC process.
+# Its siblings: pdlc-work-item-loop (the outer loop a whole work item walks),
+# pdlc-pr-loop (the inner loop each delivering pull request walks), and
+# pdlc-contribution-loop (the scoped intervention into somebody else's
+# in-progress item). Same vocabulary, same hooks, same runtime; the smallest
+# node set the-loop can express.
+#
+# WHY IT IS NOT `contribute` (the question issue #225 asks). The contribution
+# loop is DEFINED by its two `required: true` nodes: `goal-definition` refuses
+# to begin without a stated goal and success criteria, and `verification`
+# blocks until every one of those criteria is proved. An ad-hoc task has
+# neither — the work item IS the instruction, and it is done when the requester
+# says it is done. Driving one through `contribute` means either inventing
+# success criteria for "fix this typo" so a gate will release, or declaring
+# every skippable phase away and STILL stopping at two gates before the agent
+# touches anything. Both put ceremony exactly where this loop must have none.
+#
+# WHAT IT DELIBERATELY DOES NOT HAVE, in one place so a reviewer can check it:
+#
+#   * no `goal-definition` — the work item is the instruction;
+#   * no `phase-selection` — there are no phases to choose between, which is
+#     also how the issue-177/179 invariant survives here. That gate exists so
+#     that every phase which does NOT run has a named human on it; in this loop
+#     no phase is skipped, because the loop declares none. Arming the item with
+#     `the-loop do` IS the named, authorized, durably recorded declaration that
+#     this work item runs without the PDLC;
+#   * no `produces` and no `validate-artifacts` — no spec chain, no
+#     contribution.md, no evidence tree, nothing gated on a file;
+#   * no `skipSets` and no `skippable`/`required` nodes — there is nothing left
+#     to declare away;
+#   * no review chain. That is a genuine reduction in guardrails, and the
+#     mitigation is ATTRIBUTION rather than a gate: the mode is selected only by
+#     an authorized user's explicit keyword, frozen into graph-state.json's
+#     `loop` field, with the arming comment left standing on the thread.
+#
+# WHAT IT KEEPS, and why each is free: `log-entry` skips when the work item has
+# no execution-log.md (so an ad-hoc item writes none by default, and an operator
+# who keeps one gets the usual trail); `verify-tests` skips when a node declares
+# no command (the seam an operator can later point at a test command without a
+# graph change); the phase labels are the EXISTING ones — implementation,
+# complete, cleanup — so adopting this loop changes no repository's
+# workflow.phases and no dashboard.
+#
+# "UNTIL THE USER CLOSES THE WORK ITEM" needs no machinery here: a closed issue
+# (or a merged/closed PR) already ends the session on the shared close path
+# (issue-94). This loop inherits it unchanged.
+#
+# HOW IT IS CHOSEN: an authorized user arms the work item with the `do` control
+# keyword (default `the-loop do`) instead of `start`. Recorded durably — in the
+# portable control record before the first start, and in graph-state.json's
+# `loop` field from then on. Declared, never inferred from the item's size,
+# labels or history.
+#
+# UNLIKE A CONTRIBUTION, an ad-hoc item is NOT a guest: it is the requester's
+# own work item in their own repository, so an unconfigured checkout is adopted
+# exactly as the outer loop adopts it (issue-193). The harness config is what
+# tells the ad-hoc session which test and lint commands to run — most of the
+# value left once the gates are gone.
+#
+# This file ships WITH THE CLI and is the-loop's own. A repository cannot
+# define or override it — a repo-supplied graph is ignored with a warning.
+#
+# Spec: docs/specs/issue-225/  ·  Decision: 082
+
+version: 1
+name: pdlc-adhoc-loop
+start: work
+
+nodes:
+  # Do the thing. `command:` steers a session spawned for this item to
+  # /the-loop:do-task rather than the spawn template's default work-on
+  # (rendered into the graph-context block, never executed by the runtime).
+  - id: work
+    phase: implementation
+    actor: agent
+    command: do-task
+    stage: implementation
+    entry: [set-phase-label, log-entry, deliver-assignment]
+    exit:
+      - verify-tests
+
+  # The conversation, expressed as an edge. `classify-adhoc-reply` inverts the
+  # review gate's default: for a REVIEW, an ambiguous reply must not be read as
+  # an approval, so `classify-feedback` waits; for an AD-HOC task, an authorized
+  # human typing "also update the README" is the common case and must move the
+  # graph. So: a reply that declares completion is `done`, any other authorized
+  # reply is `more-work`, and silence keeps the gate open.
+  #
+  # No `phase:` on purpose — waiting on the requester is not a phase, and this
+  # node must not move the item's label off implementation while work is still
+  # in flight. `decision-pending` rather than phase-approval-pending, for the
+  # same reason: there is no phase to approve, only a decision to make.
+  - id: review
+    actor: human
+    session: inherit
+    command: do-task
+    entry:
+      - log-entry
+      - request-review
+      - {hook: notify, with: {event: decision-pending}}
+    exit:
+      - classify-adhoc-reply
+
+  - id: complete
+    phase: complete
+    actor: agent
+    command: do-task
+    stage: complete
+    terminal: true
+    entry: [set-phase-label, log-entry]
+    exit: []
+
+  # The teardown node (issue-186), identical to the outer and contribution
+  # loops': an ad-hoc task is a work item too, so it accumulates the same local
+  # resources and gets the same recorded release of them. No inbound edge —
+  # the-loop enters it directly.
+  - id: cleanup
+    phase: cleanup
+    actor: code
+    terminal: true
+    entry: [set-phase-label, log-entry]
+    exit: []
+
+  - id: escalated
+    actor: human
+    terminal: true
+    entry: [{hook: notify, with: {event: conflict-escalated}}]
+    exit: []
+
+edges:
+  - {from: work, to: review, on: pass}
+  - {from: review, to: work, on: more-work}
+  - {from: review, to: complete, on: done}

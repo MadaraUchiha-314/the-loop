@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [083](decision-083.md) | An ad-hoc task is a fourth loop, not a stretched `contribute` | proposed | 2026-08-14 |
 | [082](decision-082.md) | The learnings directory is a `workflow` key, and it defaults into `docs/` | proposed | 2026-08-14 |
 | [081](decision-081.md) | The config editor splices the file, and validates with a schema it ships | proposed | 2026-08-14 |
 | [080](decision-080.md) | the-loop's config schemas ship with the plugin, not with your repo | proposed | 2026-08-14 |

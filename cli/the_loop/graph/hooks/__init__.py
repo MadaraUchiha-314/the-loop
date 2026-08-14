@@ -4,6 +4,7 @@ Same shape as ``the_loop/commands/__init__.py``: new behaviour is a new module
 imported here for its registration side effect.
 """
 
+from . import adhoc  # noqa: F401
 from . import artifacts  # noqa: F401
 from . import assignment  # noqa: F401
 from . import lint  # noqa: F401
@@ -16,6 +17,7 @@ from . import selection  # noqa: F401
 from . import mcp  # noqa: F401
 
 __all__ = [
+    "adhoc",
     "artifacts",
     "assignment",
     "feedback",

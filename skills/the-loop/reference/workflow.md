@@ -344,6 +344,58 @@ Two rules keep the intervention light without losing rigor:
   repository offers. In an adopted repository the hook skips — link the checked-in
   file instead, as ever.
 
+## The ad-hoc loop — a task with no process (issue-225)
+
+The fourth shipped graph, **`pdlc-adhoc-loop`**, is walked instead of the outer loop when
+a requester wants a **tactical task done and nothing else**: no spec chain, no phase
+gates, no review chain. The arming keyword is **`the-loop do`** (configurable,
+`routing.control.keywords.do`), which arms the item exactly as `start` would and selects
+this loop; the choice is recorded durably (the portable control record, then
+`graph-state.json`'s `loop` field) like every other loop choice. Drive it with
+`/the-loop:do-task <id>`.
+
+**Why this is not `contribute`.** `pdlc-contribution-loop` is *defined* by two
+`required: true` gates — `goal-definition`, which refuses to start without a stated goal
+and success criteria, and `verification`, which blocks until every criterion is proved.
+An ad-hoc task has neither: the work item **is** the instruction, and it is done when the
+requester says so. Running one through `contribute` means either inventing success
+criteria for "fix this typo" or declaring every skippable phase away and still stopping
+at two gates before anything happens.
+
+The walk is three nodes: `work → review → complete`, with `review` routing **back** to
+`work` for as long as the requester keeps asking for more.
+
+- **`work`** (agent, phase `implementation`) — do it, then report back on the thread.
+- **`review`** (human) — the conversational gate. Its `classify-adhoc-reply` hook inverts
+  the review gate's default: a reply that declares completion is `done`, **any other**
+  authorized reply is `more-work` and goes straight back to `work` with the new
+  instruction, and silence leaves the gate open. The same two safety rules hold as at
+  every human gate — self-authored comments are dropped before authorization is even
+  considered, and an empty `authorizedUsers` reads nothing — so the harness cannot end
+  its own work item. The **newest** authorized comment decides.
+- **`complete`** (phase `complete`) — the requester said so. Closing the issue ends it
+  too, on the shared close path; this loop adds no machinery for that.
+
+Three rules govern working inside it:
+
+- **Author nothing.** No `requirements.md`, `design.md`, `testing-plan.md`, `tasks.md`,
+  `contribution.md` or `evidence/` tree — none is gated here, and creating one anyway is
+  the bloat the loop exists to avoid. The only file the-loop writes into the repository
+  for an ad-hoc item is `<specDir>/<id>/graph-state.json`, a cache. If the task turns out
+  to deserve the PDLC, say so on the thread and propose a **new** work item rather than
+  quietly starting a spec chain inside this one.
+- **No phase selection, because there are no phases.** The issue-177/179 invariant — every
+  phase that does not run has a named human on it — holds *by construction*: nothing is
+  skipped, because the loop declares nothing to skip. Typing `the-loop do` is that named,
+  authorized, recorded declaration.
+- **Rigor that survives.** No review chain runs, and that is the requester's declared
+  call — but the project's own lint, type-check and test commands still run before you
+  report back (which is what the harness config is for), the self-authored marker still
+  goes on every comment, and a risk you notice is still said out loud on the thread.
+  Unlike a contribution, an ad-hoc item is **not a guest**: it is the requester's own work
+  item in their own repository, so an unconfigured checkout is adopted exactly as the
+  outer loop adopts it.
+
 ## Link artifacts to the ticket (single source of truth)
 
 Once each spec document is established (requirements, design, tasks), **update the work

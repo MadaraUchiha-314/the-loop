@@ -64,6 +64,53 @@ The ticket's phase label moves through `not-started → requirements-definition 
 complete` as the loop advances —
 `work-status` reads it back out for you at any point.
 
+## 5. Or skip the process entirely — ad-hoc tasks {#ad-hoc-tasks}
+
+Not every task deserves a spec chain. For a **tactical** one — bump a dependency, fix a
+typo, add a log line — comment this on the issue:
+
+```text
+the-loop do
+```
+
+That is the whole trigger. The-loop walks the **ad-hoc loop** (`pdlc-adhoc-loop`) instead
+of the outer loop: it reads the issue as its instruction, does the work, and reports back
+on the thread. There is no `requirements.md`, no design, no phase-selection checklist and
+no review chain.
+
+The keyword can ride along with the instruction, so one comment is usually the whole
+interaction:
+
+```text
+the-loop do — bump ruff to 0.16 and fix whatever it flags
+```
+
+Then it is a conversation. Reply on the ticket and the-loop picks it up:
+
+| You comment | What happens |
+|---|---|
+| anything that is **not** a "we're done" | more work — it routes back and keeps going |
+| `done` / `lgtm` / `that's all` / `ship it` | the item is complete |
+| *(you close the issue)* | the session ends, same as any work item |
+
+Three things to know before you use it:
+
+- **You must be an authorized user.** `the-loop do` is a control keyword like
+  `the-loop start`, so the same `routing.authorizedUsers` allowlist applies, and the-loop
+  can never answer its own gate.
+- **No review chain runs.** No self-review, no critic round, no security-review gate.
+  That is the point, and it is recorded: the loop this item walked is frozen in its
+  `graph-state.json`, and your arming comment stays on the thread — so a reviewer of the
+  resulting change can see that no automated review ran and who decided that. Lint,
+  type-check and tests still run.
+- **It is not a smaller `work-on`, and not `the-loop contribute`.** `contribute` joins
+  somebody else's in-progress work and refuses to start without a stated goal and
+  success criteria. Ad-hoc has neither: the ticket is the instruction and you decide when
+  it is done.
+
+Driving it from your editor instead of the ticket: `/the-loop:do-task <id>`. Configuring
+or disabling the word: [`control.keywords.do`](/config/cli/routing-options#controlkeywordsdo).
+
 ## Next
 
 - [How it works](/guide/how-it-works) — configuration, templates, and where knowledge

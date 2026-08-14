@@ -15,9 +15,9 @@ the operating model — one delivery surface, not the product.
 below in full: install, quickstart, the CLI command by command, every config option, and
 the developer docs.
 
-## Three loops
+## Four loops
 
-The PDLC is **three** graphs, all shipped inside the CLI as package data
+The PDLC is **four** graphs, all shipped inside the CLI as package data
 ([`cli/the_loop/graph/`](cli/the_loop/graph/)):
 
 - **`pdlc-work-item-loop`** — the **outer** loop. One work item, from a fuzzy idea to a
@@ -30,8 +30,15 @@ The PDLC is **three** graphs, all shipped inside the CLI as package data
   it refuses to start until an authorized human states a **goal and success criteria**,
   plans in one lightweight `contribution.md` instead of the four-file spec chain, and
   its verification gate holds until every stated criterion is met.
+- **`pdlc-adhoc-loop`** — the **ad-hoc** loop, and the smallest of them. A tactical task
+  that runs **no PDLC process at all** (comment `the-loop do`, optionally with the
+  instruction on the same line): `work → review → complete`, no spec chain, no
+  phase-selection gate, no artifact gates, no review chain. The ticket is the
+  instruction; any reply that is not a "we're done" is more work; the item ends when you
+  say so or close it. Walkthrough:
+  [quickstart § ad-hoc tasks](https://madarauchiha-314.github.io/the-loop/guide/quickstart#ad-hoc-tasks).
 
-They meet at exactly **one seam**. The outer `implementation` node waits at
+The first two meet at exactly **one seam**. The outer `implementation` node waits at
 `await-inner-loops` until every inner loop that was started reaches `complete`; then
 verification runs across all the PRs. A work item delivered by a single session starts no
 inner loops and passes that gate vacuously.

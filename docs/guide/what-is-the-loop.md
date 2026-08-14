@@ -11,9 +11,9 @@ and Cursor are how an agent picks up the operating model — one delivery surfac
 product. Once a plan is approved, the harness delivers a work item end-to-end with minimal
 or no human intervention, escalating only when a decision is genuinely needed.
 
-## Three loops
+## Four loops
 
-The PDLC is **three** graphs, all shipped as package data inside the CLI:
+The PDLC is **four** graphs, all shipped as package data inside the CLI:
 
 - **`pdlc-work-item-loop`** — the **outer** loop: one *work item*, from a fuzzy idea to a
   closed ticket.
@@ -28,8 +28,15 @@ The PDLC is **three** graphs, all shipped as package data inside the CLI:
   of the four-file spec chain; and its verification gate holds until every stated
   criterion is met. Phases are selectable as ever, so a small contained instruction can
   run as little as implementation + verification.
+- **`pdlc-adhoc-loop`** — the **ad-hoc** loop, and the smallest of them: a tactical task
+  that runs **no PDLC process at all** (comment `the-loop do`). Three nodes —
+  `work → review → complete` — with no spec chain, no phase-selection gate, no artifact
+  gates and no review chain. The ticket is the instruction, any reply that is not a "we're
+  done" is more work, and the item ends when you say so or close it. See the
+  [quickstart](/guide/quickstart#ad-hoc-tasks) for the
+  exact comment.
 
-They meet at exactly **one seam**: the outer `implementation` node waits at
+The first two meet at exactly **one seam**: the outer `implementation` node waits at
 `await-inner-loops` until every inner loop that was started reaches `complete`, after which
 verification runs across all the pull requests. A work item delivered by a single session
 starts no inner loops and passes that gate vacuously — it behaves exactly as it did before

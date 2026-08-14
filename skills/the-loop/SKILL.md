@@ -83,7 +83,12 @@ the-loop is **invited into an existing, in-progress work item as a
 contributor** (`the-loop contribute`): it cannot start without an authorized
 human's **goal and success criteria**, plans in one `contribution.md` instead
 of the four-file spec chain, and completes only when every stated criterion is
-met — see `reference/workflow.md` § The contribution loop. When a node's work is done, tell the graph so —
+met — see `reference/workflow.md` § The contribution loop. A fourth,
+`pdlc-adhoc-loop` (issue-225), is the smallest of them: a **tactical task that
+runs no PDLC process at all** (`the-loop do`) — `work → review → complete`, no
+spec chain, no phase selection, no artifact gates, no review chain, finished
+when the requester says so. See `reference/workflow.md` § The ad-hoc loop.
+When a node's work is done, tell the graph so —
 `the-loop graph complete <id>` — rather than only narrating the transition.
 
 See `reference/workflow.md` for what each phase contains, the review gates, the
@@ -375,6 +380,9 @@ Granular commands (one step at a time; same flow `work-on` runs end-to-end):
 - `/the-loop:contribute-to <id>` — join an **existing, in-progress** work item as a
   contributor: walk `pdlc-contribution-loop` toward the human-stated goal and success
   criteria (issue-185).
+- `/the-loop:do-task <id>` — do an **ad-hoc, tactical** task with no PDLC process: walk
+  `pdlc-adhoc-loop`, author no spec chain, ask follow-ups on the thread, and continue
+  until the requester declares it done (issue-225).
 
 ## Knowledge the loop maintains
 

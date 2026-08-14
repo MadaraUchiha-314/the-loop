@@ -37,13 +37,14 @@ def _recorded_loop(path: Path, work_item: str) -> str:
     """The outer-path loop this work item's state records (issue-185).
 
     ``""`` — the shipped default — for a fresh item, a pre-issue-185 state
-    file, or anything unreadable; only the contribution loop is ever returned,
-    because the state file is agent-writable and must not choose arbitrary
-    graphs. This is what lets `the-loop check`/`graph` address a contribution
-    item with no new flags: the recorded fact travels with the checkout.
+    file, or anything unreadable; only a non-default **outer-path** loop is ever
+    returned, because the state file is agent-writable and must not choose
+    arbitrary graphs. This is what lets `the-loop check`/`graph` address a
+    contribution or an ad-hoc item (issue-225) with no new flags: the recorded
+    fact travels with the checkout.
     """
     from .. import harness_config
-    from ..graph.model import PDLC_CONTRIBUTION_LOOP
+    from ..graph.model import resolve_outer_loop
     from ..graph.state import GraphState
 
     try:
@@ -52,7 +53,7 @@ def _recorded_loop(path: Path, work_item: str) -> str:
         recorded = str(getattr(state, "loop", "") or "")
     except Exception:  # noqa: BLE001 — an unreadable state reads as the default
         return ""
-    return PDLC_CONTRIBUTION_LOOP if recorded == PDLC_CONTRIBUTION_LOOP else ""
+    return resolve_outer_loop(recorded)
 
 
 def _runtime(
