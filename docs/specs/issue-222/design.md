@@ -159,7 +159,7 @@ sequenceDiagram
   Core->>Core: migrations.assert_current(merged)
   Core->>Core: cors_config(merged)  (the pair that cannot boot)
   Core->>YP: apply(text, patch)
-  YP->>YP: re-parse result; compare to merged
+  YP->>YP: re-parse the result, compare to merged
   YP--xCore: mismatch → RuntimeError → 500, nothing written
   Core->>FS: atomic replace (tmp in the same dir → os.replace)
   Core-->>API: {path, changed[], restartRequired[], config}
