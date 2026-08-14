@@ -11,32 +11,39 @@ meta:
   - path: .the-loop/harness-config.yaml
     role: project-config
     managed: true
-  - path: .the-loop/harness-config.schema.json
-    role: config-schema
-    managed: true
   - path: .the-loop/manifest.yaml
     role: manifest
     managed: true
   - path: .the-loop/collaborators.yaml
     role: collaborators
     managed: true   # single source for people + notification channels (issue-82, decision-035)
-  - path: .the-loop/collaborators.schema.json
-    role: collaborators-schema
-    managed: true
   - path: .the-loop/cli-config.yaml
     role: cli-config
     managed: true
     optional: true   # only scaffolded if the operator opts in at /init time (decision-032)
-  - path: .the-loop/cli-config.schema.json
-    role: cli-config-schema
-    managed: true
-    optional: true   # ships alongside cli-config.yaml, never on its own
 
 # Templates are INTERNAL to the-loop and are NOT copied into a project. They ship with
 # the plugin under `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/` and the-loop's
 # commands read them from there when authoring an artifact. `templatesDir` records that
 # location so tooling has a single place to resolve it.
 templatesDir: skills/the-loop/templates   # relative to ${CLAUDE_PLUGIN_ROOT}
+
+# Config SCHEMAS are internal to the-loop too (issue-220) and are NOT copied into a
+# project: they are the plugin's contract, not the operator's data, and a copy only goes
+# stale. They ship with the plugin under `${CLAUDE_PLUGIN_ROOT}/.the-loop/` — this
+# repository's own `.the-loop/` doubles as that directory — and `/the-loop:init`,
+# `/the-loop:upgrade-the-loop` and any other tool validate a project's config by reading
+# them from here. `schemasDir` records the location so there is one place to resolve it,
+# exactly as `templatesDir` does for templates. Scaffolded configs carry a
+# `# yaml-language-server: $schema=<published url>` first line so an editor still
+# validates them with no local copy present.
+#
+# CAREFUL — this path is plugin-relative and looks project-relative. A project has a
+# `.the-loop/` too, and it holds the operator's CONFIGS and no schema at all. Resolve
+# `schemasDir` against ${CLAUDE_PLUGIN_ROOT}, never against the repository being worked;
+# resolving it the wrong way finds a directory that exists and lacks every file you came
+# for.
+schemasDir: .the-loop   # relative to ${CLAUDE_PLUGIN_ROOT}, NOT to the project; holds harness-config, collaborators and cli-config schemas
 
 # Paths that OLDER versions of the-loop created inside a project but that current
 # versions no longer manage. `/the-loop:upgrade-the-loop` removes these when present so
@@ -49,6 +56,32 @@ deprecated:
       Templates are now internal to the-loop (issue #36) and live with the plugin's skill
       under skills/the-loop/templates/; they are no longer copied into each project.
     removeIn: "0.5.0"
+  - path: .the-loop/harness-config.schema.json
+    role: config-schema
+    reason: >-
+      Schemas are internal to the-loop (issue #220) and ship with the plugin under
+      `${CLAUDE_PLUGIN_ROOT}/.the-loop/` (manifest.schemasDir); they are no longer copied
+      into each project. SAFE TO DELETE, not a migration: the file is a verbatim copy of
+      the plugin's own schema and holds no project data. The config it validated
+      (.the-loop/harness-config.yaml) stays exactly where it is.
+    removeIn: "10.0.0"
+  - path: .the-loop/collaborators.schema.json
+    role: collaborators-schema
+    reason: >-
+      Schemas are internal to the-loop (issue #220), shipped under
+      `${CLAUDE_PLUGIN_ROOT}/.the-loop/` (manifest.schemasDir). SAFE TO DELETE, not a
+      migration: a verbatim copy of the plugin's schema, no project data.
+      .the-loop/collaborators.yaml — the operator's own file — is untouched.
+    removeIn: "10.0.0"
+  - path: .the-loop/cli-config.schema.json
+    role: cli-config-schema
+    reason: >-
+      Schemas are internal to the-loop (issue #220), shipped under
+      `${CLAUDE_PLUGIN_ROOT}/.the-loop/` (manifest.schemasDir). SAFE TO DELETE, not a
+      migration: a verbatim copy of the plugin's schema, no project data. An opt-in
+      .the-loop/cli-config.yaml (decision-032) keeps being validated against the plugin's
+      copy.
+    removeIn: "10.0.0"
   - path: .the-loop/config.yaml
     role: project-config
     reason: >-
@@ -61,8 +94,11 @@ deprecated:
   - path: .the-loop/config.schema.json
     role: config-schema
     reason: >-
-      Renamed to .the-loop/harness-config.schema.json (issue #82, decision-035).
-      Upgrade replaces it with the current schema under the new name.
+      Renamed to .the-loop/harness-config.schema.json (issue #82, decision-035), which
+      issue #220 then retired from projects altogether. Upgrade DELETES this file and
+      writes no replacement: the schema it duplicated now ships with the plugin
+      (manifest.schemasDir). The rename of the *config* it validated is still a
+      migration — see the .the-loop/config.yaml entry above.
     removeIn: "1.0.0"
 
 # Per-work-item artifacts: an optional brainstorm scratchpad, the Kiro-style 3-phase spec,

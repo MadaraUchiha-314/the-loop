@@ -23,36 +23,50 @@ command reconciles them.
    - Create any missing managed files / directories.
    - Never clobber user-owned files (`managed: false`) — diff and suggest changes
      instead.
-   - Templates are **internal to the-loop** and are **not** materialized in the project;
-     read them from `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/`
-     (`manifest.templatesDir`) rather than creating a `.the-loop/templates/` folder.
+   - Templates and config **schemas** are **internal to the-loop** and are **not**
+     materialized in the project; read them from
+     `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/` (`manifest.templatesDir`) and
+     `${CLAUDE_PLUGIN_ROOT}/.the-loop/*.schema.json` (`manifest.schemasDir`) rather than
+     creating a `.the-loop/templates/` folder or a `.the-loop/*.schema.json` copy
+     (issue-220).
 
 3. **Clean up deprecated paths.** For each entry under `manifest.deprecated`, if the path
    is present in the project, act on it — this is how projects initialized by older
-   versions shed the duplicated, internal-only artifacts (notably
-   `.the-loop/templates/`, superseded by the plugin's own skill templates in issue #36).
+   versions shed the duplicated, internal-only artifacts: `.the-loop/templates/`,
+   superseded by the plugin's own skill templates (issue #36), and the three
+   `.the-loop/*.schema.json` copies, superseded by the plugin's own schemas (issue #220 —
+   up to 118 KB of the-loop's internals per repository).
    **Read the entry's `reason` first:** an entry whose reason describes a MIGRATION
-   (e.g. `.the-loop/config.yaml` / `.the-loop/config.schema.json`, renamed in
-   issue-82) is **never deleted here** — it is handled by step 4's rename migration,
-   which preserves the data; only remove a path whose reason marks it as
-   safe-to-delete. If a user has clearly added their own files under a deprecated
-   path, surface them in the report and confirm before deleting rather than removing
-   silently.
+   (e.g. `.the-loop/config.yaml`, renamed in issue-82) is **never deleted here** — it is
+   handled by step 4's rename migration, which preserves the data; only remove a path
+   whose reason marks it as safe-to-delete. If a user has clearly added their own files
+   under a deprecated path, surface them in the report and confirm before deleting rather
+   than removing silently.
+   - **Only the exact paths the manifest names.** A candidate that resolves outside the
+     project's `.the-loop/` directory — a symlink, a `..` segment, an absolute path — is
+     **refused and reported**, never deleted. Removal is name-driven; it is never
+     inferred from a pattern.
+   - **A schema copy that differs from the plugin's shipped schema is a signal.** Diff it
+     before removing and say so in the report — somebody may have been relying on a local
+     edit, and this is their one chance to find out. If you cannot establish that a file
+     is a the-loop schema copy, leave it and report it under **needs-user**.
 
-4. **Migrate schemas.** the-loop has **three** independent config schemas — the per-repo
-   **harness (plugin)** config (`.the-loop/harness-config.schema.json` ↔ `.the-loop/harness-config.yaml`),
-   the per-repo **collaborators** file (`.the-loop/collaborators.schema.json` ↔
+4. **Migrate configs to the current schemas.** the-loop has **three** independent config
+   schemas, all of them the **plugin's** (`manifest.schemasDir`) — the per-repo
+   **harness (plugin)** config (`harness-config.schema.json` ↔ `.the-loop/harness-config.yaml`),
+   the per-repo **collaborators** file (`collaborators.schema.json` ↔
    `.the-loop/collaborators.yaml`, issue-82/decision-035) and the
-   **CLI daemon** config (`.the-loop/cli-config.schema.json` ↔ `.the-loop/cli-config.yaml`,
-   decision-032). Check each one **independently**: a release may change only one of them
-   (e.g. a new `routing.*` key touches only the CLI schema), so never
-   gate the CLI-config migration on the plugin schema having changed.
+   **CLI daemon** config (`cli-config.schema.json` ↔ `.the-loop/cli-config.yaml`,
+   decision-032). What migrates is the **project's config file**; the schema itself is
+   never written into the project (issue-220). Check each one **independently**: a release
+   may change only one of them (e.g. a new `routing.*` key touches only the CLI schema),
+   so never gate the CLI-config migration on the plugin schema having changed.
 
    **Rename migration (issue-82, decision-035):** if the project still has
-   `.the-loop/config.yaml` / `.the-loop/config.schema.json` (the pre-rename names),
+   `.the-loop/config.yaml` (the pre-rename name),
    `git mv` the config to `.the-loop/harness-config.yaml` preserving every user value,
-   replace the schema with the current `.the-loop/harness-config.schema.json`, and then
-   migrate the retired people keys: move each `personas` entry into
+   delete any leftover `.the-loop/config.schema.json` without replacing it (step 3), and
+   then migrate the retired people keys: move each `personas` entry into
    `.the-loop/collaborators.yaml` as a collaborator (creating the file from
    `templates/collaborators.yaml` if absent), fold any `messaging.channels` targets into
    a collaborator `notifications.channels` entry (`type: slack` → a slack channel with
@@ -62,8 +76,9 @@ command reconciles them.
    files. Report this migration explicitly so the operator sees exactly what moved
    where.
 
-   For **any** of the three schemas, when it changed, update the project's copy of that
-   schema file and migrate the corresponding config file to the new shape:
+   For **any** of the three schemas, when it changed, migrate the corresponding config
+   file to the new shape (there is no project copy of the schema to update — read the
+   plugin's):
    - **Add new keys with defaults.** This is the common case and covers purely additive,
      opt-in keys — e.g. `routing.workspace` (issue-76): add it with `root: ""` (disabled)
      so nothing changes for an operator who doesn't set it, and `spawnWorkdir` keeps its
@@ -80,9 +95,9 @@ command reconciles them.
      the same yes/no question `/the-loop:init` asks (Requirement 2.4): scaffold it at
      `.the-loop/cli-config.yaml` (repo-tracked) or print the extracted block for the
      operator to place at `~/.the-loop/cli-config.yaml` themselves. Either way, validate
-     it against `.the-loop/cli-config.schema.json`, THEN strip `webhooks`/`polling`/
+     it against the plugin's `cli-config.schema.json`, THEN strip `webhooks`/`polling`/
      `observability.eventLog` from `.the-loop/harness-config.yaml` and re-validate it against
-     the trimmed `.the-loop/harness-config.schema.json`. Report this migration explicitly (not
+     the trimmed `harness-config.schema.json`. Report this migration explicitly (not
      folded into a generic "drifted" line) so the operator sees exactly what moved
      where. Also flag `routing.authorizedUsers` / any poll source's `repos` if they were
      empty and relying on the now-removed `ticketing.github` fallback (Requirement 4) —
@@ -152,7 +167,8 @@ command reconciles them.
      that matters more, because the CLI will refuse to start against it. Say so explicitly
      and print the migrated block for the operator to paste.
 
-   Validate each migrated file against its schema. The CLI config is opt-in: only migrate
+   Validate each migrated file against its schema, read from `manifest.schemasDir` under
+   `${CLAUDE_PLUGIN_ROOT}` — locally, never over the network. The CLI config is opt-in: only migrate
    `.the-loop/cli-config.yaml` if the project already had one (scaffolded at a previous
    init/upgrade). Never scaffold one now if the project never had one and step 4's data
    migration didn't just create it (that's the operator's choice, not upgrade's to make

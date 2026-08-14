@@ -3,7 +3,9 @@
 `.the-loop/harness-config.yaml` — the **per-repository** configuration, written by
 `/the-loop:init` and read by the `/the-loop:*` commands and the operating skill. It is
 what makes "how work is done" a property of the project rather than of whoever is running
-the agent. Validated against `.the-loop/harness-config.schema.json`.
+the agent. Validated against `harness-config.schema.json`, which ships with the plugin
+rather than being copied into your repository — see
+[where the schemas live](/config/#where-the-schemas-live).
 
 For the daemon's own, repo-independent settings see the [CLI config](/config/cli/) —
 the two never share a key ([decision-032](/decisions/decision-032)).
@@ -142,7 +144,7 @@ module other than `the_loop.harness_config` opens the file.
 `.the-loop/collaborators.yaml` — the single source of truth for who collaborates on the
 project and how they are notified
 ([decision-035](/decisions/decision-035)). CODEOWNERS-like: the stewards of the
-repository. Validated against `.the-loop/collaborators.schema.json`.
+repository. Validated against the plugin's `collaborators.schema.json`.
 
 Each collaborator declares a handle, `kind` (individual/group), `roles`, and their
 `notifications`: a per-user `enabled` switch and a list of channels — each with a `type`
@@ -177,4 +179,7 @@ never reads any repository's `collaborators.yaml` — see
 `.the-loop/manifest.yaml` tracks every file and directory the-loop creates or maintains in
 a project, so
 `/the-loop:upgrade-the-loop` can reconcile a project against the installed plugin version
-instead of guessing what it owns.
+instead of guessing what it owns. It also declares the two things the-loop deliberately
+does **not** put in a project — `templatesDir` and `schemasDir`, both relative to the
+installed plugin — and lists under `deprecated` the paths older versions created so that
+upgrading removes them.

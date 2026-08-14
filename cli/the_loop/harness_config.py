@@ -97,6 +97,29 @@ _SCAFFOLD_HEADER = """\
 
 """
 
+#: The editor directive the packaged default opens with (issue-220). ``yaml-language-server``
+#: honours it on the **first line only**, which is why :func:`_with_header` exists.
+_MODELINE_PREFIX = "# yaml-language-server:"
+
+
+def _with_header(body: str) -> str:
+    """``_SCAFFOLD_HEADER`` above ``body`` — but never above its schema modeline.
+
+    the-loop stopped copying its JSON schemas into projects (issue-220), so a scaffolded
+    config's only editor validation is the ``# yaml-language-server: $schema=…`` line the
+    packaged default opens with, and that directive works on line 1 or not at all.
+    Prepending the provenance header verbatim would push it to line 7 and quietly cost
+    the operator the validation this file promises them.
+
+    A body that carries no modeline gets today's plain concatenation, so nothing depends
+    on the default keeping that first line — only on the header not jumping over it.
+    """
+    head, separator, rest = body.partition("\n")
+    if not head.startswith(_MODELINE_PREFIX):
+        return _SCAFFOLD_HEADER + body
+    return head + separator + _SCAFFOLD_HEADER + rest
+
+
 #: GitHub's own owner/repo charset. Payload-derived text entering a YAML document is an
 #: injection surface, and this allow-list is the whole defence: it contains no quote, no
 #: newline and no ``": "``, so a value that passes cannot extend, terminate or re-key the
@@ -372,9 +395,7 @@ def scaffold(root: Path, owner: str = "", repo: str = "") -> str:
         return ""
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(
-            _SCAFFOLD_HEADER + _named_for(body, owner, repo), encoding="utf-8"
-        )
+        target.write_text(_with_header(_named_for(body, owner, repo)), encoding="utf-8")
     except OSError as exc:
         logger.warning("could not write %s: %s", target, exc)
         return ""

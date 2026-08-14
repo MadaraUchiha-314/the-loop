@@ -1,5 +1,8 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/MadaraUchiha-314/the-loop/main/.the-loop/collaborators.schema.json
 # .the-loop/collaborators.yaml
-# Validated against .the-loop/collaborators.schema.json.
+# Validated against ${CLAUDE_PLUGIN_ROOT}/.the-loop/collaborators.schema.json — the
+# schema ships with the plugin rather than being copied here (issue-220). The first
+# line points your editor at the published copy of it.
 #
 # The stewards of the repository (CODEOWNERS-like) and the SINGLE source of truth
 # for who collaborates on this project and how they are notified (issue-82,

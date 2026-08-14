@@ -6,9 +6,9 @@
 ## What it is
 
 The packaging that makes the-loop installable in both harnesses: two thin plugin
-manifests over one shared set of skills, commands and templates. The templates are
-**internal** to the plugin — read from it when authoring artifacts, never copied into
-the projects the-loop is run on.
+manifests over one shared set of skills, commands and templates. The templates **and the
+config schemas** are **internal** to the plugin — read from it when authoring artifacts or
+validating a config, never copied into the projects the-loop is run on.
 
 ## Current behaviour
 
@@ -42,6 +42,26 @@ the projects the-loop is run on.
   `.the-loop/templates/` folder into THEN it SHALL remove that folder (per
   `manifest.deprecated`), confirming first only if the user has added their own files
   under it.
+- **Config schemas SHALL be internal to the plugin too** (issue-220,
+  [decision-080](../decisions/decision-080.md)), shipped under
+  `${CLAUDE_PLUGIN_ROOT}/.the-loop/` and declared once as `manifest.schemasDir` — the same
+  shape `templatesDir` has. `/the-loop:init` SHALL NOT create
+  `harness-config.schema.json`, `collaborators.schema.json` or `cli-config.schema.json` in
+  a project, and the opt-in `.the-loop/cli-config.yaml` SHALL be scaffolded alone.
+- WHEN init or upgrade validates a config, or drives the `x-onboarding` walkthrough, THEN
+  it SHALL read the schema from `manifest.schemasDir` **on disk** — the absence of a
+  project-local copy SHALL NOT weaken, skip, or move that validation onto the network.
+- WHEN `/the-loop:upgrade-the-loop` runs on a project holding a schema copy an older
+  version left behind THEN it SHALL delete it and report it under **removed
+  (deprecated)**; WHERE that copy differs from the plugin's shipped schema the difference
+  SHALL be surfaced first, and WHERE the file cannot be established as a the-loop copy it
+  SHALL be left in place and reported under **needs-user**. Deletion is name-driven from
+  `manifest.deprecated`; a path resolving outside the project's `.the-loop/` SHALL be
+  refused.
+- Every config the-loop scaffolds SHALL open, on its **first line**, with a
+  `# yaml-language-server: $schema=<published url>` modeline, so an operator's editor
+  validates the file with no local schema. It is a comment: the loop SHALL never read it,
+  and SHALL never fetch a schema over the network.
 - WHEN `/the-loop:init` scaffolds `.the-loop/harness-config.yaml` THEN it SHALL establish the
   config with the user via a guided onboarding driven by the schema's `x-onboarding`
   groups: related keys clubbed and decided together, each group explained, enum keys
@@ -82,6 +102,7 @@ the projects the-loop is run on.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-220 | Config schemas made internal to the plugin (`manifest.schemasDir`); init stops copying up to 118 KB of them into each project, upgrade deletes the copies already there, and scaffolded configs carry a `# yaml-language-server: $schema=` modeline instead | [spec](../specs/issue-220/), [decision-080](../decisions/decision-080.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/220) |
 | issue-152 | The **Claude Code** plugin became installable and upgradable from the CLI (`the-loop install` / `upgrade`), at user or project scope, without opening a session — the terminal-side counterpart to the marketplace routes. Cursor stays in-editor-only, split out as issue-157 | [spec](../specs/issue-152/), [decision-057](../decisions/decision-057.md), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/152) |
 | issue-106 | A key whose default changes behaviour (`routing.control.requireStartCommand`) is reported as **needs-user**, not silently added; the `state`/`control` blocks are added with defaults and the poll-state move is offered, not forced | [spec](../specs/issue-106/), [decision-040](../decisions/decision-040.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/106) |
 | issue-63 | `/upgrade` migrates (not just flags) removed schema keys with live data — the `webhooks`/`polling`/`observability.eventLog` → CLI config extraction | [spec](../specs/issue-63/), [decision-032](../decisions/decision-032.md) |

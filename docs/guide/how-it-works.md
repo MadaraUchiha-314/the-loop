@@ -36,16 +36,21 @@ Inspect it with [`the-loop graph`](/cli/commands/graph) and read the full behavi
 
 ## Configuration, templates and the operating model
 
-- **Configuration** lives in `.the-loop/harness-config.yaml`, validated against
-  `.the-loop/harness-config.schema.json`. A subset of keys can be overridden per work item
-  via the markdown front-matter. The CLI daemon's own config (webhook receiver / poller) is
-  independent and not tied to a repo — see the [configuration reference](/config/).
+- **Configuration** lives in `.the-loop/harness-config.yaml`. A subset of keys can be
+  overridden per work item via the markdown front-matter. The CLI daemon's own config
+  (webhook receiver / poller) is independent and not tied to a repo — see the
+  [configuration reference](/config/).
 - **Everything the-loop manages** is tracked in `.the-loop/manifest.yaml`.
 - **Templates** for epics, stories, bugs, the optional `brainstorm` root artifact and the
   spec artifacts (`requirements`/`bugfix`, `design`, `testing-plan`, `tasks`,
   `execution-log`) are **internal to the-loop** — they ship with the plugin under
   `skills/the-loop/templates/` and are read from there when an artifact is authored, rather
   than being copied into every project.
+- **Config schemas are internal too.** `harness-config.schema.json`,
+  `collaborators.schema.json` and `cli-config.schema.json` ship with the plugin
+  (`manifest.schemasDir`) and validate your config from there — your repository keeps the
+  configuration you wrote, not a copy of the-loop's contract. Each scaffolded config opens
+  with a `# yaml-language-server: $schema=…` line so your editor still validates it.
 - **The operating model** is captured in the `the-loop` skill, with the full detail in its
   [reference docs](/operating-model/) — workflow, context, onboarding, instructions,
   design-artifacts, reviewing, security, tooling, testing, minimalism, token economy,
