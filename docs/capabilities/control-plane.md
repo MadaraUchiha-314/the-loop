@@ -137,6 +137,44 @@ package — there are no install extras (owner decision, PR #162).
   to the plane's existing audience under the existing posture (decision-059),
   with every read audited as `api.request`
   ([decision-079](../decisions/decision-079.md)).
+- The operator's **CLI config** SHALL be readable and writable through the plane
+  (issue-222): `GET /api/v1/config` serves the resolved file with its path and an
+  `exists` flag (a machine that has never been configured is a normal state, not an
+  error; an *unparseable* file is a 400, never an empty config), `GET
+  /api/v1/config/schema` serves the packaged `cli-config.schema.json` with every `$ref`
+  resolved, and `POST /api/v1/config` applies a **sparse patch**. The file this writes
+  SHALL be the one the process already reads — resolved by the usual precedence
+  (`--config`, `$THE_LOOP_CLI_CONFIG`, `./.the-loop/`, `~/`) — and **no request field
+  SHALL name a path**.
+- A save SHALL be **spliced into the file, never a re-serialization of it**: comments,
+  key order, blank lines and quoting SHALL survive, because about half of a the-loop
+  config is the prose explaining it. Nothing SHALL be written until the *merged*
+  document passes the schema, the migration gate (`assert_current`) and the same
+  `cors_config` check the service refuses to boot on, and until the edited text has been
+  re-parsed and shown to hold the intended document; any failure SHALL leave the file
+  byte-identical. The write itself SHALL be atomic (temp file in the same directory,
+  then `os.replace`), and a file created this way SHALL open with the schema modeline
+  and be mode `0600`.
+- A saved change SHALL take effect **without a restart**: the daemons already reload from
+  the file's content hash, and the service SHALL do the same — its in-process config is
+  refreshed once per request, so a hand-edit is picked up too, and a file that becomes
+  unparseable keeps the last good config rather than reverting to defaults. The values
+  read only at boot — `service.host`, `service.port`, `service.exposed` and everything
+  under `service.cors` — SHALL be reported back as `restartRequired`, and that list SHALL
+  be empty when nothing in it changed.
+- A config write SHALL be **visible**: every successful save emits `config.updated` with
+  the file and the **changed key paths**, and never the values, which name people, hosts
+  and binaries. The route SHALL NOT be exposed as an MCP tool — a daemon config an agent
+  can rewrite is `graph force`'s problem with a longer half-life — and its authority is
+  otherwise the plane's existing one: a caller who can reach it can already start harness
+  sessions, so the boundary remains the loopback bind, the exposure guard and the
+  deploying gateway.
+- The dashboard's **Settings** tab SHALL render that config from the served schema —
+  one section per top-level property, nested objects as nested groups, typed controls for
+  scalars, enums and string lists, and an editable JSON field for any subtree with no
+  typed control, so no key is unreachable from the screen. A schema `default` SHALL be
+  shown as a **placeholder, never adopted as a value** (that distinction is what keeps
+  today's defaults out of the operator's file), and Save SHALL send only what changed.
 - Where the dashboard's design specified a surface this API cannot back, that
   surface SHALL be rendered **disabled and named**, never mocked and never
   silently dropped. None remains today: the inline reply shipped disabled and
@@ -167,4 +205,5 @@ package — there are no install extras (owner decision, PR #162).
 | issue-211 | The dashboard can actually read the service: `service.cors` makes the allowed browser origins configuration, shipping the published page's own origin as the default. Exact-string origins only; `"*"` with credentials refuses to start; an empty list installs no middleware. The bind, the exposure guard and the MCP transport's origin check are unchanged | [spec](../specs/issue-211/), [decision-077](../decisions/decision-077.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/211) |
 | issue-207 | The descoped UI lands: a static dashboard in `ui/` over the same `/api/v1`, published to `/the-loop/ui/` from the docs site's Pages artifact. Loop position joined from the session's `cwd` and the record's spec id; the inbox unions `/attention` with the repo-scoped graph gates it excludes; the two surfaces the API cannot back ship disabled and named | [spec](../specs/issue-207/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/207) |
 | issue-208 | Agent questions become a verb and get an answer route: `the-loop ask` posts the question with the marker stamped centrally and emits `session.awaiting_input`; `POST /api/v1/sessions/reply` pastes the answer into the pane (fail-closed — never spawns, refuses paused), emits `session.reply_sent`, and records a marked report on the ticket. `attention` gains the `awaiting-input` kind; the dashboard's reply box goes live | [spec](../specs/issue-208/), [decision-078](../decisions/decision-078.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/208) |
+| issue-222 | The CLI config becomes editable from the plane: `GET/POST /api/v1/config` and `GET /api/v1/config/schema`, over a comment-preserving splice writer (`yamlpatch`) and a packaged-schema validator (`configschema`) that adds no runtime dependency. Nothing is written until the merged document clears the schema, the migration gate and the CORS boot rule, and the splice has re-parsed to what it promised. The service gains the daemons' hot reload, so a save is live on the next request; boot-only keys come back as `restartRequired`. The dashboard's Settings tab renders the whole config from the schema | [spec](../specs/issue-222/), [decision-081](../decisions/decision-081.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/222) |
 | issue-209 | The harness's own JSONL is served: `GET /api/v1/sessions/transcript` (+ the `session_transcript` MCP tool) resolves the file from the recorded `cwd` + session id and returns a bounded tail, fail-closed to `*.jsonl` inside the projects root — the plane's first file-contents route. The dashboard's turns-and-tool-calls trace goes live, with the event trail kept as the 404 fallback; its path caption switches to the harness's per-character munge | [spec](../specs/issue-209/), [decision-079](../decisions/decision-079.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/209) |

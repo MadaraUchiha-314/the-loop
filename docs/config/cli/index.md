@@ -18,6 +18,29 @@ Validated against
 which ships with the plugin — `/the-loop:init` scaffolds the config alone and never a copy
 of the schema beside it.
 
+## Editing it from the dashboard
+
+Since issue-222 this file is not only hand-editable. Run
+[`the-loop service start`](/cli/commands/service), open the
+[dashboard's](https://madarauchiha-314.github.io/the-loop/ui/) **Settings** tab, and the
+whole config is there — one section per top-level block, rendered from the schema, with
+each key's description beside it.
+
+Two things are worth knowing before you use it:
+
+- **Your comments survive.** A save rewrites the values you changed *in the file text*
+  rather than re-serializing the document, so the prose explaining each knob stays where
+  you wrote it, along with key order and formatting.
+- **A save is live immediately** — the poller and the receiver reload from the file, and
+  so does the service itself. The exceptions are the values read once at boot
+  (`service.host`, `service.port`, `service.exposed`, `service.cors.*`); the dashboard
+  names them in its confirmation when you change one.
+
+An invalid change is refused with the offending key named, and nothing is written. The
+route has the same authority as the rest of the control plane — see
+[service options](/config/cli/service-options) for the network posture, which this does
+not change.
+
 ## Where the file is found
 
 Resolved in priority order — the first that exists wins:

@@ -15,7 +15,9 @@ import { useState } from "react";
 import { ApiError, HttpApi, normalizeBaseUrl } from "../api/client.ts";
 import { useApi } from "../state/ApiContext.tsx";
 import { Blueprint } from "../components/Blueprint.tsx";
+import { ConfigEditor } from "../components/ConfigEditor.tsx";
 import { POLL_CHOICES, type DataMode } from "../state/settings.ts";
+import { useAsync } from "../state/useAsync.ts";
 
 type Probe = { state: "idle" } | { state: "checking" } | { state: "ok"; version: string } | { state: "fail"; advice: string };
 
@@ -126,10 +128,57 @@ export function Settings() {
         </div>
       </Blueprint>
 
+      <CliConfigSection />
+
       <div className="lp-more">
         More to come: event-log retention view, default reply actor, per-workstation profiles.
       </div>
     </>
+  );
+}
+
+/**
+ * The daemon's own config (issue-222).
+ *
+ * The two calls are loaded together and the editor is only mounted once both are in:
+ * the form is *derived* from the schema, so half of the pair is not a screen worth
+ * rendering. A failure says which of the two failed and offers a retry, because "the
+ * service is old enough not to have the route" and "the service is unreachable" want
+ * different things from the operator.
+ */
+function CliConfigSection() {
+  const { api } = useApi();
+  const [nonce, setNonce] = useState(0);
+  const loaded = useAsync(
+    async (signal) => ({
+      document: await api.config(signal),
+      schema: await api.configSchema(signal),
+    }),
+    [api, nonce],
+  );
+
+  if (loaded.loading) return <div className="lp-skeleton">Reading the CLI config…</div>;
+  if (loaded.error || !loaded.data) {
+    const advice = loaded.error instanceof ApiError ? loaded.error.advice : String(loaded.error);
+    return (
+      <Blueprint className="lp-settings-card">
+        <div className="lp-settings-kicker">CLI config</div>
+        <div className="lp-config-report fail">{advice}</div>
+        <div className="lp-settings-row">
+          <button type="button" className="btn btn-secondary" onClick={() => setNonce((value) => value + 1)}>
+            Retry
+          </button>
+        </div>
+      </Blueprint>
+    );
+  }
+
+  return (
+    <ConfigEditor
+      document={loaded.data.document}
+      schema={loaded.data.schema}
+      onSave={(patch) => api.saveConfig(patch)}
+    />
   );
 }
 

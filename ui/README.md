@@ -69,7 +69,12 @@ Nothing here is a new endpoint. The interesting part is the **join**, which live
 | Attention | `GET /attention`, unioned with the parked gates from the graph reports |
 | Events | `GET /events` |
 | Chrome | `GET /daemons` |
-| Settings | `GET /health` |
+| Settings | `GET /health`, plus `GET /config` + `GET /config/schema` and `POST /config` for the CLI-config editor (issue-222) |
+
+The config editor is the one screen that renders itself: its sections, labels, prose,
+types, enums and defaults all come from the served schema, so it cannot drift from what
+the service accepts, and a subtree with no typed control (a list of poll sources, say) is
+edited as JSON rather than left unreachable. Save sends only the keys that changed.
 
 Two facts shape that:
 

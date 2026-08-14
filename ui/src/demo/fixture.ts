@@ -13,6 +13,8 @@
  */
 
 import type {
+  ConfigDocument,
+  JsonSchema,
   AttentionItem,
   DaemonStatus,
   EventRecord,
@@ -423,3 +425,73 @@ export const DEMO_TRANSCRIPT: TranscriptEntry[] = [
     message: { role: "assistant", content: [{ type: "text", text: "Briefing posted; requesting review next." }] },
   },
 ];
+
+/**
+ * A small, believable CLI config and the slice of its schema the demo renders — enough
+ * for the Settings editor to show real sections, prose and controls with no service in
+ * reach. It is deliberately not the whole 100-key schema: the demo demonstrates the
+ * screen, and a copy of the shipped schema here would be a second one to keep current.
+ */
+export const DEMO_CONFIG: ConfigDocument = {
+  path: "~/.the-loop/cli-config.yaml",
+  exists: true,
+  version: "0.4.0",
+  config: {
+    version: "0.4.0",
+    routing: {
+      enabled: true,
+      defaultHarness: "claude",
+      authorizedUsers: ["octocat"],
+      maxConcurrentDispatches: 4,
+    },
+    polling: { intervalSeconds: 60, sources: [] },
+    eventLog: { enabled: true, path: ".the-loop/logs/events.jsonl" },
+  },
+};
+
+export const DEMO_CONFIG_SCHEMA: JsonSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    version: { type: "string", description: "Schema version of this file." },
+    routing: {
+      type: "object",
+      description: "What happens to an event once accepted: who may drive the loop, and how sessions are hosted.",
+      properties: {
+        enabled: { type: "boolean", default: false, description: "Route events to registered harness sessions." },
+        defaultHarness: {
+          type: "string",
+          enum: ["claude", "cursor"],
+          default: "claude",
+          description: "Which harness a spawned session runs.",
+        },
+        authorizedUsers: {
+          type: "array",
+          items: { type: "string" },
+          description: "Logins whose comments may command the loop. Empty means nothing is actioned (fail closed).",
+        },
+        maxConcurrentDispatches: { type: "integer", minimum: 1, default: 4 },
+      },
+    },
+    polling: {
+      type: "object",
+      description: "The poller's cadence and the repositories it watches.",
+      properties: {
+        intervalSeconds: { type: "integer", minimum: 5, default: 60 },
+        sources: {
+          type: "array",
+          items: { type: "object", properties: { provider: { type: "string" } } },
+          description: "Poll sources. Rendered as JSON: a list of records has no typed control.",
+        },
+      },
+    },
+    eventLog: {
+      type: "object",
+      description: "The structured JSONL trail `the-loop events` reads.",
+      properties: {
+        enabled: { type: "boolean", default: true },
+        path: { type: "string", default: ".the-loop/logs/events.jsonl" },
+      },
+    },
+  },
+};

@@ -105,9 +105,18 @@ The contract is authored in
 — a parity test fails the build when the served schema drifts from it. Interactive
 docs are served at `/api/docs`. Work items, the process graph
 (show/check/advance/complete/force), sessions and their register/close/control verbs,
-the event log, daemon lifecycle, needs-attention, and repo-scoped queries (scenarios /
-instructions / critics, and running one critic round) are all exposed; `sessions reset`
-deliberately is **not** (a destructive verb stays a local decision).
+the event log, daemon lifecycle, needs-attention, repo-scoped queries (scenarios /
+instructions / critics, and running one critic round) and the **CLI config itself**
+(`GET/POST /api/v1/config`, `GET /api/v1/config/schema` — issue-222) are all exposed;
+`sessions reset` deliberately is **not** (a destructive verb stays a local decision).
+
+The config routes read and write the file this process already resolved — no request
+names a path — and a write is spliced into the file rather than re-serialized, so your
+comments survive. Nothing is written unless the merged document passes the schema, the
+migration gate and the CORS boot rule. A saved change is live on the next request, and
+the values read once at boot (`service.host`, `service.port`, `service.exposed`,
+`service.cors.*`) come back in the response as `restartRequired`. See
+[configuring the CLI](/config/cli/).
 
 ## MCP: connecting an agent
 

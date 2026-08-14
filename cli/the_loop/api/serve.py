@@ -28,8 +28,9 @@ logger = logging.getLogger("the-loop.service")
 
 
 def main() -> int:
+    config_path = default_cli_config_path()
     try:
-        cli_config = load_cli_config(default_cli_config_path())
+        cli_config = load_cli_config(config_path)
     except Exception:  # config problems must not leave the service half-up
         logger.exception("cannot load the CLI config; refusing to start")
         return 2
@@ -63,7 +64,9 @@ def main() -> int:
 
     from .app import create_app
 
-    app = create_app(cli_config)
+    # The resolved path travels with the config: the app serves it, writes it through
+    # /api/v1/config, and watches it so a saved change needs no restart (issue-222).
+    app = create_app(cli_config, config_path=config_path)
     eventlog.emit("service.started", host=conf["host"], port=conf["port"])
     try:
         import uvicorn

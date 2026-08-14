@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [081](decision-081.md) | The config editor splices the file, and validates with a schema it ships | proposed | 2026-08-14 |
 | [080](decision-080.md) | the-loop's config schemas ship with the plugin, not with your repo | proposed | 2026-08-14 |
 | [079](decision-079.md) | The transcript route serves transcripts, not the filesystem | proposed | 2026-08-12 |
 | [078](decision-078.md) | Agent questions travel through a verb; the loop-prevention marker is stamped centrally | proposed | 2026-08-12 |

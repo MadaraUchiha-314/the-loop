@@ -15,7 +15,11 @@ matches the loopback-by-default posture the exposure guard enforces.
 
 Exclusions are policy (R5.3): ``sessions reset`` is destructive and stays a
 local decision; ``graph force`` requires a human-attributed reason an agent
-must not forge. Neither is registered as a tool.
+must not forge. The **CLI config** (``/api/v1/config``, issue-222) is excluded
+for the same reason with a longer half-life: it names who may command the loop
+and which binaries the daemon runs, so changing it is an operator's act, and an
+agent that could rewrite it would be editing the rules it is judged by. None of
+the three is registered as a tool.
 """
 
 from __future__ import annotations
