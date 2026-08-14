@@ -124,6 +124,8 @@ Verification results table records the command, outcome and committed evidence f
 | `skills/the-loop/SKILL.md` | the fourth loop in the loops paragraph; `/the-loop:do-task` in the command list |
 | `skills/the-loop/reference/workflow.md` | a new section, *The ad-hoc loop — a task with no process* |
 | `skills/the-loop/templates/cli-config.yaml` | the `do` keyword in the shipped config template |
+| `README.md`, `docs/guide/what-is-the-loop.md` | "Three loops" → "Four loops", with the ad-hoc entry |
+| `docs/guide/quickstart.md` | a new §5, *Or skip the process entirely — ad-hoc tasks*: the exact comment to leave on an issue, the reply vocabulary, and the three things to know before using it (owner ask on PR #227) |
 | `docs/reference/commands.md` | `/the-loop:do-task <id>` |
 | `docs/config/cli/routing-options.md` | `control.keywords.do` (Type + Default + prose) |
 | `docs/decisions/decision-083.md`, `docs/decisions/decisions.md` | the decision record and its index row |
