@@ -624,6 +624,35 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/restart:
+    post:
+      summary: Restart
+      operationId: restart
+      description: Schedule a whole-system restart (issue-228). The service cannot
+        stop itself synchronously and still answer, so this spawns a detached
+        `the-loop restart` (optionally `--with-upgrade`) and returns at once with
+        the spawned pid and its logfile.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestartBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Restart
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/attention:
     get:
       summary: List Attention
@@ -1029,6 +1058,14 @@ components:
           title: Detail
       type: object
       title: HTTPValidationError
+    RestartBody:
+      properties:
+        withUpgrade:
+          type: boolean
+          title: Withupgrade
+          default: false
+      type: object
+      title: RestartBody
     SessionCloseBody:
       properties:
         ref:

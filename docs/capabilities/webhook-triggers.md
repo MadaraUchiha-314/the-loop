@@ -280,8 +280,8 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 - **Stopping and restarting the poller SHALL have no observable effect** (issue-159): a
   poller that was stopped and started behaves as one that never stopped. Five rules make
   that true, on top of the durable per-item ledger.
-  - **At most one poller per state root.** `poll start` SHALL take an exclusive advisory
-    lock on its pidfile — `--once` included — and a second `start` against the same state
+  - **At most one poller per state root.** The poller SHALL take an exclusive advisory
+    lock on its pidfile — `--once` included — and a second start against the same state
     SHALL refuse, name the holding pid and exit non-zero (`poller.blocked`) without
     touching the ledger. Two pollers sharing one ledger interleave read-modify-write over
     the same records and re-forward each other's comments, which is the sharpest form of a
@@ -289,11 +289,12 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
     I signal them" cannot disagree; it is scoped per state root (two roots, two pollers),
     and the kernel releases it however the process dies — so a pidfile left by a `SIGKILL`
     is simply unlocked and needs no manual cleanup.
-  - **`poll stop` SHALL be verified and blocking.** It signals a pid only when the lock
-    proves a poller holds it (a stale pidfile is reported and removed, never signalled —
-    under pid reuse the old behaviour sent `SIGTERM` to an unrelated process), and it
-    returns only once the poller has actually exited, bounded by `--timeout` (default 30s);
-    a poller that outlives the timeout is reported and the command exits non-zero.
+  - **Stopping the poller (`the-loop stop`) SHALL be verified and blocking.** It signals
+    a pid only when the lock proves a poller holds it (a stale pidfile is never
+    signalled — under pid reuse the old behaviour sent `SIGTERM` to an unrelated
+    process), and it returns only once the poller has actually exited, bounded by a
+    timeout (default 30s); a poller that outlives the timeout is reported and the
+    command exits non-zero.
   - **Progress SHALL be durable per work item.** Each item's record is written as soon as
     that item is done — including when processing it raised, so an attempt already spent
     cannot be spent twice — instead of at the end of the cycle. A hard kill then loses the
@@ -309,15 +310,15 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
     attempt each of them spent (`poll.attempts_released`), leaving the event **unresolved**
     rather than baselined. Without this, restarts accumulate toward `polling.maxRetries`
     and can permanently abandon a comment nothing ever tried to deliver.
-  - **The poller SHALL be able to outlive the shell that started it** (issue-191).
-    `poll start --daemon` detaches (double-fork + `setsid`), redirects its output to
-    `<state.root>/logs/poller.out`, and writes the pidfile after the final fork so the
-    recorded pid is the surviving process's; `poll status` reports liveness from the lock
-    and progress from the per-cycle heartbeat, exiting `0`/`1`. Restarting is invisible
-    only if a poller stays up between restarts — the process being tied to a terminal's
-    process group was the last way it could vanish with no trace. Detaching remains
-    opt-in ([decision-072](../decisions/decision-072.md)) because `poll start` is also
-    what cron and systemd run.
+  - **The poller SHALL be able to outlive the shell that started it** (issue-191,
+    re-shaped by issue-228). `the-loop start` spawns it detached — its own session
+    (`start_new_session`), output to `<state.root>/logs/poller.out` — and reports
+    success only once the daemon holds its pidfile lock, so a poller that exits during
+    startup is a reported failure, not a silent one; `the-loop status` reports liveness
+    from the lock and progress from the per-cycle heartbeat, exiting `0`/`1`. The
+    issue-191 double-fork detach went with the removed `poll` command
+    ([decision-084](../decisions/decision-084.md)); the foreground form cron and
+    systemd run is `python -m the_loop.daemon_entry poller [--once]`.
 - On the poll path the linked issues of a labelled PR SHALL be read from GitHub inside the
   PR listing the poller already performs (`gh pr list --json …,closingIssuesReferences` —
   no extra API round-trip per cycle), and WHEN the installed `gh` predates that field THEN
@@ -380,7 +381,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 - A comment/review the-loop itself posted (identified by an embedded marker, since it
   is posted under the operator's own credentials and is otherwise indistinguishable by
   author) SHALL be dropped before dispatch, so the-loop never resumes a session on its
-  own reply (`the_loop.authz.is_self_authored`; same check in `the-loop poll`).
+  own reply (`the_loop.authz.is_self_authored`; same check on the poll path).
 - WHEN **any** producer writes a comment on the-loop's behalf — the spawned harness or
   the daemon itself (today: the interactive-session announcement) — THEN the body SHALL
   be stamped by `the_loop.authz.mark_self_authored`, the producer-side counterpart of
@@ -468,16 +469,17 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-228 | The ingresses stopped owning the operator surface (2026-08-14): the poller and receiver are started by `the-loop start` per `polling.enabled` / `webhooks.ghWebhook.enabled` (both default off), the `poll` command is gone (`daemon_entry poller [--once]` is the foreground/cron form; the run loop itself is unchanged), a start is proven by the daemon's pidfile lock instead of the removed double-fork handshake, and the receiver now holds its pidfile as a flock like the poller — so `daemon_status`, `the-loop status` and a truthful blocking `gh-webhook stop` all answer from the lock | [spec](../specs/issue-228/), [decision-084](../decisions/decision-084.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/228) |
 | issue-225 | An eighth control keyword, `do` (`the-loop do`, `routing.control.keywords.do`): arms and spawns exactly as `start` at both spawn seams (same durable record, same named-actor authorization, same two-keyword refusal) and selects `pdlc-adhoc-loop` for the work item's outer walk — a tactical task with no PDLC process, resolved by the GraphLink state-first and then from the portable control record through the shared `LOOP_FOR_CONTROL_COMMAND` mapping. The existing token boundary already refuses `the-loop done`/`does`/`docs`, so no parser change was needed | [spec](../specs/issue-225/), [decision-083](../decisions/decision-083.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/225) |
 | issue-201 | Adoption moved to before the spawn (2026-08-10): issue-193 wrote the built-in default from `on_spawn`, which the dispatcher calls **after** `tmux.spawn` — so a session could begin, SessionStart hook included, in a checkout whose `.the-loop/` did not exist yet. A public `GraphLink.adopt` now runs between workspace preparation and the prompt render, and again in the respawn pre-flight, carrying the coupling's own gates (the prepared `cwd` is not yet proved to be the work item's repository); `_adopt` stays on the driving actions as an idempotent safety net. The ordering is asserted from inside the spawn call, not after the dispatch returns | [spec](../specs/issue-201/), [decision-073](../decisions/decision-073.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/201) |
-| issue-197 | The poll ingress stopped letting the work item's author decide whether anybody is listened to (2026-08-10): a comment is judged by its own author, so an authorized user's control comment on an outside contributor's issue arms and forwards; the item's author now gates only whether the poller starts work on it **by itself**, and an authorized user's recorded arming command satisfies that gate too. The spawn prompt states the work item itself is untrusted content | [spec](../specs/issue-197/), [decision-074](../decisions/decision-074.md), [poll](../cli/commands/poll.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/197) |
+| issue-197 | The poll ingress stopped letting the work item's author decide whether anybody is listened to (2026-08-10): a comment is judged by its own author, so an authorized user's control comment on an outside contributor's issue arms and forwards; the item's author now gates only whether the poller starts work on it **by itself**, and an authorized user's recorded arming command satisfies that gate too. The spawn prompt states the work item itself is untrusted content | [spec](../specs/issue-197/), [decision-074](../decisions/decision-074.md), [polling](../config/cli/polling-options.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/197) |
 | issue-199 | The spawning comment reaches the graph (2026-08-10): a spawn that enters a **human** start node now evaluates that node's exit chain once, with the spawning event's comments attached — so `the-loop contribute` carrying a goal moves the item to `phase-selection` without a second command, where before the arming comment (executed by the control path, never forwarded) could reach no gate at all and the item sat at its first node until some unrelated event arrived; agent start nodes and respawns evaluate nothing | [spec](../specs/issue-199/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/199) |
 | issue-193 | The ingress adopts a repository that never ran `/the-loop:init` (2026-08-10): the graph coupling writes the-loop's built-in default to `.the-loop/harness-config.yaml` — naming the work item's owner/repo so `originRepo` resolves — after the `origin`-remote ownership proof and **before** the spec-directory gate, so the session the daemon just spawned has a config to read even on the run whose graph is skipped; recorded as `harness.config_scaffolded`, never overwriting an existing config, and never for a contribution | [spec](../specs/issue-193/), [decision-073](../decisions/decision-073.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/193) |
 | issue-186 | A seventh control keyword, `cleanup` (`the-loop cleanup`, `routing.control.keywords.cleanup`): releases a work item's LOCAL resources — every endpoint's tmux session, the workspace checkout, the machine-local session record — keeping the portable record and touching nothing remote. Runs with or without a live session (the retroactive case), disarms the item like a stop, and runs automatically on a closure **only** when the close event names an authorized actor; otherwise it is deferred and recorded | [spec](../specs/issue-186/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/186) |
 | issue-185 | A sixth control keyword, `contribute` (`the-loop contribute`, `routing.control.keywords.contribute`): arms and spawns exactly as `start` at both spawn seams (same durable record, same named-actor authorization, same ambiguity refusal) and selects `pdlc-contribution-loop` for the work item's outer walk — resolved by the GraphLink state-first, then from the portable control record | [spec](../specs/issue-185/), [decision-070](../decisions/decision-070.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/185) |
 | issue-183 | Cross-repository linkage (2026-08-09): a qualified closing reference to another repository now routes to the work item **there** instead of being dropped, so a pull request delivering one repository's share of a multi-repo work item can reach its ticket; the PR's inner loop is addressed by repository as well as number, and an inner-loop prompt's claim command carries `--pr-repo` | [spec](../specs/issue-183/), [decision-069](../decisions/decision-069.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/183) |
 | issue-172 | Which session owns a PR's events stopped being recomputed from `gh` per event (2026-08-07): the work item's single session record now carries its `pullRequests[]`, each an endpoint with its own tmux session and harness conversation (`routing.tmux.sessionPerPr`, default on — `false` collapses to the pre-issue-172 single session), spawned lazily and closed individually when its PR closes. Additive resolution; issue-93's derivation and issue-101's close rule unchanged | [spec](../specs/issue-172/), [decision-064](../decisions/decision-064.md), [state](../cli/state.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/172) |
-| issue-159 | Stopping and restarting the poller became invisible (2026-08-05): an exclusive lock on the pidfile makes two pollers on one ledger impossible (`--once` included), `poll stop` verifies the pid against that lock and waits for the process to exit, each work item's record is persisted as it finishes, a stop ends the cycle after the item in flight (and an interrupted cycle never reconciles closures), and a shutdown hands back the retry budget of dispatches it abandoned | [spec](../specs/issue-159/), [poll](../cli/commands/poll.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/159) |
+| issue-159 | Stopping and restarting the poller became invisible (2026-08-05): an exclusive lock on the pidfile makes two pollers on one ledger impossible (`--once` included), `poll stop` verifies the pid against that lock and waits for the process to exit, each work item's record is persisted as it finishes, a stop ends the cycle after the item in flight (and an interrupted cycle never reconciles closures), and a shutdown hands back the retry budget of dispatches it abandoned | [spec](../specs/issue-159/), [polling](../config/cli/polling-options.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/159) |
 | issue-156 | Process runner removed; tmux is the only runner (2026-08-05): dispatch always pastes into a tmux-hosted session, the `cli`-under-process interaction warning went with the runner choice, and the tmux-hosting requirement is unconditional | [spec](../specs/issue-156/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/156) |
 | issue-142 | `routing` promoted out from under `webhooks.ghWebhook` to a top-level key: the block was never the receiver's — the poller reads it verbatim for dispatch and `the-loop sessions` reads it again — so its scope is now legible from the config's shape rather than from a comment. A relocation only: same options, same defaults, same behaviour, with the cross-command import replaced by one shared accessor and the old path refused rather than ignored (schema `0.4.0`) | [spec](../specs/issue-142/), [decision-053](../decisions/decision-053.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/142) |
 | issue-136 | Pre-spawn trust reached the checkout it was for: `hasTrustDialogAccepted` is written on the exact spawn directory under every `scope` (the gate that decides whether the dialog appears for a repo shipping `.claude/settings.json` grants has no ancestor walk), so `scope` now only widens | [spec](../specs/issue-136/), [decision-052](../decisions/decision-052.md), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/136) |

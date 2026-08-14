@@ -52,7 +52,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from .base import Command, register
 from .gh_webhook import _CONFIG_PATH, _state_layout
-from .poll import _build_dispatcher
+from ..poller.daemon import _build_dispatcher
 from .. import cli_config, eventlog
 from ..client.routing import routed, service_error
 from ..control import CLEANUP, PAUSE, RESUME, START, STOP, ControlStore

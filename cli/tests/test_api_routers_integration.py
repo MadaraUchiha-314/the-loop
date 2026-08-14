@@ -143,3 +143,43 @@ def test_api_operations_are_audited(tmp_path, monkeypatch):
         r["event"] == "api.request" and r["path"] == "/api/v1/work-items"
         for r in records
     )
+
+
+def test_restart_schedules_a_detached_fixed_argv_process(tmp_path, monkeypatch):
+    """
+    Feature: whole-system restart over the API
+      Scenario: a client asks the service to restart itself
+        Given the service cannot stop synchronously and still answer
+        When POST /api/v1/restart runs (withUpgrade true)
+        Then a detached `the-loop restart --with-upgrade` is spawned with a
+             fixed argv carrying the config path this process already reads,
+             and the response reports the schedule at once
+
+    Requirement: docs/specs/issue-228/requirements.md R4.4, R4.5
+    """
+    from types import SimpleNamespace
+
+    from the_loop.core import lifecycle
+
+    spawned = {}
+
+    def fake_popen(argv, **kwargs):
+        spawned["argv"] = argv
+        spawned["kwargs"] = kwargs
+        return SimpleNamespace(pid=99)
+
+    monkeypatch.setattr(lifecycle.subprocess, "Popen", fake_popen)
+    client, _ = _client(tmp_path)
+    response = client.post("/api/v1/restart", json={"withUpgrade": True})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["scheduled"] is True
+    assert body["withUpgrade"] is True
+    assert body["pid"] == 99
+    assert spawned["argv"][-2:] == ["restart", "--with-upgrade"]
+    assert "--config" in spawned["argv"]
+    assert spawned["kwargs"]["start_new_session"] is True
+
+    plain = client.post("/api/v1/restart", json={})
+    assert plain.json()["withUpgrade"] is False
+    assert spawned["argv"][-1] == "restart"

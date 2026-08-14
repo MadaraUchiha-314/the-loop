@@ -58,9 +58,16 @@ MODELINE = (
 )
 
 #: Key paths that only take effect on a restart. The bind is uvicorn's, taken once in
-#: ``api/serve.py``; the CORS middleware is Starlette's, built once in ``create_app``.
-#: Everything else in the config is read per use, from the value the service refreshes.
-RESTART_REQUIRED = ("service.host", "service.port", "service.exposed", "service.cors")
+#: ``api/serve.py``; the CORS middleware is Starlette's, built once in ``create_app`` —
+#: as is the MCP mount (``service.mcp``, issue-228). Everything else in the config is
+#: read per use, from the value the service refreshes.
+RESTART_REQUIRED = (
+    "service.host",
+    "service.port",
+    "service.exposed",
+    "service.cors",
+    "service.mcp",
+)
 
 #: A config this module creates is readable by its owner only: it names authorized GitHub
 #: logins and local paths, and a fresh file has no reason to be world-readable. An

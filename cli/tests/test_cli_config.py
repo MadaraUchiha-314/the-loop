@@ -122,16 +122,18 @@ def test_empty_file_is_empty_mapping(tmp_path):
 # -- module-level command wiring -------------------------------------------------
 
 
-def test_gh_webhook_and_poll_default_to_the_cli_config_path():
-    """gh_webhook._CONFIG_PATH and poll._CONFIG_PATH are the CLI config — the
-    ONLY config either reads (issue-63 review: no plugin-config fallback) —
-    at import time."""
-    from the_loop.commands import gh_webhook, poll
+def test_gh_webhook_and_the_poller_read_only_the_cli_config():
+    """The CLI config is the ONLY config either ingress reads (issue-63 review:
+    no plugin-config fallback). The receiver's command caches the path at import
+    time; the poller daemon (issue-228) resolves it per call and caches nothing."""
+    from the_loop.commands import gh_webhook
+    from the_loop.poller import daemon as poller_daemon
 
     assert gh_webhook._CONFIG_PATH == cli_config.default_cli_config_path()
-    assert poll._CONFIG_PATH == cli_config.default_cli_config_path()
+    assert poller_daemon._config_path() == cli_config.default_cli_config_path()
     assert not hasattr(gh_webhook, "_PLUGIN_CONFIG_PATH")
-    assert not hasattr(poll, "_PLUGIN_CONFIG_PATH")
+    assert not hasattr(poller_daemon, "_CONFIG_PATH")
+    assert not hasattr(poller_daemon, "_PLUGIN_CONFIG_PATH")
 
 
 # -- the shared routing accessor (issue-142) -------------------------------------
@@ -182,9 +184,10 @@ def test_the_poller_and_sessions_no_longer_read_routing_through_the_receiver():
     `authorizedUsers` resolved by one shared accessor, not by importing the
     webhook command's module.
     """
-    from the_loop.commands import poll, sessions_cmd
+    from the_loop.commands import sessions_cmd
+    from the_loop.poller import daemon as poller_daemon
 
-    for module in (poll, sessions_cmd):
+    for module in (poller_daemon, sessions_cmd):
         assert not hasattr(module, "_load_config_defaults")
 
 

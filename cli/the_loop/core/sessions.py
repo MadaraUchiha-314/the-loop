@@ -104,7 +104,7 @@ def _local_actor() -> str:
 
 def _dispatcher_for(config: Optional[dict], registry_dir: str, portable_dir: str):
     """The daemon's own dispatcher, pointed at the dirs this call names."""
-    from ..commands.poll import _build_dispatcher
+    from ..poller.daemon import _build_dispatcher
 
     routing = dict(_routing(config))
     routing["registryDir"] = registry_dir

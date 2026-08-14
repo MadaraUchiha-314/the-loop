@@ -44,18 +44,18 @@ deprecated no-ops, kept so pinned install lines keep resolving.) Needs Python 3.
 ```bash
 # 1. Tell the daemon who may drive it, in ~/.the-loop/cli-config.yaml
 #      routing.authorizedUsers: ["your-github-login"]
+#      polling.enabled: true    # polling needs no inbound networking
 #      polling.sources: [{ provider: github, repos: ["your-org/your-repo"] }]
 
-# 2. Start an ingress (poll needs no inbound networking).
-#    --daemon detaches it from this shell and logs to .the-loop/logs/poller.out;
-#    drop it to run in the foreground, under systemd or cron.
-the-loop poll start --daemon
+# 2. Bring the-loop up: starts every service the config enables — here the
+#    control-plane service and the poller — detached, logging under .the-loop/logs/.
+the-loop start
 
 # 3. Label a GitHub issue "the-loop: auto-execute", then comment:
 #      the-loop start
 
 # 4. Watch
-the-loop poll status        # running? pid? last cycle? (exit 0/1)
+the-loop status             # per-service liveness + the poller's last cycle (exit 0/1)
 the-loop sessions list
 the-loop events --follow
 ```

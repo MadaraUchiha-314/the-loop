@@ -40,6 +40,7 @@ from ..core import config as core_config
 from ..core import daemons as core_daemons
 from ..core import events as core_events
 from ..core import graphs as core_graphs
+from ..core import lifecycle as core_lifecycle
 from ..core import repo as core_repo
 from ..core import sessions as core_sessions
 from ..core import workitems as core_workitems
@@ -221,6 +222,13 @@ class DaemonControlBody(BaseModel):
     verb: str
 
 
+class RestartBody(BaseModel):
+    # One boolean, nothing else on the wire (issue-228 §Security): the spawned
+    # process is a fixed argv, and the config path it receives is the one this
+    # process already reads — no request can name another.
+    withUpgrade: bool = False
+
+
 class CriticRunBody(BaseModel):
     repo: str
     name: str
@@ -248,17 +256,28 @@ def create_app(cli_config: Optional[dict] = None, *, config_path=None) -> FastAP
     CORS middleware here, the bind in ``serve.py``, the MCP transport guard — keep the
     config they were built with, which is what ``core.config``'s ``restartRequired``
     reports back to whoever saved a change to one of them."""
-    from .mcp import build_app as build_mcp_app
+    from .config import service_config
 
-    mcp_app = build_mcp_app(cli_config)
+    # The MCP layer is mounted only when `service.mcp.enabled` says so
+    # (issue-228, decision-084): a REST-only deployment gets no /mcp route at
+    # all (404), no SDK session manager, and a no-op lifespan. Resolved at
+    # boot, like the bind and CORS — `restartRequired` covers a change to it.
+    mcp_app = None
+    if service_config(cli_config)["mcpEnabled"]:
+        from .mcp import build_app as build_mcp_app
+
+        mcp_app = build_mcp_app(cli_config)
     holder = _ConfigHolder(cli_config, config_path or default_cli_config_path())
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         # The SDK's session manager runs a task group for the duration of the
         # process; without adopting its lifespan, /mcp 500s on first use.
-        async with mcp_app.router.lifespan_context(mcp_app):
+        if mcp_app is None:
             yield
+        else:
+            async with mcp_app.router.lifespan_context(mcp_app):
+                yield
 
     app = FastAPI(
         title="the-loop control plane",
@@ -527,6 +546,15 @@ def create_app(cli_config: Optional[dict] = None, *, config_path=None) -> FastAP
     def control_daemon(body: DaemonControlBody) -> Dict[str, Any]:
         return core_daemons.control_daemon(body.daemon, body.verb, holder.current)
 
+    @app.post(f"{API_PREFIX}/restart", operation_id="restart")
+    def restart(body: RestartBody) -> Dict[str, Any]:
+        # Scheduling, not doing (issue-228, R4.4): this process is among what a
+        # restart stops, so the work happens in a detached `the-loop restart`
+        # that outlives it, and the response only promises the spawn.
+        return core_lifecycle.schedule_restart(
+            holder.current, with_upgrade=body.withUpgrade, config_path=holder.path
+        )
+
     @app.get(
         f"{API_PREFIX}/attention",
         operation_id="listAttention",
@@ -578,6 +606,7 @@ def create_app(cli_config: Optional[dict] = None, *, config_path=None) -> FastAP
     # make the SDK's own path ``/mcp/`` and leave ``/mcp`` a 307 — a redirect
     # some MCP clients will not follow on a POST, so the URL an operator pastes
     # into Claude or Cursor would work in one client and not the next.
-    app.mount("/", mcp_app)
+    if mcp_app is not None:
+        app.mount("/", mcp_app)
 
     return app

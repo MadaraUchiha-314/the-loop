@@ -59,14 +59,14 @@ package — there are no install extras (owner decision, PR #162).
   start` — never an in-process fallback. Every core-capability command routes:
   `check`, `events`, `graph` (show/status/advance/complete/force/run), `sessions`
   (register/list/close/start/pause/resume/stop), `scenarios`, `instructions` and
-  `critic` (list/run). Four commands stay local **by nature**: `sessions attach`
+  `critic` (list/run). Some commands stay local **by nature**: `sessions attach`
   replaces the caller's terminal with tmux, `sessions reset` is a recovery action
-  that must work when nothing is running, `poll start` / `gh-webhook start` run the
-  daemon themselves because cron and systemd units depend on it — foreground by
-  default, and detaching on their own with `--daemon` (issue-191) rather than
-  through the service — and the bootstrap commands
-  (`install`, `upgrade`, `migrate-config`, `service`, `--version`) precede any
-  service. `THE_LOOP_SERVICE_LOCAL=1` is a test seam, not an operator switch.
+  that must work when nothing is running, the daemon entry point
+  (`python -m the_loop.daemon_entry`, and `gh-webhook start`) runs the daemon in-process
+  because cron and systemd units depend on it, and the bootstrap commands
+  (`start`, `stop`, `status`, `restart`, `install`, `upgrade`, `migrate-config`,
+  `service`, `--version`) precede — or manage — any service (issue-228,
+  decision-084). `THE_LOOP_SERVICE_LOCAL=1` is a test seam, not an operator switch.
 - The CLI SHALL NOT re-implement any routed operation: commands render the
   `messages` and `exitCode` the core facade returns, so an operator's `sessions
   pause` and an agent's `control_session` tool call produce identical words.
@@ -155,6 +155,16 @@ package — there are no install extras (owner decision, PR #162).
   byte-identical. The write itself SHALL be atomic (temp file in the same directory,
   then `os.replace`), and a file created this way SHALL open with the schema modeline
   and be mode `0600`.
+- **`POST /api/v1/restart` SHALL schedule a whole-system restart** (issue-228,
+  decision-084): the service cannot stop itself synchronously and still answer, so the
+  route spawns a detached `the-loop restart` — a **fixed argv** carrying only the
+  config path this process already reads plus at most `--with-upgrade` from the body's
+  one boolean — with output at `<state.root>/logs/restart.out`, answers at once with
+  the spawned pid, and lands `restart.scheduled` / `restart.completed` in the event
+  log. It SHALL NOT be an MCP tool: it tears down the MCP transport mid-call, and
+  `--with-upgrade` reaches the installer — an agent must not replace the code it is
+  judged by. The MCP endpoint itself SHALL be disableable (`service.mcp.enabled:
+  false` mounts nothing; `/mcp` answers 404) so a deployment can be REST-only.
 - A saved change SHALL take effect **without a restart**: the daemons already reload from
   the file's content hash, and the service SHALL do the same — its in-process config is
   refreshed once per request, so a hand-edit is picked up too, and a file that becomes
@@ -201,6 +211,7 @@ package — there are no install extras (owner decision, PR #162).
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-228 | The plane can bounce itself: `POST /api/v1/restart` schedules a detached, fixed-argv `the-loop restart [--with-upgrade]` (output at `logs/restart.out`, `restart.scheduled`/`restart.completed` in the event log) — deliberately not an MCP tool. The MCP endpoint became disableable (`service.mcp.enabled: false` mounts nothing; `/mcp` 404s), and the service's start/stop mechanics moved into `core.lifecycle`, shared by `the-loop start\|stop\|restart` and `the-loop service` | [spec](../specs/issue-228/), [decision-084](../decisions/decision-084.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/228) |
 | issue-161 | Capability minted: core facade extracted, API service + OpenAPI contract, loopback-default network posture (no in-app auth — the gateway owns it, decision-059), service lifecycle commands, every core-capability command routed through the service, HTTP-only MCP endpoint on the official SDK, no install extras. The UI was descoped on owner review | [spec](../specs/issue-161/), [decision-058](../decisions/decision-058.md), [decision-059](../decisions/decision-059.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/161) |
 | issue-211 | The dashboard can actually read the service: `service.cors` makes the allowed browser origins configuration, shipping the published page's own origin as the default. Exact-string origins only; `"*"` with credentials refuses to start; an empty list installs no middleware. The bind, the exposure guard and the MCP transport's origin check are unchanged | [spec](../specs/issue-211/), [decision-077](../decisions/decision-077.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/211) |
 | issue-207 | The descoped UI lands: a static dashboard in `ui/` over the same `/api/v1`, published to `/the-loop/ui/` from the docs site's Pages artifact. Loop position joined from the session's `cwd` and the record's spec id; the inbox unions `/attention` with the repo-scoped graph gates it excludes; the two surfaces the API cannot back ship disabled and named | [spec](../specs/issue-207/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/207) |

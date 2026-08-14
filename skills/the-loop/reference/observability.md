@@ -29,7 +29,7 @@ plugin config, resolved via `--config`/env/cwd/home (see `docs/config/cli/`,
 [decision-032](../../../docs/decisions/decision-032.md)). Decision:
 [decision-025](../../../docs/decisions/decision-025.md) — JSONL, not SQLite.
 
-the-loop's CLI processes (`the-loop gh-webhook`, `the-loop poll`, `the-loop sessions`)
+the-loop's CLI processes (`the-loop gh-webhook`, the poller, `the-loop sessions`)
 append **every accept / reject / dispatch / spawn / retry / close decision** they make
 as one JSON object per line to the event log. It is the durable, machine-queryable
 answer to:

@@ -27,7 +27,7 @@ Why the validator is ours
 ``jsonschema`` is the obvious answer and stays the CI answer
 (``scripts/validate_config.py``), but as a *runtime* dependency it would pull ``attrs``,
 ``referencing`` and the compiled ``rpds-py`` into a CLI whose dependency set is an
-argument in itself, to be imported by every ``the-loop poll`` process in order to validate
+argument in itself, to be imported by every poller process in order to validate
 nothing. The schemas being validated are the-loop's own, and they use sixteen keywords
 between them. :data:`SUPPORTED` names all sixteen; :func:`validate` implements the ten
 that constrain data and ignores the six that document it.

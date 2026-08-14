@@ -19,7 +19,11 @@ must not forge. The **CLI config** (``/api/v1/config``, issue-222) is excluded
 for the same reason with a longer half-life: it names who may command the loop
 and which binaries the daemon runs, so changing it is an operator's act, and an
 agent that could rewrite it would be editing the rules it is judged by. None of
-the three is registered as a tool.
+the three is registered as a tool. ``restart`` (``POST /api/v1/restart``,
+issue-228) is excluded on both grounds at once: it tears down the very
+transport the MCP client is speaking over mid-call, and ``--with-upgrade``
+reaches the installer — an agent must not be able to replace the code it is
+judged by. A client that legitimately needs it has the REST route.
 """
 
 from __future__ import annotations

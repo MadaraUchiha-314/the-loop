@@ -1,7 +1,7 @@
 # Configuring the CLI
 
 `cli-config.yaml` is read by the CLI's **daemon** commands —
-[`gh-webhook`](/cli/commands/gh-webhook), [`poll`](/cli/commands/poll),
+[`start`](/cli/commands/start), [`gh-webhook`](/cli/commands/gh-webhook),
 [`sessions`](/cli/commands/sessions) and [`events`](/cli/commands/events). It describes
 *your machine*: which port the receiver binds, who is allowed to trigger it, how sessions
 are hosted, where the log goes.

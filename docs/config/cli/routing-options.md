@@ -6,7 +6,7 @@ configBase: routing
 
 Options under the top-level `routing` key — what happens to an event once it has been
 accepted. This is the largest block in the CLI config, and it is shared: the
-[poller](/cli/commands/poll) reuses the whole of it for dispatch, so everything here
+[poller](/config/cli/polling-options) reuses the whole of it for dispatch, so everything here
 applies to **both** ingresses.
 
 ::: warning Moved in issue-142

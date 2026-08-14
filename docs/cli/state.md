@@ -33,7 +33,7 @@ working directory), split by whether it travels:
 │   └── poller.out                 # a daemonized poller's stdout/stderr
 ├── gh-webhook.pid                 # the running receiver
 ├── poll.pid                       # the running poller — and its lock
-└── poll-status.json               # the poller's heartbeat, read by `poll status`
+└── poll-status.json               # the poller's heartbeat, read by `the-loop status`
 ```
 
 Everything here is JSON, JSONL or plain text, meant to be read with `jq`, `cat` and
@@ -73,8 +73,8 @@ them, is what makes the `.gitignore` recipe three lines instead of a puzzle
 | `<root>/logs/events.jsonl` | every ingress, and `sessions` | one JSON object per decision | **local** |
 | `<root>/logs/poller.out` | a daemonized poller | its stdout and stderr, appended | **local** |
 | `<root>/gh-webhook.pid` | `gh-webhook start` | the receiver's pid | **local** |
-| `<root>/poll.pid` | `poll start` | the poller's pid — and the lock proving it is the only one | **local** |
-| `<root>/poll-status.json` | `poll start`, after every cycle | the heartbeat `poll status` reads: `startedAt`, `lastCycleAt`, last cycle's counters — and no pid, which is `poll.pid`'s to name | **local** |
+| `<root>/poll.pid` | the poller | the poller's pid — and the lock proving it is the only one | **local** |
+| `<root>/poll-status.json` | the poller, after every cycle | the heartbeat `the-loop status` reads: `startedAt`, `lastCycleAt`, last cycle's counters — and no pid, which is `poll.pid`'s to name | **local** |
 
 The same table is declared in code, in
 [`the_loop/state.py`](https://github.com/MadaraUchiha-314/the-loop/blob/main/cli/the_loop/state.py)
@@ -344,10 +344,11 @@ harmless; `stop` reports the process is gone.
 
 ## Poller pidfile — `<root>/poll.pid`
 
-Written by [`poll start`](/cli/commands/poll), removed when it exits. It is also the
-poller's **single-instance lock**: `start` holds an exclusive advisory lock on it for the
+Written by the poller (started by [`the-loop start`](/cli/commands/start) or
+`python -m the_loop.daemon_entry poller`), removed when it exits. It is also the
+poller's **single-instance lock**: the poller holds an exclusive advisory lock on it for the
 whole run, so a second poller against the same state root refuses rather than sharing the
-ledger, and `stop` uses the same lock to tell a live poller from a pid left behind by a
+ledger, and [`the-loop stop`](/cli/commands/stop) uses the same lock to tell a live poller from a pid left behind by a
 crash. Being one file rather than two is the point — "who is running" and "how do I signal
 them" cannot then disagree. It is the **only** place either question is answered: the
 heartbeat below deliberately carries no pid, and
@@ -355,14 +356,14 @@ heartbeat below deliberately carries no pid, and
 written up there.
 
 **If you delete it while a poller is running:** the running poller keeps its lock (the lock
-lives on the open file, not the name), but a second `start` will no longer see it and can
+lives on the open file, not the name), but a second start will no longer see it and can
 start alongside. Don't. **A stale file after a crash is harmless:** it is unlocked, so the
-next `start` reports it, removes it and takes a fresh one, and `stop` removes it.
+next start reports it, removes it and takes a fresh one, and `the-loop stop` removes it.
 
 ## Poller heartbeat — `<root>/poll-status.json`
 
-Rewritten by [`poll start`](/cli/commands/poll) after every cycle, and read by
-[`poll status`](/cli/commands/poll#status). It carries what a lock cannot: when this poller
+Rewritten by the poller after every cycle, and read by
+[`the-loop status`](/cli/commands/status). It carries what a lock cannot: when this poller
 started, when it last finished a cycle, and what that cycle did.
 
 ```json
@@ -380,12 +381,12 @@ started, when it last finished a cycle, and what that cycle did.
 ::: warning It is never the answer to "is the poller running?"
 That answer is the lock on `poll.pid`, and only the lock — the one formulation immune to
 pid reuse, and the one nobody can forge by writing a file. A recent `lastCycleAt` beside a
-lock nobody holds means the poller *stopped* after that cycle, and `poll status` says
+lock nobody holds means the poller *stopped* after that cycle, and `the-loop status` says
 exactly that.
 :::
 
-It is deliberately **not** removed when the poller exits, so `poll status` can still tell
-you when the last cycle ran. **If you delete it:** `poll status` keeps reporting liveness
+It is deliberately **not** removed when the poller exits, so `the-loop status` can still tell
+you when the last cycle ran. **If you delete it:** `the-loop status` keeps reporting liveness
 and pid and loses the progress lines, until the next cycle writes a new one.
 
 The file carried a `pid` until [issue-205](https://github.com/MadaraUchiha-314/the-loop/issues/205);
@@ -408,14 +409,14 @@ It is a fair question, and the answer is three things pulling in opposite direct
 The first row of *how* is the one that settles it. An advisory lock lives on the inode the
 daemon opened, not on the name; replacing the file at that path leaves the poller holding a
 lock on an orphan while the path goes free. Merged, the poller would unlock itself on its
-own first cycle, and the next `poll start` would happily run a **second poller against the
+own first cycle, and the next poller start would happily run a **second poller against the
 same ledger** — the bug the lock exists to prevent. Writing the heartbeat in place instead
-would trade that for a `poll status` that can read a half-written document, and would still
+would trade that for a `the-loop status` that can read a half-written document, and would still
 leave the last two rows contradictory.
 
 ## Poller log — `<root>/logs/poller.out`
 
-Where a poller started with [`--daemon`](/cli/commands/poll#start) — or by the control
+Where a poller started detached — by [`the-loop start`](/cli/commands/start) or the control
 plane — sends its stdout and stderr. Plain text, appended to, and **never rotated**: point
 `logrotate` (or your platform's equivalent) at it on a long-lived host. the-loop does not
 rotate it itself, because a daemon that truncates its own log while another process is

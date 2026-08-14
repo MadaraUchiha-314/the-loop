@@ -506,6 +506,17 @@ EVENT_TYPES: Dict[str, str] = {
     ),
     "service.started": "The control-plane API service came up (host, port).",
     "service.stopped": "The control-plane API service shut down.",
+    "restart.scheduled": (
+        "A whole-system restart was scheduled (issue-228): a detached "
+        "`the-loop restart` was spawned (pid, logfile, withUpgrade). Emitted by "
+        "POST /api/v1/restart — the service cannot stop itself synchronously "
+        "and still answer, so the API's contract is scheduling."
+    ),
+    "restart.completed": (
+        "A `the-loop restart` finished (ok, withUpgrade): every running service "
+        "stopped, the optional CLI upgrade ran, every enabled service started. "
+        "Per-service outcomes are in the command's output/logfile. issue-228."
+    ),
 }
 
 

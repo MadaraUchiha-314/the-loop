@@ -98,9 +98,12 @@ const cliSidebar = [
     text: "Commands",
     items: [
       { text: "Overview", link: "/cli/commands/" },
+      { text: "start", link: "/cli/commands/start" },
+      { text: "stop", link: "/cli/commands/stop" },
+      { text: "status", link: "/cli/commands/status" },
+      { text: "restart", link: "/cli/commands/restart" },
       { text: "service", link: "/cli/commands/service" },
       { text: "gh-webhook", link: "/cli/commands/gh-webhook" },
-      { text: "poll", link: "/cli/commands/poll" },
       { text: "sessions", link: "/cli/commands/sessions" },
       { text: "ask", link: "/cli/commands/ask" },
       { text: "events", link: "/cli/commands/events" },

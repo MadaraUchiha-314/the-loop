@@ -42,7 +42,7 @@ to point at.
 
 **`webhooks.ghWebhook.routing` → `routing`** (issue-142). The block is promoted to the top
 level, unchanged key for key. It was never the receiver's: the
-[poller](/cli/commands/poll) reads every value in it verbatim for dispatch, and
+[poller](/config/cli/polling-options) reads every value in it verbatim for dispatch, and
 `the-loop sessions` reads it again. If your config happens to declare **both** the old and
 the new block, the top-level one wins key by key and the report names every value it
 dropped — never a merge, because unioning two `authorizedUsers` lists would quietly

@@ -26,8 +26,12 @@ from pathlib import Path
 
 from .base import Command, register
 from .. import cli_config, eventlog
+from ..runlock import RunLock
 from ..state import StateLayout, layout_from_config
 from ..webhook import serve
+
+#: How long `stop` waits for the receiver to actually exit (issue-159 discipline).
+_STOP_TIMEOUT_SECONDS = 30.0
 
 logger = logging.getLogger("the-loop.gh-webhook")
 
@@ -279,6 +283,35 @@ class GhWebhookCommand(Command):
             level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
         )
         eventlog.configure_from_file("gh-webhook")
+
+        # At most one receiver per pidfile, and the pidfile is the flock — the
+        # issue-159 discipline the poller has had all along. Before issue-228
+        # this was a plain `write_text(pid)`, which meant `daemon_status` (whose
+        # liveness answer IS the lock) reported a foreground receiver as not
+        # running, and `the-loop start` could not prove a spawned one came up.
+        lock = RunLock(args.pidfile, name="gh-webhook")
+        try:
+            acquired = lock.acquire()
+        except OSError as exc:
+            logger.error("cannot use the receiver lockfile %s: %s", args.pidfile, exc)
+            return 1
+        if not acquired:
+            logger.error(
+                "another gh-webhook receiver is already running (pid %s, pidfile "
+                "%s); stop it first with `the-loop stop` (or `the-loop "
+                "gh-webhook stop`)",
+                lock.holder() or "unknown",
+                args.pidfile,
+            )
+            return 1
+
+        try:
+            return self._serve(args)
+        finally:
+            lock.release()
+
+    def _serve(self, args: argparse.Namespace) -> int:
+        """The receiver run itself, with the single-instance lock already held."""
         secret = os.environ.get(args.secret_env)
         if not secret:
             logger.warning(
@@ -314,10 +347,6 @@ class GhWebhookCommand(Command):
             stop_web_terminal(web_proc)
             return 1
 
-        pidfile = Path(args.pidfile)
-        pidfile.parent.mkdir(parents=True, exist_ok=True)
-        pidfile.write_text(str(os.getpid()))
-
         def _shutdown(signum, _frame):
             logger.info("received signal %s, shutting down", signum)
             httpd.shutdown()
@@ -330,7 +359,7 @@ class GhWebhookCommand(Command):
             args.host,
             args.port,
             args.path,
-            pidfile,
+            args.pidfile,
         )
         eventlog.emit(
             "server.started",
@@ -348,27 +377,47 @@ class GhWebhookCommand(Command):
                 dispatcher.stop()
             stop_web_terminal(web_proc)
             eventlog.emit("server.stopped", host=args.host, port=args.port)
-            try:
-                pidfile.unlink()
-            except FileNotFoundError:
-                pass
         return 0
 
     def _stop(self, args: argparse.Namespace) -> int:
+        """Stop the receiver, and return only once it has actually gone.
+
+        The pidfile is the receiver's flock since issue-228 (as the poller's has
+        been since issue-159), so both halves are honest: an unlocked pidfile is
+        provably stale (never signalled — pid reuse), and waiting for the lock
+        to clear proves the receiver exited, so a scripted `stop && start`
+        cannot overlap the shutdown it just asked for.
+        """
         pidfile = Path(args.pidfile)
         if not pidfile.is_file():
             print(f"no pidfile at {pidfile}; is the server running?", file=sys.stderr)
             return 1
-        try:
-            pid = int(pidfile.read_text().strip())
-        except ValueError:
+        lock = RunLock(pidfile, name="gh-webhook")
+        if not lock.is_held():
+            print(
+                f"no receiver is running; removing the stale pidfile {pidfile}",
+                file=sys.stderr,
+            )
+            pidfile.unlink(missing_ok=True)
+            return 1
+        pid = lock.holder()
+        if pid <= 0:
             print(f"pidfile {pidfile} is corrupt", file=sys.stderr)
             return 1
         try:
             os.kill(pid, signal.SIGTERM)
-        except ProcessLookupError:
+        except ProcessLookupError:  # died between the lock probe and the signal
             print(f"process {pid} not running; removing stale pidfile", file=sys.stderr)
             pidfile.unlink(missing_ok=True)
             return 1
-        print(f"sent SIGTERM to gh-webhook server (pid {pid})")
+        print(f"sent SIGTERM to gh-webhook server (pid {pid}); waiting for it to exit")
+        if not lock.wait_until_free(_STOP_TIMEOUT_SECONDS):
+            print(
+                f"gh-webhook (pid {pid}) had not exited after "
+                f"{_STOP_TIMEOUT_SECONDS:g}s; check again before starting "
+                "another receiver",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"gh-webhook server (pid {pid}) stopped")
         return 0

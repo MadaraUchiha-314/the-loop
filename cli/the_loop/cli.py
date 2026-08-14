@@ -30,11 +30,9 @@ def _refresh_cli_config_paths() -> None:
     """Re-resolve the CLI config path for commands that cache it at import
     time, so a ``--config``/``-c`` override (set just before this call) takes
     effect before ``add_arguments()`` computes their other flags' defaults."""
-    from .commands import gh_webhook, poll
+    from .commands import gh_webhook
 
-    resolved = cli_config.default_cli_config_path()
-    gh_webhook._CONFIG_PATH = resolved
-    poll._CONFIG_PATH = resolved
+    gh_webhook._CONFIG_PATH = cli_config.default_cli_config_path()
 
 
 def build_parser() -> argparse.ArgumentParser:

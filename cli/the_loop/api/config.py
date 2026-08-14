@@ -38,10 +38,16 @@ DEFAULT_ALLOWED_HEADERS = ("Accept", "Content-Type")
 def service_config(cli_config: Optional[dict] = None) -> Dict[str, Any]:
     raw = ((cli_config or {}).get("service")) or {}
     return {
+        # `enabled` decides whether `the-loop start` composes the service in and
+        # whether auto-start may resurrect it (issue-228, decision-084); the
+        # explicit `the-loop service start` ignores it — typing the granular
+        # verb is the enablement.
+        "enabled": bool(raw.get("enabled", True)),
         "host": str(raw.get("host") or DEFAULT_HOST),
         "port": int(raw.get("port") or DEFAULT_PORT),
         "exposed": bool(raw.get("exposed", False)),
         "autoStart": bool(raw.get("autoStart", True)),
+        "mcpEnabled": bool((raw.get("mcp") or {}).get("enabled", True)),
     }
 
 

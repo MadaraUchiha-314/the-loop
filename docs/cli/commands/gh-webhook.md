@@ -124,5 +124,5 @@ Every receive, reject, route, dispatch, spawn and close decision is appended to 
 ## See also
 
 - [Webhook options](/config/cli/webhook-options) · [Routing options](/config/cli/routing-options)
-- [`poll`](/cli/commands/poll) — the same dispatch stack, pull-based.
+- [polling](/config/cli/polling-options) — the same dispatch stack, pull-based; started by [`the-loop start`](/cli/commands/start).
 - [webhook triggers](/capabilities/webhook-triggers) — the capability doc.

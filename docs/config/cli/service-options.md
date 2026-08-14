@@ -5,16 +5,20 @@ configBase: service
 # Service options
 
 Options under `service` — the control-plane API service started by
+[`the-loop start`](/cli/commands/start) or
 [`the-loop service start`](/cli/commands/service) (issue-161, decision-058). The
 service carries **no in-app authentication** — a gateway owns that — so its own
 posture is network scoping: loopback-only unless `exposed` is explicitly true.
 
 ```yaml
 service:
+  enabled: true
   host: 127.0.0.1
   port: 4114
   exposed: false
   autoStart: true
+  mcp:
+    enabled: true
   cors:
     allowOrigins: ["https://madarauchiha-314.github.io"]
     allowMethods: [GET, POST, OPTIONS]
@@ -22,6 +26,30 @@ service:
     allowCredentials: false
     allowPrivateNetwork: true
 ```
+
+## Lifecycle
+
+### `enabled`
+
+- **Type:** `boolean`
+- **Default:** `true`
+
+Whether [`the-loop start`](/cli/commands/start) brings the service up (issue-228,
+[decision-084](/decisions/decision-084)). Default on: the service is the CLI's only
+execution path for core capabilities. `false` also disables `autoStart` — a service the
+operator disabled must not resurrect because an unrelated CLI command wanted it
+(fail-closed, the affected command names this key) — while the explicit
+`the-loop service start` still works.
+
+### `mcp.enabled`
+
+- **Type:** `boolean`
+- **Default:** `true`
+
+Whether the service mounts the [MCP endpoint](/cli/commands/service#mcp-connecting-an-agent)
+at `/mcp` (issue-228). Default on — `/mcp` has been mounted unconditionally since
+issue-161 — so the flag exists to *narrow* a deployment to REST-only: with `false`, no
+MCP app is built and `/mcp` answers 404.
 
 ## Binding
 
@@ -135,5 +163,6 @@ allowlist — it can only decline what the allowlist let through.
 
 Whether a CLI command may boot a local service on demand when none is reachable.
 The service is the CLI's only execution path for core capabilities, so with
-`autoStart: false` those commands fail (naming `the-loop service start`) until the
-operator starts one.
+`autoStart: false` those commands fail (naming the lifecycle commands) until the
+operator starts one. Honoured only while `enabled` is true — a disabled service never
+auto-starts (issue-228).

@@ -11,6 +11,7 @@ what it does with an event it accepts is [routing](/config/cli/routing-options).
 ```yaml
 webhooks:
   ghWebhook:
+    enabled: false
     host: 127.0.0.1
     port: 8787
     path: /gh-webhook
@@ -23,6 +24,17 @@ webhooks:
 Every option here is also a flag on `gh-webhook start`, and **the flag always wins**.
 
 ## Listener
+
+### `enabled`
+
+- **Type:** `boolean`
+- **Default:** `false`
+
+Whether [`the-loop start`](/cli/commands/start) brings the receiver up (issue-228,
+[decision-084](/decisions/decision-084)). An explicit opt-in: a receiver needs a
+reachable bind, a secret and GitHub-side configuration, so a config that merely
+*describes* one must not open a port. The explicit `the-loop gh-webhook start` works
+regardless of this flag — typing the granular verb is the enablement.
 
 ### `host`
 

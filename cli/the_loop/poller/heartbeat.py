@@ -1,4 +1,4 @@
-"""The poller's heartbeat — what ``the-loop poll status`` reports beyond liveness
+"""The poller's heartbeat — what ``the-loop status`` reports beyond liveness
 (issue-191).
 
 "Is the poller running?" is answered by the flock on its pidfile, and only by

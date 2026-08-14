@@ -4,25 +4,22 @@
 discipline as the other daemons (issue-159): the pidfile is the flock, start is
 idempotent, stop signals and waits. This is a **bootstrap command** — it manages
 the service process itself, so it is an exception to the service-only execution
-rule (decision-058).
+rule (decision-058). Since issue-228 the mechanics live in
+:mod:`the_loop.core.lifecycle` (shared with ``the-loop start|stop|restart``);
+this command is the explicit, single-service form, and deliberately ignores
+`service.enabled` — an operator typing the granular verb *is* the enablement.
 """
 
 from __future__ import annotations
 
 import argparse
-import os
-import signal
-import subprocess
 import sys
-import time
 
 from .base import Command, register
 from .. import eventlog
 from ..api.config import base_url, service_pidfile
+from ..core import lifecycle
 from ..runlock import RunLock
-
-_STOP_TIMEOUT_SECONDS = 30.0
-_START_TIMEOUT_SECONDS = 15.0
 
 
 def _healthy(config: dict) -> bool:
@@ -45,7 +42,7 @@ class ServiceCommand(Command):
         stop.add_argument(
             "--timeout",
             type=float,
-            default=_STOP_TIMEOUT_SECONDS,
+            default=lifecycle.SERVICE_STOP_TIMEOUT_SECONDS,
             help="Seconds to wait for the service to exit (default: 30).",
         )
         stop.set_defaults(_action=self._stop)
@@ -59,50 +56,24 @@ class ServiceCommand(Command):
     # -- verbs -----------------------------------------------------------------
 
     def _start(self, args: argparse.Namespace) -> int:
-        config = _load_config()
-        lock = RunLock(service_pidfile(config), name="service")
-        if lock.is_held():
-            print(f"service already running (pid {lock.holder()})")
+        outcome = lifecycle.start_service(_load_config())
+        if outcome["running"]:
+            print(f"service {outcome['detail']}")
             return 0
-        subprocess.Popen(  # noqa: S603 — fixed argv, no shell
-            [sys.executable, "-m", "the_loop.api.serve"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            stdin=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-        deadline = time.monotonic() + _START_TIMEOUT_SECONDS
-        while time.monotonic() < deadline:
-            if _healthy(config):
-                print(f"service started at {base_url(config)}")
-                return 0
-            time.sleep(0.25)
-        print(
-            "error: service did not become healthy; check the event log "
-            "(`the-loop events --source service`)",
-            file=sys.stderr,
-        )
+        print(f"error: service {outcome['detail']}", file=sys.stderr)
         return 1
 
     def _stop(self, args: argparse.Namespace) -> int:
-        config = _load_config()
-        lock = RunLock(service_pidfile(config), name="service")
-        if not lock.is_held():
-            print("service is not running")
-            return 0
-        pid = lock.holder()
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-        if lock.wait_until_free(args.timeout):
-            print(f"service stopped (pid {pid})")
-            return 0
+        outcome = lifecycle.stop_service(_load_config(), timeout=args.timeout)
+        if outcome["running"]:
+            print(f"error: service {outcome['detail']}", file=sys.stderr)
+            return 1
         print(
-            f"error: service (pid {pid}) did not exit within {args.timeout:.0f}s",
-            file=sys.stderr,
+            f"service {outcome['detail']}"
+            if outcome["stopped"]
+            else "service is not running"
         )
-        return 1
+        return 0
 
     def _status(self, args: argparse.Namespace) -> int:
         config = _load_config()

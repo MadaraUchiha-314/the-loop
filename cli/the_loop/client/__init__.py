@@ -28,8 +28,14 @@ _AUTOSTART_TIMEOUT = 15.0
 
 UNAVAILABLE_HINT = (
     "the control-plane service is not running and could not be started. "
-    "Start it with `the-loop service start`, or check "
+    "Start it with `the-loop start` (or `the-loop service start`), or check "
     "`the-loop events --source service` for why it exited."
+)
+
+DISABLED_HINT = (
+    "the control-plane service is disabled (service.enabled: false in the CLI "
+    "config) and will not be auto-started. Set service.enabled: true and run "
+    "`the-loop start`, or start one explicitly with `the-loop service start`."
 )
 
 
@@ -114,6 +120,11 @@ def ensure_service(config: Optional[dict] = None) -> None:
     if healthy(config):
         return
     conf = service_config(config)
+    # Fail closed on disablement (issue-228, R5.2): an operator who set
+    # service.enabled: false must not have the service resurrected because an
+    # unrelated CLI command wanted it. The explicit lifecycle verbs still work.
+    if not conf["enabled"]:
+        raise ServiceUnavailable(DISABLED_HINT)
     if conf["autoStart"]:
         _spawn_service()
         deadline = time.monotonic() + _AUTOSTART_TIMEOUT
