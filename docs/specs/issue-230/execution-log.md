@@ -43,7 +43,7 @@ issue-208/209/211/217/220/222, with the same two consequences a reviewer should 
 
 | PR | Scope / tasks | Status |
 |----|---------------|--------|
-| `claude/github-issue-230-lmqbsb` | the whole work item | in progress |
+| [#237](https://github.com/MadaraUchiha-314/the-loop/pull/237) (`claude/github-issue-230-lmqbsb`) | the whole work item | open, awaiting human approval |
 
 ## Progress entries
 
