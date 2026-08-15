@@ -46,6 +46,9 @@ def service_config(cli_config: Optional[dict] = None) -> Dict[str, Any]:
         "exposed": bool(raw.get("exposed", False)),
         "autoStart": bool(raw.get("autoStart", True)),
         "mcpEnabled": bool((raw.get("mcp") or {}).get("enabled", True)),
+        # issue-231: with the service enabled, the enabled ingresses run as
+        # hosted tasks inside this one process instead of separate ones.
+        "hostIngresses": bool(raw.get("hostIngresses", True)),
     }
 
 

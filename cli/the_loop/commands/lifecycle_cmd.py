@@ -121,6 +121,8 @@ class StatusCommand(Command):
             liveness = (
                 f"running (pid {row['pid']})" if row["running"] else "not running"
             )
+            if row.get("hosted"):
+                liveness = f"running (hosted in the service, pid {row['pid']})"
             extra = ""
             if row["service"] == "service" and row["running"]:
                 extra = f" — {row['url']}, {'healthy' if row['healthy'] else 'unresponsive'}"

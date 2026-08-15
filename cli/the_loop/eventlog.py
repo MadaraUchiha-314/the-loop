@@ -517,6 +517,15 @@ EVENT_TYPES: Dict[str, str] = {
         "stopped, the optional CLI upgrade ran, every enabled service started. "
         "Per-service outcomes are in the command's output/logfile. issue-228."
     ),
+    "ingress.hosted": (
+        "The control-plane service is hosting this ingress (poller | "
+        "gh-webhook) as an in-process task (`service.hostIngresses`, "
+        "issue-231). Its pidfile lock is held by the service's pid."
+    ),
+    "ingress.hosted_stopped": (
+        "A hosted ingress finished during the service's shutdown; its lock is "
+        "released. issue-231."
+    ),
 }
 
 

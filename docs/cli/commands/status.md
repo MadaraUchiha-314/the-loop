@@ -17,6 +17,18 @@ poller      running (pid 24913) [enabled]
             last cycle: 2026-08-14T20:43:02Z (10s ago) — 5 item(s), 1 spawn(s), 0 comment(s) forwarded
 ```
 
+An ingress running [inside the service](/config/cli/service-options#hostingresses)
+(issue-231) says so — same lock-based liveness, its lock is simply held by the
+service's pid — and the JSON rows carry it as `"hosted": true`:
+
+```console
+$ the-loop status
+service     running (pid 24846) [enabled] — http://127.0.0.1:4114, healthy
+gh-webhook  running (hosted in the service, pid 24846) [enabled]
+poller      running (hosted in the service, pid 24846) [enabled]
+            ...
+```
+
 Two properties carried over from the removed `poll status` (issue-191/205):
 
 - **Liveness and the pid come from the pidfile's lock, never from a file's claim.** A

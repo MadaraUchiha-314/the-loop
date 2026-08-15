@@ -55,6 +55,13 @@ package — there are no install extras (owner decision, PR #162).
   Hosting needs no extra: `fastapi`, `uvicorn`
   and the official `mcp` SDK are required dependencies, so `pip install
   the-loopy-one` is always enough to run the service.
+- The service SHALL be the default **host process** for the ingresses (issue-231,
+  decision-084 §8): with `service.hostIngresses` true (the default), its lifespan
+  starts the enabled poller and webhook receiver as background threads — each
+  acquiring its own pidfile flock under the service's pid, so single-instance,
+  `status`/`stop` and the daemons API semantics are unchanged — and stops them,
+  in reverse order, when the service shuts down. A lock already held by another
+  process is skipped with a warning; a hosting failure never takes down the API.
 - The service SHALL be the CLI's **only execution path** for core capabilities
   (owner decision, PR #162): a command auto-starts a local service when
   `service.autoStart` allows and otherwise fails closed naming `the-loop start`
@@ -213,7 +220,7 @@ package — there are no install extras (owner decision, PR #162).
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
-| issue-228 | The plane can bounce itself: `POST /api/v1/restart` schedules a detached, fixed-argv `the-loop restart [--with-upgrade]` (output at `logs/restart.out`, `restart.scheduled`/`restart.completed` in the event log) — deliberately not an MCP tool. The MCP endpoint became disableable (`service.mcp.enabled: false` mounts nothing; `/mcp` 404s), and the service's start/stop mechanics moved into `core.lifecycle`, shared by `the-loop start\|stop\|restart` and `the-loop service` | [spec](../specs/issue-228/), [decision-084](../decisions/decision-084.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/228) |
+| issue-228 | The plane can bounce itself: `POST /api/v1/restart` schedules a detached, fixed-argv `the-loop restart [--with-upgrade]` (output at `logs/restart.out`, `restart.scheduled`/`restart.completed` in the event log) — deliberately not an MCP tool. The MCP endpoint became disableable (`service.mcp.enabled: false` mounts nothing; `/mcp` 404s), and the service's start/stop mechanics moved into `core.lifecycle` behind `the-loop start\|stop\|status\|restart` (the granular `service` command folded away on owner review). Amended in the same PR (issue-231): with `service.hostIngresses` (default true) the service hosts the enabled ingresses as threads in its lifespan, each holding its own pidfile flock under the service's pid | [spec](../specs/issue-228/), [decision-084](../decisions/decision-084.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/228), [issue-231](https://github.com/MadaraUchiha-314/the-loop/issues/231) |
 | issue-161 | Capability minted: core facade extracted, API service + OpenAPI contract, loopback-default network posture (no in-app auth — the gateway owns it, decision-059), service lifecycle commands, every core-capability command routed through the service, HTTP-only MCP endpoint on the official SDK, no install extras. The UI was descoped on owner review | [spec](../specs/issue-161/), [decision-058](../decisions/decision-058.md), [decision-059](../decisions/decision-059.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/161) |
 | issue-211 | The dashboard can actually read the service: `service.cors` makes the allowed browser origins configuration, shipping the published page's own origin as the default. Exact-string origins only; `"*"` with credentials refuses to start; an empty list installs no middleware. The bind, the exposure guard and the MCP transport's origin check are unchanged | [spec](../specs/issue-211/), [decision-077](../decisions/decision-077.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/211) |
 | issue-207 | The descoped UI lands: a static dashboard in `ui/` over the same `/api/v1`, published to `/the-loop/ui/` from the docs site's Pages artifact. Loop position joined from the session's `cwd` and the record's spec id; the inbox unions `/attention` with the repo-scoped graph gates it excludes; the two surfaces the API cannot back ship disabled and named | [spec](../specs/issue-207/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/207) |

@@ -288,8 +288,17 @@ def run(options: ReceiverOptions | None = None) -> int:
         lock.release()
 
 
-def _serve(options: ReceiverOptions) -> int:
-    """The receiver run itself, with the single-instance lock already held."""
+def build_receiver(options: ReceiverOptions):
+    """Everything up to (and including) the bind: ``(httpd, cleanup)``.
+
+    Shared by the standalone run below and the **hosted** form (issue-231),
+    where the control-plane service drives ``httpd.serve_forever()`` on a
+    background thread and calls ``httpd.shutdown()`` from its lifespan instead
+    of a signal handler. Returns ``None`` when the receiver cannot start (a
+    missing dependency, an unbindable port); the reasons are logged. ``cleanup``
+    closes the server and drains the dispatcher — call it exactly once, after
+    the serve loop returns.
+    """
     secret = os.environ.get(options.secret_env)
     if not secret:
         logger.warning(
@@ -308,7 +317,7 @@ def _serve(options: ReceiverOptions) -> int:
         if missing:  # R6.1: fail with per-platform guidance; R6.2: else silent
             for line in missing:
                 logger.error(line)
-            return 1
+            return None
         if routing_config.web_terminal.enabled:
             web_proc = start_web_terminal(routing_config.web_terminal)
 
@@ -323,14 +332,7 @@ def _serve(options: ReceiverOptions) -> int:
     except OSError as exc:
         logger.error("could not bind %s:%s — %s", options.host, options.port, exc)
         stop_web_terminal(web_proc)
-        return 1
-
-    def _shutdown(signum, _frame):
-        logger.info("received signal %s, shutting down", signum)
-        httpd.shutdown()
-
-    signal.signal(signal.SIGTERM, _shutdown)
-    signal.signal(signal.SIGINT, _shutdown)
+        return None
 
     logger.info(
         "gh-webhook listening on http://%s:%s%s (pidfile=%s)",
@@ -347,12 +349,33 @@ def _serve(options: ReceiverOptions) -> int:
         routing=bool(options.route),
         verifying_signatures=bool(secret),
     )
-    try:
-        httpd.serve_forever()
-    finally:
+
+    def cleanup() -> None:
         httpd.server_close()
         if dispatcher is not None:
             dispatcher.stop()
         stop_web_terminal(web_proc)
         eventlog.emit("server.stopped", host=options.host, port=options.port)
+
+    return httpd, cleanup
+
+
+def _serve(options: ReceiverOptions) -> int:
+    """The receiver run itself, with the single-instance lock already held."""
+    built = build_receiver(options)
+    if built is None:
+        return 1
+    httpd, cleanup = built
+
+    def _shutdown(signum, _frame):
+        logger.info("received signal %s, shutting down", signum)
+        httpd.shutdown()
+
+    signal.signal(signal.SIGTERM, _shutdown)
+    signal.signal(signal.SIGINT, _shutdown)
+
+    try:
+        httpd.serve_forever()
+    finally:
+        cleanup()
     return 0

@@ -17,6 +17,7 @@ service:
   port: 4114
   exposed: false
   autoStart: true
+  hostIngresses: true
   mcp:
     enabled: true
   cors:
@@ -39,6 +40,28 @@ Whether [`the-loop start`](/cli/commands/start) brings the service up (issue-228
 execution path for core capabilities. `false` also disables `autoStart` — a service the
 operator disabled must not resurrect because an unrelated CLI command wanted it
 (fail-closed, the affected command names this key).
+
+### `hostIngresses`
+
+- **Type:** `boolean`
+- **Default:** `true`
+
+Single-process mode ([issue-231](https://github.com/MadaraUchiha-314/the-loop/issues/231)):
+with the service enabled, the enabled ingresses — the [poller](/config/cli/polling-options)
+per `polling.enabled`, the [webhook receiver](/cli/receiver) per
+`webhooks.ghWebhook.enabled` — run as background threads **inside** the service process.
+One pid, one logfile, one `the-loop start`.
+
+Each hosted ingress still holds its own pidfile flock (under the service's pid), so
+[`the-loop status`](/cli/commands/status)/[`stop`](/cli/commands/stop), the
+single-instance guarantees and the daemons API answer unchanged — `status` marks the
+rows `hosted in the service`, and `stop` stops the one process. A standalone daemon
+already holding a lock is **skipped with a warning**, never fought over.
+
+Set `false` to keep the issue-228 split — every enabled service in its own process —
+when you want fault isolation: a wedged ingress cannot share fate with the API. With
+`service.enabled: false` the ingresses always run standalone regardless of this flag.
+Takes effect on restart.
 
 ### `mcp.enabled`
 

@@ -269,15 +269,32 @@ def create_app(cli_config: Optional[dict] = None, *, config_path=None) -> FastAP
         mcp_app = build_mcp_app(cli_config)
     holder = _ConfigHolder(cli_config, config_path or default_cli_config_path())
 
+    # issue-231 (`service.hostIngresses`, default true): the one process this
+    # app runs in also hosts the enabled ingresses — the poller and the webhook
+    # receiver — as background threads for the lifespan's duration. The run
+    # loops are the daemons' own; each still holds its per-ingress pidfile
+    # lock (now under this pid), so `the-loop status`/`stop` and the daemons
+    # API keep answering from the same truth. A hosted ingress that cannot
+    # start degrades to a logged warning; the API keeps serving.
+    host_ingresses = service_config(cli_config)["hostIngresses"]
+
     @asynccontextmanager
     async def lifespan(_: FastAPI):
-        # The SDK's session manager runs a task group for the duration of the
-        # process; without adopting its lifespan, /mcp 500s on first use.
-        if mcp_app is None:
-            yield
-        else:
-            async with mcp_app.router.lifespan_context(mcp_app):
+        from . import ingress as ingress_mod
+
+        hosted = (
+            ingress_mod.start_hosted_ingresses(cli_config) if host_ingresses else []
+        )
+        try:
+            # The SDK's session manager runs a task group for the duration of
+            # the process; without adopting its lifespan, /mcp 500s on first use.
+            if mcp_app is None:
                 yield
+            else:
+                async with mcp_app.router.lifespan_context(mcp_app):
+                    yield
+        finally:
+            ingress_mod.stop_hosted_ingresses(hosted)
 
     app = FastAPI(
         title="the-loop control plane",

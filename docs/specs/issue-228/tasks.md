@@ -93,3 +93,13 @@ graph LR
   Settings Service card, the config editor's "Restart now" on `restartRequired`;
   UI tests, lint, typecheck, build.
   _Requirements: R4.6_ · _Test: T13_
+- [x] **15. Single-process mode** _(review round 2,
+  [issue-231](https://github.com/MadaraUchiha-314/the-loop/issues/231))_.
+  `service.hostIngresses` (default true) in `service_config` + both schema copies +
+  template; `api/ingress.py` hosting the poller (`_run_locked` with `stop_event`,
+  no signal handlers) and the receiver (`build_receiver` split) as locked threads
+  in `create_app`'s lifespan; `core.lifecycle` detecting hosted-ness from the lock
+  in `start_all`/`stop_all`/`status_all`; `RESTART_REQUIRED` + new event types;
+  docs (config/command/service/receiver pages, capability docs, decision-084 §8,
+  requirements R6 / design D6).
+  _Requirements: R6.1–R6.6_ · _Test: T14_

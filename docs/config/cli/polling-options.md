@@ -38,7 +38,9 @@ Whether [`the-loop start`](/cli/commands/start) brings the poller up (issue-228,
 `sources` list — `sources` describes *how* to poll, not that polling is wanted on this
 host. `start` names this key when it skips a disabled poller, and reports an enabled
 poller with an empty `sources` list as *misconfigured* rather than starting a loop
-that would exit at once.
+that would exit at once. Where the enabled poller runs — inside the service process
+(the default) or as its own — is
+[`service.hostIngresses`](/config/cli/service-options#hostingresses) (issue-231).
 
 ### `intervalSeconds`
 

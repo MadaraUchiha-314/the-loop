@@ -34,6 +34,9 @@ Whether [`the-loop start`](/cli/commands/start) brings the receiver up (issue-22
 reachable bind, a secret and GitHub-side configuration, so a config that merely
 *describes* one must not open a port. The foreground entry point
 (`python -m the_loop.daemon_entry gh-webhook`, for systemd) runs regardless of it.
+Where the enabled receiver runs — inside the service process (the default) or as its
+own — is [`service.hostIngresses`](/config/cli/service-options#hostingresses)
+(issue-231).
 
 ### `host`
 

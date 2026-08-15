@@ -49,6 +49,20 @@ API.
    dashboard restart wired now, not as follow-up: the Settings tab gained a Service
    card calling `POST /api/v1/restart`, and a config save reporting
    `restartRequired` keys offers "Restart now".
+8. **Amended on owner review round 2 (PR #229,
+   [issue-231](https://github.com/MadaraUchiha-314/the-loop/issues/231)):
+   single-process mode is the default.** `service.hostIngresses` (default true) makes
+   `start` boot one process: with the service enabled, the enabled ingresses run as
+   threads inside its lifespan instead of as spawned daemons. Each hosted ingress
+   still acquires its own pidfile flock — under the service's pid — so the issue-159
+   lock discipline, `status`/`stop` and the daemons API are unchanged; "hosted" is
+   *detected*, never recorded: an ingress lock whose holder equals the service's pid
+   is hosted, anything else is standalone. Contention is a skip-with-warning (a
+   standalone daemon is never fought over), an enabled poller with no sources refuses
+   to host (the service keeps serving), and `stop` stops the one process, reporting
+   the hosted rows only once their locks are released. `false` restores one process
+   per service (fault isolation); `service.enabled: false` always means standalone
+   ingresses.
 
 ## Consequences
 

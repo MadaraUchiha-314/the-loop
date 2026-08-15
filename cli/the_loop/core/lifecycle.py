@@ -48,6 +48,10 @@ SERVICE_START_TIMEOUT_SECONDS = 15.0
 DAEMON_START_TIMEOUT_SECONDS = 10.0
 #: How long ``stop`` waits for the service to release its lock.
 SERVICE_STOP_TIMEOUT_SECONDS = 30.0
+#: How long ``stop`` waits for a hosted ingress's lock after the service exits.
+#: Short: the service's own stop already waited for the whole process, so this
+#: only covers the release racing the process's last breath (issue-231).
+STOP_TIMEOUT_HOSTED_SECONDS = 5.0
 
 
 def _webhook_enabled(config: Optional[dict]) -> bool:
@@ -182,6 +186,36 @@ def _start_daemon(daemon: str, config: Optional[dict]) -> Dict[str, Any]:
     )
 
 
+def _await_hosted(
+    daemon: str, config: Optional[dict], service_pid: int
+) -> Dict[str, Any]:
+    """The honest start for an ingress the *service* hosts (issue-231).
+
+    Nothing is spawned here: the service's lifespan starts the ingress on a
+    thread and takes its per-ingress pidfile lock under the service's own pid.
+    Waiting for that lock is the same proof `_start_daemon` uses; the holder's
+    pid tells hosted (== the service's) apart from a standalone daemon that
+    was already running (anything else).
+    """
+    lock = RunLock(core_daemons._pidfile(daemon, config), name=daemon)
+    deadline = time.monotonic() + DAEMON_START_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        if lock.is_held():
+            holder = lock.holder()
+            if service_pid and holder == service_pid:
+                return _row(
+                    daemon, True, "hosted", f"in the service process (pid {holder})"
+                )
+            return _row(daemon, True, "already-running", f"standalone, pid {holder}")
+        time.sleep(0.1)
+    return _row(
+        daemon,
+        True,
+        "failed",
+        "the service did not host it; check `the-loop events --source service`",
+    )
+
+
 def start_all(config: Optional[dict] = None) -> Dict[str, Any]:
     """Start every enabled service, reporting per service (R1).
 
@@ -191,12 +225,22 @@ def start_all(config: Optional[dict] = None) -> Dict[str, Any]:
     enabled = enabled_services(config)
     conf = service_config(config)
     rows: List[Dict[str, Any]] = []
+    # issue-231: with the service enabled and `service.hostIngresses` (the
+    # default), the enabled ingresses run *inside* the service process — one
+    # pid — so nothing is spawned for them here; their honest start is waiting
+    # for the per-ingress lock the service takes while hosting them. With the
+    # service disabled (or the mode off), they spawn standalone as before.
+    hosting = enabled["service"] and conf["hostIngresses"]
+    service_up = False
+    service_pid = 0
 
     if not enabled["service"]:
         rows.append(_row("service", False, "disabled", "service.enabled is false"))
     else:
         try:
             outcome = start_service(config)
+            service_up = bool(outcome["running"])
+            service_pid = int(outcome["pid"] or 0)
             mcp = (
                 "/mcp exposed"
                 if conf["mcpEnabled"]
@@ -217,13 +261,26 @@ def start_all(config: Optional[dict] = None) -> Dict[str, Any]:
         except Exception as exc:  # noqa: BLE001 — isolate per-service failures (R1.4)
             rows.append(_row("service", True, "failed", str(exc)))
 
+    def _ingress_row(daemon: str) -> Dict[str, Any]:
+        if hosting:
+            if not service_up:
+                return _row(
+                    daemon,
+                    True,
+                    "failed",
+                    "the service hosts the ingresses (service.hostIngresses) "
+                    "and did not come up",
+                )
+            return _await_hosted(daemon, config, service_pid)
+        return _start_daemon(daemon, config)
+
     if not enabled["gh-webhook"]:
         rows.append(
             _row("gh-webhook", False, "disabled", "webhooks.ghWebhook.enabled is false")
         )
     else:
         try:
-            rows.append(_start_daemon("gh-webhook", config))
+            rows.append(_ingress_row("gh-webhook"))
         except Exception as exc:  # noqa: BLE001
             rows.append(_row("gh-webhook", True, "failed", str(exc)))
 
@@ -243,47 +300,73 @@ def start_all(config: Optional[dict] = None) -> Dict[str, Any]:
         )
     else:
         try:
-            rows.append(_start_daemon("poller", config))
+            rows.append(_ingress_row("poller"))
         except Exception as exc:  # noqa: BLE001
             rows.append(_row("poller", True, "failed", str(exc)))
 
     ok = all(
-        row["outcome"] in ("started", "already-running", "disabled") for row in rows
+        row["outcome"] in ("started", "already-running", "hosted", "disabled")
+        for row in rows
     )
     return {"services": rows, "ok": ok}
 
 
 def stop_all(config: Optional[dict] = None) -> Dict[str, Any]:
-    """Stop every running service, reverse start order, ignoring ``enabled``."""
-    rows: List[Dict[str, Any]] = []
+    """Stop every running service, reverse start order, ignoring ``enabled``.
+
+    An ingress whose lock is held by the **service's own pid** is hosted
+    (issue-231): it is not signalled directly — SIGTERM to that pid is the
+    service's shutdown — but stopped *by* stopping the service, and its row is
+    reported only once its lock has actually been released.
+    """
+    by_name: Dict[str, Dict[str, Any]] = {}
     enabled = enabled_services(config)
+    service_lock = _service_lock(config)
+    service_pid = service_lock.holder() if service_lock.is_held() else 0
+    hosted: List[str] = []
     for daemon in ("poller", "gh-webhook"):
         try:
+            lock = RunLock(core_daemons._pidfile(daemon, config), name=daemon)
+            if service_pid and lock.is_held() and lock.holder() == service_pid:
+                hosted.append(daemon)
+                continue
             result = core_daemons.control_daemon(daemon, "stop", config)
             outcome = (
                 "stopped"
                 if result["exitCode"] == 0 and result["pid"]
                 else ("not-running" if result["exitCode"] == 0 else "failed")
             )
-            rows.append(_row(daemon, enabled[daemon], outcome, result["output"]))
+            by_name[daemon] = _row(daemon, enabled[daemon], outcome, result["output"])
         except Exception as exc:  # noqa: BLE001
-            rows.append(_row(daemon, enabled[daemon], "failed", str(exc)))
+            by_name[daemon] = _row(daemon, enabled[daemon], "failed", str(exc))
     try:
         outcome = stop_service(config)
-        rows.append(
-            _row(
-                "service",
-                enabled["service"],
-                (
-                    "stopped"
-                    if outcome["stopped"]
-                    else ("not-running" if not outcome["running"] else "failed")
-                ),
-                outcome["detail"],
-            )
+        by_name["service"] = _row(
+            "service",
+            enabled["service"],
+            (
+                "stopped"
+                if outcome["stopped"]
+                else ("not-running" if not outcome["running"] else "failed")
+            ),
+            outcome["detail"],
         )
     except Exception as exc:  # noqa: BLE001
-        rows.append(_row("service", enabled["service"], "failed", str(exc)))
+        by_name["service"] = _row("service", enabled["service"], "failed", str(exc))
+    for daemon in hosted:
+        lock = RunLock(core_daemons._pidfile(daemon, config), name=daemon)
+        freed = lock.wait_until_free(STOP_TIMEOUT_HOSTED_SECONDS)
+        by_name[daemon] = _row(
+            daemon,
+            enabled[daemon],
+            "stopped" if freed else "failed",
+            (
+                f"was hosted in the service (pid {service_pid}); stopped with it"
+                if freed
+                else "hosted lock still held after the service stopped"
+            ),
+        )
+    rows = [by_name[name] for name in ("poller", "gh-webhook", "service")]
     ok = all(row["outcome"] in ("stopped", "not-running") for row in rows)
     return {"services": rows, "ok": ok}
 
@@ -309,6 +392,12 @@ def status_all(config: Optional[dict] = None) -> Dict[str, Any]:
         status = core_daemons.daemon_status(daemon, config)
         status["service"] = status.pop("daemon")
         status["enabled"] = enabled[daemon]
+        # issue-231: an ingress whose lock is held by the service's own pid is
+        # running *inside* the service — reported as such, so an operator can
+        # tell one process hosting three services from three processes.
+        status["hosted"] = bool(
+            running and status["running"] and status["pid"] == rows[0]["pid"]
+        )
         rows.append(status)
     # The poller's progress beyond liveness (issue-191): the counters and
     # interval `poll status` used to report travel with the row, so removing

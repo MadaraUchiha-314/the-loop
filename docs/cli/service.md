@@ -47,6 +47,14 @@ Set [`service.autoStart: false`](/config/cli/service-options#autostart) if you w
 rather manage the process yourself (a systemd unit, a container); commands then fail
 naming `the-loop start` instead of booting one.
 
+The service is also the default **host** for the other services: with
+[`service.hostIngresses`](/config/cli/service-options#hostingresses) at its default,
+an enabled [poller](/config/cli/polling-options) and
+[webhook receiver](/cli/receiver) run as background threads inside this one process
+(issue-231) — one pid, one logfile — while keeping their own pidfile locks so
+`status`, `stop` and the daemons API answer unchanged. Set it `false` for one process
+per service.
+
 To change the port or bind address, set
 [`service.host` / `service.port`](/config/cli/service-options) in your CLI config:
 

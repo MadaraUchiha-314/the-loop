@@ -143,6 +143,33 @@ commit on the same branch:
    a *schedule*), and a "Restart now" follow-through in the config editor whenever a
    save reports `restartRequired` keys. Two new UI tests; 91 pass.
 
+### 2026-08-15 — owner review round 2: single-process mode (issue-231)
+
+The owner asked (PR #229 comment) whether the poller now runs inside the FastAPI
+service; the honest answer was no — three processes, only MCP in-service — and the
+follow-up ticket for folding them became
+[issue-231](https://github.com/MadaraUchiha-314/the-loop/issues/231), filed by the
+owner. The owner then blocked the merge on it: *"merging this PR will cause a
+regression. Can we implement this … so that all functionality will remain?"* —
+so single-process mode landed in this PR as a third commit (R6, design D6,
+decision-084 §8):
+
+- `service.hostIngresses` (default **true**): `the-loop start` boots one process,
+  the service, whose lifespan runs the enabled poller and receiver as threads —
+  each still acquiring its own pidfile flock, now under the service's pid.
+- Hosted-ness is **detected from the lock** (holder pid == service pid), never
+  recorded in a file; contention with a standalone daemon is a skip-with-warning;
+  an enabled poller with no sources refuses to host while the API keeps serving;
+  `stop` stops the one process and reports hosted rows only once their locks free.
+- Enablers: `poller.daemon` gained `stop_event`/`install_signal_handlers` (signal
+  handlers are main-thread-only), `webhook.daemon` split into
+  `build_receiver` + `_serve`, `api/ingress.py` is the hosting glue, and
+  `core.lifecycle` awaits locks instead of spawning when hosting.
+- Verified as T14: 5 new unit cases (15 total in `test_core_lifecycle.py`), a new
+  real-process integration file (one pid holds all three locks; receiver answers
+  on its port; `status` says hosted; `stop` releases everything; a standalone
+  lock is not fought over), full suite 2041 passed / 1 skipped.
+
 ## Capability docs
 
 - [`docs/capabilities/cli.md`](../../capabilities/cli.md) — the lifecycle-surface
@@ -158,7 +185,10 @@ commit on the same branch:
 - [`docs/capabilities/interactive-sessions.md`](../../capabilities/interactive-sessions.md)
   — two ingress-naming clauses reworded; no behaviour change.
 - All three issue-228 history rows amended for the PR #229 review round (the fold and
-  the dashboard restart).
+  the dashboard restart), and again for round 2 (single-process mode, issue-231) —
+  with new SHALL clauses in `cli.md` (one process by default), `control-plane.md`
+  (the service as the default host process) and `webhook-triggers.md` (both
+  ingresses hosted by default).
 
 ## Documentation
 
@@ -178,3 +208,8 @@ commit on the same branch:
 - `docs/decisions/decision-084.md` + index row.
 - `skills/the-loop/SKILL.md` and `reference/automation.md` needed no change: neither
   names the poll commands.
+- Review round 2 (issue-231): `service.hostIngresses` documented on
+  `docs/config/cli/service-options.md` (and pointed at from the polling/webhook
+  `enabled` sections), the one-process-by-default sections on `start.md`, hosted
+  rows on `stop.md`/`status.md`, hosting paragraphs on `docs/cli/service.md` and
+  `docs/cli/receiver.md`, decision-084 §8, requirements R6 and design D6.

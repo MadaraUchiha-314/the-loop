@@ -205,3 +205,30 @@ path per call; `--config` override honoured with no cached module path),
 `webhook.daemon`), `test_webhook_routing_integration.py` (routing opt-in follows
 `routing.enabled`), `test_service_lifecycle_integration.py` (`the-loop start/stop`
 drive the real service), `test_client.py` (hints name `the-loop start`).
+
+## T14 — review round 2: single-process mode (issue-231)
+
+Third commit on the branch, after the owner blocked the merge on
+[issue-231](https://github.com/MadaraUchiha-314/the-loop/issues/231)
+("merging this PR will cause a regression").
+
+```console
+$ cd cli && uv run pytest tests/test_core_lifecycle.py -q
+15 passed                              # 5 new hosted-mode cases; 2 standalone-path
+                                       # tests pinned with service.hostIngresses: false
+
+$ uv run pytest tests/test_hosted_ingress_integration.py -q
+2 passed in 7.15s                      # real processes: one pid holds all three locks,
+                                       # hosted receiver answers /health on its own port,
+                                       # status rows say hosted, stop releases everything;
+                                       # a standalone daemon's lock is skipped, not stolen
+
+$ uv run pytest -q
+2041 passed, 1 skipped in 93.02s       # full suite after the hosting change
+```
+
+The first full-suite run of this round failed exactly one test —
+`test_docs_parity.py::test_p4_every_schema_leaf_is_documented`, because
+`service.hostIngresses` was in the schema before its section existed on
+`docs/config/cli/service-options.md`. Documented, re-ran: 5/5 parity tests green,
+then the clean full run above.

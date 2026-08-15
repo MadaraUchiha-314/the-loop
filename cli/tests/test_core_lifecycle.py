@@ -94,6 +94,7 @@ def test_start_starts_every_enabled_service(tmp_path, monkeypatch):
     )
     config = _config(
         tmp_path,
+        service={"hostIngresses": False},  # this test pins the standalone spawn path
         webhooks={"ghWebhook": {"enabled": True}},
         polling={"enabled": True, "sources": [{"provider": "github"}]},
     )
@@ -157,7 +158,11 @@ def test_one_failed_service_never_hides_the_others(tmp_path, monkeypatch):
         },
     )
     report = lifecycle.start_all(
-        _config(tmp_path, webhooks={"ghWebhook": {"enabled": True}})
+        _config(
+            tmp_path,
+            service={"hostIngresses": False},  # standalone path: webhook spawns
+            webhooks={"ghWebhook": {"enabled": True}},
+        )
     )
     outcomes = {row["service"]: row["outcome"] for row in report["services"]}
     assert outcomes == {
@@ -285,3 +290,179 @@ def test_schedule_restart_spawns_a_fixed_detached_argv(tmp_path, monkeypatch):
     assert upgraded["withUpgrade"] is True
     assert spawned["argv"][-1] == "--with-upgrade"
     assert spawned["argv"][-2] == "restart"
+
+
+# -- single-process mode (issue-231) ----------------------------------------------
+
+
+def test_hosting_skips_the_spawn_and_waits_for_the_hosted_locks(tmp_path, monkeypatch):
+    """
+    Feature: single-process mode (service.hostIngresses)
+    Scenario: the service is enabled and hosts the enabled ingresses
+        Given hostIngresses (the default) and both ingresses enabled
+        When start_all runs and the service comes up
+        Then no standalone daemon is spawned; each ingress row is `hosted`
+             once its lock is held by the service's pid
+    Requirement: github issue #231
+    """
+    monkeypatch.setattr(
+        lifecycle,
+        "start_service",
+        lambda config: {
+            "running": True,
+            "pid": 41,
+            "detail": "started",
+            "started": True,
+        },
+    )
+    monkeypatch.setattr(
+        lifecycle,
+        "_start_daemon",
+        lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError("hosting must not spawn standalone daemons")
+        ),
+    )
+    awaited = []
+    monkeypatch.setattr(
+        lifecycle,
+        "_await_hosted",
+        lambda daemon, config, service_pid: (
+            awaited.append((daemon, service_pid))
+            or {"service": daemon, "enabled": True, "outcome": "hosted", "detail": ""}
+        ),
+    )
+    config = _config(
+        tmp_path,
+        webhooks={"ghWebhook": {"enabled": True}},
+        polling={"enabled": True, "sources": [{"provider": "github"}]},
+    )
+    report = lifecycle.start_all(config)
+    assert report["ok"] is True
+    assert awaited == [("gh-webhook", 41), ("poller", 41)]
+    assert [row["outcome"] for row in report["services"]] == [
+        "started",
+        "hosted",
+        "hosted",
+    ]
+
+
+def test_host_ingresses_false_keeps_the_standalone_spawn(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        lifecycle,
+        "start_service",
+        lambda config: {"running": True, "pid": 41, "detail": "d", "started": True},
+    )
+    started = []
+    monkeypatch.setattr(
+        lifecycle,
+        "_start_daemon",
+        lambda daemon, config: (
+            started.append(daemon)
+            or {"service": daemon, "enabled": True, "outcome": "started", "detail": ""}
+        ),
+    )
+    monkeypatch.setattr(
+        lifecycle,
+        "_await_hosted",
+        lambda *a: (_ for _ in ()).throw(AssertionError("mode is off")),
+    )
+    config = _config(
+        tmp_path,
+        service={"hostIngresses": False},
+        polling={"enabled": True, "sources": [{"provider": "github"}]},
+    )
+    report = lifecycle.start_all(config)
+    assert started == ["poller"]
+    assert report["ok"] is True
+
+
+def test_a_disabled_service_never_hosts(tmp_path, monkeypatch):
+    """
+    Feature: single-process mode (service.hostIngresses)
+    Scenario: service.enabled false with an enabled poller
+        Given the deployment shape issue-228 guaranteed (poll-only box, no API)
+        When start_all runs
+        Then the poller spawns standalone — hostIngresses changes nothing
+    Requirement: github issue #231 (independent enablement survives)
+    """
+    started = []
+    monkeypatch.setattr(
+        lifecycle,
+        "_start_daemon",
+        lambda daemon, config: (
+            started.append(daemon)
+            or {"service": daemon, "enabled": True, "outcome": "started", "detail": ""}
+        ),
+    )
+    config = _config(
+        tmp_path,
+        service={"enabled": False},
+        polling={"enabled": True, "sources": [{"provider": "github"}]},
+    )
+    report = lifecycle.start_all(config)
+    assert started == ["poller"]
+    assert report["ok"] is True
+
+
+def test_hosted_ingresses_fail_when_the_service_does_not_come_up(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        lifecycle,
+        "start_service",
+        lambda config: {"running": False, "pid": 0, "detail": "d", "started": False},
+    )
+    config = _config(
+        tmp_path,
+        polling={"enabled": True, "sources": [{"provider": "github"}]},
+    )
+    report = lifecycle.start_all(config)
+    row = next(r for r in report["services"] if r["service"] == "poller")
+    assert row["outcome"] == "failed"
+    assert "hostIngresses" in row["detail"]
+    assert report["ok"] is False
+
+
+def test_stop_stops_a_hosted_ingress_by_stopping_the_service(tmp_path, monkeypatch):
+    """
+    Feature: single-process mode (service.hostIngresses)
+    Scenario: `the-loop stop` with hosted ingresses
+        Given the poller's lock is held by the service's own pid
+        When stop_all runs
+        Then the poller is never signalled directly — the service is stopped,
+             and the poller row reports stopped once its lock is released
+    Requirement: github issue #231
+    """
+    from the_loop.runlock import RunLock
+
+    service_pidfile = tmp_path / ".the-loop" / "local" / "service.pid"
+    service_pidfile.parent.mkdir(parents=True)
+    service_lock = RunLock(service_pidfile, name="service")
+    assert service_lock.acquire()  # "the service": this test process's pid
+
+    poll_pidfile = tmp_path / ".the-loop" / "poll.pid"
+    poller_lock = RunLock(poll_pidfile, name="poller")
+    assert poller_lock.acquire()  # hosted: same pid as the "service"
+
+    signalled = []
+    monkeypatch.setattr(
+        lifecycle.core_daemons,
+        "control_daemon",
+        lambda daemon, verb, config: (
+            signalled.append(daemon)
+            or {"exitCode": 0, "pid": 0, "output": "not running"}
+        ),
+    )
+
+    def fake_stop_service(config):
+        # The real stop SIGTERMs the process, whose lifespan releases the
+        # hosted locks on the way down; both releases are simulated here.
+        service_lock.release()
+        poller_lock.release()
+        return {"running": False, "pid": 4, "detail": "stopped", "stopped": True}
+
+    monkeypatch.setattr(lifecycle, "stop_service", fake_stop_service)
+    report = lifecycle.stop_all(_config(tmp_path))
+    outcomes = {row["service"]: row["outcome"] for row in report["services"]}
+    assert outcomes["poller"] == "stopped"
+    assert outcomes["service"] == "stopped"
+    assert signalled == ["gh-webhook"], "the hosted poller must not be signalled"
+    assert report["ok"] is True

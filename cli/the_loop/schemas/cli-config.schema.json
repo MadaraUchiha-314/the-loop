@@ -847,6 +847,12 @@
             }
           }
         },
+        "hostIngresses": {
+          "type": "boolean",
+          "default": true,
+          "description": "Single-process mode (issue-231): with the service enabled, the enabled ingresses (the poller per `polling.enabled`, the webhook receiver per `webhooks.ghWebhook.enabled`) run as background tasks INSIDE the service process — one pid, one logfile — instead of as separate processes. Each hosted ingress still holds its own pidfile flock (under the service's pid), so `the-loop status`/`stop`, the single-instance guarantees and the daemons API answer unchanged, and a standalone daemon already holding a lock is skipped with a warning rather than fought over. Set false to keep the issue-228 split (fault isolation: a wedged ingress cannot share fate with the API); with `service.enabled: false` the ingresses always run standalone regardless of this flag.",
+          "examples": [false]
+        },
         "cors": {
           "type": "object",
           "description": "Which browser ORIGINS may read this service's responses (issue-211, decision-077). Orthogonal to `host`/`exposed`, which decide who may CONNECT: no value here widens the bind. Ships allowing the one origin the-loop publishes its dashboard to, so the hosted UI works against a local service with no configuration; an empty `allowOrigins` installs no middleware at all and restores same-origin-only behaviour.",

@@ -263,6 +263,18 @@ self-learning/ML capabilities.
   commands are removed with it (owner review on PR #229 — *"It should all fold into
   `the-loop start`"*), the receiver's run loop relocated the same way
   (`the_loop.webhook.daemon`, `daemon_entry gh-webhook` as its foreground form).
+- **`start` SHALL boot one process by default** (issue-231, decision-084 §8): with
+  the service enabled and `service.hostIngresses` true (the default), the enabled
+  ingresses run as threads inside the service's lifespan — one pid, one logfile —
+  each still holding its own pidfile flock under the service's pid, so
+  `status`/`stop`, the single-instance guarantee and the daemons API answer
+  unchanged. Hosted-ness SHALL be detected from the lock (holder pid equals the
+  service's), never recorded in a file; an ingress lock already held by another
+  process SHALL be skipped with a warning, never fought over; an enabled poller
+  with no sources SHALL refuse to host while the service keeps serving; and `stop`
+  SHALL report a hosted ingress stopped only once its lock is released.
+  `hostIngresses: false` restores one process per enabled service, and a disabled
+  service always means standalone ingresses.
 - Every core-capability command SHALL execute through the control-plane service as
   its only mode (issue-161). The exceptions are inherent, not transitional:
   `sessions attach` hands the terminal to tmux, `sessions reset` must work when
@@ -311,7 +323,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
-| issue-228 | The CLI's lifecycle became one surface (2026-08-14): `the-loop start\|stop\|status\|restart` compose the control-plane service, webhook receiver and poller per new per-service `enabled` flags (service + MCP on by default, ingresses opt-in), the `poll`, `gh-webhook` and `service` commands were removed with the run loops relocated to `the_loop.poller.daemon` / `the_loop.webhook.daemon` (`daemon_entry <poller\|gh-webhook> [--once]` is the foreground/cron form; the fold of the latter two is the owner's PR #229 review), the issue-191 double-fork went with them, `restart --with-upgrade` reuses the issue-152 installer plan, and `service.enabled: false` also refuses implicit auto-start | [spec](../specs/issue-228/), [decision-084](../decisions/decision-084.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/228) |
+| issue-228 | The CLI's lifecycle became one surface (2026-08-14): `the-loop start\|stop\|status\|restart` compose the control-plane service, webhook receiver and poller per new per-service `enabled` flags (service + MCP on by default, ingresses opt-in), the `poll`, `gh-webhook` and `service` commands were removed with the run loops relocated to `the_loop.poller.daemon` / `the_loop.webhook.daemon` (`daemon_entry <poller\|gh-webhook> [--once]` is the foreground/cron form; the fold of the latter two is the owner's PR #229 review), the issue-191 double-fork went with them, `restart --with-upgrade` reuses the issue-152 installer plan, and `service.enabled: false` also refuses implicit auto-start. Amended in the same PR (issue-231, owner review round 2): `service.hostIngresses` (default true) makes `start` boot one process — the enabled ingresses run as threads inside the service, each keeping its own pidfile flock under the service's pid, hosted-ness detected from the lock and never recorded | [spec](../specs/issue-228/), [decision-084](../decisions/decision-084.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/228), [issue-231](https://github.com/MadaraUchiha-314/the-loop/issues/231) |
 | issue-208 | `the-loop ask` joins the CLI: an agent's question is posted with the loop-prevention marker stamped centrally and the wait recorded as `session.awaiting_input`; runs in-process because the escalation path must not depend on a running service | [spec](../specs/issue-208/), [decision-078](../decisions/decision-078.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/208) |
 | issue-205 | The poller's heartbeat stopped carrying a `pid` nothing read: `poll.pid` — the flock — is the single source of truth for which process is polling, and an older heartbeat's pid is now dropped on read. The two files stay separate because the heartbeat's atomic rewrite would free the lock it is held on | [spec](../specs/issue-205/), [decision-076](../decisions/decision-076.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/205) |
 | issue-203 | `integrations.slack` gained an optional inline `url`, taking precedence over `urlEnv`, so the one value that turns notifications on stops living outside every config file the-loop owns — and a resolution failure now names both remedies instead of only the env var. Slack's webhook URL alone; tokens and signing secrets stay env-only | [spec](../specs/issue-203/), [decision-075](../decisions/decision-075.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/203) |

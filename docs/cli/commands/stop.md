@@ -22,6 +22,18 @@ gh-webhook  not-running      [disabled]  gh-webhook is not running
 service     stopped          [enabled]  stopped (pid 24846)
 ```
 
+An ingress that is [hosted inside the service](/config/cli/service-options#hostingresses)
+(issue-231) is stopped *with* it: `stop` recognises the lock is held by the service's
+own pid, stops the one process, and reports success for the hosted rows only once
+their locks are actually released.
+
+```console
+$ the-loop stop
+poller      stopped          [enabled]  was hosted in the service (pid 24846); stopped with it
+gh-webhook  stopped          [enabled]  was hosted in the service (pid 24846); stopped with it
+service     stopped          [enabled]  stopped (pid 24846)
+```
+
 Idempotent in both directions: stopping a stopped system exits 0 with `not-running`
 rows. The exit code is non-zero only when something that *was* running failed to exit
 within the timeout.

@@ -140,6 +140,44 @@ code it is judged by. A client that legitimately needs it has the REST route.
 entirely (no route, `/mcp` → 404) and skip adopting its lifespan; `service_config`
 carries the resolved flag.
 
+## D6 — single-process mode (amendment, owner review round 2 / issue-231)
+
+*(This section — and R6 — were added when the owner flagged the regression and filed
+[issue-231](https://github.com/MadaraUchiha-314/the-loop/issues/231). It supersedes
+the parts of D1/D3 that assume every enabled service is spawned; the earlier text is
+kept as the `hostIngresses: false` behaviour. Likewise, D1's "existing single-service
+commands are unaffected" was superseded in review round 1: `gh-webhook` and `service`
+are folded into the lifecycle surface, per R5.1 as amended.)*
+
+One new boolean, `service.hostIngresses` (default **true**), read by
+`api.config.service_config`. The moving parts:
+
+- **`api/ingress.py` (new)** is the hosting glue: `start_hosted_ingresses(cli_config)`
+  runs, per enabled flag, the poller (`poller.daemon._run_locked` with a `stop_event`
+  and `install_signal_handlers=False` — signal handlers are main-thread-only) and the
+  receiver (`webhook.daemon.build_receiver`, a new bind/serve/cleanup split of the
+  run loop `_serve` now composes) as daemon threads. Each acquires its **own**
+  `RunLock` first — same pidfile, now holding the service's pid — and a lock already
+  held is a skip-with-warning, never a fight (R6.3). Nothing in here raises past the
+  lifespan: a hosting failure is logged and the API serves on (R6.4).
+- **`create_app`'s lifespan** starts the hosted ingresses before the MCP session
+  manager and stops them (reverse order, `httpd.shutdown` / `stop_event.set`, join,
+  release lock) on shutdown — so a SIGTERM to the service is also a clean ingress
+  stop.
+- **`core/lifecycle.py` detects rather than records.** With the service enabled and
+  the flag true, `start_all` does not spawn ingresses; it waits for each enabled
+  ingress's lock and reports `hosted` when the holder pid equals the service's
+  (`_await_hosted`), or already-running (standalone) otherwise. `stop_all` sees a
+  lock whose holder is the service's pid, stops the one process, and reports the
+  hosted rows only once their locks are free. `status_all` marks such rows
+  `"hosted": true`. No state file, no drift: the locks are the single source of
+  truth, exactly the issue-159 discipline.
+
+Rejected: an in-service supervisor config (YAGNI); recording hosted-ness in a file
+(drifts from reality; the lock cannot); asyncio tasks instead of threads (the run
+loops are synchronous and already thread-safe via their own primitives — rewriting
+them as async is not this ticket).
+
 ## Error handling
 
 - A CLI config that fails to load (unparseable / pre-migration): `start`/`restart`
@@ -162,7 +200,11 @@ Code: `commands/lifecycle_cmd.py` (new), `core/lifecycle.py` (new),
 `commands/gh_webhook.py` and `commands/service_cmd.py` deleted,
 `webhook/daemon.py` added, and the dashboard (`ui/src`) gained the restart client
 method, the Settings Service card and the config editor's "Restart now"
-follow-through (R4.6).
+follow-through (R4.6). On review round 2 (issue-231): `api/ingress.py` (new),
+`api/app.py` (lifespan hosts ingresses), `poller/daemon.py` (`stop_event` /
+`install_signal_handlers` params), `webhook/daemon.py` (`build_receiver` split),
+`core/lifecycle.py` (hosted detection in start/stop/status), both schema copies +
+template (`service.hostIngresses`), `core/config.py` (`RESTART_REQUIRED`).
 
 Tests and docs: see [`testing-plan.md`](testing-plan.md) and the Documentation section
 of the execution log.

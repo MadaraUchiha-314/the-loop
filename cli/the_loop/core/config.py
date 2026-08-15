@@ -67,6 +67,7 @@ RESTART_REQUIRED = (
     "service.exposed",
     "service.cors",
     "service.mcp",
+    "service.hostIngresses",
 )
 
 #: A config this module creates is readable by its owner only: it names authorized GitHub

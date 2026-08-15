@@ -175,6 +175,38 @@ optionally onto a new version — with one verb.
   be: service and MCP enabled, webhook and poller disabled — defaults argued in
   `design.md`. No config migration is required (keys are added, none removed).
 
+### R6 — single-process mode (added on owner review round 2, issue-231)
+
+**User story:** As an operator, I want `the-loop start` to give me **one process** —
+the service hosting the enabled ingresses — so that all functionality survives the
+poll-command removal without my machine sprouting a process per feature.
+
+*(Added when the owner flagged that merging as-was would regress the "everything in
+one place" experience and filed
+[issue-231](https://github.com/MadaraUchiha-314/the-loop/issues/231): implement it
+in PR #229 "so that all functionality will remain".)*
+
+- R6.1 WHEN `service.hostIngresses` is true (the **default**) and the service is
+  enabled THEN `start` SHALL run each enabled ingress (poller per `polling.enabled`,
+  receiver per `webhooks.ghWebhook.enabled`) as a background thread inside the
+  service process — one pid, one logfile — instead of spawning it.
+- R6.2 WHILE hosted, each ingress SHALL hold its own pidfile flock, under the
+  service's pid, so the single-instance guarantee, `the-loop status`/`stop` and the
+  daemons API keep answering from the lock unchanged. Hosted-ness SHALL be
+  *detected* (lock holder pid equals the service's pid), never recorded in a file.
+- R6.3 WHEN an ingress's lock is already held by another process THEN the service
+  SHALL skip hosting it with a warning — never fight a standalone daemon for its
+  lock — and `start` SHALL report that ingress as already running (standalone).
+- R6.4 WHEN a hosted ingress cannot start (an enabled poller with no sources, a
+  port that will not bind) THEN the service SHALL keep serving — hosting failures
+  are logged, never fatal to the API.
+- R6.5 WHEN `the-loop stop` finds an ingress hosted in the service THEN it SHALL
+  stop the service process and report the hosted rows stopped only once their locks
+  are actually released.
+- R6.6 WHEN `service.hostIngresses` is false, or `service.enabled` is false, THEN
+  the ingresses SHALL start standalone exactly as R1 describes (one process per
+  enabled service); the flag SHALL be documented as restart-required.
+
 ## Non-functional requirements
 
 - NFR1 **One startup sequence per service.** `start`, the control plane's daemon spawn

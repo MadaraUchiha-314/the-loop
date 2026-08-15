@@ -5,9 +5,12 @@ to the harness session working that item.
 
 Its lifecycle is [`the-loop start|stop|status`](/cli/commands/start) — it comes up when
 [`webhooks.ghWebhook.enabled`](/config/cli/webhook-options#enabled) is true (issue-228;
-there is no `gh-webhook` command any more), and
-`python -m the_loop.daemon_entry gh-webhook` runs it in the foreground for a systemd
-`Type=simple` unit. Everything it listens with — host, port, path, the secret's env
+there is no `gh-webhook` command any more). By default it runs **inside the service
+process** ([`service.hostIngresses`](/config/cli/service-options#hostingresses),
+issue-231), still listening on its own configured port and holding its own pidfile
+lock; with `hostIngresses: false` (or the service disabled) it is spawned as its own
+process, and `python -m the_loop.daemon_entry gh-webhook` runs it in the foreground
+for a systemd `Type=simple` unit. Everything it listens with — host, port, path, the secret's env
 var, the event filter — is [`webhooks.ghWebhook`](/config/cli/webhook-options) in the
 CLI config; whether it dispatches at all is
 [`routing.enabled`](/config/cli/routing-options#enabled).

@@ -199,13 +199,24 @@ def _clear_stale_pidfile(pidfile: Path) -> None:
     )
 
 
-def run(options: Optional[PollerOptions] = None) -> int:
+def run(
+    options: Optional[PollerOptions] = None,
+    stop_event: Optional[threading.Event] = None,
+    install_signal_handlers: bool = True,
+) -> int:
     """Run the poller in this process until stopped (or once, under cron).
 
     The one startup sequence every path converges on (NFR1): lock acquisition,
     dependency checks, heartbeat, hot reload, the run loop.
+
+    ``stop_event``/``install_signal_handlers`` exist for the **hosted** form
+    (issue-231): the control-plane service runs this loop on a background
+    thread, where installing signal handlers is impossible (POSIX allows them
+    on the main thread only) and shutdown arrives as an event set by the
+    service's lifespan instead of a signal.
     """
     options = options or default_options()
+    # A no-op when the hosting process (uvicorn, issue-231) configured logging.
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
     )
@@ -244,12 +255,20 @@ def run(options: Optional[PollerOptions] = None) -> int:
         )
         return 1
     try:
-        return _run_locked(options)
+        return _run_locked(
+            options,
+            stop_event=stop_event,
+            install_signal_handlers=install_signal_handlers,
+        )
     finally:
         lock.release()
 
 
-def _run_locked(options: PollerOptions) -> int:
+def _run_locked(
+    options: PollerOptions,
+    stop_event: Optional[threading.Event] = None,
+    install_signal_handlers: bool = True,
+) -> int:
     """The poll run itself, with the single-instance lock already held."""
     from . import (
         PollConfig,
@@ -337,14 +356,16 @@ def _run_locked(options: PollerOptions) -> int:
     )
     providers = plan.providers
 
-    stop_event = threading.Event()
+    stop_event = stop_event if stop_event is not None else threading.Event()
 
-    def _shutdown(signum, _frame):
-        logger.info("received signal %s, stopping poller", signum)
-        stop_event.set()
+    if install_signal_handlers:
 
-    signal.signal(signal.SIGTERM, _shutdown)
-    signal.signal(signal.SIGINT, _shutdown)
+        def _shutdown(signum, _frame):
+            logger.info("received signal %s, stopping poller", signum)
+            stop_event.set()
+
+        signal.signal(signal.SIGTERM, _shutdown)
+        signal.signal(signal.SIGINT, _shutdown)
 
     logger.info(
         "poll: %s every %ss (spawnOnUnmatched=%s, state=%s)",
