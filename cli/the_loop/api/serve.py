@@ -1,6 +1,6 @@
 """Boot the control-plane service: ``python -m the_loop.api.serve`` (issue-161).
 
-This is what ``the-loop service start`` spawns (argv, no shell). The service
+This is what ``the-loop start`` spawns (argv, no shell). The service
 carries **no in-app authentication** — it is deployed behind a gateway that
 owns auth (owner decision, PR #162). The **exposure guard** below is therefore
 the sole network boundary the service enforces itself: a non-loopback host

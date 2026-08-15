@@ -4,7 +4,7 @@ Uses only the standard library so the CLI stays very lightweight. The server
 verifies the GitHub ``X-Hub-Signature-256`` HMAC (when a secret is configured),
 logs each received event, and invokes an optional ``on_event`` callback.
 Routing events to harness sessions is composed on top via ``on_event``
-(``gh-webhook start --route``; docs/specs/issue-15/design.md).
+(``routing.enabled``; docs/specs/issue-15/design.md).
 """
 
 from __future__ import annotations

@@ -32,6 +32,7 @@ state:
 
 webhooks:
   ghWebhook:
+    enabled: false                  # `the-loop start` brings the receiver up when true
     host: 127.0.0.1
     port: 8787
     path: /gh-webhook
@@ -240,6 +241,7 @@ routing:
     enabled: true
 
 polling:
+  enabled: false                    # `the-loop start` brings the poller up when true
   intervalSeconds: 60               # seconds between poll cycles (all sources)
   sources: []                       # e.g. the github source below (empty = nothing polled)
     # - provider: github
@@ -256,6 +258,14 @@ polling:
 # cross-origin block is spelled out, because it is the one you may want to
 # change.
 service:
+  enabled: true                # `the-loop start` brings the service up (false also
+                               # disables autoStart — a disabled service never
+                               # resurrects implicitly; issue-228)
+  mcp:
+    enabled: true              # mount the MCP endpoint at /mcp (false = REST only)
+  hostIngresses: true          # single-process mode (issue-231): the enabled poller
+                               # and webhook receiver run inside the service process;
+                               # false = one process per service (the issue-228 split)
   # Which browser ORIGINS may READ this service's responses (issue-211,
   # decision-077). Not a network setting: `host`/`exposed` decide who may
   # CONNECT, and nothing here widens that. The default entry is the origin

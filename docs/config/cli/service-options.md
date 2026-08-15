@@ -5,16 +5,21 @@ configBase: service
 # Service options
 
 Options under `service` — the control-plane API service started by
-[`the-loop service start`](/cli/commands/service) (issue-161, decision-058). The
+[`the-loop start`](/cli/commands/start) (issue-161, decision-058; see
+[the control-plane service](/cli/service)). The
 service carries **no in-app authentication** — a gateway owns that — so its own
 posture is network scoping: loopback-only unless `exposed` is explicitly true.
 
 ```yaml
 service:
+  enabled: true
   host: 127.0.0.1
   port: 4114
   exposed: false
   autoStart: true
+  hostIngresses: true
+  mcp:
+    enabled: true
   cors:
     allowOrigins: ["https://madarauchiha-314.github.io"]
     allowMethods: [GET, POST, OPTIONS]
@@ -22,6 +27,51 @@ service:
     allowCredentials: false
     allowPrivateNetwork: true
 ```
+
+## Lifecycle
+
+### `enabled`
+
+- **Type:** `boolean`
+- **Default:** `true`
+
+Whether [`the-loop start`](/cli/commands/start) brings the service up (issue-228,
+[decision-084](/decisions/decision-084)). Default on: the service is the CLI's only
+execution path for core capabilities. `false` also disables `autoStart` — a service the
+operator disabled must not resurrect because an unrelated CLI command wanted it
+(fail-closed, the affected command names this key).
+
+### `hostIngresses`
+
+- **Type:** `boolean`
+- **Default:** `true`
+
+Single-process mode ([issue-231](https://github.com/MadaraUchiha-314/the-loop/issues/231)):
+with the service enabled, the enabled ingresses — the [poller](/config/cli/polling-options)
+per `polling.enabled`, the [webhook receiver](/cli/receiver) per
+`webhooks.ghWebhook.enabled` — run as background threads **inside** the service process.
+One pid, one logfile, one `the-loop start`.
+
+Each hosted ingress still holds its own pidfile flock (under the service's pid), so
+[`the-loop status`](/cli/commands/status)/[`stop`](/cli/commands/stop), the
+single-instance guarantees and the daemons API answer unchanged — `status` marks the
+rows `hosted in the service`, and `stop` stops the one process. A standalone daemon
+already holding a lock is **skipped with a warning**, never fought over.
+
+Set `false` to keep the issue-228 split — every enabled service in its own process —
+when you want fault isolation: a wedged ingress cannot share fate with the API. With
+`service.enabled: false` the ingresses always run standalone regardless of this flag.
+Takes effect on restart.
+
+### `mcp.enabled`
+
+- **Type:** `boolean`
+- **Default:** `true`
+
+Whether the service mounts the [MCP endpoint](/cli/service#mcp-connecting-an-agent)
+at `/mcp` (issue-228). Default on — `/mcp` has been mounted unconditionally since
+issue-161 — so the flag exists to *narrow* a deployment to REST-only: with `false`, no
+MCP app is built and `/mcp` answers 404.
 
 ## Binding
 
@@ -59,7 +109,7 @@ may connect**; `cors` decides **which browser page may read the answer**. Nothin
 `cors` widens the bind, and a page on an allowed origin still has to reach the service —
 over loopback, a tunnel, or a gateway — before any of this applies.
 
-It exists because the [dashboard](/cli/commands/service) is published to GitHub Pages and
+It exists because the [dashboard](/cli/service) is published to GitHub Pages and
 the service it drives runs on your workstation. Without an `Access-Control-Allow-Origin`
 header the browser throws the response away, and the only alternative remedy is a proxy
 in front of a port that is already listening on your own machine.
@@ -135,5 +185,6 @@ allowlist — it can only decline what the allowlist let through.
 
 Whether a CLI command may boot a local service on demand when none is reachable.
 The service is the CLI's only execution path for core capabilities, so with
-`autoStart: false` those commands fail (naming `the-loop service start`) until the
-operator starts one.
+`autoStart: false` those commands fail (naming the lifecycle commands) until the
+operator starts one. Honoured only while `enabled` is true — a disabled service never
+auto-starts (issue-228).

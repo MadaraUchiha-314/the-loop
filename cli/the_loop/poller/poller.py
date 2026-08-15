@@ -431,7 +431,7 @@ class Poller:
         # only an item one of them opened (or armed) is started (empty => fail
         # closed for human-authored input). See the_loop.authz, decision-074.
         self.authorized_users = list(authorized_users)
-        # Called with each cycle's summary so `the-loop poll status` can report
+        # Called with each cycle's summary so `the-loop status` can report
         # progress, not just liveness (issue-191). Injected rather than owned:
         # the run loop should not hold a file handle, and a poller under test
         # should not write one. A raising heartbeat must never end a cycle, so

@@ -183,3 +183,25 @@ def test_the_endpoint_answers_on_mcp_without_a_redirect():
         )
     assert response.status_code == 200
     assert _sse_payloads(response.text)[0]["result"]["serverInfo"]["name"] == "the-loop"
+
+
+def test_mcp_can_be_disabled_per_config():
+    """
+    Feature: MCP over HTTP
+      Scenario: a REST-only deployment turns the MCP layer off
+        Given service.mcp.enabled false in the CLI config
+        When the app is built and a client POSTs to /mcp
+        Then no MCP app is mounted at all — /mcp answers 404 — while the REST
+             surface keeps answering
+
+    Requirement: docs/specs/issue-228/requirements.md R1.6
+    """
+    config = {"service": {"mcp": {"enabled": False}}}
+    with TestClient(create_app(config), base_url=BASE_URL) as http:
+        assert http.get("/api/v1/health").status_code == 200
+        response = http.post(
+            MCP_PATH,
+            json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+            headers=HEADERS,
+        )
+    assert response.status_code == 404

@@ -4,8 +4,9 @@ configBase: polling
 
 # Polling options
 
-Options under `polling` — the pull-based ingress run by
-[`the-loop poll start`](/cli/commands/poll), for hosts a webhook cannot reach: behind NAT
+Options under `polling` — the pull-based ingress started by
+[`the-loop start`](/cli/commands/start) when `enabled` is true (or run directly via
+`python -m the_loop.daemon_entry poller`), for hosts a webhook cannot reach: behind NAT
 or a firewall, a laptop, infrastructure with no inbound route.
 
 Only the **run loop** is configured here. Everything the poller does with an item it
@@ -15,6 +16,7 @@ dispatch stack, two ingresses.
 
 ```yaml
 polling:
+  enabled: false
   intervalSeconds: 60
   maxRetries: 3
   sources:
@@ -25,6 +27,20 @@ polling:
 ```
 
 ## The run loop
+
+### `enabled`
+
+- **Type:** `boolean`
+- **Default:** `false`
+
+Whether [`the-loop start`](/cli/commands/start) brings the poller up (issue-228,
+[decision-084](/decisions/decision-084)). Explicit, never inferred from a non-empty
+`sources` list — `sources` describes *how* to poll, not that polling is wanted on this
+host. `start` names this key when it skips a disabled poller, and reports an enabled
+poller with an empty `sources` list as *misconfigured* rather than starting a loop
+that would exit at once. Where the enabled poller runs — inside the service process
+(the default) or as its own — is
+[`service.hostIngresses`](/config/cli/service-options#hostingresses) (issue-231).
 
 ### `intervalSeconds`
 
@@ -75,8 +91,9 @@ provider's own config, unknown to the poller core — which is what keeps the co
 provider-agnostic. GitHub ships today; the seam admits others.
 
 ::: warning An empty `sources` list polls nothing
-`the-loop poll start` exits with `no polling sources configured` rather than looping
-quietly over an empty list.
+A directly run poller exits with `no polling sources configured` rather than looping
+quietly over an empty list, and [`the-loop start`](/cli/commands/start) reports an
+enabled-but-sourceless poller as *misconfigured* without spawning one.
 :::
 
 ### `sources[].provider`
@@ -137,6 +154,6 @@ shared dispatch config under `routing` still needs a restart.
 
 ## Next
 
-- [`the-loop poll`](/cli/commands/poll) — the command, its flags, and how finished work
+- [`the-loop start`](/cli/commands/start) — the command that runs the poller, and how finished work
   items get closed without a `closed` webhook.
 - [Routing options](/config/cli/routing-options) — everything the poller reuses.

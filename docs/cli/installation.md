@@ -50,7 +50,7 @@ outcomes.
 ## Extras
 
 **There are none, by design.** Everything the CLI can do resolves from a single
-`pip install the-loopy-one`: hosting the [control-plane service](/cli/commands/service)
+`pip install the-loopy-one`: hosting the [control-plane service](/cli/service)
 and its MCP endpoint (`fastapi`, `uvicorn`, the official `mcp` SDK), reading YAML
 config (`pyyaml`), and the [Slack `sdk` transport](/config/cli/integrations-options#slack-transport)
 (`slack-sdk`). Extras were removed on owner review — *"it creates a nightmare when
@@ -115,7 +115,7 @@ every command:
 |------|-----------|
 | `gh`, authenticated | GitHub reads and writes — the poller, reactions, session announcements, control paper-trail comments. The daemon holds no token of its own. |
 | `git` | Per-work-item [workspaces](/config/cli/routing-options#workspace-root). |
-| `tmux` | Hosting every spawned session — **required** by `gh-webhook start` and `poll start`. See [interactive sessions](/capabilities/interactive-sessions). |
+| `tmux` | Hosting every spawned session — **required** by both ingress daemons ([`the-loop start`](/cli/commands/start)). See [interactive sessions](/capabilities/interactive-sessions). |
 | `ttyd` | The optional [browser terminal](/config/cli/routing-options#webterminal-enabled). |
 | `claude` / `cursor-agent` | Whichever harness you spawn sessions with. |
 

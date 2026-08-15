@@ -26,17 +26,6 @@ def _peek_config_flag(argv: List[str]) -> Optional[str]:
     return known.config
 
 
-def _refresh_cli_config_paths() -> None:
-    """Re-resolve the CLI config path for commands that cache it at import
-    time, so a ``--config``/``-c`` override (set just before this call) takes
-    effect before ``add_arguments()`` computes their other flags' defaults."""
-    from .commands import gh_webhook, poll
-
-    resolved = cli_config.default_cli_config_path()
-    gh_webhook._CONFIG_PATH = resolved
-    poll._CONFIG_PATH = resolved
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="the-loop",
@@ -64,9 +53,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Optional[List[str]] = None) -> int:
     argv = list(sys.argv[1:]) if argv is None else list(argv)
     # Always (re-)set, including to None: a stale override from an earlier
-    # main() call in the same process (e.g. under test) must not leak.
+    # main() call in the same process (e.g. under test) must not leak. Nothing
+    # caches the resolved path at import any more (issue-228): every module
+    # resolves it per call, so the override needs no refresh step.
     cli_config.set_override(_peek_config_flag(argv))
-    _refresh_cli_config_paths()
     parser = build_parser()
     args = parser.parse_args(argv)
     handler = getattr(args, "_handler", None)

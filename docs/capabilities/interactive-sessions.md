@@ -181,13 +181,13 @@ still carrying the key is warned about and otherwise ignored).
   SHALL always be attached **read-only** (with a note) whether or not `--read-only` was
   passed — with a clear error for a genuinely absent session, and for a record with no
   `tmuxTarget` yet ("no tmux session recorded yet…" — see the lazy-healing rule below).
-- WHEN `gh-webhook start --route` or `poll start` runs THEN the native dependencies
+- WHEN the receiver (with routing enabled) or the poller runs THEN the native dependencies
   (`tmux`; `ttyd` if `routing.webTerminal.enabled`) SHALL be verified with
   per-platform install guidance — silent when satisfied. Both ingress paths drive
   the same `Dispatcher`/`TmuxRunner`, so the preflight and the web terminal below
   behave identically regardless of which one is running (issue-65).
-- WHEN `routing.webTerminal.enabled` THEN whichever ingress is running (`gh-webhook
-  start --route` or `poll start`) SHALL serve a browser terminal via a ttyd child
+- WHEN `routing.webTerminal.enabled` THEN whichever ingress is running (the receiver
+  or the poller) SHALL serve a browser terminal via a ttyd child
   process bound to `127.0.0.1` by default (a shared `the-loop-hub` tmux session),
   stopped on shutdown; the-loop implements **no auth** — access control is
   environmental (localhost / VPN / hosting provider network).

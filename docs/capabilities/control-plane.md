@@ -48,25 +48,34 @@ package — there are no install extras (owner decision, PR #162).
   no operation and emits no `api.request` event; `/mcp` SHALL keep the SDK's
   DNS-rebinding protection with its own loopback-only origin allowlist, so no CORS
   setting makes the MCP endpoint drivable from a page.
-- `the-loop service start|stop|status` SHALL manage the service with the issue-159
-  lifecycle discipline: the pidfile is the flock, a second start reports `already
-  running`, stop signals and waits. Hosting needs no extra: `fastapi`, `uvicorn`
+- The service's lifecycle SHALL be the one surface every the-loop service shares —
+  `the-loop start|stop|status|restart` over `core.lifecycle` (issue-228, PR #229
+  review: no granular `service` command) — with the issue-159 discipline: the pidfile
+  is the flock, a second start reports `already-running`, stop signals and waits.
+  Hosting needs no extra: `fastapi`, `uvicorn`
   and the official `mcp` SDK are required dependencies, so `pip install
   the-loopy-one` is always enough to run the service.
+- The service SHALL be the default **host process** for the ingresses (issue-231,
+  decision-084 §8): with `service.hostIngresses` true (the default), its lifespan
+  starts the enabled poller and webhook receiver as background threads — each
+  acquiring its own pidfile flock under the service's pid, so single-instance,
+  `status`/`stop` and the daemons API semantics are unchanged — and stops them,
+  in reverse order, when the service shuts down. A lock already held by another
+  process is skipped with a warning; a hosting failure never takes down the API.
 - The service SHALL be the CLI's **only execution path** for core capabilities
   (owner decision, PR #162): a command auto-starts a local service when
-  `service.autoStart` allows and otherwise fails closed naming `the-loop service
-  start` — never an in-process fallback. Every core-capability command routes:
+  `service.autoStart` allows and otherwise fails closed naming `the-loop start`
+  — never an in-process fallback. Every core-capability command routes:
   `check`, `events`, `graph` (show/status/advance/complete/force/run), `sessions`
   (register/list/close/start/pause/resume/stop), `scenarios`, `instructions` and
-  `critic` (list/run). Four commands stay local **by nature**: `sessions attach`
+  `critic` (list/run). Some commands stay local **by nature**: `sessions attach`
   replaces the caller's terminal with tmux, `sessions reset` is a recovery action
-  that must work when nothing is running, `poll start` / `gh-webhook start` run the
-  daemon themselves because cron and systemd units depend on it — foreground by
-  default, and detaching on their own with `--daemon` (issue-191) rather than
-  through the service — and the bootstrap commands
-  (`install`, `upgrade`, `migrate-config`, `service`, `--version`) precede any
-  service. `THE_LOOP_SERVICE_LOCAL=1` is a test seam, not an operator switch.
+  that must work when nothing is running, the daemon entry point
+  (`python -m the_loop.daemon_entry <poller|gh-webhook>`) runs a daemon in-process
+  because cron and systemd units depend on it, and the bootstrap commands
+  (`start`, `stop`, `status`, `restart`, `install`, `upgrade`, `migrate-config`,
+  `--version`) precede — or manage — any service (issue-228,
+  decision-084). `THE_LOOP_SERVICE_LOCAL=1` is a test seam, not an operator switch.
 - The CLI SHALL NOT re-implement any routed operation: commands render the
   `messages` and `exitCode` the core facade returns, so an operator's `sessions
   pause` and an agent's `control_session` tool call produce identical words.
@@ -155,6 +164,16 @@ package — there are no install extras (owner decision, PR #162).
   byte-identical. The write itself SHALL be atomic (temp file in the same directory,
   then `os.replace`), and a file created this way SHALL open with the schema modeline
   and be mode `0600`.
+- **`POST /api/v1/restart` SHALL schedule a whole-system restart** (issue-228,
+  decision-084): the service cannot stop itself synchronously and still answer, so the
+  route spawns a detached `the-loop restart` — a **fixed argv** carrying only the
+  config path this process already reads plus at most `--with-upgrade` from the body's
+  one boolean — with output at `<state.root>/logs/restart.out`, answers at once with
+  the spawned pid, and lands `restart.scheduled` / `restart.completed` in the event
+  log. It SHALL NOT be an MCP tool: it tears down the MCP transport mid-call, and
+  `--with-upgrade` reaches the installer — an agent must not replace the code it is
+  judged by. The MCP endpoint itself SHALL be disableable (`service.mcp.enabled:
+  false` mounts nothing; `/mcp` answers 404) so a deployment can be REST-only.
 - A saved change SHALL take effect **without a restart**: the daemons already reload from
   the file's content hash, and the service SHALL do the same — its in-process config is
   refreshed once per request, so a hand-edit is picked up too, and a file that becomes
@@ -193,7 +212,7 @@ package — there are no install extras (owner decision, PR #162).
 [`docs/specs/issue-161/design.md`](../specs/issue-161/design.md) ·
 [`docs/specs/issue-207/design.md`](../specs/issue-207/design.md) ·
 [`docs/api-specs/openapi/the-loop.v1.yaml`](../api-specs/openapi/the-loop.v1.yaml) ·
-[CLI: service](../cli/commands/service.md) ·
+[CLI: the service](../cli/service.md) ·
 [config: service options](../config/cli/service-options.md) ·
 [`ui/README.md`](https://github.com/MadaraUchiha-314/the-loop/blob/main/ui/README.md)
 
@@ -201,6 +220,7 @@ package — there are no install extras (owner decision, PR #162).
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-228 | The plane can bounce itself: `POST /api/v1/restart` schedules a detached, fixed-argv `the-loop restart [--with-upgrade]` (output at `logs/restart.out`, `restart.scheduled`/`restart.completed` in the event log) — deliberately not an MCP tool. The MCP endpoint became disableable (`service.mcp.enabled: false` mounts nothing; `/mcp` 404s), and the service's start/stop mechanics moved into `core.lifecycle` behind `the-loop start\|stop\|status\|restart` (the granular `service` command folded away on owner review). Amended in the same PR (issue-231): with `service.hostIngresses` (default true) the service hosts the enabled ingresses as threads in its lifespan, each holding its own pidfile flock under the service's pid | [spec](../specs/issue-228/), [decision-084](../decisions/decision-084.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/228), [issue-231](https://github.com/MadaraUchiha-314/the-loop/issues/231) |
 | issue-161 | Capability minted: core facade extracted, API service + OpenAPI contract, loopback-default network posture (no in-app auth — the gateway owns it, decision-059), service lifecycle commands, every core-capability command routed through the service, HTTP-only MCP endpoint on the official SDK, no install extras. The UI was descoped on owner review | [spec](../specs/issue-161/), [decision-058](../decisions/decision-058.md), [decision-059](../decisions/decision-059.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/161) |
 | issue-211 | The dashboard can actually read the service: `service.cors` makes the allowed browser origins configuration, shipping the published page's own origin as the default. Exact-string origins only; `"*"` with credentials refuses to start; an empty list installs no middleware. The bind, the exposure guard and the MCP transport's origin check are unchanged | [spec](../specs/issue-211/), [decision-077](../decisions/decision-077.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/211) |
 | issue-207 | The descoped UI lands: a static dashboard in `ui/` over the same `/api/v1`, published to `/the-loop/ui/` from the docs site's Pages artifact. Loop position joined from the session's `cwd` and the record's spec id; the inbox unions `/attention` with the repo-scoped graph gates it excludes; the two surfaces the API cannot back ship disabled and named | [spec](../specs/issue-207/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/207) |

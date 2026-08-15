@@ -15,18 +15,19 @@ from the_loop.webhook import verify_signature, make_handler
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
-def test_gh_webhook_is_registered():
+def test_lifecycle_commands_are_registered():
     names = {c.name for c in iter_commands()}
-    assert "gh-webhook" in names
+    # The whole lifecycle is one surface (issue-228, owner review on PR #229):
+    # the granular gh-webhook/service/poll commands are gone.
+    assert {"start", "stop", "status", "restart"} <= names
+    assert not {"gh-webhook", "service", "poll"} & names
 
 
 def test_parser_builds_and_lists_subcommands():
     parser = build_parser()
-    # gh-webhook start should parse with its defaults
-    args = parser.parse_args(["gh-webhook", "start"])
-    assert args.command == "gh-webhook"
-    assert args.action == "start"
-    assert args.port == 8787
+    args = parser.parse_args(["status", "--format", "json"])
+    assert args.command == "status"
+    assert args.format == "json"
     assert hasattr(args, "_handler")
 
 

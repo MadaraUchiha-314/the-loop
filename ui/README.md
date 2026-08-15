@@ -5,7 +5,7 @@ item the-loop is tracking, where each one sits in its process graph, the pull re
 delivering it with their own inner loops, what needs a human, and the event log.
 
 It is a **client only**. It reads and drives the service that
-[`the-loop service start`](../docs/cli/commands/service.md) already exposes, and adds no
+[`the-loop start`](../docs/cli/commands/start.md) already exposes, and adds no
 state and no server of its own.
 
 ## Running it

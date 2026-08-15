@@ -188,7 +188,7 @@ def test_the_poller_honours_the_same_interaction_block(tmp_path, monkeypatch):
     block serves both — see the reply on PR #139. Issue-142 promoted the block out
     from under `webhooks` so the config's shape says that too.
     """
-    from the_loop.commands import poll
+    from the_loop.poller import daemon as poll
 
     monkeypatch.setattr(poll, "_state_layout", lambda: StateLayout(root=str(tmp_path)))
     dispatcher, routing = poll._build_dispatcher({"interaction": {"mode": "cli"}})

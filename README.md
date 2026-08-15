@@ -105,9 +105,11 @@ the graph and lets you **inspect** it:
 ```bash
 pip install the-loopy-one
 
-the-loop gh-webhook start   # HMAC-verified GitHub webhook receiver; routes events to sessions
-the-loop poll start --daemon  # pull-based ingress for hosts a webhook cannot reach — detached
-the-loop poll status          # running? pid? last cycle? (exit 0/1, so it is a health check)
+the-loop start              # bring up every service the CLI config enables — the
+                            # control-plane service (+ /mcp), the webhook receiver,
+                            # the poller — each detached, each reported per service
+the-loop status             # per-service liveness + the poller's last cycle (exit 0/1)
+the-loop restart --with-upgrade  # bounce everything, upgrading the CLI in between
 the-loop sessions list      # the work-item record: its session, and one endpoint per PR
 the-loop events --follow    # the structured trail of every routing and dispatch decision
 

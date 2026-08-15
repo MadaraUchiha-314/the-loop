@@ -1,17 +1,21 @@
-"""A detached poller, against the real process table (issue-191, T6/T7).
+"""A detached poller, against the real process table (issue-191, re-pointed by
+issue-228 when `poll start --daemon` was removed).
 
-Everything else about this work item is ordinary unit-testable code. Detaching is
-not: mocking ``os.fork`` would prove only that we called it, and the properties
-that matter — reparenting to init, owning a session, surviving the teardown of
-the process group that started it — are statements about the running system.
+Everything else about the lifecycle is ordinary unit-testable code. Detaching is
+not: the properties that matter — surviving the teardown of the process group
+that started it, owning the pidfile's lock, logging somewhere — are statements
+about the running system. So these tests spawn ``the-loop start`` (with only the
+poller enabled) as a real subprocess against a temporary ``state.root``, and
+then interrogate the kernel. Every test kills what it spawned in a ``finally``;
+nothing here reaches the network (the ``gh`` on ``PATH`` is a stub that lists no
+work items) and nothing spawns a session.
 
-So these tests spawn ``the-loop poll start --daemon`` as a real subprocess against
-a temporary ``state.root``, and then interrogate the kernel: ``/proc`` where it is
-available, ``ps`` where it is not. Every test kills what it spawned in a
-``finally``; nothing here reaches the network (the ``gh`` on ``PATH`` is a stub
-that lists no work items) and nothing spawns a session.
+The detach idiom changed with issue-228 — `Popen(start_new_session=True)` via
+``the_loop.daemon_entry`` instead of the double-fork — but the properties
+asserted here are the same ones issue-191 established, minus the fork-specific
+mechanics (zombie reaping) that died with the mechanism.
 
-Spec: docs/specs/issue-191/design.md; testing plan rows T6, T7.
+Spec: docs/specs/issue-191/design.md (T6, T7); docs/specs/issue-228/design.md §D2/D3.
 """
 
 from __future__ import annotations
@@ -29,14 +33,18 @@ import pytest
 from the_loop.runlock import RunLock
 
 pytestmark = pytest.mark.skipif(
-    not hasattr(os, "fork"), reason="daemonizing needs POSIX fork"
+    os.name != "posix", reason="daemon lifecycle tests need POSIX signals"
 )
 
+#: Only the poller is enabled: `the-loop start` must compose exactly that.
 CONFIG = """
+service:
+  enabled: false
 routing:
   enabled: false
   authorizedUsers: ["octocat"]
 polling:
+  enabled: true
   intervalSeconds: 1
   sources:
     - provider: github
@@ -72,6 +80,7 @@ def env(tmp_path):
     environ["PATH"] = f"{bin_dir}{os.pathsep}{environ.get('PATH', '')}"
     environ["THE_LOOP_CLI_CONFIG"] = str(root / "cli-config.yaml")
     environ["PYTHONPATH"] = str(Path(__file__).resolve().parents[1])
+    environ.pop("THE_LOOP_SERVICE_LOCAL", None)
     return {
         "cwd": tmp_path,
         "root": root,
@@ -79,9 +88,6 @@ def env(tmp_path):
         "pidfile": root / "poll.pid",
         "logfile": root / "logs" / "poller.out",
         "status": root / "poll-status.json",
-        # The paths default relative to the working directory, and that is what
-        # the command prints back — so that is what the assertions look for.
-        "logfile_arg": ".the-loop/logs/poller.out",
     }
 
 
@@ -95,16 +101,14 @@ CLI = [
 ]
 
 
-def _start(env, *extra, **popen_kwargs):
-    """Run `poll start` to completion in the *starter* process, returning it."""
+def _cli(env, *argv, timeout=90):
     return subprocess.run(
-        [*CLI, "poll", "start", *extra],
+        [*CLI, *argv],
         cwd=str(env["cwd"]),
         env=env["environ"],
         capture_output=True,
         text=True,
-        timeout=90,
-        **popen_kwargs,
+        timeout=timeout,
     )
 
 
@@ -143,9 +147,6 @@ def _stat(pid: int) -> dict:
     """``{ppid, sid, pgid}`` for ``pid``, from /proc or ps."""
     proc_status = Path(f"/proc/{pid}/stat")
     if proc_status.is_file():
-        # The comm field can contain spaces and parentheses; everything after the
-        # final ')' is positional. Fields (1-indexed from there): state, ppid,
-        # pgrp, session.
         fields = proc_status.read_text().rsplit(")", 1)[1].split()
         return {"ppid": int(fields[1]), "pgid": int(fields[2]), "sid": int(fields[3])}
     out = subprocess.run(
@@ -169,23 +170,22 @@ def _wait_for(predicate, timeout: float = 30.0) -> bool:
 # -- the detach itself ----------------------------------------------------------
 
 
-def test_a_daemonized_poller_owns_its_session_pidfile_and_log(env):
+def test_start_detaches_a_poller_that_owns_its_pidfile_and_log(env):
     """
-    Feature: `poll start --daemon` runs as a proper daemon
-    Scenario: A daemonized poller owns its pidfile and its logfile
-        Given `poll start --daemon` is run in a temporary state root
-        When the starting process returns
-        Then it reports a pid that is not its own child, that pid holds the
-        pidfile's lock, the daemon is its own session leader's child reparented
-        away from the starter, and the logfile is receiving its output
-    Requirement: github issue #191 (R1.1, R2.1, R3.1, R3.5)
+    Feature: `the-loop start` runs the poller as a proper daemon
+    Scenario: a started poller owns its pidfile and its logfile
+        Given only the poller is enabled in the CLI config
+        When `the-loop start` returns
+        Then it reports the poller started, the daemon holds the pidfile's
+        lock in its own session, and the logfile is receiving its output
+    Requirement: github issue #191 (R1.1, R2.1); issue #228 (R1.1, R1.5)
     """
-    result = _start(env, "--daemon")
+    result = _cli(env, "start")
     pid = _daemon_pid(env)
     try:
         assert result.returncode == 0, result.stderr
-        assert f"poller started (pid {pid})" in result.stdout
-        assert env["logfile_arg"] in result.stdout
+        assert "poller" in result.stdout and "started" in result.stdout
+        assert "service" in result.stdout and "disabled" in result.stdout
 
         # The lock, not the file, is what proves it is running.
         assert RunLock(env["pidfile"], name="poller").is_held()
@@ -203,19 +203,17 @@ def test_a_daemonized_poller_owns_its_session_pidfile_and_log(env):
         _kill(pid)
 
 
-def test_a_daemonized_poller_outlives_the_shell_that_started_it(env):
+def test_a_started_poller_outlives_the_shell_that_started_it(env):
     """
-    Feature: `poll start --daemon` runs as a proper daemon
-    Scenario: A daemonized poller outlives the shell that started it
+    Feature: `the-loop start` runs the poller as a proper daemon
+    Scenario: the poller outlives the shell that started it
         Given a poller started from a process in its own process group
         When that whole process group is torn down with SIGKILL
         Then the poller is still running and still holds its lock
     Requirement: github issue #191 (R1.2)
     """
-    # A starter in its own process group, so killing the group cannot reach the
-    # test runner — this is the exact teardown that lost us a poller.
     starter = subprocess.Popen(
-        [*CLI, "poll", "start", "--daemon"],
+        [*CLI, "start"],
         cwd=str(env["cwd"]),
         env=env["environ"],
         stdout=subprocess.PIPE,
@@ -224,8 +222,6 @@ def test_a_daemonized_poller_outlives_the_shell_that_started_it(env):
         start_new_session=True,
     )
     starter.communicate(timeout=90)
-    # `start_new_session=True` makes the starter its own session and group leader,
-    # so its pid IS the process-group id we are about to tear down.
     starter_group = starter.pid
     pid = _daemon_pid(env)
     try:
@@ -246,149 +242,154 @@ def test_a_daemonized_poller_outlives_the_shell_that_started_it(env):
         _kill(pid)
 
 
-def test_the_starter_leaves_no_zombie_behind(env):
-    """
-    Feature: `poll start --daemon` runs as a proper daemon
-    Scenario: The intermediate child is reaped by the process that forked it
-        Given the double-fork leaves an intermediate child that exits at once
-        When the starting process returns
-        Then it has reaped that child rather than leaving a zombie
-    Requirement: github issue #191 (R1.1)
-    """
-    result = _start(env, "--daemon")
-    pid = _daemon_pid(env)
-    try:
-        assert result.returncode == 0
-        # The daemon is reparented away from the starter, and the starter has
-        # exited — so nothing it forked can still be a child of anything but init.
-        assert _stat(pid)["ppid"] != 0
-    finally:
-        _kill(pid)
-
-
 # -- refusals and failures ------------------------------------------------------
 
 
-def test_a_daemonized_start_refuses_when_a_poller_already_holds_the_lock(env):
+def test_start_is_idempotent_while_the_poller_runs(env):
     """
     Feature: the pidfile tells the truth
-    Scenario: A daemonized start refuses when a poller already holds the lock
+    Scenario: a second `the-loop start` while the poller runs
         Given a poller is already running against this state root
-        When a second `poll start --daemon` is invoked
-        Then it exits non-zero naming the holding pid, and the first poller is
-        untouched
-    Requirement: github issue #191 (R3.3); T7 abuse case
+        When `the-loop start` is invoked again
+        Then it reports the poller as already running, exits 0, and the first
+        poller is untouched (R1.3)
+    Requirement: issue #228 (R1.3); github issue #191 (R3.3)
     """
-    first = _start(env, "--daemon")
+    first = _cli(env, "start")
     pid = _daemon_pid(env)
     try:
         assert first.returncode == 0
-        second = _start(env, "--daemon")
+        second = _cli(env, "start")
 
-        assert second.returncode == 1
-        assert f"another poller is already running (pid {pid}" in second.stderr
-        assert _alive(pid), "the refusal must not disturb the running poller"
+        assert second.returncode == 0
+        assert "already-running" in second.stdout
+        assert _daemon_pid(env) == pid
+        assert _alive(pid), "the second start must not disturb the running poller"
     finally:
         _kill(pid)
 
 
-def test_a_daemonized_start_reports_a_startup_failure_to_its_caller(env):
+def test_start_reports_a_startup_failure_to_its_caller(env):
     """
-    Feature: `poll start --daemon` runs as a proper daemon
-    Scenario: A daemonized start reports a startup failure to its caller
-        Given a config whose polling sources are empty, so the poller exits at
-        startup
-        When `poll start --daemon` is invoked
-        Then the starting process exits non-zero, points at the logfile, and no
-        lock is left held
-    Requirement: github issue #191 (R3.4)
+    Feature: an honest start
+    Scenario: the poller exits during startup
+        Given a config whose polling source names an unknown provider, so the
+        spawned poller exits before taking its lock
+        When `the-loop start` is invoked
+        Then it exits non-zero, points at the logfile, and no lock is left held
+    Requirement: github issue #191 (R3.4); issue #228 (R1.4, design D3)
     """
     (env["root"] / "cli-config.yaml").write_text(
-        "routing:\n  enabled: false\npolling:\n  intervalSeconds: 1\n  sources: []\n"
+        "service:\n  enabled: false\nrouting:\n  enabled: false\n"
+        "polling:\n  enabled: true\n  intervalSeconds: 1\n"
+        "  sources:\n    - provider: nosuch\n"
     )
-    result = _start(env, "--daemon")
+    result = _cli(env, "start")
 
     assert result.returncode == 1
-    assert "the poller did not come up" in result.stderr
-    assert env["logfile_arg"] in result.stderr
+    assert "failed" in result.stdout
+    assert "poller.out" in result.stdout
     assert not RunLock(env["pidfile"], name="poller").is_held()
-    assert "no polling sources configured" in env["logfile"].read_text()
+    assert "nosuch" in env["logfile"].read_text()
 
 
-def test_a_stale_pidfile_is_removed_by_the_next_daemonized_start(env):
+def test_an_enabled_poller_with_no_sources_is_reported_at_plan_time(env):
+    """
+    Feature: an honest start
+    Scenario: polling.enabled true with an empty sources list
+        Given the config contradiction
+        When `the-loop start` is invoked
+        Then the poller row reads misconfigured on the terminal — not a spawn
+        whose failure lands only in a logfile — and nothing is started
+    Requirement: issue #228 (design D3)
+    """
+    (env["root"] / "cli-config.yaml").write_text(
+        "service:\n  enabled: false\nrouting:\n  enabled: false\n"
+        "polling:\n  enabled: true\n  sources: []\n"
+    )
+    result = _cli(env, "start")
+
+    assert result.returncode == 1
+    assert "misconfigured" in result.stdout
+    assert "polling.sources" in result.stdout
+    assert not env["pidfile"].exists()
+
+
+def test_a_stale_pidfile_is_removed_by_the_next_start(env):
     """
     Feature: the pidfile tells the truth
-    Scenario: A stale pidfile is removed by the next start
-        Given a pidfile naming a pid no poller holds a lock for
-        When `poll start --daemon` runs
-        Then the stale pid is gone and the pidfile names the new daemon
-    Requirement: github issue #191 (R3.2); T7 abuse case
+    Scenario: a stale pidfile is cleaned up by the next start
+        Given a pidfile naming a process that is not running
+        When `the-loop start` brings a poller up
+        Then the poller starts normally and the pidfile records the new pid
+    Requirement: github issue #191 (R3.2)
     """
-    env["pidfile"].write_text("999999\n")
-    result = _start(env, "--daemon")
+    env["pidfile"].parent.mkdir(parents=True, exist_ok=True)
+    env["pidfile"].write_text("424242\n")
+
+    result = _cli(env, "start")
     pid = _daemon_pid(env)
     try:
-        assert result.returncode == 0
-        assert pid != 999999
-        assert "removed a stale pidfile" in env["logfile"].read_text()
+        assert result.returncode == 0, result.stderr
+        assert pid not in (0, 424242)
+        assert RunLock(env["pidfile"], name="poller").is_held()
     finally:
         _kill(pid)
 
 
-# -- status against a real daemon -----------------------------------------------
+# -- stop and status against the real daemon ------------------------------------
+
+
+def test_stop_signals_the_poller_and_waits_for_it_to_exit(env):
+    """
+    Feature: `the-loop stop` blocks until the poller has actually exited
+    Scenario: a scripted `stop && start`
+        Given a running poller holding the lock
+        When `the-loop stop` runs
+        Then it returns success only after the lock is released (R3.1)
+    Requirement: issue #228 (R3.1); github issue #159 (AC2.2)
+    """
+    assert _cli(env, "start").returncode == 0
+    pid = _daemon_pid(env)
+    try:
+        result = _cli(env, "stop")
+        assert result.returncode == 0
+        assert "stopped" in result.stdout
+        assert not RunLock(env["pidfile"], name="poller").is_held()
+        # The lock is released in the daemon's `finally`, a moment before the
+        # process itself finishes dying — wait for the tail end.
+        assert _wait_for(lambda: not _alive(pid), timeout=10)
+    finally:
+        _kill(pid)
 
 
 def test_status_reports_a_running_poller_its_pid_and_its_last_cycle(env):
     """
-    Feature: `poll status` answers "is the poller actually running?"
-    Scenario: poll status reports a running poller, its pid and its last cycle
-        Given a daemonized poller that has completed at least one cycle
-        When `poll status --format json` runs
-        Then it exits 0 and reports running, that pid, and the cycle's counters —
-        and after the poller stops it exits 1 while still reporting the cycle
-    Requirement: github issue #191 (R4.1, R4.2, R4.3, R4.5)
+    Feature: `the-loop status` answers "is the poller actually running?"
+    Scenario: status reports a running poller, its pid and its last cycle
+        Given a poller started by `the-loop start`
+        When `the-loop status --format json` runs after the first cycle
+        Then the poller row carries running=true, the daemon's real pid, and
+        the last cycle's counters
+    Requirement: github issue #191 (R4); issue #228 (R2.4, R3.2)
     """
-    result = _start(env, "--daemon")
+    assert _cli(env, "start").returncode == 0
     pid = _daemon_pid(env)
     try:
-        assert result.returncode == 0
         assert _wait_for(
             lambda: (
-                (beat := _read_json(env["status"])) is not None
-                and beat.get("lastCycleAt")
+                env["status"].is_file()
+                and json.loads(env["status"].read_text()).get("lastCycleAt")
             )
-        ), "the poller never recorded a cycle"
-
-        status = _status(env)
-        assert status.returncode == 0
-        report = json.loads(status.stdout)
-        assert report["running"] is True
-        assert report["pid"] == pid
-        assert report["lastCycleAt"]
-        assert report["stalePidfile"] is False
+        )
+        result = _cli(env, "status", "--format", "json")
+        assert result.returncode == 0, result.stdout
+        report = json.loads(result.stdout)
+        row = next(r for r in report["services"] if r["service"] == "poller")
+        assert row["running"] is True
+        assert row["pid"] == pid
+        assert row["enabled"] is True
+        assert row["lastCycleAt"]
+        assert "itemsSeen" in row["lastCycle"]
     finally:
         _kill(pid)
-
-    stopped = _status(env)
-    assert stopped.returncode == 1, "exit 1 is what makes it a health check"
-    report = json.loads(stopped.stdout)
-    assert report["running"] is False
-    assert report["lastCycleAt"], "the heartbeat outlives the poller, on purpose"
-
-
-def _status(env):
-    return subprocess.run(
-        [*CLI, "poll", "status", "--format", "json"],
-        cwd=str(env["cwd"]),
-        env=env["environ"],
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-
-
-def _read_json(path: Path):
-    try:
-        return json.loads(path.read_text())
-    except (OSError, ValueError):
-        return None

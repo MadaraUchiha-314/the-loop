@@ -23,7 +23,7 @@ self-learning/ML capabilities.
 - `the-loop --version` SHALL report the installed package version, derived from package
   metadata (`importlib.metadata.version("the-loopy-one")`) rather than a hardcoded string,
   so it always tracks the actually-installed release (issue-78).
-- `the-loop gh-webhook start|stop` SHALL run/stop the HMAC-verified GitHub webhook
+- The lifecycle surface SHALL run/stop the HMAC-verified GitHub webhook
   receiver (see [webhook-triggers](webhook-triggers.md)).
 - `the-loop sessions register|list|attach|close` SHALL manage the work-item ↔
   harness-session registry used for webhook routing.
@@ -244,33 +244,59 @@ self-learning/ML capabilities.
   (`READS`); a test SHALL fail the build when a key is read that is not declared, when a
   declared key is undocumented, or when any other module opens the file.
 
-- `the-loop service start|stop|status` SHALL manage the control-plane API service
-  (issue-161); every core-capability command SHALL execute through that service as
-  its only mode. The exceptions are inherent, not transitional: `sessions attach`
-  hands the terminal to tmux, `sessions reset` must work when nothing is running,
-  `poll start` / `gh-webhook start` run the daemon themselves for cron and
-  systemd, and the bootstrap commands (`install`, `upgrade`, `migrate-config`,
-  `service`, `--version`) precede any service. See
+- **`the-loop start|stop|status|restart` SHALL be the whole system's lifecycle surface**
+  (issue-228, decision-084). `start` reads the CLI config and starts, detached, every
+  service it enables — the control-plane service (`service.enabled`, default on, with
+  the MCP endpoint mounted per `service.mcp.enabled`), the webhook receiver
+  (`webhooks.ghWebhook.enabled`, default off) and the poller (`polling.enabled`,
+  default off) — reporting one outcome per service
+  (`started | already-running | disabled | misconfigured | failed`, an enabled poller
+  with no `polling.sources` being the misconfigured case) and exiting `0` only when
+  every enabled service came up; one service's failure SHALL NOT hide the others'
+  outcomes. `stop` SHALL stop every running service regardless of the `enabled` flags.
+  `restart` SHALL compose stop → start, `--with-upgrade` running the issue-152
+  installer plan (CLI component only) in between — a failed upgrade is reported and the
+  start half still runs. `POST /api/v1/restart` SHALL schedule the same restart as a
+  detached, fixed-argv process and answer immediately. The `poll` command is removed;
+  `python -m the_loop.daemon_entry poller [--once]` is the foreground/cron form, running
+  the same relocated loop (`the_loop.poller.daemon`); the `gh-webhook` and `service`
+  commands are removed with it (owner review on PR #229 — *"It should all fold into
+  `the-loop start`"*), the receiver's run loop relocated the same way
+  (`the_loop.webhook.daemon`, `daemon_entry gh-webhook` as its foreground form).
+- **`start` SHALL boot one process by default** (issue-231, decision-084 §8): with
+  the service enabled and `service.hostIngresses` true (the default), the enabled
+  ingresses run as threads inside the service's lifespan — one pid, one logfile —
+  each still holding its own pidfile flock under the service's pid, so
+  `status`/`stop`, the single-instance guarantee and the daemons API answer
+  unchanged. Hosted-ness SHALL be detected from the lock (holder pid equals the
+  service's), never recorded in a file; an ingress lock already held by another
+  process SHALL be skipped with a warning, never fought over; an enabled poller
+  with no sources SHALL refuse to host while the service keeps serving; and `stop`
+  SHALL report a hosted ingress stopped only once its lock is released.
+  `hostIngresses: false` restores one process per enabled service, and a disabled
+  service always means standalone ingresses.
+- Every core-capability command SHALL execute through the control-plane service as
+  its only mode (issue-161). The exceptions are inherent, not transitional:
+  `sessions attach` hands the terminal to tmux, `sessions reset` must work when
+  nothing is running, the lifecycle commands and the daemon entry point run the
+  processes themselves, and the bootstrap commands (`install`, `upgrade`,
+  `migrate-config`, `--version`) precede any service. See
   [control-plane](control-plane.md), the capability that owns this behaviour.
 
-- **`poll start` SHALL run in the foreground by default and detach properly on request**
-  (issue-191, decision-072). `--daemon` SHALL double-fork with `setsid` between the forks
-  (so the poller owns its session and process group, holds no controlling terminal and is
-  reparented to init), SHALL redirect stdout/stderr in append mode to `--logfile`
-  (default `<state.root>/logs/poller.out`) and stdin to `/dev/null`, and SHALL NOT change
-  the working directory — every path the-loop resolves is relative to it. `--foreground`
-  SHALL be its inverse on the same setting, and `--daemon --once` SHALL be refused.
-  A start that cannot succeed SHALL fail **in the caller's terminal**: the logfile is
-  opened and the lock probed before any fork, and a post-fork failure SHALL be reported
-  over a startup handshake — so `poll start --daemon` exits `0` only once the daemon holds
-  the lock and has passed its dependency checks.
-- The poller's pidfile SHALL be written by the process that survives — after the final
-  fork, under the single-instance lock — and a pidfile no live poller holds SHALL be
-  reported as stale and removed by `start` rather than left for the operator.
-- **`the-loop poll status` SHALL answer "is the poller running, and is it making
-  progress"** in one command: liveness, pid, pidfile, logfile, `startedAt`, `lastCycleAt`
-  and the last cycle's counters, as text or `--format json`, exiting `0` when a poller is
-  running and `1` when none is. **Liveness and the reported pid SHALL come from the lock
+- **A start SHALL be honest** (issue-191, re-shaped by issue-228): `the-loop start`
+  reports a daemon as started only once it holds its pidfile lock (the service, only
+  once `/health` answers), so a process that exits during startup is a reported
+  failure pointing at its logfile — never a silent one. Daemons are spawned into their
+  own session with stdout/stderr appended to `<state.root>/logs/`, and the working
+  directory is never changed — every path the-loop resolves is relative to it.
+- The poller's pidfile SHALL be written by the surviving process under the
+  single-instance lock, and a pidfile no live poller holds SHALL be
+  reported as stale and removed by the next poller start rather than left for the operator.
+- **`the-loop status` SHALL answer "is each service running, and is the poller making
+  progress"** in one command: per service enabled/running/pid (plus the service's URL,
+  health and MCP exposure), and for the poller `startedAt`, `lastCycleAt`
+  and the last cycle's counters, as text or `--format json`, exiting `0` iff every
+  enabled service is running. **Liveness and the reported pid SHALL come from the lock
   and never from the heartbeat** — the only formulation immune to pid reuse, and the only
   one a file cannot forge. The poller SHALL record that heartbeat at
   `<state.root>/poll-status.json` after every cycle, atomically; a heartbeat that cannot be
@@ -297,6 +323,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-228 | The CLI's lifecycle became one surface (2026-08-14): `the-loop start\|stop\|status\|restart` compose the control-plane service, webhook receiver and poller per new per-service `enabled` flags (service + MCP on by default, ingresses opt-in), the `poll`, `gh-webhook` and `service` commands were removed with the run loops relocated to `the_loop.poller.daemon` / `the_loop.webhook.daemon` (`daemon_entry <poller\|gh-webhook> [--once]` is the foreground/cron form; the fold of the latter two is the owner's PR #229 review), the issue-191 double-fork went with them, `restart --with-upgrade` reuses the issue-152 installer plan, and `service.enabled: false` also refuses implicit auto-start. Amended in the same PR (issue-231, owner review round 2): `service.hostIngresses` (default true) makes `start` boot one process — the enabled ingresses run as threads inside the service, each keeping its own pidfile flock under the service's pid, hosted-ness detected from the lock and never recorded | [spec](../specs/issue-228/), [decision-084](../decisions/decision-084.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/228), [issue-231](https://github.com/MadaraUchiha-314/the-loop/issues/231) |
 | issue-208 | `the-loop ask` joins the CLI: an agent's question is posted with the loop-prevention marker stamped centrally and the wait recorded as `session.awaiting_input`; runs in-process because the escalation path must not depend on a running service | [spec](../specs/issue-208/), [decision-078](../decisions/decision-078.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/208) |
 | issue-205 | The poller's heartbeat stopped carrying a `pid` nothing read: `poll.pid` — the flock — is the single source of truth for which process is polling, and an older heartbeat's pid is now dropped on read. The two files stay separate because the heartbeat's atomic rewrite would free the lock it is held on | [spec](../specs/issue-205/), [decision-076](../decisions/decision-076.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/205) |
 | issue-203 | `integrations.slack` gained an optional inline `url`, taking precedence over `urlEnv`, so the one value that turns notifications on stops living outside every config file the-loop owns — and a resolution failure now names both remedies instead of only the env var. Slack's webhook URL alone; tokens and signing secrets stay env-only | [spec](../specs/issue-203/), [decision-075](../decisions/decision-075.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/203) |

@@ -12,6 +12,7 @@ import type {
   AttentionItem,
   ConfigDocument,
   ConfigSaveResult,
+  RestartSchedule,
   CoreResult,
   DaemonStatus,
   DaemonVerb,
@@ -244,6 +245,11 @@ export class DemoApi implements TheLoopApi {
 
   controlDaemon(daemon: string, verb: DaemonVerb): Promise<CoreResult> {
     return delay({ messages: [{ stream: "out", text: `demo: ${verb} ${daemon}` }], exitCode: 0 });
+  }
+
+  /** The schedule the real route answers with; nothing restarts in the demo. */
+  restart(withUpgrade = false): Promise<RestartSchedule> {
+    return delay({ scheduled: true, pid: 4242, withUpgrade, logfile: ".the-loop/logs/restart.out" });
   }
 
   config(signal?: AbortSignal): Promise<ConfigDocument> {

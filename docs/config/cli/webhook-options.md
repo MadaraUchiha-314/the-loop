@@ -5,12 +5,14 @@ configBase: webhooks.ghWebhook
 # Webhook options
 
 Options under `webhooks.ghWebhook` — the GitHub webhook receiver started by
-[`the-loop gh-webhook start`](/cli/commands/gh-webhook). They configure the **listener**;
+[`the-loop start`](/cli/commands/start) when `enabled` is true (see
+[the webhook receiver](/cli/receiver)). They configure the **listener**;
 what it does with an event it accepts is [routing](/config/cli/routing-options).
 
 ```yaml
 webhooks:
   ghWebhook:
+    enabled: false
     host: 127.0.0.1
     port: 8787
     path: /gh-webhook
@@ -20,9 +22,21 @@ webhooks:
     routing: {}     # see /config/cli/routing-options
 ```
 
-Every option here is also a flag on `gh-webhook start`, and **the flag always wins**.
-
 ## Listener
+
+### `enabled`
+
+- **Type:** `boolean`
+- **Default:** `false`
+
+Whether [`the-loop start`](/cli/commands/start) brings the receiver up (issue-228,
+[decision-084](/decisions/decision-084)). An explicit opt-in: a receiver needs a
+reachable bind, a secret and GitHub-side configuration, so a config that merely
+*describes* one must not open a port. The foreground entry point
+(`python -m the_loop.daemon_entry gh-webhook`, for systemd) runs regardless of it.
+Where the enabled receiver runs — inside the service process (the default) or as its
+own — is [`service.hostIngresses`](/config/cli/service-options#hostingresses)
+(issue-231).
 
 ### `host`
 
@@ -74,7 +88,7 @@ it cannot leak into a committed config or a process listing:
 
 ```bash
 export THE_LOOP_GH_WEBHOOK_SECRET='…'   # the same value you gave GitHub
-the-loop gh-webhook start
+the-loop start
 ```
 
 If the variable is unset, HMAC verification is not performed — anyone who can reach the
@@ -102,5 +116,4 @@ receiver warns at startup when either is missing.
 
 - [Routing options](/config/cli/routing-options) — what the receiver *does* with an
   accepted event.
-- [`the-loop gh-webhook`](/cli/commands/gh-webhook) — the command, its flags and its
-  guards.
+- [The webhook receiver](/cli/receiver) — verification, routing and the guards.

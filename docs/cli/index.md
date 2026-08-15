@@ -20,7 +20,7 @@ You want the CLI when you stop driving the loop by hand:
 
 | You want to… | Use |
 |---|---|
-| Have a comment on a GitHub issue start an agent, unattended | [`gh-webhook`](/cli/commands/gh-webhook) or [`poll`](/cli/commands/poll) |
+| Have a comment on a GitHub issue start an agent, unattended | [`start`](/cli/commands/start) with the [webhook receiver](/cli/receiver) or [polling](/config/cli/polling-options) enabled |
 | Keep one session per work item and route later activity to it | [`sessions`](/cli/commands/sessions) |
 | Watch an agent work, live, and type into it | [`sessions attach`](/cli/commands/sessions) |
 | Answer "why did nothing happen?" | [`events`](/cli/commands/events) |
@@ -52,7 +52,7 @@ graph TD
   CFG["cli-config.yaml<br/><i>your machine</i>"]
   subgraph D["Daemon commands"]
     GW["gh-webhook<br/>push ingress"]
-    PO["poll<br/>pull ingress"]
+    PO["poller<br/>pull ingress (via start)"]
     SE["sessions<br/>registry + control"]
     EV["events<br/>the trail"]
   end

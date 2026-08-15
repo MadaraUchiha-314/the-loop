@@ -1438,21 +1438,21 @@ def test_dispatcher_reload_swaps_policy_and_templates_keeps_dedup(tmp_path):
 
 
 def test_read_gh_webhook_config_strict_vs_lenient(tmp_path, monkeypatch):
-    from the_loop.commands import gh_webhook
+    from the_loop.webhook import daemon as webhook_daemon
 
     cfg = tmp_path / "config.yaml"
-    monkeypatch.setattr(gh_webhook, "_CONFIG_PATH", cfg)
+    monkeypatch.setattr(webhook_daemon, "_config_path", lambda: cfg)
 
     # missing file: lenient => {}, strict => raises
-    assert gh_webhook._read_gh_webhook_config(strict=False) == {}
+    assert webhook_daemon._read_gh_webhook_config(strict=False) == {}
     with pytest.raises(FileNotFoundError):
-        gh_webhook._read_gh_webhook_config(strict=True)
+        webhook_daemon._read_gh_webhook_config(strict=True)
 
     # unparseable: lenient => {} (keep defaults), strict => raises (keep previous)
     cfg.write_text("webhooks: [unclosed\n")
-    assert gh_webhook._read_gh_webhook_config(strict=False) == {}
+    assert webhook_daemon._read_gh_webhook_config(strict=False) == {}
     with pytest.raises(Exception):
-        gh_webhook._read_gh_webhook_config(strict=True)
+        webhook_daemon._read_gh_webhook_config(strict=True)
 
 
 def _write_webhook_config(path, policy, sessions_dir, events="[]"):
@@ -1469,14 +1469,14 @@ def _write_webhook_config(path, policy, sessions_dir, events="[]"):
 
 
 def test_webhook_hot_reload_applies_on_next_event(tmp_path, monkeypatch):
-    from the_loop.commands import gh_webhook
+    from the_loop.webhook import daemon as webhook_daemon
 
     cfg = tmp_path / "config.yaml"
     _write_webhook_config(cfg, "never", tmp_path / "sessions")
-    monkeypatch.setattr(gh_webhook, "_CONFIG_PATH", cfg)
+    monkeypatch.setattr(webhook_daemon, "_config_path", lambda: cfg)
 
-    on_event, dispatcher, _ = gh_webhook._build_routing(
-        cli_config.load_routing_config(cfg), gh_webhook._read_gh_webhook_config()
+    on_event, dispatcher, _ = webhook_daemon._build_routing(
+        cli_config.load_routing_config(cfg), webhook_daemon._read_gh_webhook_config()
     )
     assert dispatcher.config.spawn_on_unmatched == "never"
 

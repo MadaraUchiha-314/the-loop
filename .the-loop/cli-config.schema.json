@@ -27,13 +27,19 @@
     },
     "webhooks": {
       "type": "object",
-      "description": "Config for the the-loop CLI webhook receiver(s) (e.g. `the-loop gh-webhook start`).",
+      "description": "Config for the the-loop CLI webhook receiver(s), started by `the-loop start` when `ghWebhook.enabled` is true (issue-228).",
       "additionalProperties": false,
       "properties": {
         "ghWebhook": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "Whether `the-loop start` brings the GitHub webhook receiver up (issue-228, decision-084). Explicit opt-in: a receiver needs a reachable bind, a secret and GitHub-side configuration, so a config that merely DESCRIBES one must not open a port. The foreground entry point (`python -m the_loop.daemon_entry gh-webhook`, for systemd) runs regardless of it.",
+              "examples": [true]
+            },
             "host": {
               "type": "string",
               "default": "127.0.0.1"
@@ -81,9 +87,15 @@
     },
     "polling": {
       "type": "object",
-      "description": "Config for the the-loop CLI poller (`the-loop poll start`) \u2014 a pull-based, provider-agnostic alternative to the webhook receiver for hosts a webhook cannot reach. Each entry in `sources` selects a provider (e.g. github) the system interfaces with; the core carries no provider-specific knobs. Dispatch behaviour (harness, runner, spawn policy, templates, registry) is the shared top-level `routing` block \u2014 the same one the webhook receiver runs on (issue-142).",
+      "description": "Config for the the-loop CLI poller (started by `the-loop start` when `polling.enabled` is true, or directly via `python -m the_loop.daemon_entry poller`) \u2014 a pull-based, provider-agnostic alternative to the webhook receiver for hosts a webhook cannot reach. Each entry in `sources` selects a provider (e.g. github) the system interfaces with; the core carries no provider-specific knobs. Dispatch behaviour (harness, runner, spawn policy, templates, registry) is the shared top-level `routing` block \u2014 the same one the webhook receiver runs on (issue-142).",
       "additionalProperties": false,
       "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether `the-loop start` brings the poller up (issue-228, decision-084). Explicit opt-in, never inferred from a non-empty `sources` list — `sources` describes HOW to poll, not that polling is wanted on this host. `the-loop start` names this key when it skips a disabled poller, and `python -m the_loop.daemon_entry poller [--once]` runs one regardless (the cron/systemd form).",
+          "examples": [true]
+        },
         "intervalSeconds": {
           "type": "integer",
           "minimum": 1,
@@ -152,7 +164,7 @@
         "enabled": {
           "type": "boolean",
           "default": false,
-          "description": "Default for `gh-webhook start --route/--no-route`."
+          "description": "Whether the receiver dispatches events at all (routing off = verify and log only)."
         },
         "registryDir": {
           "type": "string",
@@ -796,6 +808,12 @@
       "description": "The control-plane API service (issue-161, decision-058/059): the HTTP layer over the-loop's core that the CLI and the MCP endpoint consume. No in-app authentication \u2014 a gateway owns that (decision-059); the service's own posture is network scoping: loopback-only unless `exposed` is explicitly true. Hosting the service requires the [service] extra (`pip install 'the-loopy-one[service]'`).",
       "additionalProperties": false,
       "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether `the-loop start` brings the control-plane service up (issue-228, decision-084). Default true: the service is the CLI's only execution path for core capabilities (decision-058). Setting false also refuses the implicit auto-start (`service.autoStart`) \u2014 a service the operator disabled must not resurrect because an unrelated CLI command wanted it.",
+          "examples": [false]
+        },
         "host": {
           "type": "string",
           "default": "127.0.0.1",
@@ -814,7 +832,26 @@
         "autoStart": {
           "type": "boolean",
           "default": true,
-          "description": "Whether a CLI command may boot a local service on demand when none is reachable (the service is the CLI's only execution path for core capabilities)."
+          "description": "Whether a CLI command may boot a local service on demand when none is reachable (the service is the CLI's only execution path for core capabilities). Honoured only while `service.enabled` is true — a disabled service never auto-starts (issue-228)."
+        },
+        "mcp": {
+          "type": "object",
+          "description": "The MCP layer the service exposes (issue-161). One flag: whether the streamable-HTTP MCP endpoint is mounted at all.",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true,
+              "description": "Whether the service mounts the MCP endpoint at /mcp (issue-228, decision-084). Default true — /mcp has been unconditionally mounted since issue-161, so the flag exists to NARROW a deployment to REST-only (/mcp answers 404 when false), not as a new opt-in.",
+              "examples": [false]
+            }
+          }
+        },
+        "hostIngresses": {
+          "type": "boolean",
+          "default": true,
+          "description": "Single-process mode (issue-231): with the service enabled, the enabled ingresses (the poller per `polling.enabled`, the webhook receiver per `webhooks.ghWebhook.enabled`) run as background tasks INSIDE the service process — one pid, one logfile — instead of as separate processes. Each hosted ingress still holds its own pidfile flock (under the service's pid), so `the-loop status`/`stop`, the single-instance guarantees and the daemons API answer unchanged, and a standalone daemon already holding a lock is skipped with a warning rather than fought over. Set false to keep the issue-228 split (fault isolation: a wedged ingress cannot share fate with the API); with `service.enabled: false` the ingresses always run standalone regardless of this flag.",
+          "examples": [false]
         },
         "cors": {
           "type": "object",

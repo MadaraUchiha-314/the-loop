@@ -240,3 +240,18 @@ export interface ConfigSaveResult extends ConfigDocument {
   restartRequired: string[];
   written: boolean;
 }
+
+/**
+ * `POST /api/v1/restart` — a whole-system restart, **scheduled** (issue-228).
+ * The service cannot stop itself synchronously and still answer, so the
+ * response promises a detached `the-loop restart` process, not a finished
+ * restart; the page sees the service drop and come back within seconds.
+ */
+export interface RestartSchedule {
+  scheduled: boolean;
+  /** Pid of the detached restart process (not the service's). */
+  pid: number;
+  withUpgrade: boolean;
+  /** Where that process logs, under the workstation's state root. */
+  logfile: string;
+}

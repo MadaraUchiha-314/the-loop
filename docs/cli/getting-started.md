@@ -59,6 +59,7 @@ webhooks:
         enabled: false                            # no browser terminal until you mean it
 
 polling:
+  enabled: true              # so `the-loop start` brings the poller up (issue-228)
   intervalSeconds: 60
   sources:
     - provider: github
@@ -97,8 +98,9 @@ sessions, tmux hosting, guards, prompts — and differ only in how events arrive
 
 ```bash [Webhook (push)]
 # Needs an inbound route to your machine.
+# Enable it in the CLI config (webhooks.ghWebhook.enabled: true), then:
 export THE_LOOP_GH_WEBHOOK_SECRET='the same secret you gave GitHub'
-the-loop gh-webhook start
+the-loop start
 
 # GitHub → repo Settings → Webhooks → Add:
 #   Payload URL:  https://<your-host>/gh-webhook
@@ -109,20 +111,20 @@ the-loop gh-webhook start
 
 ```bash [Poll (pull)]
 # No inbound route needed — works behind NAT, a firewall, or on a laptop.
-# Detached, so it outlives this shell; logs to .the-loop/logs/poller.out:
-the-loop poll start --daemon
-the-loop poll status        # running? pid? last cycle? (exits 1 if it is not)
+# Enable it in the CLI config (polling.enabled: true), then:
+the-loop start              # detached; logs to .the-loop/logs/poller.out
+the-loop status             # running? pid? last cycle? (exits 1 if it is not)
 
 # In the foreground instead, for a systemd `Type=simple` unit:
-the-loop poll start
+python -m the_loop.daemon_entry poller
 
 # One cycle and exit, for a cron job or a systemd timer:
-the-loop poll start --once
+python -m the_loop.daemon_entry poller --once
 ```
 
 :::
 
-Not sure? Start with **poll**. It needs no networking at all, and everything you configure
+Not sure? Start with **polling**. It needs no networking at all, and everything you configure
 carries over if you later switch.
 
 ## 4. Arm a work item, then start it

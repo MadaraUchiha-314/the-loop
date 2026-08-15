@@ -258,7 +258,7 @@ GENERATED_PATHS: Tuple[GeneratedPath, ...] = (
         portable=False,
         holds=(
             "startedAt, lastCycleAt and the last cycle's counters — what "
-            "`the-loop poll status` reports beyond liveness. No pid: naming the "
+            "`the-loop status` reports beyond liveness. No pid: naming the "
             "process is the pidfile lock's job (issue-205)"
         ),
         why=(

@@ -122,16 +122,17 @@ def test_empty_file_is_empty_mapping(tmp_path):
 # -- module-level command wiring -------------------------------------------------
 
 
-def test_gh_webhook_and_poll_default_to_the_cli_config_path():
-    """gh_webhook._CONFIG_PATH and poll._CONFIG_PATH are the CLI config — the
-    ONLY config either reads (issue-63 review: no plugin-config fallback) —
-    at import time."""
-    from the_loop.commands import gh_webhook, poll
+def test_both_ingress_daemons_read_only_the_cli_config():
+    """The CLI config is the ONLY config either ingress reads (issue-63 review:
+    no plugin-config fallback). Both daemon modules (issue-228) resolve the
+    path per call and cache nothing at import."""
+    from the_loop.poller import daemon as poller_daemon
+    from the_loop.webhook import daemon as webhook_daemon
 
-    assert gh_webhook._CONFIG_PATH == cli_config.default_cli_config_path()
-    assert poll._CONFIG_PATH == cli_config.default_cli_config_path()
-    assert not hasattr(gh_webhook, "_PLUGIN_CONFIG_PATH")
-    assert not hasattr(poll, "_PLUGIN_CONFIG_PATH")
+    for module in (poller_daemon, webhook_daemon):
+        assert module._config_path() == cli_config.default_cli_config_path()
+        assert not hasattr(module, "_CONFIG_PATH")
+        assert not hasattr(module, "_PLUGIN_CONFIG_PATH")
 
 
 # -- the shared routing accessor (issue-142) -------------------------------------
@@ -182,9 +183,10 @@ def test_the_poller_and_sessions_no_longer_read_routing_through_the_receiver():
     `authorizedUsers` resolved by one shared accessor, not by importing the
     webhook command's module.
     """
-    from the_loop.commands import poll, sessions_cmd
+    from the_loop.commands import sessions_cmd
+    from the_loop.poller import daemon as poller_daemon
 
-    for module in (poll, sessions_cmd):
+    for module in (poller_daemon, sessions_cmd):
         assert not hasattr(module, "_load_config_defaults")
 
 
@@ -211,23 +213,22 @@ def test_eventlog_load_config_defaults_to_cli_config_path(monkeypatch, tmp_path)
 
 
 def test_config_flag_overrides_resolved_path_for_defaults(monkeypatch, isolated_cwd):
-    """`the-loop --config X gh-webhook start` computes --host/--port/etc.
-    defaults from X, not the CWD/home/env resolution."""
-    from the_loop.cli import build_parser, main
+    """`the-loop --config X …` makes every daemon resolve its options from X,
+    not the CWD/home/env resolution — the pre-scan sets the override before
+    anything reads the config, and nothing caches the path at import."""
+    from the_loop.cli import main
+    from the_loop.webhook import daemon as webhook_daemon
 
     monkeypatch.delenv(cli_config.CLI_CONFIG_ENV, raising=False)
     cfg = isolated_cwd / "custom.yaml"
     cfg.write_text("webhooks:\n  ghWebhook:\n    port: 9191\n")
 
-    # main() pre-scans --config and refreshes gh_webhook/poll._CONFIG_PATH
-    # before build_parser() computes their other flags' defaults.
     with pytest.raises(SystemExit) as exc:
         main(["--config", str(cfg), "--version"])
     assert exc.value.code == 0  # sanity: main() ran the pre-scan without error
 
-    parser = build_parser()
-    args = parser.parse_args(["gh-webhook", "start"])
-    assert args.port == 9191
+    # The override set by the pre-scan is what the daemons resolve against.
+    assert webhook_daemon.default_options().port == 9191
 
 
 def test_no_config_flag_leaves_resolution_at_cwd_or_home(monkeypatch, isolated_cwd):
@@ -246,7 +247,7 @@ def test_no_config_flag_leaves_resolution_at_cwd_or_home(monkeypatch, isolated_c
 
 
 def test_events_defaults_to_the_routable_set_including_lifecycle_events():
-    from the_loop.commands.gh_webhook import DEFAULT_EVENTS, resolve_events
+    from the_loop.webhook.daemon import DEFAULT_EVENTS, resolve_events
 
     for config in ({}, {"events": []}, {"events": None}):
         events = resolve_events(config)
@@ -256,13 +257,13 @@ def test_events_defaults_to_the_routable_set_including_lifecycle_events():
 
 
 def test_an_explicit_events_list_still_wins():
-    from the_loop.commands.gh_webhook import resolve_events
+    from the_loop.webhook.daemon import resolve_events
 
     assert resolve_events({"events": ["issues"]}) == ["issues"]
 
 
 def test_an_events_list_without_the_lifecycle_events_warns(caplog):
-    from the_loop.commands.gh_webhook import warn_on_missing_lifecycle_events
+    from the_loop.webhook.daemon import warn_on_missing_lifecycle_events
 
     with caplog.at_level(logging.WARNING, logger="the-loop.gh-webhook"):
         missing = warn_on_missing_lifecycle_events(["issue_comment", "workflow_run"])
@@ -271,7 +272,7 @@ def test_an_events_list_without_the_lifecycle_events_warns(caplog):
 
 
 def test_the_default_set_warns_about_nothing(caplog):
-    from the_loop.commands.gh_webhook import (
+    from the_loop.webhook.daemon import (
         DEFAULT_EVENTS,
         warn_on_missing_lifecycle_events,
     )

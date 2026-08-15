@@ -27,7 +27,7 @@ def test_unreachable_with_autostart_off_fails_closed(tmp_path):
     with pytest.raises(client.ServiceUnavailable) as excinfo:
         client.ensure_service(_unreachable_config(tmp_path, auto_start=False))
     message = str(excinfo.value)
-    assert "the-loop service start" in message
+    assert "the-loop start" in message
     # No extras any more (owner decision, PR #162): an unreachable service is a
     # lifecycle problem, so the message must not send anyone to `pip install`.
     assert "pip install" not in message

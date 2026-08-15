@@ -29,9 +29,15 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
 
 - Primary CLI: **`the-loop`**. Add a command by subclassing `Command`, `@register`-ing
   it, and dropping the module under `the_loop/commands/`.
+- Lifecycle: **`the-loop start | stop | status | restart [--with-upgrade]`**
+  (issue-228) — one surface that starts, detached, every service the CLI config
+  enables (the control-plane service per `service.enabled`, `/mcp` per
+  `service.mcp.enabled`, the webhook receiver per `webhooks.ghWebhook.enabled`, the
+  poller per `polling.enabled`), stops whatever runs, and reports per service.
+  `POST /api/v1/restart` schedules the same restart over the API.
+  `python -m the_loop.daemon_entry <poller|gh-webhook> [--once]` is the
+  foreground/cron form of either daemon.
 - GitHub webhook receiver:
-  - `the-loop gh-webhook start [--host --port --path --pidfile --secret-env --route]`
-  - `the-loop gh-webhook stop [--pidfile]`
   - Verifies the GitHub `X-Hub-Signature-256` HMAC (secret from an env var), exposes
     `GET /health`, and logs deliveries. Defaults come from `webhooks.ghWebhook` in the
     **CLI config** (`cli-config.yaml` — resolved via `--config`/env/cwd/home; see
@@ -41,7 +47,7 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
     `collaborators.yaml` but declared, never looked up) and the daemon-side
     `notifications.events` filters (work-item-spawned, dispatch-failed, session-died,
     event-dropped-unauthorized) — issue-82, decision-035.
-- **Webhook → session routing** (`--route`; `routing`): a received
+- **Webhook → session routing** (`routing.enabled`): a received
   event (PR/issue comment, `workflow_run` result, …) is matched to the registered
   session working that item and delivered by *resuming* that session through its
   official CLI (`claude -p … --resume` / `cursor-agent -p … --resume`) with a prompt

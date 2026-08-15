@@ -26,10 +26,10 @@ Every subcommand accepts `--registry-dir`, defaulting to
 
 ::: warning `--registry-dir` / `--portable-dir` and the service
 Since issue-161 these commands run through the
-[control-plane service](/cli/commands/service), which reads **its own** configured
+[control-plane service](/cli/service), which reads **its own** configured
 state directories. The two path flags therefore only take effect on the in-process
 path the test suite uses; to point real invocations at other state, point the
-service at it — `the-loop --config other.yaml service start`, or set
+service at it — `the-loop --config other.yaml start`, or set
 `routing.registryDir` / `state.root` in the config the service runs on. Arbitrary
 filesystem paths are deliberately not accepted over HTTP.
 :::

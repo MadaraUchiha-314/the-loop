@@ -51,8 +51,8 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from .base import Command, register
-from .gh_webhook import _CONFIG_PATH, _state_layout
-from .poll import _build_dispatcher
+from ..poller.daemon import _build_dispatcher
+from ..webhook.daemon import _state_layout
 from .. import cli_config, eventlog
 from ..client.routing import routed, service_error
 from ..control import CLEANUP, PAUSE, RESUME, START, STOP, ControlStore
@@ -94,7 +94,7 @@ def _control_store(args: argparse.Namespace) -> ControlStore:
 
 def _cli_config() -> dict:
     """The operator's CLI config, as core's surfaces expect to receive it."""
-    return cli_config.load_cli_config(_CONFIG_PATH)
+    return cli_config.load_cli_config(cli_config.default_cli_config_path())
 
 
 def _render(result: Dict[str, Any]) -> int:

@@ -18,7 +18,7 @@ import pytest
 from the_loop.authz import is_self_authored
 from the_loop.control import ControlStore, parse_command, ControlConfig
 from the_loop.cli import main
-from the_loop.commands import poll as poll_cmd
+from the_loop.poller import daemon as poll_cmd
 from the_loop.core import sessions as core_sessions
 from the_loop.sessions import Session, SessionRegistry, WorkItemRef
 
