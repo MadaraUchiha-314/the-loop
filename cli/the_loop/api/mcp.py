@@ -233,18 +233,26 @@ def build_server(cli_config: Optional[dict] = None) -> MCPServer:
     return server
 
 
-def build_app(cli_config: Optional[dict] = None):
+def build_app(
+    cli_config: Optional[dict] = None, *, allowed_hosts: Optional[List[str]] = None
+):
     """The SDK's streamable-HTTP ASGI app, ready to mount at :data:`MCP_PATH`.
 
     DNS-rebinding protection stays enabled (the SDK's default) with the hosts
     the service actually answers on — the same loopback-by-default posture the
     exposure guard enforces for the REST surface.
+
+    ``allowed_hosts`` overrides that derivation, and exists for the embedded case
+    (issue-212): a mount inside somebody else's application answers on *their* host and
+    port, which ``service.host``/``service.port`` do not describe. Absent, the derivation
+    is unchanged, so the standalone service behaves exactly as before.
     """
-    conf = service_config(cli_config)
-    host, port = conf["host"], conf["port"]
-    allowed_hosts = [f"{host}:{port}", host]
-    if host in ("127.0.0.1", "localhost"):
-        allowed_hosts += [f"localhost:{port}", "localhost", f"127.0.0.1:{port}"]
+    if allowed_hosts is None:
+        conf = service_config(cli_config)
+        host, port = conf["host"], conf["port"]
+        allowed_hosts = [f"{host}:{port}", host]
+        if host in ("127.0.0.1", "localhost"):
+            allowed_hosts += [f"localhost:{port}", "localhost", f"127.0.0.1:{port}"]
     server = build_server(cli_config)
     return server.streamable_http_app(
         streamable_http_path=MCP_PATH,

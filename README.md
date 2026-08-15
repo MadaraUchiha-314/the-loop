@@ -131,6 +131,33 @@ Full reference: **[the-loop CLI](https://madarauchiha-314.github.io/the-loop/cli
 [every command](https://madarauchiha-314.github.io/the-loop/cli/commands/) ·
 [every config option](https://madarauchiha-314.github.io/the-loop/config/).
 
+## The SDK
+
+The same package is importable, so the control plane can live **inside a Python service you
+already run** rather than in a process of its own:
+
+```python
+from fastapi import Depends, FastAPI
+from the_loop.sdk import TheLoop
+
+loop = TheLoop(config_path="/etc/the-loop/cli-config.yaml")
+
+app = FastAPI()
+loop.mount(app, prefix="/the-loop", dependencies=[Depends(verify_caller)])
+```
+
+That mounts every `/api/v1` operation `the-loop start` serves — the *same* router, so the
+embedded and standalone surfaces cannot drift — plus the MCP endpoint, under your prefix,
+behind your auth and middleware, in your process. The capabilities are also callable with no
+HTTP in the way (`loop.work_items.list()`, `loop.graph.check(repo, "issue-42")`), and
+`loop.check_environment()` tells you at startup which external binaries your configuration
+needs and whether they are there.
+
+Full reference: **[the Python SDK](https://madarauchiha-314.github.io/the-loop/sdk/)** ·
+[embedding in FastAPI](https://madarauchiha-314.github.io/the-loop/sdk/embedding) ·
+[environment expectations](https://madarauchiha-314.github.io/the-loop/sdk/environment) ·
+[API reference](https://madarauchiha-314.github.io/the-loop/sdk/reference).
+
 ## The agent plugins
 
 The operating model reaches an agent as a plugin — the same `SKILL.md` for both harnesses,

@@ -60,6 +60,26 @@ the-loop sessions list
 the-loop events --follow
 ```
 
+## Or embed it
+
+The package is importable, so the control plane can live inside a Python service you
+already run instead of a process of its own:
+
+```python
+from fastapi import Depends, FastAPI
+from the_loop.sdk import TheLoop
+
+loop = TheLoop(config_path="/etc/the-loop/cli-config.yaml")
+
+app = FastAPI()
+loop.mount(app, prefix="/the-loop", dependencies=[Depends(verify_caller)])
+```
+
+Same router as `the-loop start` serves, under your prefix, behind your auth and middleware.
+The capabilities work with no HTTP at all (`loop.work_items.list()`), and
+`loop.check_environment()` says at startup which external binaries your configuration needs.
+See [the SDK docs](https://madarauchiha-314.github.io/the-loop/sdk/).
+
 ## Documentation
 
 Full docs at **<https://madarauchiha-314.github.io/the-loop/cli/>**:
@@ -73,6 +93,7 @@ Full docs at **<https://madarauchiha-314.github.io/the-loop/cli/>**:
 | [Commands](https://madarauchiha-314.github.io/the-loop/cli/commands/) | `gh-webhook` · `poll` · `sessions` · `events` · `check` · `graph` · `critic` · `scenarios` · `instructions` · `install` · `upgrade` · `migrate-config` |
 | [Configuration](https://madarauchiha-314.github.io/the-loop/config/cli/) | Every option, by area, with types and defaults |
 | [Adding a command](https://madarauchiha-314.github.io/the-loop/cli/extending) | The `Command` / `@register` contract |
+| [Python SDK](https://madarauchiha-314.github.io/the-loop/sdk/) | The same package, imported: mount the control plane into your own FastAPI service, or call the capabilities directly |
 
 > **Two config files, and they never overlap.** The CLI daemon reads `cli-config.yaml`
 > (yours, machine-scoped, resolved via `--config` → `$THE_LOOP_CLI_CONFIG` →
