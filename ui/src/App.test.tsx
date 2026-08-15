@@ -60,8 +60,9 @@ describe("the control plane, on demo data", () => {
   it("lists every tracked work item with its loop position", async () => {
     renderApp();
 
-    // Eight fixture items, all present — the armed item with no session included.
-    expect(await screen.findByText(/8 tracked/)).toBeInTheDocument();
+    // Nine fixture items, all present — the armed item with no session and the
+    // ad-hoc item (issue-230) included.
+    expect(await screen.findByText(/9 tracked/)).toBeInTheDocument();
     // The position arrives in the second round (one graph/check per loop), so
     // the row is re-read until it does rather than asserted on the first paint.
     await expectInRow("Open loop-lab#214", "implementation");

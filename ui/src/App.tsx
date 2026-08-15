@@ -10,6 +10,7 @@ import { useControlPlane } from "./state/useControlPlane.ts";
 import { Attention } from "./views/Attention.tsx";
 import { Dashboard } from "./views/Dashboard.tsx";
 import { Events } from "./views/Events.tsx";
+import { Sessions } from "./views/Sessions.tsx";
 import { Settings } from "./views/Settings.tsx";
 import { WorkItemDetail } from "./views/WorkItemDetail.tsx";
 
@@ -49,6 +50,16 @@ export function App() {
               <a href={hrefFor({ name: "dashboard" })}>Back to the board</a>.
             </div>
           )
+        ) : null}
+
+        {route.name === "sessions" ? (
+          <Sessions
+            views={board.views}
+            loading={board.loading}
+            titleFor={titleFor}
+            selectedRef={route.ref}
+            onChanged={board.refresh}
+          />
         ) : null}
 
         {route.name === "attention" ? <Attention views={board.views} /> : null}

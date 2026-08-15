@@ -16,10 +16,11 @@ import {
   railProgress,
   relativeTime,
   rowFlag,
+  sessionTree,
   shortRef,
   specId,
   transcriptPath,
-  transcriptTurns,
+  transcriptThread,
 } from "./model.ts";
 import type { GraphStatus, SessionRecord, WorkItemRecord } from "./types.ts";
 
@@ -100,9 +101,9 @@ describe("transcriptPath", () => {
   });
 });
 
-describe("transcriptTurns", () => {
-  it("projects text, tool uses and timestamps into rows", () => {
-    const turns = transcriptTurns([
+describe("transcriptThread", () => {
+  it("projects text, tool uses and timestamps into rows with per-tool summaries", () => {
+    const rows = transcriptThread([
       {
         type: "assistant",
         timestamp: "2026-08-12T10:00:05Z",
@@ -110,39 +111,154 @@ describe("transcriptTurns", () => {
           role: "assistant",
           content: [
             { type: "text", text: "Reading the test first." },
-            { type: "tool_use", name: "Read", input: { file_path: "cli/tests/test_x.py" } },
+            { type: "tool_use", id: "t1", name: "Read", input: { file_path: "cli/tests/test_x.py" } },
           ],
         },
       },
     ]);
-    expect(turns).toEqual([
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      kind: "assistant",
+      time: "2026-08-12T10:00:05Z",
+      text: "Reading the test first.",
+    });
+    expect(rows[0]!.tools).toEqual([
       {
-        kind: "assistant",
-        time: "2026-08-12T10:00:05Z",
-        text: "Reading the test first.",
-        tools: [{ name: "Read", detail: '{"file_path":"cli/tests/test_x.py"}' }],
+        id: "t1",
+        name: "Read",
+        summary: "cli/tests/test_x.py",
+        input: JSON.stringify({ file_path: "cli/tests/test_x.py" }, null, 2),
+        result: "",
+        isError: false,
       },
     ]);
   });
 
-  it("accepts string content and labels result-only user entries as tool results", () => {
-    const turns = transcriptTurns([
-      { type: "user", message: { role: "user", content: "Fix the flaky test." } },
-      { type: "user", message: { role: "user", content: [{ type: "tool_result", content: "def test_x(): ..." }] } },
+  it("folds a tool result into the call it answers, matched by id, and emits no row for it", () => {
+    const rows = transcriptThread([
+      {
+        type: "assistant",
+        message: {
+          content: [
+            { type: "tool_use", id: "a", name: "Bash", input: { command: "pytest -q" } },
+            { type: "tool_use", id: "b", name: "Grep", input: { pattern: "flaky" } },
+          ],
+        },
+      },
+      // Results arrive out of order — pairing is by id, not adjacency.
+      { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "b", content: "3 matches" }] } },
+      {
+        type: "user",
+        message: {
+          content: [
+            { type: "tool_result", tool_use_id: "a", content: [{ type: "text", text: "1 failed" }], is_error: true },
+          ],
+        },
+      },
     ]);
-    expect(turns[0]).toMatchObject({ kind: "user", text: "Fix the flaky test." });
-    expect(turns[1]).toMatchObject({ kind: "tool result", text: "" });
+    expect(rows).toHaveLength(1);
+    const [bash, grep] = rows[0]!.tools;
+    expect(bash).toMatchObject({ name: "Bash", summary: "pytest -q", result: "1 failed", isError: true });
+    expect(grep).toMatchObject({ name: "Grep", summary: "flaky", result: "3 matches", isError: false });
   });
 
-  it("surfaces malformed lines and degrades unknown shapes without throwing", () => {
-    const turns = transcriptTurns([
+  it("renders an orphan tool result as its own row, never blank — the issue-230 bug", () => {
+    const rows = transcriptThread([
+      { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "gone", content: "def test_x(): ..." }] } },
+      { type: "user", message: { content: [{ type: "tool_result", content: [] }] } },
+    ]);
+    expect(rows[0]).toMatchObject({ kind: "tool result", text: "def test_x(): ..." });
+    expect(rows[1]).toMatchObject({ kind: "tool result", text: "(no output)" });
+  });
+
+  it("captures thinking blocks collapsed rather than dropping them", () => {
+    const rows = transcriptThread([
+      {
+        type: "assistant",
+        message: { content: [{ type: "thinking", thinking: "The failure smells like a fixture." }] },
+      },
+    ]);
+    expect(rows[0]).toMatchObject({ kind: "assistant", thinking: "The failure smells like a fixture.", text: "" });
+  });
+
+  it("labels bookkeeping and unknown shapes as meta rows, and keeps malformed lines", () => {
+    const rows = transcriptThread([
       { malformed: "not json {" },
       { type: "summary", summary: "Session compacted." },
       { unrecognised: true },
+      { type: "system", message: { content: "hook output" } },
     ]);
-    expect(turns[0]).toEqual({ kind: "malformed", time: "", text: "not json {", tools: [] });
-    expect(turns[1]).toMatchObject({ kind: "summary", text: "Session compacted." });
-    expect(turns[2]).toMatchObject({ kind: "entry", text: "" });
+    expect(rows[0]).toMatchObject({ kind: "malformed", text: "not json {" });
+    expect(rows[1]).toMatchObject({ kind: "meta", label: "summary", text: "Session compacted." });
+    expect(rows[2]).toMatchObject({ kind: "meta", label: "entry" });
+    expect(rows[3]).toMatchObject({ kind: "meta", label: "system", text: "hook output" });
+  });
+
+  it("falls back to compact JSON for a tool the summary table does not know", () => {
+    const rows = transcriptThread([
+      {
+        type: "assistant",
+        message: { content: [{ type: "tool_use", id: "x", name: "MysteryTool", input: { a: 1 } }] },
+      },
+    ]);
+    expect(rows[0]!.tools[0]).toMatchObject({ name: "MysteryTool", summary: '{"a":1}' });
+  });
+
+  it("accepts string content for user turns", () => {
+    const rows = transcriptThread([{ type: "user", message: { role: "user", content: "Fix the flaky test." } }]);
+    expect(rows[0]).toMatchObject({ kind: "user", text: "Fix the flaky test." });
+  });
+});
+
+const record = (ref: string, loop: string): WorkItemRecord => ({
+  ref,
+  graph: { loop, workItem: "issue-1", nodes: [] },
+});
+
+const session = (ref: string, prRefs: string[] = []): SessionRecord => ({
+  ref,
+  workItem: { ref, provider: "github", owner: "octo", repo: "lab", number: 1 },
+  harness: "claude",
+  harnessSessionId: "sid",
+  status: "active",
+  tmuxTarget: `tmux-${ref.split("#")[1]}`,
+  pullRequests: prRefs.map((prRef) => ({
+    workItem: { ref: prRef, provider: "github", owner: "octo", repo: "lab", number: 2 },
+    harness: "claude",
+    harnessSessionId: "sid-pr",
+    status: "active",
+    tmuxTarget: `tmux-${prRef.split("#")[1]}`,
+  })),
+});
+
+describe("sessionTree", () => {
+  it("builds a two-level tree: the outer session, then one child per PR endpoint", () => {
+    const views = buildWorkItemViews({
+      workItems: [record("github:octo/lab#1", "pdlc-work-item-loop")],
+      sessions: [session("github:octo/lab#1", ["github:octo/lab#2"])],
+      attention: [],
+    });
+    const tree = sessionTree(views);
+    expect(tree).toHaveLength(1);
+    expect(tree[0]!.adhoc).toBe(false);
+    expect(tree[0]!.outer).toMatchObject({ ref: "github:octo/lab#1", scope: "outer", state: "active" });
+    expect(tree[0]!.inner).toEqual([
+      { ref: "github:octo/lab#2", shortRef: "lab#2", scope: "inner", state: "active", tmuxTarget: "tmux-2" },
+    ]);
+  });
+
+  it("flags ad-hoc and contribution loops treeless — one session, no inner level", () => {
+    for (const loop of ["pdlc-adhoc-loop", "pdlc-contribution-loop"]) {
+      const views = buildWorkItemViews({
+        workItems: [record("github:octo/lab#1", loop)],
+        // Even a linked PR endpoint stays out of an ad-hoc item's tree.
+        sessions: [session("github:octo/lab#1", ["github:octo/lab#2"])],
+        attention: [],
+      });
+      const tree = sessionTree(views);
+      expect(tree[0]!.adhoc).toBe(true);
+      expect(tree[0]!.inner).toEqual([]);
+    }
   });
 });
 

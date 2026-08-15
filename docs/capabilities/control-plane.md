@@ -124,9 +124,15 @@ package — there are no install extras (owner decision, PR #162).
   provenance header, `session.reply_sent` is emitted, and a **marked** report
   comment lands on the ticket (best-effort, `comment: false` to skip) so the thread
   stays the paper trail without the poller delivering the answer a second time.
+  The ref SHALL resolve the way dispatch resolves it (issue-230): the ref's own
+  record first, else the record holding it as a **pull-request endpoint** — so a
+  PR's ref delivers into that inner loop's pane — with a closed PR endpoint
+  falling back to the work item's own session, the same rule `session_for`
+  applies to events.
   The route SHALL be fail-closed: no registered session or no live pane is 404 —
-  a reply never spawns, respawns or resumes anything — a paused session is 400,
-  and the claimed `actor` is recorded for audit, never trusted as auth.
+  a reply never spawns, respawns or resumes anything — a paused record or
+  endpoint is 400, and the claimed `actor` is recorded for audit, never trusted
+  as auth.
 - `GET /attention` SHALL report the wait as kind `awaiting-input`: open while the
   work item's newest `session.awaiting_input` is newer than its newest
   `session.reply_sent` — the same rule the dashboard's `awaitingInput` model
@@ -208,6 +214,25 @@ package — there are no install extras (owner decision, PR #162).
   went live with issue-208, and the **turns-and-tool-calls trace** did the same
   with issue-209 — it renders the served transcript, keeping the event-log trail
   as the stated fallback when the route answers 404.
+- The dashboard SHALL render a served transcript as a **readable stream**
+  (issue-230), not a flat dump of lines: tool calls collapsed to the tool name
+  plus a one-line summary of their input, each call carrying the `tool_result`
+  that answered it (paired by `tool_use_id`; errors flagged), thinking and
+  harness bookkeeping collapsed and labelled, and **no line rendered blank** —
+  a result whose call fell outside the served tail is its own visible row, and
+  an unknown shape degrades to a labelled row rather than disappearing or
+  throwing. All of it renders as text (React escaping), never as markup.
+- The dashboard SHALL provide a **Sessions screen** (issue-230): every work item
+  in a sidebar, each opening into its sessions as a **two-level tree** — the
+  outer loop's session, then one child per PR inner loop, mirroring the
+  registry's own one-level nesting — with ad-hoc and contribution items
+  (`pdlc-adhoc-loop`, `pdlc-contribution-loop`) rendered treeless as their
+  single session. The selected session is the hash route, its stream is the
+  readable transcript (event-trail fallback unchanged), and a **chat bar**
+  beneath the stream posts to `/sessions/reply` with the viewed ref — the outer
+  session's or the PR endpoint's — disabled with the reason when that session
+  cannot receive. The work-item detail page's trace panel SHALL use the same
+  renderer and carry the same chat bar, bound to the selected trace tab.
 - The dashboard SHALL hold no credential and mint none. The network posture is
   unchanged and is stated in its Settings screen: the service binds loopback, so a
   service on **another** machine is reached through an SSH tunnel or a gateway that
@@ -228,6 +253,7 @@ package — there are no install extras (owner decision, PR #162).
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-230 | The transcript becomes readable and steerable: the dashboard's stream pairs each `tool_result` to its `tool_use` by id and collapses tool calls/thinking/bookkeeping behind disclosure (no line renders blank — the reported bug), a new Sessions screen lists every work item in a sidebar with its sessions as a two-level outer/inner tree (ad-hoc items treeless), and a chat bar under any stream posts to `/sessions/reply` with the viewed ref. Server side, the reply route resolves PR endpoints the way dispatch does, so an inner loop's chat lands in that PR's pane; every issue-208 refusal is kept | [spec](../specs/issue-230/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/230) |
 | issue-212 | The plane gained a second consumer without gaining a second implementation: `/api/v1` moved out of `create_app`'s body into one `APIRouter` (`api/routes.py`), and the per-request behaviour that was middleware and app-level handlers — config refresh, error translation, the `api.request` audit — moved onto that router's route class, so it travels into an application the-loop does not own. `create_app` keeps its signature and behaviour; `api/lifespan.py` holds the MCP-session-manager and hosted-ingress composition both consumers need; `api/mcp.build_app` gained an optional `allowed_hosts` for deployments that do not bind where `service.host` says. The new capability is [sdk](sdk.md) | [spec](../specs/issue-212/), [decision-085](../decisions/decision-085.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/212) |
 | issue-228 | The plane can bounce itself: `POST /api/v1/restart` schedules a detached, fixed-argv `the-loop restart [--with-upgrade]` (output at `logs/restart.out`, `restart.scheduled`/`restart.completed` in the event log) — deliberately not an MCP tool. The MCP endpoint became disableable (`service.mcp.enabled: false` mounts nothing; `/mcp` 404s), and the service's start/stop mechanics moved into `core.lifecycle` behind `the-loop start\|stop\|status\|restart` (the granular `service` command folded away on owner review). Amended in the same PR (issue-231): with `service.hostIngresses` (default true) the service hosts the enabled ingresses as threads in its lifespan, each holding its own pidfile flock under the service's pid | [spec](../specs/issue-228/), [decision-084](../decisions/decision-084.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/228), [issue-231](https://github.com/MadaraUchiha-314/the-loop/issues/231) |
 | issue-161 | Capability minted: core facade extracted, API service + OpenAPI contract, loopback-default network posture (no in-app auth — the gateway owns it, decision-059), service lifecycle commands, every core-capability command routed through the service, HTTP-only MCP endpoint on the official SDK, no install extras. The UI was descoped on owner review | [spec](../specs/issue-161/), [decision-058](../decisions/decision-058.md), [decision-059](../decisions/decision-059.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/161) |

@@ -567,6 +567,12 @@ def reply_session(
 ) -> Dict[str, Any]:
     """Deliver an operator's answer into a waiting session's tmux pane (issue-208).
 
+    The ref resolves the way dispatch resolves it (issue-230): the ref's own
+    record first, else the record holding it as a **pull-request endpoint** —
+    so an inner loop's chat bar reaches that PR's pane, not a 404. A closed PR
+    endpoint falls back to the record's own session, the same rule
+    ``SessionRegistry.session_for`` applies to events.
+
     Fail-closed by design: a reply answers an agent that is waiting, so it must
     never *create* one — no session, a paused session, or a dead/absent pane are
     refusals (``LookupError``/``ValueError``, mapped to 404/400 by the API), and
@@ -580,12 +586,22 @@ def reply_session(
     if not text or not text.strip():
         raise ValueError("the reply text is empty; nothing to deliver")
     registry = SessionRegistry(_registry_dir(config, registry_dir))
-    session = registry.find_by_work_item(work_item)
-    if session is None:
+    record = registry.record_owning(work_item)
+    if record is None:
         raise LookupError(
             f"no session registered for {work_item.ref} — a reply never spawns "
             "one; answer on the ticket, or start the work item first"
         )
+    if record.is_paused:
+        raise ValueError(
+            f"the session for {work_item.ref} is paused and delivery is held; "
+            "resume it first"
+        )
+    session = record.endpoint_for(work_item)
+    if session is None or not session.is_live:
+        # A PR whose endpoint closed with its pull request falls back to the
+        # work item's own session — still the one that owns the work.
+        session = record
     if session.is_paused:
         raise ValueError(
             f"the session for {work_item.ref} is paused and delivery is held; "

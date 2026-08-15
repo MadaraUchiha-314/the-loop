@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 export type Route =
   | { name: "dashboard" }
   | { name: "detail"; ref: string }
+  | { name: "sessions"; ref?: string }
   | { name: "attention" }
   | { name: "events" }
   | { name: "settings" };
@@ -23,6 +24,13 @@ export function parseHash(hash: string): Route {
   if (path === "attention") return { name: "attention" };
   if (path === "events") return { name: "events" };
   if (path === "settings") return { name: "settings" };
+  if (path === "sessions") return { name: "sessions" };
+  if (path.startsWith("sessions/")) {
+    // The selected *session's* ref — the work item's for the outer loop, the
+    // PR's for an inner loop; the sidebar derives which item owns it.
+    const ref = decodeURIComponent(path.slice("sessions/".length));
+    return ref ? { name: "sessions", ref } : { name: "sessions" };
+  }
   if (path.startsWith("item/")) {
     const ref = decodeURIComponent(path.slice("item/".length));
     if (ref) return { name: "detail", ref };
@@ -36,6 +44,8 @@ export function hrefFor(route: Route): string {
       return "#/";
     case "detail":
       return `#/item/${encodeURIComponent(route.ref)}`;
+    case "sessions":
+      return route.ref ? `#/sessions/${encodeURIComponent(route.ref)}` : "#/sessions";
     default:
       return `#/${route.name}`;
   }

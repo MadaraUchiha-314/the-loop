@@ -417,9 +417,13 @@ paths:
       description: Deliver an operator's answer into a waiting session's tmux pane
         (bracketed paste, then Enter), emitting `session.reply_sent` and — by default —
         recording a marked report comment on the work item so the ticket stays the
-        paper trail (issue-208). Fail-closed — a reply never spawns, respawns or
-        resumes a session — 404 when the work item has no registered session or its
-        pane is gone; 400 when the session is paused or the text is empty.
+        paper trail (issue-208). The ref resolves the way dispatch resolves it
+        (issue-230) — the ref's own record first, else the record holding it as a
+        pull-request endpoint — so a PR's ref delivers into that inner loop's pane;
+        a closed PR endpoint falls back to the work item's own session. Fail-closed —
+        a reply never spawns, respawns or resumes a session — 404 when the work item
+        has no registered session or its pane is gone; 400 when the session is paused
+        or the text is empty.
       requestBody:
         content:
           application/json:

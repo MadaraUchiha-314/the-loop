@@ -150,6 +150,7 @@ function endpoint(number: number, overrides: Partial<SessionRecord> = {}): Sessi
 }
 
 const TITLES: Record<number, string> = {
+  223: "Ad-hoc: bump the CI cache key",
   214: "Control plane UI over /api/v1",
   209: "Poller heartbeat drops pid",
   205: "Session announce comment loops back",
@@ -174,8 +175,21 @@ export const DEMO_TITLES: Record<string, string> = Object.fromEntries(
   Object.entries(TITLES).map(([number, title]) => [`github:octo/loop-lab#${number}`, title]),
 );
 
+/** An ad-hoc item (`the-loop do`, issue-225): one session, no inner loops. */
+function makeAdhocItem(number: number): WorkItemRecord {
+  return {
+    ...makeWorkItem(number),
+    graph: {
+      loop: "pdlc-adhoc-loop",
+      workItem: `issue-${number}`,
+      nodes: ["work", "review", "complete"].map((id) => ({ id, phase: id, skipped: false, selectable: false })),
+    },
+  };
+}
+
 export const DEMO_WORK_ITEMS: WorkItemRecord[] = [
   makeWorkItem(214, { skipped: ["brainstorming"] }),
+  makeAdhocItem(223),
   makeWorkItem(209, { skipped: ["brainstorming", "design-critic-review"] }),
   makeWorkItem(205, { skipped: ["brainstorming"] }),
   makeWorkItem(198, { command: "pause", polledMinutesAgo: 2880 }),
@@ -249,6 +263,7 @@ export const DEMO_SESSIONS: SessionRecord[] = [
       },
     ],
   }),
+  endpoint(223, { lastEventAt: iso(11) }),
   endpoint(198, { status: "paused", lastEventAt: iso(2880), control: { command: "pause", source: "cli", actor: "maintainer", requestedAt: iso(2880) } }),
   endpoint(219, { lastEventAt: iso(5) }),
   endpoint(178, {
@@ -380,11 +395,24 @@ export const DEMO_EVENTS: EventRecord[] = [
 /**
  * A short transcript in Claude Code's real line format
  * (`type` / `timestamp` / `message.content` blocks), served by the demo
- * transport for any session on the board — the shapes `transcriptTurns`
- * projects, including a server-flagged malformed line so the demo shows how
- * one renders.
+ * transport for any session on the board — every shape `transcriptThread`
+ * projects (issue-230): tool results paired to their calls by `tool_use_id`
+ * (one an error), an orphan result whose call fell outside the tail, a
+ * thinking block, a `summary` bookkeeping line, and a server-flagged
+ * malformed line.
  */
 export const DEMO_TRANSCRIPT: TranscriptEntry[] = [
+  { type: "summary", summary: "Context compacted — 14 earlier turns summarised." },
+  {
+    // The call this answers sits before the served tail — it renders as its
+    // own output row rather than disappearing.
+    type: "user",
+    timestamp: iso(43),
+    message: {
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: "toolu_00", content: "…tail of an earlier `bun run test` run…" }],
+    },
+  },
   {
     type: "user",
     timestamp: iso(42),
@@ -396,15 +424,24 @@ export const DEMO_TRANSCRIPT: TranscriptEntry[] = [
     message: {
       role: "assistant",
       content: [
+        { type: "thinking", thinking: "The briefing template is a gate — read it before touching the PR body." },
         { type: "text", text: "Reading the briefing template and the PR body first." },
-        { type: "tool_use", name: "Read", input: { file_path: "skills/the-loop/templates/pr-briefing.md" } },
+        {
+          type: "tool_use",
+          id: "toolu_01",
+          name: "Read",
+          input: { file_path: "skills/the-loop/templates/pr-briefing.md" },
+        },
       ],
     },
   },
   {
     type: "user",
     timestamp: iso(41),
-    message: { role: "user", content: [{ type: "tool_result", content: "# <PR title> — reviewer briefing…" }] },
+    message: {
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: "toolu_01", content: "# <PR title> — reviewer briefing…" }],
+    },
   },
   {
     type: "assistant",
@@ -413,8 +450,24 @@ export const DEMO_TRANSCRIPT: TranscriptEntry[] = [
       role: "assistant",
       content: [
         { type: "text", text: "Template read. Drafting the briefing with the focus order and the mermaid map." },
-        { type: "tool_use", name: "Write", input: { file_path: "briefing.md" } },
-        { type: "tool_use", name: "Bash", input: { command: "gh pr edit --body-file briefing.md" } },
+        { type: "tool_use", id: "toolu_02", name: "Write", input: { file_path: "briefing.md" } },
+        { type: "tool_use", id: "toolu_03", name: "Bash", input: { command: "gh pr edit --body-file briefing.md" } },
+      ],
+    },
+  },
+  {
+    type: "user",
+    timestamp: iso(38),
+    message: {
+      role: "user",
+      content: [
+        { type: "tool_result", tool_use_id: "toolu_02", content: "wrote briefing.md" },
+        {
+          type: "tool_result",
+          tool_use_id: "toolu_03",
+          content: [{ type: "text", text: "gh: Validation Failed — body too long" }],
+          is_error: true,
+        },
       ],
     },
   },
