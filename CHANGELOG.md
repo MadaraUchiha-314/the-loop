@@ -1,3 +1,9 @@
+## v10.1.0 (2026-08-15)
+
+### Feat
+
+- **issue-212**: a Python SDK that embeds the-loop into somebody else's service (#235)
+
 ## v10.0.0 (2026-08-15)
 
 ### BREAKING CHANGE
