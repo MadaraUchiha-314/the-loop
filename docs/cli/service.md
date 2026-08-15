@@ -55,6 +55,13 @@ an enabled [poller](/config/cli/polling-options) and
 `status`, `stop` and the daemons API answer unchanged. Set it `false` for one process
 per service.
 
+::: tip Already run a Python service?
+You do not have to run this as a process of its own. The same `/api/v1` surface is
+mountable into a FastAPI app you already deploy — behind your auth and middleware, in one
+process — with [the Python SDK](/sdk/). It is the same router, so nothing here drifts from
+what you get there.
+:::
+
 To change the port or bind address, set
 [`service.host` / `service.port`](/config/cli/service-options) in your CLI config:
 

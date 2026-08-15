@@ -44,10 +44,18 @@ package — there are no install extras (owner decision, PR #162).
   `"*"` together with `allowCredentials: true` SHALL refuse to start, before the bind
   and before the run lock. Chromium's private-network preflight SHALL be answered only
   for an origin the allowlist already admits.
-- The CORS middleware SHALL sit outside the audit middleware, so a **preflight** runs
-  no operation and emits no `api.request` event; `/mcp` SHALL keep the SDK's
-  DNS-rebinding protection with its own loopback-only origin allowlist, so no CORS
-  setting makes the MCP endpoint drivable from a page.
+- CORS SHALL be a property of the standalone **application**, never of the router
+  (issue-212): a **preflight** is answered by the middleware and reaches no route, so it
+  runs no operation and emits no `api.request` event, and an embedded mount applies the
+  host application's cross-origin policy rather than the-loop's. `/mcp` SHALL keep the
+  SDK's DNS-rebinding protection with its own origin allowlist, so no CORS setting makes
+  the MCP endpoint drivable from a page.
+- The `/api/v1` surface SHALL be **one `APIRouter`** (`the_loop.api.routes`) consumed by
+  both the standalone app and the [SDK](sdk.md), and the per-request behaviour — the CLI
+  config refresh, the `ValueError`/`LookupError`/`SpliceError` translation and the
+  `api.request` audit event — SHALL ride on that router's **route class** rather than on
+  application middleware or application-level handlers, so it travels wherever the router
+  goes. `health` SHALL stay audit-exempt, keyed on its operation id.
 - The service's lifecycle SHALL be the one surface every the-loop service shares —
   `the-loop start|stop|status|restart` over `core.lifecycle` (issue-228, PR #229
   review: no granular `service` command) — with the issue-159 discipline: the pidfile
@@ -220,6 +228,7 @@ package — there are no install extras (owner decision, PR #162).
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-212 | The plane gained a second consumer without gaining a second implementation: `/api/v1` moved out of `create_app`'s body into one `APIRouter` (`api/routes.py`), and the per-request behaviour that was middleware and app-level handlers — config refresh, error translation, the `api.request` audit — moved onto that router's route class, so it travels into an application the-loop does not own. `create_app` keeps its signature and behaviour; `api/lifespan.py` holds the MCP-session-manager and hosted-ingress composition both consumers need; `api/mcp.build_app` gained an optional `allowed_hosts` for deployments that do not bind where `service.host` says. The new capability is [sdk](sdk.md) | [spec](../specs/issue-212/), [decision-085](../decisions/decision-085.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/212) |
 | issue-228 | The plane can bounce itself: `POST /api/v1/restart` schedules a detached, fixed-argv `the-loop restart [--with-upgrade]` (output at `logs/restart.out`, `restart.scheduled`/`restart.completed` in the event log) — deliberately not an MCP tool. The MCP endpoint became disableable (`service.mcp.enabled: false` mounts nothing; `/mcp` 404s), and the service's start/stop mechanics moved into `core.lifecycle` behind `the-loop start\|stop\|status\|restart` (the granular `service` command folded away on owner review). Amended in the same PR (issue-231): with `service.hostIngresses` (default true) the service hosts the enabled ingresses as threads in its lifespan, each holding its own pidfile flock under the service's pid | [spec](../specs/issue-228/), [decision-084](../decisions/decision-084.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/228), [issue-231](https://github.com/MadaraUchiha-314/the-loop/issues/231) |
 | issue-161 | Capability minted: core facade extracted, API service + OpenAPI contract, loopback-default network posture (no in-app auth — the gateway owns it, decision-059), service lifecycle commands, every core-capability command routed through the service, HTTP-only MCP endpoint on the official SDK, no install extras. The UI was descoped on owner review | [spec](../specs/issue-161/), [decision-058](../decisions/decision-058.md), [decision-059](../decisions/decision-059.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/161) |
 | issue-211 | The dashboard can actually read the service: `service.cors` makes the allowed browser origins configuration, shipping the published page's own origin as the default. Exact-string origins only; `"*"` with credentials refuses to start; an empty list installs no middleware. The bind, the exposure guard and the MCP transport's origin check are unchanged | [spec](../specs/issue-211/), [decision-077](../decisions/decision-077.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/211) |

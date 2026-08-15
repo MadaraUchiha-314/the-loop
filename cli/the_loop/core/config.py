@@ -22,9 +22,9 @@ the-loop process uses (``--config``, ``$THE_LOOP_CLI_CONFIG``, ``./.the-loop/``,
 The API exposes no field that names a file, so this route cannot write anywhere else.
 
 Hot reload comes free for the daemons — :class:`the_loop.reload.Reloader` content-hashes
-this path and the poller and receiver check it as they run — and is arranged for the
-service itself in :mod:`the_loop.api.app`. What cannot reload is reported instead: see
-:data:`RESTART_REQUIRED`.
+this path and the poller and receiver check it as they run — and is arranged for the HTTP
+surface in :mod:`the_loop.api.routes`, whose route class refreshes the holder once per
+request. What cannot reload is reported instead: see :data:`RESTART_REQUIRED`.
 """
 
 from __future__ import annotations

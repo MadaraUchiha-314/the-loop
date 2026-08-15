@@ -19,6 +19,9 @@ hero:
       text: the-loop CLI
       link: /cli/
     - theme: alt
+      text: Python SDK
+      link: /sdk/
+    - theme: alt
       text: View on GitHub
       link: https://github.com/MadaraUchiha-314/the-loop
 
@@ -44,6 +47,13 @@ features:
       session per pull request, execution control, and a structured event log.
     link: /cli/
     linkText: Explore the CLI
+  - title: Or embed it in your own service
+    details: >-
+      The same package is importable. the_loop.sdk mounts the control plane's own router
+      into a FastAPI app you already deploy — behind your auth, your middleware and your
+      lifespan, in one process — or drives the capabilities directly with no HTTP at all.
+    link: /sdk/
+    linkText: Embed the-loop
   - title: Gated, reviewed, documented
     details: >-
       Every phase is gated by human review, and testing is planned before it is executed.

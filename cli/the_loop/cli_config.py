@@ -127,6 +127,42 @@ def load_cli_config(path: Path, strict: bool = False) -> dict:
     return data
 
 
+class ConfigHolder:
+    """The CLI config a long-lived process serves *now*, kept level with the file.
+
+    The daemons have had this since issue-63: :class:`~the_loop.reload.Reloader`
+    content-hashes the config path and rebuilds on change. The control-plane service did
+    not — it closed over whatever it was handed at boot — so a config edited through its
+    own API left it answering from the old one until somebody restarted it (issue-222).
+
+    It lives here rather than beside the routes that drive it because the SDK holds one
+    too (issue-212), and the SDK must be importable without FastAPI (NFR2). Refresh is
+    driven **once per request** rather than per read: one ``sha256`` of a ~10 KB file per
+    call, and no watcher thread. The rebuilt value replaces an attribute rather than
+    mutating the dict in place, so a reader already running in another thread keeps a
+    consistent document. A file that becomes unparseable keeps the previous value — that
+    is ``Reloader``'s documented behaviour, and it is the right one: somebody is mid-edit,
+    not asking for defaults.
+    """
+
+    def __init__(self, initial: Optional[dict], path: Union[str, Path]) -> None:
+        from .reload import Reloader
+
+        self.path = Path(path)
+        self.current: dict = dict(initial or {})
+        # Baselined to the file as it is now, so an unchanged file never rebuilds and a
+        # holder built from an explicit dict keeps serving that dict.
+        self._reloader = Reloader(self.path, self._build)
+
+    def _build(self) -> dict:
+        return load_cli_config(self.path, strict=True)
+
+    def refresh(self) -> None:
+        fresh = self._reloader.poll_for_change()
+        if fresh is not None:
+            self.current = fresh
+
+
 def load_routing_config(path: Optional[Union[str, Path]] = None) -> dict:
     """The top-level ``routing`` block — the policy **both** ingresses run on.
 

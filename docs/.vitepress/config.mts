@@ -69,6 +69,7 @@ const capabilitiesItems = [
   { text: "Capability docs", link: "/capabilities/capability-docs" },
   { text: "Distribution", link: "/capabilities/distribution" },
   { text: "CLI", link: "/capabilities/cli" },
+  { text: "SDK", link: "/capabilities/sdk" },
   { text: "Webhook triggers", link: "/capabilities/webhook-triggers" },
   { text: "Interactive sessions", link: "/capabilities/interactive-sessions" },
   { text: "Observability", link: "/capabilities/observability" },
@@ -120,6 +121,22 @@ const cliSidebar = [
   {
     text: "Extending",
     items: [{ text: "Adding a command", link: "/cli/extending" }],
+  },
+];
+
+// The SDK is the third way to run the same code (issue-212): the CLI, the standalone
+// service, and the-loop imported into somebody else's process. It gets its own section
+// rather than a page under /cli/, because its reader is a developer embedding a library,
+// not an operator running a command.
+const sdkSidebar = [
+  {
+    text: "Python SDK",
+    items: [
+      { text: "Overview", link: "/sdk/" },
+      { text: "Embedding in FastAPI", link: "/sdk/embedding" },
+      { text: "Environment expectations", link: "/sdk/environment" },
+      { text: "API reference", link: "/sdk/reference" },
+    ],
   },
 ];
 
@@ -182,6 +199,7 @@ const developerSidebar = [
     items: [
       { text: "Overview", link: "/reports/" },
       { text: "GitHub queries", link: "/reports/gh-queries" },
+      { text: "Vendor SDKs vs. binaries", link: "/reports/vendor-sdk-analysis" },
       { text: "Status labels & dashboards", link: "/reports/labels-and-dashboards" },
     ],
   },
@@ -226,6 +244,7 @@ export default defineConfig({
     nav: [
       { text: "Guide", link: "/guide/what-is-the-loop" },
       { text: "CLI", link: "/cli/", activeMatch: "^/cli/" },
+      { text: "SDK", link: "/sdk/", activeMatch: "^/sdk/" },
       { text: "Config", link: "/config/", activeMatch: "^/config/" },
       { text: "Reference", link: "/reference/commands" },
       {
@@ -257,6 +276,7 @@ export default defineConfig({
       ],
 
       "/cli/": cliSidebar,
+      "/sdk/": sdkSidebar,
       "/config/": configSidebar,
 
       "/reference/": [
@@ -266,6 +286,7 @@ export default defineConfig({
             { text: "Plugin commands", link: "/reference/commands" },
             { text: "Configuration", link: "/config/" },
             { text: "CLI commands", link: "/cli/commands/" },
+            { text: "Python SDK", link: "/sdk/reference" },
           ],
         },
       ],
