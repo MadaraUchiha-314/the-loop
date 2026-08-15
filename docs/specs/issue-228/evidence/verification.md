@@ -232,3 +232,23 @@ The first full-suite run of this round failed exactly one test —
 `service.hostIngresses` was in the schema before its section existed on
 `docs/config/cli/service-options.md`. Documented, re-ran: 5/5 parity tests green,
 then the clean full run above.
+
+## CI fix on head `ec5fb76` — a transiently-held lock read as a started poller
+
+CI (and only CI) failed
+`test_poll_daemon_integration.py::test_start_reports_a_startup_failure_to_its_caller`:
+`start` reported an unknown-provider poller as `started` (exit 0). The race:
+`poller.daemon.run()` took the single-instance lock **before** validating its
+sources, so a poller doomed by its own config held the lock for the few hundred
+milliseconds its validation took to fail — and `start`'s wait-for-lock proof,
+sampling in that window, honestly saw a held lock. Locally the daemon always
+died before the first sample; CI's slower machine caught the window.
+
+Fix: provider validation (a pure parse + construct, no side effects) moved
+**before** lock acquisition in `run()`, so a config-doomed poller exits without
+ever holding the lock — which is what the test's own *Given* ("exits before
+taking its lock") always described. The lock-first rule keeps fencing what it
+was built to fence: side effects (ledger, web terminal, dependency probes).
+The hosted path (`_run_locked`) is unaffected. Verified: the failing test 5×
+green in a row, the poller/lifecycle/hosted suites (32 passed), and the full
+suite re-run below.

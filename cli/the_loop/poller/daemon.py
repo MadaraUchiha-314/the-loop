@@ -221,6 +221,23 @@ def run(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
     )
     eventlog.configure_from_file("poll")
+
+    # Config validation happens BEFORE the lock. `the-loop start` proves a
+    # daemon started by seeing its lock held, so a poller doomed by its own
+    # config (an unknown provider) must exit without ever holding it —
+    # transiently taking the lock and dying during validation reads as a
+    # successful start to a caller that samples at the wrong moment. This
+    # pre-flight is pure (parse + construct, nothing touched), so it does not
+    # loosen the lock-first rule below, which exists to fence *side effects*.
+    from . import PollConfig, ProviderError, build_provider
+
+    try:
+        for source in PollConfig.from_mapping(_load_polling_config()).sources:
+            build_provider(source, default_label="")
+    except ProviderError as exc:
+        logger.error("%s", exc)
+        return 1
+
     _clear_stale_pidfile(Path(options.pidfile))
 
     # At most one poller per state root (issue-159). Taken BEFORE anything
