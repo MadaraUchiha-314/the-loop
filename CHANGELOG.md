@@ -1,3 +1,20 @@
+## v10.0.0 (2026-08-15)
+
+### BREAKING CHANGE
+
+- the `the-loop poll` command (start/stop/status) is removed.
+Use `the-loop start|stop|status` driven by polling.enabled, or
+`python -m the_loop.daemon_entry poller [--once]` for the foreground/cron
+form. No config migration required: keys were added, none removed.
+- `the-loop gh-webhook` and `the-loop service` are removed
+alongside `the-loop poll`. Use `the-loop start|stop|status|restart` driven
+by the config's enabled flags, or `python -m the_loop.daemon_entry
+<poller|gh-webhook>` for a foreground daemon.
+
+### Feat
+
+- **issue-228**: one lifecycle surface — `the-loop start|stop|status|restart` per config-enabled services (#229)
+
 ## v9.15.0 (2026-08-14)
 
 ### Feat
