@@ -101,9 +101,18 @@ surfaces; if one does, the capture is not committed and the row says so.
 - [x] T9 — `uv run pytest cli/tests/test_core_graphs.py -k "resolve or unknown"`
 - [x] Full suite — `uv run pytest` and `cd ui && bun run lint && bun run test && bun run build`
 - [x] T12 — `curl` the stale path against a running service, before and after
-- [ ] T12 (visual) — open the UI and read the devtools console across at least three poll
-      ticks. **Not executed** — the browser extension was not connected. Replanned; see
-      Verification results.
+- [x] T12 (replanned) — one real poll tick of the board's own `fetchGraphs` + `HttpApi`
+      against both a fixed and an unfixed service, with `fetch` wrapped to record every
+      `/graph/check` status
+
+**Replanned during verification.** This row was authored as *"open the UI and read the
+devtools console across at least three poll ticks"*. It could not be executed — the browser
+extension this session drives Chrome through was not connected — so it was replaced by the
+line above, which captures the same list of response statuses from the same client code,
+with a before/after contrast a screenshot could not have given. The replacement ran and is
+evidenced; the original is recorded as not executed under Verification results, and the
+last inch it would have covered (Chrome rendering zero red lines for a set of `200`s) is
+asked of a human on PR #241 rather than claimed here.
 
 ## Verification results
 

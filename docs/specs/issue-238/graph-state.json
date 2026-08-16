@@ -88,7 +88,7 @@
       "outcome": "",
       "enteredAt": "2026-08-16T02:32:16+00:00",
       "exitedAt": "",
-      "lastBlock": "",
+      "lastBlock": "`validate-artifacts` did not pass:\n- 1 task(s) still unticked (docs/specs/issue-238/testing-plan.md)",
       "forced": false
     }
   },
@@ -275,6 +275,10 @@
     },
     "implementation": {
       "at": "2026-08-16T02:32:16+00:00",
+      "by": "the-loop-session"
+    },
+    "verification": {
+      "at": "2026-08-16T02:40:58+00:00",
       "by": "the-loop-session"
     }
   },
