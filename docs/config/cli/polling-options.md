@@ -153,6 +153,20 @@ Poll issues.
 
 Poll pull requests.
 
+::: info All three comment surfaces, not just the conversation
+A polled pull request is read on the three surfaces GitHub files instructions under
+(issue-246): **conversation comments**, **review bodies**, and **inline review-thread
+comments** — the same set the webhook receiver has always handled. Each is forwarded
+exactly once, judged by its own author against
+[`routing.authorizedUsers`](/config/cli/routing-options#authorizedusers), and an inline
+comment arrives with the file and line it is anchored to.
+
+Two reviews carry no instruction and are not forwarded: an **approval with an empty body**,
+and a **`PENDING`** review its author has not submitted. A polled **issue** costs exactly
+the one request it always did; a polled pull request costs two more (`gh api
+repos/…/pulls/<n>/reviews` and `…/comments`, both paginated).
+:::
+
 ::: tip Where the `gh` binary comes from
 GitHub reads use your existing `gh auth` — the daemon holds no token. The binary is
 configured once at

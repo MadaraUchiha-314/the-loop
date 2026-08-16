@@ -1,3 +1,9 @@
+## v10.2.2 (2026-08-16)
+
+### Fix
+
+- **issue-246**: the poller reads reviews and review threads, not just comments (#249)
+
 ## v10.2.1 (2026-08-16)
 
 ### Fix

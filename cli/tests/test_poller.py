@@ -57,7 +57,7 @@ from the_loop import __version__ as the_loop_version
 from the_loop import eventlog
 from the_loop.workitem import INDEX_FILE, POLL, WorkItemStore
 from the_loop.sessions import Session, SessionRegistry, WorkItemRef
-from the_loop.webhook.router import RoutedEvent
+from the_loop.webhook.router import RoutedEvent, event_actor, event_body
 
 LABEL = "the-loop: auto-execute"
 OWNER, REPO = "octo", "repo"
@@ -224,7 +224,16 @@ def test_gh_list_comments_uses_kind_subcommand(is_pr, sub):
             ]
         }
     )
-    run = FakeRun(stdout=payload)
+
+    class Run(FakeRun):
+        def __call__(self, cmd, **kwargs):
+            self.calls.append(list(cmd))
+            # A PR also reads its reviews and review threads (issue-246); this
+            # test is about the sub-command the *conversation* read uses.
+            out = "[]" if cmd[1] == "api" else payload
+            return subprocess.CompletedProcess(cmd, 0, out, "")
+
+    run = Run()
     client = GhClient(runner=run)
     comments = client.list_comments(OWNER, REPO, 15, is_pr=is_pr)
     assert comments == [
@@ -237,6 +246,169 @@ def test_gh_list_comments_uses_kind_subcommand(is_pr, sub):
         )
     ]
     assert run.calls[0][1] == sub  # gh <issue|pr> view …
+
+
+def _pr_surfaces_client(conversation=(), reviews=(), review_comments=()):
+    """A GhClient answering the three reads a polled PR now performs (issue-246)."""
+
+    class Router:
+        def __init__(self):
+            self.calls = []
+
+        def __call__(self, cmd, **kwargs):
+            self.calls.append(list(cmd))
+            if cmd[1] == "api":
+                path = cmd[2]
+                rows = reviews if "/reviews" in path else review_comments
+                return subprocess.CompletedProcess(cmd, 0, json.dumps(list(rows)), "")
+            out = json.dumps({"comments": list(conversation)})
+            return subprocess.CompletedProcess(cmd, 0, out, "")
+
+    router = Router()
+    return GhClient(runner=router), router
+
+
+def _review(node_id, body, author="octocat", submitted_at="", state="COMMENTED"):
+    return {
+        "id": 4946703449,
+        "node_id": node_id,
+        "user": {"login": author},
+        "body": body,
+        "state": state,
+        "html_url": f"https://github.com/octo/repo/pull/42#pullrequestreview-{node_id}",
+        "submitted_at": submitted_at,
+    }
+
+
+def _review_comment(node_id, body, author="octocat", created_at="", **extra):
+    row = {
+        "id": 12345,
+        "node_id": node_id,
+        "user": {"login": author},
+        "body": body,
+        "path": "cli/the_loop/poller/github.py",
+        "line": 239,
+        "created_at": created_at,
+        "html_url": f"https://github.com/octo/repo/pull/42#discussion_r{node_id}",
+        "diff_hunk": "@@ -239,7 +239,7 @@",
+    }
+    row.update(extra)
+    return row
+
+
+def test_gh_list_comments_on_a_pr_reads_all_three_surfaces():
+    """A review body and an inline comment are comments too (issue-246)."""
+    client, router = _pr_surfaces_client(
+        conversation=[
+            {
+                "id": "IC_1",
+                "body": "conversation",
+                "author": {"login": "octocat"},
+                "createdAt": "2026-08-16T01:00:00Z",
+                "url": "c-url",
+            }
+        ],
+        reviews=[
+            _review("PRR_1", "please rename it", submitted_at="2026-08-16T03:00:00Z")
+        ],
+        review_comments=[
+            _review_comment("PRRC_1", "this line", created_at="2026-08-16T02:00:00Z")
+        ],
+    )
+    comments = client.list_comments(OWNER, REPO, 42, is_pr=True)
+
+    # Merged and ordered by time, not by source (issue-119 depends on thread order).
+    assert [c.id for c in comments] == ["IC_1", "PRRC_1", "PRR_1"]
+    assert [c.kind for c in comments] == ["conversation", "review-thread", "review"]
+    review = comments[-1]
+    assert (review.body, review.author, review.state) == (
+        "please rename it",
+        "octocat",
+        "COMMENTED",
+    )
+    inline = comments[1]
+    assert (inline.path, inline.line) == ("cli/the_loop/poller/github.py", 239)
+
+    paths = [c[2] for c in router.calls if c[1] == "api"]
+    assert any(p.startswith(f"repos/{OWNER}/{REPO}/pulls/42/reviews") for p in paths)
+    assert any(p.startswith(f"repos/{OWNER}/{REPO}/pulls/42/comments") for p in paths)
+    # Every page, oldest-first REST ordering being what hides the newest reviews.
+    assert all("--paginate" in c for c in router.calls if c[1] == "api")
+
+
+def test_gh_list_comments_on_an_issue_is_one_call_exactly_as_before():
+    """Issue polling is untouched: no PR endpoint is reached for an issue."""
+    client, router = _pr_surfaces_client(
+        conversation=[
+            {
+                "id": "IC_1",
+                "body": "hi",
+                "author": {"login": "octocat"},
+                "createdAt": "",
+                "url": "u",
+            }
+        ]
+    )
+    comments = client.list_comments(OWNER, REPO, 15, is_pr=False)
+    assert [c.id for c in comments] == ["IC_1"]
+    assert [c[1] for c in router.calls] == ["issue"]  # one call, no `gh api`
+
+
+@pytest.mark.parametrize(
+    "row,why",
+    [
+        (_review("PRR_empty", "", state="APPROVED"), "an approval with no words"),
+        (_review("PRR_blank", "   \n ", state="APPROVED"), "whitespace only"),
+        (_review("PRR_draft", "not sent yet", state="PENDING"), "never submitted"),
+    ],
+)
+def test_gh_review_carrying_no_instruction_is_not_a_comment(row, why):
+    client, _ = _pr_surfaces_client(reviews=[row])
+    assert client.list_comments(OWNER, REPO, 42, is_pr=True) == [], why
+
+
+def test_gh_review_comment_on_an_outdated_line_keeps_its_original_anchor():
+    """`line` is null once the diff moves on; the anchor is still part of the ask."""
+    client, _ = _pr_surfaces_client(
+        review_comments=[
+            _review_comment("PRRC_old", "stale", line=None, original_line=17)
+        ]
+    )
+    (inline,) = client.list_comments(OWNER, REPO, 42, is_pr=True)
+    assert inline.line == 17
+
+
+def test_gh_review_without_a_user_is_authorized_exactly_as_the_webhook_path_is():
+    """A review GitHub attributes to nobody parses to no author.
+
+    `is_authorized` then **allows** it, because an actor-less action is allowed
+    by design (`the_loop.authz`: a CI event carries status, not instructions).
+    That is the shared contract, and the webhook path answers identically for the
+    same object — `event_actor` reads `review.user.login` and gets `None` — so
+    this test pins the parity, not an ambition. The residual (a review body *is*
+    free-form text, unlike a CI status) is recorded in `design.md`; narrowing it
+    would change both ingresses at once, which is not this work item's scope.
+    """
+    client, _ = _pr_surfaces_client(
+        reviews=[{**_review("PRR_ghost", "do the thing"), "user": None}]
+    )
+    (review,) = client.list_comments(OWNER, REPO, 42, is_pr=True)
+    assert review.author == ""
+    assert is_authorized(review.author, ["octocat"]) is True
+    assert event_actor("pull_request_review", {"review": {"user": None}}) is None
+
+
+def test_gh_review_fetch_failure_is_not_swallowed_into_no_comments():
+    """A broken read must look broken, never like a quiet PR (R4.4)."""
+
+    def runner(cmd, **kwargs):
+        if cmd[1] == "api":
+            return subprocess.CompletedProcess(cmd, 1, "", "HTTP 502: upstream")
+        return subprocess.CompletedProcess(cmd, 0, json.dumps({"comments": []}), "")
+
+    with pytest.raises(ProviderError) as exc:
+        GhClient(runner=runner).list_comments(OWNER, REPO, 42, is_pr=True)
+    assert "502" in str(exc.value)
 
 
 def test_gh_error_on_nonzero_exit():
@@ -382,6 +554,134 @@ def test_provider_comment_event_carries_body_and_is_unlabeled():
     assert ev.event == "issue_comment" and ev.labeled is False
     assert ev.delivery_id == "poll-comment-IC_9"
     assert ev.payload["comment"]["body"] == "the build is red"
+
+
+def _pr_provider():
+    """A provider whose one work item is PR #42 (issue-246 event shapes)."""
+    gh = _gh_client(
+        prs=[
+            {
+                "number": 42,
+                "title": "p",
+                "labels": [{"name": LABEL}],
+                "url": "u",
+                "headRefName": "x",
+                "body": "",
+            }
+        ]
+    )
+    provider = GitHubPollProvider(parse_repos(["octo/repo"]), LABEL, gh=gh)
+    item = provider.list_work_items()[0]
+    return provider, item, provider.refs(item)
+
+
+def test_provider_review_event_is_shaped_like_the_webhook_one():
+    """A review is `pull_request_review`, so the router reads it correctly."""
+    provider, item, refs = _pr_provider()
+    comment = Comment(
+        "PRR_1",
+        "please rename it",
+        "octocat",
+        "2026-08-16T03:00:00Z",
+        "r-url",
+        raw={"kind": "review", "state": "CHANGES_REQUESTED"},
+    )
+    ev = provider.comment_event(item, comment, refs)
+
+    assert (ev.event, ev.action, ev.labeled) == (
+        "pull_request_review",
+        "submitted",
+        False,
+    )
+    assert ev.delivery_id == "poll-comment-PRR_1"
+    review = ev.payload["review"]
+    assert review["body"] == "please rename it"
+    assert review["state"] == "CHANGES_REQUESTED"
+    assert review["user"]["login"] == "octocat"
+    # The two router readers the dispatcher's guards depend on.
+    assert event_actor(ev.event, ev.payload) == "octocat"
+    assert event_body(ev.event, ev.payload) == "please rename it"
+
+
+def test_provider_review_comment_event_carries_its_file_and_line():
+    """An inline comment without its anchor is not an instruction (R2.2)."""
+    provider, item, refs = _pr_provider()
+    comment = Comment(
+        "PRRC_1",
+        "this line is wrong",
+        "octocat",
+        "2026-08-16T02:00:00Z",
+        "d-url",
+        raw={
+            "kind": "review-thread",
+            "path": "cli/the_loop/poller/github.py",
+            "line": 239,
+        },
+    )
+    ev = provider.comment_event(item, comment, refs)
+
+    assert (ev.event, ev.action) == ("pull_request_review_comment", "created")
+    body = ev.payload["comment"]
+    assert (body["path"], body["line"]) == ("cli/the_loop/poller/github.py", 239)
+    assert body["body"] == "this line is wrong"
+    assert event_actor(ev.event, ev.payload) == "octocat"
+    assert event_body(ev.event, ev.payload) == "this line is wrong"
+    # The anchor precedes the body, so a long body truncates before it does.
+    assert list(body)[:2] == ["path", "line"]
+
+
+def test_provider_conversation_comment_event_is_unchanged():
+    """The existing shape is the regression risk of the other two (R4.1)."""
+    provider, item, refs = _pr_provider()
+    ev = provider.comment_event(
+        item, Comment("IC_9", "the build is red", "octocat", "", "u"), refs
+    )
+    assert (ev.event, ev.action) == ("issue_comment", "created")
+    assert ev.payload["comment"]["body"] == "the build is red"
+    assert "review" not in ev.payload
+
+
+def test_provider_passes_the_review_kind_through_to_the_event():
+    """End to end inside the provider: gh JSON in, per-kind event out."""
+    gh, _ = _pr_surfaces_client(
+        reviews=[_review("PRR_1", "rename it", submitted_at="2026-08-16T03:00:00Z")]
+    )
+    provider = GitHubPollProvider(parse_repos(["octo/repo"]), LABEL, gh=gh)
+    item = WorkItem(
+        provider="github",
+        owner=OWNER,
+        repo=REPO,
+        number=42,
+        kind="pull-request",
+        url="u",
+        labels=[LABEL],
+        raw={"headRef": "x", "body": "", "linkedIssues": []},
+    )
+    (comment,) = provider.list_comments(item)
+    assert comment.raw["kind"] == "review"
+    assert provider.comment_event(item, comment, provider.refs(item)).event == (
+        "pull_request_review"
+    )
+
+
+def test_a_self_authored_review_never_leaves_the_poller():
+    """the-loop's own review must not resume its own session (R3.2)."""
+    gh, _ = _pr_surfaces_client(
+        reviews=[_review("PRR_own", mark_self_authored("looks good to me"))]
+    )
+    provider = GitHubPollProvider(parse_repos(["octo/repo"]), LABEL, gh=gh)
+    item = WorkItem(
+        provider="github",
+        owner=OWNER,
+        repo=REPO,
+        number=42,
+        kind="pull-request",
+        url="u",
+        labels=[LABEL],
+        raw={},
+    )
+    (comment,) = provider.list_comments(item)
+    assert is_self_authored(comment.body) is True
 
 
 def _state_client(payload):
@@ -735,6 +1035,38 @@ def test_first_sight_spawns_and_baselines_comments(tmp_path):
     assert summary.spawns == 1 and summary.comments_forwarded == 0
     assert [e.event for e in disp.events] == ["issues"]
     assert state.seen_comments("github:octo/repo#15") == {"IC_1"}
+
+
+def test_the_id_ledger_holds_a_whole_merged_thread(tmp_path):
+    """One ledger now carries three streams of ids, so the cap must fit them.
+
+    An id evicted while it is still live upstream is not merely forgotten: the
+    next cycle sees it as new, forwards it again, resolves it, and evicts it
+    again — a delivery loop (issue-246, R4.3).
+    """
+    ref = f"github:{OWNER}/{REPO}#42"
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    ids = (
+        [f"IC_{n}" for n in range(400)]
+        + [f"PRR_{n}" for n in range(100)]
+        + [f"PRRC_{n}" for n in range(200)]
+    )
+    state.baseline_comments(ref, ids, "t")
+    state.finalize(ref, ids, "t")
+    assert state.seen_comments(ref) == set(ids)
+
+
+def test_a_ledger_written_before_this_change_reads_forward(tmp_path):
+    """Upgrading must not re-forward a thread that was already baselined."""
+    ref = f"github:{OWNER}/{REPO}#42"
+    store = WorkItemStore(tmp_path / "portable")
+    store.write_section(
+        ref,
+        POLL,
+        {"seenComments": ["IC_1"], "commentAttempts": {}, "spawn": {}, "gaveUp": {}},
+    )
+    state = PollState(store)
+    assert state.is_known(ref) and state.seen_comments(ref) == {"IC_1"}
 
 
 def test_existing_session_skips_presence_and_forwards_new_comment(tmp_path):
