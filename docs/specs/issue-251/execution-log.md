@@ -38,7 +38,7 @@ The approval sits where the risk tier says it belongs — a human approving the 
 
 | PR | Scope / tasks | Status |
 |----|---------------|--------|
-| *(opened on push)* | The whole work item — the sweep, both fixes, `--dispatch-lag`, and the rule. | open |
+| [#256](https://github.com/MadaraUchiha-314/the-loop/pull/256) | The whole work item — the sweep, both fixes, `--dispatch-lag`, and the rule. | open |
 
 ## Progress entries
 
