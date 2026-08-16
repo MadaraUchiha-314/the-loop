@@ -487,3 +487,13 @@ the dashboard's refresh behaviour.
 
 - **Node:** verification
 - **Boundary:** entry
+
+### 2026-08-16 — entry implementation
+
+- **Node:** implementation
+- **Boundary:** entry
+
+### 2026-08-16 — entry verification
+
+- **Node:** verification
+- **Boundary:** entry

@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "workItem": "issue-239",
+  "currentNode": "verification",
+  "nodes": {
+    "implementation": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-08-16T19:02:54+00:00",
+      "exitedAt": "2026-08-16T19:02:55+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "verification": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-08-16T19:02:55+00:00",
+      "exitedAt": "",
+      "lastBlock": "",
+      "forced": false
+    }
+  },
+  "decisions": {},
+  "forced": [],
+  "parked": null,
+  "session": {
+    "id": "8e3ef6a8-2035-4cc2-9d79-660e2859a00a",
+    "runner": "tmux",
+    "alive": true
+  },
+  "completions": {},
+  "skips": {},
+  "optIns": {},
+  "surface": "",
+  "loop": "pdlc-pr-loop"
+}
