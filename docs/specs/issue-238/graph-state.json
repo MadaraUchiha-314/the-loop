@@ -310,7 +310,11 @@
     }
   },
   "forced": [],
-  "parked": null,
+  "parked": {
+    "node": "human-approval",
+    "reason": "`classify-feedback` did not pass:\n- feedback so far is not decisive; the gate stays open",
+    "since": "2026-08-16T04:08:53+00:00"
+  },
   "session": null,
   "completions": {
     "requirements-definition": {

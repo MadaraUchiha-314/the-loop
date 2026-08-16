@@ -189,6 +189,29 @@ status: in-progress          # in-progress | complete
   capability docs, reviewer briefing.
 - **Blockers:** none.
 
+### 2026-08-16 04:15 UTC — CI red, then green
+
+- **Phase:** needs-review (human-approval)
+- **Did:** @MadaraUchiha-314 asked for the CI failure to be fixed. One red check
+  (`checks`), two unrelated causes, both in `pre-commit run --all-files` reporting a dirty
+  tree rather than a failing assertion:
+  1. **`ruff format`** rewrapped the `AssertionError` message in
+     `test_check_answers_a_vanished_checkout_instead_of_raising`. My local
+     `pre-commit run --files …` had run before that assertion reached its final shape, so
+     the reformat never happened here.
+  2. **`uv.lock` was stale** — `the-loopy-one 10.1.0` against `cli/pyproject.toml`'s
+     `10.2.0`. The bump commit `809bc2e` updated one and not the other, and main's last CI
+     run predates it, so **this PR was the first to run `uv sync` against that drift**. Not
+     this work item's change; committed here because CI cannot go green without it. I had
+     been reverting the `uv.lock` churn all along as incidental — it was not.
+- **Checkpoint/tests:** applied exactly the two edits CI's own `uv sync` produced (the
+  version, and the `exceptiongroup` marker its newer uv resolves without) rather than my
+  local `uv lock`, whose older uv rewrote the file's `revision` from 3 to 2 and would have
+  drifted again. `ruff format --check` clean over 222 files, `ruff check` clean, targeted
+  suites 33 passed. **All three CI checks now pass: `checks`, `gate`, `ui`.**
+- **Next:** wait at `human-approval`.
+- **Blockers:** none.
+
 ## Verification results
 
 > **Only when this work item declared `test-planning` away** (issue-179). With a
