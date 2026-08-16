@@ -92,6 +92,7 @@ export function useControlPlane(
 
   // A refresh must not race the poll timer into two overlapping fetches.
   const inFlight = useRef<AbortController | null>(null);
+  const graphInFlight = useRef<AbortController | null>(null);
 
   const refresh = useCallback(() => setNonce((value) => value + 1), []);
 
@@ -112,18 +113,26 @@ export function useControlPlane(
     async (refs: Set<string>) => {
       const held = latest.current;
       if (!held) return;
+      // Aborted by the next full load, and on unmount, for the same reason round
+      // one is: a slow targeted check must not land after a full refresh and
+      // overwrite fresher rows with staler ones.
+      graphInFlight.current?.abort();
       const controller = new AbortController();
+      graphInFlight.current = controller;
+
       const reports = await fetchGraphs(
         api,
         held.workItems.filter((item) => refs.has(item.ref)),
         held.sessions.filter((session) => refs.has(session.ref)),
         controller.signal,
       );
-      const merged: GraphReports = {
-        outer: { ...held.graphs.outer, ...reports.outer },
-        inner: { ...held.graphs.inner, ...reports.inner },
-      };
-      held.graphs = merged;
+      if (controller.signal.aborted || latest.current === null) return;
+
+      // Merged against what is held **now**, not against the value read before
+      // the await: two flushes in flight would otherwise both start from the
+      // same base and the second write would drop the first one's report.
+      const merged = mergeReports(latest.current.graphs, reports);
+      latest.current.graphs = merged;
       setViews((current) => applyGraphs(current, merged));
     },
     [api],
@@ -157,6 +166,9 @@ export function useControlPlane(
 
     async function load(): Promise<void> {
       inFlight.current?.abort();
+      // A targeted graph check in flight is about to be answered by this fuller
+      // one; letting it finish would merge a staler report over a fresher row.
+      graphInFlight.current?.abort();
       const controller = new AbortController();
       inFlight.current = controller;
       const { signal } = controller;
@@ -203,15 +215,32 @@ export function useControlPlane(
         cancelled = true;
         clearInterval(timer);
         inFlight.current?.abort();
+        graphInFlight.current?.abort();
       };
     }
     return () => {
       cancelled = true;
       inFlight.current?.abort();
+      graphInFlight.current?.abort();
     };
   }, [api, pollSeconds, nonce]);
 
   return { views, daemons, error, loading, fetchedAt, refresh, stream, transcriptTick };
+}
+
+/**
+ * One report set laid over another — the newer entries win, per key.
+ *
+ * Exported for its own test because it is where a lost update would hide: the
+ * caller must merge against what is held at **write** time, and a helper that
+ * quietly returned one side or mutated an argument would make that impossible to
+ * see.
+ */
+export function mergeReports(base: GraphReports, incoming: GraphReports): GraphReports {
+  return {
+    outer: { ...base.outer, ...incoming.outer },
+    inner: { ...base.inner, ...incoming.inner },
+  };
 }
 
 /**

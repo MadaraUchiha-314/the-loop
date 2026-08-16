@@ -306,6 +306,7 @@ status: in-progress          # in-progress | complete
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
 |-------|-----------------------------|----------|---------|------|
 | 1 | self | the-loop (this session) | **new findings** — 5, all fixed with a failing test first | this log, below |
+| 2 | self | the-loop (this session) | **new findings** — 2, both in the control plane, which round 1 had not read | this log, below |
 
 > `critic-review` was declared skipped at `phase-selection`, so the self-review rounds are
 > the whole automated review chain.
@@ -346,10 +347,26 @@ Two consequences worth naming, because they change observable behaviour:
   but it cost one over-specified assertion in four tests, which asserted on *the first
   frame* rather than on the frame they cared about. Fixed in the tests, not by hiding the
   event.
-- **`design.md` § Components says the broker is started from the lifespan.** It is started
+- **`design.md` § Components said the broker is started from the lifespan.** It is started
   from the router instead, for the reason recorded at task 8-15's checkpoint: the router is
-  the only thing that travels into an embedder's application. The deviation stands; the
-  doc's table row is the stale part.
+  the only thing that travels into an embedder's application. The design's table row now
+  says so.
+
+### Round 2 — two findings, both in the control plane
+
+Round 1 read the service and never opened the browser half. Both of these are the same
+class of defect — a stale answer landing on top of a fresh one — and neither is visible
+except under a burst, which is exactly when streaming is on.
+
+1. **A targeted graph refresh could overwrite fresher rows.** `refreshGraph` created an
+   `AbortController` and dropped it, so a slow `graph/check` could land *after* a full
+   reload and merge a staler report over what the reload had just drawn. It is now
+   aborted by the next full load and on unmount, like round one already was.
+2. **Two coalesced flushes could lose one another's report.** `refreshGraph` read the held
+   reports *before* its `await` and wrote the merge afterwards — a read-modify-write, and
+   two flushes in flight at once meant the second write dropped the first one's result.
+   It now merges against what is held at **write** time, through an exported
+   `mergeReports` whose test pins that it mutates neither side.
 
 ## Security review (gate)
 
