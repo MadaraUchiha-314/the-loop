@@ -629,3 +629,66 @@ def test_dispatcher_without_workspace_uses_spawn_workdir(tmp_path):
     dispatcher.stop()
     _, _, cwd, _ = tmux.spawns[0]
     assert cwd == str(tmp_path)
+
+
+# -- a PR endpoint's own checkout (issue-253) ---------------------------------
+
+
+def _cross_repo_pr_event(other_bare: Path, number=16, delivery="x-1"):
+    """A PR in `octo/other` delivering the work item `octo/repo#15` (issue-183)."""
+    payload = {
+        "action": "synchronize",
+        "repository": {
+            "full_name": "octo/other",
+            "html_url": "https://github.com/octo/other",
+            "clone_url": str(other_bare),
+        },
+        "pull_request": {
+            "number": number,
+            "head": {"ref": "main"},
+            "body": "Closes octo/repo#15",
+            "merged": False,
+        },
+    }
+    return RoutedEvent(
+        event="pull_request",
+        action="synchronize",
+        delivery_id=delivery,
+        work_items=extract_work_items("pull_request", payload),
+        payload=payload,
+    )
+
+
+def test_a_cross_repo_pr_endpoint_spawns_in_its_own_checkout(tmp_path):
+    """The inner loop survives issue-253, and gains the thing it was missing.
+
+    A pull request in ANOTHER repository still gets its own session — and now
+    that session runs in a checkout of **that** repository, keyed on the PR's own
+    slug, instead of sharing the work item's tree with the work item's session.
+    """
+    bare = make_origin(tmp_path)
+    other = make_origin(tmp_path, name="other")
+    registry, dispatcher, tmux = _dispatcher(tmp_path, bare)
+    item = WorkItemRef.parse("github:octo/repo#15")
+    ws = Workspace(tmp_path / "root")
+    record_cwd = ws.ensure_worktree(target_for(bare), item.slug)
+    registry.register(
+        Session(
+            work_item=item,
+            harness="claude",
+            harness_session_id="s-1",
+            cwd=str(record_cwd),
+        )
+    )
+    dispatcher.handle(_cross_repo_pr_event(other))
+    assert _wait(lambda: len(tmux.spawns) == 1)
+    dispatcher.stop()
+    spawn_ref, _, cwd, _ = tmux.spawns[0]
+    assert spawn_ref == "github:octo/other#16"
+    pr = WorkItemRef.parse(spawn_ref)
+    assert Path(cwd) == ws.worktree_dir(target_for(other, repo="other"), pr.slug)
+    assert Path(cwd) != record_cwd  # the whole point: two sessions, two trees
+    record = registry.find_by_work_item(item)
+    assert record is not None
+    ((endpoint,),) = (record.pull_requests,)
+    assert endpoint.cwd == cwd  # recorded, so resume and cleanup find it

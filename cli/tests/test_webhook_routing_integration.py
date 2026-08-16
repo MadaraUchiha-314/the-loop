@@ -550,14 +550,17 @@ def pr_conversation_comment_payload(pr_number=16, body="Closes #15"):
 def test_pr_comment_reaches_the_linked_issues_work_item(server_factory, tmp_path):
     """
     Feature: Webhook event routing
-    Scenario: A comment on a labelled PR reaches the linked issue's work item
+    Scenario: A comment on a labelled PR reaches the linked issue's one session
         Given a session registered for github:octo/repo#15
-        And a labelled PR 16 whose body closes issue 15
+        And a labelled PR 16 in the SAME repository whose body closes issue 15
         And spawnOnUnmatched: labeled (so an unmatched PR event would spawn)
         When a conversation comment is posted on PR 16
-        Then the PR gets its own session under issue 15's record (sessionPerPr)
+        Then it is delivered into issue 15's own session
+        And no second session is spawned into issue 15's working tree
         And no second work-item record is created for the PR's own ref
-    Requirement: docs/specs/issue-93/bugfix.md#AC4, docs/specs/issue-172/bugfix.md#R2
+        And the PR is still recorded as delivering issue 15
+    Requirement: docs/specs/issue-93/bugfix.md#AC4, docs/specs/issue-172/bugfix.md#R2,
+        docs/specs/issue-253/bugfix.md#R1
     """
     port, registry, tmux = server_factory(
         spawn_on_unmatched="labeled", auto_execute_label=AUTO_LABEL
@@ -569,18 +572,15 @@ def test_pr_comment_reaches_the_linked_issues_work_item(server_factory, tmp_path
         == 202
     )
 
-    def endpoint_spawned():
-        found = registry.find_by_work_item(REF)
-        return found is not None and any(
-            "pr-c-1" in pr.recent_deliveries for pr in found.pull_requests
-        )
-
-    assert wait_until(endpoint_spawned)
-    ((ref, prompt, _, _),) = tmux.spawns  # the PR's own endpoint...
-    assert ref == "github:octo/repo#16"
+    assert wait_until(lambda: len(tmux.delivers) == 1)
+    ((ref, prompt),) = tmux.delivers
+    assert ref == REF  # the work item's own session — one owner, one tree
     assert "please rerun CI" in prompt
-    assert registry.find_by_work_item("github:octo/repo#16") is None  # ...no record
-    assert registry.find_by_work_item("github:octo/repo#16") is None
+    assert tmux.spawns == []
+    assert registry.find_by_work_item("github:octo/repo#16") is None  # no record
+    record = registry.find_by_work_item(REF)
+    assert record is not None
+    assert [pr.work_item.ref for pr in record.pull_requests] == ["github:octo/repo#16"]
 
 
 def test_new_issue_without_label_does_nothing(server_factory):
@@ -640,17 +640,19 @@ def test_pr_event_still_reaches_its_work_item_after_the_link_is_removed(
         Given a session registered for github:octo/repo#15
         And a comment on PR 16 whose description declares "Closes #15"
         When that comment routes, PR 16 is recorded on issue 15's session record
-        And the PR gets its own session under that record (sessionPerPr)
         And when a second comment arrives on PR 16 with the closing keyword gone
-        Then it is delivered into the PR's recorded session
+        Then it is still delivered into issue 15's session, off the recorded
+             binding alone — the derivation the ticket describes as fragile is
+             never consulted again
         And no work-item record is ever created for the PR's own ref
-    Requirement: docs/specs/issue-172/bugfix.md#R5 (R2.1, R1.1, R5.1)
+    Requirement: docs/specs/issue-172/bugfix.md#R5 (R2.1, R1.1, R5.1),
+        docs/specs/issue-253/bugfix.md#R1
     """
     port, registry, tmux = server_factory()
     register(registry, tmp_path)
 
     # Step 3 of the ticket's reproduction: the linkage is present. The routing
-    # decision now leaves a trace — the PR on the record, with its own session.
+    # decision now leaves a trace — the PR on the record.
     assert (
         post_webhook(
             port,
@@ -660,15 +662,14 @@ def test_pr_event_still_reaches_its_work_item_after_the_link_is_removed(
         )
         == 202
     )
-    assert wait_until(lambda: len(tmux.spawns) == 1)
-    assert tmux.spawns[0][0] == PR_REF  # the PR's own endpoint
+    assert wait_until(lambda: len(tmux.delivers) == 1)
     record = registry.find_by_work_item(REF)
     assert record is not None
     assert [pr.work_item.ref for pr in record.pull_requests] == [PR_REF]
 
     # Steps 4 and 5: the Development-panel link is gone, the closing keyword is
     # edited out — derivation fails exactly as the ticket describes, and the
-    # recorded endpoint is still the one working this PR.
+    # recorded binding is still what carries the event to the work item.
     assert (
         post_webhook(
             port,
@@ -678,10 +679,10 @@ def test_pr_event_still_reaches_its_work_item_after_the_link_is_removed(
         )
         == 202
     )
-    assert wait_until(lambda: len(tmux.delivers) == 1)
-    ref, prompt = tmux.delivers[0]
-    assert ref == PR_REF and "and again please" in prompt
-    assert len(tmux.spawns) == 1  # no duplicate session
+    assert wait_until(lambda: len(tmux.delivers) == 2)
+    assert [ref for ref, _ in tmux.delivers] == [REF, REF]
+    assert "and again please" in tmux.delivers[1][1]
+    assert tmux.spawns == []  # never a second session in the work item's tree
     assert registry.find_by_work_item(PR_REF) is None  # no record for the PR
 
 

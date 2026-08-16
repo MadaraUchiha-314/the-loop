@@ -1148,21 +1148,87 @@ def test_dispatcher_pr_close_never_spawns(tmp_path):
 
 
 def test_dispatcher_still_routes_pr_events_that_are_not_close(tmp_path):
-    """A non-close PR event routes normally — under sessionPerPr (the default)
-    that now means the PR's own endpoint is spawned for it (issue-172)."""
+    """A non-close PR event routes normally. The PR is in the work item's OWN
+    repository, so it is the work item's own delivery and its events go into the
+    work item's session — one owner per work item (issue-253). It is still
+    recorded on the record as a PR delivering it."""
     tmux = FakeTmux()
     registry, dispatcher = make_dispatcher(tmp_path, tmux)
     registry.register(make_session())
     open_pr = routed_pr_closed(delivery="o-1", merged=False)
     open_pr.action = "synchronize"  # a non-close PR event still routes normally
     dispatcher.handle(open_pr)
-    assert wait_until(lambda: len(tmux.spawns) == 1)
+    assert wait_until(lambda: len(tmux.delivers) == 1)
     dispatcher.stop()
-    ((spawn_ref, _, _, _),) = tmux.spawns
-    assert spawn_ref == "github:octo/repo#16"  # the PR's endpoint, not a record
+    assert tmux.spawns == []  # no second session in the work item's tree
+    assert tmux.delivers[0][0] == REF
     record = registry.find_by_work_item(REF)
     assert record is not None  # not closed
-    assert [pr.work_item.ref for pr in record.pull_requests] == [spawn_ref]
+    assert [pr.work_item.ref for pr in record.pull_requests] == ["github:octo/repo#16"]
+    # …and the endpoint stays a binding, never a conversation.
+    assert record.pull_requests[0].tmux_target == ""
+
+
+def test_a_same_repo_pr_never_gets_a_session_even_once_it_has_a_record(tmp_path):
+    """The rule holds for an endpoint that was already given a session — by an
+    older the-loop, or by hand. Routing stops feeding the second conversation
+    rather than leaving two owners in one tree (issue-253)."""
+    tmux = FakeTmux()
+    registry, dispatcher = make_dispatcher(tmp_path, tmux)
+    registry.register(make_session())
+    endpoint = registry.link_pull_request(REF, "github:octo/repo#16")
+    assert endpoint is not None
+    endpoint.tmux_target = "loop-github-octo-repo-16"  # a pre-issue-253 leftover
+    endpoint.harness_session_id = "pr-sess"
+    registry.save_endpoint(REF, endpoint)
+    open_pr = routed_pr_closed(delivery="o-3", merged=False)
+    open_pr.action = "synchronize"
+    dispatcher.handle(open_pr)
+    assert wait_until(lambda: len(tmux.delivers) == 1)
+    dispatcher.stop()
+    assert tmux.delivers[0][0] == REF  # the work item's, not the leftover's
+    assert tmux.spawns == []
+
+
+def routed_cross_repo_pr(delivery="x-1", number=16, repo="octo/other"):
+    """A PR in ANOTHER repository, delivering `octo/repo#15` (issue-183)."""
+    payload = {
+        "action": "synchronize",
+        "repository": {"full_name": repo},
+        "pull_request": {
+            "number": number,
+            "head": {"ref": "claude/github-issue-15-x"},
+            "body": "Closes octo/repo#15",
+            "merged": False,
+        },
+    }
+    return RoutedEvent(
+        event="pull_request",
+        action="synchronize",
+        delivery_id=delivery,
+        work_items=extract_work_items("pull_request", payload),
+        payload=payload,
+    )
+
+
+def test_a_cross_repo_pr_without_a_workspace_is_declined_not_collided(tmp_path):
+    """A PR in another repository is the case the inner loop exists for — but a
+    session is only worth having with a checkout of its own, and without
+    `routing.workspace.root` there is none. So it is declined and the event lands
+    in the work item's session rather than spawning into its tree (issue-253)."""
+    tmux = FakeTmux()
+    registry, dispatcher = make_dispatcher(tmp_path, tmux)
+    registry.register(make_session())
+    dispatcher.handle(routed_cross_repo_pr())
+    assert wait_until(lambda: len(tmux.delivers) == 1)
+    dispatcher.stop()
+    assert tmux.spawns == []
+    assert tmux.delivers[0][0] == REF
+    record = registry.find_by_work_item(REF)
+    assert record is not None
+    # The binding is still recorded: which PRs deliver this work item is a fact
+    # about the work item, independent of how many conversations it has.
+    assert [pr.work_item.ref for pr in record.pull_requests] == ["github:octo/other#16"]
 
 
 def test_dispatcher_delivers_pr_events_into_the_work_items_session_when_collapsed(
@@ -1490,3 +1556,34 @@ def test_webhook_hot_reload_applies_on_next_event(tmp_path, monkeypatch):
     dispatcher.stop()
 
     assert dispatcher.config.spawn_on_unmatched == "always"
+
+
+def test_an_endpoint_checkout_that_lands_on_the_records_tree_is_refused(
+    tmp_path, caplog
+):
+    """The invariant is enforced, not inferred from the workspace's layout.
+
+    `_prepare_workspace` has a fallback — a payload naming no repository gets
+    `spawnWorkdir` — that can resolve to the record's own tree. Whatever produced
+    the path, a second session is refused there: two harness conversations never
+    share a working tree (issue-253).
+    """
+    from the_loop.webhook.dispatcher import WorkspaceConfig
+
+    tmux = FakeTmux()
+    registry, dispatcher = make_dispatcher(
+        tmp_path, tmux, workspace=WorkspaceConfig(root=str(tmp_path / "ws"))
+    )
+    assert dispatcher.workspace is not None  # the no-workspace branch is NOT what ran
+    record = make_session()
+    registry.register(record)
+    # Stand in for every way a prepared checkout can come back as the record's:
+    # the point under test is the guard, not the fallback that reaches it.
+    dispatcher._prepare_workspace = lambda work_item, routed: record.cwd
+    with caplog.at_level(logging.INFO, logger="the-loop.gh-webhook"):
+        dispatcher.handle(routed_cross_repo_pr(delivery="x-2"))
+        assert wait_until(lambda: len(tmux.delivers) == 1)
+    dispatcher.stop()
+    assert tmux.spawns == []
+    assert tmux.delivers[0][0] == REF
+    assert any("own tree" in r.message for r in caplog.records)

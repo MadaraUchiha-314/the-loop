@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [088](decision-088.md) | A work item's own pull request is the work item's session — an endpoint needs a tree, not a toggle | proposed | 2026-08-16 |
 | [087](decision-087.md) | Server-Sent Events, not WebSocket, for the control-plane stream | proposed | 2026-08-16 |
 | [086](decision-086.md) | The event excerpt is a field allow-list, and the constant text stays put — for now | proposed | 2026-08-16 |
 | [085](decision-085.md) | Ship the SDK as a router + lifespan seam, not a second application | proposed | 2026-08-15 |
