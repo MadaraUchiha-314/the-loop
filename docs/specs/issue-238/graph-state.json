@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-238",
-  "currentNode": "requirements-definition",
+  "currentNode": "requirements-approval",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -21,10 +21,18 @@
     },
     "requirements-definition": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-08-16T01:41:57+00:00",
-      "exitedAt": "",
+      "exitedAt": "2026-08-16T01:47:08+00:00",
       "lastBlock": "`validate-artifacts` did not pass:\n- artifact is not locked \u2014 front-matter says status: draft, expected status: approved (docs/specs/issue-238/bugfix.md)",
+      "forced": false
+    },
+    "requirements-approval": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-08-16T01:47:08+00:00",
+      "exitedAt": "",
+      "lastBlock": "",
       "forced": false
     }
   },
@@ -194,7 +202,7 @@
   "session": null,
   "completions": {
     "requirements-definition": {
-      "at": "2026-08-16T01:46:37+00:00",
+      "at": "2026-08-16T01:47:08+00:00",
       "by": "the-loop-session"
     }
   },
