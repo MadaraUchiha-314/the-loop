@@ -1,7 +1,7 @@
 ---
 type: execution-log
 workItem: "github:MadaraUchiha-314/the-loop#238"
-phase: requirements-definition  # not-started | brainstorming | requirements-definition | design | test-planning | tasks-breakdown | implementation | verification | needs-review | complete
+phase: test-planning         # not-started | brainstorming | requirements-definition | design | test-planning | tasks-breakdown | implementation | verification | needs-review | complete
 status: in-progress          # in-progress | complete
 # repos:                     # OPTIONAL (issue-183). The CONTRIBUTING repositories this
 #   - <owner>/<repo>         #   work item raises pull requests in — one inner loop each,
@@ -28,9 +28,9 @@ status: in-progress          # in-progress | complete
 | Phase | Entered | Reviewed/approved by | Notes |
 |-------|---------|----------------------|-------|
 | phase-selection | 2026-08-16 | @MadaraUchiha-314 | Full process; `brainstorming` declared skipped; `design-critic-review` not selected. Outer loop iterates **on a pull request**. |
-| requirements-definition | 2026-08-16 |  | `bugfix.md` (a bug, so `bugfix.md` not `requirements.md`). |
-| design |  |  |  |
-| test-planning |  |  |  |
+| requirements-definition | 2026-08-16 | @MadaraUchiha-314 (PR #241) | `bugfix.md` (a bug, so `bugfix.md` not `requirements.md`). Approved 2026-08-16. |
+| design | 2026-08-16 |  | Settled the deferred question **server-side only**; recorded the rejected session-listing alternative. |
+| test-planning | 2026-08-16 |  | 12 rows, 5 in scope. Two existing tests are rewritten, not deleted — called out explicitly. |
 | tasks-breakdown |  |  |  |
 | implementation |  |  |  |
 | verification |  |  |  |
@@ -85,6 +85,27 @@ status: in-progress          # in-progress | complete
 - **Checkpoint/tests:** reproduction confirmed — `POST /api/v1/graph/check` with the stale
   `devbox#2` worktree path returns `400 {"detail":"repo path is not a directory: …"}`.
 - **Next:** open the PR carrying `bugfix.md` and request review of the requirements.
+- **Blockers:** none.
+
+### 2026-08-16 02:05 UTC — requirements approved; design and testing plan written
+
+- **Phase:** design → test-planning
+- **Did:** @MadaraUchiha-314 approved on PR #241 without answering the deferred
+  server-side/client-side question, so `design.md` settles it: **server-side only**.
+  `core.graphs.check` returns a `200` "position unknown" report for a `repo` that does not
+  resolve; `fetchGraphs` drops that answer exactly as it drops today's rejection, so
+  `railFromFrozen` still renders the row. The session-listing alternative is recorded as
+  rejected with its three reasons rather than dropped. Then wrote `testing-plan.md`:
+  12 rows, 5 in scope, each `n/a` carrying a reason.
+- **Checkpoint/tests:** `markdownlint` clean on all three artifacts. Read the two existing
+  tests that assert today's `400` — `test_check_malformed_repo_never_reaches_the_graph`
+  (`cli/tests/test_core_graphs.py:37`) and `test_graph_check_rejects_a_bad_repo_path`
+  (`cli/tests/test_api_routers_integration.py:85`) — and planned their rewrite explicitly,
+  with the red run as its own evidence row.
+- **Corrected:** R3.3 of `bugfix.md` said the OpenAPI contract "SHALL be regenerated rather
+  than hand-edited". False here — issue-161 made the contract **authored**, with a parity
+  test asserting the app serves it. Reworded in place, with the correction noted inline.
+- **Next:** wait for the `design-approval` gate (one gate, both artifacts).
 - **Blockers:** none.
 
 ## Verification results

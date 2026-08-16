@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-238",
-  "currentNode": "test-planning",
+  "currentNode": "design-approval",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -53,8 +53,16 @@
     },
     "test-planning": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-08-16T02:02:39+00:00",
+      "exitedAt": "2026-08-16T02:07:16+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "design-approval": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-08-16T02:07:16+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -231,6 +239,10 @@
     },
     "design": {
       "at": "2026-08-16T02:02:39+00:00",
+      "by": "the-loop-session"
+    },
+    "test-planning": {
+      "at": "2026-08-16T02:07:16+00:00",
       "by": "the-loop-session"
     }
   },
