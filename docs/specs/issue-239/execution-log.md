@@ -50,7 +50,7 @@ status: in-progress          # in-progress | complete
 
 | PR | Scope / tasks | Status |
 |----|---------------|--------|
-| [#242](https://github.com/MadaraUchiha-314/the-loop/pull/242) | The whole work item — the spec chain (this item iterates its outer loop on a PR) and the implementation. | open |
+| [#244](https://github.com/MadaraUchiha-314/the-loop/pull/244) | The whole work item — the spec chain (this item iterates its outer loop on a PR) and the implementation. | open |
 
 ## Progress entries
 
