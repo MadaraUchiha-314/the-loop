@@ -137,7 +137,16 @@ def record_feedback(ctx: HookContext) -> HookResult:
     text = path.read_text(encoding="utf-8")
     entry = [f"\n### {date.today().isoformat()} — {outcome}\n"]
     for comment in comments:
-        entry.append(f"\n**@{comment['author']}**\n\n{comment['body'].strip()}\n")
+        # The attribution carries trailing text on purpose (issue-247): a line
+        # that is emphasis and nothing else is what markdownlint's MD036 rejects,
+        # so `**@handle**` alone left every approved artifact failing the lint the
+        # same project is configured with. The body stays verbatim — the harness
+        # fixes its own markdown, never a human's words.
+        body = comment["body"].strip()
+        if body:
+            entry.append(f"\n**@{comment['author']}** wrote:\n\n{body}\n")
+        else:
+            entry.append(f"\n**@{comment['author']}** left no comment text.\n")
     block = "".join(entry)
 
     if f"## {REVIEW_SECTION}" in text:
