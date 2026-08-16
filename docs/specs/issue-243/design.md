@@ -78,15 +78,18 @@ _EVENT_CONTAINERS: Dict[str, Tuple[str, ...]] # event name    -> containers to r
 | `check_run` | `name`, `status`, `conclusion`, `output`, `html_url`, `details_url` | `output` is `{title, summary}` — the failure message itself |
 | `check_suite` | `status`, `conclusion`, `head_branch`, `head_sha` | A suite has no `html_url` and no name |
 
-Each container additionally carries `author` — `user.login` flattened to a string (R1.5) —
-and never the `user` object.
+The `comment` and `review` containers additionally carry `author` — `user.login`
+flattened to a string (R1.5), never the `user` object. The other containers do **not**: an
+`issue`'s `user` is whoever *opened* it, not who acted, and reading an opener as the person
+to reply to is a mistake worth making structurally impossible.
 
 | Event | Containers read |
 |---|---|
 | `issue_comment`, `pull_request_review_comment` | `comment` |
 | `pull_request_review` | `review` |
 | `issues` | `issue`, `label` |
-| `pull_request`, `pull_request_review_thread` | `pull_request`, `label` |
+| `pull_request` | `pull_request`, `label` |
+| `pull_request_review_thread` | `pull_request` (a thread event carries no label) |
 | `workflow_run` / `check_run` / `check_suite` | the same-named container (plus `pull_request`? **no** — see below) |
 | `status` | none; `status` fields sit at the payload root, so a third table entry carries `state`, `context`, `description`, `target_url` |
 | anything else (operator-configured event) | every container in `_CONTAINERS` the payload happens to carry (R2.6) |
@@ -141,7 +144,8 @@ The rendered excerpt for the ticket's own worked example — a conversation comm
 }
 ```
 
-238 characters, against 4,014 today, for the same event.
+203 characters, against 4,014 before, for the same event — and it parses, which the
+old one did not.
 
 ## Error handling
 
@@ -192,7 +196,7 @@ the constant part is:
 | Template shell (header, “react to this event per the-loop's rules”, UNTRUSTED framing) | 748 | Only the 4 header values |
 | `$interaction_directive` (`work-item` mode) | 1,542 | Constant per mode; re-read from config on reload |
 | `$graph_context` | ~372 | **Yes** — current node, phase, gate verdict, resume command |
-| Distilled excerpt | ~240 | Yes |
+| Distilled excerpt | ~203 | Yes |
 
 So ~2,290 characters (~570 tokens) per event are byte-identical to the previous event's.
 At 50 events on a work item that is ~29k tokens — real, but an order of magnitude below

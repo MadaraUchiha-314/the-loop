@@ -6,7 +6,7 @@ row **T8**.
 ## Command
 
 ```console
-$ uv run python docs/specs/issue-243/evidence/measure_prompt.py
+uv run python docs/specs/issue-243/evidence/measure_prompt.py
 ```
 
 ## Output

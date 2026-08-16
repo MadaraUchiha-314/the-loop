@@ -7,7 +7,7 @@ the run below fails on assertions about behaviour — not on an `ImportError`.
 ## Command
 
 ```console
-$ uv run pytest cli/tests/test_excerpt.py -q
+uv run pytest cli/tests/test_excerpt.py -q
 ```
 
 ## Output
