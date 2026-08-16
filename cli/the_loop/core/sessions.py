@@ -258,30 +258,31 @@ def _tail_lines(path: Path, tail: int) -> Tuple[int, List[str]]:
     return total, list(kept)
 
 
-def get_transcript(
+def _transcript_target(
     ref: str,
-    tail: int = 200,
     config: Optional[dict] = None,
     registry_dir: str = "",
-) -> Dict[str, Any]:
-    """The harness's own transcript for a work item's session (issue-209).
+) -> Tuple[Any, Path]:
+    """The endpoint whose transcript this is, and where the file is (issue-209).
 
     the-loop runs the harness as a CLI in tmux, so a session's turns and tool
     calls are the harness's file, not the service's: for Claude Code,
     ``<projects root>/<munged cwd>/<harnessSessionId>.jsonl`` — both halves
     recorded at registration, so the path is derived, never asked for.
 
-    Fail-closed by design: this is the plane's first route that returns file
-    contents from disk, and it serves transcripts, not the filesystem. The
+    Fail-closed by design: the plane serves transcripts, not the filesystem. The
     session id is validated before any filesystem touch (a registry record is
     writable through ``POST /sessions/register``), and only a regular
-    ``<id>.jsonl`` resolving inside the projects root is ever opened.
+    ``<id>.jsonl`` resolving inside the projects root is ever returned. Every
+    refusal is a :class:`LookupError` naming the reason, which the route maps to
+    404.
 
-    A read like :func:`get_session` — no ``messages``/``exitCode`` envelope.
+    Split out of :func:`get_transcript` for the stream's transcript watch
+    (issue-239), which needs to **stat** this file every tick without reading it.
+    One derivation, one set of refusals: a second copy in the broker would be a
+    second place for this boundary to be got wrong.
     """
     work_item = WorkItemRef.parse(ref)  # ValueError on a malformed ref
-    if tail < 0:
-        raise ValueError("tail must be >= 0 (0 means the whole file)")
     registry = SessionRegistry(_registry_dir(config, registry_dir))
     endpoint = _transcript_endpoint(registry, work_item)
     if endpoint is None:
@@ -316,6 +317,40 @@ def get_transcript(
         raise LookupError(
             f"no transcript at {candidate} — the session may not have written one yet"
         )
+    return endpoint, path
+
+
+def transcript_path(
+    ref: str,
+    config: Optional[dict] = None,
+    registry_dir: str = "",
+) -> Path:
+    """Where a work item's transcript file is, with every refusal above applied.
+
+    The stream's transcript watch (issue-239) needs to **stat** this file every
+    tick without reading it, and must not re-derive the path: one derivation, one
+    set of refusals, so the boundary cannot be got wrong in a second place.
+    """
+    return _transcript_target(ref, config=config, registry_dir=registry_dir)[1]
+
+
+def get_transcript(
+    ref: str,
+    tail: int = 200,
+    config: Optional[dict] = None,
+    registry_dir: str = "",
+) -> Dict[str, Any]:
+    """The harness's own transcript for a work item's session (issue-209).
+
+    The path — and every refusal that can stop one being derived — is
+    :func:`transcript_path`; this adds the tail and the envelope.
+
+    A read like :func:`get_session` — no ``messages``/``exitCode`` envelope.
+    """
+    if tail < 0:
+        raise ValueError("tail must be >= 0 (0 means the whole file)")
+    work_item = WorkItemRef.parse(ref)  # ValueError on a malformed ref
+    endpoint, path = _transcript_target(ref, config=config, registry_dir=registry_dir)
     total, lines = _tail_lines(path, tail)
     entries: List[Dict[str, Any]] = []
     for line in lines:
@@ -329,7 +364,7 @@ def get_transcript(
     return {
         "workItem": work_item.ref,
         "harness": endpoint.harness,
-        "harnessSessionId": sid,
+        "harnessSessionId": endpoint.harness_session_id,
         "path": str(path),
         "totalLines": total,
         "truncated": total > len(entries),

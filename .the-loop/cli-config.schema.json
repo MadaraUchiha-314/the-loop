@@ -847,6 +847,33 @@
             }
           }
         },
+        "stream": {
+          "type": "object",
+          "description": "The server-push stream (issue-239): GET /api/v1/stream, text/event-stream. A READ surface over the same records GET /api/v1/events already serves, held open so the control plane re-renders when the workstation changes instead of on a timer. Governed by `service.cors` like every other route — that parity is why the transport is SSE and not a WebSocket, whose handshake is exempt from CORS (docs/specs/issue-239/design.md).",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true,
+              "description": "Whether the service serves /api/v1/stream. Default true; false answers 404 and starts no tailer, narrowing a deployment to REST-only exactly as `service.mcp.enabled` does. An ABSENT block means unconfigured, not disabled.",
+              "examples": [false]
+            },
+            "maxSubscribers": {
+              "type": "integer",
+              "default": 8,
+              "minimum": 1,
+              "description": "Simultaneous open stream connections. Beyond this the service answers 503 and never accepts the connection, so an open dashboard cannot starve the REST surface (requirements R5.1, abuse case 1). A value below 1 clamps up: the bound is not configurable away.",
+              "examples": [16]
+            },
+            "keepAliveSeconds": {
+              "type": "integer",
+              "default": 15,
+              "minimum": 1,
+              "description": "Interval between SSE keep-alive comments on an idle connection, which is what stops an intermediary reaping it. Lower it only if something between the browser and the service reaps idle connections faster than this.",
+              "examples": [30]
+            }
+          }
+        },
         "hostIngresses": {
           "type": "boolean",
           "default": true,

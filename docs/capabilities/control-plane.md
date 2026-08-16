@@ -33,6 +33,40 @@ package — there are no install extras (owner decision, PR #162).
   network scoping: it SHALL bind loopback by default and refuse a non-loopback bind
   unless `service.exposed: true`. No
   credential SHALL be minted, stored, or required.
+- The service SHALL be able to **push** change to a browser rather than wait to be asked
+  (`GET /api/v1/stream`, `text/event-stream`, issue-239). The stream SHALL be a **read**
+  surface over records `GET /api/v1/events` already serves, opening no new source of
+  truth: a `log` frame is one event-log record with its byte offset as the SSE `id`, a
+  `transcript` frame carries a watched session's ref and line count and **no content**,
+  and a `desync` frame says the client's cursor could not be honoured. The transport is
+  SSE and not a WebSocket because a WebSocket handshake is exempt from CORS and would
+  need a hand-written `Origin` check to recover the boundary every other route inherits
+  ([decision-087](../decisions/decision-087.md)).
+- The stream SHALL never carry `api.request` or `mcp.call`, and SHALL offer no way to
+  opt in. Every route emits `api.request`, so a stream that carried it would deliver a
+  frame for each of the control plane's own refreshes, each frame triggering another —
+  a loop that never idles and worsens the more people watch.
+- A subscriber SHALL be able to resume losslessly: `Last-Event-ID` is a byte offset, and
+  the service SHALL replay the records after it **or** state that it cannot. Replay
+  SHALL be bounded; a truncated file, a rotated one and an over-wide gap SHALL each
+  resolve to one `desync` rather than to an unbounded read.
+- Simultaneous connections SHALL be bounded by `service.stream.maxSubscribers`, refused
+  at accept time with `503` before any task, queue or file handle exists, and the bound
+  SHALL NOT be configurable away (a value below 1 clamps up). One shared tailer SHALL
+  serve every subscriber, so N connections cost one read of the event log per tick, and
+  a subscriber that stops reading SHALL be bounded by its own queue and desynced rather
+  than buffered without limit.
+- The **viewer** SHALL choose how the dashboard refreshes — streaming, polling at an
+  interval, or manual — stored per browser. Settings written before that choice existed
+  SHALL be read for what they imply (`pollSeconds: 0` → manual, otherwise polling at
+  that interval) rather than switched onto a transport the viewer's tunnel may not
+  carry, and the storage key SHALL be unchanged so no viewer loses their base URL.
+- A stream that cannot be opened or that keeps dropping SHALL be **visible**: the
+  dashboard SHALL show live / connecting / reconnecting / unavailable in words as well
+  as colour, and SHALL fall back to polling with the reason rather than leaving an
+  unchanging screen. A streamed change SHALL refresh only what it touches — a `graph.*`
+  frame re-checks that one loop, anything else refetches the lists — and an event type
+  the bundle does not recognise SHALL refresh the lists rather than be ignored.
 - Which browser **origins** may read the service's responses SHALL be configuration
   (`service.cors`, issue-211) and SHALL be a separate question from who may connect:
   no value under `cors` widens the bind, and the exposure guard is unaffected. The
@@ -264,6 +298,7 @@ package — there are no install extras (owner decision, PR #162).
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-239 | The plane stops waiting to be asked: `GET /api/v1/stream` (SSE) holds a connection open and pushes event-log records, transcript-growth notifications and `desync` signals, fed by one shared tailer over `events.jsonl` with a bounded queue per subscriber and `service.stream.maxSubscribers` refusing the rest at `503`. SSE over WebSocket on a security argument — the WebSocket handshake is exempt from CORS. The stream never carries `api.request`/`mcp.call`, which would feed it from the control plane's own refreshes. The dashboard gains streaming/polling/manual as a per-browser choice with a visible connection state, refreshes one loop for a `graph.*` frame instead of sweeping the board, and finally puts the chat bar in reach with a self-scrolling trace panel | [spec](../specs/issue-239/), [decision-087](../decisions/decision-087.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/239) |
 | issue-238 | A cleaned-up checkout stopped being caller error: `graph/check` answers a non-resolving `repo` with `200` + `repoResolved: false` instead of `400`, and `fetchGraphs` drops that answer where the old rejection was dropped, so the rail still renders from the frozen record and the browser console stops accumulating 4xx at a layer no `catch` can reach. The boundary itself is unchanged — `repo_resolves` is factored out of `resolve_repo` so the predicate exists once, and `check` returns before `_runtime`, so no graph read ever sees an unvetted path. Only the polled verb changed; the mutating ones still refuse | [spec](../specs/issue-238/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/238) |
 | issue-230 | The transcript becomes readable and steerable: the dashboard's stream pairs each `tool_result` to its `tool_use` by id and collapses tool calls/thinking/bookkeeping behind disclosure (no line renders blank — the reported bug), a new Sessions screen lists every work item in a sidebar with its sessions as a two-level outer/inner tree (ad-hoc items treeless), and a chat bar under any stream posts to `/sessions/reply` with the viewed ref. Server side, the reply route resolves PR endpoints the way dispatch does, so an inner loop's chat lands in that PR's pane; every issue-208 refusal is kept | [spec](../specs/issue-230/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/230) |
 | issue-212 | The plane gained a second consumer without gaining a second implementation: `/api/v1` moved out of `create_app`'s body into one `APIRouter` (`api/routes.py`), and the per-request behaviour that was middleware and app-level handlers — config refresh, error translation, the `api.request` audit — moved onto that router's route class, so it travels into an application the-loop does not own. `create_app` keeps its signature and behaviour; `api/lifespan.py` holds the MCP-session-manager and hosted-ingress composition both consumers need; `api/mcp.build_app` gained an optional `allowed_hosts` for deployments that do not bind where `service.host` says. The new capability is [sdk](sdk.md) | [spec](../specs/issue-212/), [decision-085](../decisions/decision-085.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/212) |

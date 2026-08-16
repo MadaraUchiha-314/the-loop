@@ -34,6 +34,14 @@ DEFAULT_ALLOWED_ORIGINS = ("https://madarauchiha-314.github.io",)
 DEFAULT_ALLOWED_METHODS = ("GET", "POST", "OPTIONS")
 DEFAULT_ALLOWED_HEADERS = ("Accept", "Content-Type")
 
+#: Simultaneous open ``GET /api/v1/stream`` connections (issue-239). Eight is a
+#: browser tab or two per operator plus room for a second machine, and it is a
+#: **bound**, not a target: the point is that an open dashboard cannot starve the
+#: REST surface (requirements R5.1, abuse case 1).
+DEFAULT_STREAM_MAX_SUBSCRIBERS = 8
+#: Seconds between SSE keep-alive comments on an idle connection (R1.4).
+DEFAULT_STREAM_KEEPALIVE_SECONDS = 15
+
 
 def service_config(cli_config: Optional[dict] = None) -> Dict[str, Any]:
     raw = ((cli_config or {}).get("service")) or {}
@@ -49,6 +57,45 @@ def service_config(cli_config: Optional[dict] = None) -> Dict[str, Any]:
         # issue-231: with the service enabled, the enabled ingresses run as
         # hosted tasks inside this one process instead of separate ones.
         "hostIngresses": bool(raw.get("hostIngresses", True)),
+    }
+
+
+def _positive_int(value: Any, default: int) -> int:
+    """A usable positive integer, whatever a hand-edit put in the file.
+
+    Clamps rather than raises, and clamps **upward** to 1. Both failure directions
+    matter here and they are not symmetric: a cap of 0 would refuse every
+    connection (a broken service), and a cap that fell through to "unlimited"
+    would hand abuse case 1 a configuration switch. Neither is a value the
+    operator can have meant, so neither is honoured.
+    """
+    try:
+        resolved = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(1, resolved)
+
+
+def stream_config(cli_config: Optional[dict] = None) -> Dict[str, Any]:
+    """Resolve ``service.stream`` — the server-push surface (issue-239).
+
+    An **absent** block resolves to the defaults, not to "off": the stream has
+    been part of the service since it shipped, so a config written before this
+    key existed means "unconfigured". ``enabled: false`` is the off switch and has
+    to be written, exactly as ``service.mcp.enabled`` does.
+
+    The bound is the security-relevant field, so it is the one that cannot be
+    configured away; see :func:`_positive_int`.
+    """
+    raw = (((cli_config or {}).get("service")) or {}).get("stream") or {}
+    return {
+        "enabled": bool(raw.get("enabled", True)),
+        "maxSubscribers": _positive_int(
+            raw.get("maxSubscribers"), DEFAULT_STREAM_MAX_SUBSCRIBERS
+        ),
+        "keepAliveSeconds": _positive_int(
+            raw.get("keepAliveSeconds"), DEFAULT_STREAM_KEEPALIVE_SECONDS
+        ),
     }
 
 

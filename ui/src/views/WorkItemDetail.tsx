@@ -12,7 +12,7 @@
  * via issue-208's `POST /api/v1/sessions/reply`.
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState, type UIEvent } from "react";
 
 import { ApiError } from "../api/client.ts";
 import {
@@ -37,13 +37,34 @@ import { useApi } from "../state/ApiContext.tsx";
 import { hrefFor } from "../state/route.ts";
 import { useAsync } from "../state/useAsync.ts";
 
+/** How close to the bottom still counts as "following the newest entry". */
+const PIN_THRESHOLD_PX = 24;
+
+/**
+ * Whether the reader is at the newest entry, and so wants to be kept there.
+ *
+ * Exported for its own test: this is the whole of R6.3/R6.4, and the rest of the
+ * mechanism — reading it **before** the render that appends — is only correct if
+ * this answer is. A few pixels of slack because a scrolled-to-bottom container
+ * is routinely a fraction short of exact.
+ */
+export function isAtNewest(panel: Pick<HTMLElement, "scrollHeight" | "scrollTop" | "clientHeight">): boolean {
+  return panel.scrollHeight - panel.scrollTop - panel.clientHeight < PIN_THRESHOLD_PX;
+}
+
 interface DetailProps {
   view: WorkItemView;
   title: string | undefined;
   onChanged: () => void;
+  /**
+   * Bumped by the board when a streamed `transcript` frame says the watched
+   * session's file grew (issue-239). The stream itself lives one level up —
+   * one connection per tab — so this is how the news reaches the panel.
+   */
+  transcriptTick?: number;
 }
 
-export function WorkItemDetail({ view, title, onChanged }: DetailProps) {
+export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0 }: DetailProps) {
   const { api } = useApi();
   const [busy, setBusy] = useState<SessionVerb | "gate" | "reply" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -55,7 +76,14 @@ export function WorkItemDetail({ view, title, onChanged }: DetailProps) {
     [api, view.ref],
   );
 
-  const transcript = useAsync((signal) => api.transcript(traceRef, 200, signal), [api, traceRef]);
+  // `transcriptTick` in the deps is the whole of the live update: the frame
+  // carries a line count and no content, so the panel refetches through the
+  // route that owns the path validation (issue-209) rather than rendering
+  // anything the stream handed it.
+  const transcript = useAsync(
+    (signal) => api.transcript(traceRef, 200, signal),
+    [api, traceRef, transcriptTick],
+  );
 
   async function run(label: SessionVerb | "gate" | "reply", action: () => Promise<unknown>): Promise<void> {
     setBusy(label);
@@ -75,6 +103,27 @@ export function WorkItemDetail({ view, title, onChanged }: DetailProps) {
 
   const traceSession =
     traceRef === view.ref ? view.session : (view.pullRequests.find((pr) => pr.ref === traceRef)?.session ?? null);
+
+  const traceScroll = useRef<HTMLDivElement | null>(null);
+  const entryCount = transcript.data?.entries.length ?? 0;
+
+  /**
+   * Follow the newest entry, but only for a reader who is already there (R6.3,
+   * R6.4).
+   *
+   * "Already there" is decided **before** the render that appended, which is why
+   * this reads the pinned state in a layout effect keyed on the count rather
+   * than in the scroll handler: by the time an effect keyed on the DOM runs, the
+   * new entry has already made `scrollHeight` bigger and every reader would look
+   * un-pinned. Scrolling somebody back to the bottom while they are reading
+   * history is the one thing this feature must not do.
+   */
+  const pinned = useRef(true);
+  useEffect(() => {
+    const panel = traceScroll.current;
+    if (!panel) return;
+    if (pinned.current) panel.scrollTop = panel.scrollHeight;
+  }, [entryCount, traceRef]);
 
   return (
     <>
@@ -223,7 +272,20 @@ export function WorkItemDetail({ view, title, onChanged }: DetailProps) {
         <span className="lp-trace-source">{transcriptPath(traceSession) ?? "no derivable transcript path"}</span>
       </div>
 
-      <Blueprint className="lp-trace">
+      {/* R6.2/R6.5: the panel scrolls inside its own bounds (`.lp-trace` in
+          app.css) rather than extending the page, and is focusable so it can be
+          scrolled from the keyboard. `ref` reaches the div through Blueprint's
+          prop spread — React 19 passes it as an ordinary prop. */}
+      <Blueprint
+        className="lp-trace"
+        ref={traceScroll}
+        tabIndex={0}
+        role="log"
+        aria-label="Session transcript"
+        onScroll={(event: UIEvent<HTMLDivElement>) => {
+          pinned.current = isAtNewest(event.currentTarget);
+        }}
+      >
         {/* `useAsync` keeps stale data across tab switches and errors, so the
             order matters: while loading, or after an error, the held `data` is
             the PREVIOUS tab's transcript and must not be drawn. */}

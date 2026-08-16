@@ -4,7 +4,7 @@
  * the sentence that actually helps.
  */
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError, HttpApi, normalizeBaseUrl } from "./client.ts";
 
@@ -101,5 +101,100 @@ describe("HttpApi", () => {
 
     expect(error.message).toBe("502 Bad Gateway");
     expect(error.advice).toMatch(/service errored/);
+  });
+});
+
+/**
+ * Frame decoding (issue-239).
+ *
+ * This exists because a real bug lived here for ten minutes: the transcript
+ * handler read `work_item`, which is what an event-log record carries, while
+ * the service sends `ref`. Typecheck and lint were both green — the field names
+ * are strings on an untyped payload. Only a test that puts a real frame through
+ * the decoder can catch that, so here is one per frame kind.
+ */
+describe("HttpApi.stream", () => {
+  class FakeEventSource {
+    static CLOSED = 2;
+    static instances: FakeEventSource[] = [];
+    readonly listeners = new Map<string, Set<(event: Event) => void>>();
+    readyState = 1;
+    closed = false;
+    readonly url: string;
+
+    // A plain assignment, not a parameter property: `erasableSyntaxOnly` is on,
+    // and a parameter property is TypeScript that has to be *compiled*, not
+    // erased.
+    constructor(url: string) {
+      this.url = url;
+      FakeEventSource.instances.push(this);
+    }
+    addEventListener(type: string, handler: (event: Event) => void) {
+      if (!this.listeners.has(type)) this.listeners.set(type, new Set());
+      this.listeners.get(type)?.add(handler);
+    }
+    removeEventListener(type: string, handler: (event: Event) => void) {
+      this.listeners.get(type)?.delete(handler);
+    }
+    close() {
+      this.closed = true;
+    }
+    /** Deliver one frame the way the browser delivers an SSE block. */
+    deliver(type: string, data: string, lastEventId = "") {
+      const event = new MessageEvent(type, { data, lastEventId });
+      for (const handler of this.listeners.get(type) ?? []) handler(event);
+    }
+  }
+
+  beforeEach(() => {
+    FakeEventSource.instances = [];
+    vi.stubGlobal("EventSource", FakeEventSource);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  function open(query: Parameters<HttpApi["stream"]>[0] = {}) {
+    const frames: unknown[] = [];
+    const close = new HttpApi("http://h:1").stream(query, { onFrame: (f) => frames.push(f), onError: () => {} });
+    return { frames, close, source: FakeEventSource.instances.at(-1)! };
+  }
+
+  it("puts the filters on the query string", () => {
+    const { source } = open({ workItem: ["github:o/r#1"], transcript: ["github:o/r#2"] });
+    expect(source.url).toContain("workItem=github%3Ao%2Fr%231");
+    expect(source.url).toContain("transcript=github%3Ao%2Fr%232");
+  });
+
+  it("decodes a log frame, carrying the SSE id through as the cursor", () => {
+    const { frames, source } = open();
+    source.deliver("log", JSON.stringify({ ts: "2026-08-16T00:00:00Z", event: "graph.advanced" }), "148213");
+    expect(frames).toEqual([
+      { kind: "log", record: { ts: "2026-08-16T00:00:00Z", event: "graph.advanced" }, cursor: "148213" },
+    ]);
+  });
+
+  it("decodes a transcript frame from `ref`, which is not `work_item`", () => {
+    const { frames, source } = open();
+    source.deliver("transcript", JSON.stringify({ ref: "github:o/r#1", totalLines: 412 }));
+    expect(frames).toEqual([{ kind: "transcript", ref: "github:o/r#1", totalLines: 412 }]);
+  });
+
+  it("decodes a desync frame with its reason", () => {
+    const { frames, source } = open();
+    source.deliver("desync", JSON.stringify({ reason: "replay-window" }));
+    expect(frames).toEqual([{ kind: "desync", reason: "replay-window" }]);
+  });
+
+  it("drops a frame that is not a record rather than passing a half one on", () => {
+    const { frames, source } = open();
+    source.deliver("log", "{not json");
+    source.deliver("log", JSON.stringify({ event: "graph.advanced" })); // no ts
+    source.deliver("transcript", JSON.stringify({ totalLines: 1 })); // no ref
+    expect(frames).toEqual([]);
+  });
+
+  it("closes the connection when unsubscribed", () => {
+    const { close, source } = open();
+    close?.();
+    expect(source.closed).toBe(true);
   });
 });

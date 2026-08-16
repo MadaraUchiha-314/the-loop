@@ -504,6 +504,180 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/stream:
+    get:
+      summary: Stream Events
+      description: 'Hold a connection open and push control-plane change to it (issue-239).
+
+
+        **`async def`, not `def`.** Every other route here is synchronous and runs
+
+        in the anyio threadpool; a synchronous generator held open for hours would
+
+        hold one of its 40 slots for hours, and `maxSubscribers` of them would take
+
+        a fifth of the pool away from the CLI and `/mcp`. As a coroutine this costs
+
+        one task and no thread, which is what makes R5.1 true rather than hoped for.
+
+
+        Everything that can refuse the connection is decided **before** the
+
+        response begins — capacity, filter, cursor — so a refusal is an ordinary
+
+        JSON error the client can read, and costs the service one rejected request
+
+        rather than a task, a queue and a file handle.'
+      operationId: streamEvents
+      parameters:
+      - name: workItem
+        in: query
+        required: false
+        schema:
+          type: array
+          items:
+            type: string
+          default: []
+          title: Workitem
+      - name: transcript
+        in: query
+        required: false
+        schema:
+          type: array
+          items:
+            type: string
+          default: []
+          title: Transcript
+      - name: Last-Event-ID
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last-Event-Id
+      responses:
+        '200':
+          description: 'An open Server-Sent Events stream. Each frame is one of `log`
+            (an event-log record, with its byte offset as the SSE `id` — quote it back
+            as `Last-Event-ID` to resume), `transcript` (a watched session''s transcript
+            grew), or `desync` (the cursor could not be honoured; refetch everything).
+            Interleaved with `: keep-alive` comments. `api.request` and `mcp.call` are
+            never carried.'
+          content:
+            application/json:
+              schema: {}
+            text/event-stream:
+              schema:
+                type: string
+                title: SSE frames
+                example: 'id: 148213
+
+                  event: log
+
+                  data: {"ts":"2026-08-16T16:35:48.114Z","event":"graph.advanced","work_item":"github:octo/repo#7"}
+
+
+                  '
+        '400':
+          description: Malformed Last-Event-ID, workItem or transcript.
+        '404':
+          description: service.stream.enabled is false.
+        '503':
+          description: service.stream.maxSubscribers connections are already open. Carries
+            Retry-After.
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/stream:
+    get:
+      summary: Stream Events
+      description: 'Hold a connection open and push control-plane change to it (issue-239).
+
+
+        **`async def`, not `def`.** Every other route here is synchronous and runs
+
+        in the anyio threadpool; a synchronous generator held open for hours would
+
+        hold one of its 40 slots for hours, and `maxSubscribers` of them would take
+
+        a fifth of the pool away from the CLI and `/mcp`. As a coroutine this costs
+
+        one task and no thread, which is what makes R5.1 true rather than hoped for.
+
+
+        Everything that can refuse the connection is decided **before** the
+
+        response begins — capacity, filter, cursor — so a refusal is an ordinary
+
+        JSON error the client can read, and costs the service one rejected request
+
+        rather than a task, a queue and a file handle.'
+      operationId: streamEvents
+      parameters:
+      - name: workItem
+        in: query
+        required: false
+        schema:
+          type: array
+          items:
+            type: string
+          default: []
+          title: Workitem
+      - name: transcript
+        in: query
+        required: false
+        schema:
+          type: array
+          items:
+            type: string
+          default: []
+          title: Transcript
+      - name: Last-Event-ID
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Last-Event-Id
+      responses:
+        '200':
+          description: 'An open Server-Sent Events stream. Each frame is one of `log`
+            (an event-log record, with its byte offset as the SSE `id` — quote it back
+            as `Last-Event-ID` to resume), `transcript` (a watched session''s transcript
+            grew), or `desync` (the cursor could not be honoured; refetch everything).
+            Interleaved with `: keep-alive` comments. `api.request` and `mcp.call` are
+            never carried.'
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                title: SSE frames
+                example: 'id: 148213
+
+                  event: log
+
+                  data: {"ts":"2026-08-16T16:35:48.114Z","event":"graph.advanced","work_item":"github:octo/repo#7"}
+
+
+                  '
+        '400':
+          description: Malformed Last-Event-ID, workItem or transcript.
+        '404':
+          description: service.stream.enabled is false.
+        '503':
+          description: service.stream.maxSubscribers connections are already open. Carries
+            Retry-After.
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/events:
     get:
       summary: Query Events

@@ -384,23 +384,22 @@ def test_legacy_record_without_a_tmux_target_heals_via_respawn(pipeline):
         )
     )
     deliver("issue_comment", issue_payload(action="created"), "d-legacy-1")
-    assert wait_until(
-        lambda: (
-            (
-                registry.find_by_work_item(REF)
-                or Session(
-                    work_item=WorkItemRef.parse(REF),
-                    harness="",
-                    harness_session_id="",
-                    cwd="",
-                )
-            ).tmux_target
-            == TARGET
+
+    # Wait for EVERYTHING this test asserts, not for one signal that precedes
+    # the rest: the healing writes the tmux target and records the delivery in
+    # separate steps on the dispatcher's own thread, so a wait on the first of
+    # them can return while the second has not happened. Under load it does.
+    def healed_record():
+        record = registry.find_by_work_item(REF)
+        return (
+            record is not None
+            and record.tmux_target == TARGET
+            and "d-legacy-1" in record.recent_deliveries
         )
-    )
+
+    assert wait_until(healed_record)
     healed = registry.find_by_work_item(REF)
     assert healed.harness_session_id == "legacy-conv-1"  # same conversation
-    assert "d-legacy-1" in healed.recent_deliveries
     (spawn,) = [c for c in calls() if c[0] == "new-session"]
     tail = spawn[spawn.index("--") + 1 :]
     assert tail[1] == "--resume" and tail[2] == "legacy-conv-1"

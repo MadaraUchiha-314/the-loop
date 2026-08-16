@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { TheLoopApi } from "../api/client.ts";
 import type { GraphStatus, SessionRecord, WorkItemRecord } from "../api/types.ts";
-import { fetchGraphs } from "./useControlPlane.ts";
+import { fetchGraphs, mergeReports } from "./useControlPlane.ts";
 
 const REF = "github:acme/widgets#7";
 
@@ -63,5 +63,37 @@ describe("fetchGraphs", () => {
     );
 
     expect(reports.outer[REF]).toEqual(status);
+  });
+});
+
+describe("mergeReports (issue-239)", () => {
+  const a: GraphStatus = { workItem: "issue-1", currentNode: "design", ok: true, nodes: [] };
+  const b: GraphStatus = { workItem: "issue-2", currentNode: "tasks-breakdown", ok: true, nodes: [] };
+  const newerA: GraphStatus = { workItem: "issue-1", currentNode: "implementation", ok: true, nodes: [] };
+
+  it("keeps entries the incoming set does not mention", () => {
+    const merged = mergeReports({ outer: { one: a, two: b }, inner: {} }, { outer: { one: newerA }, inner: {} });
+    expect(merged.outer["one"]).toBe(newerA);
+    expect(merged.outer["two"]).toBe(b);
+  });
+
+  it("merges the inner loops independently of the outer ones", () => {
+    const merged = mergeReports({ outer: { one: a }, inner: { "one::pr" : b } }, { outer: {}, inner: {} });
+    expect(merged.outer["one"]).toBe(a);
+    expect(merged.inner["one::pr"]).toBe(b);
+  });
+
+  /**
+   * The lost-update hazard this exists to make visible: two coalesced flushes can
+   * be in flight at once, and each must merge against what is held when it
+   * *writes*, not what it read before its await. A helper that mutated its base
+   * would hide the difference.
+   */
+  it("mutates neither argument", () => {
+    const base = { outer: { one: a }, inner: {} };
+    const incoming = { outer: { two: b }, inner: {} };
+    mergeReports(base, incoming);
+    expect(Object.keys(base.outer)).toEqual(["one"]);
+    expect(Object.keys(incoming.outer)).toEqual(["two"]);
   });
 });

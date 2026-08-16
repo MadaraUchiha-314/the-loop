@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>issue-239 · Work-item detail — scrolling trace, sticky chat bar</title>
+<!--
+  Self-contained prototype (design.uiArtifacts.selfContained: true). Covers R6:
+  the chat bar stays reachable, the trace scrolls inside its own bounds, and an
+  arriving entry follows the newest entry only while the reader is already there.
+
+  Press "agent turn arrives" with the panel scrolled to the bottom (it follows) and
+  again after scrolling up (it does not move) — that is the whole of R6.3/R6.4.
+-->
+<style>
+  :root {
+    --color-bg: #f2f2f3;
+    --color-text: #1d1f20;
+    --color-neutral-100: #f5f5f8;
+    --color-neutral-200: #e7e7ea;
+    --color-neutral-300: #d4d4d7;
+    --color-neutral-400: #b7b7ba;
+    --color-neutral-500: #98989b;
+    --color-neutral-600: #7a7a7d;
+    --color-neutral-700: #5d5d60;
+    --color-accent-700: #416180;
+    --font-heading: "Barlow Condensed", system-ui, sans-serif;
+    --font-body: "Barlow", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 20px 0;
+    background: var(--color-bg); color: var(--color-text);
+    font-family: var(--font-body); font-size: 14px; line-height: 1.55;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  h1 { font-family: var(--font-heading); font-weight: 600; font-size: 28px; margin: 0 0 2px; }
+  h2 { font-family: var(--font-heading); font-weight: 600; font-size: 17px;
+       letter-spacing: 0.04em; text-transform: uppercase; margin: 0; }
+  .ref { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--color-neutral-600); }
+  .filler {
+    border: 1px dashed var(--color-neutral-400); color: var(--color-neutral-600);
+    padding: 14px 16px; margin: 18px 0; font-size: 12.5px;
+  }
+  .trace-head {
+    display: flex; align-items: baseline; gap: 12px; margin: 26px 0 10px; flex-wrap: wrap;
+  }
+  .trace-source { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--color-neutral-600); }
+
+  /* R6.2 — the panel scrolls inside its own bounds instead of extending the page.
+     R6.5 — clamp keeps it usable on a short viewport without collapsing to nothing. */
+  .trace {
+    border: 1px solid var(--color-neutral-300);
+    background: var(--color-neutral-100);
+    padding: 4px 0;
+    max-height: clamp(240px, 55vh, 720px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .trace:focus-visible { outline: 2px solid var(--color-accent-700); outline-offset: 2px; }
+  .entry { display: flex; gap: 14px; padding: 12px 18px; border-bottom: 1px solid var(--color-neutral-200); }
+  .entry:last-child { border-bottom: none; }
+  .kind {
+    min-width: 118px; font-family: var(--font-heading); font-size: 10.5px;
+    letter-spacing: 0.07em; text-transform: uppercase; color: var(--color-neutral-700);
+  }
+  .kind.accent { color: var(--color-accent-700); }
+  .ts { font-family: ui-monospace, Menlo, monospace; font-size: 10.5px;
+        color: var(--color-neutral-500); text-transform: none; letter-spacing: 0; }
+  .main { flex: 1; min-width: 0; }
+  .fold { font-size: 12.5px; color: var(--color-neutral-700); }
+  .fold summary { cursor: pointer; }
+
+  /* R6.1 — the bar stays in reach. In normal flow, so it traps no focus and
+     covers nothing; sticky to the bottom of the viewport while the page scrolls. */
+  .chat {
+    position: sticky; bottom: 0; z-index: 2;
+    margin-top: 10px;
+    padding: 10px 0 16px;
+    background: linear-gradient(to bottom, transparent, var(--color-bg) 22%);
+  }
+  .chat-row { display: flex; gap: 10px; align-items: stretch; }
+  .chat-row textarea {
+    flex: 1; resize: vertical; min-height: 44px; font: inherit; font-size: 13px;
+    padding: 8px 10px; border: 1px solid var(--color-neutral-400);
+    background: var(--color-neutral-100); color: inherit;
+  }
+  .btn {
+    font: inherit; font-size: 13px; padding: 8px 16px; cursor: pointer;
+    background: var(--color-accent-700); border: 1px solid var(--color-accent-700); color: #fff;
+  }
+  .btn.ghost { background: var(--color-neutral-200); border-color: var(--color-neutral-400); color: inherit; }
+  .tools { display: flex; gap: 8px; margin: 14px 0 40px; flex-wrap: wrap; align-items: center; }
+  .hint { font-size: 12px; color: var(--color-neutral-600); }
+  .pinned { font-size: 11.5px; color: var(--color-neutral-600); margin-left: auto; }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --color-bg: #17181a; --color-text: #ececee;
+      --color-neutral-100: #1f2022; --color-neutral-200: #292a2d;
+      --color-neutral-300: #3a3b3f; --color-neutral-400: #4d4e53;
+      --color-neutral-500: #6d6e73; --color-neutral-600: #909196;
+      --color-neutral-700: #b2b3b8; --color-accent-700: #8fb4d6;
+    }
+    .btn { color: #17181a; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="ref">github:MadaraUchiha-314/the-loop#239</div>
+  <h1>Add streaming support from the-loop's service to control plane</h1>
+
+  <div class="filler">
+    ⟨ node rail, pull-request cards and the human-gate callout sit here — unchanged by this work item,
+    and the reason the chat bar used to be so far down the page ⟩
+  </div>
+
+  <div class="trace-head">
+    <h2>Trace · turns &amp; tool calls</h2>
+    <span class="trace-source">~/.claude/projects/…/41ac9ec6.jsonl</span>
+  </div>
+
+  <div class="trace" id="trace" tabindex="0" role="log" aria-label="Session transcript">
+    <!-- entries injected below -->
+  </div>
+
+  <div class="chat">
+    <div class="chat-row">
+      <textarea rows="2" aria-label="Message the session"
+        placeholder="Message the session — pasted into its tmux pane (bracketed paste, then Enter)"></textarea>
+      <button class="btn" type="button">Send</button>
+    </div>
+  </div>
+
+  <div class="tools">
+    <button class="btn ghost" type="button" id="arrive">agent turn arrives</button>
+    <span class="hint">scroll the panel up first, then press it again</span>
+    <span class="pinned" id="pinned">following newest</span>
+  </div>
+</div>
+
+<script>
+  const trace = document.getElementById("trace");
+  const pinnedLabel = document.getElementById("pinned");
+
+  const SAMPLE = [
+    ["assistant", "accent", "Reading the refresh path end to end before writing anything."],
+    ["tool call", "", "Read · ui/src/state/useControlPlane.ts"],
+    ["tool result", "", "207 lines"],
+    ["assistant", "accent", "Round two is where loop position comes from — a stream that only replays the event log would leave the rail stale."],
+    ["tool call", "", "Grep · @router.get"],
+    ["tool result", "", "31 matches in cli/the_loop/api/routes.py"],
+    ["user", "", "Use SSE, and say why on the PR."],
+    ["assistant", "accent", "SSE it is: the CORS boundary comes for free, and Last-Event-ID gives resume without a hand-rolled cursor protocol."],
+  ];
+
+  let n = 0;
+  function addEntry(row) {
+    const [kind, cls, text] = row;
+    const at = new Date(Date.now() + n * 1000).toISOString().slice(11, 19);
+    const el = document.createElement("div");
+    el.className = "entry";
+    el.innerHTML =
+      '<div class="kind ' + cls + '">' + kind + '<div class="ts">' + at + "</div></div>" +
+      '<div class="main">' + (kind === "tool result"
+        ? '<details class="fold"><summary>output — ' + text + "</summary></details>"
+        : text) + "</div>";
+    trace.appendChild(el);
+    n += 1;
+  }
+
+  /** Pinned = the reader is already at the newest entry (R6.3 vs R6.4). */
+  function isPinned() {
+    return trace.scrollHeight - trace.scrollTop - trace.clientHeight < 24;
+  }
+
+  for (let i = 0; i < 4; i += 1) for (const row of SAMPLE) addEntry(row);
+  trace.scrollTop = trace.scrollHeight;
+
+  trace.addEventListener("scroll", () => {
+    pinnedLabel.textContent = isPinned() ? "following newest" : "scrolled back — arrivals will not move this";
+  });
+
+  document.getElementById("arrive").addEventListener("click", () => {
+    const wasPinned = isPinned();
+    addEntry(SAMPLE[n % SAMPLE.length]);
+    if (wasPinned) trace.scrollTop = trace.scrollHeight;
+  });
+</script>
+</body>
+</html>

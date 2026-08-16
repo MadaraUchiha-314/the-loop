@@ -163,7 +163,12 @@ def test_a_labelled_work_item_does_not_spawn_until_it_is_started(setup):
     assert registry.find_by_work_item(REF) is None
 
     dispatcher.handle(comment_event(f"let's go: {START_KEYWORD}", delivery="d-start"))
-    assert _wait(lambda: len(tmux.spawns) == 1)
+    # Wait on the REGISTRATION, which is what the next line asserts. Waiting on
+    # the spawn instead returns one step early — registration happens after it,
+    # on the dispatcher's own thread — so under load the assertion below reads a
+    # registry that has not been written yet.
+    assert _wait(lambda: registry.find_by_work_item(REF) is not None)
+    assert len(tmux.spawns) == 1
     session = registry.find_by_work_item(REF)
     assert session is not None and session.status == "active"
 

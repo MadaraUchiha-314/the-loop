@@ -9,6 +9,7 @@
 import type { DaemonStatus } from "../api/types.ts";
 import { hrefFor, type Route } from "../state/route.ts";
 import { relativeTime } from "../api/model.ts";
+import type { StreamState } from "../state/useStream.ts";
 
 const TABS: { label: string; route: Route }[] = [
   { label: "Dashboard", route: { name: "dashboard" } },
@@ -22,9 +23,10 @@ interface NavProps {
   route: Route;
   attentionCount: number;
   daemons: DaemonStatus[];
+  stream: StreamState;
 }
 
-export function Nav({ route, attentionCount, daemons }: NavProps) {
+export function Nav({ route, attentionCount, daemons, stream }: NavProps) {
   return (
     <nav className="nav lp-nav">
       <div className="lp-nav-brand">
@@ -48,6 +50,7 @@ export function Nav({ route, attentionCount, daemons }: NavProps) {
         })}
       </div>
       <div className="lp-daemons">
+        <StreamChip state={stream} />
         {daemons.length === 0 ? <span className="lp-daemon">daemons · unknown</span> : null}
         {daemons.map((daemon) => (
           <span className="lp-daemon" key={daemon.daemon}>
@@ -62,5 +65,36 @@ export function Nav({ route, attentionCount, daemons }: NavProps) {
         ))}
       </div>
     </nav>
+  );
+}
+
+/**
+ * Whether the screen is live, and if not, why (issue-239, R4.3).
+ *
+ * It sits with the daemon chips because it answers the same question they do —
+ * "is anything actually keeping this page current?" — and it is **text plus a
+ * dot**, never a dot alone, so the state survives being read by someone who
+ * cannot see the colour. `aria-live="polite"` announces a change without
+ * stealing focus from whatever the operator was doing.
+ *
+ * Nothing is rendered while the viewer chose polling or manual: a chip saying
+ * "not streaming" on a page nobody asked to stream is noise.
+ */
+function StreamChip({ state }: { state: StreamState }) {
+  if (state.name === "off") return null;
+  const [tone, text] =
+    state.name === "live"
+      ? (["on", `live · connected ${relativeTime(new Date(state.since).toISOString())}`] as const)
+      : state.name === "connecting"
+        ? (["", "stream · connecting"] as const)
+        : state.name === "reconnecting"
+          ? (["off", `stream · reconnecting (${state.attempt})`] as const)
+          : (["off", "stream unavailable · polling instead"] as const);
+
+  return (
+    <span className="lp-daemon" role="status" aria-live="polite" title={state.name === "fallback" ? state.advice : undefined}>
+      <span className={`lp-daemon-dot ${tone}`} aria-hidden="true" />
+      {text}
+    </span>
   );
 }

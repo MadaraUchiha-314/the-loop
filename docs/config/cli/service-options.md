@@ -20,6 +20,10 @@ service:
   hostIngresses: true
   mcp:
     enabled: true
+  stream:
+    enabled: true
+    maxSubscribers: 8
+    keepAliveSeconds: 15
   cors:
     allowOrigins: ["https://madarauchiha-314.github.io"]
     allowMethods: [GET, POST, OPTIONS]
@@ -72,6 +76,58 @@ Whether the service mounts the [MCP endpoint](/cli/service#mcp-connecting-an-age
 at `/mcp` (issue-228). Default on — `/mcp` has been mounted unconditionally since
 issue-161 — so the flag exists to *narrow* a deployment to REST-only: with `false`, no
 MCP app is built and `/mcp` answers 404.
+
+## The stream
+
+`GET /api/v1/stream` holds a connection open and pushes control-plane changes to the
+[dashboard](/cli/service), so the screen re-renders when the workstation changes instead
+of on a timer ([issue-239](https://github.com/MadaraUchiha-314/the-loop/issues/239)). It
+is a **read** surface over the same records
+[`GET /api/v1/events`](/cli/service) already serves — it opens no new source of truth —
+and it is governed by `cors` below exactly like every other route.
+
+That parity is why the transport is Server-Sent Events rather than a WebSocket: a
+WebSocket handshake is exempt from CORS, so it would need a hand-written `Origin` check
+to recover a boundary SSE inherits for free.
+
+The viewer chooses whether to use it: the dashboard's Settings page offers **streaming**,
+**polling** at an interval, and **manual**, stored per browser. This block decides only
+whether the service offers the stream at all, and how much of it one workstation will
+serve.
+
+### `stream.enabled`
+
+- **Type:** `boolean`
+- **Default:** `true`
+
+Whether the service serves `/api/v1/stream`. Default on, so the flag exists to *narrow* a
+deployment to REST-only — with `false` no tailer starts and the route answers 404, and the
+dashboard falls back to polling with the reason on screen. An **absent** `stream` block
+means unconfigured, not disabled; `false` has to be written.
+
+### `stream.maxSubscribers`
+
+- **Type:** `integer`
+- **Default:** `8`
+
+Simultaneous open stream connections. Beyond this the service answers `503` and never
+accepts the connection, which is what keeps an open dashboard — or a page that opens
+connections deliberately — from starving the REST surface the CLI and `/mcp` share.
+
+A value below 1 clamps up to 1: the bound is not configurable away. Raise it if several
+people watch one workstation; each idle subscriber costs a bounded queue and no polling of
+its own, because one shared tailer reads the event log once per tick however many are
+connected.
+
+### `stream.keepAliveSeconds`
+
+- **Type:** `integer`
+- **Default:** `15`
+
+Interval between SSE keep-alive comments on an idle connection. Without them an
+intermediary reaps a connection that has had nothing to say, and the dashboard shows a
+reconnect it did not need. Lower it only if something between the browser and the service
+reaps faster than this.
 
 ## Binding
 

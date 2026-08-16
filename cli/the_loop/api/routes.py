@@ -30,8 +30,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Query, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Header, Query, Request, Response
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.routing import APIRoute
 from pydantic import BaseModel
 
@@ -46,7 +46,10 @@ from ..core import lifecycle as core_lifecycle
 from ..core import repo as core_repo
 from ..core import sessions as core_sessions
 from ..core import workitems as core_workitems
+from ..workitem import WorkItemRef
 from ..yamlpatch import SpliceError
+from . import stream as api_stream
+from .config import stream_config
 
 API_PREFIX = "/api/v1"
 
@@ -219,6 +222,36 @@ def _core_route_class(holder: ConfigHolder):
     return CoreRoute
 
 
+def _build_broker(holder: ConfigHolder):
+    """The stream's broker, pointed at this config's event log.
+
+    The transcript resolver is injected rather than imported by the broker, so
+    the path derivation stays in one place — ``core.sessions.transcript_path``,
+    which owns the fail-closed rules issue-209 wrote — and the broker stays
+    testable without a session registry.
+    """
+    from ..state import layout_from_config
+    from .config import stream_config
+    from .stream import StreamBroker
+
+    conf = stream_config(holder.current)
+
+    def resolve(ref: str):
+        # LookupError is the *normal* answer for a work item whose session has
+        # not registered a conversation yet, so it is not logged or raised: the
+        # broker retries, and the watch starts when the session does.
+        try:
+            return core_sessions.transcript_path(ref, config=holder.current)
+        except (LookupError, ValueError):
+            return None
+
+    return StreamBroker(
+        layout_from_config(holder.current or {}).event_log,
+        max_subscribers=conf["maxSubscribers"],
+        transcript_path=resolve,
+    )
+
+
 def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
     """Every ``/api/v1`` operation, as a router any FastAPI app can include.
 
@@ -229,6 +262,15 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
     ``include_router`` time.
     """
     router = APIRouter(route_class=_core_route_class(holder), **router_kwargs)
+
+    # The stream's broker is owned by the ROUTER, not by the lifespan (issue-239).
+    # The router is the only thing that travels into an embedder's application
+    # (issue-212 R3.3) — a lifespan-owned broker would simply not exist for SDK
+    # consumers, and the stream would 500 for them and nobody would know why. It
+    # costs nothing to own it here: the tailer task starts with the first
+    # subscriber and stops with the last, so a service nobody is watching runs no
+    # task at all.
+    stream_broker = _build_broker(holder)
 
     @router.get(f"{API_PREFIX}/health", operation_id="health")
     def health() -> Dict[str, str]:
@@ -418,6 +460,153 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
     def close_session(body: SessionCloseBody) -> Dict[str, Any]:
         return core_sessions.close_session(
             body.ref, keep_tmux=body.keepTmux, config=holder.current
+        )
+
+    # The response is declared rather than inferred: FastAPI would derive
+    # `application/json` from the return annotation, and the contract this repo
+    # publishes would then describe a media type this route never sends
+    # (`apiSpecs`, contract-first). The frame shapes live here because they are
+    # the wire contract — a client parses `event:` and this `data:`.
+    @router.get(
+        f"{API_PREFIX}/stream",
+        operation_id="streamEvents",
+        # Without `response_class` FastAPI infers `application/json` from the
+        # return annotation and MERGES it with the declaration below, so the
+        # published contract would offer a media type this route never sends.
+        response_class=StreamingResponse,
+        responses={
+            200: {
+                "description": (
+                    "An open Server-Sent Events stream. Each frame is one of "
+                    "`log` (an event-log record, with its byte offset as the SSE "
+                    "`id` — quote it back as `Last-Event-ID` to resume), "
+                    "`transcript` (a watched session's transcript grew), or "
+                    "`desync` (the cursor could not be honoured; refetch "
+                    "everything). Interleaved with `: keep-alive` comments. "
+                    "`api.request` and `mcp.call` are never carried."
+                ),
+                "content": {
+                    "text/event-stream": {
+                        "schema": {
+                            "type": "string",
+                            "title": "SSE frames",
+                            "example": (
+                                "id: 148213\n"
+                                "event: log\n"
+                                'data: {"ts":"2026-08-16T16:35:48.114Z",'
+                                '"event":"graph.advanced",'
+                                '"work_item":"github:octo/repo#7"}\n\n'
+                            ),
+                        }
+                    }
+                },
+            },
+            400: {"description": "Malformed Last-Event-ID, workItem or transcript."},
+            404: {"description": "service.stream.enabled is false."},
+            503: {
+                "description": (
+                    "service.stream.maxSubscribers connections are already open. "
+                    "Carries Retry-After."
+                )
+            },
+        },
+    )
+    async def stream_events(
+        request: Request,
+        workItem: List[str] = Query(default=[]),
+        transcript: List[str] = Query(default=[]),
+        last_event_id: Optional[str] = Header(default=None, alias="Last-Event-ID"),
+    ) -> Response:
+        """Hold a connection open and push control-plane change to it (issue-239).
+
+        **`async def`, not `def`.** Every other route here is synchronous and runs
+        in the anyio threadpool; a synchronous generator held open for hours would
+        hold one of its 40 slots for hours, and `maxSubscribers` of them would take
+        a fifth of the pool away from the CLI and `/mcp`. As a coroutine this costs
+        one task and no thread, which is what makes R5.1 true rather than hoped for.
+
+        Everything that can refuse the connection is decided **before** the
+        response begins — capacity, filter, cursor — so a refusal is an ordinary
+        JSON error the client can read, and costs the service one rejected request
+        rather than a task, a queue and a file handle.
+        """
+        conf = stream_config(holder.current)
+        if not conf["enabled"]:
+            eventlog.emit("stream.refused", reason="disabled")
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "detail": "this service does not serve /api/v1/stream "
+                    "(service.stream.enabled is false)"
+                },
+            )
+
+        # Validate the filter before accepting. Failing OPEN here would turn a
+        # typo into a subscription to every work item on the workstation, so a
+        # ref that will not parse is the caller's error, not a wider stream.
+        for name, refs in (("workItem", workItem), ("transcript", transcript)):
+            if len(refs) > api_stream.MAX_FILTER_ENTRIES:
+                detail = (
+                    f"{name} accepts at most "
+                    f"{api_stream.MAX_FILTER_ENTRIES} entries, got {len(refs)}"
+                )
+                eventlog.emit("stream.refused", reason="bad-filter", detail=detail)
+                return JSONResponse(status_code=400, content={"detail": detail})
+        for ref in list(workItem) + list(transcript):
+            try:
+                WorkItemRef.parse(ref)
+            except ValueError as exc:
+                # Truncated: the message quotes the caller, and the event log is
+                # append-only and read by people.
+                eventlog.emit(
+                    "stream.refused",
+                    reason="bad-filter",
+                    detail=str(exc)[: api_stream.MAX_REFUSAL_DETAIL],
+                )
+                return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+        try:
+            cursor = api_stream.parse_cursor(last_event_id)
+        except ValueError as exc:
+            eventlog.emit("stream.refused", reason="bad-cursor")
+            return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+        broker = stream_broker
+        broker.max_subscribers = conf["maxSubscribers"]
+        try:
+            subscriber = broker.subscribe(work_items=workItem, transcripts=transcript)
+        except RuntimeError as exc:
+            eventlog.emit(
+                "stream.refused", reason="at-capacity", subscribers=broker.count
+            )
+            return JSONResponse(
+                status_code=503,
+                content={"detail": str(exc)},
+                headers={"Retry-After": "5"},
+            )
+
+        eventlog.emit(
+            "stream.subscribed",
+            subscribers=broker.count,
+            work_items=list(workItem) or None,
+            transcripts=list(transcript) or None,
+            cursor=cursor,
+        )
+        return StreamingResponse(
+            api_stream.serve(
+                broker,
+                subscriber,
+                cursor=cursor,
+                keep_alive=conf["keepAliveSeconds"],
+            ),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                # Without this an nginx in front buffers the whole response and
+                # the feature silently becomes a very slow poll.
+                "X-Accel-Buffering": "no",
+            },
         )
 
     @router.get(f"{API_PREFIX}/events", operation_id="queryEvents")

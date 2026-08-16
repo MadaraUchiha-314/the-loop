@@ -17,7 +17,16 @@ import { WorkItemDetail } from "./views/WorkItemDetail.tsx";
 export function App() {
   const { api, settings, updateSettings } = useApi();
   const route = useRoute();
-  const board = useControlPlane(api, settings.pollSeconds);
+  // One stream connection per tab (R3.5), owned here rather than by the detail
+  // page: the page comes and goes with the route, and a connection that opened
+  // and closed on every navigation would replay a cursor for nothing. The
+  // viewed ref travels down instead, and the detail page reads `transcriptTick`.
+  const watched = route.name === "detail" ? route.ref : "";
+  const board = useControlPlane(
+    api,
+    { mode: settings.refreshMode, pollSeconds: settings.pollSeconds },
+    watched,
+  );
 
   // No /api/v1 route serves a ticket's title — the portable record keeps the ref
   // and the URL and deliberately not a copy of GitHub's mutable fields. The demo
@@ -29,7 +38,12 @@ export function App() {
 
   return (
     <div className="lp-shell">
-      <Nav route={route} attentionCount={attentionEntries(board.views).length} daemons={board.daemons} />
+      <Nav
+        route={route}
+        attentionCount={attentionEntries(board.views).length}
+        daemons={board.daemons}
+        stream={board.stream}
+      />
 
       {api.isDemo ? <DemoBanner onGoLive={() => updateSettings({ mode: "live" })} /> : null}
       {!api.isDemo && board.error ? <ConnectionBanner error={board.error} baseUrl={api.baseUrl} /> : null}
@@ -41,7 +55,12 @@ export function App() {
 
         {route.name === "detail" ? (
           selected ? (
-            <WorkItemDetail view={selected} title={titleFor(selected.ref)} onChanged={board.refresh} />
+            <WorkItemDetail
+              view={selected}
+              title={titleFor(selected.ref)}
+              onChanged={board.refresh}
+              transcriptTick={board.transcriptTick}
+            />
           ) : board.loading ? (
             <div className="lp-skeleton">Loading…</div>
           ) : (

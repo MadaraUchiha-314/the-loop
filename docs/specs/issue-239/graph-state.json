@@ -1,0 +1,335 @@
+{
+  "version": 1,
+  "workItem": "issue-239",
+  "currentNode": "security-review",
+  "nodes": {
+    "phase-selection": {
+      "attempts": 1,
+      "outcome": "selected",
+      "enteredAt": "2026-08-16T16:31:11+00:00",
+      "exitedAt": "2026-08-16T16:35:48+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "brainstorming": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-08-16T16:35:48+00:00",
+      "exitedAt": "2026-08-16T16:35:48+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "requirements-definition": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-08-16T16:35:48+00:00",
+      "exitedAt": "2026-08-16T16:40:48+00:00",
+      "lastBlock": "`validate-artifacts` did not pass:\n- artifact is not locked \u2014 front-matter says status: draft, expected status: approved (docs/specs/issue-239/requirements.md)",
+      "forced": false
+    },
+    "requirements-approval": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-08-16T16:40:48+00:00",
+      "exitedAt": "2026-08-16T16:40:48+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "design": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-08-16T16:40:48+00:00",
+      "exitedAt": "2026-08-16T16:49:20+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "design-critic-review": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-08-16T16:49:20+00:00",
+      "exitedAt": "2026-08-16T16:49:20+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "test-planning": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-08-16T16:49:20+00:00",
+      "exitedAt": "2026-08-16T16:49:24+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "design-approval": {
+      "attempts": 1,
+      "outcome": "approved",
+      "enteredAt": "2026-08-16T16:49:24+00:00",
+      "exitedAt": "2026-08-16T17:17:13+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "tasks-breakdown": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-08-16T17:17:13+00:00",
+      "exitedAt": "2026-08-16T17:20:04+00:00",
+      "lastBlock": "`validate-artifacts` did not pass:\n- required artifact is missing (docs/specs/issue-239/tasks.md)",
+      "forced": false
+    },
+    "implementation": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-08-16T17:20:04+00:00",
+      "exitedAt": "2026-08-16T18:21:56+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "verification": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-08-16T18:21:56+00:00",
+      "exitedAt": "2026-08-16T19:13:08+00:00",
+      "lastBlock": "`validate-artifacts` did not pass:\n- 4 task(s) still unticked (docs/specs/issue-239/testing-plan.md)",
+      "forced": false
+    },
+    "self-review": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-08-16T19:13:08+00:00",
+      "exitedAt": "2026-08-16T19:23:25+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "critic-review": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-08-16T19:23:25+00:00",
+      "exitedAt": "2026-08-16T19:23:25+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "security-review": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-08-16T19:23:25+00:00",
+      "exitedAt": "",
+      "lastBlock": "",
+      "forced": false
+    }
+  },
+  "decisions": {
+    "phase-selection": {
+      "at": "2026-08-16T16:35:48+00:00",
+      "graph": {
+        "loop": "pdlc-work-item-loop",
+        "workItem": "issue-239",
+        "surface": "pull-request",
+        "nodes": [
+          {
+            "id": "phase-selection",
+            "phase": "phase-selection",
+            "skipped": false,
+            "selectable": false,
+            "optIn": false
+          },
+          {
+            "id": "brainstorming",
+            "phase": "brainstorming",
+            "skipped": true,
+            "selectable": true,
+            "optIn": false
+          },
+          {
+            "id": "requirements-definition",
+            "phase": "requirements-definition",
+            "skipped": false,
+            "selectable": true,
+            "optIn": false
+          },
+          {
+            "id": "requirements-approval",
+            "phase": "",
+            "skipped": true,
+            "selectable": true,
+            "optIn": false
+          },
+          {
+            "id": "design",
+            "phase": "design",
+            "skipped": false,
+            "selectable": true,
+            "optIn": false
+          },
+          {
+            "id": "design-critic-review",
+            "phase": "",
+            "skipped": true,
+            "selectable": true,
+            "optIn": true
+          },
+          {
+            "id": "test-planning",
+            "phase": "test-planning",
+            "skipped": false,
+            "selectable": true,
+            "optIn": false
+          },
+          {
+            "id": "design-approval",
+            "phase": "",
+            "skipped": false,
+            "selectable": true,
+            "optIn": false
+          },
+          {
+            "id": "tasks-breakdown",
+            "phase": "tasks-breakdown",
+            "skipped": false,
+            "selectable": true,
+            "optIn": false
+          },
+          {
+            "id": "implementation",
+            "phase": "implementation",
+            "skipped": false,
+            "selectable": true,
+            "optIn": false
+          },
+          {
+            "id": "verification",
+            "phase": "verification",
+            "skipped": false,
+            "selectable": true,
+            "optIn": false
+          },
+          {
+            "id": "self-review",
+            "phase": "needs-review",
+            "skipped": false,
+            "selectable": true,
+            "optIn": false
+          },
+          {
+            "id": "critic-review",
+            "phase": "",
+            "skipped": true,
+            "selectable": true,
+            "optIn": false
+          },
+          {
+            "id": "security-review",
+            "phase": "",
+            "skipped": false,
+            "selectable": true,
+            "optIn": false
+          },
+          {
+            "id": "evidence",
+            "phase": "",
+            "skipped": false,
+            "selectable": true,
+            "optIn": false
+          },
+          {
+            "id": "capability-docs",
+            "phase": "",
+            "skipped": false,
+            "selectable": true,
+            "optIn": false
+          },
+          {
+            "id": "reviewer-briefing",
+            "phase": "",
+            "skipped": false,
+            "selectable": true,
+            "optIn": false
+          },
+          {
+            "id": "human-approval",
+            "phase": "",
+            "skipped": false,
+            "selectable": true,
+            "optIn": false
+          },
+          {
+            "id": "complete",
+            "phase": "complete",
+            "skipped": false,
+            "selectable": false,
+            "optIn": false
+          },
+          {
+            "id": "cleanup",
+            "phase": "cleanup",
+            "skipped": false,
+            "selectable": false,
+            "optIn": false
+          },
+          {
+            "id": "escalated",
+            "phase": "",
+            "skipped": false,
+            "selectable": false,
+            "optIn": false
+          }
+        ]
+      },
+      "via": "checklist",
+      "surface": "pull-request"
+    }
+  },
+  "forced": [],
+  "parked": null,
+  "session": null,
+  "completions": {
+    "requirements-definition": {
+      "at": "2026-08-16T16:40:48+00:00",
+      "by": "cli"
+    },
+    "design": {
+      "at": "2026-08-16T16:49:20+00:00",
+      "by": "cli"
+    },
+    "test-planning": {
+      "at": "2026-08-16T16:49:24+00:00",
+      "by": "cli"
+    },
+    "tasks-breakdown": {
+      "at": "2026-08-16T17:20:04+00:00",
+      "by": "cli"
+    },
+    "implementation": {
+      "at": "2026-08-16T18:21:56+00:00",
+      "by": "cli"
+    },
+    "verification": {
+      "at": "2026-08-16T19:13:08+00:00",
+      "by": "cli"
+    }
+  },
+  "skips": {
+    "brainstorming": {
+      "via": "selection",
+      "token": "brainstorming",
+      "by": "@MadaraUchiha-314",
+      "reason": "",
+      "at": "2026-08-16T16:35:48+00:00"
+    },
+    "requirements-approval": {
+      "via": "selection",
+      "token": "requirements-approval",
+      "by": "@MadaraUchiha-314",
+      "reason": "",
+      "at": "2026-08-16T16:35:48+00:00"
+    },
+    "critic-review": {
+      "via": "selection",
+      "token": "critic-review",
+      "by": "@MadaraUchiha-314",
+      "reason": "",
+      "at": "2026-08-16T16:35:48+00:00"
+    }
+  },
+  "optIns": {},
+  "surface": "pull-request",
+  "loop": "pdlc-work-item-loop"
+}
