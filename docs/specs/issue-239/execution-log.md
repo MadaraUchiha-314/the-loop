@@ -319,6 +319,30 @@ status: in-progress          # in-progress | complete
   [#247](https://github.com/MadaraUchiha-314/the-loop/issues/247), which is the same root
   cause.
 
+### 2026-08-16 19:20 UTC — CI fixed: three tests that waited on the wrong signal
+
+- **Phase:** needs-review
+- **Did:** @MadaraUchiha-314 asked for CI to be fixed. One job was red:
+  `test_tmux_runner_integration::test_legacy_record_without_a_tmux_target_heals_via_respawn`,
+  on `assert "d-legacy-1" in healed.recent_deliveries` → `[]`.
+- **Diagnosed before touching anything.** Every file that test exercises —
+  `runner.py`, `webhook/dispatcher.py`, `sessions/registry.py`, `poller/poller.py` and the
+  test itself — is **byte-identical to `origin/main`** on this branch, so the code under
+  test is unchanged and only the wall-clock differs. It is the
+  [#251](https://github.com/MadaraUchiha-314/the-loop/issues/251) shape a third time: the
+  test waits for the tmux target to be written and then asserts on `recent_deliveries`,
+  which the dispatcher writes in a **later** step on its own thread.
+- **Fixed all three, not just the red one.** Each now waits on **everything it asserts**
+  rather than on one signal that precedes the rest — the remedy #251 already prescribed.
+  This is that ticket's fix landing here rather than separately, because a red CI on this
+  PR is this PR's problem whoever's defect it is; #251 stays open for the tests to be
+  swept for the same pattern.
+- **Checkpoint/tests:** the three files 71 passed; full Python suite 2216 passed with the
+  same four macOS-local failures that fail on `origin/main` (they pass in CI, whose
+  environment they are sensitive to); `make lint`, `format-check` and `typecheck` clean.
+- **Next:** the security review — risk tier 4, so a named human sign-off.
+- **Blockers:** none.
+
 ## Design critic review
 
 > **Only when this work item selected the opt-in `design-critic-review` phase** (issue-188)
@@ -532,4 +556,14 @@ the dashboard's refresh behaviour.
 ### 2026-08-16 — entry verification (re-entered, 2)
 
 - **Node:** verification
+- **Boundary:** entry
+
+### 2026-08-16 — entry self-review
+
+- **Node:** self-review
+- **Boundary:** entry
+
+### 2026-08-16 — entry security-review
+
+- **Node:** security-review
 - **Boundary:** entry

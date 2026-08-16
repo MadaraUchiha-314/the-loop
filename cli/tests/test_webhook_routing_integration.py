@@ -741,12 +741,19 @@ def test_spawning_for_a_linked_issue_records_the_binding(server_factory, tmp_pat
         )
         == 202
     )
-    assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
+
+    # Wait for the linkage too, not just for the record to exist: the pull
+    # request is recorded against the session after the session itself is, so a
+    # wait on the record alone can return between the two writes.
+    def linked():
+        record = registry.find_by_work_item(REF)
+        return record is not None and [
+            pr.work_item.ref for pr in record.pull_requests
+        ] == [PR_REF]
+
+    assert wait_until(linked)
     ((ref, _, _, _),) = tmux.spawns
     assert ref == REF  # spawned against the issue, not the PR
-    record = registry.find_by_work_item(REF)
-    assert record is not None
-    assert [pr.work_item.ref for pr in record.pull_requests] == [PR_REF]
 
 
 def test_a_stop_on_an_unlinked_pr_stops_the_bound_session(server_factory, tmp_path):

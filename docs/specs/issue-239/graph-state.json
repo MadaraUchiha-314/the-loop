@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-239",
-  "currentNode": "verification",
+  "currentNode": "security-review",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -85,10 +85,34 @@
     },
     "verification": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-08-16T18:21:56+00:00",
-      "exitedAt": "",
+      "exitedAt": "2026-08-16T19:13:08+00:00",
       "lastBlock": "`validate-artifacts` did not pass:\n- 4 task(s) still unticked (docs/specs/issue-239/testing-plan.md)",
+      "forced": false
+    },
+    "self-review": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-08-16T19:13:08+00:00",
+      "exitedAt": "2026-08-16T19:23:25+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "critic-review": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-08-16T19:23:25+00:00",
+      "exitedAt": "2026-08-16T19:23:25+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "security-review": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-08-16T19:23:25+00:00",
+      "exitedAt": "",
+      "lastBlock": "",
       "forced": false
     }
   },
@@ -278,7 +302,7 @@
       "by": "cli"
     },
     "verification": {
-      "at": "2026-08-16T18:34:43+00:00",
+      "at": "2026-08-16T19:13:08+00:00",
       "by": "cli"
     }
   },
