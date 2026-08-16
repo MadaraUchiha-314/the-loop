@@ -25,6 +25,21 @@ pre-commit run --all-files    # exactly what CI runs
 - **markdownlint** for all docs
 - **schema validation** for `.the-loop` config
 
+### Hunting wait-ordering flakes
+
+```bash
+uv run --project cli python -m pytest --dispatch-lag=0.5 cli
+```
+
+Delays every dispatcher write that *follows* a spawn or a delivery — registry records,
+dedup releases, announcements, graph moves — so a test that waits on the attempt and then
+depends on its outcome fails on every run instead of about one in three
+([issue-251](https://github.com/MadaraUchiha-314/the-loop/issues/251),
+[decision-089](/decisions/decision-089)). Nothing is patched unless the flag is passed, so
+`make check` is unaffected; run it when you add a test that drives work onto a background
+thread, or when a flake needs a cause. The rule it enforces is in
+[`reference/testing.md`](/operating-model/reference/testing).
+
 CI ([`.github/workflows/ci.yml`](https://github.com/MadaraUchiha-314/the-loop/blob/main/.github/workflows/ci.yml))
 runs the very same pre-commit hooks — no local-vs-CI drift. See
 [decision-006](/decisions/decision-006).

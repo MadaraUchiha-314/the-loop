@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [091](decision-091.md) | An asynchronous test waits on the outcome, and the suite carries a lag to prove it | proposed | 2026-08-16 |
 | [090](decision-090.md) | Self-diagnosis is a policy over the event log, behind an allow-list, and its issues are never armed | proposed | 2026-08-16 |
 | [089](decision-089.md) | The harness's own markdown passes the project's linter; a human's words are never rewritten to | proposed | 2026-08-16 |
 | [088](decision-088.md) | A work item's own pull request is the work item's session — an endpoint needs a tree, not a toggle | proposed | 2026-08-16 |
