@@ -305,26 +305,72 @@ class TestTmuxRunner:
         assert not result.ok
         assert "tmux" in result.error
 
-    def test_deliver_pastes_with_bracketed_paste_then_enter(self, monkeypatch):
+    def test_deliver_pastes_bracketed_then_submits_without_send_keys(self, monkeypatch):
+        # issue-240: the submit must not be `send-keys`. tmux resolves that
+        # command's TARGET CLIENT from `-c`/the current client — never from `-t`
+        # — so with a read-only observer attached (`tmux attach -r`) tmux >= 3.7
+        # refuses it with "client is read-only" and the session's only input path
+        # dies. `paste-buffer` writes straight into the pane and consults no
+        # client, so both halves travel that way: the prompt bracketed, the
+        # submit not.
         fake = FakeRun()
         monkeypatch.setattr(runner_mod.subprocess, "run", fake)
         monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
         session = make_session(tmux_target="loop-github-octo-repo-15")
         result = TmuxRunner().deliver(session, "event prompt")
         assert result.ok, result.error
-        # liveness (has-session + list-panes), then load-buffer, paste-buffer
-        # -p, send-keys Enter — in order.
+        # liveness (has-session + list-panes), then the prompt buffer and its
+        # bracketed paste, then the submit buffer and its unbracketed paste.
         assert fake.verbs == [
             "has-session",
             "list-panes",
             "load-buffer",
             "paste-buffer",
-            "send-keys",
+            "load-buffer",
+            "paste-buffer",
         ]
-        paste = fake.calls[3]
-        assert "-p" in paste
-        assert paste[paste.index("-t") + 1] == "loop-github-octo-repo-15"
-        assert fake.calls[4][-1] == "Enter"
+        # Pinned as a whole rather than as "no send-keys": this repository's CI
+        # runs a tmux without the guard, so only the argv itself can fail here
+        # when a client-resolved command comes back.
+        assert "send-keys" not in fake.verbs
+        prompt_paste, submit_paste = fake.calls[3], fake.calls[5]
+        assert "-p" in prompt_paste, "the prompt is one message, so it stays bracketed"
+        assert "-p" not in submit_paste, "a bracketed submit would be literal text"
+        for paste in (prompt_paste, submit_paste):
+            assert "-d" in paste, "both buffers are deleted after use"
+            assert paste[paste.index("-t") + 1] == "loop-github-octo-repo-15"
+        # Two distinct buffers, so nothing depends on the order of a delete and
+        # the next load.
+        assert (
+            prompt_paste[prompt_paste.index("-b") + 1]
+            != submit_paste[submit_paste.index("-b") + 1]
+        )
+
+    def test_deliver_removes_both_temporary_files(self, monkeypatch):
+        # R3.3: the prompt file was always unlinked; the submit file must be too,
+        # including when the delivery fails between the two pastes.
+        made = []
+        real_mkstemp = runner_mod.tempfile.mkstemp
+
+        def spy(*args, **kwargs):
+            fd, path = real_mkstemp(*args, **kwargs)
+            made.append(path)
+            return fd, path
+
+        monkeypatch.setattr(runner_mod.tempfile, "mkstemp", spy)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        monkeypatch.setattr(runner_mod.subprocess, "run", FakeRun())
+        assert TmuxRunner().deliver(make_session(tmux_target="loop-a"), "p").ok
+        assert len(made) == 2
+        assert not any(os.path.exists(path) for path in made)
+
+        made.clear()
+        # Second paste fails: the file written for it must still be cleaned up.
+        monkeypatch.setattr(
+            runner_mod.subprocess, "run", FakeRun(verbs_per_call={"paste-buffer": [0, 1]})
+        )
+        assert not TmuxRunner().deliver(make_session(tmux_target="loop-a"), "p").ok
+        assert made and not any(os.path.exists(path) for path in made)
 
     def test_deliver_and_kill_address_the_normalised_target(self, monkeypatch):
         # AC5: every argv built from a legacy dotted record names the session

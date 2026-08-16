@@ -272,9 +272,11 @@ def test_followup_event_is_pasted_into_the_running_session(pipeline, monkeypatch
     Scenario: a follow-up comment is pasted into the live TUI
       Given a registered tmux-mode session for the work item, live in tmux
       When an issue_comment event for that work item arrives
-      Then the prompt is delivered via load-buffer, bracketed paste-buffer and Enter
+      Then the prompt is delivered via load-buffer and a bracketed paste-buffer
+      And the submit travels as a second, unbracketed paste-buffer rather than send-keys
       And the session records the processed delivery id
     Requirement: docs/specs/issue-32/requirements.md#R3
+    Requirement: docs/specs/issue-240/bugfix.md#requirement-1--a-read-only-observer-does-not-block-delivery
     """
     deliver, registry, calls = pipeline
     registry.register(
@@ -304,17 +306,24 @@ def test_followup_event_is_pasted_into_the_running_session(pipeline, monkeypatch
     )
 
     verbs = [c[0] for c in calls()]
-    # has-session + list-panes = the liveness probe (issue-86).
+    # has-session + list-panes = the liveness probe (issue-86). The submit is a
+    # second paste, not send-keys: tmux resolves send-keys against the session's
+    # current CLIENT, so a read-only observer would refuse every delivery
+    # (issue-240).
     assert verbs == [
         "has-session",
         "list-panes",
         "load-buffer",
         "paste-buffer",
-        "send-keys",
+        "load-buffer",
+        "paste-buffer",
     ]
-    paste = calls()[3]
+    assert "send-keys" not in verbs
+    paste, submit = calls()[3], calls()[5]
     assert "-p" in paste
+    assert "-p" not in submit
     assert paste[paste.index("-t") + 1] == "loop-github-octo-repo-15"
+    assert submit[submit.index("-t") + 1] == "loop-github-octo-repo-15"
 
 
 def pr_close_payload(number=15):
