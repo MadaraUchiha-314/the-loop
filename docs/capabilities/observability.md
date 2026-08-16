@@ -43,5 +43,6 @@ for humans, coding agents and any dashboarding built on top.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-239 | The event log gained a second reader: `stream.subscribed`, `stream.refused`, `stream.desync` and `stream.disconnected` record who is watching a workstation, what was refused and why, and when a subscriber was told to resynchronise. `api.request` and `mcp.call` are excluded from what the stream carries — the log still serves them to `the-loop events` | [spec](../specs/issue-239/), [decision-086](../decisions/decision-086.md) |
 | issue-63 | `observability.eventLog` moved into the independent, repo-agnostic CLI config as top-level `eventLog` | [spec](../specs/issue-63/), [decision-032](../decisions/decision-032.md) |
 | issue-50 | Added the structured JSONL event log and `the-loop events` | [spec](../specs/issue-50/), [decision-025](../decisions/decision-025.md) |

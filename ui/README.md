@@ -20,6 +20,26 @@ Point it at a workstation on the **Settings** screen; the base URL is kept in th
 browser's `localStorage`. With no service reachable, switch the data source to **Demo
 fixture** — a bundled dataset in the same record shapes, always shown behind a banner.
 
+## Keeping the screen current
+
+Settings offers three ways, stored per browser:
+
+| Mode | What it does | When it is the right one |
+|---|---|---|
+| **Streaming** | Holds one `GET /api/v1/stream` open; the service pushes each change | Loopback, or a stable tunnel — the default |
+| **Polling** | Asks again on a timer (5–60s) | A flaky link: a failed cycle costs one request, where a failed stream is a screen that stops updating |
+| **Manual** | No background request at all | A metered or remote workstation you want to look at deliberately |
+
+Streaming refreshes only what a change touches — a graph move re-reads that one work
+item's loop position, anything else re-reads the four lists — so watching a busy work item
+costs less than the 15-second poll it replaces, not more. The header says whether the
+screen is **live**, **reconnecting**, or has fallen back to polling and why; it never
+shows a stale board that looks current. A service older than the stream, or one with
+`service.stream.enabled: false`, answers 404 and the page polls instead.
+
+Demo mode streams too: the frames a demo viewer sees are the ones their own clicks
+produced. Nothing invents traffic that did not happen.
+
 | Command | What it does |
 |---|---|
 | `bun run dev` | Vite dev server |
@@ -142,7 +162,8 @@ build did not emit, so a history-API router would break every deep link on refre
 src/
   api/        types.ts (the records /api/v1 serves) · client.ts (HTTP) · model.ts (the join)
   demo/       the bundled fixture, behind the same interface as the HTTP client
-  state/      settings (localStorage) · hash route · the board's fetch/poll loop
+  state/      settings (localStorage) · hash route · the board's fetch loop
+              stream.ts (what a frame makes stale) · useStream.ts (the connection)
   components/ the Industry primitives: blueprint frame, node rail, session dot
   views/      one file per screen
   styles/     industry.css (vendored design system — do not hand-edit) · app.css

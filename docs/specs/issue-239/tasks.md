@@ -205,7 +205,7 @@ red→green transition recorded as evidence.
 
 ### Documentation
 
-- [ ] 16. Capability docs, user-facing docs, and the decision record
+- [x] 16. Capability docs, user-facing docs, and the decision record
   - `docs/capabilities/control-plane.md` — the refresh modes and the stream, with history
     rows tracing to this work item; `docs/capabilities/observability.md` — the four new
     event types.

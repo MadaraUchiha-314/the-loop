@@ -1,7 +1,7 @@
 ---
 type: execution-log
 workItem: "github:MadaraUchiha-314/the-loop#239"
-phase: implementation            # not-started | brainstorming | requirements-definition | design | test-planning | tasks-breakdown | implementation | verification | needs-review | complete
+phase: verification              # not-started | brainstorming | requirements-definition | design | test-planning | tasks-breakdown | implementation | verification | needs-review | complete
 status: in-progress          # in-progress | complete
 # repos:                     # OPTIONAL (issue-183). The CONTRIBUTING repositories this
 #   - <owner>/<repo>         #   work item raises pull requests in — one inner loop each,
@@ -32,7 +32,7 @@ status: in-progress          # in-progress | complete
 | design | 2026-08-16 | @MadaraUchiha-314 (PR #244) | SSE over WebSocket, decided on CORS parity. Two UI prototypes under `design/`. Risk tier 4 — the CLI config schema changes, so the security review needs a named human sign-off. |
 | test-planning | 2026-08-16 | @MadaraUchiha-314 (PR #244) | 13 rows, 10 in scope. R1.6's CORS parity is deliberately *not* automated — a test client cannot prove it; T12 does it from a browser. |
 | tasks-breakdown | 2026-08-16 | n/a — the plan's human read is `human-approval` | 16 tasks, six of them startable at once: the service chain and the UI chain share no file. |
-| implementation | 2026-08-16 |  | 16 tasks; TDD throughout. |
+| implementation | 2026-08-16 |  | All 16 tasks done. One design deviation (the broker is router-owned, not lifespan-owned) and one replanned test row, both recorded below. |
 | verification |  |  |  |
 | needs-review |  |  |  |
 | complete |  |  |  |
@@ -223,6 +223,21 @@ status: in-progress          # in-progress | complete
   kind through the decoder; that suite did not exist before, which is why the bug was
   possible.
 
+### 2026-08-16 18:40 UTC — task 16 done: docs, capability docs, decision record
+
+- **Phase:** implementation → verification
+- **Did:** `decision-086` (SSE over WebSocket, with the CORS asymmetry as the deciding
+  reason) and its index row; seven behaviours added to the `control-plane` capability doc
+  and the four event types to `observability`; the `service.stream` leaves documented in
+  the config reference; a **Keeping the screen current** section in `ui/README.md`. The
+  execution log's gated `## Capability docs` and `## Documentation` sections are filled,
+  including the reason `README.md` and the skill needed no change.
+- **Checkpoint/tests:** `make lint` clean over 696 files; the three parity tests
+  (`docs_parity`, `api_contract_parity`, `config_schema_parity`) pass — they are what
+  would have caught an undocumented schema leaf or a contract that drifted.
+- **Next:** the `verification` node — execute `testing-plan.md` and record evidence.
+- **Blockers:** none.
+
 ## Verification results
 
 > **Only when this work item declared `test-planning` away** (issue-179). With a
@@ -286,7 +301,8 @@ under `<specDir>/<id>/evidence/`.
 
 | Capability doc | What changed | History row |
 |----------------|--------------|-------------|
-|                |              |             |
+| [`control-plane.md`](../../capabilities/control-plane.md) | Seven behaviours added: the stream as a read surface and its three frame kinds; the `api.request`/`mcp.call` exclusion with no opt-in; lossless resume with a bounded replay; the subscriber bound and the shared tailer; the viewer's three refresh modes and their migration; and visible degradation with the two invalidation classes. | `issue-239`, linking the spec and decision-086 |
+| [`observability.md`](../../capabilities/observability.md) | The four new event types — `stream.subscribed`, `stream.refused`, `stream.desync`, `stream.disconnected` — and the note that `api.request`/`mcp.call` stay in the log while never reaching the stream. | `issue-239` |
 
 ## Documentation
 
@@ -305,7 +321,14 @@ under `<specDir>/<id>/evidence/`.
 
 | Document | What changed |
 |----------|--------------|
-|          |              |
+| [`docs/config/cli/service-options.md`](../../config/cli/service-options.md) | A new **The stream** section documenting `stream.enabled`, `stream.maxSubscribers` and `stream.keepAliveSeconds` — required by `test_docs_parity.py` P4, which fails the build for an undocumented schema leaf. |
+| [`ui/README.md`](https://github.com/MadaraUchiha-314/the-loop/blob/main/ui/README.md) | A **Keeping the screen current** section: the three refresh modes and when each is right, what streaming actually refreshes, what the header says when it cannot connect, and that demo mode streams the viewer's own clicks rather than inventing traffic. |
+| [`docs/api-specs/openapi/the-loop.v1.yaml`](../../api-specs/openapi/the-loop.v1.yaml) | `streamEvents`: the two query parameters, the `text/event-stream` response with its frame description and example, and the 400/404/503 answers. Contract-first, and gated by `test_api_contract_parity.py`. |
+| [`docs/decisions/decision-086.md`](../../decisions/decision-086.md) | New — SSE over WebSocket, with the CORS asymmetry as the deciding reason, plus what it costs (one of the browser's six per-origin connections) and what it constrains. Indexed in `decisions.md`. |
+
+No change was needed to `README.md` or to the operating-model skill: this work item changes
+what the **control plane** does, not how the loop is run, and neither document describes
+the dashboard's refresh behaviour.
 
 ### 2026-08-16 — entry phase-selection
 

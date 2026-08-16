@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [086](decision-086.md) | Server-Sent Events, not WebSocket, for the control-plane stream | proposed | 2026-08-16 |
 | [085](decision-085.md) | Ship the SDK as a router + lifespan seam, not a second application | proposed | 2026-08-15 |
 | [084](decision-084.md) | One lifecycle surface (`start\|stop\|status\|restart`) driven by per-service `enabled` flags | proposed | 2026-08-14 |
 | [083](decision-083.md) | An ad-hoc task is a fourth loop, not a stretched `contribute` | proposed | 2026-08-14 |
