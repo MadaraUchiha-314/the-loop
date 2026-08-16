@@ -54,7 +54,14 @@ logger = logging.getLogger("the-loop.poll")
 # Per item, how many comment ids we remember across polls. The set is re-seeded
 # from the live comment list every cycle, so this only caps a single very
 # chatty thread; the newest comments always stay in the window.
-_SEEN_COMMENTS_CAP = 500
+#
+# Raised from 500 with issue-246, which put three streams of ids into this one
+# ledger — conversation comments, review bodies and inline review-thread
+# comments — so the old bound is reached roughly three times sooner. It matters
+# because of what eviction does here: an id dropped while it is still live
+# upstream reads as new on the next cycle, is forwarded again, resolves, and is
+# evicted again. That is a delivery loop, not a forgotten comment.
+_SEEN_COMMENTS_CAP = 2000
 
 
 @dataclass
