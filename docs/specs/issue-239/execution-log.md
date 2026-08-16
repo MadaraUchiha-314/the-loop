@@ -1,7 +1,7 @@
 ---
 type: execution-log
 workItem: "github:MadaraUchiha-314/the-loop#239"
-phase: design-approval           # not-started | brainstorming | requirements-definition | design | test-planning | tasks-breakdown | implementation | verification | needs-review | complete
+phase: tasks-breakdown           # not-started | brainstorming | requirements-definition | design | test-planning | tasks-breakdown | implementation | verification | needs-review | complete
 status: in-progress          # in-progress | complete
 # repos:                     # OPTIONAL (issue-183). The CONTRIBUTING repositories this
 #   - <owner>/<repo>         #   work item raises pull requests in — one inner loop each,
@@ -29,9 +29,9 @@ status: in-progress          # in-progress | complete
 |-------|---------|----------------------|-------|
 | phase-selection | 2026-08-16 | @MadaraUchiha-314 | `brainstorming`, `requirements-approval` and `critic-review` declared skipped; `design-critic-review` not selected. Outer loop iterates **on a pull request**. |
 | requirements-definition | 2026-08-16 | n/a — `requirements-approval` skipped | 6 requirements. The transport choice (SSE vs WebSocket) is deferred to design *with its constraints fixed here*, CORS parity among them. |
-| design | 2026-08-16 | awaiting `design-approval` | SSE over WebSocket, decided on CORS parity. Two UI prototypes under `design/`. Risk tier 4 — the CLI config schema changes, so the security review needs a named human sign-off. |
-| test-planning | 2026-08-16 | awaiting `design-approval` | 13 rows, 10 in scope. R1.6's CORS parity is deliberately *not* automated — a test client cannot prove it; T12 does it from a browser. |
-| tasks-breakdown |  |  |  |
+| design | 2026-08-16 | @MadaraUchiha-314 (PR #244) | SSE over WebSocket, decided on CORS parity. Two UI prototypes under `design/`. Risk tier 4 — the CLI config schema changes, so the security review needs a named human sign-off. |
+| test-planning | 2026-08-16 | @MadaraUchiha-314 (PR #244) | 13 rows, 10 in scope. R1.6's CORS parity is deliberately *not* automated — a test client cannot prove it; T12 does it from a browser. |
+| tasks-breakdown | 2026-08-16 | n/a — the plan's human read is `human-approval` | 16 tasks, six of them startable at once: the service chain and the UI chain share no file. |
 | implementation |  |  |  |
 | verification |  |  |  |
 | needs-review |  |  |  |
@@ -110,6 +110,29 @@ status: in-progress          # in-progress | complete
   on PR #244, although this work item's frozen surface is `pull-request`. The artifacts and
   their review belong on the PR, so the briefing was posted there by hand. Out of scope
   here; worth its own ticket.
+
+### 2026-08-16 17:20 UTC — design approved; task DAG written
+
+- **Phase:** tasks-breakdown
+- **Did:** @MadaraUchiha-314 approved at `design-approval` with a bare `approved`
+  ([comment](https://github.com/MadaraUchiha-314/the-loop/pull/244#issuecomment-5308654627)),
+  so all four design open questions stand as written — SSE, the transcript in scope,
+  `stream` as the default mode, and Requirement 6 staying in this item. Wrote `tasks.md`:
+  16 tasks in two chains that share no file, plus Requirement 6 standing alone, meeting
+  only at the documentation task.
+- **Checkpoint/tests:** `make lint` → 0 errors over 694 files, after the detour below.
+- **Next:** implementation. Entering it crosses the phase boundary, so the context is
+  cleared and the work re-enters from the locked artifacts on disk
+  (`contextManagement.phaseBoundary: clear`). Start at tasks 1, 2, 8, 9, 10 and 15 — the
+  six roots.
+- **Blockers:** none.
+- **Detour, ticketed not fixed:** `record-feedback` wrote the approval as
+  `**@handle**` alone on a line, which markdownlint's MD036 rejects — so the gate's own
+  hook left `design.md` and `testing-plan.md` failing this repo's lint. Reflowed both
+  blocks by hand to `**@handle** — approved` (attribution and body preserved verbatim) and
+  filed [#247](https://github.com/MadaraUchiha-314/the-loop/issues/247). Not fixed inside
+  this PR: it is an unrelated harness change, and every change is a work item with a
+  ticket.
 
 ## Verification results
 
@@ -213,4 +236,14 @@ under `<specDir>/<id>/evidence/`.
 ### 2026-08-16 — entry test-planning
 
 - **Node:** test-planning
+- **Boundary:** entry
+
+### 2026-08-16 — entry tasks-breakdown
+
+- **Node:** tasks-breakdown
+- **Boundary:** entry
+
+### 2026-08-16 — entry implementation
+
+- **Node:** implementation
 - **Boundary:** entry
