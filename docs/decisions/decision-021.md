@@ -1,6 +1,10 @@
 # Decision 021: tmux runner for observable/interactive webhook-spawned sessions
 
-- **Status:** accepted
+- **Status:** accepted — **superseded in part by** `docs/specs/issue-240/`: the submit
+  half of "bracketed-paste injection" below is no longer `send-keys Enter` but a second,
+  unbracketed `paste-buffer`, because `send-keys` resolves a *target client* and a
+  read-only observer therefore blocked every delivery on tmux ≥ 3.7. The injection
+  mechanism, the FIFO and everything else here stand.
 - **Date:** 2026-07-17
 - **Deciders:** @MadaraUchiha-314 (issue #32, PR #33/#35 reviews)
 - **Work item:** issue-32

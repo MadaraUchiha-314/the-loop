@@ -309,6 +309,20 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   (`Dispatcher.delivery_status`: done/inflight/unhandled) rather than assuming success at
   enqueue time. (The webhook path relies on GitHub redelivery, repaired for dead tmux
   sessions by the respawn above — see [interactive-sessions](interactive-sessions.md).)
+- **A comment the poller abandons SHALL be reported on the work item** (issue-240). WHEN
+  the retry budget for a comment is exhausted THEN, after the give-up is recorded, the
+  poller SHALL post one comment on that item — naming the abandoned comment, the number of
+  attempts, and that it will not be retried — carrying the self-comment marker so it is
+  never read back as human input (`poll.giveup_reported`). Until then the only signal was
+  a 😕 reaction and a line in the local event log, so a human who told an agent to do
+  something had no way to learn the agent was never told. The notice states the recovery:
+  **post the instruction again** — a new comment id carries a full retry budget, and
+  nothing the-loop stores needs editing. Posting is **best-effort in one direction only**:
+  it MAY fail (no `gh`, a non-GitHub provider, an API error — `poll.giveup_report_failed`)
+  and the give-up SHALL be recorded regardless; it SHALL NEVER cause a comment to be
+  treated as delivered, and SHALL NEVER end a poll cycle. The notice is built from the
+  comment's id, URL and attempt count only — **no text from the abandoned comment is
+  echoed** into something the-loop posts with the operator's credentials.
 - **Stopping and restarting the poller SHALL have no observable effect** (issue-159): a
   poller that was stopped and started behaves as one that never stopped. Five rules make
   that true, on top of the durable per-item ledger.
@@ -508,6 +522,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-240 | A comment abandoned after `polling.maxRetries` is now reported **on the work item** (`poll.giveup_reported`), naming the comment, the attempts and the recovery — posting it again — instead of leaving a 😕 reaction as the only signal. Best-effort and ledger-first: the notice can fail without changing what was recorded, and it echoes no text from the comment it reports | [spec](../specs/issue-240/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/240) |
 | issue-246 | The poll ingress reached parity with the receiver on **what a comment is** (2026-08-16): it read only the `IssueComment` connection, so an instruction left as a PR **review** or as an **inline review-thread comment** was never forwarded — silently, since nothing was read there was nothing to drop or log. The provider now merges all three surfaces into one chronological list (`gh pr view --json comments` plus paginated `gh api …/pulls/<n>/{reviews,comments}`), emits each as the event a real webhook would have carried, and forwards an inline comment with its file/line anchor; empty-body and `PENDING` reviews are dropped as carrying no instruction, an issue costs the one request it always did, and the retained-id cap grew to fit three streams in one ledger | [spec](../specs/issue-246/), [polling](../config/cli/polling-options.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/246) |
 | issue-228 | The ingresses stopped owning the operator surface (2026-08-14): the poller and receiver are started by `the-loop start` per `polling.enabled` / `webhooks.ghWebhook.enabled` (both default off), the `poll` command is gone (`daemon_entry poller [--once]` is the foreground/cron form; the run loop itself is unchanged), a start is proven by the daemon's pidfile lock instead of the removed double-fork handshake, and the receiver now holds its pidfile as a flock like the poller — so `daemon_status`, `the-loop status` and a truthful blocking `the-loop stop` all answer from the lock (the `gh-webhook` command itself folded away on the owner's PR #229 review, its run loop relocated to `the_loop.webhook.daemon`). Amended in the same PR (issue-231): `service.hostIngresses` (default true) runs both ingresses as threads inside the service process, locks kept per-ingress under the service's pid | [spec](../specs/issue-228/), [decision-084](../decisions/decision-084.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/228), [issue-231](https://github.com/MadaraUchiha-314/the-loop/issues/231) |
 | issue-225 | An eighth control keyword, `do` (`the-loop do`, `routing.control.keywords.do`): arms and spawns exactly as `start` at both spawn seams (same durable record, same named-actor authorization, same two-keyword refusal) and selects `pdlc-adhoc-loop` for the work item's outer walk — a tactical task with no PDLC process, resolved by the GraphLink state-first and then from the portable control record through the shared `LOOP_FOR_CONTROL_COMMAND` mapping. The existing token boundary already refuses `the-loop done`/`does`/`docs`, so no parser change was needed | [spec](../specs/issue-225/), [decision-083](../decisions/decision-083.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/225) |

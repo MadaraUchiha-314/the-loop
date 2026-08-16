@@ -38,9 +38,18 @@ still carrying the key is warned about and otherwise ignored).
   see [webhook-triggers](webhook-triggers.md) for how the linkage is resolved
   (issue-93, [decision-036](../decisions/decision-036.md)).
 - WHEN a routed event matches a session THEN the rendered prompt SHALL be
-  **bracketed-pasted** into the TUI (`load-buffer` → `paste-buffer -p` → `send-keys
-  Enter`), FIFO per session; a delivery that fails while the session is alive discards
-  the delivery id so the next redelivery/poll retries.
+  **bracketed-pasted** into the TUI and then submitted by a second, **unbracketed** paste
+  of a carriage return (`load-buffer` → `paste-buffer -p` → `load-buffer` →
+  `paste-buffer`), FIFO per session; a delivery that fails while the session is alive
+  discards the delivery id so the next redelivery/poll retries.
+- **A delivery SHALL issue no tmux command that resolves a client** (issue-240). The
+  submit was `send-keys … Enter` until then, and `send-keys` resolves its *target client*
+  from `-c` — or, with no `-c`, from the session's current client, never from `-t`. So an
+  operator attached with `sessions attach --read-only` (`tmux attach -r`) became the
+  target client, and tmux ≥ 3.7 refused every delivery with `client is read-only`: the
+  documented safe way to observe a session silently destroyed its only input path.
+  `paste-buffer` consults no client — it writes into the `-t` pane — so **observing a
+  session, read-only or not, SHALL NOT affect what the daemon can deliver into it**.
 - WHEN a delivery finds the target tmux session **gone** (crashed or killed, i.e.
   tmux answers that there is no such session) THEN the dispatcher SHALL **respawn**
   the harness on a fresh
@@ -255,6 +264,7 @@ still carrying the key is warned about and otherwise ignored).
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-240 | A read-only observer no longer blocks delivery: the submit keystroke is a second, unbracketed `paste-buffer` instead of `send-keys … Enter`, so no tmux command in the delivery resolves a client. tmux ≥ 3.7 refused `send-keys` with `client is read-only` whenever anyone was attached with `--read-only`, and `-t` could not avoid it — the guard tests the *target client*, which is resolved from `-c`/the current client | [spec](../specs/issue-240/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/240) |
 | issue-186 | `the-loop cleanup` — a control keyword, a CLI/API/MCP verb and an authorized closure all release a finished work item's **local** resources: every endpoint's tmux session, the workspace checkout and the machine-local registry record, ignoring the two retention settings. The portable record is kept and nothing remote is touched; a closure that names no authorized actor defers to the keyword rather than destroying state on an unattributable event | [spec](../specs/issue-186/), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/186) |
 | issue-156 | Process runner removed; tmux is the only runner (2026-08-05): `routing.runner` left the schema (ignored with a warning), tmux became a required daemon dependency, registry records dropped their `runner` field, and a record without a `tmuxTarget` heals lazily through the respawn path on its next event | [spec](../specs/issue-156/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/156) |
 | issue-154 | Fixed the tmux session name the-loop recorded and posted not being the one tmux gave the session: a slug's `.`/`:` are now rewritten to `_` (tmux's own `session_check_name`) where the name is minted and where a registry record is loaded, so the announced `tmux attach -t …` command resolves, probes stop reading a live session as absent, and `terminate_harness`'s guard rejects the target-grammar shape outright | [spec](../specs/issue-154/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/154) |
