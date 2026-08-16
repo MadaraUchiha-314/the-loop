@@ -1,3 +1,9 @@
+## v10.2.4 (2026-08-16)
+
+### Perf
+
+- **issue-243**: a forwarded event carries the instruction, not GitHub's metadata (#252)
+
 ## v10.2.3 (2026-08-16)
 
 ### Fix
