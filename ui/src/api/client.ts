@@ -94,8 +94,12 @@ export interface StreamQuery {
 
 export interface StreamHandlers {
   onFrame: (frame: StreamFrame) => void;
-  /** Called on every connection error. The caller counts them and decides. */
-  onError: (error: ApiError) => void;
+  /**
+   * Called on every connection error. The caller counts them and decides —
+   * except when `terminal` is true, which means the browser has **stopped
+   * trying**, so no number of further failures will ever arrive.
+   */
+  onError: (error: ApiError, terminal: boolean) => void;
   onOpen?: () => void;
 }
 
@@ -394,18 +398,27 @@ export class HttpApi implements TheLoopApi {
     };
     const onOpen = () => handlers.onOpen?.();
     const onError = () => {
-      // `EventSource` never says *why*. A closed readyState means the browser
-      // gave up on this connection — a 404 from an older service, a CORS
-      // rejection, or nothing listening — and all three reach the operator as
-      // `ApiError.advice`, which already names them in cheapest-remedy order.
+      // `EventSource` never says *why*, but it does say whether it will try
+      // again — and the difference decides what the page should do.
+      //
+      // A *dropped* connection is reopened by the browser on its own schedule,
+      // so failures keep arriving and the caller can count them. A response the
+      // browser will not accept — a 404 from a service too old for this route, a
+      // CORS rejection — is **terminal**: `readyState` goes to CLOSED and no
+      // further error will ever come. Reported as such, because a caller waiting
+      // for a fifth failure that cannot happen would sit on a frozen board
+      // forever (R4.1). Found by driving a real browser against a service with
+      // `service.stream.enabled: false`; every stub retries politely.
+      const terminal = source.readyState === EventSource.CLOSED;
       handlers.onError(
         new ApiError(
           "network",
-          source.readyState === EventSource.CLOSED
-            ? "the stream connection was closed by the browser"
+          terminal
+            ? "the service refused or closed the stream, and the browser will not retry it"
             : "the stream connection dropped",
           source.url,
         ),
+        terminal,
       );
     };
 

@@ -7,11 +7,13 @@
  *    Refreshing per frame would make streaming more expensive than the 15-second
  *    poll it replaces, so frames accumulate for {@link COALESCE_MS} and flush as
  *    one invalidation.
- * 2. **Count failures and stop.** `EventSource` reconnects on its own, forever,
- *    and cannot be told otherwise. Left alone it would sit on a dead board
- *    retrying invisibly — so this counts consecutive failures and closes the
- *    source at {@link MAX_CONSECUTIVE_FAILURES}, which is what makes "streaming
- *    unavailable, polling instead" a state the operator can see.
+ * 2. **Count failures and stop.** `EventSource` reconnects on its own and cannot
+ *    be told otherwise, so this counts consecutive failures and closes the source
+ *    at {@link MAX_CONSECUTIVE_FAILURES} — which is what makes "streaming
+ *    unavailable, polling instead" a state the operator can see rather than a
+ *    dead board being retried invisibly. A **terminal** failure short-circuits
+ *    that count: when the browser has stopped trying, waiting for a fifth
+ *    failure that can never arrive is the same frozen board by another route.
  * 3. **Say which state it is in**, in words: `live` with a timestamp,
  *    `reconnecting` with an attempt number, or `fallback` with the reason. A
  *    screen that is not updating must never look like a screen where nothing is
@@ -107,9 +109,12 @@ export function useStream(
           pending.current = mergeInvalidation(pending.current, invalidationFor(frame));
           if (timer.current === null) timer.current = setTimeout(flush, COALESCE_MS);
         },
-        onError: (error: ApiError) => {
+        onError: (error: ApiError, terminal: boolean) => {
           failures.current += 1;
-          if (failures.current < MAX_CONSECUTIVE_FAILURES) {
+          // `terminal` means the browser closed the source and will not try
+          // again — counting toward a limit it can never reach would leave the
+          // board frozen behind a "reconnecting" label forever.
+          if (!terminal && failures.current < MAX_CONSECUTIVE_FAILURES) {
             setState({ name: "reconnecting", attempt: failures.current });
             return;
           }

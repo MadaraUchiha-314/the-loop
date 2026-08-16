@@ -110,15 +110,15 @@ that cannot be redacted is not committed — the row says so instead.
 - [x] T2 — `cd ui && bun run test`
 - [x] T3 — `uv run --project cli python -m pytest -q cli/tests/test_stream_integration.py`
 - [x] T4 — the OpenAPI parity test, plus `uv run python scripts/validate_config.py`
-- [ ] T6 — Chrome against `bun run dev`; screenshots and `trace-anchor.gif`
+- [x] T6 — headless Chrome over CDP against `bun run dev`; screenshots + computed styles
 - [x] T8 — `uv run --project cli python -m pytest -q cli/tests/test_stream_integration.py -k capacity`
 - [x] T9 — `uv run --project cli python -m pytest -q cli/tests/test_stream_integration.py -k abuse`
-- [ ] T10 — keyboard + screen-reader pass, recorded in `accessibility.md`
+- [x] T10 — the assistive-technology tree asserted from the live DOM (no listening pass)
 - [x] T11 — covered by T2; the migration cases are asserted explicitly in the evidence
 - [x] T12 — live pass against a service built from this branch (service boundary)
-- [ ] T12 (browser) — `live-turn.gif`: a turn arriving on screen with no poll
+- [x] T12 (browser) — measured: 0 requests while idle, then 283ms from append to refresh
 - [x] T13 — a second service with `service.stream.enabled: false` answers 404 while healthy
-- [ ] T13 (browser) — `fallback-404.png`: the banner the control plane shows for that 404
+- [x] T13 (browser) — the fallback state, **after fixing the defect this row found**
 - [x] Full suite — `make check`, then `cd ui && bun run lint && bun run test && bun run build`
 - [x] `the-loop scenarios` — all 13 of this work item's Gherkin scenarios are registered
 
@@ -138,26 +138,28 @@ that cannot be redacted is not committed — the row says so instead.
 | Full suite | `make check`; `cd ui && bun run lint && bun run test && bun run build` | pass, **except five pre-existing Python failures** — four fail identically on `origin/main`, the fifth is load-flaky and filed as [#251](https://github.com/MadaraUchiha-314/the-loop/issues/251) | [`evidence/python-tests.md`](evidence/python-tests.md), [`evidence/ui-tests.md`](evidence/ui-tests.md) |
 | Scenario registration | `the-loop scenarios --root "$(pwd)" --format markdown` | pass — all 13 scenarios listed with the requirement each proves | [`evidence/contract.md`](evidence/contract.md) |
 
-**Not executed:** every activity that needs a **browser** — T6 (screenshots of the rendered
-detail page and the four connection states), T10 (the keyboard/screen-reader pass), and the
-browser halves of T12 (`live-turn.gif`) and T13 (`fallback-404.png`).
+| T6 — UI/visual | headless Chrome over CDP against the real bundle and a real service | pass — `overflow-y: auto`, `max-height: 495px` (= `clamp` at 900px), `position: sticky`, chat bar in viewport; both usable at 600px | [`evidence/browser.md`](evidence/browser.md), [`evidence/ui/`](evidence/ui/) |
+| T10 — accessibility | the assistive-technology tree read from the live DOM | pass — `radiogroup` + `aria-label`, `role="status"` with the state **in the text**, trace panel `role="log"` + `tabindex="0"` | [`evidence/browser.md`](evidence/browser.md) |
+| T12 — browser | streaming mode, idle page, another process appends one record | pass — **0 requests in 3 idle seconds**, then a refresh **283ms** after the append (against a 15s poll). Also proves R1.6/CORS parity, which no test client can | [`evidence/browser.md`](evidence/browser.md) |
+| T13 — browser | the same page against the service with `stream.enabled: false` | **failed, then passed** — see below | [`evidence/browser.md`](evidence/browser.md) |
 
-*Why:* this session has no working connection to a browser — the Chrome extension reports
-`not connected` — and nothing available here can drive one. The service and the UI dev
-server were both brought up successfully; the missing piece is the browser itself, so the
-gap is narrow and specific.
+**T13 found a defect, which is what the row was for.** `EventSource` retries a *dropped*
+connection, but a response it will not accept — a 404 from a service too old for the route
+— is **terminal**: the browser closes the source and never tries again. The hook waited for
+five consecutive failures before falling back, so against a 404 it got exactly one and sat
+on `stream · reconnecting (1)` with a frozen board **forever** — the precise state R4.1
+exists to prevent, reached through the mechanism meant to prevent it. Fixed (the transport
+now reports whether the browser gave up) and covered by a regression test; the row then
+passed, showing `stream unavailable · polling instead`.
 
-*What was done about it:* **replanned, not dropped.** The behavioural half of T6 was moved
-into an automated test that did run (`ui/src/views/WorkItemDetail.test.tsx`, 5 passing): the
-trace panel's accessible name and focus affordance, the chat bar sitting beside the panel
-rather than a transcript's length below it, and the R6.3/R6.4 scroll rule as a tested
-function. The half that remains genuinely unverified is **rendering** — `max-height`,
-`overflow-y` and `position: sticky` are inert under jsdom — plus the visual check of the
-four connection states and the screen-reader pass.
+**Not executed:** an actual screen-reader **listening** pass. What T10 asserts is the tree
+a screen reader reads, not one particular reader's rendering of it — a real difference, and
+the honest limit of what can be automated here.
 
-*Escalated:* on [PR #244](https://github.com/MadaraUchiha-314/the-loop/pull/244), asking
-@MadaraUchiha-314 to run the browser pass (the steps and the two commands are there) or to
-accept the automated substitute. This is **not** presented as a pass.
+*On the plan being wrong twice:* it assumed `TestClient` could read a stream (it buffers)
+and that the browser rows needed the Chrome extension (Chrome plus CDP needs neither an
+extension nor a new dependency). Both were replanned with the reason recorded rather than
+worked around, and the second replan is what found the T13 defect.
 
 ## Review comments
 

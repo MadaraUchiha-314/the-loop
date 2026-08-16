@@ -1,4 +1,4 @@
-# Decision 086: Server-Sent Events, not WebSocket, for the control-plane stream
+# Decision 087: Server-Sent Events, not WebSocket, for the control-plane stream
 
 - **Status:** proposed
 - **Date:** 2026-08-16

@@ -283,6 +283,42 @@ status: in-progress          # in-progress | complete
   documents were equally wrong and it passed. Fixed with
   `response_class=StreamingResponse`.
 
+### 2026-08-16 19:05 UTC — the browser rows ran after all, and found a bug
+
+- **Phase:** verification
+- **Did:** @MadaraUchiha-314 asked why this needed a human. Fair question, and the answer
+  was that I had stopped at the wrong obstacle: the Chrome **extension** is not connected
+  (`list_connected_browsers` → `[]`), but Chrome itself is installed and `bun` speaks
+  WebSocket, so a ~200-line scratchpad script launches headless Chrome with
+  `--remote-debugging-port` and drives it over CDP. No repository dependency; nothing added
+  to `ui/package.json`. All four browser rows executed against the real bundle and a real
+  service.
+- **Checkpoint/tests:** T6, T10, T12 (browser) and T13 (browser) now ticked with evidence
+  in [`evidence/browser.md`](evidence/browser.md) and six screenshots under `evidence/ui/`.
+- **Next:** `the-loop graph complete issue-239` → the review chain and the security gate.
+- **Blockers:** none. The escalation on PR #244 is withdrawn.
+- **T13 found a real defect — the point of the row.** `EventSource` retries a *dropped*
+  connection, but a response it will not accept — a 404 from a service too old for the
+  route — is **terminal**: the browser closes the source and never retries. `useStream` was
+  counting to five consecutive failures, so against a 404 it received exactly one and sat
+  on `stream · reconnecting (1)` with a frozen board **forever**. That is the precise state
+  R4.1 exists to prevent, reached through the mechanism meant to prevent it. No stub would
+  have found it — every stub retries politely. The transport now reports whether the
+  browser gave up, and a terminal failure short-circuits the count.
+- **What the browser proved that nothing else could:** with the page idle in streaming
+  mode, **zero** requests in three seconds; then another process appended one record and
+  the page refreshed **283ms** later, against a 15-second poll. And R1.6 — CORS parity —
+  which the plan had written off as unautomatable: a real browser opened `EventSource`
+  cross-origin and the service accepted it, because the origin is in
+  `service.cors.allowOrigins`. `httpx` cannot show that; it does not enforce CORS at all.
+- **Also this window:** main advanced under this branch (issue-243 merged) and a merge was
+  in flight with two conflicts. Resolved — `uv.lock` taken from `origin/main`, and this
+  work item's decision record **renumbered 086 → 087** because issue-243 had claimed 086.
+  Two more hook-generated headings failed markdownlint (MD024, repeated `entry <node>`
+  headings from `log-entry` re-entries); disambiguated in place and added to
+  [#247](https://github.com/MadaraUchiha-314/the-loop/issues/247), which is the same root
+  cause.
+
 ## Design critic review
 
 > **Only when this work item selected the opt-in `design-critic-review` phase** (issue-188)
@@ -488,12 +524,12 @@ the dashboard's refresh behaviour.
 - **Node:** verification
 - **Boundary:** entry
 
-### 2026-08-16 — entry implementation
+### 2026-08-16 — entry implementation (re-entered, 2)
 
 - **Node:** implementation
 - **Boundary:** entry
 
-### 2026-08-16 — entry verification
+### 2026-08-16 — entry verification (re-entered, 2)
 
 - **Node:** verification
 - **Boundary:** entry

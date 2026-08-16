@@ -95,11 +95,11 @@ describe("useStream", () => {
     const { result } = renderHook(() => useStream(api, true, {}, vi.fn()));
     act(() => state.handlers?.onOpen?.());
 
-    act(() => state.handlers?.onError(new ApiError("network", "dropped", "u")));
+    act(() => state.handlers?.onError(new ApiError("network", "dropped", "u"), false));
     expect(result.current.name).toBe("reconnecting");
     if (result.current.name === "reconnecting") expect(result.current.attempt).toBe(1);
 
-    act(() => state.handlers?.onError(new ApiError("network", "dropped", "u")));
+    act(() => state.handlers?.onError(new ApiError("network", "dropped", "u"), false));
     if (result.current.name === "reconnecting") expect(result.current.attempt).toBe(2);
   });
 
@@ -115,7 +115,7 @@ describe("useStream", () => {
 
     const failures = MAX_CONSECUTIVE_FAILURES;
     for (let i = 0; i < failures; i += 1) {
-      act(() => state.handlers?.onError(new ApiError("network", "nothing is listening", "u")));
+      act(() => state.handlers?.onError(new ApiError("network", "nothing is listening", "u"), false));
     }
 
     expect(result.current.name).toBe("fallback");
@@ -131,14 +131,14 @@ describe("useStream", () => {
     act(() => state.handlers?.onOpen?.());
 
     for (let i = 0; i < MAX_CONSECUTIVE_FAILURES - 1; i += 1) {
-      act(() => state.handlers?.onError(new ApiError("network", "dropped", "u")));
+      act(() => state.handlers?.onError(new ApiError("network", "dropped", "u"), false));
     }
     act(() => state.handlers?.onOpen?.());
     expect(result.current.name).toBe("live");
 
     // A flaky link that recovers must not accumulate toward the limit.
     for (let i = 0; i < MAX_CONSECUTIVE_FAILURES - 1; i += 1) {
-      act(() => state.handlers?.onError(new ApiError("network", "dropped", "u")));
+      act(() => state.handlers?.onError(new ApiError("network", "dropped", "u"), false));
     }
     expect(result.current.name).toBe("reconnecting");
   });
@@ -166,5 +166,32 @@ describe("useStream", () => {
     rerender({ ref: "github:octo/repo#8" });
     expect(state.unsubscribes).toBe(1);
     expect(state.queries.at(-1)?.transcript).toEqual(["github:octo/repo#8"]);
+  });
+
+  /**
+   * The failure a real browser found and a stub never would.
+   *
+   * `EventSource` retries a *dropped* connection, but a response it will not
+   * accept — a 404 from a service too old for the route, a CORS rejection — is
+   * **terminal**: it closes the source and never tries again. Counting to five
+   * therefore never gets there, and the page sits on "reconnecting (1)" with a
+   * frozen board forever, which is the exact state R4.1 exists to prevent.
+   */
+  it("falls back at once when the browser gave up rather than retrying", () => {
+    const { api, state } = stubTransport();
+    const { result } = renderHook(() => useStream(api, true, {}, vi.fn()));
+
+    act(() => state.handlers?.onError(new ApiError("network", "closed by the browser", "u"), true));
+
+    expect(result.current.name).toBe("fallback");
+    expect(state.unsubscribes).toBe(1);
+  });
+
+  it("still counts a merely dropped connection toward the limit", () => {
+    const { api, state } = stubTransport();
+    const { result } = renderHook(() => useStream(api, true, {}, vi.fn()));
+    act(() => state.handlers?.onOpen?.());
+    act(() => state.handlers?.onError(new ApiError("network", "dropped", "u"), false));
+    expect(result.current.name).toBe("reconnecting");
   });
 });
