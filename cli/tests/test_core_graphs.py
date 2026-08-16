@@ -62,7 +62,9 @@ def test_check_answers_a_vanished_checkout_instead_of_raising(tmp_path, monkeypa
     """
 
     def fatal(*args, **kwargs):
-        raise AssertionError("check reached core with a repo path that does not resolve")
+        raise AssertionError(
+            "check reached core with a repo path that does not resolve"
+        )
 
     monkeypatch.setattr(graphs, "_runtime", fatal)
 
