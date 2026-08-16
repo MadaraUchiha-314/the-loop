@@ -48,6 +48,8 @@ __all__ = [
     "TICK_SECONDS",
     "QUEUE_SIZE",
     "MAX_PARTIAL_BYTES",
+    "MAX_FILTER_ENTRIES",
+    "MAX_REFUSAL_DETAIL",
     "EXCLUDED_EVENTS",
     "Frame",
     "LogTail",
@@ -88,6 +90,21 @@ _TRANSCRIPT_RETRY_TICKS = 10
 #: otherwise grow this until the process died. 1 MiB is far larger than any
 #: record `eventlog` writes and small enough to be irrelevant to the process.
 MAX_PARTIAL_BYTES = 1024 * 1024
+
+#: How many refs one connection may filter on, or watch transcripts for.
+#:
+#: The queue bounds what a subscriber can **buffer**; this bounds what it can
+#: **cost per tick**. Every watched transcript is a session-registry read and a
+#: stat every half-second, and every filtered ref is a comparison per record — so
+#: an unbounded list turns one cheap request into work repeated twice a second
+#: for as long as the connection is held. 64 is comfortably more than any board
+#: has rows.
+MAX_FILTER_ENTRIES = 64
+
+#: How much of a refused request's own text is recorded against it. The event log
+#: is append-only and read by people; what a stranger can write into it per
+#: request needs a ceiling.
+MAX_REFUSAL_DETAIL = 200
 
 #: What ``retry:`` tells ``EventSource`` to wait before reconnecting, in
 #: milliseconds. The browser's own default is unspecified and has been as low as

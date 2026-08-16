@@ -544,11 +544,25 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
         # Validate the filter before accepting. Failing OPEN here would turn a
         # typo into a subscription to every work item on the workstation, so a
         # ref that will not parse is the caller's error, not a wider stream.
+        for name, refs in (("workItem", workItem), ("transcript", transcript)):
+            if len(refs) > api_stream.MAX_FILTER_ENTRIES:
+                detail = (
+                    f"{name} accepts at most "
+                    f"{api_stream.MAX_FILTER_ENTRIES} entries, got {len(refs)}"
+                )
+                eventlog.emit("stream.refused", reason="bad-filter", detail=detail)
+                return JSONResponse(status_code=400, content={"detail": detail})
         for ref in list(workItem) + list(transcript):
             try:
                 WorkItemRef.parse(ref)
             except ValueError as exc:
-                eventlog.emit("stream.refused", reason="bad-filter", detail=str(exc))
+                # Truncated: the message quotes the caller, and the event log is
+                # append-only and read by people.
+                eventlog.emit(
+                    "stream.refused",
+                    reason="bad-filter",
+                    detail=str(exc)[: api_stream.MAX_REFUSAL_DETAIL],
+                )
                 return JSONResponse(status_code=400, content={"detail": str(exc)})
 
         try:

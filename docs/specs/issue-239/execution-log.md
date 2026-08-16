@@ -307,6 +307,7 @@ status: in-progress          # in-progress | complete
 |-------|-----------------------------|----------|---------|------|
 | 1 | self | the-loop (this session) | **new findings** — 5, all fixed with a failing test first | this log, below |
 | 2 | self | the-loop (this session) | **new findings** — 2, both in the control plane, which round 1 had not read | this log, below |
+| 3 | self (security lens) | the-loop (this session) | **new findings** — 2, both amplification | this log, below |
 
 > `critic-review` was declared skipped at `phase-selection`, so the self-review rounds are
 > the whole automated review chain.
@@ -367,6 +368,34 @@ except under a burst, which is exactly when streaming is on.
    two flushes in flight at once meant the second write dropped the first one's result.
    It now merges against what is held at **write** time, through an exported
    `mergeReports` whose test pins that it mutates neither side.
+
+### Round 3 — two findings, read with the security lens
+
+Both are the same shape, and it is the shape `reviews.selfReviewCount: 3` exists to catch:
+a **bound that was assumed rather than written**. The design bounded what a subscriber can
+buffer (the queue) and how far it can replay; neither of these was bounded at all.
+
+1. **A request could ask to watch an unbounded number of refs.** `?transcript=` is a
+   session-registry read plus a `stat` **every tick, per ref**, and `?workItem=` is a
+   comparison per record per ref. Nothing capped the list, so one cheap request bought work
+   repeated twice a second for as long as the connection was held — an amplification the
+   `maxSubscribers` bound does nothing about, because it is one connection. Capped at
+   `MAX_FILTER_ENTRIES` (64, comfortably more than any board has rows), refused with `400`
+   naming the limit.
+2. **A refusal recorded an unbounded amount of the caller's own text.** `stream.refused`
+   quotes the parse error, which quotes the ref. The event log is append-only and read by
+   people, so what a stranger can write into it per request now has a ceiling
+   (`MAX_REFUSAL_DETAIL`). The `400` sent back to the caller is untruncated — they already
+   know what they sent.
+
+**Zero further findings on a re-read of the same surface**, so the self-review loop stops
+here per `reviews.stopOnNoNewFindings`. `critic-review` was declared skipped, so the next
+gate is the security review — which at risk tier 4 needs a named human sign-off.
+
+**A second flaky test, same family as [#251](https://github.com/MadaraUchiha-314/the-loop/issues/251):**
+`test_webhook_routing_integration::test_spawning_for_a_linked_issue_records_the_binding`
+failed once in a full-suite run and not in the next; alone it passed 6/6. Added to that
+ticket rather than filed again.
 
 ## Security review (gate)
 

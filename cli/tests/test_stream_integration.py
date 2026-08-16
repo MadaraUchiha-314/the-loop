@@ -29,6 +29,7 @@ import socket
 import threading
 import time
 from pathlib import Path
+from typing import Any, Dict
 
 import httpx
 import pytest
@@ -94,7 +95,7 @@ def _serving(config):
         eventlog.reset()
 
 
-def _config(tmp_path, **stream):
+def _config(tmp_path, **stream) -> Dict[str, Any]:
     """A config for one test's own state root.
 
     ``keepAliveSeconds`` defaults to 1 here, not to the shipped 15: these tests read
@@ -102,10 +103,11 @@ def _config(tmp_path, **stream):
     send. At the shipped interval an assertion about *absence* would block for
     fifteen seconds before it could conclude anything.
     """
-    config = {"state": {"root": str(tmp_path / ".the-loop")}}
     stream.setdefault("keepAliveSeconds", 1)
-    config["service"] = {"stream": stream}
-    return config
+    return {
+        "state": {"root": str(tmp_path / ".the-loop")},
+        "service": {"stream": stream},
+    }
 
 
 def _log_path(config) -> Path:
@@ -539,3 +541,71 @@ def test_the_stream_is_instrumented_like_everything_else(tmp_path):
     for event in ("stream.subscribed", "stream.refused", "stream.disconnected"):
         assert event in seen, f"{event} was never emitted; saw {sorted(seen)}"
         assert event in eventlog.EVENT_TYPES, "an emitted type must be in the catalog"
+
+
+def test_abuse_a_request_cannot_ask_to_watch_an_unbounded_number_of_things(tmp_path):
+    """
+    Feature: a small request cannot buy a large amount of repeated work
+      Scenario: a client asks to watch far more refs than any board has
+        Given a stream request naming hundreds of work items and transcripts
+        When the service handles it
+        Then it is refused with 400 naming the limit, and no connection is opened
+
+    Requirement: docs/specs/issue-239/requirements.md R5.3 (abuse case 5)
+
+    The subscriber queue bounds what one connection can *buffer*; this bounds what
+    it can *cost per tick*. Every watched transcript is a session-registry read and
+    a stat every tick, and every filtered ref is a comparison per record — so an
+    unbounded list turns one cheap request into work repeated twice a second for
+    as long as the connection is held.
+    """
+    from the_loop.api.stream import MAX_FILTER_ENTRIES
+
+    many = [f"github:octo/repo#{n}" for n in range(MAX_FILTER_ENTRIES + 1)]
+    with _serving(_config(tmp_path)) as client:
+        for param in ("workItem", "transcript"):
+            response = client.get("/api/v1/stream", params={param: many})
+            assert response.status_code == 400, param
+            assert str(MAX_FILTER_ENTRIES) in response.json()["detail"]
+
+        # And the bound is usable, not merely present: exactly the limit is fine.
+        # Opened as a stream, not a plain GET — a GET would try to read an endless
+        # body to completion.
+        with client.stream(
+            "GET", "/api/v1/stream", params={"workItem": many[:MAX_FILTER_ENTRIES]}
+        ) as ok:
+            assert ok.status_code == 200
+
+
+def test_a_refusal_records_a_bounded_amount_of_what_the_caller_sent(tmp_path):
+    """
+    Feature: the audit trail cannot be filled by the thing it is auditing
+      Scenario: a refused request carries a very long filter value
+        Given a stream request whose workItem is thousands of characters
+        When it is refused
+        Then the event recorded for it is bounded
+
+    Requirement: docs/specs/issue-239/requirements.md §Security considerations
+
+    `stream.refused` records why a connection was turned away, and the reason
+    quotes the caller. The event log is append-only and read by people, so what a
+    stranger can write into it per request has to have a ceiling.
+    """
+    from the_loop import eventlog
+
+    config = _config(tmp_path)
+    with _serving(config) as client:
+        assert (
+            client.get("/api/v1/stream", params={"workItem": "z" * 8000}).status_code
+            == 400
+        )
+
+    refusals = [
+        r
+        for r in eventlog.read_events(_log_path(config))
+        if r["event"] == "stream.refused"
+    ]
+    assert refusals, "the refusal was not recorded at all"
+    assert all(len(str(r.get("detail", ""))) <= 300 for r in refusals), (
+        f"recorded {max(len(str(r.get('detail', ''))) for r in refusals)} characters"
+    )
