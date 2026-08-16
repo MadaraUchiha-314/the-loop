@@ -121,13 +121,17 @@ def _append(config, *records):
             handle.write(json.dumps(record, separators=(",", ":")) + "\n")
 
 
-def _frames(response, count, timeout=10.0):
-    """Read until ``count`` non-comment frames have arrived, or the timeout passes.
+def _frames(response, count, timeout=10.0, keep=None):
+    """Read until ``count`` frames matching ``keep`` have arrived, or time is up.
 
     Parses the SSE wire format by hand rather than through a library: the framing
     *is* part of the contract under test (``id:``, ``event:``, exactly one
     ``data:`` line), so a parser that tolerated a different shape would hide the
     only thing worth asserting.
+
+    ``keep`` filters as it reads rather than afterwards, so a test wanting one
+    specific frame stops at that frame instead of waiting out the timeout for
+    frames it was going to discard.
     """
     frames = []
     buffer = ""
@@ -137,11 +141,30 @@ def _frames(response, count, timeout=10.0):
         while "\n\n" in buffer:
             block, _, buffer = buffer.partition("\n\n")
             parsed = _parse(block)
-            if parsed is not None:
+            if parsed is not None and (keep is None or keep(parsed)):
                 frames.append(parsed)
         if len(frames) >= count or time.monotonic() > deadline:
             break
     return frames
+
+
+def _log_frames(response, count, timeout=10.0):
+    """Only the `log` frames for event-log records this test cares about.
+
+    The stream also carries its own `stream.subscribed` / `stream.disconnected`
+    records — they are events on the workstation like any other, and the tail is
+    positioned when a subscriber registers, so a connection sees the record of its
+    own arrival. Asserting on "the first frame" would make every test here depend
+    on what else the service happens to log.
+    """
+    return _frames(
+        response,
+        count,
+        timeout=timeout,
+        keep=lambda f: (
+            f["event"] == "log" and not f["data"]["event"].startswith("stream.")
+        ),
+    )
 
 
 def _parse(block):
@@ -187,7 +210,7 @@ def test_an_appended_event_reaches_an_open_subscriber(tmp_path):
             time.sleep(TICK_SECONDS * 2)
             _append(config, {"event": "graph.advanced", "work_item": REF, "node": "x"})
 
-            (frame,) = _frames(response, 1)
+            (frame,) = _log_frames(response, 1)
             assert frame["event"] == "log"
             assert frame["data"]["event"] == "graph.advanced"
             assert frame["data"]["work_item"] == REF
@@ -215,7 +238,7 @@ def test_a_work_item_filter_excludes_another_items_events(tmp_path):
                 {"event": "graph.advanced", "work_item": OTHER},
                 {"event": "graph.advanced", "work_item": REF},
             )
-            (frame,) = _frames(response, 1)
+            (frame,) = _log_frames(response, 1)
             assert frame["data"]["work_item"] == REF
 
 
@@ -244,7 +267,7 @@ def test_the_control_planes_own_api_requests_never_reach_the_stream(tmp_path):
                 assert client.get("/api/v1/work-items").status_code == 200
             _append(config, {"event": "graph.advanced", "work_item": REF})
 
-            frames = _frames(response, 1)
+            frames = _log_frames(response, 1)
             assert [f["data"]["event"] for f in frames] == ["graph.advanced"]
 
         # The exclusion is only meaningful if the records were really written:
@@ -269,7 +292,7 @@ def test_a_reconnect_with_last_event_id_replays_exactly_the_missed_records(tmp_p
         with client.stream("GET", "/api/v1/stream") as response:
             time.sleep(TICK_SECONDS * 2)
             _append(config, {"event": "graph.advanced", "work_item": REF, "n": 1})
-            (first,) = _frames(response, 1)
+            (first,) = _log_frames(response, 1)
         cursor = first["id"]
 
         _append(
@@ -281,7 +304,7 @@ def test_a_reconnect_with_last_event_id_replays_exactly_the_missed_records(tmp_p
         with client.stream(
             "GET", "/api/v1/stream", headers={"Last-Event-ID": cursor}
         ) as response:
-            frames = _frames(response, 2)
+            frames = _log_frames(response, 2)
             assert [f["data"]["n"] for f in frames] == [2, 3]
 
 

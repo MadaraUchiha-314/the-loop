@@ -400,11 +400,14 @@ def test_one_read_serves_every_subscriber(tmp_path):
     to lose to a later refactor that moves the read inside the fan-out loop.
     """
     log = tmp_path / "events.jsonl"
-    _write(log, {"event": "graph.advanced", "work_item": "github:o/r#1"})
 
     async def scenario():
         broker = stream.StreamBroker(log, max_subscribers=8)
         subscribers = [broker.subscribe() for _ in range(3)]
+        # Appended AFTER subscribing: everything at or below the tail's offset at
+        # registration belongs to each connection's own replay, not to the shared
+        # tailer, so a record written first would (correctly) produce no frame.
+        _write(log, {"event": "graph.advanced", "work_item": "github:o/r#1"})
         opens = 0
         original = builtins.open
 
@@ -616,5 +619,163 @@ def test_two_tabs_asking_for_the_same_thing_are_two_subscribers(tmp_path):
         _write(log, {"event": "graph.advanced", "work_item": "github:o/r#1"})
         broker.tick()
         assert len(_drain(two)) == 1
+
+    _run(scenario())
+
+
+# -- self-review findings (issue-239, review round 1) ----------------------------
+
+
+def test_a_subscriber_that_recovers_can_be_desynced_again(tmp_path):
+    """
+    Feature: a client is always told when it has a gap
+      Scenario: a subscriber overflows, catches up, and falls behind again
+        Given a subscriber that overflowed and was told to resynchronise
+        When it drains its queue and then overflows a second time
+        Then it is told to resynchronise again
+
+    Requirement: docs/specs/issue-239/requirements.md R5.4 (abuse case 5)
+
+    `desynced` means "a resync is already waiting", not "has ever resynced". The
+    difference is the whole point: a client that recovered and silently lost
+    frames the second time believes it is current and is not — which is the
+    screen that looks live and lies.
+    """
+
+    async def scenario():
+        broker = stream.StreamBroker(tmp_path / "events.jsonl", max_subscribers=8)
+        subscriber = broker.subscribe()
+        frame = stream.Frame(kind="log", data={"event": "graph.advanced"}, cursor=1)
+
+        for _ in range(stream.QUEUE_SIZE + 1):
+            subscriber.offer(frame)
+        assert [f.kind for f in _drain(subscriber)] == ["desync"]
+
+        # It caught up. The next overflow must be reported like the first one.
+        for _ in range(stream.QUEUE_SIZE + 1):
+            subscriber.offer(frame)
+        assert "desync" in [f.kind for f in _drain(subscriber)]
+
+    _run(scenario())
+
+
+def test_a_line_that_never_ends_cannot_grow_without_limit(tmp_path):
+    """
+    Feature: a broken writer cannot exhaust the service's memory
+      Scenario: the log gains bytes that never form a whole record
+        Given a log being appended to with no newline
+        When the tail reads repeatedly
+        Then the held fragment stays bounded and the tail resynchronises
+
+    Requirement: docs/specs/issue-239/requirements.md R5.4 (abuse case 5)
+
+    The subscriber queues are bounded; this is the other buffer, and it was not.
+    A partial line is held so a mid-write read does not lose the record — but
+    "held" has to have a ceiling, or a writer that never terminates a line (or a
+    corrupted file) grows it until the process dies.
+    """
+    log = tmp_path / "events.jsonl"
+    tail = stream.LogTail(log)
+    with open(log, "ab") as handle:
+        for _ in range(400):
+            handle.write(b"x" * 4096)
+            handle.flush()
+            assert list(tail.read()) == []
+            assert len(tail._partial) <= stream.MAX_PARTIAL_BYTES
+
+    # And it recovers: a whole record after the garbage is still delivered.
+    with open(log, "ab") as handle:
+        handle.write(b'\n{"event":"graph.advanced"}\n')
+    assert [r.data["event"] for r in tail.read()] == ["graph.advanced"]
+
+
+def test_a_record_appended_during_replay_is_not_lost(tmp_path):
+    """
+    Feature: the handover from replay to live loses nothing
+      Scenario: a record is appended between the replay read and the live tail
+        Given a subscriber replaying from a cursor
+        When a record is appended after the replay window was measured
+        Then the live tailer delivers it, rather than skipping past it
+
+    Requirement: docs/specs/issue-239/requirements.md R1.5
+
+    The shared tailer is positioned at EOF when the FIRST subscriber registers,
+    and the replay window ends at exactly that offset. Positioning it after the
+    replay instead leaves a gap the width of however long the replay took — and a
+    dropped record is the one failure `Last-Event-ID` exists to prevent.
+    """
+
+    async def scenario():
+        log = tmp_path / "events.jsonl"
+        _write(log, {"event": "graph.advanced", "n": 1})
+        boundary = log.stat().st_size
+
+        broker = stream.StreamBroker(log, max_subscribers=8)
+        subscriber = broker.subscribe()
+        # Registering positions the shared tail; the replay window is [0, here).
+        assert broker.tail_offset() == boundary
+
+        _write(log, {"event": "graph.advanced", "n": 2})
+        broker.tick()
+
+        # n=1 is the replay's to deliver, n=2 is the tailer's. Neither is both,
+        # and neither is nobody's.
+        assert [f.data["n"] for f in _drain(subscriber)] == [2]
+        replayed = [
+            r.data["n"] for r in stream.LogTail(log).read() if r.cursor <= boundary
+        ]
+        assert replayed == [1]
+
+    _run(scenario())
+
+
+def test_counting_transcript_lines_does_not_re_read_the_whole_file(tmp_path):
+    """
+    Feature: watching a long session stays cheap
+      Scenario: a watched transcript grows repeatedly
+        Given a transcript that has already reached a few thousand lines
+        When it gains one line at a time
+        Then the whole-file counter is never called again — only the new bytes are
+
+    Requirement: docs/specs/issue-239/requirements.md §Non-functional (cost)
+
+    An agent's JSONL reaches megabytes over a long session. Counting its lines
+    from scratch twice a second is real I/O for a number that only ever moves by
+    a handful, so the count is carried and only the appended bytes are counted.
+    Asserted at the seam — `_count_lines` reads the whole file, and after the
+    baseline it must not be reached at all.
+    """
+    transcript = tmp_path / "session.jsonl"
+    transcript.write_bytes(b'{"type":"user"}\n' * 5000)
+
+    async def scenario():
+        broker = stream.StreamBroker(
+            tmp_path / "events.jsonl",
+            max_subscribers=8,
+            transcript_path=lambda ref: transcript,
+        )
+        subscriber = broker.subscribe(transcripts=["github:o/r#1"])
+        broker.tick()  # the baseline may read the whole file, once
+
+        def explode(*args, **kwargs):
+            raise AssertionError("the whole transcript was re-read after the baseline")
+
+        original = stream._count_lines
+        stream._count_lines = explode
+        try:
+            for _ in range(5):
+                with open(transcript, "ab") as handle:
+                    handle.write(b'{"type":"assistant"}\n')
+                broker.tick()
+        finally:
+            stream._count_lines = original
+
+        assert [f.data["totalLines"] for f in _drain(subscriber)] == [
+            5001,
+            5002,
+            5003,
+            5004,
+            5005,
+        ]
 
     _run(scenario())

@@ -47,6 +47,7 @@ __all__ = [
     "REPLAY_BYTES",
     "TICK_SECONDS",
     "QUEUE_SIZE",
+    "MAX_PARTIAL_BYTES",
     "EXCLUDED_EVENTS",
     "Frame",
     "LogTail",
@@ -80,6 +81,13 @@ QUEUE_SIZE = 256
 #: registers after its work item does, so "no transcript yet" is a normal state
 #: that fixes itself — without this the client would have to reconnect to notice.
 _TRANSCRIPT_RETRY_TICKS = 10
+
+#: How much of an unterminated line the tailer will hold before giving up on it.
+#: The subscriber queues are bounded; this is the other buffer. A writer that
+#: never terminates a line — or a corrupted file with no newline in it — would
+#: otherwise grow this until the process died. 1 MiB is far larger than any
+#: record `eventlog` writes and small enough to be irrelevant to the process.
+MAX_PARTIAL_BYTES = 1024 * 1024
 
 #: What ``retry:`` tells ``EventSource`` to wait before reconnecting, in
 #: milliseconds. The browser's own default is unspecified and has been as low as
@@ -248,6 +256,18 @@ class LogTail:
 
         buffer = self._partial + chunk
         lines = buffer.split(b"\n")
+        if len(lines) == 1 and len(buffer) > MAX_PARTIAL_BYTES:
+            # No newline in a megabyte. Whatever is being written is not a record
+            # this reader can use, so drop it rather than hold it: the next
+            # newline resynchronises, and the corrupt remainder is skipped by the
+            # same JSON guard that skips any other unparseable line.
+            logger.warning(
+                "discarding %d bytes of unterminated line from %s",
+                len(buffer),
+                self.path,
+            )
+            self._partial = b""
+            return
         # `split` always leaves a last element: "" when the buffer ended on a
         # newline, the incomplete record otherwise. Either way it is what carries
         # over, and every other element is a whole line.
@@ -302,8 +322,10 @@ class Subscriber:
     work_items: List[str] = field(default_factory=list)
     transcripts: List[str] = field(default_factory=list)
     frames: int = 0
-    #: Set once the subscriber has been told to resynchronise, so a queue that
-    #: stays full does not enqueue a second desync behind the first.
+    #: Whether a resync is **currently waiting** to be read — not whether one has
+    #: ever been sent. A queue that stays full must not stack desyncs behind each
+    #: other; a subscriber that caught up and fell behind again must be told
+    #: again, or it believes it is current and is not.
     desynced: bool = False
 
     def offer(self, frame: Frame) -> bool:
@@ -317,6 +339,9 @@ class Subscriber:
         try:
             self.queue.put_nowait(frame)
             self.frames += 1
+            # It read what was waiting, so the pending resync is spent and the
+            # next overflow gets reported like the first.
+            self.desynced = False
             return True
         except asyncio.QueueFull:
             if self.desynced:
@@ -354,14 +379,28 @@ class StreamBroker:
         self._subscribers: Set[Subscriber] = set()
         self._task: Optional[asyncio.Task] = None
         self._tail = LogTail(self.log_path)
-        self._sizes: Dict[str, int] = {}
+        #: ref -> (size in bytes, line count) of the transcript as last seen.
+        #: The count is CARRIED rather than recomputed: an agent's JSONL reaches
+        #: megabytes, and re-counting it twice a second for a number that moves by
+        #: a handful is real I/O for nothing.
+        self._sizes: Dict[str, Tuple[int, int]] = {}
         self._ticks = 0
 
     # -- lifecycle --------------------------------------------------------------
 
     def tail_size(self) -> int:
-        """The event log's current size — where a fresh subscriber starts."""
+        """The event log's current size on disk."""
         return self._tail.size()
+
+    def tail_offset(self) -> int:
+        """Where the live tailer will read from next.
+
+        The boundary between what a connecting subscriber must **replay** and what
+        the shared tailer will deliver to it. Everything at or below this offset
+        is the replay's; everything above it is the tailer's. Neither is both, and
+        nothing is neither.
+        """
+        return self._tail.offset
 
     @property
     def count(self) -> int:
@@ -385,7 +424,15 @@ class StreamBroker:
             work_items=list(work_items),
             transcripts=list(transcripts),
         )
+        first = not self._subscribers
         self._subscribers.add(subscriber)
+        if first:
+            # Position the shared tail HERE, at registration, so the replay window
+            # a connection is about to read ends at exactly the offset the live
+            # tailer starts from. Doing it after the replay instead leaves a gap
+            # the width of however long the replay took, and a dropped record is
+            # the one failure `Last-Event-ID` exists to prevent.
+            self.start()
         return subscriber
 
     def unsubscribe(self, subscriber: Subscriber) -> None:
@@ -448,12 +495,22 @@ class StreamBroker:
                 continue
             try:
                 size = os.path.getsize(path)
-                lines = _count_lines(path)
             except OSError:
                 continue
-            if known is not None and size == known:
+            if known is not None and size == known[0]:
                 continue
-            self._sizes[ref] = size
+            try:
+                if known is None:
+                    lines = _count_lines(path)
+                elif size < known[0]:
+                    # Truncated or replaced. Whatever the carried count meant, it
+                    # does not mean anything now.
+                    lines = _count_lines(path)
+                else:
+                    lines = known[1] + _count_lines_from(path, known[0])
+            except OSError:
+                continue
+            self._sizes[ref] = (size, lines)
             if known is None:
                 continue  # first sighting establishes the baseline, not a change
             frame = Frame(kind="transcript", data={"ref": ref, "totalLines": lines})
@@ -470,11 +527,11 @@ async def serve(
 ):
     """One subscriber's connection, as ``text/event-stream`` chunks.
 
-    The order is deliberate. Replay is resolved and sent **first**, from the
-    broker's own tail, before the subscriber is fed live frames — so a reconnect
-    cannot interleave history with what arrives while it is catching up. The
-    broker's tailer only then starts (if it is not already running), positioned at
-    the end of the log.
+    The order is deliberate. Replay is resolved and sent **first**, up to the
+    shared tail's offset, before the subscriber is fed the frames waiting on its
+    queue — so a reconnect cannot interleave history with what arrived while it
+    was catching up, and the two halves meet at exactly one offset with no gap and
+    no overlap.
 
     **Disconnect is Starlette's to detect, not ours.** ``StreamingResponse`` runs
     ``listen_for_disconnect`` alongside this generator and cancels it when the
@@ -492,8 +549,14 @@ async def serve(
     delivered = 0
     reason = "client"
     try:
-        size = broker.tail_size()
-        start, desync = resolve_cursor(cursor, size)
+        # The boundary, taken from the SHARED tail rather than from the file. The
+        # tailer was positioned when the first subscriber registered, and this
+        # subscriber is already registered — so everything at or below this offset
+        # is this replay's to deliver, and everything above it will arrive on the
+        # queue. Measuring the file instead would leave the two overlapping (a
+        # record delivered twice) or apart (a record delivered by neither).
+        boundary = broker.tail_offset()
+        start, desync = resolve_cursor(cursor, boundary)
         if desync:
             from .. import eventlog
 
@@ -506,13 +569,13 @@ async def serve(
         yield f"retry: {RETRY_MS}\n\n"
 
         for record in LogTail(broker.log_path, offset=start).read():
+            if record.cursor > boundary:
+                break
             if matches(record.data, subscriber.work_items):
                 delivered += 1
                 yield encode_frame(
                     Frame(kind="log", data=record.data, cursor=record.cursor)
                 )
-
-        broker.start()
 
         last_keepalive = _loop_time()
         while True:
@@ -545,8 +608,18 @@ def _loop_time() -> float:
 
 
 def _count_lines(path: Union[str, Path]) -> int:
-    try:
-        with open(path, "rb") as handle:
-            return sum(1 for _ in handle)
-    except OSError:
-        return 0
+    """Every line in the file. Used once per watched transcript, for the baseline."""
+    with open(path, "rb") as handle:
+        return sum(1 for _ in handle)
+
+
+def _count_lines_from(path: Union[str, Path], offset: int) -> int:
+    """Lines in the bytes appended after ``offset`` — the per-tick cost.
+
+    Counts newlines rather than lines, so a final unterminated line is not
+    counted until the write that ends it. That matches what the transcript route
+    will serve, and means a half-written turn is never announced twice.
+    """
+    with open(path, "rb") as handle:
+        handle.seek(offset)
+        return handle.read().count(b"\n")

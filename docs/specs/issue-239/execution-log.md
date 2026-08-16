@@ -305,7 +305,51 @@ status: in-progress          # in-progress | complete
 
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
 |-------|-----------------------------|----------|---------|------|
-|       |                             |          |         |      |
+| 1 | self | the-loop (this session) | **new findings** — 5, all fixed with a failing test first | this log, below |
+
+> `critic-review` was declared skipped at `phase-selection`, so the self-review rounds are
+> the whole automated review chain.
+
+### Round 1 — five findings
+
+Each was written as a **failing test before the fix**, so each is now something that
+cannot silently come back.
+
+1. **A recovered subscriber could never be desynced again.** `Subscriber.desynced` was set
+   on the first overflow and never cleared, so a client that caught up and later fell
+   behind again lost frames **silently** — believing it was current when it was not, which
+   is the exact failure the whole design is against. The flag now means "a resync is
+   waiting", cleared on the next successful read.
+2. **The partial-line buffer was unbounded.** The subscriber queues are bounded (abuse case
+   5); this was the other buffer, and a writer that never terminated a line — or a
+   corrupted file with no newline — would have grown it until the process died. Bounded at
+   `MAX_PARTIAL_BYTES` (1 MiB), with the remainder dropped and the next newline
+   resynchronising.
+3. **A record appended during replay could be lost.** `serve()` read the log to EOF, then
+   started the tailer with `seek_to_end()` — leaving a gap the width of however long the
+   replay took. A dropped record is precisely what `Last-Event-ID` exists to prevent. The
+   tailer is now positioned when the **first subscriber registers**, and the replay window
+   ends at exactly that offset: no gap, and no overlap either.
+4. **The transcript line count re-read the whole file every tick.** An agent's JSONL reaches
+   megabytes; counting it from scratch twice a second for a number that moves by a handful
+   is real I/O. The count is now carried and only the appended bytes are counted (falling
+   back to a full count if the file shrank).
+5. **A lockfile downgrade had been committed.** `uv.lock` went `revision = 3` → `2`,
+   because this machine's `uv` is older than the one that wrote it. Nothing to do with this
+   work item and capable of confusing everyone else; reverted to `origin/main`'s copy.
+
+Two consequences worth naming, because they change observable behaviour:
+
+- **The stream now carries its own `stream.subscribed`.** Positioning the tail at
+  registration means a connection sees the record of its own arrival. That is correct — it
+  is an event on the workstation like any other, and excluding it would be special-casing —
+  but it cost one over-specified assertion in four tests, which asserted on *the first
+  frame* rather than on the frame they cared about. Fixed in the tests, not by hiding the
+  event.
+- **`design.md` § Components says the broker is started from the lifespan.** It is started
+  from the router instead, for the reason recorded at task 8-15's checkpoint: the router is
+  the only thing that travels into an embedder's application. The deviation stands; the
+  doc's table row is the stale part.
 
 ## Security review (gate)
 

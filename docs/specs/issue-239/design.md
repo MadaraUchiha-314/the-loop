@@ -94,7 +94,7 @@ Three properties the diagram is drawn to make checkable:
 |---|---|---|
 | `cli/the_loop/api/stream.py` | **new** — `StreamBroker` (tail, fan-out, watch), the SSE frame encoder | The only new concept; kept out of `routes.py`, which is transport-and-serialization only |
 | `cli/the_loop/api/routes.py` | **+1 route** — `GET /api/v1/stream`, `operation_id: streamEvents` | One definition of the surface, shared by the app and the SDK (issue-212) |
-| `cli/the_loop/api/lifespan.py` | start/stop the broker task | A live task, not an importable module — the same reason MCP's session manager is here |
+| ~~`cli/the_loop/api/lifespan.py`~~ | **Superseded during implementation:** the broker is owned by `routes.py` instead | The router is the only thing that travels into an embedder's application (issue-212 R3.3), so a lifespan-owned broker would simply not exist for SDK consumers. It costs nothing: the tailer task starts with the first subscriber and stops with the last |
 | `cli/the_loop/api/config.py` | `stream_config(cli_config)` | Beside `service_config` / `cors_config`, resolved once at boot |
 | `cli/the_loop/schemas/cli-config.schema.json` | `service.stream` | Three knobs, shaped exactly like `service.mcp` |
 | `cli/the_loop/eventlog.py` | 4 new `EVENT_TYPES` | The catalog is the contract (`reference/observability.md`) |
