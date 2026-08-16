@@ -813,7 +813,17 @@ def test_an_abandoned_comment_is_reported_on_the_work_item(tmp_path, monkeypatch
     gh.comments.append(_comment("IC_2", "the build is red"))
 
     poller.poll_once()  # attempt 1 (budget = 1)
-    assert wait_until(lambda: len(tmux.delivers) >= 1)
+    # Wait for the attempt's OUTCOME, through the very call the next cycle makes.
+    # A failed dispatch releases the delivery id after the paste that failed, and
+    # until it does `delivery_status` answers "inflight" — which the poller is
+    # right to read as "not yet a failure", so the cycle below would spend no
+    # budget, give up on nothing, and report zero failures. Waiting on
+    # `tmux.delivers` observes the paste, one step too early (issue-251).
+    refs = [WorkItemRef.parse(REF)]
+    assert wait_until(
+        lambda: dispatcher.delivery_status("poll-comment-IC_2", refs) == "unhandled"
+    )
+    assert len(tmux.delivers) >= 1
     assert poster.bodies == []  # still retrying: nothing to report yet
 
     summary = poller.poll_once()  # budget exhausted -> give up + notice
