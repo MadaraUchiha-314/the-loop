@@ -1,3 +1,9 @@
+## v10.4.1 (2026-08-16)
+
+### Fix
+
+- **issue-251**: the suite is swept — two tests waited on the attempt, not the outcome (#256)
+
 ## v10.4.0 (2026-08-16)
 
 ### Feat
