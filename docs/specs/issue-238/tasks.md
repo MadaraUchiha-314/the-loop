@@ -20,7 +20,7 @@ written.
 
 ## Task list
 
-- [ ] 1. Write the Python tests for the new behaviour, and watch them fail
+- [x] 1. Write the Python tests for the new behaviour, and watch them fail
   - Rewrite `test_check_malformed_repo_never_reaches_the_graph`
     (`cli/tests/test_core_graphs.py:37`) from "raises `ValueError`" to "returns
     `repoResolved: False`, `nodes: []`, `currentNode: ""`, and constructs no runtime"
@@ -42,7 +42,7 @@ written.
   - _Requirements:_ R4.1, R4.2
   - _Test:_ `T0 — uv run pytest cli/tests/test_core_graphs.py cli/tests/test_api_routers_integration.py` (red)
 
-- [ ] 2. Write the UI test for the dropped answer, and watch it fail
+- [x] 2. Write the UI test for the dropped answer, and watch it fail
   - Export `fetchGraphs` from `ui/src/state/useControlPlane.ts`. It is module-private
     today and the test needs it addressable. **This is a production change the design did
     not name** — recorded here rather than done quietly; see § Deviations.

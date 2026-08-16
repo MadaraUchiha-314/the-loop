@@ -135,7 +135,13 @@ interface GraphJob {
   run: (signal: AbortSignal) => Promise<GraphStatus>;
 }
 
-async function fetchGraphs(
+/**
+ * Round two: one graph report per loop, for every ref that has both halves of
+ * the join. Exported for its own test (issue-238) — it is a pure function of
+ * its arguments, and asserting on it directly says which of the poll effect,
+ * the abort wiring and this projection broke.
+ */
+export async function fetchGraphs(
   api: TheLoopApi,
   workItems: WorkItemRecord[],
   sessions: SessionRecord[],

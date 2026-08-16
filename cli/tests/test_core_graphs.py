@@ -14,6 +14,21 @@ def test_resolve_repo_rejects_non_directory(tmp_path):
         graphs.resolve_repo(str(file_path))
 
 
+def test_repo_resolves_agrees_with_resolve_repo(tmp_path):
+    """The predicate and the raiser must not drift (issue-238).
+
+    `check` asks `repo_resolves` and `resolve_repo` raises on the same question,
+    so the day they disagree is the day a path one of them rejects reaches core
+    through the other. Same three cases as the test above, on the predicate.
+    """
+    file_path = tmp_path / "a-file"
+    file_path.write_text("x")
+
+    assert graphs.repo_resolves(str(tmp_path)) is True
+    assert graphs.repo_resolves(str(tmp_path / "missing")) is False
+    assert graphs.repo_resolves(str(file_path)) is False
+
+
 def test_check_reports_this_repos_own_work_item(tmp_path, monkeypatch):
     """
     Feature: control-plane graph reads
@@ -34,9 +49,59 @@ def test_check_reports_this_repos_own_work_item(tmp_path, monkeypatch):
     assert "requirements-definition" in node_ids
 
 
-def test_check_malformed_repo_never_reaches_the_graph(tmp_path):
-    with pytest.raises(ValueError):
-        graphs.check(str(tmp_path / "nope"), "issue-1")
+def test_check_answers_a_vanished_checkout_instead_of_raising(tmp_path, monkeypatch):
+    """A cleaned-up checkout is expected state, not caller error (issue-238).
+
+    This test asserted `pytest.raises(ValueError)` until issue-238: `check` is
+    the one polled verb, and reporting a worktree somebody deleted as a caller
+    mistake made the control-plane UI log a 400 per session per poll tick,
+    forever. The half that did not change is the half that matters — the path
+    still reaches no graph read, asserted here by making `_runtime` fatal.
+
+    Requirement: docs/specs/issue-238/bugfix.md R1.1, R3.2
+    """
+
+    def fatal(*args, **kwargs):
+        raise AssertionError("check reached core with a repo path that does not resolve")
+
+    monkeypatch.setattr(graphs, "_runtime", fatal)
+
+    report = graphs.check(str(tmp_path / "nope"), "issue-1")
+
+    assert report["repoResolved"] is False
+    assert report["workItem"] == "issue-1"
+    assert report["currentNode"] == ""
+    assert report["nodes"] == []
+    assert report["ok"] is False
+
+
+def test_the_unknown_position_answer_is_not_a_filesystem_oracle(tmp_path):
+    """Abuse case 1 of design.md §Security design (issue-238).
+
+    Answering with a 200 must not tell the caller more than the 400 did. The
+    400 echoed the path back; this body names nothing at all.
+    """
+    secret_ish = tmp_path / "some-private-directory-name" / "deeper"
+
+    body = repr(graphs.check(str(secret_ish), "issue-1"))
+
+    assert "some-private-directory-name" not in body
+    assert str(tmp_path) not in body
+
+
+def test_a_resolving_repo_keeps_exactly_the_keys_it_always_had(tmp_path):
+    """R2.2: the normal answer is byte-identical, so the field is absent.
+
+    Requirement: docs/specs/issue-238/bugfix.md R2.2
+    """
+    import pathlib
+
+    repo_root = str(pathlib.Path(__file__).resolve().parents[2])
+
+    report = graphs.check(repo_root, "issue-161")
+
+    assert set(report) == {"workItem", "currentNode", "ok", "parked", "nodes"}
+    assert "repoResolved" not in report
 
 
 def test_skip_declares_against_the_shipped_vocabulary(tmp_path):
