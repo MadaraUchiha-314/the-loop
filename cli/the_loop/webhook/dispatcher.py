@@ -405,6 +405,31 @@ def _pr_head_ref(routed: RoutedEvent) -> Optional[str]:
     return ref or None
 
 
+def _same_path(one: str, other: str) -> bool:
+    """Whether two directory strings name the same tree.
+
+    Resolved, not compared as text: ``.`` and an absolute path to the same
+    directory are the same occupant, and only one harness session may hold it.
+    A path that cannot be resolved (a vanished checkout) falls back to its
+    literal form rather than raising — the caller is deciding where to spawn,
+    not proving the directory exists.
+    """
+    try:
+        return Path(one).resolve() == Path(other).resolve()
+    except OSError:
+        return one == other
+
+
+def _same_repository(one: WorkItemRef, other: WorkItemRef) -> bool:
+    """Whether two refs name objects in the **same repository**.
+
+    Provider and path together, never path alone: ``path`` carries the host only
+    when it is not the provider's default, so two providers' identically-named
+    repositories would otherwise compare equal.
+    """
+    return one.provider == other.provider and one.path == other.path
+
+
 def _repo_payload(item: WorkItemRef) -> dict:
     """The minimal payload naming a work item's repository.
 
@@ -811,9 +836,28 @@ class Dispatcher:
     def _endpoint_for(self, record: Session, routed: RoutedEvent) -> Session:
         """The endpoint of ``record`` that should receive ``routed``.
 
-        The PR's own endpoint when the event carries a pull request and
-        ``sessionPerPr`` is on; the work item's own session otherwise — which is
-        every issue event, and every event at all when the toggle is off.
+        The PR's own endpoint when the event carries a pull request in **another
+        repository** and ``sessionPerPr`` is on; the work item's own session
+        otherwise — which is every issue event, every pull request in the work
+        item's own repository, and every event at all when the toggle is off.
+
+        The same-repository rule is the work item's **ownership** rule
+        (issue-253). A pull request in the repository the ticket lives in is that
+        work item's own delivery: it is worked on the work item's branch, in the
+        work item's checkout, and — when the item froze
+        ``outer-loop-on-pull-request`` — it is where the work item's own session
+        is already posting its spec chain and reading its human gates. Giving it
+        a second session put two harness conversations in one working tree, with
+        no lock and no owner: they interleaved commits, restarted each other's
+        services, and ran the same verification twice against a tree each was
+        changing under the other. One work item, one owner.
+
+        A pull request in a **different** repository is the case issue-172 and
+        issue-183 built the inner loop for — a contribution this work item makes
+        elsewhere, with a checkout of its own — and it still gets its own
+        session. :meth:`_spawn_endpoint` is what makes that true rather than
+        assumed: it declines the spawn when there is no separate checkout to run
+        it in.
 
         Never ``None``: an event whose PR has no endpoint yet (the record was
         registered by hand, or the link write failed) falls back to the work
@@ -823,6 +867,8 @@ class Dispatcher:
             return record
         pr = pr_work_item(routed.event, routed.payload)
         if pr is None or pr.ref == record.work_item.ref:
+            return record
+        if _same_repository(pr, record.work_item):
             return record
         endpoint = record.endpoint_for(pr)
         return endpoint if endpoint is not None and endpoint.is_live else record
@@ -1791,6 +1837,84 @@ class Dispatcher:
         self.announcer.announce(session)
         return True
 
+    def _endpoint_cwd(
+        self, record: Session, endpoint: Session, routed: RoutedEvent
+    ) -> Optional[str]:
+        """The checkout a PR endpoint's own session would run in — ``None`` if none.
+
+        ``None`` is the refusal that keeps the ownership rule true at the spawn
+        seam (issue-253): a session is worth having only when it has a working
+        tree of its own, and returning ``record.cwd`` — what this did before —
+        was not a checkout for the endpoint at all but a second occupant of the
+        work item's.
+
+        A workspace resolves it honestly: the endpoint's checkout is keyed on the
+        **pull request's** slug and seeded from its head branch, in a clone of
+        the repository the event actually came from. A workspace failure is a
+        refusal, not a raise: the event still lands, in the work item's session.
+        """
+        if self.workspace is None:
+            logger.info(
+                "not giving %s a session of its own: no routing.workspace.root, so "
+                "the only checkout available is %s's own. Delivering into it instead",
+                endpoint.work_item.ref,
+                record.work_item.ref,
+            )
+            eventlog.emit(
+                "session.pr_session_declined",
+                reason="no-separate-checkout",
+                work_item=record.work_item.ref,
+                pull_request=endpoint.work_item.ref,
+                gh_event=routed.event,
+                delivery_id=routed.delivery_id or None,
+            )
+            return None
+        try:
+            prepared = self._prepare_workspace(endpoint.work_item, routed)
+        except WorkspaceError as exc:
+            logger.warning(
+                "could not prepare a checkout for %s (%s); delivering into %s's "
+                "session instead",
+                endpoint.work_item.ref,
+                exc,
+                record.work_item.ref,
+            )
+            eventlog.emit(
+                "session.pr_session_declined",
+                level="warning",
+                reason="workspace-failed",
+                work_item=record.work_item.ref,
+                pull_request=endpoint.work_item.ref,
+                error=str(exc),
+                gh_event=routed.event,
+                delivery_id=routed.delivery_id or None,
+            )
+            return None
+        if _same_path(prepared, record.cwd):
+            # `_prepare_workspace` falls back to `spawnWorkdir` for a payload
+            # naming no repository, which can land on the record's own tree. The
+            # rule is enforced here rather than inferred from the workspace's
+            # layout: two harness sessions never share a working tree, whatever
+            # produced the path.
+            logger.info(
+                "not giving %s a session of its own: its checkout resolved to %s's "
+                "own tree (%s). Delivering into it instead",
+                endpoint.work_item.ref,
+                record.work_item.ref,
+                prepared,
+            )
+            eventlog.emit(
+                "session.pr_session_declined",
+                reason="shared-worktree",
+                work_item=record.work_item.ref,
+                pull_request=endpoint.work_item.ref,
+                cwd=prepared,
+                gh_event=routed.event,
+                delivery_id=routed.delivery_id or None,
+            )
+            return None
+        return prepared
+
     def _spawn_endpoint(
         self,
         record: Session,
@@ -1810,6 +1934,15 @@ class Dispatcher:
         outer `graph-state.json` — so a PR walks its component-scoped subset of
         the process while the work item's own pointer is untouched until the
         `await-inner-loops` seam reads the inner states back.
+
+        A session is given only when there is a **checkout to give it**
+        (issue-253). ``_endpoint_for`` has already ruled out the work item's own
+        repository; what is left is a pull request elsewhere, which needs a
+        checkout of *that* repository — and only a configured workspace can
+        produce one. With no workspace the alternative was the work item's own
+        tree, which is both the wrong repository and already occupied, so the
+        event is delivered into the work item's session instead. Two harness
+        conversations never share a working tree.
         """
         adapter = self.adapters.get(record.harness)
         if adapter is None or not adapter.is_available():
@@ -1821,13 +1954,16 @@ class Dispatcher:
                 record.work_item.ref,
             )
             return self._deliver_into(record, record, routed, prompt)
-        self._prepare_environment(adapter, endpoint.work_item, record.cwd)
+        cwd = self._endpoint_cwd(record, endpoint, routed)
+        if cwd is None:
+            return self._deliver_into(record, record, routed, prompt)
+        self._prepare_environment(adapter, endpoint.work_item, cwd)
         session_id = str(uuid.uuid4())
         result = self.tmux.spawn(
             endpoint.work_item,
             adapter,
             prompt,
-            cwd=record.cwd,
+            cwd=cwd,
             session_id=session_id,
             timeout=self.config.dispatch_timeout_seconds,
         )
@@ -1851,7 +1987,7 @@ class Dispatcher:
             return self._deliver_into(record, record, routed, prompt)
         endpoint.harness_session_id = session_id
         endpoint.tmux_target = self.tmux.target_for(endpoint.work_item)
-        endpoint.cwd = record.cwd
+        endpoint.cwd = cwd
         self.registry.save_endpoint(record.work_item, endpoint)
         self.registry.touch(
             record.work_item,

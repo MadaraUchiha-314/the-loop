@@ -159,7 +159,18 @@ EVENT_TYPES: Dict[str, str] = {
         "A recorded pull request got its own tmux session and harness "
         "conversation (work_item, pull_request, harness, harness_session_id, "
         "tmux_target) — `routing.tmux.sessionPerPr`, on by default. The work "
-        "item's own session is untouched; this is an additional endpoint."
+        "item's own session is untouched; this is an additional endpoint. Only "
+        "a pull request in ANOTHER repository reaches this (issue-253): the "
+        "work item's own repository is its own session's, one owner per tree."
+    ),
+    "session.pr_session_declined": (
+        "A pull request in another repository was NOT given a session of its "
+        "own, and its event went into the work item's session instead "
+        "(work_item, pull_request, reason: no-separate-checkout | "
+        "workspace-failed | shared-worktree) — issue-253. An endpoint gets a "
+        "conversation only "
+        "when it has a working tree of its own; without `routing.workspace.root` "
+        "there is none to give, and two harness sessions never share a tree."
     ),
     "session.pr_closed": (
         "A pull request's endpoint was closed while its work item's session "

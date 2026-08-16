@@ -233,13 +233,27 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   for `closingIssuesReferences`, or one transient GraphQL error** silently re-pointed
   routing at the PR itself — past a running session — and the event was dropped or
   answered with a duplicate session.
-  - WHEN `routing.tmux.sessionPerPr` is true (**the default**) THEN each recorded PR
-    SHALL work in its **own** tmux session with its **own** harness conversation, spawned
-    lazily by the first event that needs it and announced like any other spawn — so a
-    work item with two PRs has three sessions: its own (which receives the issue's
-    events) and one per PR. WHEN it is false THEN every PR's events SHALL be delivered
-    into the work item's single session — the pre-issue-172 behaviour, kept as a
-    configured choice.
+  - **A work item has one session, and one working tree, and they are the same session's**
+    (issue-253, [decision-088](../decisions/decision-088.md)). WHEN an event carries a pull
+    request in the work item's **own repository** THEN it SHALL be delivered into the work
+    item's session and no session SHALL be spawned for the pull request: that pull request
+    is the work item's own delivery — its branch, its checkout, and under
+    `outer-loop-on-pull-request` the very conversation the work item's session is already
+    holding there. Before issue-253 it got a session of its own **in the work item's
+    working tree**, so two harness conversations shared one branch with no lock and no
+    owner: they interleaved commits, restarted each other's services and ran the same
+    verification twice against a tree each was changing under the other.
+  - WHEN `routing.tmux.sessionPerPr` is true (**the default**) AND the pull request is in
+    **another** repository — a contribution this work item makes elsewhere (issue-183) —
+    THEN it SHALL work in its **own** tmux session with its **own** harness conversation,
+    spawned lazily by the first event that needs it and announced like any other spawn.
+    That session SHALL run in a checkout of **that** repository, keyed on the pull
+    request's own slug (`routing.workspace.root`); WHEN there is no workspace to produce
+    one THEN no session SHALL be spawned — a session is worth having only with a tree of
+    its own — and the event SHALL be delivered into the work item's session, recorded as
+    `session.pr_session_declined`. WHEN `sessionPerPr` is false THEN every PR's events
+    SHALL be delivered into the work item's single session — the pre-issue-172 behaviour,
+    kept as a configured choice.
   - Resolution is **additive**: a ref with its own record resolves to it, and only a ref
     with none is looked up across the live records' PR lists — so a recorded PR never
     suppresses a work item the derived linkage still finds, and a deliberate re-link
@@ -557,6 +571,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-253 | A work item stopped having two owners (2026-08-16): `sessionPerPr` gave every pull request delivering a work item its own harness conversation but never its own **checkout** — `_spawn_endpoint` spawned with `record.cwd`, and `Workspace.prepare` keys both strategies on the work-item slug, so under *every* configuration a pull request's session ran in the work item session's tree. Two agents, one branch, no lock: on issue-239 they interleaved commits, restarted each other's services and ran the same verification twice against a tree each was changing under the other. Now a pull request in the work item's **own repository** is the work item's session's — no second spawn — and a pull request in **another** repository spawns only into a checkout of its own, keyed on its slug, or not at all (`session.pr_session_declined`) | [spec](../specs/issue-253/), [decision-088](../decisions/decision-088.md), [routing](../config/cli/routing-options.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/253) |
 | issue-243 | A forwarded event stopped carrying GitHub's metadata (2026-08-16): the `$payload_excerpt` block was a subset of the raw payload — nine containers copied whole, cut at 4,000 characters — so an ordinary comment delivered a 61-character instruction inside 4,014 characters of `user` objects, `reactions` and the whole `issue`, with the cut landing mid-string so the "JSON" did not parse. It is now a **field allow-list per container** with free text capped per field: a comment is its body, its address and its author's login; an inline comment keeps its anchor ahead of the body; lifecycle and CI events keep what makes them actionable. Measured on the same payload, 4,014 → 203 characters and the whole prompt 6,676 → 2,865. Nothing that acts on an event changed — the gates still read the full payload | [spec](../specs/issue-243/), [decision-086](../decisions/decision-086.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/243) |
 | issue-240 | A comment abandoned after `polling.maxRetries` is now reported **on the work item** (`poll.giveup_reported`), naming the comment, the attempts and the recovery — posting it again — instead of leaving a 😕 reaction as the only signal. Best-effort and ledger-first: the notice can fail without changing what was recorded, and it echoes no text from the comment it reports | [spec](../specs/issue-240/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/240) |
 | issue-246 | The poll ingress reached parity with the receiver on **what a comment is** (2026-08-16): it read only the `IssueComment` connection, so an instruction left as a PR **review** or as an **inline review-thread comment** was never forwarded — silently, since nothing was read there was nothing to drop or log. The provider now merges all three surfaces into one chronological list (`gh pr view --json comments` plus paginated `gh api …/pulls/<n>/{reviews,comments}`), emits each as the event a real webhook would have carried, and forwards an inline comment with its file/line anchor; empty-body and `PENDING` reviews are dropped as carrying no instruction, an issue costs the one request it always did, and the retained-id cap grew to fit three streams in one ledger | [spec](../specs/issue-246/), [polling](../config/cli/polling-options.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/246) |
