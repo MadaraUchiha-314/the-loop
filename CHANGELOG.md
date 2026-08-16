@@ -1,3 +1,9 @@
+## v10.3.1 (2026-08-16)
+
+### Fix
+
+- **issue-247**: record-feedback writes markdown its own linter accepts (#255)
+
 ## v10.3.0 (2026-08-16)
 
 ### Feat
