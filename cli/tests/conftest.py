@@ -8,11 +8,79 @@ from typing import Optional
 import pytest
 
 from the_loop import eventlog
+from the_loop.announce import SessionAnnouncer
 from the_loop.client.routing import SERVICE_LOCAL_ENV
+from the_loop.control import ControlStore
+from the_loop.graphlink import GraphLink
 from the_loop.harness import HarnessAdapter
 from the_loop.runner import SESSION_ABSENT, TmuxResult, TmuxRunner
+from the_loop.sessions import SessionRegistry
 from the_loop.trust import TrustResult
 from the_loop.webhook import dispatcher as dispatcher_mod
+from the_loop.webhook.router import Deduper
+
+#: Every write the dispatcher makes **after** the spawn or delivery it was asked
+#: for — the outcome of a dispatch, as opposed to the attempt that `FakeTmux`
+#: records. ``--dispatch-lag`` delays exactly these, because a test that waits on
+#: the attempt and then depends on the outcome is the shape issue-251 exists to
+#: find (five instances so far, each failing about one run in three under load).
+_DISPATCH_OUTCOME_WRITES = (
+    (SessionRegistry, "register"),
+    (SessionRegistry, "touch"),
+    (SessionRegistry, "save_endpoint"),
+    (SessionRegistry, "link_pull_request"),
+    (SessionRegistry, "close"),
+    (Deduper, "discard"),
+    (SessionAnnouncer, "announce"),
+    (GraphLink, "on_spawn"),
+    (GraphLink, "on_event"),
+    (ControlStore, "record"),
+)
+
+
+def pytest_addoption(parser):
+    """``--dispatch-lag=<seconds>``: turn a wait-ordering flake into a certainty.
+
+    Load is what used to expose these — the ticket measured one failure in three
+    after ~16 seconds of unrelated wall-clock — so the suite carries its own load
+    instead of waiting for a busy CI runner to supply some. See
+    ``skills/the-loop/reference/testing.md`` § RULE: an asynchronous test waits on
+    the state it depends on.
+    """
+    parser.addoption(
+        "--dispatch-lag",
+        type=float,
+        default=0.0,
+        metavar="SECONDS",
+        help=(
+            "delay every dispatcher write that FOLLOWS a spawn or delivery "
+            "(registry, deduper, announcer, graph link, control store) by this "
+            "many seconds, so a test waiting on the attempt rather than its "
+            "outcome fails every run instead of one in three. 0 disables."
+        ),
+    )
+
+
+@pytest.fixture(autouse=True)
+def _dispatch_lag(request, monkeypatch):
+    """Widen the gap between a dispatch's attempt and its outcome (issue-251).
+
+    Off unless asked for: at the default this is one float comparison per test and
+    nothing is patched. When it is on, the patches go through ``monkeypatch``, so
+    each unwinds at the end of its own test and no lagged class survives into the
+    next one.
+    """
+    lag = request.config.getoption("--dispatch-lag")
+    if lag <= 0:
+        return
+    for cls, name in _DISPATCH_OUTCOME_WRITES:
+        real = getattr(cls, name)
+
+        def slow(self, *args, _real=real, **kwargs):
+            time.sleep(lag)
+            return _real(self, *args, **kwargs)
+
+        monkeypatch.setattr(cls, name, slow)
 
 
 @pytest.fixture(autouse=True)
