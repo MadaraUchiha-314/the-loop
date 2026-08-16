@@ -1,3 +1,9 @@
+## v10.2.1 (2026-08-16)
+
+### Fix
+
+- **issue-238**: a vanished checkout must not keep failing /graph/check (#241)
+
 ## v10.2.0 (2026-08-16)
 
 ### Feat
