@@ -223,23 +223,66 @@ status: in-progress          # in-progress | complete
 
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
 |-------|-----------------------------|----------|---------|------|
-|       |                             |          |         |      |
+| 1 | self | the-loop session | new findings — `the-loop check --fail-on block` would have exited 0 on a repo that does not resolve, because the position-unknown report has no nodes and so no *blocking* node. Fixed test-first; `resolve_repo` tidied and the abuse-case test strengthened to pin the whole key set | [commit](https://github.com/MadaraUchiha-314/the-loop/commit/2e166de) |
+| 2 | self | the-loop session | new findings — the MCP tool and the SDK's `check` pass core's dict straight through, so both now answer where they used to raise. Docstrings state what the shape means; the MCP one in the imperative, since an LLM reads it as a tool description | [commit](https://github.com/MadaraUchiha-314/the-loop/commit/2e166de) |
+| 3 | self | the-loop session | new findings — `testing-plan.md`'s own T11 claim was wrong: an older UI build against a newer service stores the `200` and renders an empty rail, rather than "ignoring an unknown key". `buildWorkItemViews` now falls back to `railFromFrozen` for a report with no nodes; T11's reason corrected in place | [commit](https://github.com/MadaraUchiha-314/the-loop/commit/2e166de) |
+| 4 | critic | — | **unavailable** — `reviews.critics: []` in `.the-loop/harness-config.yaml`, so `the-loop critic list` reports none configured. Does **not** count toward `reviews.criticReviewCount` (`reference/reviewing.md`) | — |
+| 5 | security | built-in security-review skill | pass — no findings at confidence ≥ 8 | see § Security review |
+
+Rounds 1–3 each found something new, so the loop did not stop early. A fourth self-round
+was not run: `reviews.selfReviewCount` is 3, and the three rounds were spent on distinct
+surfaces (the CLI gate, the other API consumers, upgrade compatibility) rather than three
+re-readings of the same diff.
 
 ## Security review (gate)
 
 > Required before ready-to-ship (`security.review.required`). See `reference/security.md`.
 
-- **Mechanism:** <security-review skill | the-loop checklist> (`security.review.mechanism`)
-- **Outcome:** <pass | findings fixed (link threads) | escalated>
-- **Human sign-off:** <n/a (tier below `security.review.humanSignOffMinTier`) | @handle + link>
+- **Mechanism:** the built-in `security-review` skill (`security.review.mechanism: auto`,
+  which prefers the skill when available).
+- **Outcome:** **pass** — no findings at confidence ≥ 8. Five questions were put to it
+  explicitly, because they are where this change could plausibly have gone wrong:
+
+  | Question | Verdict |
+  |---|---|
+  | Does `check` reach core with an unvetted path? | No. The early return is unconditional and precedes `_runtime`, the only route to `resolve_repo`/`build_runtime` from this verb. The returned dict is literals plus the caller's own `work_item` — no filesystem, no graph state, no config load. |
+  | Does `repo_resolves` differ from the old inline predicate? | No. Byte-identical (`is_dir()` follows symlinks in both). `resolve_repo` now builds the `Path` twice, but `is_dir()` and `resolve()` were already two syscalls, so the TOCTOU window is unchanged in existence and width — and `resolve()` was never the security decision. |
+  | Does the `200` leak more than the `400` did? | No — **less**. The old body echoed the caller's path; the new one names nothing the caller did not send. The directory-existence oracle is unchanged, not newly introduced. |
+  | Does error→success change any gating decision? | Every consumer traced. `_fails` fails closed (and the `is False` identity test is correct against JSON-parsed `false` over HTTP). `graph status` and `--dry-run` fail closed already via `ok: False`. `check --all` still raises through `_show`. The API, MCP and SDK entry points make no decision. `the-loop-gate.yml` uses `--repo .` and is unaffected. |
+  | Anything in the UI change? | No. `=== false` is strict identity, not truthiness. No `dangerouslySetInnerHTML`/`innerHTML`/`eval` anywhere in `ui/src`; values reach React text nodes and are escaped. Exporting `fetchGraphs` widens no runtime surface. |
+
+  One residual was considered and rejected below the reporting threshold: a **version-skewed
+  old CLI** (a `_fails` without the new branch) against a new service would take
+  `--fail-on block` to exit 0 on a non-resolving repo. It needs mixed versions *and*
+  attacker influence over `--repo`, which is a CLI flag — a trusted value — and is `.` in
+  the only gate in this repository. Recorded rather than dropped.
+
+- **Human sign-off:** n/a. Risk tier 3 (`autonomy.defaultTier`, and no `sensitivePaths`
+  glob matches — the change touches no schema, no `.the-loop/` config and no
+  `.github/workflows/`), which is below `security.review.humanSignOffMinTier: 4`.
 
 ## Final validation evidence
 
-The evidence presented to the user proving acceptance criteria are met. **Summarised
-from `testing-plan.md`'s Verification results** (the `verification` node produced the
-raw record — command, outcome, committed evidence per activity); this section maps it
-onto the acceptance criteria rather than re-deriving it. Committed evidence files live
-under `<specDir>/<id>/evidence/`.
+Every acceptance criterion is met. Summarised from
+[`testing-plan.md` § Verification results](testing-plan.md#verification-results); the raw
+record is there and the committed output is under [`evidence/`](evidence/).
+
+| Criterion | Met by |
+|---|---|
+| **R1.1** no browser-logged 4xx/5xx for a non-resolving `cwd` | One real poll tick through the board's own `fetchGraphs`: **1× 4xx before, 0× after**, same records, same tick ([`manual.md`](evidence/manual.md)). |
+| **R1.2** no growth over time | The answer is a pure function of the path — no state, no cache, no reconcile — so every tick is the one measured above. `test_check_answers_a_vanished_checkout_instead_of_raising` pins it. |
+| **R1.3** satisfied from the first tick after removal, with no reconcile | Structural: the answer comes from a `Path.is_dir()` at request time. Nothing is remembered between ticks, so there is no window to be wrong in — which is why the session-listing alternative was rejected in `design.md`. |
+| **R2.1** the rail renders exactly as today | `reports.outer` is byte-for-byte identical before and after on the real path ([`manual.md`](evidence/manual.md)), plus `useControlPlane.test.ts` and the `railFromFrozen` fallback test in `model.test.ts`. |
+| **R2.2** a resolving repo's response is unchanged, byte for byte | `test_a_resolving_repo_keeps_exactly_the_keys_it_always_had` asserts the exact five-key set; `test_graph_check_says_nothing_new_about_a_checkout_that_is_there` asserts it over HTTP. Both were green *before* the change too, which is what makes them meaningful. |
+| **R3.1** malformed requests still refused | Untouched — the request model and `Path("")` behaviour are exactly as before, verified by the unchanged tests around them. |
+| **R3.2** no core graph call receives an unvetted path | `test_check_answers_a_vanished_checkout_instead_of_raising` monkeypatches `_runtime` to raise if reached. Independently confirmed by the security review: the early `return` precedes the only route to `resolve_repo`. |
+| **R3.3** the contract describes the shape; parity green | `graphCheck` gained a `description`, verified `identical: True` against the served schema; `test_api_contract_parity.py` passes ([`unit-and-integration.md`](evidence/unit-and-integration.md)). |
+| **R4.1** a test that fails before and passes after | [`red.md`](evidence/red.md) — four Python assertions and one vitest case failing against unfixed code, committed as their own commit before the fix. |
+| **R4.2** coverage of a session record whose `cwd` does not exist | `useControlPlane.test.ts` (the record shape) and the T12 runs against the real stale `devbox#2` record. |
+
+**Not claimed:** that Chrome renders zero red lines. The response statuses it would render
+were captured directly, but no browser was driven — the extension was not connected. See
+`testing-plan.md` § Verification results.
 
 ## Capability docs
 
@@ -252,7 +295,8 @@ under `<specDir>/<id>/evidence/`.
 
 | Capability doc | What changed | History row |
 |----------------|--------------|-------------|
-|                |              |             |
+| [`control-plane.md`](../../capabilities/control-plane.md) | New behaviour bullet beside the existing `graph/check` one: a `repo` that does not resolve SHALL be answered, not refused — `200` with `repoResolved: false`, the field absent otherwise, `4xx` still reserved for a malformed request, the mutating verbs still refusing, and the path still reaching no graph read. | issue-238 |
+| [`process-graph.md`](../../capabilities/process-graph.md) | New bullet under *State, recovery and the escape hatch*: **a gate that evaluated nothing SHALL NOT pass** — `the-loop check` fails an unresolved repo in both `--fail-on` modes and renders `UNREAD` rather than a phase-less work item. Added because the control-plane change created that hole; found by self-review, not by the fix's own tests. | issue-238 |
 
 ## Documentation
 
@@ -271,7 +315,14 @@ under `<specDir>/<id>/evidence/`.
 
 | Document | What changed |
 |----------|--------------|
-|          |              |
+| [`ui/README.md`](../../../ui/README.md) | The *"Loop position needs two records"* bullet said an item with no session shows its frozen node list "never an error". Extended: neither does one whose checkout has since been deleted, with the `repoResolved` contract and the `=== false` warning. |
+| [`docs/cli/commands/check.md`](../../cli/commands/check.md) | New subsection under `--fail-on`: *A repository that is not there fails both modes*, with the console transcript, the exit code, and why — a mistyped `--repo` would otherwise take the automated-gate mode to exit 0. |
+| [`docs/api-specs/openapi/the-loop.v1.yaml`](../../api-specs/openapi/the-loop.v1.yaml) | The `graphCheck` operation gained a `description` stating the position-unknown answer. Authored by hand (this repo's contract is authored, not generated — issue-161) and verified byte-identical to what the app serves; response schemas untouched, so the parity test is unaffected. |
+
+`README.md` and the VitePress site were checked and needed no change: neither describes
+`/graph/check`'s status codes or the dashboard's rail fallback. Verified by grepping both
+trees for `graph/check` and `graphCheck` — the only hits outside `docs/specs/` were the two
+documents listed above.
 
 ### 2026-08-15 — entry design
 
@@ -301,4 +352,9 @@ under `<specDir>/<id>/evidence/`.
 ### 2026-08-15 — entry self-review
 
 - **Node:** self-review
+- **Boundary:** entry
+
+### 2026-08-15 — entry critic-review
+
+- **Node:** critic-review
 - **Boundary:** entry
