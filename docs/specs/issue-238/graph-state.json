@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-238",
-  "currentNode": "requirements-approval",
+  "currentNode": "design",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -29,10 +29,18 @@
     },
     "requirements-approval": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "approved",
       "enteredAt": "2026-08-16T01:47:08+00:00",
-      "exitedAt": "",
+      "exitedAt": "2026-08-16T01:59:11+00:00",
       "lastBlock": "",
+      "forced": false
+    },
+    "design": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-08-16T01:59:11+00:00",
+      "exitedAt": "",
+      "lastBlock": "`validate-artifacts` did not pass:\n- required artifact is missing (docs/specs/issue-238/design.md)",
       "forced": false
     }
   },
@@ -204,6 +212,10 @@
     "requirements-definition": {
       "at": "2026-08-16T01:47:08+00:00",
       "by": "the-loop-session"
+    },
+    "design": {
+      "at": "2026-08-16T01:59:21+00:00",
+      "by": "MadaraUchiha-314"
     }
   },
   "skips": {

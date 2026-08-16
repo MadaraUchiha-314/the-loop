@@ -3,7 +3,7 @@ type: bugfix
 phase: requirements-definition
 workItem: "github:MadaraUchiha-314/the-loop#238"
 status: approved             # draft | in-review | approved
-approvedBy: []
+approvedBy: ["@MadaraUchiha-314"]  # PR #241, 2026-08-16
 severity: low                # low | medium | high | critical
 collaborators: [engineer]
 overrides: {}
@@ -139,8 +139,13 @@ service its input validation.
 2. WHEN `POST /api/v1/graph/check` receives a `repo` path that does not resolve to a
    directory THEN the API SHALL NOT pass that path to any core graph call.
 3. The published OpenAPI contract (`docs/api-specs/openapi/the-loop.v1.yaml`) SHALL
-   describe whatever response shape this change introduces, and SHALL be regenerated
-   rather than hand-edited.
+   describe whatever response shape this change introduces, and the parity test
+   `cli/tests/test_api_contract_parity.py` SHALL stay green.
+
+   > Corrected during design (see `design.md` § Trade-offs). This criterion first said the
+   > contract "SHALL be regenerated rather than hand-edited", which is false for this
+   > repository: issue-161 made the contract **authored**, with a test asserting the app
+   > serves it. Hand-editing it is the convention, not the violation.
 
 ### Requirement 4 — the regression is pinned
 

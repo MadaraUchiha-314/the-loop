@@ -170,3 +170,8 @@ under `<specDir>/<id>/evidence/`.
 | Document | What changed |
 |----------|--------------|
 |          |              |
+
+### 2026-08-15 — entry design
+
+- **Node:** design
+- **Boundary:** entry
