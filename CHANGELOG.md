@@ -1,3 +1,9 @@
+## v10.3.0 (2026-08-16)
+
+### Feat
+
+- **issue-239**: stream the-loop's service to the control plane (#244)
+
 ## v10.2.5 (2026-08-16)
 
 ### Fix
