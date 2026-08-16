@@ -358,3 +358,23 @@ documents listed above.
 
 - **Node:** critic-review
 - **Boundary:** entry
+
+### 2026-08-15 — entry security-review
+
+- **Node:** security-review
+- **Boundary:** entry
+
+### 2026-08-15 — entry evidence
+
+- **Node:** evidence
+- **Boundary:** entry
+
+### 2026-08-15 — entry capability-docs
+
+- **Node:** capability-docs
+- **Boundary:** entry
+
+### 2026-08-15 — entry reviewer-briefing
+
+- **Node:** reviewer-briefing
+- **Boundary:** entry

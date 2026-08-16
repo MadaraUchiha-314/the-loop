@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-238",
-  "currentNode": "critic-review",
+  "currentNode": "human-approval",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -101,8 +101,48 @@
     },
     "critic-review": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-08-16T02:48:43+00:00",
+      "exitedAt": "2026-08-16T02:52:47+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "security-review": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-08-16T02:52:47+00:00",
+      "exitedAt": "2026-08-16T02:52:48+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "evidence": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-08-16T02:52:48+00:00",
+      "exitedAt": "2026-08-16T02:52:48+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "capability-docs": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-08-16T02:52:48+00:00",
+      "exitedAt": "2026-08-16T02:52:48+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "reviewer-briefing": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-08-16T02:52:48+00:00",
+      "exitedAt": "2026-08-16T02:53:50+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "human-approval": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-08-16T02:53:50+00:00",
       "exitedAt": "",
       "lastBlock": "",
       "forced": false
@@ -299,6 +339,26 @@
     },
     "self-review": {
       "at": "2026-08-16T02:48:43+00:00",
+      "by": "the-loop-session"
+    },
+    "critic-review": {
+      "at": "2026-08-16T02:52:47+00:00",
+      "by": "the-loop-session"
+    },
+    "security-review": {
+      "at": "2026-08-16T02:52:48+00:00",
+      "by": "the-loop-session"
+    },
+    "evidence": {
+      "at": "2026-08-16T02:52:48+00:00",
+      "by": "the-loop-session"
+    },
+    "capability-docs": {
+      "at": "2026-08-16T02:52:48+00:00",
+      "by": "the-loop-session"
+    },
+    "reviewer-briefing": {
+      "at": "2026-08-16T02:53:50+00:00",
       "by": "the-loop-session"
     }
   },
