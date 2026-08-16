@@ -1,3 +1,9 @@
+## v10.2.5 (2026-08-16)
+
+### Fix
+
+- **issue-253**: a work item's own pull request is the work item's session (#254)
+
 ## v10.2.4 (2026-08-16)
 
 ### Perf
