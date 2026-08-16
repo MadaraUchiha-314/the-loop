@@ -6,6 +6,7 @@ Feature: the-loop's process graph
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 
@@ -145,6 +146,25 @@ def test_partial_feedback_leaves_the_gate_waiting(repo):
     assert classify_feedback(ctx).status == "wait"
 
 
+# MD036 (no-emphasis-as-heading) rejects a paragraph whose whole content is one
+# span of emphasized text. Asserting that shape rather than shelling out to
+# markdownlint is deliberate (issue-247 R3.2): the suite runs without Node.js, and
+# a test that skips when `npx` is missing would stop guarding the thing the ticket
+# is about — the real linter runs once at verification, as evidence.
+_EMPHASIS_ONLY = re.compile(r"^(?P<mark>\*\*|__|\*|_)(?!\s)(?P<inner>.+?)(?P=mark)$")
+
+
+def _emphasis_only_lines(text: str) -> list[str]:
+    lines = []
+    for line in text.split("\n"):
+        found = _EMPHASIS_ONLY.match(line.strip())
+        # `**a** and **b**` matches the pattern but is not one span, so MD036
+        # leaves it alone; so does this.
+        if found and found["mark"] not in found["inner"]:
+            lines.append(line)
+    return lines
+
+
 def test_an_approval_with_comments_is_recorded_in_the_artifact(repo):
     """
     Feature: the-loop's process graph
@@ -173,7 +193,71 @@ def test_an_approval_with_comments_is_recorded_in_the_artifact(repo):
     assert result.status == "pass"
     text = (_spec(repo) / "design.md").read_text()
     assert "## Review comments" in text
-    assert "@owner" in text and "tighten the nit" in text
+    assert "@owner" in text
+    # Verbatim, not merely present: the harness never reflows a human's words
+    # (issue-247 R2.2 — the workaround this ticket replaced did exactly that).
+    assert "\napproved, but tighten the nit\n" in text
+    assert not _emphasis_only_lines(text)
+
+
+def _record(repo, comments, into="design.md"):
+    """Run the two feedback hooks over `comments` and return the artifact's text."""
+    (_spec(repo) / into).write_text("---\nstatus: approved\n---\n\n# D\n")
+    ctx = HookContext(
+        work_item=WorkItem(ref="github:o/r#1", id="issue-1", spec_dir=_spec(repo)),
+        node={"id": "design-approval"},
+        boundary="exit",
+        repo=repo,
+        config={"authorizedUsers": ["owner", "second"]},
+        event={"comments": comments},
+    )
+    ctx.results = [classify_feedback(ctx)]
+    ctx.params = {"into": into}
+    assert record_feedback(ctx).status == "pass"
+    return (_spec(repo) / into).read_text()
+
+
+def test_a_recorded_review_never_writes_emphasis_alone_on_a_line(repo):
+    """
+    Feature: the-loop's process graph
+    Scenario: a recorded approval passes the project's markdown linter
+      Given a gate approving with comments from two reviewers
+      When record-feedback appends them to the artifact
+      Then no line of the artifact is emphasized text and nothing else
+    Requirement: docs/specs/issue-247/bugfix.md#R1.1
+    """
+    text = _record(
+        repo,
+        [
+            {"author": "owner", "body": "approved, but tighten the nit"},
+            {"author": "second", "body": "lgtm"},
+        ],
+    )
+
+    assert "@owner" in text and "@second" in text
+    assert not _emphasis_only_lines(text)
+
+
+def test_a_comment_with_no_body_is_recorded_without_a_blank_line_pair(repo):
+    """
+    Feature: the-loop's process graph
+    Scenario: an approval submitted with no comment text is still recorded
+      Given a reviewer who approves without writing anything
+      When record-feedback appends the review to the artifact
+      Then the reviewer is still attributed and no two blank lines are adjacent
+    Requirement: docs/specs/issue-247/bugfix.md#R1.2
+    """
+    text = _record(
+        repo,
+        [
+            {"author": "owner", "body": "approved"},
+            {"author": "second", "body": "   "},
+        ],
+    )
+
+    assert "@second" in text  # an empty approval is still a fact about the gate
+    assert "\n\n\n" not in text
+    assert not _emphasis_only_lines(text)
 
 
 def test_forcing_past_a_gate_leaves_recompute_honest(repo):
