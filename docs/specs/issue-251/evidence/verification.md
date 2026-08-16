@@ -79,6 +79,36 @@ Linting: 746 files
 Summary: 0 issues in 0 files
 ```
 
+## Re-run after the rebase onto `main` (f869ac0)
+
+The numbers above were measured on the pre-rebase base. `main` moved by two commits
+(PR #255 and the 10.3.1 bump) and the branch was rebased at the maintainer's request, so
+every claim was measured again rather than carried over. #255 adds two tests, hence 2225
+where the earlier runs report 2223.
+
+```console
+$ cd cli && uv run python -m pytest -q                     # CI's own invocation
+2225 passed, 1 skipped in 118.14s (0:01:58)
+
+$ uv run --project cli python -m pytest -q --dispatch-lag=0.5 cli
+2225 passed, 1 skipped in 562.87s (0:09:22)
+
+$ uv run ruff check cli hooks && uv run ruff format --check cli hooks
+All checks passed! · 229 files already formatted
+
+$ uv run pyright cli
+0 errors, 0 warnings, 0 informations
+
+$ npx markdownlint-cli2 "**/*.md"
+Linting: 756 files · Summary: 0 issues in 0 files
+
+$ uv run the-loop check issue-251 --recompute --fail-on block   # the-loop's own gate
+issue-251: UNMET (at phase-selection) — WAIT, exit 0
+```
+
+The gate's `WAIT` is the expected state of an open PR: the work item is parked at the
+human phase-selection gate, which `--fail-on block` deliberately does not fail on.
+
 ## What is not claimed
 
 - **The organic failure was not reproduced.** The ticket's own method — run the suite

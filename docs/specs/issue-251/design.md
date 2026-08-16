@@ -161,7 +161,7 @@ See `testing-plan.md` for the matrix and the activities.
 ## Trade-offs & decisions
 
 **Ship the lag option, or only write the rule down?** Shipping it — recorded as
-[decision-089](../../decisions/decision-089.md). The rule alone is what the loop had
+[decision-090](../../decisions/decision-090.md). The rule alone is what the loop had
 before: PR #244 wrote the lesson into three code comments and two more instances were
 still there for this sweep to find. `--dispatch-lag` is ~25 lines, off by default, and it
 is the difference between a convention people mean to follow and one a command checks.

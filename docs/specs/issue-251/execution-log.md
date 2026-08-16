@@ -87,7 +87,7 @@ The approval sits where the risk tier says it belongs — a human approving the 
   is extinct; the action variant was not being looked for.
 - **Decided:** ship the lag as `pytest --dispatch-lag=<seconds>` rather than leave it in a
   scratch file. Argued in `design.md`, recorded as
-  [decision-089](../../decisions/decision-089.md). The one-line case: PR #244 wrote this
+  [decision-090](../../decisions/decision-090.md). The one-line case: PR #244 wrote this
   lesson into three code comments and two more instances were still in the suite.
 
 ### 2026-08-16 — red, then green, under the shipped flag
@@ -127,6 +127,23 @@ The approval sits where the risk tier says it belongs — a human approving the 
 - **Critic review: not run — `reviews.critics` is empty in this repository**, so there is
   no second model configured to run one. Flagged on the PR rather than silently skipped.
 
+### 2026-08-16 — rebased onto main at the maintainer's request; the decision renumbered
+
+- **Phase:** needs-review
+- **Did:** rebased onto `main` (`f869ac0`, two commits ahead: issue-247's #255 and the
+  10.3.1 bump) after the maintainer commented `rebase` on PR #256.
+- **Two conflicts, both in the decision log.** #255 claimed **089** for its own decision
+  while this branch was in flight, so this work item's record moved to
+  [decision-090](../../decisions/decision-090.md) and every reference with it; `main`'s
+  089 is untouched. The numbering note is copied into the record itself, as
+  [decision-088](../../decisions/decision-088.md) did for the same collision one PR
+  earlier.
+- **One commit dropped as already upstream:** the `uv.lock` workspace-version sync, which
+  the 10.3.1 release commit carried.
+- **Re-verified after the rebase** rather than assuming the merge was clean — the full
+  suite, the lagged suite, and the gates. Results in
+  [`evidence/verification.md`](evidence/verification.md).
+
 ## Capability docs
 
 - [`docs/capabilities/testing-and-contracts.md`](../../capabilities/testing-and-contracts.md)
@@ -144,7 +161,7 @@ The approval sits where the risk tier says it belongs — a human approving the 
 - [`docs/contributing.md`](../../contributing.md) — *Hunting wait-ordering flakes*: the
   command, what it delays, and when to run it. This is where a contributor looks for "how
   do I run the tests", so it is where the flag belongs.
-- [`docs/decisions/decision-089.md`](../../decisions/decision-089.md) + index row.
+- [`docs/decisions/decision-090.md`](../../decisions/decision-090.md) + index row.
 - **README.md and the guide: unchanged, deliberately.** Nothing here alters what the-loop
   *does* for a user — no command, no config key, no phase, no artifact. The one new
   affordance is a pytest flag for people working on this repository, which is what

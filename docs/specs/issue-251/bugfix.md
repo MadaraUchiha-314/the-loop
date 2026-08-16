@@ -177,4 +177,4 @@ no runtime flag, environment variable or config key that turns it on outside pyt
 
 None. The one judgement call — shipping `--dispatch-lag` rather than only writing the
 rule down — is argued in `design.md` and recorded as
-[decision-089](../../decisions/decision-089.md).
+[decision-090](../../decisions/decision-090.md).

@@ -5,6 +5,12 @@
 - **Work item:** [issue-242](https://github.com/MadaraUchiha-314/the-loop/issues/242)
 - **Deciders:** maintainer (via ticket); harness (proposal)
 
+  > **Numbering.** Written as 089 and renumbered to 090 on the rebase:
+  > [PR #255](https://github.com/MadaraUchiha-314/the-loop/pull/255) (issue-247) landed
+  > 089 on `main` while this branch was in flight. Same collision
+  > [decision-088](decision-088.md) records; the next branch to take a number should
+  > check `main` rather than its own base.
+
 ## Context
 
 When the-loop's own machinery fails, the evidence is already in the event log — and
