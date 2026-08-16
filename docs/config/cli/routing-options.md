@@ -492,12 +492,24 @@ How long the harness gets to exit after SIGTERM before SIGKILL. `0` escalates im
 - **Type:** `boolean`
 - **Default:** `true`
 
-Give each pull request delivering a work item its **own** tmux session and harness
-conversation (issue-172). A work item with two PRs then has three sessions: its own, which
-receives the issue's events, and one per PR — all recorded on the work item's single
-session record (`sessions list --format json` shows them under `pullRequests`), each
-spawned lazily by the first event that needs it and announced on the work item like any
-other spawn.
+Give a pull request **in another repository** its own tmux session and harness conversation
+(issue-172, issue-183) — a contribution this work item makes elsewhere, which has a
+checkout of its own. Recorded on the work item's single session record (`sessions list
+--format json` shows them under `pullRequests`), spawned lazily by the first event that
+needs it and announced on the work item like any other spawn.
+
+::: tip A pull request in the work item's own repository is never a session of its own
+That pull request *is* the work item's delivery: same branch, same checkout, and under
+`outer-loop-on-pull-request` the same conversation the work item's session is already
+holding on it. Its events go into the work item's session regardless of this setting
+(issue-253) — one owner per work item, one session per working tree. Before that, it got a
+second session pointed at the **same working tree**, and two agents shared one branch with
+no lock.
+:::
+
+A cross-repository endpoint spawns only when there is a checkout to give it — that is,
+when [`workspace.root`](#workspaceroot) is set. Without one, the event is delivered into
+the work item's session and the refusal is recorded as `session.pr_session_declined`.
 
 A PR closing (merged or not) ends only **that PR's** session, through the same
 `keepSessionOnClose`/`killHarnessOnClose` rules as any close; the work item's session
