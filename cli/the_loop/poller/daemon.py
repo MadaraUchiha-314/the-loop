@@ -375,6 +375,12 @@ def _run_locked(
 
     stop_event = stop_event if stop_event is not None else threading.Event()
 
+    # Self-diagnosis (issue-242, opt-in): a background scanner over the event
+    # log, bounded by this daemon's lifetime. None unless the operator enabled it.
+    from ..core import selfdiagnosis
+
+    selfdiagnosis.start_watcher(cli_config.load_cli_config(_config_path()), stop_event)
+
     if install_signal_handlers:
 
         def _shutdown(signum, _frame):

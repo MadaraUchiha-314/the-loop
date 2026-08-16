@@ -573,6 +573,26 @@ EVENT_TYPES: Dict[str, str] = {
         "A hosted ingress finished during the service's shutdown; its lock is "
         "released. issue-231."
     ),
+    "diagnosis.detected": (
+        "Self-diagnosis (issue-242, opt-in) accepted a NEW failure fingerprint "
+        "for diagnosis (fingerprint, trigger: the event type that raised it). "
+        "Emitted once per fingerprint, on its first attempt."
+    ),
+    "diagnosis.posted": (
+        "Self-diagnosis filed the issue (fingerprint, trigger, url) on the "
+        "configured repository, labeled and self-authored — never armed."
+    ),
+    "diagnosis.deferred": (
+        "Self-diagnosis hit the rolling daily cap (selfDiagnosis.maxIssuesPerDay) "
+        "and left this candidate for a later scan (fingerprint, trigger). "
+        "Deferred, not dropped."
+    ),
+    "diagnosis.failed": (
+        "A diagnosis attempt failed (fingerprint, trigger, stage: agent | post, "
+        "attempt, error — scrubbed). Warning-level on purpose: diagnosis.* is "
+        "excluded from candidacy, and the level makes that belt-and-braces. "
+        "After selfDiagnosis.maxRetries failures the fingerprint is abandoned."
+    ),
 }
 
 

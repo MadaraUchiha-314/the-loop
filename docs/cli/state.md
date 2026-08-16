@@ -75,6 +75,7 @@ them, is what makes the `.gitignore` recipe three lines instead of a puzzle
 | `<root>/gh-webhook.pid` | the receiver | the receiver's pid — and its single-instance lock (issue-228) | **local** |
 | `<root>/poll.pid` | the poller | the poller's pid — and the lock proving it is the only one | **local** |
 | `<root>/poll-status.json` | the poller, after every cycle | the heartbeat `the-loop status` reads: `startedAt`, `lastCycleAt`, last cycle's counters — and no pid, which is `poll.pid`'s to name | **local** |
+| `<root>/self-diagnosis.json` | self-diagnosis (issue-242, opt-in) | which failure fingerprints this machine already reported (with the issue URL), abandoned or is retrying, and when it last posted | **local** |
 
 The same table is declared in code, in
 [`the_loop/state.py`](https://github.com/MadaraUchiha-314/the-loop/blob/main/cli/the_loop/state.py)
@@ -438,6 +439,19 @@ tailing it is a worse problem than a large file.
 restarted — the usual reason to have `logrotate` use `copytruncate` or to restart the
 poller after rotating.
 
+## Self-diagnosis ledger — `<root>/self-diagnosis.json`
+
+What [self-diagnosis](/config/cli/self-diagnosis-options) — opt-in, off by default — has
+already done with this machine's event log: each failure fingerprint it reported (with
+the created issue's URL), abandoned after repeated agent failures, or is still retrying,
+plus the timestamps behind the rolling daily cap. A sibling `self-diagnosis.json.lock`
+holds the flock that keeps two processes from scanning at once; the `.gitignore` pattern
+covers both (and the atomic writer's temporaries) with one `self-diagnosis.json*`.
+
+**If you delete it:** every failure still in the event log becomes "new" again on the
+next scan, so already-filed issues can be filed a second time. Delete it only together
+with (or after) the event log it summarises.
+
 ## Wiping one work item — `sessions reset`
 
 Backing state up is one question; getting rid of it is the other, and it has a command:
@@ -497,6 +511,7 @@ Track `portable/` in git. Paste this into the `.gitignore` of the repository you
 .the-loop/logs/
 .the-loop/*.pid
 .the-loop/poll-status.json
+.the-loop/self-diagnosis.json*
 .the-loop/portable/*.tmp
 ```
 

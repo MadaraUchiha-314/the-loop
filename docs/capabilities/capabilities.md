@@ -20,6 +20,7 @@ PR** as the work item that changes behaviour (a ready-to-ship gate item).
 | [webhook-triggers](webhook-triggers.md) | GitHub webhook receiver and event → session routing. |
 | [interactive-sessions](interactive-sessions.md) | tmux-hosted harness sessions humans can watch/steer live (local, SSH, browser). |
 | [observability](observability.md) | Structured JSONL event log of the CLI's actions and the `events` query command. |
+| [self-diagnosis](self-diagnosis.md) | the-loop filing redacted issues for its own failures: event-log detection, an isolated diagnosis agent, never-armed issue creation (opt-in, default off). |
 | [testing-and-contracts](testing-and-contracts.md) | The testing plan and the verification node (test-type matrix, environment, committed evidence), Gherkin scenario docstrings, the queryable scenario view, contract-first APIs. |
 | [design-artifacts](design-artifacts.md) | UI/UX design artifacts (Figma / HTML prototypes) in the design phase. |
 | [release-publishing](release-publishing.md) | Automatic semantic releases and PyPI publishing of the CLI. |
