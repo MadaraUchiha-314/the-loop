@@ -6,8 +6,8 @@ Testing-plan rows **T1–T7**, after the change.
 
 ```console
 $ uv run pytest cli/tests/test_excerpt.py -q
-...........................                                              [100%]
-27 passed in 0.05s
+............................                                             [100%]
+28 passed in 0.06s
 ```
 
 ## T6 — the abuse cases alone
@@ -15,7 +15,7 @@ $ uv run pytest cli/tests/test_excerpt.py -q
 ```console
 $ uv run pytest cli/tests/test_excerpt.py -k abuse -q
 ........                                                                 [100%]
-8 passed, 19 deselected in 0.04s
+8 passed, 20 deselected in 0.03s
 ```
 
 ## T4, T5 — the two ingresses, and the gates
@@ -23,16 +23,16 @@ $ uv run pytest cli/tests/test_excerpt.py -k abuse -q
 ```console
 $ uv run pytest cli/tests/test_excerpt_integration.py -q
 ....                                                                     [100%]
-4 passed in 0.07s
+4 passed in 0.05s
 ```
 
 ## T7 — the whole suite
 
 ```console
 $ uv run pytest cli -q
-........................................................................ [ 96%]
-....................................................................     [100%]
-2155 passed, 1 skipped in 109.61s (0:01:49)
+.....................................................................    [100%]
+2156 passed, 1 skipped in 110.54s (0:01:50)
+
 ```
 
 ## The integration tests, red first

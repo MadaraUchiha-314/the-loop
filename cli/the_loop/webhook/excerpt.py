@@ -96,7 +96,7 @@ _ROOT_FIELDS: Dict[str, Tuple[str, ...]] = {
 }
 
 #: Fields whose value is free text an untrusted actor wrote: capped (R3.1).
-_TEXT_FIELDS = frozenset({"body", "description", "summary", "text"})
+_TEXT_FIELDS = frozenset({"body", "description", "summary"})
 
 #: Nested objects carried whole, distilled by the same rules.
 _NESTED: Dict[str, Tuple[str, ...]] = {

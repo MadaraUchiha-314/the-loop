@@ -297,6 +297,7 @@ excerpt no longer shows their inputs (R5.1). Full matrix: [`testing-plan.md`](te
 | Keep `$payload_excerpt` placeholder and its framing | Rename to `$event_summary` | It is a contract with operator-authored templates (R5.2); the rename buys nothing |
 | Cap per field, keep the global cap as a backstop | Replace the global cap | Cheap insurance against a shape nobody predicted; costs one branch |
 | `check_run.output` carried | Dropped as metadata | It is the failure message — dropping it forces a second lookup for the most common CI event |
+| A lifecycle event carries the entity's **title but not its body** | Carry the body as before | A spawn's first act is `/the-loop:work-on <ref>`, which reads the ticket itself; the body was both the largest string in the excerpt and the largest attacker-controlled one, and it travelled with *every* event about that item. Pinned by a test so restoring it is a decision, not a drift |
 | Answer the constant-text question, do not act on it | Implement option D here | It weakens a stated invariant (decision-051); the ticket asked for pros/cons |
 
 ## Open questions

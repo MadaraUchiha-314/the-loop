@@ -91,10 +91,10 @@ overrides: {}
 |----------|--------------------|---------|----------|
 | T1–T3, T6 (red) | `uv run pytest cli/tests/test_excerpt.py -q`, against the pre-change distiller | fail — 21 failed, 6 passed (the six pass in both trees; the file says which and why) | [`red.md`](evidence/red.md) |
 | T4, T5 (red) | `uv run pytest cli/tests/test_excerpt_integration.py -q`, with `08b7bd6:excerpt.py` restored under the wired dispatcher | fail — 4 failed | [`unit-and-integration.md`](evidence/unit-and-integration.md) |
-| T1, T2, T3, T6 | `uv run pytest cli/tests/test_excerpt.py -q` | pass — 27 passed | [`unit-and-integration.md`](evidence/unit-and-integration.md) |
-| T6 | `uv run pytest cli/tests/test_excerpt.py -k abuse -q` | pass — 8 passed, 19 deselected | [`unit-and-integration.md`](evidence/unit-and-integration.md) |
+| T1, T2, T3, T6 | `uv run pytest cli/tests/test_excerpt.py -q` | pass — 28 passed | [`unit-and-integration.md`](evidence/unit-and-integration.md) |
+| T6 | `uv run pytest cli/tests/test_excerpt.py -k abuse -q` | pass — 8 passed, 20 deselected | [`unit-and-integration.md`](evidence/unit-and-integration.md) |
 | T4, T5 | `uv run pytest cli/tests/test_excerpt_integration.py -q` | pass — 4 passed | [`unit-and-integration.md`](evidence/unit-and-integration.md) |
-| T7 | `uv run pytest cli -q` | pass — 2155 passed, 1 skipped | [`unit-and-integration.md`](evidence/unit-and-integration.md) |
+| T7 | `uv run pytest cli -q` | pass — 2156 passed, 1 skipped | [`unit-and-integration.md`](evidence/unit-and-integration.md) |
 | T7 | `ruff check`, `ruff format --check`, `pyright cli`, `markdownlint-cli2 "**/*.md"`, `validate_config.py` | pass — clean | [`lint-and-typecheck.md`](evidence/lint-and-typecheck.md) |
 | T8 | `uv run python docs/specs/issue-243/evidence/measure_prompt.py` | measured — excerpt 4,014 → 203 chars (−94.9%), prompt 6,676 → 2,865 (−57.1%), and the excerpt parses | [`baseline.md`](evidence/baseline.md), [`after.md`](evidence/after.md) |
 

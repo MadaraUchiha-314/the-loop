@@ -52,6 +52,11 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   - WHEN a comment event is rendered THEN the excerpt SHALL carry **no** `sender` or
     `user` object, no `issue` object, and no `api.github.com` URL: an author is a bare
     login, and the comment's own URL already names the issue or pull request it lives on.
+  - WHEN a lifecycle event is rendered THEN the excerpt SHALL carry the entity's **title
+    but not its body**: a spawned session's first act is `/the-loop:work-on <ref>`, which
+    reads the ticket itself, and the body was both the largest string in the excerpt and
+    the largest attacker-controlled one — travelling with *every* event about that item,
+    not only the spawn.
   - WHEN free text (`body`, `description`, a check run's `summary`) is longer than the
     per-field cap THEN **that field alone** SHALL be truncated with a visible marker, the
     rendered excerpt SHALL remain parseable JSON, and the object's `html_url` — and an

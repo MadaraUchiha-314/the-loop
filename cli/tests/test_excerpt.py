@@ -238,6 +238,20 @@ def test_a_labeled_issue_carries_the_entity_and_the_label_that_is_the_event():
     }
 
 
+def test_a_lifecycle_event_carries_the_title_but_not_the_body():
+    """The spawn prompt's context, deliberately narrowed (design.md § Trade-offs).
+
+    A labelled issue used to arrive with its whole body in the excerpt. It no
+    longer does: the session's first act is `/the-loop:work-on <ref>`, which
+    reads the ticket itself, and the body is the largest attacker-controlled
+    string that used to travel with every event about that item.
+    """
+    payload = {"action": "labeled", "issue": dict(ISSUE), "repository": dict(REPO)}
+    excerpt = loads("issues", payload)
+    assert excerpt["issue"]["title"] == "optimize tokens by stripping out meta-data"
+    assert "body" not in excerpt["issue"]
+
+
 def test_a_merged_pull_request_says_that_it_merged():
     payload = {
         "action": "closed",

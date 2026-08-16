@@ -84,7 +84,7 @@ overrides: {}
   - _Requirements:_ R6.1
   - _Test:_ `T7 — uv run pytest cli/tests/test_docs_parity.py` + `markdownlint`
 
-- [ ] 10. Verification, reviews, briefing
+- [x] 10. Verification, reviews, briefing
   - Execute `testing-plan.md` and fill its results; self-review rounds; security review;
     post the pros/cons analysis on the ticket for the owner (R6.2); reviewer briefing on
     the PR.

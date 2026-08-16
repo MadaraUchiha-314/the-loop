@@ -70,6 +70,11 @@ per-event text (another 2,290 characters) should move into a system prompt inste
   agent's prompt entirely — the `sender`/`user` objects and the `issue` object that
   travelled with every comment — and what remains is a fixed, named, individually capped
   few.
+- **A spawn prompt no longer contains the ticket's body.** It contains the title, and the
+  session's first act is `/the-loop:work-on <ref>`, which reads the ticket. This is the
+  one context reduction that is not purely metadata, and it is deliberate: the body was
+  the largest attacker-controlled string in the excerpt and it travelled with every event
+  about that item, not just the spawn.
 - **A field the-loop stopped carrying is one a session must fetch.** Every carried object
   keeps its `html_url`, so the cost is one lookup, and the failure mode is a session
   asking rather than acting wrongly. Adding a field back is a one-line table edit.
