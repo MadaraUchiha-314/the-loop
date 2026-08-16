@@ -1,89 +1,87 @@
-# Decision 086: Server-Sent Events, not WebSocket, for the control-plane stream
+# Decision 086: the event excerpt is a field allow-list, and the constant text stays put — for now
 
 - **Status:** proposed
 - **Date:** 2026-08-16
-- **Work item:** [issue-239](https://github.com/MadaraUchiha-314/the-loop/issues/239)
-- **Deciders:** maintainer (approved at `design-approval`, PR #244); harness (proposal)
+- **Work item:** [issue-243](https://github.com/MadaraUchiha-314/the-loop/issues/243)
+- **Deciders:** maintainer (via ticket); harness (proposal)
 
 ## Context
 
-The control plane learned nothing until it asked again. Every screen was driven by a
-two-round poll on a fixed timer — four flat list calls, then one `POST /graph/check` per
-loop — so at the shipped 15-second default an operator watching an agent work saw each
-turn up to fifteen seconds late, and the cost of looking sooner was paid by the whole
-board.
+Everything the-loop forwards into a session ends as one rendered prompt, and the part of it
+that describes *what happened* was a subset of GitHub's raw payload: nine container keys,
+copied whole, JSON-dumped, cut at 4,000 characters.
 
-The ticket asked for the service to push instead, and left one question open in as many
-words: *"websocket or SSE? would be an interesting choice to make here"*.
+Measured on an ordinary `issue_comment` webhook
+([`evidence/baseline.md`](../specs/issue-243/evidence/baseline.md)), a 61-character
+instruction arrived inside a 4,014-character excerpt — 0.9% signal — and the cut landed
+mid-string inside `issue.user.gists_url`, so the delivered "JSON" did not parse. Two
+`user` objects with eighteen API URLs each, two `reactions` blocks, the label objects and
+the whole `issue` body travelled with every comment on that item.
 
-They are usually presented as a performance trade — bidirectional and binary against
-simple and text — and on that axis the answer here would be a shrug. Nothing in this
-feature needs the browser to send anything: replies to an agent already have a route
-(`POST /api/v1/sessions/reply`, issue-208), and the stream is a **read** surface over
-records `GET /api/v1/events` already serves.
+The ticket asks two things: strip the metadata, and say whether the-loop's *own* constant
+per-event text (another 2,290 characters) should move into a system prompt instead.
 
 ## Decision
 
-**Server-Sent Events**, served from `GET /api/v1/stream` as an ordinary `async def` route
-returning `text/event-stream`.
-
-The deciding reason is not performance. It is that **the WebSocket handshake is exempt
-from CORS**.
-
-Every other route on this service is governed by `service.cors.allowOrigins` (issue-211,
-decision-077) — an allowlist an operator configures, shipping with exactly the origin
-the-loop publishes its own dashboard to. The browser enforces it; the service installs one
-middleware and every route inherits the boundary. A WebSocket upgrade is not a CORS
-request: the browser sends it from **any** origin and the server alone decides. Choosing
-WebSocket would therefore mean writing an `Origin` check by hand, in one route, to recover
-a boundary the rest of the surface gets for free — and a version of that route which
-forgot it would look completely normal in review while silently having no origin check at
-all, on a service that carries no in-app authentication (decision-059).
-
-SSE keeps the boundary structural. There is no second code path to get wrong.
-
-The rest of the comparison points the same way, which is why this was not a close call:
-
-| | SSE | WebSocket |
-|---|---|---|
-| Origin allowlist | the existing `CORSMiddleware`, no new code | hand-written, or absent |
-| Direction | server→client, which is all this needs | bidirectional; nothing wants it |
-| Resume after a drop | `Last-Event-ID` resent by the browser | hand-rolled |
-| Reconnect | built into `EventSource` | hand-rolled |
-| New dependency | none — Starlette's `StreamingResponse` | `uvicorn[standard]` / `websockets` |
+1. **The excerpt is a field allow-list per container, not a payload subset.** Each
+   container the-loop carries (`comment`, `review`, `issue`, `pull_request`, `label`,
+   `workflow_run`, `check_run`, `check_suite`) names the fields it contributes, in
+   emission order, and everything else is dropped. A deny-list of noisy keys was rejected:
+   GitHub adds fields to these objects routinely, so a deny-list silently re-inflates
+   while an allow-list does not move.
+2. **A comment is its body and its address.** An `issue_comment` carries `body`,
+   `html_url` and the author's login — not the `issue` object, whose identity the
+   comment's own URL already contains, and not the `sender`. An inline comment keeps
+   `path`/`line` **before** the body (issue-246's rule, now structural rather than
+   incidental); a review keeps its `state`.
+3. **Free text is capped per field, before the dump.** The rendered excerpt stays
+   parseable JSON no matter how long a body is, and a cap can no longer take a URL, an
+   anchor, or the document's structure. The whole-excerpt limit is enforced by shortening
+   prose (halving the text budget until it fits), not by cutting the document in half.
+4. **An unknown shape costs context, never a delivery.** An event with no rule distils
+   whichever containers it carries; a payload with nothing recognisable renders `{}`; a
+   wrong-typed container contributes nothing rather than raising. By the time the excerpt
+   is rendered the event has already passed routing and authorization, so failing *closed*
+   here would drop an instruction a human authorized — the wrong trade.
+5. **The excerpt is prompt text and nothing else.** Routing, authorization, the
+   self-comment marker check, control-keyword parsing, reaction targeting and head-ref
+   resolution keep reading the full `RoutedEvent.payload`. Asserted by test, not by
+   convention.
+6. **The `$payload_excerpt` placeholder, its position and its UNTRUSTED framing do not
+   change.** They are a contract with operator-authored templates.
+7. **The constant per-event text stays where it is, and the question is escalated rather
+   than answered.** Four options were analysed
+   ([`design.md` § The constant text](../specs/issue-243/design.md#the-constant-text-the-tickets-second-question)):
+   status quo; a harness system prompt; stating it once at spawn; and a two-line
+   restatement per event with the full text at spawn. The last is recommended and is
+   **not** implemented here, because it weakens a stated invariant — decision-051: *every*
+   rendered prompt says where the session takes its answers from — which is the owner's to
+   relax. The system-prompt option is not recommended at all: `HarnessAdapter` has no
+   system-prompt channel, only one adapter implements interactive sessions at all, a
+   system prompt cannot follow a `Dispatcher.reload`, and it is invisible in the tmux
+   scrollback a human debugs from.
 
 ## Consequences
 
-**What it costs.** SSE takes one of the browser's ~6 HTTP/1.1 connections per origin. The
-board's first round issues five parallel calls, so with the stream open that is exactly six
-— at the cap, nothing queued; the second round's four workers then run against a free pool
-of five. Measured rather than assumed, and small enough to accept. A WebSocket would not
-have counted against that pool.
+- **Measured:** the excerpt for the baseline event drops 4,014 → 203 characters and the
+  whole prompt 6,676 → 2,865 (−57%), and the excerpt parses for the first time
+  ([`evidence/after.md`](../specs/issue-243/evidence/after.md)).
+- **The trust boundary narrows.** Two attacker-controlled surfaces stop reaching an
+  agent's prompt entirely — the `sender`/`user` objects and the `issue` object that
+  travelled with every comment — and what remains is a fixed, named, individually capped
+  few.
+- **A spawn prompt no longer contains the ticket's body.** It contains the title, and the
+  session's first act is `/the-loop:work-on <ref>`, which reads the ticket. This is the
+  one context reduction that is not purely metadata, and it is deliberate: the body was
+  the largest attacker-controlled string in the excerpt and it travelled with every event
+  about that item, not just the spawn.
+- **A field the-loop stopped carrying is one a session must fetch.** Every carried object
+  keeps its `html_url`, so the cost is one lookup, and the failure mode is a session
+  asking rather than acting wrongly. Adding a field back is a one-line table edit.
+- **The tables are now the thing to review.** What a session learns about an event is
+  legible in two dicts instead of implied by what GitHub happens to send.
+- **The bigger remaining share of the prompt is the-loop's own text**, and that is stated
+  in the evidence rather than left to be rediscovered — with the options costed for
+  whoever decides.
 
-**What it constrains.** The stream is text and one-directional for good. A future feature
-wanting the browser to *push* — steering an agent over the same socket, say — does not
-extend this; it takes a route of its own, and re-opens this decision on its own merits.
-
-**What it does not change.** The service still has no in-app authentication. Anyone who
-can reach the base URL and is allowed by CORS can read the stream, exactly as they can
-already read `GET /api/v1/events`; streaming makes that cheaper to do continuously. The
-mitigations are the existing ones — loopback by default, `exposed: true` as a deliberate
-act, a gateway in front — and `service.stream.maxSubscribers` bounds what one workstation
-will serve.
-
-## Alternatives considered
-
-**WebSocket with a hand-written `Origin` check.** Rejected on the argument above: it
-reproduces an existing boundary in a second place, where its absence is invisible.
-
-**Long-polling `GET /api/v1/events` with a `since` cursor.** No new endpoint and no new
-concept, but it is polling with extra steps — and it cannot carry the transcript watch or
-the `desync` signal without inventing a payload anyway. It also would not have solved the
-real problem: a stream of event-log records alone does **not** refresh the board, because
-loop position comes from `graph/check` over `graph-state.json` and is not in the event
-log's shape.
-
-**An in-process pub/sub instead of tailing the file.** Rejected because it would see a
-fraction of the traffic. The poller and the webhook receiver may run hosted in the service
-process or as separate ones, and the harness and the `sessions` CLI always run elsewhere;
-`events.jsonl` is the only place all of them meet (decision-025).
+Spec: [docs/specs/issue-243/](../specs/issue-243/requirements.md)

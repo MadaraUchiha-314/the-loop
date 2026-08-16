@@ -10,7 +10,6 @@ Spec: docs/specs/issue-15/design.md §4 (requirements R3.2/R3.3, R5).
 
 from __future__ import annotations
 
-import json
 import logging
 import queue
 import re
@@ -59,6 +58,7 @@ from ..state import LegacyLayout, StateLayout, legacy_layout
 from ..harness_plugins import PluginConfig
 from ..trust import TrustConfig, TrustResult, is_too_broad
 from ..workspace import RepoTarget, Workspace, WorkspaceError, repo_target_from_payload
+from .excerpt import event_excerpt, payload_excerpt  # noqa: F401 — re-exported
 from .router import (
     Deduper,
     RoutedEvent,
@@ -70,18 +70,6 @@ from .router import (
 
 logger = logging.getLogger("the-loop.gh-webhook")
 
-_PAYLOAD_EXCERPT_KEYS = (
-    "action",
-    "sender",
-    "comment",
-    "review",
-    "issue",
-    "pull_request",
-    "workflow_run",
-    "check_run",
-    "check_suite",
-)
-_PAYLOAD_EXCERPT_MAX_CHARS = 4000
 
 # Conservative shape a recorded harness session id must have before it is passed
 # to the harness CLI on a resume (issue-89). the-loop writes uuid4s; anything
@@ -438,15 +426,6 @@ def _repo_payload(item: WorkItemRef) -> dict:
             "html_url": item.url,
         }
     }
-
-
-def payload_excerpt(payload: dict) -> str:
-    """The routable subset of the payload, JSON-formatted and size-capped."""
-    subset = {k: payload[k] for k in _PAYLOAD_EXCERPT_KEYS if k in payload}
-    text = json.dumps(subset, indent=2, default=str)
-    if len(text) > _PAYLOAD_EXCERPT_MAX_CHARS:
-        text = text[:_PAYLOAD_EXCERPT_MAX_CHARS] + "\n… (truncated)"
-    return text
 
 
 class Dispatcher:
@@ -2503,7 +2482,7 @@ class Dispatcher:
             action=routed.action or "-",
             repository=repository,
             delivery_id=routed.delivery_id or "-",
-            payload_excerpt=payload_excerpt(routed.payload),
+            payload_excerpt=event_excerpt(routed.event, routed.payload),
             interaction_directive=directive,
             graph_context=graph_context,
         )

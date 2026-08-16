@@ -35,13 +35,15 @@ docs/specs/issue-159/design.md.
 from __future__ import annotations
 
 import logging
+import subprocess
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence
 
 from .. import __version__, eventlog
-from ..authz import is_authorized, is_self_authored
+from ..authz import is_authorized, is_self_authored, mark_self_authored
+from ..comments import post_issue_comment
 from ..control import ControlConfig, ControlStore, parse_command
 from ..reload import Reloader
 from ..sessions import SessionRegistry, WorkItemRef
@@ -54,7 +56,60 @@ logger = logging.getLogger("the-loop.poll")
 # Per item, how many comment ids we remember across polls. The set is re-seeded
 # from the live comment list every cycle, so this only caps a single very
 # chatty thread; the newest comments always stay in the window.
-_SEEN_COMMENTS_CAP = 500
+#
+# Raised from 500 with issue-246, which put three streams of ids into this one
+# ledger — conversation comments, review bodies and inline review-thread
+# comments — so the old bound is reached roughly three times sooner. It matters
+# because of what eviction does here: an id dropped while it is still live
+# upstream reads as new on the next cycle, is forwarded again, resolves, and is
+# evicted again. That is a delivery loop, not a forgotten comment.
+_SEEN_COMMENTS_CAP = 2000
+
+
+def giveup_notice(*, ref: str, comment_id: str, comment_url: str, attempts: int) -> str:
+    """The comment the poller posts when it abandons a comment (issue-240).
+
+    A give-up used to be visible only in the local event log and as a 😕
+    reaction, so a human who told an agent to do something had no way to learn
+    the agent was never told. This is what says so on the ticket.
+
+    Pure, and **deliberately unable to echo the comment it reports**: there is no
+    parameter through which a commenter's body could reach a comment the-loop
+    posts with the operator's own credentials. Everything here is either
+    the-loop's own prose or a value it minted (the ref, the attempt count, the
+    provider's own comment id/URL), which is what makes
+    :func:`~the_loop.authz.mark_self_authored` safe to apply — it asserts
+    authorship, and must never be applied to foreign text.
+    """
+    # The id is named even when a URL is available: the reader follows the link,
+    # and an operator greps the event log by the same id `poll.comment_failed`
+    # recorded.
+    named = (
+        f"[a comment]({comment_url}) (`{comment_id}`)"
+        if comment_url
+        else f"comment `{comment_id}`"
+    )
+    attempt_word = "attempt" if attempts == 1 else "attempts"
+    return mark_self_authored(
+        f"😕 **the-loop could not deliver {named} to the session for `{ref}`.**\n"
+        "\n"
+        f"Every one of {attempts} delivery {attempt_word} failed, so the comment "
+        "has been abandoned: the session never received it, and the poller will "
+        "not try again on its own.\n"
+        "\n"
+        "**To get it through:** post the instruction again. A new comment is a "
+        "new delivery with a full retry budget — nothing the-loop stores needs "
+        "editing.\n"
+        "\n"
+        "**Before you do,** check the session is still there and attachable:\n"
+        "\n"
+        "```sh\n"
+        "the-loop sessions list\n"
+        "```\n"
+        "\n"
+        "The cause of each failed delivery is in the daemon's event log, as the "
+        "`error` field of the `dispatch.failed` entries for this work item.\n"
+    )
 
 
 @dataclass
@@ -417,6 +472,7 @@ class Poller:
         control: Optional[ControlConfig] = None,
         control_store: Optional[ControlStore] = None,
         heartbeat: Optional[Callable[["PollSummary"], None]] = None,
+        comment_runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
     ):
         self.providers = list(providers)
         self.registry = registry
@@ -459,6 +515,11 @@ class Poller:
         # process can answer — and a SIGKILL, where there is no shutdown to roll
         # back, must leave the ledger exactly as the per-item flush left it.
         self._attempted: Dict[str, tuple] = {}
+        # How the give-up notice reaches GitHub (issue-240). Injectable for the
+        # same reason `SessionAnnouncer`/`GitHubReactor` are: tests drive the
+        # notice without a real `gh`.
+        self._comment_runner = comment_runner
+        self._warned_missing_gh = False
 
     @property
     def control(self) -> ControlConfig:
@@ -982,6 +1043,11 @@ class Poller:
             self.state.resolve_comment(ref, comment.id, gave_up=True)
             self._attempted.pop(event.delivery_id, None)  # resolved, one way or another
             summary.failures += 1
+            # The ledger is written FIRST, on purpose (issue-240): a slow or
+            # hanging `gh` must never sit between "we gave up" and "it is
+            # recorded", or a process killed in that window would retry a comment
+            # it had already announced as abandoned.
+            self._report_giveup(item, comment, attempts)
             return
         self.dispatcher.handle(event)
         attempt = self.state.note_comment_attempt(ref, comment.id)
@@ -994,6 +1060,91 @@ class Poller:
             attempt=attempt,
         )
         summary.comments_forwarded += 1
+
+    def _report_giveup(
+        self, work_item: WorkItem, comment: Comment, attempts: int
+    ) -> None:
+        """Tell the ticket that ``comment`` was abandoned (issue-240).
+
+        Best-effort in one direction only: it can fail to appear, and it can
+        never change what the ledger already recorded — the caller writes the
+        give-up before calling this, and every failure here is swallowed. A
+        notice must not end a poll cycle.
+
+        Posted **once** per abandoned comment, which follows from the caller's
+        control flow rather than from bookkeeping here: the give-up baselines the
+        comment id, so no later cycle reaches this branch for it again.
+
+        Addressed to the **polled item**, not to ``refs[0]``: a PR's refs lead
+        with the issue it is linked to (issue-93), which is the right target for
+        *routing* the event and the wrong one for *answering* a comment — the
+        human wrote it on the PR, and that is where they will look for the reply.
+        """
+        item = WorkItemRef(
+            provider=work_item.provider,
+            owner=work_item.owner,
+            repo=work_item.repo,
+            number=work_item.number,
+            host=work_item.host,
+        )
+        try:
+            ok, error = post_issue_comment(
+                item,
+                giveup_notice(
+                    ref=item.ref,
+                    comment_id=comment.id,
+                    comment_url=comment.url,
+                    attempts=attempts,
+                ),
+                gh_binary=self.dispatcher.config.announce.gh_binary,
+                runner=self._comment_runner,
+            )
+        except Exception as exc:  # noqa: BLE001 — a notice never ends a cycle
+            logger.warning(
+                "could not report the abandoned comment %s on %s: %s",
+                comment.id,
+                item.ref,
+                exc,
+            )
+            eventlog.emit(
+                "poll.giveup_report_failed",
+                level="warning",
+                work_item=item.ref,
+                comment_id=comment.id,
+                error=str(exc),
+            )
+            return
+        if ok:
+            eventlog.emit(
+                "poll.giveup_reported",
+                work_item=item.ref,
+                comment_id=comment.id,
+                attempts=attempts,
+            )
+            return
+        if error.endswith("not found on PATH"):
+            # One warning per process, then silence — a machine without `gh`
+            # would otherwise log this on every give-up.
+            if not self._warned_missing_gh:
+                self._warned_missing_gh = True
+                logger.warning("%s — abandoned comments cannot be reported", error)
+        elif "is not a GitHub one" in error or "unusable repo coordinates" in error:
+            # A Jira (or other) provider has no `gh` endpoint. Not an error.
+            logger.debug("%s; not reporting the abandoned comment", error)
+        else:
+            logger.warning(
+                "could not report the abandoned comment %s on %s: %s",
+                comment.id,
+                item.ref,
+                error,
+            )
+        eventlog.emit(
+            "poll.giveup_report_failed",
+            level="warning",
+            work_item=item.ref,
+            comment_id=comment.id,
+            error=error,
+        )
 
     # -- shutdown (issue-159) ---------------------------------------------------
 

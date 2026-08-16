@@ -26,13 +26,26 @@ class ProviderError(Exception):
 
 @dataclass(frozen=True)
 class Comment:
-    """A provider-agnostic comment on a work item."""
+    """A provider-agnostic comment on a work item.
+
+    "Comment" is the *role*, not the API object: anything a human leaves on a
+    work item carrying an instruction is one. On GitHub that is three distinct
+    objects — a conversation comment, a pull-request review body, and an inline
+    review-thread comment (issue-246) — and the poller core treats all three
+    identically, because the four fields below are everything it reads.
+    """
 
     id: str  # stable, unique per comment — the cross-poll dedup key
     body: str
     author: str
     created_at: str
     url: str
+    # Provider-specific extras the provider needs in order to build the right
+    # event for this comment (e.g. GitHub's kind and a review comment's
+    # file/line anchor), carried here rather than widening the neutral shape —
+    # the same contract, and the same warning, as ``WorkItem.raw``: the core
+    # never reads it, and only the provider that wrote it may.
+    raw: Dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

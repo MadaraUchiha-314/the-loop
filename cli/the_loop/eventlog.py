@@ -360,6 +360,16 @@ EVENT_TYPES: Dict[str, str] = {
         "budget (polling.maxRetries); later polls ignore it (work_item, "
         "comment_id, actor, attempts, will_retry=False)."
     ),
+    "poll.giveup_reported": (
+        "A give-up (`poll.comment_failed`) was reported on the work item, so "
+        "the human who wrote the comment learns it never reached the session "
+        "(work_item, comment_id, attempts) — issue-240."
+    ),
+    "poll.giveup_report_failed": (
+        "The give-up notice could not be posted — no `gh` on PATH, a "
+        "non-GitHub work item, or an API error (work_item, comment_id, error). "
+        "Best-effort: the give-up itself is recorded regardless."
+    ),
     # -- process lifecycle (source: gh-webhook or poll) -----------------------
     "server.started": "The webhook receiver started (host, port, path, routing).",
     "server.stopped": "The webhook receiver shut down.",

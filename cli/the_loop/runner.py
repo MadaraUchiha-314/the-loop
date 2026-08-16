@@ -48,8 +48,26 @@ __all__ = [
 
 logger = logging.getLogger("the-loop.runner")
 
-# tmux paste buffer used for event delivery; -d deletes it after each paste.
+# tmux paste buffers used for event delivery; -d deletes each after its paste.
+# Two names rather than one so nothing depends on the ordering of a delete and
+# the next load, and so a delivery in flight is readable in `tmux list-buffers`.
 _EVENT_BUFFER = "the-loop-evt"
+_SUBMIT_BUFFER = "the-loop-submit"
+# The submit, as bytes rather than as a key (issue-240). `tmux send-keys … Enter`
+# cannot be used: it carries CMD_CLIENT_CFLAG, so tmux resolves its *target
+# client* from `-c` — and with no `-c` from the session's current client, never
+# from `-t`. When the only client attached is a read-only observer
+# (`tmux attach -r`, which `sessions attach --read-only` is), tmux >= 3.7 refuses
+# the command with "client is read-only" and the session's sole input path dies.
+# `paste-buffer` consults no client at all: it writes straight into the `-t`
+# pane. So the submit travels as a second, *unbracketed* paste — unbracketed
+# because a bracketed one is by definition literal text the TUI must not act on.
+#
+# `\r` and not `\n`: `\r` is what a terminal sends for Return, what `send-keys …
+# Enter` produced, and what paste-buffer already uses as its own default line
+# separator. A `\n` is a line feed, which many TUIs bind to "insert a newline".
+# A module constant, never caller data — nothing about the prompt reaches it.
+_SUBMIT_BYTES = "\r"
 # Shared hub session the web terminal (ttyd) drops browser clients into; the
 # loop-* sessions are one `switch-client`/`choose-tree` away from it.
 HUB_SESSION = "the-loop-hub"
@@ -599,13 +617,37 @@ class TmuxRunner:
             )
         return TmuxResult(ok=True)
 
+    @staticmethod
+    def _buffer_file(content: str) -> str:
+        """A temporary file holding ``content``, for ``load-buffer`` to read.
+
+        Cleans up after itself if the write fails, so a full disk leaves no
+        `/tmp/the-loop-evt-*` behind — the property the single inline
+        ``mkstemp``/``finally`` this replaced already had.
+        """
+        fd, path = tempfile.mkstemp(prefix="the-loop-evt-")
+        try:
+            with os.fdopen(fd, "w") as handle:
+                handle.write(content)
+        except BaseException:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+            raise
+        return path
+
     def deliver(
         self, session: Session, prompt: str, timeout: Optional[float] = None
     ) -> TmuxResult:
         """Paste ``prompt`` into the session's TUI (bracketed paste) and submit.
 
-        The prompt travels via tempfile → load-buffer so size/quoting are
-        non-issues; -p pastes bracketed so the TUI treats it as one message.
+        Both halves travel via tempfile → load-buffer → paste-buffer, so size and
+        quoting are non-issues and **no tmux command here resolves a client**:
+        the prompt pastes bracketed (``-p``) so the TUI reads it as one message,
+        and the submit pastes unbracketed so the TUI acts on it. The submit was a
+        ``send-keys`` until issue-240, which a read-only observer attached to the
+        session made tmux refuse — see :data:`_SUBMIT_BYTES`.
         """
         target = session.tmux_target
         if not target:
@@ -630,23 +672,27 @@ class TmuxRunner:
                     "fresh session and delivering this event into it"
                 ),
             )
-        fd, path = tempfile.mkstemp(prefix="the-loop-evt-")
+        # Written inside the `try` so the first file is cleaned up even if the
+        # second one cannot be created.
+        paths: List[str] = []
         try:
-            with os.fdopen(fd, "w") as handle:
-                handle.write(prompt)
+            paths.append(self._buffer_file(prompt))
+            paths.append(self._buffer_file(_SUBMIT_BYTES))
             for argv in (
-                ["load-buffer", "-b", _EVENT_BUFFER, path],
+                ["load-buffer", "-b", _EVENT_BUFFER, paths[0]],
                 ["paste-buffer", "-p", "-d", "-b", _EVENT_BUFFER, "-t", target],
-                ["send-keys", "-t", target, "Enter"],
+                ["load-buffer", "-b", _SUBMIT_BUFFER, paths[1]],
+                ["paste-buffer", "-d", "-b", _SUBMIT_BUFFER, "-t", target],
             ):
                 result = self._run(argv, timeout)
                 if not result.ok:
                     return result
         finally:
-            try:
-                os.unlink(path)
-            except FileNotFoundError:
-                pass
+            for path in paths:
+                try:
+                    os.unlink(path)
+                except FileNotFoundError:
+                    pass
         return TmuxResult(ok=True)
 
     def kill(self, session: Session, timeout: Optional[float] = None) -> TmuxResult:

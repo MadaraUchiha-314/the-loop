@@ -74,6 +74,16 @@ poller logs a terminal failure (`poll.spawn_failed` / `poll.comment_failed`) and
 the event on later polls until new activity re-arms it. An in-flight, still-processing
 dispatch is not counted as a failed attempt.
 
+**An abandoned comment is reported on the work item** (issue-240). Giving up used to be
+visible only here, in the event log, and as a 😕 reaction — so somebody who told an agent
+to do something had no way to learn it was never told. The poller now posts one comment
+naming the abandoned comment, the attempts, and the recovery: **post the instruction
+again**, since a new comment carries a full retry budget and nothing on disk needs
+editing. It is marked as the-loop's own, so the poller never reads its own notice back.
+Best-effort in one direction only — no `gh` on PATH, a non-GitHub provider or an API error
+logs `poll.giveup_report_failed` and the give-up stands regardless; a notice can never
+make an undelivered comment count as delivered.
+
 **An upgrade re-arms an abandoned comment, once** (issue-146). A give-up is a statement
 about a failing environment, and a new the-loop version is the one event that can
 invalidate it — the reason those events could not be delivered may be exactly what the
@@ -83,6 +93,11 @@ with a full fresh budget (`poll.rearmed`), which is how an item stranded by a bu
 picked up instead of staying stuck forever. Gated on the version rather than on "the
 poller started", so repeated `poll --once` runs from cron cannot re-forward abandoned
 comments every minute.
+
+The two rules compose, which is how a comment lost to a the-loop bug comes back by itself:
+upgrading past the release that fixed it re-arms the comment, the delivery now works, and
+if it somehow still does not, the notice above says so on the ticket. Nothing on disk needs
+editing in either case.
 
 ## Sources
 
@@ -137,6 +152,20 @@ Poll issues.
 - **Default:** `true` *(github)*
 
 Poll pull requests.
+
+::: info All three comment surfaces, not just the conversation
+A polled pull request is read on the three surfaces GitHub files instructions under
+(issue-246): **conversation comments**, **review bodies**, and **inline review-thread
+comments** — the same set the webhook receiver has always handled. Each is forwarded
+exactly once, judged by its own author against
+[`routing.authorizedUsers`](/config/cli/routing-options#authorizedusers), and an inline
+comment arrives with the file and line it is anchored to.
+
+Two reviews carry no instruction and are not forwarded: an **approval with an empty body**,
+and a **`PENDING`** review its author has not submitted. A polled **issue** costs exactly
+the one request it always did; a polled pull request costs two more (`gh api
+repos/…/pulls/<n>/reviews` and `…/comments`, both paginated).
+:::
 
 ::: tip Where the `gh` binary comes from
 GitHub reads use your existing `gh auth` — the daemon holds no token. The binary is

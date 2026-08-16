@@ -1,3 +1,21 @@
+## v10.2.4 (2026-08-16)
+
+### Perf
+
+- **issue-243**: a forwarded event carries the instruction, not GitHub's metadata (#252)
+
+## v10.2.3 (2026-08-16)
+
+### Fix
+
+- **issue-240**: a read-only tmux observer must not block every delivery (#250)
+
+## v10.2.2 (2026-08-16)
+
+### Fix
+
+- **issue-246**: the poller reads reviews and review threads, not just comments (#249)
+
 ## v10.2.1 (2026-08-16)
 
 ### Fix

@@ -565,6 +565,28 @@ internal template; the dispatcher falls back to a built-in default when the path
 which is the normal case in a project repository that does not carry the-loop's templates.
 Set a repo-relative path to override.
 
+The placeholders a template may declare:
+
+| Placeholder | What it renders |
+|---|---|
+| `$work_item` | The work item's ref, e.g. `github:octo/repo#15` |
+| `$event` / `$action` | The GitHub event name and its action |
+| `$repository` | `owner/repo` |
+| `$delivery_id` | The delivery id, for tracing against [`the-loop events`](/cli/commands/events) |
+| `$interaction_directive` | Where this session takes its answers from — see [`interaction.mode`](#interactionmode). **Appended** if the template omits it |
+| `$graph_context` | Where the item stands in the process graph; empty when there is no context |
+| `$payload_excerpt` | What happened, distilled |
+
+`$payload_excerpt` is **not** the raw webhook payload. Since issue-243 it is a field
+allow-list per event: a comment renders as its body, its `html_url` and its author's
+login — no `sender`, no `issue` object, no `api.github.com` URLs — an inline review
+comment adds its `path` and `line` ahead of the body, and lifecycle and CI events keep
+their number/title/state and name/status/conclusion. Free text is capped **per field**, so
+a pasted 10 KB log costs its own tail and never the comment's URL, and the block is always
+parseable JSON. The full payload is still what routing, `authorizedUsers`, control
+keywords and reactions judge by — the distillation is what the *agent reads*. See
+[webhook-triggers](/capabilities/webhook-triggers) for the per-event table.
+
 ### `spawnPromptTemplate`
 
 - **Type:** `string`

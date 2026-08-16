@@ -226,7 +226,7 @@ status: in-progress          # in-progress | complete
 ### 2026-08-16 18:40 UTC — task 16 done: docs, capability docs, decision record
 
 - **Phase:** implementation → verification
-- **Did:** `decision-086` (SSE over WebSocket, with the CORS asymmetry as the deciding
+- **Did:** `decision-087` (SSE over WebSocket, with the CORS asymmetry as the deciding
   reason) and its index row; seven behaviours added to the `control-plane` capability doc
   and the four event types to `observability`; the `service.stream` leaves documented in
   the config reference; a **Keeping the screen current** section in `ui/README.md`. The
@@ -424,7 +424,7 @@ under `<specDir>/<id>/evidence/`.
 
 | Capability doc | What changed | History row |
 |----------------|--------------|-------------|
-| [`control-plane.md`](../../capabilities/control-plane.md) | Seven behaviours added: the stream as a read surface and its three frame kinds; the `api.request`/`mcp.call` exclusion with no opt-in; lossless resume with a bounded replay; the subscriber bound and the shared tailer; the viewer's three refresh modes and their migration; and visible degradation with the two invalidation classes. | `issue-239`, linking the spec and decision-086 |
+| [`control-plane.md`](../../capabilities/control-plane.md) | Seven behaviours added: the stream as a read surface and its three frame kinds; the `api.request`/`mcp.call` exclusion with no opt-in; lossless resume with a bounded replay; the subscriber bound and the shared tailer; the viewer's three refresh modes and their migration; and visible degradation with the two invalidation classes. | `issue-239`, linking the spec and decision-087 |
 | [`observability.md`](../../capabilities/observability.md) | The four new event types — `stream.subscribed`, `stream.refused`, `stream.desync`, `stream.disconnected` — and the note that `api.request`/`mcp.call` stay in the log while never reaching the stream. | `issue-239` |
 
 ## Documentation
@@ -447,7 +447,7 @@ under `<specDir>/<id>/evidence/`.
 | [`docs/config/cli/service-options.md`](../../config/cli/service-options.md) | A new **The stream** section documenting `stream.enabled`, `stream.maxSubscribers` and `stream.keepAliveSeconds` — required by `test_docs_parity.py` P4, which fails the build for an undocumented schema leaf. |
 | [`ui/README.md`](https://github.com/MadaraUchiha-314/the-loop/blob/main/ui/README.md) | A **Keeping the screen current** section: the three refresh modes and when each is right, what streaming actually refreshes, what the header says when it cannot connect, and that demo mode streams the viewer's own clicks rather than inventing traffic. |
 | [`docs/api-specs/openapi/the-loop.v1.yaml`](../../api-specs/openapi/the-loop.v1.yaml) | `streamEvents`: the two query parameters, the `text/event-stream` response with its frame description and example, and the 400/404/503 answers. Contract-first, and gated by `test_api_contract_parity.py`. |
-| [`docs/decisions/decision-086.md`](../../decisions/decision-086.md) | New — SSE over WebSocket, with the CORS asymmetry as the deciding reason, plus what it costs (one of the browser's six per-origin connections) and what it constrains. Indexed in `decisions.md`. |
+| [`docs/decisions/decision-087.md`](../../decisions/decision-087.md) | New — SSE over WebSocket, with the CORS asymmetry as the deciding reason, plus what it costs (one of the browser's six per-origin connections) and what it constrains. Indexed in `decisions.md`. |
 
 No change was needed to `README.md` or to the operating-model skill: this work item changes
 what the **control plane** does, not how the loop is run, and neither document describes
