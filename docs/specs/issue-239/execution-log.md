@@ -195,6 +195,34 @@ status: in-progress          # in-progress | complete
   the-loop code involved — it failed 1/6. Filed as
   [#251](https://github.com/MadaraUchiha-314/the-loop/issues/251).
 
+### 2026-08-16 18:25 UTC — tasks 8-15 done: the control plane consumes the stream
+
+- **Phase:** implementation
+- **Did:** `refreshMode` with its v1 migration, the invalidation map, `stream()` on both
+  clients, `useStream`, the mode-driven `useControlPlane` with a targeted graph refresh,
+  the three-mode Settings card, the connection chip in the nav, the live transcript, and
+  Requirement 6's sticky chat bar and scrolling trace.
+- **Checkpoint/tests:** `bun run lint` clean, `bun run typecheck` clean,
+  `bun run test` 139 passed (10 files), `bun run build` clean.
+- **Next:** task 16 — capability docs, user-facing docs, the decision record.
+- **Blockers:** none.
+- **Two decisions a reviewer should check:**
+  1. **The broker is owned by the router, not the lifespan** — a deviation from
+     `design.md` § Components, made while wiring it. The router is the only thing that
+     travels into an embedder's application (issue-212 R3.3), so a lifespan-owned broker
+     would simply not exist for SDK consumers and the stream would 500 for them. It costs
+     nothing: the tailer task starts with the first subscriber and stops with the last.
+  2. **The stream connection lives in `App`, not in the detail page.** R3.5 allows one
+     connection per tab; a page-owned connection would open and close on every navigation
+     and replay a cursor for nothing. The viewed ref travels down as a `transcript` watch
+     and the news comes back as `transcriptTick`.
+- **One bug caught by writing a test for it:** while satisfying oxlint I rewrote the SSE
+  listeners and made the transcript handler read `work_item` — what an event-log record
+  carries — where the service sends `ref`. Typecheck and lint were both green, because
+  these are strings on an untyped payload. `client.test.ts` now puts a real frame of each
+  kind through the decoder; that suite did not exist before, which is why the bug was
+  possible.
+
 ## Verification results
 
 > **Only when this work item declared `test-planning` away** (issue-179). With a

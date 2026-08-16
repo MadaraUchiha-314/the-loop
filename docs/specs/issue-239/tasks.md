@@ -118,7 +118,7 @@ red→green transition recorded as evidence.
 
 ### The control plane
 
-- [ ] 8. Settings: `refreshMode` and the v1 migration
+- [x] 8. Settings: `refreshMode` and the v1 migration
   - `ui/src/state/settings.ts` gains `refreshMode: "stream" | "poll" | "manual"`, default
     `stream`; `pollSeconds` is kept as the interval used while the mode is `poll`.
   - Migration reads the existing `the-loop:settings:v1` key rather than minting a v2, so no
@@ -128,7 +128,7 @@ red→green transition recorded as evidence.
   - _Requirements:_ R3.2, R3.6
   - _Test:_ T2, T11 — `cd ui && bun run test` (red→green); write the migration cases first
 
-- [ ] 9. The invalidation map
+- [x] 9. The invalidation map
   - A pure function in `ui/src/api/model.ts` (or a new `stream.ts` beside it): frame →
     `{lists, graphRefs, transcriptRefs}`. `graph.*` → that one ref; anything else carrying
     a `work_item`, and any **unrecognised** event type → `lists`.
@@ -138,7 +138,7 @@ red→green transition recorded as evidence.
   - _Requirements:_ R2.1, R2.2
   - _Test:_ T2 — `cd ui && bun run test -t invalidation` (red→green)
 
-- [ ] 10. `TheLoopApi.stream` on both clients
+- [x] 10. `TheLoopApi.stream` on both clients
   - Add `stream(query, handlers): () => void` to the interface; `HttpApi` implements it
     with `EventSource` (which resends `Last-Event-ID` on its own), returning an
     unsubscribe.
@@ -148,7 +148,7 @@ red→green transition recorded as evidence.
   - _Requirements:_ R1.1, R3.5
   - _Test:_ T2 — `cd ui && bun run test` with a stubbed `EventSource` (red→green)
 
-- [ ] 11. `useStream`: connection state machine, coalescing, fallback
+- [x] 11. `useStream`: connection state machine, coalescing, fallback
   - New `ui/src/state/useStream.ts`. States `live` / `reconnecting` / `fallback` / `off`;
     invalidations accumulated over a 250ms window and flushed as one; five consecutive
     `onerror` events close the source and settle into polling with the reason.
@@ -157,7 +157,7 @@ red→green transition recorded as evidence.
   - _Test:_ T2 — `cd ui && bun run test -t useStream` (red→green); assert the five-failure
     fallback and that two frames inside the window cost one flush
 
-- [ ] 12. `useControlPlane`: mode-driven, with a targeted graph refresh
+- [x] 12. `useControlPlane`: mode-driven, with a targeted graph refresh
   - The effect branches on `refreshMode`: `poll` keeps today's timer exactly, `manual`
     starts nothing, `stream` subscribes and refreshes on flush.
   - Add the targeted path: `fetchGraphs` filtered to one ref, merged into the held reports,
@@ -168,7 +168,7 @@ red→green transition recorded as evidence.
   - _Requirements:_ R2.1, R2.2, R2.5, R3.3, R3.4
   - _Test:_ T2 — `cd ui && bun run test` (red→green)
 
-- [ ] 13. The Settings Refresh card and the connection indicator
+- [x] 13. The Settings Refresh card and the connection indicator
   - Rebuild the Refresh card as the three-mode radio group from
     [`design/refresh-settings.html`](design/refresh-settings.html); the interval select
     appears only for `poll`. Reuses `.lp-settings-card`, `.lp-conn`, `.lp-conn-dot` — no new
@@ -180,7 +180,7 @@ red→green transition recorded as evidence.
   - _Test:_ T2, T6, T10 — vitest for the mode switch; the browser pass for the rendered
     states and the keyboard/screen-reader check
 
-- [ ] 14. Detail page: the transcript refreshes from the stream
+- [x] 14. Detail page: the transcript refreshes from the stream
   - `WorkItemDetail.tsx` subscribes the viewed ref as a `transcript` watch and refetches
     `GET /api/v1/sessions/transcript` when a frame says it grew. Changing the viewed tab
     reconnects with the new watch; `Last-Event-ID` makes that lossless.
@@ -190,7 +190,7 @@ red→green transition recorded as evidence.
 
 ### Requirement 6 — the ticket's second comment
 
-- [ ] 15. Sticky chat bar, scrolling trace, scroll anchoring
+- [x] 15. Sticky chat bar, scrolling trace, scroll anchoring
   - `.lp-trace` gets `max-height: clamp(240px, 55vh, 720px)`, `overflow-y: auto`,
     `overscroll-behavior: contain`, `tabindex="0"` and an accessible name; `.lp-chat` gets
     `position: sticky; bottom: 0` in normal flow, so it traps no focus and covers nothing.

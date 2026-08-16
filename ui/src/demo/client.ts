@@ -7,7 +7,8 @@
  * screens, not to be a second implementation of the-loop.
  */
 
-import type { EventQuery, GraphQuery, TheLoopApi } from "../api/client.ts";
+import type { EventQuery, GraphQuery, StreamHandlers, StreamQuery, TheLoopApi } from "../api/client.ts";
+import type { StreamFrame } from "../state/stream.ts";
 import type {
   AttentionItem,
   ConfigDocument,
@@ -299,5 +300,34 @@ export class DemoApi implements TheLoopApi {
   }): void {
     const record: EventRecord = { ...fields, ts: new Date().toISOString() };
     this.eventRecords = [...this.eventRecords, record];
+    for (const subscriber of this.streamSubscribers) {
+      subscriber({ kind: "log", record, cursor: String(this.eventRecords.length) });
+    }
+  }
+
+  private streamSubscribers = new Set<(frame: StreamFrame) => void>();
+
+  /**
+   * Streaming, on the fixture (issue-239).
+   *
+   * Demo mode is not exempt from a feature: the hosted page has to be
+   * explorable before anyone has a tunnel open, and a "streaming" mode that did
+   * nothing there would misrepresent the thing it is demonstrating. Every
+   * control verb below already calls `emit`, so the fixture has a real source of
+   * change to push — the frames a demo viewer sees are the ones their own clicks
+   * produced, which is exactly what the live stream does.
+   *
+   * No timer inventing traffic: a fake event arriving on its own would teach a
+   * viewer that the dashboard shows things that did not happen.
+   */
+  stream(_query: StreamQuery, handlers: StreamHandlers): (() => void) | null {
+    this.streamSubscribers.add(handlers.onFrame);
+    // Asynchronously, so a caller that sets state in `onOpen` is not doing it
+    // during its own render — the same shape a real connection has.
+    const opened = setTimeout(() => handlers.onOpen?.(), 0);
+    return () => {
+      clearTimeout(opened);
+      this.streamSubscribers.delete(handlers.onFrame);
+    };
   }
 }

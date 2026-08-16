@@ -661,10 +661,23 @@ a:hover {
   font-family: ui-monospace, monospace;
   overflow-wrap: anywhere;
 }
+/* issue-239 R6.2/R6.5: the panel scrolls inside its own bounds rather than
+   extending the page, which is what used to put the chat bar a whole
+   transcript's worth of scrolling away. `clamp` keeps it useful on a short
+   viewport without collapsing to a letterbox: never below 240px, never taller
+   than 720px, 55vh in between. `overscroll-behavior` stops a flick at the
+   bottom of the list from scrolling the page instead. */
 .lp-trace {
   position: relative;
   border: 1px solid var(--color-neutral-300);
   padding: 4px 0;
+  max-height: clamp(240px, 55vh, 720px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.lp-trace:focus-visible {
+  outline: 2px solid var(--color-accent-700);
+  outline-offset: 2px;
 }
 .lp-trace-entry {
   display: flex;
@@ -886,8 +899,17 @@ a:hover {
 
 /* — chat bar (issue-230) —————————————————————————————————————————————— */
 
+/* issue-239 R6.1: the message box stays in reach. Sticky rather than fixed, so
+   it is still in normal flow — it traps no focus, covers nothing at the end of
+   the page, and needs no spacer under it. The gradient keeps the trace from
+   appearing to run underneath a floating bar. */
 .lp-chat {
   margin-top: 10px;
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  padding: 10px 0 14px;
+  background: linear-gradient(to bottom, transparent, var(--color-bg) 22%);
 }
 .lp-chat-row {
   display: flex;
@@ -1166,4 +1188,53 @@ a:hover {
   font-family: ui-monospace, monospace;
   font-size: 12px;
   color: var(--color-neutral-800);
+}
+
+/* — refresh mode (issue-239) ——————————————————————————————————————————— */
+
+.lp-modes-fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.lp-modes {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+}
+.lp-mode {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+.lp-mode:hover {
+  background: var(--color-neutral-200);
+}
+.lp-mode:has(input:checked) {
+  background: var(--color-accent-200);
+  border-color: var(--color-accent-600);
+}
+.lp-mode:has(input:focus-visible) {
+  outline: 2px solid var(--color-accent-700);
+  outline-offset: 1px;
+}
+.lp-mode input {
+  margin: 3px 0 0;
+  accent-color: var(--color-accent-700);
+}
+.lp-mode-name {
+  display: block;
+  font-weight: 500;
+}
+.lp-mode-why {
+  display: block;
+  font-size: 12.5px;
+  color: var(--color-neutral-700);
+}
+.lp-mode-interval {
+  margin: 12px 0 0 34px;
 }

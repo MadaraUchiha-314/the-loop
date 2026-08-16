@@ -17,7 +17,7 @@ import type { RestartSchedule } from "../api/types.ts";
 import { useApi } from "../state/ApiContext.tsx";
 import { Blueprint } from "../components/Blueprint.tsx";
 import { ConfigEditor } from "../components/ConfigEditor.tsx";
-import { POLL_CHOICES, type DataMode } from "../state/settings.ts";
+import { POLL_CHOICES, type DataMode, type RefreshMode } from "../state/settings.ts";
 import { useAsync } from "../state/useAsync.ts";
 
 type Probe = { state: "idle" } | { state: "checking" } | { state: "ok"; version: string } | { state: "fail"; advice: string };
@@ -106,28 +106,7 @@ export function Settings() {
         </div>
       </Blueprint>
 
-      <Blueprint className="lp-settings-card">
-        <div className="lp-settings-kicker">Refresh</div>
-        <label className="lp-settings-label" htmlFor="lp-poll">
-          Background poll interval
-        </label>
-        <select
-          id="lp-poll"
-          className="input"
-          value={settings.pollSeconds}
-          onChange={(event) => updateSettings({ pollSeconds: Number(event.target.value) })}
-        >
-          {POLL_CHOICES.map((seconds) => (
-            <option key={seconds} value={seconds}>
-              {seconds === 0 ? "off — refresh manually" : `every ${seconds}s`}
-            </option>
-          ))}
-        </select>
-        <div className="lp-note">
-          Each cycle is four list calls plus one <code>graph/check</code> per loop, so a large board against a remote
-          workstation is happier at 30s or off.
-        </div>
-      </Blueprint>
+      <RefreshSection />
 
       <RestartSection />
 
@@ -137,6 +116,89 @@ export function Settings() {
         More to come: event-log retention view, default reply actor, per-workstation profiles.
       </div>
     </>
+  );
+}
+
+const MODES: { value: RefreshMode; name: string; why: string }[] = [
+  {
+    value: "stream",
+    name: "Streaming",
+    why: "The service pushes changes as they happen. One connection, held open. Best on loopback or a stable tunnel.",
+  },
+  {
+    value: "poll",
+    name: "Polling",
+    why: "Ask again on a timer. A failed cycle costs one request, so this is the kinder mode over a flaky link.",
+  },
+  {
+    value: "manual",
+    name: "Manual",
+    why: "No background request of any kind. The screen changes only when you ask it to.",
+  },
+];
+
+/**
+ * How this browser keeps the screen current (issue-239, R3).
+ *
+ * A radio group rather than three buttons: the modes are mutually exclusive and
+ * a screen reader should say "1 of 3", which `role="radiogroup"` gets for free
+ * and a row of `aria-pressed` buttons does not. The interval select belongs to
+ * exactly one mode, so it appears with that mode instead of sitting greyed out
+ * beside the others.
+ */
+function RefreshSection() {
+  const { settings, updateSettings } = useApi();
+  return (
+    <Blueprint className="lp-settings-card">
+      <div className="lp-settings-kicker">Refresh</div>
+      <fieldset className="lp-modes-fieldset">
+        <legend className="lp-settings-label">How this browser keeps the screen current</legend>
+        <div className="lp-modes" role="radiogroup" aria-label="Refresh mode">
+          {MODES.map((mode) => (
+            <label className="lp-mode" key={mode.value}>
+              <input
+                type="radio"
+                name="lp-refresh-mode"
+                value={mode.value}
+                checked={settings.refreshMode === mode.value}
+                onChange={() => updateSettings({ refreshMode: mode.value })}
+              />
+              <span>
+                <span className="lp-mode-name">{mode.name}</span>
+                <span className="lp-mode-why">{mode.why}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
+      {settings.refreshMode === "poll" ? (
+        <div className="lp-mode-interval">
+          <label className="lp-settings-label" htmlFor="lp-poll">
+            Poll interval
+          </label>
+          <select
+            id="lp-poll"
+            className="input"
+            value={settings.pollSeconds}
+            onChange={(event) => updateSettings({ pollSeconds: Number(event.target.value) })}
+          >
+            {POLL_CHOICES.map((seconds) => (
+              <option key={seconds} value={seconds}>
+                every {seconds}s
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
+
+      <div className="lp-note">
+        Each poll cycle is four list calls plus one <code>graph/check</code> per loop, so a large board against a
+        remote workstation is happier at 30s. Streaming costs one held-open connection instead, and refreshes only
+        what each change touches — a graph move re-reads that one work item&rsquo;s position, anything else re-reads
+        the lists. A stream that cannot be opened says so in the header and falls back to polling.
+      </div>
+    </Blueprint>
   );
 }
 

@@ -14,22 +14,42 @@ const STORAGE_KEY = "the-loop:settings:v1";
 
 export type DataMode = "live" | "demo";
 
+/**
+ * How this browser keeps the screen current (issue-239).
+ *
+ * `stream` holds one `GET /api/v1/stream` open and refreshes what each frame
+ * touches; `poll` is the pre-issue-239 timer, unchanged; `manual` makes no
+ * background request of any kind. The viewer picks, because the right answer
+ * depends on how they reach the workstation: over a flaky tunnel a failed poll
+ * costs one request, while a failed stream is a screen that stops updating.
+ */
+export type RefreshMode = "stream" | "poll" | "manual";
+
+const REFRESH_MODES: readonly RefreshMode[] = ["stream", "poll", "manual"];
+
 export interface Settings {
   /** Where the service is, as the browser can reach it. */
   baseUrl: string;
   /** `live` talks to `baseUrl`; `demo` serves the bundled fixture. */
   mode: DataMode;
-  /** Background refresh cadence. 0 disables polling. */
+  /** How the screen refreshes. */
+  refreshMode: RefreshMode;
+  /** The interval used while `refreshMode` is `poll`. */
   pollSeconds: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   baseUrl: DEFAULT_BASE_URL,
   mode: "live",
+  // Streaming for a NEW browser: the shipped base URL is loopback, where it
+  // always works, and a wrong guess costs one failed connect plus a stated
+  // reason rather than a dead board. An EXISTING browser keeps what it had —
+  // see the migration in `loadSettings`.
+  refreshMode: "stream",
   pollSeconds: 15,
 };
 
-export const POLL_CHOICES = [0, 5, 15, 30, 60] as const;
+export const POLL_CHOICES = [5, 15, 30, 60] as const;
 
 /**
  * Read the stored settings, falling back field by field.
@@ -59,12 +79,39 @@ export function loadSettings(storage: Storage | undefined = safeStorage()): Sett
   const candidate = parsed as Partial<Record<keyof Settings, unknown>>;
   const baseUrl = typeof candidate.baseUrl === "string" ? normalizeBaseUrl(candidate.baseUrl) : "";
   const mode = candidate.mode === "demo" ? "demo" : "live";
-  const pollSeconds =
+  const storedSeconds =
     typeof candidate.pollSeconds === "number" && Number.isFinite(candidate.pollSeconds) && candidate.pollSeconds >= 0
       ? Math.min(candidate.pollSeconds, 3600)
-      : DEFAULT_SETTINGS.pollSeconds;
+      : null;
 
-  return { baseUrl: baseUrl || DEFAULT_SETTINGS.baseUrl, mode, pollSeconds };
+  return {
+    baseUrl: baseUrl || DEFAULT_SETTINGS.baseUrl,
+    mode,
+    refreshMode: readRefreshMode(candidate.refreshMode, storedSeconds),
+    // 0 is not an interval — it was how "off" used to be spelled, and it is now
+    // `refreshMode: "manual"`. Keeping it here would give the poll timer a zero
+    // to divide the world by.
+    pollSeconds: storedSeconds && storedSeconds > 0 ? storedSeconds : DEFAULT_SETTINGS.pollSeconds,
+  };
+}
+
+/**
+ * The stored mode, or what the pre-issue-239 store implies.
+ *
+ * The storage key stays `:v1` rather than becoming `:v2`, so nobody loses their
+ * base URL to this change. That makes the absence of `refreshMode` the migration
+ * signal, and `pollSeconds` the only evidence of what the viewer wanted:
+ * `0` meant "off", which is now `manual`; anything else meant polling at that
+ * interval. Deliberately NOT defaulted to `stream` — a new browser gets
+ * streaming, but switching an existing viewer onto a transport their tunnel may
+ * not carry is a different decision, and not one a migration should make for
+ * them.
+ */
+function readRefreshMode(stored: unknown, storedSeconds: number | null): RefreshMode {
+  const known = REFRESH_MODES.find((mode) => mode === stored);
+  if (known) return known;
+  if (storedSeconds === null) return DEFAULT_SETTINGS.refreshMode;
+  return storedSeconds === 0 ? "manual" : "poll";
 }
 
 export function saveSettings(settings: Settings, storage: Storage | undefined = safeStorage()): void {

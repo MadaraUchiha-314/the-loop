@@ -16,6 +16,7 @@
  * into the config/tunnel instructions rather than a bare "failed to fetch".
  */
 
+import type { StreamFrame } from "../state/stream.ts";
 import type {
   AttentionItem,
   ConfigDocument,
@@ -83,6 +84,21 @@ export interface GraphQuery {
   prRepo?: string;
 }
 
+/** What a stream subscription asks the service for (issue-239). */
+export interface StreamQuery {
+  /** Deliver only these work items' log frames; empty means all of them. */
+  workItem?: string[];
+  /** Also notify when these refs' session transcripts grow. */
+  transcript?: string[];
+}
+
+export interface StreamHandlers {
+  onFrame: (frame: StreamFrame) => void;
+  /** Called on every connection error. The caller counts them and decides. */
+  onError: (error: ApiError) => void;
+  onOpen?: () => void;
+}
+
 export interface EventQuery {
   type?: string[];
   workItem?: string;
@@ -137,6 +153,15 @@ export interface TheLoopApi {
    * expect a few failed polls before /health answers again.
    */
   restart(withUpgrade?: boolean): Promise<RestartSchedule>;
+  /**
+   * Hold `GET /api/v1/stream` open and deliver frames as they arrive (issue-239).
+   * Returns the unsubscribe. Reconnection is the transport's business — the
+   * caller sees `onError` per failure and decides when to give up.
+   *
+   * `null` when this transport cannot stream at all, so a caller can say so
+   * rather than wait for a connection that will never open.
+   */
+  stream(query: StreamQuery, handlers: StreamHandlers): (() => void) | null;
 }
 
 /** Trailing slashes make `${base}/api/v1/x` produce `//api`, so strip them. */
@@ -321,5 +346,103 @@ export class HttpApi implements TheLoopApi {
 
   saveConfig(patch: Record<string, unknown>): Promise<ConfigSaveResult> {
     return this.post<ConfigSaveResult>("/config", { patch });
+  }
+
+  /**
+   * `EventSource`, not a `fetch` reader.
+   *
+   * It brings two things this would otherwise hand-roll: reconnection, and
+   * resending `Last-Event-ID` on reconnect so the service replays exactly what
+   * was missed. What it cannot do is set request headers — which costs nothing
+   * here, because the service carries no in-app auth to send (decision-059).
+   *
+   * What it also cannot do is *stop trying*, or back off on a schedule of our
+   * choosing. That is why `onError` reports every failure to the caller instead
+   * of being swallowed: `useStream` counts them and closes the source itself.
+   */
+  stream(query: StreamQuery, handlers: StreamHandlers): (() => void) | null {
+    if (typeof EventSource === "undefined") return null;
+    const source = new EventSource(this.url("/stream", { workItem: query.workItem, transcript: query.transcript }));
+
+    const onLog = (event: Event) => {
+      const message = asMessage(event);
+      const record = parseFrameData(message?.data);
+      // A frame without the two fields every record carries is not a record.
+      // `types.ts` makes everything else optional on purpose, so a service that
+      // added a field degrades to a value this bundle ignores rather than a
+      // crash — but `ts` and `event` are the shape itself.
+      if (typeof record?.ts === "string" && typeof record.event === "string") {
+        handlers.onFrame({
+          kind: "log",
+          record: { ...record, ts: record.ts, event: record.event },
+          cursor: message?.lastEventId ?? "",
+        });
+      }
+    };
+    const onTranscript = (event: Event) => {
+      const data = parseFrameData(asMessage(event)?.data);
+      // `ref`, not `work_item`: a transcript frame is not an event-log record,
+      // and it carries the ref plus a line count and nothing else.
+      const ref = data?.ref;
+      if (typeof ref === "string") {
+        handlers.onFrame({ kind: "transcript", ref, totalLines: Number(data?.totalLines) || 0 });
+      }
+    };
+    const onDesync = (event: Event) => {
+      const reason = parseFrameData(asMessage(event)?.data)?.reason;
+      handlers.onFrame({ kind: "desync", reason: typeof reason === "string" ? reason : "unknown" });
+    };
+    const onOpen = () => handlers.onOpen?.();
+    const onError = () => {
+      // `EventSource` never says *why*. A closed readyState means the browser
+      // gave up on this connection — a 404 from an older service, a CORS
+      // rejection, or nothing listening — and all three reach the operator as
+      // `ApiError.advice`, which already names them in cheapest-remedy order.
+      handlers.onError(
+        new ApiError(
+          "network",
+          source.readyState === EventSource.CLOSED
+            ? "the stream connection was closed by the browser"
+            : "the stream connection dropped",
+          source.url,
+        ),
+      );
+    };
+
+    source.addEventListener("log", onLog);
+    source.addEventListener("transcript", onTranscript);
+    source.addEventListener("desync", onDesync);
+    source.addEventListener("open", onOpen);
+    source.addEventListener("error", onError);
+
+    return () => {
+      source.removeEventListener("error", onError);
+      source.close();
+    };
+  }
+}
+
+/** The `MessageEvent` an SSE listener receives, or `null` for anything else. */
+function asMessage(event: Event): MessageEvent<string> | null {
+  if (!(event instanceof MessageEvent)) return null;
+  const { data } = event;
+  return typeof data === "string" ? new MessageEvent(event.type, { data, lastEventId: event.lastEventId }) : null;
+}
+
+/**
+ * A frame's `data:` line as a plain record, or `null` when it is not one.
+ *
+ * `types.ts` makes every field a client did not put there optional, so a shape
+ * that drifted degrades to missing values rather than a crash — the same
+ * contract the JSON responses get, applied to the stream.
+ */
+function parseFrameData(raw: string | undefined): Record<string, unknown> | null {
+  if (raw === undefined) return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    return Object.fromEntries(Object.entries(parsed));
+  } catch {
+    return null;
   }
 }
