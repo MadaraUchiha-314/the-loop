@@ -1,7 +1,7 @@
 ---
 type: execution-log
 workItem: "github:MadaraUchiha-314/the-loop#239"
-phase: phase-selection       # not-started | brainstorming | requirements-definition | design | test-planning | tasks-breakdown | implementation | verification | needs-review | complete
+phase: requirements-definition   # not-started | brainstorming | requirements-definition | design | test-planning | tasks-breakdown | implementation | verification | needs-review | complete
 status: in-progress          # in-progress | complete
 # repos:                     # OPTIONAL (issue-183). The CONTRIBUTING repositories this
 #   - <owner>/<repo>         #   work item raises pull requests in — one inner loop each,
@@ -27,8 +27,8 @@ status: in-progress          # in-progress | complete
 
 | Phase | Entered | Reviewed/approved by | Notes |
 |-------|---------|----------------------|-------|
-| phase-selection | 2026-08-16 |  | Checklist posted; waiting for an authorized `the-loop execute`. |
-| requirements-definition |  |  |  |
+| phase-selection | 2026-08-16 | @MadaraUchiha-314 | `brainstorming`, `requirements-approval` and `critic-review` declared skipped; `design-critic-review` not selected. Outer loop iterates **on a pull request**. |
+| requirements-definition | 2026-08-16 | n/a — `requirements-approval` skipped | 6 requirements. The transport choice (SSE vs WebSocket) is deferred to design *with its constraints fixed here*, CORS parity among them. |
 | design |  |  |  |
 | test-planning |  |  |  |
 | tasks-breakdown |  |  |  |
@@ -50,7 +50,7 @@ status: in-progress          # in-progress | complete
 
 | PR | Scope / tasks | Status |
 |----|---------------|--------|
-|    |               | open \| merged \| closed |
+| [#242](https://github.com/MadaraUchiha-314/the-loop/pull/242) | The whole work item — the spec chain (this item iterates its outer loop on a PR) and the implementation. | open |
 
 ## Progress entries
 
@@ -70,6 +70,25 @@ status: in-progress          # in-progress | complete
 - **Next:** wait for an authorized user's `the-loop execute` to freeze the phase selection
   and the outer-loop surface, then derive `requirements.md`.
 - **Blockers:** the phase-selection gate — a human act the session never answers itself.
+
+### 2026-08-16 16:36 UTC — phases frozen; requirements drafted
+
+- **Phase:** requirements-definition
+- **Did:** @MadaraUchiha-314 replied `the-loop execute` with `brainstorming`,
+  `requirements-approval` and `critic-review` unticked and
+  `outer-loop-on-pull-request` ticked
+  ([comment](https://github.com/MadaraUchiha-314/the-loop/issues/239#issuecomment-5308477504)).
+  Read the refresh path end to end before writing anything — `useControlPlane`'s two
+  rounds, `HttpApi`, the `/api/v1` router, `eventlog`'s JSONL contract and `EVENT_TYPES`,
+  the Settings page, and the detail page's trace/chat-bar layout. Wrote
+  `requirements.md`: 6 requirements, the load-bearing one being that a stream which only
+  replays `/api/v1/events` does **not** refresh the board, because loop position comes
+  from round two (`graph/check` over `graph-state.json`) and is not in the event log's
+  shape.
+- **Checkpoint/tests:** `make lint` → ruff clean, markdownlint 691 files, 0 errors.
+- **Next:** derive `design.md` — settle SSE vs WebSocket against the constraints
+  requirements fixed, then the testing plan; both land at the `design-approval` gate.
+- **Blockers:** none.
 
 ## Verification results
 
@@ -158,4 +177,9 @@ under `<specDir>/<id>/evidence/`.
 ### 2026-08-16 — entry phase-selection
 
 - **Node:** phase-selection
+- **Boundary:** entry
+
+### 2026-08-16 — entry requirements-definition
+
+- **Node:** requirements-definition
 - **Boundary:** entry
