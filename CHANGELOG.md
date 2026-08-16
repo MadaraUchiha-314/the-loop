@@ -1,3 +1,9 @@
+## v10.2.3 (2026-08-16)
+
+### Fix
+
+- **issue-240**: a read-only tmux observer must not block every delivery (#250)
+
 ## v10.2.2 (2026-08-16)
 
 ### Fix
