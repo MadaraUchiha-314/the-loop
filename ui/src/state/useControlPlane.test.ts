@@ -17,7 +17,7 @@ const REF = "github:acme/widgets#7";
 const WORK_ITEM: WorkItemRecord = {
   ref: REF,
   graph: { workItem: "issue-7", nodes: [{ id: "design", phase: "design" }] },
-} as WorkItemRecord;
+};
 
 const SESSION: SessionRecord = {
   ref: REF,
@@ -26,7 +26,7 @@ const SESSION: SessionRecord = {
   harnessSessionId: "s1",
   cwd: "/gone/worktrees/acme/widgets/7",
   status: "closed",
-} as SessionRecord;
+};
 
 function apiAnswering(status: GraphStatus): TheLoopApi {
   return { graphCheck: vi.fn(() => Promise.resolve(status)) } as unknown as TheLoopApi;

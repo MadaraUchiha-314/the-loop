@@ -84,6 +84,11 @@ Two facts shape that:
   record (`cwd`); the id is only in the *work-item* record (`graph.workItem`). So the
   board paints twice: the flat lists first, the positions as they arrive. An item with no
   session on this machine shows its frozen node list with no pointer, never an error.
+  Neither does one whose checkout has since been deleted: the session record outlives the
+  path it names, so `/graph/check` answers `200` with `repoResolved: false` and the board
+  drops that answer where a rejection would have been dropped
+  ([issue-238](https://github.com/MadaraUchiha-314/the-loop/issues/238)). Read the field as
+  `=== false` — it is absent, not `true`, on a normal answer.
 - **A pull request is a session, not a lookup.** Since
   [issue-172](https://github.com/MadaraUchiha-314/the-loop/issues/172) the session record
   holds one endpoint per PR delivering the work item, each with its own tmux target and

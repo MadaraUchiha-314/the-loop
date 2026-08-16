@@ -54,7 +54,7 @@ written.
   - _Requirements:_ R2.1, R4.1
   - _Test:_ `T0 — cd ui && bun run test` (red)
 
-- [ ] 3. Answer instead of raising, in `check` alone
+- [x] 3. Answer instead of raising, in `check` alone
   - `cli/the_loop/core/graphs.py`: add `repo_resolves(repo) -> bool` and make
     `resolve_repo` call it, so the predicate exists once.
   - `check` returns the unknown-position dict when `repo_resolves` is false, **before**
@@ -65,7 +65,7 @@ written.
   - _Requirements:_ R1.1, R1.2, R1.3, R2.2, R3.1, R3.2
   - _Test:_ `T1, T3, T9 — uv run pytest cli/tests/test_core_graphs.py cli/tests/test_api_routers_integration.py` (green)
 
-- [ ] 4. Drop the unknown answer client-side, exactly as the rejection was dropped
+- [x] 4. Drop the unknown answer client-side, exactly as the rejection was dropped
   - `ui/src/api/types.ts`: add `repoResolved?: boolean` to `GraphStatus`, documented as
     present-and-false only.
   - `ui/src/state/useControlPlane.ts`: in the worker, `if (status.repoResolved === false) continue;`
@@ -76,7 +76,7 @@ written.
   - _Requirements:_ R2.1
   - _Test:_ `T2 — cd ui && bun run test` (green)
 
-- [ ] 5. Say it in the contract
+- [x] 5. Say it in the contract
   - `docs/api-specs/openapi/the-loop.v1.yaml`: give the `graphCheck` operation a
     `description` stating that a `repo` which does not resolve is answered `200` with
     `repoResolved: false`, reserving `4xx` for a malformed request.
@@ -86,7 +86,7 @@ written.
   - _Requirements:_ R3.3
   - _Test:_ `T4 — uv run pytest cli/tests/test_api_contract_parity.py`
 
-- [ ] 6. Update the docs the change makes wrong
+- [x] 6. Update the docs the change makes wrong
   - `docs/capabilities/control-plane.md`: extend the `graph/check` behaviour bullet
     (line ~104) — an item whose `cwd` no longer resolves is answered rather than refused —
     and add the issue-238 history row.
@@ -97,7 +97,7 @@ written.
   - _Requirements:_ none directly — the ready-to-ship gate (`reference/workflow.md`)
   - _Test:_ `npx markdownlint-cli2@0.18.1 <changed files>`
 
-- [ ] 7. Run everything the way CI runs it, and commit the green evidence
+- [x] 7. Run everything the way CI runs it, and commit the green evidence
   - `uv run pre-commit run --all-files`, `uv run pytest`, and
     `cd ui && bun run lint && bun run test && bun run build` — the same commands
     `.github/workflows/ci.yml` runs.
