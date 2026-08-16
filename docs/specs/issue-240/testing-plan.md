@@ -2,7 +2,7 @@
 type: testing-plan
 phase: test-planning
 workItem: "github:MadaraUchiha-314/the-loop#240"
-status: draft                # draft | in-review | approved
+status: approved             # draft | in-review | approved
 approvedBy: []
 overrides: {}
 ---
@@ -94,15 +94,15 @@ local tmux session names and pytest counts.
 
 ## Verification activities
 
-- [ ] T1 — live tmux: bracketed paste + CR paste submits, with a read-only client attached
-- [ ] T2 — `uv run --project cli python -m pytest -q cli/tests/test_tmux_runner.py`
-- [ ] T3 — `uv run --project cli python -m pytest -q cli/tests/test_poller.py`
-- [ ] T4 — `uv run --project cli python -m pytest -q cli/tests/test_poller_integration.py`
-- [ ] T5 — `uv run --project cli python -m pytest -q cli/tests/test_tmux_runner_integration.py`
-- [ ] T6 — `uv run --project cli python -m pytest -q cli/tests/test_poller.py -k notice`
-- [ ] T11 — tmux version archaeology, recorded with the commands that produced it
-- [ ] T15 — `uv run --project cli python -m pytest -q cli`
-- [ ] Red run — every new assertion, failing against unfixed code, committed before the fix
+- [x] T1 — live tmux: bracketed paste + CR paste submits, with a read-only client attached
+- [x] T2 — `uv run --project cli python -m pytest -q cli/tests/test_tmux_runner.py`
+- [x] T3 — `uv run --project cli python -m pytest -q cli/tests/test_poller.py`
+- [x] T4 — `uv run --project cli python -m pytest -q cli/tests/test_poller_integration.py`
+- [x] T5 — `uv run --project cli python -m pytest -q cli/tests/test_tmux_runner_integration.py`
+- [x] T6 — `uv run --project cli python -m pytest -q cli/tests/test_poller.py -k notice`
+- [x] T11 — tmux version archaeology, recorded with the commands that produced it
+- [x] T15 — `uv run --project cli python -m pytest -q cli`
+- [x] Red run — every new assertion, failing against unfixed code, committed before the fix
 
 ## Verification results
 

@@ -2,7 +2,7 @@
 type: tasks
 phase: tasks-breakdown
 workItem: "github:MadaraUchiha-314/the-loop#240"
-status: draft                # draft | in-review | approved
+status: approved             # draft | in-review | approved
 approvedBy: []
 overrides: {}
 ---
@@ -30,7 +30,7 @@ flowchart LR
 
 ## Task list
 
-- [ ] 1. Write the tmux delivery tests, and watch them fail
+- [x] 1. Write the tmux delivery tests, and watch them fail
   - Rewrite `test_deliver_pastes_with_bracketed_paste_then_enter`
     (`cli/tests/test_tmux_runner.py:308`) as
     `test_deliver_pastes_bracketed_then_submits_without_send_keys`: assert the **exact**
@@ -45,7 +45,7 @@ flowchart LR
   - _Requirements:_ R4.1, R4.2
   - _Test:_ `T2, T5` (red)
 
-- [ ] 2. Write the give-up notice tests, and watch them fail
+- [x] 2. Write the give-up notice tests, and watch them fail
   - `cli/tests/test_poller.py`: `giveup_notice` carries the self-comment marker, a visible
     attribution line, the attempt count, the comment link and the recovery; and — the
     abuse case — contains none of an adversarial comment body, which it has no parameter
@@ -58,7 +58,7 @@ flowchart LR
   - _Requirements:_ R4.1, R4.3
   - _Test:_ `T3, T4, T6` (red)
 
-- [ ] 3. Submit with an unbracketed paste instead of `send-keys`
+- [x] 3. Submit with an unbracketed paste instead of `send-keys`
   - `cli/the_loop/runner.py`: add `_SUBMIT_BUFFER` and `_SUBMIT_BYTES` beside
     `_EVENT_BUFFER`, with the reason (`\r`, not `\n`; a constant, never caller data).
   - `deliver`: write both buffers through one tempfile helper, issue the four commands,
@@ -69,7 +69,7 @@ flowchart LR
   - _Requirements:_ R1.1–R1.5, R3.1–R3.4
   - _Test:_ `T2, T5`
 
-- [ ] 4. Report a give-up on the ticket
+- [x] 4. Report a give-up on the ticket
   - `cli/the_loop/poller/poller.py`: add module-level `giveup_notice(...)` (pure,
     `mark_self_authored`, no parameter that can carry a comment body) and
     `Poller._report_giveup(...)` (best-effort; catches everything; emits
@@ -81,7 +81,7 @@ flowchart LR
   - _Requirements:_ R2.1–R2.6
   - _Test:_ `T3, T4, T6`
 
-- [ ] 5. Verify the mechanism against a live tmux
+- [x] 5. Verify the mechanism against a live tmux
   - Execute T1 and T11 of the testing plan and write `evidence/manual.md`: session set-up,
     a genuine `tmux attach -r` client with `#{client_readonly}=1`, the bracketed paste, the
     CR paste, the pane's own output, and the per-release `cmd-send-keys.c` guard counts.
@@ -89,7 +89,7 @@ flowchart LR
   - _Requirements:_ R1.1, R1.3, R1.4
   - _Test:_ `T1, T11`
 
-- [ ] 6. Update the capability docs and the user-facing docs
+- [x] 6. Update the capability docs and the user-facing docs
   - `docs/capabilities/interactive-sessions.md`: how an event is delivered, and the
     read-only guarantee stated as behaviour with an issue-240 history row.
   - The poller capability doc: a give-up is reported on the ticket, and what the notice
@@ -99,13 +99,13 @@ flowchart LR
   - _Requirements:_ ready-to-ship gate
   - _Test:_ `markdownlint`
 
-- [ ] 7. Run what CI runs
+- [x] 7. Run what CI runs
   - `make lint`, `make format-check`, `make typecheck`, `make test`.
   - _Depends on:_ 6
   - _Requirements:_ R3.1, R3.2
   - _Test:_ `T15`
 
-- [ ] 8. Complete the evidence and the execution log
+- [x] 8. Complete the evidence and the execution log
   - `evidence/red.md`, `evidence/unit-and-integration.md`, `evidence/manual.md`;
     `testing-plan.md` § Verification results; `execution-log.md`.
   - _Depends on:_ 7
@@ -117,4 +117,21 @@ flowchart LR
 > Production changes made that the design did not name, recorded here **before** they are
 > done rather than explained afterwards.
 
-_None so far._
+1. **`TmuxRunner._buffer_file` is a new (private, static) helper.** The design said "write
+   both buffers through one tempfile helper"; naming it on the class rather than inlining
+   it twice is that sentence made concrete, and it is what lets the write-failure cleanup
+   be asserted directly (`test_a_buffer_file_that_cannot_be_written_leaves_nothing_behind`).
+2. **`Poller.__init__` gained `comment_runner`.** The design named `post_issue_comment` but
+   not how a test would drive it without a real `gh`. Added with a `subprocess.run` default,
+   mirroring `SessionAnnouncer`/`GitHubReactor` — the convention `comments.py` documents.
+3. **`_report_giveup` takes the polled `WorkItem`, not `refs`.** Self-review finding: a
+   PR's refs lead with the issue it is _linked_ to, so the design's implied `refs[0]` would
+   have answered on the wrong ticket. See `execution-log.md`, round 1.
+4. **`eventlog.EVENT_TYPES` gained two entries.** Not a design decision — the repository's
+   own `test_every_emitted_event_type_is_documented` requires every emitted type to be
+   described, and it caught the omission.
+5. **`uv.lock` regenerated.** Not this work item's change: the `10.2.1` bump updated
+   `cli/pyproject.toml` and not the lock, so this branch is the first to run `uv sync`
+   against the drift. Committed because CI cannot go green without it — the same thing
+   issue-238 found at `10.2.0`, which makes it a recurring gap in the bump, flagged on the
+   PR.

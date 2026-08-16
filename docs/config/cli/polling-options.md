@@ -94,6 +94,11 @@ picked up instead of staying stuck forever. Gated on the version rather than on 
 poller started", so repeated `poll --once` runs from cron cannot re-forward abandoned
 comments every minute.
 
+The two rules compose, which is how a comment lost to a the-loop bug comes back by itself:
+upgrading past the release that fixed it re-arms the comment, the delivery now works, and
+if it somehow still does not, the notice above says so on the ticket. Nothing on disk needs
+editing in either case.
+
 ## Sources
 
 `sources` is an ordered list. Each entry names a `provider`; the remaining keys are that
