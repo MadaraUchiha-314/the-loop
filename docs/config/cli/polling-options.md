@@ -74,6 +74,16 @@ poller logs a terminal failure (`poll.spawn_failed` / `poll.comment_failed`) and
 the event on later polls until new activity re-arms it. An in-flight, still-processing
 dispatch is not counted as a failed attempt.
 
+**An abandoned comment is reported on the work item** (issue-240). Giving up used to be
+visible only here, in the event log, and as a 😕 reaction — so somebody who told an agent
+to do something had no way to learn it was never told. The poller now posts one comment
+naming the abandoned comment, the attempts, and the recovery: **post the instruction
+again**, since a new comment carries a full retry budget and nothing on disk needs
+editing. It is marked as the-loop's own, so the poller never reads its own notice back.
+Best-effort in one direction only — no `gh` on PATH, a non-GitHub provider or an API error
+logs `poll.giveup_report_failed` and the give-up stands regardless; a notice can never
+make an undelivered comment count as delivered.
+
 **An upgrade re-arms an abandoned comment, once** (issue-146). A give-up is a statement
 about a failing environment, and a new the-loop version is the one event that can
 invalidate it — the reason those events could not be delivered may be exactly what the

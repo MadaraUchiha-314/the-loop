@@ -19,6 +19,7 @@ import threading
 import time
 
 from conftest import FakeTmux, StubInteractiveAdapter
+from the_loop import comments as comments_mod
 from the_loop.authz import is_self_authored
 from the_loop.control import ControlConfig
 from the_loop.announce import announcement_body
@@ -647,7 +648,7 @@ class _RecordingGh:
         return Proc()
 
 
-def test_an_abandoned_comment_is_reported_on_the_work_item(tmp_path):
+def test_an_abandoned_comment_is_reported_on_the_work_item(tmp_path, monkeypatch):
     """Scenario: every delivery of a comment fails until the retry budget is spent.
 
     Given a live session whose tmux delivery keeps failing
@@ -657,6 +658,7 @@ def test_an_abandoned_comment_is_reported_on_the_work_item(tmp_path):
     And the notice carries the-loop's own marker, so the poller never reads it back
     Requirement: docs/specs/issue-240/bugfix.md#requirement-2--an-abandoned-comment-is-reported-to-the-human-who-wrote-it
     """
+    monkeypatch.setattr(comments_mod.shutil, "which", lambda _: "/usr/bin/gh")
     gh = GhState()
     gh.comments = [_comment("IC_1", "old")]
     poster = _RecordingGh()

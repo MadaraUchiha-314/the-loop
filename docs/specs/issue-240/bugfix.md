@@ -68,8 +68,8 @@ tmux commands, the last of which is `send-keys -t <session> Enter`. In tmux ≥ 
 struct client *tc = cmdq_get_target_client(item);
 …
 if (tc != NULL && tc->flags & CLIENT_READONLY && !args_has(args, 'X')) {
-	cmdq_error(item, "client is read-only");
-	return (CMD_RETURN_ERROR);
+        cmdq_error(item, "client is read-only");
+        return (CMD_RETURN_ERROR);
 }
 ```
 

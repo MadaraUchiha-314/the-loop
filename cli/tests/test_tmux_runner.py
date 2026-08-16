@@ -367,10 +367,54 @@ class TestTmuxRunner:
         made.clear()
         # Second paste fails: the file written for it must still be cleaned up.
         monkeypatch.setattr(
-            runner_mod.subprocess, "run", FakeRun(verbs_per_call={"paste-buffer": [0, 1]})
+            runner_mod.subprocess,
+            "run",
+            FakeRun(verbs_per_call={"paste-buffer": [0, 1]}),
         )
         assert not TmuxRunner().deliver(make_session(tmux_target="loop-a"), "p").ok
         assert made and not any(os.path.exists(path) for path in made)
+
+    def test_a_failed_second_buffer_does_not_leak_the_first(self, monkeypatch):
+        # Found by self-review. Writing the two files as a list literal left the
+        # prompt file behind when the submit file could not be created (a full
+        # disk) — a leak the single inline `mkstemp` this replaced did not have.
+        made = []
+        real_mkstemp = runner_mod.tempfile.mkstemp
+
+        def spy(*args, **kwargs):
+            if made:  # the second call: the disk is full
+                raise OSError("No space left on device")
+            fd, path = real_mkstemp(*args, **kwargs)
+            made.append(path)
+            return fd, path
+
+        monkeypatch.setattr(runner_mod.tempfile, "mkstemp", spy)
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        monkeypatch.setattr(runner_mod.subprocess, "run", FakeRun())
+        with pytest.raises(OSError):
+            TmuxRunner().deliver(make_session(tmux_target="loop-a"), "p")
+        assert made and not os.path.exists(made[0])
+
+    def test_a_buffer_file_that_cannot_be_written_leaves_nothing_behind(
+        self, monkeypatch
+    ):
+        # The same property one level down: mkstemp created the file, the write
+        # failed. Asserted on the helper, so it holds for any future caller.
+        made = []
+        real_mkstemp = runner_mod.tempfile.mkstemp
+
+        def spy(*args, **kwargs):
+            fd, path = real_mkstemp(*args, **kwargs)
+            made.append(path)
+            os.close(fd)  # fdopen on a closed fd raises inside the helper
+            return -1, path
+
+        monkeypatch.setattr(runner_mod.tempfile, "mkstemp", spy)
+        # Whatever the failure is — the helper cleans up and re-raises it
+        # unchanged, so the caller still sees a failed delivery.
+        with pytest.raises(Exception):
+            TmuxRunner._buffer_file("anything")
+        assert made and not os.path.exists(made[0])
 
     def test_deliver_and_kill_address_the_normalised_target(self, monkeypatch):
         # AC5: every argv built from a legacy dotted record names the session
