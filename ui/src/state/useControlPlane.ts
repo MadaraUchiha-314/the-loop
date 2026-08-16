@@ -135,7 +135,13 @@ interface GraphJob {
   run: (signal: AbortSignal) => Promise<GraphStatus>;
 }
 
-async function fetchGraphs(
+/**
+ * Round two: one graph report per loop, for every ref that has both halves of
+ * the join. Exported for its own test (issue-238) — it is a pure function of
+ * its arguments, and asserting on it directly says which of the poll effect,
+ * the abort wiring and this projection broke.
+ */
+export async function fetchGraphs(
   api: TheLoopApi,
   workItems: WorkItemRecord[],
   sessions: SessionRecord[],
@@ -178,6 +184,12 @@ async function fetchGraphs(
         // next job as their own finishes IS the concurrency cap.
         // oxlint-disable-next-line no-await-in-loop
         const status = await job.run(signal);
+        // `repoResolved: false` is the server saying the checkout is gone
+        // (issue-238). Storing it would swap railFromFrozen — which still shows
+        // the agreed node list — for an empty rail, so it is dropped here
+        // exactly as a rejection is dropped by the catch below. `=== false`
+        // on purpose: absent means a normal answer, not a falsy one.
+        if (status.repoResolved === false) continue;
         if (job.outer) reports.outer[job.key] = status;
         else reports.inner[job.key] = status;
       } catch {

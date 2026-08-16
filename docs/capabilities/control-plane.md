@@ -107,6 +107,17 @@ package — there are no install extras (owner decision, PR #162).
   records, an item with no session on this machine SHALL still be listed, showing
   its frozen node list with no pointer rather than an error — the API's inability
   to answer "where is it?" is not the same as the item not existing.
+- **A `repo` that does not resolve SHALL be answered, not refused** (issue-238).
+  A session record outlives the checkout it names — nothing blanks `cwd` when a
+  worktree is removed — so `graph/check` SHALL return `200` with
+  `repoResolved: false`, an empty `nodes` list and no `currentNode`, and the
+  dashboard SHALL drop that answer exactly as it drops a rejection, falling back
+  to the frozen node list. The field SHALL be **absent** on every other response.
+  `4xx` stays reserved for a malformed request, and the mutating graph verbs
+  (`complete`, `advance`, `force`, `skip`) SHALL keep refusing a repository that
+  is not there: only the polled verb treats a cleaned-up checkout as expected
+  state. The path SHALL still reach no graph read — the boundary's *report*
+  changed, not what it admits.
 - The dashboard's inbox SHALL be the union of `/attention` and the graph gates
   that endpoint deliberately excludes: gate waits are repo-scoped, so
   `core.attention` documents them as reaching a client through `graphs.check` per
@@ -253,6 +264,7 @@ package — there are no install extras (owner decision, PR #162).
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-238 | A cleaned-up checkout stopped being caller error: `graph/check` answers a non-resolving `repo` with `200` + `repoResolved: false` instead of `400`, and `fetchGraphs` drops that answer where the old rejection was dropped, so the rail still renders from the frozen record and the browser console stops accumulating 4xx at a layer no `catch` can reach. The boundary itself is unchanged — `repo_resolves` is factored out of `resolve_repo` so the predicate exists once, and `check` returns before `_runtime`, so no graph read ever sees an unvetted path. Only the polled verb changed; the mutating ones still refuse | [spec](../specs/issue-238/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/238) |
 | issue-230 | The transcript becomes readable and steerable: the dashboard's stream pairs each `tool_result` to its `tool_use` by id and collapses tool calls/thinking/bookkeeping behind disclosure (no line renders blank — the reported bug), a new Sessions screen lists every work item in a sidebar with its sessions as a two-level outer/inner tree (ad-hoc items treeless), and a chat bar under any stream posts to `/sessions/reply` with the viewed ref. Server side, the reply route resolves PR endpoints the way dispatch does, so an inner loop's chat lands in that PR's pane; every issue-208 refusal is kept | [spec](../specs/issue-230/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/230) |
 | issue-212 | The plane gained a second consumer without gaining a second implementation: `/api/v1` moved out of `create_app`'s body into one `APIRouter` (`api/routes.py`), and the per-request behaviour that was middleware and app-level handlers — config refresh, error translation, the `api.request` audit — moved onto that router's route class, so it travels into an application the-loop does not own. `create_app` keeps its signature and behaviour; `api/lifespan.py` holds the MCP-session-manager and hosted-ingress composition both consumers need; `api/mcp.build_app` gained an optional `allowed_hosts` for deployments that do not bind where `service.host` says. The new capability is [sdk](sdk.md) | [spec](../specs/issue-212/), [decision-085](../decisions/decision-085.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/212) |
 | issue-228 | The plane can bounce itself: `POST /api/v1/restart` schedules a detached, fixed-argv `the-loop restart [--with-upgrade]` (output at `logs/restart.out`, `restart.scheduled`/`restart.completed` in the event log) — deliberately not an MCP tool. The MCP endpoint became disableable (`service.mcp.enabled: false` mounts nothing; `/mcp` 404s), and the service's start/stop mechanics moved into `core.lifecycle` behind `the-loop start\|stop\|status\|restart` (the granular `service` command folded away on owner review). Amended in the same PR (issue-231): with `service.hostIngresses` (default true) the service hosts the enabled ingresses as threads in its lifespan, each holding its own pidfile flock under the service's pid | [spec](../specs/issue-228/), [decision-084](../decisions/decision-084.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/228), [issue-231](https://github.com/MadaraUchiha-314/the-loop/issues/231) |

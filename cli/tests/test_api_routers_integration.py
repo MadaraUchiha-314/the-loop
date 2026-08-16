@@ -82,13 +82,49 @@ def test_graph_check_runs_against_a_repo_path(tmp_path):
     assert response.json()["workItem"] == "issue-161"
 
 
-def test_graph_check_rejects_a_bad_repo_path(tmp_path):
+def test_graph_check_answers_a_checkout_that_has_been_deleted(tmp_path):
+    """
+    Feature: control-plane graph reads
+      Scenario: a control-plane client asks where a work item stands in a checkout that has been deleted
+        Given a session record whose cwd names a worktree that has been removed
+        When the client POSTs /graph/check with that path
+        Then it receives 200 with repoResolved false and no position claimed
+        And the response carries no 4xx for the browser console to log
+
+    Requirement: docs/specs/issue-238/bugfix.md R1.1, R1.2
+    """
     client, _ = _client(tmp_path)
     response = client.post(
         "/api/v1/graph/check",
         json={"repo": str(tmp_path / "nope"), "workItem": "issue-1"},
     )
-    assert response.status_code == 400
+    assert response.status_code == 200
+    body = response.json()
+    assert body["repoResolved"] is False
+    assert body["currentNode"] == ""
+    assert body["nodes"] == []
+
+
+def test_graph_check_says_nothing_new_about_a_checkout_that_is_there(tmp_path):
+    """
+    Feature: control-plane graph reads
+      Scenario: a control-plane client asks about a checkout that is still there
+        Given this repository's own checkout
+        When the client POSTs /graph/check with its path
+        Then the response is exactly what it was before issue-238, with no repoResolved key
+
+    Requirement: docs/specs/issue-238/bugfix.md R2.2
+    """
+    import pathlib
+
+    client, _ = _client(tmp_path)
+    repo_root = str(pathlib.Path(__file__).resolve().parents[2])
+    response = client.post(
+        "/api/v1/graph/check",
+        json={"repo": repo_root, "workItem": "issue-161"},
+    )
+    assert response.status_code == 200
+    assert "repoResolved" not in response.json()
 
 
 def test_sessions_daemons_attention_and_events(tmp_path):

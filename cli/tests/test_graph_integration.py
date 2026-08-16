@@ -346,3 +346,26 @@ class TestFailOn:
 
         report = self._report("design", {"design": "pass", "later": "block"})
         assert _fails(report, "block") is False
+
+    def test_a_repo_that_is_not_there_fails_both_modes(self):
+        """An unread repository is not a passing gate (issue-238).
+
+        Since issue-238 `graphs.check` answers a `repo` that does not resolve
+        with `repoResolved: false` and an empty node list instead of raising —
+        right for the polled API, and a trap for this command, because a report
+        with no nodes has no blocking node either. A mistyped `--repo` would then
+        make `--fail-on block` exit 0: a CI gate going green because it evaluated
+        nothing. Both modes must refuse it.
+        """
+        from the_loop.commands.graph_cmd import _fails
+
+        report = {
+            "workItem": "issue-1",
+            "currentNode": "",
+            "ok": False,
+            "parked": None,
+            "nodes": [],
+            "repoResolved": False,
+        }
+        assert _fails(report, "block") is True
+        assert _fails(report, "unmet") is True

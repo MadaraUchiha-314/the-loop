@@ -24,13 +24,23 @@ from ..graph.bootstrap import build_runtime
 from ..graph import runtime as graph_runtime
 
 
+def repo_resolves(repo: str) -> bool:
+    """Does ``repo`` name a directory this process can use?
+
+    The predicate behind :func:`resolve_repo`, factored out rather than copied so
+    a caller can ask the boundary's question without catching its exception
+    (issue-238). One predicate, one answer: the day these two disagree is the day
+    a path one of them rejects reaches core through the other.
+    """
+    return Path(repo).expanduser().is_dir()
+
+
 def resolve_repo(repo: str) -> Path:
     """Validate a repo path at the trust boundary: it must exist and be a
     directory (abuse case 3 — no core call on unvetted input)."""
-    path = Path(repo).expanduser()
-    if not path.is_dir():
+    if not repo_resolves(repo):
         raise ValueError(f"repo path is not a directory: {repo}")
-    return path.resolve()
+    return Path(repo).expanduser().resolve()
 
 
 def _recorded_loop(path: Path, work_item: str) -> str:
@@ -96,7 +106,35 @@ def check(
     pr: Optional[int] = None,
     pr_repo: str = "",
 ) -> Dict[str, Any]:
-    """`the-loop check` for one work item: the status report as a dict."""
+    """`the-loop check` for one work item: the status report as a dict.
+
+    A ``repo`` that does not resolve is **answered, not raised** (issue-238). A
+    checkout that has been cleaned up is expected state on the machine that
+    cleaned it up, and the only honest report about it is "position unknown" —
+    which is what the control plane already renders from the frozen record.
+    Calling it a caller error made the dashboard log a 400 per stale session per
+    poll tick, forever, in a place no `catch` can suppress.
+
+    Only ``check`` behaves this way, and deliberately: it is the one verb a
+    client polls. Somebody asking to *advance* or *force* a repository that is
+    not there has made a mistake and wants to be told, so the mutating verbs keep
+    :func:`resolve_repo`'s ``ValueError``.
+
+    The early return sits **before** :func:`_runtime`, which is what makes
+    "no core call on unvetted input" structural rather than incidental — there is
+    no path through this function that reaches the graph with a path the boundary
+    rejected. The body names nothing the caller did not already send: no path, no
+    error text, so the 200 tells them strictly less than the 400 did.
+    """
+    if not repo_resolves(repo):
+        return {
+            "workItem": work_item,
+            "currentNode": "",
+            "ok": False,
+            "parked": None,
+            "nodes": [],
+            "repoResolved": False,
+        }
     return (
         _runtime(repo, pr, pr_repo, work_item)
         .status(work_item, recompute=recompute)

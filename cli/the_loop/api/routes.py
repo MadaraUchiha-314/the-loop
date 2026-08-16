@@ -282,6 +282,15 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
         operation_id="graphCheck",
     )
     def graph_check(body: GraphCheckBody) -> Dict[str, Any]:
+        """Where a work item stands, as `the-loop check` computes it.
+
+        A `repo` that does not resolve to a directory is answered `200` with
+        `repoResolved: false`, an empty `nodes` list and no `currentNode` — a
+        checkout that has been cleaned up is expected state on the machine that
+        cleaned it up, not caller error (issue-238). The field is **absent** on
+        every other response. `4xx` stays reserved for a malformed request; the
+        mutating graph verbs still refuse a repository that is not there.
+        """
         return core_graphs.check(
             body.repo,
             body.workItem,

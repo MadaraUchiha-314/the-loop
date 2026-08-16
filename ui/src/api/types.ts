@@ -132,6 +132,14 @@ export interface GraphStatus {
   /** Set when the current node's exit hook returned `wait` — a human is owed. */
   parked?: { node: string; reason: string; since?: string } | null;
   nodes: NodeReport[];
+  /**
+   * Present and `false` only when `repo` named a path that does not resolve to a
+   * directory: the checkout has been cleaned up, so the server knows nothing
+   * about this work item's position and says so with a 200 rather than a 400
+   * (issue-238). **Absent on every normal response**, which keeps those
+   * byte-identical — so read it as `=== false`, never for truthiness.
+   */
+  repoResolved?: boolean;
 }
 
 /** One node of the graph definition, as `GET /api/v1/graph` reports it. */
