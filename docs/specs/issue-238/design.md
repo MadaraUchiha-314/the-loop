@@ -282,6 +282,6 @@ with the rejected option and its reasons recorded rather than dropped.
 
 ### 2026-08-15 — approved
 
-**@MadaraUchiha-314**
+By @MadaraUchiha-314 —
 
 approved

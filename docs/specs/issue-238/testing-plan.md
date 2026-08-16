@@ -92,26 +92,50 @@ surfaces; if one does, the capture is not committed and the row says so.
 
 ## Verification activities
 
-- [ ] T0 — capture the red run: apply the new tests only (no fix) and run
+- [x] T0 — capture the red run: apply the new tests only (no fix) and run
       `uv run pytest cli/tests/test_core_graphs.py cli/tests/test_api_routers_integration.py`
-- [ ] T1 — `uv run pytest cli/tests/test_core_graphs.py`
-- [ ] T2 — `cd ui && bun run test`
-- [ ] T3 — `uv run pytest cli/tests/test_api_routers_integration.py`
-- [ ] T4 — `uv run pytest cli/tests/test_api_contract_parity.py`
-- [ ] T9 — `uv run pytest cli/tests/test_core_graphs.py -k "resolve or unknown"`
-- [ ] Full suite — `uv run pytest` and `cd ui && bun run lint && bun run test && bun run build`
-- [ ] T12 — `curl` the stale path against a running service; then open the UI and read the
-      devtools console across at least three poll ticks
+- [x] T1 — `uv run pytest cli/tests/test_core_graphs.py`
+- [x] T2 — `cd ui && bun run test`
+- [x] T3 — `uv run pytest cli/tests/test_api_routers_integration.py`
+- [x] T4 — `uv run pytest cli/tests/test_api_contract_parity.py`
+- [x] T9 — `uv run pytest cli/tests/test_core_graphs.py -k "resolve or unknown"`
+- [x] Full suite — `uv run pytest` and `cd ui && bun run lint && bun run test && bun run build`
+- [x] T12 — `curl` the stale path against a running service, before and after
+- [ ] T12 (visual) — open the UI and read the devtools console across at least three poll
+      ticks. **Not executed** — the browser extension was not connected. Replanned; see
+      Verification results.
 
 ## Verification results
 
-*Not yet executed.*
+Every planned activity ran except the devtools screenshot, which was replanned rather than
+skipped — the row and its reason are below the table.
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| | | | |
+| T0 — red | `uv run pytest cli/tests/test_core_graphs.py cli/tests/test_api_routers_integration.py` (before the fix) | 4 failed, 19 passed — the four new/rewritten assertions | [`evidence/red.md`](evidence/red.md) |
+| T0 — red (UI) | `cd ui && bun run test` (before the fix) | 1 failed, 105 passed — `fetchGraphs` stored the answer it should drop | [`evidence/red.md`](evidence/red.md) |
+| T1, T3 | `uv run pytest cli/tests/test_core_graphs.py cli/tests/test_api_routers_integration.py` | pass — 23 passed | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
+| T2 | `cd ui && bun run test` | pass — 106 passed (8 files) | [`evidence/ui-tests.md`](evidence/ui-tests.md) |
+| T4 | `uv run pytest cli/tests/test_api_contract_parity.py` + a direct authored-vs-served description comparison | pass — 2 passed, descriptions `identical: True` | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
+| T9 | `uv run pytest cli/tests/test_core_graphs.py -k "resolve or unknown"` | pass — 3 passed, 11 deselected | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
+| Full suite (Python) | `uv run pytest` | 2103 passed, **4 failed** — all four are CI-machine assertions failing on this macOS workstation, proved unrelated by re-running them against the stashed tree | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
+| Full suite (UI) | `cd ui && bun run lint && bun run test && bun run build` | pass — no lint findings, 106 tests, build clean (`tsc --noEmit` included) | [`evidence/ui-tests.md`](evidence/ui-tests.md) |
+| T12 — the reported request | `curl` the stale worktree path at `:4114` (10.2.0) and `:4199` (this branch), same state root | pass — `400` before, `200 {"repoResolved": false}` after; a live checkout still answers with a position and no `repoResolved` key | [`evidence/manual.md`](evidence/manual.md) |
+| T12 — one real poll tick | the board's own `fetchGraphs` + `HttpApi` against both services, with `fetch` wrapped to record statuses | pass — 1× 4xx before, 0× after, and `reports.outer` identical in both runs | [`evidence/manual.md`](evidence/manual.md) |
 
-**Not executed:** *none yet — this section is filled at the `verification` node.*
+**Not executed:** *T12 (visual) — the devtools console screenshot.* The Chrome extension
+this session drives a browser through was not connected (`tabs_context_mcp` returned
+"Browser extension is not connected"), so no browser could be opened. The service and the
+Vite dev server were brought up for it and CORS was configured; only the browser was
+missing.
+
+**Replanned, not dropped.** A console screenshot would have shown a list of `/graph/check`
+response statuses. That list was captured directly instead, from the same client code the
+browser runs, against the same records — with a before/after contrast a single screenshot
+could not have provided. What stays unverified by machine is the last inch: that Chrome
+renders zero red lines for a set of `200` responses. That is browser behaviour rather than
+this project's, and a human can confirm it in thirty seconds; flagged on PR #241 rather
+than claimed.
 
 ## Review comments
 
@@ -120,6 +144,6 @@ surfaces; if one does, the capture is not committed and the row says so.
 
 ### 2026-08-15 — approved
 
-**@MadaraUchiha-314**
+By @MadaraUchiha-314 —
 
 approved
