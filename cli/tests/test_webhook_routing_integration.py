@@ -118,6 +118,17 @@ class ServerFactory:
         self.started.append((httpd, dispatcher))
         return httpd.server_address[1], registry, tmux
 
+    @property
+    def dispatcher(self):
+        """The dispatcher behind the receiver started last.
+
+        The call returns what nearly every test wants — port, registry, tmux. A
+        test that needs a dispatch's *outcome* rather than its attempt (whether a
+        failed delivery id has been released for retry, say) needs the dispatcher
+        itself, and reaches it here instead of widening that tuple everywhere.
+        """
+        return self.started[-1][1]
+
 
 @pytest.fixture()
 def server_factory(tmp_path):
@@ -342,9 +353,14 @@ def test_delivery_error_is_isolated_and_redelivery_retries(server_factory, tmp_p
     assert (
         post_webhook(port, "issue_comment", issue_comment_payload("boom"), "e-1") == 202
     )
-    assert wait_until(lambda: len(tmux.delivers) == 1)
+    # Wait for the failure to be RECORDED, not for the paste that failed. The
+    # dispatcher releases the delivery id after the failed deliver, on its own
+    # thread, and the re-POST below is deduped away until it does — so waiting on
+    # `tmux.delivers` and sleeping over the gap is a race the loaded machine wins
+    # (issue-251).
+    assert wait_until(lambda: "e-1" not in server_factory.dispatcher.deduper)
+    assert len(tmux.delivers) == 1
     # Failure is isolated: the delivery is not marked processed...
-    time.sleep(0.2)
     found = registry.find_by_work_item(REF)
     assert found is not None and "e-1" not in found.recent_deliveries
     # ...so a redelivery of the same id is retried, not deduped away.

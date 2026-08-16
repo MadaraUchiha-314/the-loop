@@ -164,6 +164,58 @@ the-loop scenarios --format json        # machine-readable, for the harness
 - The markdown output is what the reviewer briefing / PR summary should embed when the
   change adds or alters integration behaviour.
 
+## RULE: an asynchronous test waits on the state it depends on
+
+A test that drives work onto a background thread MUST wait on **the state its next line
+needs** — never on an earlier signal that merely tends to arrive first. The two are
+different events, and which one wins is decided by how busy the machine is that minute.
+
+The distinction to hold on to is **attempt vs outcome**:
+
+| | What it is | Why it attracts the wait |
+|---|---|---|
+| **The attempt** | the call the test's double records — a spawn, a delivery, an HTTP request | it is the visible one, and it is usually already true |
+| **The outcome** | everything the worker writes afterwards — registry records, dedup releases, event-log lines, announcements, graph moves | it is what the assertion (or the *next step*) actually depends on |
+
+```python
+# WRONG — waits for the attempt, then depends on its outcome
+assert wait_until(lambda: len(tmux.delivers) == 1)
+time.sleep(0.2)                                    # <- time standing in for a signal
+post_webhook(port, ..., "e-1")                     # deduped away if the release is late
+
+# RIGHT — wait for the fact the next line needs; assert the rest underneath
+assert wait_until(lambda: "e-1" not in dispatcher.deduper)
+assert len(tmux.delivers) == 1
+```
+
+Three habits follow:
+
+- **A fixed `time.sleep` before a positive assertion is a defect**, not a safety margin:
+  no value is correct, only values that are unlucky less often. (A sleep guarding a
+  *negative* assertion — "give a would-be dispatch time to wrongly happen" — is a
+  different thing and stays.)
+- **Wait on a compound predicate when the test depends on several writes.** Two waits in
+  sequence are not the same as one wait for both.
+- **A real barrier beats a clever predicate.** Where the component offers one — draining
+  and joining its workers, closing its pool — take it, then assert everything afterwards.
+
+### Finding the shape instead of arguing about it
+
+This is a happens-before property, so no amount of reading the test proves it. Move time
+and watch what breaks: delay the writes that follow the attempt, and a test waiting on the
+wrong signal fails **every** run instead of one in three.
+
+In this repository that is a flag:
+
+```bash
+pytest --dispatch-lag=0.5 cli      # every post-spawn/post-delivery write, delayed
+```
+
+Nothing is patched unless the flag is passed. A failure under it names a test whose wait
+is one step early; the same test at lag 0 is the control. Run it when async tests are
+added, or when a flake goes hunting for its cause — a suite that only passes when it is
+fast is a suite that has not been tested. (issue-251.)
+
 ## RULE: REST APIs are contract-first OpenAPI
 
 All API specs for **RESTful APIs** are authored in the **`specs/openapi/`** folder

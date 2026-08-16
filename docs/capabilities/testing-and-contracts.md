@@ -87,6 +87,24 @@ every API is authored contract-first with docs generated from the contract).
   degradation (`graph.hook_degraded`, verdicts unchanged), and loop prevention (marked and
   unauthorized comments never release a human gate).
 
+### Asynchronous tests wait on the state they depend on (issue-251)
+
+- WHEN a test drives work onto a background thread THEN it SHALL wait on **the state its
+  next line depends on**, and SHALL NOT wait on an earlier signal that merely tends to
+  arrive first. A dispatch is an **attempt** (the spawn or delivery a test double records)
+  and an **outcome** (the registry, dedup, event-log, announcement and graph writes made
+  afterwards); the attempt is the visible one and the outcome is the one that matters.
+- A fixed `time.sleep` before a **positive** assertion or a dependent action SHALL be read
+  as a defect rather than a safety margin. A sleep guarding a **negative** assertion
+  ("nothing should have happened") is a different construct and is permitted.
+- WHERE the component under test offers a real barrier (draining and joining its workers)
+  the test SHOULD take it and assert afterwards, rather than predicate-matching its way to
+  the same point.
+- the-loop's own suite SHALL carry `pytest --dispatch-lag=<seconds>`, which delays every
+  dispatcher write that follows a spawn or a delivery so that a test waiting one step
+  early fails on **every** run instead of about one in three. It SHALL be inert unless
+  asked for, and its patches SHALL unwind per test.
+
 ### Scenario docstrings and contract-first APIs
 
 - Every integration test SHALL carry a Gherkin-syntax docstring
@@ -112,6 +130,7 @@ every API is authored contract-first with docs generated from the contract).
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-251 | Waiting became a rule rather than a habit (2026-08-16): an asynchronous test waits on the state its next line depends on, not on the attempt that precedes it, and a fixed sleep before a positive assertion is a defect — with `pytest --dispatch-lag=<seconds>` shipped so the shape is found by running the suite rather than by reading it | [spec](../specs/issue-251/), [decision-091](../decisions/decision-091.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/251) |
 | issue-217 | The process itself became integration-tested (2026-08-12): a scenario-driven e2e suite drives one work item per scenario through the shipped outer loop against a fixture-playback agent, asserting process conformance (node trace with skips distinct from passes, label trail, locks before implementation, ordered event subsequence, execution-log sections) — seven scenarios covering the happy path with the inner-loop seam, trivial-tier declared skips, ask/reply with the fail-closed dead-pane refusal, gate rejection, review rejection looping back, GitHub-outage degradation, and loop prevention; new scenarios are fixture sets kept in lockstep with named tests by a consistency test | [spec](../specs/issue-217/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/217) |
 | issue-163 | Testing became part of the process rather than an assumption: the `testing-plan.md` artifact and the `test-planning` / `verification` nodes, the test-type matrix with `n/a`-with-a-reason, the declared-not-managed verification environment, and committed, redacted evidence (screenshots and GIFs for UI flows) | [spec](../specs/issue-163/), [decision-060](../decisions/decision-060.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/163) |
 | issue-165 | Textual evidence is markdown (`.md`), never `.txt` — titled, one section per command, output in fenced blocks, linted like every other markdown file | [spec](../specs/issue-165/), PR #168 |
