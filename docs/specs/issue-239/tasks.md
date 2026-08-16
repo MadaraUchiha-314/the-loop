@@ -24,7 +24,7 @@ red→green transition recorded as evidence.
 
 ### The service — `GET /api/v1/stream`
 
-- [ ] 1. `service.stream` config: schema entry and resolver
+- [x] 1. `service.stream` config: schema entry and resolver
   - Add the `service.stream` object to `cli/the_loop/schemas/cli-config.schema.json` —
     `enabled` (default true), `maxSubscribers` (default 8, minimum 1), `keepAliveSeconds`
     (default 15, minimum 1), `additionalProperties: false`, shaped after `service.mcp`.

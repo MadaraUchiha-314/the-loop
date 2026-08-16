@@ -1,7 +1,7 @@
 ---
 type: execution-log
 workItem: "github:MadaraUchiha-314/the-loop#239"
-phase: tasks-breakdown           # not-started | brainstorming | requirements-definition | design | test-planning | tasks-breakdown | implementation | verification | needs-review | complete
+phase: implementation            # not-started | brainstorming | requirements-definition | design | test-planning | tasks-breakdown | implementation | verification | needs-review | complete
 status: in-progress          # in-progress | complete
 # repos:                     # OPTIONAL (issue-183). The CONTRIBUTING repositories this
 #   - <owner>/<repo>         #   work item raises pull requests in — one inner loop each,
@@ -32,7 +32,7 @@ status: in-progress          # in-progress | complete
 | design | 2026-08-16 | @MadaraUchiha-314 (PR #244) | SSE over WebSocket, decided on CORS parity. Two UI prototypes under `design/`. Risk tier 4 — the CLI config schema changes, so the security review needs a named human sign-off. |
 | test-planning | 2026-08-16 | @MadaraUchiha-314 (PR #244) | 13 rows, 10 in scope. R1.6's CORS parity is deliberately *not* automated — a test client cannot prove it; T12 does it from a browser. |
 | tasks-breakdown | 2026-08-16 | n/a — the plan's human read is `human-approval` | 16 tasks, six of them startable at once: the service chain and the UI chain share no file. |
-| implementation |  |  |  |
+| implementation | 2026-08-16 |  | 16 tasks; TDD throughout. |
 | verification |  |  |  |
 | needs-review |  |  |  |
 | complete |  |  |  |
@@ -133,6 +133,28 @@ status: in-progress          # in-progress | complete
   filed [#247](https://github.com/MadaraUchiha-314/the-loop/issues/247). Not fixed inside
   this PR: it is an unrelated harness change, and every change is a work item with a
   ticket.
+
+### 2026-08-16 17:35 UTC — task 1 done: `service.stream` config
+
+- **Phase:** implementation
+- **Did:** `service.stream` (`enabled`, `maxSubscribers`, `keepAliveSeconds`) in both
+  copies of `cli-config.schema.json` — they are byte-compared by
+  `test_config_schema_parity.py`, so `cp` is the only correct way to move one — plus
+  `stream_config()` in `api/config.py` and the three leaves documented in
+  `docs/config/cli/service-options.md` (`test_docs_parity.py` P4 gates that).
+  The cap **clamps up to 1** rather than raising: a 0 would refuse every connection and an
+  "unlimited" fallback would hand abuse case 1 a configuration switch.
+- **Checkpoint/tests:** red → `ImportError: cannot import name 'DEFAULT_STREAM_MAX_SUBSCRIBERS'`;
+  green → 9 passed in `test_api_stream.py`, 37 passed across the parity tests.
+- **Next:** task 2 — the log tailer and the cursor, in a new `cli/the_loop/api/stream.py`.
+- **Blockers:** none.
+- **Noted:** four tests fail on `origin/main` unchanged by this work —
+  `test_core_repo.py::test_critics_lists_configured_entries_without_argv`,
+  `test_critics.py::test_list_reports_availability`,
+  `test_harness_gate.py::…does_not_escape_the_temp_dir`,
+  `test_poll_daemon_integration.py::test_start_detaches_a_poller…`. Confirmed pre-existing
+  by running them on a stashed tree. Not this work item's to fix; recorded so the
+  verification evidence is not read as a regression.
 
 ## Verification results
 
