@@ -156,6 +156,45 @@ status: in-progress          # in-progress | complete
   by running them on a stashed tree. Not this work item's to fix; recorded so the
   verification evidence is not read as a regression.
 
+### 2026-08-16 18:05 UTC — tasks 2-7 done: the service serves the stream
+
+- **Phase:** implementation
+- **Did:** `cli/the_loop/api/stream.py` (tailer, cursor, broker, transcript watch, the SSE
+  generator), the `GET /api/v1/stream` route, four `EVENT_TYPES`, and the endpoint in the
+  OpenAPI contract. `core.sessions.get_transcript` was split so the path derivation —
+  and every fail-closed refusal issue-209 wrote — is reused by the watch rather than
+  copied into it.
+- **Checkpoint/tests:** red on every task before green. `test_api_stream.py` 31 passed,
+  `test_stream_integration.py` 14 passed (16s), full Python suite 2148 passed.
+  `make lint` clean, `make format` applied.
+- **Next:** the control-plane chain — tasks 8, 9, 10 are three independent roots.
+- **Blockers:** none.
+- **Three findings worth the reviewer's time:**
+  1. **The testing plan was wrong about T3 and is replanned.** Starlette's `TestClient`
+     collects the whole response body before returning, so against an endless
+     `text/event-stream` it never returns — the first draft of the integration file hung
+     for five minutes. The suite now boots real uvicorn on an ephemeral port. That is a
+     better test, not a workaround: headers-before-body, one-frame-at-a-time and
+     refuse-while-held are all invisible to a buffering client.
+  2. **Two of those tests were briefly vacuous.** `eventlog.emit` is a module-level no-op
+     until `configure` is called, and only `serve.main` calls it — so the `api.request`
+     exclusion test was asserting against an empty log. The fixture now configures the
+     log as `serve.main` does, and the test asserts the records were really written
+     before asserting they were excluded.
+  3. **`Request.is_disconnected` was removed from the stream loop.** It reads the same
+     ASGI `receive` channel Starlette's own `listen_for_disconnect` consumes for a
+     `StreamingResponse`. It was not the cause of the symptom I first blamed it for (that
+     was a test abandoning `iter_text()` mid-iteration, which closes the connection), but
+     two consumers of one channel is a race worth not having.
+- **Known pre-existing failures, ticketed not fixed:** five tests fail on this tree.
+  Four fail identically on `origin/main`
+  (`test_core_repo`, `test_critics`, `test_harness_gate`, `test_poll_daemon_integration`).
+  The fifth, `test_control_integration::test_a_labelled_work_item_does_not_spawn_until_it_is_started`,
+  is **load-flaky**: it waits on the spawn and asserts on the registration. Isolated it
+  passed 15/15; after a file that does nothing but burn 16 seconds of wall-clock — no
+  the-loop code involved — it failed 1/6. Filed as
+  [#251](https://github.com/MadaraUchiha-314/the-loop/issues/251).
+
 ## Verification results
 
 > **Only when this work item declared `test-planning` away** (issue-179). With a

@@ -40,7 +40,7 @@ red→green transition recorded as evidence.
   - _Test:_ T1 — `uv run --project cli python -m pytest -q cli -k stream_config` (red→green),
     plus `uv run python scripts/validate_config.py`
 
-- [ ] 2. The log tailer and the cursor
+- [x] 2. The log tailer and the cursor
   - New `cli/the_loop/api/stream.py`. A `LogTail` that owns an offset, reads only whole
     `\n`-terminated lines from it, buffers a partial trailing line until the next read, and
     yields parsed records with the offset **after** each record as its cursor.
@@ -55,7 +55,7 @@ red→green transition recorded as evidence.
   - _Test:_ T1 — `pytest -q cli -k "tail or cursor"` (red→green). Write the
     partial-trailing-line case and the `api.request`-excluded case before the reader.
 
-- [ ] 3. `StreamBroker`: one tailer task, per-subscriber bounded queues
+- [x] 3. `StreamBroker`: one tailer task, per-subscriber bounded queues
   - Subscriber registry with a capacity check at registration; `asyncio.Queue(maxsize=256)`
     per subscriber; one `asyncio.Task` ticking every 0.5s that reads the log **once** and
     fans out to every matching queue.
@@ -70,7 +70,7 @@ red→green transition recorded as evidence.
   - _Test:_ T3, T9 — `pytest -q cli/tests/test_stream_integration.py -k "broker or abuse"`
     (red→green); the negative tests are capacity-refusal and queue-overflow-desyncs.
 
-- [ ] 4. The transcript watcher
+- [x] 4. The transcript watcher
   - Inside the broker: for each ref a subscriber asked to watch, stat the transcript file
     resolved through the same path logic `core.sessions.get_transcript` uses, and emit a
     `transcript` frame carrying `{ref, totalLines}` when it grows. No content on the wire.
@@ -81,7 +81,7 @@ red→green transition recorded as evidence.
   - _Requirements:_ R2.3
   - _Test:_ T3 — `pytest -q cli/tests/test_stream_integration.py -k transcript` (red→green)
 
-- [ ] 5. The route: `GET /api/v1/stream`
+- [x] 5. The route: `GET /api/v1/stream`
   - `async def` — not `def`. A synchronous generator would hold an anyio threadpool slot
     for the life of the connection; this is the mechanism behind R5.1, so the test asserts
     the REST surface still answers with the stream at capacity.
@@ -97,7 +97,7 @@ red→green transition recorded as evidence.
   - _Test:_ T3, T8, T9 — `pytest -q cli/tests/test_stream_integration.py` (red→green), with
     the Gherkin scenarios named in `testing-plan.md` § Scenarios
 
-- [ ] 6. Observability: four `EVENT_TYPES` and their emission points
+- [x] 6. Observability: four `EVENT_TYPES` and their emission points
   - `stream.subscribed`, `stream.refused`, `stream.desync`, `stream.disconnected`, with
     the field lists `design.md` § Data models gives, registered in
     `cli/the_loop/eventlog.py` and emitted from the route and the broker.
@@ -107,7 +107,7 @@ red→green transition recorded as evidence.
   - _Test:_ T3 — `pytest -q cli -k "event_types or stream_events"`; assert every emitted
     type is in `EVENT_TYPES`, which is the check that catches the next one somebody forgets
 
-- [ ] 7. The OpenAPI contract
+- [x] 7. The OpenAPI contract
   - Describe `streamEvents` in `docs/api-specs/openapi/the-loop.v1.yaml`: the `GET`, its
     two query parameters, the `text/event-stream` response, the `log` / `transcript` /
     `desync` frame schemas, and the `400` / `404` / `503` responses.

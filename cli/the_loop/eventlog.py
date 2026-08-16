@@ -504,6 +504,32 @@ EVENT_TYPES: Dict[str, str] = {
         "people, hosts and binaries, and this trail is as readable as the event "
         "log is. issue-222."
     ),
+    # -- the server-push stream (source: service) — issue-239 ------------------
+    "stream.subscribed": (
+        "A client opened GET /api/v1/stream (subscribers: how many are now open, "
+        "work_items / transcripts: the filters it asked for, cursor: where it "
+        "resumed from, or absent for a fresh connection). The answer to 'who is "
+        "watching this workstation?'."
+    ),
+    "stream.refused": (
+        "A stream connection was refused and never accepted (reason: disabled | "
+        "at-capacity | bad-cursor | bad-filter, subscribers). `at-capacity` means "
+        "`service.stream.maxSubscribers` is reached — the bound that keeps an open "
+        "dashboard from starving the REST surface; the others are caller errors, "
+        "refused rather than widened to an unfiltered stream."
+    ),
+    "stream.desync": (
+        "A subscriber was told to refetch everything rather than served a partial "
+        "history (reason: truncated | rotated | replay-window | queue-overflow). "
+        "Not an error — the self-healing path — but the signal that the log was "
+        "rotated under the service, or that a client is reading slower than the "
+        "workstation emits."
+    ),
+    "stream.disconnected": (
+        "A subscriber's connection ended (frames: how many were delivered, "
+        "reason: client | shutdown). The slot is released, and the tailer stops "
+        "when the last subscriber leaves."
+    ),
     "service.started": "The control-plane API service came up (host, port).",
     "service.stopped": "The control-plane API service shut down.",
     "restart.scheduled": (
