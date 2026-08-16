@@ -1,3 +1,9 @@
+## v10.4.0 (2026-08-16)
+
+### Feat
+
+- **issue-242**: the-loop diagnoses its own failures and files the bug itself (#257)
+
 ## v10.3.1 (2026-08-16)
 
 ### Fix
