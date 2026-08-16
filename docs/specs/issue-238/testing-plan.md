@@ -3,7 +3,7 @@ type: testing-plan
 phase: test-planning
 workItem: "github:MadaraUchiha-314/the-loop#238"
 status: approved             # draft | in-review | approved
-approvedBy: []
+approvedBy: ["@MadaraUchiha-314"]  # PR #241, 2026-08-16
 overrides: {}
 ---
 
@@ -117,3 +117,9 @@ surfaces; if one does, the capture is not committed and the row says so.
 
 > Appended by the-loop's `record-feedback` hook when a human gate approves with
 > comments (issue-109). Append-only and attributed.
+
+### 2026-08-15 — approved
+
+**@MadaraUchiha-314**
+
+approved

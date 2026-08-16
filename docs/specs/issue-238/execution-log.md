@@ -201,3 +201,8 @@ under `<specDir>/<id>/evidence/`.
 
 - **Node:** test-planning
 - **Boundary:** entry
+
+### 2026-08-15 — entry tasks-breakdown
+
+- **Node:** tasks-breakdown
+- **Boundary:** entry
