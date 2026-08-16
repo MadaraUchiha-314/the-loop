@@ -1,3 +1,9 @@
+## v10.2.0 (2026-08-16)
+
+### Feat
+
+- **issue-230**: readable session streams, a sessions tree, and a chat bar in the control plane (#237)
+
 ## v10.1.0 (2026-08-15)
 
 ### Feat
