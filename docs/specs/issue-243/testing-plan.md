@@ -76,22 +76,43 @@ overrides: {}
 
 ## Verification activities
 
-- [ ] T1 — `uv run pytest cli/tests/test_excerpt.py`
-- [ ] T2 — `uv run pytest cli/tests/test_excerpt.py`
-- [ ] T3 — `uv run pytest cli/tests/test_excerpt.py`
-- [ ] T4 — `uv run pytest cli/tests/test_excerpt_integration.py`
-- [ ] T5 — `uv run pytest cli/tests/test_excerpt_integration.py`
-- [ ] T6 — `uv run pytest cli/tests/test_excerpt.py -k abuse`
-- [ ] T7 — `uv run pytest`
-- [ ] T8 — `uv run python docs/specs/issue-243/evidence/measure_prompt.py`
+- [x] T1 — `uv run pytest cli/tests/test_excerpt.py`
+- [x] T2 — `uv run pytest cli/tests/test_excerpt.py`
+- [x] T3 — `uv run pytest cli/tests/test_excerpt.py`
+- [x] T4 — `uv run pytest cli/tests/test_excerpt_integration.py`
+- [x] T5 — `uv run pytest cli/tests/test_excerpt_integration.py`
+- [x] T6 — `uv run pytest cli/tests/test_excerpt.py -k abuse`
+- [x] T7 — `uv run pytest`
+- [x] T8 — `uv run python docs/specs/issue-243/evidence/measure_prompt.py`
 
 ## Verification results
 
-*Not yet executed.*
-
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| | | | |
+| T1–T3, T6 (red) | `uv run pytest cli/tests/test_excerpt.py -q`, against the pre-change distiller | fail — 21 failed, 6 passed (the six pass in both trees; the file says which and why) | [`red.md`](evidence/red.md) |
+| T4, T5 (red) | `uv run pytest cli/tests/test_excerpt_integration.py -q`, with `08b7bd6:excerpt.py` restored under the wired dispatcher | fail — 4 failed | [`unit-and-integration.md`](evidence/unit-and-integration.md) |
+| T1, T2, T3, T6 | `uv run pytest cli/tests/test_excerpt.py -q` | pass — 27 passed | [`unit-and-integration.md`](evidence/unit-and-integration.md) |
+| T6 | `uv run pytest cli/tests/test_excerpt.py -k abuse -q` | pass — 8 passed, 19 deselected | [`unit-and-integration.md`](evidence/unit-and-integration.md) |
+| T4, T5 | `uv run pytest cli/tests/test_excerpt_integration.py -q` | pass — 4 passed | [`unit-and-integration.md`](evidence/unit-and-integration.md) |
+| T7 | `uv run pytest cli -q` | pass — 2155 passed, 1 skipped | [`unit-and-integration.md`](evidence/unit-and-integration.md) |
+| T7 | `ruff check`, `ruff format --check`, `pyright cli`, `markdownlint-cli2 "**/*.md"`, `validate_config.py` | pass — clean | [`lint-and-typecheck.md`](evidence/lint-and-typecheck.md) |
+| T8 | `uv run python docs/specs/issue-243/evidence/measure_prompt.py` | measured — excerpt 4,014 → 203 chars (−94.9%), prompt 6,676 → 2,865 (−57.1%), and the excerpt parses | [`baseline.md`](evidence/baseline.md), [`after.md`](evidence/after.md) |
+
+**Not executed:** none. Every activity in the checklist ran.
+
+**Corrected after execution:** two numbers the specs carried before the code existed. The
+distilled excerpt is **203** characters, not the ~238 `design.md` estimated (the estimate
+counted a field the design later dropped — see below), and the integration suite is **4**
+tests, not the 5 the plan sketched: ingress parity for a conversation comment and for the
+review surfaces fit one test each rather than three.
+
+**Changed during implementation:** the `issue` and `pull_request` containers do **not**
+carry an `author`. The design said every container would; the first run of
+`test_a_labeled_issue_carries_the_entity_and_the_label_that_is_the_event` showed what that
+means in practice — GitHub's `issue.user` is whoever *opened* the item, not who acted, so
+carrying it as `author` invites a session to reply to the wrong person. Those events carry
+a top-level `actor` (from `router.event_actor`) and nothing else; `design.md` records the
+rule.
 
 ## Residual risk
 
