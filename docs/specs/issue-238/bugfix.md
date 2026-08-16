@@ -2,7 +2,7 @@
 type: bugfix
 phase: requirements-definition
 workItem: "github:MadaraUchiha-314/the-loop#238"
-status: draft                # draft | in-review | approved
+status: approved             # draft | in-review | approved
 approvedBy: []
 severity: low                # low | medium | high | critical
 collaborators: [engineer]

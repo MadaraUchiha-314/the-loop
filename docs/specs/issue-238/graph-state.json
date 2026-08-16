@@ -24,7 +24,7 @@
       "outcome": "",
       "enteredAt": "2026-08-16T01:41:57+00:00",
       "exitedAt": "",
-      "lastBlock": "",
+      "lastBlock": "`validate-artifacts` did not pass:\n- artifact is not locked \u2014 front-matter says status: draft, expected status: approved (docs/specs/issue-238/bugfix.md)",
       "forced": false
     }
   },
@@ -192,7 +192,12 @@
   "forced": [],
   "parked": null,
   "session": null,
-  "completions": {},
+  "completions": {
+    "requirements-definition": {
+      "at": "2026-08-16T01:46:37+00:00",
+      "by": "the-loop-session"
+    }
+  },
   "skips": {
     "brainstorming": {
       "via": "selection",
