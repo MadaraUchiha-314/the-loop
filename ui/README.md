@@ -66,6 +66,7 @@ Nothing here is a new endpoint. The interesting part is the **join**, which live
 |---|---|
 | Dashboard | `GET /work-items` + `GET /sessions` + `GET /attention`, then one `POST /graph/check` per loop |
 | Work item | the same, plus `GET /events?workItem=…` |
+| Sessions | the board's join again, as a sidebar tree (outer session + one child per PR inner loop; ad-hoc items treeless), plus `GET /sessions/transcript?ref=…` for the selected stream and `POST /sessions/reply` from its chat bar (issue-230) |
 | Attention | `GET /attention`, unioned with the parked gates from the graph reports |
 | Events | `GET /events` |
 | Chrome | `GET /daemons` |

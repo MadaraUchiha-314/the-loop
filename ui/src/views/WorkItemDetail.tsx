@@ -21,18 +21,18 @@ import {
   levelTag,
   questionOf,
   relativeTime,
+  sessionState,
   stampOf,
   timeOf,
   transcriptPath,
-  transcriptTurns,
   type PullRequestView,
-  type TranscriptTurn,
   type WorkItemView,
 } from "../api/model.ts";
 import type { EventRecord, SessionVerb } from "../api/types.ts";
 import { Blueprint } from "../components/Blueprint.tsx";
 import { NodeRail } from "../components/NodeRail.tsx";
 import { SessionDot, sessionLabel } from "../components/SessionDot.tsx";
+import { ChatBar, TranscriptView } from "../components/Transcript.tsx";
 import { useApi } from "../state/ApiContext.tsx";
 import { hrefFor } from "../state/route.ts";
 import { useAsync } from "../state/useAsync.ts";
@@ -239,9 +239,7 @@ export function WorkItemDetail({ view, title, onChanged }: DetailProps) {
             {transcript.data.entries.length === 0 ? (
               <div className="lp-empty">The transcript exists but holds no entries yet.</div>
             ) : (
-              transcriptTurns(transcript.data.entries).map((turn, index) => (
-                <TurnRow key={`${turn.time}-${index}`} turn={turn} />
-              ))
+              <TranscriptView entries={transcript.data.entries} />
             )}
           </>
         ) : (
@@ -267,6 +265,11 @@ export function WorkItemDetail({ view, title, onChanged }: DetailProps) {
           </>
         )}
       </Blueprint>
+
+      {/* The chat bar delivers into the *viewed* session's pane — the outer
+          loop's when the work-item tab is selected, that PR's when an inner
+          loop's is (issue-230). */}
+      <ChatBar refFor={traceRef} state={sessionState(traceSession)} onSent={onChanged} />
 
       <h2 className="lp-h2">Events for this item</h2>
       {events.error ? (
@@ -405,37 +408,6 @@ const KIND_CLASS: Record<string, string> = {
   poll: "",
   "gh-webhook": "",
 };
-
-/**
- * One transcript turn: the projected kind/time in the left rail, then the
- * turn's text and its tool invocations — the row shape (and the styles) the
- * trace panel was designed with in issue-207, filled with real data now that
- * the transcript route serves it.
- */
-function TurnRow({ turn }: { turn: TranscriptTurn }) {
-  const kindClass = turn.kind === "assistant" ? "accent" : turn.kind === "malformed" ? "hot" : "";
-  return (
-    <div className="lp-trace-entry">
-      <div className={`lp-trace-kind ${kindClass}`.trim()}>
-        {turn.kind}
-        {turn.time ? <div className="lp-trace-ts">{timeOf(turn.time)}</div> : null}
-      </div>
-      <div className="lp-trace-main">
-        {turn.text ? <div className="lp-trace-text">{turn.text}</div> : null}
-        {turn.tools.length > 0 ? (
-          <div className="lp-trace-tools">
-            {turn.tools.map((tool, index) => (
-              <div className="lp-trace-tool" key={`${tool.name}-${index}`}>
-                <span className="lp-trace-tool-name">{tool.name}</span>
-                <span className="lp-trace-tool-detail">{tool.detail}</span>
-              </div>
-            ))}
-          </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
 
 function TraceEntry({ event }: { event: EventRecord }) {
   return (

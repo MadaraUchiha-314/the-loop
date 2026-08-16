@@ -190,6 +190,136 @@ def test_reply_to_a_paused_session_is_400(tmp_path, fake_runner):
     assert not fake_runner.delivered
 
 
+PR_REF = "github:octo/repo#12"
+
+
+def _register_with_pr(tmp_path, pr_status="active"):
+    """A work-item record holding a PR endpoint with its own pane (issue-172)."""
+    layout = layout_from_config(_config(tmp_path))
+    registry = SessionRegistry(layout.local_dir)
+    registry.register(
+        Session(
+            work_item=WorkItemRef.parse(REF),
+            harness="claude",
+            harness_session_id="sess-1",
+            cwd=str(tmp_path),
+            tmux_target="loop-octo-repo-7",
+            pull_requests=[
+                Session(
+                    work_item=WorkItemRef.parse(PR_REF),
+                    harness="claude",
+                    harness_session_id="sess-pr",
+                    cwd=str(tmp_path),
+                    status=pr_status,
+                    tmux_target="loop-octo-repo-12",
+                )
+            ],
+        )
+    )
+    return registry
+
+
+def test_reply_to_a_pr_ref_lands_in_the_pr_endpoints_pane(
+    tmp_path, fake_runner, no_ticket_comment
+):
+    """
+    Feature: the chat bar reaches inner loops
+      Scenario: a reply addressed to a pull request delivers into that PR's pane
+        Given a work-item record holding a PR endpoint with its own tmux session
+        When the operator POSTs /api/v1/sessions/reply with the PR's ref
+        Then the text is delivered into the PR endpoint's pane, not the record's
+        And the session.reply_sent event names the PR's ref
+
+    Requirement: docs/specs/issue-230/requirements.md R4.2
+    """
+    _register_with_pr(tmp_path)
+    log = _capture_log(tmp_path)
+    client = TestClient(create_app(_config(tmp_path)))
+
+    response = client.post(
+        "/api/v1/sessions/reply", json={"ref": PR_REF, "text": "Fix the lint."}
+    )
+
+    assert response.status_code == 200
+    ref, prompt = fake_runner.delivered[0]
+    assert ref == PR_REF
+    assert prompt.endswith("Fix the lint.")
+    events = [json.loads(line) for line in log.read_text().splitlines()]
+    sent = [e for e in events if e["event"] == "session.reply_sent"]
+    assert sent and sent[0]["work_item"] == PR_REF
+
+
+def test_reply_to_a_closed_pr_endpoint_falls_back_to_the_records_session(
+    tmp_path, fake_runner, no_ticket_comment
+):
+    """
+    Feature: the chat bar reaches inner loops
+      Scenario: a PR whose endpoint closed with the pull request falls back
+        Given a PR endpoint that was closed while the work item stays live
+        When the operator POSTs /api/v1/sessions/reply with the PR's ref
+        Then delivery targets the work item's own session — the same fallback
+          dispatch applies — rather than a 404
+
+    Requirement: docs/specs/issue-230/requirements.md R4.2
+    """
+    _register_with_pr(tmp_path, pr_status="closed")
+    client = TestClient(create_app(_config(tmp_path)))
+
+    response = client.post(
+        "/api/v1/sessions/reply", json={"ref": PR_REF, "text": "Fix the lint."}
+    )
+
+    assert response.status_code == 200
+    ref, _prompt = fake_runner.delivered[0]
+    assert ref == REF
+
+
+def test_reply_to_a_pr_of_a_paused_record_is_still_400(tmp_path, fake_runner):
+    """
+    Feature: the reply route stays fail-closed
+      Scenario: a paused work item holds delivery for its PR endpoints too
+        Given a paused work-item record holding an active PR endpoint
+        When the operator POSTs /api/v1/sessions/reply with the PR's ref
+        Then the response is 400 telling them to resume first, and nothing is delivered
+
+    Requirement: docs/specs/issue-230/requirements.md R4.3
+    """
+    registry = _register_with_pr(tmp_path)
+    registry.pause(WorkItemRef.parse(REF))
+    client = TestClient(create_app(_config(tmp_path)))
+
+    response = client.post(
+        "/api/v1/sessions/reply", json={"ref": PR_REF, "text": "Fix the lint."}
+    )
+
+    assert response.status_code == 400
+    assert "paused" in response.json()["detail"]
+    assert not fake_runner.delivered
+
+
+def test_reply_to_an_unknown_pr_ref_is_still_404(tmp_path, fake_runner):
+    """
+    Feature: the reply route stays fail-closed
+      Scenario: a PR no record owns is refused without spawning
+        Given a registry whose records hold no endpoint for the ref
+        When the operator POSTs /api/v1/sessions/reply with that ref
+        Then the response is 404 and nothing was delivered or spawned
+
+    Requirement: docs/specs/issue-230/requirements.md R4.3
+    """
+    _register(tmp_path)
+    client = TestClient(create_app(_config(tmp_path)))
+
+    response = client.post(
+        "/api/v1/sessions/reply",
+        json={"ref": "github:octo/repo#999", "text": "hello?"},
+    )
+
+    assert response.status_code == 404
+    assert "never spawns" in response.json()["detail"]
+    assert not fake_runner.delivered
+
+
 def test_empty_or_malformed_replies_are_400(tmp_path, fake_runner):
     """
     Feature: the reply route is fail-closed

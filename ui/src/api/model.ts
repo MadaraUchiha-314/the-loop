@@ -120,65 +120,200 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** One render-ready row of the trace panel, projected from a transcript entry. */
-export interface TranscriptTurn {
-  /** The entry's `type` (`user`, `assistant`, …), `tool result`, or `malformed`. */
-  kind: string;
+/** One tool invocation, with the result that answered it folded in. */
+export interface ToolCallView {
+  /** The `tool_use` block's id — what pairs a result to this call; may be "". */
+  id: string;
+  name: string;
+  /** One human-readable line of the input: the command, the path, the pattern. */
+  summary: string;
+  /** The full input, pretty-printed, for the expanded view. */
+  input: string;
+  /** The paired `tool_result`'s text; "" until (unless) one arrives. */
+  result: string;
+  /** The paired result's `is_error`. */
+  isError: boolean;
+}
+
+/** One render-ready row of the stream, projected from transcript entries. */
+export interface ThreadRow {
+  /** What the row is; drives the row treatment. */
+  kind: "user" | "assistant" | "tool result" | "meta" | "malformed";
   /** The entry's timestamp, when it carried one. */
   time: string;
-  /** The turn's text — every `text` block joined; the raw line for `malformed`. */
+  /** User/assistant text; an orphan result's text; the raw malformed line. */
   text: string;
-  /** Tool invocations in this turn (`tool_use` blocks), in order. */
-  tools: { name: string; detail: string }[];
+  /** Assistant `thinking` blocks joined — rendered collapsed. */
+  thinking: string;
+  /** A meta row's label: the entry's `type` (`summary`, `system`, …). */
+  label: string;
+  /** Tool invocations in this turn, results folded in. */
+  tools: ToolCallView[];
 }
 
 /**
- * Claude Code JSONL entries → rows the trace panel can draw.
+ * The one line that names what a tool call did, per tool — claude.ai/code's
+ * collapsed-row treatment. Data, not a switch: an unknown tool falls back to a
+ * compact rendering of its input, so this table may lag the harness safely.
+ */
+const TOOL_SUMMARY_KEYS: Record<string, string[]> = {
+  Bash: ["command"],
+  Read: ["file_path"],
+  Write: ["file_path"],
+  Edit: ["file_path"],
+  NotebookEdit: ["notebook_path"],
+  Grep: ["pattern"],
+  Glob: ["pattern"],
+  Task: ["description"],
+  Agent: ["description"],
+  WebFetch: ["url"],
+  WebSearch: ["query"],
+  Skill: ["skill"],
+};
+
+function toolSummary(name: string, input: unknown): string {
+  if (isRecord(input)) {
+    for (const key of TOOL_SUMMARY_KEYS[name] ?? []) {
+      const value = input[key];
+      if (typeof value === "string" && value !== "") return value;
+    }
+  }
+  const compact = input === undefined ? "" : (JSON.stringify(input) ?? "");
+  return compact === "{}" ? "" : compact;
+}
+
+/** The text a `tool_result`'s `content` carries — a string, or `text` blocks. */
+function resultText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  const texts: string[] = [];
+  for (const block of content as unknown[]) {
+    if (isRecord(block) && block["type"] === "text" && typeof block["text"] === "string") texts.push(block["text"]);
+  }
+  return texts.join("\n");
+}
+
+/**
+ * Claude Code JSONL entries → the rows the stream draws.
  *
  * The line format is the harness's own, so this is a projection, not a parser:
  * it reads the fields it knows (`type`, `timestamp`, `message.content` as a
- * string or as `text`/`tool_use`/`tool_result` blocks), tolerates anything it
- * does not, and never throws on a shape that drifted — an unknown entry
- * degrades to its `type` with empty text, and a server-flagged `malformed`
- * line surfaces as its own kind rather than disappearing.
+ * string or as `text`/`thinking`/`tool_use`/`tool_result` blocks), tolerates
+ * anything it does not, and never throws on a shape that drifted (issue-230).
+ *
+ * The reshaping over the flat file: a `tool_result` entry is **folded into the
+ * call it answers** — matched by `tool_use_id` against the `tool_use` blocks
+ * already projected — and emits no row of its own, because the harness feeding
+ * output back is not a turn. A result whose call fell outside the served tail
+ * still renders, as its own `tool result` row; an entry with no derivable text
+ * (`summary`, `system`, unknown shapes) renders as a labelled `meta` row.
+ * Nothing projects to a blank row — that was the reported bug.
  */
-export function transcriptTurns(entries: TranscriptEntry[]): TranscriptTurn[] {
-  return entries.map((entry) => {
+const row = (partial: Partial<ThreadRow> & Pick<ThreadRow, "kind">): ThreadRow => ({
+  time: "",
+  text: "",
+  thinking: "",
+  label: "",
+  tools: [],
+  ...partial,
+});
+
+export function transcriptThread(entries: TranscriptEntry[]): ThreadRow[] {
+  const rows: ThreadRow[] = [];
+  // Calls awaiting their result, by tool_use id — across rows, since the
+  // result always arrives in a later entry than its call.
+  const pending = new Map<string, ToolCallView>();
+
+  for (const entry of entries) {
     const malformed = entry["malformed"];
-    if (typeof malformed === "string") return { kind: "malformed", time: "", text: malformed, tools: [] };
+    if (typeof malformed === "string") {
+      rows.push(row({ kind: "malformed", text: malformed }));
+      continue;
+    }
     const time = typeof entry["timestamp"] === "string" ? entry["timestamp"] : "";
-    const kind = typeof entry["type"] === "string" && entry["type"] !== "" ? entry["type"] : "entry";
+    const type = typeof entry["type"] === "string" && entry["type"] !== "" ? entry["type"] : "entry";
     const message = entry["message"];
     if (!isRecord(message)) {
-      // Not a turn (e.g. a `summary` line) — show what text it does carry.
+      // Not a turn (a `summary` line, harness bookkeeping) — a labelled meta
+      // row with whatever text it does carry.
       const summary = entry["summary"];
-      return { kind, time, text: typeof summary === "string" ? summary : "", tools: [] };
+      rows.push(row({ kind: "meta", time, label: type, text: typeof summary === "string" ? summary : "" }));
+      continue;
     }
+
     const content = message["content"];
     const texts: string[] = [];
-    const tools: { name: string; detail: string }[] = [];
-    let sawToolResult = false;
-    if (typeof content === "string") texts.push(content);
+    const thinking: string[] = [];
+    const tools: ToolCallView[] = [];
+    const orphanResults: { text: string; isError: boolean }[] = [];
+    if (typeof content === "string" && content !== "") texts.push(content);
     if (Array.isArray(content)) {
       for (const block of content as unknown[]) {
         if (!isRecord(block)) continue;
-        if (block["type"] === "text" && typeof block["text"] === "string") texts.push(block["text"]);
+        // Empty blocks are dropped, not collected: a row whose only content
+        // is "" would render blank — the very bug this projection removes.
+        if (block["type"] === "text" && typeof block["text"] === "string" && block["text"] !== "") {
+          texts.push(block["text"]);
+        }
+        if (block["type"] === "thinking" && typeof block["thinking"] === "string" && block["thinking"] !== "") {
+          thinking.push(block["thinking"]);
+        }
         if (block["type"] === "tool_use" && typeof block["name"] === "string") {
           const input = block["input"];
-          tools.push({ name: block["name"], detail: input === undefined ? "" : (JSON.stringify(input) ?? "") });
+          const call: ToolCallView = {
+            id: typeof block["id"] === "string" ? block["id"] : "",
+            name: block["name"],
+            summary: toolSummary(block["name"], input),
+            input: input === undefined ? "" : (JSON.stringify(input, null, 2) ?? ""),
+            result: "",
+            isError: false,
+          };
+          tools.push(call);
+          if (call.id) pending.set(call.id, call);
         }
-        if (block["type"] === "tool_result") sawToolResult = true;
+        if (block["type"] === "tool_result") {
+          const text = resultText(block["content"]);
+          const isError = block["is_error"] === true;
+          const id = typeof block["tool_use_id"] === "string" ? block["tool_use_id"] : "";
+          const call = id ? pending.get(id) : undefined;
+          if (call) {
+            call.result = text;
+            call.isError = isError;
+            pending.delete(id);
+          } else {
+            // The call this answers fell outside the served tail — still
+            // worth a row of its own, never a blank (the reported bug).
+            orphanResults.push({ text, isError });
+          }
+        }
       }
     }
-    // A user entry that only carries tool results is the harness feeding
-    // output back, not the human typing — label it as what it is.
-    return {
-      kind: sawToolResult && texts.length === 0 && tools.length === 0 ? "tool result" : kind,
-      time,
-      text: texts.join("\n"),
-      tools,
-    };
-  });
+
+    for (const orphan of orphanResults) {
+      rows.push(row({ kind: "tool result", time, text: orphan.text || "(no output)" }));
+    }
+    if (texts.length === 0 && thinking.length === 0 && tools.length === 0) {
+      if (orphanResults.length === 0) {
+        // Neither a turn nor a fold-in — an unknown message shape. Label it.
+        const kind = type === "user" || type === "assistant" ? type : "meta";
+        if (kind === "meta") rows.push(row({ kind, time, label: type }));
+        // A user/assistant entry that only carried results was folded above.
+      }
+      continue;
+    }
+    const kind = type === "user" ? "user" : type === "assistant" ? "assistant" : "meta";
+    rows.push(
+      row({
+        kind,
+        time,
+        label: kind === "meta" ? type : "",
+        text: texts.join("\n"),
+        thinking: thinking.join("\n"),
+        tools,
+      }),
+    );
+  }
+  return rows;
 }
 
 /** How a node mark is drawn on a rail. */
@@ -426,6 +561,65 @@ function buildPullRequests(
       tmuxTarget: endpoint.tmuxTarget ?? "",
       rail: railFromStatus(status),
       status,
+    };
+  });
+}
+
+/** One selectable session in the sidebar tree. */
+export interface SessionNode {
+  /** What `/sessions/transcript` and `/sessions/reply` are called with. */
+  ref: string;
+  shortRef: string;
+  /** `outer` — the work item's own loop; `inner` — one PR's `pdlc-pr-loop`. */
+  scope: "outer" | "inner";
+  state: SessionState;
+  tmuxTarget: string;
+}
+
+/** One work item's row in the Sessions sidebar: the item, then its sessions. */
+export interface SessionTreeItem {
+  view: WorkItemView;
+  /**
+   * `pdlc-adhoc-loop` / `pdlc-contribution-loop` items run no outer/inner
+   * split — one session, no tree (issue-230).
+   */
+  adhoc: boolean;
+  outer: SessionNode;
+  /** One child per PR inner loop; always empty for an ad-hoc item. */
+  inner: SessionNode[];
+}
+
+const ADHOC_LOOPS = new Set(["pdlc-adhoc-loop", "pdlc-contribution-loop"]);
+
+/**
+ * The Sessions sidebar: every work item, its sessions as a two-level tree.
+ *
+ * Two levels is not a rendering choice — the registry's nesting is one level
+ * deep by design (a PR does not have pull requests), so the tree mirrors the
+ * data it draws.
+ */
+export function sessionTree(views: WorkItemView[]): SessionTreeItem[] {
+  return views.map((view) => {
+    const adhoc = ADHOC_LOOPS.has(view.record.graph?.loop ?? "");
+    return {
+      view,
+      adhoc,
+      outer: {
+        ref: view.ref,
+        shortRef: view.shortRef,
+        scope: "outer" as const,
+        state: view.sessionState,
+        tmuxTarget: view.tmuxTarget,
+      },
+      inner: adhoc
+        ? []
+        : view.pullRequests.map((pr) => ({
+            ref: pr.ref,
+            shortRef: pr.shortRef,
+            scope: "inner" as const,
+            state: pr.sessionState,
+            tmuxTarget: pr.tmuxTarget,
+          })),
     };
   });
 }

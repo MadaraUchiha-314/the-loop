@@ -12,6 +12,7 @@ import { relativeTime } from "../api/model.ts";
 
 const TABS: { label: string; route: Route }[] = [
   { label: "Dashboard", route: { name: "dashboard" } },
+  { label: "Sessions", route: { name: "sessions" } },
   { label: "Attention", route: { name: "attention" } },
   { label: "Events", route: { name: "events" } },
   { label: "Settings", route: { name: "settings" } },
