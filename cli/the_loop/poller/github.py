@@ -65,6 +65,22 @@ _PR_LINK_FIELD = "closingIssuesReferences"
 _PR_FIELDS_LEGACY = "number,title,labels,updatedAt,url,headRefName,body,author"
 _PR_FIELDS = f"{_PR_FIELDS_LEGACY},{_PR_LINK_FIELD}"
 
+# The three surfaces a pull request carries instructions on (issue-246). GitHub
+# files them under three different objects, and the poller used to read only the
+# first — so a human's instruction left as a review was never forwarded, while
+# the webhook ingress had handled all three since issue-15.
+_KIND_CONVERSATION = "conversation"  # IssueComment (IC_) — `gh pr view --json comments`
+_KIND_REVIEW = "review"  # PullRequestReview (PRR_) — a review body
+_KIND_REVIEW_THREAD = "review-thread"  # PullRequestReviewComment (PRRC_) — inline
+
+# A review a human has written but not submitted. Visible only to its author, so
+# forwarding it would deliver words nobody has sent.
+_REVIEW_PENDING = "PENDING"
+
+# Page size for the REST reads below. `--paginate` walks every page, so this
+# only decides how many round trips a long thread costs.
+_REST_PAGE_SIZE = 100
+
 
 class GhError(ProviderError):
     """A ``gh`` invocation failed (non-zero exit, bad JSON, or gh missing)."""
@@ -72,13 +88,23 @@ class GhError(ProviderError):
 
 @dataclass(frozen=True)
 class GhComment:
-    """One issue/PR conversation comment (GraphQL ``comments`` shape)."""
+    """One comment on an issue/PR — conversation, review, or review thread.
+
+    The first five fields are what every surface has in common, and all the
+    poller core reads. ``kind`` and the fields under it are how the provider
+    later builds the event GitHub itself would have delivered for this object
+    (issue-246); they are empty for a conversation comment.
+    """
 
     id: str  # stable node id, used for cross-poll dedup
     body: str
     author: str
     created_at: str
     url: str
+    kind: str = _KIND_CONVERSATION
+    state: str = ""  # reviews: APPROVED | CHANGES_REQUESTED | COMMENTED
+    path: str = ""  # review threads: the file the comment is anchored to
+    line: Optional[int] = None  # review threads: the line, or None if unknown
 
 
 @dataclass(frozen=True)
@@ -239,10 +265,25 @@ class GhClient:
     def list_comments(
         self, owner: str, repo: str, number: int, is_pr: bool
     ) -> List[GhComment]:
-        """All conversation comments on an issue/PR (``gh`` paginates for us).
+        """Every comment on an issue/PR, whichever surface GitHub filed it under.
 
-        ``gh issue view`` rejects PR numbers and vice-versa, so the kind picks
-        the sub-command; both expose the same GraphQL ``comments`` shape.
+        For an **issue** this is exactly the call it always was: one
+        ``gh issue view --json comments``. ``gh issue view`` rejects PR numbers
+        and vice-versa, so the kind picks the sub-command.
+
+        For a **pull request** it is that call plus the two REST reads that
+        answer for the other two surfaces (issue-246), merged into one
+        chronological list. ``gh pr view --json`` cannot supply them: it exposes
+        no review-thread connection at all, so at least one call has to go
+        elsewhere, and REST costs a documented endpoint and ``--paginate``
+        rather than a hand-written GraphQL query with three cursors. The
+        conversation call is deliberately left alone — moving it to REST would
+        change its ids from GraphQL node ids to numeric ones and re-forward every
+        operator's already-baselined thread on upgrade.
+
+        Ordering is chronological, not per-source: the first-sight control path
+        forwards commands "in thread order (so the last command wins)"
+        (issue-119), which a merge that simply appended reviews would break.
         """
         sub = "pr" if is_pr else "issue"
         data = self._run_json(
@@ -256,8 +297,103 @@ class GhClient:
                 "comments",
             ]
         )
-        comments = (data or {}).get("comments") or []
-        return [self._comment_from_json(c) for c in comments]
+        comments = [
+            self._comment_from_json(c) for c in ((data or {}).get("comments") or [])
+        ]
+        if not is_pr:
+            return comments
+        comments += self.list_reviews(owner, repo, number)
+        comments += self.list_review_comments(owner, repo, number)
+        # Stable sort: same-timestamp items keep their source order.
+        return sorted(comments, key=lambda c: c.created_at)
+
+    def list_reviews(self, owner: str, repo: str, number: int) -> List[GhComment]:
+        """Submitted PR reviews that carry an instruction (issue-246).
+
+        Two are dropped here rather than downstream, because "carries no
+        instruction" is a fact about the GitHub object and not a policy the
+        poller core should hold: a review with an **empty body** (an Approve with
+        no words), and a **PENDING** one (a draft its author has not submitted).
+        Everything else — who may be obeyed, what has already been delivered —
+        stays where it is, so the new stream passes the guards conversation
+        comments pass, unchanged.
+        """
+        reviews: List[GhComment] = []
+        for row in self._run_rest_list(f"repos/{owner}/{repo}/pulls/{number}/reviews"):
+            state = str(row.get("state") or "").upper()
+            body = str(row.get("body") or "")
+            if state == _REVIEW_PENDING or not body.strip():
+                continue
+            reviews.append(
+                GhComment(
+                    id=str(row.get("node_id") or ""),
+                    body=body,
+                    author=str((row.get("user") or {}).get("login") or ""),
+                    created_at=str(row.get("submitted_at") or ""),
+                    url=str(row.get("html_url") or ""),
+                    kind=_KIND_REVIEW,
+                    state=state,
+                )
+            )
+        return reviews
+
+    def list_review_comments(
+        self, owner: str, repo: str, number: int
+    ) -> List[GhComment]:
+        """Inline review-thread comments, each with the file/line it is on.
+
+        The anchor is part of the instruction — "this is wrong" means nothing
+        without it — so it travels with the comment. ``line`` is null once the
+        diff has moved past an outdated comment, and GitHub keeps the line it was
+        written against in ``original_line``; that is the honest anchor to carry,
+        because it is where the reviewer was looking.
+
+        The ``diff_hunk`` GitHub also returns is deliberately **not** carried:
+        the forwarded payload is capped (``_PAYLOAD_EXCERPT_MAX_CHARS``), and up
+        to thirty lines of diff would truncate the instruction it was meant to
+        contextualise. The session can read the diff; it cannot read a comment it
+        was never told about.
+        """
+        inline: List[GhComment] = []
+        for row in self._run_rest_list(f"repos/{owner}/{repo}/pulls/{number}/comments"):
+            line = row.get("line")
+            if not isinstance(line, int):
+                line = row.get("original_line")
+            inline.append(
+                GhComment(
+                    id=str(row.get("node_id") or ""),
+                    body=str(row.get("body") or ""),
+                    author=str((row.get("user") or {}).get("login") or ""),
+                    created_at=str(row.get("created_at") or ""),
+                    url=str(row.get("html_url") or ""),
+                    kind=_KIND_REVIEW_THREAD,
+                    path=str(row.get("path") or ""),
+                    line=line if isinstance(line, int) else None,
+                )
+            )
+        return inline
+
+    def _run_rest_list(self, path: str) -> List[dict]:
+        """Every page of a REST array endpoint, as dicts.
+
+        ``--paginate`` matters rather than being a nicety: REST returns reviews
+        oldest-first, so a single capped page would permanently hide the newest
+        ones on a heavily-reviewed PR — the exact silence issue-246 is about.
+
+        Failures propagate as :class:`GhError`. Nothing here catches and returns
+        an empty list: a read that breaks must look broken, never like a quiet
+        pull request.
+        """
+        data = self._run_json(
+            ["api", f"{path}?per_page={_REST_PAGE_SIZE}", "--paginate"]
+        )
+        if data is None:
+            return []
+        if not isinstance(data, list):
+            raise GhError(
+                f"gh api {path} returned {type(data).__name__}, expected a list"
+            )
+        return [row for row in data if isinstance(row, dict)]
 
     def fetch_item_state(self, owner: str, repo: str, number: int) -> GhItemState:
         """Lifecycle state of one issue/PR — the closure question (issue-94).
@@ -431,6 +567,15 @@ class GitHubPollProvider(PollProvider):
                 author=c.author,
                 created_at=c.created_at,
                 url=c.url,
+                # Which surface it came from, and (for an inline comment) where
+                # it is anchored — read back by `comment_event` below, and by
+                # nothing else (issue-246).
+                raw={
+                    "kind": c.kind,
+                    "state": c.state,
+                    "path": c.path,
+                    "line": c.line,
+                },
             )
             for c in gh_comments
         ]
@@ -456,22 +601,67 @@ class GitHubPollProvider(PollProvider):
     def comment_event(
         self, item: WorkItem, comment: Comment, refs: List[WorkItemRef]
     ) -> RoutedEvent:
-        # issue_comment carries issue AND PR conversation comments on GitHub;
-        # reuse the item's refs so a PR comment still reaches a session
-        # registered against the linked issue. labeled=False: comments only feed
-        # existing sessions, never spawn (spawning is presence's job).
+        """The event GitHub itself would have delivered for this comment.
+
+        One of three, by surface (issue-246) — ``issue_comment``,
+        ``pull_request_review`` or ``pull_request_review_comment`` — because
+        three existing readers branch on exactly those names and are already
+        right for them: ``router.event_actor`` (who may be obeyed),
+        ``router.event_body`` (the self-comment marker and the control keyword)
+        and ``reactions.target_from_event``. Labelling every surface
+        ``issue_comment`` would be the shorter edit and would break the first
+        two: they would look for ``payload["comment"]`` in a review payload,
+        find nothing, and resolve an actor-less event the dispatcher then
+        refuses to take a command from.
+
+        The item's own refs are reused, so a comment on a PR still reaches a
+        session registered against the linked issue. ``labeled=False``: comments
+        only feed existing sessions, never spawn (spawning is presence's job).
+        """
         payload = self._item_payload(item)
-        payload["action"] = "created"
-        payload["comment"] = {
-            "id": comment.id,
-            "body": comment.body,
-            "html_url": comment.url,
-            "created_at": comment.created_at,
-            "user": {"login": comment.author},
-        }
+        raw = comment.raw or {}
+        kind = str(raw.get("kind") or _KIND_CONVERSATION)
+        if kind == _KIND_REVIEW:
+            payload["action"] = "submitted"
+            payload["review"] = {
+                "id": comment.id,
+                "body": comment.body,
+                "html_url": comment.url,
+                "submitted_at": comment.created_at,
+                # Carried as context only. Whether an approval should itself
+                # advance anything is a product question about approvals, not
+                # this parity fix — nothing acts on it.
+                "state": str(raw.get("state") or ""),
+                "user": {"login": comment.author},
+            }
+            event = "pull_request_review"
+        else:
+            body: dict = {}
+            if kind == _KIND_REVIEW_THREAD:
+                # Anchor first: the payload excerpt is truncated from the end,
+                # so a long body must not be able to push the file and line
+                # (which are what make the comment actionable) out of it.
+                body["path"] = str(raw.get("path") or "")
+                body["line"] = raw.get("line")
+            body.update(
+                {
+                    "id": comment.id,
+                    "body": comment.body,
+                    "html_url": comment.url,
+                    "created_at": comment.created_at,
+                    "user": {"login": comment.author},
+                }
+            )
+            payload["action"] = "created"
+            payload["comment"] = body
+            event = (
+                "pull_request_review_comment"
+                if kind == _KIND_REVIEW_THREAD
+                else "issue_comment"
+            )
         return RoutedEvent(
-            event="issue_comment",
-            action="created",
+            event=event,
+            action=str(payload["action"]),
             delivery_id=f"poll-comment-{comment.id}",
             work_items=refs,
             payload=payload,
