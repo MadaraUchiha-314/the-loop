@@ -3,7 +3,7 @@ type: bugfix
 phase: requirements-definition
 workItem: "github:MadaraUchiha-314/the-loop#246"
 status: approved             # draft | in-review | approved
-approvedBy: ["@MadaraUchiha-314"]  # issue #246 filed with the fix specified; PR #248
+approvedBy: ["@MadaraUchiha-314"]  # issue #246 filed with the fix specified; PR #249
 severity: high               # low | medium | high | critical
 collaborators: [engineer]
 overrides: {}

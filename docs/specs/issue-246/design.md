@@ -3,7 +3,7 @@ type: design
 phase: design
 workItem: "github:MadaraUchiha-314/the-loop#246"
 status: approved             # draft | in-review | approved
-approvedBy: ["@MadaraUchiha-314"]  # PR #248
+approvedBy: ["@MadaraUchiha-314"]  # PR #249
 overrides: {}
 ---
 

@@ -3,7 +3,7 @@ type: testing-plan
 phase: test-planning
 workItem: "github:MadaraUchiha-314/the-loop#246"
 status: approved             # draft | in-review | approved
-approvedBy: ["@MadaraUchiha-314"]  # PR #248
+approvedBy: ["@MadaraUchiha-314"]  # PR #249
 overrides: {}
 ---
 
@@ -39,7 +39,7 @@ overrides: {}
 | T1 | R1.3, R1.4, R1.5, R2.2, R2.3, R2.4, R4.1 | `list_comments` on a PR issues `pr view` + both `gh api` reads; on an issue, `issue view` alone. Empty-body and `PENDING` reviews absent from the result; an outdated inline comment carries `original_line` |
 | T2 | R1.1, R1.2, R2.1, R2.2, R3.1 | `Scenario: a PR review left on a polled pull request reaches its session exactly once` |
 | T2 | R1.4, R3.1 | `Scenario: an empty approval and an unauthorized review are never forwarded` |
-| T8 | R3.1, R3.2 | unauthorized author resolved-not-forwarded; a review carrying `<!-- the-loop:agent-comment -->` resolved-not-forwarded; `user: null` treated as unauthorized |
+| T8 | R3.1, R3.2 | unauthorized author resolved-not-forwarded; a review carrying `<!-- the-loop:agent-comment -->` resolved-not-forwarded; `user: null` answered **exactly as the webhook path answers it** (allowed — corrected after execution, see § Verification results and `design.md` § Security design) |
 | T10 | R4.3 | a ledger written by an older version keeps its `IC_` baseline; the cap covers the merged stream |
 | T12 | R5.1 | the four assertions above, all failing before the fix |
 

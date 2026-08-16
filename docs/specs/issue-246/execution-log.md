@@ -14,9 +14,9 @@ status: in-progress          # in-progress | complete
 | Phase | Entered | Reviewed/approved by | Notes |
 |-------|---------|----------------------|-------|
 | phase-selection | 2026-08-16 | @MadaraUchiha-314 | Declared by the owner's direct instruction to complete #246 in a cloud session (see the note under *Deviations from the standard gates*). Full process; `brainstorming` skipped — the issue names the fix; `design-critic-review` not selected (no critic is configured). |
-| requirements-definition | 2026-08-16 | pending — PR #248 | `bugfix.md` (a bug). Five requirements; the four questions the issue flagged are settled in it, one is deferred to design on purpose. |
-| design | 2026-08-16 | pending — PR #248 | Settled the deferred question: REST via `gh api --paginate`, with the GraphQL alternative recorded as rejected and why. |
-| test-planning | 2026-08-16 | pending — PR #248 | 14 rows, 6 in scope; every `n/a` carries a reason. |
+| requirements-definition | 2026-08-16 | pending — PR #249 | `bugfix.md` (a bug). Five requirements; the four questions the issue flagged are settled in it, one is deferred to design on purpose. |
+| design | 2026-08-16 | pending — PR #249 | Settled the deferred question: REST via `gh api --paginate`, with the GraphQL alternative recorded as rejected and why. |
+| test-planning | 2026-08-16 | pending — PR #249 | 14 rows, 6 in scope; every `n/a` carries a reason. |
 | tasks-breakdown | 2026-08-16 |  | 10 tasks, three independent red roots. |
 | implementation | 2026-08-16 |  | TDD: the red run captured and committed before the fix. |
 | verification | 2026-08-16 |  | Every planned activity ran. Two rows corrected after execution — see below. |
@@ -27,7 +27,7 @@ status: in-progress          # in-progress | complete
 
 | PR | Scope / tasks | Status |
 |----|---------------|--------|
-| [#248](https://github.com/MadaraUchiha-314/the-loop/pull/248) | The whole work item — the spec chain and the fix. | open |
+| [#249](https://github.com/MadaraUchiha-314/the-loop/pull/249) | The whole work item — the spec chain and the fix. | open |
 
 ## Progress entries
 
@@ -103,7 +103,7 @@ Two, both stated rather than quietly taken:
    `human-approves-pr` — is **not** bypassed: the PR waits for review.
 2. **The four spec artifacts are marked `approved` in one PR** rather than approved one at
    a time. Same reason: there is no ingress in this environment that could deliver a
-   per-phase approval. The reviewer approves the chain and the code together on PR #248,
+   per-phase approval. The reviewer approves the chain and the code together on PR #249,
    and any correction lands as an edit to the artifact, not a new comment.
 
 ## Verification results
