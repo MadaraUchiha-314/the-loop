@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-238",
-  "currentNode": "design",
+  "currentNode": "test-planning",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -37,10 +37,26 @@
     },
     "design": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-08-16T01:59:11+00:00",
-      "exitedAt": "",
+      "exitedAt": "2026-08-16T02:02:39+00:00",
       "lastBlock": "`validate-artifacts` did not pass:\n- required artifact is missing (docs/specs/issue-238/design.md)",
+      "forced": false
+    },
+    "design-critic-review": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-08-16T02:02:39+00:00",
+      "exitedAt": "2026-08-16T02:02:39+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "test-planning": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-08-16T02:02:39+00:00",
+      "exitedAt": "",
+      "lastBlock": "",
       "forced": false
     }
   },
@@ -214,8 +230,8 @@
       "by": "the-loop-session"
     },
     "design": {
-      "at": "2026-08-16T01:59:21+00:00",
-      "by": "MadaraUchiha-314"
+      "at": "2026-08-16T02:02:39+00:00",
+      "by": "the-loop-session"
     }
   },
   "skips": {

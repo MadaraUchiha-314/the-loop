@@ -175,3 +175,8 @@ under `<specDir>/<id>/evidence/`.
 
 - **Node:** design
 - **Boundary:** entry
+
+### 2026-08-15 — entry test-planning
+
+- **Node:** test-planning
+- **Boundary:** entry
