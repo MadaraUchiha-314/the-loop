@@ -83,10 +83,21 @@ def test_the_unknown_position_answer_is_not_a_filesystem_oracle(tmp_path):
     """
     secret_ish = tmp_path / "some-private-directory-name" / "deeper"
 
-    body = repr(graphs.check(str(secret_ish), "issue-1"))
+    report = graphs.check(str(secret_ish), "issue-1")
+    body = repr(report)
 
     assert "some-private-directory-name" not in body
     assert str(tmp_path) not in body
+    # Pin the whole key set, not just the absence of today's leak: the test is
+    # worth little if a later change can add a `detail` or a `path` beside them.
+    assert set(report) == {
+        "workItem",
+        "currentNode",
+        "ok",
+        "parked",
+        "nodes",
+        "repoResolved",
+    }
 
 
 def test_a_resolving_repo_keeps_exactly_the_keys_it_always_had(tmp_path):

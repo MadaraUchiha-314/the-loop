@@ -36,8 +36,30 @@ against the unfixed code (red), then the whole suite after (green).
 | T8 | Performance / load | n/a — the change removes work (an early return before any graph read). No path gets slower, and nothing here is on a hot loop worth measuring. | | |
 | T9 | Security / abuse case | yes | Negative tests for both abuse cases in `design.md` § Security design: the unknown-position body leaks no path or filesystem string, and a non-resolving `repo` reaches no core graph call. | `uv run pytest cli/tests/test_core_graphs.py -k "resolve or unknown"` |
 | T10 | Accessibility | n/a — no rendered change, so no new markup, focus order or contrast to evaluate. | | |
-| T11 | Migration / upgrade | n/a — no persisted state, schema or config key changes. An older UI build talking to a newer service ignores an unknown key and keeps its `catch`; a newer UI against an older service never sees the field and behaves as it does today. Both directions are already correct without a migration. | | |
+| T11 | Migration / upgrade | n/a for **state** — nothing persisted, no schema, no config key. **Corrected during self-review:** the compatibility claim first written here was wrong in one direction, and the correction is a code change rather than a test row. See the note below the matrix. | | |
 | T12 | Manual exploratory | yes | The reported symptom, checked the way it was reported: `curl` against the stale worktree path returns `200`, and the control-plane UI polling a state root with a stale session record logs no `/graph/check` errors in the devtools console across several ticks. | by hand, against a locally running `the-loop start` |
+
+### T11, corrected — the old-client direction was not benign
+
+This row first read *"an older UI build talking to a newer service ignores an unknown key
+and keeps its `catch`"*. That is false. The old build keeps its `catch` only for a
+**rejection**; handed a `200`, it stores the report like any other and renders
+`railFromStatus` over an empty node list — a **blank rail** where the frozen node list used
+to be. The published dashboard is a static build served from GitHub Pages against whatever
+local service the operator is running, so an old page against a new service is a real
+combination, not a hypothetical one.
+
+Nothing server-side can fix an already-published page, so the fix is defensive and lives in
+`model.ts`: `buildWorkItemViews` now treats a report with **no nodes** as no position and
+falls back to `railFromFrozen`, independently of whether the caller dropped it. That
+protects this build and every future client; the already-deployed old build self-heals on
+the next Pages publish, which ships with this change. Covered by
+`model.test.ts::falls back to the frozen rail for a report that carries no position at all`
+(counted under T2), and the degradation in the interim is one blank rail on rows whose
+checkout is gone — stated here rather than left to be discovered.
+
+The other direction is genuinely benign: a newer UI against an older service never sees the
+field, so `=== false` is never true and behaviour is exactly today's.
 
 ## Scenarios & requirement trace
 

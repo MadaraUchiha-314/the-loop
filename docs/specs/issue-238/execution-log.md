@@ -1,7 +1,7 @@
 ---
 type: execution-log
 workItem: "github:MadaraUchiha-314/the-loop#238"
-phase: verification          # not-started | brainstorming | requirements-definition | design | test-planning | tasks-breakdown | implementation | verification | needs-review | complete
+phase: needs-review          # not-started | brainstorming | requirements-definition | design | test-planning | tasks-breakdown | implementation | verification | needs-review | complete
 status: in-progress          # in-progress | complete
 # repos:                     # OPTIONAL (issue-183). The CONTRIBUTING repositories this
 #   - <owner>/<repo>         #   work item raises pull requests in — one inner loop each,
@@ -156,6 +156,39 @@ status: in-progress          # in-progress | complete
 - **Next:** self-review, critic review, security review, reviewer briefing.
 - **Blockers:** none.
 
+### 2026-08-16 03:10 UTC — self-review found two real defects in the fix
+
+- **Phase:** needs-review
+- **Did:** three self-review rounds over the whole diff, tracing consumers rather than
+  re-reading the diff three times.
+- **Round 1 — a CI gate that would go green on a typo.** `the-loop check --fail-on block`
+  is the automated-gate mode, and `_fails` decides it by looking for a blocking node. The
+  new unknown-position report has *no nodes*, so it has no blocking node either: a mistyped
+  `--repo` would have exited 0. `.github/workflows/the-loop-gate.yml:56` runs exactly that
+  command. Fixed test-first (`test_a_repo_that_is_not_there_fails_both_modes`, red before
+  the fix): `_fails` refuses an unresolved repo in **both** modes ahead of either rule, and
+  the row renders `UNREAD — <path> is not a directory` instead of `UNMET (at )` with
+  nothing under it. Also tidied `resolve_repo` (it computed `expanduser()` twice) and
+  strengthened the oracle test to pin the whole key set rather than today's absence.
+- **Round 2 — the other two consumers.** The MCP tool `check_work_item` and the SDK's
+  `check` both return core's dict straight through, so both now hand back
+  `repoResolved: false` where they used to raise. Neither is wrong, but an agent reading
+  `nodes: []` could report "no phases"; both docstrings now say what the shape means, and
+  the MCP one — which is a tool description an LLM reads — says it in the imperative.
+- **Round 3 — my own testing plan was wrong about upgrades.** T11 claimed an older UI build
+  against a newer service "ignores an unknown key and keeps its `catch`". False: the old
+  build keeps its `catch` only for a *rejection*, and a `200` is stored and rendered as an
+  empty rail. The dashboard is published to Pages and pointed at whatever local service the
+  operator runs, so that combination is real. Nothing server-side can fix an
+  already-published page, so `buildWorkItemViews` now treats a report with no nodes as no
+  position and falls back to `railFromFrozen` regardless of the caller. T11's reason is
+  corrected in place rather than quietly rewritten.
+- **Checkpoint/tests:** `uv run pytest` 2104 passed / the same 4 pre-existing environment
+  failures; UI lint clean, 107 vitest passed, build clean.
+- **Next:** critic review (none configured — record as unavailable), security review,
+  capability docs, reviewer briefing.
+- **Blockers:** none.
+
 ## Verification results
 
 > **Only when this work item declared `test-planning` away** (issue-179). With a
@@ -263,4 +296,9 @@ under `<specDir>/<id>/evidence/`.
 ### 2026-08-15 — entry verification
 
 - **Node:** verification
+- **Boundary:** entry
+
+### 2026-08-15 — entry self-review
+
+- **Node:** self-review
 - **Boundary:** entry

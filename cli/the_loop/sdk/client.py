@@ -134,6 +134,12 @@ class Graph(_Namespace):
         pr: Optional[int] = None,
         pr_repo: str = "",
     ) -> Dict[str, Any]:
+        """The work item's gate report.
+
+        A ``repo`` that does not resolve returns ``repoResolved: False`` with an
+        empty ``nodes`` list instead of raising (issue-238) — an embedder gating
+        on this report should treat that as *unevaluated*, not as *satisfied*.
+        """
         return core_graphs.check(
             repo, work_item, recompute=recompute, pr=pr, pr_repo=pr_repo
         )

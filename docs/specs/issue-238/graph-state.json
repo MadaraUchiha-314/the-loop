@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-238",
-  "currentNode": "verification",
+  "currentNode": "self-review",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -85,10 +85,18 @@
     },
     "verification": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-08-16T02:32:16+00:00",
-      "exitedAt": "",
+      "exitedAt": "2026-08-16T02:41:22+00:00",
       "lastBlock": "`validate-artifacts` did not pass:\n- 1 task(s) still unticked (docs/specs/issue-238/testing-plan.md)",
+      "forced": false
+    },
+    "self-review": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-08-16T02:41:22+00:00",
+      "exitedAt": "",
+      "lastBlock": "",
       "forced": false
     }
   },
@@ -278,7 +286,7 @@
       "by": "the-loop-session"
     },
     "verification": {
-      "at": "2026-08-16T02:40:58+00:00",
+      "at": "2026-08-16T02:41:22+00:00",
       "by": "the-loop-session"
     }
   },

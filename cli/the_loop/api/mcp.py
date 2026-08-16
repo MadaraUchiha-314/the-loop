@@ -75,7 +75,12 @@ def build_server(cli_config: Optional[dict] = None) -> MCPServer:
         repo: str, work_item: str, recompute: bool = False
     ) -> Dict[str, Any]:
         """Evaluate a work item's process-graph gates against its checked-in
-        artifacts (pure read; the same report `the-loop check` prints)."""
+        artifacts (pure read; the same report `the-loop check` prints).
+
+        A `repo` that is not a directory on this machine comes back as
+        `{"repoResolved": false, "nodes": [], "currentNode": ""}` rather than an
+        error. That is "this checkout is not here", NOT "this work item has no
+        phases" — do not report progress from it; check the path instead."""
         return core_graphs.check(repo, work_item, recompute=recompute)
 
     def graph_show(repo: str) -> Dict[str, Any]:

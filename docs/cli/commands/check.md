@@ -68,6 +68,22 @@ people learn to merge past.
 the-loop check "issue-$(git branch --show-current | grep -oE '[0-9]+$')" --fail-on block
 ```
 
+### A repository that is not there fails both modes
+
+```console
+$ the-loop check issue-1 --repo /typo --fail-on block
+issue-1: UNREAD — /typo is not a directory
+$ echo $?
+1
+```
+
+Ahead of either rule above, because it is not a verdict about the work item: nothing was
+evaluated. The control-plane API deliberately answers a `repo` that does not resolve with
+`200` and no position — a checkout somebody cleaned up is expected state on that machine
+([issue-238](https://github.com/MadaraUchiha-314/the-loop/issues/238)) — and a report with
+no nodes has no *blocking* node either. Without this rule a mistyped `--repo` would take
+`--fail-on block` straight to exit 0. **A gate that evaluated nothing has not passed.**
+
 ## `--recompute`
 
 Normally `check` trusts the stored graph state where it has one. `--recompute` throws that

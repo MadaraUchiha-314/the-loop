@@ -350,6 +350,33 @@ describe("buildWorkItemViews", () => {
     });
   });
 
+  it("falls back to the frozen rail for a report that carries no position at all", () => {
+    // The shape `/graph/check` answers with when the checkout is gone
+    // (issue-238). An empty node list is the ABSENCE of a position, so rendering
+    // it as one would replace the agreed node list with a blank rail — including
+    // for a client that does not know to drop it.
+    const [view] = buildWorkItemViews({
+      workItems: [RECORD],
+      sessions: [SESSION],
+      attention: [],
+      graphs: {
+        outer: {
+          "github:octo/repo#15": {
+            workItem: "issue-15",
+            currentNode: "",
+            ok: false,
+            nodes: [],
+            repoResolved: false,
+          },
+        },
+        inner: {},
+      },
+    });
+
+    expect(view!.rail.length).toBeGreaterThan(0);
+    expect(view!.rail.map((node) => node.id)).toEqual(RECORD.graph!.nodes!.map((node) => node.id));
+  });
+
   it("keeps an armed work item with no session — that is what the inbox is for", () => {
     const views = buildWorkItemViews({
       workItems: [RECORD],

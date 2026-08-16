@@ -38,10 +38,9 @@ def repo_resolves(repo: str) -> bool:
 def resolve_repo(repo: str) -> Path:
     """Validate a repo path at the trust boundary: it must exist and be a
     directory (abuse case 3 — no core call on unvetted input)."""
-    path = Path(repo).expanduser()
     if not repo_resolves(repo):
         raise ValueError(f"repo path is not a directory: {repo}")
-    return path.resolve()
+    return Path(repo).expanduser().resolve()
 
 
 def _recorded_loop(path: Path, work_item: str) -> str:

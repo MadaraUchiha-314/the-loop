@@ -255,7 +255,17 @@ def _fails(report: Dict[str, Any], fail_on: str) -> bool:
     wants: a work item parked at a human-approval node is the normal state of an
     open PR, so failing CI for it would make the gate red by construction, and a
     gate that is always red is one people learn to merge past.
+
+    A repository that is not there fails **both** modes, ahead of either rule.
+    Since issue-238 ``graphs.check`` answers a non-resolving ``repo`` with
+    ``repoResolved: false`` and an empty node list rather than raising — correct
+    for the polled API, where a cleaned-up checkout is expected state, and a trap
+    here: a report with no nodes has no *blocking* node either, so a mistyped
+    ``--repo`` would take `--fail-on block` straight to exit 0. A gate that
+    evaluated nothing has not passed.
     """
+    if report.get("repoResolved") is False:
+        return True
     if fail_on == "unmet":
         return not report["ok"]
     current = report.get("currentNode")
@@ -348,6 +358,13 @@ class CheckCommand(Command):
             print(json.dumps(payload if args.all else payload[0], indent=2))
         else:
             for report in payload:
+                # Nothing was evaluated, so there is nothing to render but the
+                # reason (issue-238). Without this the row reads "UNMET (at )"
+                # with no findings under it, which looks like a work item with
+                # no nodes rather than a repository that is not there.
+                if report.get("repoResolved") is False:
+                    print(f"{report['workItem']}: UNREAD — {root} is not a directory")
+                    continue
                 state = "ok" if report["ok"] else "UNMET"
                 print(f"{report['workItem']}: {state} (at {report['currentNode']})")
                 # Only nodes at or before the pointer are findings; anything

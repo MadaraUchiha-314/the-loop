@@ -505,7 +505,13 @@ export function buildWorkItemViews(input: BuildInput): WorkItemView[] {
     const session = sessionByRef.get(ref) ?? null;
     const parsed = parseRef(ref);
     const status = input.graphs?.outer[ref] ?? null;
-    const rail = status ? railFromStatus(status) : railFromFrozen(record);
+    // A report with no nodes is not a position, it is the absence of one — the
+    // shape `/graph/check` answers with when the checkout is gone (issue-238).
+    // Belt and braces: `fetchGraphs` already drops those, and this keeps any
+    // other caller of `buildWorkItemViews` from rendering an empty rail where
+    // the frozen node list would have said more.
+    const known = status !== null && status.nodes.length > 0;
+    const rail = known ? railFromStatus(status) : railFromFrozen(record);
 
     views.push({
       ref,
