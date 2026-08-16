@@ -171,6 +171,7 @@ Everything else takes its default. Build up from here with the option pages belo
 | [Integrations options](/config/cli/integrations-options) | `integrations` — how the-loop's own calls reach GitHub, Slack and Jira |
 | [Service options](/config/cli/service-options) | `service` — the control-plane API's bind, auto-start and cross-origin allowlist |
 | [Observability options](/config/cli/observability-options) | `eventLog`, `collaborators`, `notifications` |
+| [Self-diagnosis options](/config/cli/self-diagnosis-options) | `selfDiagnosis` — the-loop filing issues for its own failures (opt-in) |
 
 Every option on those pages is checked against the schema in both directions by a test in
 the repository — a documented key the schema does not define fails the build, and so does

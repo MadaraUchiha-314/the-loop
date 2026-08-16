@@ -113,6 +113,11 @@ class StateLayout:
         """Where a daemonized poller's stdout/stderr go (issue-191)."""
         return str(self.root_path / "logs" / "poller.out")
 
+    @property
+    def self_diagnosis(self) -> str:
+        """What self-diagnosis has already reported/abandoned (issue-242)."""
+        return str(self.root_path / "self-diagnosis.json")
+
 
 @dataclass(frozen=True)
 class LegacyLayout:
@@ -277,6 +282,23 @@ GENERATED_PATHS: Tuple[GeneratedPath, ...] = (
             "the same reason as the event log: two machines appending to one tracked "
             "file conflict on every line, and the output is read where it was written. "
             "Rotation is the host's job (logrotate), so it also grows without bound."
+        ),
+    ),
+    GeneratedPath(
+        name="self-diagnosis ledger",
+        attr="self_diagnosis",
+        default="<root>/self-diagnosis.json",
+        portable=False,
+        holds=(
+            "which failure fingerprints this machine already reported (with the "
+            "issue URL), abandoned, or is still retrying, and when it last posted "
+            "(the rolling daily cap) — issue-242"
+        ),
+        why=(
+            "a record of what THIS machine's event log already produced. Carried to "
+            "another machine it would suppress reports for failures that machine "
+            "never diagnosed — its log is different — and the sibling .lock file "
+            "guarding concurrent scans is kernel state that cannot travel at all."
         ),
     ),
 )

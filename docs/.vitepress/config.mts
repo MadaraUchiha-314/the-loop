@@ -111,6 +111,7 @@ const cliSidebar = [
       { text: "check", link: "/cli/commands/check" },
       { text: "graph", link: "/cli/commands/graph" },
       { text: "critic", link: "/cli/commands/critic" },
+      { text: "diagnose", link: "/cli/commands/diagnose" },
       { text: "scenarios", link: "/cli/commands/scenarios" },
       { text: "instructions", link: "/cli/commands/instructions" },
       { text: "install", link: "/cli/commands/install" },
@@ -161,6 +162,7 @@ const configSidebar = [
       { text: "Integrations options", link: "/config/cli/integrations-options" },
       { text: "Service options", link: "/config/cli/service-options" },
       { text: "Observability options", link: "/config/cli/observability-options" },
+      { text: "Self-diagnosis options", link: "/config/cli/self-diagnosis-options" },
     ],
   },
 ];

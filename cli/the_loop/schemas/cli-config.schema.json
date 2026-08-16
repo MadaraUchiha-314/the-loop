@@ -916,6 +916,64 @@
           }
         }
       }
+    },
+    "selfDiagnosis": {
+      "type": "object",
+      "description": "Self-diagnosis (issue-242): when the-loop's own machinery fails \u2014 an error-level event or a terminal give-up in the event log \u2014 debug it in an isolated agent one-shot and file the findings as an issue on the-loop's own repository, labeled `the-loop: self-diagnosed`. STRICTLY OPT-IN and off by default: enabling it means this machine may post redacted failure reports publicly, using your own `gh` credentials. Everything posted is built from a field allow-list with free text scrubbed (paths, usernames, hostnames, e-mails, tokens, sensitive env values), and a self-filed issue is never armed: no auto-execute label, no control-keyword comment, and the self-authored marker so the-loop's own ingress drops it. Preview what would leave the machine with `the-loop diagnose --dry-run` before opting in.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "The opt-in. Only a literal `true` enables anything; an absent section, `false`, or a malformed section all mean no scan, no watcher thread, no agent, no post (fail closed).",
+          "examples": [true]
+        },
+        "repo": {
+          "type": "string",
+          "default": "MadaraUchiha-314/the-loop",
+          "description": "owner/repo the issues are filed on. Defaults to the-loop's own repository \u2014 the point of the feature is fixing the-loop, not your project. Point it at a fork if you triage there first."
+        },
+        "label": {
+          "type": "string",
+          "default": "the-loop: self-diagnosed",
+          "description": "Label requested on each created issue. GitHub silently drops the request for callers without triage rights on the target repository; the body names the intended label either way, so the marker survives the permission gap. Must never equal `routing.autoExecuteLabel` or any `polling.sources[].label`."
+        },
+        "harness": {
+          "type": "string",
+          "enum": ["claude", "cursor"],
+          "default": "claude",
+          "description": "Which agent harness runs the isolated diagnosis one-shot (the same adapter set as `routing.defaultHarness`)."
+        },
+        "model": {
+          "type": "string",
+          "default": "",
+          "description": "Model passed to the harness's one-shot invocation; empty uses the harness's own default."
+        },
+        "timeoutSeconds": {
+          "type": "number",
+          "minimum": 1,
+          "default": 900,
+          "description": "Wall-clock budget for one diagnosis agent run."
+        },
+        "intervalSeconds": {
+          "type": "number",
+          "minimum": 1,
+          "default": 3600,
+          "description": "How often the background watcher (hosted inside the poller and gh-webhook daemons) scans the event log for new failures. A manual `the-loop diagnose` scans regardless."
+        },
+        "maxIssuesPerDay": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 3,
+          "description": "Rolling 24h cap on created issues (storm control). Candidates over the cap are DEFERRED to a later scan, never dropped."
+        },
+        "maxRetries": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 3,
+          "description": "Failed diagnosis attempts (agent or post) per failure fingerprint before it is abandoned and never retried."
+        }
+      }
     }
   }
 }

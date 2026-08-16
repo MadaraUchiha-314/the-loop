@@ -224,6 +224,25 @@ eventLog:                           # structured JSONL o11y trail; `the-loop eve
   enabled: true
   path: .the-loop/logs/events.jsonl
 
+# Self-diagnosis (issue-242): when the-loop's OWN machinery fails (error-level
+# events, terminal give-ups in the event log), debug the failure in an isolated
+# agent one-shot and file the findings on the-loop's repo, labeled
+# `the-loop: self-diagnosed`. STRICTLY OPT-IN, default off — enabling it means
+# this machine may post redacted failure reports publicly with your gh
+# credentials. Everything posted is allow-listed + scrubbed, and a self-filed
+# issue is never armed (no auto-execute label, no control keyword, self-authored
+# marker). Preview with `the-loop diagnose --dry-run` before flipping it on.
+selfDiagnosis:
+  enabled: false
+  # repo: MadaraUchiha-314/the-loop        # where the issues are filed
+  # label: "the-loop: self-diagnosed"
+  # harness: claude                        # claude | cursor — runs the diagnosis one-shot
+  # model: ""
+  # timeoutSeconds: 900
+  # intervalSeconds: 3600                  # watcher cadence inside the poller/gh-webhook daemons
+  # maxIssuesPerDay: 3                     # rolling cap; excess candidates defer, never drop
+  # maxRetries: 3                          # failed attempts per fingerprint before abandoning
+
 # The operator's own notification recipients (issue-82, decision-035) — the same
 # collaborator structure as .the-loop/collaborators.schema.json, DECLARED here:
 # the CLI daemon never reads any repo's collaborators.yaml.
