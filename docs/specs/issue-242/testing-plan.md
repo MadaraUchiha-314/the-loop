@@ -78,7 +78,7 @@ overrides: {}
 - [x] T1 — `uv run --project cli python -m pytest cli/tests/test_selfdiagnosis.py cli/tests/test_redact.py`
 - [x] T2 — `uv run --project cli python -m pytest cli/tests/test_selfdiagnosis_integration.py`
 - [x] T8 — the `-k "redact or defang or arm or disabled or allow"` selection above
-- [ ] T11 — `the-loop diagnose --dry-run` on this repo's log, human-read
+- [x] T11 — `the-loop diagnose --dry-run` on this repo's log, human-read
 - [x] T12 — `uv run --project cli python -m pytest cli/tests -q`
 - [x] T13 — `make lint && make format-check && make typecheck`
 - [x] Red-first — the new tests fail before the implementation exists

@@ -89,12 +89,12 @@ overrides: {}
   - _Requirements:_ all
   - _Test:_ `T12`, `T13`
 
-- [ ] 11. Manual dry run on this repo's own log, human-read for redaction quality
+- [x] 11. Manual dry run on this repo's own log, human-read for redaction quality
   - _Depends on:_ 10
   - _Requirements:_ R4 (judgement)
   - _Test:_ `T11` → `evidence/dry-run.md`
 
-- [ ] 12. Capability doc, decision record, user-facing docs
+- [x] 12. Capability doc, decision record, user-facing docs
   - New `docs/capabilities/self-diagnosis.md` + index row; `decision-090` (opt-in
     self-diagnosis: detection over the event log, allow-list redaction, never-armed
     issues), indexed in `decisions.md`; README/docs-site touchpoint if the change makes
