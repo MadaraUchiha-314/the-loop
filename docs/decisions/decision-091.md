@@ -5,6 +5,15 @@
 - **Work item:** [issue-251](https://github.com/MadaraUchiha-314/the-loop/issues/251)
 - **Deciders:** maintainer (via ticket); harness (proposal)
 
+  > **Numbering.** Written as 089, renumbered to 090, then to 091 — two rebases, two
+  > collisions: [PR #255](https://github.com/MadaraUchiha-314/the-loop/pull/255)
+  > (issue-247) took 089 and
+  > [PR #257](https://github.com/MadaraUchiha-314/the-loop/pull/257) (issue-242) took 090
+  > while this branch was in flight. [decision-088](decision-088.md) hit the same thing
+  > one PR earlier, which makes three consecutive. Checking `main` rather than one's own
+  > base is not enough when two branches are open at once — the number is really
+  > allocated at merge time.
+
 ## Context
 
 Five integration tests in this repository have now failed for the same reason: each waited

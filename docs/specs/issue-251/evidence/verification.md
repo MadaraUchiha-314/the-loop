@@ -79,32 +79,36 @@ Linting: 746 files
 Summary: 0 issues in 0 files
 ```
 
-## Re-run after the rebase onto `main` (f869ac0)
+## Re-run after the rebases onto `main` (latest: 3dcc3bf)
 
-The numbers above were measured on the pre-rebase base. `main` moved by two commits
-(PR #255 and the 10.3.1 bump) and the branch was rebased at the maintainer's request, so
-every claim was measured again rather than carried over. #255 adds two tests, hence 2225
-where the earlier runs report 2223.
+The numbers above were measured on the original base. `main` has moved twice since and
+the branch was rebased both times at the maintainer's request, so every claim was
+measured again rather than carried over. The suite grows with each rebase — #255 added
+two tests and #257 added forty-nine — so the totals below do not match the earlier runs'
+2223, and that is the point: the lagged sweep now covers issue-242's new self-diagnosis
+tests as well, and they pass under it.
 
 ```console
 $ cd cli && uv run python -m pytest -q                     # CI's own invocation
-2225 passed, 1 skipped in 118.14s (0:01:58)
+2274 passed, 1 skipped in 129.38s (0:02:09)
 
 $ uv run --project cli python -m pytest -q --dispatch-lag=0.5 cli
-2225 passed, 1 skipped in 562.87s (0:09:22)
+2274 passed, 1 skipped in 574.49s (0:09:34)
 
 $ uv run ruff check cli hooks && uv run ruff format --check cli hooks
-All checks passed! · 229 files already formatted
+All checks passed! · 235 files already formatted
 
 $ uv run pyright cli
 0 errors, 0 warnings, 0 informations
 
 $ npx markdownlint-cli2 "**/*.md"
-Linting: 756 files · Summary: 0 issues in 0 files
+Linting: 769 files · Summary: 0 issues in 0 files
 
 $ uv run the-loop check issue-251 --recompute --fail-on block   # the-loop's own gate
 issue-251: UNMET (at phase-selection) — WAIT, exit 0
 ```
+
+(The intermediate rebase onto `f869ac0` measured 2225/2225 on the same commands.)
 
 The gate's `WAIT` is the expected state of an open PR: the work item is parked at the
 human phase-selection gate, which `--fail-on block` deliberately does not fail on.

@@ -18,7 +18,7 @@ flowchart LR
     T1 --> T3["3 — fix the poller test"]
     T2 --> T4["4 — the rule in reference/testing.md"]
     T3 --> T4
-    T4 --> T5["5 — capability doc + decision-090"]
+    T4 --> T5["5 — capability doc + decision-091"]
     T2 --> T6["6 — verification: lagged + clean suite, evidence"]
     T3 --> T6
     T5 --> T7["7 — execution log, PR briefing"]
@@ -50,7 +50,7 @@ flowchart LR
       _Test:_ T13
 
 - [x] **5. Capability doc and decision** — `docs/capabilities/testing-and-contracts.md`
-      current behaviour + history row; `docs/decisions/decision-090.md` and the index row.
+      current behaviour + history row; `docs/decisions/decision-091.md` and the index row.
       _Requirements:_ R3.2
       _Test:_ T13
 

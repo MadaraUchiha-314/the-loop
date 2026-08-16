@@ -35,7 +35,7 @@ Delays every dispatcher write that *follows* a spawn or a delivery — registry 
 dedup releases, announcements, graph moves — so a test that waits on the attempt and then
 depends on its outcome fails on every run instead of about one in three
 ([issue-251](https://github.com/MadaraUchiha-314/the-loop/issues/251),
-[decision-090](/decisions/decision-090)). Nothing is patched unless the flag is passed, so
+[decision-091](/decisions/decision-091)). Nothing is patched unless the flag is passed, so
 `make check` is unaffected; run it when you add a test that drives work onto a background
 thread, or when a flake needs a cause. The rule it enforces is in
 [`reference/testing.md`](/operating-model/reference/testing).
