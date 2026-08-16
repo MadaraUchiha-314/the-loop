@@ -27,7 +27,7 @@ status: in-progress          # in-progress | complete
 
 | PR | Scope / tasks | Status |
 |----|---------------|--------|
-| this branch's PR | The whole work item — the spec chain and the feature. | pending |
+| [#257](https://github.com/MadaraUchiha-314/the-loop/pull/257) | The whole work item — the spec chain and the feature. | open |
 
 ## Progress entries
 
