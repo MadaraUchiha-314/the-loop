@@ -106,29 +106,58 @@ that cannot be redacted is not committed — the row says so instead.
 
 ## Verification activities
 
-- [ ] T1 — `uv run --project cli python -m pytest -q cli`
-- [ ] T2 — `cd ui && bun run test`
-- [ ] T3 — `uv run --project cli python -m pytest -q cli/tests/test_stream_integration.py`
-- [ ] T4 — the OpenAPI validation step, plus `uv run python scripts/validate_config.py`
+- [x] T1 — `uv run --project cli python -m pytest -q cli`
+- [x] T2 — `cd ui && bun run test`
+- [x] T3 — `uv run --project cli python -m pytest -q cli/tests/test_stream_integration.py`
+- [x] T4 — the OpenAPI parity test, plus `uv run python scripts/validate_config.py`
 - [ ] T6 — Chrome against `bun run dev`; screenshots and `trace-anchor.gif`
-- [ ] T8 — `uv run --project cli python -m pytest -q cli/tests/test_stream_integration.py -k capacity`
-- [ ] T9 — `uv run --project cli python -m pytest -q cli/tests/test_stream_integration.py -k abuse`
+- [x] T8 — `uv run --project cli python -m pytest -q cli/tests/test_stream_integration.py -k capacity`
+- [x] T9 — `uv run --project cli python -m pytest -q cli/tests/test_stream_integration.py -k abuse`
 - [ ] T10 — keyboard + screen-reader pass, recorded in `accessibility.md`
-- [ ] T11 — covered by T2; assert the migration case explicitly in the evidence
-- [ ] T12 — live pass against `the-loop start`; `live-turn.gif`
-- [ ] T13 — the same page against `service.stream.enabled: false`; `fallback-404.png`
-- [ ] Full suite — `make check`, then `cd ui && bun run lint && bun run test && bun run build`
-- [ ] `the-loop scenarios --format markdown` — the Gherkin scenarios above are registered and queryable
+- [x] T11 — covered by T2; the migration cases are asserted explicitly in the evidence
+- [x] T12 — live pass against a service built from this branch (service boundary)
+- [ ] T12 (browser) — `live-turn.gif`: a turn arriving on screen with no poll
+- [x] T13 — a second service with `service.stream.enabled: false` answers 404 while healthy
+- [ ] T13 (browser) — `fallback-404.png`: the banner the control plane shows for that 404
+- [x] Full suite — `make check`, then `cd ui && bun run lint && bun run test && bun run build`
+- [x] `the-loop scenarios` — all 13 of this work item's Gherkin scenarios are registered
 
 ## Verification results
 
-*Not yet executed.*
-
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| | | | |
+| T1 — unit (Python) | `uv run --project cli python -m pytest -q cli/tests/test_api_stream.py` | pass — 31 passed | [`evidence/python-tests.md`](evidence/python-tests.md) |
+| T2 — unit (UI) | `cd ui && bun run test` | pass — 144 passed (11 files) | [`evidence/ui-tests.md`](evidence/ui-tests.md) |
+| T3 — integration, Gherkin | `uv run --project cli python -m pytest cli/tests/test_stream_integration.py -v` | pass — 14 passed in 17s, against real uvicorn on a loopback port | [`evidence/python-tests.md`](evidence/python-tests.md) |
+| T4 — contract | `pytest cli/tests/test_api_contract_parity.py` + `scripts/validate_config.py` | pass — the served schema is the authored one; the 200 offers `text/event-stream` only | [`evidence/contract.md`](evidence/contract.md) |
+| T8 — capacity | `pytest -k capacity`, and five live connections against a `maxSubscribers: 4` service | pass — REST answers with the stream full; the fifth connection is refused `503` before it exists | [`evidence/python-tests.md`](evidence/python-tests.md), [`evidence/live-stream.md`](evidence/live-stream.md) |
+| T9 — abuse cases | `pytest -k abuse` | pass — 4 passed: capacity, malformed cursor, malformed filter, over-wide replay | [`evidence/python-tests.md`](evidence/python-tests.md) |
+| T11 — migration | `cd ui && bun run test src/state/settings.test.ts` | pass — 13 passed, including the three pre-`refreshMode` store cases | [`evidence/ui-tests.md`](evidence/ui-tests.md) |
+| T12 — live, service boundary | `curl -N` against a service built from this branch, seeded with issue-239 and **this session's own transcript** | pass — appended records arrive with byte-offset ids; a real `transcript` frame (1720 lines); **no `api.request` frames** despite the API traffic that produced them | [`evidence/live-stream.md`](evidence/live-stream.md) |
+| T13 — older service | a second service, same build, `service.stream.enabled: false` | pass — `404` with the reason while `/health` answers `200` | [`evidence/live-stream.md`](evidence/live-stream.md) |
+| Full suite | `make check`; `cd ui && bun run lint && bun run test && bun run build` | pass, **except five pre-existing Python failures** — four fail identically on `origin/main`, the fifth is load-flaky and filed as [#251](https://github.com/MadaraUchiha-314/the-loop/issues/251) | [`evidence/python-tests.md`](evidence/python-tests.md), [`evidence/ui-tests.md`](evidence/ui-tests.md) |
+| Scenario registration | `the-loop scenarios --root "$(pwd)" --format markdown` | pass — all 13 scenarios listed with the requirement each proves | [`evidence/contract.md`](evidence/contract.md) |
 
-**Not executed:** *none yet.*
+**Not executed:** every activity that needs a **browser** — T6 (screenshots of the rendered
+detail page and the four connection states), T10 (the keyboard/screen-reader pass), and the
+browser halves of T12 (`live-turn.gif`) and T13 (`fallback-404.png`).
+
+*Why:* this session has no working connection to a browser — the Chrome extension reports
+`not connected` — and nothing available here can drive one. The service and the UI dev
+server were both brought up successfully; the missing piece is the browser itself, so the
+gap is narrow and specific.
+
+*What was done about it:* **replanned, not dropped.** The behavioural half of T6 was moved
+into an automated test that did run (`ui/src/views/WorkItemDetail.test.tsx`, 5 passing): the
+trace panel's accessible name and focus affordance, the chat bar sitting beside the panel
+rather than a transcript's length below it, and the R6.3/R6.4 scroll rule as a tested
+function. The half that remains genuinely unverified is **rendering** — `max-height`,
+`overflow-y` and `position: sticky` are inert under jsdom — plus the visual check of the
+four connection states and the screen-reader pass.
+
+*Escalated:* on [PR #244](https://github.com/MadaraUchiha-314/the-loop/pull/244), asking
+@MadaraUchiha-314 to run the browser pass (the steps and the two commands are there) or to
+accept the automated substitute. This is **not** presented as a pass.
 
 ## Review comments
 

@@ -470,6 +470,10 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
     @router.get(
         f"{API_PREFIX}/stream",
         operation_id="streamEvents",
+        # Without `response_class` FastAPI infers `application/json` from the
+        # return annotation and MERGES it with the declaration below, so the
+        # published contract would offer a media type this route never sends.
+        response_class=StreamingResponse,
         responses={
             200: {
                 "description": (

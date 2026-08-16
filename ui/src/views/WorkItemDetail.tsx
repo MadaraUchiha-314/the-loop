@@ -40,6 +40,18 @@ import { useAsync } from "../state/useAsync.ts";
 /** How close to the bottom still counts as "following the newest entry". */
 const PIN_THRESHOLD_PX = 24;
 
+/**
+ * Whether the reader is at the newest entry, and so wants to be kept there.
+ *
+ * Exported for its own test: this is the whole of R6.3/R6.4, and the rest of the
+ * mechanism — reading it **before** the render that appends — is only correct if
+ * this answer is. A few pixels of slack because a scrolled-to-bottom container
+ * is routinely a fraction short of exact.
+ */
+export function isAtNewest(panel: Pick<HTMLElement, "scrollHeight" | "scrollTop" | "clientHeight">): boolean {
+  return panel.scrollHeight - panel.scrollTop - panel.clientHeight < PIN_THRESHOLD_PX;
+}
+
 interface DetailProps {
   view: WorkItemView;
   title: string | undefined;
@@ -271,8 +283,7 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0 }: D
         role="log"
         aria-label="Session transcript"
         onScroll={(event: UIEvent<HTMLDivElement>) => {
-          const panel = event.currentTarget;
-          pinned.current = panel.scrollHeight - panel.scrollTop - panel.clientHeight < PIN_THRESHOLD_PX;
+          pinned.current = isAtNewest(event.currentTarget);
         }}
       >
         {/* `useAsync` keeps stale data across tab switches and errors, so the

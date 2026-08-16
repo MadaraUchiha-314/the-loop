@@ -1,7 +1,7 @@
 ---
 type: execution-log
 workItem: "github:MadaraUchiha-314/the-loop#239"
-phase: verification              # not-started | brainstorming | requirements-definition | design | test-planning | tasks-breakdown | implementation | verification | needs-review | complete
+phase: needs-review              # not-started | brainstorming | requirements-definition | design | test-planning | tasks-breakdown | implementation | verification | needs-review | complete
 status: in-progress          # in-progress | complete
 # repos:                     # OPTIONAL (issue-183). The CONTRIBUTING repositories this
 #   - <owner>/<repo>         #   work item raises pull requests in — one inner loop each,
@@ -33,7 +33,7 @@ status: in-progress          # in-progress | complete
 | test-planning | 2026-08-16 | @MadaraUchiha-314 (PR #244) | 13 rows, 10 in scope. R1.6's CORS parity is deliberately *not* automated — a test client cannot prove it; T12 does it from a browser. |
 | tasks-breakdown | 2026-08-16 | n/a — the plan's human read is `human-approval` | 16 tasks, six of them startable at once: the service chain and the UI chain share no file. |
 | implementation | 2026-08-16 |  | All 16 tasks done. One design deviation (the broker is router-owned, not lifespan-owned) and one replanned test row, both recorded below. |
-| verification |  |  |  |
+| verification | 2026-08-16 |  | 11 of 15 activities ran and passed; the four that need a browser did not, and are escalated rather than ticked. |
 | needs-review |  |  |  |
 | complete |  |  |  |
 
@@ -250,6 +250,39 @@ status: in-progress          # in-progress | complete
 |-------------------|---------|---------|----------|
 |                   |         | pass \| fail | link or `evidence/<file>` |
 
+### 2026-08-16 18:55 UTC — verification: everything that could run, ran
+
+- **Phase:** verification
+- **Did:** executed `testing-plan.md`. The automated rows all pass. For the live rows I
+  stood up a service **built from this branch** on a seeded state root whose registered
+  session is *this* conversation, so the transcript watch pointed at a file genuinely
+  growing during the run — and held the stream open with `curl -N` while another process
+  appended records. Three things fell out of one capture: records arriving with byte-offset
+  ids, a real `transcript` frame (1720 lines of this conversation), and **no `api.request`
+  frames** despite the API traffic that produced them. Also proved live: the `503` at
+  `maxSubscribers`, and a second service with the stream disabled answering `404` while
+  healthy.
+- **Checkpoint/tests:** Python 2148 passed / 5 pre-existing failures; UI 144 passed, lint,
+  typecheck and build clean; the OpenAPI, schema-parity and docs-parity gates all pass; all
+  13 Gherkin scenarios registered.
+- **Next:** `self-review` (3 rounds — `critic-review` was declared skipped), then the
+  security review, which needs a **named human sign-off** at risk tier 4.
+- **Blockers:** none blocking, one escalation open — see below.
+- **Four activities did not run, and are not ticked.** Everything needing a **browser**:
+  T6's screenshots, T10's keyboard/screen-reader pass, and the browser halves of T12 and
+  T13. This session has no working browser connection (the Chrome extension reports
+  *not connected*); the service and the Vite dev server both came up, so the gap is exactly
+  the browser. Replanned rather than dropped: the behavioural half of T6 is now an
+  automated test that did run (`WorkItemDetail.test.tsx`). What stays unverified is
+  **rendering** — jsdom applies no stylesheet, so `max-height`, `overflow-y` and
+  `position: sticky` are inert — plus the visual connection states. Escalated on PR #244.
+- **One contract defect found by reading the evidence, not by a test.** The first version
+  of the OpenAPI block offered **both** `text/event-stream` and `application/json` on the
+  200: FastAPI infers a JSON response from the return annotation and merges it with a
+  declared one. The parity test compares paths, methods and operation ids, so both
+  documents were equally wrong and it passed. Fixed with
+  `response_class=StreamingResponse`.
+
 ## Design critic review
 
 > **Only when this work item selected the opt-in `design-critic-review` phase** (issue-188)
@@ -358,4 +391,9 @@ the dashboard's refresh behaviour.
 ### 2026-08-16 — entry implementation
 
 - **Node:** implementation
+- **Boundary:** entry
+
+### 2026-08-16 — entry verification
+
+- **Node:** verification
 - **Boundary:** entry
