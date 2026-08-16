@@ -35,6 +35,41 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   `the-loop: auto-execute` label) using the configured prompt templates — **and, since
   issue-106, only once an authorized user has explicitly started the work item** (see
   *Execution control* below).
+- **A forwarded event carries the instruction, not GitHub's metadata** (issue-243,
+  [decision-086](../decisions/decision-086.md)). The `$payload_excerpt` block is a
+  **field allow-list per container**, not a subset of the raw payload — the same function
+  for both ingresses, so a comment reads identically whether it was pushed or polled.
+
+  | Event | What the excerpt carries |
+  |---|---|
+  | `issue_comment` | the comment's `body`, `html_url`, `author` |
+  | `pull_request_review_comment` | the same, preceded by `path` and `line` |
+  | `pull_request_review` | `state`, `body`, `html_url`, `author` |
+  | `issues` / `pull_request` | the acting `actor`, the entity's `number`, `title`, `state`, `html_url` (plus `draft`/`merged` for a PR), and the `label` name when the action is `labeled`/`unlabeled` |
+  | `workflow_run` / `check_run` / `check_suite` | `name` where the object has one, `status`, `conclusion`, `head_branch`, the URLs, and a check run's own `output` title and summary |
+  | `status` | `state`, `context`, `description`, `target_url` |
+
+  - WHEN a comment event is rendered THEN the excerpt SHALL carry **no** `sender` or
+    `user` object, no `issue` object, and no `api.github.com` URL: an author is a bare
+    login, and the comment's own URL already names the issue or pull request it lives on.
+  - WHEN a lifecycle event is rendered THEN the excerpt SHALL carry the entity's **title
+    but not its body**: a spawned session's first act is `/the-loop:work-on <ref>`, which
+    reads the ticket itself, and the body was both the largest string in the excerpt and
+    the largest attacker-controlled one — travelling with *every* event about that item,
+    not only the spawn.
+  - WHEN free text (`body`, `description`, a check run's `summary`) is longer than the
+    per-field cap THEN **that field alone** SHALL be truncated with a visible marker, the
+    rendered excerpt SHALL remain parseable JSON, and the object's `html_url` — and an
+    inline comment's `path`/`line`, which are emitted first — SHALL survive it.
+  - IF an event has no rule of its own (an operator's extra `webhooks.ghWebhook.events`
+    entry) THEN it SHALL be distilled over whichever known containers it carries, and
+    SHALL never fall back to the raw payload. IF nothing is recognised THEN the excerpt
+    SHALL render `{}` and the prompt SHALL otherwise be delivered unchanged: an
+    unrecognised shape costs the session context, never the delivery of an event an
+    authorized human already caused.
+  - The excerpt is **prompt text only**. Routing, `authorizedUsers`, the self-comment
+    marker check, control-keyword parsing, reaction targeting and head-ref resolution all
+    read the **full** payload and are unaffected by what it omits.
 - **Every rendered prompt states where the work item stands in the process graph**
   (issue-148). WHEN a prompt is rendered THEN the item's graph context — current node,
   phase, status, gate messages, the node's resume command and the
@@ -522,6 +557,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-243 | A forwarded event stopped carrying GitHub's metadata (2026-08-16): the `$payload_excerpt` block was a subset of the raw payload — nine containers copied whole, cut at 4,000 characters — so an ordinary comment delivered a 61-character instruction inside 4,014 characters of `user` objects, `reactions` and the whole `issue`, with the cut landing mid-string so the "JSON" did not parse. It is now a **field allow-list per container** with free text capped per field: a comment is its body, its address and its author's login; an inline comment keeps its anchor ahead of the body; lifecycle and CI events keep what makes them actionable. Measured on the same payload, 4,014 → 203 characters and the whole prompt 6,676 → 2,865. Nothing that acts on an event changed — the gates still read the full payload | [spec](../specs/issue-243/), [decision-086](../decisions/decision-086.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/243) |
 | issue-240 | A comment abandoned after `polling.maxRetries` is now reported **on the work item** (`poll.giveup_reported`), naming the comment, the attempts and the recovery — posting it again — instead of leaving a 😕 reaction as the only signal. Best-effort and ledger-first: the notice can fail without changing what was recorded, and it echoes no text from the comment it reports | [spec](../specs/issue-240/), [interactive-sessions](interactive-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/240) |
 | issue-246 | The poll ingress reached parity with the receiver on **what a comment is** (2026-08-16): it read only the `IssueComment` connection, so an instruction left as a PR **review** or as an **inline review-thread comment** was never forwarded — silently, since nothing was read there was nothing to drop or log. The provider now merges all three surfaces into one chronological list (`gh pr view --json comments` plus paginated `gh api …/pulls/<n>/{reviews,comments}`), emits each as the event a real webhook would have carried, and forwards an inline comment with its file/line anchor; empty-body and `PENDING` reviews are dropped as carrying no instruction, an issue costs the one request it always did, and the retained-id cap grew to fit three streams in one ledger | [spec](../specs/issue-246/), [polling](../config/cli/polling-options.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/246) |
 | issue-228 | The ingresses stopped owning the operator surface (2026-08-14): the poller and receiver are started by `the-loop start` per `polling.enabled` / `webhooks.ghWebhook.enabled` (both default off), the `poll` command is gone (`daemon_entry poller [--once]` is the foreground/cron form; the run loop itself is unchanged), a start is proven by the daemon's pidfile lock instead of the removed double-fork handshake, and the receiver now holds its pidfile as a flock like the poller — so `daemon_status`, `the-loop status` and a truthful blocking `the-loop stop` all answer from the lock (the `gh-webhook` command itself folded away on the owner's PR #229 review, its run loop relocated to `the_loop.webhook.daemon`). Amended in the same PR (issue-231): `service.hostIngresses` (default true) runs both ingresses as threads inside the service process, locks kept per-ingress under the service's pid | [spec](../specs/issue-228/), [decision-084](../decisions/decision-084.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/228), [issue-231](https://github.com/MadaraUchiha-314/the-loop/issues/231) |
