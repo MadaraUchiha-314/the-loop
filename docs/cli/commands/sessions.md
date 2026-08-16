@@ -84,6 +84,13 @@ them.
 Works after the work item is closed too — and is then **always** read-only, because a
 finished session takes no input. Equivalent to `tmux attach -t loop-<slug>`.
 
+Attaching read-only is safe to leave running: the daemon delivers events by pasting into
+the pane, which consults no tmux client, so an observer cannot block the session's input.
+That was not true before **10.3.0** — the submit was a `tmux send-keys`, which resolves its
+*target client* from the session's current client, and tmux ≥ 3.7 refused it with
+`client is read-only` while anyone was attached this way, failing every delivery
+([issue-240](https://github.com/MadaraUchiha-314/the-loop/issues/240)).
+
 A session registered by hand (`sessions register`) has no tmux session until its first
 dispatched event spawns one; until then `attach` errors, telling you no tmux session is
 recorded yet.

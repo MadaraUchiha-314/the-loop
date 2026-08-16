@@ -19,6 +19,8 @@ import threading
 import time
 
 from conftest import FakeTmux, StubInteractiveAdapter
+from the_loop import comments as comments_mod
+from the_loop.authz import is_self_authored
 from the_loop.control import ControlConfig
 from the_loop.announce import announcement_body
 from the_loop.authz import mark_self_authored
@@ -135,6 +137,8 @@ def _make(
     monitor_prs=False,
     authorized=("octocat",),
     control=None,
+    max_retries=3,
+    comment_runner=None,
 ):
     registry = SessionRegistry(tmp_path / "sessions")
     tmux = FakeTmux()
@@ -160,9 +164,10 @@ def _make(
         providers=[provider],
         registry=registry,
         dispatcher=dispatcher,
-        config=PollConfig(),
+        config=PollConfig(max_retries=max_retries),
         state=PollState(WorkItemStore(tmp_path / "portable")),
         authorized_users=list(authorized),  # default: the fixture author (authz guard)
+        **({"comment_runner": comment_runner} if comment_runner else {}),
     )
     return registry, tmux, dispatcher, poller
 
@@ -761,6 +766,70 @@ def test_an_abandoned_dispatch_is_retried_with_a_full_budget(tmp_path):
     reread = PollState(WorkItemStore(tmp_path / "portable"))
     assert "IC_3" not in reread.seen_comments(REF)
     assert reread.comment_attempts(REF, "IC_3") == 0
+
+
+class _RecordingGh:
+    """A `gh` double for the give-up notice's `post_issue_comment` runner."""
+
+    def __init__(self):
+        self.bodies = []
+        self.endpoints = []
+
+    def __call__(self, cmd, **kwargs):
+        self.endpoints.append(next((a for a in cmd if a.startswith("repos/")), ""))
+        self.bodies.extend(a[5:] for a in cmd if a.startswith("body="))
+
+        class Proc:
+            returncode = 0
+            stdout = "{}"
+            stderr = ""
+
+        return Proc()
+
+
+def test_an_abandoned_comment_is_reported_on_the_work_item(tmp_path, monkeypatch):
+    """Scenario: every delivery of a comment fails until the retry budget is spent.
+
+    Given a live session whose tmux delivery keeps failing
+    When the poller forwards a comment until `polling.maxRetries` is exhausted
+    Then the comment is abandoned exactly as before
+    And a single notice is posted on the work item naming the comment and the recovery
+    And the notice carries the-loop's own marker, so the poller never reads it back
+    Requirement: docs/specs/issue-240/bugfix.md#requirement-2--an-abandoned-comment-is-reported-to-the-human-who-wrote-it
+    """
+    monkeypatch.setattr(comments_mod.shutil, "which", lambda _: "/usr/bin/gh")
+    gh = GhState()
+    gh.comments = [_comment("IC_1", "old")]
+    poster = _RecordingGh()
+    registry, tmux, dispatcher, poller = _make(
+        tmp_path, gh, max_retries=1, comment_runner=poster
+    )
+    poller.poll_once()  # spawn + baseline IC_1
+    assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
+
+    # Every delivery now fails transiently — the shape a read-only tmux client
+    # produced before issue-240, and the shape any wedged dispatch produces.
+    tmux.deliver_ok = False
+    gh.comments.append(_comment("IC_2", "the build is red"))
+
+    poller.poll_once()  # attempt 1 (budget = 1)
+    assert wait_until(lambda: len(tmux.delivers) >= 1)
+    assert poster.bodies == []  # still retrying: nothing to report yet
+
+    summary = poller.poll_once()  # budget exhausted -> give up + notice
+    dispatcher.stop()
+
+    assert summary.failures == 1
+    assert "IC_2" in poller.state.seen_comments(REF)
+    assert len(poster.bodies) == 1
+    body = poster.bodies[0]
+    assert is_self_authored(body)
+    assert "IC_2" in body
+    assert poster.endpoints == ["repos/octo/repo/issues/15/comments"]
+
+    # One notice per abandoned comment: a later cycle reads it as baselined.
+    poller.poll_once()
+    assert len(poster.bodies) == 1
 
 
 def test_a_second_poller_is_refused_rather_than_sharing_the_ledger(tmp_path):

@@ -103,6 +103,10 @@ A harness dispatch failed **terminally**: `poll.spawn_failed` / `poll.comment_fa
 error. This is the one most operators want on — it is the difference between "the-loop is
 quiet because there is nothing to do" and "the-loop is quiet because it is broken".
 
+Independently of this setting, an abandoned **comment** is also reported on the work item
+itself (`poll.giveup_reported`, issue-240), so the person who wrote it learns it never
+reached the session even if nobody wired this notification up.
+
 ### `notifications.events.session-died`
 
 - **Type:** `string[]` (roles)
