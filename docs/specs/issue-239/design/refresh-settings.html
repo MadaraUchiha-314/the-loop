@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>issue-239 · Settings → Refresh, and the connection indicator</title>
+<!--
+  Self-contained prototype (design.uiArtifacts.selfContained: true) — no network,
+  no fonts, no scripts from anywhere. Tokens are copied from ui/src/styles/industry.css
+  rather than imported, and the component classes are the ones app.css already ships
+  (.lp-settings-card, .lp-settings-kicker, .lp-note, .lp-conn, .lp-conn-dot, .btn).
+
+  Covers: R3 (three refresh modes, persisted, no reload) and R4 (visible degradation).
+-->
+<style>
+  :root {
+    --color-bg: #f2f2f3;
+    --color-surface: #e9e9ea;
+    --color-text: #1d1f20;
+    --color-neutral-100: #f5f5f8;
+    --color-neutral-200: #e7e7ea;
+    --color-neutral-300: #d4d4d7;
+    --color-neutral-400: #b7b7ba;
+    --color-neutral-500: #98989b;
+    --color-neutral-600: #7a7a7d;
+    --color-neutral-700: #5d5d60;
+    --color-neutral-900: #2b2b2d;
+    --color-accent-200: #d6ebff;
+    --color-accent-600: #597ea3;
+    --color-accent-700: #416180;
+    --color-accent-900: #1d2d3d;
+    --font-heading: "Barlow Condensed", system-ui, sans-serif;
+    --font-body: "Barlow", system-ui, sans-serif;
+    --ok: #2f6f4f;
+    --warn: #8a6320;
+    --fail: #8c3b3b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px 20px 64px;
+    background: var(--color-bg); color: var(--color-text);
+    font-family: var(--font-body); font-size: 14px; line-height: 1.55;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  h1 { font-family: var(--font-heading); font-weight: 600; font-size: 30px;
+       letter-spacing: 0.01em; margin: 0 0 4px; }
+  .page-note { color: var(--color-neutral-600); font-size: 12.5px; margin-bottom: 26px; }
+  .card {
+    background: var(--color-neutral-100);
+    border: 1px solid var(--color-neutral-300);
+    padding: 18px 20px 20px; margin-bottom: 18px;
+    position: relative;
+  }
+  .card::before {
+    content: ""; position: absolute; inset: 4px; pointer-events: none;
+    border: 1px solid var(--color-neutral-200);
+  }
+  .kicker {
+    font-family: var(--font-heading); text-transform: uppercase;
+    letter-spacing: 0.09em; font-size: 11px; color: var(--color-neutral-700);
+    margin-bottom: 12px;
+  }
+  fieldset { border: 0; margin: 0; padding: 0; }
+  legend {
+    font-size: 12px; color: var(--color-neutral-700); padding: 0 0 8px;
+    font-weight: 500;
+  }
+  .modes { display: flex; flex-direction: column; gap: 2px; }
+  .mode {
+    display: flex; gap: 10px; align-items: flex-start;
+    padding: 9px 10px; border: 1px solid transparent; cursor: pointer;
+  }
+  .mode:hover { background: var(--color-neutral-200); }
+  .mode:has(input:checked) {
+    background: var(--color-accent-200);
+    border-color: var(--color-accent-600);
+  }
+  .mode:has(input:focus-visible) { outline: 2px solid var(--color-accent-700); outline-offset: 1px; }
+  .mode input { margin: 3px 0 0; accent-color: var(--color-accent-700); }
+  .mode-name { font-weight: 500; }
+  .mode-why { font-size: 12.5px; color: var(--color-neutral-700); }
+  .interval { margin: 12px 0 0 34px; }
+  .interval[hidden] { display: none; }
+  label.field { display: block; font-size: 12px; color: var(--color-neutral-700); margin-bottom: 5px; }
+  select, input[type="text"] {
+    font: inherit; padding: 7px 9px; background: var(--color-neutral-100);
+    border: 1px solid var(--color-neutral-400); color: inherit; min-width: 220px;
+  }
+  .note {
+    margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--color-neutral-200);
+    font-size: 12.5px; color: var(--color-neutral-700);
+  }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px;
+         background: var(--color-neutral-200); padding: 1px 4px; }
+
+  /* the connection indicator — .lp-conn / .lp-conn-dot, as the base-URL probe uses */
+  .conn {
+    display: flex; align-items: center; gap: 9px; margin-top: 14px;
+    font-size: 12.5px; color: var(--color-neutral-900);
+  }
+  .conn-dot {
+    width: 9px; height: 9px; flex: none; border-radius: 50%;
+    background: var(--color-neutral-400); box-shadow: 0 0 0 3px var(--color-neutral-200);
+  }
+  .conn-dot.live { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
+  .conn-dot.warn { background: var(--warn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 22%, transparent); }
+  .conn-dot.fail { background: var(--fail); box-shadow: 0 0 0 3px color-mix(in srgb, var(--fail) 22%, transparent); }
+  .conn-text b { font-weight: 500; }
+  .conn-advice { display: block; color: var(--color-neutral-700); }
+
+  .states { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .btn {
+    font: inherit; font-size: 12.5px; padding: 6px 12px; cursor: pointer;
+    background: var(--color-neutral-200); border: 1px solid var(--color-neutral-400);
+    color: inherit;
+  }
+  .btn[aria-pressed="true"] { background: var(--color-accent-600); border-color: var(--color-accent-700); color: #fff; }
+  .legendbox { font-size: 12px; color: var(--color-neutral-600); margin-top: 26px; }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --color-bg: #17181a; --color-text: #ececee;
+      --color-neutral-100: #1f2022; --color-neutral-200: #292a2d;
+      --color-neutral-300: #3a3b3f; --color-neutral-400: #4d4e53;
+      --color-neutral-500: #6d6e73; --color-neutral-600: #909196;
+      --color-neutral-700: #b2b3b8; --color-neutral-900: #ececee;
+      --color-accent-200: #23394d; --ok: #62b98c; --warn: #d3a659; --fail: #d98080;
+    }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Settings</h1>
+  <div class="page-note">
+    Prototype for <a href="https://github.com/MadaraUchiha-314/the-loop/issues/239">issue-239</a> — the
+    Refresh card (R3) and the connection indicator (R4). Everything below is live: pick a mode, then
+    step the connection through its states.
+  </div>
+
+  <section class="card" aria-labelledby="refresh-kicker">
+    <div class="kicker" id="refresh-kicker">Refresh</div>
+
+    <fieldset>
+      <legend>How this browser keeps the screen current</legend>
+      <div class="modes" role="radiogroup" aria-label="Refresh mode">
+        <label class="mode">
+          <input type="radio" name="mode" value="stream" checked>
+          <span>
+            <span class="mode-name">Streaming</span>
+            <span class="mode-why">The service pushes changes as they happen. One connection, held
+            open. Best on loopback or a stable tunnel.</span>
+          </span>
+        </label>
+        <label class="mode">
+          <input type="radio" name="mode" value="poll">
+          <span>
+            <span class="mode-name">Polling</span>
+            <span class="mode-why">Ask again on a timer. A failed cycle costs one request, so this is
+            the kinder mode over a flaky link.</span>
+          </span>
+        </label>
+        <label class="mode">
+          <input type="radio" name="mode" value="manual">
+          <span>
+            <span class="mode-name">Manual</span>
+            <span class="mode-why">No background request of any kind. The screen changes only when
+            you ask it to.</span>
+          </span>
+        </label>
+      </div>
+    </fieldset>
+
+    <div class="interval" id="interval" hidden>
+      <label class="field" for="poll-seconds">Poll interval</label>
+      <select id="poll-seconds">
+        <option value="5">every 5s</option>
+        <option value="15" selected>every 15s</option>
+        <option value="30">every 30s</option>
+        <option value="60">every 60s</option>
+      </select>
+    </div>
+
+    <div class="conn" id="conn" role="status" aria-live="polite">
+      <span class="conn-dot live" aria-hidden="true"></span>
+      <span class="conn-text"><b>Live</b> — last heard from the service 2s ago</span>
+    </div>
+
+    <div class="note" id="note">
+      Each streamed change refreshes only what it touches: a graph move re-reads that one work item's
+      position, anything else re-reads the four lists. A connection that cannot be opened falls back to
+      polling and says why.
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="states-kicker">
+    <div class="kicker" id="states-kicker">Connection states (R4) — step through them</div>
+    <div class="states">
+      <button class="btn" type="button" data-state="live" aria-pressed="true">live</button>
+      <button class="btn" type="button" data-state="reconnecting" aria-pressed="false">reconnecting</button>
+      <button class="btn" type="button" data-state="fallback" aria-pressed="false">fallback</button>
+      <button class="btn" type="button" data-state="off" aria-pressed="false">off (polling/manual)</button>
+    </div>
+    <div class="note">
+      The state is text first and a dot second — colour never carries it alone. The region is
+      <code>aria-live="polite"</code>, so a change is announced without stealing focus.
+    </div>
+  </section>
+
+  <div class="legendbox">
+    Reuses the shipped <code>.lp-settings-card</code>, <code>.lp-conn</code> and <code>.btn</code>
+    classes; no new component primitive and no new colour. Tokens copied from
+    <code>industry.css</code> so this file needs no network.
+  </div>
+</div>
+
+<script>
+  const STATES = {
+    live:         { dot: "live", html: "<b>Live</b> — last heard from the service 2s ago" },
+    reconnecting: { dot: "warn", html: "<b>Reconnecting</b> — attempt 2 of 5<span class='conn-advice'>The screen is not updating while this says so.</span>" },
+    fallback:     { dot: "fail", html: "<b>Streaming unavailable — polling every 15s instead</b><span class='conn-advice'>This page's origin is not in <code>service.cors.allowOrigins</code>, so the browser blocks the stream. Add it there, or keep polling.</span>" },
+    off:          { dot: "",     html: "<b>Not streaming</b> — this browser is set to poll" },
+  };
+
+  const conn = document.getElementById("conn");
+  const interval = document.getElementById("interval");
+
+  function setState(name) {
+    const s = STATES[name];
+    conn.innerHTML = '<span class="conn-dot ' + s.dot + '" aria-hidden="true"></span>' +
+                     '<span class="conn-text">' + s.html + "</span>";
+    for (const b of document.querySelectorAll("[data-state]")) {
+      b.setAttribute("aria-pressed", String(b.dataset.state === name));
+    }
+  }
+
+  for (const b of document.querySelectorAll("[data-state]")) {
+    b.addEventListener("click", () => setState(b.dataset.state));
+  }
+
+  for (const radio of document.querySelectorAll('input[name="mode"]')) {
+    radio.addEventListener("change", () => {
+      const mode = document.querySelector('input[name="mode"]:checked').value;
+      interval.hidden = mode !== "poll";
+      setState(mode === "stream" ? "live" : "off");
+    });
+  }
+</script>
+</body>
+</html>

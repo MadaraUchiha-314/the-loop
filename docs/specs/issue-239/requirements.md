@@ -2,8 +2,12 @@
 type: requirements
 phase: requirements-definition
 workItem: "github:MadaraUchiha-314/the-loop#239"
-status: draft                # draft | in-review | approved
-approvedBy: []               # `requirements-approval` was declared skipped at phase-selection
+status: approved             # locked by the authoring node: `requirements-approval` was
+                             # declared skipped, so there is no per-phase approval round —
+                             # the artifact meets its human at `design-approval` and at the
+                             # final `human-approval` gate on PR #244 (graph comment,
+                             # pdlc-work-item-loop.yaml § requirements-approval)
+approvedBy: []               # none: the approval phase was declared away by @MadaraUchiha-314
 collaborators: [engineer, designer, approver]
 overrides: {}
 ---
@@ -225,7 +229,9 @@ that replying does not mean scrolling past the entire transcript.
   The untrusted actor is therefore *any page in a browser that can reach the base URL*,
   and any local process on the workstation. The stream is a **read** surface; it must not
   become a control surface.
-- **Trust boundaries & data.** The notifications carry event-log material — work-item
+- **Trust boundaries & data.** The one trust boundary this work item adds is the moment a
+  browser's request becomes a connection the service holds open on its behalf; everything
+  in the list below is a consequence of that. The notifications carry event-log material — work-item
   refs, actor handles, filesystem paths (`cwd`), tmux target names, and the text of
   questions agents asked. That data is *already* served by `GET /api/v1/events`, so the
   change is not the data but the **channel**: a push channel that a page can open once and

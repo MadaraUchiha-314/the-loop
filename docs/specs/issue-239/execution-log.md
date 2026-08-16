@@ -1,7 +1,7 @@
 ---
 type: execution-log
 workItem: "github:MadaraUchiha-314/the-loop#239"
-phase: requirements-definition   # not-started | brainstorming | requirements-definition | design | test-planning | tasks-breakdown | implementation | verification | needs-review | complete
+phase: design-approval           # not-started | brainstorming | requirements-definition | design | test-planning | tasks-breakdown | implementation | verification | needs-review | complete
 status: in-progress          # in-progress | complete
 # repos:                     # OPTIONAL (issue-183). The CONTRIBUTING repositories this
 #   - <owner>/<repo>         #   work item raises pull requests in — one inner loop each,
@@ -29,8 +29,8 @@ status: in-progress          # in-progress | complete
 |-------|---------|----------------------|-------|
 | phase-selection | 2026-08-16 | @MadaraUchiha-314 | `brainstorming`, `requirements-approval` and `critic-review` declared skipped; `design-critic-review` not selected. Outer loop iterates **on a pull request**. |
 | requirements-definition | 2026-08-16 | n/a — `requirements-approval` skipped | 6 requirements. The transport choice (SSE vs WebSocket) is deferred to design *with its constraints fixed here*, CORS parity among them. |
-| design |  |  |  |
-| test-planning |  |  |  |
+| design | 2026-08-16 | awaiting `design-approval` | SSE over WebSocket, decided on CORS parity. Two UI prototypes under `design/`. Risk tier 4 — the CLI config schema changes, so the security review needs a named human sign-off. |
+| test-planning | 2026-08-16 | awaiting `design-approval` | 13 rows, 10 in scope. R1.6's CORS parity is deliberately *not* automated — a test client cannot prove it; T12 does it from a browser. |
 | tasks-breakdown |  |  |  |
 | implementation |  |  |  |
 | verification |  |  |  |
@@ -89,6 +89,27 @@ status: in-progress          # in-progress | complete
 - **Next:** derive `design.md` — settle SSE vs WebSocket against the constraints
   requirements fixed, then the testing plan; both land at the `design-approval` gate.
 - **Blockers:** none.
+
+### 2026-08-16 16:52 UTC — design and testing plan locked; at the first human gate
+
+- **Phase:** design-approval
+- **Did:** wrote `design.md`, two self-contained UI prototypes under `design/`, and
+  `testing-plan.md`; locked all three and advanced the graph twice. The design settles the
+  ticket's open question — **SSE, not WebSocket** — on the ground that a WebSocket
+  handshake is exempt from CORS, so choosing it would silently drop a boundary the REST
+  surface already has. Two further findings came out of writing it: the stream must never
+  carry `api.request` (the control plane's own refresh would feed itself forever), and one
+  invalidation class would make streaming *more* expensive than the 15s poll it replaces.
+- **Checkpoint/tests:** `make lint` → 0 errors over 693 files. `the-loop graph complete`
+  passed `design` (validate-artifacts + enforces-boundaries-from + lint) and
+  `test-planning`.
+- **Next:** wait for @MadaraUchiha-314 at `design-approval`, which reads `design.md` and
+  `testing-plan.md` together. Then `tasks-breakdown`.
+- **Blockers:** the `design-approval` gate.
+- **Observed, not fixed:** `request-review` posted its gate notice on the **ticket**, not
+  on PR #244, although this work item's frozen surface is `pull-request`. The artifacts and
+  their review belong on the PR, so the briefing was posted there by hand. Out of scope
+  here; worth its own ticket.
 
 ## Verification results
 
@@ -182,4 +203,14 @@ under `<specDir>/<id>/evidence/`.
 ### 2026-08-16 — entry requirements-definition
 
 - **Node:** requirements-definition
+- **Boundary:** entry
+
+### 2026-08-16 — entry design
+
+- **Node:** design
+- **Boundary:** entry
+
+### 2026-08-16 — entry test-planning
+
+- **Node:** test-planning
 - **Boundary:** entry

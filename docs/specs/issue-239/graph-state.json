@@ -1,7 +1,7 @@
 {
   "version": 1,
   "workItem": "issue-239",
-  "currentNode": "requirements-definition",
+  "currentNode": "design-approval",
   "nodes": {
     "phase-selection": {
       "attempts": 1,
@@ -21,10 +21,50 @@
     },
     "requirements-definition": {
       "attempts": 1,
-      "outcome": "",
+      "outcome": "pass",
       "enteredAt": "2026-08-16T16:35:48+00:00",
+      "exitedAt": "2026-08-16T16:40:48+00:00",
+      "lastBlock": "`validate-artifacts` did not pass:\n- artifact is not locked \u2014 front-matter says status: draft, expected status: approved (docs/specs/issue-239/requirements.md)",
+      "forced": false
+    },
+    "requirements-approval": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-08-16T16:40:48+00:00",
+      "exitedAt": "2026-08-16T16:40:48+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "design": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-08-16T16:40:48+00:00",
+      "exitedAt": "2026-08-16T16:49:20+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "design-critic-review": {
+      "attempts": 0,
+      "outcome": "skipped",
+      "enteredAt": "2026-08-16T16:49:20+00:00",
+      "exitedAt": "2026-08-16T16:49:20+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "test-planning": {
+      "attempts": 1,
+      "outcome": "pass",
+      "enteredAt": "2026-08-16T16:49:20+00:00",
+      "exitedAt": "2026-08-16T16:49:24+00:00",
+      "lastBlock": "",
+      "forced": false
+    },
+    "design-approval": {
+      "attempts": 1,
+      "outcome": "",
+      "enteredAt": "2026-08-16T16:49:24+00:00",
       "exitedAt": "",
-      "lastBlock": "`validate-artifacts` did not pass:\n- required artifact is missing \u2014 write one of: requirements.md, bugfix.md (docs/specs/issue-239)",
+      "lastBlock": "",
       "forced": false
     }
   },
@@ -192,7 +232,20 @@
   "forced": [],
   "parked": null,
   "session": null,
-  "completions": {},
+  "completions": {
+    "requirements-definition": {
+      "at": "2026-08-16T16:40:48+00:00",
+      "by": "cli"
+    },
+    "design": {
+      "at": "2026-08-16T16:49:20+00:00",
+      "by": "cli"
+    },
+    "test-planning": {
+      "at": "2026-08-16T16:49:24+00:00",
+      "by": "cli"
+    }
+  },
   "skips": {
     "brainstorming": {
       "via": "selection",
