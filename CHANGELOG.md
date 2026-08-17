@@ -1,3 +1,9 @@
+## v10.6.0 (2026-08-17)
+
+### Feat
+
+- **issue-260**: the work item chooses how many sessions its pull requests get (#261)
+
 ## v10.5.0 (2026-08-17)
 
 ### Feat
