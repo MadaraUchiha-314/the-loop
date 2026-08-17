@@ -128,7 +128,9 @@ def test_invalid_documents_are_named_by_key_path(document, why):
 def test_session_per_pr_accepts_both_booleans_and_all_three_modes(accepted):
     """issue-258 R3.3 — the key grew names without dropping the booleans, so a
     config file written before this change still validates."""
-    assert configschema.validate({"routing": {"tmux": {"sessionPerPr": accepted}}}) == []
+    assert (
+        configschema.validate({"routing": {"tmux": {"sessionPerPr": accepted}}}) == []
+    )
 
 
 def test_the_schemas_use_no_keyword_the_validator_ignores():

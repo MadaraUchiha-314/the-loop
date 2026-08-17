@@ -224,6 +224,17 @@ routing:
   # session is KEPT, end the harness process inside it — the pane stays
   # readable, but is no longer a live TUI a stray keystroke/paste could
   # resume. SIGTERM, then SIGKILL after harnessKillGraceSeconds.
+  # sessionPerPr (issue-172, issue-253, issue-258): how many tmux+claude sessions
+  # a work item's pull requests get — `never` (all events into the work item's
+  # single session), `cross-repository` (the default — only a PR in ANOTHER
+  # repository gets its own; a PR in the work item's own repository is that
+  # item's delivery, on its branch and in its checkout), or `always` (every PR,
+  # its own repository included). In every mode an endpoint spawns only when it
+  # has a working tree of its own, so `always` needs workspace.root and, in
+  # practice, strategy: clone — two git worktrees of one clone cannot both hold
+  # the PR's branch. A refusal goes into the work item's session and is recorded
+  # as session.pr_session_declined. The legacy booleans still parse: true is
+  # cross-repository, false is never.
   tmux:
     keepSessionOnClose: true
     remainOnExit: true
@@ -231,6 +242,7 @@ routing:
     resumeProbeSeconds: 2
     killHarnessOnClose: true
     harnessKillGraceSeconds: 5
+    sessionPerPr: cross-repository
   # Session announcement comment (issue-86): when a tmux-mode session is spawned
   # for a work item, post the tmux session name and the `tmux attach -t …`
   # command on the work item, so a human on the ticket can watch it work. A

@@ -489,36 +489,67 @@ How long the harness gets to exit after SIGTERM before SIGKILL. `0` escalates im
 
 ### `tmux.sessionPerPr`
 
-- **Type:** `boolean`
-- **Default:** `true`
+- **Type:** `string` (`never` · `cross-repository` · `always`) — the legacy booleans still parse
+- **Default:** `cross-repository`
+- **Related:** [decision-064](/decisions/decision-064), [decision-088](/decisions/decision-088), [decision-092](/decisions/decision-092)
 
-Give a pull request **in another repository** its own tmux session and harness conversation
-(issue-172, issue-183) — a contribution this work item makes elsewhere, which has a
-checkout of its own. Recorded on the work item's single session record (`sessions list
---format json` shows them under `pullRequests`), spawned lazily by the first event that
-needs it and announced on the work item like any other spawn.
+How many tmux+claude sessions a work item's pull requests get. A pull request that gets one
+is recorded on the work item's single session record (`sessions list --format json` shows
+them under `pullRequests`), spawned lazily by the first event that needs it, and announced
+on the work item like any other spawn.
 
-::: tip A pull request in the work item's own repository is never a session of its own
-That pull request *is* the work item's delivery: same branch, same checkout, and under
-`outer-loop-on-pull-request` the same conversation the work item's session is already
-holding on it. Its events go into the work item's session regardless of this setting
-(issue-253) — one owner per work item, one session per working tree. Before that, it got a
-second session pointed at the **same working tree**, and two agents shared one branch with
-no lock.
+| Value | A pull request in the work item's own repository | A pull request in another repository |
+|---|---|---|
+| `never` | the work item's session | the work item's session |
+| `cross-repository` *(default)* | the work item's session | its own session |
+| `always` | its own session | its own session |
+
+- **`never`** is the pre-issue-172 shape: one work item, one conversation, whatever opens
+  against it.
+- **`cross-repository`** splits off the case the inner loop was built for (issue-183) — a
+  contribution this work item makes elsewhere, which has a repository of its own to work in.
+  A pull request in the work item's *own* repository is that work item's delivery: same
+  branch, same checkout, and under `outer-loop-on-pull-request` the same conversation the
+  work item's session is already holding on it.
+- **`always`** is the operator saying they want a conversation per pull request anyway
+  (issue-258). Read the box below before setting it.
+
+::: warning `always` needs a checkout per pull request — in practice `strategy: clone`
+An endpoint gets a conversation only when it gets a **working tree of its own**
+([decision-088](/decisions/decision-088) D2), in every mode. That rule is not relaxed by
+`always`, because relaxing it is exactly the [#253](https://github.com/MadaraUchiha-314/the-loop/issues/253)
+defect: two harness conversations on one branch, no lock, interleaved commits and duplicated
+verification.
+
+Under [`workspace.strategy: worktree`](#workspacestrategy) the work item's own session holds
+the pull request's branch, and **two worktrees of one clone cannot both check out one
+branch** — that is git, not policy. So a same-repository endpoint declines under `worktree`
+and is served under [`clone`](#workspacestrategy), where it gets an independent clone that
+really is on the pull request's code.
+
+A decline is not a lost event: it is delivered into the work item's session and recorded as
+`session.pr_session_declined`. If you set `always` and see one session, `the-loop events`
+says which of `no-separate-checkout`, `workspace-failed` or `shared-worktree` it was.
 :::
 
-A cross-repository endpoint spawns only when there is a checkout to give it — that is,
-when [`workspace.root`](#workspaceroot) is set. Without one, the event is delivered into
-the work item's session and the refusal is recorded as `session.pr_session_declined`.
+A cross-repository endpoint has the same requirement, and it is why
+[`workspace.root`](#workspaceroot) must be set for any mode but `never` to produce a second
+session at all.
 
 A PR closing (merged or not) ends only **that PR's** session, through the same
 `keepSessionOnClose`/`killHarnessOnClose` rules as any close; the work item's session
 keeps running until the item itself ends. This is issue-101's several-PRs rule expressed
 in the model rather than special-cased.
 
-`false` delivers every PR's events into the work item's single session — the
-pre-issue-172 behaviour. Either way, *which* work item owns a PR's events is read from
-the session record, never re-derived from GitHub on each event.
+In every mode, *which* work item owns a PR's events is read from the session record, never
+re-derived from GitHub on each event.
+
+::: tip Upgrading from the boolean
+`true` and `false` still validate and still mean what they mean today — `true` is
+`cross-repository`, `false` is `never`. Nothing changes on upgrade unless you edit the file.
+A value that is neither a boolean nor one of the three names resolves to `cross-repository`
+with a warning, never to `always`.
+:::
 
 ### `webTerminal.enabled`
 

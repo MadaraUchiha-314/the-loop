@@ -19,8 +19,12 @@
 # chain, it does not get a spec chain of its own.
 #
 # Each inner loop runs in its PR's own session — the pullRequests[] endpoint
-# this same work item added (routing.tmux.sessionPerPr) — so two PRs advance
-# their loops without sharing a conversation.
+# this same work item added — so two PRs advance their loops without sharing a
+# conversation. WHICH pull requests have such a session is the operator's choice
+# (routing.tmux.sessionPerPr, issue-258): `cross-repository` (the default) gives
+# one to a PR in another repository only, `always` to every PR that can be given
+# a checkout of its own, and `never` to none — under `never`, no inner loop is
+# walked at all and every PR's events advance the work item's outer loop.
 #
 # A PR in ANOTHER repository walks this same loop (issue-183): its state is
 # qualified by repository (pr-loops/<owner>__<repo>/pr-<n>/) because a PR number

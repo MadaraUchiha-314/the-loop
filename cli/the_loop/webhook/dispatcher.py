@@ -18,7 +18,7 @@ import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from string import Template
-from typing import Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 from .. import eventlog
 from ..announce import AnnounceConfig, SessionAnnouncer
@@ -167,6 +167,46 @@ class WebTerminalConfig:
         )
 
 
+#: The three answers to "how many tmux+claude sessions do a work item's pull
+#: requests get?" (issue-258). ``sessionPerPr`` used to be a boolean; the two
+#: booleans still parse, to the two modes they have always meant.
+SESSION_PER_PR_NEVER = "never"
+SESSION_PER_PR_CROSS_REPOSITORY = "cross-repository"
+SESSION_PER_PR_ALWAYS = "always"
+SESSION_PER_PR_MODES = (
+    SESSION_PER_PR_NEVER,
+    SESSION_PER_PR_CROSS_REPOSITORY,
+    SESSION_PER_PR_ALWAYS,
+)
+
+
+def _session_per_pr_mode(value: Any) -> str:
+    """Resolve a configured ``sessionPerPr`` to one of :data:`SESSION_PER_PR_MODES`.
+
+    Total: every input produces a mode. ``True``/``False`` are what every config
+    file written before issue-258 says, and they keep meaning exactly what they
+    mean today — ``True`` is ``cross-repository``, **not** ``always``, because
+    that is what it has meant since issue-253 narrowed it.
+
+    Anything else resolves to the shipped default with a warning, the way
+    ``routing.interaction.mode`` does. Fail *closed*: a typo lands on the
+    narrower of the two splitting choices, never on the widest one.
+    """
+    if value is None:
+        return SESSION_PER_PR_CROSS_REPOSITORY
+    if isinstance(value, bool):
+        return SESSION_PER_PR_CROSS_REPOSITORY if value else SESSION_PER_PR_NEVER
+    if value in SESSION_PER_PR_MODES:
+        return str(value)
+    logger.warning(
+        "routing.tmux.sessionPerPr: %r is not one of %s; using %r",
+        value,
+        ", ".join(SESSION_PER_PR_MODES),
+        SESSION_PER_PR_CROSS_REPOSITORY,
+    )
+    return SESSION_PER_PR_CROSS_REPOSITORY
+
+
 @dataclass
 class TmuxConfig:
     """Mirror of ``routing.tmux`` — lifetime of the hosted sessions (issue-86).
@@ -181,13 +221,27 @@ class TmuxConfig:
     record rather than a live agent: the harness process is ended when the work
     item closes, leaving a dead — readable, un-typeable — pane behind.
 
-    ``session_per_pr`` (issue-172, PR #173 review) decides how many
-    conversations one work item gets: on (**the default**) each pull request
-    delivering it works in its own tmux session with its own harness
-    conversation, so a work item with two PRs has three sessions — its own, which
-    receives issue events, and one per PR. Off, every PR's events are delivered
-    into the work item's single session, which is what the-loop did before
-    issue-172.
+    ``session_per_pr`` (issue-172, issue-253, issue-258) decides how many
+    conversations one work item gets, and it is the **operator's** choice among
+    three:
+
+    ``never``
+        every pull request's events are delivered into the work item's single
+        session — the pre-issue-172 shape.
+    ``cross-repository`` (**the default**)
+        only a pull request in a repository *other* than the work item's gets a
+        session of its own. A pull request in the work item's own repository is
+        the work item's own delivery, on its branch, in its checkout.
+    ``always``
+        every pull request delivering the work item gets its own tmux session
+        and harness conversation, the work item's own repository included.
+
+    What the mode does **not** decide is whether a session is actually spawned:
+    decision-088 D2 stands in every mode — an endpoint gets a conversation only
+    when it gets a working tree of its own, enforced at
+    :meth:`Dispatcher._endpoint_cwd`. So ``always`` in a deployment with no
+    ``routing.workspace.root`` still yields one session, and says so
+    (``session.pr_session_declined``).
     """
 
     keep_session_on_close: bool = True
@@ -196,7 +250,22 @@ class TmuxConfig:
     resume_probe_seconds: float = 2.0
     kill_harness_on_close: bool = True
     harness_kill_grace_seconds: float = 5.0
-    session_per_pr: bool = True
+    session_per_pr: str = SESSION_PER_PR_CROSS_REPOSITORY
+
+    def __post_init__(self) -> None:
+        # Constructed directly as often as it is parsed (tests, embedders), and a
+        # mode is only useful if every construction path produces a valid one.
+        self.session_per_pr = _session_per_pr_mode(self.session_per_pr)
+
+    @property
+    def splits_pull_requests(self) -> bool:
+        """Whether *any* pull request can have a conversation of its own."""
+        return self.session_per_pr != SESSION_PER_PR_NEVER
+
+    @property
+    def splits_same_repository(self) -> bool:
+        """Whether a pull request in the work item's own repository is a candidate."""
+        return self.session_per_pr == SESSION_PER_PR_ALWAYS
 
     @classmethod
     def from_mapping(cls, data: dict) -> "TmuxConfig":
@@ -208,7 +277,7 @@ class TmuxConfig:
             resume_probe_seconds=float(data.get("resumeProbeSeconds", 2.0)),
             kill_harness_on_close=bool(data.get("killHarnessOnClose", True)),
             harness_kill_grace_seconds=float(data.get("harnessKillGraceSeconds", 5.0)),
-            session_per_pr=bool(data.get("sessionPerPr", True)),
+            session_per_pr=_session_per_pr_mode(data.get("sessionPerPr")),
         )
 
 
@@ -836,39 +905,50 @@ class Dispatcher:
     def _endpoint_for(self, record: Session, routed: RoutedEvent) -> Session:
         """The endpoint of ``record`` that should receive ``routed``.
 
-        The PR's own endpoint when the event carries a pull request in **another
-        repository** and ``sessionPerPr`` is on; the work item's own session
-        otherwise — which is every issue event, every pull request in the work
-        item's own repository, and every event at all when the toggle is off.
+        The PR's own endpoint when ``sessionPerPr`` makes that pull request a
+        candidate; the work item's own session otherwise — which is every issue
+        event, and every event at all under ``never``.
 
-        The same-repository rule is the work item's **ownership** rule
-        (issue-253). A pull request in the repository the ticket lives in is that
-        work item's own delivery: it is worked on the work item's branch, in the
-        work item's checkout, and — when the item froze
-        ``outer-loop-on-pull-request`` — it is where the work item's own session
-        is already posting its spec chain and reading its human gates. Giving it
-        a second session put two harness conversations in one working tree, with
-        no lock and no owner: they interleaved commits, restarted each other's
-        services, and ran the same verification twice against a tree each was
-        changing under the other. One work item, one owner.
+        Which pull requests are candidates is the **operator's** choice
+        (issue-258), and the only interesting boundary is the work item's own
+        repository:
 
-        A pull request in a **different** repository is the case issue-172 and
-        issue-183 built the inner loop for — a contribution this work item makes
-        elsewhere, with a checkout of its own — and it still gets its own
-        session. :meth:`_spawn_endpoint` is what makes that true rather than
-        assumed: it declines the spawn when there is no separate checkout to run
-        it in.
+        - ``never`` — none of them. The pre-issue-172 shape.
+        - ``cross-repository`` (the default) — a pull request in the repository
+          the ticket lives in is that work item's own delivery: worked on the
+          work item's branch, in the work item's checkout, and — when the item
+          froze ``outer-loop-on-pull-request`` — the very place the work item's
+          session is already posting its spec chain and reading its human gates.
+          It routes to the work item's session.
+        - ``always`` — it does not. An operator who wants a conversation per
+          pull request in their own repository gets one, and gets it with a
+          checkout of its own or not at all.
+
+        That last clause is the part issue-253 established and issue-258 does
+        **not** relax: giving a pull request a second session *in the work item's
+        tree* put two harness conversations on one branch with no lock, and they
+        interleaved commits, restarted each other's services and ran the same
+        verification twice. :meth:`_endpoint_cwd` is what keeps it true — in
+        every mode — by declining the spawn when there is no separate checkout.
+
+        The repository test runs **before** ``record.endpoint_for(pr)``
+        (decision-088 D3): an endpoint a previous configuration spawned already
+        exists, and testing the repository first stops routing feeding it.
+        Nothing is torn down — killing a live conversation to enforce a routing
+        preference would destroy in-flight work, and `the-loop cleanup` already
+        ends a work item's endpoints.
 
         Never ``None``: an event whose PR has no endpoint yet (the record was
         registered by hand, or the link write failed) falls back to the work
         item's session rather than being dropped.
         """
-        if not self.config.tmux.session_per_pr:
+        tmux = self.config.tmux
+        if not tmux.splits_pull_requests:
             return record
         pr = pr_work_item(routed.event, routed.payload)
         if pr is None or pr.ref == record.work_item.ref:
             return record
-        if _same_repository(pr, record.work_item):
+        if _same_repository(pr, record.work_item) and not tmux.splits_same_repository:
             return record
         endpoint = record.endpoint_for(pr)
         return endpoint if endpoint is not None and endpoint.is_live else record
@@ -1852,6 +1932,16 @@ class Dispatcher:
         **pull request's** slug and seeded from its head branch, in a clone of
         the repository the event actually came from. A workspace failure is a
         refusal, not a raise: the event still lands, in the work item's session.
+
+        For a **same-repository** pull request — reachable only under
+        ``sessionPerPr: always`` (issue-258) — the head branch is *required*
+        rather than preferred. The work item's own session already holds that
+        branch, so under ``strategy: worktree`` git cannot check it out twice
+        from one clone and the usual fallback would hand this endpoint a tree on
+        the default branch: a distinct path (so the ``_same_path`` guard below
+        passes) that is not the pull request's code. Requiring the branch turns
+        that into the decline it should always have been. ``strategy: clone``
+        gives the endpoint an independent clone and satisfies the requirement.
         """
         if self.workspace is None:
             logger.info(
@@ -1870,7 +1960,11 @@ class Dispatcher:
             )
             return None
         try:
-            prepared = self._prepare_workspace(endpoint.work_item, routed)
+            prepared = self._prepare_workspace(
+                endpoint.work_item,
+                routed,
+                require_branch=_same_repository(endpoint.work_item, record.work_item),
+            )
         except WorkspaceError as exc:
             logger.warning(
                 "could not prepare a checkout for %s (%s); delivering into %s's "
@@ -2434,7 +2528,7 @@ class Dispatcher:
             return "unhandled"
         for ref in refs:
             existing = self.registry.session_for(
-                ref, session_per_pr=self.config.tmux.session_per_pr
+                ref, session_per_pr=self.config.tmux.splits_pull_requests
             )
             if existing is not None and delivery_id in existing.recent_deliveries:
                 return "done"
@@ -2538,13 +2632,23 @@ class Dispatcher:
             default_host=ws.default_host,
         )
 
-    def _prepare_workspace(self, work_item: WorkItemRef, routed: RoutedEvent) -> str:
+    def _prepare_workspace(
+        self,
+        work_item: WorkItemRef,
+        routed: RoutedEvent,
+        *,
+        require_branch: bool = False,
+    ) -> str:
         """Resolve the cwd a spawned session runs in.
 
         Legacy (no ``routing.workspace.root``): the static ``spawnWorkdir``.
         Enabled: clone the event's repo under the workspace root and hand back a
         per-work-item git worktree. Raises :class:`WorkspaceError` on a git
         failure so the caller can fail the spawn and let redelivery retry.
+
+        ``require_branch`` (issue-258) makes "the checkout is not on the pull
+        request's branch" one of those git failures — see
+        :meth:`Workspace.ensure_worktree`.
         """
         if self.workspace is None:
             return self.config.spawn_workdir
@@ -2560,6 +2664,7 @@ class Dispatcher:
             target,
             work_item.slug,
             branch=branch,
+            require_branch=require_branch,
             timeout=self.config.dispatch_timeout_seconds,
         )
         eventlog.emit(

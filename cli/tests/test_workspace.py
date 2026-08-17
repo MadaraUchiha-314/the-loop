@@ -217,7 +217,9 @@ def test_require_branch_refuses_a_worktree_that_is_not_on_the_branch(tmp_path):
     bare = make_origin(tmp_path)
     ws = Workspace(tmp_path / "root")
     target = target_for(bare)
-    assert (ws.prepare(target, "lenient", branch="nope/missing") / "README.md").is_file()
+    assert (
+        ws.prepare(target, "lenient", branch="nope/missing") / "README.md"
+    ).is_file()
     with pytest.raises(WorkspaceError):
         ws.prepare(target, "strict", branch="nope/missing", require_branch=True)
 
@@ -254,7 +256,9 @@ def test_clone_strategy_require_branch_refuses_to_stay_on_the_default_branch(tmp
     bare = make_origin(tmp_path)
     ws = Workspace(tmp_path / "root", strategy="clone")
     target = target_for(bare)
-    assert (ws.prepare(target, "lenient", branch="nope/missing") / "README.md").is_file()
+    assert (
+        ws.prepare(target, "lenient", branch="nope/missing") / "README.md"
+    ).is_file()
     with pytest.raises(WorkspaceError):
         ws.prepare(target, "strict", branch="nope/missing", require_branch=True)
 
@@ -846,7 +850,9 @@ def _always_dispatcher(tmp_path, strategy):
     return registry, _make_dispatcher(registry, config, tmux), tmux
 
 
-def test_always_gives_a_same_repository_pull_request_its_own_clone_and_session(tmp_path):
+def test_always_gives_a_same_repository_pull_request_its_own_clone_and_session(
+    tmp_path,
+):
     """
     Feature: the operator chooses how many sessions a work item's pull requests get
       Scenario: an operator who chose `always` gets a session per pull request in

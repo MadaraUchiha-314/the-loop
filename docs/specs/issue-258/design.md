@@ -175,8 +175,17 @@ and the portable/local split are all untouched. A record written before this cha
 after it, and a record written after it is read by an older the-loop.
 
 The only serialized surface that changes is the **config schema**, whose `sessionPerPr` leaf
-goes from `{"type": "boolean"}` to a two-branch `anyOf` (boolean, or one of three `enum`
-strings) — which accepts every file that validated before.
+goes from `{"type": "boolean"}` to a `type` union plus an `enum`:
+
+```json
+{ "type": ["string", "boolean"], "enum": ["never", "cross-repository", "always", true, false] }
+```
+
+Not `anyOf`, deliberately. `configschema.py` is a hand-written validator whose `SUPPORTED`
+keyword set is asserted by a test, so `anyOf` would mean implementing a new combinator to
+express something two existing keywords already say. Both keywords are enforced by the
+hand-written validator *and* by the differential check against `jsonschema`, and the union
+accepts every file that validated before.
 
 ## Error handling
 
@@ -230,7 +239,7 @@ object, and a routing test that fails because `_endpoint_for` collapses regardle
 
 ## Trade-offs & decisions
 
-Recorded in [decision-089](../../decisions/decision-089.md). In brief:
+Recorded in [decision-092](../../decisions/decision-092.md). In brief:
 
 | Chosen | Rejected | Why |
 |---|---|---|

@@ -152,7 +152,7 @@ class StubWorkspace(Workspace):
         super().__init__(root)
         self._checkout = checkout
 
-    def prepare(self, target, slug, *, branch=None, timeout=None):
+    def prepare(self, target, slug, *, branch=None, require_branch=False, timeout=None):
         return self._checkout
 
 

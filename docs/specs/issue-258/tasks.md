@@ -47,7 +47,7 @@ overrides: {}
   same-repository endpoint and turns the raise into the existing decline. Turns T3 and the
   declining half of T5 green.
   _Requirements: R2.1–R2.3_ · _Test: T1, T2, T8_ · _Depends: T3_
-- [x] **T9 — green: the schema.** `anyOf` boolean-or-enum in
+- [x] **T9 — green: the schema.** a `type` union plus an `enum` in
   `.the-loop/cli-config.schema.json`, copied byte-for-byte to
   `cli/the_loop/schemas/`. Turns T4 green. _Requirements: R3.3_ · _Test: T3_ · _Depends: T4_
 - [x] **T10 — docs: the configuration reference.** `docs/config/cli/routing-options.md`
@@ -56,7 +56,7 @@ overrides: {}
   _Requirements: R1, R2, R3_ · _Test: T12_ · _Depends: T9_
 - [x] **T11 — docs: the capability page and the decision.** `docs/capabilities/webhook-triggers.md`
   (behaviour + a history row), `docs/cli/state.md`, `docs/capabilities/process-graph.md`,
-  the `pdlc-pr-loop.yaml` header comment, `decision-089.md` + the decisions index, and this
+  the `pdlc-pr-loop.yaml` header comment, `decision-092.md` + the decisions index, and this
   repository's own `.the-loop/cli-config.yaml` commentary.
   _Requirements: R1, R2_ · _Test: T12_ · _Depends: T7, T8_
 - [x] **T12 — verification.** Run every activity in `testing-plan.md`, commit the evidence,

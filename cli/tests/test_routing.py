@@ -252,8 +252,9 @@ def test_session_for_prefers_the_prs_own_endpoint(tmp_path):
     resolved = registry.session_for(PR_REF)
     assert resolved is not None and resolved.work_item.ref == PR_REF
     assert resolved.tmux_target == "loop-github-octo-repo-16"
-    # sessionPerPr: false collapses onto the work item's single session — the
-    # pre-issue-172 behaviour, kept as a configured choice.
+    # `sessionPerPr: never` collapses onto the work item's single session — the
+    # pre-issue-172 behaviour, kept as a configured choice. The registry takes a
+    # boolean because policy is the caller's: the dispatcher resolves the mode.
     collapsed = registry.session_for(PR_REF, session_per_pr=False)
     assert collapsed is not None and collapsed.work_item.ref == REF
 
@@ -1234,12 +1235,12 @@ def test_a_cross_repo_pr_without_a_workspace_is_declined_not_collided(tmp_path):
 def test_dispatcher_delivers_pr_events_into_the_work_items_session_when_collapsed(
     tmp_path,
 ):
-    """sessionPerPr: false — the pre-issue-172 shape, kept as a configured choice."""
+    """sessionPerPr: never — the pre-issue-172 shape, kept as a configured choice."""
     from the_loop.webhook.dispatcher import TmuxConfig
 
     tmux = FakeTmux()
     registry, dispatcher = make_dispatcher(
-        tmp_path, tmux, tmux_config=TmuxConfig(session_per_pr=False)
+        tmp_path, tmux, tmux_config=TmuxConfig(session_per_pr="never")
     )
     registry.register(make_session())
     open_pr = routed_pr_closed(delivery="o-2", merged=False)
@@ -1276,9 +1277,14 @@ def test_session_per_pr_resolves_to_one_of_three_modes(configured, expected):
     assert TmuxConfig.from_mapping(configured).session_per_pr == expected
 
 
-@pytest.mark.parametrize("bad", ["sometimes", "ALWAYS", "", 3, None, ["always"]])
+@pytest.mark.parametrize("bad", ["sometimes", "ALWAYS", "", 3, ["always"]])
 def test_an_unrecognised_session_per_pr_fails_closed_to_cross_repository(bad, caplog):
-    """Fail closed to the shipped default, never to the widest choice."""
+    """Fail closed to the shipped default, never to the widest choice.
+
+    ``None`` is deliberately not in this list: an absent key and an explicit
+    `null` are the same value here, and an absent key is not a mistake to warn
+    about — it is the default, asserted a test above.
+    """
     from the_loop.webhook.dispatcher import TmuxConfig
 
     with caplog.at_level(logging.WARNING):
@@ -1314,6 +1320,7 @@ def _endpoint_ref_for(tmp_path, mode, routed):
     )
     registry.register(make_session())
     pr = pr_work_item(routed.event, routed.payload)
+    assert pr is not None
     endpoint = registry.link_pull_request(REF, pr)
     assert endpoint is not None
     endpoint.tmux_target = f"loop-{pr.slug}"
@@ -1704,7 +1711,7 @@ def test_an_endpoint_checkout_that_lands_on_the_records_tree_is_refused(
     registry.register(record)
     # Stand in for every way a prepared checkout can come back as the record's:
     # the point under test is the guard, not the fallback that reaches it.
-    dispatcher._prepare_workspace = lambda work_item, routed: record.cwd
+    dispatcher._prepare_workspace = lambda work_item, routed, **kwargs: record.cwd
     with caplog.at_level(logging.INFO, logger="the-loop.gh-webhook"):
         dispatcher.handle(routed_cross_repo_pr(delivery="x-2"))
         assert wait_until(lambda: len(tmux.delivers) == 1)
