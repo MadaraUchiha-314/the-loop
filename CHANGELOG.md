@@ -1,3 +1,9 @@
+## v10.5.0 (2026-08-17)
+
+### Feat
+
+- **issue-258**: the operator chooses how many sessions a work item's pull requests get (#259)
+
 ## v10.4.1 (2026-08-16)
 
 ### Fix
