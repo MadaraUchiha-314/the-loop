@@ -30,6 +30,7 @@ that item's own checkout, the same way the repo-scoped commands do.
 |---------|--------------|
 | [`sessions`](/cli/commands/sessions) | The work-item ↔ session registry, execution control (`start`/`pause`/`resume`/`stop`), and `reset` — forget a work item's state so it starts over. |
 | [`ask`](/cli/commands/ask) | Post an agent's question on its work item — marker stamped centrally, wait recorded as `session.awaiting_input`. |
+| [`channels`](/cli/commands/channels) | Operate the conversation channels (the Slack bot): `status`, one `poll` cycle, or the Socket Mode `listen`er. |
 | [`events`](/cli/commands/events) | Query the structured event log — the answer to "why did nothing happen?". |
 
 ## Repo-scoped commands

@@ -31,6 +31,8 @@ working directory), split by whether it travels:
 ├── logs/
 │   ├── events.jsonl               # the decision trail
 │   └── poller.out                 # a daemonized poller's stdout/stderr
+├── channels/
+│   └── slack.json                 # channel conversations: thread bindings + read cursors — never tracked
 ├── gh-webhook.pid                 # the running receiver
 ├── poll.pid                       # the running poller — and its lock
 └── poll-status.json               # the poller's heartbeat, read by `the-loop status`
@@ -76,6 +78,7 @@ them, is what makes the `.gitignore` recipe three lines instead of a puzzle
 | `<root>/poll.pid` | the poller | the poller's pid — and the lock proving it is the only one | **local** |
 | `<root>/poll-status.json` | the poller, after every cycle | the heartbeat `the-loop status` reads: `startedAt`, `lastCycleAt`, last cycle's counters — and no pid, which is `poll.pid`'s to name | **local** |
 | `<root>/self-diagnosis.json` | self-diagnosis (issue-242, opt-in) | which failure fingerprints this machine already reported (with the issue URL), abandoned or is retrying, and when it last posted | **local** |
+| `<root>/channels/<channel>.json` | the channels reader/writer (issue-245, opt-in) | per channel type: which Slack thread carries which work item's conversation, and the last reply this deployment mirrored and delivered | **local** |
 
 The same table is declared in code, in
 [`the_loop/state.py`](https://github.com/MadaraUchiha-314/the-loop/blob/main/cli/the_loop/state.py)
@@ -463,6 +466,23 @@ covers both (and the atomic writer's temporaries) with one `self-diagnosis.json*
 next scan, so already-filed issues can be filed a second time. Delete it only together
 with (or after) the event log it summarises.
 
+## Channel conversation state — `<root>/channels/<channel>.json`
+
+What the [channels](/config/cli/channels-options) surface — opt-in, off by default —
+remembers about its conversations, one file per channel type (today: `slack.json`).
+Two maps: `threads` binds a Slack thread to the work item whose question started it,
+and `cursors` records the last reply in each thread this deployment already mirrored
+and delivered. Bounded (the oldest binding is dropped past a cap), rewritten
+atomically, and **local**: the cursors are a ledger of what *this* machine processed,
+and the thread and member ids name conversations in the operator's own workspace —
+neither belongs in a repository.
+
+**If you delete it:** the bot forgets its open conversations. Replies in old threads
+stop being read (an unbound thread is dropped as `unmapped`), and the next `the-loop
+ask` starts a fresh thread instead of continuing the old one. Nothing is
+double-processed — the bindings are how replies are *found*, not how they are deduped
+against the ticket.
+
 ## Wiping one work item — `sessions reset`
 
 Backing state up is one question; getting rid of it is the other, and it has a command:
@@ -523,6 +543,7 @@ Track `portable/` in git. Paste this into the `.gitignore` of the repository you
 .the-loop/*.pid
 .the-loop/poll-status.json
 .the-loop/self-diagnosis.json*
+.the-loop/channels/
 .the-loop/portable/*.tmp
 ```
 

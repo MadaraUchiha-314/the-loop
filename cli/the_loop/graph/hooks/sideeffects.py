@@ -171,7 +171,15 @@ def _recipients(ctx: HookContext, event: str) -> List[str]:
 
 @hook("notify")
 def notify(ctx: HookContext) -> HookResult:
-    """Notify the configured roles. Never wedges the graph if a channel is down."""
+    """Notify the configured roles. Never wedges the graph if a channel is down.
+
+    Posts through the **channels** layer (issue-245, owner's convergence call on
+    PR #267): the graph's notification is one more outbound event, filtered by
+    each channel's ``events`` allow-list — so an operator subscribes their Slack
+    channel to ``phase-approval-pending`` and friends, and the reply path those
+    channels carry works for notifications too. The incoming-webhook integration
+    this hook used to call is gone (`the-loop migrate-config`).
+    """
     name = "notify"
     event = str(ctx.params.get("event") or "phase-approval-pending")
     roles = _recipients(ctx, event)
@@ -181,9 +189,19 @@ def notify(ctx: HookContext) -> HookResult:
         f"the-loop: {ctx.work_item.id} is at *{ctx.node_id}* ({event}). "
         f"Roles: {', '.join(roles)}"
     )
-    try:
-        _integration(ctx, "slack").call("post-message", text=text)
-    except IntegrationError as exc:
-        logger.warning("notification not delivered: %s", exc)
-        return HookResult.ok(name, delivered=False, roles=roles, error=str(exc))
+    # Call-time import, the `_integration` rule: the test seam and any embedder
+    # patch the channels module, and a module-level binding would slip past them.
+    from ...channels.broadcast import broadcast
+
+    results = broadcast(event, ctx.work_item.ref, text, cli_config=ctx.config)
+    if not results:
+        return HookResult.skipped(
+            name,
+            f"no channel subscribed to {event} — add it to channels.slack.events",
+        )
+    delivered = any(result.ok for result in results)
+    errors = "; ".join(result.error for result in results if not result.ok)
+    if not delivered:
+        logger.warning("notification not delivered: %s", errors)
+        return HookResult.ok(name, delivered=False, roles=roles, error=errors)
     return HookResult.ok(name, delivered=True, roles=roles)

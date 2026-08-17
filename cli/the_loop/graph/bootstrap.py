@@ -111,6 +111,12 @@ def build_runtime(
         cli_cfg = {}
     if isinstance(cli_cfg, dict):
         config["integrations"] = cli_cfg.get("integrations") or {}
+        # The channels layer (issue-245): the `notify` hook broadcasts through
+        # it, and the Slack channel's thread bindings live under `state.root` —
+        # both must reach hooks or a graph notification would silently go to a
+        # default state root instead of the operator's.
+        config["channels"] = cli_cfg.get("channels") or {}
+        config["state"] = cli_cfg.get("state") or {}
         # The `execute` keyword is operator-configurable like every other
         # control word (issue-177, owner review): the phase-selection gate must
         # look for what THIS deployment declared, not a constant.

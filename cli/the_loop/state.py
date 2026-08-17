@@ -118,6 +118,11 @@ class StateLayout:
         """What self-diagnosis has already reported/abandoned (issue-242)."""
         return str(self.root_path / "self-diagnosis.json")
 
+    @property
+    def channels_dir(self) -> str:
+        """Channel conversation state — thread bindings + read cursors (issue-245)."""
+        return str(self.root_path / "channels")
+
 
 @dataclass(frozen=True)
 class LegacyLayout:
@@ -299,6 +304,24 @@ GENERATED_PATHS: Tuple[GeneratedPath, ...] = (
             "another machine it would suppress reports for failures that machine "
             "never diagnosed — its log is different — and the sibling .lock file "
             "guarding concurrent scans is kernel state that cannot travel at all."
+        ),
+    ),
+    GeneratedPath(
+        name="channel conversation state",
+        attr="channels_dir",
+        default="<root>/channels/<channel>.json",
+        portable=False,
+        holds=(
+            "per channel type: thread bindings (which Slack thread carries which "
+            "work item's conversation) and per-thread read cursors (the last "
+            "reply THIS deployment mirrored and delivered) — issue-245"
+        ),
+        why=(
+            "handles into one deployment's conversations, and a ledger of what it "
+            "already processed. Carried elsewhere the cursors would suppress "
+            "replies the other machine never mirrored, and the thread ids name "
+            "conversations its bot may not even be a member of. It also names "
+            "Slack member and channel ids, which do not belong in a repository."
         ),
     ),
 )

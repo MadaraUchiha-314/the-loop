@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import getpass
 import json
+import logging
 import os
 import re
 import shutil
@@ -45,6 +46,8 @@ from ..state import layout_from_config, legacy_layout
 from ..webhook.dispatcher import TmuxConfig
 from ..webhook.router import RoutedEvent
 from ..workitem import WorkItemRef
+
+logger = logging.getLogger("the-loop.core.sessions")
 
 CONTROL_VERBS = (START, PAUSE, RESUME, STOP, CLEANUP)
 
@@ -550,10 +553,41 @@ def ask_session(
         comment_url=url or None,
         comment_posted=ok,
     )
+    # Fan the question out to the configured channels (issue-245, R2.3) —
+    # AFTER the work item has it, and best-effort by contract (R1.2): the
+    # result computed below never depends on what any channel did.
+    channel_results = []
+    try:
+        from ..channels.broadcast import broadcast as channel_broadcast
+
+        channel_results = channel_broadcast(
+            "session.awaiting_input",
+            work_item.ref,
+            question,
+            url=url or "",
+            detail={"actor": actor},
+            cli_config=dict(config or {}),
+        )
+    except Exception as exc:  # noqa: BLE001 — a channel bug never fails the ask
+        logger.warning("channel broadcast failed: %s", exc)
     messages: List[Dict[str, str]] = []
     if ok:
         where = f" — {url}" if url else ""
         messages.append({"stream": "out", "text": f"asked on {work_item.ref}{where}"})
+        for posted in channel_results:
+            messages.append(
+                {
+                    "stream": "out" if posted.ok else "err",
+                    "text": (
+                        f"also asked on the {posted.channel} channel"
+                        if posted.ok
+                        else (
+                            f"note: the {posted.channel} channel did not take the "
+                            f"question ({posted.error}); the work item has it"
+                        )
+                    ),
+                }
+            )
         messages.append(
             {
                 "stream": "out",
@@ -572,6 +606,14 @@ def ask_session(
                 ),
             }
         )
+        for posted in channel_results:
+            if posted.ok:
+                messages.append(
+                    {
+                        "stream": "out",
+                        "text": f"still asked on the {posted.channel} channel",
+                    }
+                )
         messages.append(
             {
                 "stream": "err",

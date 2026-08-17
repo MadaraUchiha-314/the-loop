@@ -67,7 +67,7 @@ def test_the_binary_now_comes_from_the_integrations_block(tmp_path):
     path.write_text(
         yaml.safe_dump(
             {
-                "version": "0.4.0",
+                "version": "0.5.0",
                 "integrations": {"github": {"cli": {"binary": "/usr/bin/gh"}}},
                 "routing": {"control": {"enabled": True}},
             }

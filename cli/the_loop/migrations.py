@@ -40,9 +40,9 @@ __all__ = [
     "needs_migration",
 ]
 
-#: Bumped by issue-109, then issue-128, then issue-142. A config below this needs
-#: `/the-loop:upgrade-the-loop`.
-CURRENT_CONFIG_VERSION = "0.4.0"
+#: Bumped by issue-109, then issue-128, then issue-142, then issue-245. A config
+#: below this needs `/the-loop:upgrade-the-loop`.
+CURRENT_CONFIG_VERSION = "0.5.0"
 
 _UPGRADE = "/the-loop:upgrade-the-loop"
 
@@ -72,6 +72,15 @@ _ROUTING_KEY = "routing"
 _STATE_FILE_SITE: Tuple[str, ...] = ("polling",)
 _STATE_FILE_KEY = "stateFile"
 _STATE_FILE_REPLACEMENT = "state.root"
+
+# issue-245 converged Slack on the channels layer (owner's call on PR #267):
+# `integrations.slack` was the write-only incoming webhook the graph's `notify`
+# hook fired; the bot under `channels.slack` does that job and carries replies
+# back. A webhook URL cannot be turned into a bot token, so the migration
+# removes the key and says what to configure instead of pretending to convert.
+_SLACK_SITE: Tuple[str, ...] = ("integrations",)
+_SLACK_KEY = "slack"
+_SLACK_REPLACEMENT = "channels.slack"
 
 
 class ConfigTooOld(RuntimeError):
@@ -121,6 +130,8 @@ def needs_migration(config: Mapping[str, Any]) -> bool:
     if (_dig(config, _STATE_FILE_SITE) or {}).get(_STATE_FILE_KEY) is not None:
         return True
     if (_dig(config, _ROUTING_SITE) or {}).get(_ROUTING_KEY) is not None:
+        return True
+    if (_dig(config, _SLACK_SITE) or {}).get(_SLACK_KEY) is not None:
         return True
     return any(
         (section or {}).get("ghBinary") is not None
@@ -179,6 +190,16 @@ def assert_current(config: Mapping[str, Any]) -> None:
             "NOT being ignored: `routing.authorizedUsers` decides which GitHub "
             "logins may drive your daemon, and quietly falling back to none is "
             f"not a decision this config gets to make for you. Run `{_UPGRADE}` "
+            "to migrate."
+        )
+    if (_dig(config, _SLACK_SITE) or {}).get(_SLACK_KEY) is not None:
+        raise ConfigTooOld(
+            "this CLI config still declares `integrations.slack`. The "
+            "incoming-webhook integration was removed (issue-245): Slack is a "
+            f"conversation channel now, configured once under "
+            f"`{_SLACK_REPLACEMENT}` (a bot token, which also carries replies "
+            "back). It is NOT being ignored — a notification you configured "
+            f"silently going nowhere is worse than an error. Run `{_UPGRADE}` "
             "to migrate."
         )
     declared = config.get("version")
@@ -288,6 +309,24 @@ def migrate_cli_config(config: Mapping[str, Any]) -> MigrationReport:
             )
 
     _promote_routing(data, report)
+
+    integrations = _dig(data, _SLACK_SITE)
+    if integrations is not None and _SLACK_KEY in integrations:
+        integrations.pop(_SLACK_KEY)
+        report.changed = True
+        report.moves.append(
+            f"integrations.{_SLACK_KEY} removed — Slack converged on "
+            f"`{_SLACK_REPLACEMENT}` (issue-245)"
+        )
+        report.notes.append(
+            "the incoming-webhook transport is gone and its URL cannot become "
+            "a bot token: to keep Slack notifications, configure "
+            "`channels.slack` (botTokenEnv, channel, and the notification "
+            "event names under `events`) — the bot also carries replies back "
+            "into the session"
+        )
+        if not integrations:
+            data.pop("integrations", None)
 
     if _parts(str(data.get("version", "0"))) < _parts(CURRENT_CONFIG_VERSION):
         report.moves.append(

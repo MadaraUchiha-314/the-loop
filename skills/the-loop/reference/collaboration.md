@@ -47,6 +47,18 @@ A session driven by the CLI daemon is **told** where its answers come from, via
 When no daemon is involved (a human ran `/the-loop:work-on` themselves), the human is by
 definition at the terminal — that is `cli` behaviour, with the same paper-trail obligation.
 
+**Conversation channels fan the question out; the work item stays the source of truth**
+(issue-245). When the operator's CLI config declares `channels` (today: a Slack bot —
+`channels.slack`, with its own event allow-list and verbosity), `the-loop ask` also posts
+the question to every subscribed channel, as a thread per work item — *after* the
+work-item comment, best-effort, never changing the ask's outcome. A reply given on a
+channel by an **authorized member** (a fail-closed Slack-member-id allow-list, the
+`routing.authorizedUsers` posture) is **mirrored onto the work item** as the-loop's own
+comment — visible attribution naming the channel and author, plus the self-authored
+marker, so ingress drops it and the reply is processed exactly once — and then delivered
+into the waiting session through the same fail-closed path the reply route uses. Whatever
+channel carried the conversation, the ticket carries the record.
+
 ### 2. RULE: a generated artifact is iterated on a durable, reviewable surface
 
 Once an artifact of the chain exists — `brainstorm.md`, `requirements.md`/`bugfix.md`,

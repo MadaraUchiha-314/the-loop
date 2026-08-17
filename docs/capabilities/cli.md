@@ -159,20 +159,12 @@ self-learning/ML capabilities.
   dispatch on the same block, so nesting it under one ingress misstated its scope
   (issue-142). Both are **breaking** changes, handled by `/the-loop:upgrade-the-loop`,
   which shells out to `the-loop migrate-config`.
-- The CLI SHALL declare a second runtime dependency, `slack-sdk`, only as an **optional
-  extra**: it is Slack's official SDK and has zero required dependencies of its own, but
-  the dependency-free `webhook` transport remains available so the base install stays
-  one-dependency.
-- The Slack incoming-webhook URL SHALL be resolvable from **either** the CLI config
-  (`integrations.slack.url`) or the environment (`integrations.slack.urlEnv`, default
-  `THE_LOOP_SLACK_WEBHOOK_URL`), with the **config taking precedence** — otherwise the
-  effective configuration would depend on ambient environment and reading the file would
-  not tell you where a notification goes (issue-203, decision-075). An empty `url` counts
-  as absent and falls back. Both transports resolve through the same method, so they
-  cannot drift. WHEN neither source is set THEN the failure SHALL name **both** remedies
-  and never the URL itself. This carve-out is Slack's alone: a webhook URL is post rights
-  to one channel, so its secrecy is the operator's call to price, while
-  `github.api.tokenEnv` and `webhooks.ghWebhook.secretEnv` remain **env-only**.
+- Slack SHALL be configured in exactly **one** place: `channels.slack` (the bot —
+  [channels](channels.md)). The `integrations.slack` incoming webhook and its
+  `url`/`urlEnv` carve-out are **retired** (issue-245, the owner's convergence call on
+  PR #267): a config still carrying the section is refused with the replacement named,
+  and `the-loop migrate-config` removes it. Bot and app tokens are **env-only**, like
+  `github.api.tokenEnv` and `webhooks.ghWebhook.secretEnv`.
 - `the-loop scenarios` SHALL output the table of every Gherkin scenario covered by the
   integration tests (`--format table|markdown|json`; see
   [testing-and-contracts](testing-and-contracts.md)).
@@ -323,6 +315,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-245 | `the-loop channels` joins the CLI: `status` (config with token presence only), `poll` (one synchronous read cycle over the bound Slack threads — the cron/daemon-less form) and `listen` (Socket Mode, the no-polling reader). The daemons additionally run the poll-mode reader as a background watcher | [spec](../specs/issue-245/), [decision-094](../decisions/decision-094.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/245) |
 | issue-228 | The CLI's lifecycle became one surface (2026-08-14): `the-loop start\|stop\|status\|restart` compose the control-plane service, webhook receiver and poller per new per-service `enabled` flags (service + MCP on by default, ingresses opt-in), the `poll`, `gh-webhook` and `service` commands were removed with the run loops relocated to `the_loop.poller.daemon` / `the_loop.webhook.daemon` (`daemon_entry <poller\|gh-webhook> [--once]` is the foreground/cron form; the fold of the latter two is the owner's PR #229 review), the issue-191 double-fork went with them, `restart --with-upgrade` reuses the issue-152 installer plan, and `service.enabled: false` also refuses implicit auto-start. Amended in the same PR (issue-231, owner review round 2): `service.hostIngresses` (default true) makes `start` boot one process — the enabled ingresses run as threads inside the service, each keeping its own pidfile flock under the service's pid, hosted-ness detected from the lock and never recorded | [spec](../specs/issue-228/), [decision-084](../decisions/decision-084.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/228), [issue-231](https://github.com/MadaraUchiha-314/the-loop/issues/231) |
 | issue-208 | `the-loop ask` joins the CLI: an agent's question is posted with the loop-prevention marker stamped centrally and the wait recorded as `session.awaiting_input`; runs in-process because the escalation path must not depend on a running service | [spec](../specs/issue-208/), [decision-078](../decisions/decision-078.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/208) |
 | issue-205 | The poller's heartbeat stopped carrying a `pid` nothing read: `poll.pid` — the flock — is the single source of truth for which process is polling, and an older heartbeat's pid is now dropped on read. The two files stay separate because the heartbeat's atomic rewrite would free the lock it is held on | [spec](../specs/issue-205/), [decision-076](../decisions/decision-076.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/205) |

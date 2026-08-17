@@ -299,3 +299,50 @@ def test_a_half_migrated_config_prefers_the_new_block_and_reports_what_it_droppe
     assert any("authorizedUsers" in note and "stale" in note for note in report.notes)
     assert "webhooks" not in report.config
     assert_current(report.config)
+
+
+# --- integrations.slack retired (issue-245, PR #267 review) ---------------------
+
+WITH_SLACK_INTEGRATION = {
+    "version": "0.4.0",
+    "integrations": {
+        "github": {"transport": "auto"},
+        "slack": {"transport": "sdk", "urlEnv": "THE_LOOP_SLACK_WEBHOOK_URL"},
+    },
+}
+
+
+def test_a_config_still_declaring_the_slack_integration_is_detected():
+    assert needs_migration(WITH_SLACK_INTEGRATION) is True
+
+
+def test_the_runtime_refuses_the_slack_integration_and_names_channels():
+    with pytest.raises(ConfigTooOld) as exc:
+        assert_current(WITH_SLACK_INTEGRATION)
+    message = str(exc.value)
+    assert "integrations.slack" in message and "channels.slack" in message
+
+
+def test_migration_removes_the_slack_integration_and_points_at_the_bot():
+    report = migrate_cli_config(WITH_SLACK_INTEGRATION)
+    assert report.changed is True
+    assert "slack" not in report.config.get("integrations", {})
+    assert report.config["integrations"]["github"] == {"transport": "auto"}
+    assert any("channels.slack" in move for move in report.moves)
+    assert any("bot" in note for note in report.notes)
+    assert_current(report.config)
+
+
+def test_migrating_a_slack_only_integrations_block_leaves_no_husk():
+    report = migrate_cli_config(
+        {"version": "0.4.0", "integrations": {"slack": {"transport": "webhook"}}}
+    )
+    assert "integrations" not in report.config
+    assert_current(report.config)
+
+
+def test_the_slack_integration_migration_is_idempotent():
+    once = migrate_cli_config(WITH_SLACK_INTEGRATION)
+    twice = migrate_cli_config(once.config)
+    assert twice.changed is False
+    assert twice.config == once.config

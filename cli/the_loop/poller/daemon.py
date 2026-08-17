@@ -381,6 +381,15 @@ def _run_locked(
 
     selfdiagnosis.start_watcher(cli_config.load_cli_config(_config_path()), stop_event)
 
+    # Channel replies (issue-245, opt-in): a background reader over the bound
+    # Slack threads, bounded by this daemon's lifetime. None unless the
+    # operator enabled channels.slack with read.mode: poll.
+    from ..channels import watcher as channels_watcher
+
+    channels_watcher.start_watcher(
+        cli_config.load_cli_config(_config_path()), stop_event
+    )
+
     if install_signal_handlers:
 
         def _shutdown(signum, _frame):

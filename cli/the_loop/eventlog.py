@@ -252,6 +252,38 @@ EVENT_TYPES: Dict[str, str] = {
         "issue-208. Closes the work item's session.awaiting_input on the "
         "attention surface and the dashboard alike."
     ),
+    # -- channels (source: ask | channels | poll | gh-webhook) ----------------
+    "channel.posted": (
+        "An outbound event was posted to a communication channel (channel, "
+        "work_item, event_type, thread: the provider's conversation handle) — "
+        "issue-245. The work item already carries the text; this is the "
+        "fan-out."
+    ),
+    "channel.post_failed": (
+        "A channel post failed (channel, work_item, event_type, error) — "
+        "best-effort by contract: the ask's outcome is unaffected and the "
+        "work item remains the record."
+    ),
+    "channel.reply_received": (
+        "An authorized reply arrived through a channel and entered the "
+        "pipeline (channel, work_item, actor: the channel-native member id). "
+        "Payloads carry ids, never message text."
+    ),
+    "channel.dropped": (
+        "An inbound channel message was not processed (reason: unmapped | "
+        "self-authored | unauthorized-actor | undeliverable; channel, "
+        "work_item, actor, error). undeliverable means the mirror stood but "
+        "no session could take the reply."
+    ),
+    "channel.mirrored": (
+        "A channel reply was posted onto its work item as the-loop's own "
+        "marker-stamped comment — the single-source-of-truth rule (channel, "
+        "work_item, actor)."
+    ),
+    "channel.mirror_failed": (
+        "The work-item mirror of a channel reply could not be posted "
+        "(channel, work_item, error); the delivery attempt still proceeds."
+    ),
     "session.closed": "A session was closed in the registry (work_item).",
     "session.paused": (
         "A session was paused, so events for its work item are held rather "
