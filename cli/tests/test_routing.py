@@ -1250,6 +1250,131 @@ def test_dispatcher_delivers_pr_events_into_the_work_items_session_when_collapse
     assert tmux.delivers[0][0] == REF and tmux.spawns == []
 
 
+# -- how many sessions a work item's pull requests get (issue-258) ------------
+
+
+@pytest.mark.parametrize(
+    "configured, expected",
+    [
+        ({}, "cross-repository"),
+        ({"sessionPerPr": True}, "cross-repository"),
+        ({"sessionPerPr": False}, "never"),
+        ({"sessionPerPr": "never"}, "never"),
+        ({"sessionPerPr": "cross-repository"}, "cross-repository"),
+        ({"sessionPerPr": "always"}, "always"),
+    ],
+)
+def test_session_per_pr_resolves_to_one_of_three_modes(configured, expected):
+    """The operator's choice, including the two booleans it used to be (issue-258).
+
+    `true`/`false` are what every config file written before this change says, and
+    they must keep meaning exactly what they mean today — `true` is
+    `cross-repository`, not `always`.
+    """
+    from the_loop.webhook.dispatcher import TmuxConfig
+
+    assert TmuxConfig.from_mapping(configured).session_per_pr == expected
+
+
+@pytest.mark.parametrize("bad", ["sometimes", "ALWAYS", "", 3, None, ["always"]])
+def test_an_unrecognised_session_per_pr_fails_closed_to_cross_repository(bad, caplog):
+    """Fail closed to the shipped default, never to the widest choice."""
+    from the_loop.webhook.dispatcher import TmuxConfig
+
+    with caplog.at_level(logging.WARNING):
+        resolved = TmuxConfig.from_mapping({"sessionPerPr": bad}).session_per_pr
+    assert resolved == "cross-repository"
+    assert "sessionPerPr" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "mode, splits_pull_requests, splits_same_repository",
+    [
+        ("never", False, False),
+        ("cross-repository", True, False),
+        ("always", True, True),
+    ],
+)
+def test_the_mode_answers_the_two_questions_routing_asks(
+    mode, splits_pull_requests, splits_same_repository
+):
+    from the_loop.webhook.dispatcher import TmuxConfig
+
+    tmux = TmuxConfig.from_mapping({"sessionPerPr": mode})
+    assert tmux.splits_pull_requests is splits_pull_requests
+    assert tmux.splits_same_repository is splits_same_repository
+
+
+def _endpoint_ref_for(tmp_path, mode, routed):
+    """Which conversation `_endpoint_for` picks, with the PR already linked+live."""
+    from the_loop.webhook.dispatcher import TmuxConfig
+
+    registry, dispatcher = make_dispatcher(
+        tmp_path, FakeTmux(), tmux_config=TmuxConfig(session_per_pr=mode)
+    )
+    registry.register(make_session())
+    pr = pr_work_item(routed.event, routed.payload)
+    endpoint = registry.link_pull_request(REF, pr)
+    assert endpoint is not None
+    endpoint.tmux_target = f"loop-{pr.slug}"
+    endpoint.harness_session_id = "pr-sess"
+    registry.save_endpoint(REF, endpoint)
+    record = registry.find_by_work_item(REF)
+    assert record is not None
+    try:
+        return dispatcher._endpoint_for(record, routed).work_item.ref
+    finally:
+        dispatcher.stop()
+
+
+@pytest.mark.parametrize(
+    "mode, same_repository, other_repository",
+    [
+        ("never", REF, REF),
+        ("cross-repository", REF, "github:octo/other#16"),
+        ("always", PR_REF, "github:octo/other#16"),
+    ],
+)
+def test_the_operator_chooses_which_pull_requests_get_their_own_session(
+    tmp_path, mode, same_repository, other_repository
+):
+    """issue-258: the same-repository collapse is a choice again, not a rule.
+
+    issue-253 made it unconditional to stop two agents sharing one working tree.
+    The tree is still the condition — `_endpoint_cwd` enforces it at the spawn
+    seam — but *which pull requests are candidates* is the operator's call.
+    """
+    same = routed_pr_closed(delivery="pm-1", merged=False)
+    same.action = "synchronize"
+    assert _endpoint_ref_for(tmp_path / mode / "same", mode, same) == same_repository
+
+    cross = routed_cross_repo_pr(delivery="pm-2")
+    assert _endpoint_ref_for(tmp_path / mode / "other", mode, cross) == other_repository
+
+
+def test_always_still_declines_the_session_when_there_is_no_checkout_for_it(tmp_path):
+    """R2.3 — the choice never overrides decision-088 D2.
+
+    With no `routing.workspace.root` there is exactly one tree, so `always` gets
+    exactly one session: the event is delivered into the work item's, and the
+    refusal is on the record.
+    """
+    from the_loop.webhook.dispatcher import TmuxConfig
+
+    tmux = FakeTmux()
+    registry, dispatcher = make_dispatcher(
+        tmp_path, tmux, tmux_config=TmuxConfig(session_per_pr="always")
+    )
+    registry.register(make_session())
+    open_pr = routed_pr_closed(delivery="pm-3", merged=False)
+    open_pr.action = "synchronize"
+    dispatcher.handle(open_pr)
+    assert wait_until(lambda: len(tmux.delivers) == 1)
+    dispatcher.stop()
+    assert tmux.spawns == []
+    assert tmux.delivers[0][0] == REF
+
+
 def routed_issue_closed(delivery="ic-1", number=15):
     payload = {
         "action": "closed",

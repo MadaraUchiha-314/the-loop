@@ -193,6 +193,117 @@ def test_ensure_worktree_unknown_branch_falls_back_to_detached(tmp_path):
     assert (wt / "README.md").is_file()
 
 
+# -- require_branch: a checkout that is not on the branch is no checkout (issue-258) --
+
+
+def push_branch(tmp_path: Path, bare: Path, name: str, filename: str) -> None:
+    """Push ``name`` to ``bare`` carrying ``filename`` — a stand-in for a PR head."""
+    work = tmp_path / f"pusher-{name.replace('/', '-')}"
+    _git(["clone", str(bare), str(work)], tmp_path)
+    _git(["checkout", "-b", name], work)
+    (work / filename).write_text("feature\n")
+    _git(["add", "-A"], work)
+    _git(["commit", "-m", name], work)
+    _git(["push", "origin", name], work)
+
+
+def test_require_branch_refuses_a_worktree_that_is_not_on_the_branch(tmp_path):
+    """The default still degrades; ``require_branch`` raises instead.
+
+    Both halves matter. Cross-repository endpoints (issue-183) rely on the
+    degradation — a head ref origin has not seen yet must not fail the spawn —
+    so making the raise unconditional would change behaviour nobody reported.
+    """
+    bare = make_origin(tmp_path)
+    ws = Workspace(tmp_path / "root")
+    target = target_for(bare)
+    assert (ws.prepare(target, "lenient", branch="nope/missing") / "README.md").is_file()
+    with pytest.raises(WorkspaceError):
+        ws.prepare(target, "strict", branch="nope/missing", require_branch=True)
+
+
+def test_require_branch_refuses_when_a_sibling_worktree_already_holds_the_branch(
+    tmp_path,
+):
+    """The exact hazard `sessionPerPr: always` creates under `strategy: worktree`.
+
+    Two worktrees of one clone cannot both check out one branch — that is git,
+    not policy. Without ``require_branch`` the second worktree lands on the
+    default branch at a *different path*, so `_endpoint_cwd`'s shared-tree guard
+    passes and the-loop would announce a session for pull request #N that is not
+    on pull request #N's code.
+    """
+    bare = make_origin(tmp_path)
+    push_branch(tmp_path, bare, "feature/x", "f.txt")
+    ws = Workspace(tmp_path / "root")
+    target = target_for(bare)
+
+    held = ws.ensure_worktree(target, "github-octo-repo-15", branch="feature/x")
+    assert (held / "f.txt").is_file()
+
+    degraded = ws.ensure_worktree(target, "github-octo-repo-16", branch="feature/x")
+    assert degraded != held and not (degraded / "f.txt").is_file()  # silently on main
+
+    with pytest.raises(WorkspaceError):
+        ws.ensure_worktree(
+            target, "github-octo-repo-17", branch="feature/x", require_branch=True
+        )
+
+
+def test_clone_strategy_require_branch_refuses_to_stay_on_the_default_branch(tmp_path):
+    bare = make_origin(tmp_path)
+    ws = Workspace(tmp_path / "root", strategy="clone")
+    target = target_for(bare)
+    assert (ws.prepare(target, "lenient", branch="nope/missing") / "README.md").is_file()
+    with pytest.raises(WorkspaceError):
+        ws.prepare(target, "strict", branch="nope/missing", require_branch=True)
+
+
+def test_clone_strategy_can_hold_a_branch_a_sibling_worktree_already_has(tmp_path):
+    """Why `always` is served by `strategy: clone`: an independent clone has no
+    sibling worktree to conflict with, so the endpoint really is on the PR's code."""
+    bare = make_origin(tmp_path)
+    push_branch(tmp_path, bare, "feature/y", "y.txt")
+    target = target_for(bare)
+    Workspace(tmp_path / "root").ensure_worktree(
+        target, "github-octo-repo-15", branch="feature/y"
+    )
+    dest = Workspace(tmp_path / "root", strategy="clone").prepare(
+        target, "github-octo-repo-16", branch="feature/y", require_branch=True
+    )
+    assert (dest / "y.txt").is_file()
+
+
+def test_git_is_invoked_without_a_shell(tmp_path):
+    """Abuse case 1: a hostile head ref is an argument, never a command.
+
+    `_git` builds an argv list and `subprocess.run` is called without
+    ``shell=True``, so metacharacters in a payload-supplied ref cannot reach a
+    shell. With ``require_branch`` the failed fetch declines the session instead
+    of degrading onto a tree that is not the pull request's.
+    """
+    bare = make_origin(tmp_path)
+    ws = Workspace(tmp_path / "root")
+    target = target_for(bare)
+    calls = []
+    real = subprocess.run
+
+    def recording(cmd, *args, **kwargs):
+        calls.append((cmd, kwargs))
+        return real(cmd, *args, **kwargs)
+
+    hostile = "main; touch pwned"
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(subprocess, "run", recording)
+        with pytest.raises(WorkspaceError):
+            ws.prepare(target, "hostile", branch=hostile, require_branch=True)
+    assert calls, "no git call was recorded"
+    assert all(isinstance(cmd, list) for cmd, _ in calls)
+    assert not any(kwargs.get("shell") for _, kwargs in calls)
+    assert any(hostile in cmd for cmd, _ in calls)  # passed through as one argument
+    assert not (tmp_path / "pwned").exists()
+
+
 def test_ensure_worktree_idempotent(tmp_path):
     bare = make_origin(tmp_path)
     ws = Workspace(tmp_path / "root")
@@ -360,6 +471,7 @@ from the_loop.sessions import Session, SessionRegistry, WorkItemRef  # noqa: E40
 from the_loop.webhook.dispatcher import (  # noqa: E402
     Dispatcher,
     RoutingConfig,
+    TmuxConfig,
     WorkspaceConfig,
 )
 from the_loop.webhook.router import RoutedEvent, extract_work_items  # noqa: E402
@@ -692,3 +804,116 @@ def test_a_cross_repo_pr_endpoint_spawns_in_its_own_checkout(tmp_path):
     assert record is not None
     ((endpoint,),) = (record.pull_requests,)
     assert endpoint.cwd == cwd  # recorded, so resume and cleanup find it
+
+
+# -- sessionPerPr: always, end to end (issue-258) ------------------------------
+
+
+def _same_repo_pr_event(bare, number=16, branch="feature/x", delivery="sr-1"):
+    """A PR in the work item's OWN repository, delivering `octo/repo#15`."""
+    payload = {
+        "action": "synchronize",
+        "repository": {
+            "full_name": "octo/repo",
+            "html_url": "https://github.com/octo/repo",
+            "clone_url": str(bare),
+        },
+        "pull_request": {
+            "number": number,
+            "head": {"ref": branch},
+            "body": "Closes #15",
+            "merged": False,
+        },
+    }
+    return RoutedEvent(
+        event="pull_request",
+        action="synchronize",
+        delivery_id=delivery,
+        work_items=extract_work_items("pull_request", payload),
+        payload=payload,
+    )
+
+
+def _always_dispatcher(tmp_path, strategy):
+    registry = SessionRegistry(tmp_path / "sessions")
+    config = RoutingConfig(
+        spawn_on_unmatched="always",
+        workspace=WorkspaceConfig(root=str(tmp_path / "root"), strategy=strategy),
+        control=ControlConfig(require_start_command=False),
+        tmux=TmuxConfig(session_per_pr="always"),
+    )
+    tmux = FakeTmux()
+    return registry, _make_dispatcher(registry, config, tmux), tmux
+
+
+def test_always_gives_a_same_repository_pull_request_its_own_clone_and_session(tmp_path):
+    """
+    Feature: the operator chooses how many sessions a work item's pull requests get
+      Scenario: an operator who chose `always` gets a session per pull request in
+                their own repository
+        Given routing.tmux.sessionPerPr is `always` and workspace.strategy is `clone`
+        And a work item session for github:octo/repo#15 in its own checkout
+        When a pull request in that same repository is synchronized
+        Then a second tmux session is spawned for the pull request
+        And it runs in a checkout keyed on the pull request, holding its head branch
+        And the work item's own checkout is untouched
+
+    Requirement: docs/specs/issue-258/requirements.md R1.3, R2.1
+    """
+    bare = make_origin(tmp_path)
+    push_branch(tmp_path, bare, "feature/x", "f.txt")
+    registry, dispatcher, tmux = _always_dispatcher(tmp_path, "clone")
+    item = WorkItemRef.parse("github:octo/repo#15")
+    ws = Workspace(tmp_path / "root", strategy="clone")
+    target = target_for(bare)
+    record_cwd = ws.prepare(target, item.slug)
+    registry.register(
+        Session(
+            work_item=item,
+            harness="claude",
+            harness_session_id="s-1",
+            cwd=str(record_cwd),
+        )
+    )
+    dispatcher.handle(_same_repo_pr_event(bare))
+    assert _wait(lambda: len(tmux.spawns) == 1)
+    dispatcher.stop()
+    spawn_ref, _, cwd, _ = tmux.spawns[0]
+    assert spawn_ref == "github:octo/repo#16"
+    pr = WorkItemRef.parse(spawn_ref)
+    assert Path(cwd) == ws.clone_dir(target, pr.slug)
+    assert Path(cwd) != record_cwd  # two sessions, two trees — decision-088 D2 holds
+    assert (Path(cwd) / "f.txt").is_file()  # and it is on the pull request's branch
+
+
+def test_always_declines_to_one_session_when_the_branch_cannot_be_held_twice(tmp_path):
+    """
+    Feature: the operator chooses how many sessions a work item's pull requests get
+      Scenario: `always` declines when the pull request cannot have its own branch
+        Given routing.tmux.sessionPerPr is `always` and workspace.strategy is `worktree`
+        And the work item's own worktree already has the pull request's branch
+        When a pull request in that same repository is synchronized
+        Then no second session is spawned
+        And the event is delivered into the work item's session instead
+
+    Requirement: docs/specs/issue-258/requirements.md R2.2, R2.3
+    """
+    bare = make_origin(tmp_path)
+    push_branch(tmp_path, bare, "feature/x", "f.txt")
+    registry, dispatcher, tmux = _always_dispatcher(tmp_path, "worktree")
+    item = WorkItemRef.parse("github:octo/repo#15")
+    ws = Workspace(tmp_path / "root")
+    record_cwd = ws.ensure_worktree(target_for(bare), item.slug, branch="feature/x")
+    registry.register(
+        Session(
+            work_item=item,
+            harness="claude",
+            harness_session_id="s-1",
+            cwd=str(record_cwd),
+        )
+    )
+    dispatcher.handle(_same_repo_pr_event(bare, delivery="sr-2"))
+    assert _wait(lambda: len(tmux.delivers) == 1)
+    dispatcher.stop()
+    assert tmux.spawns == []
+    assert tmux.delivers[0][0] == "github:octo/repo#15"
