@@ -491,12 +491,22 @@ How long the harness gets to exit after SIGTERM before SIGKILL. `0` escalates im
 
 - **Type:** `string` (`never` · `cross-repository` · `always`) — the legacy booleans still parse
 - **Default:** `cross-repository`
-- **Related:** [decision-064](/decisions/decision-064), [decision-088](/decisions/decision-088), [decision-092](/decisions/decision-092)
+- **Related:** [decision-064](/decisions/decision-064), [decision-088](/decisions/decision-088), [decision-092](/decisions/decision-092), [decision-093](/decisions/decision-093)
 
 How many tmux+claude sessions a work item's pull requests get. A pull request that gets one
 is recorded on the work item's single session record (`sessions list --format json` shows
 them under `pullRequests`), spawned lazily by the first event that needs it, and announced
 on the work item like any other spawn.
+
+::: tip This is the **default**, not the verdict (issue-260)
+Each work item states its own answer at `phase-selection` — three checklist rows,
+`pr-sessions-never` / `pr-sessions-cross-repository` / `pr-sessions-always`, with the value
+you set here already ticked. An authorized `the-loop execute` freezes the choice into that
+work item's portable record, and routing reads it there first; this key answers for every
+work item that left the rows alone, and for every work item started before the question
+existed. One repository has both a one-repo bugfix and a three-repo migration, and they can
+now differ. See [decision-093](/decisions/decision-093).
+:::
 
 | Value | A pull request in the work item's own repository | A pull request in another repository |
 |---|---|---|
@@ -511,8 +521,8 @@ on the work item like any other spawn.
   A pull request in the work item's *own* repository is that work item's delivery: same
   branch, same checkout, and under `outer-loop-on-pull-request` the same conversation the
   work item's session is already holding on it.
-- **`always`** is the operator saying they want a conversation per pull request anyway
-  (issue-258). Read the box below before setting it.
+- **`always`** is a conversation per pull request anyway (issue-258). Read the box below
+  before setting it — as a default, or as a work item's own selection.
 
 ::: warning `always` needs a checkout per pull request — in practice `strategy: clone`
 An endpoint gets a conversation only when it gets a **working tree of its own**
@@ -542,7 +552,8 @@ keeps running until the item itself ends. This is issue-101's several-PRs rule e
 in the model rather than special-cased.
 
 In every mode, *which* work item owns a PR's events is read from the session record, never
-re-derived from GitHub on each event.
+re-derived from GitHub on each event — and *how many conversations* those events are spread
+across is read from the work item's own frozen selection, falling back to this key.
 
 ::: tip Upgrading from the boolean
 `true` and `false` still validate and still mean what they mean today — `true` is

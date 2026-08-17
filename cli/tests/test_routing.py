@@ -1311,22 +1311,32 @@ def test_the_mode_answers_the_two_questions_routing_asks(
     assert tmux.splits_same_repository is splits_same_repository
 
 
-def _endpoint_ref_for(tmp_path, mode, routed):
-    """Which conversation `_endpoint_for` picks, with the PR already linked+live."""
+def _endpoint_ref_for(tmp_path, mode, routed, frozen=None, ref=REF):
+    """Which conversation `_endpoint_for` picks, with the PR already linked+live.
+
+    ``mode`` is the operator's configured default; ``frozen``, when given, is
+    what the work item itself chose at `phase-selection` (issue-260) and is
+    written through the same store the daemon's own sink writes.
+    """
     from the_loop.webhook.dispatcher import TmuxConfig
 
     registry, dispatcher = make_dispatcher(
-        tmp_path, FakeTmux(), tmux_config=TmuxConfig(session_per_pr=mode)
+        tmp_path,
+        FakeTmux(),
+        tmux_config=TmuxConfig(session_per_pr=mode),
+        portable_dir=str(tmp_path / "portable"),
     )
-    registry.register(make_session())
+    if frozen is not None:
+        dispatcher.control_store.record_frozen_graph(ref, {"sessionPerPr": frozen})
+    registry.register(make_session(ref=ref))
     pr = pr_work_item(routed.event, routed.payload)
     assert pr is not None
-    endpoint = registry.link_pull_request(REF, pr)
+    endpoint = registry.link_pull_request(ref, pr)
     assert endpoint is not None
     endpoint.tmux_target = f"loop-{pr.slug}"
     endpoint.harness_session_id = "pr-sess"
-    registry.save_endpoint(REF, endpoint)
-    record = registry.find_by_work_item(REF)
+    registry.save_endpoint(ref, endpoint)
+    record = registry.find_by_work_item(ref)
     assert record is not None
     try:
         return dispatcher._endpoint_for(record, routed).work_item.ref
@@ -1357,6 +1367,89 @@ def test_the_operator_chooses_which_pull_requests_get_their_own_session(
 
     cross = routed_cross_repo_pr(delivery="pm-2")
     assert _endpoint_ref_for(tmp_path / mode / "other", mode, cross) == other_repository
+
+
+@pytest.mark.parametrize(
+    "frozen, same_repository, other_repository",
+    [
+        ("always", PR_REF, "github:octo/other#16"),
+        ("never", REF, REF),
+        ("cross-repository", REF, "github:octo/other#16"),
+    ],
+)
+def test_a_work_items_frozen_choice_overrides_the_operators_default(
+    tmp_path, frozen, same_repository, other_repository
+):
+    """issue-260, R2.1 — the daemon is configured `cross-repository` throughout;
+    what decides is what the work item froze at `phase-selection`."""
+    same = routed_pr_closed(delivery="fz-1", merged=False)
+    same.action = "synchronize"
+    assert (
+        _endpoint_ref_for(
+            tmp_path / frozen / "same", "cross-repository", same, frozen=frozen
+        )
+        == same_repository
+    )
+
+    cross = routed_cross_repo_pr(delivery="fz-2")
+    assert (
+        _endpoint_ref_for(
+            tmp_path / frozen / "other", "cross-repository", cross, frozen=frozen
+        )
+        == other_repository
+    )
+
+
+@pytest.mark.parametrize("frozen", [None, "sometimes", "", 3])
+def test_a_work_item_with_no_usable_choice_routes_by_the_configured_default(
+    tmp_path, frozen
+):
+    """R2.2/R2.3/R3.4 — no frozen graph (every work item started before this
+    question existed) and a hand-edited one both fall back to the operator's
+    value. The portable record is agent-writable, so a fourth mode never
+    reaches `TmuxConfig`."""
+    same = routed_pr_closed(delivery="fb-1", merged=False)
+    same.action = "synchronize"
+    assert _endpoint_ref_for(tmp_path, "always", same, frozen=frozen) == PR_REF
+
+
+def test_one_work_items_choice_does_not_move_another_ones(tmp_path):
+    """R2.4 — one daemon, two work items, two answers. The whole point of moving
+    the switch off the machine."""
+    quiet = routed_pr_closed(delivery="iso-1", merged=False)
+    quiet.action = "synchronize"
+    assert _endpoint_ref_for(tmp_path / "a", "always", quiet, frozen="never") == REF
+
+    loud = routed_pr_closed(delivery="iso-2", merged=False)
+    loud.action = "synchronize"
+    assert _endpoint_ref_for(tmp_path / "b", "never", loud, frozen="always") == PR_REF
+
+
+def test_delivery_status_resolves_through_the_work_items_own_choice(tmp_path):
+    """R2.5 — a linked-but-unspawned endpoint is live, so asking with splitting
+    ON for a work item that chose `never` would look straight past the session
+    that recorded the delivery, and the poller would re-forward the comment."""
+    from the_loop.webhook.dispatcher import TmuxConfig
+
+    tmux = FakeTmux()
+    registry, dispatcher = make_dispatcher(
+        tmp_path,
+        tmux,
+        tmux_config=TmuxConfig(session_per_pr="cross-repository"),
+        portable_dir=str(tmp_path / "portable"),
+    )
+    dispatcher.control_store.record_frozen_graph(REF, {"sessionPerPr": "never"})
+    registry.register(make_session())
+    cross = routed_cross_repo_pr(delivery="ds-1")
+    dispatcher.handle(cross)
+    assert wait_until(lambda: len(tmux.delivers) == 1)
+    dispatcher.stop()
+    # It went into the work item's session, and the retry path agrees — asked
+    # about the PULL REQUEST's own ref, which is what the poller forwards on.
+    assert tmux.delivers[0][0] == REF
+    pr = pr_work_item(cross.event, cross.payload)
+    assert pr is not None
+    assert dispatcher.delivery_status("ds-1", [pr]) == "done"
 
 
 def test_always_still_declines_the_session_when_there_is_no_checkout_for_it(tmp_path):

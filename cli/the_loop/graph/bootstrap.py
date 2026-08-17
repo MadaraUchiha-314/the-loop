@@ -114,16 +114,23 @@ def build_runtime(
         # The `execute` keyword is operator-configurable like every other
         # control word (issue-177, owner review): the phase-selection gate must
         # look for what THIS deployment declared, not a constant.
-        control = ((cli_cfg.get("webhooks") or {}).get("ghWebhook") or {}).get(
+        routing = ((cli_cfg.get("webhooks") or {}).get("ghWebhook") or {}).get(
             "routing"
         ) or {}
-        keywords = ((control.get("control") or {}).get("keywords")) or {}
+        keywords = ((routing.get("control") or {}).get("keywords")) or {}
         if keywords.get("execute") is not None:
             config["executeKeyword"] = str(keywords["execute"])
+        # The DEFAULT the same gate offers for "how many sessions do this work
+        # item's pull requests get?" (issue-260). The operator states it once,
+        # per deployment; the checklist renders it pre-ticked, and the work item
+        # overrides it or leaves it alone. Resolved here — legacy booleans and
+        # typos included — so the checklist and the daemon read one vocabulary.
+        from ..prsessions import session_per_pr_mode
+
+        config["sessionPerPr"] = session_per_pr_mode(
+            (routing.get("tmux") or {}).get("sessionPerPr")
+        )
         if authorized_users is None:
-            routing = ((cli_cfg.get("webhooks") or {}).get("ghWebhook") or {}).get(
-                "routing"
-            ) or {}
             config["authorizedUsers"] = routing.get("authorizedUsers") or []
     if pr_number is not None:
         # One expression of the layout, shared with the hook that reads it back

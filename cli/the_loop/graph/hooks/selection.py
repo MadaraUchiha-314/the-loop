@@ -55,6 +55,16 @@ what keeps a multi-repo item from opening a pull request that only ever holds a
 discussion. The INNER loop has no such question: a pull request's loop runs on
 that pull request.
 
+**And a third question, for the same reason** (issue-260): *how many tmux+claude
+sessions do this work item's pull requests get* — one conversation for the whole
+item, one per pull request in another repository, or one per pull request
+outright. `routing.tmux.sessionPerPr` owned that answer for a day and owned it
+in the wrong place: a machine-wide switch cannot serve a one-repo bugfix and a
+three-repo migration in the same repository, which is the argument that put the
+surface here in the first place. The operator's value stays — as the **default**
+the rows are rendered against, and as the answer for every work item that never
+answered.
+
 **And a loop with no outer loop is not asked it at all** (issue-199). The
 contribution loop (issue-185) joins somebody else's in-progress work item: it
 authors one artifact, on that thread, and it never owns an outer loop whose
@@ -72,6 +82,13 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from ...authz import mark_self_authored
+from ...prsessions import (
+    SESSION_PER_PR_ALWAYS,
+    SESSION_PER_PR_CROSS_REPOSITORY,
+    SESSION_PER_PR_MODES,
+    SESSION_PER_PR_NEVER,
+    session_per_pr_mode,
+)
 from ..contract import HookContext, HookResult
 from ..registry import hook
 from .feedback import _authorized_comments
@@ -124,6 +141,43 @@ SURFACE_TOKEN = "outer-loop-on-pull-request"
 #: question that was never asked. The runtime writes only a non-empty value into
 #: `graph-state.json`, so nothing downstream has to learn a third literal.
 NO_SURFACE = ""
+
+#: The checklist rows that answer "how many tmux+claude sessions do this work
+#: item's pull requests get?" (issue-260) — one per mode, so the reply is a
+#: *choice among three* rather than a box that can only say two things. Derived
+#: from :data:`SESSION_PER_PR_MODES` rather than spelled again, so the config
+#: file, the checklist and the daemon cannot drift into three vocabularies. The
+#: prefix keeps them unmistakable among the phase rows they sit below.
+PR_SESSIONS_TOKENS = {f"pr-sessions-{mode}": mode for mode in SESSION_PER_PR_MODES}
+
+#: What each row says it does, in the order the modes are declared — narrowest
+#: first, so a reader scanning down sees the choice widen.
+PR_SESSIONS_ROW_TEXT = {
+    SESSION_PER_PR_NEVER: "every pull request's events land in **this** work "
+    "item's one session.",
+    SESSION_PER_PR_CROSS_REPOSITORY: "only a pull request in **another** repository "
+    "gets its own session; one in this repository is this work item's own delivery.",
+    SESSION_PER_PR_ALWAYS: "**every** pull request delivering this work item gets "
+    "its own session, this repository's included.",
+}
+
+#: Tokens the checklist carries that are NOT phases (issue-183, issue-260). One
+#: set, because the parse rule is one rule: a row here is never a declared skip
+#: and never a refusal, whichever way it is ticked.
+_NON_PHASE_TOKENS = {SURFACE_TOKEN, *PR_SESSIONS_TOKENS}
+
+
+def _pr_sessions_default(ctx: HookContext) -> str:
+    """This deployment's configured ``routing.tmux.sessionPerPr``.
+
+    The row the checklist pre-ticks, and the answer for every reply that does
+    not choose one. Resolved through the shared vocabulary, so a legacy boolean
+    and a typo land on exactly the mode the daemon would route by — offering a
+    default the deployment does not actually use would be worse than offering
+    none. Absent (no CLI config, or a `check` run outside a deployment) is the
+    shipped default.
+    """
+    return session_per_pr_mode((ctx.config or {}).get("sessionPerPr"))
 
 
 def _asks_surface(ctx: HookContext) -> bool:
@@ -272,6 +326,26 @@ def _checklist_body(ctx: HookContext) -> str:
             "repository it targets.",
             "",
         ]
+    default_mode = _pr_sessions_default(ctx)
+    lines += [
+        "**How many sessions should this work item's pull requests get?** Also "
+        "not a phase — it is how many harness conversations run for this item. "
+        "**Tick exactly one**; this deployment's default is already ticked:",
+        "",
+    ]
+    for token, mode in PR_SESSIONS_TOKENS.items():
+        mark = "x" if mode == default_mode else " "
+        lines.append(f"- [{mark}] `{token}` — {PR_SESSIONS_ROW_TEXT[mode]}")
+    lines += [
+        "",
+        f"Leave them alone and `{default_mode}` stands — the operator's "
+        "`routing.tmux.sessionPerPr`. Ticking none, or more than one, means the "
+        "same thing. A pull request only ever gets a session when it can get a "
+        "**working tree of its own**, in every mode: where it cannot, the event "
+        "is delivered into this work item's session and recorded as "
+        "`session.pr_session_declined`.",
+        "",
+    ]
     lines += [
         "A doc fix usually needs little more than implementation and "
         "verification; a feature usually needs every phase. Reply "
@@ -356,6 +430,7 @@ def _frozen_graph(
     skips: List[str],
     surface: str = DEFAULT_SURFACE,
     opt_ins: Optional[List[str]] = None,
+    session_per_pr: str = SESSION_PER_PR_CROSS_REPOSITORY,
 ) -> Dict[str, Any]:
     """The graph this work item will actually walk, as a record.
 
@@ -389,6 +464,12 @@ def _frozen_graph(
         # Empty for a loop that was never asked the question (issue-199): the
         # record says "no surface was chosen", not "the default was kept".
         "surface": surface,
+        # Always a resolved mode (issue-260), unlike `surface`: this question is
+        # asked wherever the gate runs, and the daemon reads this key on every
+        # pull-request event. A record that carried the *unanswered* case would
+        # make every reader re-derive the operator's default; carrying the
+        # answer means the routing a work item agreed to is a recorded fact.
+        "sessionPerPr": session_per_pr,
         "nodes": nodes,
     }
 
@@ -417,11 +498,11 @@ def _parse_selection(
     refused: List[str] = []
     for match in _CHECK_LINE.finditer(body):
         token = match.group("token")
-        if token == SURFACE_TOKEN:
-            # Not a phase (issue-183). An unticked surface row means "the work
-            # item", never "skip a node" — and it must not fall through to the
-            # refused list either, or every default selection would report a
-            # phase it never asked to drop.
+        if token in _NON_PHASE_TOKENS:
+            # Not a phase (issue-183, issue-260). An unticked surface or
+            # pr-sessions row means "the default", never "skip a node" — and it
+            # must not fall through to the refused list either, or every default
+            # selection would report a phase it never asked to drop.
             continue
         ticked = bool(match.group("mark").strip())
         if token in opt_in:
@@ -453,6 +534,27 @@ def _parse_surface(body: str) -> str:
     return DEFAULT_SURFACE
 
 
+def _parse_pr_sessions(body: str, default: str) -> str:
+    """The chosen ``sessionPerPr`` mode from one reply — the default otherwise.
+
+    Exactly one ticked row is a choice. **Anything else is the default**: no row
+    ticked, several ticked (a reader who ticked before unticking), an absent
+    section, a body the-loop could not read. That is the fail-closed direction
+    here — not the narrowest mode, but the value that was already in force, the
+    one the operator stated and the one every work item before this question ran
+    on. Guessing which of two ticks a human meant is how a three-repo migration
+    silently gets one conversation.
+    """
+    ticked = [
+        mode
+        for match in _CHECK_LINE.finditer(body)
+        for mode in [PR_SESSIONS_TOKENS.get(match.group("token"))]
+        if mode is not None and match.group("mark").strip()
+    ]
+    unique = list(dict.fromkeys(ticked))
+    return unique[0] if len(unique) == 1 else default
+
+
 def _confirmation(
     ctx: HookContext,
     actor: str,
@@ -461,6 +563,7 @@ def _confirmation(
     surface: str = DEFAULT_SURFACE,
     opt_ins: Optional[List[str]] = None,
     offered: Optional[List[str]] = None,
+    session_per_pr: str = SESSION_PER_PR_CROSS_REPOSITORY,
 ) -> str:
     lines = ["🤖 _the-loop_ — **phase selection recorded**", ""]
     if skips:
@@ -515,6 +618,9 @@ def _confirmation(
     # was never offered.
     lines += [
         "",
+        f"Pull requests delivering this work item: **`{session_per_pr}`** — "
+        + PR_SESSIONS_ROW_TEXT[session_per_pr],
+        "",
         "Starting the loop.",
     ]
     return mark_self_authored("\n".join(lines))
@@ -563,6 +669,10 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
     # surface, so a `SURFACE_TOKEN` row typed into a contribution's reply — by
     # habit, or by copy-paste from another ticket — changes nothing.
     surface = _parse_surface(body) if _asks_surface(ctx) else NO_SURFACE
+    # Asked wherever this gate runs (issue-260): every loop that reaches it can
+    # be delivered by pull requests, and a contribution's are usually in
+    # somebody else's repository — the case the modes differ most about.
+    session_per_pr = _parse_pr_sessions(body, _pr_sessions_default(ctx))
     actor = str(reply["author"]).lstrip("@")
 
     confirmation_error = ""
@@ -571,7 +681,14 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
             "add-comment",
             ref=ctx.work_item.ref,
             body=_confirmation(
-                ctx, actor, skips, refused, surface, opt_ins=opt_ins, offered=opt_in
+                ctx,
+                actor,
+                skips,
+                refused,
+                surface,
+                opt_ins=opt_ins,
+                offered=opt_in,
+                session_per_pr=session_per_pr,
             ),
         )
     except Exception as exc:  # noqa: BLE001
@@ -599,7 +716,10 @@ def classify_phase_selection(ctx: HookContext) -> HookResult:
             "refused": refused,
             "decision": DECISION_KEY,
             "surface": surface,
-            "frozenGraph": _frozen_graph(ctx, skips, surface, opt_ins=opt_ins),
+            "sessionPerPr": session_per_pr,
+            "frozenGraph": _frozen_graph(
+                ctx, skips, surface, opt_ins=opt_ins, session_per_pr=session_per_pr
+            ),
             "selectionSource": source,
             **({"error": confirmation_error} if confirmation_error else {}),
         },

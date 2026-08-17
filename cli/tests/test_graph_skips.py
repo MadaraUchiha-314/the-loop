@@ -700,6 +700,145 @@ def test_the_posted_checklist_offers_the_surface_row(selecting, repo, fake_githu
     assert "Where should the outer loop happen?" in posted
 
 
+# -- M14 (issue-260): the third question the one signed reply answers ----------
+
+
+def _selecting_with(repo, **config):
+    """A selecting runtime whose CLI-config-derived hook config is `config`."""
+    return Runtime(
+        repo,
+        graph=compile_graph(copy.deepcopy(SELECT_GRAPH)),
+        config={"authorizedUsers": ["@owner"], **config},
+    )
+
+
+def test_the_posted_checklist_offers_a_row_per_pr_session_mode(
+    selecting, repo, fake_github
+):
+    """One row per mode, not one box: the question has three answers, and
+    collapsing two of them is what issue-260 objects to."""
+    selecting.start(WORK_ITEM, ref="github:o/r#1")
+    posted = fake_github.posted[0]
+    assert "How many sessions should this work item's pull requests get?" in posted
+    # ...with the deployment's default — here the shipped one — already ticked.
+    assert "- [ ] `pr-sessions-never`" in posted
+    assert "- [x] `pr-sessions-cross-repository`" in posted
+    assert "- [ ] `pr-sessions-always`" in posted
+
+
+@pytest.mark.parametrize(
+    "configured, ticked",
+    [
+        ("always", "pr-sessions-always"),
+        ("never", "pr-sessions-never"),
+        (False, "pr-sessions-never"),  # the legacy boolean, resolved
+        (True, "pr-sessions-cross-repository"),
+        ("sometimes", "pr-sessions-cross-repository"),  # a typo fails closed
+    ],
+)
+def test_the_checklist_pre_ticks_the_deployments_configured_default(
+    repo, fake_github, configured, ticked
+):
+    """R1.1/R3.2 — `routing.tmux.sessionPerPr` is the DEFAULT, so the row it
+    resolves to is the ticked one. Offering a default the daemon would not
+    actually route by would be worse than offering none."""
+    _selecting_with(repo, sessionPerPr=configured).start(WORK_ITEM, ref="github:o/r#1")
+    posted = fake_github.posted[0]
+    assert f"- [x] `{ticked}`" in posted
+    # Exactly one — a radio group, not a set of independent boxes.
+    ticks = [ln for ln in posted.splitlines() if ln.startswith("- [x] `pr-sessions-")]
+    assert len(ticks) == 1
+
+
+def test_ticking_a_pr_session_row_freezes_that_mode(repo, fake_github):
+    """R1.2–R1.4 — one signed reply, one record: the mode lands in the decision,
+    in the frozen graph, in what the sink publishes, and in the confirmation."""
+    published = []
+    runtime = _selecting_with(
+        repo,
+        sessionPerPr="cross-repository",
+        frozenGraphSink=lambda frozen: published.append(frozen),
+    )
+    runtime.start(WORK_ITEM, ref="github:o/r#1")
+    runtime.advance(
+        WORK_ITEM,
+        ref="github:o/r#1",
+        event=_reply("- [x] pr-sessions-always\nthe-loop execute"),
+    )
+    decision = GraphState.load(_spec_dir(repo), WORK_ITEM).decisions["phase-selection"]
+    assert decision["sessionPerPr"] == "always"
+    assert decision["graph"]["sessionPerPr"] == "always"
+    assert published[-1]["sessionPerPr"] == "always"
+    assert "`always`" in fake_github.posted[-1]
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "the-loop execute",  # nothing ticked, no checklist to read
+        "- [ ] pr-sessions-always\nthe-loop execute",  # asked for none
+        "- [x] pr-sessions-always\n- [x] pr-sessions-never\nthe-loop execute",
+    ],
+)
+def test_an_unchosen_or_ambiguous_answer_keeps_the_configured_default(
+    repo, fake_github, reply
+):
+    """R3.1 — fail closed to the value already in force, not to the narrowest
+    mode. Guessing which of two ticks a human meant is how a three-repo
+    migration silently gets one conversation."""
+    runtime = _selecting_with(repo, sessionPerPr="always")
+    runtime.start(WORK_ITEM, ref="github:o/r#1")
+    runtime.advance(WORK_ITEM, ref="github:o/r#1", event=_reply(reply))
+    decision = GraphState.load(_spec_dir(repo), WORK_ITEM).decisions["phase-selection"]
+    assert decision["sessionPerPr"] == "always"
+
+
+def test_a_pr_session_row_is_never_read_as_a_phase(selecting, repo, fake_github):
+    """R3.3 — the checklist now carries three kinds of line. An unticked mode
+    row is neither a declared skip nor a refusal."""
+    selecting.start(WORK_ITEM, ref="github:o/r#1")
+    selecting.advance(
+        WORK_ITEM,
+        ref="github:o/r#1",
+        event=_reply(
+            "- [ ] pr-sessions-never\n- [ ] pr-sessions-always\n"
+            "- [ ] requirements\nthe-loop execute"
+        ),
+    )
+    state = GraphState.load(_spec_dir(repo), WORK_ITEM)
+    assert set(state.skips) == {"requirements"}
+    assert "pr-sessions" not in fake_github.posted[-1].split("Refused")[-1]
+
+
+def test_a_token_outside_the_vocabulary_is_ignored_not_obeyed(
+    selecting, repo, fake_github
+):
+    """Abuse case 2 — a fourth mode cannot be introduced from a comment."""
+    selecting.start(WORK_ITEM, ref="github:o/r#1")
+    selecting.advance(
+        WORK_ITEM,
+        ref="github:o/r#1",
+        event=_reply("- [x] pr-sessions-sometimes\nthe-loop execute"),
+    )
+    decision = GraphState.load(_spec_dir(repo), WORK_ITEM).decisions["phase-selection"]
+    assert decision["sessionPerPr"] == "cross-repository"
+    assert "pr-sessions-sometimes" not in fake_github.posted[-1]
+
+
+def test_an_unauthorized_ticker_cannot_freeze_a_mode(selecting, repo, fake_github):
+    """Abuse case 1 — the rows ride the same authorization as the phase rows."""
+    selecting.start(WORK_ITEM, ref="github:o/r#1")
+    report = selecting.advance(
+        WORK_ITEM,
+        ref="github:o/r#1",
+        event=_reply("- [x] pr-sessions-always\nthe-loop execute", author="@drive-by"),
+    )
+    assert report.status == "wait"
+    assert (
+        "phase-selection" not in GraphState.load(_spec_dir(repo), WORK_ITEM).decisions
+    )
+
+
 def test_a_failing_frozen_graph_sink_never_gates_the_selection(
     selecting, repo, fake_github
 ):

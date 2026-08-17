@@ -224,9 +224,12 @@ routing:
   # session is KEPT, end the harness process inside it — the pane stays
   # readable, but is no longer a live TUI a stray keystroke/paste could
   # resume. SIGTERM, then SIGKILL after harnessKillGraceSeconds.
-  # sessionPerPr (issue-172, issue-253, issue-258): how many tmux+claude sessions
-  # a work item's pull requests get — `never` (all events into the work item's
-  # single session), `cross-repository` (the default — only a PR in ANOTHER
+  # sessionPerPr (issue-172, issue-253, issue-258, issue-260): the DEFAULT for
+  # how many tmux+claude sessions a work item's pull requests get — each work
+  # item picks its own at phase-selection (the pr-sessions-* checklist rows,
+  # this value pre-ticked), and this answers for one that left them alone.
+  # The three modes: `never` (all events into the work item's
+  # single session), `cross-repository` (the shipped one — only a PR in ANOTHER
   # repository gets its own; a PR in the work item's own repository is that
   # item's delivery, on its branch and in its checkout), or `always` (every PR,
   # its own repository included). In every mode an endpoint spawns only when it

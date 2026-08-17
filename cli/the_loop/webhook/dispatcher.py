@@ -15,10 +15,10 @@ import queue
 import re
 import threading
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from string import Template
-from typing import Any, Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set
 
 from .. import eventlog
 from ..announce import AnnounceConfig, SessionAnnouncer
@@ -45,6 +45,13 @@ from ..graphlink import (
 )
 from ..harness.base import HarnessAdapter, UnsupportedRunnerError
 from ..interaction import InteractionConfig, apply_directive
+from ..prsessions import (
+    SESSION_PER_PR_ALWAYS,
+    SESSION_PER_PR_CROSS_REPOSITORY,
+    SESSION_PER_PR_MODES,
+    SESSION_PER_PR_NEVER,
+    session_per_pr_mode,
+)
 from ..reactions import (
     STATE_COMPLETED,
     STATE_ERROR,
@@ -167,46 +174,6 @@ class WebTerminalConfig:
         )
 
 
-#: The three answers to "how many tmux+claude sessions do a work item's pull
-#: requests get?" (issue-258). ``sessionPerPr`` used to be a boolean; the two
-#: booleans still parse, to the two modes they have always meant.
-SESSION_PER_PR_NEVER = "never"
-SESSION_PER_PR_CROSS_REPOSITORY = "cross-repository"
-SESSION_PER_PR_ALWAYS = "always"
-SESSION_PER_PR_MODES = (
-    SESSION_PER_PR_NEVER,
-    SESSION_PER_PR_CROSS_REPOSITORY,
-    SESSION_PER_PR_ALWAYS,
-)
-
-
-def _session_per_pr_mode(value: Any) -> str:
-    """Resolve a configured ``sessionPerPr`` to one of :data:`SESSION_PER_PR_MODES`.
-
-    Total: every input produces a mode. ``True``/``False`` are what every config
-    file written before issue-258 says, and they keep meaning exactly what they
-    mean today — ``True`` is ``cross-repository``, **not** ``always``, because
-    that is what it has meant since issue-253 narrowed it.
-
-    Anything else resolves to the shipped default with a warning, the way
-    ``routing.interaction.mode`` does. Fail *closed*: a typo lands on the
-    narrower of the two splitting choices, never on the widest one.
-    """
-    if value is None:
-        return SESSION_PER_PR_CROSS_REPOSITORY
-    if isinstance(value, bool):
-        return SESSION_PER_PR_CROSS_REPOSITORY if value else SESSION_PER_PR_NEVER
-    if value in SESSION_PER_PR_MODES:
-        return str(value)
-    logger.warning(
-        "routing.tmux.sessionPerPr: %r is not one of %s; using %r",
-        value,
-        ", ".join(SESSION_PER_PR_MODES),
-        SESSION_PER_PR_CROSS_REPOSITORY,
-    )
-    return SESSION_PER_PR_CROSS_REPOSITORY
-
-
 @dataclass
 class TmuxConfig:
     """Mirror of ``routing.tmux`` — lifetime of the hosted sessions (issue-86).
@@ -222,8 +189,10 @@ class TmuxConfig:
     item closes, leaving a dead — readable, un-typeable — pane behind.
 
     ``session_per_pr`` (issue-172, issue-253, issue-258) decides how many
-    conversations one work item gets, and it is the **operator's** choice among
-    three:
+    conversations one work item gets. It is the operator's **default** rather
+    than their verdict (issue-260): a work item states its own answer at
+    `phase-selection`, and this value is what the checklist offers pre-ticked
+    and what stands for a work item that never answered. Three modes:
 
     ``never``
         every pull request's events are delivered into the work item's single
@@ -241,7 +210,8 @@ class TmuxConfig:
     when it gets a working tree of its own, enforced at
     :meth:`Dispatcher._endpoint_cwd`. So ``always`` in a deployment with no
     ``routing.workspace.root`` still yields one session, and says so
-    (``session.pr_session_declined``).
+    (``session.pr_session_declined``). That is as true of a work item's own
+    selection as of this default: moving the choice never moved the rule.
     """
 
     keep_session_on_close: bool = True
@@ -255,7 +225,7 @@ class TmuxConfig:
     def __post_init__(self) -> None:
         # Constructed directly as often as it is parsed (tests, embedders), and a
         # mode is only useful if every construction path produces a valid one.
-        self.session_per_pr = _session_per_pr_mode(self.session_per_pr)
+        self.session_per_pr = session_per_pr_mode(self.session_per_pr)
 
     @property
     def splits_pull_requests(self) -> bool:
@@ -277,7 +247,7 @@ class TmuxConfig:
             resume_probe_seconds=float(data.get("resumeProbeSeconds", 2.0)),
             kill_harness_on_close=bool(data.get("killHarnessOnClose", True)),
             harness_kill_grace_seconds=float(data.get("harnessKillGraceSeconds", 5.0)),
-            session_per_pr=_session_per_pr_mode(data.get("sessionPerPr")),
+            session_per_pr=session_per_pr_mode(data.get("sessionPerPr")),
         )
 
 
@@ -909,9 +879,10 @@ class Dispatcher:
         candidate; the work item's own session otherwise — which is every issue
         event, and every event at all under ``never``.
 
-        Which pull requests are candidates is the **operator's** choice
-        (issue-258), and the only interesting boundary is the work item's own
-        repository:
+        Which pull requests are candidates is the **work item's** choice
+        (issue-260), taken at `phase-selection` and falling back to the
+        operator's configured default; the only interesting boundary is the work
+        item's own repository:
 
         - ``never`` — none of them. The pre-issue-172 shape.
         - ``cross-repository`` (the default) — a pull request in the repository
@@ -920,8 +891,8 @@ class Dispatcher:
           froze ``outer-loop-on-pull-request`` — the very place the work item's
           session is already posting its spec chain and reading its human gates.
           It routes to the work item's session.
-        - ``always`` — it does not. An operator who wants a conversation per
-          pull request in their own repository gets one, and gets it with a
+        - ``always`` — it does not. A work item that wants a conversation per
+          pull request in its own repository gets one, and gets it with a
           checkout of its own or not at all.
 
         That last clause is the part issue-253 established and issue-258 does
@@ -942,16 +913,54 @@ class Dispatcher:
         registered by hand, or the link write failed) falls back to the work
         item's session rather than being dropped.
         """
-        tmux = self.config.tmux
-        if not tmux.splits_pull_requests:
-            return record
         pr = pr_work_item(routed.event, routed.payload)
         if pr is None or pr.ref == record.work_item.ref:
+            return record
+        # Resolved only once the event is known to carry a pull request: this
+        # reads the work item's portable record, and every issue comment would
+        # otherwise pay for a question that cannot apply to it.
+        tmux = self._tmux_for(record.work_item)
+        if not tmux.splits_pull_requests:
             return record
         if _same_repository(pr, record.work_item) and not tmux.splits_same_repository:
             return record
         endpoint = record.endpoint_for(pr)
         return endpoint if endpoint is not None and endpoint.is_live else record
+
+    def _tmux_for(self, work_item: WorkItemRef) -> TmuxConfig:
+        """The operator's tmux policy with THIS work item's own choice applied.
+
+        One field differs, and only ever this one: ``session_per_pr``, which
+        issue-260 moved from the operator's verdict to the operator's *default*.
+        A work item states its own answer at `phase-selection`, an authorized
+        `the-loop execute` freezes it, and it travels in the portable record's
+        frozen graph — so the daemon reads it per work item rather than once at
+        startup. One repository has both a one-repo bugfix and a three-repo
+        migration, and a machine-wide switch answers for neither.
+
+        Everything unreadable resolves to the configured default: a record with
+        no frozen graph (every work item started before the choice existed), a
+        record the store could not read, and a mode outside the vocabulary — the
+        portable record is agent-writable like every state file here, so the
+        value is re-validated on the way in and a fourth mode never reaches
+        :class:`TmuxConfig`.
+        """
+        default = self.config.tmux
+        try:
+            frozen = self.control_store.frozen_graph(work_item) or {}
+        except Exception as exc:  # noqa: BLE001 — never fail a delivery over a read
+            logger.warning(
+                "could not read the frozen selection for %s (%s); routing its pull "
+                "requests by the configured sessionPerPr (%s)",
+                work_item.ref,
+                exc,
+                default.session_per_pr,
+            )
+            return default
+        chosen = frozen.get("sessionPerPr")
+        if chosen not in SESSION_PER_PR_MODES or chosen == default.session_per_pr:
+            return default
+        return replace(default, session_per_pr=str(chosen))
 
     def _deliver_assignment(
         self, work_item: WorkItemRef, pr_number: Optional[int], text: str
@@ -2518,17 +2527,22 @@ class Dispatcher:
         failed and discarded the id, or it was never sent).
 
         Resolves each ref the way dispatch did — through a stored binding when
-        the ref has no session of its own (issue-172). Asking the registry
-        directly would report a delivery that *succeeded* through a binding as
-        ``unhandled``, because the id was recorded on the bound session's record
-        and no ref here names it — and the poller would then re-forward the same
-        comment until its retry budget was spent.
+        the ref has no session of its own (issue-172), and by the **work item's
+        own** ``sessionPerPr`` (issue-260), not the operator's default. Both
+        halves answer the same failure: reporting a delivery that *succeeded* as
+        ``unhandled`` makes the poller re-forward the same comment until its
+        retry budget is spent. A pull request that was merely linked has a live
+        endpoint with no conversation, so asking with splitting on for a work
+        item that chose ``never`` would look straight past the session that
+        actually recorded the delivery.
         """
         if not delivery_id:
             return "unhandled"
         for ref in refs:
+            owner = self.registry.record_owning(ref)
+            tmux = self._tmux_for(owner.work_item) if owner else self.config.tmux
             existing = self.registry.session_for(
-                ref, session_per_pr=self.config.tmux.splits_pull_requests
+                ref, session_per_pr=tmux.splits_pull_requests
             )
             if existing is not None and delivery_id in existing.recent_deliveries:
                 return "done"

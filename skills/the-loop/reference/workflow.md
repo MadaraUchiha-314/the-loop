@@ -287,6 +287,30 @@ reply anyway is inert, and the record carries no surface — its one `contributi
 iterated on the thread it was invited into. See
 [decision-069](../../../docs/decisions/decision-069.md).
 
+### How many sessions this work item's pull requests get — the same act (issue-260)
+
+The checklist carries a second non-phase question, for the same reason and answered by the
+same signed reply: **how many tmux+claude sessions this work item's pull requests get.**
+Three rows, of which exactly one is ticked:
+
+```text
+- [ ] `pr-sessions-never`             every PR's events land in this work item's one session
+- [x] `pr-sessions-cross-repository`  only a PR in ANOTHER repository gets its own
+- [ ] `pr-sessions-always`            every PR gets its own, this repository's included
+```
+
+The row that arrives already ticked is the operator's `routing.tmux.sessionPerPr` — the
+**default**, not the verdict. Leave them alone (or tick none, or tick two) and that default
+stands; tick exactly one and it is this work item's, frozen into `graph-state.json` and the
+portable record and read by the daemon per work item from then on. A three-repo migration
+and a one-line doc fix on the same machine can now differ, which is the whole point.
+
+In every mode a pull request gets a session only when it can get a **working tree of its
+own**; where it cannot, its events are delivered into the work item's session and the
+refusal is recorded (`session.pr_session_declined`). **The agent never ticks these rows**,
+exactly as it never declares a skip. See
+[decision-093](../../../docs/decisions/decision-093.md).
+
 ## The contribution loop — joining an existing work item (issue-185)
 
 The third shipped graph, **`pdlc-contribution-loop`**, is walked instead of the outer

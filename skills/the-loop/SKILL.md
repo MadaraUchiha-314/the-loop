@@ -123,8 +123,11 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   (audited, like `force`). A declared skip is reported by `the-loop check` as
   *skipped by declaration* with provenance — never as a pass. **Never answer the
   selection gate or run the skip verb from a working session**: if phases seem
-  unnecessary, say so on the ticket and let a human declare it. See
-  `reference/workflow.md` § Declared skips.
+  unnecessary, say so on the ticket and let a human declare it. The same reply also
+  answers the two questions that are **not** phases — where the outer loop is iterated
+  (issue-183) and how many sessions this item's pull requests get (issue-260,
+  `pr-sessions-*`, defaulting to the operator's `routing.tmux.sessionPerPr`) — and the
+  agent never ticks those rows either. See `reference/workflow.md` § Declared skips.
 - **Reference, don't duplicate (single source of truth).** Once
   requirements/design/testing-plan/tasks exist, update the ticket with a **link** to each
   checked-in artifact. Subsequent

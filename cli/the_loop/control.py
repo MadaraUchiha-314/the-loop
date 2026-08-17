@@ -339,6 +339,20 @@ class ControlStore:
         """
         self.store.write_section(work_item, GRAPH, dict(frozen))
 
+    def frozen_graph(
+        self, work_item: Union[str, WorkItemRef]
+    ) -> Optional[Dict[str, Any]]:
+        """What :meth:`record_frozen_graph` wrote, or ``None`` if nothing has.
+
+        The reader that makes the frozen selection *usable* by the daemon
+        (issue-260) rather than only readable by a human: the routing choice a
+        work item made at `phase-selection` is in here, and
+        ``Dispatcher._tmux_for`` asks for it on every pull-request event. ``None``
+        is the honest answer for every work item that has not answered the gate —
+        which is every work item started before the choice existed.
+        """
+        return self.store.section(work_item, GRAPH)
+
     def record(
         self,
         work_item: Union[str, WorkItemRef],

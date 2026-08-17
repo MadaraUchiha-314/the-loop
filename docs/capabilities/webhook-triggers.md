@@ -244,9 +244,15 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
     branch with no lock and no owner: they interleaved commits, restarted each other's
     services and ran the same verification twice against a tree each was changing under
     the other.
-  - **How many sessions a work item's pull requests get is the operator's choice**
-    (`routing.tmux.sessionPerPr`, issue-258,
-    [decision-092](../decisions/decision-092.md)), among three:
+  - **How many sessions a work item's pull requests get is the work item's choice**
+    (issue-260, [decision-093](../decisions/decision-093.md)), made at `phase-selection`
+    and frozen into its portable record; `routing.tmux.sessionPerPr` (issue-258,
+    [decision-092](../decisions/decision-092.md)) is the **default** it is chosen against.
+    WHEN routing a pull request's event THEN the system SHALL read that work item's frozen
+    `graph.sessionPerPr` and SHALL fall back to the configured value when the record
+    carries none or carries a value outside the vocabulary — so a work item started before
+    the choice existed, and a hand-edited record, both route exactly as they do today. The
+    three modes are unchanged:
     - WHEN it is `never` THEN every pull request's events SHALL be delivered into the work
       item's single session — the pre-issue-172 behaviour.
     - WHEN it is `cross-repository` (**the default**) THEN a pull request in **another**
@@ -262,6 +268,9 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
       system SHALL resolve it to `cross-repository` and SHALL log the value it rejected;
       the legacy booleans SHALL resolve to `cross-repository` (`true`) and `never`
       (`false`), so a configuration written before issue-258 keeps its meaning.
+    - WHEN the retry path asks whether a delivery was handled THEN it SHALL resolve the
+      endpoint by the **same** per-work-item mode dispatch used, so a comment delivered
+      into the work item's session under `never` is never re-forwarded as unhandled.
   - An endpoint's session SHALL run in a checkout of **that pull request's** repository,
     keyed on the pull request's own slug (`routing.workspace.root`), spawned lazily by the
     first event that needs it and announced like any other spawn. WHEN the pull request is
@@ -588,6 +597,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-260 | How many sessions a work item's pull requests get moved from the operator to the work item (2026-08-17): issue-258 gave the choice to `routing.tmux.sessionPerPr`, machine-wide — the same mistake issue-183 refused to make for `outer-loop-on-pull-request`, because one repository has both a one-repo bugfix and a three-repo migration and one daemon serves both. `phase-selection` now carries three rows (`pr-sessions-never` / `pr-sessions-cross-repository` / `pr-sessions-always`) with the deployment's configured value pre-ticked; exactly one ticked row is the choice, and none, several, an unreadable checklist or a token outside the vocabulary all resolve to that default. The resolved mode is frozen by the same signed `the-loop execute` into `graph-state.json` and the portable record (`graph.sessionPerPr`), and routing reads it there per work item ahead of the config key. Nothing else moved: the three modes mean what decision-092 said, decision-088 D2's tree requirement is untouched, the schema is unchanged, and a work item with no frozen mode routes exactly as before | [spec](../specs/issue-260/), [decision-093](../decisions/decision-093.md), [routing](../config/cli/routing-options.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/260) |
 | issue-258 | How many sessions a work item's pull requests get became the operator's choice again (2026-08-17): issue-253 stated the same-repository collapse as a **rule** — `sessionPerPr: true` meant "only a pull request elsewhere splits", and no configuration gave a pull request in the work item's own repository a session of its own. The key is now three-valued — `never`, `cross-repository` (the unchanged default) and `always` — with the legacy booleans still parsing to the first two, so no existing config changes meaning. What did **not** become optional is decision-088 D2: an endpoint spawns only with a working tree of its own, and a same-repository endpoint's checkout must additionally hold the pull request's **head branch** (`Workspace.prepare(require_branch=True)`) — otherwise git's one-branch-per-worktree rule would have handed it a tree silently sitting on the default branch. `always` is therefore served by `workspace.strategy: clone` and declines to the single session under `worktree` | [spec](../specs/issue-258/), [decision-092](../decisions/decision-092.md), [routing](../config/cli/routing-options.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/258) |
 | issue-253 | A work item stopped having two owners (2026-08-16): `sessionPerPr` gave every pull request delivering a work item its own harness conversation but never its own **checkout** — `_spawn_endpoint` spawned with `record.cwd`, and `Workspace.prepare` keys both strategies on the work-item slug, so under *every* configuration a pull request's session ran in the work item session's tree. Two agents, one branch, no lock: on issue-239 they interleaved commits, restarted each other's services and ran the same verification twice against a tree each was changing under the other. Now a pull request in the work item's **own repository** is the work item's session's — no second spawn — and a pull request in **another** repository spawns only into a checkout of its own, keyed on its slug, or not at all (`session.pr_session_declined`) | [spec](../specs/issue-253/), [decision-088](../decisions/decision-088.md), [routing](../config/cli/routing-options.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/253) |
 | issue-243 | A forwarded event stopped carrying GitHub's metadata (2026-08-16): the `$payload_excerpt` block was a subset of the raw payload — nine containers copied whole, cut at 4,000 characters — so an ordinary comment delivered a 61-character instruction inside 4,014 characters of `user` objects, `reactions` and the whole `issue`, with the cut landing mid-string so the "JSON" did not parse. It is now a **field allow-list per container** with free text capped per field: a comment is its body, its address and its author's login; an inline comment keeps its anchor ahead of the body; lifecycle and CI events keep what makes them actionable. Measured on the same payload, 4,014 → 203 characters and the whole prompt 6,676 → 2,865. Nothing that acts on an event changed — the gates still read the full payload | [spec](../specs/issue-243/), [decision-086](../decisions/decision-086.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/243) |
