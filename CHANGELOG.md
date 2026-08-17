@@ -1,3 +1,15 @@
+## v11.0.0 (2026-08-17)
+
+### BREAKING CHANGE
+
+- integrations.slack is no longer a valid CLI-config
+key; run the-loop migrate-config (or /the-loop:upgrade-the-loop) and
+configure channels.slack instead.
+
+### Feat
+
+- **issue-245**: channels — back-and-forth user communication through a Slack bot (#267)
+
 ## v10.6.0 (2026-08-17)
 
 ### Feat
