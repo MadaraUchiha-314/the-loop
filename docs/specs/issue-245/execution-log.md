@@ -104,6 +104,23 @@ status: in-progress          # in-progress | complete
   / `test_integration_contract.py`, and added five migration tests plus a
   notify-through-channels scenario.
 
+### 2026-08-17 — review round 2: a common definition for the subscribable events
+
+- **Phase:** needs-review (review feedback applied)
+- **Trigger:** review comment on PR #267 — *"We should have a common definition of
+  these events so that users configuring can configure it appropriately."*
+- **Did:** added `channels/events.py` — `SUBSCRIBABLE_EVENTS`, one catalog with a
+  one-line meaning per name (the ask + the six graph notification events), consumed
+  three ways: the config parser **warns on unknown names** (kept, not refused — a
+  custom graph may fire a custom notify event; a typo would otherwise fail silently),
+  `the-loop channels status` prints the catalog with subscription ticks, and
+  `channels-options.md` carries the table. Three pinning tests: catalog ⊇ ask +
+  notification events, catalog == the harness schema's `notifications.events`
+  taxonomy (a new notification event cannot ship without joining the catalog), and
+  every catalog name appears in the doc page.
+
+## Deviations from the standard gates
+
 - **`phase-selection` was answered by direct instruction, not by the checklist
   comment.** This work started from the owner's cloud-session request on the ticket
   rather than from `the-loop start`, so no checklist was posted and no

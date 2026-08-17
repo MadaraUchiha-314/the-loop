@@ -120,12 +120,29 @@ class SlackChannelConfig:
                     "/".join(VERBOSITIES),
                 )
                 verbosity = "normal"
+            events = tuple(str(e) for e in (section.get("events") or DEFAULT_EVENTS))
+            # Warn against the common catalog (PR #267 review): an allow-list
+            # typo otherwise fails SILENTLY — the event just never arrives.
+            # Unknown names are kept, not refused: a custom process graph may
+            # fire a custom notify event, and its subscription must work.
+            from .events import SUBSCRIBABLE_EVENTS
+
+            unknown = [e for e in events if e not in SUBSCRIBABLE_EVENTS]
+            if unknown:
+                logger.warning(
+                    "channels.slack.events names %s, not in the subscribable-"
+                    "event catalog (%s) — kept, but nothing shipped broadcasts "
+                    "them; see `the-loop channels status` or "
+                    "docs/config/cli/channels-options for the vocabulary",
+                    ", ".join(repr(e) for e in unknown),
+                    ", ".join(SUBSCRIBABLE_EVENTS),
+                )
             return cls(
                 enabled=bool(section.get("enabled", False)),
                 bot_token_env=str(section.get("botTokenEnv") or DEFAULT_BOT_TOKEN_ENV),
                 app_token_env=str(section.get("appTokenEnv") or DEFAULT_APP_TOKEN_ENV),
                 channel=str(section.get("channel") or ""),
-                events=tuple(str(e) for e in (section.get("events") or DEFAULT_EVENTS)),
+                events=events,
                 verbosity=verbosity,
                 authorized_users=tuple(
                     str(user) for user in (section.get("authorizedUsers") or []) if user

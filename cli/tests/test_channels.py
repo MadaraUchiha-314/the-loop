@@ -446,3 +446,92 @@ def test_channels_status_shows_presence_never_values(tmp_path, monkeypatch, caps
     assert code == 0
     assert "slack" in out and "set" in out
     assert "xoxb-supersecret" not in out
+
+
+# -- the subscribable-event catalog (PR #267 review) ----------------------------
+
+
+def test_the_catalog_carries_the_ask_and_every_notification_event():
+    """The common definition (PR #267 review): everything the notify hook can
+    fire per the harness taxonomy is subscribable, plus the ask."""
+    from the_loop.channels.events import NOTIFICATION_EVENTS, SUBSCRIBABLE_EVENTS
+
+    assert "session.awaiting_input" in SUBSCRIBABLE_EVENTS
+    for name in NOTIFICATION_EVENTS:
+        assert name in SUBSCRIBABLE_EVENTS
+
+
+def test_the_catalog_matches_the_harness_notification_taxonomy():
+    """Containment is pinned against the schema, so a new notification event
+    cannot ship without joining the catalog users configure against."""
+    import json
+    from pathlib import Path
+
+    from the_loop.channels.events import NOTIFICATION_EVENTS
+
+    schema = json.loads(
+        (
+            Path(__file__).resolve().parents[2]
+            / ".the-loop"
+            / "harness-config.schema.json"
+        ).read_text(encoding="utf-8")
+    )
+    taxonomy = schema["properties"]["notifications"]["properties"]["events"][
+        "properties"
+    ]
+    assert set(taxonomy) == set(NOTIFICATION_EVENTS)
+
+
+def test_the_docs_list_every_subscribable_event():
+    """The doc page and the catalog cannot drift (the docs-parity ethos)."""
+    from pathlib import Path
+
+    from the_loop.channels.events import SUBSCRIBABLE_EVENTS
+
+    doc = (
+        Path(__file__).resolve().parents[2]
+        / "docs"
+        / "config"
+        / "cli"
+        / "channels-options.md"
+    ).read_text(encoding="utf-8")
+    for name in SUBSCRIBABLE_EVENTS:
+        assert f"`{name}`" in doc, f"{name} missing from channels-options.md"
+
+
+def test_an_unknown_event_name_warns_but_is_kept(tmp_path, caplog):
+    """A typo must not fail SILENTLY (the allow-list would just eat the event);
+    a custom graph's own notify event must still be subscribable."""
+    with caplog.at_level("WARNING", logger="the-loop.channels"):
+        config = SlackChannelConfig.from_mapping(
+            cli_config(tmp_path, events=["phase-approval-pending", "phse-typo"])
+        )
+    assert config.events == ("phase-approval-pending", "phse-typo")
+    warning = "\n".join(r.getMessage() for r in caplog.records)
+    assert "phse-typo" in warning and "channels status" in warning
+
+
+def test_a_catalog_only_events_list_warns_nothing(tmp_path, caplog):
+    with caplog.at_level("WARNING", logger="the-loop.channels"):
+        SlackChannelConfig.from_mapping(
+            cli_config(tmp_path, events=["session.awaiting_input", "pr-review-pending"])
+        )
+    assert not caplog.records
+
+
+def test_channels_status_prints_the_catalog_with_ticks(tmp_path, monkeypatch, capsys):
+    from the_loop.commands.channels_cmd import ChannelsCommand
+
+    monkeypatch.setenv("THE_LOOP_CLI_CONFIG", str(tmp_path / "cli-config.yaml"))
+    (tmp_path / "cli-config.yaml").write_text(
+        json.dumps(cli_config(tmp_path, events=["phase-approval-pending"])),
+        encoding="utf-8",
+    )
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    ChannelsCommand().add_arguments(parser)
+    assert ChannelsCommand().run(parser.parse_args(["status"])) == 0
+    out = capsys.readouterr().out
+    assert "[x] phase-approval-pending" in out
+    assert "[ ] session.awaiting_input" in out

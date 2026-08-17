@@ -81,12 +81,27 @@ disables posting, with a recorded reason per attempt.
 - **Type:** `string[]`
 - **Default:** `["session.awaiting_input"]`
 
-The event-type allow-list: only these are posted to this channel. The default carries
-exactly the ask. The graph's `notify` hook posts its **notification events** through
-this same filter — add the ones you want carried (`phase-approval-pending`,
-`pr-review-pending`, `decision-pending`, `security-sign-off-pending`,
-`conflict-escalated`; which roles each event notifies stays in the harness config's
-`notifications.events`). See `the-loop events --types` for the catalog.
+The event-type allow-list: only these are posted to this channel. The names come from
+**one common catalog** (`SUBSCRIBABLE_EVENTS`, printed with subscription ticks by
+[`the-loop channels status`](/cli/commands/channels)) — the ask plus everything the
+graph's `notify` hook can fire. Which *roles* each notification event pings stays in
+the harness config's `notifications.events`; this list decides which events reach
+*this channel*.
+
+| Event | Fires when |
+|-------|-----------|
+| `session.awaiting_input` | an agent asked a human a question (`the-loop ask`) and is waiting — the default subscription |
+| `decision-pending` | the graph reached a point where a human decision or opinion is genuinely required |
+| `phase-approval-pending` | a spec-chain phase (requirements, design + testing plan, tasks) is ready for its human gate |
+| `pr-review-pending` | a pull request delivering the work item is ready for human review |
+| `security-sign-off-pending` | the work item's risk tier requires a named human security sign-off |
+| `conflict-escalated` | the loop hit a genuine block, logged the conflict and escalated once |
+| `work-item-complete` | the work item reached `complete` |
+
+A name outside the catalog is **kept but warned about** (a custom process graph may
+fire a custom `notify` event; a typo would otherwise fail silently — the event would
+just never arrive). A test pins the catalog to the harness config's notification
+taxonomy and to this table, so none of the three can drift.
 
 ### `slack.verbosity`
 

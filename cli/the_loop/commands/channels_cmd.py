@@ -17,6 +17,7 @@ from .base import Command, register
 from .sessions_cmd import _cli_config
 from .. import eventlog
 from ..channels import inbound
+from ..channels.events import SUBSCRIBABLE_EVENTS
 from ..channels.slack import SlackChannelConfig, run_socket_listener, slack_state_path
 from ..channels.state import ChannelState
 
@@ -49,6 +50,18 @@ def _status(config: dict) -> int:
         f"  conversations: {len(state.threads)} bound thread(s), "
         f"{len(state.cursors)} cursor(s)"
     )
+    # The common event definition (PR #267 review): what CAN be subscribed,
+    # with what IS — so configuring `events` never means guessing names.
+    print("subscribable events ([x] = in channels.slack.events):")
+    for name, meaning in SUBSCRIBABLE_EVENTS.items():
+        tick = "x" if name in slack.events else " "
+        print(f"  [{tick}] {name} — {meaning}")
+    for name in slack.events:
+        if name not in SUBSCRIBABLE_EVENTS:
+            print(
+                f"  [!] {name} — not in the shipped catalog; nothing shipped "
+                "broadcasts it (a custom graph notify event, or a typo)"
+            )
     return 0
 
 
