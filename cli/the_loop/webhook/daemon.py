@@ -350,18 +350,23 @@ def build_receiver(options: ReceiverOptions):
         verifying_signatures=bool(secret),
     )
 
-    # Self-diagnosis (issue-242, opt-in): a background scanner over the event
-    # log, bounded by this receiver's lifetime. None unless the operator
-    # enabled it.
+    # Background watchers, both opt-in and bounded by this receiver's
+    # lifetime: self-diagnosis (issue-242) scanning the event log, and the
+    # channels reader (issue-245) fetching Slack thread replies when
+    # channels.slack has read.mode: poll.
+    from ..channels import watcher as channels_watcher
     from ..core import selfdiagnosis
 
-    diagnosis_stop = threading.Event()
+    watchers_stop = threading.Event()
     selfdiagnosis.start_watcher(
-        cli_config.load_cli_config(_config_path()), diagnosis_stop
+        cli_config.load_cli_config(_config_path()), watchers_stop
+    )
+    channels_watcher.start_watcher(
+        cli_config.load_cli_config(_config_path()), watchers_stop
     )
 
     def cleanup() -> None:
-        diagnosis_stop.set()
+        watchers_stop.set()
         httpd.server_close()
         if dispatcher is not None:
             dispatcher.stop()

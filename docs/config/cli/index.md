@@ -169,6 +169,7 @@ Everything else takes its default. Build up from here with the option pages belo
 | [Routing options](/config/cli/routing-options) | `routing` — who may trigger, what spawns, how sessions are hosted |
 | [Polling options](/config/cli/polling-options) | `polling` — the pull-based ingress and its sources |
 | [Integrations options](/config/cli/integrations-options) | `integrations` — how the-loop's own calls reach GitHub, Slack and Jira |
+| [Channels options](/config/cli/channels-options) | `channels` — the back-and-forth conversation surfaces (the Slack bot) |
 | [Service options](/config/cli/service-options) | `service` — the control-plane API's bind, auto-start and cross-origin allowlist |
 | [Observability options](/config/cli/observability-options) | `eventLog`, `collaborators`, `notifications` |
 | [Self-diagnosis options](/config/cli/self-diagnosis-options) | `selfDiagnosis` — the-loop filing issues for its own failures (opt-in) |

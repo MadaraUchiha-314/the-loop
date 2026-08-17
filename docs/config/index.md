@@ -87,6 +87,7 @@ prefer, and you lose completion while typing, nothing else.
   [routing](/config/cli/routing-options) ·
   [polling](/config/cli/polling-options) ·
   [integrations](/config/cli/integrations-options) ·
+  [channels](/config/cli/channels-options) ·
   [observability](/config/cli/observability-options).
 
 Every CLI-config option on those pages is checked against

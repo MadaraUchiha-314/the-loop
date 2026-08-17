@@ -112,6 +112,8 @@ the-loop status             # per-service liveness + the poller's last cycle (ex
 the-loop restart --with-upgrade  # bounce everything, upgrading the CLI in between
 the-loop sessions list      # the work-item record: its session, and one endpoint per PR
 the-loop events --follow    # the structured trail of every routing and dispatch decision
+the-loop channels poll      # the Slack-bot conversation channel: read thread replies —
+                            # each mirrored onto its work item, delivered to its session
 
 the-loop graph status <id>            # where a work item sits in the outer loop
 the-loop graph status <id> --pr <n>   # …and where a PR sits in its inner loop

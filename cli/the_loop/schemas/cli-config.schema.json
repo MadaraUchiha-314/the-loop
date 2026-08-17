@@ -676,6 +676,91 @@
         }
       }
     },
+    "channels": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Communication channels (issue-245): named surfaces the-loop holds a back-and-forth conversation on, each with its own event filter and verbosity. Distinct from `integrations` (transports for the-loop's own calls): a channel also reads, and mirrors every reply onto the work item \u2014 the single source of truth \u2014 with the self-authored marker.",
+      "properties": {
+        "slack": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "The Slack BOT channel \u2014 the official slack-sdk WebClient, a bot token, one Slack channel, one thread per work item. Coexists with integrations.slack (the write-only incoming webhook).",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "Default off: enabling the daemons never becomes consent to posting into (or reading from) a Slack workspace."
+            },
+            "botTokenEnv": {
+              "type": "string",
+              "default": "THE_LOOP_SLACK_BOT_TOKEN",
+              "description": "Env var holding the bot token (xoxb-, chat:write plus channels.history for reads). Read at call time; the token value itself is never a config value and never reaches state files or the event log."
+            },
+            "appTokenEnv": {
+              "type": "string",
+              "default": "THE_LOOP_SLACK_APP_TOKEN",
+              "description": "Env var holding the app-level token (xapp-, connections:write) that `the-loop channels listen` needs for Socket Mode \u2014 the no-polling read transport."
+            },
+            "channel": {
+              "type": "string",
+              "default": "",
+              "description": "The Slack channel id the bot posts into (C\u2026, from the channel's details pane \u2014 ids, not names, survive renames). Empty disables posting."
+            },
+            "events": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [
+                "session.awaiting_input"
+              ],
+              "description": "Event-type allow-list: only these are posted to this channel. session.awaiting_input is the ask (`the-loop ask`); see `the-loop events --types` for the catalog."
+            },
+            "verbosity": {
+              "type": "string",
+              "enum": [
+                "quiet",
+                "normal",
+                "verbose"
+              ],
+              "default": "normal",
+              "description": "quiet = one line + the work-item link; normal = + the question text; verbose = + context detail. Strict supersets, so turning it down never changes the words."
+            },
+            "authorizedUsers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [],
+              "description": "Slack MEMBER IDS (U\u2026, not display names \u2014 names are attacker-chosen) whose replies the-loop acts on. Empty denies every reply (fail closed), the routing.authorizedUsers posture."
+            },
+            "read": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "How replies come back. Both transports read ONLY threads the-loop itself started.",
+              "properties": {
+                "mode": {
+                  "type": "string",
+                  "enum": [
+                    "poll",
+                    "socket",
+                    "off"
+                  ],
+                  "default": "poll",
+                  "description": "poll = the daemons fetch thread replies on a background thread (and `the-loop channels poll` runs one cycle); socket = `the-loop channels listen` receives them over Socket Mode; off = nothing is read. An unknown value resolves to off, never to a reading mode."
+                },
+                "intervalSeconds": {
+                  "type": "integer",
+                  "minimum": 5,
+                  "default": 30,
+                  "description": "Poll-mode cadence. A cycle with no bound threads makes no API call at all."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "eventLog": {
       "type": "object",
       "description": "Structured JSONL event log of every routing/dispatch/session decision made by the-loop's CLI processes (gh-webhook, poll, sessions). Queried with `the-loop events`; schema in skills/the-loop/reference/observability.md (decision-025). Top-level here (not nested under an `observability` key) \u2014 the CLI config has no dev/runtime log-level concept, that stays with the HARNESS config's `observability.devLevel`/`runtimeLevel`/`browserLogging`.",

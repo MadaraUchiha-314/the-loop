@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [094](decision-094.md) | Channels are a conversation layer beside the integrations, and the work item stays the source of truth | proposed | 2026-08-17 |
 | [093](decision-093.md) | How many sessions a work item's pull requests get is the work item's choice — the operator states the default | proposed | 2026-08-17 |
 | [092](decision-092.md) | How many sessions a work item's pull requests get is the operator's choice — the tree is not | proposed | 2026-08-17 |
 | [091](decision-091.md) | An asynchronous test waits on the outcome, and the suite carries a lag to prove it | proposed | 2026-08-16 |

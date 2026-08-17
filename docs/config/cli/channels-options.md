@@ -1,0 +1,124 @@
+---
+configBase: channels
+---
+
+# Channels options
+
+Options under `channels` — the surfaces the-loop holds a **back-and-forth
+conversation** on ([issue-245](https://github.com/MadaraUchiha-314/the-loop/issues/245)).
+
+Distinct from [`integrations`](/config/cli/integrations-options), deliberately: an
+integration is a transport for the-loop's own calls (`integrations.slack` is the
+write-only incoming webhook the graph's `notify` hook fires); a **channel** also reads,
+filters the event types it wants, renders at a configured verbosity, and mirrors every
+reply onto the work item — the single source of truth — as the-loop's own
+marker-stamped comment, so nothing is processed twice.
+
+```yaml
+channels:
+  slack:
+    enabled: true
+    botTokenEnv: THE_LOOP_SLACK_BOT_TOKEN   # xoxb-, chat:write + channels.history
+    appTokenEnv: THE_LOOP_SLACK_APP_TOKEN   # xapp-, only for read.mode: socket
+    channel: C0123ABCDEF                     # the channel the bot posts into
+    events: [session.awaiting_input]
+    verbosity: normal
+    authorizedUsers: [U0456GHIJKL]           # Slack MEMBER ids — empty denies all
+    read:
+      mode: poll                             # poll | socket | off
+      intervalSeconds: 30
+```
+
+An asked question ([`the-loop ask`](/cli/commands/ask)) lands on the work item first,
+then fans out to every enabled channel subscribed to `session.awaiting_input`; a thread
+reply from an authorized member is mirrored onto the ticket and delivered into the
+waiting session. Operate it with [`the-loop channels`](/cli/commands/channels).
+
+## Slack
+
+### `slack.enabled`
+
+- **Type:** `boolean`
+- **Default:** `false`
+
+Default off: enabling the daemons never becomes consent to posting into (or reading
+from) a Slack workspace. A malformed section also resolves to disabled, loudly — fail
+closed, never half-enabled.
+
+### `slack.botTokenEnv`
+
+- **Type:** `string`
+- **Default:** `THE_LOOP_SLACK_BOT_TOKEN`
+
+The environment variable holding the bot token (`xoxb-…`, needing `chat:write` to post
+and `channels:history` to read thread replies). The same arrangement as
+[`webhooks.ghWebhook.secretEnv`](/config/cli/webhook-options#secretenv): the config
+names the *variable*, the token is read from the environment **at call time**, and the
+value never appears in config, state files, `channels status` output or the event log.
+
+### `slack.appTokenEnv`
+
+- **Type:** `string`
+- **Default:** `THE_LOOP_SLACK_APP_TOKEN`
+
+The environment variable holding the app-level token (`xapp-…`, scope
+`connections:write`) that [`the-loop channels listen`](/cli/commands/channels) needs
+for Socket Mode — the no-polling read transport. Unused in `poll` mode.
+
+### `slack.channel`
+
+- **Type:** `string`
+- **Default:** `""`
+
+The id of the Slack channel the bot posts into (`C…` — copy it from the channel's
+details pane; ids, unlike names, survive renames). The bot must be a member. Empty
+disables posting, with a recorded reason per attempt.
+
+### `slack.events`
+
+- **Type:** `string[]`
+- **Default:** `["session.awaiting_input"]`
+
+The event-type allow-list: only these are posted to this channel. The default carries
+exactly the ask. See `the-loop events --types` for the catalog.
+
+### `slack.verbosity`
+
+- **Type:** `'quiet' | 'normal' | 'verbose'`
+- **Default:** `normal`
+
+How much of an event each message carries: `quiet` is one line plus the work-item
+link; `normal` adds the full question text; `verbose` adds context detail (actor,
+comment URL). Strict supersets — turning it down never changes the words, only how
+many of them there are.
+
+### `slack.authorizedUsers`
+
+- **Type:** `string[]`
+- **Default:** `[]`
+
+The Slack **member ids** (`U…` — ids, not display names, which are attacker-chosen)
+whose thread replies the-loop acts on. The
+[`routing.authorizedUsers`](/config/cli/routing-options#authorizedusers) posture
+exactly: an empty list denies every reply (fail closed), and an unauthorized reply is
+neither delivered into the session nor mirrored onto the ticket.
+
+### `slack.read.mode`
+
+- **Type:** `'poll' | 'socket' | 'off'`
+- **Default:** `poll`
+
+How replies come back. `poll`: the long-running daemons fetch new thread replies on a
+background thread, and `the-loop channels poll` runs one cycle for cron or daemon-less
+deployments. `socket`: `the-loop channels listen` receives them push-fashion over
+Socket Mode — no polling, and no inbound HTTP endpoint to expose. `off`: nothing is
+read. An unknown value resolves to `off` with a warning — never to a reading mode by
+accident. Both transports read **only** threads the-loop itself started.
+
+### `slack.read.intervalSeconds`
+
+- **Type:** `integer` (minimum 5)
+- **Default:** `30`
+
+Poll-mode cadence. A cycle with no bound threads makes no API call at all; with
+bindings it is one `conversations.replies` call per open thread.

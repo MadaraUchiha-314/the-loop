@@ -4,6 +4,7 @@ from .base import Command, iter_commands, register  # noqa: F401
 
 # Import command modules for their registration side effects.
 from . import ask_cmd  # noqa: F401,E402
+from . import channels_cmd  # noqa: F401,E402
 from . import critic_cmd  # noqa: F401,E402
 from . import diagnose_cmd  # noqa: F401,E402
 from . import events  # noqa: F401,E402

@@ -80,16 +80,29 @@ overrides: {}
 
 ## Verification activities
 
-- [ ] T1 — `uv run --project cli python -m pytest cli/tests/test_channels.py`
-- [ ] T2 — `uv run --project cli python -m pytest cli/tests/test_channels_integration.py`
-- [ ] T8 — the `-k` security selection above
-- [ ] T12 — `uv run --project cli python -m pytest cli/tests -q`
-- [ ] T13 — `make lint && make format-check && make typecheck`
-- [ ] Red-first — the new tests fail before the implementation exists
+- [x] T1 — `uv run --project cli python -m pytest cli/tests/test_channels.py`
+- [x] T2 — `uv run --project cli python -m pytest cli/tests/test_channels_integration.py`
+- [x] T8 — the `-k` security selection above
+- [x] T12 — `uv run --project cli python -m pytest cli/tests -q`
+- [x] T13 — `make lint && make format-check && make typecheck`
+- [x] Red-first — the new tests fail before the implementation exists
 
 ## Verification results
 
-> Completed at the `verification` node.
+| Activity | Command / procedure | Outcome | Evidence |
+|----------|--------------------|---------|----------|
+| Red-first | run the two new test modules before the implementation exists | both fail at import — nothing they guard exists | [`red.md`](evidence/red.md) |
+| T1 | `pytest cli/tests/test_channels.py` | 29 passed | [`unit-and-integration.md`](evidence/unit-and-integration.md) |
+| T2 | `pytest cli/tests/test_channels_integration.py` | 7 passed | [`unit-and-integration.md`](evidence/unit-and-integration.md) |
+| T8 | the `-k "unauthorized or empty_allowlist or own or marker or defang or token or disabled"` selection | 11 passed | [`unit-and-integration.md`](evidence/unit-and-integration.md) |
+| T12 | `pytest cli/tests -q` (inside `make check`) | 2369 passed, 1 skipped — parity gates (P1–P5, schema byte-parity, keyword guard, `--types`, state-portability) included | [`unit-and-integration.md`](evidence/unit-and-integration.md) |
+| T13 | `make lint`, `make format-check`, `make typecheck`, `make validate` | clean | [`lint-and-typecheck.md`](evidence/lint-and-typecheck.md) |
+
+**Not executed:** T4 (live Slack workspace) and T11 (manual bot exploration) —
+deferred with reasons recorded in the matrix: this environment has no Slack
+workspace with the app installed. The SDK boundary is one injected factory, and
+every argument the fake receives is asserted; a first live run is called out in
+the PR briefing as a reviewer activity.
 
 ## Review comments
 

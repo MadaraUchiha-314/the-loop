@@ -308,3 +308,24 @@ integrations:
   slack:
     transport: sdk              # sdk (official slack-sdk, 0 deps) | webhook (raw POST)
     urlEnv: THE_LOOP_SLACK_WEBHOOK_URL
+
+# Back-and-forth conversation channels (issue-245) — the Slack BOT, distinct
+# from integrations.slack (the write-only incoming webhook above). Opt-in,
+# default off. When enabled, `the-loop ask` fans the question out to every
+# subscribed channel, and an authorized member's thread reply is mirrored onto
+# the work item (with the self-authored marker — the single source of truth)
+# and delivered into the waiting session. Reads happen with polling (the
+# daemons, or `the-loop channels poll`) or without (Socket Mode via
+# `the-loop channels listen`).
+channels:
+  slack:
+    enabled: false
+    # botTokenEnv: THE_LOOP_SLACK_BOT_TOKEN  # xoxb-, chat:write + channels.history
+    # appTokenEnv: THE_LOOP_SLACK_APP_TOKEN  # xapp-, only for read.mode: socket
+    # channel: ""                            # the channel id the bot posts into (C…)
+    # events: [session.awaiting_input]       # event-type allow-list
+    # verbosity: normal                      # quiet | normal | verbose
+    # authorizedUsers: []                    # Slack MEMBER ids (U…); empty = deny all
+    # read:
+    #   mode: poll                           # poll | socket | off
+    #   intervalSeconds: 30

@@ -1,7 +1,7 @@
 ---
 type: execution-log
 workItem: "github:MadaraUchiha-314/the-loop#245"
-phase: implementation        # not-started | brainstorming | requirements-definition | design | test-planning | tasks-breakdown | implementation | verification | needs-review | complete
+phase: needs-review          # not-started | brainstorming | requirements-definition | design | test-planning | tasks-breakdown | implementation | verification | needs-review | complete
 status: in-progress          # in-progress | complete
 ---
 
@@ -18,9 +18,9 @@ status: in-progress          # in-progress | complete
 | design | 2026-08-17 | pending — PR for this branch | Reuse-first: the issue-64/104 marker contract for loop prevention, `reply_session`'s fail-closed delivery, the issue-242 `redact` helpers for the mirror, the self-diagnosis watcher shape for the poll transport. Six alternatives recorded as rejected. Risk tier 4 (schema touched; inbound text gains a path into sessions). |
 | test-planning | 2026-08-17 | pending — PR for this branch | 13 rows, 5 in scope; every `n/a` carries a reason; T4 (live Slack) and T11 (manual) deferred with reasons — no workspace in this environment. |
 | tasks-breakdown | 2026-08-17 | | 12 tasks, two independent red roots. |
-| implementation | 2026-08-17 | | TDD: red captured before the code. |
-| verification | | | |
-| needs-review | | | |
+| implementation | 2026-08-17 | | TDD: red captured before the code (`evidence/red.md`). |
+| verification | 2026-08-17 | | Every applicable activity ran; T4/T11 deferred with reasons (no Slack workspace here). |
+| needs-review | 2026-08-17 | | |
 | complete | | | |
 
 ## Pull requests
@@ -51,6 +51,39 @@ status: in-progress          # in-progress | complete
   marker never suppresses processing — it suppresses *re*-processing. That is the
   ticket's "not processed twice" rule, implemented with zero new marker machinery.
 
+### 2026-08-17 — red first, then one package
+
+- **Phase:** implementation
+- **Did:** wrote the 36 guarding tests first and captured their failure as
+  [`evidence/red.md`](evidence/red.md); then the `channels/` package (`base`,
+  `state`, `slack`, `broadcast`, `inbound`, `watcher`), the `ask_session`
+  broadcast seam, the two daemon wiring lines, the `channels` verb, the schema
+  section (both copies, byte-identical), the six `channel.*` event types, the
+  `channels_dir` state-layout entry and the docs pages.
+- **Two findings from the self-review rounds, both fixed before commit:**
+  1. `eventlog.emit(event, ...)` collides with a field named `event` — the exact
+     issue-242 lesson; the broadcast events carry `event_type` instead.
+  2. `SlackBotChannel` bound `build_client` at construction time, which would
+     have defeated both the test seam and a late-set env var; the factory is now
+     resolved at call time, matching the token rule.
+  A third suspicion — the state file racing between poll and socket transports —
+  was checked and accepted: both load-modify-save through atomic replace, and
+  the two transports are documented as alternatives (`read.mode`), not
+  simultaneous readers.
+- **Checkpoint/tests:** 2369 passed, 1 skipped; `make lint`, `make format-check`,
+  `make typecheck`, `make validate` clean. Evidence in [`evidence/`](evidence/).
+
+### 2026-08-17 — verification executed the plan
+
+- **Phase:** verification
+- **Did:** ran T1 (29 passed), T2 (7 passed), the T8 security selection
+  (11 passed — empty allow-list denial, own-message drop, marker on every
+  mirror, defang, token hygiene, disabled-section inertness), T12 (the full
+  suite with every parity gate) and T13. Results recorded in
+  [`testing-plan.md`](testing-plan.md) § Verification results; T4/T11 (live
+  Slack) deferred with the reason stated there and a first-live-run activity
+  called out for the reviewer.
+
 ## Deviations from the standard gates
 
 - **`phase-selection` was answered by direct instruction, not by the checklist
@@ -71,8 +104,36 @@ status: in-progress          # in-progress | complete
 
 ## Capability docs
 
-> Completed at the capability-docs gate — see the entries added with the change.
+- **New:** [`docs/capabilities/channels.md`](../../capabilities/channels.md) — the
+  capability's current-behaviour contract, indexed in
+  [`capabilities.md`](../../capabilities/capabilities.md) and the VitePress
+  sidebar. Minted product-feature shaped: the behaviour is one coherent surface
+  (filter → fan out → read back → mirror → deliver), not a slice of an existing
+  doc.
+- **Updated:** [`docs/capabilities/observability.md`](../../capabilities/observability.md)
+  (history row: the six `channel.*` event types) and
+  [`docs/capabilities/cli.md`](../../capabilities/cli.md) (history row: the
+  `channels` verb).
+- **Decision:** [`decision-094`](../../decisions/decision-094.md), indexed in
+  `decisions.md` — the channels-vs-integrations split, the mirror-first rule and
+  the recorded deferrals.
 
 ## Documentation
 
-> Completed at the capability-docs gate — see the entries added with the change.
+- `docs/config/cli/channels-options.md` — the `channels` block, every leaf with
+  Type and Default (P3–P5 gated), plus rows in `docs/config/cli/index.md` and
+  `docs/config/index.md`.
+- `docs/cli/commands/channels.md` — the verb (P1/P2 gated), its row in
+  `docs/cli/commands/index.md`, and both VitePress sidebar lists.
+- `docs/cli/state.md` — the channel conversation state: tree entry,
+  classification row, its own section, and the `.gitignore` recipe line
+  (mirrored into this repo's `.gitignore`, as the state-portability tests
+  require).
+- **Skill/reference docs:** `reference/observability.md` (the channel bullet in
+  the event-log answers) and `reference/collaboration.md` § Where questions go
+  (how channels compose with the interaction mode and the marker rule).
+- **README:** one highlights line (`the-loop channels poll`) in the CLI section —
+  the section is a deliberate highlights list, and a new conversation surface
+  belongs in it the way `events --follow` does.
+- **Config instances:** commented `channels:` blocks in `.the-loop/cli-config.yaml`
+  and the shipped `skills/the-loop/templates/cli-config.yaml`.

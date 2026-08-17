@@ -352,3 +352,26 @@ integrations:
     #   urlEnv, so reading this file tells you where a notification goes. It is
     #   still a bearer credential for that channel: setting it here commits it,
     #   and git history keeps it after you delete the line. Prefer urlEnv.
+
+# Back-and-forth conversation channels (issue-245) — the Slack BOT, distinct
+# from integrations.slack (the write-only incoming webhook above): a bot token
+# with an identity, one Slack channel, one thread per work item, and replies
+# read BACK. Opt-in, default off. When enabled, `the-loop ask` fans the
+# question out to every subscribed channel; an authorized member's thread
+# reply is mirrored onto the work item (with the self-authored marker — the
+# work item stays the single source of truth) and delivered into the waiting
+# session. Reads happen with polling (the daemons' background reader, or
+# `the-loop channels poll` under cron) or without (Socket Mode via
+# `the-loop channels listen` — an outbound connection, nothing exposed).
+channels:
+  slack:
+    enabled: false
+    # botTokenEnv: THE_LOOP_SLACK_BOT_TOKEN  # xoxb-, chat:write + channels.history
+    # appTokenEnv: THE_LOOP_SLACK_APP_TOKEN  # xapp-, only for read.mode: socket
+    # channel: ""                            # the channel id the bot posts into (C…)
+    # events: [session.awaiting_input]       # event-type allow-list
+    # verbosity: normal                      # quiet | normal | verbose
+    # authorizedUsers: []                    # Slack MEMBER ids (U…); empty = deny all
+    # read:
+    #   mode: poll                           # poll | socket | off
+    #   intervalSeconds: 30

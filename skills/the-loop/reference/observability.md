@@ -58,7 +58,13 @@ answer to:
   `workspace.trusted` / `workspace.trust_failed` name every directory it marked
   trusted in the harness's own config before a spawn (issue-90). Those two are
   the audit trail for the one thing the-loop writes outside its own state:
-  `the-loop events --type 'workspace.trust*'`.
+  `the-loop events --type 'workspace.trust*'`;
+- **what did a conversation channel carry?** — `channel.posted` /
+  `channel.reply_received` / `channel.mirrored` trace a question's fan-out and a
+  reply's round-trip (Slack thread → work-item mirror → session delivery), and
+  `channel.dropped` carries the machine-readable `reason` (`unmapped`,
+  `self-authored`, `unauthorized-actor`, `undeliverable`) — issue-245. Payloads
+  name ids, never message text and never tokens.
 
 ### Record shape
 
