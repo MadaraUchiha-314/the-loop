@@ -671,6 +671,20 @@ def test_the_outer_loops_checklist_still_asks_the_question(repo, fake_github):
     assert "Where should the outer loop happen?" in checklist
 
 
+def test_the_contribution_checklist_still_asks_how_many_pr_sessions(
+    runtime, repo, fake_github
+):
+    """issue-260, R1.5 — unlike the surface row, this question has a true answer
+    here: a contribution's pull request is usually in somebody else's
+    repository, which is the case the modes differ most about."""
+    fake_github.comments = [{"user": {"login": "owner"}, "body": GOAL_COMMENT}]
+    runtime.start(WORK_ITEM, ref=REF)
+    runtime.advance(WORK_ITEM, ref=REF)
+    checklist = fake_github.posted[-1]
+    assert "How many sessions should this work item's pull requests get?" in checklist
+    assert "- [x] `pr-sessions-cross-repository`" in checklist
+
+
 def test_a_ticked_surface_row_in_a_contributions_reply_changes_nothing(
     runtime, repo, fake_github
 ):

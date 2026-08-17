@@ -462,6 +462,14 @@ class Runtime:
                     # one human act, one record (issue-183).
                     record["surface"] = chosen
                     state.surface = chosen
+                per_pr = str(result.data.get("sessionPerPr") or "")
+                if per_pr:
+                    # How many sessions this work item's pull requests get
+                    # (issue-260) — the third thing the one signed reply freezes.
+                    # No `GraphState` field of its own, unlike `surface`: nothing
+                    # here reads it back, and the reader that does is the daemon,
+                    # through the frozen graph the sink below publishes.
+                    record["sessionPerPr"] = per_pr
                 goal = result.data.get("goal")
                 if goal:
                     # The contribution loop's goal gate (issue-185): the goal

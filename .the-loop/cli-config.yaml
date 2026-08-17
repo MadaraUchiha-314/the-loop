@@ -116,8 +116,11 @@ routing:
   # session when the work item closes, so the pane stays readable but is no
   # longer a live TUI stray input could resume (SIGTERM, then SIGKILL after
   # harnessKillGraceSeconds).
-  # sessionPerPr (issue-172, issue-253, issue-258) is the one operator CHOICE in
-  # this block: how many tmux+claude sessions a work item's pull requests get.
+  # sessionPerPr (issue-172, issue-253, issue-258, issue-260) is the operator
+  # DEFAULT for how many tmux+claude sessions a work item's pull requests get.
+  # The CHOICE is the work item's, made at phase-selection (the pr-sessions-*
+  # checklist rows, with this value pre-ticked) and frozen by an authorized
+  # `the-loop execute`; this line answers for a work item that left them alone.
   #   never             every PR's events go into the work item's single session.
   #   cross-repository  (default) only a PR in ANOTHER repository gets its own —
   #                     a PR in the work item's own repository is that item's own
@@ -129,8 +132,9 @@ routing:
   # branch. A refusal is delivered into the work item's session and recorded as
   # session.pr_session_declined. The legacy booleans still parse: true is
   # cross-repository, false is never; anything unrecognised warns and resolves
-  # to cross-repository. Left at the default here: this repository's workspace
-  # is unset, so `always` would decline every time.
+  # to cross-repository. Left at the shipped value here: this repository's
+  # workspace is unset, so `always` would decline every time — for a work item
+  # that selects it as much as for a default that states it.
   tmux:
     keepSessionOnClose: true
     remainOnExit: true

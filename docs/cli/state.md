@@ -115,6 +115,7 @@ item itself.
   "graph": {
     "loop": "pdlc-work-item-loop",
     "workItem": "issue-15",
+    "sessionPerPr": "cross-repository",
     "nodes": [
       {"id": "design", "phase": "design", "skipped": true, "selectable": true},
       {"id": "design-critic-review", "phase": "", "skipped": true, "selectable": true, "optIn": true},
@@ -178,6 +179,7 @@ can rebuild.
 |---|---|
 | `loop` | which shipped loop was frozen (`pdlc-work-item-loop`) |
 | `workItem` | the spec-folder id the graph was resolved for |
+| `sessionPerPr` | how many tmux+claude sessions this work item's pull requests get — `never`, `cross-repository` or `always`, chosen on the same checklist and frozen by the same reply ([issue-260](https://github.com/MadaraUchiha-314/the-loop/issues/260)). Absent on a record written before the question existed, which reads as "route by the operator's `routing.tmux.sessionPerPr`" |
 | `nodes` | every node in declaration order: `skipped` (routed around), `selectable` (was it ever the user's to choose) and `optIn` (off unless selected — so `skipped: true` here means *nobody asked for it*, not *somebody removed it*) |
 
 Written once, when an authorized user answers the
@@ -188,9 +190,11 @@ needs* is true on any machine, so it travels with the work item and not with the
 handle. It is also the answer to "what did we agree this item would do?" without a
 checkout and without re-reading a comment thread anyone can still edit.
 
-**If you delete it:** nothing breaks — `docs/specs/<id>/graph-state.json` in the
-repository is the authoritative copy, and the loop keeps walking exactly the same phases.
-You lose the portable, checkout-free view of the item's agreed shape.
+**If you delete it:** the loop keeps walking exactly the same phases —
+`docs/specs/<id>/graph-state.json` in the repository is the authoritative copy of those.
+You lose the portable, checkout-free view of the item's agreed shape, and `sessionPerPr`
+with it: this file is the **only** copy the daemon reads, so the item's pull requests fall
+back to routing by the operator's configured default.
 
 ### `poll` — what the poller has already seen
 
@@ -268,9 +272,11 @@ that work item's sessions: the item's own, plus one entry per **pull request** d
 it.
 
 A pull request entry is a durable **binding** — which pull requests deliver this work item —
-and only sometimes a second conversation. Which of them get one is
-[`routing.tmux.sessionPerPr`](/config/cli/routing-options#tmux-sessionperpr): under the
-default `cross-repository`, a pull request in the work item's **own repository** has no
+and only sometimes a second conversation. Which of them get one is the work item's own choice, frozen at `phase-selection` into
+the `graph` section's `sessionPerPr` (above) and falling back
+to [`routing.tmux.sessionPerPr`](/config/cli/routing-options#tmux-sessionperpr)
+([issue-260](https://github.com/MadaraUchiha-314/the-loop/issues/260)): under
+`cross-repository`, a pull request in the work item's **own repository** has no
 session of its own — it is the work item's delivery, on the work item's branch and in the
 work item's checkout, so its `tmuxTarget` and `harnessSessionId` stay empty and its events
 go to the record's session ([issue-253](https://github.com/MadaraUchiha-314/the-loop/issues/253)) —

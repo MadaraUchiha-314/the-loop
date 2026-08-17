@@ -627,20 +627,21 @@ def test_new_issue_without_label_does_nothing(server_factory):
 PR_REF = "github:octo/repo#16"
 
 
-def pr_comment_payload(body, pr_body="", number=16):
+def pr_comment_payload(body, pr_body="", number=16, repo="octo/repo"):
     """A comment on a PR — GitHub delivers it as ``issue_comment``.
 
     ``pr_body`` is the **PR description**, which is where the closing keyword
     lives; emptying it is how these scenarios remove the linkage without touching
-    anything else.
+    anything else. ``repo`` puts the pull request in another repository, which is
+    the boundary the `sessionPerPr` modes disagree about (issue-183, issue-260).
     """
     return {
         "action": "created",
-        "repository": {"full_name": "octo/repo"},
+        "repository": {"full_name": repo},
         "issue": {
             "number": number,
             "body": pr_body,
-            "pull_request": {"html_url": f"https://github.com/octo/repo/pull/{number}"},
+            "pull_request": {"html_url": f"https://github.com/{repo}/pull/{number}"},
         },
         "comment": {"body": body, "user": {"login": "octocat"}},
         "sender": {"login": "octocat"},
@@ -739,6 +740,62 @@ def test_a_recorded_pr_does_not_suppress_a_work_item_the_linkage_still_finds(
     )
     assert wait_until(lambda: len(tmux.delivers) == 2)
     assert {ref for ref, _ in tmux.delivers} == {REF, "github:octo/repo#20"}
+
+
+CROSS_PR_REF = "github:octo/other#16"
+
+
+@pytest.mark.parametrize(
+    "frozen, receives",
+    [(None, CROSS_PR_REF), ("never", REF)],
+)
+def test_the_work_items_own_selection_decides_which_session_a_pr_talks_to(
+    server_factory, tmp_path, frozen, receives
+):
+    """
+    Feature: Webhook event routing
+    Scenario: A work item's phase-selection answer overrides the operator's default
+        Given a daemon configured `sessionPerPr: cross-repository`
+        And issue 15 with a live conversation for its pull request in octo/other
+        When a comment arrives on that pull request
+        Then it is delivered into the pull request's own conversation
+        But when issue 15's frozen phase selection says `never`
+        Then the same comment is delivered into issue 15's own session instead
+    Requirement: docs/specs/issue-260/requirements.md#R2 (R2.1)
+    """
+    from the_loop.webhook.dispatcher import TmuxConfig
+
+    port, registry, tmux = server_factory(
+        tmux_config=TmuxConfig(session_per_pr="cross-repository")
+    )
+    register(registry, tmp_path)
+    endpoint = registry.link_pull_request(REF, CROSS_PR_REF)
+    assert endpoint is not None
+    # Already worked once: the endpoint has a conversation, so the routing
+    # decision is visible at the tmux seam instead of being hidden behind the
+    # "no checkout, no session" decline every mode shares.
+    endpoint.tmux_target = "loop-github-octo-other-16"
+    endpoint.harness_session_id = "pr-sess"
+    registry.save_endpoint(REF, endpoint)
+    if frozen is not None:
+        server_factory.dispatcher.control_store.record_frozen_graph(
+            REF, {"sessionPerPr": frozen}
+        )
+
+    assert (
+        post_webhook(
+            port,
+            "issue_comment",
+            pr_comment_payload(
+                "please rebase", pr_body="Closes octo/repo#15", repo="octo/other"
+            ),
+            f"sel-{frozen}",
+        )
+        == 202
+    )
+    assert wait_until(lambda: len(tmux.delivers) == 1)
+    assert tmux.delivers[0][0] == receives
+    assert tmux.spawns == []
 
 
 def test_spawning_for_a_linked_issue_records_the_binding(server_factory, tmp_path):
