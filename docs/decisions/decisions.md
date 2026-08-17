@@ -24,7 +24,7 @@ record (`decision-<nnn>.md`). Newest first.
 | [078](decision-078.md) | Agent questions travel through a verb; the loop-prevention marker is stamped centrally | proposed | 2026-08-12 |
 | [077](decision-077.md) | The published dashboard's origin is allowed to read the service by default | proposed | 2026-08-12 |
 | [076](decision-076.md) | The lock and the heartbeat are two files — and only the lock names the process | proposed | 2026-08-11 |
-| [075](decision-075.md) | A credential's secrecy is the operator's call — Slack's webhook URL may be configured inline | proposed | 2026-08-10 |
+| [075](decision-075.md) | A credential's secrecy is the operator's call — Slack's webhook URL may be configured inline | superseded (by 094) | 2026-08-10 |
 | [074](decision-074.md) | On the poll path, the item's author gates only spawning | proposed | 2026-08-10 |
 | [073](decision-073.md) | the-loop adopts an unconfigured repository with a packaged default — except as a guest | proposed | 2026-08-10 |
 | [072](decision-072.md) | `poll start --daemon` is opt-in, not the default | proposed | 2026-08-10 |

@@ -1,6 +1,6 @@
 # Decision 075: A credential's secrecy is the operator's call — Slack's webhook URL may be configured inline
 
-- **Status:** proposed
+- **Status:** superseded (by 094: Slack converged on channels; the incoming-webhook integration this decision configured was removed)
 - **Date:** 2026-08-10
 - **Deciders:** @MadaraUchiha-314 (owner), the-loop (engineer)
 - **Work item:** [issue-203](https://github.com/MadaraUchiha-314/the-loop/issues/203)

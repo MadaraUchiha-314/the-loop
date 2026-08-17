@@ -78,9 +78,11 @@ channels:
 Under `channels`, not `integrations`: an integration is a transport for the-loop's own
 calls; a channel is a conversation surface with a filter, a verbosity, an allow-list
 and inbound state. Conflating them would put `authorizedUsers` and `events` on a shape
-whose other members are pure transports. `integrations.slack` (the incoming webhook)
-is untouched (R3.4). Tokens are named by env var, never held as values — the
-`secretEnv` arrangement, applied twice.
+whose other members are pure transports. *(Amended in review — R3.4/decision-094 D8:
+`integrations.slack` is not kept beside this section; the graph's `notify` hook
+broadcasts through channels, the webhook integration is removed, and
+`the-loop migrate-config` (config version 0.5.0) retires an old section.)* Tokens are
+named by env var, never held as values — the `secretEnv` arrangement, applied twice.
 
 ### D3 — outbound: `ask` broadcasts after the work item has the question
 

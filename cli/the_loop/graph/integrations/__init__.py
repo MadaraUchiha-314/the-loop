@@ -1,4 +1,9 @@
-"""Integrations — how the-loop's OWN calls reach GitHub, Slack and Jira.
+"""Integrations — how the-loop's OWN calls reach GitHub and Jira.
+
+Slack is deliberately NOT here any more (issue-245, owner's call on PR #267):
+conversation surfaces live in :mod:`the_loop.channels`, and the graph's
+``notify`` hook broadcasts through them. An integration remained the right
+shape for one-call transports only.
 
 Two call planes, and only one of them is governed here (issue-109, decision-042):
 
@@ -10,10 +15,10 @@ Two call planes, and only one of them is governed here (issue-109, decision-042)
   would break the session-takeover property the tmux runner exists for.
 
 Transport is a choice, not a mandate: ``api`` and ``cli`` where both are
-meaningful, ``sdk`` where an official one exists. Providers **declare the
-operations they implement**, and the runtime checks that declaration at load
-time — a graph needing an operation the configured transport lacks fails at
-startup, naming the operation and both fixes, not three nodes deep.
+meaningful. Providers **declare the operations they implement**, and the
+runtime checks that declaration at load time — a graph needing an operation
+the configured transport lacks fails at startup, naming the operation and both
+fixes, not three nodes deep.
 """
 
 from .base import (  # noqa: F401

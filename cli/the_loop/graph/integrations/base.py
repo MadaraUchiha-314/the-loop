@@ -89,28 +89,16 @@ def resolve(target: str, config: Mapping[str, Any]) -> "Integration":
         )
 
     if target == "slack":
-        from .slack import SlackSdk, SlackWebhook
-
-        url_env = str(section.get("urlEnv", "THE_LOOP_SLACK_WEBHOOK_URL"))
-        # ``or ""`` collapses a missing key, an explicit null and a blank string
-        # into one "absent": a blank ``url:`` must fall back to the environment
-        # rather than silently disabling a working env-based setup (issue-203).
-        url = str(section.get("url") or "")
-        if transport == "webhook":
-            return SlackWebhook(url_env, url)
-        if transport in ("sdk", "auto"):
-            try:
-                return SlackSdk(url_env, url)
-            except ImportError:
-                if transport == "sdk":
-                    raise TransportUnavailable(
-                        "slack: transport 'sdk' requires the official slack-sdk "
-                        "package (pip install slack-sdk), or set transport: webhook "
-                        "for the dependency-free client"
-                    ) from None
-                return SlackWebhook(url_env, url)
+        # Slack converged on the channels layer (issue-245, owner's call on
+        # PR #267): the incoming-webhook integration is gone, and the `notify`
+        # hook broadcasts through `channels.slack` instead. Kept as a named
+        # refusal so an embedder still calling `resolve("slack", …)` learns the
+        # replacement instead of getting a generic unknown-target error.
         raise TransportUnavailable(
-            f"slack: unknown transport {transport!r}; expected auto, sdk or webhook"
+            "slack is no longer an integration — the incoming webhook was "
+            "removed in favour of the channels layer (issue-245). Configure "
+            "channels.slack (the bot) instead; `the-loop migrate-config` "
+            "retires an old integrations.slack section."
         )
 
     raise TransportUnavailable(f"no integration registered for target {target!r}")

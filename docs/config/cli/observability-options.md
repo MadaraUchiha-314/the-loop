@@ -125,13 +125,14 @@ somewhere: a steady trickle is normal (other people commenting on your tickets),
 sudden burst is either a misconfigured `authorizedUsers` or somebody probing.
 
 ::: tip How a notification is actually delivered
-Through [`integrations.slack`](/config/cli/integrations-options#slack-transport) — the
-official SDK or a dependency-free webhook POST, with the URL taken from an environment
-variable, never from this file.
+Through the [channels](/config/cli/channels-options) layer — the Slack bot posts every
+event a channel's `events` allow-list subscribes to, with the token taken from an
+environment variable, never from this file. (The old `integrations.slack` incoming
+webhook converged into channels — issue-245; `the-loop migrate-config` retires it.)
 :::
 
 ## Next
 
 - [`the-loop events`](/cli/commands/events) — querying the trail.
-- [Integrations options](/config/cli/integrations-options) — the transport notifications go
-  out over.
+- [Channels options](/config/cli/channels-options) — the surface notifications go
+  out over, and replies come back in on.

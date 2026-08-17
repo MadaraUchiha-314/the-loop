@@ -84,7 +84,25 @@ status: in-progress          # in-progress | complete
   Slack) deferred with the reason stated there and a first-live-run activity
   called out for the reviewer.
 
-## Deviations from the standard gates
+### 2026-08-17 — the owner converged Slack onto channels, in review
+
+- **Phase:** needs-review (review feedback applied)
+- **Trigger:** two review comments on PR #267 — *"Why have slack related configs in
+  multiple places?"*, then *"converge right now. no one is using the webhook
+  integration"*.
+- **Did:** re-pointed the graph's `notify` hook through the channels broadcast (a
+  notification is one more outbound event, filtered by each channel's `events`
+  allow-list — so notifications gain the reply path); removed
+  `graph/integrations/slack.py` and the `integrations.slack` schema/config/template
+  sections; made `resolve("slack", …)` a named refusal pointing at `channels.slack`;
+  added the versioned migration (0.4.0 → 0.5.0: `needs_migration`, `assert_current`
+  refusal naming the replacement, `migrate_cli_config` removal with a bot-pointing
+  note); passed `channels` + `state` through the graph bootstrap so hooks can reach
+  the layer; amended R3.4, decision-094 (new D8, superseding decision-075) and every
+  affected doc page. Deleted `test_graph_slack_url_integration.py` (the path it
+  pinned no longer exists), rewrote the slack halves of `test_graph_integrations.py`
+  / `test_integration_contract.py`, and added five migration tests plus a
+  notify-through-channels scenario.
 
 - **`phase-selection` was answered by direct instruction, not by the checklist
   comment.** This work started from the owner's cloud-session request on the ticket

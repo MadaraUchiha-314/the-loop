@@ -364,7 +364,7 @@ class TestDiagnoseCommand:
     def _config_file(self, tmp_path, extra=""):
         path = tmp_path / "cli-config.yaml"
         path.write_text(
-            'version: "0.4.0"\n'
+            'version: "0.5.0"\n'
             f"state:\n  root: {tmp_path / 'state'}\n"
             f"eventLog:\n  enabled: true\n  path: {tmp_path / 'events.jsonl'}\n" + extra
         )

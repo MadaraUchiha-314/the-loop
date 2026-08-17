@@ -39,3 +39,18 @@ docs parity P1–P5 (command pages, config leaves), schema byte-parity
 EVENT_TYPES ↔ `events --types` catalog test and the state-portability ↔
 docs/cli/state.md classification test — all passing with the new
 channels section, verb, state file and event types.
+
+## Convergence round (PR #267 review — owner: "converge right now")
+
+After re-pointing the `notify` hook through channels and removing
+`integrations.slack` behind the 0.5.0 migration:
+
+```
+$ uv run --project cli python -m pytest cli/tests -q     # via make check
+2358 passed, 1 skipped in 129.18s (0:02:09)
+```
+
+The count moved from 2369 because `test_graph_slack_url_integration.py` and the
+webhook-transport unit tests went with the integration they pinned, while five
+migration tests and the notify-through-channels scenario joined. Lint,
+format-check, pyright and config validation: clean on the same run.

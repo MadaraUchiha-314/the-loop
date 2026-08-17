@@ -26,6 +26,12 @@ an integration is a transport for one call; a channel is a conversation with sta
   includes `session.awaiting_input`, rendered at the channel's `verbosity`
   (`quiet` ⊂ `normal` ⊂ `verbose`). Channel delivery SHALL be best-effort: an outage
   never changes the ask's outcome or exit code.
+- WHEN the graph's `notify` hook fires for a notification event THEN it SHALL
+  broadcast through the same channels and the same `events` filter — a channel
+  subscribed to `phase-approval-pending` carries it, one that is not reports a skip.
+  `integrations.slack` no longer exists; resolving it is a named refusal pointing at
+  `channels.slack`, and `the-loop migrate-config` (config version 0.5.0) retires an
+  old section.
 - The Slack bot channel SHALL post through the official `slack-sdk` `WebClient` with a
   bot token read **at call time** from the env var named by
   `channels.slack.botTokenEnv` (default `THE_LOOP_SLACK_BOT_TOKEN`); one Slack thread
@@ -64,12 +70,16 @@ an integration is a transport for one call; a channel is a conversation with sta
 - [`skills/the-loop/reference/collaboration.md`](https://github.com/MadaraUchiha-314/the-loop/blob/main/skills/the-loop/reference/collaboration.md)
   § Where questions go — how channels compose with the interaction mode and the
   self-comment marker rule.
-- The `notify` graph hook (the harness-plane Slack *notification*) is deliberately
-  unchanged — [`decision-094`](../decisions/decision-094.md) records the split and the
+- The `notify` graph hook posts **through channels** (decision-094 D8, the owner's
+  convergence call on PR #267): a graph notification is one more outbound event,
+  filtered by each channel's `events` allow-list, so notifications gain the reply path
+  for free. The old `integrations.slack` incoming webhook is retired — a config still
+  carrying it is refused, and `the-loop migrate-config` removes it.
+  [`decision-094`](../decisions/decision-094.md) records the split and the remaining
   deferrals (per-collaborator targeting, more channel types).
 
 ## History
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
-| issue-245 | Introduced the capability: the channel abstraction (events filter, verbosity, best-effort broadcast from `the-loop ask`), the Slack bot channel (slack-sdk, thread per work item, poll + Socket Mode reads), the authorize → mirror → deliver inbound pipeline with the work item as source of truth, the `channels` CLI verb, and the `channel.*` event types. | [spec](../specs/issue-245/), [decision-094](../decisions/decision-094.md) |
+| issue-245 | Introduced the capability: the channel abstraction (events filter, verbosity, best-effort broadcast from `the-loop ask`), the Slack bot channel (slack-sdk, thread per work item, poll + Socket Mode reads), the authorize → mirror → deliver inbound pipeline with the work item as source of truth, the `channels` CLI verb, and the `channel.*` event types. In the same PR's review the owner converged Slack entirely onto this layer: the graph's `notify` hook broadcasts through channels and `integrations.slack` (the incoming webhook) was removed behind a versioned migration (0.5.0). | [spec](../specs/issue-245/), [decision-094](../decisions/decision-094.md), [PR #267](https://github.com/MadaraUchiha-314/the-loop/pull/267) |

@@ -11,6 +11,8 @@ from __future__ import annotations
 import threading
 import time
 
+import pytest
+
 from the_loop.authz import is_self_authored
 from the_loop.channels import inbound, watcher
 from the_loop.channels.slack import DEFAULT_BOT_TOKEN_ENV
@@ -329,3 +331,50 @@ def test_watcher_fetches_on_interval_and_stops_with_daemon(tmp_path, monkeypatch
         watcher.start_watcher(cli_config(tmp_path, read={"mode": "socket"}), stop)
         is None
     )
+
+
+def test_graph_notification_flows_through_the_channels(tmp_path, monkeypatch):
+    """Scenario: A graph notification reaches the Slack channel through the
+    channels layer
+
+    Given a Slack channel subscribed to phase-approval-pending
+    When the graph's notify hook fires for that event
+    Then the notification is posted to Slack through the channel filter
+    And with no channel subscribed the hook reports a skip, not a failure
+    And the old integrations.slack webhook is a named refusal
+
+    Requirement: docs/specs/issue-245/requirements.md R1.1, R2.1 (owner's
+    convergence decision on PR #267)
+    """
+    from the_loop.graph.contract import HookContext, WorkItem
+    from the_loop.graph.hooks.sideeffects import notify
+
+    client = FakeSlackClient()
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    monkeypatch.setattr("the_loop.channels.slack.build_client", lambda token: client)
+
+    def ctx(events):
+        config = cli_config(tmp_path, events=events)
+        config["notifications"] = {"events": {"phase-approval-pending": ["approver"]}}
+        return HookContext(
+            work_item=WorkItem(id="issue-7", ref="github:o/r#7", spec_dir=tmp_path),
+            node={"id": "design"},
+            boundary="entry",
+            repo=tmp_path,
+            config=config,
+            params={"event": "phase-approval-pending"},
+        )
+
+    subscribed = notify(ctx(["phase-approval-pending"]))
+    assert subscribed.status == "pass" and subscribed.data["delivered"] is True
+    assert len(client.posted) == 1
+    assert "phase-approval-pending" in client.posted[0]["text"]
+
+    unsubscribed = notify(ctx(["session.awaiting_input"]))
+    assert unsubscribed.status == "skip"
+    assert len(client.posted) == 1  # nothing further posted
+
+    from the_loop.graph.integrations import TransportUnavailable, resolve
+
+    with pytest.raises(TransportUnavailable, match="channels.slack"):
+        resolve("slack", {})

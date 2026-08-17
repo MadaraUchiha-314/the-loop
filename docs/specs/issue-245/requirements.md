@@ -110,8 +110,13 @@ from a bot I installed, so that answering is one thread reply away.
 3. WHEN the bot token or the target Slack channel id is missing THEN the post SHALL
    fail closed for that channel with a recorded reason, without affecting the work-item
    post (R1.2).
-4. The existing `integrations.slack` incoming-webhook notification path SHALL be
-   unchanged — `channels.slack` is a separate, additive surface.
+4. *(Amended in PR #267 review — the owner: "converge right now. no one is using the
+   webhook integration.")* `channels.slack` SHALL be the **only** Slack configuration:
+   the graph's `notify` hook SHALL broadcast its notification events through the
+   channels (subject to each channel's `events` allow-list), the `integrations.slack`
+   incoming-webhook integration SHALL be removed, and a config still carrying it SHALL
+   be refused with the replacement named (`the-loop migrate-config`, config version
+   0.5.0).
 
 ### Requirement 4 — the Slack bot channel reads, with and without polling
 
@@ -236,3 +241,10 @@ the feature's.
 ## Review comments
 
 > Appended by the-loop's `record-feedback` hook when a human gate approves with comments.
+
+- **2026-08-17, @MadaraUchiha-314 on [PR #267](https://github.com/MadaraUchiha-314/the-loop/pull/267):**
+  *"Why have slack related configs in multiple places?"* → *"converge right now. no one
+  is using the webhook integration"*. R3.4 amended accordingly: the transitional
+  coexistence with `integrations.slack` was dropped — the webhook integration is
+  removed behind a versioned migration and the `notify` hook posts through channels
+  (decision-094 D8).

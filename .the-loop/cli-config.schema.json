@@ -684,7 +684,7 @@
         "slack": {
           "type": "object",
           "additionalProperties": false,
-          "description": "The Slack BOT channel \u2014 the official slack-sdk WebClient, a bot token, one Slack channel, one thread per work item. Coexists with integrations.slack (the write-only incoming webhook).",
+          "description": "The Slack BOT channel \u2014 the official slack-sdk WebClient, a bot token, one Slack channel, one thread per work item. THE Slack surface: the graph's notify hook broadcasts through it too (the old integrations.slack incoming webhook was removed \u2014 issue-245, PR #267).",
           "properties": {
             "enabled": {
               "type": "boolean",
@@ -714,7 +714,7 @@
               "default": [
                 "session.awaiting_input"
               ],
-              "description": "Event-type allow-list: only these are posted to this channel. session.awaiting_input is the ask (`the-loop ask`); see `the-loop events --types` for the catalog."
+              "description": "Event-type allow-list: only these are posted to this channel. session.awaiting_input is the ask (`the-loop ask`); the graph's notify hook posts its notification events here too (phase-approval-pending, pr-review-pending, decision-pending, security-sign-off-pending, conflict-escalated) \u2014 add the ones you want. See `the-loop events --types` for the catalog."
             },
             "verbosity": {
               "type": "string",
@@ -822,31 +822,6 @@
                   "default": "gh"
                 }
               }
-            }
-          }
-        },
-        "slack": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "transport": {
-              "type": "string",
-              "enum": [
-                "auto",
-                "sdk",
-                "webhook"
-              ],
-              "default": "sdk",
-              "description": "sdk = the official slack-sdk (zero required deps); webhook = raw POST, no dependency at all"
-            },
-            "urlEnv": {
-              "type": "string",
-              "default": "THE_LOOP_SLACK_WEBHOOK_URL",
-              "description": "Env var holding the incoming-webhook URL. The default source, and the one to keep where this file is shared or public."
-            },
-            "url": {
-              "type": "string",
-              "description": "The incoming-webhook URL itself, for an operator who judges it non-secret. Takes precedence over urlEnv. A Slack incoming-webhook URL is a bearer credential for one channel: setting it here commits it. Prefer urlEnv unless you have decided otherwise."
             }
           }
         },

@@ -8,11 +8,13 @@ Options under `channels` — the surfaces the-loop holds a **back-and-forth
 conversation** on ([issue-245](https://github.com/MadaraUchiha-314/the-loop/issues/245)).
 
 Distinct from [`integrations`](/config/cli/integrations-options), deliberately: an
-integration is a transport for the-loop's own calls (`integrations.slack` is the
-write-only incoming webhook the graph's `notify` hook fires); a **channel** also reads,
+integration is a transport for the-loop's own one-shot calls; a **channel** also reads,
 filters the event types it wants, renders at a configured verbosity, and mirrors every
 reply onto the work item — the single source of truth — as the-loop's own
-marker-stamped comment, so nothing is processed twice.
+marker-stamped comment, so nothing is processed twice. This is **the** Slack surface:
+the graph's `notify` hook posts its notification events through the same filter, and
+the old `integrations.slack` incoming webhook is retired (issue-245, PR #267 review —
+[`the-loop migrate-config`](/cli/commands/migrate-config) removes an old section).
 
 ```yaml
 channels:
@@ -80,7 +82,11 @@ disables posting, with a recorded reason per attempt.
 - **Default:** `["session.awaiting_input"]`
 
 The event-type allow-list: only these are posted to this channel. The default carries
-exactly the ask. See `the-loop events --types` for the catalog.
+exactly the ask. The graph's `notify` hook posts its **notification events** through
+this same filter — add the ones you want carried (`phase-approval-pending`,
+`pr-review-pending`, `decision-pending`, `security-sign-off-pending`,
+`conflict-escalated`; which roles each event notifies stays in the harness config's
+`notifications.events`). See `the-loop events --types` for the catalog.
 
 ### `slack.verbosity`
 

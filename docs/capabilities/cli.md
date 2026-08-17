@@ -159,20 +159,12 @@ self-learning/ML capabilities.
   dispatch on the same block, so nesting it under one ingress misstated its scope
   (issue-142). Both are **breaking** changes, handled by `/the-loop:upgrade-the-loop`,
   which shells out to `the-loop migrate-config`.
-- The CLI SHALL declare a second runtime dependency, `slack-sdk`, only as an **optional
-  extra**: it is Slack's official SDK and has zero required dependencies of its own, but
-  the dependency-free `webhook` transport remains available so the base install stays
-  one-dependency.
-- The Slack incoming-webhook URL SHALL be resolvable from **either** the CLI config
-  (`integrations.slack.url`) or the environment (`integrations.slack.urlEnv`, default
-  `THE_LOOP_SLACK_WEBHOOK_URL`), with the **config taking precedence** — otherwise the
-  effective configuration would depend on ambient environment and reading the file would
-  not tell you where a notification goes (issue-203, decision-075). An empty `url` counts
-  as absent and falls back. Both transports resolve through the same method, so they
-  cannot drift. WHEN neither source is set THEN the failure SHALL name **both** remedies
-  and never the URL itself. This carve-out is Slack's alone: a webhook URL is post rights
-  to one channel, so its secrecy is the operator's call to price, while
-  `github.api.tokenEnv` and `webhooks.ghWebhook.secretEnv` remain **env-only**.
+- Slack SHALL be configured in exactly **one** place: `channels.slack` (the bot —
+  [channels](channels.md)). The `integrations.slack` incoming webhook and its
+  `url`/`urlEnv` carve-out are **retired** (issue-245, the owner's convergence call on
+  PR #267): a config still carrying the section is refused with the replacement named,
+  and `the-loop migrate-config` removes it. Bot and app tokens are **env-only**, like
+  `github.api.tokenEnv` and `webhooks.ghWebhook.secretEnv`.
 - `the-loop scenarios` SHALL output the table of every Gherkin scenario covered by the
   integration tests (`--format table|markdown|json`; see
   [testing-and-contracts](testing-and-contracts.md)).

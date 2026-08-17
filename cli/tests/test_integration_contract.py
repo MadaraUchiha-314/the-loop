@@ -10,10 +10,9 @@ import pytest
 
 from the_loop.graph.integrations.base import OperationUnsupported
 from the_loop.graph.integrations.github import GitHubApi, GitHubCli
-from the_loop.graph.integrations.slack import SlackSdk, SlackWebhook
 
 GITHUB_PROVIDERS = [GitHubApi(["GH_TOKEN"]), GitHubCli("gh")]
-ALL_PROVIDERS = GITHUB_PROVIDERS + [SlackWebhook("X")]
+ALL_PROVIDERS = list(GITHUB_PROVIDERS)
 
 
 @pytest.mark.parametrize(
@@ -38,13 +37,3 @@ def test_the_github_transports_are_interchangeable():
     assert api.operations == cli.operations
     assert api.name == cli.name
     assert api.transport != cli.transport
-
-
-def test_the_slack_transports_are_interchangeable():
-    webhook = SlackWebhook("X")
-    assert webhook.operations == {"post-message"}
-    try:
-        sdk = SlackSdk("X")
-    except ImportError:
-        pytest.skip("slack-sdk is an optional extra")
-    assert sdk.operations == webhook.operations

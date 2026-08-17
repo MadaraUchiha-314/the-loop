@@ -25,7 +25,7 @@ overrides: {}
 | T7 | Performance / load | n/a — a poll cycle is one bounded API call per open thread (≤ the binding cap); Socket Mode is push | | |
 | T8 | Security / abuse case | yes | the fail-closed contracts: empty `authorizedUsers` denies every reply (not mirrored, not delivered); an unauthorized member id likewise; the bot's own messages never re-enter; every mirror parses as self-authored and defangs control keywords; tokens never appear in state, status output or event payloads; no `channels` section → no watcher, no reads, no posts | `uv run --project cli python -m pytest cli/tests/test_channels.py cli/tests/test_channels_integration.py -k "unauthorized or empty_allowlist or own or marker or defang or token or disabled"` |
 | T9 | Accessibility | n/a — no user-facing surface | | |
-| T10 | Migration / upgrade | n/a — the config section and state file are both new and optional; an older config (no section) means today's behaviour exactly, asserted in T1; no existing key moves | | |
+| T10 | Migration / upgrade | yes *(added in the review convergence)* | removing `integrations.slack` is a breaking config change: detection, the fail-closed runtime refusal naming `channels.slack`, the deterministic removal with its bot-pointing note, the no-husk case and idempotency | `uv run --project cli python -m pytest cli/tests/test_migrations.py -k slack` |
 | T11 | Manual exploratory | no — deferred with reason: exercising a real bot needs a Slack workspace with the app installed, which this environment does not have; the dry surface (`the-loop channels status` against this repo's config) is asserted in T1/T2 instead | | |
 | T12 | Whole-suite regression | yes | the daemon wiring, `ask` change and new verb break nothing; docs/schema parity gates (P1–P5, schema byte-parity, configschema keyword guard, `--types` parity) pass with the new section, command and event types | `make test` (or `uv run --project cli python -m pytest cli/tests`) |
 | T13 | Lint / format / types | yes | the repo's own gates | `make lint`, `make format-check`, `make typecheck` |
@@ -52,6 +52,7 @@ overrides: {}
 | T8 | R4.5 | a `bot_id`-authored and an own-user-authored message are dropped before authz |
 | T8 | R1.3, R5.3 | every composed mirror `is_self_authored`; defang holds for every configured keyword |
 | T8 | R3.1, R6.2 | no token value in `channels status` output or any emitted event payload |
+| T10 | R3.4 (as amended) | an old config carrying `integrations.slack` is detected, refused with the replacement named, and migrated to 0.5.0 without a husk; `Scenario: A graph notification reaches the Slack channel through the channels layer` covers the notify re-point |
 | T12 | all, R6.1–6.2 | full CLI suite + parity gates (schema byte-parity, docs P1–P5, `EVENT_TYPES` ↔ `--types`) |
 
 ## Verification environment
@@ -97,6 +98,12 @@ overrides: {}
 | T8 | the `-k "unauthorized or empty_allowlist or own or marker or defang or token or disabled"` selection | 11 passed | [`unit-and-integration.md`](evidence/unit-and-integration.md) |
 | T12 | `pytest cli/tests -q` (inside `make check`) | 2369 passed, 1 skipped — parity gates (P1–P5, schema byte-parity, keyword guard, `--types`, state-portability) included | [`unit-and-integration.md`](evidence/unit-and-integration.md) |
 | T13 | `make lint`, `make format-check`, `make typecheck`, `make validate` | clean | [`lint-and-typecheck.md`](evidence/lint-and-typecheck.md) |
+
+**Re-run after the review convergence** (owner's PR #267 call: `notify` through
+channels, `integrations.slack` removed, migration 0.5.0): full suite
+**2358 passed, 1 skipped** — the deleted webhook tests left with their integration;
+five migration tests and a notify-through-channels scenario joined. Same evidence
+file, § Convergence round.
 
 **Not executed:** T4 (live Slack workspace) and T11 (manual bot exploration) —
 deferred with reasons recorded in the matrix: this environment has no Slack

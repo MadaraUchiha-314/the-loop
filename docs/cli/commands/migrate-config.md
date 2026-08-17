@@ -27,7 +27,13 @@ A breaking change is only as good as its migration, so four properties hold:
 
 ## What it migrates today
 
-Current version: **`0.4.0`**.
+Current version: **`0.5.0`**.
+
+**`integrations.slack` removed** (issue-245). Slack converged on the
+[channels](/config/cli/channels-options) layer — one `channels.slack` section configures
+the bot that posts notifications **and** carries replies back into the session. A webhook
+URL cannot become a bot token, so the migration removes the key and the report says what
+to configure instead; nothing is converted silently.
 
 **`ghBinary` → `integrations.github.cli.binary`** (issue-109). The per-feature keys —
 declared separately under `routing.control`, `routing.reactions` and `routing.announce` —
@@ -55,10 +61,10 @@ migrated the CLI config:
   · webhooks.ghWebhook.routing.reactions.ghBinary → integrations.github.cli.binary ('gh')
   · webhooks.ghWebhook.routing.announce.ghBinary → integrations.github.cli.binary ('gh')
   · webhooks.ghWebhook.routing → routing (top level; it governs the poller too)
-  · version '0.1.0' → '0.4.0'
+  · version '0.1.0' → '0.5.0'
 
 --- /home/you/.the-loop/cli-config.yaml (preview, not written) ---
-version: 0.4.0
+version: 0.5.0
 …
 ```
 

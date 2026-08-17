@@ -61,7 +61,7 @@ def test_a_workstation_with_no_config_reads_as_empty_not_as_an_error(tmp_path):
 def test_reading_serves_the_document_as_authored(config_file):
     document = core_config.get_config(config_file)
     assert document["exists"] is True
-    assert document["version"] == "0.4.0"
+    assert document["version"] == "0.5.0"
     assert document["config"] == yaml.safe_load(TEMPLATE.read_text(encoding="utf-8"))
     # `load_cli_config` would fan `integrations.github.cli.binary` out into private
     # `_ghBinary` keys; they are not in the schema and would fail the next save.
@@ -153,7 +153,7 @@ def test_a_missing_file_is_created_with_its_modeline_and_version(tmp_path):
     assert result["written"] is True
     text = path.read_text(encoding="utf-8")
     assert text.startswith("# yaml-language-server: $schema=")
-    assert yaml.safe_load(text)["version"] == "0.4.0"
+    assert yaml.safe_load(text)["version"] == "0.5.0"
     assert yaml.safe_load(text)["routing"] == {"enabled": True}
     assert path.stat().st_mode & 0o777 == 0o600
 
