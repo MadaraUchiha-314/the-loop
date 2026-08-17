@@ -34,6 +34,8 @@ VALID = [
     {"version": "0.4.0"},
     {"routing": {"enabled": True, "authorizedUsers": ["octocat"]}},
     {"polling": {"intervalSeconds": 30, "sources": []}},
+    {"routing": {"tmux": {"sessionPerPr": True}}},
+    {"routing": {"tmux": {"sessionPerPr": "always"}}},
     {
         "service": {
             "port": 8080,
@@ -55,6 +57,14 @@ INVALID = [
     ({"webhooks": {"ghWebhook": {"port": 0}}}, "below the minimum"),
     ({"webhooks": {"ghWebhook": {"port": 99999}}}, "above the maximum"),
     ({"routing": {"authorizedUsers": "octocat"}}, "string where an array belongs"),
+    (
+        {"routing": {"tmux": {"sessionPerPr": "sometimes"}}},
+        "a session-per-pr mode that does not exist",
+    ),
+    (
+        {"routing": {"tmux": {"sessionPerPr": 1}}},
+        "a number where a mode or a boolean belongs",
+    ),
     (
         {"collaborators": [{"handle": "@octocat", "kind": "nonsense"}]},
         "bad enum in a $ref'd shape",
@@ -110,6 +120,17 @@ def test_invalid_documents_are_named_by_key_path(document, why):
     errors = configschema.validate(document)
     assert errors, why
     assert all(":" in error for error in errors)
+
+
+@pytest.mark.parametrize(
+    "accepted", [True, False, "never", "cross-repository", "always"]
+)
+def test_session_per_pr_accepts_both_booleans_and_all_three_modes(accepted):
+    """issue-258 R3.3 — the key grew names without dropping the booleans, so a
+    config file written before this change still validates."""
+    assert (
+        configschema.validate({"routing": {"tmux": {"sessionPerPr": accepted}}}) == []
+    )
 
 
 def test_the_schemas_use_no_keyword_the_validator_ignores():

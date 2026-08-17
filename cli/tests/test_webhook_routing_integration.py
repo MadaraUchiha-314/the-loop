@@ -718,9 +718,12 @@ def test_a_recorded_pr_does_not_suppress_a_work_item_the_linkage_still_finds(
     from the_loop.webhook.dispatcher import TmuxConfig
 
     # Collapsed mode keeps this scenario's assertion sharp: both WORK ITEMS see
-    # the event. (Under sessionPerPr each record would race to own the PR's one
-    # `loop-<slug>` tmux name; the second falls back to its work-item session.)
-    port, registry, tmux = server_factory(tmux_config=TmuxConfig(session_per_pr=False))
+    # the event. (Under a splitting mode each record would race to own the PR's
+    # one `loop-<slug>` tmux name; the second falls back to its work-item
+    # session.)
+    port, registry, tmux = server_factory(
+        tmux_config=TmuxConfig(session_per_pr="never")
+    )
     register(registry, tmp_path)
     register(registry, tmp_path, ref="github:octo/repo#20", session_id="sess-2")
     registry.link_pull_request(REF, PR_REF)

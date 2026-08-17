@@ -11,10 +11,11 @@ recognises the files the registry wrote — ``<slug>.json`` — and leaves the r
 alone (issue-111).
 
 A work item's record also carries its **pull requests** (issue-172): one entry
-per PR that delivers it, each an endpoint in its own right — its own tmux session
-and its own harness conversation, unless ``routing.tmux.sessionPerPr`` is off.
-That list is the routing decision written down, so which session owns a PR's
-events stops being a value recomputed from ``gh`` on every event.
+per PR that delivers it, each an endpoint in its own right — and, when
+``routing.tmux.sessionPerPr`` makes that PR a candidate *and* a checkout of its
+own can be prepared for it, its own tmux session and harness conversation. That
+list is the routing decision written down, so which session owns a PR's events
+stops being a value recomputed from ``gh`` on every event.
 
 One file per work item is the point: everything about a work item — its own
 session, every PR delivering it, and every tmux/harness conversation involved —
@@ -619,10 +620,15 @@ class SessionRegistry:
         this is unchanged from before issue-172; for a pull request it is the PR's
         own endpoint, and ``session_per_pr=False`` collapses it onto the record's
         own session instead — the pre-issue-172 behaviour, kept as a configured
-        choice rather than discarded (``routing.tmux.sessionPerPr``).
+        choice rather than discarded.
 
         Policy is the caller's: the store is told which it wants and never reads
-        configuration itself.
+        configuration itself. Deliberately still a **boolean** while
+        ``routing.tmux.sessionPerPr`` has three values (issue-258): the store
+        resolves a ref to the endpoint that *exists*, and an endpoint only exists
+        for a pull request the dispatcher already decided to split. The caller
+        passes ``TmuxConfig.splits_pull_requests``; teaching the store the
+        repository rule as well would put one decision in two places.
         """
         record = self.record_owning(ref)
         if record is None:

@@ -192,11 +192,14 @@ There are exactly **two** runtime concepts and **one** contract between them.
     `pullRequests[]` endpoint, `routing.tmux.sessionPerPr`): the endpoint's spawn enters
     the loop at `implementation`, its events advance it, and the work item's outer loop
     is NEVER advanced by a PR's events — the outer loop hears about inner ones only
-    through the state files `await-inner-loops` reads. Since issue-253 a PR's own session
-    exists only for a pull request in **another** repository, so an inner loop is what a
-    cross-repository contribution walks; a pull request in the work item's own repository
-    has no second session to drive one from, and the work item walks its outer loop alone
-    — the "one agent, one session" shape `await-inner-loops` already passes vacuously. WHEN the PR **merges** THEN its
+    through the state files `await-inner-loops` reads. Which pull requests have a session to
+    drive an inner loop from is `routing.tmux.sessionPerPr` (issue-258): under the default
+    `cross-repository` it is a pull request in **another** repository, so an inner loop is
+    what a cross-repository contribution walks and a pull request in the work item's own
+    repository has no second session — the work item walks its outer loop alone, the "one
+    agent, one session" shape `await-inner-loops` already passes vacuously. `always`
+    extends inner loops to same-repository pull requests that get a checkout of their own,
+    and `never` collapses every one of them onto the outer loop. WHEN the PR **merges** THEN its
     loop SHALL be driven to `complete` as a **forced** transition (reason recorded; a
     force moves the pointer, never forges a verdict), because a merge is the PR's
     approval delivered as a state change. A PR closed WITHOUT merging SHALL keep its

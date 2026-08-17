@@ -385,9 +385,10 @@
               "description": "How long a resume-on-respawn waits before checking that the harness is still running. `tmux new-session -d` succeeds as soon as the pane forks, while a harness that cannot resume (e.g. `claude --resume <unknown-id>`) exits within a fraction of a second \u2014 without this probe such a respawn would report success forever while events went nowhere. 0 checks immediately without waiting."
             },
             "sessionPerPr": {
-              "type": "boolean",
-              "default": true,
-              "description": "Give each pull request delivering a work item its OWN tmux session and harness conversation (issue-172). A work item with two PRs then has three sessions: its own (which receives issue events) and one per PR, each recorded on the work item's single session record and spawned lazily by the first event that needs it. A PR closing ends only that PR's session; the work item's session keeps running until the item itself ends. false delivers every PR's events into the work item's single session \u2014 the pre-issue-172 behaviour."
+              "type": ["string", "boolean"],
+              "enum": ["never", "cross-repository", "always", true, false],
+              "default": "cross-repository",
+              "description": "How many tmux+claude sessions a work item's pull requests get (issue-172, issue-258). `never`: every PR's events are delivered into the work item's single session \u2014 the pre-issue-172 behaviour. `cross-repository` (the default): only a PR in a repository OTHER than the work item's gets its own tmux session and harness conversation; a PR in the work item's own repository is that work item's own delivery, on its branch and in its checkout, so it routes to the work item's session (issue-253). `always`: every PR delivering the work item gets its own session, its own repository included. In every mode an endpoint spawns only when it has a WORKING TREE of its own (decision-088 D2), so `always` needs `routing.workspace.root` set, and in practice `strategy: clone` \u2014 two git worktrees of one clone cannot both hold the PR's branch. A refusal is delivered into the work item's session and recorded as `session.pr_session_declined`. Endpoints are recorded on the work item's single session record and spawned lazily; a PR closing ends only that PR's session. The legacy booleans still parse: `true` is `cross-repository`, `false` is `never`."
             }
           }
         },

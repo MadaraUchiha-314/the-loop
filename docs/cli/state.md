@@ -268,14 +268,19 @@ that work item's sessions: the item's own, plus one entry per **pull request** d
 it.
 
 A pull request entry is a durable **binding** — which pull requests deliver this work item —
-and only sometimes a second conversation. Since
-[issue-253](https://github.com/MadaraUchiha-314/the-loop/issues/253) a pull request in the
-work item's **own repository** has no session of its own: it is the work item's delivery, on
-the work item's branch and in the work item's checkout, so its `tmuxTarget` and
-`harnessSessionId` stay empty and its events go to the record's session. A pull request in
-**another** repository still gets its own tmux session and harness conversation, in a
-checkout of that repository
-([`routing.tmux.sessionPerPr`](/config/cli/routing-options#tmux-sessionperpr)).
+and only sometimes a second conversation. Which of them get one is
+[`routing.tmux.sessionPerPr`](/config/cli/routing-options#tmux-sessionperpr): under the
+default `cross-repository`, a pull request in the work item's **own repository** has no
+session of its own — it is the work item's delivery, on the work item's branch and in the
+work item's checkout, so its `tmuxTarget` and `harnessSessionId` stay empty and its events
+go to the record's session ([issue-253](https://github.com/MadaraUchiha-314/the-loop/issues/253)) —
+while a pull request in **another** repository gets its own tmux session and harness
+conversation, in a checkout of that repository. `always` makes the same-repository entry a
+candidate too, and `never` makes none of them one
+([issue-258](https://github.com/MadaraUchiha-314/the-loop/issues/258)). An entry whose
+session was declined for want of a checkout of its own keeps the empty fields, exactly as a
+collapsed one does — the record says what was *bound*, and the event log says what was
+*spawned*.
 
 ```json
 {

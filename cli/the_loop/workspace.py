@@ -196,18 +196,36 @@ class Workspace:
         slug: str,
         *,
         branch: Optional[str] = None,
+        require_branch: bool = False,
         timeout: Optional[float] = None,
     ) -> Path:
         """Provide a ready checkout for one work item, per the configured strategy.
 
         Returns the directory the session should run in. Raises
         :class:`WorkspaceError` on a git failure so the caller can fail+retry.
+
+        ``require_branch`` (issue-258) makes a *checkout on the wrong branch* a
+        failure rather than a degradation. Both strategies otherwise swallow a
+        failed branch checkout and hand back the default branch, which is the
+        right call for a pull request whose head origin has not seen yet — and
+        the wrong one for a caller that only wants the tree **because** it is
+        that pull request's. See :meth:`ensure_worktree`.
         """
         if self.strategy == "clone":
             return self.ensure_workitem_clone(
-                target, slug, branch=branch, timeout=timeout
+                target,
+                slug,
+                branch=branch,
+                require_branch=require_branch,
+                timeout=timeout,
             )
-        return self.ensure_worktree(target, slug, branch=branch, timeout=timeout)
+        return self.ensure_worktree(
+            target,
+            slug,
+            branch=branch,
+            require_branch=require_branch,
+            timeout=timeout,
+        )
 
     def cleanup(
         self, target: RepoTarget, slug: str, *, timeout: Optional[float] = None
@@ -263,6 +281,7 @@ class Workspace:
         slug: str,
         *,
         branch: Optional[str] = None,
+        require_branch: bool = False,
         timeout: Optional[float] = None,
     ) -> Path:
         """Return a ready worktree for one work item, cloning the repo if needed.
@@ -272,6 +291,20 @@ class Workspace:
         the default branch's tip — the primary clone keeps that branch checked
         out, so a shared branch would otherwise be rejected — and the harness
         creates its own feature branch inside.
+
+        ``require_branch`` (issue-258) turns the branch fallback into a raise.
+        The fallback is right for a pull request whose head ref origin does not
+        have yet: a tree in the right repository beats no session. It is wrong
+        for a **same-repository** pull request under ``sessionPerPr: always``,
+        where the work item's own session already holds that branch in a sibling
+        worktree of this very clone — so ``git worktree add -B`` fails *by
+        construction*, and the fallback would hand the endpoint a distinct path
+        holding the default branch. A distinct path passes the caller's
+        shared-tree guard, so the-loop would announce a session for pull request
+        #N sitting on code that is not pull request #N's. Two worktrees of one
+        clone cannot hold one branch; that is git, and the honest answer is to
+        decline (or to run ``strategy: clone``, where the endpoint's clone is
+        independent).
         """
         repo_dir = self.ensure_clone(target, timeout=timeout)
         worktree = self.worktree_dir(target, slug)
@@ -297,6 +330,10 @@ class Workspace:
             except WorkspaceError as exc:
                 # A PR head that origin doesn't have yet (or a fork ref) — don't
                 # fail the spawn; fall back to a detached default-branch worktree.
+                if require_branch:
+                    raise WorkspaceError(
+                        f"no worktree on branch {branch!r} for {slug}: {exc}"
+                    ) from exc
                 logger.warning(
                     "worktree on branch %r failed (%s); using detached default branch",
                     branch,
@@ -348,6 +385,7 @@ class Workspace:
         slug: str,
         *,
         branch: Optional[str] = None,
+        require_branch: bool = False,
         timeout: Optional[float] = None,
     ) -> Path:
         """Clone ``target`` into the work item's own folder (clone strategy).
@@ -355,6 +393,12 @@ class Workspace:
         Independent full clone (no shared object store), so — unlike a worktree —
         the default branch can be checked out directly and a PR head branch is
         checked out in place. Idempotent: an existing clone is reused (fetched).
+
+        Being independent is also why this strategy is the one that serves
+        ``sessionPerPr: always``: no sibling worktree holds the branch, so a
+        same-repository pull request's endpoint really can sit on its own code.
+        ``require_branch`` (issue-258) is honoured here too, for the case that
+        remains — a head ref origin does not have.
         """
         dest = self.clone_dir(target, slug)
         if (dest / ".git").exists():
@@ -377,6 +421,10 @@ class Workspace:
             except WorkspaceError as exc:
                 # PR head origin doesn't have yet (or a fork ref) — keep the
                 # default branch the clone already checked out; don't fail spawn.
+                if require_branch:
+                    raise WorkspaceError(
+                        f"no clone on branch {branch!r} for {slug}: {exc}"
+                    ) from exc
                 logger.warning(
                     "checkout of branch %r failed (%s); staying on default branch",
                     branch,
