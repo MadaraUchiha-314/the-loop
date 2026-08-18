@@ -218,4 +218,6 @@ def test_a_repository_on_the_pre_rename_config_still_works(tmp_path):
     repo = _repository(tmp_path)
     (repo / ".the-loop" / "harness-config.yaml").unlink()
     (repo / ".the-loop" / "config.yaml").write_text(HARNESS)
-    assert load_graph(repo=repo).node("complete").exit == ({"hook": "x-licence-header"},)
+    assert load_graph(repo=repo).node("complete").exit == (
+        {"hook": "x-licence-header"},
+    )

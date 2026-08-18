@@ -149,7 +149,10 @@ def test_the_digest_follows_the_declaration():
         ({"modules": [{"module": "not a module"}]}, "importable dotted name"),
         ({"attach": [{"hook": "x-a"}]}, "needs"),
         ({"attach": [{"hook": "plain", "node": "work"}]}, "may only name"),
-        ({"attach": [{"hook": "x-a", "node": "work", "boundary": "middle"}]}, "boundary"),
+        (
+            {"attach": [{"hook": "x-a", "node": "work", "boundary": "middle"}]},
+            "boundary",
+        ),
         ({"attach": [{"hook": "x-a", "node": "work", "with": []}]}, "not a mapping"),
     ],
 )
@@ -459,9 +462,10 @@ def test_load_graph_attaches_a_repositorys_hooks(tmp_path):
 
 def test_load_graph_without_a_declaration_changes_nothing(tmp_path):
     plain = load_graph()
-    assert load_graph(repo=tmp_path).node("implementation").exit == plain.node(
-        "implementation"
-    ).exit
+    assert (
+        load_graph(repo=tmp_path).node("implementation").exit
+        == plain.node("implementation").exit
+    )
     assert load_graph(repo=tmp_path).extension_hooks == {}
 
 
@@ -471,7 +475,8 @@ def test_the_operator_kill_switch_imports_nothing(tmp_path):
     graph = load_graph(repo=repo, allow_repo_hooks=False)
     assert graph.extension_hooks == {}
     assert all(
-        entry != {"hook": "x-house-rules"} for entry in graph.node("implementation").exit
+        entry != {"hook": "x-house-rules"}
+        for entry in graph.node("implementation").exit
     )
 
 

@@ -312,9 +312,7 @@ def _contained(repo: Path, raw: str) -> Path:
             f"({target}); a repository may only run hook code it carries"
         )
     if target.suffix != ".py":
-        raise GraphConfigError(
-            f"`{CONFIG_KEY}.modules` path {raw!r} is not a .py file"
-        )
+        raise GraphConfigError(f"`{CONFIG_KEY}.modules` path {raw!r} is not a .py file")
     if not target.is_file():
         raise GraphConfigError(
             f"`{CONFIG_KEY}.modules` path {raw!r} does not exist ({target})"

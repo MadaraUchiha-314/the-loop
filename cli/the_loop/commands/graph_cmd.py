@@ -472,8 +472,7 @@ def _report_hooks(root: Path, fmt: str) -> int:
     for entry in attach:
         suffix = f"  with: {entry['with']}" if entry["with"] else ""
         print(
-            f"  attach  {entry['hook']} → {entry['node']} "
-            f"({entry['boundary']}){suffix}"
+            f"  attach  {entry['hook']} → {entry['node']} ({entry['boundary']}){suffix}"
         )
     print(
         "\n`the-loop check <work item>` is what loads them; a declaration that "
