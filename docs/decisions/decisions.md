@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [096](decision-096.md) | A repository may append its own hooks to the-loop's graph, and may do nothing else to it | proposed | 2026-08-18 |
 | [095](decision-095.md) | The weakest linkage source earns its place, and the record answers before GitHub is asked | proposed | 2026-08-18 |
 | [094](decision-094.md) | Channels are a conversation layer beside the integrations, and the work item stays the source of truth | proposed | 2026-08-17 |
 | [093](decision-093.md) | How many sessions a work item's pull requests get is the work item's choice — the operator states the default | proposed | 2026-08-17 |

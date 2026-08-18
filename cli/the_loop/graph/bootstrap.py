@@ -109,6 +109,19 @@ def build_runtime(
         cli_cfg = cli_config.load_cli_config(cli_config.default_cli_config_path()) or {}
     except Exception:  # noqa: BLE001 — the CLI config is optional for `check`
         cli_cfg = {}
+    # Whether this MACHINE runs the repositories' own graph hooks (issue-248).
+    # Read from the top-level `routing` block, where the schema declares
+    # `routing.graph`, and defaulting to true: the declaration in a repository's
+    # harness config is the opt-in, and an operator who wants none sets this to
+    # false. A daemon that honoured it on one ingress and not another would run a
+    # repository's code on a path the operator thought they had closed, so it is
+    # resolved HERE, once, for every runtime this function builds.
+    allow_repo_hooks = (
+        ((cli_cfg.get("routing") or {}).get("graph") or {}).get("repoHooks", True)
+        is not False
+        if isinstance(cli_cfg, dict)
+        else True
+    )
     if isinstance(cli_cfg, dict):
         config["integrations"] = cli_cfg.get("integrations") or {}
         # The channels layer (issue-245): the `notify` hook broadcasts through
@@ -153,7 +166,9 @@ def build_runtime(
         config["prRef"] = ref_for(pr_repo or config["originRepo"], pr_number)
         return Runtime(
             root,
-            graph=load_graph(repo=root, name=PDLC_PR_LOOP),
+            graph=load_graph(
+                repo=root, name=PDLC_PR_LOOP, allow_repo_hooks=allow_repo_hooks
+            ),
             spec_root=str(spec_root or harness_config.spec_dir(harness)),
             config=config,
             state_subpath=subpath,
@@ -170,7 +185,7 @@ def build_runtime(
         chosen = PDLC_WORK_ITEM_LOOP
     return Runtime(
         root,
-        graph=load_graph(repo=root, name=chosen),
+        graph=load_graph(repo=root, name=chosen, allow_repo_hooks=allow_repo_hooks),
         spec_root=str(spec_root or harness_config.spec_dir(harness)),
         config=config,
     )

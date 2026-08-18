@@ -23,17 +23,20 @@ from .contract import (  # noqa: F401
     Message,
     WorkItem,
 )
+from .extensions import Declaration, read_declaration  # noqa: F401
 from .model import Graph, GraphConfigError, Node, load_graph  # noqa: F401
-from .registry import get_hook, hook, hook_names  # noqa: F401
+from .registry import EXTENSION_PREFIX, get_hook, hook, hook_names  # noqa: F401
 from .runtime import NodeReport, Runtime, StatusReport, force  # noqa: F401
 from .state import GraphState  # noqa: F401
 
 __all__ = [
     "BLOCK",
+    "EXTENSION_PREFIX",
     "PASS",
     "SKIP",
     "WAIT",
     "ChainOutcome",
+    "Declaration",
     "Graph",
     "GraphConfigError",
     "GraphState",
@@ -50,5 +53,6 @@ __all__ = [
     "hook",
     "hook_names",
     "load_graph",
+    "read_declaration",
     "run_chain",
 ]

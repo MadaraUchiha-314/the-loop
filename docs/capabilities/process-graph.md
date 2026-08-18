@@ -476,6 +476,44 @@ included, however empty the log was.
   verbatim, so a body that fails lint on its own merits is a human's edit to make, never
   the recorder's ([decision-089](../decisions/decision-089.md)).
 
+### A repository's own hooks (issue-248)
+
+> [decision-096](../decisions/decision-096.md) · [adding a hook](../cli/hooks.md)
+
+- A repository SHALL be able to bring **hooks of its own** and attach them to boundaries the
+  shipped graph already declares, by declaring `graph.hooks` in its
+  [harness config](../config/harness-config.md): `modules[]` (a `path` to a `.py` file inside
+  the repository, or an installed `module` dotted name) and `attach[]`
+  (`hook`, `node`, optional `boundary` and `with`).
+- A repository hook SHALL use the **same contract** as a shipped one —
+  `(HookContext) -> HookResult`, the same `@hook` decorator, the same block-on-raise
+  behaviour. There is one hook API, not two.
+- Every repository hook SHALL be named `x-<something>`, and no shipped hook SHALL take such a
+  name. The prefix says whose code is about to run and makes shadowing a shipped hook
+  impossible.
+- An attachment SHALL be **appended** to the node's chain. There SHALL be no way to remove,
+  reorder or replace a shipped hook, so a shipped gate always runs — and short-circuits —
+  first: a repository hook can add a constraint and never relax one.
+- A repository hook SHALL NOT route. An `outcome` in its `data` SHALL be dropped and the drop
+  logged, so it can neither classify a human gate nor select an edge; its influence on
+  movement is its `status` alone.
+- Repository hooks SHALL be resolved from a **per-repository table on the compiled graph**,
+  never the process-global registry: a daemon walking two repositories that both define
+  `x-house-rules` SHALL run each repository's own.
+- A declaration that cannot be honoured SHALL **fail the graph load**, naming it — a missing,
+  unreadable, raising or empty module, a name outside `x-`, a duplicate, an unknown node or
+  boundary, or a `path` that escapes the repository (absolute, `..`, or a symlink out).
+  Nothing SHALL degrade to "no hooks": a gate the repository asked for either runs or is
+  loudly absent. (A repository *graph* file is still merely ignored — the-loop never promised
+  to honour that one.)
+- The modules run **inside the-loop's own process**, so `the-loop graph hooks` SHALL report
+  what a repository declares **without importing any of it**, and
+  `routing.graph.repoHooks: false` SHALL refuse the mechanism machine-wide, naming any
+  repository whose hooks were refused.
+- A module SHALL be imported once per process. The **graph itself stays the-loop's**: nodes,
+  edges and loops are not repository-authorable, which is the half of issue-109's deferred
+  item this does not deliver.
+
 ### Testing is planned and verified as nodes (issue-163)
 
 - **`test-planning`** SHALL sit between `design` and `design-approval` and produce

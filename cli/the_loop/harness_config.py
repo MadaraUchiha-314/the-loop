@@ -190,6 +190,13 @@ READS: Tuple[HarnessConfigRead, ...] = (
         "(issue-183); a daemon watching N repos cannot know it for each of them",
     ),
     HarnessConfigRead(
+        "graph.hooks",
+        "check, graph, and the daemon via graphlink",
+        "a hook a project wrote to gate its own artifacts is that project's rule, "
+        "and the code it names lives in that project's tree (issue-248) — an "
+        "operator's machine cannot know it for each repository it watches",
+    ),
+    HarnessConfigRead(
         "customInstructions",
         "instructions",
         "which conventions govern work on this repository is a fact about this "

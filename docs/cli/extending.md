@@ -100,5 +100,7 @@ Integration tests carry a Gherkin docstring naming their scenario — see
 
 ## See also
 
+- [Adding a hook](/cli/hooks) — the other extension point: a hook of your repository's own,
+  run at a boundary the-loop's process graph already declares.
 - [Commands](/cli/commands/) — what exists today.
 - [cli](/capabilities/cli) — the capability doc, and the CLI's current behaviour.

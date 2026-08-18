@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 from typing import Any, List, Mapping, Sequence
 
 from .contract import PASS, SKIP, HookContext, HookResult, Message
-from .registry import get_hook
+from .registry import EXTENSION_PREFIX, get_hook
 
 logger = logging.getLogger("the-loop.graph")
 
@@ -105,13 +105,45 @@ def _normalise_spec(spec: Any) -> tuple[str, Mapping[str, Any]]:
     raise ValueError(f"malformed hook entry: {spec!r}")
 
 
+def _resolve(name: str, ctx: HookContext) -> Any:
+    """The function ``name`` means **in this chain's graph**.
+
+    A compiled graph resolves its own repository's hooks first (issue-248); a
+    context with no graph — a unit test, a direct caller — resolves from the
+    shipped registry, where an ``x-`` name correctly does not exist.
+    """
+    resolver = getattr(ctx.graph, "hook_for", None)
+    return resolver(name) if callable(resolver) else get_hook(name)
+
+
+def _disarm_routing(name: str, result: HookResult) -> None:
+    """A REPOSITORY's hook may stop the loop; it may not steer it (issue-248, R2.3).
+
+    ``data["outcome"]`` is how a hook declares a gate classification —
+    ``approved``, ``changes-requested`` — and every edge routes on it. Honouring
+    one from repository code would make "add a check of your own" a way to approve
+    your own work item, so the value is dropped and the drop is reported: a
+    silently ignored declaration is a defect report nobody receives.
+    """
+    if not name.startswith(EXTENSION_PREFIX):
+        return
+    declared = result.data.pop("outcome", None)
+    if declared is not None:
+        logger.warning(
+            "%s declared outcome %r; repository hooks do not route, so it was "
+            "ignored (issue-248)",
+            name,
+            declared,
+        )
+
+
 def run_chain(specs: Sequence[Any], ctx: HookContext) -> ChainOutcome:
     """Run ``specs`` in order against ``ctx``; stop at the first hook that does
     not pass. A ``skip`` is not a verdict, so the chain runs on past it."""
     results: List[HookResult] = []
     for spec in specs:
         name, params = _normalise_spec(spec)
-        fn = get_hook(name)
+        fn = _resolve(name, ctx)
         ctx.results = results
         ctx.params = params
         try:
@@ -123,6 +155,7 @@ def run_chain(specs: Sequence[Any], ctx: HookContext) -> ChainOutcome:
                 [Message(text=f"the {name} hook failed to run: {exc}")],
                 retriable=False,
             )
+        _disarm_routing(name, result)
         results.append(result)
         if result.status not in (PASS, SKIP):
             return ChainOutcome(status=result.status, results=results, blocking=result)

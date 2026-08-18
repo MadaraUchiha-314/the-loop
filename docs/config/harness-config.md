@@ -87,6 +87,20 @@ so no inbound event can replace your `autonomy` tiers, `sensitivePaths` or
 | `userInteraction` | Diagram format, mandatory PR briefing/education requirements, and `writingStyle` — the diagram-first rule and formal-language carve-out the bundled `the-loop:writing` skill reads (no length limits, by decision). See [writing-style](/capabilities/writing-style). |
 | `notifications` | Which harness-raised events notify which roles (recipients resolve from `.the-loop/collaborators.yaml`). |
 | `externalTools` | Inline registry of MCPs/CLIs/skills the harness may use. |
+| `graph` | Hooks **this repository** brings to the-loop's process graph (`graph.hooks`) — see [process-graph](/capabilities/process-graph) and [adding a hook](/cli/extending#adding-a-hook). |
+
+### `graph.hooks` is executable config too
+
+Same rule, a second surface. `graph.hooks.modules[]` names Python that the-loop **imports
+into its own process** and runs at node boundaries, so review a hook module the way you
+would review anything else that runs with your credentials in scope.
+
+What the mechanism guarantees in return is that a repository hook can only ever *add* a
+constraint: it is appended after every shipped hook (which short-circuits first), it must be
+named `x-<something>` so it cannot shadow one, and an `outcome` it declares is ignored so it
+can neither approve a gate nor pick an edge. `the-loop graph hooks` prints what a repository
+declares without importing any of it, and an operator refuses the whole mechanism with
+[`routing.graph.repoHooks: false`](/config/cli/routing-options#graphrepohooks).
 
 ### `reviews.critics[]` is executable config
 
@@ -99,11 +113,11 @@ accepts.
 ## What the CLI reads from it
 
 The file's primary reader is the agent — the `/the-loop:*` commands and the operating
-skill. But the [CLI](/cli/) reads seven of its keys too, and it is worth being precise
+skill. But the [CLI](/cli/) reads eight of its keys too, and it is worth being precise
 about which, because "why is the CLI reading my harness config?" is a fair question
 ([issue #121](https://github.com/MadaraUchiha-314/the-loop/issues/121)).
 
-The answer is that these seven are the **repository's own policy**, and the CLI is
+The answer is that these eight are the **repository's own policy**, and the CLI is
 executing that policy on the repository's behalf. None of them could live in
 `cli-config.yaml`: that is one machine-scoped file for a daemon watching N repositories,
 the skill already reads the same values, and `check`/`scenarios` run in bare CI checkouts
@@ -117,6 +131,7 @@ where no CLI config exists.
 | `reviews.critics` | `critic` | The review bar is a property of the project — and the skill reads the same entries, so a second source could make the two disagree. |
 | `testing.integrationTestGlobs` | `scenarios` | Where the integration tests live is part of the layout. |
 | `ticketing.github` | `check`, `graph`, and the daemon's graph coupling | The repository the ticket was created in is what makes `pr-loops/pr-<n>/` attributable once a work item spans several repositories ([issue #183](https://github.com/MadaraUchiha-314/the-loop/issues/183)). |
+| `graph.hooks` | `check`, `graph`, and the daemon's graph coupling | A hook a project wrote to gate its own artifacts is that project's rule, and the code it names lives in that project's tree ([issue #248](https://github.com/MadaraUchiha-314/the-loop/issues/248)). |
 | `customInstructions` | `instructions` | Which conventions govern work on this repository is a fact about this repository — and the agent reads the same entries, so a check resolving a different list would verify nothing. |
 
 Everything else in this file is read by the agent alone.
