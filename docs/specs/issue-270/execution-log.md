@@ -85,12 +85,6 @@ decision-097:
   is what lets a redelivery succeed after the operator kills the stale tmux session.
   Baselining it would remove a recovery path to fix a cosmetic one.
 
-### 2026-08-18 — one unrelated line: `uv.lock`
-
-`uv.lock` still recorded `the-loopy-one 11.0.0` after the `11.0.1` bump commit; running the
-suite relocked it. One line, matching the version already committed in `pyproject.toml`, kept
-rather than reverted so the lockfile is not left stale.
-
 ## Capability docs
 
 - [`docs/capabilities/webhook-triggers.md`](../../capabilities/webhook-triggers.md) — a new
@@ -111,6 +105,31 @@ rather than reverted so the lockfile is not left stale.
   before the start. This is the user-facing half of the fix, not a doc chore: without it,
   "the content is not lost" rested on nothing.
 - [`docs/decisions/decision-097.md`](../../decisions/decision-097.md) and the index.
+
+### 2026-08-18 — rebased onto `main`; the decision is 097, not 096
+
+The owner asked for a rebase and a decision renumber on the pull request. `main` had moved by
+two commits — issue-248 (a repository may bring its own hooks to the process graph) and the
+`11.1.0` bump — and issue-248 **took `decision-096`**. So this work item's decision is now
+[decision-097](../../decisions/decision-097.md): the file was renamed, its heading renumbered,
+its eleven references updated (`design.md`, `tasks.md`, this log, `evidence/security-review.md`,
+the capability doc's history row) and the index rebuilt from `main`'s so both rows stand.
+Nothing about the decision's content changed.
+
+Two conflicts, both in that renumbering: `docs/decisions/decision-096.md` (add/add — resolved
+by restoring `main`'s file verbatim and writing this one to `097`) and `decisions.md` (the
+index row).
+
+The `uv.lock` drift survived the rebase, because `main` has it too: the `11.0.1 → 11.1.0` bump
+commit did not refresh the lock either, so the first `uv run` in any checkout rewrites two
+lines — the workspace package's version, and a `python_full_version < '3.11'` marker `uv` now
+resolves for `exceptiongroup`'s own dependency. Carried rather than reverted, so the branch is
+not left with a lockfile that disagrees with `pyproject.toml`; it is not part of this change.
+
+Re-verified on the rebased tree rather than assumed: the full suite, `ruff`, `ruff format`,
+`pyright`, `markdownlint` (818 files) and `validate_config.py` all clean. The suite is 2476
+passed, 1 skipped — `main`'s own count rose with issue-248; this work item's 18 tests are
+unchanged.
 
 ## Reviews
 

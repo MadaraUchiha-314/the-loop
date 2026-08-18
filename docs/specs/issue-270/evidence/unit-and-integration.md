@@ -41,12 +41,14 @@ direction — the one refusal that wants a retry still gets one.
 ```console
 $ make test
 uv run --project cli python -m pytest -q cli
-.....................................................                    [100%]
-2428 passed, 1 skipped in 123.71s (0:02:03)
+.............................                                            [100%]
+2476 passed, 1 skipped in 127.67s (0:02:07)
 ```
 
-2410 before this change (issue-269's recorded count), + 18 new tests = 2428 — 17 written
-red-first, plus `test_the_settled_vocabulary_is_exactly_the_five_documented_outcomes`, added
-in self-review round 1 to pin a constant nothing was reading. No test was changed to
+Re-run after rebasing onto `main` at `ede4630` (which had gained issue-248): **2476 passed, 1
+skipped**, of which 18 are this work item's — 17 written red-first, plus
+`test_the_settled_vocabulary_is_exactly_the_five_documented_outcomes`, added in self-review
+round 1 to pin a constant nothing was reading. (Before the rebase, against `main` at
+`fc3adcf`: 2428 passed, 1 skipped, up from 2410.) No test was changed to
 accommodate the fix; the two edits to existing test code are additive — a `delivery_outcome`
 method and a settlement switch on the poller's `RecordingDispatcher` double.
