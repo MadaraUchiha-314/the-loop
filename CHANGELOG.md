@@ -1,3 +1,9 @@
+## v11.1.1 (2026-08-18)
+
+### Fix
+
+- **issue-270**: a refused delivery is settled, not pending (#272)
+
 ## v11.1.0 (2026-08-18)
 
 ### Feat
