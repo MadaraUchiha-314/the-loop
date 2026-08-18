@@ -298,6 +298,30 @@ Best-effort by design: a graph failure is logged (`graph.link_failed`) and never
 delivery. `false` restores the pre-issue-113 behaviour, where the graph moves only when a
 human or CI runs `the-loop graph advance`.
 
+### `graph.repoHooks`
+
+- **Type:** `boolean`
+- **Default:** `true`
+- **Related:** [process-graph](/capabilities/process-graph) · [harness config](/config/harness-config) · [decision-096](/decisions/decision-096)
+
+Whether this machine runs the **watched repositories' own graph hooks**. A repository
+declares them under `graph.hooks` in its harness config, and that declaration is the opt-in:
+a repository that declares none is unaffected whichever way this is set.
+
+Left `true`, the-loop imports the modules a repository names and runs them at the boundaries
+it named. **Those modules execute inside the-loop's own process, with its environment** — so
+adopting a repository's hooks is adopting its code, the same statement `reviews.critics[]`
+already carries for the critics a repository declares.
+
+Set `false` to refuse the mechanism machine-wide. Nothing from any repository is imported,
+and a repository that declared hooks is named in a warning rather than quietly losing its
+gates — an absent gate somebody asked for is worse than a loud refusal.
+
+```bash
+# what a repository would run, without importing any of it
+the-loop graph --repo /srv/checkouts/app hooks
+```
+
 ### `graph.specDir`
 
 - **Type:** `string`

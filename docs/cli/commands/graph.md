@@ -6,6 +6,7 @@ remembers to move.
 
 ```bash
 the-loop graph [--repo .] show   [--format text|json]
+the-loop graph [--repo .] hooks  [--format text|json]
 the-loop graph [--repo .] status <work-item>
 the-loop graph [--repo .] advance <work-item> [--ref REF]
 the-loop graph [--repo .] complete <work-item> [--node NODE] [--actor WHO] [--ref REF] [--pr N] [--pr-repo OWNER/REPO]
@@ -146,6 +147,36 @@ so a reviewer's suggestions never block the phase — they are recorded and carr
 | Flag | Default | Meaning |
 |------|---------|---------|
 | `--format` | `text` | `text`, or `json` for the full node/edge model. |
+
+## `hooks`
+
+Report the **shipped** hooks and the hooks **this repository** brings to the graph
+([issue-248](https://github.com/MadaraUchiha-314/the-loop/issues/248)) — the declarations
+under `graph.hooks` in its [harness config](/config/harness-config).
+
+This action imports nothing. That is its purpose: a repository's hook modules run inside
+the-loop's own process, so an operator gets to read what a checkout would run **before**
+running it. `the-loop check` is what loads them, and a declaration that cannot load fails
+there rather than being skipped.
+
+```text
+$ the-loop graph --repo /srv/checkouts/app hooks
+shipped hooks (19): await-inner-loops, classify-adhoc-reply, classify-feedback, …
+
+this repository declares 1 module(s) and 1 attachment(s) — nothing here has been imported:
+  module  .the-loop/hooks/house_rules.py
+  attach  x-licence-header → implementation (exit)
+
+`the-loop check <work item>` is what loads them; a declaration that cannot load fails there
+rather than being skipped.
+```
+
+| Flag | Default | Meaning |
+|------|---------|---------|
+| `--format` | `text` | `text`, or `json` (`shipped`, `modules`, `attach`) for scripting. |
+
+Writing one of these is [adding a hook](/cli/extending#adding-a-hook); refusing all of them
+machine-wide is [`routing.graph.repoHooks`](/config/cli/routing-options#graphrepohooks).
 
 ## `status`
 

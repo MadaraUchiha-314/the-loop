@@ -139,9 +139,10 @@ self-learning/ML capabilities.
   on every harness turn *and* in CI, so the gate is the runtime rather than a
   reimplementation of it. `--recompute` ignores stored graph state and derives the verdict
   from the artifacts alone.
-- `the-loop graph show|status|advance|run|force` SHALL inspect and drive the process graph
-  (see [process-graph](process-graph.md)). `run` is bounded by `--max-nodes` and detects
-  loops — a runaway loop is the one failure mode a deterministic driver can still have, so
+- `the-loop graph show|hooks|status|advance|run|force` SHALL inspect and drive the process
+  graph (see [process-graph](process-graph.md)). `hooks` reports the shipped hooks and the
+  repository's own declarations **without importing any of them**. `run` is bounded by
+  `--max-nodes` and detects loops — a runaway loop is the one failure mode a deterministic driver can still have, so
   it gets an explicit ceiling rather than trust. `force` is the authorized-operator escape
   hatch: it requires a reason and moves the pointer without ever forging the bypassed
   gate's verdict. `--ref` is optional on every verb that runs hooks: omitted, it is

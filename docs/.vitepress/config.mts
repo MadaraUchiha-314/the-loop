@@ -123,7 +123,10 @@ const cliSidebar = [
   },
   {
     text: "Extending",
-    items: [{ text: "Adding a command", link: "/cli/extending" }],
+    items: [
+      { text: "Adding a command", link: "/cli/extending" },
+      { text: "Adding a hook", link: "/cli/hooks" },
+    ],
   },
 ];
 

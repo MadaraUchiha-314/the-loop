@@ -121,6 +121,22 @@ hooks:
   prePush: [lint, typecheck, unit-test]
   commitConvention: conventional-commits   # all commits follow Conventional Commits
 
+# HOOKS OF YOUR OWN on the process graph (issue-248, decision-096). the-loop's graph
+# ships with the CLI and a repository cannot redefine it; what a repository MAY do is
+# append a check of its own to a boundary the graph already declares. Uncomment and
+# point it at your module. Every hook it registers is named `x-<something>`, runs AFTER
+# every shipped hook at that node, and can block but never approve. The modules run
+# inside the-loop's process — review one like code. See docs: /cli/hooks.
+# graph:
+#   hooks:
+#     modules:
+#       - path: .the-loop/hooks/house_rules.py   # a .py file inside this repository
+#       - module: acme_loop_hooks.compliance     # or an installed dotted name
+#     attach:
+#       - hook: x-licence-header
+#         node: implementation
+#         boundary: exit                          # entry | exit (default exit)
+
 observability:
   devLevel: debug
   runtimeLevel: info

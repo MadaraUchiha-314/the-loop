@@ -282,6 +282,11 @@
               "default": true,
               "description": "Couple dispatch to the process graph. False restores the pre-issue-113 behaviour (the graph only moves when a human or CI runs `the-loop graph advance`)."
             },
+            "repoHooks": {
+              "type": "boolean",
+              "default": true,
+              "description": "Whether this machine runs the WATCHED REPOSITORIES' own graph hooks (issue-248). A repository declares them under `graph.hooks` in its harness config, and that declaration is the opt-in \u2014 a repository that declares none is unaffected either way. Left true, the-loop imports the modules a repository names and runs them at the boundaries it named; the code executes inside the-loop's process, with its environment, so adopting a repository's hooks is adopting its code. Set false to refuse the mechanism machine-wide: nothing from any repository is imported, and a repository that declared hooks is named in a warning rather than silently losing its gates. `the-loop graph hooks --repo <path>` reports what a repository declares without importing any of it."
+            },
             "specDir": {
               "type": "string",
               "default": "",

@@ -17,11 +17,11 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import yaml
 
-from .registry import hook_names, is_registered
+from .registry import HookFn, get_hook, hook_names, is_registered
 
 #: The four shipped loops. The OUTER loop (issue-172, PR #173 review) walks a
 #: work item through the PDLC; the INNER loop walks one pull request through
@@ -302,7 +302,22 @@ class Graph:
     #: the whole set. Compile-validated — every member is a declared, skippable
     #: node — so no set can smuggle a protected gate into the vocabulary.
     skip_sets: Dict[str, Tuple[str, ...]] = field(default_factory=dict)
+    #: This REPOSITORY's own hooks (issue-248), by ``x-`` name. Carried on the
+    #: compiled graph rather than in the process-global registry because a daemon
+    #: walks several repositories in one process, and two of them may legitimately
+    #: define the same name. Empty for every repository that declares none.
+    extension_hooks: Mapping[str, HookFn] = field(default_factory=dict, repr=False)
     _index: Dict[Tuple[str, str], Edge] = field(default_factory=dict, repr=False)
+
+    def hook_for(self, name: str) -> HookFn:
+        """The function ``name`` resolves to **for this graph**.
+
+        This repository's table first, the shipped registry second — and the two
+        can never collide, because a repository hook is required to carry the
+        ``x-`` prefix and a shipped one is refused it.
+        """
+        fn = self.extension_hooks.get(name)
+        return fn if fn is not None else get_hook(name)
 
     def node(self, node_id: str) -> Node:
         try:
@@ -382,8 +397,14 @@ def shipped_graph_path(name: str = PDLC_WORK_ITEM_LOOP) -> Path:
 
 
 def _validate_chain(
-    node_id: str, boundary: str, specs: Sequence[Any]
+    node_id: str,
+    boundary: str,
+    specs: Sequence[Any],
+    known: Optional[Callable[[str], bool]] = None,
 ) -> Tuple[Any, ...]:
+    """Validate one chain's entries. ``known`` widens what counts as registered —
+    a repository's own table when this is validating an attachment (issue-248) —
+    so a shipped entry and an appended one are checked by the same code."""
     out: List[Any] = []
     for spec in specs:
         if isinstance(spec, str):
@@ -395,7 +416,7 @@ def _validate_chain(
                 f"node {node_id!r}: malformed {boundary} hook entry {spec!r} — "
                 "expected a hook name or {hook: name, with: {...}}"
             )
-        if not is_registered(name):
+        if not (is_registered(name) or (known is not None and known(name))):
             raise GraphConfigError(
                 f"node {node_id!r}: {boundary} references unknown hook {name!r}; "
                 f"registered hooks are: {', '.join(hook_names()) or '(none)'}"
@@ -583,27 +604,43 @@ def compile_graph(data: Mapping[str, Any]) -> Graph:
     )
 
 
-_CACHE: Dict[str, Graph] = {}
+_CACHE: Dict[Tuple[str, str, str], Graph] = {}
 
 
 def load_graph(
     path: Optional[Path] = None,
     repo: Optional[Path] = None,
     name: str = PDLC_WORK_ITEM_LOOP,
+    allow_repo_hooks: bool = True,
 ) -> Graph:
-    """Load and compile a shipped loop. Cached per path — compiled once.
+    """Load and compile a shipped loop. Cached — compiled once per repository.
 
     ``name`` selects which loop when no explicit ``path`` is given: the
     work-item loop (the default, and the whole process before issue-172) or the
     PR loop. Both are shipped, compiled by the same code, and executed by the
     same runtime.
+
+    ``repo`` is what makes the result repository-specific (issue-248): the
+    repository's ``graph.hooks`` declaration is read, its modules executed, and
+    its hooks appended to the nodes it named. That is why the cache key carries
+    the repository and the declaration's digest — two repositories no longer
+    compile the same shipped file to the same graph. ``allow_repo_hooks=False``
+    is the operator's refusal (``routing.graph.repoHooks``): none of the
+    repository's code is imported, and what it declared is read only to report
+    what was refused.
     """
     from . import hooks  # noqa: F401 — registers the built-ins before resolution
+    from .extensions import Declaration, apply, read_declaration
 
+    declaration = Declaration()
     if repo is not None:
         _warn_on_repo_graph(repo)
+        if allow_repo_hooks:
+            declaration = read_declaration(_repo_harness_config(repo))
+        else:
+            _warn_on_refused_hooks(repo)
     target = Path(path) if path else shipped_graph_path(name)
-    key = str(target)
+    key = (str(target), str(repo or ""), declaration.digest())
     if key in _CACHE:
         return _CACHE[key]
     try:
@@ -617,8 +654,36 @@ def load_graph(
     if not isinstance(data, Mapping):
         raise GraphConfigError(f"the graph at {target} must be a mapping")
     graph = compile_graph(data)
+    if repo is not None:
+        graph = apply(graph, Path(repo), declaration)
     _CACHE[key] = graph
     return graph
+
+
+def _repo_harness_config(repo: Path) -> Mapping[str, Any]:
+    """``repo``'s harness config, read through its one reader (decision-044)."""
+    from ..harness_config import load as load_harness_config
+
+    return load_harness_config(Path(repo))
+
+
+def _warn_on_refused_hooks(repo: Path) -> None:
+    """Say what was refused. An operator who switched repository hooks off still
+    needs to know a repository expected some — a gate silently not running is the
+    failure mode this whole work item is built against."""
+    from .extensions import read_declaration
+
+    try:
+        declared = read_declaration(_repo_harness_config(repo))
+    except GraphConfigError:
+        declared = None
+    if declared is None or not declared.empty:
+        logger.warning(
+            "%s declares graph hooks, and this machine refuses them "
+            "(routing.graph.repoHooks is false): nothing from the repository was "
+            "imported and none of its hooks will run",
+            repo,
+        )
 
 
 def _warn_on_repo_graph(repo: Path) -> None:

@@ -416,6 +416,72 @@ def _add_pr_flags(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _repository_hooks(root: Path) -> Dict[str, Any]:
+    """What ``root`` declares under ``graph.hooks``, parsed but NOT loaded.
+
+    Deliberately local and deliberately inert. Local, because this reads a file in
+    a checkout rather than evaluating a work item — the same shape as
+    ``the-loop critic list``, which reports the other block of executable
+    configuration a repository declares. Inert, because the whole point is that an
+    operator can see what a repository would run **before** running it (R5.1): a
+    declaration is reported here, and only ``the-loop check`` imports it.
+    """
+    from ..graph import hooks as _hooks  # noqa: F401 — registers the built-ins
+    from ..graph import read_declaration
+    from ..graph.registry import hook_names
+    from ..harness_config import load as load_harness_config
+
+    declaration = read_declaration(load_harness_config(root))
+    return {
+        "shipped": hook_names(),
+        "modules": [
+            {"path": ref.path, "module": ref.dotted} for ref in declaration.modules
+        ],
+        "attach": [
+            {
+                "hook": a.hook,
+                "node": a.node,
+                "boundary": a.boundary,
+                "with": dict(a.params),
+            }
+            for a in declaration.attachments
+        ],
+    }
+
+
+def _report_hooks(root: Path, fmt: str) -> int:
+    report = _repository_hooks(root)
+    if fmt == "json":
+        print(json.dumps(report, indent=2))
+        return 0
+    shipped = report["shipped"]
+    print(f"shipped hooks ({len(shipped)}): {', '.join(shipped)}")
+    modules, attach = report["modules"], report["attach"]
+    if not modules and not attach:
+        print(
+            "this repository declares no graph hooks "
+            "(`graph.hooks` in .the-loop/harness-config.yaml)"
+        )
+        return 0
+    print(
+        f"\nthis repository declares {len(modules)} module(s) and "
+        f"{len(attach)} attachment(s) — nothing here has been imported:"
+    )
+    for ref in modules:
+        print(f"  module  {ref['path'] or ref['module']}")
+    for entry in attach:
+        suffix = f"  with: {entry['with']}" if entry["with"] else ""
+        print(
+            f"  attach  {entry['hook']} → {entry['node']} "
+            f"({entry['boundary']}){suffix}"
+        )
+    print(
+        "\n`the-loop check <work item>` is what loads them; a declaration that "
+        "cannot load fails there rather than being skipped."
+    )
+    return 0
+
+
 @register
 class GraphCommand(Command):
     name = "graph"
@@ -493,6 +559,14 @@ class GraphCommand(Command):
         skip.add_argument("--ref", default="", help="work item ref for integrations")
         _add_pr_flags(skip)
 
+        sub.add_parser(
+            "hooks",
+            help=(
+                "report the shipped hooks and this repository's own declarations "
+                "(issue-248) — WITHOUT importing any of the repository's code"
+            ),
+        ).add_argument("--format", choices=["text", "json"], default="text")
+
         run = sub.add_parser(
             "run", help="drive a work item until it waits, escalates or completes"
         )
@@ -515,6 +589,9 @@ class GraphCommand(Command):
             return _report(exc)
 
     def _dispatch(self, root: Path, args: argparse.Namespace) -> int:
+        if args.action == "hooks":
+            return _report_hooks(root, args.format)
+
         if args.action == "show":
             graph = _show(root, pr=args.pr, pr_repo=args.pr_repo)
             if args.format == "json":

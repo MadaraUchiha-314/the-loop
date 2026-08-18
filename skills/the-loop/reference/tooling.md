@@ -61,6 +61,22 @@ When several entities in a monorepo must be tested together:
 - These are git hooks (e.g. wired via the repo's hook manager); they run the SAME
   commands as CI.
 
+## Hooks the PROJECT brings to the loop (`graph.hooks`)
+
+Different `hooks` entirely from the block above: those are git hooks running the project's
+own commands; these are **process-graph hooks** — a check of the project's own, appended to
+a node boundary the-loop already declares (issue-248, decision-096). A project declares the
+module and where it attaches; the-loop loads it and runs it in the same chain as its shipped
+hooks.
+
+- Names are `x-<something>`; the unprefixed namespace is the-loop's.
+- An attached hook runs **after** every shipped hook at that node and can therefore only
+  add a constraint: it can block or wait, never approve, and any `outcome` it declares is
+  ignored.
+- A module that cannot load fails the graph load rather than silently disappearing.
+- When a node blocks on an `x-` hook, the finding is the **project's** rule, not the-loop's:
+  read that module before treating it as a harness defect.
+
 ## RULE: Conventional Commits
 
 All commits MUST follow Conventional Commits v1.0.0

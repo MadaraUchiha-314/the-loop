@@ -90,8 +90,8 @@
         "id": "runtime",
         "title": "Observability & local orchestration",
         "ask": "advanced",
-        "explain": "Logging levels (dev == runtime, only breakpoints differ), browser logging, container runtime and local service wiring for multi-artifact testing, and the external-tools registry.",
-        "keys": ["observability", "localOrchestration", "externalTools"]
+        "explain": "Logging levels (dev == runtime, only breakpoints differ), browser logging, container runtime and local service wiring for multi-artifact testing, the external-tools registry, and any hooks this repository brings to the process graph.",
+        "keys": ["observability", "localOrchestration", "externalTools", "graph"]
       },
       {
         "id": "automation",
@@ -494,6 +494,59 @@
           "enum": ["conventional-commits", "none"],
           "default": "conventional-commits",
           "description": "Commit-message convention enforced via a commit-msg hook. RULE: all commits are Conventional Commits (https://www.conventionalcommits.org/en/v1.0.0/)."
+        }
+      }
+    },
+    "graph": {
+      "type": "object",
+      "description": "THE PROCESS GRAPH, as THIS REPOSITORY extends it (issue-248, decision-096). the-loop's graph ships with the CLI and a repository cannot redefine it — nodes, edges and loops are the-loop's. What a repository MAY do is bring hooks of its own to the boundaries the shipped graph already declares.",
+      "additionalProperties": false,
+      "properties": {
+        "hooks": {
+          "type": "object",
+          "description": "Hooks this repository provides: `modules` names the Python that defines them, `attach` says where each one runs. Every hook a module registers is named `x-<something>` — the unprefixed namespace is the-loop's, so a repository hook can never shadow a shipped one. An attached hook is APPENDED to the node's shipped chain, so every shipped gate runs (and short-circuits) first: a repository hook can add a constraint, never relax one, and an `outcome` it declares is ignored so it can neither approve a gate nor choose an edge. This block is EXECUTABLE CONFIGURATION — the modules it names run inside the-loop's own process — so review one like code, exactly as `reviews.critics[]`. `the-loop graph hooks` reports what a repository declares without importing any of it; an operator refuses the whole mechanism with `routing.graph.repoHooks: false` in their CLI config.",
+          "additionalProperties": false,
+          "examples": [
+            {
+              "modules": [{ "path": ".the-loop/hooks/house_rules.py" }, { "module": "acme_loop_hooks.compliance" }],
+              "attach": [
+                { "hook": "x-licence-header", "node": "implementation", "boundary": "exit" },
+                { "hook": "x-arch-signoff", "node": "design", "with": { "board": "platform" } }
+              ]
+            }
+          ],
+          "properties": {
+            "modules": {
+              "type": "array",
+              "description": "Python modules registering this repository's hooks, loaded once per process. A module that is missing, raises on import, registers nothing, or registers a name outside the `x-` namespace FAILS the graph load rather than being skipped — a gate that silently stopped running is the failure this refuses.",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "Exactly one of `path` or `module`. A bare string is refused: it cannot say which of the two it is.",
+                "properties": {
+                  "path": { "type": "string", "description": "A .py file, relative to the repository root and inside it. An absolute path, a `..` escape or a symlink leaving the tree is refused — a repository may only run hook code it carries." },
+                  "module": { "type": "string", "description": "An importable dotted module name installed alongside the-loop's CLI — how a team ships shared hooks as a package." }
+                }
+              },
+              "default": []
+            },
+            "attach": {
+              "type": "array",
+              "description": "Where each repository hook runs. An entry naming a node the loop does not declare, a boundary other than entry/exit, or a hook no declared module registered fails the graph load.",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["hook", "node"],
+                "properties": {
+                  "hook": { "type": "string", "pattern": "^x-.+", "description": "The hook's registered name. Must start with `x-`: only a repository's OWN hooks may be attached, since attaching a shipped hook elsewhere would be editing the-loop's process." },
+                  "node": { "type": "string", "description": "The node to attach to, e.g. `design` or `implementation`. `the-loop graph show` lists the nodes of the loop being walked." },
+                  "boundary": { "type": "string", "enum": ["entry", "exit"], "default": "exit", "description": "Which of the node's two chains to append to: `exit` gates leaving the node, `entry` runs on arrival." },
+                  "with": { "type": "object", "description": "Typed parameters handed to the hook as `ctx.params`, exactly as a shipped chain entry's `with:` is.", "default": {} }
+                }
+              },
+              "default": []
+            }
+          }
         }
       }
     },
