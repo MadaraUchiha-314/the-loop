@@ -1,7 +1,7 @@
 ---
 type: execution-log
 workItem: "github:MadaraUchiha-314/the-loop#270"
-phase: verification              # not-started | brainstorming | requirements-definition | design | test-planning | tasks-breakdown | implementation | verification | needs-review | complete
+phase: needs-review              # not-started | brainstorming | requirements-definition | design | test-planning | tasks-breakdown | implementation | verification | needs-review | complete
 status: in-progress              # in-progress | complete
 ---
 
@@ -21,12 +21,13 @@ status: in-progress              # in-progress | complete
 | tasks-breakdown | 2026-08-18 | pending | `tasks.md` |
 | implementation | 2026-08-18 | — | tasks 1–6, test-first per `tdd.mode: standard` |
 | verification | 2026-08-18 | — | every activity in the testing plan ran; results recorded there |
+| needs-review | 2026-08-18 | pending | human approval of the pull request (tier 3: `human-approves-pr`) |
 
 ## Pull requests
 
 | Repository | PR | Loop state | Status |
 |---|---|---|---|
-| MadaraUchiha-314/the-loop | (this branch) | outer loop only — one repository, one delivery | open |
+| MadaraUchiha-314/the-loop | [#272](https://github.com/MadaraUchiha-314/the-loop/pull/272) | outer loop only — one repository, one delivery | open, briefing posted |
 
 ## Progress entries
 
