@@ -8,8 +8,8 @@ root; `make test` is the whole suite.
 ```console
 $ uv run --project cli python -m pytest -q cli/tests/test_routing.py cli/tests/test_poller.py \
     cli/tests/test_eventlog.py cli/tests/test_interaction.py
-..............................................................           [100%]
-350 passed in 2.46s
+...............................................................          [100%]
+351 passed in 2.43s
 ```
 
 ## T2, T10 — integration (the reproduction, the restart, the upgrade)
@@ -25,8 +25,8 @@ $ uv run --project cli python -m pytest -q cli/tests/test_poller_integration.py
 ```console
 $ uv run --project cli python -m pytest -q cli/tests/test_routing.py cli/tests/test_poller.py \
     -k "settle or settled"
-.............                                                            [100%]
-13 passed, 290 deselected in 0.37s
+..............                                                           [100%]
+14 passed, 290 deselected in 0.14s
 ```
 
 The one that matters for T8 is
@@ -41,11 +41,12 @@ direction — the one refusal that wants a retry still gets one.
 ```console
 $ make test
 uv run --project cli python -m pytest -q cli
-....................................................                     [100%]
-2427 passed, 1 skipped in 127.28s (0:02:07)
+.....................................................                    [100%]
+2428 passed, 1 skipped in 123.71s (0:02:03)
 ```
 
-2410 before this change (issue-269's recorded count), + 17 new tests = 2427. No test was
-changed to accommodate the fix; the two edits to existing test code are additive — a
-`delivery_outcome` method and a settlement switch on the poller's `RecordingDispatcher`
-double.
+2410 before this change (issue-269's recorded count), + 18 new tests = 2428 — 17 written
+red-first, plus `test_the_settled_vocabulary_is_exactly_the_five_documented_outcomes`, added
+in self-review round 1 to pin a constant nothing was reading. No test was changed to
+accommodate the fix; the two edits to existing test code are additive — a `delivery_outcome`
+method and a settlement switch on the poller's `RecordingDispatcher` double.

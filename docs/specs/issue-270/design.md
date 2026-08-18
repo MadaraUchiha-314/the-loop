@@ -142,7 +142,7 @@ attempt = self.state.note_comment_attempt(ref, comment.id)
 …unchanged…
 ```
 
-`_settle_comment` is four lines and deliberately dull:
+`_settle_comment` is small and deliberately dull — resolve, say so once, emit:
 
 ```python
 def _settle_comment(self, ref, comment, outcome, delivery_id) -> None:
@@ -182,7 +182,8 @@ budget and turn a refusal into a terminal `poll.spawn_failed` — strictly worse
 |---|---|
 | `docs/capabilities/webhook-triggers.md` | the replay rule stated once for both suppressions ("refused, never replayed — the thread is how the session learns what was said"), the settled-delivery accounting, and a history row |
 | `docs/cli/state.md` | `commentAttempts` counts only deliveries that may still be retried; a settled comment is baselined into `seenComments` |
-| `docs/capabilities/observability.md` | the new event in the catalogue view |
+| `skills/the-loop/reference/observability.md` | the question the new event answers, beside `poll.comment_failed` (`docs/capabilities/observability.md` enumerates no event types, so it needs nothing) |
+| `docs/config/cli/polling-options.md` | `maxRetries` counts only deliveries that could still succeed |
 | `skills/the-loop/templates/webhook-autoexecute-prompt.md` **and** `DEFAULT_SPAWN_TEMPLATE` | one sentence, in the prompt's trusted voice, telling the session to read the **whole** thread including anything posted before the start, because those comments were never delivered as events. A test holds the two byte-identical (issue-36), so they change together |
 | `eventlog.EVENT_TYPES` | `poll.comment_settled`, and a sentence on `dispatch.dropped` saying a suppressed delivery is reported to the poll path as settled |
 

@@ -90,10 +90,10 @@ overrides: {}
 | Activity | Command / procedure | Outcome | Evidence |
 |---|---|---|---|
 | Red run | the 17 new tests, written and run **before** any production code changed | 17 failed, 0 passed — including the two controls, which fail only on the missing `delivery_outcome` accessor and pass on the pre-change *behaviour* | [`evidence/red.md`](evidence/red.md) |
-| T1 | `pytest -q cli/tests/test_routing.py cli/tests/test_poller.py cli/tests/test_eventlog.py cli/tests/test_interaction.py` | 350 passed | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
+| T1 | `pytest -q cli/tests/test_routing.py cli/tests/test_poller.py cli/tests/test_eventlog.py cli/tests/test_interaction.py` | 351 passed | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
 | T2, T10 | `pytest -q cli/tests/test_poller_integration.py` | 24 passed | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
-| T8 | `pytest -q cli/tests/test_routing.py cli/tests/test_poller.py -k "settle or settled"` | 13 passed | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
-| Full suite | `make test` | 2427 passed, 1 skipped (2410 before this change, + 17 new) | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
+| T8 | `pytest -q cli/tests/test_routing.py cli/tests/test_poller.py -k "settle or settled"` | 14 passed | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
+| Full suite | `make test` | 2428 passed, 1 skipped (2410 before this change, + 18 new — 17 red-first, 1 added in self-review) | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
 | T12 | `uv run ruff check cli hooks`, `uv run ruff format --check cli hooks`, `uv run pyright cli`, `markdownlint-cli2` (817 files), `scripts/validate_config.py` | clean on the first run of each | [`evidence/lint-and-typecheck.md`](evidence/lint-and-typecheck.md) |
 | Security review | checklist (`reference/security.md`), effective risk tier 3 | pass, no unresolved findings | [`evidence/security-review.md`](evidence/security-review.md) |
 

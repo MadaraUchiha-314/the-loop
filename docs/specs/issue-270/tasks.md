@@ -52,7 +52,8 @@ overrides: {}
   - _Test:_ `T2, T10 — uv run pytest cli/tests/test_poller_integration.py -k settled` (red→green)
 - [x] 6. Write the semantics down (R3)
   - `docs/capabilities/webhook-triggers.md` (behaviour + history row), `docs/cli/state.md`,
-    `docs/capabilities/observability.md`, `docs/decisions/decision-097.md` + the index, and
+    `docs/config/cli/polling-options.md`, `skills/the-loop/reference/observability.md`,
+    `docs/decisions/decision-097.md` + the index, and
     **both** spawn-prompt copies (`skills/the-loop/templates/webhook-autoexecute-prompt.md`
     and `DEFAULT_SPAWN_TEMPLATE`, held byte-identical by `test_interaction.py`).
   - _Depends on:_ 2, 4

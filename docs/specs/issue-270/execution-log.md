@@ -111,6 +111,22 @@ rather than reverted so the lockfile is not left stale.
   "the content is not lost" rested on nothing.
 - [`docs/decisions/decision-097.md`](../../decisions/decision-097.md) and the index.
 
+## Reviews
+
+`reviews.selfReviewCount: 3`, `stopOnNoNewFindings: true`. Five rounds ran rather than three,
+because round 3 was still finding things: round 4 was the last with findings and round 5 — a
+re-read of the whole final diff — found nothing new, which is where the loop stops.
+
+| # | Type | Focus | Findings | Resolution |
+|---|------|-------|----------|------------|
+| 1 | self | the production diff, site by site | **2.** `SETTLED_OUTCOMES` was defined and never read — a constant nobody consults is a vocabulary nobody enforces. And `_settle_comment`'s log line said "the session reads the thread itself **when it starts**", which is false for a `control-executed` settlement (nothing is waiting to start) | the constant is now pinned by `test_the_settled_vocabulary_is_exactly_the_five_documented_outcomes`, which also checks each outcome appears in the event catalogue's description; the log line now reads "was not delivered **as an event**… nothing is replayed, and a session reads the thread itself" |
+| 2 | self | the paths *not* changed, hunting for a lockout | **0 changes, 3 risks checked and cleared.** (a) `_try_spawn`'s settled branch calls `reset_spawn`, which clears `spawn = {}` — including `deliveryId` — so the next cycle does not read the settled id again and refuse to ever spawn. (b) A `start` that spawns never reaches `_apply_control`'s settle: it returns through `_on_unmatched`, and the spawned session records the delivery itself (`done`). (c) `mark_settled` moves the id to the end of the LRU, so webhook duplicate suppression gets marginally *stronger*, never weaker | nothing to fix; recorded here so the next reader does not have to re-derive them |
+| 3 | self | the spec chain against what actually landed | **2.** `design.md` §D listed `docs/capabilities/observability.md` as a doc to update — that file enumerates no event types, and the change belongs in `skills/the-loop/reference/observability.md`; and it called `_settle_comment` "four lines" when it is ten | both corrected in `design.md`, and `tasks.md` task 6 now names the files that actually changed (including `polling-options.md`) |
+| 4 | self | the new tests | **2.** the integration scenario's Gherkin promised "the comment is refused once (`dispatch.dropped` / `awaiting-start`)" and asserted no such thing; and its three cycles were asserted in two mismatched statements | the scenario now reads the event log and asserts exactly one `dispatch.dropped`/`awaiting-start`, exactly one `poll.comment_settled` (outcome, comment id, `will_retry: false`) and no `poll.comment_failed`; the three cycles are one list comparison |
+| 5 | self | the final diff, whole | **0 new findings** — `stopOnNoNewFindings` | — |
+
+No finding repeated across rounds, so nothing escalated under `escalateOnRepeatFinding`.
+
 ## Deviations from the standard gates
 
 - **The loop was walked by hand.** This is a Claude Code cloud session in the-loop's own

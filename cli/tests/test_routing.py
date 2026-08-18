@@ -20,7 +20,13 @@ from the_loop.sessions import (
     SessionRegistry,
     WorkItemRef,
 )
-from the_loop.webhook.dispatcher import Dispatcher, RoutingConfig
+from the_loop.eventlog import EVENT_TYPES
+from the_loop.webhook.dispatcher import (
+    SETTLED_OUTCOMES,
+    SETTLED_SUPPRESSED,
+    Dispatcher,
+    RoutingConfig,
+)
 from the_loop.webhook.router import (
     Deduper,
     RoutedEvent,
@@ -1649,6 +1655,26 @@ def make_control_dispatcher(tmp_path, tmux, **overrides):
     overrides.setdefault("spawn_workdir", str(tmp_path))
     overrides.setdefault("authorized_users", ["octocat"])
     return make_dispatcher(tmp_path, tmux, **overrides)
+
+
+def test_the_settled_vocabulary_is_exactly_the_five_documented_outcomes():
+    """Adding a settlement means adding it here — and to the event catalogue.
+
+    `poll.comment_settled` documents these five as its `outcome` values, and the
+    poller records whatever it is handed without branching on it, so this tuple is
+    the only place the vocabulary is stated.
+    """
+    assert SETTLED_OUTCOMES == (
+        "awaiting-start",
+        "session-paused",
+        "control-executed",
+        "control-rejected",
+        "control-ambiguous",
+    )
+    assert SETTLED_SUPPRESSED == ("awaiting-start", "session-paused")
+    catalogued = EVENT_TYPES["poll.comment_settled"]
+    for outcome in SETTLED_OUTCOMES:
+        assert outcome in catalogued
 
 
 def test_a_comment_refused_awaiting_start_settles_its_delivery(tmp_path):

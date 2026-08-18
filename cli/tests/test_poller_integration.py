@@ -20,6 +20,7 @@ import time
 
 from conftest import FakeTmux, StubInteractiveAdapter
 from the_loop import comments as comments_mod
+from the_loop import eventlog
 from the_loop.authz import is_self_authored
 from the_loop.control import ControlConfig
 from the_loop.announce import announcement_body
@@ -993,6 +994,8 @@ def test_a_pre_start_comment_is_refused_once_and_never_counted_again(tmp_path):
     """
     gh = GhState()
     poster = _RecordingGh()
+    log = tmp_path / "events.jsonl"
+    eventlog.configure("poll", path=log, enabled=True)
     registry, tmux, dispatcher, poller = _make(
         tmp_path,
         gh,
@@ -1001,23 +1004,32 @@ def test_a_pre_start_comment_is_refused_once_and_never_counted_again(tmp_path):
         comment_runner=poster,
     )
 
-    poller.poll_once()  # first sight: baselined, nothing armed, nothing spawned
-    gh.comments = [_comment("IC_1", "any news on this?")]
-    first = poller.poll_once()  # forwarded → refused: awaiting-start
-    second = poller.poll_once()
-    third = poller.poll_once()
-    time.sleep(0.1)
-    dispatcher.stop()
+    try:
+        poller.poll_once()  # first sight: baselined, nothing armed, nothing spawned
+        gh.comments = [_comment("IC_1", "any news on this?")]
+        cycles = [
+            poller.poll_once() for _ in range(3)
+        ]  # forward → refuse → leave alone
+        time.sleep(0.1)
+    finally:
+        dispatcher.stop()
 
     assert tmux.spawns == [] and tmux.delivers == []
     assert registry.find_by_work_item(REF) is None
     # Refused, so it is resolved — not "attempt 1 of 3, in flight" forever.
     assert poller.state.comment_attempts(REF, "IC_1") == 0
     assert "IC_1" in poller.state.seen_comments(REF)
-    assert (first.comments_forwarded, second.comments_forwarded) == (0, 0)
-    assert third.comments_forwarded == 0
-    assert (first.failures, second.failures, third.failures) == (0, 0, 0)
+    assert [c.comments_forwarded for c in cycles] == [0, 0, 0]
+    assert [c.failures for c in cycles] == [0, 0, 0]
     assert poster.bodies == []  # nothing was "given up", so nobody was told it was
+
+    events = [json.loads(line) for line in log.read_text().splitlines() if line.strip()]
+    dropped = [e for e in events if e["event"] == "dispatch.dropped"]
+    settled = [e for e in events if e["event"] == "poll.comment_settled"]
+    assert [e["reason"] for e in dropped] == ["awaiting-start"]  # refused exactly once
+    assert len(settled) == 1 and settled[0]["outcome"] == "awaiting-start"
+    assert settled[0]["comment_id"] == "IC_1" and settled[0]["will_retry"] is False
+    assert not [e for e in events if e["event"] == "poll.comment_failed"]
 
     # A restart is the case the process-local dedup mark cannot cover: a fresh
     # dispatcher has never heard of the delivery id. The durable half — the
@@ -1034,6 +1046,7 @@ def test_a_pre_start_comment_is_refused_once_and_never_counted_again(tmp_path):
         summary = restarted.poll_once()
     finally:
         restarted.dispatcher.stop()
+        eventlog.reset()
     assert summary.comments_forwarded == 0 and summary.failures == 0
     assert poster.bodies == []
 

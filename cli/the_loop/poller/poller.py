@@ -1115,8 +1115,8 @@ class Poller:
         self._attempted.pop(delivery_id, None)
         self.state.resolve_comment(ref, comment.id)
         logger.info(
-            "%s: comment %s was not delivered (%s); baselining it — the session "
-            "reads the thread itself when it starts",
+            "%s: comment %s was not delivered as an event (%s); baselining it — "
+            "nothing is replayed, and a session reads the thread itself",
             ref,
             comment.id,
             outcome,
