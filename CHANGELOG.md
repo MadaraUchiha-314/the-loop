@@ -1,3 +1,9 @@
+## v11.1.0 (2026-08-18)
+
+### Feat
+
+- **issue-248**: a repository may bring its own hooks to the process graph (#268)
+
 ## v11.0.1 (2026-08-18)
 
 ### Fix
