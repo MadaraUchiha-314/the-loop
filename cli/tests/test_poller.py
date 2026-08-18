@@ -966,9 +966,22 @@ class RecordingDispatcher:
     makes a single-cycle forward look like a fresh first attempt.
     """
 
-    def __init__(self, status_map=None, control=None, control_store=None):
+    def __init__(
+        self,
+        status_map=None,
+        control=None,
+        control_store=None,
+        outcomes=None,
+        settle_on_handle="",
+    ):
         self.events = []
         self.status_map = dict(status_map or {})
+        # issue-270: a delivery the dispatcher is FINISHED with — suppressed
+        # (awaiting-start / session-paused) or consumed as a control command.
+        # `outcomes` seeds a settlement an earlier cycle took; `settle_on_handle`
+        # settles synchronously, the way `handle()` itself does for those paths.
+        self.outcomes = dict(outcomes or {})
+        self.settle_on_handle = settle_on_handle
         # The poller reads its control policy off the dispatcher it drives
         # (issue-106). These tests cover the poll loop itself, so they default
         # to the pre-issue-106 arming: presence spawns on the label alone.
@@ -981,9 +994,16 @@ class RecordingDispatcher:
 
     def handle(self, routed):
         self.events.append(routed)
+        if self.settle_on_handle and routed.delivery_id:
+            self.outcomes[routed.delivery_id] = self.settle_on_handle
 
     def delivery_status(self, delivery_id, refs):
+        if delivery_id in self.outcomes:
+            return "settled"
         return self.status_map.get(delivery_id, "unhandled")
+
+    def delivery_outcome(self, delivery_id):
+        return self.outcomes.get(delivery_id, "")
 
     def stop(self, timeout=None):
         pass
@@ -1667,6 +1687,140 @@ def test_dormant_known_item_without_session_does_not_spawn(tmp_path):
         provider, SessionRegistry(tmp_path / "sessions"), disp, state
     ).poll_once()
     assert summary.spawns == 0 and disp.events == []
+
+
+# -- a settled delivery is resolved, not retried (issue-270) ------------------
+
+
+def _known_item_with_one_new_comment(tmp_path, cid="IC_1"):
+    """A known work item whose thread carries one comment nobody has resolved."""
+    ref = "github:octo/repo#15"
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    state.baseline_comments(ref, ["IC_0"], "t")
+    provider = FakeProvider(
+        items=[_item(15)], comments={15: [_comment("IC_0"), _comment(cid)]}
+    )
+    return ref, state, provider
+
+
+def test_a_synchronously_settled_comment_is_baselined_with_no_attempt(tmp_path):
+    """R2.1/R2.2: refused by the very call that forwarded it — nothing pending.
+
+    The ticket's `commentAttempts: {IC_1: 1}` never appears: the comment is
+    baselined on the cycle it was refused, and no `poll.comment_forwarded` claims
+    an attempt nobody made.
+    """
+    ref, state, provider = _known_item_with_one_new_comment(tmp_path)
+    disp = RecordingDispatcher(settle_on_handle="awaiting-start")
+
+    summary = make_poller(
+        provider, SessionRegistry(tmp_path / "sessions"), disp, state
+    ).poll_once()
+
+    assert summary.comments_forwarded == 0 and summary.failures == 0
+    assert state.comment_attempts(ref, "IC_1") == 0
+    assert "IC_1" in state.seen_comments(ref)
+
+
+def test_a_comment_settled_after_an_attempt_is_resolved_next_cycle(tmp_path):
+    """R2.3: the asynchronous half — a session paused after the enqueue."""
+    ref, state, provider = _known_item_with_one_new_comment(tmp_path)
+    registry = _with_session(tmp_path)
+    disp = RecordingDispatcher()
+    poller = make_poller(provider, registry, disp, state)
+
+    poller.poll_once()  # forwarded, attempt 1 recorded
+    assert state.comment_attempts(ref, "IC_1") == 1
+
+    disp.outcomes["comment-IC_1"] = "session-paused"  # a worker settled it
+    summary = poller.poll_once()
+
+    assert summary.comments_forwarded == 0 and summary.failures == 0
+    assert state.comment_attempts(ref, "IC_1") == 0
+    assert "IC_1" in state.seen_comments(ref)
+
+
+def test_a_settled_comment_is_never_abandoned_so_an_upgrade_replays_nothing(
+    tmp_path,
+):
+    """R2.4: baselined, not given up — the difference an upgrade reads.
+
+    `gaveUp` means "a failing environment beat us", and
+    `rearm_gave_up_comments` un-resolves anything a DIFFERENT CLI version
+    abandoned. Recording a refusal there would re-forward it after the next
+    upgrade — replay-on-start's semantics, on a schedule nobody chose. Two
+    cycles, because that is how long a one-retry budget takes to be spent.
+    """
+    ref, state, provider = _known_item_with_one_new_comment(tmp_path)
+    disp = RecordingDispatcher(settle_on_handle="awaiting-start")
+    poller = make_poller(
+        provider, SessionRegistry(tmp_path / "sessions"), disp, state, max_retries=1
+    )
+
+    poller.poll_once()
+    poller.poll_once()
+
+    on_disk = WorkItemStore(tmp_path / "portable").section(ref, POLL) or {}
+    assert (on_disk.get("gaveUp") or {}).get("comments") in (None, [])
+    assert state.rearm_gave_up_comments(ref) == []
+
+
+def test_a_settled_comment_reports_no_delivery_failure(tmp_path):
+    """R2.5/R2.7: no give-up, no notice, no failure count — one event that says why.
+
+    The give-up notice is not stubbed out here: the assertion is that the code
+    path which posts it (`poll.comment_failed` → `_report_giveup`) is never
+    reached at all.
+    """
+    log = tmp_path / "events.jsonl"
+    eventlog.configure("poll", path=log)
+    try:
+        ref, state, provider = _known_item_with_one_new_comment(tmp_path)
+        disp = RecordingDispatcher(settle_on_handle="awaiting-start")
+        poller = make_poller(
+            provider, SessionRegistry(tmp_path / "sessions"), disp, state, max_retries=1
+        )
+        summary = poller.poll_once()
+        poller.poll_once()
+
+        assert summary.failures == 0
+        events = _poll_events(log)
+        settled = [e for e in events if e["event"] == "poll.comment_settled"]
+        assert len(settled) == 1
+        assert settled[0]["work_item"] == ref
+        assert settled[0]["comment_id"] == "IC_1"
+        assert settled[0]["outcome"] == "awaiting-start"
+        assert settled[0]["will_retry"] is False
+        names = [e["event"] for e in events]
+        assert "poll.comment_failed" not in names
+        assert "poll.giveup_reported" not in names
+        assert "poll.giveup_report_failed" not in names
+        assert "poll.comment_forwarded" not in names
+    finally:
+        eventlog.reset()
+
+
+def test_a_settled_presence_resolves_the_spawn_ledger(tmp_path):
+    """R2.6: a refused presence is not a spent retry, and never a give-up."""
+    ref = "github:octo/repo#15"
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    state.baseline_comments(ref, ["IC_0"], "t")
+    provider = FakeProvider(
+        items=[_item(15)], comments={15: [_comment("IC_0"), _comment("IC_1")]}
+    )
+    disp = RecordingDispatcher()
+    poller = make_poller(
+        provider, SessionRegistry(tmp_path / "sessions"), disp, state, max_retries=1
+    )
+
+    poller.poll_once()  # new activity arms a presence: attempt 1
+    assert state.spawn_attempts(ref) == 1
+    disp.outcomes[state.spawn_delivery_id(ref)] = "session-paused"
+
+    poller.poll_once()
+
+    assert state.spawn_attempts(ref) == 0  # resolved, not spent
+    assert state.spawn_gave_up(ref) is False
 
 
 def test_giveup_emits_terminal_events(tmp_path):

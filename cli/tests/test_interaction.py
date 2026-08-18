@@ -175,6 +175,22 @@ def test_the_directive_precedes_the_untrusted_payload_block():
         assert template.index(f"${PLACEHOLDER}") < template.index("$payload_excerpt")
 
 
+def test_the_spawn_prompt_tells_the_session_to_read_the_whole_thread():
+    """issue-270: option 3 is only true if the session is told to go and read it.
+
+    A comment posted before the start was refused, deliberately, and is never
+    replayed. The thread is where that content still exists — so the prompt says
+    so, in its own trusted voice, before it frames the thread as untrusted data.
+    """
+    body = flat(DEFAULT_SPAWN_TEMPLATE)
+    assert "read the work item's whole thread" in body
+    assert "were never delivered to you as events" in body
+    # The instruction is a constant — nothing from the payload interpolates here.
+    start = DEFAULT_SPAWN_TEMPLATE.index("read the work item's whole thread")
+    assert "$" not in DEFAULT_SPAWN_TEMPLATE[start : start + 300]
+    assert start < DEFAULT_SPAWN_TEMPLATE.index("$payload_excerpt")
+
+
 def test_the_spawn_prompt_frames_the_work_item_itself_as_untrusted():
     """issue-197: the item may be opened by someone nobody authorized.
 

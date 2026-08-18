@@ -152,7 +152,12 @@ class PollState:
       the retry budget), the baseline the poller ignores. Pruned to the live
       thread each cycle so it stays bounded.
     - ``commentAttempts`` — ``{comment_id: attempts}`` for comments still in
-      flight (forwarded but not yet confirmed delivered).
+      flight (forwarded but not yet confirmed delivered). Only deliveries that
+      may still be **retried** are counted: a comment the dispatcher refused on
+      purpose — the work item is not started, its session is paused — or consumed
+      as a control command is baselined into ``seenComments`` instead
+      (``poll.comment_settled``, issue-270), because no number of retries would
+      change that answer.
     - ``spawn`` — ``{attempts, gaveUp, deliveryId}`` for the presence/spawn
       retry (the presence delivery id is stored so the poller can tell an
       in-flight spawn from a failed one across cycles).
@@ -871,6 +876,16 @@ class Poller:
                 self._attempted.pop(last_did, None)
                 self.state.reset_spawn(ref)
                 return
+            if status == "settled":
+                # The dispatcher refused this presence on purpose (issue-270).
+                # Resolved, not spent: a refusal must not accumulate toward
+                # `maxRetries` and must not become a terminal `poll.spawn_failed`.
+                # Reset rather than give up — the refusal says "not now", not
+                # "never here", and `_try_spawn` is only reached again on
+                # genuinely new activity.
+                self._attempted.pop(last_did, None)
+                self.state.reset_spawn(ref)
+                return
         attempts = self.state.spawn_attempts(ref)
         if attempts >= self.max_retries:
             logger.error(
@@ -1020,6 +1035,17 @@ class Poller:
             self._attempted.pop(event.delivery_id, None)
             self.state.resolve_comment(ref, comment.id)
             return
+        if status == "settled":
+            # Settled on an earlier cycle, or by a worker after this cycle
+            # recorded an attempt (a session paused between enqueue and
+            # dispatch). Either way the retry counter must not be left standing.
+            self._settle_comment(
+                ref,
+                comment,
+                self.dispatcher.delivery_outcome(event.delivery_id),
+                event.delivery_id,
+            )
+            return
         if status == "inflight":
             return
         attempts = self.state.comment_attempts(ref, comment.id)
@@ -1050,6 +1076,14 @@ class Poller:
             self._report_giveup(item, comment, attempts)
             return
         self.dispatcher.handle(event)
+        outcome = self.dispatcher.delivery_outcome(event.delivery_id)
+        if outcome:
+            # Settled by the very call above — the item is not started, its
+            # session is paused, or the comment WAS a control command. Resolved
+            # here, before any attempt is recorded, so the ledger never claims a
+            # pending retry for a delivery nobody is attempting (issue-270).
+            self._settle_comment(ref, comment, outcome, event.delivery_id)
+            return
         attempt = self.state.note_comment_attempt(ref, comment.id)
         self._attempted[event.delivery_id] = (ref, comment.id)
         eventlog.emit(
@@ -1060,6 +1094,41 @@ class Poller:
             attempt=attempt,
         )
         summary.comments_forwarded += 1
+
+    def _settle_comment(
+        self, ref: str, comment: Comment, outcome: str, delivery_id: str
+    ) -> None:
+        """Resolve a comment the dispatcher is finished with (issue-270).
+
+        Baselined — **not** abandoned. The difference is `gaveUp`, which records
+        the CLI version that gave up so a later one can re-arm the comment
+        (issue-146): a give-up is a statement about a *failing environment*, and
+        an upgrade can invalidate it. A settlement is a decision, and re-arming a
+        decision would re-forward the comment after the next upgrade — replay
+        semantics nobody asked for, on a schedule nobody chose (the owner's call
+        on the ticket was that the session re-reads the thread instead).
+
+        `outcome` is the dispatcher's own literal and is recorded, not branched
+        on: which suppressions and consumptions exist is the dispatcher's
+        vocabulary, not the poller's.
+        """
+        self._attempted.pop(delivery_id, None)
+        self.state.resolve_comment(ref, comment.id)
+        logger.info(
+            "%s: comment %s was not delivered as an event (%s); baselining it — "
+            "nothing is replayed, and a session reads the thread itself",
+            ref,
+            comment.id,
+            outcome,
+        )
+        eventlog.emit(
+            "poll.comment_settled",
+            work_item=ref,
+            comment_id=comment.id,
+            actor=comment.author,
+            outcome=outcome,
+            will_retry=False,
+        )
 
     def _report_giveup(
         self, work_item: WorkItem, comment: Comment, attempts: int

@@ -88,6 +88,23 @@ logger = logging.getLogger("the-loop.gh-webhook")
 # harness invocation, which is exactly what validating here is meant to stop.
 _SESSION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
+# The outcomes that mean "the dispatcher is FINISHED with this delivery" — kept
+# marked, never retried, nothing more coming (issue-270). Two families:
+# **suppressed**, where a real event was refused on purpose and the harness
+# re-reads the thread instead, and **consumed**, where the event *was* an
+# instruction to the-loop and there was never a delivery to account for. Every
+# other end to an event stays as it was: enqueued (a session will record it) or
+# released (`deduper.discard`, so a redelivery or the next poll cycle retries).
+SETTLED_SUPPRESSED = ("awaiting-start", "session-paused")
+SETTLED_CONTROL_EXECUTED = "control-executed"
+SETTLED_CONTROL_REJECTED = "control-rejected"
+SETTLED_CONTROL_AMBIGUOUS = "control-ambiguous"
+SETTLED_OUTCOMES = SETTLED_SUPPRESSED + (
+    SETTLED_CONTROL_EXECUTED,
+    SETTLED_CONTROL_REJECTED,
+    SETTLED_CONTROL_AMBIGUOUS,
+)
+
 # Fallback when routing.promptTemplate does not exist. Templates are internal to
 # the-loop and ship with the plugin, not the project repo (issue #36), so this
 # built-in default is the source of truth in a project repo.
@@ -133,6 +150,11 @@ DEFAULT_SPAWN_TEMPLATE = """\
 This work item ($work_item) was marked for autonomous execution (label added,
 or the routing policy requested it). Start the-loop on it now by running
 `/the-loop:work-on $work_item`.
+
+Before doing anything else, read the work item's whole thread from the top,
+including anything posted **before** this run was started: comments made while a work
+item is unstarted (or its session paused) are refused on purpose and were never
+delivered to you as events, so the thread is the only place they exist.
 
 Follow the-loop's normal flow and autonomy gates — the process is defined by
 the-loop's own graph, and the block below states where this item stands in it —
@@ -703,6 +725,19 @@ class Dispatcher:
             return "awaiting-start"
         return ""
 
+    def _settle(self, routed: RoutedEvent, outcome: str) -> None:
+        """Record that this event is finished with (issue-270).
+
+        The delivery id was already being kept marked at every site that calls
+        this — the *deliberate* half of "at most once". What was missing is the
+        reason, which is the only thing that tells the poll path apart a refusal
+        it must resolve from a dispatch it should still be waiting for. A no-op
+        for an event with no delivery id (a hand-built one, or a CLI-sourced
+        command).
+        """
+        if routed.delivery_id:
+            self.deduper.mark_settled(routed.delivery_id, outcome)
+
     # -- intake -----------------------------------------------------------------
 
     def handle(self, routed: RoutedEvent) -> None:
@@ -773,6 +808,9 @@ class Dispatcher:
                 commands=control.matched,
                 delivery_id=routed.delivery_id or None,
             )
+            # Consumed, not delivered: nothing was executed and nothing was
+            # forwarded, and a retry could only reach the same reading.
+            self._settle(routed, SETTLED_CONTROL_AMBIGUOUS)
             return
         if control.command:
             # A command needs a NAMED, allowlisted human — stricter than the
@@ -890,12 +928,14 @@ class Dispatcher:
         # suppressed by a pause or dropped as a duplicate.
         for session in matched:
             self._record_pr_binding(routed, session.work_item)
+        enqueued = paused = False
         for session in matched:
             if session.is_paused:
                 # Suppressed on purpose (issue-106), not a transient failure —
                 # so the delivery id stays marked: neither a redelivery nor the
                 # next poll cycle should try again. Nothing is replayed on
                 # resume; the harness re-reads the thread itself.
+                paused = True
                 logger.info(
                     "session %s is paused; not delivering %s (resume with the "
                     "resume keyword or `the-loop sessions resume`)",
@@ -930,7 +970,13 @@ class Dispatcher:
                 routed.delivery_id or "-",
                 session.work_item.ref,
             )
+            enqueued = True
             self._enqueue(session.work_item.ref, routed)
+        if paused and not enqueued:
+            # Every session this event matched is paused, so the suppression IS
+            # the outcome (issue-270). A mixed match — one live, one paused — is a
+            # delivery, and the session that took it records the id itself.
+            self._settle(routed, "session-paused")
 
     # -- linkage verification (issue-269) ----------------------------------------
 
@@ -1331,6 +1377,12 @@ class Dispatcher:
             effect=effect,
             delivery_id=routed.delivery_id or None,
         )
+        # The comment WAS the instruction — executed here, never forwarded — so
+        # the delivery it arrived on is finished with (issue-270). Left unsaid,
+        # the poll path counted delivery attempts for a comment nobody was
+        # delivering, and a re-forward after a restart would execute the command a
+        # second time (for `cleanup`, releasing local resources twice).
+        self._settle(routed, SETTLED_CONTROL_EXECUTED)
 
     def _reject_control(
         self, command: str, routed: RoutedEvent, actor: str, reason: str
@@ -1359,6 +1411,9 @@ class Dispatcher:
             reason=reason,
             delivery_id=routed.delivery_id or None,
         )
+        # A decision about the command, not a failed delivery: retrying it would
+        # reach the same answer, so the delivery is settled (issue-270).
+        self._settle(routed, SETTLED_CONTROL_REJECTED)
 
     def close_session(
         self,
@@ -1657,6 +1712,12 @@ class Dispatcher:
             # every labelled work item nobody has started yet.
             if routed.delivery_id and refusal == "spawn-policy" and not control_command:
                 self.deduper.discard(routed.delivery_id)
+            elif not control_command and refusal in SETTLED_SUPPRESSED:
+                # ...and a kept id now SAYS it was kept on purpose (issue-270),
+                # so the poll path resolves the comment instead of counting an
+                # attempt against it forever. Membership-gated: a refusal that
+                # wants a retry has to stay out of this set.
+                self._settle(routed, refusal)
             return
         if work_item is None:  # unreachable: handle() drops an event with no items
             return
@@ -1753,6 +1814,10 @@ class Dispatcher:
                 gh_event=routed.event,
                 delivery_id=routed.delivery_id or None,
             )
+            # The asynchronous half of the same suppression: by now the poll path
+            # has recorded an attempt for this delivery, and this is what the
+            # next cycle reads instead of "still in flight" (issue-270).
+            self._settle(routed, "session-paused")
             return True
 
         # Which conversation receives it (issue-172). The record is the work
@@ -2668,6 +2733,17 @@ class Dispatcher:
         )
         return None
 
+    def delivery_outcome(self, delivery_id: Optional[str]) -> str:
+        """Why this delivery is settled, or ``""`` (issue-270).
+
+        One of :data:`SETTLED_OUTCOMES` once :meth:`_settle` has recorded it. The
+        poll path reads it to say — in its own record — *why* a comment was
+        resolved without being delivered, without owning a second vocabulary.
+        """
+        if not delivery_id:
+            return ""
+        return self.deduper.outcome(delivery_id)
+
     def delivery_status(
         self, delivery_id: Optional[str], refs: List[WorkItemRef]
     ) -> str:
@@ -2676,10 +2752,17 @@ class Dispatcher:
         Reuses the existing at-most-once machinery rather than a parallel
         channel: ``"done"`` when the id is in a matched session's durable
         ``recent_deliveries`` (written only on a successful dispatch),
-        ``"inflight"`` when it is still in the in-memory dedup cache (enqueued
-        or processing — a long resume can outlast several poll cycles, so it
-        must not be counted a failure), else ``"unhandled"`` (the dispatch
+        ``"settled"`` when the dispatcher recorded that it is finished with the
+        event (issue-270: suppressed on purpose, or consumed as a control
+        command — nothing more is coming, so the caller must resolve it rather
+        than wait), ``"inflight"`` when it is still in the in-memory dedup cache
+        (enqueued or processing — a long resume can outlast several poll cycles,
+        so it must not be counted a failure), else ``"unhandled"`` (the dispatch
         failed and discarded the id, or it was never sent).
+
+        The order is the contract: a delivery that **happened** outranks a
+        settlement, because an event can be delivered into a work item's session
+        while a second endpoint of the same record is paused.
 
         Resolves each ref the way dispatch did — through a stored binding when
         the ref has no session of its own (issue-172), and by the **work item's
@@ -2701,6 +2784,8 @@ class Dispatcher:
             )
             if existing is not None and delivery_id in existing.recent_deliveries:
                 return "done"
+        if self.deduper.outcome(delivery_id):
+            return "settled"
         if delivery_id in self.deduper:
             return "inflight"
         return "unhandled"

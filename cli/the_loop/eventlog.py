@@ -103,7 +103,12 @@ EVENT_TYPES: Dict[str, str] = {
         "`session-occupied` (issue-146) means a dead tmux session held the work "
         "item's `loop-<slug>` name and could not be cleared, so nothing was "
         "spawned and the delivery id was deliberately NOT released — retrying "
-        "could only hit the same collision."
+        "could only hit the same collision. "
+        "`awaiting-start` and `session-paused` are *suppressions*: the delivery "
+        "id is kept AND recorded as settled (issue-270), so the poll path "
+        "resolves the comment instead of counting a retry against it — nothing "
+        "is replayed when the item is started or the session resumed, and the "
+        "session reads the thread itself instead (`poll.comment_settled`)."
     ),
     "dispatch.succeeded": (
         "An event was delivered to its harness session (work_item, harness, "
@@ -150,6 +155,10 @@ EVENT_TYPES: Dict[str, str] = {
         "A comment carried two or more different control keywords, so nothing "
         "was executed and nothing was forwarded (work_items, actor, commands)."
     ),
+    # A control comment is CONSUMED, never delivered — so on the poll path its
+    # delivery is settled rather than counted as an attempt (issue-270). That
+    # applies to all three outcomes above: applied (`control.command`), refused
+    # (`control.rejected`) and ambiguous (`control.ambiguous`).
     "control.announced": (
         "A CLI control action was mirrored to the work item as a comment "
         "carrying the same keyword (work_item, command)."
@@ -425,6 +434,19 @@ EVENT_TYPES: Dict[str, str] = {
         "A shutdown returned the retry budget of dispatches that were still "
         "queued and never delivered (released) — issue-159, so restarting the "
         "poller does not accumulate toward `polling.maxRetries`."
+    ),
+    "poll.comment_settled": (
+        "A forwarded comment was resolved because the dispatcher is FINISHED "
+        "with its delivery, not because it was delivered (work_item, "
+        "comment_id, actor, outcome: awaiting-start | session-paused | "
+        "control-executed | control-rejected | control-ambiguous, "
+        "will_retry=False) — issue-270. Either the event was suppressed on "
+        "purpose (the work item is not started, or its session is paused) or it "
+        "WAS a control command, executed here and never forwarded. The comment "
+        "is baselined rather than retried or abandoned: it is not written to "
+        "`gaveUp`, so no later version re-arms it, and nothing is replayed when "
+        "the item is started or resumed — a spawned session reads the thread "
+        "itself, which the spawn prompt tells it to do."
     ),
     "poll.comment_failed": (
         "The poller gave up forwarding a comment after exhausting the retry "

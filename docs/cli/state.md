@@ -204,13 +204,21 @@ back to routing by the operator's configured default.
 | Field | Meaning |
 |---|---|
 | `seenComments` | comment ids already baselined or delivered — capped, and pruned each cycle to what still exists upstream |
-| `commentAttempts` | in-flight delivery attempts per comment, against [`maxRetries`](/config/cli/polling-options#maxretries) |
+| `commentAttempts` | in-flight delivery attempts per comment, against [`maxRetries`](/config/cli/polling-options#maxretries) — **only deliveries that may still be retried** |
 | `spawn` | the presence/spawn retry ledger: attempts, whether it gave up, the in-flight delivery id |
 | `lastPolledAt` | the last cycle that saw the item |
 
 An item is *baselined* on first sight — the whole existing thread is marked seen, because
 the spawned session reads it itself — and the section is dropped when the item ends, so a
 reopened item is first-sight again rather than skipped forever.
+
+A comment the daemon **refused on purpose** is baselined too, not left pending: while a work
+item is unstarted (`requireStartCommand`) or its session is paused, events are suppressed and
+**never replayed**, so counting retries against them would be counting a delivery nobody is
+attempting. Such a comment leaves `commentAttempts` empty and is recorded once as
+`poll.comment_settled` (with the reason). The same holds for a comment that carried a control
+keyword: it was executed, not delivered. Nothing is lost — a spawned session is told to read
+the item's whole thread, which is where those comments still are.
 
 **If you delete it:** every watched thread is first-sight again. Nothing breaks, but the
 poller re-baselines them, and an item that had been given up on gets a fresh spawn budget.

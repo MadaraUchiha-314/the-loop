@@ -41,6 +41,12 @@ answer to:
   `routing.dropped` and `dispatch.dropped` carry a machine-readable `reason`
   (e.g. `invalid-signature`, `unauthorized-actor`, `duplicate-delivery`,
   `spawn-policy`, `awaiting-start`, `session-paused`, `session-occupied`);
+- **was a comment refused, or did a delivery fail?** — `poll.comment_settled`
+  says the-loop refused the event on purpose (an unstarted item, a paused
+  session) or consumed it as a control command, so it was baselined and will
+  never be retried or replayed; `poll.comment_failed` says a delivery was
+  attempted and gave up. The two used to be indistinguishable in the ledger
+  (issue-270);
 - **why did nothing get respawned?** — `session.respawn_averted` says the tmux session
   was alive after all, so the pending event was pasted into it (issue-146); a
   `dispatch.dropped` with `reason: session-occupied` says a dead session held the

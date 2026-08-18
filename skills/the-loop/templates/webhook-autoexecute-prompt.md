@@ -7,6 +7,11 @@ This work item ($work_item) was marked for autonomous execution (label added,
 or the routing policy requested it). Start the-loop on it now by running
 `/the-loop:work-on $work_item`.
 
+Before doing anything else, read the work item's whole thread from the top,
+including anything posted **before** this run was started: comments made while a work
+item is unstarted (or its session paused) are refused on purpose and were never
+delivered to you as events, so the thread is the only place they exist.
+
 Follow the-loop's normal flow and autonomy gates — the process is defined by
 the-loop's own graph, and the block below states where this item stands in it —
 escalating to a human only when a decision is required.
