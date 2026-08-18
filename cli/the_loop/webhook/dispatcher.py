@@ -63,12 +63,14 @@ from ..runner import SESSION_LIVE, TmuxRunner
 from ..sessions import Session, SessionRegistry, WorkItemRef
 from ..state import LegacyLayout, StateLayout, legacy_layout
 from ..harness_plugins import PluginConfig
+from ..linkage import WorkItemVerifier
 from ..trust import TrustConfig, TrustResult, is_too_broad
 from ..workspace import RepoTarget, Workspace, WorkspaceError, repo_target_from_payload
 from .excerpt import event_excerpt, payload_excerpt  # noqa: F401 — re-exported
 from .router import (
     Deduper,
     RoutedEvent,
+    branch_derived_refs,
     event_actor,
     event_body,
     event_carries_label,
@@ -506,6 +508,7 @@ class Dispatcher:
         reactor: Optional[GitHubReactor] = None,
         announcer: Optional[SessionAnnouncer] = None,
         control_store: Optional[ControlStore] = None,
+        verifier: Optional[WorkItemVerifier] = None,
     ):
         self.registry = registry
         self.adapters = adapters
@@ -531,9 +534,21 @@ class Dispatcher:
         # reloads; otherwise it tracks routing.reactions across hot-reloads.
         self._reactor_override = reactor is not None
         self.reactor = reactor or GitHubReactor(self.config.reactions)
+        # "Does this work item exist?" for refs a branch name invented
+        # (issue-269). Built before the announcer, which reports into it: the
+        # announcement's own 404 is the one piece of direct evidence the daemon
+        # gets after a spawn. One `gh` binary for the whole daemon — the
+        # operator declares it once under `integrations.github.cli.binary`, and
+        # `control` is where routing decisions already read it from.
+        self._verifier_override = verifier is not None
+        self.verifier = verifier or WorkItemVerifier(
+            gh_binary=self.config.control.gh_binary
+        )
         # Same override-survives-reload pattern for the session announcer.
         self._announcer_override = announcer is not None
-        self.announcer = announcer or SessionAnnouncer(self.config.announce)
+        self.announcer = announcer or SessionAnnouncer(
+            self.config.announce, on_work_item_missing=self.verifier.record_missing
+        )
         self.deduper = (
             deduper
             if deduper is not None
@@ -604,8 +619,12 @@ class Dispatcher:
             self.workspace = self._build_workspace(config)
         if not self._reactor_override:
             self.reactor = GitHubReactor(config.reactions)
+        if not self._verifier_override:
+            self.verifier = WorkItemVerifier(gh_binary=config.control.gh_binary)
         if not self._announcer_override:
-            self.announcer = SessionAnnouncer(config.announce)
+            self.announcer = SessionAnnouncer(
+                config.announce, on_work_item_missing=self.verifier.record_missing
+            )
         if not self._tmux_override:
             self.tmux.remain_on_exit = config.tmux.remain_on_exit
         self.graphlink = GraphLink(
@@ -642,7 +661,12 @@ class Dispatcher:
             )
         return False
 
-    def _spawn_refusal(self, routed: RoutedEvent, control_command: str = "") -> str:
+    def _spawn_refusal(
+        self,
+        routed: RoutedEvent,
+        control_command: str = "",
+        target: Optional[WorkItemRef] = None,
+    ) -> str:
         """``""`` when an unmatched event may spawn, else why it may not.
 
         Two conditions, in the order issue-106 states them: the work item must be
@@ -655,15 +679,26 @@ class Dispatcher:
         *this* event carries: a start satisfies the requirement directly, so the
         durable record is only ever consulted for **later** events — the poller's
         presence retry, or a redelivery after a failed spawn.
+
+        ``target`` is the work item the caller is about to act on
+        (:meth:`_target_work_item`), passed in where the caller has already
+        resolved it so the registry is not scanned twice for one decision. The
+        start record must be read for **that** ref: a start recorded on one work
+        item and read back from another is exactly the mismatch issue-269 is
+        about.
         """
         if not self._is_armed(routed):
             return "spawn-policy"
+        if target is None:
+            target = self._target_work_item(routed)
+        if target is None:
+            return "no-work-item"
         control = self.config.control
         if (
             control.enabled
             and control.require_start_command
             and control_command not in SPAWN_COMMANDS
-            and not self.control_store.start_requested(routed.work_items[0])
+            and not self.control_store.start_requested(target)
         ):
             return "awaiting-start"
         return ""
@@ -688,6 +723,33 @@ class Dispatcher:
             # Mark at enqueue so an in-flight duplicate can't double-dispatch;
             # a failed dispatch discards the id so GitHub redelivery retries it.
             self.deduper.add(routed.delivery_id)
+
+        # A work item a branch name invented is removed here, before anything —
+        # matching, the control target, the spawn target — can act on it
+        # (issue-269). First, because `work_items[0]` is read by all three.
+        named_work_items = bool(routed.work_items)
+        routed = self._verify_linkage(routed)
+        if not routed.work_items:
+            # `no-work-item` is the router's own drop reason, kept for an event
+            # that arrived naming none (a hand-built one, or a provider that
+            # emitted an unmappable item): before issue-269 that reached
+            # `work_items[0]` and raised.
+            reason = "work-item-not-found" if named_work_items else "no-work-item"
+            logger.warning(
+                "dropping %s (%s): nothing is left to route it to",
+                routed.event,
+                reason,
+            )
+            eventlog.emit(
+                "dispatch.dropped",
+                level="warning",
+                reason=reason,
+                gh_event=routed.event,
+                delivery_id=routed.delivery_id or None,
+            )
+            # The id stays marked: a work item that does not exist is a permanent
+            # condition, and a redelivery could only reach the same answer.
+            return
 
         # Execution control (issue-106): a declared keyword from an authorized
         # user is an instruction to *the-loop*, so it is executed here and never
@@ -869,6 +931,91 @@ class Dispatcher:
                 session.work_item.ref,
             )
             self._enqueue(session.work_item.ref, routed)
+
+    # -- linkage verification (issue-269) ----------------------------------------
+
+    def _verify_linkage(self, routed: RoutedEvent) -> RoutedEvent:
+        """``routed`` without the work items a branch name invented.
+
+        The branch convention (`issue-<n>` in a head branch, or in a CI event's
+        branch) is the only linkage source that supplies a repository the event
+        never stated — so it is the only one that can name a work item nobody
+        created. In a deployment where the ticket lives in one repository and the
+        code in another, `issue-285` on a branch in the *code* repository
+        resolved to a ref there, became ``work_items[0]``, absorbed the
+        operator's `the-loop start` and had a whole session spawned against it.
+
+        Two conditions must both hold before anything is asked; they are
+        evaluated cheapest-first, so the common event pays a pure computation and
+        no I/O at all:
+
+        1. **The ref rests on the branch alone.** A ref GitHub itself reported,
+           or one a qualified closing keyword named, states its repository and is
+           never questioned; asking about those would put a network dependency
+           on issue-183's cross-repository routing.
+        2. **Nothing local can answer.** When a live record already owns one of
+           the event's refs, the routing decision is the-loop's own record's to
+           make (the owner's direction on the ticket: read the linkage from
+           internal tracking, not from GitHub). A ghost sitting beside a matched
+           record is inert — nothing spawns while an event matches, and
+           :meth:`_target_work_item` binds the command to the record — so the
+           call would change nothing and every comment on an established work
+           item would pay for it.
+
+        Only a definitive 404 removes a ref. Everything else — no ``gh``, a
+        timeout, a 403, an outage — keeps it and routes exactly as before: an
+        unavailable check is not evidence of absence, and a daemon that stops
+        routing when GitHub is unreachable is a worse failure than the one this
+        fixes.
+        """
+        weak = set(branch_derived_refs(routed.event, routed.payload))
+        if not weak or self._live_session_for(routed) is not None:
+            return routed
+        kept = [
+            item
+            for item in routed.work_items
+            if item.ref not in weak or not self.verifier.is_missing(item)
+        ]
+        if len(kept) == len(routed.work_items):
+            return routed
+        for item in routed.work_items:
+            if item not in kept:
+                logger.warning(
+                    "%s does not exist; dropping it from %s — the ref came from "
+                    "the branch name alone, which says nothing about which "
+                    "repository (or whether) the work item is in",
+                    item.ref,
+                    routed.event,
+                )
+                eventlog.emit(
+                    "routing.linkage_dropped",
+                    level="warning",
+                    work_item=item.ref,
+                    source="branch",
+                    reason="not-found",
+                    gh_event=routed.event,
+                    delivery_id=routed.delivery_id or None,
+                )
+        return replace(routed, work_items=kept)
+
+    def _target_work_item(self, routed: RoutedEvent) -> Optional[WorkItemRef]:
+        """The work item this event is *about* — one answer, four callers.
+
+        The record first (issue-269): a live session — found through its own ref
+        or through a durable PR → work-item binding (issue-172) — is the-loop's
+        own statement of which work item these events belong to, and it beats any
+        ordering the router happened to emit. Only when nothing local answers
+        does the first surviving ref decide, and by then
+        :meth:`_verify_linkage` has removed the refs that were invented.
+
+        Used by the start-requested test, the control path, the spawn target and
+        the graph-command record, so "what was started", "what is running" and
+        "what a command acts on" cannot name three different work items.
+        """
+        session = self._live_session_for(routed)
+        if session is not None:
+            return session.work_item
+        return routed.work_items[0] if routed.work_items else None
 
     # -- durable PR → session bindings (issue-172) -------------------------------
 
@@ -1074,7 +1221,7 @@ class Dispatcher:
         its phases. The paper trail is the event log plus the gate's own
         confirmation comment on the ticket.
         """
-        target = routed.work_items[0] if routed.work_items else None
+        target = self._target_work_item(routed)
         eventlog.emit(
             "control.command",
             command=command,
@@ -1098,7 +1245,9 @@ class Dispatcher:
         """
         actor = event_actor(routed.event, routed.payload) or ""
         session = self._live_session_for(routed)
-        target = session.work_item if session is not None else routed.work_items[0]
+        target = self._target_work_item(routed)
+        if target is None:  # unreachable: handle() drops an event with no items
+            return
         note = str((routed.payload.get("comment") or {}).get("html_url") or "")
 
         def record() -> None:
@@ -1118,7 +1267,9 @@ class Dispatcher:
         # durable record's command value is what later selects their loop.
         if command in SPAWN_COMMANDS:
             if session is None:
-                refusal = self._spawn_refusal(routed, control_command=command)
+                refusal = self._spawn_refusal(
+                    routed, control_command=command, target=target
+                )
                 if refusal:
                     self._reject_control(command, routed, actor, refusal)
                     return
@@ -1461,7 +1612,10 @@ class Dispatcher:
 
     def _on_unmatched(self, routed: RoutedEvent, control_command: str = "") -> None:
         refs = ", ".join(item.ref for item in routed.work_items)
-        refusal = self._spawn_refusal(routed, control_command=control_command)
+        work_item = self._target_work_item(routed)
+        refusal = self._spawn_refusal(
+            routed, control_command=control_command, target=work_item
+        )
         if refusal:
             if control_command:
                 # An explicit request that cannot be honoured is worth saying out
@@ -1504,7 +1658,8 @@ class Dispatcher:
             if routed.delivery_id and refusal == "spawn-policy" and not control_command:
                 self.deduper.discard(routed.delivery_id)
             return
-        work_item = routed.work_items[0]
+        if work_item is None:  # unreachable: handle() drops an event with no items
+            return
         if control_command:
             reason = "start requested"
         else:

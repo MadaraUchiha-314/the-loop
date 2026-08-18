@@ -77,6 +77,14 @@ EVENT_TYPES: Dict[str, str] = {
         "A verified event was not routed (reason: disabled-event | "
         "duplicate-delivery | no-work-item | unauthorized-actor; actor)."
     ),
+    "routing.linkage_dropped": (
+        "A work-item ref an event named ONLY through the issue-<n> branch "
+        "convention does not exist, so it was removed from that event's work "
+        "items before anything acted on it (work_item, source: branch, reason: "
+        "not-found, gh_event, delivery_id) — issue-269. The branch convention is "
+        "the one linkage source that supplies a repository the event never "
+        "stated; every other source is routed unchecked."
+    ),
     # -- dispatch (source: gh-webhook or poll) --------------------------------
     "dispatch.queued": (
         "A routed event was enqueued on a session's FIFO queue "
@@ -85,7 +93,13 @@ EVENT_TYPES: Dict[str, str] = {
     "dispatch.dropped": (
         "A routed event was discarded at dispatch (reason: duplicate-delivery "
         "| already-processed | spawn-policy | awaiting-start | session-paused "
-        "| session-vanished | no-adapter | session-occupied). "
+        "| session-vanished | no-adapter | session-occupied | "
+        "work-item-not-found | no-work-item). "
+        "`work-item-not-found` (issue-269) means every work item the event named "
+        "was a branch-invented ref the provider says does not exist, and "
+        "`no-work-item` that it named none to begin with; in both cases the "
+        "delivery id is deliberately NOT released, because that is a permanent "
+        "condition and a redelivery could only reach the same answer. "
         "`session-occupied` (issue-146) means a dead tmux session held the work "
         "item's `loop-<slug>` name and could not be cleared, so nothing was "
         "spawned and the delivery id was deliberately NOT released — retrying "
@@ -232,6 +246,14 @@ EVENT_TYPES: Dict[str, str] = {
         "A comment announcing a newly spawned tmux session (and how to attach "
         "to it) was posted on the work item (work_item, tmux_target); a respawn "
         "reuses the name and posts nothing further."
+    ),
+    "session.work_item_missing": (
+        "The session announcement came back 404: the work item the-loop just "
+        "spawned a session for does not exist (work_item, tmux_target, error) — "
+        "issue-269. Recorded, not acted on: a repository the credential cannot "
+        "see answers 404 for items that do exist, so killing a live session on "
+        "this evidence would destroy work. The ref is remembered as missing, so "
+        "the next event naming it through a branch convention is dropped."
     ),
     "session.announce_failed": (
         "Posting the tmux-session announcement comment failed (work_item, "

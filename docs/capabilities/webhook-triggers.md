@@ -215,13 +215,61 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   item's contributions may span repositories, and the pull request delivering one of them
   lives where its code does while the ticket lives in the origin repository. The
   head-branch convention stays local: `issue-<n>` on a branch says nothing about a
-  repository. This widens which work item an **arrived** event names, and nothing else:
+  repository — and, since issue-269, nothing about **existence** either, which is why a ref
+  resting on it alone is checked before anything acts on it (below). This widens which work
+  item an **arrived** event names, and nothing else:
   the ingress (the operator's receiver and poll sources) and the arming gate
   (`the-loop start`) are unchanged. Consequently a
   PR comment/review/CI result SHALL be delivered into the **existing session for the
   linked issue** (reusing its tmux session) rather than spawning a second one, and WHEN
   nothing matches and the spawn policy allows it THEN the session SHALL be spawned
   against the **issue's** ref, not the PR's (issue-93, decision-036).
+- **A work item a branch name invented is dropped before anything acts on it**
+  (issue-269, [decision-095](../decisions/decision-095.md)). Of the three linkage sources
+  above, the branch convention is the only one that supplies a repository the event never
+  stated — so it is the only one that can name a work item nobody created. WHEN an event
+  yields a work-item ref **only** through that convention (a pull request's head branch, or
+  a CI event's `head_branch` / `branches[].name`) AND no live session record on this machine
+  owns any of the event's refs THEN the system SHALL ask the provider whether the ref exists
+  (`gh api repos/<owner>/<repo>/issues/<n>`, a ref on GitHub Enterprise asked of its own
+  host) before that ref becomes a spawn target or a control-command target; WHEN the answer
+  is a definitive HTTP 404 THEN the ref SHALL be removed from the event's work items
+  (`routing.linkage_dropped`) and the event routed on what remains; and WHEN every one of an
+  event's work items is removed this way THEN the event SHALL be dropped
+  (`dispatch.dropped`, reason `work-item-not-found`) **without** releasing its delivery id,
+  because a work item that does not exist is a permanent condition. Every other answer — no
+  `gh` on PATH, a timeout, a 403, a 5xx, unusable coordinates, a non-GitHub provider — SHALL
+  keep the ref and route exactly as before: an unavailable check is not evidence of absence.
+  A ref GitHub itself reported (`closingIssuesReferences`) or one a closing keyword named is
+  **never** questioned — those state their repository, and issue-183's cross-repository
+  routing acquires no network dependency. Answers are cached per ref (bounded, in-process),
+  so a repeatedly-commented pull request costs one call.
+  - **The record answers before GitHub is asked, and before a list index is trusted.** WHEN
+    an event names a work item this machine holds a live session record for — through its
+    own ref, or through a durable PR → work-item binding — THEN that record's work item
+    SHALL be the target of a control command, of the `requireStartCommand` test and of an
+    unmatched event's spawn, whatever order the refs were emitted in, and the existence
+    check SHALL NOT be consulted at all. Before issue-269 those three read
+    `work_items[0]` — which, with a branch-invented ref present, is the ghost: the
+    operator's `the-loop start` was recorded against a ref that 404s, and a full session
+    (clone, registry entry, tmux session) was spawned for it, without the spec chain that
+    lives on the real work item.
+  - **A polled pull-request comment is a pull-request event.** The poller synthesises a
+    comment event over the pull request's own payload (key `pull_request`, head branch
+    included) and renames it `issue_comment`; the router read only `payload["issue"]` for
+    that name, so on the poll ingress **every** pull-request comment answered "this event
+    carries no pull request" — no `session.pr_linked` binding was written from a comment,
+    and no pull-request endpoint was ever chosen for one. Both now happen there exactly as
+    they do for a webhook (issue-269). No real webhook carries a `pull_request` beside an
+    `issue_comment`, so that path is unchanged.
+  - **A 404 on the work item after a spawn is reported, not obeyed.** WHEN the session
+    announcement fails because the work item itself is not found THEN the system SHALL
+    record `session.work_item_missing` at error level, naming the remedy, and SHALL
+    remember the ref as missing so the next event naming it through a branch convention is
+    dropped without a second call — and SHALL NOT end the session: a repository the
+    operator's credential cannot see answers 404 for items that do exist, and killing a
+    live agent (with its checkout and its uncommitted work) on an ambiguous signal is worse
+    than the situation being reported.
 - **That routing decision is recorded, not recomputed — and each PR is a session of its
   own** (issue-172, [decision-064](../decisions/decision-064.md)). WHEN an event carrying a
   pull request is dispatched to a work item's session — delivered into an existing one, or
@@ -597,6 +645,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-269 | A branch name stopped being able to invent a work item (2026-08-18): `issue-<n>` in a head branch resolved to a ref in the pull request's **own** repository and nothing ever checked that it existed, so in a multi-repository deployment (ticket in one repository, code in another) a ghost became `work_items[0]` — it absorbed the operator's `the-loop start` and had a whole session spawned against a ref that 404s, without the spec chain that lives on the real work item. A ref resting on the branch convention **alone** is now verified before it is acted on, and only a definitive 404 drops it; every other answer keeps it. The record answers first: a live session (its own ref, or a durable PR binding) is the target for control, the start test and the spawn, and where one exists the check is not consulted at all. A polled pull-request comment now names its pull request, so the binding is written and the endpoint chosen on that ingress too; and the announcement's own 404 is recorded as `session.work_item_missing` instead of a generic best-effort warning | [spec](../specs/issue-269/), [decision-095](../decisions/decision-095.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/269) |
 | issue-260 | How many sessions a work item's pull requests get moved from the operator to the work item (2026-08-17): issue-258 gave the choice to `routing.tmux.sessionPerPr`, machine-wide — the same mistake issue-183 refused to make for `outer-loop-on-pull-request`, because one repository has both a one-repo bugfix and a three-repo migration and one daemon serves both. `phase-selection` now carries three rows (`pr-sessions-never` / `pr-sessions-cross-repository` / `pr-sessions-always`) with the deployment's configured value pre-ticked; exactly one ticked row is the choice, and none, several, an unreadable checklist or a token outside the vocabulary all resolve to that default. The resolved mode is frozen by the same signed `the-loop execute` into `graph-state.json` and the portable record (`graph.sessionPerPr`), and routing reads it there per work item ahead of the config key. Nothing else moved: the three modes mean what decision-092 said, decision-088 D2's tree requirement is untouched, the schema is unchanged, and a work item with no frozen mode routes exactly as before | [spec](../specs/issue-260/), [decision-093](../decisions/decision-093.md), [routing](../config/cli/routing-options.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/260) |
 | issue-258 | How many sessions a work item's pull requests get became the operator's choice again (2026-08-17): issue-253 stated the same-repository collapse as a **rule** — `sessionPerPr: true` meant "only a pull request elsewhere splits", and no configuration gave a pull request in the work item's own repository a session of its own. The key is now three-valued — `never`, `cross-repository` (the unchanged default) and `always` — with the legacy booleans still parsing to the first two, so no existing config changes meaning. What did **not** become optional is decision-088 D2: an endpoint spawns only with a working tree of its own, and a same-repository endpoint's checkout must additionally hold the pull request's **head branch** (`Workspace.prepare(require_branch=True)`) — otherwise git's one-branch-per-worktree rule would have handed it a tree silently sitting on the default branch. `always` is therefore served by `workspace.strategy: clone` and declines to the single session under `worktree` | [spec](../specs/issue-258/), [decision-092](../decisions/decision-092.md), [routing](../config/cli/routing-options.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/258) |
 | issue-253 | A work item stopped having two owners (2026-08-16): `sessionPerPr` gave every pull request delivering a work item its own harness conversation but never its own **checkout** — `_spawn_endpoint` spawned with `record.cwd`, and `Workspace.prepare` keys both strategies on the work-item slug, so under *every* configuration a pull request's session ran in the work item session's tree. Two agents, one branch, no lock: on issue-239 they interleaved commits, restarted each other's services and ran the same verification twice against a tree each was changing under the other. Now a pull request in the work item's **own repository** is the work item's session's — no second spawn — and a pull request in **another** repository spawns only into a checkout of its own, keyed on its slug, or not at all (`session.pr_session_declined`) | [spec](../specs/issue-253/), [decision-088](../decisions/decision-088.md), [routing](../config/cli/routing-options.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/253) |

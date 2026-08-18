@@ -864,11 +864,15 @@ def test_router_deduper_is_bounded_lru():
 # -- dispatcher (R3.2/R3.3, R5) -----------------------------------------------
 
 
-def make_dispatcher(tmp_path, tmux, tmux_config=None, **config_overrides):
+def make_dispatcher(
+    tmp_path, tmux, tmux_config=None, verifier=None, **config_overrides
+):
     """A dispatcher whose observable seam is the injected FakeTmux (issue-156).
 
     ``tmux_config`` maps to ``RoutingConfig.tmux`` — named apart because the
-    positional ``tmux`` is the runner double.
+    positional ``tmux`` is the runner double. ``verifier`` is the work-item
+    existence check (issue-269); left None, the conftest stub answers "cannot
+    tell" for every ref, which is the pre-issue-269 routing behaviour.
     """
     registry = SessionRegistry(tmp_path / "sessions")
     if tmux_config is not None:
@@ -882,6 +886,7 @@ def make_dispatcher(tmp_path, tmux, tmux_config=None, **config_overrides):
         adapters={"claude": StubInteractiveAdapter()},
         config=config,
         tmux_runner=tmux,
+        verifier=verifier,
     )
     return registry, dispatcher
 
@@ -1812,3 +1817,232 @@ def test_an_endpoint_checkout_that_lands_on_the_records_tree_is_refused(
     assert tmux.spawns == []
     assert tmux.delivers[0][0] == REF
     assert any("own tree" in r.message for r in caplog.records)
+
+
+# -- ref provenance and the existence check (issue-269) -----------------------
+
+
+def payload_poll_pr_comment(
+    number=48, branch="issue-285-consolidation", body="", repo="org/lib", comment="hi"
+):
+    """A comment on a PR as the POLL path synthesises it (issue-269).
+
+    The poller reuses the pull request's own payload — key ``pull_request``, with
+    its head branch — and renames the event to ``issue_comment``. A webhook
+    delivers the same comment as an ``issue`` carrying a ``pull_request`` key and
+    no branch at all, which is why the ghost in the ticket could only appear on
+    the poll path.
+    """
+    return {
+        "action": "created",
+        "repository": {"full_name": repo},
+        "pull_request": {
+            "number": number,
+            "head": {"ref": branch},
+            "body": body,
+            "labels": [{"name": LABEL}],
+        },
+        "comment": {"body": comment, "user": {"login": "octocat"}},
+        "sender": {"login": "octocat"},
+    }
+
+
+def test_a_ref_resting_only_on_the_branch_name_is_reported_as_such():
+    from the_loop.webhook.router import branch_derived_refs
+
+    payload = payload_pull_request(number=16, branch="claude/github-issue-15-x")
+    assert branch_derived_refs("pull_request", payload) == ["github:octo/repo#15"]
+
+
+def test_a_ref_a_closing_keyword_also_names_is_not_branch_derived():
+    from the_loop.webhook.router import branch_derived_refs
+
+    payload = payload_pull_request(number=16, branch="issue-15", body="Closes #15")
+    assert branch_derived_refs("pull_request", payload) == []
+
+
+def test_a_ref_github_itself_reports_is_not_branch_derived():
+    from the_loop.webhook.router import branch_derived_refs
+
+    payload = payload_pull_request(number=16, branch="issue-15")
+    payload["pull_request"]["closingIssuesReferences"] = [{"number": 15}]
+    assert branch_derived_refs("pull_request", payload) == []
+
+
+def test_the_pull_requests_own_number_is_never_branch_derived():
+    from the_loop.webhook.router import branch_derived_refs
+
+    payload = payload_pull_request(number=16, branch="issue-16")
+    assert branch_derived_refs("pull_request", payload) == []
+
+
+def test_a_ci_events_branch_ref_is_branch_derived_but_its_prs_are_not():
+    from the_loop.webhook.router import branch_derived_refs
+
+    payload = payload_workflow_run(branch="issue-15", prs=(16,))
+    assert branch_derived_refs("workflow_run", payload) == ["github:octo/repo#15"]
+
+
+def test_an_issue_event_has_no_branch_derived_ref():
+    from the_loop.webhook.router import branch_derived_refs
+
+    assert branch_derived_refs("issue_comment", payload_issue_comment()) == []
+
+
+def test_a_polled_pr_comment_still_names_its_pull_request():
+    """The poll path's comment payload keys the PR directly (issue-269).
+
+    ``pr_work_item`` returning None there is why a polled comment recorded no
+    binding and never reached the pull request's own endpoint.
+    """
+    payload = payload_poll_pr_comment()
+    item = pr_work_item("issue_comment", payload)
+    assert item is not None and item.ref == "github:org/lib#48"
+    from the_loop.webhook.router import branch_derived_refs
+
+    assert branch_derived_refs("issue_comment", payload) == ["github:org/lib#285"]
+
+
+class FakeVerifier:
+    """Answers the existence question without a `gh`."""
+
+    def __init__(self, missing=()):
+        self.missing = set(missing)
+        self.asked = []
+
+    def is_missing(self, item):
+        self.asked.append(item.ref)
+        return item.ref in self.missing
+
+    def record_missing(self, item):
+        self.missing.add(item.ref)
+
+
+def routed_poll_pr_comment(delivery="g-1", comment="hi", **kwargs):
+    payload = payload_poll_pr_comment(comment=comment, **kwargs)
+    return RoutedEvent(
+        event="issue_comment",
+        action="created",
+        delivery_id=delivery,
+        # What the poller passes: the PR item's own refs, branch ghost included.
+        work_items=extract_work_items("pull_request", payload),
+        payload=payload,
+        labeled=False,
+    )
+
+
+def test_a_work_item_invented_by_a_branch_name_is_dropped_before_anything_acts(
+    tmp_path,
+):
+    tmux = FakeTmux()
+    verifier = FakeVerifier(missing=["github:org/lib#285"])
+    registry, dispatcher = make_dispatcher(
+        tmp_path,
+        tmux,
+        verifier=verifier,
+        spawn_on_unmatched="always",
+        spawn_workdir=str(tmp_path),
+    )
+    dispatcher.handle(routed_poll_pr_comment())
+    assert wait_until(lambda: len(tmux.spawns) == 1)
+    dispatcher.stop()
+    assert tmux.spawns[0][0] == "github:org/lib#48"  # the PR, not the ghost
+    assert registry.find_by_work_item("github:org/lib#285") is None
+
+
+def test_an_unverifiable_ref_keeps_its_place(tmp_path):
+    """Unknown is not absence — a daemon that cannot ask still routes."""
+    tmux = FakeTmux()
+    verifier = FakeVerifier(missing=[])
+    registry, dispatcher = make_dispatcher(
+        tmp_path,
+        tmux,
+        verifier=verifier,
+        spawn_on_unmatched="always",
+        spawn_workdir=str(tmp_path),
+    )
+    dispatcher.handle(routed_poll_pr_comment())
+    assert wait_until(lambda: len(tmux.spawns) == 1)
+    dispatcher.stop()
+    assert tmux.spawns[0][0] == "github:org/lib#285"
+
+
+def test_a_ref_this_machine_is_already_running_is_never_questioned(tmp_path):
+    tmux = FakeTmux()
+    verifier = FakeVerifier(missing=["github:org/lib#285"])
+    registry, dispatcher = make_dispatcher(tmp_path, tmux, verifier=verifier)
+    registry.register(make_session(ref="github:org/lib#285"))
+    dispatcher.handle(routed_poll_pr_comment())
+    assert wait_until(lambda: len(tmux.delivers) == 1)
+    dispatcher.stop()
+    assert tmux.delivers[0][0] == "github:org/lib#285"
+    assert verifier.asked == []  # internal tracking answered first
+
+
+def test_an_event_whose_every_work_item_is_a_ghost_is_dropped(tmp_path):
+    tmux = FakeTmux()
+    verifier = FakeVerifier(missing=["github:octo/repo#15"])
+    registry, dispatcher = make_dispatcher(
+        tmp_path, tmux, verifier=verifier, spawn_on_unmatched="always"
+    )
+    payload = {
+        "action": "",
+        "repository": {"full_name": "octo/repo"},
+        "branches": [{"name": "issue-15"}],
+    }
+    routed = RoutedEvent(
+        event="status",
+        action="",
+        delivery_id="ghost-1",
+        work_items=extract_work_items("status", payload),
+        payload=payload,
+    )
+    dispatcher.handle(routed)
+    dispatcher.stop()
+    assert tmux.spawns == [] and tmux.delivers == []
+    # A permanent condition: the id stays marked so nothing re-forwards it.
+    assert "ghost-1" in dispatcher.deduper
+
+
+def test_the_control_target_is_the_ref_that_survived(tmp_path):
+    tmux = FakeTmux()
+    verifier = FakeVerifier(missing=["github:org/lib#285"])
+    registry, dispatcher = make_dispatcher(
+        tmp_path,
+        tmux,
+        verifier=verifier,
+        control=ControlConfig(),  # requireStartCommand, the ticket's setup
+        spawn_on_unmatched="always",
+        spawn_workdir=str(tmp_path),
+        portable_dir=str(tmp_path / "portable"),
+        authorized_users=["octocat"],
+    )
+    dispatcher.handle(routed_poll_pr_comment(comment="the-loop start"))
+    assert wait_until(lambda: len(tmux.spawns) == 1)
+    dispatcher.stop()
+    assert tmux.spawns[0][0] == "github:org/lib#48"
+    assert dispatcher.control_store.start_requested(
+        WorkItemRef.parse("github:org/lib#48")
+    )
+    assert not dispatcher.control_store.start_requested(
+        WorkItemRef.parse("github:org/lib#285")
+    )
+
+
+def test_the_control_target_is_the_running_record_whatever_the_ref_order(tmp_path):
+    """Internal tracking decides, not the router's ordering (issue-269 R2.1)."""
+    tmux = FakeTmux()
+    registry, dispatcher = make_dispatcher(
+        tmp_path,
+        tmux,
+        control=ControlConfig(),
+        portable_dir=str(tmp_path / "portable"),
+        authorized_users=["octocat"],
+    )
+    registry.register(make_session(ref="github:org/planning#285"))
+    registry.link_pull_request("github:org/planning#285", "github:org/lib#48")
+    dispatcher.handle(routed_poll_pr_comment(comment="the-loop stop"))
+    assert wait_until(
+        lambda: registry.find_by_work_item("github:org/planning#285") is None
+    )
+    dispatcher.stop()

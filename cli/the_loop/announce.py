@@ -37,7 +37,8 @@ from typing import Callable, Optional
 from . import eventlog
 from .authz import mark_self_authored
 from .comments import post_issue_comment
-from .sessions import Session
+from .linkage import looks_not_found
+from .sessions import Session, WorkItemRef
 
 logger = logging.getLogger("the-loop.announce")
 
@@ -108,11 +109,16 @@ class SessionAnnouncer:
         config: Optional[AnnounceConfig] = None,
         runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
         timeout: Optional[float] = 30.0,
+        on_work_item_missing: Optional[Callable[[WorkItemRef], None]] = None,
     ):
         self.config = config or AnnounceConfig()
         self._runner = runner
         self.timeout = timeout
         self._warned_missing_gh = False
+        # Where a 404 on the work item itself is reported (issue-269). The
+        # dispatcher wires it to the existence check's cache; unset, the failure
+        # is still recorded on the event log.
+        self._on_work_item_missing = on_work_item_missing
 
     def announce(self, session: Session) -> bool:
         """Comment on ``session``'s work item with its tmux attach details.
@@ -160,6 +166,8 @@ class SessionAnnouncer:
         return True
 
     def _failed(self, session: Session, error: str) -> bool:
+        if looks_not_found(error):
+            return self._work_item_missing(session, error)
         logger.warning(
             "could not announce tmux session %s on %s: %s",
             session.tmux_target,
@@ -173,4 +181,42 @@ class SessionAnnouncer:
             tmux_target=session.tmux_target,
             error=error,
         )
+        return False
+
+    def _work_item_missing(self, session: Session, error: str) -> bool:
+        """A 404 on the work item is evidence, not a failed comment (issue-269).
+
+        the-loop has just spawned a session for a work item the provider says
+        does not exist — the situation a branch-invented ref produced before the
+        existence check, and one a mistyped cross-repository closing keyword can
+        still produce. Said out loud at error level, and handed to the sink so
+        the next event naming this ref does not repeat the spawn.
+
+        Deliberately **not** a kill: a repository the operator's credential
+        cannot see answers 404 for items that do exist, and ending a live agent's
+        session (with its checkout and its uncommitted work) on an ambiguous
+        signal is a worse outcome than the one being reported.
+        """
+        item = session.work_item
+        logger.error(
+            "%s does not exist (%s), but a session for it is already running in "
+            "%s — the work item was probably invented by a branch name. Inspect "
+            "it, then `the-loop sessions stop --work-item %s`",
+            item.ref,
+            error,
+            session.tmux_target or "no tmux session",
+            item.ref,
+        )
+        eventlog.emit(
+            "session.work_item_missing",
+            level="error",
+            work_item=item.ref,
+            tmux_target=session.tmux_target or None,
+            error=error,
+        )
+        if self._on_work_item_missing is not None:
+            try:
+                self._on_work_item_missing(item)
+            except Exception as exc:  # noqa: BLE001 — bookkeeping, never a raise
+                logger.debug("could not record %s as missing: %s", item.ref, exc)
         return False

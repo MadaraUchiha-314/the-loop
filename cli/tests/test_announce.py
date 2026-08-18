@@ -34,17 +34,18 @@ def make_session(**overrides) -> Session:
 class FakeRun:
     """Record ``gh`` invocations without running one."""
 
-    def __init__(self, returncode=0, raises=None):
+    def __init__(self, returncode=0, raises=None, stderr="boom"):
         self.calls = []
         self.returncode = returncode
         self.raises = raises
+        self.stderr = stderr
 
     def __call__(self, cmd, capture_output=True, text=True, timeout=None):
         self.calls.append(list(cmd))
         if self.raises is not None:
             raise self.raises
         return subprocess.CompletedProcess(
-            cmd, self.returncode, stdout="", stderr="boom"
+            cmd, self.returncode, stdout="", stderr=self.stderr
         )
 
 
@@ -212,4 +213,40 @@ def test_gh_timeout_never_raises(gh_present):
 
 def test_gh_oserror_never_raises(gh_present):
     announcer = SessionAnnouncer(AnnounceConfig(), runner=FakeRun(raises=OSError("x")))
+    assert announcer.announce(make_session()) is False
+
+
+# -- the 404 is evidence, not decoration (issue-269) ----------------------------
+
+
+def test_a_404_on_the_work_item_is_reported_as_a_missing_work_item(gh_present, caplog):
+    """The daemon has direct evidence the work item does not exist — R3.1/R3.2."""
+    seen = []
+    announcer = SessionAnnouncer(
+        AnnounceConfig(),
+        runner=FakeRun(returncode=1, stderr="gh: Not Found (HTTP 404)"),
+        on_work_item_missing=seen.append,
+    )
+    with caplog.at_level("ERROR"):
+        assert announcer.announce(make_session()) is False
+    assert [item.ref for item in seen] == [REF]
+    assert any("does not exist" in r.message for r in caplog.records)
+
+
+def test_any_other_announcement_failure_says_nothing_about_existence(gh_present):
+    seen = []
+    announcer = SessionAnnouncer(
+        AnnounceConfig(),
+        runner=FakeRun(returncode=1, stderr="gh: Bad credentials (HTTP 401)"),
+        on_work_item_missing=seen.append,
+    )
+    assert announcer.announce(make_session()) is False
+    assert seen == []
+
+
+def test_a_missing_work_item_still_never_fails_the_dispatch(gh_present):
+    """Best-effort stays best-effort: it reports, it does not raise or kill."""
+    announcer = SessionAnnouncer(
+        AnnounceConfig(), runner=FakeRun(returncode=1, stderr="HTTP 404: Not Found")
+    )
     assert announcer.announce(make_session()) is False
