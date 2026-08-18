@@ -164,7 +164,8 @@ on-disk shape, the control plane or the CLI's surface changed.
   seams from the harness, which `evidence/red.md` states at the top of each capture rather
   than presenting as a clean tests-first run.
 - **The related casualty is a separate ticket.** The pre-start comment that is dropped
-  `awaiting-start` and never replayed is filed as its own issue, per the reporter's own
+  `awaiting-start` and never replayed is filed as
+  [#270](https://github.com/MadaraUchiha-314/the-loop/issues/270), per the reporter's own
   "possibly its own issue" — it is a product decision about replay semantics, not linkage
   correctness. Linked from `bugfix.md` §Out of scope.
 - **One unrelated line.** `uv.lock` picks up `version = "11.0.0"` for the workspace package.

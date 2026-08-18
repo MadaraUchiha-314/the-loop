@@ -200,8 +200,8 @@ behaviour and nothing more.
   deliberate, documented refusal in the current code with its own trade-off (releasing the
   id would have every unstarted labelled item re-forwarded every cycle), and changing it is
   a product decision about replay semantics, not part of restoring linkage correctness. The
-  reporter flagged it as "possibly its own issue"; it is filed as one and linked from the
-  execution log.
+  reporter flagged it as "possibly its own issue"; it is filed as
+  [#270](https://github.com/MadaraUchiha-314/the-loop/issues/270).
 - **Verifying the other two linkage sources.** A closing keyword naming a nonexistent issue
   (`Closes org/typo#9`) is a human typo in a source that *states* its repository; it is
   caught by Requirement 3's report rather than by a pre-emptive call on every event.

@@ -62,8 +62,8 @@ anything says so — loudly, now.
 
 **Out of scope, deliberately.** Pre-start comments are still never replayed: a comment
 dropped `awaiting-start` keeps its delivery id forever, which the ticket flags as "possibly
-its own issue" and which is a product decision about replay semantics rather than linkage
-correctness.
+its own issue" ([#270](https://github.com/MadaraUchiha-314/the-loop/issues/270)) and which is
+a product decision about replay semantics rather than linkage correctness.
 
 ## Alternatives considered
 
