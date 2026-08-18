@@ -1,3 +1,9 @@
+## v11.0.1 (2026-08-18)
+
+### Fix
+
+- **issue-269**: a branch name must not invent a work item (#271)
+
 ## v11.0.0 (2026-08-17)
 
 ### BREAKING CHANGE
