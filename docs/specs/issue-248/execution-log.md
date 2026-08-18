@@ -17,7 +17,7 @@ Ticket: [#248](https://github.com/MadaraUchiha-314/the-loop/issues/248)
 | tasks-breakdown | 2026-08-17 | 2026-08-17 | Ten tasks, linear DAG. |
 | implementation | 2026-08-17 | 2026-08-18 | Nine tasks: the collector, extensions.py, the graph/chain/bootstrap seams, config + schemas, the CLI action, docs. |
 | verification | 2026-08-18 | 2026-08-18 | The testing plan executed and recorded; evidence committed under `evidence/`. |
-| needs-review | 2026-08-18 | | Pull request opened; awaiting the human gate and the tier-4 security sign-off. |
+| needs-review | 2026-08-18 | | Pull request opened; awaiting the human gate and the tier-4 security sign-off. Rebased onto `main` at the owner's request (PR #268): `main` took decision-095 for issue-269, so this work item's record is **decision-096**. |
 
 ## Pull requests
 
