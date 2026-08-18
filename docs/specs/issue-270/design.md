@@ -250,7 +250,7 @@ an upgrade re-arms nothing. Full matrix in `testing-plan.md`.
 
 ## Trade-offs & decisions
 
-Recorded as [decision-096](../../decisions/decision-096.md).
+Recorded as [decision-097](../../decisions/decision-097.md).
 
 | Decision | Chosen | Why not the alternative |
 |---|---|---|

@@ -74,6 +74,13 @@ poller logs a terminal failure (`poll.spawn_failed` / `poll.comment_failed`) and
 the event on later polls until new activity re-arms it. An in-flight, still-processing
 dispatch is not counted as a failed attempt.
 
+Only deliveries that could still *succeed* are counted. An event the daemon refused **on
+purpose** — the work item is not started, its session is paused — or a comment that
+**was** a control keyword spends no attempt at all: it is resolved as
+`poll.comment_settled` and baselined, because no number of retries would change that
+answer, and nothing is replayed when the item is started or resumed (issue-270). The
+session reads the thread itself; the spawn prompt tells it to.
+
 **An abandoned comment is reported on the work item** (issue-240). Giving up used to be
 visible only here, in the event log, and as a 😕 reaction — so somebody who told an agent
 to do something had no way to learn it was never told. The poller now posts one comment

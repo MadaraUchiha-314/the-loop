@@ -68,20 +68,42 @@ class Deduper:
 
     GitHub redelivery is the at-least-once retry path: a failed dispatch is
     ``discard``-ed again so its redelivery gets through.
+
+    Each entry also carries that delivery's **outcome** (issue-270): empty while
+    it is in play, and one of the dispatcher's fixed literals once the dispatcher
+    is *finished* with it — suppressed on purpose, or consumed as a control
+    command. A marked id used to mean only "seen", which the poll path could not
+    tell apart from "still on its way", so it kept a refused comment at
+    ``commentAttempts: 1`` forever. The outcome lives in this entry rather than a
+    second cache so one eviction, one :meth:`discard` and one ``dedupCacheSize``
+    govern both; a parallel store could disagree with this one about which ids
+    are known, which is the class of bug being fixed.
     """
 
     def __init__(self, maxsize: int = 1024):
         self.maxsize = max(1, maxsize)
-        self._seen: "OrderedDict[str, None]" = OrderedDict()
+        self._seen: "OrderedDict[str, str]" = OrderedDict()
 
     def __contains__(self, delivery_id: str) -> bool:
         return delivery_id in self._seen
 
-    def add(self, delivery_id: str) -> None:
-        self._seen[delivery_id] = None
+    def add(self, delivery_id: str, outcome: str = "") -> None:
+        self._seen[delivery_id] = outcome
         self._seen.move_to_end(delivery_id)
         while len(self._seen) > self.maxsize:
             self._seen.popitem(last=False)
+
+    def mark_settled(self, delivery_id: str, outcome: str) -> None:
+        """Record that nothing more is coming for ``delivery_id``.
+
+        Marks an id this cache never held: every settling site keeps the delivery
+        id on purpose, which is exactly what "not discarded" already meant.
+        """
+        self.add(delivery_id, outcome=outcome)
+
+    def outcome(self, delivery_id: str) -> str:
+        """``""`` for an unmarked or still-in-play delivery, else its outcome."""
+        return self._seen.get(delivery_id) or ""
 
     def discard(self, delivery_id: str) -> None:
         self._seen.pop(delivery_id, None)

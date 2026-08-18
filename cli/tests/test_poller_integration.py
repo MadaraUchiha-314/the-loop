@@ -974,3 +974,113 @@ def test_the_same_pull_request_still_starts_where_the_work_item_is_real(tmp_path
     dispatcher.stop()
 
     assert tmux.spawns[0][0] == "github:octo/repo#285"
+
+
+# -- a pre-start comment: refused once, never counted again (issue-270) --------
+
+
+def test_a_pre_start_comment_is_refused_once_and_never_counted_again(tmp_path):
+    """Scenario: a comment made before the start is refused once and never counted again.
+
+    Given a labelled work item nobody has started, with requireStartCommand on
+    When an authorized user comments on it and three poll cycles run
+    Then the comment is refused once (dispatch.dropped / awaiting-start)
+    And the work item's ledger records no pending delivery attempt for it
+    And no further cycle forwards it, and no delivery failure is ever reported
+    And a fresh daemon reading only the on-disk ledger forwards nothing either
+
+    Requirement: docs/specs/issue-270/bugfix.md#requirement-2--the-ledger-stops-implying-a-retry-that-will-never-come
+    """
+    gh = GhState()
+    poster = _RecordingGh()
+    registry, tmux, dispatcher, poller = _make(
+        tmp_path,
+        gh,
+        control=ControlConfig(),  # requireStartCommand: the shipped default
+        max_retries=1,  # a pre-fix run would give up on the very next cycle
+        comment_runner=poster,
+    )
+
+    poller.poll_once()  # first sight: baselined, nothing armed, nothing spawned
+    gh.comments = [_comment("IC_1", "any news on this?")]
+    first = poller.poll_once()  # forwarded → refused: awaiting-start
+    second = poller.poll_once()
+    third = poller.poll_once()
+    time.sleep(0.1)
+    dispatcher.stop()
+
+    assert tmux.spawns == [] and tmux.delivers == []
+    assert registry.find_by_work_item(REF) is None
+    # Refused, so it is resolved — not "attempt 1 of 3, in flight" forever.
+    assert poller.state.comment_attempts(REF, "IC_1") == 0
+    assert "IC_1" in poller.state.seen_comments(REF)
+    assert (first.comments_forwarded, second.comments_forwarded) == (0, 0)
+    assert third.comments_forwarded == 0
+    assert (first.failures, second.failures, third.failures) == (0, 0, 0)
+    assert poster.bodies == []  # nothing was "given up", so nobody was told it was
+
+    # A restart is the case the process-local dedup mark cannot cover: a fresh
+    # dispatcher has never heard of the delivery id. The durable half — the
+    # baselined comment — is what makes the answer stable.
+    restarted = Poller(
+        providers=poller.providers,
+        registry=registry,
+        dispatcher=_dispatcher(registry, tmux, dispatcher.config),
+        config=PollConfig(max_retries=1),
+        state=PollState(WorkItemStore(tmp_path / "portable")),
+        authorized_users=["octocat"],
+    )
+    try:
+        summary = restarted.poll_once()
+    finally:
+        restarted.dispatcher.stop()
+    assert summary.comments_forwarded == 0 and summary.failures == 0
+    assert poster.bodies == []
+
+
+def test_a_ledger_left_pending_by_an_older_version_settles_on_the_next_cycle(tmp_path):
+    """Scenario: an upgrade does not replay a comment that was refused before the start.
+
+    Given a work item whose ledger carries a comment stuck at commentAttempts: 1
+    And a second comment an OLDER the-loop version abandoned before the start
+    When the upgraded poller runs two cycles against the still-unstarted item
+    Then the stuck comment is resolved rather than retried
+    And the re-armed one (issue-146) is refused once and then left alone
+    And neither is ever delivered, because the item is still not started
+
+    Requirement: docs/specs/issue-270/bugfix.md#requirement-2--the-ledger-stops-implying-a-retry-that-will-never-come
+    """
+    gh = GhState()
+    gh.comments = [_comment("IC_1", "still stuck?"), _comment("IC_2", "and this one")]
+    store = WorkItemStore(tmp_path / "portable")
+    store.write_section(
+        REF,
+        "poll",
+        {
+            "seenComments": ["IC_2"],
+            "commentAttempts": {"IC_1": 1},
+            "spawn": {},
+            "gaveUp": {"comments": ["IC_2"], "version": "0.0.1-old"},
+        },
+    )
+    poster = _RecordingGh()
+    registry, tmux, dispatcher, poller = _make(
+        tmp_path, gh, control=ControlConfig(), max_retries=3, comment_runner=poster
+    )
+
+    poller.poll_once()
+    poller.poll_once()
+    time.sleep(0.1)
+    dispatcher.stop()
+
+    assert tmux.delivers == [] and tmux.spawns == []
+    for cid in ("IC_1", "IC_2"):
+        assert poller.state.comment_attempts(REF, cid) == 0
+        assert cid in poller.state.seen_comments(REF)
+    on_disk = store.section(REF, "poll") or {}
+    # The re-arm consumed the old give-up record (issue-146), and this time the
+    # comment ends baselined rather than abandoned again — so the re-arm cannot
+    # come round a second time on the next upgrade.
+    assert (on_disk.get("gaveUp") or {}).get("comments") in (None, [])
+    assert poller.state.rearm_gave_up_comments(REF) == []
+    assert poster.bodies == []

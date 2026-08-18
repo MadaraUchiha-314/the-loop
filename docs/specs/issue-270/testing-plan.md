@@ -46,10 +46,9 @@ overrides: {}
 | T1 | R2.7 | `poll.comment_settled` carries work item, comment, actor, outcome, `will_retry: false` |
 | T1 | R3.4 | the event catalogue holds `poll.comment_settled` (the emitted-vs-catalogued parity test) |
 | T1 | R3.3 | both spawn-prompt copies tell the session to read the whole thread, and stay byte-identical |
-| T2 | R2.1, R2.2, R2.3 | `Scenario: a comment made before the start is refused once and never counted again` |
-| T2 | R2.4, R2.5 | `Scenario: a pre-start comment is never turned into a delivery failure` |
-| T10 | R2.4 | `Scenario: an upgrade does not replay a comment that was refused before the start` |
-| T8 | Security design | `Scenario: a delivery a session actually received is never baselined as settled` |
+| T2 | R2.1, R2.2, R2.3, R2.5 | `Scenario: a comment made before the start is refused once and never counted again` — three cycles plus a restart, and no give-up notice posted |
+| T10 | R2.1, R2.4 | `Scenario: an upgrade does not replay a comment that was refused before the start` — a ledger already stuck at `commentAttempts: 1`, plus a comment an older version abandoned |
+| T8 | Security design | `test_a_delivery_a_session_received_outranks_a_settlement` (a delivered comment is never baselined as settled) and `test_a_spawn_policy_drop_still_releases_its_id_and_settles_nothing` (a refusal that wants a retry still gets one) |
 | T12 | R4 | lint and type checks pass over the changed modules |
 
 ## Verification environment
@@ -60,8 +59,9 @@ overrides: {}
   `cli/tests/test_poller.py` and `cli/tests/test_poller_integration.py`.
 - **Fixtures & data:** the existing dispatcher/poller fixtures; `tmp_path` for the state root
   so the portable record is asserted on disk.
-- **Credentials:** none. No `gh` is invoked (the give-up notice's poster is stubbed, as it
-  already is in `test_poller.py`).
+- **Credentials:** none. No `gh` is invoked: the give-up notice's runner is injected
+  (`comment_runner`, as in the existing issue-240 tests) and the assertion is that the code
+  path which would post it is never reached.
 - **Bring-up:** `make test` · **Tear-down:** none (pytest `tmp_path`).
 - **If bring-up fails:** record it under Verification results, leave the dependent activities
   unticked, and escalate.
@@ -70,7 +70,7 @@ overrides: {}
 
 | Row | Evidence | Path under `evidence/` |
 |-----|----------|------------------------|
-| T1, T2, T8, T10 | red run — the new tests failing against `main`'s production code | `red.md` |
+| T1, T2, T8, T10 | red run — the new tests, run before any production code changed | `red.md` |
 | T1, T2, T8, T10 | green run — full suite summary and the per-file runs | `unit-and-integration.md` |
 | T12 | `make lint` / type-check output | `lint-and-typecheck.md` |
 | — | security review record (checklist per `reference/security.md`) | `security-review.md` |
@@ -89,12 +89,12 @@ overrides: {}
 
 | Activity | Command / procedure | Outcome | Evidence |
 |---|---|---|---|
-| Red run | the new tests against `main`'s production code (`git stash push -- cli/the_loop`) | 12 failed, 2 passed — the two that pass are the controls (a `spawn-policy` drop still releases its id; a delivered comment is still baselined) | [`evidence/red.md`](evidence/red.md) |
-| T1 | `pytest -q cli/tests/test_routing.py cli/tests/test_poller.py cli/tests/test_eventlog.py cli/tests/test_interaction.py` | 372 passed | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
-| T2, T10 | `pytest -q cli/tests/test_poller_integration.py` | 27 passed | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
-| T8 | `pytest -q cli/tests/test_routing.py cli/tests/test_poller.py -k "settle or settled"` | 11 passed | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
-| Full suite | `make test` | 2424 passed, 1 skipped (2410 before this change) | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
-| T12 | `uv run ruff check cli hooks`, `uv run ruff format --check cli hooks`, `uv run pyright cli`, `markdownlint-cli2`, `scripts/validate_config.py` | clean | [`evidence/lint-and-typecheck.md`](evidence/lint-and-typecheck.md) |
+| Red run | the 17 new tests, written and run **before** any production code changed | 17 failed, 0 passed — including the two controls, which fail only on the missing `delivery_outcome` accessor and pass on the pre-change *behaviour* | [`evidence/red.md`](evidence/red.md) |
+| T1 | `pytest -q cli/tests/test_routing.py cli/tests/test_poller.py cli/tests/test_eventlog.py cli/tests/test_interaction.py` | 350 passed | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
+| T2, T10 | `pytest -q cli/tests/test_poller_integration.py` | 24 passed | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
+| T8 | `pytest -q cli/tests/test_routing.py cli/tests/test_poller.py -k "settle or settled"` | 13 passed | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
+| Full suite | `make test` | 2427 passed, 1 skipped (2410 before this change, + 17 new) | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
+| T12 | `uv run ruff check cli hooks`, `uv run ruff format --check cli hooks`, `uv run pyright cli`, `markdownlint-cli2` (817 files), `scripts/validate_config.py` | clean on the first run of each | [`evidence/lint-and-typecheck.md`](evidence/lint-and-typecheck.md) |
 | Security review | checklist (`reference/security.md`), effective risk tier 3 | pass, no unresolved findings | [`evidence/security-review.md`](evidence/security-review.md) |
 
 Every planned activity ran. Nothing was replanned, and nothing is left unticked.

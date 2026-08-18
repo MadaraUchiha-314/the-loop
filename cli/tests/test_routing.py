@@ -861,6 +861,31 @@ def test_router_deduper_is_bounded_lru():
     assert "b" not in deduper
 
 
+def test_router_deduper_remembers_a_delivery_outcome():
+    """A marked id carries WHY the dispatcher is done with it (issue-270).
+
+    The mark alone says "seen"; the outcome says "seen, and nothing more is
+    coming". It lives in the same entry so one eviction, one `discard` and one
+    `dedupCacheSize` govern both — a parallel cache could disagree with the
+    deduper about which ids are known, which is the class of bug being fixed.
+    """
+    deduper = Deduper(maxsize=2)
+    deduper.add("a")
+    assert deduper.outcome("a") == ""  # dispatched; nothing decided yet
+    deduper.mark_settled("a", "awaiting-start")
+    assert "a" in deduper and deduper.outcome("a") == "awaiting-start"
+    deduper.discard("a")
+    assert deduper.outcome("a") == ""  # gone with the mark it qualified
+
+    # Settling an id the cache never held MARKS it: every settling site keeps the
+    # delivery id on purpose, which is what "not discarded" already meant.
+    deduper.mark_settled("b", "session-paused")
+    assert "b" in deduper and deduper.outcome("b") == "session-paused"
+    deduper.add("c")
+    deduper.add("d")  # evicts b, outcome and all
+    assert "b" not in deduper and deduper.outcome("b") == ""
+
+
 # -- dispatcher (R3.2/R3.3, R5) -----------------------------------------------
 
 
@@ -1589,6 +1614,157 @@ def test_delivery_status_resolves_a_prs_endpoint(tmp_path):
     assert (
         dispatcher.delivery_status("d-wi", [WorkItemRef.parse(PR_REF)]) == "unhandled"
     )
+
+
+# -- a settled delivery: suppressed or consumed, never pending (issue-270) -----
+
+
+def routed_labelled_comment(delivery="s-1", body="please fix", author="octocat"):
+    """A comment on a LABELLED issue — the shape both ingresses produce."""
+    payload = {
+        "action": "created",
+        "repository": {"full_name": "octo/repo"},
+        "issue": {"number": 15, "labels": [{"name": LABEL}]},
+        "comment": {
+            "id": 1,
+            "body": body,
+            "html_url": "https://c/1",
+            "user": {"login": author},
+        },
+        "sender": {"login": author},
+    }
+    return RoutedEvent(
+        event="issue_comment",
+        action="created",
+        delivery_id=delivery,
+        work_items=extract_work_items("issue_comment", payload),
+        payload=payload,
+    )
+
+
+def make_control_dispatcher(tmp_path, tmux, **overrides):
+    overrides.setdefault("control", ControlConfig())  # requireStartCommand on
+    overrides.setdefault("spawn_on_unmatched", "labeled")
+    overrides.setdefault("portable_dir", str(tmp_path / "portable"))
+    overrides.setdefault("spawn_workdir", str(tmp_path))
+    overrides.setdefault("authorized_users", ["octocat"])
+    return make_dispatcher(tmp_path, tmux, **overrides)
+
+
+def test_a_comment_refused_awaiting_start_settles_its_delivery(tmp_path):
+    """The ticket's case: refused on purpose, so it is not a pending delivery."""
+    tmux = FakeTmux()
+    _, dispatcher = make_control_dispatcher(tmp_path, tmux)
+
+    dispatcher.handle(routed_labelled_comment(delivery="await-1"))
+    dispatcher.stop()
+
+    assert tmux.spawns == [] and tmux.delivers == []
+    refs = [WorkItemRef.parse(REF)]
+    assert "await-1" in dispatcher.deduper  # kept marked, as before
+    assert dispatcher.delivery_status("await-1", refs) == "settled"
+    assert dispatcher.delivery_outcome("await-1") == "awaiting-start"
+
+
+def test_a_spawn_policy_drop_still_releases_its_id_and_settles_nothing(tmp_path):
+    """R1.4's control: the one refusal that WANTS a retry is untouched."""
+    tmux = FakeTmux()
+    _, dispatcher = make_control_dispatcher(tmp_path, tmux, spawn_on_unmatched="never")
+
+    dispatcher.handle(routed_labelled_comment(delivery="policy-1"))
+    dispatcher.stop()
+
+    refs = [WorkItemRef.parse(REF)]
+    assert "policy-1" not in dispatcher.deduper
+    assert dispatcher.delivery_outcome("policy-1") == ""
+    assert dispatcher.delivery_status("policy-1", refs) == "unhandled"
+
+
+def test_a_paused_session_settles_the_delivery_it_suppresses(tmp_path):
+    tmux = FakeTmux()
+    registry, dispatcher = make_control_dispatcher(tmp_path, tmux)
+    registry.register(make_session())
+    registry.pause(REF)
+
+    dispatcher.handle(routed_labelled_comment(delivery="paused-1"))
+    dispatcher.stop()
+
+    assert tmux.delivers == []
+    refs = [WorkItemRef.parse(REF)]
+    assert dispatcher.delivery_status("paused-1", refs) == "settled"
+    assert dispatcher.delivery_outcome("paused-1") == "session-paused"
+
+
+def test_a_pause_between_enqueue_and_dispatch_settles_the_delivery(tmp_path):
+    """The asynchronous half: the poller has already recorded an attempt.
+
+    Driven through `_dispatch_one` directly, which is where the race lands — a
+    session paused after its event was queued. Reproducing the timing through
+    `handle()` would need the worker wedged mid-queue; the seam is the same.
+    """
+    registry, dispatcher = make_control_dispatcher(tmp_path, FakeTmux())
+    registry.register(make_session())
+    registry.pause(REF)
+    routed = routed_labelled_comment(delivery="late-pause")
+    dispatcher.deduper.add("late-pause")
+
+    assert dispatcher._dispatch_one(REF, routed, False) is True
+    dispatcher.stop()
+
+    assert dispatcher.delivery_outcome("late-pause") == "session-paused"
+
+
+def test_a_delivery_a_session_received_outranks_a_settlement(tmp_path):
+    """R1.3: a suppression on one endpoint cannot undo a delivery on another."""
+    registry, dispatcher = make_control_dispatcher(tmp_path, FakeTmux())
+    registry.register(make_session())
+    registry.touch(REF, delivery_id="mixed-1")
+    dispatcher.deduper.mark_settled("mixed-1", "session-paused")
+
+    assert dispatcher.delivery_status("mixed-1", [WorkItemRef.parse(REF)]) == "done"
+
+
+def test_an_executed_control_command_settles_its_delivery(tmp_path):
+    """A control comment was never a delivery: it IS the instruction."""
+    registry, dispatcher = make_control_dispatcher(tmp_path, FakeTmux())
+    registry.register(make_session())
+
+    dispatcher.handle(routed_labelled_comment(delivery="ctl-1", body="the-loop pause"))
+    dispatcher.stop()
+
+    paused = registry.find_by_work_item(REF)
+    assert paused is not None and paused.is_paused
+    assert dispatcher.delivery_status("ctl-1", [WorkItemRef.parse(REF)]) == "settled"
+    assert dispatcher.delivery_outcome("ctl-1") == "control-executed"
+
+
+def test_a_rejected_control_command_settles_its_delivery(tmp_path):
+    registry, dispatcher = make_control_dispatcher(tmp_path, FakeTmux())
+    registry.register(make_session())
+
+    dispatcher.handle(
+        routed_labelled_comment(
+            delivery="ctl-2", body="the-loop stop", author="stranger"
+        )
+    )
+    dispatcher.stop()
+
+    assert registry.find_by_work_item(REF) is not None  # not stopped
+    assert dispatcher.delivery_outcome("ctl-2") == "control-rejected"
+
+
+def test_conflicting_control_keywords_settle_the_delivery(tmp_path):
+    registry, dispatcher = make_control_dispatcher(tmp_path, FakeTmux())
+    registry.register(make_session())
+
+    dispatcher.handle(
+        routed_labelled_comment(
+            delivery="ctl-3", body="the-loop start, no — the-loop stop"
+        )
+    )
+    dispatcher.stop()
+
+    assert dispatcher.delivery_outcome("ctl-3") == "control-ambiguous"
 
 
 # -- `the-loop sessions` command (R2.2) ----------------------------------------
