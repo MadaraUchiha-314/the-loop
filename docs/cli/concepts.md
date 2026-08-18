@@ -74,6 +74,12 @@ head-branch convention, closing keywords, and the PRs behind `workflow_run` / `c
 events — and then delivered to that item's session. One event at a time per session, in
 parallel across sessions.
 
+A work item named **only** by the branch convention is verified to exist before anything
+acts on it, because that convention is a guess about which repository the number belongs to
+and no statement at all that it exists; a definitive 404 drops it, and any other answer
+keeps it. Where a session record already owns one of the event's refs, that record decides
+and nothing is asked.
+
 ### How a session ends
 
 When the work item **itself** ends — the issue closed, or, when the PR *is* the work item,

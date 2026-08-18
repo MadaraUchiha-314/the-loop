@@ -251,6 +251,23 @@ class _NoopAnnouncer:
         return False
 
 
+class _NoopVerifier:
+    """Stand-in for WorkItemVerifier that never shells out.
+
+    Answers "unknown" (issue-269's fail-open direction), so a dispatcher test
+    that never heard of the existence check routes exactly as it did before it.
+    """
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def is_missing(self, item):
+        return False
+
+    def record_missing(self, item):
+        return None
+
+
 @pytest.fixture(autouse=True)
 def _hermetic_reactor(monkeypatch):
     """Dispatchers built without injected gh-writers must not shell out to gh.
@@ -258,11 +275,13 @@ def _hermetic_reactor(monkeypatch):
     ``routing.reactions`` (issue-84) and ``routing.announce`` (issue-86) both
     default to enabled, so a bare ``RoutingConfig()`` would give every
     dispatcher test a real ``GitHubReactor``/``SessionAnnouncer`` — and CI
-    runners ship a real ``gh``. Stub the classes the dispatcher instantiates;
-    the reaction/announcement tests inject their own.
+    runners ship a real ``gh``. The work-item existence check (issue-269) reads
+    through the same binary. Stub the classes the dispatcher instantiates; the
+    reaction/announcement/linkage tests inject their own.
     """
     monkeypatch.setattr(dispatcher_mod, "GitHubReactor", _NoopReactor)
     monkeypatch.setattr(dispatcher_mod, "SessionAnnouncer", _NoopAnnouncer)
+    monkeypatch.setattr(dispatcher_mod, "WorkItemVerifier", _NoopVerifier)
 
 
 @pytest.fixture(autouse=True)

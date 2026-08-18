@@ -65,6 +65,7 @@ class ServerFactory:
         registry=None,
         events=None,
         tmux_config=None,
+        verifier=None,
         **routing_overrides,
     ):
         tmux = tmux if tmux is not None else FakeTmux()
@@ -93,6 +94,9 @@ class ServerFactory:
             adapters={"claude": StubInteractiveAdapter()},
             config=config,
             tmux_runner=tmux,
+            # The work-item existence check (issue-269); left None, the
+            # conftest stub answers "cannot tell" for every ref.
+            verifier=verifier,
         )
         router = Router(
             events=ROUTED_EVENTS if events is None else events,
@@ -940,3 +944,145 @@ def test_receiver_routing_follows_the_config(tmp_path, monkeypatch):
     assert webhook_daemon.default_options().route is False
     cfg.write_text("webhooks: {}\n")
     assert webhook_daemon.default_options().route is False
+
+
+# -- a branch name must not invent a work item (issue-269) ---------------------
+
+
+class RecordingVerifier:
+    """Answers the existence question without a `gh` (issue-269)."""
+
+    def __init__(self, missing=()):
+        self.missing = set(missing)
+        self.asked = []
+
+    def is_missing(self, item):
+        self.asked.append(item.ref)
+        return item.ref in self.missing
+
+    def record_missing(self, item):
+        self.missing.add(item.ref)
+
+
+def polled_pr_comment_payload(body, branch="issue-285-consolidation", repo="org/lib"):
+    """A comment on a PR as the POLL path synthesises it (issue-269).
+
+    The poller reuses the pull request's own payload — key ``pull_request``,
+    carrying its head branch — and renames the event to ``issue_comment``. This
+    is the shape the ticket's deployment ran on: a webhook's ``issue_comment``
+    carries no branch, so only here can a branch name invent a work item.
+    """
+    return {
+        "action": "created",
+        "repository": {"full_name": repo},
+        "pull_request": {
+            "number": 48,
+            "head": {"ref": branch},
+            "body": "Delivers https://github.com/org/planning/issues/285",
+            "labels": [{"name": "the-loop: auto-execute"}],
+        },
+        "comment": {"body": body, "user": {"login": "octocat"}},
+        "sender": {"login": "octocat"},
+    }
+
+
+def test_a_start_on_a_cross_repo_pr_does_not_spawn_for_an_invented_work_item(
+    server_factory, tmp_path
+):
+    """
+    Feature: Webhook event routing
+    Scenario: A start on a cross-repository pull request does not spawn a session
+              for a branch-invented work item
+        Given a pull request org/lib#48 whose branch is issue-285-consolidation
+        And org/lib has no issue 285 (the ticket lives in org/planning)
+        And no session is registered for anything
+        When an authorized user comments "the-loop start" on that pull request
+        Then the branch-derived ref org/lib#285 is dropped from the routing decision
+        And the start is recorded against the pull request itself
+        And the session spawns for the pull request, not for the invented issue
+    Requirement: docs/specs/issue-269/bugfix.md#R1 (R1.1, R1.2), #R2 (R2.2, R2.3, R2.4)
+    """
+    verifier = RecordingVerifier(missing=["github:org/lib#285"])
+    port, registry, tmux = server_factory(
+        events=["issue_comment"],
+        verifier=verifier,
+        spawn_on_unmatched="labeled",
+        control=ControlConfig(),  # requireStartCommand, as the ticket reports
+        authorized_users=["octocat"],
+    )
+    assert (
+        post_webhook(
+            port,
+            "issue_comment",
+            polled_pr_comment_payload("the-loop start"),
+            "ghost-1",
+        )
+        == 202
+    )
+    assert wait_until(lambda: len(tmux.spawns) == 1)
+    assert tmux.spawns[0][0] == "github:org/lib#48"
+    assert registry.find_by_work_item("github:org/lib#285") is None
+    store = server_factory.dispatcher.control_store
+    assert store.start_requested(WorkItemRef.parse("github:org/lib#48"))
+    assert not store.start_requested(WorkItemRef.parse("github:org/lib#285"))
+
+
+def test_an_unverifiable_work_item_keeps_its_place_in_the_routing_decision(
+    server_factory, tmp_path
+):
+    """
+    Feature: Webhook event routing
+    Scenario: An unverifiable work item keeps its place in the routing decision
+        Given the same pull request and the existence check cannot answer
+        When an authorized user comments "the-loop start" on it
+        Then the branch-derived ref is kept
+        And the session spawns for it, exactly as it did before the check existed
+    Requirement: docs/specs/issue-269/bugfix.md#R1 (R1.3)
+    """
+    verifier = RecordingVerifier(missing=[])  # every answer is "cannot tell"
+    port, registry, tmux = server_factory(
+        events=["issue_comment"],
+        verifier=verifier,
+        spawn_on_unmatched="labeled",
+        control=ControlConfig(),
+        authorized_users=["octocat"],
+    )
+    assert (
+        post_webhook(
+            port,
+            "issue_comment",
+            polled_pr_comment_payload("the-loop start"),
+            "ghost-2",
+        )
+        == 202
+    )
+    assert wait_until(lambda: len(tmux.spawns) == 1)
+    assert tmux.spawns[0][0] == "github:org/lib#285"
+
+
+def test_a_running_work_item_is_never_questioned(server_factory, tmp_path):
+    """
+    Feature: Webhook event routing
+    Scenario: A pull request's comment reaches the session its record already owns
+        Given a session registered for github:org/planning#285
+        And org/lib#48 recorded on that session as one of its pull requests
+        When an authorized user comments on org/lib#48
+        Then the comment is delivered into org/planning#285's session
+        And the existence check is never consulted
+    Requirement: docs/specs/issue-269/bugfix.md#R1 (R1.5), #R2 (R2.1, R2.6)
+    """
+    verifier = RecordingVerifier(missing=["github:org/lib#285"])
+    port, registry, tmux = server_factory(
+        events=["issue_comment"], verifier=verifier, authorized_users=["octocat"]
+    )
+    register(registry, tmp_path, ref="github:org/planning#285", session_id="sess-p")
+    registry.link_pull_request("github:org/planning#285", "github:org/lib#48")
+    assert (
+        post_webhook(
+            port, "issue_comment", polled_pr_comment_payload("please rebase"), "ghost-3"
+        )
+        == 202
+    )
+    assert wait_until(lambda: len(tmux.delivers) == 1)
+    assert tmux.delivers[0][0] == "github:org/planning#285"
+    assert verifier.asked == []

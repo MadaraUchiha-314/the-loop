@@ -41,6 +41,12 @@ to that item's registered session:
 
 - **Extraction** — issue/PR number, the `issue-<n>` PR head-branch convention, closing
   keywords, and the PRs behind `workflow_run` / `check_*` events.
+- **Verification** — a work item named **only** by the branch convention is checked against
+  the provider before it can be spawned on or commanded (`gh api repos/…/issues/<n>`,
+  answers cached): the branch is the one source that supplies a repository the event never
+  stated, so it is the one that can name a work item nobody created. A definitive 404 drops
+  that ref; anything else — no `gh`, a timeout, a 403 — keeps it. Where a live session
+  record already owns one of the event's refs, that record answers and nothing is asked.
 - **Dedup** — on `X-GitHub-Delivery`, through a bounded LRU
   ([`dedupCacheSize`](/config/cli/routing-options#dedupcachesize)), so GitHub's redeliveries
   are processed at most once.

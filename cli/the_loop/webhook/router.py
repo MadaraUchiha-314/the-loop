@@ -12,7 +12,7 @@ import logging
 import re
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import List, Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Set, Tuple
 
 from .. import eventlog
 from ..authz import is_authorized, is_self_authored
@@ -39,6 +39,14 @@ _CLOSING_KEYWORD_RE = re.compile(
     r")",
     re.IGNORECASE,
 )
+
+#: Where a work-item ref came from (issue-269). Provenance is not decoration: of
+#: the four, exactly one — ``SOURCE_BRANCH`` — supplies a repository the event
+#: never stated, so it is the only one that can name a work item nobody created.
+SOURCE_REFERENCE = "closing-reference"  # GitHub's own closingIssuesReferences
+SOURCE_BRANCH = "branch"  # the issue-<n> head-branch / CI-branch convention
+SOURCE_KEYWORD = "keyword"  # a closing keyword in the pull request's body
+SOURCE_ENTITY = "entity"  # the issue/PR the event is about (GitHub said so)
 
 
 @dataclass
@@ -126,6 +134,14 @@ def _pr_entity(event: str, payload: dict) -> Optional[dict]:
         issue = payload.get("issue") or {}
         if issue.get("pull_request"):
             return issue
+        # The POLL path synthesises a comment event over the pull request's own
+        # payload — key ``pull_request``, head branch and all — and renames the
+        # event to ``issue_comment`` (issue-269). Reading only ``issue`` there
+        # answered "this event carries no pull request" for every polled comment:
+        # no binding was recorded and no endpoint was ever chosen for one. No
+        # real webhook puts a ``pull_request`` beside an ``issue_comment``, so
+        # this fallback is unreachable on that path.
+        return payload.get("pull_request") or None
     return None
 
 
@@ -156,6 +172,66 @@ def _reference_repo(reference: dict, owner: str, repo: str) -> Tuple[str, str]:
     return owner, repo
 
 
+def linked_work_item_sources(
+    entity: dict, owner: str, repo: str, host: str = ""
+) -> "OrderedDict[str, Tuple[WorkItemRef, Set[str]]]":
+    """The traversal :func:`linked_work_items` renders, with each ref's sources.
+
+    One walk, two readers (issue-269). The list of refs was always the answer to
+    "which work items?"; this is the answer to "and how do we know?" — needed
+    because :data:`SOURCE_BRANCH` is the only source that supplies a repository
+    the pull request never stated, and therefore the only one that can name a
+    work item nobody created. A ref reachable through more than one source
+    carries all of them, so corroboration is visible rather than lost to
+    first-wins deduplication.
+
+    Keyed on :attr:`WorkItemRef.ref`, insertion-ordered most authoritative first
+    — the order :func:`linked_work_items` has always returned.
+    """
+    items: "OrderedDict[str, Tuple[WorkItemRef, Set[str]]]" = OrderedDict()
+    own_number = entity.get("number")
+
+    def add(
+        number: Optional[int], source: str, in_owner: str = "", in_repo: str = ""
+    ) -> None:
+        if number is None:
+            return
+        target_owner, target_repo = in_owner or owner, in_repo or repo
+        local = target_owner.lower() == owner.lower() and target_repo.lower() == (
+            repo.lower()
+        )
+        if local and number == own_number:
+            return
+        ref = WorkItemRef(
+            provider="github",
+            owner=target_owner,
+            repo=target_repo,
+            number=number,
+            host=host,
+        )
+        known = items.get(ref.ref)
+        if known is None:
+            items[ref.ref] = (ref, {source})
+        else:
+            known[1].add(source)
+
+    for reference in entity.get("closingIssuesReferences") or []:
+        reference = reference or {}
+        number = reference.get("number")
+        if isinstance(number, int):
+            add(number, SOURCE_REFERENCE, *_reference_repo(reference, owner, repo))
+    add(_issue_from_branch((entity.get("head") or {}).get("ref") or ""), SOURCE_BRANCH)
+    for match in _CLOSING_KEYWORD_RE.finditer(entity.get("body") or ""):
+        qualifier = match.group("url_repo") or match.group("repo")
+        raw = match.group("url_number") or match.group("number") or match.group("gh")
+        if qualifier and qualifier.count("/") == 1:
+            other_owner, other_repo = qualifier.split("/")
+            add(int(raw), SOURCE_KEYWORD, other_owner, other_repo)
+        else:
+            add(int(raw), SOURCE_KEYWORD)
+    return items
+
+
 def linked_work_items(
     entity: dict, owner: str, repo: str, host: str = ""
 ) -> List[WorkItemRef]:
@@ -176,52 +252,17 @@ def linked_work_items(
     repository. It is returned as a ref *in the repository it names* — the whole
     reason this returns refs rather than numbers, which cannot say where they
     belong. The branch convention stays local: ``issue-12`` on a branch says
-    nothing about a repository.
+    nothing about a repository — and says nothing about *existence* either, which
+    is why the ref it produces is checked before it is acted on (issue-269; the
+    provenance is :func:`linked_work_item_sources`).
 
     Nothing here widens which events *reach* the router — that is the operator's
     receiver and poll sources — nor which work items are armed. It widens only
     which work item an event that already arrived is about.
     """
-    items: List[WorkItemRef] = []
-    seen: set = set()
-    own_number = entity.get("number")
-
-    def add(number: Optional[int], in_owner: str = "", in_repo: str = "") -> None:
-        if number is None:
-            return
-        target_owner, target_repo = in_owner or owner, in_repo or repo
-        local = target_owner.lower() == owner.lower() and target_repo.lower() == (
-            repo.lower()
-        )
-        if local and number == own_number:
-            return
-        ref = WorkItemRef(
-            provider="github",
-            owner=target_owner,
-            repo=target_repo,
-            number=number,
-            host=host,
-        )
-        if ref.ref in seen:
-            return
-        seen.add(ref.ref)
-        items.append(ref)
-
-    for reference in entity.get("closingIssuesReferences") or []:
-        reference = reference or {}
-        number = reference.get("number")
-        if isinstance(number, int):
-            add(number, *_reference_repo(reference, owner, repo))
-    add(_issue_from_branch((entity.get("head") or {}).get("ref") or ""))
-    for match in _CLOSING_KEYWORD_RE.finditer(entity.get("body") or ""):
-        qualifier = match.group("url_repo") or match.group("repo")
-        raw = match.group("url_number") or match.group("number") or match.group("gh")
-        if qualifier and qualifier.count("/") == 1:
-            other_owner, other_repo = qualifier.split("/")
-            add(int(raw), other_owner, other_repo)
-        else:
-            add(int(raw))
-    return items
+    return [
+        item for item, _ in linked_work_item_sources(entity, owner, repo, host).values()
+    ]
 
 
 def linked_issue_numbers(entity: dict, owner: str, repo: str) -> List[int]:
@@ -314,38 +355,50 @@ def event_body(event: str, payload: dict) -> Optional[str]:
     return None
 
 
-def extract_work_items(event: str, payload: dict) -> List[WorkItemRef]:
-    """Map a GitHub event payload to the work item(s) it concerns (R3.1).
+def work_item_sources(
+    event: str, payload: dict
+) -> "OrderedDict[str, Tuple[WorkItemRef, Set[str]]]":
+    """:func:`extract_work_items` with each ref's provenance (issue-269).
 
-    A PR event yields the issue(s) the PR is **linked** to *before* the PR's own
-    number (issue-93): the linked issue is the work item the PR delivers, so a
-    session registered against it is the one that must receive the event, and an
-    unmatched event spawns against it rather than against the PR. A PR linked to
-    no issue still routes as its own work item (non-GitHub ticketing).
+    The one traversal; :func:`extract_work_items` and :func:`branch_derived_refs`
+    are views over it, so the refs an event yields and the story of where they
+    came from cannot drift apart.
     """
     parts = _repo_parts(payload)
     if parts is None:
-        return []
+        return OrderedDict()
     owner, repo = parts
     host = _host(payload)
-    numbers: List[int] = []
-    # A PR's linked work items may live in ANOTHER repository (issue-183), so
-    # they are carried as refs; everything else this function extracts is a
-    # number in the event's own repository and is materialised at the end.
-    linked: List[WorkItemRef] = []
+    items: "OrderedDict[str, Tuple[WorkItemRef, Set[str]]]" = OrderedDict()
 
-    def add(number: Optional[int]) -> None:
-        if number is not None and number not in numbers:
-            numbers.append(number)
+    def add_ref(ref: WorkItemRef, source: str) -> None:
+        known = items.get(ref.ref)
+        if known is None:
+            items[ref.ref] = (ref, {source})
+        else:
+            known[1].add(source)
+
+    def add(number: Optional[int], source: str) -> None:
+        if number is None:
+            return
+        add_ref(
+            WorkItemRef(
+                provider="github", owner=owner, repo=repo, number=number, host=host
+            ),
+            source,
+        )
 
     pr = _pr_entity(event, payload)
     if pr is not None:
-        for item in linked_work_items(pr, owner, repo, host):
-            if item.ref not in {i.ref for i in linked}:
-                linked.append(item)
-        add(pr.get("number"))
+        # A PR's linked work items may live in ANOTHER repository (issue-183),
+        # so they are carried as refs; everything else here is a number in the
+        # event's own repository.
+        for item, sources in linked_work_item_sources(pr, owner, repo, host).values():
+            for source in sources:
+                add_ref(item, source)
+        add(pr.get("number"), SOURCE_ENTITY)
     elif event in ("issues", "issue_comment"):
-        add((payload.get("issue") or {}).get("number"))
+        add((payload.get("issue") or {}).get("number"), SOURCE_ENTITY)
     elif event in ("workflow_run", "check_run", "check_suite", "status"):
         if event == "workflow_run":
             run = payload.get("workflow_run") or {}
@@ -355,17 +408,43 @@ def extract_work_items(event: str, payload: dict) -> List[WorkItemRef]:
             run = payload.get("check_suite") or {}
         else:  # status events carry branch names only
             run = {}
-        for pr in run.get("pull_requests") or []:
-            add(pr.get("number"))
-        add(_issue_from_branch(run.get("head_branch") or ""))
+        for linked_pr in run.get("pull_requests") or []:
+            add(linked_pr.get("number"), SOURCE_ENTITY)
+        add(_issue_from_branch(run.get("head_branch") or ""), SOURCE_BRANCH)
         for branch in payload.get("branches") or []:
-            add(_issue_from_branch(branch.get("name") or ""))
+            add(_issue_from_branch(branch.get("name") or ""), SOURCE_BRANCH)
+    return items
 
-    own = [
-        WorkItemRef(provider="github", owner=owner, repo=repo, number=n, host=host)
-        for n in numbers
+
+def extract_work_items(event: str, payload: dict) -> List[WorkItemRef]:
+    """Map a GitHub event payload to the work item(s) it concerns (R3.1).
+
+    A PR event yields the issue(s) the PR is **linked** to *before* the PR's own
+    number (issue-93): the linked issue is the work item the PR delivers, so a
+    session registered against it is the one that must receive the event, and an
+    unmatched event spawns against it rather than against the PR. A PR linked to
+    no issue still routes as its own work item (non-GitHub ticketing).
+    """
+    return [item for item, _ in work_item_sources(event, payload).values()]
+
+
+def branch_derived_refs(event: str, payload: dict) -> List[str]:
+    """The refs this event yields **only** through the branch convention (issue-269).
+
+    The weakest linkage there is, and the one that cannot be wrong quietly: a
+    branch says ``issue-285`` and the ref is resolved in the event's own
+    repository, which may have no issue 285 at all. Everything else states its
+    repository — GitHub's own reference, or a qualified closing keyword — or
+    *is* the entity GitHub delivered the event about.
+
+    Names refs, not items: the dispatcher matches these against the refs it is
+    about to act on, and a ref string is the identity both sides already use.
+    """
+    return [
+        ref
+        for ref, (_, sources) in work_item_sources(event, payload).items()
+        if sources == {SOURCE_BRANCH}
     ]
-    return linked + [item for item in own if item.ref not in {i.ref for i in linked}]
 
 
 class Router:

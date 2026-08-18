@@ -121,12 +121,15 @@ def _comment(cid, body, author="octocat"):
     }
 
 
-def _dispatcher(registry, tmux, config):
+def _dispatcher(registry, tmux, config, verifier=None):
     return Dispatcher(
         registry=registry,
         adapters={"claude": StubInteractiveAdapter()},
         config=config,
         tmux_runner=tmux,
+        # The work-item existence check (issue-269); left None, the conftest
+        # stub answers "cannot tell" for every ref.
+        verifier=verifier,
     )
 
 
@@ -139,6 +142,7 @@ def _make(
     control=None,
     max_retries=3,
     comment_runner=None,
+    verifier=None,
 ):
     registry = SessionRegistry(tmp_path / "sessions")
     tmux = FakeTmux()
@@ -152,6 +156,7 @@ def _make(
             authorized_users=list(authorized),
             portable_dir=str(tmp_path / "portable"),
         ),
+        verifier=verifier,
     )
     provider = GitHubPollProvider(
         parse_repos(["octo/repo"]),
@@ -860,3 +865,112 @@ def test_a_second_poller_is_refused_rather_than_sharing_the_ledger(tmp_path):
     finally:
         first.release()
     assert RunLock(pidfile, name="poller").acquire() is True
+
+
+# -- a branch name must not invent a work item (issue-269) --------------------
+
+
+class _Verifier:
+    """The work-item existence check, without a `gh` (issue-269)."""
+
+    def __init__(self, missing=()):
+        self.missing = set(missing)
+        self.asked = []
+
+    def is_missing(self, item):
+        self.asked.append(item.ref)
+        return item.ref in self.missing
+
+    def record_missing(self, item):
+        self.missing.add(item.ref)
+
+
+def _cross_repo_pr():
+    """The ticket's pull request: its branch points at ANOTHER repo's issue.
+
+    No `closingIssuesReferences` (the body links the ticket as a plain URL, which
+    GitHub does not read as linkage), so the head branch is the only thing that
+    names a work item — and it names one this repository does not have.
+    """
+    return [
+        {
+            "number": 48,
+            "title": "consolidation",
+            "labels": [{"name": LABEL}],
+            "url": "u",
+            "author": {"login": "octocat"},
+            "headRefName": "issue-285-consolidation",
+            "body": "Delivers https://github.com/octo/planning/issues/285",
+            "closingIssuesReferences": [],
+        }
+    ]
+
+
+def test_a_branch_invented_work_item_never_becomes_the_start_target(tmp_path):
+    """Scenario: a start on a cross-repository PR does not spawn a ghost session.
+
+    Given a labelled PR 48 whose branch is issue-285-consolidation
+    And this repository has no issue 285 (the ticket lives in another repo)
+    When an authorized user comments "the-loop start" on the pull request
+    Then the branch-derived ref is dropped from the routing decision
+    And the start is recorded against the pull request itself
+    And the session spawns for the pull request, with no ghost registered
+
+    Requirement: docs/specs/issue-269/bugfix.md#R1 (R1.1, R1.2), #R2 (R2.2, R2.3)
+    """
+    gh = GhState()
+    gh.prs = _cross_repo_pr()
+    verifier = _Verifier(missing=["github:octo/repo#285"])
+    registry, tmux, dispatcher, poller = _make(
+        tmp_path,
+        gh,
+        monitor_issues=False,
+        monitor_prs=True,
+        control=ControlConfig(),  # requireStartCommand, as the ticket reports
+        verifier=verifier,
+    )
+
+    poller.poll_once()  # first sight: nobody has started it, nothing spawns
+    assert tmux.spawns == []
+    gh.pr_comments = [_comment("IC_1", "the-loop start")]
+    poller.poll_once()
+    assert wait_until(lambda: len(tmux.spawns) == 1)
+    time.sleep(0.1)
+    dispatcher.stop()
+
+    assert tmux.spawns[0][0] == "github:octo/repo#48"
+    assert registry.find_by_work_item("github:octo/repo#285") is None
+    store = WorkItemStore(tmp_path / "portable")
+    assert store.read(WorkItemRef.parse("github:octo/repo#48")).get("control")
+
+
+def test_the_same_pull_request_still_starts_where_the_work_item_is_real(tmp_path):
+    """Scenario: a branch-derived work item that DOES exist is unchanged.
+
+    Given the same labelled PR 48 with the same issue-285 branch
+    And this repository does have issue 285
+    When an authorized user comments "the-loop start" on the pull request
+    Then the session spawns against issue 285, exactly as it always did
+
+    Requirement: docs/specs/issue-269/bugfix.md#R1 (R1.2 — only a 404 drops a ref)
+    """
+    gh = GhState()
+    gh.prs = _cross_repo_pr()
+    verifier = _Verifier(missing=[])  # issue 285 is real here
+    registry, tmux, dispatcher, poller = _make(
+        tmp_path,
+        gh,
+        monitor_issues=False,
+        monitor_prs=True,
+        control=ControlConfig(),
+        verifier=verifier,
+    )
+
+    poller.poll_once()
+    gh.pr_comments = [_comment("IC_1", "the-loop start")]
+    poller.poll_once()
+    assert wait_until(lambda: len(tmux.spawns) == 1)
+    time.sleep(0.1)
+    dispatcher.stop()
+
+    assert tmux.spawns[0][0] == "github:octo/repo#285"
