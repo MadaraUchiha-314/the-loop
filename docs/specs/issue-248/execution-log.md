@@ -23,7 +23,7 @@ Ticket: [#248](https://github.com/MadaraUchiha-314/the-loop/issues/248)
 
 | PR | Repository | Scope | State |
 |----|-----------|-------|-------|
-| (recorded when the pull request is opened) | MadaraUchiha-314/the-loop | the whole work item | |
+| [#268](https://github.com/MadaraUchiha-314/the-loop/pull/268) | MadaraUchiha-314/the-loop | the whole work item | open |
 
 ## Progress entries
 
