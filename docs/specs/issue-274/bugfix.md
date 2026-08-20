@@ -210,7 +210,9 @@ performs no remote action and destroys nothing.
   PR would close the ticket at Phase 1.
 - **The companion bug** (the phase-selection gate never running / `no-spec-dir`), which
   the ticket names as the reason the graph never froze the pull request as an endpoint.
-  Separate ticket, separate cause.
+  Separate ticket, separate cause — and now separately fixed, as issue-273 (#275). Its
+  fix does not close this one: a graph that starts still does not record the pull request
+  the session opens, because until this change nothing could.
 
 ## Open questions
 

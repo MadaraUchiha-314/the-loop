@@ -10,12 +10,12 @@ $ uv run ruff check cli hooks
 All checks passed!
 $ npx --yes markdownlint-cli2@0.18.1 "**/*.md"
 markdownlint-cli2 v0.18.1 (markdownlint v0.38.0)
-Linting: 838 file(s)
+Linting: 850 file(s)
 Summary: 0 error(s)
 ```
 
-838 markdown files: 836 before, plus this work item's two new documents that lint
-(`docs/specs/issue-274/*`, `docs/decisions/decision-098.md`).
+Run on the rebased tree (`main` at `71e7dff`): 850 markdown files — 841 on the branch
+before the rebase, plus issue-273's, which landed in between.
 
 ## `make format-check`
 

@@ -72,8 +72,9 @@ function that exists (P2).
 
 ```console
 $ uv run --project cli python -m pytest -q cli
-2495 passed, 1 skipped in 136.07s (0:02:16)
+2501 passed, 1 skipped in 131.52s (0:02:11)
 ```
 
-Up from 2476 on `main` at `50c2a27` — the 19 tests this work item added (18 red-first,
-plus the control that holds the bug in place).
+After rebasing onto `main` at `71e7dff` (issue-273 landed in between and brought its own
+tests). Before the rebase, on `main` at `50c2a27`: 2495 passed, 1 skipped, up from 2476 —
+the 19 this work item adds (18 red-first, plus the control that holds the bug in place).

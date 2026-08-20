@@ -91,8 +91,8 @@ overrides: {}
 | T3 | `pytest -q cli/tests/test_api_contract_parity.py cli/tests/test_api_routers_integration.py cli/tests/test_mcp_integration.py` | 18 passed | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
 | T8 | `pytest -q cli/tests/test_core_sessions.py -k link` | 16 passed | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
 | T13 | `pytest -q cli/tests/test_docs_parity.py cli/tests/test_sdk_docs_parity.py cli/tests/test_writing_parity.py cli/tests/test_eventlog.py` | 35 passed | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
-| Full suite | `make test` | **2495 passed, 1 skipped**, up from 2476 on `main` at `50c2a27` — the 19 this work item added | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
-| T12 | `uv run ruff check cli hooks`, `uv run ruff format --check cli hooks`, `uv run pyright cli`, `markdownlint-cli2` (838 files), `scripts/validate_config.py` | clean on the first run of each | [`evidence/lint-and-typecheck.md`](evidence/lint-and-typecheck.md) |
+| Full suite | `make test` | **2501 passed, 1 skipped** after rebasing onto `main` at `71e7dff`; pre-rebase, on `main` at `50c2a27`: 2495 passed, 1 skipped, up from 2476 — the 19 this work item adds | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
+| T12 | `uv run ruff check cli hooks`, `uv run ruff format --check cli hooks`, `uv run pyright cli`, `markdownlint-cli2` (850 files), `scripts/validate_config.py` | clean on the first run of each | [`evidence/lint-and-typecheck.md`](evidence/lint-and-typecheck.md) |
 | Security review | checklist (`reference/security.md`), effective risk tier 3 | pass, no findings | [`evidence/security-review.md`](evidence/security-review.md) |
 
 Every planned activity ran. One row was **replanned** before it ran: T13 named

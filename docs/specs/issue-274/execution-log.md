@@ -39,9 +39,22 @@ status: in-progress
   `sessions.link_pr` on the SDK), the authored OpenAPI contract, the workflow rule in the
   four places the labelling rule already lives, the capability/CLI/state/SDK docs and
   decision-098.
-- **Checkpoint/tests:** `make test` — 2495 passed, 1 skipped (2476 on `main`, +19).
+- **Checkpoint/tests:** `make test` — 2495 passed, 1 skipped (2476 on `main` at
+  `50c2a27`, +19); 2501 passed, 1 skipped after rebasing onto `main` at `71e7dff`.
   `make lint`, `make format-check`, `pyright cli`, `validate_config.py` — all clean first
   run. Evidence under `evidence/`.
+- **Next:** human review of PR #276.
+
+### 2026-08-20 — rebased onto main at the author's request
+
+- **Phase:** needs-review
+- **Did:** rebased onto `main` at `71e7dff`. One conflict, in
+  `docs/capabilities/webhook-triggers.md`'s history table: issue-273 added its row at the
+  top while this branch added issue-274's. Both kept, newest first. Recorded in
+  `bugfix.md` that the companion bug named in § Out of scope has now landed as
+  issue-273 (#275), and that it does not close this one.
+- **Checkpoint/tests:** `make test` — 2501 passed, 1 skipped. `make lint`,
+  `make format-check`, `pyright cli`, `validate_config.py` — clean.
 - **Next:** human review of PR #276.
 
 ### 2026-08-20 — spec chain locked
