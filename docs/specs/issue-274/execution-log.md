@@ -19,14 +19,14 @@ status: in-progress
 | tasks-breakdown | 2026-08-20 |  | `tasks.md` |
 | implementation | 2026-08-20 |  | tasks 1–7 |
 | verification | 2026-08-20 |  | every activity in `testing-plan.md` ran; results and evidence recorded there |
-| needs-review | 2026-08-20 |  | reviewer briefing posted on PR #275 |
+| needs-review | 2026-08-20 |  | reviewer briefing posted on PR #276 |
 | complete |  |  |  |
 
 ## Pull requests
 
 | PR | Scope / tasks | Status |
 |----|---------------|--------|
-| #275 | the whole work item — spec chain, the `link-pr` operation on three surfaces, the workflow rule, documentation and tests | open |
+| #276 | the whole work item — spec chain, the `link-pr` operation on its surfaces, the workflow rule, documentation and tests | open |
 
 ## Progress entries
 
@@ -42,7 +42,7 @@ status: in-progress
 - **Checkpoint/tests:** `make test` — 2495 passed, 1 skipped (2476 on `main`, +19).
   `make lint`, `make format-check`, `pyright cli`, `validate_config.py` — all clean first
   run. Evidence under `evidence/`.
-- **Next:** human review of PR #275.
+- **Next:** human review of PR #276.
 
 ### 2026-08-20 — spec chain locked
 
