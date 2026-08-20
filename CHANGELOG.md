@@ -1,3 +1,9 @@
+## v11.2.0 (2026-08-20)
+
+### Feat
+
+- **issue-277**: sessions that outlive every work item (#278)
+
 ## v11.1.3 (2026-08-20)
 
 ### Fix
