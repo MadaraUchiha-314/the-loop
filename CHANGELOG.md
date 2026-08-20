@@ -1,3 +1,9 @@
+## v11.1.2 (2026-08-20)
+
+### Fix
+
+- **issue-273**: start the graph before the spec folder exists (#275)
+
 ## v11.1.1 (2026-08-18)
 
 ### Fix
