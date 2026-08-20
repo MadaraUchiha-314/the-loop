@@ -655,6 +655,22 @@ reader.
   SHALL say *resume at the current node*; entering the graph (`on_spawn`, the write)
   SHALL still happen only after a successful spawn. Reads before the spawn, writes
   after it.
+- **A work item that has not been placed yet SHALL still get a block** (issue-273). Because
+  the read precedes the write, a fresh work item has no pointer at the one moment the
+  auto-execute prompt is written — and an empty block is what let a spawned session walk
+  straight into `requirements-definition`. The context SHALL then name the graph's `start`
+  node with status `pending`, and the rendered block SHALL say the node has **not been
+  entered**, that the session must not begin a phase, write an artifact, set a label or
+  open a pull request, that the loop delivers the node's assignment when it enters it,
+  and — when that node is a human node — that it is a gate for an authorized person and
+  not the session's to answer or claim. It SHALL also tell the session to **say so on the
+  work item** if no assignment arrives: an *event* prompt can carry a pending context too
+  (a session predating the coupling, or one whose entry faulted), and there no assignment
+  is coming, so the block must turn that into an escalation rather than a silent wait.
+  A `pending` context is deliberately **not** a waiting human gate: nothing has been
+  entered, so no event is handed to a gate on its account, and the consult-first ordering
+  above is unchanged. Where there is no graph to read at all the block SHALL stay empty, so
+  a deployment with `routing.graph.enabled: false` renders exactly what it did before.
 - **A waiting human gate sees its input first** (issue-148): WHEN an event arrives for
   an item parked at a human-actor node THEN the dispatcher SHALL run `advance` (with
   the event's comments) **before** delivering, and the delivered prompt SHALL carry the
@@ -692,9 +708,19 @@ reader.
   comment.
 - The coupling SHALL skip — leaving the graph exactly where it is — when it is disabled
   (`routing.graph.enabled: false`), when the ref has no known spec-id convention, when
-  the work item has no spec directory, or when `control.requireStartCommand` holds and
-  nobody has started the item. **No input can move a work item forward**; inputs can only
-  cause a move not to happen.
+  the checkout is not the work item's own repository, or when
+  `control.requireStartCommand` holds and nobody has started the item. **No input can
+  move a work item forward**; inputs can only cause a move not to happen.
+- **Starting a graph SHALL NOT require a spec directory** (issue-273). `<specDir>/<id>/`
+  is created by the work the graph exists to gate, so requiring it before the graph may
+  start is a chicken-and-egg for every work item that begins life as a plain ticket —
+  and the node it holds back is `phase-selection`, the outer loop's one `required: true`
+  node, whose entire job is to run before any spec exists. The `start` and `context`
+  actions SHALL therefore proceed without it: `start` writes `graph-state.json` (creating
+  the directory as it goes) and `context` is a pure read. `advance` and `clean` SHALL keep
+  the requirement — neither can be the first thing that happens to a work item, so for
+  them a missing directory still means the graph was never placed here, and keeping it
+  there is what preserves the rule above.
 - **Where the specs are is the work item's own repository's to declare** (issue-123,
   [decision-044](../decisions/decision-044.md)). On the ingress path the coupling SHALL
   resolve the spec directory from the checkout's `workflow.specDir` (default
@@ -709,8 +735,9 @@ reader.
   repository must not select a write target elsewhere on the operator's machine.
 - A skip for want of a spec directory SHALL be recorded as `graph.skipped` in the event
   log (`work_item`, `action`, `reason`, `spec_dir`). A work item that is labelled, armed
-  and spawned but whose graph never moves is a question `the-loop events` must be able to
-  answer; at `logger.debug` it could not.
+  and delivered to but whose graph never moves is a question `the-loop events` must be
+  able to answer; at `logger.debug` it could not. Since issue-273 the `action` on such a
+  record can only be `advance` or `clean`.
 - A chain's routing outcome SHALL come from the last hook that declared one explicitly,
   whether or not that hook blocked. A gate that classifies a review returns `pass`
   *carrying* its verdict, so reading the outcome only from a blocking result discarded it
@@ -752,6 +779,7 @@ reader.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-273 | `phase-selection` stopped being routed around by default (2026-08-20): the ingress→graph coupling gated **every** graph action on `<specDir>/<id>/` already existing, so a work item minted as a plain ticket — no `/create-ticket`, no committed spec folder — had its graph declined at spawn (`graph.skipped`, `no-spec-dir`, twice) and its session walked into `requirements-definition` with the outer loop's one `required: true` node never having run: no checklist, no `the-loop execute`, no frozen graph, and nothing for `the-loop check` to attribute. `start` and `context` are now exempt (the directory is created by the work the gate holds back; `advance` and `clean` keep the check), and the read-before-spawn context of an unplaced work item renders its start node as `pending` — a block that names the gate and forbids beginning a phase before the node's assignment arrives, instead of the empty block that let the session start on its own | [spec](../specs/issue-273/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/273) |
 | issue-247 | The one hook that writes markdown into a checked-in artifact stopped writing markdown the project's own linter rejects (2026-08-16): `record-feedback`'s attribution gained trailing text (`**@handle** wrote:`), because emphasis alone on a line is precisely MD036's target — so every approval-with-comments had been leaving `design.md` and `testing-plan.md` failing `make lint`, and a session hand-editing the paper trail to unblock itself. A comment with an empty body now becomes one attribution line instead of a blank-line run (MD012). The reviewer's body stays verbatim, which is the other half of the rule: the harness fixes its own markdown and never a human's words, so a body that fails lint on its own merits is out of scope by decision rather than by omission | [spec](../specs/issue-247/), [decision-089](../decisions/decision-089.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/247) |
 | issue-238 | A gate that read nothing stopped counting as a gate that passed: when `graph/check` began answering a non-resolving `repo` with a position-unknown report instead of raising, that report had no nodes and so no blocking node, and `the-loop check --fail-on block` — the automated-gate mode — would have exited 0 on a mistyped `--repo`. Both modes now refuse it ahead of either rule, and the row renders `UNREAD — <path> is not a directory` instead of `UNMET (at )` with nothing under it. Found by self-review of the control-plane fix, not by the fix's own tests | [spec](../specs/issue-238/), [control-plane](control-plane.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/238) |
 | issue-260 | How many sessions a work item's pull requests get moved from the operator to the work item (2026-08-17): issue-258 gave the choice to `routing.tmux.sessionPerPr`, machine-wide — the same mistake issue-183 refused to make for `outer-loop-on-pull-request`, because one repository has both a one-repo bugfix and a three-repo migration and one daemon serves both. `phase-selection` now carries three rows (`pr-sessions-never` / `pr-sessions-cross-repository` / `pr-sessions-always`) with the deployment's configured value pre-ticked; exactly one ticked row is the choice, and none, several, an unreadable checklist or a token outside the vocabulary all resolve to that default. The resolved mode is frozen by the same signed `the-loop execute` into `graph-state.json` and the portable record (`graph.sessionPerPr`), and routing reads it there per work item ahead of the config key. Nothing else moved: the three modes mean what decision-092 said, decision-088 D2's tree requirement is untouched, the schema is unchanged, and a work item with no frozen mode routes exactly as before | [spec](../specs/issue-260/), [decision-093](../decisions/decision-093.md), [routing](../config/cli/routing-options.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/260) |

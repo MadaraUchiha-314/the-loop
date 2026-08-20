@@ -155,8 +155,18 @@ def _link(repo, runtime):
     return _TrustingLink(runtime, control=ControlConfig(enabled=False))
 
 
-def test_a_fresh_item_has_no_context(runtime, repo):
-    assert _link(repo, runtime).context(REF, str(repo)) is None
+def test_a_fresh_item_reports_the_node_it_is_about_to_stand_on(runtime, repo):
+    """issue-273 — this used to be `None`, which rendered an empty process-state
+    block into the one prompt that most needs one: the spawn prompt of a work item
+    that has not been placed yet. The graph's own start node is the honest answer,
+    and `pending` says it has not been entered."""
+    ctx = _link(repo, runtime).context(REF, str(repo))
+    assert ctx is not None
+    assert ctx.current_node == runtime.graph.start
+    assert ctx.status == "pending"
+    assert not ctx.at_human_gate, (
+        "nothing has been entered, so there is no gate to hand an event to"
+    )
 
 
 def test_a_started_item_reports_its_node(runtime, repo):

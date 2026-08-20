@@ -74,10 +74,16 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   (issue-148). WHEN a prompt is rendered THEN the item's graph context — current node,
   phase, status, gate messages, the node's resume command and the
   `the-loop graph complete` instruction — SHALL be substituted into the
-  `$graph_context` placeholder, resolved read-only **before** delivery or spawn. WHEN
-  no context exists (fresh item, graph disabled, no spec directory, foreign checkout,
-  or a resolution fault) THEN the placeholder SHALL render empty and the prompt SHALL
-  otherwise be unchanged — resolution failure never costs a delivery. See
+  `$graph_context` placeholder, resolved read-only **before** delivery or spawn. WHEN the
+  work item has not entered the graph yet — the ordinary case for a spawn prompt, since
+  the read precedes the write — THEN the block SHALL name the graph's start node with
+  status `pending`, forbid beginning a phase before that node's assignment arrives, and
+  tell the session to say so on the work item if none does (issue-273); the empty block
+  that used to stand there is what let an auto-execute session walk into
+  `requirements-definition` past `phase-selection`. WHEN there is no
+  graph to read at all (graph disabled, foreign checkout, a ref with no spec-id
+  convention, or a resolution fault) THEN the placeholder SHALL render empty and the
+  prompt SHALL otherwise be unchanged — resolution failure never costs a delivery. See
   [process-graph](process-graph.md) for the consult-first ordering at human gates.
 - **Every rendered prompt states where the session takes its answers from** (issue-134,
   `routing.interaction.mode`, [decision-051](../decisions/decision-051.md)).
@@ -613,7 +619,9 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   optional override for a checkout with no harness config, and setting it applies to every
   watched repository. A work item skipped for want of that directory is recorded as
   `graph.skipped` — the delivery still succeeds, so without the record an inert graph had
-  no explanation (issue-123). See [process-graph](process-graph.md).
+  no explanation (issue-123). **Starting a graph needs no such directory** (issue-273):
+  the spec folder is created by the work the graph gates, so only `advance` and `clean`
+  are held back by its absence. See [process-graph](process-graph.md).
 - **A repository that never adopted the-loop is adopted on the way in** (issue-193,
   [decision-073](../decisions/decision-073.md)). WHEN the coupling handles a work item in
   a checkout it has proved to be that work item's own repository, and the checkout carries
@@ -664,6 +672,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-273 | A work item that begins life as a plain GitHub issue finally starts at `phase-selection` (2026-08-20): the coupling had declined to start a graph without `<specDir>/<id>/` on disk, which the gated work is what creates — so an armed, spawned ticket got two `graph.skipped` records, no phase checklist, no `the-loop execute`, and a session that began requirements work on its own. `start` and `context` no longer require the directory, and the spawn prompt of an unplaced work item now carries a `pending` process-state block naming the gate instead of nothing at all | [spec](../specs/issue-273/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/273) |
 | issue-270 | A comment refused before the start stopped being filed as a delivery still in flight (2026-08-18): pre-start (and paused-session) events are suppressed on purpose and never replayed — the settled product decision — but the poll ledger recorded the refusal as `commentAttempts: 1` and left it there, so an operator could not tell "we are still trying" from "we decided not to", and after a restart the poller spent the rest of the budget, declared a terminal delivery failure, posted a notice on the ticket saying the comment never arrived after three attempts, and left a `gaveUp` record that the next CLI version re-armed — replaying the comment nobody asked to replay. A delivery the dispatcher is *finished* with is now recorded as **settled** (suppressed, or consumed as a control command) beside its dedup mark, and the poller resolves such a comment instead of counting it: baselined, never abandoned, one `poll.comment_settled` record naming the reason. The spawn prompt now tells the session to read the item's whole thread, which is where a refused comment still is | [spec](../specs/issue-270/), [decision-097](../decisions/decision-097.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/270) |
 | issue-269 | A branch name stopped being able to invent a work item (2026-08-18): `issue-<n>` in a head branch resolved to a ref in the pull request's **own** repository and nothing ever checked that it existed, so in a multi-repository deployment (ticket in one repository, code in another) a ghost became `work_items[0]` — it absorbed the operator's `the-loop start` and had a whole session spawned against a ref that 404s, without the spec chain that lives on the real work item. A ref resting on the branch convention **alone** is now verified before it is acted on, and only a definitive 404 drops it; every other answer keeps it. The record answers first: a live session (its own ref, or a durable PR binding) is the target for control, the start test and the spawn, and where one exists the check is not consulted at all. A polled pull-request comment now names its pull request, so the binding is written and the endpoint chosen on that ingress too; and the announcement's own 404 is recorded as `session.work_item_missing` instead of a generic best-effort warning | [spec](../specs/issue-269/), [decision-095](../decisions/decision-095.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/269) |
 | issue-260 | How many sessions a work item's pull requests get moved from the operator to the work item (2026-08-17): issue-258 gave the choice to `routing.tmux.sessionPerPr`, machine-wide — the same mistake issue-183 refused to make for `outer-loop-on-pull-request`, because one repository has both a one-repo bugfix and a three-repo migration and one daemon serves both. `phase-selection` now carries three rows (`pr-sessions-never` / `pr-sessions-cross-repository` / `pr-sessions-always`) with the deployment's configured value pre-ticked; exactly one ticked row is the choice, and none, several, an unreadable checklist or a token outside the vocabulary all resolve to that default. The resolved mode is frozen by the same signed `the-loop execute` into `graph-state.json` and the portable record (`graph.sessionPerPr`), and routing reads it there per work item ahead of the config key. Nothing else moved: the three modes mean what decision-092 said, decision-088 D2's tree requirement is untouched, the schema is unchanged, and a work item with no frozen mode routes exactly as before | [spec](../specs/issue-260/), [decision-093](../decisions/decision-093.md), [routing](../config/cli/routing-options.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/260) |
