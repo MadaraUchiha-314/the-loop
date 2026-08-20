@@ -25,6 +25,10 @@ import type {
   SessionEndpoint,
   SessionRecord,
   SessionVerb,
+  StandingCreateRequest,
+  StandingResult,
+  StandingSessionRecord,
+  StandingVerb,
   TranscriptResponse,
   WorkItemRecord,
 } from "../api/types.ts";
@@ -37,6 +41,7 @@ import {
   DEMO_INNER_GRAPHS,
   DEMO_OUTER_GRAPHS,
   DEMO_SESSIONS,
+  DEMO_STANDING,
   DEMO_TRANSCRIPT,
   DEMO_WORK_ITEMS,
   INNER_NODES,
@@ -105,6 +110,7 @@ export class DemoApi implements TheLoopApi {
 
   private workItemRecords: WorkItemRecord[] = clone(DEMO_WORK_ITEMS);
   private sessionRecords: SessionRecord[] = clone(DEMO_SESSIONS);
+  private standing: StandingSessionRecord[] = clone(DEMO_STANDING);
   private attentionItems: AttentionItem[] = clone(DEMO_ATTENTION);
   private eventRecords: EventRecord[] = clone(DEMO_EVENTS);
   private outer: Record<string, GraphStatus> = clone(DEMO_OUTER_GRAPHS);
@@ -220,6 +226,98 @@ export class DemoApi implements TheLoopApi {
     return delay({ messages: [{ stream: "out", text: `demo: replied to ${ref}` }], exitCode: 0 });
   }
 
+  // -- standing sessions (issue-277) ----------------------------------------
+  //
+  // Same convention as the control verbs: the demo *behaves*, so the screen can
+  // be explored — created and deleted included — before anyone has a service
+  // running. The refusals are modelled too, because they are the part of the
+  // contract an operator most needs to meet before they meet it for real.
+
+  standingSessions(signal?: AbortSignal): Promise<StandingSessionRecord[]> {
+    return delay(this.standing, signal);
+  }
+
+  createStandingSession(body: StandingCreateRequest): Promise<StandingResult> {
+    const name = body.name.trim();
+    if (!/^[a-z0-9][a-z0-9-]{0,39}$/.test(name)) {
+      return Promise.reject(new Error(`invalid standing-session name ${JSON.stringify(name)}`));
+    }
+    if (this.standing.some((session) => session.name === name)) {
+      return Promise.reject(new Error(`standing session ${JSON.stringify(name)} already exists`));
+    }
+    const created: StandingSessionRecord = {
+      name,
+      declared: false,
+      description: body.description ?? "",
+      autoStart: body.autoStart ?? true,
+      harness: body.harness || "claude",
+      cwd: body.cwd || "/home/you/dev/the-loop",
+      tmuxTarget: `loop-standing-${name}`,
+      ref: `standing:${name}`,
+      status: "running",
+      running: true,
+      harnessSessionId: `demo-${name}`,
+      slackChannel: body.slackEnabled ? (body.slackChannel ?? "") : "",
+      slackThread: body.slackEnabled ? `${Date.now() / 1000}` : "",
+      startedAt: new Date().toISOString(),
+      lastMessageAt: "",
+      outcome: "started",
+      detail: `started loop-standing-${name} (claude demo-${name})`,
+    };
+    this.standing = [...this.standing, created];
+    this.emit({ event: "standing.created", level: "info", source: "service", standing: name, actor: "you" });
+    this.emit({ event: "standing.started", level: "info", source: "service", standing: name });
+    return delay({ sessions: [created], ok: true });
+  }
+
+  deleteStandingSession(name: string): Promise<StandingResult> {
+    const session = this.standing.find((candidate) => candidate.name === name);
+    if (!session) return Promise.reject(new Error(`no standing session ${JSON.stringify(name)} has been created`));
+    if (session.declared) {
+      return Promise.reject(
+        new Error(
+          `standing session ${JSON.stringify(name)} is declared in standingSessions.sessions, ` +
+            "so deleting its record would not remove it — remove the entry from the config, or stop it",
+        ),
+      );
+    }
+    this.standing = this.standing.filter((candidate) => candidate.name !== name);
+    this.emit({ event: "standing.deleted", level: "info", source: "service", standing: name, actor: "you" });
+    return delay({ sessions: [{ ...session, outcome: "deleted", running: false, status: "absent" }], ok: true });
+  }
+
+  controlStandingSession(name: string, verb: StandingVerb): Promise<StandingResult> {
+    const running = verb !== "stop";
+    let touched: StandingSessionRecord | undefined;
+    this.standing = this.standing.map((session) => {
+      if (session.name !== name) return session;
+      touched = {
+        ...session,
+        running,
+        status: running ? "running" : "stopped",
+        startedAt: running ? new Date().toISOString() : session.startedAt,
+        outcome: verb === "stop" ? "stopped" : session.harnessSessionId ? "resumed" : "started",
+        detail: `demo: ${verb} loop-standing-${name}`,
+      };
+      return touched;
+    });
+    if (!touched) return Promise.reject(new Error(`no standing session ${JSON.stringify(name)}`));
+    this.emit({ event: `standing.${verb === "stop" ? "stopped" : "started"}`, level: "info", source: "service", standing: name });
+    return delay({ sessions: [touched], ok: true });
+  }
+
+  sayToStandingSession(name: string, _text: string, _actor = ""): Promise<CoreResult> {
+    const session = this.standing.find((candidate) => candidate.name === name);
+    if (!session?.running) {
+      return Promise.reject(new Error(`standing session ${JSON.stringify(name)} has no live tmux pane to paste into`));
+    }
+    this.standing = this.standing.map((candidate) =>
+      candidate.name === name ? { ...candidate, lastMessageAt: new Date().toISOString() } : candidate,
+    );
+    this.emit({ event: "standing.said", level: "info", source: "service", standing: name, actor: "you" });
+    return delay({ messages: [{ stream: "out", text: `demo: delivered into loop-standing-${name}` }], exitCode: 0 });
+  }
+
   transcript(ref: string, tail = 200, signal?: AbortSignal): Promise<TranscriptResponse> {
     // Same convention as the control verbs: the demo behaves. Any session on
     // the board (the work item's own or a PR endpoint's) answers with the
@@ -297,6 +395,8 @@ export class DemoApi implements TheLoopApi {
     work_item?: string;
     actor?: string;
     node?: string;
+    /** A standing session's name — it has no work item to key on (issue-277). */
+    standing?: string;
   }): void {
     const record: EventRecord = { ...fields, ts: new Date().toISOString() };
     this.eventRecords = [...this.eventRecords, record];

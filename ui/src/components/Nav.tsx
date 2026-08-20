@@ -1,5 +1,5 @@
 /**
- * The header bar: brand, the four screens, and the daemon chips.
+ * The header bar: brand, the screens, and the daemon chips.
  *
  * The chips are the answer to "is anything actually watching GitHub right now?"
  * — a board full of stale rows and a stopped poller look identical without
@@ -14,6 +14,7 @@ import type { StreamState } from "../state/useStream.ts";
 const TABS: { label: string; route: Route }[] = [
   { label: "Dashboard", route: { name: "dashboard" } },
   { label: "Sessions", route: { name: "sessions" } },
+  { label: "Standing", route: { name: "standing" } },
   { label: "Attention", route: { name: "attention" } },
   { label: "Events", route: { name: "events" } },
   { label: "Settings", route: { name: "settings" } },

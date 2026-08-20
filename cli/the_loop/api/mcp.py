@@ -23,7 +23,13 @@ the three is registered as a tool. ``restart`` (``POST /api/v1/restart``,
 issue-228) is excluded on both grounds at once: it tears down the very
 transport the MCP client is speaking over mid-call, and ``--with-upgrade``
 reaches the installer — an agent must not be able to replace the code it is
-judged by. A client that legitimately needs it has the REST route.
+judged by. A client that legitimately needs it has the REST route. **Standing-session
+control, create and delete** (``POST /api/v1/standing-sessions/{control,create,
+delete}``, issue-277) join them: an agent that could stop or restart a standing
+session could stop the very one supervising it, and bringing a harness process
+into — or out of — existence is an operator's act. Reading them and *talking*
+to them are registered, because those are what an agent coordinating with a
+supervisor session actually needs.
 """
 
 from __future__ import annotations
@@ -39,6 +45,7 @@ from ..core import events as core_events
 from ..core import graphs as core_graphs
 from ..core import repo as core_repo
 from ..core import sessions as core_sessions
+from ..core import standing as core_standing
 from ..core import workitems as core_workitems
 from .config import service_config
 
@@ -146,6 +153,27 @@ def build_server(cli_config: Optional[dict] = None) -> MCPServer:
         full ref (github:OWNER/REPO#16) for one in another repository."""
         return core_sessions.link_pull_request(ref, pull_request, config=cli_config)
 
+    def list_standing_sessions() -> List[Dict[str, Any]]:
+        """The standing sessions (issue-277) — the long-lived sessions that
+        belong to no work item, declared in the CLI config and addressed by
+        name. `running` is tmux's answer now, not the record's."""
+        return core_standing.list_standing(config=cli_config)
+
+    def get_standing_session(name: str) -> Dict[str, Any]:
+        """One standing session by name, or an error when it is neither
+        declared nor recorded."""
+        return core_standing.get_standing(name, config=cli_config)
+
+    def say_to_standing_session(
+        name: str, text: str, actor: str = ""
+    ) -> Dict[str, Any]:
+        """Send a message to a running standing session — pasted into its
+        terminal and submitted. A standing session owns no ticket, so nothing
+        is posted anywhere; `standing.said` is the record. Fail-closed: a
+        message never starts a session, so an unknown or stopped name is an
+        error naming `the-loop standing start <name>`."""
+        return core_standing.say_standing(name, text, actor=actor, config=cli_config)
+
     def close_session(ref: str, keep_tmux: Optional[bool] = None) -> Dict[str, Any]:
         """Close a work item's registration and settle its tmux session."""
         return core_sessions.close_session(ref, keep_tmux=keep_tmux, config=cli_config)
@@ -234,6 +262,9 @@ def build_server(cli_config: Optional[dict] = None) -> MCPServer:
         register_session,
         link_pull_request,
         close_session,
+        list_standing_sessions,
+        get_standing_session,
+        say_to_standing_session,
         query_events,
         daemon_status,
         control_daemon,

@@ -5,6 +5,8 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [100](decision-100.md) | Standing sessions are created and deleted at runtime; the control plane is not a channel | accepted | 2026-08-20 |
+| [099](decision-099.md) | A session that owns no work item lives in its own namespace, and is called standing | proposed | 2026-08-20 |
 | [098](decision-098.md) | The component that opens a pull request is the one that records what it delivers | proposed | 2026-08-20 |
 | [097](decision-097.md) | A refused delivery is settled, not pending — and the thread is the replay | proposed | 2026-08-18 |
 | [096](decision-096.md) | A repository may append its own hooks to the-loop's graph, and may do nothing else to it | proposed | 2026-08-18 |

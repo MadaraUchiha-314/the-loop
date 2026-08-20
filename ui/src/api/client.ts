@@ -32,6 +32,10 @@ import type {
   JsonSchema,
   SessionRecord,
   SessionVerb,
+  StandingCreateRequest,
+  StandingResult,
+  StandingSessionRecord,
+  StandingVerb,
   TranscriptResponse,
   WorkItemRecord,
 } from "./types.ts";
@@ -140,6 +144,15 @@ export interface TheLoopApi {
    * event trail with the reason.
    */
   transcript(ref: string, tail?: number, signal?: AbortSignal): Promise<TranscriptResponse>;
+  /** Every standing session — declared in the config, or created here (issue-277). */
+  standingSessions(signal?: AbortSignal): Promise<StandingSessionRecord[]>;
+  /** Create one and start it. The service refuses a name already in use. */
+  createStandingSession(body: StandingCreateRequest): Promise<StandingResult>;
+  /** Stop a **created** session and forget it. Refused for a declared one. */
+  deleteStandingSession(name: string): Promise<StandingResult>;
+  controlStandingSession(name: string, verb: StandingVerb): Promise<StandingResult>;
+  /** Paste a message into a running standing session's pane. */
+  sayToStandingSession(name: string, text: string, actor?: string): Promise<CoreResult>;
   controlDaemon(daemon: string, verb: DaemonVerb): Promise<CoreResult>;
   /** The CLI config the service is running on, and the path it lives at (issue-222). */
   config(signal?: AbortSignal): Promise<ConfigDocument>;
@@ -326,6 +339,26 @@ export class HttpApi implements TheLoopApi {
 
   replySession(ref: string, text: string, actor = ""): Promise<CoreResult> {
     return this.post<CoreResult>("/sessions/reply", { ref, text, actor });
+  }
+
+  standingSessions(signal?: AbortSignal): Promise<StandingSessionRecord[]> {
+    return this.request<StandingSessionRecord[]>("/standing-sessions", {}, signal);
+  }
+
+  createStandingSession(body: StandingCreateRequest): Promise<StandingResult> {
+    return this.post<StandingResult>("/standing-sessions/create", body);
+  }
+
+  deleteStandingSession(name: string): Promise<StandingResult> {
+    return this.post<StandingResult>("/standing-sessions/delete", { name });
+  }
+
+  controlStandingSession(name: string, verb: StandingVerb): Promise<StandingResult> {
+    return this.post<StandingResult>("/standing-sessions/control", { name, verb });
+  }
+
+  sayToStandingSession(name: string, text: string, actor = ""): Promise<CoreResult> {
+    return this.post<CoreResult>("/standing-sessions/say", { name, text, actor });
   }
 
   transcript(ref: string, tail = 200, signal?: AbortSignal): Promise<TranscriptResponse> {

@@ -15,5 +15,6 @@ from . import lifecycle_cmd  # noqa: F401,E402  (start/stop/status/restart)
 from . import migrate_cmd  # noqa: F401,E402
 from . import scenarios  # noqa: F401,E402
 from . import sessions_cmd  # noqa: F401,E402
+from . import standing_cmd  # noqa: F401,E402
 
 __all__ = ["Command", "iter_commands", "register"]

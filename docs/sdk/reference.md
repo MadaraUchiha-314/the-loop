@@ -95,6 +95,22 @@ that is not there.
 | `link_pr(ref, pull_request)` | record a pull request as delivering a work item, so its comments, reviews and CI route to that work item's session — the step a session runs as it opens the PR |
 | `close(ref, keep_tmux=None)` | close a session and release its resources |
 
+### `loop.standing`
+
+The sessions that belong to **no work item** ([standing sessions](/capabilities/standing-sessions),
+issue-277) — addressed by **name**, never by a ref, because the two namespaces are
+separate: nothing routed by ref reaches one, and nothing here reaches a work item's
+session.
+
+| Method | Returns |
+|--------|---------|
+| `list()` | every declared or recorded standing session, `running` answered by tmux |
+| `get(name)` | one session; `LookupError` when it is neither declared nor recorded |
+| `control(name, verb)` | `start` / `stop` / `restart`, idempotent in both directions; an empty `name` means every declared session for `start` and every recorded one for `stop` |
+| `create(name, harness='', cwd='', prompt='', description='', harness_args=None, slack_enabled=False, slack_channel='', auto_start=True, start=True)` | bring a session into existence with no config entry, and start it; `ValueError` when the name is already declared or recorded |
+| `delete(name)` | stop a **created** session and forget it; `ValueError` for a declared one (the config would recreate it), `LookupError` when it was never created |
+| `say(name, text, actor="")` | paste a message into a running session's terminal and submit it; fail-closed — never starts one |
+
 ### `loop.graph`
 
 | Method | Returns |

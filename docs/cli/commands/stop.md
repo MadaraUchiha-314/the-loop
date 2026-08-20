@@ -34,6 +34,21 @@ gh-webhook  stopped          [enabled]  was hosted in the service (pid 24846); s
 service     stopped          [enabled]  stopped (pid 24846)
 ```
 
+[Standing sessions](/capabilities/standing-sessions) are stopped **first**, before the
+ingresses and the service, so a session is taken down while the control plane it may be
+talking to is still up — and every **recorded** one is stopped, whether or not
+`standingSessions.enabled` still says so. Each keeps its record and its conversation id,
+so the next [`start`](/cli/commands/start) resumes rather than forgets.
+
+```console
+$ the-loop stop
+poller      stopped          [enabled]  stopped poller (pid 24913)
+gh-webhook  not-running      [disabled]  gh-webhook is not running
+service     stopped          [enabled]  stopped (pid 24846)
+standing sessions:
+supervisor  stopped          stopped loop-standing-supervisor
+```
+
 Idempotent in both directions: stopping a stopped system exits 0 with `not-running`
 rows. The exit code is non-zero only when something that *was* running failed to exit
 within the timeout.

@@ -315,9 +315,73 @@ EVENT_TYPES: Dict[str, str] = {
         "marker-stamped comment — the single-source-of-truth rule (channel, "
         "work_item, actor)."
     ),
+    "channel.mirror_skipped": (
+        "A channel reply had no work item to mirror onto and was delivered "
+        "anyway (channel, work_item, reason: standing-session) — a standing "
+        "session owns no ticket, so this event IS its paper trail (issue-277)."
+    ),
     "channel.mirror_failed": (
         "The work-item mirror of a channel reply could not be posted "
         "(channel, work_item, error); the delivery attempt still proceeds."
+    ),
+    "standing.started": (
+        "A standing session — one that belongs to no work item — was spawned on "
+        "a fresh conversation (standing, harness, harness_session_id, "
+        "tmux_target, cwd). issue-277."
+    ),
+    "standing.resumed": (
+        "A standing session was spawned continuing its RECORDED conversation "
+        "rather than a fresh one (same payload as standing.started), which is "
+        "what makes `the-loop restart` not amnesia for a supervisor session."
+    ),
+    "standing.resume_failed": (
+        "A standing session's resume did not survive its liveness probe "
+        "(standing, harness_session_id, error); a fresh conversation is started "
+        "instead, so a standing.started follows."
+    ),
+    "standing.spawn_failed": (
+        "A standing session could not be started (standing, harness, "
+        "tmux_target, error): a missing harness binary, a cwd that is not "
+        "there, an unreadable promptFile, or a live tmux session the-loop has "
+        "no record of and will not spawn over."
+    ),
+    "standing.created": (
+        "A standing session was brought into existence through the API rather "
+        "than declared in the config (standing, harness, cwd, auto_start) — "
+        "issue-277 R6. The definition now lives in its registry record."
+    ),
+    "standing.create_failed": (
+        "A create wrote its record but the session would not start (standing, "
+        "error); the record was removed again, so the name is free for a retry."
+    ),
+    "standing.deleted": (
+        "A created standing session was stopped and its record removed "
+        "(standing). Unlike standing.stopped, nothing comes back: the "
+        "conversation id is gone with the record."
+    ),
+    "standing.stopped": (
+        "A standing session's harness was terminated and its tmux session "
+        "killed (standing, tmux_target). The record is KEPT, so the next start "
+        "resumes the same conversation."
+    ),
+    "standing.stop_failed": (
+        "A standing session's tmux session could not be killed (standing, "
+        "tmux_target, error); the record is marked stopped regardless."
+    ),
+    "standing.said": (
+        "A message was pasted into a running standing session and submitted "
+        "(standing, tmux_target, actor). Nothing is posted to any ticket — "
+        "there is none — so this event is the delivery's only record."
+    ),
+    "standing.announced": (
+        "A standing session was announced in Slack and the resulting thread "
+        "bound to it (standing, channel, thread), which is what makes replies "
+        "in that thread reach its terminal."
+    ),
+    "standing.announce_failed": (
+        "A standing session's Slack announcement did not land (standing, "
+        "error). Best-effort by contract: the session is up regardless, it "
+        "simply has no Slack thread."
     ),
     "session.closed": "A session was closed in the registry (work_item).",
     "session.paused": (

@@ -290,6 +290,33 @@ class TmuxRunner:
         respawn path's way of not losing everything the agent knew about the
         work item.
         """
+        return self.spawn_in(
+            self.target_for(work_item),
+            adapter,
+            prompt,
+            cwd=cwd,
+            session_id=session_id,
+            timeout=timeout,
+            resume=resume,
+        )
+
+    def spawn_in(
+        self,
+        target: str,
+        adapter: "HarnessAdapter",
+        prompt: str,
+        cwd: str,
+        session_id: str,
+        timeout: Optional[float] = None,
+        resume: bool = False,
+    ) -> TmuxResult:
+        """:meth:`spawn`, addressed by tmux target rather than by work item.
+
+        The whole of the spawn — the argv, the collision handling, the
+        ``remain-on-exit`` set — depends on nothing but the target, so a session
+        that has no work item (issue-277's standing sessions) reuses it rather
+        than growing a second, drifting copy.
+        """
         try:
             harness_argv = (
                 adapter.interactive_resume_argv(prompt, session_id)
@@ -298,7 +325,6 @@ class TmuxRunner:
             )
         except UnsupportedRunnerError as exc:
             return TmuxResult(ok=False, error=str(exc))
-        target = self.target_for(work_item)
         argv = [
             "new-session",
             "-d",
@@ -571,7 +597,30 @@ class TmuxRunner:
         already-exited process or a refused signal are reported, never raised —
         closing the work item must not depend on it.
         """
-        target = session.tmux_target
+        return self.terminate_harness_in(
+            session.tmux_target,
+            session.work_item.ref,
+            grace=grace,
+            timeout=timeout,
+            sleeper=sleeper,
+            killer=killer,
+        )
+
+    def terminate_harness_in(
+        self,
+        target: str,
+        label: str,
+        grace: float = 5.0,
+        timeout: Optional[float] = None,
+        sleeper: Callable[[float], None] = time.sleep,
+        killer: Optional[Callable[[int, int], None]] = None,
+    ) -> TmuxResult:
+        """:meth:`terminate_harness`, addressed by tmux target.
+
+        ``label`` names what the target belonged to, and is used only in the
+        refusal log line — a work item's ref, or a standing session's name
+        (issue-277). It never reaches tmux or a signal.
+        """
         if not target:
             return TmuxResult(ok=True)
         if not _LOOP_TARGET_RE.match(target):
@@ -579,7 +628,7 @@ class TmuxRunner:
                 "refusing to terminate processes in tmux target %r for %s: not a "
                 "the-loop `loop-<slug>` session",
                 target,
-                session.work_item.ref,
+                label,
             )
             return TmuxResult(
                 ok=False, error=f"{target!r} is not a the-loop tmux session name"
@@ -672,6 +721,19 @@ class TmuxRunner:
                     "fresh session and delivering this event into it"
                 ),
             )
+        return self.deliver_to(target, prompt, timeout)
+
+    def deliver_to(
+        self, target: str, prompt: str, timeout: Optional[float] = None
+    ) -> TmuxResult:
+        """:meth:`deliver`'s paste, addressed by tmux target.
+
+        The liveness refusals stay with :meth:`deliver`, because their wording is
+        the work item's ("respawning a fresh session…"): a caller with no work
+        item — a standing session (issue-277) — owns a different remedy and
+        checks liveness itself. What is shared is exactly the paste protocol,
+        which is the part that must never be written twice.
+        """
         # Written inside the `try` so the first file is cleaned up even if the
         # second one cannot be created.
         paths: List[str] = []
@@ -696,4 +758,8 @@ class TmuxRunner:
         return TmuxResult(ok=True)
 
     def kill(self, session: Session, timeout: Optional[float] = None) -> TmuxResult:
-        return self._run(["kill-session", "-t", session.tmux_target], timeout)
+        return self.kill_target(session.tmux_target, timeout)
+
+    def kill_target(self, target: str, timeout: Optional[float] = None) -> TmuxResult:
+        """:meth:`kill`, addressed by tmux target."""
+        return self._run(["kill-session", "-t", target], timeout)

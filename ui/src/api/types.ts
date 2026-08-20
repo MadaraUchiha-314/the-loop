@@ -208,6 +208,54 @@ export interface CoreResult {
   [key: string]: unknown;
 }
 
+/**
+ * One standing session (issue-277) — a session that belongs to no work item.
+ *
+ * `declared` says where its definition comes from: a `standingSessions.sessions`
+ * entry, or (false) the registry record a `create` wrote. `running` is tmux's
+ * answer now, not the record's claim, which is why it is separate from `status`.
+ */
+export interface StandingSessionRecord {
+  name: string;
+  declared: boolean;
+  description: string;
+  autoStart: boolean;
+  harness: string;
+  cwd: string;
+  tmuxTarget: string;
+  ref: string;
+  status: string;
+  running: boolean;
+  harnessSessionId: string;
+  slackChannel: string;
+  slackThread: string;
+  startedAt: string;
+  lastMessageAt: string;
+  /** Present only on the rows a control verb returns. */
+  outcome?: string;
+  detail?: string;
+}
+
+export type StandingVerb = "start" | "stop" | "restart";
+
+/** The body of `POST /api/v1/standing-sessions/create`. */
+export interface StandingCreateRequest {
+  name: string;
+  harness?: string;
+  cwd?: string;
+  prompt?: string;
+  description?: string;
+  slackEnabled?: boolean;
+  slackChannel?: string;
+  autoStart?: boolean;
+}
+
+/** What the standing verbs return: one row per session they touched. */
+export interface StandingResult {
+  sessions: StandingSessionRecord[];
+  ok: boolean;
+}
+
 export type SessionVerb = "start" | "pause" | "resume" | "stop" | "cleanup";
 export type DaemonVerb = "start" | "stop" | "restart" | "status";
 

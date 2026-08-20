@@ -87,6 +87,7 @@ Nothing here is a new endpoint. The interesting part is the **join**, which live
 | Dashboard | `GET /work-items` + `GET /sessions` + `GET /attention`, then one `POST /graph/check` per loop |
 | Work item | the same, plus `GET /events?workItem=…` |
 | Sessions | the board's join again, as a sidebar tree (outer session + one child per PR inner loop; ad-hoc items treeless), plus `GET /sessions/transcript?ref=…` for the selected stream and `POST /sessions/reply` from its chat bar (issue-230) |
+| Standing | `GET /standing-sessions`, plus `POST /standing-sessions/{create,delete,control,say}` — the sessions that belong to no work item (issue-277) |
 | Attention | `GET /attention`, unioned with the parked gates from the graph reports |
 | Events | `GET /events` |
 | Chrome | `GET /daemons` |
@@ -109,6 +110,16 @@ Two facts shape that:
   drops that answer where a rejection would have been dropped
   ([issue-238](https://github.com/MadaraUchiha-314/the-loop/issues/238)). Read the field as
   `=== false` — it is absent, not `true`, on a normal answer.
+- **A standing session joins nothing.** It has no work item, so it appears on no other
+  screen and needs none of the board's join — `GET /standing-sessions` is the whole of it.
+  That is also why it is its own tab rather than a row on Sessions: the Sessions screen is
+  a tree of work items, and a session with no ticket, no phases and no completion would be
+  a row lying about being part of one
+  ([issue-277](https://github.com/MadaraUchiha-314/the-loop/issues/277),
+  [decision-100](../docs/decisions/decision-100.md)). The screen surfaces the service's
+  refusals **verbatim** rather than re-wording them, and offers `delete` only for a
+  *created* session — the service refuses it for a declared one, and a button whose only
+  outcome is that refusal is worse than no button.
 - **A pull request is a session, not a lookup.** Since
   [issue-172](https://github.com/MadaraUchiha-314/the-loop/issues/172) the session record
   holds one endpoint per PR delivering the work item, each with its own tmux target and

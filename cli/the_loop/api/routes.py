@@ -45,6 +45,7 @@ from ..core import graphs as core_graphs
 from ..core import lifecycle as core_lifecycle
 from ..core import repo as core_repo
 from ..core import sessions as core_sessions
+from ..core import standing as core_standing
 from ..core import workitems as core_workitems
 from ..workitem import WorkItemRef
 from ..yamlpatch import SpliceError
@@ -134,6 +135,44 @@ class SessionReplyBody(BaseModel):
     # as authentication (decision-059: the gateway owns auth).
     actor: str = ""
     comment: bool = True
+
+
+class StandingControlBody(BaseModel):
+    # A standing session is addressed by NAME, never by a work-item ref
+    # (issue-277): the two namespaces are separate so no event can cross between
+    # them. An empty name means "every declared session" for start, and "every
+    # recorded one" for stop; `restart` requires one.
+    name: str = ""
+    verb: str
+
+
+class StandingSayBody(BaseModel):
+    name: str
+    text: str
+    # Recorded on the event for the audit trail; never trusted as
+    # authentication (decision-059: the gateway owns auth).
+    actor: str = ""
+
+
+class StandingCreateBody(BaseModel):
+    # The whole definition, so a session can exist without a config edit
+    # (issue-277 R6). Every field but `name` falls back to the `routing`
+    # defaults a declared entry would inherit.
+    name: str
+    harness: str = ""
+    cwd: str = ""
+    prompt: str = ""
+    description: str = ""
+    # None (absent) inherits routing.harnessArgs.<harness>; [] means none.
+    harnessArgs: Optional[List[str]] = None
+    slackEnabled: bool = False
+    slackChannel: str = ""
+    autoStart: bool = True
+    start: bool = True
+
+
+class StandingDeleteBody(BaseModel):
+    name: str
 
 
 class SessionRegisterBody(BaseModel):
@@ -474,6 +513,64 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
     def close_session(body: SessionCloseBody) -> Dict[str, Any]:
         return core_sessions.close_session(
             body.ref, keep_tmux=body.keepTmux, config=holder.current
+        )
+
+    @router.get(
+        f"{API_PREFIX}/standing-sessions",
+        operation_id="listStandingSessions",
+    )
+    def list_standing_sessions() -> List[Dict[str, Any]]:
+        return core_standing.list_standing(config=holder.current)
+
+    @router.get(
+        f"{API_PREFIX}/standing-sessions/one",
+        operation_id="getStandingSession",
+    )
+    def get_standing_session(name: str = Query(...)) -> Dict[str, Any]:
+        return core_standing.get_standing(name, config=holder.current)
+
+    @router.post(
+        f"{API_PREFIX}/standing-sessions/create",
+        operation_id="createStandingSession",
+    )
+    def create_standing_session(body: StandingCreateBody) -> Dict[str, Any]:
+        return core_standing.create_standing(
+            body.name,
+            harness=body.harness,
+            cwd=body.cwd,
+            prompt=body.prompt,
+            description=body.description,
+            harness_args=body.harnessArgs,
+            slack_enabled=body.slackEnabled,
+            slack_channel=body.slackChannel,
+            auto_start=body.autoStart,
+            start=body.start,
+            config=holder.current,
+        )
+
+    @router.post(
+        f"{API_PREFIX}/standing-sessions/delete",
+        operation_id="deleteStandingSession",
+    )
+    def delete_standing_session(body: StandingDeleteBody) -> Dict[str, Any]:
+        return core_standing.delete_standing(body.name, config=holder.current)
+
+    @router.post(
+        f"{API_PREFIX}/standing-sessions/control",
+        operation_id="controlStandingSession",
+    )
+    def control_standing_session(body: StandingControlBody) -> Dict[str, Any]:
+        return core_standing.control_standing(
+            body.name, body.verb, config=holder.current
+        )
+
+    @router.post(
+        f"{API_PREFIX}/standing-sessions/say",
+        operation_id="sayToStandingSession",
+    )
+    def say_to_standing_session(body: StandingSayBody) -> Dict[str, Any]:
+        return core_standing.say_standing(
+            body.name, body.text, actor=body.actor, config=holder.current
         )
 
     # The response is declared rather than inferred: FastAPI would derive

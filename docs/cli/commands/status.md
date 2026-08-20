@@ -37,6 +37,21 @@ Two properties carried over from the removed `poll status` (issue-191/205):
 - **The heartbeat is enrichment.** An absent or unreadable one loses the progress
   lines, never the liveness answer.
 
+[Standing sessions](/capabilities/standing-sessions) get their own section, and count
+toward the exit code — but only the ones [`start`](/cli/commands/start) **would have
+started** (the block enabled, and the entry's `autoStart` true). One declared without
+`autoStart`, or one that is only in the registry because you started it by hand, is
+reported without deciding the answer.
+
+```console
+$ the-loop status
+service     running (pid 24846) [enabled] — http://127.0.0.1:4114, healthy
+...
+standing sessions:
+supervisor  running [declared]
+triage      not running [declared, not auto-started]
+```
+
 **The exit code is the health check** ([R3.3](https://github.com/MadaraUchiha-314/the-loop/issues/228)):
 0 iff every **enabled** service is running, so `the-loop status || …` is the keepalive
 primitive. `--format json` emits the same facts as one document (per-service rows plus

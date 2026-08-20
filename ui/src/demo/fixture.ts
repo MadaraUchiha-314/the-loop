@@ -15,6 +15,7 @@
 import type {
   ConfigDocument,
   JsonSchema,
+  StandingSessionRecord,
   AttentionItem,
   DaemonStatus,
   EventRecord,
@@ -548,3 +549,45 @@ export const DEMO_CONFIG_SCHEMA: JsonSchema = {
     },
   },
 };
+
+/**
+ * Two standing sessions (issue-277) — one declared in the config, one created
+ * through the API — so the demo shows both halves of the split the screen
+ * exists to make visible.
+ */
+export const DEMO_STANDING: StandingSessionRecord[] = [
+  {
+    name: "supervisor",
+    declared: true,
+    description: "Watches the work items in flight and reports what is stuck.",
+    autoStart: true,
+    harness: "claude",
+    cwd: "/home/you/dev/the-loop",
+    tmuxTarget: "loop-standing-supervisor",
+    ref: "standing:supervisor",
+    status: "running",
+    running: true,
+    harnessSessionId: "0f3ac1de-6f2b-4d51-9a7a-2b4c8e5d1f90",
+    slackChannel: "C07LOOPOPS",
+    slackThread: "1755712800.001900",
+    startedAt: new Date(Date.now() - 92 * 60_000).toISOString(),
+    lastMessageAt: new Date(Date.now() - 7 * 60_000).toISOString(),
+  },
+  {
+    name: "triage",
+    declared: false,
+    description: "Created for the release; deletes when the release is out.",
+    autoStart: true,
+    harness: "claude",
+    cwd: "/home/you/dev/the-loop",
+    tmuxTarget: "loop-standing-triage",
+    ref: "standing:triage",
+    status: "stopped",
+    running: false,
+    harnessSessionId: "7c1d9b02-31ae-4f88-b0c3-9d6e2a4f7b15",
+    slackChannel: "",
+    slackThread: "",
+    startedAt: new Date(Date.now() - 5 * 3_600_000).toISOString(),
+    lastMessageAt: "",
+  },
+];

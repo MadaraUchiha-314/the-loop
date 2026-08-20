@@ -42,6 +42,7 @@ pytestmark = pytest.mark.skipif(
 NAMESPACE_MODULES: Dict[str, str] = {
     "work_items": "the_loop.core.workitems",
     "sessions": "the_loop.core.sessions",
+    "standing": "the_loop.core.standing",
     "graph": "the_loop.core.graphs",
     "events": "the_loop.core.events",
     "daemons": "the_loop.core.daemons",
@@ -63,6 +64,7 @@ def _namespace_classes() -> Dict[str, type]:
         for name, attribute in (
             ("work_items", "WorkItems"),
             ("sessions", "Sessions"),
+            ("standing", "Standing"),
             ("graph", "Graph"),
             ("events", "Events"),
             ("daemons", "Daemons"),

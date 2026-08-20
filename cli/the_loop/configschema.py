@@ -29,8 +29,8 @@ Why the validator is ours
 ``referencing`` and the compiled ``rpds-py`` into a CLI whose dependency set is an
 argument in itself, to be imported by every poller process in order to validate
 nothing. The schemas being validated are the-loop's own, and they use sixteen keywords
-between them. :data:`SUPPORTED` names all sixteen; :func:`validate` implements the ten
-that constrain data and ignores the six that document it.
+between them. :data:`SUPPORTED` names all seventeen; :func:`validate` implements the
+eleven that constrain data and ignores the six that document it.
 
 That trade is only safe because two tests hold it up: a **keyword guard** fails when a
 schema grows a construct not in :data:`SUPPORTED`, and a **differential test** runs this
@@ -41,6 +41,8 @@ Both live in ``cli/tests/test_configschema.py``.
 from __future__ import annotations
 
 import json
+import logging
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -53,6 +55,8 @@ __all__ = [
     "schema_path",
     "validate",
 ]
+
+logger = logging.getLogger("the-loop.configschema")
 
 #: Where the packaged copies live, beside this module.
 _SCHEMA_DIR = Path(__file__).resolve().parent / "schemas"
@@ -78,6 +82,7 @@ SUPPORTED = frozenset(
         "maximum",
         "minItems",
         "uniqueItems",
+        "pattern",
         # documentation only — read by clients, ignored here
         "title",
         "description",
@@ -100,6 +105,7 @@ CONSTRAINING = frozenset(
         "maximum",
         "minItems",
         "uniqueItems",
+        "pattern",
     }
 )
 
@@ -229,6 +235,21 @@ def _check(value: Any, schema: Any, path: str, errors: List[str]) -> None:
     if "enum" in schema and value not in schema["enum"]:
         allowed = ", ".join(json.dumps(option) for option in schema["enum"])
         errors.append(f"{_label(path)}: {json.dumps(value)} is not one of {allowed}")
+
+    pattern = schema.get("pattern")
+    if isinstance(value, str) and isinstance(pattern, str):
+        # JSON Schema's `pattern` is an unanchored SEARCH, not a full match —
+        # `re.search`, not `re.fullmatch`, or a schema that anchors itself (as
+        # the-loop's do) would be judged differently here than by jsonschema.
+        try:
+            matched = re.search(pattern, value) is not None
+        except re.error as exc:  # a malformed pattern is the schema's bug, not the
+            logger.warning("ignoring unusable pattern %r: %s", pattern, exc)  # data's
+            matched = True
+        if not matched:
+            errors.append(
+                f"{_label(path)}: {json.dumps(value)} does not match {pattern}"
+            )
 
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         minimum, maximum = schema.get("minimum"), schema.get("maximum")

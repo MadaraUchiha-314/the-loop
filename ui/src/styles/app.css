@@ -1238,3 +1238,141 @@ a:hover {
 .lp-mode-interval {
   margin: 12px 0 0 34px;
 }
+
+/* — Standing sessions (issue-277) —
+   The screen has no tree and no board: a create form, then one card per
+   session. Every rule below is layout only; the palette is `industry.css`'s,
+   so a theme change reaches this screen without a second edit. */
+.lp-standing {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.lp-standing-createbar {
+  display: flex;
+}
+.lp-standing-create {
+  padding: 18px 20px;
+}
+.lp-standing-create form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.lp-standing-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lp-standing-field label {
+  font-family: var(--font-heading);
+  font-size: 13px;
+  color: var(--color-neutral-800);
+}
+.lp-standing-field input,
+.lp-standing-field textarea {
+  font: inherit;
+  font-size: 14px;
+  padding: 7px 9px;
+  border: 1px solid var(--color-neutral-400);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+.lp-standing-field textarea {
+  resize: vertical;
+  min-height: 62px;
+}
+.lp-standing-error {
+  padding: 14px 18px;
+  border-left: 3px solid var(--color-neutral-800);
+}
+.lp-standing-card {
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.lp-standing-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.lp-h3 {
+  font-family: var(--font-heading);
+  font-size: 17px;
+  margin: 0;
+}
+/* The declared/created split decides whether `delete` is offered, so it is a
+   worded chip rather than a colour — it has to survive being read in
+   monochrome, and it is the first thing an operator needs from the card. */
+.lp-standing-tag {
+  font-size: 12px;
+  padding: 2px 8px;
+  border: 1px solid var(--color-neutral-400);
+  border-radius: var(--radius-md);
+  color: var(--color-neutral-700);
+}
+.lp-standing-desc {
+  margin: 0;
+  color: var(--color-neutral-800);
+}
+.lp-standing-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin: 0;
+}
+.lp-standing-facts div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.lp-standing-facts dt {
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-neutral-600);
+}
+.lp-standing-facts dd {
+  margin: 0;
+  font-size: 13.5px;
+}
+.lp-standing-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.btn-danger {
+  border: 1px solid var(--color-neutral-800);
+  color: var(--color-neutral-900);
+}
+.btn-danger:hover {
+  background: color-mix(in srgb, var(--color-neutral-900) 10%, transparent);
+}
+.lp-standing-say {
+  display: flex;
+  gap: 8px;
+}
+.lp-standing-say input {
+  flex: 1;
+  font: inherit;
+  font-size: 14px;
+  padding: 7px 9px;
+  border: 1px solid var(--color-neutral-400);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+/* Off-screen but reachable: the per-card message input needs a label each
+   screen reader can distinguish, and a visible one per card would be noise. */
+.lp-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
