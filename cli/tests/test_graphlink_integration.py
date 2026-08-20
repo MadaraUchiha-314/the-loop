@@ -49,6 +49,47 @@ def _checkout(root, origin="https://github.com/octo/repo.git", spec_dir=""):
     return root
 
 
+def _bare_checkout(root, origin="https://github.com/octo/repo.git"):
+    """The same checkout **without** the spec folder — a plain ticket (issue-273).
+
+    An issue opened directly on GitHub is never minted by ``/create-ticket``, so
+    ``docs/specs/<id>/`` does not exist anywhere in the repository: it is created by
+    the very work ``phase-selection`` is supposed to gate.
+    """
+    root.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(
+        ["git", "-C", str(root), "remote", "add", "origin", origin], check=True
+    )
+    return root
+
+
+class _FakeGitHub:
+    """Records what the entry chain sends, and reaches no network doing it."""
+
+    def __init__(self):
+        self.posted: list[str] = []
+        self.labels: list[str] = []
+
+    def call(self, op, **params):
+        if op == "list-comments":
+            return {"comments": [{"body": body} for body in self.posted]}
+        if op == "add-comment":
+            self.posted.append(str(params.get("body") or ""))
+        if op == "set-labels":
+            self.labels.extend(str(label) for label in (params.get("labels") or []))
+        return {}
+
+
+@pytest.fixture()
+def github(monkeypatch):
+    provider = _FakeGitHub()
+    monkeypatch.setattr(
+        "the_loop.graph.integrations.resolve", lambda target, config: provider
+    )
+    return provider
+
+
 @pytest.fixture()
 def checkout(tmp_path):
     return _checkout(tmp_path)
@@ -273,3 +314,117 @@ def test_the_poller_and_the_webhook_share_the_same_coupling(tmp_path):
     dispatcher = _dispatcher(tmp_path)
     assert isinstance(dispatcher.graphlink, GraphLink)
     assert dispatcher.graphlink.authorized_users == [REVIEWER]
+
+
+# -- a work item that begins life as a plain ticket (issue-273) ------------------
+
+
+def test_a_ticket_with_no_spec_folder_is_still_held_at_phase_selection(
+    tmp_path, github
+):
+    """
+    Feature: Ingress-driven process graph
+    Scenario: A work item minted as a plain ticket starts at the human gate
+      Given a checkout of the work item's own repository with no docs/specs/<id>/
+      And the work item was armed and a session was spawned for it
+      When the dispatcher reports that spawn
+      Then the graph is started and the work item stands at `phase-selection`
+      And the selectable-phase checklist is posted on the ticket
+      And the loop:phase-selection label is set
+      And nothing is recorded as skipped for want of a spec directory
+
+    Requirement: docs/specs/issue-273/bugfix.md R1.1, R1.2
+    """
+    from the_loop import eventlog
+
+    events = tmp_path / "events.jsonl"
+    eventlog.configure(path=events, source="test")
+    checkout = _bare_checkout(tmp_path / "plain")
+
+    _dispatcher(tmp_path).graphlink.on_spawn(REF, str(checkout))
+
+    spec = checkout / "docs" / "specs" / "issue-113"
+    assert GraphState.load(spec, "issue-113").current_node == "phase-selection"
+    assert github.labels == ["loop:phase-selection"]
+    assert len(github.posted) == 1, "the checklist is the gate's only channel"
+    assert "the-loop execute" in github.posted[0]
+    logged = [json.loads(line) for line in events.read_text().splitlines() if line]
+    assert [e for e in logged if e["event"] == "graph.skipped"] == []
+
+
+def test_the_gate_still_waits_for_an_authorized_human(tmp_path, github):
+    """
+    Feature: Ingress-driven process graph
+    Scenario: Starting the graph is not the same as walking it
+      Given a plain-ticket work item whose graph has just been started
+      When an unauthorized user posts `the-loop execute` on it
+      Then the work item is still at `phase-selection`
+
+    The fix removes a directory check, not a permission one: `phase-selection` is
+    `required: true` precisely so no channel can route around the act of choosing.
+
+    Requirement: docs/specs/issue-273/bugfix.md R1.3
+    """
+    checkout = _bare_checkout(tmp_path / "plain")
+    dispatcher = _dispatcher(tmp_path)
+    dispatcher.graphlink.on_spawn(REF, str(checkout))
+
+    dispatcher.graphlink.on_event(
+        REF, str(checkout), _comment("the-loop execute", author="a-stranger")
+    )
+
+    spec = checkout / "docs" / "specs" / "issue-113"
+    assert GraphState.load(spec, "issue-113").current_node == "phase-selection"
+
+
+def test_the_spawn_prompt_of_an_unplaced_work_item_forbids_starting_a_phase(
+    tmp_path, github
+):
+    """
+    Feature: Ingress-driven process graph
+    Scenario: The prompt is rendered before the graph is entered
+      Given a plain-ticket work item whose graph has not been started yet
+      When the dispatcher resolves the graph context it renders into the prompt
+      Then the block names `phase-selection` as the node about to be entered
+      And it tells the session not to start a phase before its assignment arrives
+      And it names the node as a human gate
+
+    The dispatcher reads the context BEFORE the spawn and enters the graph AFTER it
+    (issue-148, D5), so this block is the only guard standing between an
+    auto-execute prompt and a session that walks into requirements-definition.
+
+    Requirement: docs/specs/issue-273/bugfix.md R2.1, R2.2
+    """
+    from the_loop.graphlink import render_graph_context
+
+    checkout = _bare_checkout(tmp_path / "plain")
+    ctx = _dispatcher(tmp_path).graphlink.context(REF, str(checkout))
+
+    assert ctx is not None and ctx.current_node == "phase-selection"
+    assert ctx.status == "pending" and not ctx.at_human_gate
+    block = render_graph_context(ctx, "issue-113")
+    assert "phase-selection" in block
+    assert "NOT ENTERED YET" in block
+    assert "HUMAN gate" in block
+    assert "the-loop graph complete" not in block, (
+        "a node nobody entered is not a node to claim"
+    )
+
+
+def test_a_graph_that_has_started_reports_its_real_node(tmp_path, checkout, github):
+    """
+    Feature: Ingress-driven process graph
+    Scenario: `pending` never masks a work item in flight
+      Given a work item already standing on a node
+      When its graph context is resolved
+      Then the status is the node's own, not `pending`
+
+    Requirement: docs/specs/issue-273/bugfix.md R2.3
+    """
+    dispatcher = _dispatcher(tmp_path)
+    dispatcher.graphlink.on_spawn(REF, str(checkout))
+
+    ctx = dispatcher.graphlink.context(REF, str(checkout))
+
+    assert ctx is not None and ctx.current_node == "phase-selection"
+    assert ctx.status != "pending"

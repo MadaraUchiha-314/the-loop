@@ -203,13 +203,28 @@ def test_a_disabled_link_does_nothing(repo):
     assert runtime.started == [] and runtime.advanced == []
 
 
-def test_a_work_item_with_no_spec_directory_is_skipped(tmp_path):
-    """AC9 — no spec means the loop has not started this item; inventing a
-    directory would fake that."""
+def test_a_work_item_with_no_spec_directory_is_still_started(tmp_path):
+    """issue-273 — the outer loop's ONE required node, `phase-selection`, runs
+    before any spec exists, so gating the start on `docs/specs/<id>/` routed it
+    around every work item that begins life as a plain ticket. AC9's original
+    reading ("no spec means the loop has not started this item") is answered by
+    `_awaiting_start`, not by a directory the gated work itself creates."""
+    _git_repo(tmp_path)
     runtime = _FakeRuntime()
     link = _link(tmp_path, runtime)
     link.on_spawn(REF, str(tmp_path))
-    assert runtime.started == []
+    assert runtime.started == [("issue-113", REF.ref)]
+
+
+def test_an_advance_still_requires_the_spec_directory(tmp_path):
+    """The exemption is `start` and `context` only (issue-273). `advance` cannot be
+    the first thing that happens to a work item, so a missing directory there still
+    means the graph was never placed here — and this module's asymmetry (no input
+    moves an unplaced work item forward) survives the fix."""
+    _git_repo(tmp_path)
+    runtime = _FakeRuntime()
+    _link(tmp_path, runtime).on_event(REF, str(tmp_path), _comment_event())
+    assert runtime.advanced == []
 
 
 def test_a_non_github_ref_is_skipped(repo):
@@ -464,17 +479,26 @@ def test_the_cli_key_overrides_the_repositorys_value(tmp_path):
 def test_the_gate_reads_the_same_directory_the_runtime_will(tmp_path):
     """R2.1 — the skip decision and the runtime resolve **one** value. A repo
     that declares `specs` and still has an old `docs/specs` must not be gated on
-    the stale one and then written to the declared one."""
+    the stale one and then written to the declared one.
+
+    Driven by an `advance`, which is the action the gate still applies to since
+    issue-273; the `start` beside it pins the other half — the value threaded into
+    the runtime is the declared one, so a graph that starts writes its state where
+    the gate would have looked."""
     _git_repo(tmp_path)
     _harness_config(tmp_path, "specs")
     (tmp_path / "docs" / "specs" / "issue-113").mkdir(parents=True)
     runtime = _FakeRuntime()
     link = _link(tmp_path, runtime)
 
+    link.on_event(REF, str(tmp_path), _comment_event())
+
+    assert runtime.advanced == [], "the gate must use the declared directory"
+    assert runtime.built == []
+
     link.on_spawn(REF, str(tmp_path))
 
-    assert runtime.started == [], "the gate must use the declared directory"
-    assert runtime.built == []
+    assert runtime.built == [(str(tmp_path), "specs")]
 
 
 def test_an_unparseable_harness_config_falls_back_to_the_default(repo):
@@ -543,23 +567,44 @@ def test_a_foreign_checkouts_harness_config_is_never_read(tmp_path, monkeypatch)
 
 
 def test_a_skipped_work_item_is_recorded_in_the_event_log(tmp_path):
-    """R3.1 — a work item that is labelled, armed and spawned but whose graph
+    """R3.1 — a work item that is labelled, armed and delivered to but whose graph
     never moves is worth one line in `the-loop events`. At `logger.debug` it was
-    invisible while the delivery still counted as a success."""
+    invisible while the delivery still counted as a success.
+
+    Driven by an `advance` since issue-273: `start` no longer refuses a work item
+    for having no spec directory, so it no longer has this skip to record."""
     _git_repo(tmp_path)
     events = _events(tmp_path)
     runtime = _FakeRuntime()
 
-    _link(tmp_path, runtime).on_spawn(REF, str(tmp_path))
+    _link(tmp_path, runtime).on_event(REF, str(tmp_path), _comment_event())
 
     skipped = [r for r in _records(events) if r["event"] == "graph.skipped"]
     assert len(skipped) == 1
     assert skipped[0]["work_item"] == REF.ref
-    assert skipped[0]["action"] == "start"
+    assert skipped[0]["action"] == "advance"
     assert skipped[0]["reason"] == "no-spec-dir"
     assert skipped[0]["spec_dir"] == "docs/specs"
     assert skipped[0]["level"] != "debug", (
         "the record must be visible in `the-loop events` without a flag"
+    )
+
+
+def test_a_start_with_no_spec_directory_records_no_skip(tmp_path):
+    """issue-273 — the two `graph.skipped` records at spawn (`context`, then
+    `start`) were the whole visible signature of the bug: the gate that must run
+    before any work never ran, and the operator's only clue was a pair of skips.
+    Neither action refuses on this ground any more."""
+    _git_repo(tmp_path)
+    events = _events(tmp_path)
+    runtime = _FakeRuntime()
+
+    link = _link(tmp_path, runtime)
+    link.context(REF, str(tmp_path))
+    link.on_spawn(REF, str(tmp_path))
+
+    assert [r for r in _records(events) if r["event"] == "graph.skipped"] == [], (
+        "no-spec-dir must not refuse the node that runs before any spec exists"
     )
 
 

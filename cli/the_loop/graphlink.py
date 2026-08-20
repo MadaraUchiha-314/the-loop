@@ -69,6 +69,28 @@ _COMMENT_EVENTS = {
 #: The primary adoption is :meth:`GraphLink.adopt`, called before anything is spawned.
 _ADOPTING_ACTIONS = frozenset({"start", "advance"})
 
+#: The actions that do NOT require ``<specDir>/<id>/`` to already exist (issue-273).
+#:
+#: ``docs/specs/<id>/`` is created by the work the graph exists to gate, so keying
+#: every action on it is a chicken-and-egg for a work item that begins life as a plain
+#: ticket: the one ``required: true`` node of ``pdlc-work-item-loop`` —
+#: ``phase-selection``, "where every work item starts" (issue-177, decision-067/068) —
+#: is the node that runs *before* any spec exists, and gating it on the spec folder is
+#: what routed it around every ticket not minted by ``/create-ticket``.
+#:
+#: * ``start`` places the work item on that node. It produces no artifact, and
+#:   :func:`the_loop.graph.state.state_lock` / :meth:`GraphState.save` create the
+#:   directory they write into, so nothing here has to pre-create it.
+#: * ``context`` is a pure read that renders the spawn prompt's process-state block.
+#:   Without the exemption the block is empty for exactly the items that need it, and
+#:   the spawned session walks into ``requirements-definition`` unguarded.
+#:
+#: ``advance`` and ``clean`` keep the predicate. Neither can be the *first* thing that
+#: happens to a work item, so for them a missing directory still means "this graph was
+#: never placed here" — and keeping it there preserves the module's asymmetry: no input
+#: moves an unplaced work item forward.
+_SPEC_DIR_OPTIONAL_ACTIONS = frozenset({"start", "context"})
+
 
 @dataclass
 class GraphLinkConfig:
@@ -217,7 +239,14 @@ class GraphContext:
 
     current_node: str
     phase: str
-    status: str  # in-progress | waiting | blocked | parked | complete | escalated
+    #: pending | in-progress | waiting | blocked | parked | complete | escalated.
+    #: ``pending`` (issue-273) is the one status that describes a node the work item
+    #: has **not** entered: the graph knows where it is about to be placed, and the
+    #: spawn prompt is rendered before the placement happens (issue-148, D5 — the
+    #: write only follows a successful spawn). It is deliberately not part of
+    #: :attr:`at_human_gate`: nothing has been entered, so there is no gate to hand
+    #: an event to.
+    status: str
     reason: str
     messages: Tuple[str, ...]
     next_command: str
@@ -319,6 +348,39 @@ def render_graph_context(
         + (f" (phase: {ctx.phase})" if ctx.phase else "")
         + f" — status: {ctx.status}",
     ]
+    if ctx.status == "pending":
+        # issue-273: the work item has not entered this node yet, and this block is
+        # the only thing standing between the auto-execute prompt and a session that
+        # starts a phase nobody selected. Everything below — the reason, the gate
+        # messages, the resume command, the claim command — describes a node that was
+        # entered; none of it is true yet, so none of it is rendered.
+        #
+        # Worded for BOTH prompts. At a spawn the entry follows within moments, which
+        # is the case this exists for. But an *event* prompt can carry a pending
+        # context too — a session that predates the coupling, or one whose entry
+        # faulted — and there the assignment never comes. So the last line makes the
+        # stall speak instead of waiting: an agent that is never placed says so on the
+        # work item rather than deciding for itself that it may begin.
+        lines.append(
+            "  NOT ENTERED YET — the-loop has not placed this work item on any node. Do "
+            "not start a phase, write a spec artifact, set a phase label or open a pull "
+            "request: the loop delivers this node's assignment into this conversation "
+            "when it enters it"
+        )
+        if ctx.actor == "human":
+            lines.append(
+                "  this node is a HUMAN gate — the loop waits for an authorized person "
+                "on the work item. Do not claim it, do not answer it on their behalf, "
+                "and do not start the work it gates"
+            )
+        lines.append(
+            "  if no assignment arrives, say so on the work item — never start the "
+            "phase yourself"
+        )
+        lines.append(
+            "  (this block is the-loop's own state, not part of the event payload)"
+        )
+        return "\n".join(lines)
     if ctx.reason:
         lines.append(f"  reason: {ctx.reason}")
     for message in ctx.messages:
@@ -708,7 +770,10 @@ class GraphLink:
             else ""
         )
         self._adopt(action, root, work_item, loop)
-        if not (root / spec_dir / item_id).is_dir():
+        if (
+            action not in _SPEC_DIR_OPTIONAL_ACTIONS
+            and not (root / spec_dir / item_id).is_dir()
+        ):
             logger.debug(
                 "no %s/%s under %s; not %sing its graph",
                 spec_dir,
@@ -821,6 +886,46 @@ class GraphLink:
         state.save(state_dir)
 
     @staticmethod
+    def _pending_context(rt: Any, state: Any) -> Optional[GraphContext]:
+        """Where a work item that has not entered the graph is about to stand (issue-273).
+
+        The dispatcher resolves the context **before** it spawns and enters the graph
+        **after** (issue-148, D5: a failed spawn must not leave a labelled ticket
+        pointing at a node nobody stands on). So at the one moment the auto-execute
+        prompt is written, a fresh work item has no pointer — and returning ``None``
+        there rendered an empty process-state block, which is how a spawned session
+        came to walk into ``requirements-definition`` with the outer loop's one
+        ``required: true`` node, ``phase-selection``, never having run.
+
+        The graph's own ``start`` is that answer, and reading it costs nothing and
+        writes nothing. Declared skips are deliberately **not** applied: they are made
+        *at* ``phase-selection``, which is not skippable, so the start node is the start
+        node — and re-deriving a route here would be this module guessing at a walk it
+        is documented never to move.
+
+        ``None`` when the graph cannot be read at all (a fake runtime, a graph that
+        failed to compile): the block is then empty, exactly as before.
+        """
+        try:
+            node = rt.graph.node(rt.graph.start)
+        except Exception as exc:  # noqa: BLE001 — an unreadable graph renders nothing
+            logger.debug("could not resolve the graph's start node: %s", exc)
+            return None
+        return GraphContext(
+            current_node=node.id,
+            phase=node.phase,
+            status="pending",
+            reason="",
+            messages=(),
+            # Not rendered for a pending node (see `render_graph_context`): a command
+            # that has not been assigned is not a command to run.
+            next_command=node.command,
+            actor=node.actor,
+            surface=str(getattr(state, "surface", "") or ""),
+            loop=str(getattr(state, "loop", "") or ""),
+        )
+
+    @staticmethod
     def _context_from(rt: Any, item_id: str) -> Optional[GraphContext]:
         """Derive a :class:`GraphContext` from state + graph, mutating nothing.
 
@@ -835,7 +940,7 @@ class GraphLink:
         state_dir = rt.state_dir(item) if hasattr(rt, "state_dir") else item.spec_dir
         state = GraphState.load(state_dir, item_id)
         if not state.current_node:
-            return None  # never entered — a fresh item starts, it doesn't resume
+            return GraphLink._pending_context(rt, state)
         node = rt.graph.node(state.current_node)
         rec = state.nodes.get(node.id)
         reason, messages = "", ()

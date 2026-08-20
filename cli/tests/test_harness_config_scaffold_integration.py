@@ -49,6 +49,29 @@ def _adopted(root: Path) -> Path:
     return root / ".the-loop" / "harness-config.yaml"
 
 
+@pytest.fixture(autouse=True)
+def offline(monkeypatch):
+    """No hook in this suite reaches GitHub.
+
+    Autouse since issue-273: a spawn in an unadopted checkout now *starts* the graph
+    (the outer loop's first node runs before any spec directory exists), so the
+    entry chain — `set-phase-label`, `post-phase-selection` — resolves a provider.
+    Without this the suite would sit on the real transport for its 403s, which is a
+    network dependency in a test about writing one YAML file.
+    """
+    monkeypatch.setattr(
+        "the_loop.graph.integrations.resolve",
+        lambda target, config: _OfflineGitHub(),
+    )
+
+
+class _OfflineGitHub:
+    """Answers every op with nothing, so a hook chain runs and reaches no network."""
+
+    def call(self, op, **params):
+        return {"comments": []} if op == "list-comments" else {}
+
+
 @pytest.fixture()
 def events(tmp_path):
     """The real event log, so `harness.config_scaffolded` is asserted as emitted."""
@@ -96,23 +119,27 @@ def test_a_repository_is_adopted_even_when_its_graph_is_skipped(tmp_path, events
     Scenario: the work item has no spec directory yet
       Given an unadopted checkout in which the work item has no spec directory
       When the ingress→graph coupling handles a spawn
-      Then the graph is still skipped, exactly as before this change
-      And the repository is adopted anyway, because the session the daemon just
-           spawned is already running there and needs a config to read
+      Then the repository is adopted, because the session the daemon just spawned
+           is already running there and needs a config to read
+      And the config is written BEFORE the graph starts, so the graph's own first
+           node reads the-loop's defaults rather than nothing
+      And no `no-spec-dir` skip is recorded — since issue-273 the start does not
+           refuse a work item for having no spec directory yet
 
-    Requirement: docs/specs/issue-193/requirements.md R2.1
+    Requirement: docs/specs/issue-193/requirements.md R2.1;
+                 docs/specs/issue-273/bugfix.md R1.1
     """
     root = _checkout(tmp_path / "repo")
     _link().on_spawn(REF, str(root))
 
     assert _adopted(root).is_file()
-    assert not (root / "docs" / "specs" / WORK_ITEM / "graph-state.json").exists()
+    assert (root / "docs" / "specs" / WORK_ITEM / "graph-state.json").is_file()
     skips = [
         record
         for record in eventlog.read_events(events.path)
         if record["event"] == "graph.skipped"
     ]
-    assert [record["reason"] for record in skips] == ["no-spec-dir"]
+    assert skips == []
 
 
 def test_a_foreign_checkout_is_never_adopted(tmp_path, events):
