@@ -110,18 +110,36 @@ def test_a_message_never_spawns_a_standing_session(tmp_path, monkeypatch):
     assert spawned == []
 
 
-def test_standing_control_is_not_reachable_over_mcp():
+def test_standing_lifecycle_is_not_reachable_over_mcp():
     """An agent that could stop a standing session could stop the one supervising
-    it, and starting a harness process is an operator's act — the same reasoning
-    that keeps `restart` and `sessions reset` off this surface."""
+    it, and bringing a harness process into — or out of — existence is an
+    operator's act. Same reasoning that keeps `restart` and `sessions reset` off
+    this surface."""
     import asyncio
 
     tools = {tool.name for tool in asyncio.run(api_mcp.build_server({}).list_tools())}
 
     assert "say_to_standing_session" in tools
     assert "list_standing_sessions" in tools
-    assert "control_standing_session" not in tools
-    assert not any("standing" in name and "control" in name for name in tools)
+    assert "get_standing_session" in tools
+    for forbidden in ("control", "create", "delete", "start", "stop", "restart"):
+        assert not any("standing" in name and forbidden in name for name in tools), (
+            f"{forbidden} reached the MCP surface"
+        )
+
+
+def test_a_created_session_cannot_be_addressed_as_a_work_item(tmp_path):
+    """The namespace split holds for created sessions too: they are recorded in
+    the standing registry, which nothing that resolves refs ever reads."""
+    config = _config(tmp_path)
+    config["standingSessions"] = {"enabled": True, "sessions": []}
+    StandingRegistry(layout_from_config(config).standing_dir).write(
+        StandingRecord(name="triage", harness="claude")
+    )
+
+    assert core_sessions.list_sessions(config=config) == []
+    with pytest.raises(ValueError):
+        core_sessions.get_session(standing_ref("triage"), config=config)
 
 
 def test_the_rest_surface_maps_refusals_onto_the_documented_codes(tmp_path):
@@ -147,4 +165,24 @@ def test_the_rest_surface_maps_refusals_onto_the_documented_codes(tmp_path):
                 json={"name": "supervisor", "text": "  "},
             ).status_code
             == 400
+        )
+        # create: a name the config already declares is the caller's mistake
+        assert (
+            client.post(
+                "/api/v1/standing-sessions/create", json={"name": "supervisor"}
+            ).status_code
+            == 400
+        )
+        # delete: a declared session is 400, an uncreated one is 404
+        assert (
+            client.post(
+                "/api/v1/standing-sessions/delete", json={"name": "supervisor"}
+            ).status_code
+            == 400
+        )
+        assert (
+            client.post(
+                "/api/v1/standing-sessions/delete", json={"name": "nobody"}
+            ).status_code
+            == 404
         )

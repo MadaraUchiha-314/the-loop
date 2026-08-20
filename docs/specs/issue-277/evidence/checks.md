@@ -1,5 +1,8 @@
 # Evidence: lint, format, types, markdown and config validation (issue-277)
 
+Re-run after the owner's ruling ([decision-100](../../../decisions/decision-100.md)) added
+the `create`/`delete` verbs.
+
 ## `make lint` — ruff
 
 ```text
@@ -26,9 +29,10 @@ Summary: 0 error(s)
 
 ## `make validate` — every config against its schema
 
-The `standingSessions` block this work item adds is validated here in three places: this
-repository's own config, the shipped template, and (through the packaged copy) whatever an
-operator writes.
+The `standingSessions` block is validated here in three places: this repository's own
+config, the shipped template, and (through the packaged copy) whatever an operator writes.
+A **created** session is not validated here — it never touches a config file — which is
+why its name, `cwd` and harness are checked in code instead.
 
 ```text
 VALID   .the-loop/harness-config.yaml

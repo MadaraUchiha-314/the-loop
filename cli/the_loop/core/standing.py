@@ -28,6 +28,7 @@ from ..harness.base import HarnessAdapter, TrustResult, UnsupportedRunnerError
 from ..harness_plugins import PluginConfig
 from ..runner import SESSION_DEAD, SESSION_LIVE, SESSION_UNKNOWN, TmuxRunner
 from ..standing import (
+    NAME_RE,
     RUNNING,
     STOPPED,
     StandingConfig,
@@ -47,6 +48,8 @@ logger = logging.getLogger("the-loop.core.standing")
 __all__ = [
     "CONTROL_VERBS",
     "control_standing",
+    "create_standing",
+    "delete_standing",
     "get_standing",
     "list_standing",
     "restart_standing",
@@ -171,6 +174,31 @@ def _boot_prompt(entry: StandingSession, config: Optional[dict]) -> str:
     if not brief:
         return directive
     return f"{directive}\n\n---\n\n{brief}"
+
+
+def _entry_for(
+    name: str, config: Optional[dict], registry: StandingRegistry
+) -> StandingSession:
+    """What this session *is*, from whichever source has it (design §D8).
+
+    The config first, then the registry. One seam, so `start`, `stop`, `restart`
+    and `say` behave identically whether the definition was declared in
+    `standingSessions.sessions` or created through the API (R6.7) — two code
+    paths here is how the two lifecycles would drift apart.
+
+    ``LookupError`` when neither has it.
+    """
+    parsed = _tolerant_config(config)
+    declared = parsed.get(name) if parsed else None
+    if declared is not None:
+        return declared
+    record = registry.read(name)
+    if record is not None:
+        return record.as_session()
+    raise LookupError(
+        f"no standing session {name!r} — it is neither declared in "
+        "standingSessions.sessions nor recorded as created"
+    )
 
 
 def _tolerant_config(config: Optional[dict]) -> Optional[StandingConfig]:
@@ -443,8 +471,16 @@ def _start_one(
             created_at=record.created_at if record else "",
             started_at=utcnow(),
             last_message_at=record.last_message_at if record else "",
-            slack_channel=record.slack_channel if record else "",
+            slack_channel=record.slack_channel if record else entry.slack.channel,
             slack_thread=record.slack_thread if record else "",
+            # The definition travels with the record so a session that has no
+            # config entry can be rebuilt from it alone (design §D8). Harmless
+            # on a declared one: `_entry_for` reads the config first.
+            description=entry.description,
+            harness_args=entry.harness_args,
+            prompt=entry.prompt,
+            auto_start=entry.auto_start,
+            slack_enabled=entry.slack.enabled,
         )
     )
     eventlog.emit(
@@ -556,17 +592,24 @@ def start_standing(
     config typo becomes a supervisor that was never watching.
     """
     parsed = StandingConfig.from_mapping(config)
-    entries = list(parsed.sessions)
-    if name:
-        entry = parsed.get(name)
-        if entry is None:
-            raise LookupError(
-                f"no standing session {name!r} is declared in standingSessions.sessions"
-            )
-        entries = [entry]
-    elif auto_only:
-        entries = [entry for entry in entries if entry.auto_start]
     registry = _registry(config, registry_dir)
+    if name:
+        # Declared or created — one seam, so a session made through the API is
+        # started by exactly the same verb as one from the config (R6.7).
+        entries = [_entry_for(name, config, registry)]
+    else:
+        declared = {entry.name: entry for entry in parsed.sessions}
+        # `stop_all` stops every RECORDED session, so `start_all` restores every
+        # recorded one that auto-starts (R6.6) — otherwise `the-loop restart`
+        # would destroy precisely the sessions the API created.
+        created = [
+            record.as_session()
+            for record in registry.list()
+            if record.name not in declared
+        ]
+        entries = list(parsed.sessions) + created
+        if auto_only:
+            entries = [entry for entry in entries if entry.auto_start]
     runner = _runner(config)
     rows = [_start_one(entry, config, registry, runner) for entry in entries]
     ok = all(
@@ -639,6 +682,8 @@ def stop_standing(
     entries = {entry.name: entry for entry in (parsed.sessions if parsed else ())}
     registry = _registry(config, registry_dir)
     records = {record.name: record for record in registry.list()}
+    for one, record in records.items():  # a created session's own definition
+        entries.setdefault(one, record.as_session())
     runner = _runner(config)
     # Records, not the declaration: `stop` releases what the-loop started, and a
     # declared entry that was never started has nothing to release.
@@ -654,7 +699,11 @@ def stop_standing(
 def restart_standing(
     name: str, config: Optional[dict] = None, registry_dir: str = ""
 ) -> Dict[str, Any]:
-    """Stop then start one session, keeping its conversation."""
+    """Stop then start one session, keeping its conversation.
+
+    Declared or created alike: both halves resolve the definition through
+    :func:`_entry_for`.
+    """
     if not name:
         raise ValueError("restart names one standing session; it has no 'all' form")
     stopped = stop_standing(name, config, registry_dir)
@@ -664,6 +713,142 @@ def restart_standing(
         "ok": bool(stopped["ok"] and started["ok"]),
         "stopped": stopped["sessions"],
     }
+
+
+def create_standing(
+    name: str,
+    harness: str = "",
+    cwd: str = "",
+    prompt: str = "",
+    description: str = "",
+    harness_args: Optional[List[str]] = None,
+    slack_enabled: bool = False,
+    slack_channel: str = "",
+    auto_start: bool = True,
+    start: bool = True,
+    config: Optional[dict] = None,
+    registry_dir: str = "",
+) -> Dict[str, Any]:
+    """Bring a standing session into existence without a config edit (R6.1).
+
+    The whole definition is written to the registry, which is what lets
+    :func:`start_standing` rebuild it later with nothing in
+    `standingSessions.sessions` to read (design §D8). Unless ``start`` is false
+    the session is then started, so one call gives you a running session.
+
+    Refuses a name that is already **declared** or already **recorded** (R6.2):
+    a name is one session, and adopting an existing one would let a create
+    silently take over a running agent. Every other refusal a declared start
+    applies — the name shape, a missing `cwd`, a live occupant — applies here
+    unchanged, because the start half is the same function.
+    """
+    if not NAME_RE.match(name or ""):
+        raise ValueError(
+            f"invalid standing-session name {name!r}: expected lowercase letters, "
+            "digits and hyphens, not starting with a hyphen (max 40) — the name "
+            "becomes a tmux session and a file name"
+        )
+    parsed = _tolerant_config(config)
+    if parsed is not None and parsed.get(name) is not None:
+        raise ValueError(
+            f"standing session {name!r} is already declared in "
+            "standingSessions.sessions; start it with `the-loop standing start "
+            f"{name}` rather than creating a second definition for one name"
+        )
+    registry = _registry(config, registry_dir)
+    if registry.read(name) is not None:
+        raise ValueError(
+            f"standing session {name!r} already exists; `the-loop standing start "
+            f"{name}` to run it, or `the-loop standing delete {name}` to remove it "
+            "first"
+        )
+    routing = _routing(config)
+    resolved_harness = harness or str(routing.get("defaultHarness") or "claude")
+    args = harness_args
+    if args is None:
+        declared_args = routing.get("harnessArgs") or {}
+        args = list((declared_args or {}).get(resolved_harness) or [])
+    record = registry.write(
+        StandingRecord(
+            name=name,
+            harness=resolved_harness,
+            cwd=cwd or str(routing.get("spawnWorkdir") or "."),
+            status=STOPPED,  # nothing is running until the start below says so
+            description=description,
+            harness_args=tuple(str(arg) for arg in args),
+            prompt=prompt,
+            auto_start=auto_start,
+            slack_enabled=slack_enabled,
+            slack_channel=slack_channel,
+        )
+    )
+    eventlog.emit(
+        "standing.created",
+        standing=name,
+        harness=record.harness,
+        cwd=record.cwd,
+        auto_start=auto_start,
+    )
+    if not start:
+        return {
+            "sessions": [_row(name, record.as_session(), record, False)],
+            "ok": True,
+        }
+    started = start_standing(name, config=config, registry_dir=registry_dir)
+    if not started["ok"]:
+        # A create that could not start leaves no half-session behind: the record
+        # is the only thing that existed yet, so removing it keeps the name free
+        # for the retry the operator is about to make.
+        registry.delete(name)
+        eventlog.emit(
+            "standing.create_failed",
+            level="error",
+            standing=name,
+            error="; ".join(
+                row.get("detail", "")
+                for row in started["sessions"]
+                if row.get("detail")
+            )
+            or None,
+        )
+    return started
+
+
+def delete_standing(
+    name: str, config: Optional[dict] = None, registry_dir: str = ""
+) -> Dict[str, Any]:
+    """Stop a created standing session and forget it (R6.4).
+
+    The difference from ``stop`` is the record: ``stop`` keeps it, so the next
+    start resumes the same conversation, and ``delete`` removes it, so nothing
+    comes back.
+
+    Refuses a **declared** session (R6.5), naming the config key: `the-loop
+    start` would recreate its record on the next boot, so a delete that appeared
+    to work would be lying. A declared session is removed by editing the config.
+    """
+    if not NAME_RE.match(name or ""):
+        raise ValueError(f"invalid standing-session name {name!r}")
+    parsed = _tolerant_config(config)
+    if parsed is not None and parsed.get(name) is not None:
+        raise ValueError(
+            f"standing session {name!r} is declared in standingSessions.sessions, "
+            "so deleting its record would not remove it — `the-loop start` would "
+            f"bring it back. Remove the entry from the config, or stop it with "
+            f"`the-loop standing stop {name}`"
+        )
+    registry = _registry(config, registry_dir)
+    if registry.read(name) is None:
+        raise LookupError(f"no standing session {name!r} has been created")
+    stopped = stop_standing(name, config=config, registry_dir=registry_dir)
+    registry.delete(name)
+    eventlog.emit("standing.deleted", standing=name)
+    rows = stopped["sessions"] or [_row(name, None, None, False)]
+    for row in rows:
+        row["outcome"] = "deleted"
+        row["status"] = "absent"
+        row["detail"] = f"stopped and forgot {tmux_target_for(name)}"
+    return {"sessions": rows, "ok": True}
 
 
 def control_standing(

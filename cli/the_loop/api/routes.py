@@ -154,6 +154,27 @@ class StandingSayBody(BaseModel):
     actor: str = ""
 
 
+class StandingCreateBody(BaseModel):
+    # The whole definition, so a session can exist without a config edit
+    # (issue-277 R6). Every field but `name` falls back to the `routing`
+    # defaults a declared entry would inherit.
+    name: str
+    harness: str = ""
+    cwd: str = ""
+    prompt: str = ""
+    description: str = ""
+    # None (absent) inherits routing.harnessArgs.<harness>; [] means none.
+    harnessArgs: Optional[List[str]] = None
+    slackEnabled: bool = False
+    slackChannel: str = ""
+    autoStart: bool = True
+    start: bool = True
+
+
+class StandingDeleteBody(BaseModel):
+    name: str
+
+
 class SessionRegisterBody(BaseModel):
     ref: str
     harness: str
@@ -507,6 +528,32 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
     )
     def get_standing_session(name: str = Query(...)) -> Dict[str, Any]:
         return core_standing.get_standing(name, config=holder.current)
+
+    @router.post(
+        f"{API_PREFIX}/standing-sessions/create",
+        operation_id="createStandingSession",
+    )
+    def create_standing_session(body: StandingCreateBody) -> Dict[str, Any]:
+        return core_standing.create_standing(
+            body.name,
+            harness=body.harness,
+            cwd=body.cwd,
+            prompt=body.prompt,
+            description=body.description,
+            harness_args=body.harnessArgs,
+            slack_enabled=body.slackEnabled,
+            slack_channel=body.slackChannel,
+            auto_start=body.autoStart,
+            start=body.start,
+            config=holder.current,
+        )
+
+    @router.post(
+        f"{API_PREFIX}/standing-sessions/delete",
+        operation_id="deleteStandingSession",
+    )
+    def delete_standing_session(body: StandingDeleteBody) -> Dict[str, Any]:
+        return core_standing.delete_standing(body.name, config=holder.current)
 
     @router.post(
         f"{API_PREFIX}/standing-sessions/control",

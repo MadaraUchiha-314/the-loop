@@ -1,6 +1,8 @@
 # Evidence: test runs (issue-277)
 
-Captured on 2026-08-20 on this branch. No redaction needed: no output below carries a
+Captured on 2026-08-20 on this branch, and **re-run after the owner's ruling**
+([decision-100](../../../decisions/decision-100.md)) added the `create`/`delete` verbs —
+the numbers below are that second run. No redaction needed: no output below carries a
 token, a hostname or a path outside this checkout.
 
 ## Baseline — `make test` on `main` at `b6bfda1`
@@ -14,10 +16,10 @@ token, a hostname or a path outside this checkout.
 ```text
 ........................................................................ [ 97%]
 ...........................................................              [100%]
-2584 passed, 1 skipped in 133.34s (0:02:13)
+2600 passed, 1 skipped in 144.39s (0:02:24)
 ```
 
-+83 tests, none removed, none skipped that was not skipped before: 80 in the four new
++99 tests, none removed, none skipped that was not skipped before: 96 in the four new
 files, and 3 added to `test_tmux_runner.py` for the runner split.
 
 ## T1/T2/T8 — the new tests alone
@@ -25,7 +27,7 @@ files, and 3 added to `test_tmux_runner.py` for the runner split.
 `uv run --project cli python -m pytest -q cli/tests/test_standing.py cli/tests/test_standing_integration.py cli/tests/test_standing_channels_integration.py cli/tests/test_standing_security_integration.py`
 
 ```text
-80 passed in 1.37s
+96 passed in 1.84s
 ```
 
 ## T1 — the runner split is a refactor
@@ -36,7 +38,7 @@ work-item paths behave identically.
 
 ```text
 ..........................................                               [100%]
-114 passed in 0.26s
+114 passed in 0.29s
 ```
 
 ## T3 — the served schema equals the authored contract

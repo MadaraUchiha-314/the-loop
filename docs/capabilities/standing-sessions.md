@@ -4,6 +4,19 @@
 > the-loop keeps for itself, declared in the CLI config, addressed by name, and talked to
 > on the control plane or in a Slack thread.
 
+## How you interact with one
+
+Three ways, and no others are built ([decision-100](../decisions/decision-100.md)): type
+directly into its **tmux session**, reply in its **Slack thread**, or send it a message
+through the **control plane** (`the-loop standing say`, `POST
+/api/v1/standing-sessions/say`, the `say_to_standing_session` MCP tool). The control plane
+is deliberately *not* modelled as a `channel`, and the existing way to talk to a tmux
+session is reused rather than reinvented.
+
+A standing session cannot yet *initiate* — it is read by looking at its pane, locally,
+over SSH, or through the ttyd web terminal. That limitation is recorded in decision-100
+rather than left to be rediscovered.
+
 ## What it is
 
 Every other session the-loop spawns is a work item's: the tmux name is minted from a
@@ -30,6 +43,7 @@ flowchart LR
 | | work-item session | standing session |
 |---|---|---|
 | Identity | `github:OWNER/REPO#N` | a name (`^[a-z0-9][a-z0-9-]{0,39}$`) |
+| Defined by | the ticket | a config entry, **or** `standing create` at runtime |
 | tmux | `loop-<work-item-slug>` | `loop-standing-<name>` |
 | Record | `<state.root>/local/<slug>.json` | `<state.root>/local/standing/<name>.json` |
 | Started by | an authorized control keyword on the ticket | `the-loop start`, or `standing start` |
@@ -37,6 +51,39 @@ flowchart LR
 | Ends | when the work item is delivered | when an operator stops it |
 
 ## Current behaviour
+
+### Definition — declared, or created
+
+A session's definition comes from one of two sources, and the verbs cannot tell them
+apart ([decision-100](../decisions/decision-100.md)):
+
+- WHEN a name is **declared** in `standingSessions.sessions` THEN that entry is its
+  definition.
+- WHEN a name is not declared but **recorded** THEN its registry record is its definition:
+  a session created through the API carries `harnessArgs`, `prompt`, `description` and
+  `autoStart` in the record, because for it the record *is* the declaration.
+- `start`, `stop`, `restart` and `say` SHALL resolve through that one seam, so the source
+  of a definition never changes what a verb does.
+
+### Created and deleted at runtime
+
+- WHEN an authorized caller **creates** a session THEN its whole definition SHALL be
+  written to the registry and the session started, unless the caller asks for the record
+  alone.
+- IF the name is already declared **or** already recorded THEN the create SHALL be refused.
+  A name is one session; adopting an existing one would let a create take over a running
+  agent.
+- WHEN a create's start fails THEN the record it wrote SHALL be removed, so the name stays
+  free for the retry and no half-session is left behind.
+- WHEN an authorized caller **deletes** a session THEN it SHALL be stopped with the same
+  graceful termination `stop` performs, and its record SHALL then be removed — the whole
+  difference from `stop`, which keeps the record so the next start resumes.
+- IF the named session is **declared** THEN delete SHALL be refused, naming the config key
+  and `stop`. `the-loop start` would recreate the record on the next boot, so a delete
+  that appeared to work would be lying.
+- WHEN a **created** session's record says it auto-starts THEN `the-loop start` SHALL
+  restore it. `stop` already takes down every *recorded* session, so without the symmetry
+  `the-loop restart` would destroy exactly what the API created.
 
 ### Declaration
 
@@ -109,10 +156,10 @@ flowchart LR
   fail-closed rule `sessions reply` follows.
 - The CLI (`the-loop standing`), the REST API (`/api/v1/standing-sessions*`), the MCP
   endpoint and the SDK (`loop.standing`) SHALL all reach the same core functions.
-  **Control is not on MCP**: an agent that could stop or restart a standing session could
-  stop the one supervising it, and starting a harness process is an operator's act. Read
-  and `say` are registered, because those are what an agent coordinating with a supervisor
-  actually needs.
+  **Control, create and delete are not on MCP**: an agent that could stop or restart a
+  standing session could stop the one supervising it, and bringing a harness process into —
+  or out of — existence is an operator's act. Read and `say` are registered, because those
+  are what an agent coordinating with a supervisor actually needs.
 
 ### Slack
 
@@ -146,13 +193,13 @@ flowchart LR
 
 | Surface | Operations |
 |---|---|
-| CLI | [`the-loop standing`](../cli/commands/standing.md) — `list`, `start`, `stop`, `restart`, `say` |
-| REST | `GET /api/v1/standing-sessions`, `GET …/one?name=`, `POST …/control`, `POST …/say` |
-| MCP | `list_standing_sessions`, `get_standing_session`, `say_to_standing_session` |
-| SDK | `loop.standing.list() / get() / control() / say()` |
+| CLI | [`the-loop standing`](../cli/commands/standing.md) — `list`, `create`, `delete`, `start`, `stop`, `restart`, `say` |
+| REST | `GET /api/v1/standing-sessions`, `GET …/one?name=`, `POST …/create`, `POST …/delete`, `POST …/control`, `POST …/say` |
+| MCP | `list_standing_sessions`, `get_standing_session`, `say_to_standing_session` — **only** these three |
+| SDK | `loop.standing.list() / get() / create() / delete() / control() / say()` |
 | Lifecycle | [`start`](../cli/commands/start.md), [`stop`](../cli/commands/stop.md), [`status`](../cli/commands/status.md) carry a `standingSessions` section |
 | Config | [`standingSessions`](../config/cli/standing-sessions-options.md) |
-| Events | `standing.started`, `standing.resumed`, `standing.resume_failed`, `standing.spawn_failed`, `standing.stopped`, `standing.stop_failed`, `standing.said`, `standing.announced`, `standing.announce_failed`, `channel.mirror_skipped` |
+| Events | `standing.created`, `standing.create_failed`, `standing.deleted`, `standing.started`, `standing.resumed`, `standing.resume_failed`, `standing.spawn_failed`, `standing.stopped`, `standing.stop_failed`, `standing.said`, `standing.announced`, `standing.announce_failed`, `channel.mirror_skipped` |
 
 ## Security posture
 
@@ -180,4 +227,4 @@ runner these share) · [channels](channels.md) (the Slack bot and its pipeline) 
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
-| issue-277 | Introduced standing sessions: the `standingSessions` config block, the `StandingRegistry` under `<state.root>/local/standing/`, `loop-standing-<name>` tmux sessions, the `the-loop standing` command and its REST/MCP/SDK surfaces, the `start`/`stop`/`status` integration with resume-across-restart, the non-configurable boot directive, and the Slack thread a session is announced in and answered on | [spec](../specs/issue-277/), [decision-099](../decisions/decision-099.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/277) |
+| issue-277 | Introduced standing sessions: the `standingSessions` config block, the `StandingRegistry` under `<state.root>/local/standing/`, `loop-standing-<name>` tmux sessions, the `the-loop standing` command and its REST/MCP/SDK surfaces, the `start`/`stop`/`status` integration with resume-across-restart, the non-configurable boot directive, and the Slack thread a session is announced in and answered on. On review the owner ruled the control plane is **not** a channel and asked for create/delete instead, so a session can be brought into existence and removed through the API rather than only by editing the config — the record then carries the whole definition | [spec](../specs/issue-277/), [decision-099](../decisions/decision-099.md), [decision-100](../decisions/decision-100.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/277) |

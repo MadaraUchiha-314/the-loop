@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 from typing import Any, Dict, List
 
 from .base import Command, register
@@ -71,6 +72,41 @@ class StandingCommand(Command):
         listing = sub.add_parser("list", help="Every declared or recorded session")
         listing.add_argument("--format", choices=["text", "json"], default="text")
 
+        create = sub.add_parser(
+            "create", help="Create a session without editing the config, and start it"
+        )
+        create.add_argument("name")
+        create.add_argument("--harness", default="", help="claude | cursor")
+        create.add_argument("--cwd", default="", help="Where the session runs")
+        create.add_argument("--prompt", default="", help="The session's brief, inline")
+        create.add_argument(
+            "--prompt-file", default="", help="The session's brief, from a file"
+        )
+        create.add_argument("--description", default="")
+        create.add_argument(
+            "--harness-arg",
+            action="append",
+            default=None,
+            dest="harness_args",
+            help="Repeatable. Omit to inherit routing.harnessArgs.<harness>.",
+        )
+        create.add_argument("--slack", action="store_true", help="Announce it in Slack")
+        create.add_argument("--slack-channel", default="")
+        create.add_argument(
+            "--no-auto-start",
+            action="store_true",
+            help="Do not bring it back on the next `the-loop start`",
+        )
+        create.add_argument(
+            "--no-start", action="store_true", help="Record it without starting it"
+        )
+
+        delete = sub.add_parser(
+            "delete",
+            help="Stop a created session and forget it (not for declared ones)",
+        )
+        delete.add_argument("name")
+
         start = sub.add_parser("start", help="Start one session, or every declared one")
         start.add_argument("name", nargs="?", default="")
 
@@ -107,6 +143,10 @@ class StandingCommand(Command):
                 return self._list(args)
             if action == "say":
                 return self._say(args)
+            if action == "create":
+                return self._create(args)
+            if action == "delete":
+                return self._delete(args)
             return self._control(args, action)
         except Exception as exc:  # noqa: BLE001 — mapped, or re-raised by _report
             return _report(exc)
@@ -141,6 +181,62 @@ class StandingCommand(Command):
         for row in table:
             print("  ".join(cell.ljust(widths[i]) for i, cell in enumerate(row)))
         return 0
+
+    def _create(self, args: argparse.Namespace) -> int:
+        prompt = args.prompt
+        if args.prompt_file:
+            if prompt:
+                print(
+                    "error: pass --prompt or --prompt-file, not both — there is no "
+                    "precedence between them",
+                    file=sys.stderr,
+                )
+                return 2
+            try:
+                prompt = Path(args.prompt_file).expanduser().read_text(encoding="utf-8")
+            except OSError as exc:
+                print(
+                    f"error: cannot read {args.prompt_file!r}: {exc}", file=sys.stderr
+                )
+                return 2
+        body = {
+            "name": args.name,
+            "harness": args.harness,
+            "cwd": args.cwd,
+            "prompt": prompt,
+            "description": args.description,
+            "harnessArgs": args.harness_args,
+            "slackEnabled": bool(args.slack),
+            "slackChannel": args.slack_channel,
+            "autoStart": not args.no_auto_start,
+            "start": not args.no_start,
+        }
+        result = routed(
+            lambda connection: connection.post("/standing-sessions/create", body),
+            lambda: core_standing.create_standing(
+                args.name,
+                harness=args.harness,
+                cwd=args.cwd,
+                prompt=prompt,
+                description=args.description,
+                harness_args=args.harness_args,
+                slack_enabled=bool(args.slack),
+                slack_channel=args.slack_channel,
+                auto_start=not args.no_auto_start,
+                start=not args.no_start,
+                config=_cli_config(),
+            ),
+        )
+        return _print_control(result)
+
+    def _delete(self, args: argparse.Namespace) -> int:
+        result = routed(
+            lambda connection: connection.post(
+                "/standing-sessions/delete", {"name": args.name}
+            ),
+            lambda: core_standing.delete_standing(args.name, config=_cli_config()),
+        )
+        return _print_control(result)
 
     def _control(self, args: argparse.Namespace, verb: str) -> int:
         name = getattr(args, "name", "")

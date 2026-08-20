@@ -531,3 +531,201 @@ def test_restart_stops_then_starts_keeping_the_conversation(tmp_path, tmux):
     assert report["ok"] is True
     assert tmux.spawns[1]["resume"] is True
     assert tmux.spawns[1]["session_id"] == conversation
+
+
+# -- create / delete (issue-277 R6, decision-100) ---------------------------------
+
+
+def test_a_created_session_needs_no_config_entry(tmp_path, tmux):
+    """
+    Feature: standing sessions
+      Scenario: a standing session is created through the API, with no config entry
+        Given a CLI config that declares no standing sessions
+        When one is created by name
+        Then it is recorded with its whole definition and started
+        And the verbs address it exactly as they address a declared one
+
+    Requirement: docs/specs/issue-277/requirements.md R6.1, R6.7
+    """
+    config = _config(tmp_path)
+    config["standingSessions"] = {"enabled": True, "sessions": []}
+
+    report = core_standing.create_standing(
+        "triage",
+        cwd=str(tmp_path),
+        prompt="watch the queue",
+        description="triage bot",
+        config=config,
+    )
+
+    assert [row["outcome"] for row in report["sessions"]] == ["started"]
+    record = _registry(config).read("triage")
+    assert record is not None
+    assert record.prompt == "watch the queue"
+    assert record.description == "triage bot"
+    assert record.auto_start is True
+    # The definition survives into the boot prompt, and the directive still leads.
+    prompt = tmux.spawns[0]["prompt"]
+    assert prompt.index("you own no") < prompt.index("watch the queue")
+
+    # …and every other verb reaches it by name, with no declaration anywhere.
+    assert core_standing.get_standing("triage", config=config)["declared"] is False
+    assert core_standing.say_standing("triage", "hi", config=config)["delivered"]
+    assert core_standing.stop_standing("triage", config=config)["ok"]
+    assert core_standing.start_standing("triage", config=config)["ok"]
+
+
+def test_a_created_session_resumes_its_conversation_like_a_declared_one(tmp_path, tmux):
+    config = _config(tmp_path)
+    config["standingSessions"] = {"enabled": True, "sessions": []}
+    core_standing.create_standing("triage", cwd=str(tmp_path), config=config)
+    conversation = tmux.spawns[0]["session_id"]
+
+    core_standing.stop_standing("triage", config=config)
+    core_standing.start_standing("triage", config=config)
+
+    assert tmux.spawns[1]["resume"] is True
+    assert tmux.spawns[1]["session_id"] == conversation
+
+
+def test_creating_a_name_that_already_exists_is_refused(tmp_path, tmux):
+    """R6.2 — a name is one session; adopting an existing one would let a create
+    take over a running agent."""
+    config = _config(tmp_path)  # declares "supervisor"
+    with pytest.raises(ValueError) as declared:
+        core_standing.create_standing("supervisor", cwd=str(tmp_path), config=config)
+    assert "already declared" in str(declared.value)
+
+    core_standing.create_standing("triage", cwd=str(tmp_path), config=config)
+    with pytest.raises(ValueError) as recorded:
+        core_standing.create_standing("triage", cwd=str(tmp_path), config=config)
+    assert "already exists" in str(recorded.value)
+
+
+def test_a_create_that_cannot_start_leaves_no_half_session(tmp_path, tmux):
+    """The record is the only thing that existed yet, so removing it keeps the
+    name free for the retry the operator is about to make."""
+    config = _config(tmp_path)
+    report = core_standing.create_standing(
+        "triage", cwd=str(tmp_path / "gone"), config=config
+    )
+
+    assert report["ok"] is False
+    assert _registry(config).read("triage") is None
+    assert tmux.spawns == []
+
+
+def test_create_can_record_without_starting(tmp_path, tmux):
+    config = _config(tmp_path)
+    report = core_standing.create_standing(
+        "triage", cwd=str(tmp_path), start=False, config=config
+    )
+    assert report["ok"] is True
+    assert tmux.spawns == []
+    assert _registry(config).read("triage") is not None
+
+
+def test_delete_stops_the_session_and_forgets_it(tmp_path, tmux):
+    """
+    Feature: standing sessions
+      Scenario: a created standing session is deleted and does not come back
+        Given a created, running standing session
+        When it is deleted
+        Then its harness is stopped and its record removed
+        And the-loop start does not bring it back
+
+    Requirement: docs/specs/issue-277/requirements.md R6.4
+    """
+    config = _config(tmp_path)
+    config["standingSessions"] = {"enabled": True, "sessions": []}
+    core_standing.create_standing("triage", cwd=str(tmp_path), config=config)
+
+    report = core_standing.delete_standing("triage", config=config)
+
+    assert [row["outcome"] for row in report["sessions"]] == ["deleted"]
+    assert tmux.terminated and tmux.killed == ["loop-standing-triage"]
+    assert _registry(config).read("triage") is None
+    assert core_standing.start_standing(config=config, auto_only=True)["sessions"] == []
+
+
+def test_delete_refuses_a_declared_session(tmp_path, tmux):
+    """R6.5 — `the-loop start` would recreate its record, so a delete that
+    appeared to work would be lying."""
+    config = _config(tmp_path)
+    core_standing.start_standing("supervisor", config=config)
+
+    with pytest.raises(ValueError) as excinfo:
+        core_standing.delete_standing("supervisor", config=config)
+
+    message = str(excinfo.value)
+    assert "standingSessions.sessions" in message
+    assert "the-loop standing stop supervisor" in message
+    assert _registry(config).read("supervisor") is not None
+
+
+def test_delete_of_an_uncreated_name_is_a_lookup_error(tmp_path, tmux):
+    config = _config(tmp_path)
+    config["standingSessions"] = {"enabled": True, "sessions": []}
+    with pytest.raises(LookupError):
+        core_standing.delete_standing("nobody", config=config)
+
+
+def test_the_loop_start_restores_a_created_session(tmp_path, tmux, monkeypatch):
+    """
+    Feature: standing sessions
+      Scenario: the-loop restart does not destroy the sessions the API created
+        Given a created standing session that auto-starts
+        When the-loop stop then the-loop start are composed
+        Then the session is stopped and brought back, resuming its conversation
+
+    Requirement: docs/specs/issue-277/requirements.md R6.6
+    """
+    config = _config(tmp_path)
+    config["standingSessions"] = {"enabled": True, "sessions": []}
+    config["service"] = {"enabled": False}
+    monkeypatch.setattr(core_lifecycle, "_healthy", lambda config=None: False)
+    core_standing.create_standing("triage", cwd=str(tmp_path), config=config)
+    conversation = tmux.spawns[0]["session_id"]
+
+    stopped = core_lifecycle.stop_all(config)
+    assert [row["outcome"] for row in stopped["standingSessions"]] == ["stopped"]
+
+    started = core_lifecycle.start_all(config)
+    assert [row["outcome"] for row in started["standingSessions"]] == ["resumed"]
+    assert tmux.spawns[1]["session_id"] == conversation
+
+
+def test_a_created_session_that_does_not_auto_start_stays_down(tmp_path, tmux):
+    config = _config(tmp_path)
+    config["standingSessions"] = {"enabled": True, "sessions": []}
+    core_standing.create_standing(
+        "triage", cwd=str(tmp_path), auto_start=False, start=False, config=config
+    )
+
+    report = core_standing.start_standing(config=config, auto_only=True)
+
+    assert report["sessions"] == []
+    # …but an explicit start still reaches it.
+    assert core_standing.start_standing("triage", config=config)["ok"]
+
+
+def test_a_created_session_inherits_the_routing_defaults(tmp_path, tmux):
+    config = _config(tmp_path)
+    config["routing"]["harnessArgs"] = {"claude": ["--permission-mode", "acceptEdits"]}
+    config["standingSessions"] = {"enabled": True, "sessions": []}
+
+    core_standing.create_standing("triage", config=config)
+
+    record = _registry(config).read("triage")
+    assert record is not None
+    assert record.harness == "claude"
+    assert record.cwd == str(tmp_path)  # routing.spawnWorkdir
+    assert record.harness_args == ("--permission-mode", "acceptEdits")
+
+
+def test_an_invalid_created_name_never_becomes_a_tmux_target(tmp_path, tmux):
+    config = _config(tmp_path)
+    for name in ("Triage", "-lead", "has space", ""):
+        with pytest.raises(ValueError):
+            core_standing.create_standing(name, cwd=str(tmp_path), config=config)
+    assert tmux.spawns == []

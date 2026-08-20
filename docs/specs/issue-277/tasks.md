@@ -95,6 +95,13 @@ flowchart LR
       `cli`).
       _Requirements: (the ready-to-ship gate)_ · _Test: T1 (docs-parity)_
 
+- [x] 12. **The owner's ruling (decision-100).** Withdraw the control-plane-as-channel
+      option and the outbound-verb option; add `create`/`delete`: the `_entry_for` seam so
+      a definition can come from the config **or** the registry, the record carrying the
+      whole definition, `start_all` restoring created sessions that auto-start, and the
+      two verbs on the CLI, REST (with the authored contract) and SDK — but **not** MCP.
+      _Requirements: R6.1–R6.7_ · _Test: T1, T2, T8_
+
 - [x] 11. **Verification.** Run every activity in `testing-plan.md`, record the results and
       commit the evidence.
       _Requirements: all_ · _Test: all_

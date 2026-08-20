@@ -19,7 +19,7 @@ status: in-progress
 | tasks-breakdown | 2026-08-20 |  | `tasks.md` |
 | implementation | 2026-08-20 |  | tasks 1–10 |
 | verification | 2026-08-20 |  | every activity in `testing-plan.md` ran; results and evidence recorded there |
-| needs-review | 2026-08-20 |  | reviewer briefing posted on the pull request |
+| needs-review | 2026-08-20 |  | reviewer briefing posted on the pull request; owner's ruling (decision-100) worked back into the spec chain and implemented |
 | complete |  |  |  |
 
 ## Pull requests
@@ -71,4 +71,31 @@ _Pending._
   `/api/v1/stream` path **twice** (two near-identical blocks; YAML's last-key-wins hides
   it, and the parity test compares path/method/operationId sets so it passes). Pre-existing
   and unrelated to this work item — worth its own ticket rather than widening this PR.
+- **Next:** human review.
+
+### 2026-08-20 — the owner's ruling, worked back through the chain
+
+- **Phase:** needs-review (the spec chain is `in-review`, so the artifacts were **edited**,
+  not appended to — the reference-don't-duplicate rule)
+- **The decision** ([decision-100](../../decisions/decision-100.md), from
+  [the PR thread](https://github.com/MadaraUchiha-314/the-loop/pull/278#issuecomment-5358714877)):
+  _"Forget about control plane as a channel"_, the three interaction surfaces are tmux /
+  Slack / the control plane's messaging path, _"we already have a way to interact with a
+  tmux session through control plane, let's reuse that"_, and — the one addition —
+  _"let's just do the APIs that create the adhoc session and delete that adhoc session"_.
+  So **both** options I had proposed were withdrawn, and create/delete took their place.
+- **Did:** requirements gained R6 (seven criteria) and a settled R3.0 naming the three
+  surfaces; design gained §D8 (`_entry_for` — a definition comes from the config _or_ the
+  registry, and the verbs cannot tell); the record grew to carry a whole definition;
+  `create_standing`/`delete_standing` on the CLI, REST (with authored contract entries)
+  and SDK, and **not** on MCP; `start_all` now restores created sessions that auto-start,
+  because `stop_all` already stops every recorded one.
+- **Two judgement calls a reviewer should check:** `create` refuses a name already declared
+  or recorded rather than adopting it, and `delete` refuses a _declared_ session rather
+  than removing a record `the-loop start` would recreate. Both are argued in decision-100.
+- **Checkpoint/tests:** `make test` — 2600 passed, 1 skipped (+99 over `main` at
+  `b6bfda1`). `make lint`, `make format-check`, `pyright cli`, `make validate`,
+  markdownlint — clean. Every verb also exercised by hand against a real tmux + `claude`:
+  create → list → the two refusals → delete, and `stop`/`start` proving a created session
+  comes back on the **same** conversation id (R6.6). Evidence refreshed under `evidence/`.
 - **Next:** human review.

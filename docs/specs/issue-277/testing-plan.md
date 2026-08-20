@@ -41,8 +41,17 @@ overrides: {}
 | T2 | R2.1, R2.2, R2.5, R2.8 | `Scenario: the-loop start, stop and status carry the standing sessions` |
 | T2 | R4.1, R4.2, R4.3 | `Scenario: a Slack thread reply reaches a standing session and no ticket` |
 | T2 | R2.9 | `Scenario: a live tmux session the-loop cannot account for is never spawned over` |
+| T1 | R6.1, R6.7 | a record round-trips its whole definition, and reads back as a declaration |
+| T1 | (compat) | a record written before the create verb still auto-starts; a hand-edited `harnessArgs` that is not a list is ignored |
+| T2 | R6.1, R6.7 | `Scenario: a standing session is created through the API, with no config entry` |
+| T2 | R6.4 | `Scenario: a created standing session is deleted and does not come back` |
+| T2 | R6.6 | `Scenario: the-loop restart does not destroy the sessions the API created` |
+| T8 | R6.2 | a create for a name already declared, or already recorded, is refused |
+| T8 | R6.5 | a delete of a **declared** session is refused, naming the config key |
+| T8 | R6.3 | a created session's bad name, missing `cwd` or failed start never leaves a half-session |
+| T8 | R3.1 | a created session is not addressable as a work item either |
 | T2 | R5.1, R5.2 | `Scenario: a standing session is told what it is not` — the directive precedes the operator's prompt in the pasted argv |
-| T3 | R3.5 | the four REST operations appear in the served schema exactly as authored |
+| T3 | R3.5, R6 | the **six** REST operations appear in the served schema exactly as authored |
 | T8 | R3.1, R3.2 | `Scenario: the two session namespaces cannot address each other` |
 | T8 | R4.4 | `Scenario: an unauthorized Slack member never reaches a standing session` |
 | T8 | R3.4 | `Scenario: a message into a stopped standing session refuses instead of spawning one` |
@@ -88,16 +97,20 @@ skipped.
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| T1/T2/T8/T10 | `make test` | **2584 passed, 1 skipped** (2501 passed, 1 skipped on `main` at `b6bfda1` — +83, none removed) | [tests.md](evidence/tests.md) |
-| T1/T2/T8 | the four new test files alone | **80 passed** (the other 3 of the +83 are the runner-split tests, below) | [tests.md](evidence/tests.md) |
+| T1/T2/T8/T10 | `make test` | **2600 passed, 1 skipped** (2501 passed, 1 skipped on `main` at `b6bfda1` — +99, none removed) | [tests.md](evidence/tests.md) |
+| T1/T2/T8 | the four new test files alone | **96 passed** (the other 3 of the +99 are the runner-split tests, below) | [tests.md](evidence/tests.md) |
 | T1 | `pytest cli/tests/test_tmux_runner.py` | **114 passed** (111 before; the 111 unchanged — the check that the runner split is a refactor) | [tests.md](evidence/tests.md) |
-| T2/T8 | `the-loop scenarios` over the new integration files | **8 scenarios** indexed, each naming the requirements it proves | [scenarios.md](evidence/scenarios.md) |
+| T2/T8 | `the-loop scenarios` over the new integration files | **11 scenarios** indexed, each naming the requirements it proves | [scenarios.md](evidence/scenarios.md) |
 | T3 | `pytest cli/tests/test_api_contract_parity.py` | **2 passed** — the served schema equals the authored contract, including the four new operations | [tests.md](evidence/tests.md) |
 | T10 | `make validate` | **VALID** for this repository's config, the shipped template and both schemas | [checks.md](evidence/checks.md) |
 | T10 | the parity gates (docs, SDK docs, state, event catalog, schema) | **62 passed** | [tests.md](evidence/tests.md) |
 | all | `make lint`, `make format-check`, `uv run pyright cli`, markdownlint | clean, first run | [checks.md](evidence/checks.md) |
 
 **Not executed:** none.
+
+**Re-verified on 2026-08-20 after the owner's ruling** ([decision-100](../../decisions/decision-100.md))
+added `create`/`delete` and withdrew the control-plane-as-channel alternative. Every
+activity ran again; the counts above are the second run.
 
 One thing the verification *changed* about the plan, recorded rather than quietly done:
 `test_configschema.py`'s keyword guard failed as soon as the schema used `pattern`, which

@@ -118,6 +118,12 @@ sessions from the control plane, because they have no ticket to comment on.
 
 #### Acceptance criteria (EARS)
 
+0. There are **three** ways to interact with a standing session, and no others are built
+   here (owner's ruling on PR #278): typing directly into its tmux session, a reply in its
+   Slack thread, and the control plane's messaging path. The control plane is **not**
+   modelled as a `channel` — that alternative was considered and withdrawn
+   ([decision-100](../../decisions/decision-100.md)) — and the existing way to talk to a
+   tmux session is reused rather than reinvented.
 1. WHEN a caller addresses a standing session THEN it SHALL be addressed **by name**, and
    a work-item ref SHALL NOT resolve to one.
 2. WHEN `the-loop sessions list` runs THEN standing sessions SHALL NOT appear in it: the
@@ -167,6 +173,42 @@ that it does not answer a phase gate or run a control keyword on somebody else's
 2. WHEN the entry supplies `prompt` or `promptFile` THEN that text SHALL be **appended to**
    the directive above, never substituted for it — the same rule
    `$interaction_directive` follows for work-item prompts.
+
+### Requirement 6 — Created and deleted at runtime, not only declared
+
+**User story:** As an operator, I want to bring a standing session into existence and remove
+it again through the API, so that spinning one up does not mean editing a config file and
+restarting the-loop.
+
+> Added after the owner's ruling on [PR #278](https://github.com/MadaraUchiha-314/the-loop/pull/278#issuecomment-5358714877):
+> *"Let's just do the APIs that create the adhoc session and delete that adhoc session"*,
+> and *"forget about control plane as a channel"* — which withdrew the alternative this
+> spec had been holding open. See [decision-100](../../decisions/decision-100.md).
+
+#### Acceptance criteria (EARS)
+
+1. WHEN an authorized caller creates a standing session by name THEN the system SHALL
+   record its whole definition — harness, arguments, working directory, brief, Slack
+   binding — in the registry, and SHALL start it unless the caller asks otherwise.
+2. IF the name is already declared in `standingSessions.sessions` or already recorded
+   THEN the create SHALL be refused: a name is one session, and silently adopting an
+   existing one would let a create take over a running agent.
+3. WHEN a session is created THEN every refusal a declared session's start applies SHALL
+   apply unchanged — the name shape, a `cwd` that must exist, the live-occupant refusal,
+   and the boot directive that cannot be replaced.
+4. WHEN an authorized caller deletes a standing session THEN the system SHALL stop it (the
+   same graceful termination `stop` performs) and then remove its record, so it does not
+   come back.
+5. IF the named session is **declared** in the config THEN delete SHALL be refused, naming
+   the config key and `stop` as the alternative — deleting a record the config would
+   recreate is a lie about what happened.
+6. WHEN a **created** session's record says it auto-starts THEN `the-loop start` SHALL
+   bring it back, exactly as it does a declared one. Without this, `the-loop restart` would
+   silently destroy every session created through the API, while `the-loop stop` stops them
+   — an asymmetry that loses work.
+7. WHEN a session exists only as a record (created, never declared) THEN `start`, `stop`,
+   `restart` and `say` SHALL address it exactly as they address a declared one: the
+   definition's *source* SHALL NOT change what the verbs do.
 
 ## Non-functional requirements
 

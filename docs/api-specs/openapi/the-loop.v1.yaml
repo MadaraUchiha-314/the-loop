@@ -578,6 +578,73 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/standing-sessions/create:
+    post:
+      summary: Create Standing Session
+      operationId: createStandingSession
+      description: 'Bring a standing session into existence without editing
+        `standingSessions.sessions` (issue-277 R6, decision-100). The whole definition
+        is written to the registry — which is what lets a later start rebuild it with
+        no config entry to read — and the session is started unless `start` is false.
+        Refuses a name already declared or already recorded (400): a name is one
+        session, and adopting an existing one would let a create take over a running
+        agent. Every refusal a declared start applies applies here too, because the
+        start half is the same code: the name shape, a `cwd` that must exist, and the
+        live-occupant refusal. A create whose start fails removes the record it wrote,
+        so the name stays free for the retry.'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StandingCreateBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Createstandingsession
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/standing-sessions/delete:
+    post:
+      summary: Delete Standing Session
+      operationId: deleteStandingSession
+      description: 'Stop a created standing session and forget it. The difference from
+        `control` with verb `stop` is the record: stop keeps it, so the next start
+        resumes the same conversation, and delete removes it, so nothing comes back.
+        Refuses a session **declared** in `standingSessions.sessions` (400), naming the
+        config key — `the-loop start` would recreate its record on the next boot, so a
+        delete that appeared to work would be lying. 404 when the name was never
+        created.'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StandingDeleteBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Deletestandingsession
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/standing-sessions/control:
     post:
       summary: Control Standing Session
@@ -1391,6 +1458,82 @@ components:
           default: false
       type: object
       title: RestartBody
+    StandingCreateBody:
+      properties:
+        name:
+          type: string
+          title: Name
+          description: The session's identity everywhere. Lowercase letters, digits and
+            hyphens, not starting with a hyphen, at most 40 characters.
+        harness:
+          type: string
+          title: Harness
+          description: claude or cursor. Empty inherits routing.defaultHarness.
+          default: ''
+        cwd:
+          type: string
+          title: Cwd
+          description: Where the session runs; it must exist. Empty inherits
+            routing.spawnWorkdir.
+          default: ''
+        prompt:
+          type: string
+          title: Prompt
+          description: The session's brief. Appended to the-loop's own directive (you
+            own no work item; do not answer a phase gate or post a control keyword on
+            any ticket), never substituted for it.
+          default: ''
+        description:
+          type: string
+          title: Description
+          description: What this session is for, in one line. Never sent to the harness.
+          default: ''
+        harnessArgs:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Harnessargs
+          description: Extra CLI arguments for the harness. Absent inherits
+            routing.harnessArgs for the resolved harness; an empty list means none.
+        slackEnabled:
+          type: boolean
+          title: Slackenabled
+          description: Announce the session in Slack on start and bind that thread to
+            it. Requires channels.slack.enabled; best-effort, never gates the start.
+          default: false
+        slackChannel:
+          type: string
+          title: Slackchannel
+          description: The channel id to announce in. Empty uses channels.slack.channel.
+          default: ''
+        autoStart:
+          type: boolean
+          title: Autostart
+          description: Whether `the-loop start` brings this session back. True by
+            default, because stop_all stops every recorded session — without the
+            symmetry a restart would destroy what this route created.
+          default: true
+        start:
+          type: boolean
+          title: Start
+          description: Start the session as part of the create. False records the
+            definition without running anything.
+          default: true
+      type: object
+      required:
+      - name
+      title: StandingCreateBody
+    StandingDeleteBody:
+      properties:
+        name:
+          type: string
+          title: Name
+      type: object
+      required:
+      - name
+      title: StandingDeleteBody
     StandingControlBody:
       properties:
         name:

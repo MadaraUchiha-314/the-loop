@@ -345,6 +345,20 @@ EVENT_TYPES: Dict[str, str] = {
         "there, an unreadable promptFile, or a live tmux session the-loop has "
         "no record of and will not spawn over."
     ),
+    "standing.created": (
+        "A standing session was brought into existence through the API rather "
+        "than declared in the config (standing, harness, cwd, auto_start) — "
+        "issue-277 R6. The definition now lives in its registry record."
+    ),
+    "standing.create_failed": (
+        "A create wrote its record but the session would not start (standing, "
+        "error); the record was removed again, so the name is free for a retry."
+    ),
+    "standing.deleted": (
+        "A created standing session was stopped and its record removed "
+        "(standing). Unlike standing.stopped, nothing comes back: the "
+        "conversation id is gone with the record."
+    ),
     "standing.stopped": (
         "A standing session's harness was terminated and its tmux session "
         "killed (standing, tmux_target). The record is KEPT, so the next start "

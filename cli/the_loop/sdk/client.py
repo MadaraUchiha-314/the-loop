@@ -139,6 +139,36 @@ class Standing(_Namespace):
     def control(self, name: str, verb: str) -> Dict[str, Any]:
         return core_standing.control_standing(name, verb, config=self._config)
 
+    def create(
+        self,
+        name: str,
+        harness: str = "",
+        cwd: str = "",
+        prompt: str = "",
+        description: str = "",
+        harness_args: Optional[List[str]] = None,
+        slack_enabled: bool = False,
+        slack_channel: str = "",
+        auto_start: bool = True,
+        start: bool = True,
+    ) -> Dict[str, Any]:
+        return core_standing.create_standing(
+            name,
+            harness=harness,
+            cwd=cwd,
+            prompt=prompt,
+            description=description,
+            harness_args=harness_args,
+            slack_enabled=slack_enabled,
+            slack_channel=slack_channel,
+            auto_start=auto_start,
+            start=start,
+            config=self._config,
+        )
+
+    def delete(self, name: str) -> Dict[str, Any]:
+        return core_standing.delete_standing(name, config=self._config)
+
     def say(self, name: str, text: str, actor: str = "") -> Dict[str, Any]:
         return core_standing.say_standing(name, text, actor=actor, config=self._config)
 

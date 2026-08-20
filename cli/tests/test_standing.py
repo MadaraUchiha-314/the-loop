@@ -251,3 +251,58 @@ def test_delete_reports_whether_there_was_anything_to_delete(tmp_path):
 def test_the_module_exports_what_the_surfaces_import():
     for symbol in standing.__all__:
         assert hasattr(standing, symbol), symbol
+
+
+# -- the record as a declaration (issue-277 R6, design §D8) ----------------------
+
+
+def test_a_record_round_trips_its_whole_definition(tmp_path):
+    """A created session has no config entry, so the record IS the declaration."""
+    registry = StandingRegistry(tmp_path / "standing")
+    registry.write(
+        StandingRecord(
+            name="triage",
+            harness="claude",
+            cwd="/srv/app",
+            description="triage bot",
+            harness_args=("--permission-mode", "acceptEdits"),
+            prompt="watch the queue",
+            auto_start=False,
+            slack_enabled=True,
+            slack_channel="C1",
+        )
+    )
+    record = registry.read("triage")
+    assert record is not None
+    entry = record.as_session()
+    assert entry.name == "triage"
+    assert entry.description == "triage bot"
+    assert entry.harness_args == ("--permission-mode", "acceptEdits")
+    assert entry.cwd == "/srv/app"
+    assert entry.prompt == "watch the queue"
+    assert entry.auto_start is False
+    assert entry.slack.enabled is True and entry.slack.channel == "C1"
+    assert entry.boot_text() == "watch the queue"
+
+
+def test_a_record_written_before_the_create_verb_still_auto_starts(tmp_path):
+    """`autoStart` absent means True: a record written before issue-277 R6
+    describes a session `the-loop start` should still restore."""
+    root = tmp_path / "standing"
+    root.mkdir(parents=True)
+    (root / "old.json").write_text(
+        json.dumps({"name": "old", "harness": "claude", "cwd": "/srv"}),
+        encoding="utf-8",
+    )
+    record = StandingRegistry(root).read("old")
+    assert record is not None and record.as_session().auto_start is True
+
+
+def test_a_hand_edited_harness_args_that_is_not_a_list_is_ignored(tmp_path):
+    root = tmp_path / "standing"
+    root.mkdir(parents=True)
+    (root / "a.json").write_text(
+        json.dumps({"name": "a", "harnessArgs": "--dangerous"}), encoding="utf-8"
+    )
+    record = StandingRegistry(root).read("a")
+    assert record is not None and record.harness_args == ()

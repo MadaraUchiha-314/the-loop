@@ -72,7 +72,7 @@ them, is what makes the `.gitignore` recipe three lines instead of a puzzle
 | `<root>/portable/<slug>.json` | execution control + the poller | what was armed, and which comments are already seen | **portable** |
 | `<root>/portable/index.json` | the same store, derived | one entry per record: ref, url, file, sections | **portable** |
 | `<root>/local/<slug>.json` | the session registry | conversation id, `cwd`, tmux target, status, and the item's pull requests with their own sessions | **local** |
-| `<root>/local/standing/<name>.json` | the standing-session registry (issue-277, opt-in) | per standing session: harness, conversation id, `cwd`, tmux target, status, and the Slack channel/thread its chat runs in | **local** |
+| `<root>/local/standing/<name>.json` | the standing-session registry (issue-277, opt-in) | per standing session: harness, conversation id, `cwd`, tmux target, status, the Slack channel/thread its chat runs in — and, for a session created through the API, its whole definition | **local** |
 | `<root>/logs/events.jsonl` | every ingress, and `sessions` | one JSON object per decision | **local** |
 | `<root>/logs/poller.out` | a daemonized poller | its stdout and stderr, appended | **local** |
 | `<root>/gh-webhook.pid` | the receiver | the receiver's pid — and its single-instance lock (issue-228) | **local** |
@@ -483,9 +483,14 @@ with (or after) the event log it summarises.
 What the-loop remembers between processes about a [standing session](/capabilities/standing-sessions)
 — one of the sessions it keeps for **itself**, which belongs to no work item
 (issue-277, opt-in via [`standingSessions`](/config/cli/standing-sessions-options)).
-One file per declared name: the harness and its conversation id, the `cwd` it runs in,
-its tmux target, whether the-loop last started or stopped it, and the Slack channel and
-thread its chat runs in.
+One file per name: the harness and its conversation id, the `cwd` it runs in, its tmux
+target, whether the-loop last started or stopped it, and the Slack channel and thread its
+chat runs in.
+
+For a session **created** through the API rather than declared in the config, the record
+also carries the definition — `harnessArgs`, `prompt`, `description`, `autoStart` — because
+for that session the record *is* the declaration. That is what lets `the-loop start`
+rebuild it with nothing in `standingSessions.sessions` to read.
 
 The conversation id is what the record exists for. `the-loop standing stop` keeps the
 file so the next `start` resumes the same conversation instead of booting a blank one —
@@ -500,9 +505,12 @@ tmux session name and an absolute path all name things that exist on one machine
 elsewhere, `standing start` would resume a conversation that is not there and bind replies
 to a thread its bot never posted.
 
-**If you delete it:** the next `start` begins a **fresh** conversation under the same name
-— the session loses everything it knew — and its Slack thread binding is gone, so it is
-announced into a new thread. Nothing else is affected.
+**If you delete it:** for a *declared* session the next `start` begins a **fresh**
+conversation under the same name — it loses everything it knew — and its Slack thread
+binding is gone, so it is announced into a new thread. For a *created* one the session
+stops existing altogether, which is what [`standing
+delete`](/cli/commands/standing) does deliberately (it stops the session first; deleting
+the file by hand leaves the tmux session running).
 
 ## Channel conversation state — `<root>/channels/<channel>.json`
 

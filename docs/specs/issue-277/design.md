@@ -183,6 +183,46 @@ operator delete it. This is the same reasoning `$interaction_directive` already 
 for work-item prompts, where a custom template that omits the placeholder gets the
 directive appended anyway.
 
+### D8 — A definition comes from the config **or** from the registry, and the verbs cannot tell
+
+`create` is what makes a standing session exist without a config edit
+(requirement R6, [decision-100](../../decisions/decision-100.md)). The cheap way to build
+it would be a second code path — "created sessions" with their own start and stop. That is
+the way to two divergent lifecycles.
+
+Instead there is one seam, `_entry_for(name)`, which answers *what is this session* from
+whichever source has it:
+
+```mermaid
+flowchart LR
+  N[a name] --> E{declared in\nstandingSessions.sessions?}
+  E -- yes --> D[StandingSession from the config]
+  E -- no --> R{recorded?}
+  R -- yes --> S[StandingSession synthesized\nfrom the record]
+  R -- no --> X[LookupError]
+  D --> V[start / stop / restart / say]
+  S --> V
+```
+
+Every verb goes through it, so `start`, `stop`, `restart` and `say` behave identically
+whichever source the definition came from (R6.7). The record therefore has to carry the
+whole definition — `prompt`, `description`, `harnessArgs`, `autoStart` join the fields it
+already had — because for a created session the record **is** the declaration.
+
+Two asymmetries are deliberate:
+
+- **`create` refuses a name that is already declared or already recorded** (R6.2). A name
+  is one session; adopting an existing one would let a create silently take over a running
+  agent.
+- **`delete` refuses a *declared* session** (R6.5), naming the config key and `stop`
+  instead. Deleting a record that `the-loop start` would recreate on the next boot is a
+  lie about what happened. For a declared session the honest removal is a config edit.
+
+And one symmetry that is load-bearing: `stop_all` stops **every recorded** session, so
+`start_all` restores every recorded one whose `autoStart` is set (R6.6). Without that,
+`the-loop restart` would destroy exactly the sessions the API created while dutifully
+stopping them first.
+
 ## Components and interfaces
 
 ### `the_loop/standing.py` — declaration, ref grammar, record store
@@ -233,6 +273,8 @@ it does for an enabled poller with no sources.
 | `start_standing(name="", config=…, auto_only=False)` | `{"sessions": [row…], "ok": bool}` | `ValueError` on a malformed block, `LookupError` on an undeclared name; a single session that fails to start is a per-session `outcome: failed` with a detail, never an exception |
 | `stop_standing(name="", config=…)` | same shape | — (the tolerant parse; see above) |
 | `restart_standing(name, config)` | same shape | `LookupError` on an unknown name |
+| `create_standing(name, …, start=True, config=…)` | same shape | `ValueError` on a bad name or one already declared/recorded |
+| `delete_standing(name, config=…)` | same shape | `LookupError` when unrecorded, `ValueError` when the name is **declared** |
 | `say_standing(name, text, actor, config)` | `{"name", "delivered", "exitCode", "messages"}` | `LookupError` (unknown / not running), `ValueError` (empty text) |
 
 `start_standing("")` starts every declared session; with `auto_only=True` it starts only
@@ -265,10 +307,10 @@ Row shape, one per session, used by all three verbs and by `status`:
 
 | surface | shape |
 |---|---|
-| CLI | `the-loop standing list \| start [name] \| stop [name] \| restart <name> \| say <name> --text …` (`--json` on `list`) |
-| REST | `GET /api/v1/standing-sessions`, `GET /api/v1/standing-sessions/one?name=`, `POST /api/v1/standing-sessions/control` `{name, verb}`, `POST /api/v1/standing-sessions/say` `{name, text, actor}` |
-| MCP | `list_standing_sessions`, `get_standing_session`, `say_to_standing_session` — **`control` is not exposed**: an agent that could stop or restart a standing session could stop the one supervising it, which is the same reasoning that keeps `restart` and `sessions reset` off MCP |
-| SDK | `loop.standing.list() / get() / control() / say()` |
+| CLI | `the-loop standing list \| create <name> \| delete <name> \| start [name] \| stop [name] \| restart <name> \| say <name> --text …` (`--json` on `list`) |
+| REST | `GET /api/v1/standing-sessions`, `GET …/one?name=`, `POST …/create`, `POST …/delete`, `POST …/control` `{name, verb}`, `POST …/say` `{name, text, actor}` |
+| MCP | `list_standing_sessions`, `get_standing_session`, `say_to_standing_session` — **`control`, `create` and `delete` are not exposed**: an agent that could stop a standing session could stop the one supervising it, and bringing a harness process into (or out of) existence is an operator's act. Same reasoning that keeps `restart` and `sessions reset` off MCP |
+| SDK | `loop.standing.list() / get() / create() / delete() / control() / say()` |
 
 The authored OpenAPI contract (`docs/api-specs/openapi/the-loop.v1.yaml`) gains the four
 REST operations; `test_api_contract_parity` proves the served app matches it.
@@ -290,6 +332,9 @@ REST operations; `test_api_contract_parity` proves the served app matches it.
 | resume did not survive the probe | fall back to a fresh conversation; `standing.resume_failed` at `warning`, then `standing.started` |
 | Slack post fails | `standing.announce_failed` at `warning`; the session is up regardless (R4.5) |
 | `say` into a stopped session | `LookupError` naming `the-loop standing start <name>` (R3.4) |
+| `create` for a name already declared or recorded | `ValueError` naming which, and `start`/`delete` as the alternatives |
+| `delete` of a **declared** session | `ValueError` naming `standingSessions.sessions` and `stop` — a record the config recreates must not be deletable |
+| `delete` of an unrecorded name | `LookupError` |
 
 ## Testing strategy
 

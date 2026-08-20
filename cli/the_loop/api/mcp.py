@@ -24,11 +24,12 @@ issue-228) is excluded on both grounds at once: it tears down the very
 transport the MCP client is speaking over mid-call, and ``--with-upgrade``
 reaches the installer — an agent must not be able to replace the code it is
 judged by. A client that legitimately needs it has the REST route. **Standing-session
-control** (``POST /api/v1/standing-sessions/control``, issue-277) joins them:
-an agent that could stop or restart a standing session could stop the very one
-supervising it, and starting a harness process is an operator's act. Reading
-them and *talking* to them are registered, because those are what an agent
-coordinating with a supervisor session actually needs.
+control, create and delete** (``POST /api/v1/standing-sessions/{control,create,
+delete}``, issue-277) join them: an agent that could stop or restart a standing
+session could stop the very one supervising it, and bringing a harness process
+into — or out of — existence is an operator's act. Reading them and *talking*
+to them are registered, because those are what an agent coordinating with a
+supervisor session actually needs.
 """
 
 from __future__ import annotations

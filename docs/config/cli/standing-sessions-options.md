@@ -55,7 +55,10 @@ started must still be stoppable, the same rule the services follow.
 ## The `sessions` list
 
 `standingSessions.sessions` is an array, defaulting to `[]`. One entry per standing
-session. Names must be **unique**: a duplicate refuses the whole
+session — the **declared** kind. A session can also be
+[**created**](/cli/commands/standing) at runtime, which writes the same definition into the
+registry instead of here and needs no restart; the two are addressed by exactly the same
+verbs ([decision-100](/decisions/decision-100)). Names must be **unique**: a duplicate refuses the whole
 block, naming both positions, rather than picking a winner. A block that cannot be parsed
 is **refused** by every verb — including the reads, because a listing that answered "no
 standing sessions" for a config with a typo in it would be a wrong answer that looks like a

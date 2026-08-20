@@ -271,7 +271,15 @@ class StandingConfig:
 
 @dataclass
 class StandingRecord:
-    """What the-loop remembers about one standing session between processes."""
+    """What the-loop remembers about one standing session between processes.
+
+    For a **declared** session this is the runtime half only — the conversation
+    id, the tmux target, the Slack thread — because the config carries the
+    definition. For a **created** one (issue-277 R6, decision-100) the record
+    *is* the declaration: `harness_args`, `prompt`, `description` and
+    `auto_start` are here so :func:`the_loop.core.standing.start_standing` can
+    rebuild the same session with no config entry to read.
+    """
 
     name: str
     harness: str = "claude"
@@ -284,6 +292,13 @@ class StandingRecord:
     last_message_at: str = ""
     slack_channel: str = ""
     slack_thread: str = ""
+    #: The definition half — meaningful for a created session, and harmless on a
+    #: declared one, whose config entry wins wherever the two could disagree.
+    description: str = ""
+    harness_args: Tuple[str, ...] = ()
+    prompt: str = ""
+    auto_start: bool = True
+    slack_enabled: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -298,6 +313,11 @@ class StandingRecord:
             "lastMessageAt": self.last_message_at,
             "slackChannel": self.slack_channel,
             "slackThread": self.slack_thread,
+            "description": self.description,
+            "harnessArgs": list(self.harness_args),
+            "prompt": self.prompt,
+            "autoStart": self.auto_start,
+            "slackEnabled": self.slack_enabled,
         }
 
     @classmethod
@@ -305,6 +325,9 @@ class StandingRecord:
         name = str(data.get("name") or "")
         if not NAME_RE.match(name):
             raise ValueError(f"standing record: invalid name {name!r}")
+        args = data.get("harnessArgs")
+        if not isinstance(args, Sequence) or isinstance(args, (str, bytes)):
+            args = ()
         return cls(
             name=name,
             harness=str(data.get("harness") or "claude"),
@@ -319,11 +342,37 @@ class StandingRecord:
             last_message_at=str(data.get("lastMessageAt") or ""),
             slack_channel=str(data.get("slackChannel") or ""),
             slack_thread=str(data.get("slackThread") or ""),
+            description=str(data.get("description") or ""),
+            harness_args=tuple(str(arg) for arg in args),
+            prompt=str(data.get("prompt") or ""),
+            # Absent means True: a record written before issue-277's create verb
+            # existed describes a session `the-loop start` should still restore.
+            auto_start=bool(data.get("autoStart", True)),
+            slack_enabled=bool(data.get("slackEnabled", False)),
         )
 
     @property
     def is_running(self) -> bool:
         return self.status == RUNNING
+
+    def as_session(self) -> "StandingSession":
+        """This record read as a declaration — the created session's definition.
+
+        The other half of :meth:`StandingConfig.get`: whichever of the two has
+        the session, the verbs receive the same type and cannot tell them apart
+        (design §D8).
+        """
+        return StandingSession(
+            name=self.name,
+            description=self.description,
+            harness=self.harness,
+            harness_args=self.harness_args,
+            cwd=self.cwd,
+            prompt=self.prompt,
+            prompt_file="",  # resolved at create time; the text is what is kept
+            auto_start=self.auto_start,
+            slack=SlackBinding(enabled=self.slack_enabled, channel=self.slack_channel),
+        )
 
 
 class StandingRegistry:
