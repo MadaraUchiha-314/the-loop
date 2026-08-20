@@ -287,6 +287,22 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   for `closingIssuesReferences`, or one transient GraphQL error** silently re-pointed
   routing at the PR itself — past a running session — and the event was dropped or
   answered with a duplicate session.
+  - **The session that opens a pull request records it — nothing is left to be
+    inferred** (issue-274). The three inference sources (`closingIssuesReferences`, the
+    `issue-<n>` head branch, a closing keyword in the body) are all *someone else's*
+    evidence, and a pull request **the-loop itself authors** carries none of them: a spec
+    PR must not close its ticket, and the-loop's branches are `loop/<id>-…`. WHEN a
+    the-loop session opens a pull request for a work item THEN it SHALL record the binding
+    in the same step — `the-loop sessions link-pr --work-item <ref> --pull-request <ref|N>`,
+    `POST /api/v1/sessions/link-pr`, or the `link_pull_request` MCP tool, all one
+    implementation — and the operation SHALL be idempotent, SHALL refuse a work item
+    linked to itself, and SHALL write nothing when the work item has no session record on
+    this machine. Before issue-274 the *only* writer was the routing decision itself,
+    which needs the linkage to route at all: a review comment on the spec PR the phase
+    gate asked reviewers to comment on resolved to the PR as a work item nobody armed, was
+    refused as unstarted, and — since issue-270 — was settled and never re-evaluated, so
+    repairing the linkage afterwards recovered nothing. Recording the binding is
+    best-effort for the session: a failure is reported and the work carries on.
   - **A session is given only with a working tree of its own** (issue-253,
     [decision-088](../decisions/decision-088.md) D2) — the invariant every mode below is
     subject to. WHEN a pull request endpoint would be spawned AND no checkout can be
@@ -347,7 +363,8 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
     now expressed in the model. Control commands on a PR resolve to its work item's
     record, so a `the-loop stop` commented on a PR whose linkage broke still stops the
     session that owns the work.
-  - `session.pr_linked` records each PR as it is recorded and `session.pr_spawned` each
+  - `session.pr_linked` records each PR as it is recorded — by the routing decision, or
+    by the session that opened it (issue-274) — and `session.pr_spawned` each
     endpoint spawn, so `the-loop events` answers "which PRs deliver what" without opening
     a file. An unreadable `pullRequests` entry reads as "that PR is unrecorded" — never
     an error into a dispatch, and never fatal to the work item's own session.
@@ -672,6 +689,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-274 | the-loop stopped opening pull requests it could not route events for (2026-08-20): a review comment on a **spec PR the-loop's own session opened** reached nothing. The router's three inference sources are all absent on such a PR — no `closingIssuesReferences` (a spec PR must not close its ticket), a `loop/<id>-…` head branch rather than `issue-<n>`, and a body that only *mentions* the issue — and the fourth, the durable `session.pr_linked` binding, was written **only** by the routing decision, which needs the linkage to route at all. So the comment resolved to the PR as a work item nobody armed, was refused as `awaiting-start`, and (since issue-270) settled with `will_retry: false`: the phase gate the-loop itself asks reviewers to answer was a dead letter, and repairing the linkage afterwards recovered nothing. The session that opens a pull request now records it in the same step — `the-loop sessions link-pr`, `POST /api/v1/sessions/link-pr`, or the `link_pull_request` MCP tool — and the workflow says so beside the rule that every PR is labelled | [spec](../specs/issue-274/), [sessions](../cli/commands/sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/274) |
 | issue-273 | A work item that begins life as a plain GitHub issue finally starts at `phase-selection` (2026-08-20): the coupling had declined to start a graph without `<specDir>/<id>/` on disk, which the gated work is what creates — so an armed, spawned ticket got two `graph.skipped` records, no phase checklist, no `the-loop execute`, and a session that began requirements work on its own. `start` and `context` no longer require the directory, and the spawn prompt of an unplaced work item now carries a `pending` process-state block naming the gate instead of nothing at all | [spec](../specs/issue-273/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/273) |
 | issue-270 | A comment refused before the start stopped being filed as a delivery still in flight (2026-08-18): pre-start (and paused-session) events are suppressed on purpose and never replayed — the settled product decision — but the poll ledger recorded the refusal as `commentAttempts: 1` and left it there, so an operator could not tell "we are still trying" from "we decided not to", and after a restart the poller spent the rest of the budget, declared a terminal delivery failure, posted a notice on the ticket saying the comment never arrived after three attempts, and left a `gaveUp` record that the next CLI version re-armed — replaying the comment nobody asked to replay. A delivery the dispatcher is *finished* with is now recorded as **settled** (suppressed, or consumed as a control command) beside its dedup mark, and the poller resolves such a comment instead of counting it: baselined, never abandoned, one `poll.comment_settled` record naming the reason. The spawn prompt now tells the session to read the item's whole thread, which is where a refused comment still is | [spec](../specs/issue-270/), [decision-097](../decisions/decision-097.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/270) |
 | issue-269 | A branch name stopped being able to invent a work item (2026-08-18): `issue-<n>` in a head branch resolved to a ref in the pull request's **own** repository and nothing ever checked that it existed, so in a multi-repository deployment (ticket in one repository, code in another) a ghost became `work_items[0]` — it absorbed the operator's `the-loop start` and had a whole session spawned against a ref that 404s, without the spec chain that lives on the real work item. A ref resting on the branch convention **alone** is now verified before it is acted on, and only a definitive 404 drops it; every other answer keeps it. The record answers first: a live session (its own ref, or a durable PR binding) is the target for control, the start test and the spawn, and where one exists the check is not consulted at all. A polled pull-request comment now names its pull request, so the binding is written and the endpoint chosen on that ingress too; and the announcement's own 404 is recorded as `session.work_item_missing` instead of a generic best-effort warning | [spec](../specs/issue-269/), [decision-095](../decisions/decision-095.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/269) |

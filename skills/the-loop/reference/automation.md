@@ -191,6 +191,27 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
   item (`pull_request` `closed`) — the receiver **auto-closes** the session, so a
   finished work item never leaves a dangling `active` session.
 
+- **RULE: record every PR you open, in the same step as opening it** (issue-274).
+  Opening a pull request and labelling it is not enough for the PR's own activity to
+  reach this session. The router answers "which work item does this PR deliver?" from
+  GitHub's `closingIssuesReferences`, the `issue-<n>` head-branch convention, or a
+  closing keyword in the body — and a pull request **the-loop authors** carries none of
+  them: a spec PR must not close its ticket, and `loop/<id>-…` is not the `issue-<n>`
+  convention. So state the binding rather than leaving it to be inferred:
+
+  ```bash
+  # right after `gh pr create`, for EVERY PR you open for the work item
+  the-loop sessions link-pr --work-item github:OWNER/REPO#N --pull-request <pr-number>
+  # a PR in ANOTHER repository (the multi-repo shape) is named by its full ref
+  the-loop sessions link-pr --work-item github:OWNER/REPO#N \
+      --pull-request github:OTHER_OWNER/OTHER_REPO#<pr-number>
+  ```
+
+  Best-effort like registration: a failure is reported and the work carries on, and
+  re-running it is safe (a PR already recorded is a no-op). Skipping it is what makes a
+  review comment on a spec PR a dead letter — the comment resolves to the PR as a work
+  item nobody armed, is refused as unstarted, and is never re-evaluated.
+
 - **A repository with no `.the-loop/` is adopted, not improvised around** (issue-193,
   `docs/decisions/decision-073.md`). the-loop is routinely pointed at a repository that
   never ran `/the-loop:init`. WHEN the daemon's graph coupling — or one of the

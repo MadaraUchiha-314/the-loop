@@ -70,10 +70,14 @@ requirements.
      merge/close auto-closes it.
    - **A work item may be delivered by several PRs** (a spec PR then an implementation
      PR, a stacked series, a follow-up after review, one PR per repository). Label
-     **every** PR you open for the item, record **all** of them in the execution log's
-     **Pull requests** table, and keep working the item in the same session: with GitHub
-     ticketing each PR routes back to the issue's session, and one PR merging does
-     **not** end the work item — closing the **ticket** does.
+     **every** PR you open for the item, **record every one of them against the work
+     item as you open it** (`the-loop sessions link-pr --work-item github:OWNER/REPO#N
+     --pull-request <pr-number>` — a PR the-loop authored carries none of the linkages
+     the router can infer, so its comments and reviews reach nothing without this; see
+     the skill's `reference/automation.md`), record **all** of them in the execution
+     log's **Pull requests** table, and keep working the item in the same session: with
+     GitHub ticketing each PR routes back to the issue's session, and one PR merging
+     does **not** end the work item — closing the **ticket** does.
 
 3. **Phase 0 — Brainstorm (optional)** (`brainstorming`). When the work starts as a fuzzy
    idea, create `docs/specs/<id>/brainstorm.md` (the **root artifact**) from the template:

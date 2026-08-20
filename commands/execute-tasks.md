@@ -44,9 +44,13 @@ locked spec files read from disk, not the drafting conversation (plan-mode style
    object: once the PR exists, **add the `routing.autoExecuteLabel` (from the operator's
    CLI config, decision-032; default `the-loop: auto-execute`) to the PR directly** and
    register against the PR's own ref (`github:OWNER/REPO#<pr-number>`), so PR activity
-   still resumes this session. **If the item takes more than one PR**, label **every**
-   one of them and list them all in the execution log's **Pull requests** table — one
-   PR merging does not end the work item.
+   still resumes this session. **Every PR you open is recorded against the work item in
+   the same step as opening it** — `the-loop sessions link-pr --work-item
+   github:OWNER/REPO#N --pull-request <pr-number>` — because a PR the-loop authored
+   carries none of the linkages the router can infer, and without the binding its review
+   comments reach no session at all. **If the item takes more than one PR**, label
+   **every** one of them, record every one of them, and list them all in the execution
+   log's **Pull requests** table — one PR merging does not end the work item.
 
 3. **Verification** (`verification`). Once every task is ticked, execute
    `testing-plan.md`: bring up the declared environment, run each planned activity, and

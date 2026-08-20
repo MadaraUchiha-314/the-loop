@@ -479,6 +479,31 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sessions/link-pr:
+    post:
+      summary: Link Session Pull Request
+      operationId: linkSessionPullRequest
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionLinkPrBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Linksessionpullrequest
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/sessions/close:
     post:
       summary: Close Session
@@ -1310,6 +1335,19 @@ components:
       - ref
       - text
       title: SessionReplyBody
+    SessionLinkPrBody:
+      properties:
+        ref:
+          type: string
+          title: Ref
+        pullRequest:
+          type: string
+          title: Pullrequest
+      type: object
+      required:
+      - ref
+      - pullRequest
+      title: SessionLinkPrBody
     SessionRegisterBody:
       properties:
         ref:

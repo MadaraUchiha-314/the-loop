@@ -25,8 +25,12 @@ self-learning/ML capabilities.
   so it always tracks the actually-installed release (issue-78).
 - The lifecycle surface SHALL run/stop the HMAC-verified GitHub webhook
   receiver (see [webhook-triggers](webhook-triggers.md)).
-- `the-loop sessions register|list|attach|close` SHALL manage the work-item ↔
-  harness-session registry used for webhook routing.
+- `the-loop sessions register|list|attach|link-pr|close` SHALL manage the work-item ↔
+  harness-session registry used for webhook routing. `link-pr` records a pull request
+  as delivering a work item (issue-274) — the step a session runs in the same breath as
+  opening the pull request, because a pull request the-loop authored carries none of the
+  linkages the router can otherwise infer. It is idempotent, refuses a work item linked
+  to itself, and writes nothing when the work item has no session record on this machine.
 - `the-loop sessions start|pause|resume|stop|cleanup` SHALL give an operator with shell
   access the **same five commands** an authorized user issues by keyword in a comment
   (issue-106, issue-186, see [webhook-triggers](webhook-triggers.md)): `start` spawns
@@ -316,6 +320,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-274 | `the-loop sessions link-pr --work-item <ref> --pull-request <ref\|N>` joins the registry surface, with `POST /api/v1/sessions/link-pr` and the `link_pull_request` MCP tool over the one core implementation: the session that opens a pull request records the binding the router prefers, instead of leaving it to be inferred from a closing reference, an `issue-<n>` branch or a closing keyword that a the-loop-authored pull request does not carry | [spec](../specs/issue-274/), [sessions](../cli/commands/sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/274) |
 | issue-245 | `the-loop channels` joins the CLI: `status` (config with token presence only), `poll` (one synchronous read cycle over the bound Slack threads — the cron/daemon-less form) and `listen` (Socket Mode, the no-polling reader). The daemons additionally run the poll-mode reader as a background watcher | [spec](../specs/issue-245/), [decision-094](../decisions/decision-094.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/245) |
 | issue-228 | The CLI's lifecycle became one surface (2026-08-14): `the-loop start\|stop\|status\|restart` compose the control-plane service, webhook receiver and poller per new per-service `enabled` flags (service + MCP on by default, ingresses opt-in), the `poll`, `gh-webhook` and `service` commands were removed with the run loops relocated to `the_loop.poller.daemon` / `the_loop.webhook.daemon` (`daemon_entry <poller\|gh-webhook> [--once]` is the foreground/cron form; the fold of the latter two is the owner's PR #229 review), the issue-191 double-fork went with them, `restart --with-upgrade` reuses the issue-152 installer plan, and `service.enabled: false` also refuses implicit auto-start. Amended in the same PR (issue-231, owner review round 2): `service.hostIngresses` (default true) makes `start` boot one process — the enabled ingresses run as threads inside the service, each keeping its own pidfile flock under the service's pid, hosted-ness detected from the lock and never recorded | [spec](../specs/issue-228/), [decision-084](../decisions/decision-084.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/228), [issue-231](https://github.com/MadaraUchiha-314/the-loop/issues/231) |
 | issue-208 | `the-loop ask` joins the CLI: an agent's question is posted with the loop-prevention marker stamped centrally and the wait recorded as `session.awaiting_input`; runs in-process because the escalation path must not depend on a running service | [spec](../specs/issue-208/), [decision-078](../decisions/decision-078.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/208) |

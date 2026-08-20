@@ -92,6 +92,7 @@ that is not there.
 | `reply(ref, text, actor="", comment=True)` | deliver a human reply into a waiting session |
 | `ask(ref, question)` | post an agent's question on its work item and record the wait |
 | `register(ref, harness, harness_session_id, cwd=".", force=False)` | link a work item to the session working it |
+| `link_pr(ref, pull_request)` | record a pull request as delivering a work item, so its comments, reviews and CI route to that work item's session — the step a session runs as it opens the PR |
 | `close(ref, keep_tmux=None)` | close a session and release its resources |
 
 ### `loop.graph`
