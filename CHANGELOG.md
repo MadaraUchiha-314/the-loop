@@ -1,3 +1,9 @@
+## v11.1.3 (2026-08-20)
+
+### Fix
+
+- **issue-274**: the session that opens a pull request records what it delivers (#276)
+
 ## v11.1.2 (2026-08-20)
 
 ### Fix
