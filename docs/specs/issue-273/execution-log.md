@@ -27,7 +27,7 @@ status: in-progress              # in-progress | complete
 
 | Repository | PR | Loop state | Status |
 |---|---|---|---|
-| MadaraUchiha-314/the-loop | [#274](https://github.com/MadaraUchiha-314/the-loop/pull/274) | outer loop only — one repository, one delivery | open, briefing posted |
+| MadaraUchiha-314/the-loop | [#275](https://github.com/MadaraUchiha-314/the-loop/pull/275) | outer loop only — one repository, one delivery | open, briefing posted |
 
 ## Progress entries
 
