@@ -20,7 +20,7 @@ overrides: {}
 | T2 | Integration (scenario) | yes | the four behaviours that *are* the feature: start → stop → start resumes the same conversation; `the-loop start/stop/status` carry the sessions; a Slack thread reply reaches the pane and touches no ticket; a live unaccounted-for tmux session is refused | `make test` (`cli/tests/test_standing_integration.py`, `cli/tests/test_standing_channels_integration.py`) |
 | T3 | Contract (OpenAPI) | yes | the served app's schema equals the authored `docs/api-specs/openapi/the-loop.v1.yaml` for the four new operations | `make test` (`cli/tests/test_api_contract_parity.py`, unchanged test, new contract) |
 | T4 | End-to-end | n/a — an E2E would need a real tmux server, a real `claude` binary and a real Slack workspace. The tmux seam is faked at `TmuxRunner` (as every other session test in this repo fakes it) and the Slack seam at `client_factory`, which the existing `test_reactions_integration`/`test_interaction_integration` precedent already establishes as the boundary worth testing to. | | |
-| T5 | UI / visual | n/a — no UI surface changes. The dashboard reads `/api/v1`; rendering a standing-sessions panel is not in this work item. | | |
+| T5 | UI / visual | yes | the dashboard's **Standing** screen: both kinds listed and labelled, `delete` offered only for a created session, create/delete/start/say behaving, and the service's own refusal shown verbatim. It became in scope when the owner asked whether create works from the control-plane UI — their own list of three surfaces named it | `bun run test` in `ui/` (`src/views/Standing.test.tsx`) |
 | T6 | Snapshot | n/a — no rendered artifact is asserted verbatim. | | |
 | T7 | Performance / load | n/a — the work is one subprocess per session at start; nothing is on a request path. | | |
 | T8 | Security / abuse case | yes | one negative test per trust boundary in `design.md` §Security considerations: a `standing:` string cannot address a work-item verb and a work-item ref cannot address a standing one; an unauthorized Slack member is dropped before either standing branch runs; `say` into a stopped session refuses instead of spawning; a `cwd` that does not exist is refused | `make test` (`cli/tests/test_standing_security_integration.py`) |
@@ -52,6 +52,8 @@ overrides: {}
 | T8 | R3.1 | a created session is not addressable as a work item either |
 | T2 | R5.1, R5.2 | `Scenario: a standing session is told what it is not` — the directive precedes the operator's prompt in the pasted argv |
 | T3 | R3.5, R6 | the **six** REST operations appear in the served schema exactly as authored |
+| T5 | R6.1, R6.4, R3.0 | the Standing screen lists both kinds, creates, deletes, starts and messages — and refuses an invalid name before the round trip |
+| T5 | R6.5 | `delete` is not offered for a declared session (the service's refusal is not a button) |
 | T8 | R3.1, R3.2 | `Scenario: the two session namespaces cannot address each other` |
 | T8 | R4.4 | `Scenario: an unauthorized Slack member never reaches a standing session` |
 | T8 | R3.4 | `Scenario: a message into a stopped standing session refuses instead of spawning one` |
@@ -87,6 +89,7 @@ overrides: {}
 - [x] T1/T2/T8/T10 — `make test`
 - [x] T1/T2/T8 — `uv run --project cli python -m pytest -q cli/tests/test_standing.py cli/tests/test_standing_integration.py cli/tests/test_standing_channels_integration.py cli/tests/test_standing_security_integration.py`
 - [x] T3 — `uv run --project cli python -m pytest -q cli/tests/test_api_contract_parity.py`
+- [x] T5 — `cd ui && bun run lint && bun run test && bun run build`
 - [x] T10 — `make validate`
 - [x] all — `make lint && make format-check && uv run pyright cli`
 
@@ -105,6 +108,7 @@ skipped.
 | T10 | `make validate` | **VALID** for this repository's config, the shipped template and both schemas | [checks.md](evidence/checks.md) |
 | T10 | the parity gates (docs, SDK docs, state, event catalog, schema) | **62 passed** | [tests.md](evidence/tests.md) |
 | all | `make lint`, `make format-check`, `uv run pyright cli`, markdownlint | clean, first run | [checks.md](evidence/checks.md) |
+| T5 | `bun run lint`, `bun run test`, `bun run build` in `ui/` | **157 passed** (149 before — +8 for the Standing screen); lint and build clean | [checks.md](evidence/checks.md) |
 
 **Not executed:** none.
 

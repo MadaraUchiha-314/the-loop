@@ -7,11 +7,16 @@
 ## How you interact with one
 
 Three ways, and no others are built ([decision-100](../decisions/decision-100.md)): type
-directly into its **tmux session**, reply in its **Slack thread**, or send it a message
-through the **control plane** (`the-loop standing say`, `POST
-/api/v1/standing-sessions/say`, the `say_to_standing_session` MCP tool). The control plane
-is deliberately *not* modelled as a `channel`, and the existing way to talk to a tmux
-session is reused rather than reinvented.
+directly into its **tmux session**, reply in its **Slack thread**, or reach it through the
+**control plane** — the dashboard's **Standing** screen, `the-loop standing say`, `POST
+/api/v1/standing-sessions/say`, or the `say_to_standing_session` MCP tool. The control
+plane is deliberately *not* modelled as a `channel`, and the existing way to talk to a
+tmux session is reused rather than reinvented.
+
+The dashboard screen is where a session is created and deleted without touching a config
+file: it lists both kinds, says which is which, and offers `delete` only for a **created**
+one — the service refuses it for a declared session, and a button whose only outcome is
+that refusal is worse than no button.
 
 A standing session cannot yet *initiate* — it is read by looking at its pane, locally,
 over SSH, or through the ttyd web terminal. That limitation is recorded in decision-100
@@ -197,6 +202,7 @@ apart ([decision-100](../decisions/decision-100.md)):
 | REST | `GET /api/v1/standing-sessions`, `GET …/one?name=`, `POST …/create`, `POST …/delete`, `POST …/control`, `POST …/say` |
 | MCP | `list_standing_sessions`, `get_standing_session`, `say_to_standing_session` — **only** these three |
 | SDK | `loop.standing.list() / get() / create() / delete() / control() / say()` |
+| Dashboard | the **Standing** screen (`#/standing`) — list, create, delete, start/stop/restart, and a per-session message box |
 | Lifecycle | [`start`](../cli/commands/start.md), [`stop`](../cli/commands/stop.md), [`status`](../cli/commands/status.md) carry a `standingSessions` section |
 | Config | [`standingSessions`](../config/cli/standing-sessions-options.md) |
 | Events | `standing.created`, `standing.create_failed`, `standing.deleted`, `standing.started`, `standing.resumed`, `standing.resume_failed`, `standing.spawn_failed`, `standing.stopped`, `standing.stop_failed`, `standing.said`, `standing.announced`, `standing.announce_failed`, `channel.mirror_skipped` |
@@ -227,4 +233,4 @@ runner these share) · [channels](channels.md) (the Slack bot and its pipeline) 
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
-| issue-277 | Introduced standing sessions: the `standingSessions` config block, the `StandingRegistry` under `<state.root>/local/standing/`, `loop-standing-<name>` tmux sessions, the `the-loop standing` command and its REST/MCP/SDK surfaces, the `start`/`stop`/`status` integration with resume-across-restart, the non-configurable boot directive, and the Slack thread a session is announced in and answered on. On review the owner ruled the control plane is **not** a channel and asked for create/delete instead, so a session can be brought into existence and removed through the API rather than only by editing the config — the record then carries the whole definition | [spec](../specs/issue-277/), [decision-099](../decisions/decision-099.md), [decision-100](../decisions/decision-100.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/277) |
+| issue-277 | Introduced standing sessions: the `standingSessions` config block, the `StandingRegistry` under `<state.root>/local/standing/`, `loop-standing-<name>` tmux sessions, the `the-loop standing` command and its REST/MCP/SDK surfaces, the `start`/`stop`/`status` integration with resume-across-restart, the non-configurable boot directive, and the Slack thread a session is announced in and answered on. On review the owner ruled the control plane is **not** a channel and asked for create/delete instead, so a session can be brought into existence and removed through the API rather than only by editing the config — the record then carries the whole definition. The dashboard gained a **Standing** screen when the owner asked whether create works from the control-plane UI — it did not, and neither did `say`, so the third surface the ruling named was unwired | [spec](../specs/issue-277/), [decision-099](../decisions/decision-099.md), [decision-100](../decisions/decision-100.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/277) |

@@ -99,3 +99,23 @@ _Pending._
   create → list → the two refusals → delete, and `stop`/`start` proving a created session
   comes back on the **same** conversation id (R6.6). Evidence refreshed under `evidence/`.
 - **Next:** human review.
+
+### 2026-08-20 — the third surface, wired
+
+- **Phase:** needs-review
+- **The question** ([PR thread](https://github.com/MadaraUchiha-314/the-loop/pull/278#issuecomment-5361545849)):
+  _"Can I do the same action from the control plane ui?"_ The answer was no — and checking
+  it showed the gap was wider than the question: `say` was not reachable from the dashboard
+  either, so the third surface decision-100 named ("Control Plane messaging ui", the
+  owner's own words) did not exist for standing sessions at all.
+- **Did:** a **Standing** screen on the dashboard — list both kinds and label which is
+  which, create, delete, start/stop/restart, and a per-session message box — plus the five
+  client methods, the demo transport (which models the refusals, not only the successes),
+  the route, the tab, the styles, and eight tests.
+- **Two judgement calls:** it is its **own tab** rather than a row on Sessions, because
+  that screen is a tree of work items and a session with no ticket would be a row lying
+  about being part of one; and the create form asks for four fields, not eleven — the rest
+  have `routing` defaults, and the CLI and API still take them all.
+- **Checkpoint/tests:** `bun run lint`, `bun run test` (157 passed, 149 before),
+  `bun run build` — clean. Python suite unchanged at 2600 passed, 1 skipped.
+- **Next:** human review.

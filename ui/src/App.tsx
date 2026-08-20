@@ -11,6 +11,7 @@ import { Attention } from "./views/Attention.tsx";
 import { Dashboard } from "./views/Dashboard.tsx";
 import { Events } from "./views/Events.tsx";
 import { Sessions } from "./views/Sessions.tsx";
+import { Standing } from "./views/Standing.tsx";
 import { Settings } from "./views/Settings.tsx";
 import { WorkItemDetail } from "./views/WorkItemDetail.tsx";
 
@@ -81,6 +82,8 @@ export function App() {
           />
         ) : null}
 
+        {route.name === "standing" ? <Standing /> : null}
+
         {route.name === "attention" ? <Attention views={board.views} /> : null}
         {route.name === "events" ? <Events /> : null}
         {route.name === "settings" ? <Settings /> : null}
@@ -104,8 +107,8 @@ export function App() {
       </main>
 
       <footer className="lp-footer">
-        <span>GET /work-items · /sessions · /sessions/transcript · /attention · /events · /daemons</span>
-        <span>POST /graph/check · /graph/complete · /sessions/control · /sessions/reply</span>
+        <span>GET /work-items · /sessions · /sessions/transcript · /standing-sessions · /attention · /events · /daemons</span>
+        <span>POST /graph/check · /graph/complete · /sessions/control · /sessions/reply · /standing-sessions/create · /delete · /control · /say</span>
       </footer>
     </div>
   );

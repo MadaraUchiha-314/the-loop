@@ -102,6 +102,13 @@ flowchart LR
       two verbs on the CLI, REST (with the authored contract) and SDK — but **not** MCP.
       _Requirements: R6.1–R6.7_ · _Test: T1, T2, T8_
 
+- [x] 13. **The control-plane UI.** The owner asked whether `create` works from the
+      dashboard; it did not, and neither did `say` — so the third surface their own ruling
+      named was unwired. A **Standing** screen: list, create, delete, start/stop/restart
+      and a per-session message box, with the client methods, the demo transport, the
+      route, the tab and eight tests.
+      _Requirements: R3.0, R6.1, R6.4, R6.5_ · _Test: T5_
+
 - [x] 11. **Verification.** Run every activity in `testing-plan.md`, record the results and
       commit the evidence.
       _Requirements: all_ · _Test: all_

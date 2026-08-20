@@ -43,3 +43,22 @@ VALID   skills/the-loop/templates/collaborators.yaml
 VALID   .the-loop/cli-config.yaml
 VALID   skills/the-loop/templates/cli-config.yaml
 ```
+
+## The dashboard — `bun run lint && bun run test && bun run build` in `ui/`
+
+The dashboard has its own toolchain (bun, oxlint, vitest) and its own CI job, so it is
+verified separately from the Python suite.
+
+```text
+$ bun run lint
+$ oxlint --type-aware          # clean, no findings
+
+$ bun run test
+Test Files  12 passed (12)
+     Tests  157 passed (157)   # 149 before; +8 for the Standing screen
+
+$ bun run build                # `tsc --noEmit` then vite
+dist/assets/index-Iowr0hRB.css   29.93 kB │ gzip: 5.76 kB
+dist/assets/index-D7q8B5Vu.js   287.59 kB │ gzip: 88.44 kB
+✓ built
+```

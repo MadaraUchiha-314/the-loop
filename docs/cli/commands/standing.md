@@ -166,6 +166,13 @@ and `tmux attach -r -t …` observes without being able to type. The
 [web terminal](/config/cli/routing-options#webterminalenabled) reaches these sessions like
 any other.
 
+## From the dashboard
+
+Everything above is on the [control-plane dashboard](/cli/service)'s **Standing** screen
+too — list, create, delete, start/stop/restart, and a message box per session. It offers
+`delete` only for a created session, for the same reason this command refuses it on a
+declared one.
+
 ## See also
 
 - [standing-sessions options](/config/cli/standing-sessions-options) — the config block

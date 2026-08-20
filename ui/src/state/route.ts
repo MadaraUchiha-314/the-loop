@@ -14,6 +14,7 @@ export type Route =
   | { name: "dashboard" }
   | { name: "detail"; ref: string }
   | { name: "sessions"; ref?: string }
+  | { name: "standing" }
   | { name: "attention" }
   | { name: "events" }
   | { name: "settings" };
@@ -25,6 +26,7 @@ export function parseHash(hash: string): Route {
   if (path === "events") return { name: "events" };
   if (path === "settings") return { name: "settings" };
   if (path === "sessions") return { name: "sessions" };
+  if (path === "standing") return { name: "standing" };
   if (path.startsWith("sessions/")) {
     // The selected *session's* ref — the work item's for the outer loop, the
     // PR's for an inner loop; the sidebar derives which item owns it.
