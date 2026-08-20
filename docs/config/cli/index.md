@@ -167,6 +167,7 @@ Everything else takes its default. Build up from here with the option pages belo
 |------|-------|
 | [Webhook options](/config/cli/webhook-options) | `webhooks.ghWebhook` — bind address, path, HMAC secret, event filter |
 | [Routing options](/config/cli/routing-options) | `routing` — who may trigger, what spawns, how sessions are hosted |
+| [Standing-session options](/config/cli/standing-sessions-options) | `standingSessions` — the sessions the-loop keeps for itself, which belong to no work item |
 | [Polling options](/config/cli/polling-options) | `polling` — the pull-based ingress and its sources |
 | [Integrations options](/config/cli/integrations-options) | `integrations` — how the-loop's own calls reach GitHub, Slack and Jira |
 | [Channels options](/config/cli/channels-options) | `channels` — the back-and-forth conversation surfaces (the Slack bot) |

@@ -123,6 +123,18 @@ class StateLayout:
         """Channel conversation state — thread bindings + read cursors (issue-245)."""
         return str(self.root_path / "channels")
 
+    @property
+    def standing_dir(self) -> str:
+        """Standing-session records — one per declared name (issue-277).
+
+        Under ``local/`` because it is the same kind of thing as a session
+        record and for the same reason: a conversation id, a tmux name and a
+        directory that exist on one machine. In its own subdirectory rather than
+        beside the work-item records, because the two namespaces are separate by
+        design — a standing session is addressed by name, never by ref.
+        """
+        return str(self.root_path / "local" / "standing")
+
 
 @dataclass(frozen=True)
 class LegacyLayout:
@@ -304,6 +316,24 @@ GENERATED_PATHS: Tuple[GeneratedPath, ...] = (
             "another machine it would suppress reports for failures that machine "
             "never diagnosed — its log is different — and the sibling .lock file "
             "guarding concurrent scans is kernel state that cannot travel at all."
+        ),
+    ),
+    GeneratedPath(
+        name="standing-session record",
+        attr="standing_dir",
+        default="<root>/local/standing/<name>.json",
+        portable=False,
+        holds=(
+            "per standing session (issue-277): harness, harnessSessionId, cwd, "
+            "tmuxTarget, status, and the Slack channel/thread its chat runs in"
+        ),
+        why=(
+            "the same machine handles the work-item session record carries — a "
+            "resumable conversation id, a tmux session name and an absolute path "
+            "— for a session that is not even nominally about a shared work item. "
+            "Copied elsewhere, `standing start` would resume a conversation that "
+            "does not exist there and bind replies to a thread its bot never "
+            "posted."
         ),
     ),
     GeneratedPath(

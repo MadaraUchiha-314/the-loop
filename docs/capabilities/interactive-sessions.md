@@ -260,10 +260,21 @@ still carrying the key is warned about and otherwise ignored).
 [`docs/specs/issue-32/design.md`](../specs/issue-32/design.md) ·
 [decision-021](../decisions/decision-021.md)
 
+## Sessions that are not a work item's
+
+Since issue-277 tmux hosts a second kind of session:
+[standing sessions](standing-sessions.md), which belong to no work item and are addressed
+by name (`loop-standing-<name>`). They share this runner and the harness adapters, and
+nothing else: they have their own registry, their own verbs, and no path from a routed
+GitHub event. Everything on this page about how a pane is spawned, pasted into,
+terminated and retained applies to them; everything about *which work item* an event
+belongs to does not.
+
 ## History
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-277 | The runner learned to be addressed by **target** rather than by work item (`spawn_in`, `deliver_to`, `kill_target`, `terminate_harness_in`), so a session with no work item can be hosted the same way; the four work-item entry points delegate and keep their exact refusals. The first caller is [standing-sessions](standing-sessions.md) | [spec](../specs/issue-277/), [decision-099](../decisions/decision-099.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/277) |
 | issue-240 | A read-only observer no longer blocks delivery: the submit keystroke is a second, unbracketed `paste-buffer` instead of `send-keys … Enter`, so no tmux command in the delivery resolves a client. tmux ≥ 3.7 refused `send-keys` with `client is read-only` whenever anyone was attached with `--read-only`, and `-t` could not avoid it — the guard tests the *target client*, which is resolved from `-c`/the current client | [spec](../specs/issue-240/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/240) |
 | issue-186 | `the-loop cleanup` — a control keyword, a CLI/API/MCP verb and an authorized closure all release a finished work item's **local** resources: every endpoint's tmux session, the workspace checkout and the machine-local registry record, ignoring the two retention settings. The portable record is kept and nothing remote is touched; a closure that names no authorized actor defers to the keyword rather than destroying state on an unattributable event | [spec](../specs/issue-186/), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/186) |
 | issue-156 | Process runner removed; tmux is the only runner (2026-08-05): `routing.runner` left the schema (ignored with a warning), tmux became a required daemon dependency, registry records dropped their `runner` field, and a record without a `tmuxTarget` heals lazily through the respawn path on its next event | [spec](../specs/issue-156/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/156) |

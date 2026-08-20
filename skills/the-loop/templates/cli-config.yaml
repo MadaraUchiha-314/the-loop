@@ -255,6 +255,40 @@ routing:
   announce:
     enabled: true
 
+# Standing sessions (issue-277): the sessions the-loop keeps for ITSELF. A
+# standing session belongs to no work item — no ticket, no spec chain, no
+# completion — so it is declared here rather than armed on an issue, started by
+# `the-loop start`, and addressed by NAME: `the-loop standing say supervisor
+# --text "…"`, `POST /api/v1/standing-sessions/say`, or a reply in its own Slack
+# thread. That last one is what makes it useful from a phone.
+#
+# EXECUTABLE-ADJACENT CONFIG, like `reviews.critics` in the harness config: an
+# entry names harness arguments and a working directory, and the session runs
+# with YOUR credentials. Review an entry like code.
+#
+# Default off. Each entry inherits `routing.defaultHarness`,
+# `routing.harnessArgs.<harness>` and `routing.spawnWorkdir` unless it says
+# otherwise, and its `prompt`/`promptFile` is APPENDED to the-loop's own
+# directive (you own no work item; do not answer a phase gate or post a control
+# keyword on any ticket) — never substituted for it.
+standingSessions:
+  enabled: false
+  sessions: []
+    # - name: supervisor          # ^[a-z0-9][a-z0-9-]{0,39}$ — becomes
+    #                             # `loop-standing-supervisor` in tmux
+    #   description: Watches the work items in flight and reports what is stuck.
+    #   harness: claude           # claude | cursor (omit = routing.defaultHarness)
+    #   harnessArgs: []           # omit to inherit routing.harnessArgs.<harness>
+    #   cwd: "~/dev/the-loop"     # must exist (omit = routing.spawnWorkdir)
+    #   autoStart: true           # false = declared, started only on request
+    #   promptFile: ""            # or `prompt:` inline — never both
+    #   prompt: |
+    #     Every 30 minutes, run `the-loop status` and `the-loop sessions list`,
+    #     and tell me about anything that has not moved.
+    #   slack:
+    #     enabled: false          # needs channels.slack.enabled below
+    #     channel: ""             # empty = channels.slack.channel
+
 polling:
   enabled: false                    # `the-loop start` brings the poller up when true
   intervalSeconds: 60               # seconds between poll cycles (all sources)

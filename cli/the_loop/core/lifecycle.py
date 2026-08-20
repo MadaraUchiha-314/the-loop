@@ -37,6 +37,7 @@ from ..daemonize import open_logfile
 from ..runlock import RunLock
 from ..state import layout_from_config
 from . import daemons as core_daemons
+from . import standing as core_standing
 
 #: Start order. The service first, so anything the daemons spawn can reach it;
 #: :func:`stop_all` walks it reversed.
@@ -308,7 +309,12 @@ def start_all(config: Optional[dict] = None) -> Dict[str, Any]:
         row["outcome"] in ("started", "already-running", "hosted", "disabled")
         for row in rows
     )
-    return {"services": rows, "ok": ok}
+    standing = _start_standing(config)
+    return {
+        "services": rows,
+        "standingSessions": standing["sessions"],
+        "ok": ok and standing["ok"],
+    }
 
 
 def stop_all(config: Optional[dict] = None) -> Dict[str, Any]:
@@ -319,6 +325,9 @@ def stop_all(config: Optional[dict] = None) -> Dict[str, Any]:
     service's shutdown — but stopped *by* stopping the service, and its row is
     reported only once its lock has actually been released.
     """
+    # The standing sessions go first, while the control plane they may be
+    # talking to is still up (issue-277, design D5).
+    standing = _stop_standing(config)
     by_name: Dict[str, Dict[str, Any]] = {}
     enabled = enabled_services(config)
     service_lock = _service_lock(config)
@@ -368,7 +377,11 @@ def stop_all(config: Optional[dict] = None) -> Dict[str, Any]:
         )
     rows = [by_name[name] for name in ("poller", "gh-webhook", "service")]
     ok = all(row["outcome"] in ("stopped", "not-running") for row in rows)
-    return {"services": rows, "ok": ok}
+    return {
+        "services": rows,
+        "standingSessions": standing["sessions"],
+        "ok": ok and standing["ok"],
+    }
 
 
 def status_all(config: Optional[dict] = None) -> Dict[str, Any]:
@@ -408,7 +421,73 @@ def status_all(config: Optional[dict] = None) -> Dict[str, Any]:
     rows[-1]["lastCycle"] = dict(beat.last_cycle) if beat else {}
     rows[-1]["intervalSeconds"] = beat.interval_seconds if beat else 0
     ok = all(row["running"] for row in rows if row["enabled"])
-    return {"services": rows, "ok": ok}
+    standing = _standing_status(config)
+    return {
+        "services": rows,
+        "standingSessions": standing["sessions"],
+        "ok": ok and standing["ok"],
+    }
+
+
+def _standing_enabled(config: Optional[dict]) -> bool:
+    block = (config or {}).get("standingSessions") or {}
+    return bool(isinstance(block, dict) and block.get("enabled"))
+
+
+def _standing_failure(error: str) -> Dict[str, Any]:
+    """One `misconfigured` row standing in for a block that could not be parsed."""
+    return {
+        "sessions": [
+            {
+                "name": "standingSessions",
+                "outcome": "misconfigured",
+                "detail": error,
+                "running": False,
+                "declared": False,
+                "autoStart": False,
+            }
+        ],
+        "ok": False,
+    }
+
+
+def _start_standing(config: Optional[dict]) -> Dict[str, Any]:
+    """Start the auto-start standing sessions (issue-277). Never raises."""
+    if not _standing_enabled(config):
+        return {"sessions": [], "ok": True}
+    try:
+        return core_standing.start_standing(config=config, auto_only=True)
+    except Exception as exc:  # noqa: BLE001 — isolate, exactly like a service row
+        return _standing_failure(str(exc))
+
+
+def _stop_standing(config: Optional[dict]) -> Dict[str, Any]:
+    """Stop every RECORDED standing session, `enabled` notwithstanding (R2.6)."""
+    try:
+        return core_standing.stop_standing(config=config)
+    except Exception as exc:  # noqa: BLE001
+        return _standing_failure(str(exc))
+
+
+def _standing_status(config: Optional[dict]) -> Dict[str, Any]:
+    """Standing rows for ``status``, and whether they hold up ``ok`` (design D5).
+
+    ``ok`` counts only the sessions ``start`` would have started: the block
+    enabled and the entry's ``autoStart`` true. A session declared without
+    ``autoStart``, or one that is only in the registry because an operator
+    started it by hand, is reported and does not decide the health answer.
+    """
+    try:
+        rows = core_standing.list_standing(config=config)
+    except Exception as exc:  # noqa: BLE001
+        return _standing_failure(str(exc))
+    enabled = _standing_enabled(config)
+    ok = all(
+        row["running"]
+        for row in rows
+        if enabled and row.get("declared") and row.get("autoStart")
+    )
+    return {"sessions": rows, "ok": ok}
 
 
 def restart_logfile(config: Optional[dict] = None) -> str:

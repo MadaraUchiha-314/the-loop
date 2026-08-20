@@ -590,6 +590,93 @@
         }
       }
     },
+    "standingSessions": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Standing sessions (issue-277): named, long-lived tmux + harness sessions that belong to NO work item — the ones the-loop keeps for itself (watching the work items in flight, recovering a stuck one, anything higher-order). Declared here, brought up by `the-loop start`, addressed by name on the control plane and — optionally — in a Slack thread of their own. EXECUTABLE-ADJACENT CONFIG: an entry names harness arguments and a working directory, and the session runs with your own credentials. Review an entry like code.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Default off: starting the-loop's daemons never becomes consent to spawn agent sessions nobody asked for. With this false, `the-loop start` starts none of them and says so — while `the-loop stop` still stops any that are running, because a session disabled after it was started must stay stoppable."
+        },
+        "sessions": {
+          "type": "array",
+          "default": [],
+          "description": "One entry per standing session. Names must be unique — a duplicate refuses the whole block rather than picking a winner.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]{0,39}$",
+                "description": "The session's identity everywhere: `loop-standing-<name>` in tmux, `<name>.json` in the registry, `standing:<name>` as a Slack thread binding. Lowercase letters, digits and hyphens, not starting with a hyphen, at most 40 characters — narrow because the value is interpolated into a tmux target and a file name."
+              },
+              "description": {
+                "type": "string",
+                "default": "",
+                "description": "What this session is for, in one line. Shown by `the-loop standing list`; never sent to the harness."
+              },
+              "harness": {
+                "type": "string",
+                "enum": [
+                  "claude",
+                  "cursor"
+                ],
+                "description": "Which harness hosts it. Omitted inherits `routing.defaultHarness`. cursor-agent has no pre-assignable conversation id and so cannot host an interactive session — the same limitation work-item sessions have."
+              },
+              "harnessArgs": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Extra CLI arguments for this session's harness. Omitted (not `[]`) inherits `routing.harnessArgs.<harness>`; `[]` explicitly means none. Widening permissions here widens them for an unattended agent — the-loop never adds a permission flag you did not write."
+              },
+              "cwd": {
+                "type": "string",
+                "description": "The directory the session runs in. Omitted inherits `routing.spawnWorkdir`. It must exist: a session is never spawned into a directory that is not there."
+              },
+              "prompt": {
+                "type": "string",
+                "default": "",
+                "description": "The session's brief, inline. APPENDED to the-loop's own directive (you own no work item; do not answer a phase gate or post a control keyword on any ticket), never substituted for it. Mutually exclusive with promptFile."
+              },
+              "promptFile": {
+                "type": "string",
+                "default": "",
+                "description": "The session's brief, read from a file at start time (absolute, or relative to where the-loop runs). Same append rule as `prompt`; declaring both refuses the entry, because there is no precedence between them. An unreadable file fails THAT session and no other."
+              },
+              "autoStart": {
+                "type": "boolean",
+                "default": true,
+                "description": "Whether `the-loop start` brings this one up. False means it is declared but started only on request (`the-loop standing start <name>`), and its being down never fails `the-loop status`."
+              },
+              "slack": {
+                "type": "object",
+                "additionalProperties": false,
+                "description": "This session's Slack surface. It reuses the central `channels.slack` bot, tokens, verbosity, read mode and authorized-user list — only the channel can differ.",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Announce this session in Slack when it starts and bind the resulting thread to it, so an authorized member's replies in that thread are pasted into its terminal. Requires `channels.slack.enabled`; best-effort — a Slack failure never stops the session starting."
+                  },
+                  "channel": {
+                    "type": "string",
+                    "default": "",
+                    "description": "The channel id this session is announced in (C…). Empty uses `channels.slack.channel`."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "collaborators": {
       "type": "array",
       "description": "The OPERATOR'S own notification recipients \u2014 the same collaborator structure as .the-loop/collaborators.schema.json ($defs/collaborator), declared here rather than looked up: the CLI daemon never reads any repo's collaborators.yaml (issue-82, decision-035). Typically just the operator themself; roles are used by notifications.events to pick recipients.",

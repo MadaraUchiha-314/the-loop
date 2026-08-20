@@ -111,6 +111,9 @@ the-loop start              # bring up every service the CLI config enables — 
 the-loop status             # per-service liveness + the poller's last cycle (exit 0/1)
 the-loop restart --with-upgrade  # bounce everything, upgrading the CLI in between
 the-loop sessions list      # the work-item record: its session, and one endpoint per PR
+the-loop standing say supervisor --text "what has not moved today?"
+                            # the sessions the-loop keeps for ITSELF: no work item, no
+                            # ticket to comment on — addressed by name, from here or Slack
 the-loop events --follow    # the structured trail of every routing and dispatch decision
 the-loop channels poll      # the Slack-bot conversation channel: read thread replies —
                             # each mirrored onto its work item, delivered to its session

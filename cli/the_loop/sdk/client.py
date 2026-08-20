@@ -37,6 +37,7 @@ from ..core import graphs as core_graphs
 from ..core import lifecycle as core_lifecycle
 from ..core import repo as core_repo
 from ..core import sessions as core_sessions
+from ..core import standing as core_standing
 from ..core import workitems as core_workitems
 from .environment import check_environment
 
@@ -119,6 +120,27 @@ class Sessions(_Namespace):
         return core_sessions.close_session(
             ref, keep_tmux=keep_tmux, config=self._config
         )
+
+
+class Standing(_Namespace):
+    """Standing sessions: the sessions that belong to no work item (issue-277).
+
+    Addressed by **name**, never by a work-item ref — a separate namespace, so
+    nothing routed by ref can reach one and nothing here can reach a work item's
+    session.
+    """
+
+    def list(self) -> List[Dict[str, Any]]:
+        return core_standing.list_standing(config=self._config)
+
+    def get(self, name: str) -> Dict[str, Any]:
+        return core_standing.get_standing(name, config=self._config)
+
+    def control(self, name: str, verb: str) -> Dict[str, Any]:
+        return core_standing.control_standing(name, verb, config=self._config)
+
+    def say(self, name: str, text: str, actor: str = "") -> Dict[str, Any]:
+        return core_standing.say_standing(name, text, actor=actor, config=self._config)
 
 
 class Graph(_Namespace):
@@ -358,6 +380,7 @@ class TheLoop:
 
         self.work_items = WorkItems(self)
         self.sessions = Sessions(self)
+        self.standing = Standing(self)
         self.graph = Graph(self)
         self.events = Events(self)
         self.daemons = Daemons(self)

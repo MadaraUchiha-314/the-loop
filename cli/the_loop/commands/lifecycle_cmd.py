@@ -64,6 +64,25 @@ def _print_rows(rows) -> None:
         )
 
 
+def _print_standing(rows) -> None:
+    """The standing sessions (issue-277), in their own section under the services.
+
+    Their own section rather than more `services` rows, because they are not
+    services: the `services` list keeps the exact shape every reader of it
+    already expects, and a deployment that declares no standing session prints
+    nothing extra.
+    """
+    if not rows:
+        return
+    print("standing sessions:")
+    width = max(len(row["name"]) for row in rows)
+    for row in rows:
+        print(
+            f"{row['name'].ljust(width)}  {row.get('outcome', ''):<15}"
+            + (f"  {row['detail']}" if row.get("detail") else "")
+        )
+
+
 @register
 class StartCommand(Command):
     name = "start"
@@ -79,6 +98,7 @@ class StartCommand(Command):
         eventlog.configure_from_file("cli")
         report = lifecycle.start_all(config)
         _print_rows(report["services"])
+        _print_standing(report.get("standingSessions") or [])
         return 0 if report["ok"] else 1
 
 
@@ -97,6 +117,7 @@ class StopCommand(Command):
         eventlog.configure_from_file("cli")
         report = lifecycle.stop_all(config)
         _print_rows(report["services"])
+        _print_standing(report.get("standingSessions") or [])
         return 0 if report["ok"] else 1
 
 
@@ -137,6 +158,19 @@ class StatusCommand(Command):
                 beat = PollHeartbeat.read(layout_from_config(config).poll_status)
                 for line in poller_daemon.heartbeat_lines(beat, row["running"]):
                     print(f"            {line}")
+        standing = report.get("standingSessions") or []
+        if standing:
+            print("standing sessions:")
+            for row in standing:
+                liveness = "running" if row.get("running") else "not running"
+                where = (
+                    "declared"
+                    if row.get("declared")
+                    else "recorded, no longer declared"
+                )
+                if row.get("declared") and not row.get("autoStart"):
+                    where += ", not auto-started"
+                print(f"{row['name']:<11} {liveness} [{where}]")
         return 0 if report["ok"] else 1
 
 
@@ -165,6 +199,7 @@ class RestartCommand(Command):
         print("stopping:")
         stop_report = lifecycle.stop_all(config)
         _print_rows(stop_report["services"])
+        _print_standing(stop_report.get("standingSessions") or [])
 
         upgrade_ok = True
         if args.with_upgrade:
@@ -173,6 +208,7 @@ class RestartCommand(Command):
         print("starting:")
         start_report = lifecycle.start_all(config)
         _print_rows(start_report["services"])
+        _print_standing(start_report.get("standingSessions") or [])
         ok = stop_report["ok"] and start_report["ok"] and upgrade_ok
         eventlog.emit("restart.completed", ok=ok, withUpgrade=args.with_upgrade or None)
         return 0 if ok else 1

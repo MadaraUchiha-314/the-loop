@@ -15,6 +15,7 @@ from typing import Any, Callable, Dict, Mapping, Optional
 from .. import eventlog
 from ..authz import mark_self_authored
 from ..redact import defang_control_keywords, scrub
+from ..standing import parse_standing_ref
 from .base import ChannelError, InboundReply
 from .slack import SlackBotChannel, SlackChannelConfig, slack_state_path
 from .state import ChannelState
@@ -119,6 +120,18 @@ def _mirror(
 ) -> bool:
     from ..workitem import WorkItemRef
 
+    if parse_standing_ref(reply.work_item):
+        # A standing session (issue-277) has no ticket, so there is nothing to
+        # mirror onto. The paper trail does not vanish with the comment — it
+        # moves to the event log, which is why this is recorded rather than
+        # silently skipped.
+        eventlog.emit(
+            "channel.mirror_skipped",
+            channel=reply.channel,
+            work_item=reply.work_item,
+            reason="standing-session",
+        )
+        return False
     try:
         item = WorkItemRef.parse(reply.work_item)
     except ValueError as exc:
@@ -158,11 +171,35 @@ def _mirror(
     return bool(ok)
 
 
+def _standing_deliverer() -> Callable:
+    """``core.standing.say_standing`` behind ``_deliver``'s calling convention.
+
+    The two deliveries take the same five arguments and differ only in what
+    identifies the target and whether a ticket is involved — so the adapter is
+    here rather than as a branch inside :func:`_deliver`, which stays one code
+    path with one set of failure semantics.
+    """
+    from ..core import standing as core_standing
+
+    def deliver(ref, text, actor="", comment=True, config=None):
+        del comment  # a standing session has no ticket to record a reply on
+        return core_standing.say_standing(
+            parse_standing_ref(ref) or ref, text, actor=actor, config=config
+        )
+
+    return deliver
+
+
 def _deliver(
     reply: InboundReply,
     cli_config: Optional[Mapping],
     deliver: Optional[Callable],
 ) -> bool:
+    if deliver is None and parse_standing_ref(reply.work_item):
+        # The other namespace's delivery (issue-277). Bound late for the same
+        # reason the work-item one is: a test or embedder patching
+        # ``the_loop.core.standing.say_standing`` is honoured.
+        deliver = _standing_deliverer()
     if deliver is None:
         # Call-time binding, so embedders and tests patching
         # ``the_loop.core.sessions.reply_session`` are always honoured.

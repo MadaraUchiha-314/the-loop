@@ -269,6 +269,83 @@ class TestTmuxRunner:
         tail = cmd[cmd.index("--") + 1 :]
         assert tail == ["claude", "--session-id", "uuid-1", "start work"]
 
+    def test_the_target_addressed_entry_points_issue_the_same_tmux_commands(
+        self, monkeypatch
+    ):
+        """issue-277's refactor is a refactor: `spawn`/`deliver`/`kill` for a work
+        item produce byte-identical argv to the target-addressed calls they now
+        delegate to. If they ever diverge, the work-item path has grown behaviour
+        the standing-session path silently does not have — or the reverse."""
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        item = WorkItemRef.parse(REF)
+        target = TmuxRunner().target_for(item)
+
+        def argv_for(call, per_verb=None):
+            fake = FakeRun(
+                per_verb=per_verb if per_verb is not None else {"has-session": 1}
+            )
+            monkeypatch.setattr(runner_mod.subprocess, "run", fake)
+            call(TmuxRunner())
+            return [c for c in fake.calls if c[1] != "has-session"]
+
+        by_item = argv_for(
+            lambda r: r.spawn(
+                work_item=item,
+                adapter=ClaudeCodeAdapter(),
+                prompt="start work",
+                cwd="/work",
+                session_id="uuid-1",
+            )
+        )
+        by_target = argv_for(
+            lambda r: r.spawn_in(
+                target,
+                ClaudeCodeAdapter(),
+                "start work",
+                cwd="/work",
+                session_id="uuid-1",
+            )
+        )
+        assert by_item == by_target
+
+        session = make_session(tmux_target=target)
+
+        # deliver's temporary buffer files differ per call, so compare the verbs
+        # and targets rather than the file paths.
+        def shape(calls):
+            # The buffer file names are per-call temporaries; everything else —
+            # the verb, the buffer name, the flags, the target — must match.
+            return [
+                [part for part in c if not part.startswith("/tmp/the-loop-")]
+                for c in calls
+                if c[1] != "list-panes"
+            ]
+
+        # `deliver` probes liveness first, so the session must look alive here.
+        assert shape(argv_for(lambda r: r.deliver(session, "hello"), per_verb={})) == (
+            shape(argv_for(lambda r: r.deliver_to(target, "hello"), per_verb={}))
+        )
+        assert argv_for(lambda r: r.kill(session)) == argv_for(
+            lambda r: r.kill_target(target)
+        )
+
+    def test_terminate_harness_in_refuses_a_target_that_is_not_the_loops(self, caplog):
+        """The guard that stops a hand-edited record aiming a SIGTERM at another
+        tmux session applies to the target-addressed entry point too."""
+        result = TmuxRunner().terminate_harness_in("not-a-loop-session", "standing:x")
+        assert not result.ok and "not a the-loop tmux session name" in result.error
+
+    def test_terminate_harness_in_accepts_a_standing_target(self, monkeypatch):
+        monkeypatch.setattr(runner_mod.shutil, "which", lambda _: "/usr/bin/tmux")
+        monkeypatch.setattr(
+            runner_mod.subprocess, "run", FakeRun(per_verb={"has-session": 1})
+        )
+        # `has-session` non-zero: already gone, reported not refused.
+        result = TmuxRunner().terminate_harness_in(
+            "loop-standing-supervisor", "standing:supervisor"
+        )
+        assert result.ok and result.session_missing
+
     def test_spawn_clears_a_stale_session_with_the_same_name(self, monkeypatch):
         # has-session exits 0 and every pane is dead: a retained leftover holding
         # the name. Since issue-146 the pane read is what licenses the clear — a

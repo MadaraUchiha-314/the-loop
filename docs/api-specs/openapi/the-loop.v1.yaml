@@ -529,6 +529,119 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/standing-sessions:
+    get:
+      summary: List Standing Sessions
+      operationId: listStandingSessions
+      description: 'Every standing session (issue-277) — the sessions that belong to
+        no work item: declared in the CLI config under `standingSessions`, brought up
+        by `the-loop start`, addressed by name. Declared and merely recorded sessions
+        are both listed, because both are real: a declared one is what `start` will
+        bring up, and a recorded one that is no longer declared is a live process an
+        operator still has to stop. `running` is tmux''s answer now, not the record''s.'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  additionalProperties: true
+                  type: object
+                type: array
+                title: Response Liststandingsessions
+  /api/v1/standing-sessions/one:
+    get:
+      summary: Get Standing Session
+      operationId: getStandingSession
+      description: One standing session's row by name. 404 when the name is neither
+        declared in `standingSessions.sessions` nor recorded as started.
+      parameters:
+      - name: name
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Name
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Getstandingsession
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/standing-sessions/control:
+    post:
+      summary: Control Standing Session
+      operationId: controlStandingSession
+      description: 'Start, stop or restart a standing session. Idempotent in both
+        directions: starting a session whose pane is alive reports `already-running`
+        and touches nothing, and stopping one that is not running reports
+        `not-running`. A start with a recorded conversation id resumes that
+        conversation rather than booting blank; a stop keeps the record so the next
+        start can. An empty `name` means every declared session for `start` and every
+        recorded one for `stop`; `restart` requires a name (400). A live tmux session
+        the-loop has no record of is refused, never spawned over.'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StandingControlBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Controlstandingsession
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/standing-sessions/say:
+    post:
+      summary: Say To Standing Session
+      operationId: sayToStandingSession
+      description: 'Paste a message into a running standing session''s TUI and submit
+        it, emitting `standing.said`. Nothing is posted to any ticket — a standing
+        session has none, so the event log is its paper trail. Fail-closed like
+        `sessions/reply`: a message never spawns, respawns or resumes a session — 404
+        when the name has never been started or its pane is gone, 400 when the text
+        is empty.'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StandingSayBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                additionalProperties: true
+                type: object
+                title: Response Saytostandingsession
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/stream:
     get:
       summary: Stream Events
@@ -1278,6 +1391,43 @@ components:
           default: false
       type: object
       title: RestartBody
+    StandingControlBody:
+      properties:
+        name:
+          type: string
+          title: Name
+          description: The standing session's name. Empty means every declared session
+            for `start` and every recorded one for `stop`; `restart` requires one. A
+            standing session is never addressed by a work-item ref — the two
+            namespaces are separate so nothing routes an event between them.
+          default: ''
+        verb:
+          type: string
+          title: Verb
+          description: 'One of: start, stop, restart.'
+      type: object
+      required:
+      - verb
+      title: StandingControlBody
+    StandingSayBody:
+      properties:
+        name:
+          type: string
+          title: Name
+        text:
+          type: string
+          title: Text
+        actor:
+          type: string
+          title: Actor
+          description: Who is speaking — recorded on the event for the audit trail,
+            never trusted as authentication (the gateway owns auth, decision-059).
+          default: ''
+      type: object
+      required:
+      - name
+      - text
+      title: StandingSayBody
     SessionCloseBody:
       properties:
         ref:

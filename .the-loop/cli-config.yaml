@@ -215,6 +215,20 @@ routing:
   announce:
     enabled: true
 
+# Standing sessions (issue-277): the sessions the-loop keeps for ITSELF —
+# no ticket, no spec chain, no completion, started by `the-loop start` and
+# addressed by name on the control plane or in a Slack thread of their own.
+# Declared off here: this repository's checkout is where the-loop is BUILT, and
+# a supervisor session belongs to the machine that RUNS it. An operator running
+# the-loop from this checkout turns it on and declares their own entries — the
+# shipped template (skills/the-loop/templates/cli-config.yaml) carries a
+# commented one. Reviewing an entry is reviewing code: it names harness
+# arguments and a working directory, and the session runs with the operator's
+# own credentials.
+standingSessions:
+  enabled: false
+  sessions: []
+
 polling:
   intervalSeconds: 60
   maxRetries: 3                     # per-event delivery attempts before giving up (issue-80): a failing spawn/comment is retried each cycle up to this many times, then logged (poll.*_failed) and ignored until new activity re-arms it

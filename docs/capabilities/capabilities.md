@@ -19,6 +19,7 @@ PR** as the work item that changes behaviour (a ready-to-ship gate item).
 | [sdk](sdk.md) | the-loop as a component of somebody else's Python service: the importable capability surface, the mountable router, and the environment contract. |
 | [webhook-triggers](webhook-triggers.md) | GitHub webhook receiver and event → session routing. |
 | [interactive-sessions](interactive-sessions.md) | tmux-hosted harness sessions humans can watch/steer live (local, SSH, browser). |
+| [standing-sessions](standing-sessions.md) | Named, long-lived sessions that belong to no work item — the ones the-loop keeps for itself, addressed by name on the control plane and in Slack. |
 | [observability](observability.md) | Structured JSONL event log of the CLI's actions and the `events` query command. |
 | [channels](channels.md) | Back-and-forth conversation surfaces (the Slack bot) mirroring every reply onto the work item. |
 | [self-diagnosis](self-diagnosis.md) | the-loop filing redacted issues for its own failures: event-log detection, an isolated diagnosis agent, never-armed issue creation (opt-in, default off). |
