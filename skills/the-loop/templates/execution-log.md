@@ -44,7 +44,9 @@ status: in-progress          # in-progress | complete
 > ticket was created in and each other repository gets its own PR and inner loop) — list
 > every one of them here, not just the latest. Name the repository in the PR column when
 > it is not this one. Each PR carries the auto-execute
-> label so its activity routes back to this work item's session, and the work item
+> label **and is recorded against this work item as it is opened**
+> (`the-loop sessions link-pr`, `reference/automation.md`) so its activity routes back
+> to this work item's session, and the work item
 > is complete only once **all** of them are merged or closed (`finish-tasks`).
 
 | PR | Scope / tasks | Status |

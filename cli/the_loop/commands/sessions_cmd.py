@@ -295,6 +295,32 @@ class SessionsCommand(Command):
         reg.add_argument("--portable-dir", default=portable_dir)
         reg.set_defaults(_action=self._register)
 
+        link = actions.add_parser(
+            "link-pr",
+            help=(
+                "Record a pull request as delivering a work item, so its "
+                "comments/reviews/CI route back to that work item's session"
+            ),
+        )
+        link.add_argument(
+            "--work-item",
+            required=True,
+            help="Work-item ref, e.g. github:OWNER/REPO#15",
+        )
+        link.add_argument(
+            "--pull-request",
+            required=True,
+            metavar="REF|N",
+            help=(
+                "The pull request that delivers it: its number in the work "
+                "item's own repository, or a full ref for one in another "
+                "repository (github:OWNER/REPO#16)."
+            ),
+        )
+        link.add_argument("--registry-dir", default=registry_dir)
+        link.add_argument("--portable-dir", default=portable_dir)
+        link.set_defaults(_action=self._link_pr)
+
         lst = actions.add_parser("list", help="List registered sessions")
         lst.add_argument("--status", choices=["active", "paused", "closed"])
         lst.add_argument("--format", choices=["table", "json"], default="table")
@@ -437,6 +463,31 @@ class SessionsCommand(Command):
                     args.harness_session_id,
                     cwd=args.cwd,
                     force=args.force,
+                    config=_cli_config(),
+                    registry_dir=args.registry_dir,
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001 — mapped, or re-raised below
+            return self._report(exc)
+        return _render(result)
+
+    def _link_pr(self, args: argparse.Namespace) -> int:
+        """Record "this pull request delivers this work item" (issue-274).
+
+        The step a session runs in the same breath as opening the pull request.
+        The router prefers this binding over every inference, and a pull request
+        the-loop authored carries none of the inferences — so without this the
+        review comments its own phase gate asks for never reach it.
+        """
+        try:
+            result = routed(
+                lambda connection: connection.post(
+                    "/sessions/link-pr",
+                    {"ref": args.work_item, "pullRequest": args.pull_request},
+                ),
+                lambda: core_sessions.link_pull_request(
+                    args.work_item,
+                    args.pull_request,
                     config=_cli_config(),
                     registry_dir=args.registry_dir,
                 ),

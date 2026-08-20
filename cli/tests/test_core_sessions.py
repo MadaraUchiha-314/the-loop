@@ -628,3 +628,122 @@ def test_get_transcript_for_an_undispatched_pr_endpoint_says_so(tmp_path, monkey
     _register_claude(tmp_path, sid="")
     with pytest.raises(LookupError, match="assigned on first dispatch"):
         core_sessions.get_transcript(REF, config=_config(tmp_path))
+
+
+# -- link-pr: the session records the pull request it opened (issue-274) ---------
+
+
+def _linked_refs(tmp_path):
+    layout = layout_from_config(_config(tmp_path))
+    record = SessionRegistry(layout.local_dir).find_by_work_item(REF)
+    return [] if record is None else [pr.work_item.ref for pr in record.pull_requests]
+
+
+def test_link_pull_request_records_the_pr_and_emits(tmp_path, monkeypatch):
+    """The binding the router prefers, written by the session that opened the PR.
+
+    Requirement: docs/specs/issue-274/bugfix.md R1.2
+    """
+    _register(tmp_path)
+    events = _events(monkeypatch)
+
+    result = core_sessions.link_pull_request(
+        REF, "github:octo/repo#6", config=_config(tmp_path)
+    )
+
+    assert result["exitCode"] == 0
+    assert result["linked"] is True
+    assert (result["workItem"], result["pullRequest"]) == (REF, "github:octo/repo#6")
+    assert _linked_refs(tmp_path) == ["github:octo/repo#6"]
+    assert [name for name, _, _ in events] == ["session.pr_linked"]
+
+
+def test_link_pull_request_is_idempotent(tmp_path, monkeypatch):
+    """A re-run authoring step is not an error — and writes nothing twice.
+
+    Requirement: docs/specs/issue-274/bugfix.md R1.3
+    """
+    _register(tmp_path)
+    core_sessions.link_pull_request(REF, "6", config=_config(tmp_path))
+    events = _events(monkeypatch)
+
+    result = core_sessions.link_pull_request(REF, "6", config=_config(tmp_path))
+
+    assert result["exitCode"] == 0
+    assert result["linked"] is False
+    assert _linked_refs(tmp_path) == ["github:octo/repo#6"]
+    assert events == []
+
+
+def test_link_pull_request_without_a_session_record_writes_nothing(tmp_path):
+    """Recording an endpoint for a record that does not exist would invent one.
+
+    Requirement: docs/specs/issue-274/bugfix.md R1.4
+    """
+    result = core_sessions.link_pull_request(REF, "6", config=_config(tmp_path))
+
+    assert result["exitCode"] == 1
+    assert result["linked"] is False
+    assert "no session recorded" in " ".join(
+        message["text"] for message in result["messages"]
+    )
+    assert _linked_refs(tmp_path) == []
+
+
+def test_link_pull_request_refuses_a_work_item_delivering_itself(tmp_path):
+    """Requirement: docs/specs/issue-274/bugfix.md R1.5"""
+    _register(tmp_path)
+    with pytest.raises(ValueError, match="does not deliver itself"):
+        core_sessions.link_pull_request(REF, "5", config=_config(tmp_path))
+    assert _linked_refs(tmp_path) == []
+
+
+@pytest.mark.parametrize("given", ["6", "#6", " 6 ", "github:octo/repo#6"])
+def test_link_pull_request_resolves_a_number_in_the_work_items_repository(
+    tmp_path, given
+):
+    """What an agent that has just run `gh pr create` has to hand.
+
+    Requirement: docs/specs/issue-274/bugfix.md R1.6
+    """
+    _register(tmp_path)
+    result = core_sessions.link_pull_request(REF, given, config=_config(tmp_path))
+    assert result["pullRequest"] == "github:octo/repo#6"
+    assert _linked_refs(tmp_path) == ["github:octo/repo#6"]
+
+
+def test_link_pull_request_accepts_a_pull_request_in_another_repository(tmp_path):
+    """The multi-repo shape (issue-183): the full ref is used unchanged.
+
+    Requirement: docs/specs/issue-274/bugfix.md R1.6
+    """
+    _register(tmp_path)
+    result = core_sessions.link_pull_request(
+        REF, "github:octo/other#6", config=_config(tmp_path)
+    )
+    assert result["pullRequest"] == "github:octo/other#6"
+    assert _linked_refs(tmp_path) == ["github:octo/other#6"]
+
+
+@pytest.mark.parametrize(
+    "work_item, pull_request",
+    [
+        ("not-a-ref", "6"),
+        (REF, "not-a-ref"),
+        (REF, "0"),
+        (REF, "-3"),
+        (REF, ""),
+        (REF, "#"),
+    ],
+)
+def test_link_pull_request_refuses_malformed_input(tmp_path, work_item, pull_request):
+    """Parsed before anything is touched.
+
+    Requirement: docs/specs/issue-274/bugfix.md R1.7
+    """
+    _register(tmp_path)
+    with pytest.raises(ValueError):
+        core_sessions.link_pull_request(
+            work_item, pull_request, config=_config(tmp_path)
+        )
+    assert _linked_refs(tmp_path) == []

@@ -112,6 +112,9 @@ class Sessions(_Namespace):
             config=self._config,
         )
 
+    def link_pr(self, ref: str, pull_request: str) -> Dict[str, Any]:
+        return core_sessions.link_pull_request(ref, pull_request, config=self._config)
+
     def close(self, ref: str, keep_tmux: Optional[bool] = None) -> Dict[str, Any]:
         return core_sessions.close_session(
             ref, keep_tmux=keep_tmux, config=self._config

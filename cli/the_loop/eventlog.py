@@ -176,7 +176,11 @@ EVENT_TYPES: Dict[str, str] = {
         "A pull request was durably recorded as delivering a work item "
         "(work_item, pull_request) — issue-172. Written when the routing "
         "decision is made, so which session owns the PR's events stops being "
-        "recomputed from `gh`. Emitted only when the PR is newly listed."
+        "recomputed from `gh` — and, since issue-274, by the session that "
+        "OPENED the pull request (`sessions link-pr`), which is the only "
+        "writer a the-loop-authored PR has: it carries no closing reference, "
+        "no `issue-<n>` branch and no closing keyword to infer from. Emitted "
+        "only when the PR is newly listed."
     ),
     "session.pr_spawned": (
         "A recorded pull request got its own tmux session and harness "

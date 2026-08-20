@@ -7,6 +7,7 @@ reset that forgets a work item entirely.
 # registry
 the-loop sessions register --work-item github:OWNER/REPO#N --harness claude \
     --harness-session-id "$CLAUDE_SESSION_ID" [--cwd .] [--force]
+the-loop sessions link-pr --work-item github:OWNER/REPO#N --pull-request REF|N
 the-loop sessions list   [--status active|paused|closed] [--format table|json]
 the-loop sessions attach --work-item github:OWNER/REPO#N [--read-only]
 the-loop sessions close  --work-item github:OWNER/REPO#N [--keep-tmux|--kill-tmux]
@@ -62,6 +63,38 @@ binary.
 | `--harness-session-id` | yes | Claude session id, or Cursor chat id. |
 | `--cwd` | no (`.`) | Directory the session runs in — resume is scoped to it. |
 | `--force` | no | Replace an existing active registration for this work item. |
+
+## `link-pr`
+
+Record a pull request as **delivering** a work item, so its comments, reviews and CI
+results route back to that work item's session.
+
+| Flag | Required | Meaning |
+|------|----------|---------|
+| `--work-item` | yes | Work-item ref, e.g. `github:OWNER/REPO#15`. |
+| `--pull-request` | yes | The pull request that delivers it: its number in the work item's own repository (`16`, `#16`), or a full ref for one in another repository (`github:OWNER/OTHER#16`). |
+
+Run it in the **same step as opening the pull request**. Routing normally infers which
+work item a PR delivers from GitHub's `closingIssuesReferences`, an `issue-<n>` head
+branch, or a closing keyword in the PR body — and a pull request **the-loop itself
+opens** carries none of those: a spec PR must not close its ticket, and the-loop's
+branches are `loop/<id>-…`. Without the binding, a review comment on that PR resolves to
+the PR as a work item of its own, which nobody armed, and is refused as unstarted.
+
+```bash
+gh pr create --title 'Spec PR — Phase 1 (requirements) for #15' --body '…'
+the-loop sessions link-pr --work-item github:octo/repo#15 --pull-request 16
+```
+
+Idempotent: a pull request already recorded is reported and exits 0. Exit 1 when the work
+item has no session record on this machine (register the session first — recording an
+endpoint for a record that does not exist would invent a work item), exit 2 for a
+malformed ref or a work item linked to itself.
+
+::: tip There is no `unlink`
+A mistaken binding is cleared with [`reset`](#reset), which forgets this machine's whole
+record for the work item.
+:::
 
 ## `list`
 

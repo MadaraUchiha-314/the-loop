@@ -333,15 +333,18 @@ collapsed one does — the record says what was *bound*, and the event log says 
 | `status` | `active`, `paused` (suppressed, not gone) or `closed` |
 | `tmuxTarget` | the tmux session to attach to; `""` until one is spawned (issue-156) |
 | `recentDeliveries` | the last 50 delivery ids, so a restart does not re-deliver |
-| `pullRequests` | the PRs delivering this work item, each a session of its own — same fields, one level deep, absent until a PR event routes here |
+| `pullRequests` | the PRs delivering this work item, each a session of its own — same fields, one level deep, absent until a PR event routes here or a session records one it opened (`sessions link-pr`) |
 
 **Why the PRs are in here.** Which work item a PR delivers used to be recomputed from
 `gh`'s `closingIssuesReferences` on every single event — so unlinking the PR in GitHub's
 Development panel, editing out the closing keyword, or one transient GraphQL failure
 silently re-pointed routing at the PR itself, past a session that was still running. The
 record is now the answer: everything about a work item — every PR delivering it and every
-conversation involved — is one file. A PR entry is added when its first event routes,
-gets its own tmux session lazily from the first event that needs one, and is closed (that
+conversation involved — is one file. A PR entry is added when its first event routes — or,
+for a PR the-loop opened itself, by the session that opened it
+([`sessions link-pr`](commands/sessions#link-pr), issue-274), because such a PR carries
+none of the linkages routing could otherwise infer — gets its own tmux session lazily from
+the first event that needs one, and is closed (that
 entry alone) when the PR merges or closes; the work item's session runs on, because a
 work item may be delivered by several PRs
 ([issue-101](https://github.com/MadaraUchiha-314/the-loop/issues/101)). An entry that has

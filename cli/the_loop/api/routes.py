@@ -144,6 +144,11 @@ class SessionRegisterBody(BaseModel):
     force: bool = False
 
 
+class SessionLinkPrBody(BaseModel):
+    ref: str
+    pullRequest: str
+
+
 class SessionCloseBody(BaseModel):
     ref: str
     keepTmux: Optional[bool] = None
@@ -451,6 +456,15 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
             cwd=body.cwd,
             force=body.force,
             config=holder.current,
+        )
+
+    @router.post(
+        f"{API_PREFIX}/sessions/link-pr",
+        operation_id="linkSessionPullRequest",
+    )
+    def link_session_pull_request(body: SessionLinkPrBody) -> Dict[str, Any]:
+        return core_sessions.link_pull_request(
+            body.ref, body.pullRequest, config=holder.current
         )
 
     @router.post(

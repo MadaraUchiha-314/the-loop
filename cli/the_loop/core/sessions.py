@@ -22,6 +22,7 @@ import re
 import shutil
 import uuid
 from collections import deque
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -436,6 +437,93 @@ def register_session(
         "harnessSessionId": harness_session_id,
         "exitCode": 0,
         "messages": messages,
+    }
+
+
+#: A pull request named by number alone, with or without GitHub's ``#``.
+_PR_NUMBER_RE = re.compile(r"^#?(\d+)$")
+
+
+def _pull_request_ref(work_item: WorkItemRef, given: str) -> WorkItemRef:
+    """``given`` as a ref: a bare number is the work item's own repository.
+
+    A bare number is what a session that has just run ``gh pr create`` has to
+    hand, and it is resolved against the **work item's** owner/repo/host rather
+    than the checkout's — the work item is the thing being linked, and it is the
+    only coordinate this call is sure of. A pull request in another repository
+    (the multi-repo shape, issue-183) is named by its full ref, which says where
+    it belongs and is therefore used unchanged.
+    """
+    match = _PR_NUMBER_RE.match((given or "").strip())
+    if match is None:
+        return WorkItemRef.parse(given)  # ValueError on anything else
+    number = int(match.group(1))
+    if number <= 0:
+        raise ValueError(f"pull-request number must be positive, not {number}")
+    return replace(work_item, number=number)
+
+
+def link_pull_request(
+    ref: str,
+    pull_request: str,
+    config: Optional[dict] = None,
+    registry_dir: str = "",
+) -> Dict[str, Any]:
+    """Record that ``pull_request`` delivers ``ref``'s work item (issue-274).
+
+    The binding the router prefers over every inference, written by the one
+    component that knows it for certain: the session that just opened the pull
+    request. Until this existed the only writer was
+    :meth:`~the_loop.webhook.dispatcher.Dispatcher._record_pr_binding`, which
+    runs when a routing decision is made — and therefore only once the linkage is
+    *already* derivable from the payload. A pull request the-loop authors itself
+    carries none of the three derivations (no closing reference, because a spec
+    pull request must not close its ticket; ``loop/<id>-…`` rather than the
+    ``issue-<n>`` branch convention; a bare mention rather than a closing
+    keyword), so its events resolved to the pull request as a work item of its
+    own and were refused as unstarted.
+
+    Idempotent, because the authoring step is re-run: a pull request already
+    listed is reported and exits 0. A work item with no session record on this
+    machine exits 1 and writes nothing — recording an endpoint for a record that
+    does not exist would invent a work item.
+    """
+    work_item = WorkItemRef.parse(ref)  # ValueError on a malformed ref
+    pr = _pull_request_ref(work_item, pull_request)
+    if pr.ref == work_item.ref:
+        raise ValueError(
+            f"{work_item.ref} does not deliver itself; name the pull request "
+            "that delivers it"
+        )
+    registry = SessionRegistry(_registry_dir(config, registry_dir))
+    if registry.find_by_work_item(work_item) is None:
+        return {
+            "workItem": work_item.ref,
+            "pullRequest": pr.ref,
+            "linked": False,
+            "exitCode": 1,
+            "messages": [
+                {
+                    "stream": "err",
+                    "text": (
+                        f"no session recorded for {work_item.ref} — register the "
+                        "session before recording the pull requests it opens"
+                    ),
+                }
+            ],
+        }
+    linked = registry.link_pull_request(work_item, pr) is not None
+    text = (
+        f"recorded {pr.ref} as delivering {work_item.ref}"
+        if linked
+        else f"{pr.ref} is already recorded as delivering {work_item.ref}"
+    )
+    return {
+        "workItem": work_item.ref,
+        "pullRequest": pr.ref,
+        "linked": linked,
+        "exitCode": 0,
+        "messages": [{"stream": "out", "text": text}],
     }
 
 

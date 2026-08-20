@@ -25,7 +25,7 @@ import urllib.request
 import pytest
 
 from conftest import FakeTmux, StubInteractiveAdapter
-from the_loop.control import ControlConfig
+from the_loop.control import ControlConfig, ControlStore
 from the_loop.sessions import Session, SessionRegistry, WorkItemRef
 from the_loop.webhook import serve
 from the_loop.webhook.dispatcher import Dispatcher, RoutingConfig
@@ -1086,3 +1086,121 @@ def test_a_running_work_item_is_never_questioned(server_factory, tmp_path):
     assert wait_until(lambda: len(tmux.delivers) == 1)
     assert tmux.delivers[0][0] == "github:org/planning#285"
     assert verifier.asked == []
+
+
+# -- the-loop's own spec pull request (issue-274) ---------------------------------
+
+
+def spec_pr_review_comment_payload(body="please tighten R1.2", number=16):
+    """A review comment on a spec pull request **the-loop's own session opened**.
+
+    All three inference sources are absent, exactly as the ticket describes: the
+    payload carries no ``closingIssuesReferences`` (a spec PR must not close its
+    ticket, so nothing populates the Development panel), the head branch is
+    the-loop's own ``loop/<id>-…`` convention, whose ``<id>`` is the spec
+    directory's name and need not be ``issue-<n>``, and the
+    body only *mentions* the issue.
+    """
+    return {
+        "action": "created",
+        "repository": {"full_name": "octo/repo"},
+        "pull_request": {
+            "number": number,
+            "body": "Spec PR — Phase 1 (requirements) for #15",
+            "labels": [{"name": AUTO_LABEL}],
+            "head": {"ref": "loop/spec-15-requirements"},
+        },
+        "comment": {"body": body, "user": {"login": "octocat"}},
+        "sender": {"login": "octocat"},
+    }
+
+
+def test_a_review_comment_on_the_loops_own_spec_pr_is_lost_without_the_binding(
+    server_factory, tmp_path
+):
+    """
+    Feature: Webhook event routing
+    Scenario: A review comment on a spec PR the-loop opened is dropped when nothing recorded the PR
+        Given a started session for github:octo/repo#15
+        And a labelled spec PR 16 the-loop opened for it — no closing reference,
+            a loop/<id>-requirements head branch that carries no issue-<n>,
+            and a body that only mentions #15
+        And nothing has recorded PR 16 as delivering issue 15
+        When an authorized human leaves a review comment on PR 16
+        Then the comment reaches no session at all: it resolves to the PR as a
+             work item of its own, which nobody armed
+        And no session is spawned for the PR either
+    Requirement: docs/specs/issue-274/bugfix.md#Steps to reproduce
+    """
+    port, registry, tmux = server_factory(
+        events=["pull_request_review_comment"],
+        spawn_on_unmatched="labeled",
+        auto_execute_label=AUTO_LABEL,
+        control=ControlConfig(require_start_command=True),
+    )
+    register(registry, tmp_path)
+    ControlStore(str(tmp_path / "portable")).record(
+        REF, "start", source="cli", actor="octocat"
+    )
+
+    assert (
+        post_webhook(
+            port, "pull_request_review_comment", spec_pr_review_comment_payload(), "s-1"
+        )
+        == 202
+    )
+
+    # A bounded wait for the thing that must NOT happen: without it the assertion
+    # below would pass while the dispatch was still in flight.
+    wait_until(lambda: tmux.spawns != [] or tmux.delivers != [], timeout=1.0)
+    assert (tmux.delivers, tmux.spawns) == ([], [])
+
+
+def test_a_review_comment_on_the_loops_own_spec_pr_reaches_the_session_once_recorded(
+    server_factory, tmp_path
+):
+    """
+    Feature: Webhook event routing
+    Scenario: The session that opened the spec PR recorded it, so the review comment comes home
+        Given a started session for github:octo/repo#15
+        And the session recorded PR 16 as delivering issue 15 when it opened it
+            (`the-loop sessions link-pr`, i.e. core.sessions.link_pull_request)
+        And the PR still carries no closing reference, no issue-<n> branch and no
+            closing keyword — nothing about the pull request itself changed
+        When an authorized human leaves a review comment on PR 16
+        Then it is delivered into issue 15's existing session
+        And no second session is spawned, and no record is created for the PR's own ref
+    Requirement: docs/specs/issue-274/bugfix.md#R1 (R1.2), #R3 (R3.2)
+    """
+    from the_loop.core import sessions as core_sessions
+
+    port, registry, tmux = server_factory(
+        events=["pull_request_review_comment"],
+        spawn_on_unmatched="labeled",
+        auto_execute_label=AUTO_LABEL,
+        control=ControlConfig(require_start_command=True),
+    )
+    register(registry, tmp_path)
+    ControlStore(str(tmp_path / "portable")).record(
+        REF, "start", source="cli", actor="octocat"
+    )
+
+    # The authoring step, through the very code path the CLI/API/MCP surfaces call.
+    result = core_sessions.link_pull_request(
+        REF, "16", config={}, registry_dir=str(tmp_path / "sessions")
+    )
+    assert result["exitCode"] == 0 and result["linked"] is True
+
+    assert (
+        post_webhook(
+            port, "pull_request_review_comment", spec_pr_review_comment_payload(), "s-2"
+        )
+        == 202
+    )
+
+    assert wait_until(lambda: len(tmux.delivers) == 1)
+    ((ref, prompt),) = tmux.delivers
+    assert ref == REF
+    assert "please tighten R1.2" in prompt
+    assert tmux.spawns == []
+    assert registry.find_by_work_item(PR_REF) is None

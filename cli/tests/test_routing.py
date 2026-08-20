@@ -1901,6 +1901,104 @@ def test_sessions_command_table_output(tmp_path, capsys):
     assert "Work item" in out and REF in out and "cursor" in out
 
 
+def test_sessions_command_link_pr_records_the_binding(tmp_path, capsys):
+    """`sessions link-pr` is how a session records the PR it just opened (issue-274)."""
+    registry_dir = str(tmp_path / "sessions")
+    assert (
+        run_cli(
+            [
+                "sessions",
+                "register",
+                "--work-item",
+                REF,
+                "--harness",
+                "claude",
+                "--harness-session-id",
+                "sess-1",
+                "--cwd",
+                str(tmp_path),
+                "--registry-dir",
+                registry_dir,
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    # A bare number: what an agent that has just run `gh pr create` has to hand.
+    assert (
+        run_cli(
+            [
+                "sessions",
+                "link-pr",
+                "--work-item",
+                REF,
+                "--pull-request",
+                "16",
+                "--registry-dir",
+                registry_dir,
+            ]
+        )
+        == 0
+    )
+    record = SessionRegistry(registry_dir).find_by_work_item(REF)
+    assert record is not None
+    assert [pr.work_item.ref for pr in record.pull_requests] == ["github:octo/repo#16"]
+    assert "github:octo/repo#16" in capsys.readouterr().out
+
+    # Re-running the authoring step is not an error.
+    assert (
+        run_cli(
+            [
+                "sessions",
+                "link-pr",
+                "--work-item",
+                REF,
+                "--pull-request",
+                "16",
+                "--registry-dir",
+                registry_dir,
+            ]
+        )
+        == 0
+    )
+
+
+def test_sessions_command_link_pr_reports_a_missing_record_and_a_bad_ref(tmp_path):
+    """Exit 1 for "nothing to link to", exit 2 for a caller mistake (issue-274)."""
+    registry_dir = str(tmp_path / "sessions")
+    assert (
+        run_cli(
+            [
+                "sessions",
+                "link-pr",
+                "--work-item",
+                REF,
+                "--pull-request",
+                "16",
+                "--registry-dir",
+                registry_dir,
+            ]
+        )
+        == 1
+    )
+    assert (
+        run_cli(
+            [
+                "sessions",
+                "link-pr",
+                "--work-item",
+                REF,
+                "--pull-request",
+                "not-a-ref",
+                "--registry-dir",
+                registry_dir,
+            ]
+        )
+        == 2
+    )
+
+
 # -- config hot reload (issue-34 review) --------------------------------------
 
 

@@ -137,6 +137,15 @@ def build_server(cli_config: Optional[dict] = None) -> MCPServer:
             config=cli_config,
         )
 
+    def link_pull_request(ref: str, pull_request: str) -> Dict[str, Any]:
+        """Record a pull request as delivering a work item, so its comments,
+        reviews and CI results route to that work item's session. Call this in
+        the same step as opening the pull request: a pull request the-loop
+        authored carries none of the linkages the router can otherwise infer.
+        `pull_request` is its number in the work item's own repository, or a
+        full ref (github:OWNER/REPO#16) for one in another repository."""
+        return core_sessions.link_pull_request(ref, pull_request, config=cli_config)
+
     def close_session(ref: str, keep_tmux: Optional[bool] = None) -> Dict[str, Any]:
         """Close a work item's registration and settle its tmux session."""
         return core_sessions.close_session(ref, keep_tmux=keep_tmux, config=cli_config)
@@ -223,6 +232,7 @@ def build_server(cli_config: Optional[dict] = None) -> MCPServer:
         session_transcript,
         control_session,
         register_session,
+        link_pull_request,
         close_session,
         query_events,
         daemon_status,

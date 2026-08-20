@@ -211,7 +211,7 @@ agent sees exactly what the CLI does:
 | `list_work_items`, `get_work_item` | The portable records: control and poll state |
 | `check_work_item` | Evaluate a work item's process-graph gates (the `the-loop check` report) |
 | `graph_show`, `graph_advance`, `graph_complete` | Read the graph; take an edge; file a completion claim |
-| `list_sessions`, `register_session`, `close_session`, `control_session` | The session registry and its `start`/`pause`/`resume`/`stop` verbs |
+| `list_sessions`, `register_session`, `link_pull_request`, `close_session`, `control_session` | The session registry — including recording a pull request as delivering a work item — and its `start`/`pause`/`resume`/`stop` verbs |
 | `query_events` | The structured event log |
 | `daemon_status`, `control_daemon` | The poller and gh-webhook daemons |
 | `list_attention` | What needs a human: paused sessions, armed items with no session, recent errors |
