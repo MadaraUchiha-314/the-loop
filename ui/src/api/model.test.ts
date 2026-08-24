@@ -240,23 +240,23 @@ describe("sessionTree", () => {
     });
     const tree = sessionTree(views);
     expect(tree).toHaveLength(1);
-    expect(tree[0]!.adhoc).toBe(false);
+    expect(tree[0]!.treeless).toBe(false);
     expect(tree[0]!.outer).toMatchObject({ ref: "github:octo/lab#1", scope: "outer", state: "active" });
     expect(tree[0]!.inner).toEqual([
       { ref: "github:octo/lab#2", shortRef: "lab#2", scope: "inner", state: "active", tmuxTarget: "tmux-2" },
     ]);
   });
 
-  it("flags ad-hoc and contribution loops treeless — one session, no inner level", () => {
-    for (const loop of ["pdlc-adhoc-loop", "pdlc-contribution-loop"]) {
+  it("flags ad-hoc, contribution and review loops treeless — one session, no inner level", () => {
+    for (const loop of ["pdlc-adhoc-loop", "pdlc-contribution-loop", "pdlc-review-loop"]) {
       const views = buildWorkItemViews({
         workItems: [record("github:octo/lab#1", loop)],
-        // Even a linked PR endpoint stays out of an ad-hoc item's tree.
+        // Even a linked PR endpoint stays out of a treeless item's tree.
         sessions: [session("github:octo/lab#1", ["github:octo/lab#2"])],
         attention: [],
       });
       const tree = sessionTree(views);
-      expect(tree[0]!.adhoc).toBe(true);
+      expect(tree[0]!.treeless).toBe(true);
       expect(tree[0]!.inner).toEqual([]);
     }
   });

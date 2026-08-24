@@ -233,6 +233,31 @@ empty string to remove the word from the vocabulary entirely.
 See the [process graph](/capabilities/process-graph) capability for the loop's shape and
 what it deliberately omits.
 
+### `control.keywords.review`
+
+- **Type:** `string`
+- **Default:** `the-loop review`
+
+The same shape a third time — arms exactly as `start` does, same spawn policy, same
+durable record, same named-actor authorization — and additionally selects the **review
+loop** (`pdlc-review-loop`,
+[issue-279](https://github.com/MadaraUchiha-314/the-loop/issues/279)): the-loop becomes
+the **reviewer** of the thread it was typed on, never its author.
+
+Typed on a pull request, the review binds to the **pull request itself**, even when the
+PR links a ticket — the subject of a review is the change, where every other keyword's
+subject is the work item delivering one. The loop refuses to begin until an authorized
+user states a **review brief** — `Questions:` / `Angles:` / `Validations:` bullet lists,
+at least one section, in one comment; the comment carrying this keyword qualifies, and
+otherwise the-loop posts the fill-in template and waits. Each round answers the frozen
+brief and lands as one comment on the thread; **any** authorized reply that is not a
+declaration of completion is another round. The review session changes **no code**: it
+commits nothing, pushes nothing and opens no pull request — a finding worth fixing is a
+new work item.
+
+Set this option to an empty string to remove the word from the vocabulary entirely. See
+the [process graph](/capabilities/process-graph) capability for the loop's shape.
+
 ### `control.keywords.cleanup`
 
 - **Type:** `string`

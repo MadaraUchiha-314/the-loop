@@ -13,6 +13,7 @@ from . import tests as _tests  # noqa: F401
 from . import sideeffects  # noqa: F401
 from . import feedback  # noqa: F401
 from . import goal  # noqa: F401
+from . import review  # noqa: F401
 from . import selection  # noqa: F401
 from . import mcp  # noqa: F401
 
@@ -25,6 +26,7 @@ __all__ = [
     "lint",
     "loops",
     "mcp",
+    "review",
     "selection",
     "sideeffects",
 ]

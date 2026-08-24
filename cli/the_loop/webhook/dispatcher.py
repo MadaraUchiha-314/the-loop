@@ -29,6 +29,7 @@ from ..control import (
     GRAPH_COMMANDS,
     PAUSE,
     RESUME,
+    REVIEW,
     SPAWN_COMMANDS,
     START,
     STOP,
@@ -1292,6 +1293,16 @@ class Dispatcher:
         actor = event_actor(routed.event, routed.payload) or ""
         session = self._live_session_for(routed)
         target = self._target_work_item(routed)
+        if command == REVIEW:
+            # A review binds to the PULL REQUEST itself (issue-279): the router
+            # orders a PR's linked work items first — right for delivery, where
+            # the ticket is the work item, wrong for a review, whose subject is
+            # the change. The router's own extraction, never payload text; on a
+            # plain issue it is None and the ordinary target stands.
+            pr = pr_work_item(routed.event, routed.payload)
+            if pr is not None:
+                target = pr
+                session = self.registry.record_owning(pr)
         if target is None:  # unreachable: handle() drops an event with no items
             return
         note = str((routed.payload.get("comment") or {}).get("html_url") or "")
@@ -1320,7 +1331,7 @@ class Dispatcher:
                     self._reject_control(command, routed, actor, refusal)
                     return
                 record()
-                self._on_unmatched(routed, control_command=command)
+                self._on_unmatched(routed, control_command=command, target=target)
                 return
             record()
             effect = "resumed" if self.registry.resume(target) is not None else "noop"
@@ -1665,9 +1676,17 @@ class Dispatcher:
             error=result.error or None,
         )
 
-    def _on_unmatched(self, routed: RoutedEvent, control_command: str = "") -> None:
+    def _on_unmatched(
+        self,
+        routed: RoutedEvent,
+        control_command: str = "",
+        target: Optional[WorkItemRef] = None,
+    ) -> None:
+        """``target`` is an explicit spawn subject where the caller resolved one
+        the default would not — today only ``review``'s PR-first binding
+        (issue-279); everything else takes :meth:`_target_work_item`."""
         refs = ", ".join(item.ref for item in routed.work_items)
-        work_item = self._target_work_item(routed)
+        work_item = target or self._target_work_item(routed)
         refusal = self._spawn_refusal(
             routed, control_command=control_command, target=work_item
         )

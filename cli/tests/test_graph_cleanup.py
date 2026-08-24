@@ -19,8 +19,10 @@ import pytest
 from the_loop.control import CLEANUP, ControlConfig, ControlStore
 from the_loop.graph import hooks  # noqa: F401 — registers the built-in hooks
 from the_loop.graph.model import (
+    PDLC_ADHOC_LOOP,
     PDLC_CONTRIBUTION_LOOP,
     PDLC_PR_LOOP,
+    PDLC_REVIEW_LOOP,
     PDLC_WORK_ITEM_LOOP,
     compile_graph,
     load_graph,
@@ -33,12 +35,22 @@ from the_loop.sessions import WorkItemRef
 REF = WorkItemRef.parse("github:octo/repo#186")
 SPEC = "docs/specs/issue-186"
 
+#: Every loop that operates at work-item level — each owns local resources, so
+#: each declares the same terminal cleanup node (issue-186, issue-225,
+#: issue-279). Only the PR loop stays out: a pull request owns no checkout.
+WORK_ITEM_LOOPS = [
+    PDLC_WORK_ITEM_LOOP,
+    PDLC_CONTRIBUTION_LOOP,
+    PDLC_ADHOC_LOOP,
+    PDLC_REVIEW_LOOP,
+]
+
 
 # -- the shape -------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("loop", [PDLC_WORK_ITEM_LOOP, PDLC_CONTRIBUTION_LOOP])
-def test_both_work_item_loops_declare_a_terminal_cleanup_node(loop):
+@pytest.mark.parametrize("loop", WORK_ITEM_LOOPS)
+def test_every_work_item_loop_declares_a_terminal_cleanup_node(loop):
     node = load_graph(name=loop).nodes[CLEANUP_NODE]
     assert node.terminal is True
     assert node.actor == "code"
@@ -50,7 +62,7 @@ def test_the_pull_request_loop_declares_no_cleanup_node():
     assert CLEANUP_NODE not in load_graph(name=PDLC_PR_LOOP).nodes
 
 
-@pytest.mark.parametrize("loop", [PDLC_WORK_ITEM_LOOP, PDLC_CONTRIBUTION_LOOP])
+@pytest.mark.parametrize("loop", WORK_ITEM_LOOPS)
 def test_nothing_routes_into_cleanup_by_satisfying_a_gate(loop):
     """No inbound edge, like `escalated` — the-loop enters it directly."""
     graph = load_graph(name=loop)

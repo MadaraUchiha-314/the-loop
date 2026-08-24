@@ -1,0 +1,153 @@
+# The REVIEW loop (issue-279): the-loop as the REVIEWER of a pull request,
+# never its author. Its siblings: pdlc-work-item-loop (the outer loop a whole
+# work item walks), pdlc-pr-loop (the inner loop each DELIVERING pull request
+# walks), pdlc-contribution-loop (the scoped intervention into somebody else's
+# in-progress item) and pdlc-adhoc-loop (the tactical task with no process).
+# Same vocabulary, same hooks, same runtime; a node set sized for a review
+# conversation.
+#
+# WHAT MAKES THIS LOOP DIFFERENT is its product: judgement posted on the
+# thread, not a diff. Every other loop exists to change a repository; this one
+# must change NOTHING — the session reads the pull request, answers the
+# reviewer's brief, and posts findings as self-marked comments. It commits
+# nothing, pushes nothing, and opens no pull request.
+#
+# Its one `required: true` node states its start condition:
+#
+#   `review-brief` — no brief, no review. "the-loop review" alone never cuts
+#   it: a review that does not know the reviewer's QUESTIONS, ANGLES and
+#   VALIDATIONS answers none of them. The gate posts a fill-in template on the
+#   thread (idempotently), an authorized reviewer answers it — the arming
+#   comment itself qualifies, the gate re-reads the thread — and the parsed
+#   brief is frozen into graph state with provenance before anything runs.
+#
+# WHAT IT DELIBERATELY DOES NOT HAVE, in one place so a reviewer can check it:
+#
+#   * no `phase-selection` — there are no phases to choose between. The
+#     issue-177/179 invariant survives exactly as it does in the ad-hoc loop:
+#     arming the item with `the-loop review` IS the named, authorized, durably
+#     recorded declaration that this item runs the review process and nothing
+#     else;
+#   * no `produces` and no `validate-artifacts` — no spec chain, no
+#     contribution.md, nothing gated on a file: the thread is the record;
+#   * no `skipSets` and no `skippable` nodes — nothing to declare away;
+#   * no review chain over its own output — the follow-up gate's human is the
+#     validator of every round;
+#   * no `verify-tests` — a review of a pull request whose tests fail must
+#     REPORT that, not be wedged by it. The brief's `Validations:` are run by
+#     the session as part of the round.
+#
+# THE CONVERSATION IS THE LOOP: after each round the graph parks at
+# `follow-up`, whose exit reuses the ad-hoc gate (`classify-adhoc-reply`) on
+# purpose — same default (an authorized reply that does not declare completion
+# means another round), same safety rules (self-marked comments dropped before
+# authorization is even considered), and a done-vocabulary (`lgtm`, `looks
+# good`, `approved`) that reads even more naturally on a review than on an
+# ad-hoc task. Decision-101 records the reuse.
+#
+# A REVIEW IS A GUEST (like a contribution, PR #187): it never adopts the
+# repository it reviews in, and in a repository that never initialized the-loop
+# the spec tree (the graph-state cache) is git-excluded at Runtime.start. The
+# phases it does carry are the EXISTING ones — needs-review, complete, cleanup
+# — so adopting this loop changes no repository's workflow.phases and no
+# dashboard.
+#
+# HOW IT IS CHOSEN (issue-279): an authorized user arms the thread with the
+# `review` control keyword (default `the-loop review`) instead of `start` —
+# typed on the pull request to review, which becomes the work item itself even
+# when it links a ticket. Recorded durably — in the portable control record
+# before the first start, and in graph-state.json's `loop` field from then on.
+# Declared, never inferred from the thread's state, labels or history.
+#
+# This file ships WITH THE CLI and is the-loop's own. A repository cannot
+# define or override it — a repo-supplied graph is ignored with a warning.
+#
+# Spec: docs/specs/issue-279/  ·  Decision: 101
+
+version: 1
+name: pdlc-review-loop
+start: review-brief
+
+nodes:
+  # The review loop's own invariant: no brief, no review. The entry posts the
+  # fill-in template (skipped when a brief already rode in on the arming
+  # comment, or the template was already posted); the exit freezes the newest
+  # authorized brief with provenance and releases the gate. It never guesses,
+  # and it never reads an unauthorized or self-authored body at all.
+  # `command:` steers a session spawned for a review item to
+  # /the-loop:review-pr rather than the spawn template's default work-on
+  # (rendered into the graph-context block, never executed by the runtime).
+  - id: review-brief
+    actor: human
+    required: true          # stating what to review for is a human act; never skippable
+    command: review-pr
+    entry: [log-entry, post-review-brief, deliver-assignment]
+    exit: [classify-review-brief]
+
+  # One review round: answer every question, examine every angle, run every
+  # validation the frozen brief asks for — and post the round as ONE
+  # self-marked comment on the reviewed thread. The exit chain is empty on
+  # purpose: the round's deliverable is that comment, and the follow-up gate's
+  # human is the only honest validator of it. `stage: critic-review` routes
+  # this node to the same model/thinking tier the critic reviews get — a
+  # review deserves the frontier, and inventing a `review` stage would widen
+  # the config schema for a synonym.
+  - id: review
+    phase: needs-review
+    actor: agent
+    command: review-pr
+    stage: critic-review
+    entry: [set-phase-label, log-entry, deliver-assignment]
+    exit: []
+
+  # The conversation, expressed as an edge — the ad-hoc loop's `review` node,
+  # renamed for what it holds here: the reviewer's follow-ups. A reply that
+  # declares completion is `done`, any other authorized reply is `more-work`
+  # (another round, against the frozen brief plus the new reply), and silence
+  # keeps the gate open. No `phase:` on purpose — waiting on the reviewer is
+  # not a phase, and this node must not move the label off needs-review while
+  # the review is still in flight. `decision-pending` rather than
+  # phase-approval-pending, for the same reason: there is no phase to approve,
+  # only the reviewer's next word.
+  - id: follow-up
+    actor: human
+    session: inherit
+    command: review-pr
+    entry:
+      - log-entry
+      - request-review
+      - {hook: notify, with: {event: decision-pending}}
+    exit:
+      - classify-adhoc-reply
+
+  - id: complete
+    phase: complete
+    actor: agent
+    command: review-pr
+    stage: complete
+    terminal: true
+    entry: [set-phase-label, log-entry]
+    exit: []
+
+  # The teardown node (issue-186), identical to the other work-item-level
+  # loops': a review is a work item too, so it accumulates the same local
+  # resources and gets the same recorded release of them. No inbound edge —
+  # the-loop enters it directly.
+  - id: cleanup
+    phase: cleanup
+    actor: code
+    terminal: true
+    entry: [set-phase-label, log-entry]
+    exit: []
+
+  - id: escalated
+    actor: human
+    terminal: true
+    entry: [{hook: notify, with: {event: conflict-escalated}}]
+    exit: []
+
+edges:
+  - {from: review-brief, to: review, on: briefed}
+  - {from: review, to: follow-up, on: pass}
+  - {from: follow-up, to: review, on: more-work}
+  - {from: follow-up, to: complete, on: done}

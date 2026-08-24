@@ -293,6 +293,19 @@ def _is_adhoc(loop: str) -> bool:
     return loop == PDLC_ADHOC_LOOP
 
 
+def _is_review(loop: str) -> bool:
+    """Whether ``loop`` is the shipped review loop (issue-279).
+
+    The third sentence of the family: not "no outer loop", not "no process",
+    but **no authorship at all** — the session is the reviewer of somebody
+    else's change, so the prompt must say the one thing the other loops never
+    need to: change no code.
+    """
+    from .graph.model import PDLC_REVIEW_LOOP
+
+    return loop == PDLC_REVIEW_LOOP
+
+
 def _surface_line(surface: str) -> str:
     """One sentence naming where the OUTER loop's artifacts are iterated.
 
@@ -414,6 +427,15 @@ def render_graph_context(
             "  iterate on: this work item (an ad-hoc task has no spec chain — "
             "do the work, report back here, ask follow-ups here, and open a "
             "pull request only if the change needs one)"
+        )
+    elif _is_review(ctx.loop):
+        # A review authors nothing (issue-279): its whole product is judgement
+        # on the thread, so the session is told the one rule the other loops
+        # never need — hands off the code.
+        lines.append(
+            "  iterate on: this thread (this is a REVIEW — post the brief's "
+            "answers, findings and follow-ups here; change no code, commit "
+            "nothing, and open no pull request)"
         )
     else:
         lines.append(
@@ -1104,19 +1126,21 @@ class GraphLink:
         session finds no ``.the-loop/`` at all — no workflow, no tooling, no
         phases.
 
-        **Never for a contribution.** ``pdlc-contribution-loop`` joins somebody
+        **Never for a guest loop.** ``pdlc-contribution-loop`` joins somebody
         else's in-progress work item, and PR #187 decided the-loop's machinery
-        stays out of that repository's history. A committed file declaring
-        the-loop's process in a repository that never asked for it would be the
-        loudest possible breach of that; a guest does not install itself.
+        stays out of that repository's history; ``pdlc-review-loop``
+        (issue-279) reviews somebody else's change under the same rule. A
+        committed file declaring the-loop's process in a repository that never
+        asked for it would be the loudest possible breach of that; a guest
+        does not install itself.
 
         Both callers have already proved the checkout is the work item's own.
         Best-effort: :func:`harness_config.scaffold` never raises, and a
         repository that could not be adopted is worked exactly as it was before.
         """
-        from .graph.model import PDLC_CONTRIBUTION_LOOP
+        from .graph.model import GUEST_LOOPS
 
-        if loop == PDLC_CONTRIBUTION_LOOP:
+        if loop in GUEST_LOOPS:
             return
         if harness_config.scaffold(root, work_item.owner, work_item.repo) != "written":
             return
