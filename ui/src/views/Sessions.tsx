@@ -4,9 +4,9 @@
  * child per PR inner loop — with the selected session's stream in the main
  * pane and a chat bar that delivers into that session's tmux pane.
  *
- * Ad-hoc and contribution work items (`pdlc-adhoc-loop`,
- * `pdlc-contribution-loop`) run no outer/inner split, so they render as a
- * single selectable row with no tree.
+ * Ad-hoc, contribution and review work items (`pdlc-adhoc-loop`,
+ * `pdlc-contribution-loop`, `pdlc-review-loop`) run no outer/inner split, so
+ * they render as a single selectable row with no tree.
  *
  * The selected session is the route (`#/sessions/<ref>`), so a stream can be
  * linked to; the owning work item is derived from the tree, never stored.
@@ -113,7 +113,7 @@ function SidebarItem({
         <span className="lp-sessions-ref">{item.view.shortRef}</span>
         <span className="lp-sessions-title">{title ?? ""}</span>
       </a>
-      {item.adhoc ? (
+      {item.treeless ? (
         <div className="lp-sessions-adhoc">{item.view.record.graph?.loop}</div>
       ) : owns ? (
         <div className="lp-sessions-tree">

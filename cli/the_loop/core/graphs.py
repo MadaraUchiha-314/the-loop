@@ -83,18 +83,18 @@ def _runtime(
     resting on nothing a reviewer can check.
 
     Adoption runs **before** ``build_runtime`` so ``repoInitialized`` is true on
-    the very run that adopted the repository, and never for a contribution: the
-    repository the-loop was invited into keeps the-loop out of its history
-    (issue-185, PR #187).
+    the very run that adopted the repository, and never for a guest loop — a
+    contribution (issue-185, PR #187) or a review (issue-279): the repository
+    the-loop was invited into keeps the-loop out of its history.
     """
     from .. import harness_config
-    from ..graph.model import PDLC_CONTRIBUTION_LOOP
+    from ..graph.model import GUEST_LOOPS
 
     if pr_repo and pr is None:
         raise ValueError("pr_repo names a repository, not a loop: pass pr as well")
     path = resolve_repo(repo)
     loop = _recorded_loop(path, work_item) if pr is None and work_item else ""
-    if adopt and loop != PDLC_CONTRIBUTION_LOOP:
+    if adopt and loop not in GUEST_LOOPS:
         harness_config.scaffold(path)
     return build_runtime(path, pr_number=pr, pr_repo=pr_repo, loop=loop)
 

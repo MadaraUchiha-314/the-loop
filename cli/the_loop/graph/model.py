@@ -23,7 +23,7 @@ import yaml
 
 from .registry import HookFn, get_hook, hook_names, is_registered
 
-#: The four shipped loops. The OUTER loop (issue-172, PR #173 review) walks a
+#: The five shipped loops. The OUTER loop (issue-172, PR #173 review) walks a
 #: work item through the PDLC; the INNER loop walks one pull request through
 #: the subset of it that delivers a component — in service of the work item.
 #: The CONTRIBUTION loop (issue-185) is the path walked when the-loop is
@@ -31,14 +31,17 @@ from .registry import HookFn, get_hook, hook_names, is_registered
 #: start without an authorized human's goal and success criteria, and its
 #: phases are sized for a scoped intervention. The AD-HOC loop (issue-225) is
 #: the smallest of them: a tactical task that runs NO PDLC process at all —
-#: work, talk to the requester, stop when they say stop. Same vocabulary, same
-#: hooks, same runtime; different node sets, different state files. A fifth,
-#: pdlc-project-management-loop, is anticipated by the naming and deliberately
-#: not shipped yet.
+#: work, talk to the requester, stop when they say stop. The REVIEW loop
+#: (issue-279) makes the-loop the REVIEWER of a pull request rather than its
+#: author: no brief, no review; findings and follow-ups on the thread; no code
+#: changed. Same vocabulary, same hooks, same runtime; different node sets,
+#: different state files. A pdlc-project-management-loop is anticipated by the
+#: naming and deliberately not shipped yet.
 PDLC_WORK_ITEM_LOOP = "pdlc-work-item-loop"
 PDLC_PR_LOOP = "pdlc-pr-loop"
 PDLC_CONTRIBUTION_LOOP = "pdlc-contribution-loop"
 PDLC_ADHOC_LOOP = "pdlc-adhoc-loop"
+PDLC_REVIEW_LOOP = "pdlc-review-loop"
 
 #: Every loop name :func:`load_graph` accepts. The membership check is a
 #: security seam, not bookkeeping: `graph-state.json` is agent-writable and its
@@ -49,6 +52,7 @@ SHIPPED_LOOPS = (
     PDLC_PR_LOOP,
     PDLC_CONTRIBUTION_LOOP,
     PDLC_ADHOC_LOOP,
+    PDLC_REVIEW_LOOP,
 )
 
 #: The loops a WORK ITEM's outer path may walk — every shipped loop except the
@@ -56,18 +60,33 @@ SHIPPED_LOOPS = (
 #: layout (``pr-loops/…``) rather than being named. Membership here is what
 #: :func:`resolve_outer_loop` answers, and every reader of the agent-writable
 #: ``GraphState.loop`` goes through it.
-OUTER_PATH_LOOPS = (PDLC_WORK_ITEM_LOOP, PDLC_CONTRIBUTION_LOOP, PDLC_ADHOC_LOOP)
+OUTER_PATH_LOOPS = (
+    PDLC_WORK_ITEM_LOOP,
+    PDLC_CONTRIBUTION_LOOP,
+    PDLC_ADHOC_LOOP,
+    PDLC_REVIEW_LOOP,
+)
+
+#: The loops that run as a GUEST in somebody else's repository — the-loop was
+#: invited in (to contribute, issue-185; to review, issue-279), so its machinery
+#: stays out of that repository's history: no adoption write, and the spec tree
+#: git-excluded when the host never initialized the-loop (PR #187). One named
+#: set rather than per-loop comparisons at each call site, so a sixth guest
+#: cannot be added without every carve-out following.
+GUEST_LOOPS = (PDLC_CONTRIBUTION_LOOP, PDLC_REVIEW_LOOP)
 
 #: Which outer-path loop an arming CONTROL COMMAND selects (issue-185,
-#: issue-225). Keyed by the command constants in :mod:`the_loop.control` as
-#: plain strings, deliberately: ``control`` is a low-level module with no graph
-#: imports, and the loop names live here — the module that already decides
-#: which of them may be honoured. A test asserts these keys are real commands,
-#: so a rename cannot silently orphan the mapping. A command absent from this
-#: mapping (``start``, ``resume``, …) selects the default outer loop.
+#: issue-225, issue-279). Keyed by the command constants in
+#: :mod:`the_loop.control` as plain strings, deliberately: ``control`` is a
+#: low-level module with no graph imports, and the loop names live here — the
+#: module that already decides which of them may be honoured. A test asserts
+#: these keys are real commands, so a rename cannot silently orphan the mapping.
+#: A command absent from this mapping (``start``, ``resume``, …) selects the
+#: default outer loop.
 LOOP_FOR_CONTROL_COMMAND: Dict[str, str] = {
     "contribute": PDLC_CONTRIBUTION_LOOP,
     "do": PDLC_ADHOC_LOOP,
+    "review": PDLC_REVIEW_LOOP,
 }
 
 #: The default shipped graph — the outer loop — package data beside this module
@@ -79,11 +98,13 @@ logger = logging.getLogger("the-loop.graph")
 
 __all__ = [
     "ALTERNATIVE_SEPARATOR",
+    "GUEST_LOOPS",
     "LOOP_FOR_CONTROL_COMMAND",
     "OUTER_PATH_LOOPS",
     "PDLC_ADHOC_LOOP",
     "PDLC_CONTRIBUTION_LOOP",
     "PDLC_PR_LOOP",
+    "PDLC_REVIEW_LOOP",
     "PDLC_WORK_ITEM_LOOP",
     "SHIPPED_LOOPS",
     "ArtifactSlot",

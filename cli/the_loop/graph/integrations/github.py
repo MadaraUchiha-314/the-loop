@@ -30,9 +30,51 @@ logger = logging.getLogger("the-loop.graph.integrations")
 __all__ = ["GitHubApi", "GitHubCli", "OPERATIONS"]
 
 #: Everything the-loop's own hooks need from GitHub. Small on purpose.
+#: `get-thread` and `linked-pulls` joined for the review loop (issue-279, the
+#: work-item-level review): the brief gate must tell a pull request from a
+#: work item, and may suggest the pull requests a work item is linked to.
 OPERATIONS: FrozenSet[str] = frozenset(
-    {"add-comment", "set-labels", "get-labels", "list-comments"}
+    {
+        "add-comment",
+        "set-labels",
+        "get-labels",
+        "list-comments",
+        "get-thread",
+        "linked-pulls",
+    }
 )
+
+#: GraphQL for the one association REST does not expose: the pull requests
+#: that close a work item (the "Development" panel's links). First 50 — a
+#: work item with more linked PRs than that has bigger problems than a
+#: truncated suggestion list, and the reviewer can always state the rest.
+_LINKED_PULLS_QUERY = """
+query($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    issue(number: $number) {
+      closedByPullRequestsReferences(first: 50, includeClosedPrs: true) {
+        nodes { number repository { nameWithOwner } }
+      }
+    }
+  }
+}
+"""
+
+
+def _linked_pull_refs(data: Dict[str, Any]) -> list[str]:
+    """``github:owner/repo#n`` refs out of the GraphQL response — or empty."""
+    nodes = (((data.get("data") or {}).get("repository") or {}).get("issue") or {}).get(
+        "closedByPullRequestsReferences"
+    ) or {}
+    refs: list[str] = []
+    for node in nodes.get("nodes") or []:
+        if not isinstance(node, dict):
+            continue
+        number = node.get("number")
+        slug = (node.get("repository") or {}).get("nameWithOwner") or ""
+        if isinstance(number, int) and slug:
+            refs.append(f"github:{slug}#{number}")
+    return refs
 
 
 def _split_ref(ref: str) -> tuple[str, str, str]:
@@ -133,6 +175,24 @@ class GitHubApi:
         if op == "get-labels":
             data = self._request("GET", f"/repos/{owner}/{repo}/issues/{number}/labels")
             return {"labels": [d.get("name") for d in data if isinstance(d, dict)]}
+        if op == "get-thread":
+            data = self._request("GET", f"/repos/{owner}/{repo}/issues/{number}")
+            kind = "pull-request" if "pull_request" in data else "issue"
+            return {"kind": kind}
+        if op == "linked-pulls":
+            data = self._request(
+                "POST",
+                "/graphql",
+                {
+                    "query": _LINKED_PULLS_QUERY,
+                    "variables": {
+                        "owner": owner,
+                        "repo": repo,
+                        "number": int(number),
+                    },
+                },
+            )
+            return {"pulls": _linked_pull_refs(data)}
         data = self._request("GET", f"/repos/{owner}/{repo}/issues/{number}/comments")
         return {"comments": data}
 
@@ -198,5 +258,26 @@ class GitHubCli:
             )
             data = json.loads(out or "{}")
             return {"labels": [d.get("name") for d in data.get("labels", [])]}
+        if op == "get-thread":
+            out = self._run(["api", f"repos/{owner}/{repo}/issues/{number}"])
+            data = json.loads(out or "{}")
+            kind = "pull-request" if "pull_request" in data else "issue"
+            return {"kind": kind}
+        if op == "linked-pulls":
+            out = self._run(
+                [
+                    "api",
+                    "graphql",
+                    "-f",
+                    f"query={_LINKED_PULLS_QUERY}",
+                    "-F",
+                    f"owner={owner}",
+                    "-F",
+                    f"repo={repo}",
+                    "-F",
+                    f"number={number}",
+                ]
+            )
+            return {"pulls": _linked_pull_refs(json.loads(out or "{}"))}
         out = self._run(["issue", "view", number, "--repo", slug, "--json", "comments"])
         return {"comments": json.loads(out or "{}").get("comments", [])}

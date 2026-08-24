@@ -586,16 +586,20 @@ export interface SessionNode {
 export interface SessionTreeItem {
   view: WorkItemView;
   /**
-   * `pdlc-adhoc-loop` / `pdlc-contribution-loop` items run no outer/inner
-   * split — one session, no tree (issue-230).
+   * `pdlc-adhoc-loop` / `pdlc-contribution-loop` / `pdlc-review-loop` items
+   * run no outer/inner split — one session, no tree (issue-230, issue-279).
    */
-  adhoc: boolean;
+  treeless: boolean;
   outer: SessionNode;
-  /** One child per PR inner loop; always empty for an ad-hoc item. */
+  /** One child per PR inner loop; always empty for a treeless item. */
   inner: SessionNode[];
 }
 
-const ADHOC_LOOPS = new Set(["pdlc-adhoc-loop", "pdlc-contribution-loop"]);
+const TREELESS_LOOPS = new Set([
+  "pdlc-adhoc-loop",
+  "pdlc-contribution-loop",
+  "pdlc-review-loop",
+]);
 
 /**
  * The Sessions sidebar: every work item, its sessions as a two-level tree.
@@ -606,10 +610,10 @@ const ADHOC_LOOPS = new Set(["pdlc-adhoc-loop", "pdlc-contribution-loop"]);
  */
 export function sessionTree(views: WorkItemView[]): SessionTreeItem[] {
   return views.map((view) => {
-    const adhoc = ADHOC_LOOPS.has(view.record.graph?.loop ?? "");
+    const treeless = TREELESS_LOOPS.has(view.record.graph?.loop ?? "");
     return {
       view,
-      adhoc,
+      treeless,
       outer: {
         ref: view.ref,
         shortRef: view.shortRef,
@@ -617,7 +621,7 @@ export function sessionTree(views: WorkItemView[]): SessionTreeItem[] {
         state: view.sessionState,
         tmuxTarget: view.tmuxTarget,
       },
-      inner: adhoc
+      inner: treeless
         ? []
         : view.pullRequests.map((pr) => ({
             ref: pr.ref,

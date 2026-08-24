@@ -477,6 +477,12 @@ class Runtime:
                     # as a phase selection is — a recorded fact, not a live
                     # comment.
                     record["goal"] = dict(goal)
+                brief = result.data.get("brief")
+                if brief:
+                    # The review loop's brief gate (issue-279): the reviewer's
+                    # questions, angles and validations, frozen the same way —
+                    # the contract every review round answers to.
+                    record["brief"] = dict(brief)
                 state.decisions.setdefault(str(marker), record)
                 decided = True
                 if frozen:

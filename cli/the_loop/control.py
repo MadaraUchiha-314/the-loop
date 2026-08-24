@@ -10,15 +10,16 @@ instruction to the-loop itself.
 This module is that missing vocabulary: the session commands — ``start``,
 ``stop``, ``pause``, ``resume``, plus ``contribute`` (issue-185: start's
 sibling that selects the contribution loop), ``do`` (issue-225: the same
-sibling one loop over — it selects the ad-hoc loop) and ``cleanup``
-(issue-186: the other end of the life cycle — reclaim the local resources of a
-work item that has ended) — declared in the CLI config
-(``routing.control.keywords``), recognised in a comment on the work item or its
-PR, and *executed by the-loop* rather than forwarded to the agent. All but
-``execute``, ``contribute`` and ``do`` are also available from the CLI
-(``the-loop sessions start|stop|pause|resume|cleanup``), which posts the same
-keyword back to the ticket so the thread stays a complete record of who asked
-for what.
+sibling one loop over — it selects the ad-hoc loop), ``review`` (issue-279:
+the sibling that selects the REVIEW loop — the-loop as the reviewer of a pull
+request, not its author) and ``cleanup`` (issue-186: the other end of the life
+cycle — reclaim the local resources of a work item that has ended) — declared
+in the CLI config (``routing.control.keywords``), recognised in a comment on
+the work item or its PR, and *executed by the-loop* rather than forwarded to
+the agent. All but ``execute``, ``contribute``, ``do`` and ``review`` are also
+available from the CLI (``the-loop sessions start|stop|pause|resume|cleanup``),
+which posts the same keyword back to the ticket so the thread stays a complete
+record of who asked for what.
 
 ## Why the parser is this narrow
 
@@ -83,23 +84,26 @@ __all__ = [
     "parse_command",
 ]
 
-# The eight commands, in the order they are documented. `start`, `resume`,
-# `contribute` and `do` mean "execution should be running"; `pause` and `stop`
-# mean it should not. `execute` is different in kind (issue-177): it does not
-# touch the session at all — it answers the graph's `phase-selection` gate,
-# freezing the set of phases this work item will walk. `contribute` (issue-185)
-# arms exactly as `start` does, and additionally selects the CONTRIBUTION loop
-# for the work item's outer walk: the-loop joins an existing, in-progress item
-# as a contributor rather than owning it from scratch. `do` (issue-225) is the
-# same shape one loop over: it arms as `start` does and selects the AD-HOC loop
-# — a tactical task that runs no PDLC process at all, worked until the
-# requester says it is done. `cleanup` (issue-186) is the other end of the life
+# The nine commands, in the order they are documented. `start`, `resume`,
+# `contribute`, `do` and `review` mean "execution should be running"; `pause`
+# and `stop` mean it should not. `execute` is different in kind (issue-177): it
+# does not touch the session at all — it answers the graph's `phase-selection`
+# gate, freezing the set of phases this work item will walk. `contribute`
+# (issue-185) arms exactly as `start` does, and additionally selects the
+# CONTRIBUTION loop for the work item's outer walk: the-loop joins an existing,
+# in-progress item as a contributor rather than owning it from scratch. `do`
+# (issue-225) is the same shape one loop over: it arms as `start` does and
+# selects the AD-HOC loop — a tactical task that runs no PDLC process at all,
+# worked until the requester says it is done. `review` (issue-279) is the shape
+# a third time: it arms as `start` does and selects the REVIEW loop — the-loop
+# reviews the pull request it was typed on, against an authorized reviewer's
+# brief, and changes no code. `cleanup` (issue-186) is the other end of the life
 # cycle: the work is over, so reclaim the LOCAL resources the work item
 # accumulated — the tmux sessions, the checkout, the machine-local session
 # record — and nothing else. All live here because they are **control** words an
 # authorized human types on the ticket, so they belong to the same configurable
 # vocabulary and the same named-actor authorization.
-START, STOP, PAUSE, RESUME, EXECUTE, CONTRIBUTE, CLEANUP, DO = (
+START, STOP, PAUSE, RESUME, EXECUTE, CONTRIBUTE, CLEANUP, DO, REVIEW = (
     "start",
     "stop",
     "pause",
@@ -108,8 +112,9 @@ START, STOP, PAUSE, RESUME, EXECUTE, CONTRIBUTE, CLEANUP, DO = (
     "contribute",
     "cleanup",
     "do",
+    "review",
 )
-COMMANDS = (START, STOP, PAUSE, RESUME, EXECUTE, CONTRIBUTE, CLEANUP, DO)
+COMMANDS = (START, STOP, PAUSE, RESUME, EXECUTE, CONTRIBUTE, CLEANUP, DO, REVIEW)
 
 #: Commands the *graph* acts on rather than the session registry. The
 #: dispatcher records them and then lets the event through, because the thing
@@ -124,17 +129,17 @@ GRAPH_COMMANDS = (EXECUTE,)
 TEARDOWN_COMMANDS = (CLEANUP,)
 
 # Commands whose effect is "this work item should be running" — what
-# ControlStore.start_requested reports on. `contribute` (issue-185) and `do`
-# (issue-225) arm like `start`: the loop each selects differs, the request to be
-# running does not. `cleanup` is deliberately absent, so recording one DISARMS
-# the item exactly as a `stop` does: nothing may re-spawn a session for work
-# whose resources have gone.
-_ARMING_COMMANDS = (START, RESUME, CONTRIBUTE, DO)
+# ControlStore.start_requested reports on. `contribute` (issue-185), `do`
+# (issue-225) and `review` (issue-279) arm like `start`: the loop each selects
+# differs, the request to be running does not. `cleanup` is deliberately
+# absent, so recording one DISARMS the item exactly as a `stop` does: nothing
+# may re-spawn a session for work whose resources have gone.
+_ARMING_COMMANDS = (START, RESUME, CONTRIBUTE, DO, REVIEW)
 
 #: The arming commands that may SPAWN a session where none exists — what the
 #: dispatcher's spawn seams check. `resume` is deliberately absent: it can only
 #: wake something that was paused, never conjure a session (issue-106).
-SPAWN_COMMANDS = (START, CONTRIBUTE, DO)
+SPAWN_COMMANDS = (START, CONTRIBUTE, DO, REVIEW)
 
 DEFAULT_KEYWORDS: Dict[str, str] = {
     START: "the-loop start",
@@ -149,6 +154,10 @@ DEFAULT_KEYWORDS: Dict[str, str] = {
     # `the-loop done` and `the-loop docs` all put a `\w` directly after `do`,
     # so none of them matches (issue-225).
     DO: "the-loop do",
+    # Same boundary story (issue-279): `the-loop reviews`, `reviewed` and
+    # `reviewer` all put a `\w` directly after `review`, so none of them
+    # matches.
+    REVIEW: "the-loop review",
 }
 
 # What may NOT sit directly against a keyword for it to count as a whole token.

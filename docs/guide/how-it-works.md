@@ -2,9 +2,11 @@
 
 ## The process is data
 
-All three loops are **declared, not coded**: `pdlc-work-item-loop.yaml` (outer),
-`pdlc-pr-loop.yaml` (inner) and `pdlc-contribution-loop.yaml` (the contribution loop,
-for joining an existing work item as a contributor) ship as package data inside the CLI, under
+All five loops are **declared, not coded**: `pdlc-work-item-loop.yaml` (outer),
+`pdlc-pr-loop.yaml` (inner), `pdlc-contribution-loop.yaml` (the contribution loop,
+for joining an existing work item as a contributor), `pdlc-adhoc-loop.yaml` (the
+ad-hoc loop, a task with no process) and `pdlc-review-loop.yaml` (the review loop,
+the-loop as a pull request's reviewer) ship as package data inside the CLI, under
 `cli/the_loop/graph/`, and the runtime executes that declaration rather than re-deriving
 the process from prose. A node is one step, with an ordered entry hook chain and an ordered
 exit hook chain; it is **complete** when the exit chain passes, **waiting** when a hook
@@ -71,7 +73,7 @@ skills/writing/    the-loop:writing — how the artifacts a human reads are writ
 rules/             the-loop.mdc (Cursor always-applied reminder rule)
 hooks/             hooks.json (Claude Code SessionStart reminder)
 cli/               the-loop Python CLI (the_loop package)
-  the_loop/graph/    pdlc-work-item-loop.yaml, pdlc-pr-loop.yaml, pdlc-contribution-loop.yaml, runtime, hooks
+  the_loop/graph/    the five pdlc-*-loop.yaml graphs, runtime, hooks
 docs/
   api-specs/         the-loop's own control-plane API contract (OpenAPI)
   architecture/      architecture.md (index)

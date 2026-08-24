@@ -82,6 +82,17 @@ routing:
       # is recorded (control record, then graph-state.json) so a reviewer can see
       # who decided that. Set to "" to remove the word from the vocabulary.
       do: "the-loop do"
+      # REVIEWER, NOT AUTHOR (issue-279). Arms the item exactly as `start` does
+      # and selects the REVIEW loop: review-brief -> review <-> follow-up ->
+      # complete. Typed on a pull request it binds to the PULL REQUEST itself,
+      # even when the PR links a ticket; typed on a work item, one review spans
+      # every PR delivering it (the template also asks which PRs are in scope,
+      # pre-filled with the ones the-loop detects). The loop will not review
+      # until an authorized user states a brief (Questions:/Angles:/Validations:
+      # bullet lists — the-loop posts the fill-in template if the arming comment
+      # did not carry one), and the session changes NO code: findings, answers
+      # and follow-ups are comments on the thread. Set to "" to remove the word.
+      review: "the-loop review"
       # DESTRUCTIVE (issue-186). Releases this work item's LOCAL resources —
       # every endpoint's tmux session, the workspace checkout (uncommitted work
       # in it is GONE) and the machine-local session record — ignoring the

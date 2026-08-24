@@ -45,6 +45,7 @@ first time the-loop starts working there:
 | `the-loop graph complete` / `advance` / `force` / `skip` | yes |
 | `the-loop check`, `the-loop graph status` / `show` | **no** — reads write nothing |
 | A **contribution** (`the-loop contribute`, `pdlc-contribution-loop`) | **no** — the-loop was invited into that repository as a guest and stays out of its history ([issue #185](https://github.com/MadaraUchiha-314/the-loop/issues/185)) |
+| A **review** (`the-loop review`, `pdlc-review-loop`) | **no** — the same guest rule: a reviewer installs nothing in the repository it reviews ([issue #279](https://github.com/MadaraUchiha-314/the-loop/issues/279)) |
 
 The written file carries a header saying the-loop wrote it and how to replace it with a
 considered one, and each write is recorded as `harness.config_scaffolded` in

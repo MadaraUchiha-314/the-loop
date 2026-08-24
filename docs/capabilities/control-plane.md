@@ -270,9 +270,9 @@ package — there are no install extras (owner decision, PR #162).
 - The dashboard SHALL provide a **Sessions screen** (issue-230): every work item
   in a sidebar, each opening into its sessions as a **two-level tree** — the
   outer loop's session, then one child per PR inner loop, mirroring the
-  registry's own one-level nesting — with ad-hoc and contribution items
-  (`pdlc-adhoc-loop`, `pdlc-contribution-loop`) rendered treeless as their
-  single session. The selected session is the hash route, its stream is the
+  registry's own one-level nesting — with ad-hoc, contribution and review items
+  (`pdlc-adhoc-loop`, `pdlc-contribution-loop`, `pdlc-review-loop`) rendered
+  treeless as their single session. The selected session is the hash route, its stream is the
   readable transcript (event-trail fallback unchanged), and a **chat bar**
   beneath the stream posts to `/sessions/reply` with the viewed ref — the outer
   session's or the PR endpoint's — disabled with the reason when that session

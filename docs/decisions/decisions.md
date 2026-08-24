@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [101](decision-101.md) | A review is a fifth loop, a guest, and bound to the pull request itself | proposed | 2026-08-24 |
 | [100](decision-100.md) | Standing sessions are created and deleted at runtime; the control plane is not a channel | accepted | 2026-08-20 |
 | [099](decision-099.md) | A session that owns no work item lives in its own namespace, and is called standing | proposed | 2026-08-20 |
 | [098](decision-098.md) | The component that opens a pull request is the one that records what it delivers | proposed | 2026-08-20 |
