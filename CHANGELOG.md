@@ -1,3 +1,9 @@
+## v11.3.0 (2026-08-24)
+
+### Feat
+
+- **issue-279**: the review loop — first-class PR reviews (#280)
+
 ## v11.2.0 (2026-08-20)
 
 ### Feat
