@@ -138,6 +138,23 @@ stays out of the host's history); `__all__` extended.
 
 The brief gate, patterned line-for-line on `goal.py`:
 
+**Work-item reviews (R8, the owner's PR #280 ruling).** The same gate serves both
+targets; only the template's wording and one extra section differ:
+
+- `_thread_kind` asks the provider what the thread is (`get-thread`, a new integration
+  op — one GET on both transports); unknown falls back to the pull-request wording.
+- On a work item the template adds a `Pull requests:` section, pre-filled by
+  `_detected_pulls`: the spec directory's `pr-loops/` layout first (`pr-<n>/` and
+  `<owner>__<repo>/pr-<n>/` — the state the loop already generates, per the owner's
+  "piggyback on that"), then the provider's `linked-pulls` (a new integration op —
+  GraphQL `closedByPullRequestsReferences`, the Development-panel links), deduplicated
+  and best-effort.
+- `parse_brief` reads the section (alias `PRs:`); `_normalize_pulls` composes
+  `github:owner/repo#n` refs from `#n` / `owner/repo#n` / pull URLs and drops anything
+  else; the frozen brief carries `pullRequests` and the confirmation echoes it.
+- No session machinery: the review already binds to the work item, and the existing
+  linkage forwards the linked PRs' events to that one session (R8.6).
+
 - `BRIEF_REQUEST_MARKER = "<!-- the-loop:review-brief-request -->"` — idempotence for
   the posted template.
 - `DECISION_KEY = "review-brief"` — where the answered-ness is recorded in
@@ -219,7 +236,8 @@ misreading waiting to happen); `model.test.ts` iterates the third name.
 
 - **The frozen brief** (in `GraphState.decisions["review-brief"]`):
   `{"at": iso8601, "brief": {"questions": [str], "angles": [str], "validations":
-  [str], "by": "@login"}}` — same shape discipline as the frozen goal.
+  [str], "pullRequests": [ref], "by": "@login"}}` — same shape discipline as the
+  frozen goal; `pullRequests` holds refs the-loop composed (R8.4), never free text.
 - **The control record**: unchanged shape; `command: "review"` is a new value.
 - **`graph-state.json`**: unchanged shape; `loop: "pdlc-review-loop"` is a new value,
   accepted only via `resolve_outer_loop`.

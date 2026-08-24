@@ -246,8 +246,12 @@ the **reviewer** of the thread it was typed on, never its author.
 
 Typed on a pull request, the review binds to the **pull request itself**, even when the
 PR links a ticket — the subject of a review is the change, where every other keyword's
-subject is the work item delivering one. The loop refuses to begin until an authorized
-user states a **review brief** — `Questions:` / `Angles:` / `Validations:` bullet lists,
+subject is the work item delivering one. Typed on a **work item**, one review
+conversation spans every pull request delivering it: the fill-in template additionally
+asks which pull requests are in scope, pre-filled with the ones the-loop detects from
+its own `pr-loops/` state and the work item's linked pull requests. The loop refuses to
+begin until an authorized user states a **review brief** — `Questions:` / `Angles:` /
+`Validations:` bullet lists,
 at least one section, in one comment; the comment carrying this keyword qualifies, and
 otherwise the-loop posts the fill-in template and waits. Each round answers the frozen
 brief and lands as one comment on the thread; **any** authorized reply that is not a

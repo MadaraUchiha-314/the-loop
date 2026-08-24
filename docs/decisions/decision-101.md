@@ -65,3 +65,13 @@ request itself, and its definition of done is the reviewer's word.
    request-changes stays a human act. Reusing `stage: critic-review` for the review
    node (frontier routing, high thinking effort) instead of adding a `review` stage
    keeps the config schema untouched.
+
+7. **A work item is reviewable too — one conversation across all its pull requests**
+   (the owner's ruling on PR #280, worked back into R8). Armed on a work item, the
+   same loop runs with one difference: the template also asks which pull requests the
+   review spans, pre-filled with what the-loop detects — its own `pr-loops/` state
+   first ("piggyback on that"), then the provider's linked pull requests (two new
+   integration ops, `get-thread` and `linked-pulls`). Stated entries normalize to
+   composed refs and junk is dropped; the frozen brief carries the scope. No new
+   session machinery: binding to the work item already gives one session, and the
+   existing linkage forwards the linked PRs' events to it.

@@ -38,11 +38,13 @@ The PDLC is **five** graphs, all shipped inside the CLI as package data
   say so or close it. Walkthrough:
   [quickstart § ad-hoc tasks](https://madarauchiha-314.github.io/the-loop/guide/quickstart#ad-hoc-tasks).
 - **`pdlc-review-loop`** — the **review** loop. the-loop as a pull request's
-  **reviewer**, never its author (comment `the-loop review` on the PR): it refuses to
-  start until an authorized reviewer states a **brief** — the questions to answer, the
-  angles to examine, the validations to run (the-loop posts the fill-in template if the
-  arming comment didn't carry one) — then reviews round after round, follow-up after
-  follow-up, until the reviewer says done. It changes **no code**: findings are
+  **reviewer**, never its author (comment `the-loop review` on the PR — or on the work
+  item, for one review across every PR delivering it): it refuses to start until an
+  authorized reviewer states a **brief** — the questions to answer, the angles to
+  examine, the validations to run (the-loop posts the fill-in template if the arming
+  comment didn't carry one; on a work item it also asks which PRs are in scope,
+  pre-filled with the ones it detects) — then reviews round after round, follow-up
+  after follow-up, until the reviewer says done. It changes **no code**: findings are
   comments on the thread, and a finding worth fixing becomes a new work item.
 
 The first two meet at exactly **one seam**. The outer `implementation` node waits at

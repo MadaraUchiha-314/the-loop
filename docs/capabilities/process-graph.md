@@ -143,6 +143,14 @@ There are exactly **two** runtime concepts and **one** contract between them.
     comment. The `follow-up` gate SHALL reuse `classify-adhoc-reply` (decision-101):
     an authorized reply that declares completion is `done`, anything else is another
     round, silence keeps the gate open.
+  - **A work item is reviewable too** (R8, PR #280): armed on a work item, the loop
+    runs one review conversation across every pull request delivering it. The template
+    SHALL additionally ask which pull requests the review spans, pre-filled with the
+    ones the-loop detects — its own `pr-loops/` state first, then the provider's
+    linked pull requests (`get-thread` / `linked-pulls` integration ops, best-effort)
+    — and stated entries SHALL be normalized to composed refs, unparseable bullets
+    dropped, the scope frozen with the brief. A brief with no pull requests reviews
+    the work item itself; a pull-request list alone is not a brief.
   - It SHALL declare **no** `produces`, **no** `validate-artifacts`, **no**
     `phase-selection` and **no** skip vocabulary — arming with `the-loop review` IS
     the named, authorized, durably recorded declaration (the issue-177/179 invariant,

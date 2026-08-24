@@ -30,6 +30,31 @@ status: in-progress
 
 ## Progress entries
 
+### 2026-08-24 — the owner's ruling: a work item is reviewable too
+
+- **Phase:** needs-review (the spec chain is `in-review`, so the artifacts were
+  **edited**, not appended to — the reference-don't-duplicate rule)
+- **The ask** ([the PR thread](https://github.com/MadaraUchiha-314/the-loop/pull/280)):
+  review at work-item level as well — one review session across all the PRs delivering
+  a work item; piggyback on the PR tracking the-loop already generates; when the item
+  was not delivered by the-loop, ask for the associated PRs; differentiate the
+  follow-up question between a PR review and a work-item review; suggest detected PRs
+  automatically.
+- **Did:** requirements gained R8 (six criteria); design §4 gained the work-item
+  variant; two integration ops (`get-thread`, `linked-pulls` — GraphQL
+  `closedByPullRequestsReferences`, on both transports); the template now asks for the
+  PR scope on a work item, pre-filled from the spec directory's `pr-loops/` layouts
+  and the provider's links, deduped and best-effort; `parse_brief` reads
+  `Pull requests:` (alias `PRs:`); stated entries normalize to composed
+  `github:owner/repo#n` refs with junk dropped; the frozen brief carries
+  `pullRequests` and the confirmation echoes it. No new session machinery — the
+  work-item binding already yields one session and the existing linkage forwards the
+  linked PRs' events to it (R8.6). Seven new tests (62 in the suite now);
+  decision-101 gained point 7; docs of record updated.
+- **One judgement call a reviewer should check:** a PR list alone is deliberately
+  **not** a brief — scope without content asks nothing, so the gate keeps waiting.
+- **Next:** re-verification, then back to human review.
+
 ### 2026-08-24 — implemented and verified
 
 - **Phase:** implementation → verification → needs-review

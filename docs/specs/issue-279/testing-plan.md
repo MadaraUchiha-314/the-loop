@@ -36,6 +36,7 @@ overrides: {}
 | T1 | R2.1, R2.3 | `review` is in `COMMANDS`, `SPAWN_COMMANDS` and the arming set; `DEFAULT_KEYWORDS[review] == "the-loop review"`; the keyword is configurable and disablable |
 | T1 | R2.4 | `resolve_outer_loop` accepts `pdlc-review-loop` and still returns `""` for an invented name, for `pdlc-pr-loop`, and for the default |
 | T1 | R4.2–R4.6 | `parse_brief` accepts one/two/three filled sections and refuses an empty form; `post-review-brief` skips when a brief or its marker already exists; `classify-review-brief` waits on silence, freezes the newest brief with provenance, and short-circuits once decided |
+| T1 | R8.1–R8.5 | a work-item review's template asks for (and pre-fills) the pull requests in scope, deduped across the `pr-loops/` state and the provider's links; nothing detected still asks; a PR thread (and an unknown kind) is not asked; stated entries freeze as composed refs with junk dropped; a PR list alone is not a brief |
 | T2 | R4.1, R5.1–R5.3, R6.1 | `Scenario: a review walks brief → review → follow-up rounds → complete on the reviewer's replies` |
 | T2 | R3.1–R3.2 | `Scenario: the-loop review on a pull request binds the review to the pull request itself` (linked issue present) and the plain-issue fallback |
 | T2 | R2.5 | `Scenario: the core verbs address a review item through its recorded loop` |
@@ -90,13 +91,13 @@ overrides: {}
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| T1 + T2 + T8 | `uv run pytest tests/test_graph_review.py` (from `cli/`) | pass — 56 passed (55 at first verification, +1 after the security-review fix) | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
+| T1 + T2 + T8 | `uv run pytest tests/test_graph_review.py` (from `cli/`) | pass — 62 passed (55 at first verification, +1 after the security-review fix, +6 after the work-item-level reviews of the owner's PR #280 ruling) | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
 | T2 | `uv run pytest tests/test_graph_review.py -k "Walk or target"` | pass — 5 passed | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
 | T3 | `uv run pytest tests/test_api_contract_parity.py` | pass — 2 passed | [`evidence/full-suite.md`](evidence/full-suite.md) |
 | T5 | `cd ui && bun run lint && bun run test && bun run build` | pass — 157 passed (12 files), lint and build clean | [`evidence/ui-suite.md`](evidence/ui-suite.md) |
 | T8 | `uv run pytest tests/test_graph_review.py -k "unauthorized or refused or invented or self_authored or cannot or empty_allowlist or prose"` | pass — 9 passed | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
 | T10 | `uv run pytest tests/test_graph_contribution.py tests/test_graph_adhoc.py tests/test_graphlink.py tests/test_core_graphs.py` | pass — 162 passed | [`evidence/full-suite.md`](evidence/full-suite.md) |
-| whole suite | `uv run pytest` (from `cli/`) | pass — 2661 passed, 1 skipped (+61 over the 2600 issue-277 recorded on `main` at `b6bfda1`) | [`evidence/full-suite.md`](evidence/full-suite.md) |
+| whole suite | `uv run pytest` (from `cli/`) | pass — 2667 passed, 1 skipped (+67 over the 2600 issue-277 recorded on `main` at `b6bfda1`) | [`evidence/full-suite.md`](evidence/full-suite.md) |
 | lint / types | `uv run ruff check cli hooks` · `uv run ruff format --check cli hooks` · `uv run pyright cli` · `markdownlint-cli2` (870 files, 0 errors) · `scripts/validate_config.py` (7 VALID) | pass | [`evidence/lint-and-types.md`](evidence/lint-and-types.md) |
 
 **Not executed:** none.

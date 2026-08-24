@@ -142,6 +142,12 @@ be). Then it is a conversation, exactly like an ad-hoc task: any reply that is n
 "done" / "lgtm" is another round; say it is done — or merge/close the PR — and the
 review ends.
 
+It works on a **work item** too: comment `the-loop review` on the issue and one review
+conversation spans every pull request delivering it. The template gains a
+`Pull requests:` section, pre-filled with the PRs the-loop could detect (its own
+tracking, plus the issue's linked pull requests) — edit the list, or fill it in when
+nothing was detected.
+
 Two things to know before you use it:
 
 - **The reviewer is authorized, and the-loop changes no code.** The same

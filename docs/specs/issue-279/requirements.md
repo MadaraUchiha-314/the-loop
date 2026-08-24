@@ -209,6 +209,46 @@ nothing.
    existing `repoInitialized` seam, with no new machinery.
 3. Adding the fifth loop SHALL NOT change any behaviour of the other four.
 
+### Requirement 8 — a work item is reviewable too, across all its pull requests
+
+**User story:** As a reviewer, I want `the-loop review` on a **work item** to run one
+review conversation across every pull request delivering it, so that a multi-PR change
+gets one coherent review rather than n disconnected ones.
+
+*(Added at `needs-review` from the owner's ruling on
+[PR #280](https://github.com/MadaraUchiha-314/the-loop/pull/280#issuecomment): review at
+work-item level; one session across all the PRs; piggyback on the PR tracking the-loop
+already generates; ask for the PRs when the item was not delivered by the-loop; suggest
+detected ones automatically.)*
+
+#### Acceptance criteria (EARS)
+
+1. WHEN the review is armed on a work item (not a pull request) THEN the fill-in
+   template SHALL additionally ask which pull requests the review spans — a
+   `Pull requests:` bullet section — and SHALL say that a work-item review is one
+   conversation across all of them. The system SHALL differentiate the two wordings by
+   asking the provider what the thread is, and WHEN the provider cannot say THEN the
+   pull-request wording SHALL be used.
+2. The template SHALL pre-fill the pull requests the-loop can detect, in this order and
+   deduplicated: the work item's own `pr-loops/` state (the JSON the loop generates for
+   every delivering pull request — both the same-repository and the
+   `<owner>__<repo>`-qualified layouts), then the provider's linked pull requests (the
+   work-item API). Detection SHALL be best-effort: a failure SHALL cost only the
+   suggestions, never the template.
+3. WHEN no pull request could be detected THEN the template SHALL say so and ask the
+   reviewer to list them.
+4. Stated and detected pull requests SHALL be normalized to `github:owner/repo#n` refs
+   (accepting a bare `#number` against the work item's own repository, an
+   `owner/repo#number` slug, or a pull-request URL), and an unparseable bullet SHALL be
+   dropped — the frozen list is composed by the system, never free text.
+5. The frozen brief SHALL carry the pull-request scope (`pullRequests`), the
+   confirmation SHALL echo it, and the review session SHALL review every pull request
+   in scope. A brief with an empty scope SHALL remain valid (the review examines the
+   work item itself); a pull-request list alone SHALL NOT constitute a brief.
+6. The system SHALL NOT need new session machinery for "one session across all the
+   PRs": the review binds to the work item, and the existing linkage already forwards
+   the linked pull requests' events to that one session.
+
 ## Non-functional requirements
 
 - **No new configuration surface beyond one keyword.** One new property in the CLI

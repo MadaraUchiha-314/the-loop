@@ -37,10 +37,12 @@ The PDLC is **five** graphs, all shipped as package data inside the CLI:
   exact comment.
 - **`pdlc-review-loop`** — the **review** loop: the-loop as a pull request's
   **reviewer**, never its author (comment `the-loop review` on the PR — it binds to the
-  PR itself, linked ticket or not). It cannot begin until an authorized reviewer states
-  a **brief** — questions to answer, angles to examine, validations to run; the-loop
-  posts the fill-in template if the arming comment didn't carry one — then it reviews
-  round after round until the reviewer says done, changing **no code** along the way.
+  PR itself, linked ticket or not — or on the work item, for one review across every PR
+  delivering it). It cannot begin until an authorized reviewer states a **brief** —
+  questions to answer, angles to examine, validations to run; the-loop posts the
+  fill-in template if the arming comment didn't carry one, asking on a work item which
+  PRs are in scope with the detected ones pre-filled — then it reviews round after
+  round until the reviewer says done, changing **no code** along the way.
 
 The first two meet at exactly **one seam**: the outer `implementation` node waits at
 `await-inner-loops` until every inner loop that was started reaches `complete`, after which

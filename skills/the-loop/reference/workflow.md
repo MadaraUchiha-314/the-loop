@@ -437,6 +437,15 @@ thread. And where the ad-hoc loop's instruction is the work item itself, a revie
 instruction is a **brief** the reviewer states: the questions they want answered, the
 angles they care about, the validations they want run.
 
+**A work item is reviewable too** (R8, the owner's ruling on PR #280): armed on a work
+item rather than a pull request, the same loop runs **one review conversation across
+every pull request delivering the item**. The only difference is the brief: the
+template additionally asks which pull requests the review spans (`Pull requests:` —
+`#number`, `owner/repo#number` or a URL per bullet), pre-filled with the ones the-loop
+detects from its own `pr-loops/` state and the work item's linked pull requests.
+Stated entries are normalized to refs and frozen with the brief; a review with no
+pull requests reviews the work item itself.
+
 The walk is four nodes: `review-brief → review → follow-up → complete`, with
 `follow-up` routing **back** to `review` for as long as the reviewer keeps asking.
 

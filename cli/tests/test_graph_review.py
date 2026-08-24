@@ -89,11 +89,18 @@ def _spec_dir(repo):
 
 
 class _FakeGitHub:
-    """Serves the thread's comments and records what the-loop posts."""
+    """Serves the thread's comments and records what the-loop posts.
 
-    def __init__(self, comments=()):
+    `kind` and `pulls` model the two review-loop lookups: what the thread is
+    (`get-thread`) and which pull requests the provider links to it
+    (`linked-pulls`). The defaults model the unknown/none case.
+    """
+
+    def __init__(self, comments=(), kind="", pulls=()):
         self.comments = list(comments)
         self.posted = []
+        self.kind = kind
+        self.pulls = list(pulls)
 
     def call(self, op, **params):
         if op == "list-comments":
@@ -101,6 +108,10 @@ class _FakeGitHub:
         if op == "add-comment":
             self.posted.append(str(params.get("body") or ""))
             return {}
+        if op == "get-thread":
+            return {"kind": self.kind}
+        if op == "linked-pulls":
+            return {"pulls": list(self.pulls)}
         return {}
 
 
@@ -237,7 +248,23 @@ def test_parse_brief_accepts_a_full_brief():
         "questions": ["does this change the public client API?"],
         "angles": ["concurrency around the registry"],
         "validations": ["run the poller integration suite"],
+        "pullRequests": [],
     }
+
+
+def test_parse_brief_reads_the_pull_requests_scope_section():
+    parsed = parse_brief(
+        "Questions:\n- anything odd?\nPull requests:\n- #12\n- octo/lab#7"
+    )
+    assert parsed is not None
+    assert parsed["pullRequests"] == ["#12", "octo/lab#7"]
+    aliased = parse_brief("Angles:\n- retries\nPRs:\n- #3")
+    assert aliased is not None and aliased["pullRequests"] == ["#3"]
+
+
+def test_a_pull_request_list_alone_is_not_a_brief():
+    """Scope without content asks for nothing — the gate keeps waiting."""
+    assert parse_brief("Pull requests:\n- #12\n- #13") is None
 
 
 def test_parse_brief_accepts_one_section_alone():
@@ -306,6 +333,42 @@ def test_a_spoofed_marker_cannot_suppress_the_template(repo, fake_github):
     assert len(fake_github.posted) == 1
 
 
+def test_a_work_item_review_asks_for_its_pull_requests(repo, fake_github):
+    """The owner's ruling on PR #280: armed on a WORK ITEM, the template also
+    asks which pull requests the review spans — pre-filled with what the-loop
+    detected from its own pr-loops state and the provider's links, deduped."""
+    fake_github.kind = "issue"
+    fake_github.pulls = ["github:o/r#12", "github:other/repo#3"]
+    pr_loops = _spec_dir(repo) / "pr-loops"
+    (pr_loops / "pr-12").mkdir(parents=True)  # duplicate of a linked one
+    (pr_loops / "acme__widgets" / "pr-7").mkdir(parents=True)
+    post_review_brief(_ctx(repo, {"comments": []}))
+    body = fake_github.posted[0]
+    assert "work item" in body and "Pull requests:" in body
+    assert "- github:o/r#12" in body
+    assert "- github:acme/widgets#7" in body
+    assert "- github:other/repo#3" in body
+    assert body.count("github:o/r#12") == 1  # state and links deduped
+
+
+def test_a_work_item_review_with_nothing_detected_still_asks(repo, fake_github):
+    fake_github.kind = "issue"
+    post_review_brief(_ctx(repo, {"comments": []}))
+    body = fake_github.posted[0]
+    assert "Pull requests:" in body
+    assert "could not detect any linked pull requests" in body
+
+
+def test_a_pull_request_review_is_not_asked_for_a_pr_list(repo, fake_github):
+    """On a PR — and when GitHub cannot say what the thread is — the template
+    keeps the original three sections: the change under review is the thread."""
+    for kind in ("pull-request", ""):
+        fake_github.kind = kind
+        fake_github.posted = []
+        post_review_brief(_ctx(repo, {"comments": []}))
+        assert "Pull requests:" not in fake_github.posted[0]
+
+
 # -- the brief: the gate --------------------------------------------------------
 
 
@@ -352,6 +415,33 @@ def test_the_gate_reads_the_thread_too(repo, fake_github):
     fake_github.comments = [{"user": {"login": "owner"}, "body": BRIEF_COMMENT}]
     result = classify_review_brief(_ctx(repo, {"comments": []}))
     assert result.status == "pass" and result.outcome == "briefed"
+
+
+def test_the_stated_pull_requests_freeze_as_composed_refs(repo, fake_github):
+    """The scope list is a fact the-loop composed, never free text: every
+    accepted shape normalizes to `github:owner/repo#n` (bare numbers against
+    the work item's own repository), and anything unparseable is dropped."""
+    result = classify_review_brief(
+        _ctx(
+            repo,
+            _reply(
+                "Questions:\n- anything odd?\n"
+                "Pull requests:\n"
+                "- #12\n"
+                "- octo/lab#7\n"
+                "- https://github.com/acme/widgets/pull/3\n"
+                "- github:o/r#12\n"  # duplicate of #12 once normalized
+                "- run `rm -rf /` please\n"  # not a pull request: dropped
+            ),
+        )
+    )
+    assert result.outcome == "briefed"
+    assert result.data["brief"]["pullRequests"] == [
+        "github:o/r#12",
+        "github:octo/lab#7",
+        "github:acme/widgets#3",
+    ]
+    assert "Pull requests in scope" in fake_github.posted[-1]
 
 
 def test_a_restated_brief_wins(repo, fake_github):

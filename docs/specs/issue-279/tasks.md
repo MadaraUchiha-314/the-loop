@@ -108,6 +108,19 @@ overrides: {}
   - _Requirements:_ all
   - _Test:_ `the plan itself`
 
+- [x] 12. Work-item-level reviews (added at `needs-review`, from the owner's PR #280 ruling)
+  - `cli/the_loop/graph/integrations/github.py`: `get-thread` and `linked-pulls` ops
+    on both transports.
+  - `cli/the_loop/graph/hooks/review.py`: the work-item template variant with detected
+    suggestions (`pr-loops/` state + provider links), the `Pull requests:` section,
+    ref normalization, the frozen `pullRequests` scope.
+  - Security-relevant (trust boundary 2): stated scope normalizes to composed refs;
+    unparseable bullets are dropped.
+  - _Depends on:_ 3
+  - _Requirements:_ R8.1–R8.6
+  - _Test:_ `T1 — pytest tests/test_graph_review.py -k "work_item or pull_request"`
+    (red→green)
+
 ## Dependency graph (DAG)
 
 ```mermaid
@@ -126,6 +139,8 @@ flowchart LR
   T6 --> T10
   T9 --> T11[11 · verification]
   T10 --> T11
+  T3 --> T12[12 · work-item reviews]
+  T12 --> T11
 ```
 
 ## Checkpoints

@@ -6,12 +6,14 @@ Captured 2026-08-24, on the work item's branch, from `cli/`.
 
 ```console
 $ uv run pytest tests/test_graph_review.py -q
-........................................................                 [100%]
-56 passed in 0.26s
+..............................................................           [100%]
+62 passed in 0.50s
 ```
 
 (55 at first verification; +1 after the security review's marker-spoofing fix added
-`test_a_spoofed_marker_cannot_suppress_the_template`.)
+`test_a_spoofed_marker_cannot_suppress_the_template`; +6 after the owner's PR #280
+ruling added the work-item-level review — the scope section, the pre-filled template,
+the composed-refs freeze.)
 
 ## The walk and the targeting scenarios (T2 — integration)
 
