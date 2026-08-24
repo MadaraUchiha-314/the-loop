@@ -50,10 +50,11 @@ status: in-progress
   odd-looking name in the YAML cannot be "cleaned up" silently), and the fill-in
   template **lives in the CLI hook, not in `skills/the-loop/templates/`** (the daemon
   posts it; a plugin-side copy would be a second source that drifts).
-- **Checkpoint/tests:** `uv run pytest` — 2660 passed, 1 skipped (2600 on `main` at
-  `b6bfda1`, +60). `ruff check`, `ruff format --check`, `pyright cli`,
-  `validate_config`, markdownlint (870 files), `bun run lint/test/build` (157 passed)
-  — all clean. Evidence under `evidence/`.
+- **Checkpoint/tests:** `uv run pytest` — 2661 passed, 1 skipped (2600 on `main` at
+  `b6bfda1`, +61; the last one is the security review's regression test). `ruff
+  check`, `ruff format --check`, `pyright cli`, `validate_config`, markdownlint (870
+  files), `bun run lint/test/build` (157 passed) — all clean. Evidence under
+  `evidence/`.
 - **Next:** review cycles, then human review.
 
 ### 2026-08-24 — spec chain written
@@ -74,8 +75,8 @@ status: in-progress
 
 Completed at the `verification` node — the full record (activities, outcomes,
 evidence links) lives in [`testing-plan.md` § Verification
-results](testing-plan.md#verification-results). Headline: the new suite 55/55, the
-whole Python suite 2660 passed / 1 skipped (+60 over `main`), UI 157/157, lint /
+results](testing-plan.md#verification-results). Headline: the new suite 56/56, the
+whole Python suite 2661 passed / 1 skipped (+61 over `main`), UI 157/157, lint /
 format / types / config validation / markdownlint all clean.
 
 ## Review cycles
@@ -115,7 +116,31 @@ comment-parsing gate (authorized, non-self-authored text only, output frozen as 
 fact), and a PR-first target derived from the router's own extraction — no payload
 text reaches a path, an argv, or a routing decision.
 
-**Verdict:** _pending — recorded here when the skill's filtered report lands._
+**Verdict: pass — no finding cleared the reporting bar** (>80% confidence of actual
+exploitability, HIGH/MEDIUM only). The reviewer verified: arming/briefing/steering all
+sit behind the named-actor allowlist with the self-marker dropped first; the frozen
+brief reaches no argv, path, prompt template or routing decision (the outcome token is
+the constant `briefed` on a shipped edge); PR-first targeting is composed from
+HMAC-verified structural payload fields and passes the same spawn-policy gates; and
+`resolve_outer_loop` still confines the agent-writable `loop` field to shipped names.
+Two sub-threshold observations, both recorded rather than dropped:
+
+1. **Risk elevation, not new surface** — the review loop makes "spawn a harness
+   session bound to a third-party PR" a first-class workflow, and arming via a
+   `pull_request_review(_comment)` event seeds the worktree with the PR author's head
+   branch (the ordinary `issue_comment` arming path checks out the default branch
+   detached, and the session *reads* the head). The checkout-and-trust mechanism
+   predates this work item (PR endpoints and unlinked-PR spawns), arming is
+   human-gated, and requirements §Security states the risk and its mitigations — the
+   same one every CI system carries.
+2. **Template suppression via marker spoofing** — `_already_requested` counted the
+   idempotence marker in *any* comment, so an unauthorized paste of the public marker
+   string could mute the fill-in template (cosmetic: the gate still refuses to proceed
+   without an authorized brief). **Fixed in this work item**: only a self-authored
+   marker comment counts, with a regression test
+   (`test_a_spoofed_marker_cannot_suppress_the_template`). The same pattern exists in
+   `goal.py`'s `_already_requested` — pre-existing, spotted-not-fixed here to keep the
+   PR narrow; worth its own tactical ticket.
 
 ## Final validation evidence
 

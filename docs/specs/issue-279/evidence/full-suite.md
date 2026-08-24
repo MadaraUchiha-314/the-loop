@@ -6,12 +6,13 @@ Captured 2026-08-24, on the work item's branch, from `cli/`.
 
 ```console
 $ uv run pytest -q
-2660 passed, 1 skipped in 125.06s (0:02:05)
+2661 passed, 1 skipped in 125.30s (0:02:05)
 ```
 
 2600 passed, 1 skipped on `main` at `b6bfda1` (recorded by issue-277's verification;
-the intervening `a5f432b` is a version bump) — **+60**: the 55 tests of
-`test_graph_review.py`, plus the review loop joining `test_graph_cleanup.py`'s
+the intervening `a5f432b` is a version bump) — **+61**: the 56 tests of
+`test_graph_review.py` (55 at first verification, +1 from the security review's
+marker-spoofing fix), plus the review loop joining `test_graph_cleanup.py`'s
 work-item-loop parametrizations (which also gained the ad-hoc loop, a pre-existing gap).
 
 ## The contract stays unchanged (T3)

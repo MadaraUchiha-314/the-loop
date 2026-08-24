@@ -295,6 +295,17 @@ def test_the_template_is_not_posted_when_the_brief_rode_in(repo, fake_github):
     assert fake_github.posted == []
 
 
+def test_a_spoofed_marker_cannot_suppress_the_template(repo, fake_github):
+    """The idempotence marker is public text; only the-loop's own self-marked
+    comment counts, so a drive-by paste of it cannot mute the gate."""
+    fake_github.comments = [
+        {"author": "@drive-by", "body": f"nothing to see {BRIEF_REQUEST_MARKER}"}
+    ]
+    result = post_review_brief(_ctx(repo, {"comments": []}))
+    assert result.data.get("posted") is True
+    assert len(fake_github.posted) == 1
+
+
 # -- the brief: the gate --------------------------------------------------------
 
 

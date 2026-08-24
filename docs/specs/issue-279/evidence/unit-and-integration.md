@@ -6,9 +6,12 @@ Captured 2026-08-24, on the work item's branch, from `cli/`.
 
 ```console
 $ uv run pytest tests/test_graph_review.py -q
-.......................................................                  [100%]
-55 passed in 0.20s
+........................................................                 [100%]
+56 passed in 0.26s
 ```
+
+(55 at first verification; +1 after the security review's marker-spoofing fix added
+`test_a_spoofed_marker_cannot_suppress_the_template`.)
 
 ## The walk and the targeting scenarios (T2 — integration)
 

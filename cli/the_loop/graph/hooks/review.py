@@ -45,7 +45,7 @@ import logging
 import re
 from typing import Any, Dict, List, Optional
 
-from ...authz import mark_self_authored
+from ...authz import is_self_authored, mark_self_authored
 from ..contract import HookContext, HookResult
 from ..registry import hook
 from .feedback import _authorized_comments
@@ -166,13 +166,24 @@ def _request_body(ctx: HookContext) -> str:
 
 
 def _already_requested(ctx: HookContext) -> bool:
+    """Whether the-loop's own template comment is already on the thread.
+
+    Only a **self-authored** comment counts (security review, issue-279): the
+    idempotence marker is public text, so without the check any commenter —
+    authorized or not — could paste it and suppress the template ever being
+    posted. Cosmetic, since the gate never proceeds without an authorized
+    brief, but a gate that can be quietly muted is a gate that confuses its
+    humans.
+    """
     try:
         data = _resolve(ctx).call("list-comments", ref=ctx.work_item.ref)
     except Exception as exc:  # noqa: BLE001
         logger.debug("could not list comments for %s: %s", ctx.work_item.ref, exc)
         return False
     return any(
-        isinstance(c, dict) and BRIEF_REQUEST_MARKER in str(c.get("body") or "")
+        isinstance(c, dict)
+        and BRIEF_REQUEST_MARKER in str(c.get("body") or "")
+        and is_self_authored(str(c.get("body") or ""))
         for c in (data.get("comments") or [])
     )
 

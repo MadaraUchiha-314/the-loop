@@ -90,13 +90,13 @@ overrides: {}
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| T1 + T2 + T8 | `uv run pytest tests/test_graph_review.py` (from `cli/`) | pass — 55 passed | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
+| T1 + T2 + T8 | `uv run pytest tests/test_graph_review.py` (from `cli/`) | pass — 56 passed (55 at first verification, +1 after the security-review fix) | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
 | T2 | `uv run pytest tests/test_graph_review.py -k "Walk or target"` | pass — 5 passed | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
 | T3 | `uv run pytest tests/test_api_contract_parity.py` | pass — 2 passed | [`evidence/full-suite.md`](evidence/full-suite.md) |
 | T5 | `cd ui && bun run lint && bun run test && bun run build` | pass — 157 passed (12 files), lint and build clean | [`evidence/ui-suite.md`](evidence/ui-suite.md) |
 | T8 | `uv run pytest tests/test_graph_review.py -k "unauthorized or refused or invented or self_authored or cannot or empty_allowlist or prose"` | pass — 9 passed | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
 | T10 | `uv run pytest tests/test_graph_contribution.py tests/test_graph_adhoc.py tests/test_graphlink.py tests/test_core_graphs.py` | pass — 162 passed | [`evidence/full-suite.md`](evidence/full-suite.md) |
-| whole suite | `uv run pytest` (from `cli/`) | pass — 2660 passed, 1 skipped (+60 over the 2600 issue-277 recorded on `main` at `b6bfda1`) | [`evidence/full-suite.md`](evidence/full-suite.md) |
+| whole suite | `uv run pytest` (from `cli/`) | pass — 2661 passed, 1 skipped (+61 over the 2600 issue-277 recorded on `main` at `b6bfda1`) | [`evidence/full-suite.md`](evidence/full-suite.md) |
 | lint / types | `uv run ruff check cli hooks` · `uv run ruff format --check cli hooks` · `uv run pyright cli` · `markdownlint-cli2` (870 files, 0 errors) · `scripts/validate_config.py` (7 VALID) | pass | [`evidence/lint-and-types.md`](evidence/lint-and-types.md) |
 
 **Not executed:** none.
