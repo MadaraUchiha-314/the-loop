@@ -23,7 +23,7 @@ overrides: {}
 | T5 | UI / visual | yes | the Sessions screen renders a `pdlc-review-loop` item treeless, like the other guest/ad-hoc loops | `cd ui && bun run test` |
 | T6 | Snapshot | n/a — no snapshot-tested output in this change | | |
 | T7 | Performance / load | n/a — one more YAML compiled at load, one more tuple membership test per resolution; no hot path | | |
-| T8 | Security / abuse case | yes | one negative test per abuse case in `requirements.md` §Security considerations: unauthorized arming, two-command refusal, unauthorized brief, self-authored brief/"done", invented loop name, unauthorized reply at the follow-up gate | `uv run --project cli pytest cli/tests/test_graph_review.py -k "unauthorized or refused or invented or self_authored"` |
+| T8 | Security / abuse case | yes | one negative test per abuse case in `requirements.md` §Security considerations: unauthorized arming, two-command refusal, unauthorized brief, self-authored brief/"done", invented loop name, unauthorized reply at the follow-up gate | `uv run --project cli pytest cli/tests/test_graph_review.py -k "unauthorized or refused or invented or self_authored or cannot or empty_allowlist or prose"` |
 | T9 | Accessibility | n/a — no new UI surface beyond one existing list rendering path | | |
 | T10 | Migration / upgrade | yes | a pre-issue-279 `graph-state.json` still resolves exactly as before; the two generalized adoption call sites (`GUEST_LOOPS`) are behaviour-preserving for the existing loops; the full suite proves nothing else moved | `uv run --project cli pytest cli/tests/test_graph_contribution.py cli/tests/test_graph_adhoc.py cli/tests/test_graphlink.py cli/tests/test_core_graphs.py`, then `uv run --project cli pytest -q cli` |
 | T11 | Manual exploratory | n/a — every surface is a library call or a config leaf, and the parity tests cover the docs/schema pairing mechanically | | |
@@ -74,23 +74,31 @@ overrides: {}
 
 > Run from `cli/`, so `pytest`'s configured `testpaths` apply.
 
-- [ ] T1 — `uv run pytest tests/test_graph_review.py`
-- [ ] T2 — `uv run pytest tests/test_graph_review.py -k "Walk or target"`
-- [ ] T3 — `uv run pytest tests/test_api_contract_parity.py`
-- [ ] T5 — `cd ui && bun run test`
-- [ ] T8 — `uv run pytest tests/test_graph_review.py -k "unauthorized or refused or
-  invented or self_authored"`
-- [ ] T10 — `uv run pytest tests/test_graph_contribution.py tests/test_graph_adhoc.py
+- [x] T1 — `uv run pytest tests/test_graph_review.py`
+- [x] T2 — `uv run pytest tests/test_graph_review.py -k "Walk or target"`
+- [x] T3 — `uv run pytest tests/test_api_contract_parity.py`
+- [x] T5 — `cd ui && bun run test`
+- [x] T8 — `uv run pytest tests/test_graph_review.py -k "unauthorized or refused or
+  invented or self_authored or cannot or empty_allowlist or prose"`
+- [x] T10 — `uv run pytest tests/test_graph_contribution.py tests/test_graph_adhoc.py
   tests/test_graphlink.py tests/test_core_graphs.py`, plus `uv run pytest` for the whole
   suite and its parity tests
-- [ ] lint / types — `uv run ruff check cli hooks`, `uv run ruff format --check cli
+- [x] lint / types — `uv run ruff check cli hooks`, `uv run ruff format --check cli
   hooks`, `uv run pyright cli`, `markdownlint-cli2`, `scripts/validate_config.py`
 
 ## Verification results
 
-_Completed at the `verification` node — each activity is ticked above only once it has
-actually run, and its command, outcome and evidence land here._
+| Activity | Command / procedure | Outcome | Evidence |
+|----------|--------------------|---------|----------|
+| T1 + T2 + T8 | `uv run pytest tests/test_graph_review.py` (from `cli/`) | pass — 55 passed | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
+| T2 | `uv run pytest tests/test_graph_review.py -k "Walk or target"` | pass — 5 passed | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
+| T3 | `uv run pytest tests/test_api_contract_parity.py` | pass — 2 passed | [`evidence/full-suite.md`](evidence/full-suite.md) |
+| T5 | `cd ui && bun run lint && bun run test && bun run build` | pass — 157 passed (12 files), lint and build clean | [`evidence/ui-suite.md`](evidence/ui-suite.md) |
+| T8 | `uv run pytest tests/test_graph_review.py -k "unauthorized or refused or invented or self_authored or cannot or empty_allowlist or prose"` | pass — 9 passed | [`evidence/unit-and-integration.md`](evidence/unit-and-integration.md) |
+| T10 | `uv run pytest tests/test_graph_contribution.py tests/test_graph_adhoc.py tests/test_graphlink.py tests/test_core_graphs.py` | pass — 162 passed | [`evidence/full-suite.md`](evidence/full-suite.md) |
+| whole suite | `uv run pytest` (from `cli/`) | pass — 2660 passed, 1 skipped (+60 over the 2600 issue-277 recorded on `main` at `b6bfda1`) | [`evidence/full-suite.md`](evidence/full-suite.md) |
+| lint / types | `uv run ruff check cli hooks` · `uv run ruff format --check cli hooks` · `uv run pyright cli` · `markdownlint-cli2` (870 files, 0 errors) · `scripts/validate_config.py` (7 VALID) | pass | [`evidence/lint-and-types.md`](evidence/lint-and-types.md) |
 
-**Not executed:** verification has not run yet.
+**Not executed:** none.
 
 ## Review comments

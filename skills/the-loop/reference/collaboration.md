@@ -85,7 +85,9 @@ author at `phase-selection` (issue-183) — and it applies to the **outer** loop
 - A **contribution** is not offered the box at all (issue-199): `pdlc-contribution-loop`
   joins a work item somebody else is already running, so there is no outer loop to place
   — its one `contribution.md` is iterated on that thread, and the code arrives as an
-  ordinary pull request on the repository it targets.
+  ordinary pull request on the repository it targets. A **review** (issue-279) and an
+  **ad-hoc task** (issue-225) run no phase-selection gate at all, so neither ever meets
+  the question: the thread is their whole surface.
 - This is the *reference, don't duplicate* rule (`SKILL.md`) reaching its conclusion: the
   artifact is a checked-in file, and the file, the discussion and the approval belong in
   one place.

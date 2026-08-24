@@ -111,6 +111,50 @@ Three things to know before you use it:
 Driving it from your editor instead of the ticket: `/the-loop:do-task <id>`. Configuring
 or disabling the word: [`control.keywords.do`](/config/cli/routing-options#controlkeywordsdo).
 
+## 6. Or ask for a review — PR reviews {#pr-reviews}
+
+the-loop can also sit on the **other side** of a pull request: the reviewer's. Comment
+this on the PR you want reviewed:
+
+```text
+the-loop review
+```
+
+the-loop walks the **review loop** (`pdlc-review-loop`) — bound to the pull request
+itself, even when it links a ticket — and replies with a fill-in template asking what
+the review should look at. Answer it (or put the block in the arming comment to skip the
+round trip):
+
+```text
+the-loop review
+Questions:
+- does this change the public client API?
+Angles:
+- concurrency around the session registry
+Validations:
+- run the poller integration suite against this branch
+```
+
+At least one section with one bullet is enough; drop the rest. The brief is frozen with
+your name on it, and each review round answers it in one comment: every question
+answered, every angle examined, every validation run (or a stated reason it could not
+be). Then it is a conversation, exactly like an ad-hoc task: any reply that is not a
+"done" / "lgtm" is another round; say it is done — or merge/close the PR — and the
+review ends.
+
+Two things to know before you use it:
+
+- **The reviewer is authorized, and the-loop changes no code.** The same
+  `routing.authorizedUsers` allowlist arms the review and states the brief — and the
+  review session commits nothing, pushes nothing and opens no PR. A finding worth
+  fixing becomes a new work item (`the-loop start`, `contribute` or `do` — your call).
+- **It installs nothing.** A review is a guest: it never writes the-loop's config into
+  the reviewed repository, so you can invite it into any repo the daemon can reach.
+
+Driving it from your editor instead of the thread: `/the-loop:review-pr <id>`.
+Configuring or disabling the word:
+[`control.keywords.review`](/config/cli/routing-options#controlkeywordsreview).
+
 ## Next
 
 - [How it works](/guide/how-it-works) — configuration, templates, and where knowledge

@@ -224,7 +224,8 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
   and again in the respawn pre-flight — so a session spawned into a fresh clone reads a
   real config rather than inventing one. Three limits: an existing config of either filename is
   **never** opened, `the-loop check` and the other read-only commands write nothing, and a
-  **contribution** (`the-loop contribute`) adopts nothing at all — the-loop stays out of
+  **contribution** (`the-loop contribute`) adopts nothing at all, and neither does a
+  **review** (`the-loop review`) — the-loop stays out of
   the history of a repository it was invited into as a guest. Tailor a scaffolded config
   with `/the-loop:init`.
 

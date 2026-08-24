@@ -8,8 +8,8 @@
 
 The runtime under `cli/the_loop/graph/` plus the shipped loop definitions
 (`cli/the_loop/graph/pdlc-work-item-loop.yaml`, `pdlc-pr-loop.yaml`,
-`pdlc-contribution-loop.yaml` and `pdlc-adhoc-loop.yaml`), surfaced as `the-loop check`
-and `the-loop graph`.
+`pdlc-contribution-loop.yaml`, `pdlc-adhoc-loop.yaml` and `pdlc-review-loop.yaml`),
+surfaced as `the-loop check` and `the-loop graph`.
 It exists because before it, the PDLC was enforced only by prompts: there was no event
 anywhere in the-loop meaning *"this node of the process completed"*, so there was nowhere
 to hang a gate, a notification, or an advance (issue-109, [decision-041](../decisions/decision-041.md)).
@@ -30,8 +30,8 @@ There are exactly **two** runtime concepts and **one** contract between them.
   through the component-scoped subset that delivers it — starting at `implementation`
   (everything earlier is the work item's, decided once at the outer level), through
   verification and the same review chain, to the PR's own human gate (`pr-approval`)
-  and a terminal `complete`. Same vocabulary, same hooks, same runtime; a fifth,
-  `pdlc-project-management-loop`, is anticipated by the naming and not yet shipped.
+  and a terminal `complete`. Same vocabulary, same hooks, same runtime; a
+  `pdlc-project-management-loop` is anticipated by the naming and not yet shipped.
 - **The third loop is the contribution loop** (issue-185,
   [decision-070](../decisions/decision-070.md)). `pdlc-contribution-loop` SHALL be
   walked instead of the outer loop when an authorized user arms a work item with the
@@ -115,8 +115,46 @@ There are exactly **two** runtime concepts and **one** contract between them.
     the inner loop (addressed by pull-request number, never by name) and for anything
     invented — the fail-closed rule the state file's agent-writability demands, now
     localized instead of copied per reader.
+- **The fifth loop is the review loop** (issue-279,
+  [decision-101](../decisions/decision-101.md)). `pdlc-review-loop` SHALL be walked
+  instead of the outer loop when an authorized user arms a thread with the `review`
+  control keyword — the-loop as the **reviewer** of a change, never its author. Its
+  product is judgement posted on the thread, so the session SHALL change no code: it
+  commits nothing, pushes nothing and opens no pull request; a finding worth fixing is
+  a new work item.
+  - Typed on a pull request, the review SHALL bind to the **pull request's own ref** —
+    control record, spawn and graph state alike — even when the PR links work items
+    (the router's linked-first ordering is right for delivery and wrong for a review);
+    on a plain issue the ordinary target stands.
+  - The loop SHALL declare exactly four walkable nodes — `review-brief` (human,
+    `required: true`), `review` (agent, phase `needs-review`, stage `critic-review`),
+    `follow-up` (human) and `complete` — plus the terminal `cleanup` and `escalated`
+    nodes, with edges `review-brief --briefed--> review --pass--> follow-up`,
+    `follow-up --more-work--> review` and `follow-up --done--> complete`.
+  - **No brief, no review.** The `review-brief` gate SHALL post a fill-in template
+    (questions / angles / validations) idempotently — and not at all when the brief
+    rode in on the arming comment — then freeze the newest authorized,
+    non-self-authored brief into `graph-state.json`'s decisions with provenance and
+    confirm it in a comment. Unauthorized or self-authored text SHALL NOT be read at
+    all, and the gate SHALL re-read the whole thread because the arming comment is
+    consumed by the control path.
+  - Each `review` round SHALL answer every question, examine every angle and run every
+    requested validation (or state why one could not run), posted as one self-marked
+    comment. The `follow-up` gate SHALL reuse `classify-adhoc-reply` (decision-101):
+    an authorized reply that declares completion is `done`, anything else is another
+    round, silence keeps the gate open.
+  - It SHALL declare **no** `produces`, **no** `validate-artifacts`, **no**
+    `phase-selection` and **no** skip vocabulary — arming with `the-loop review` IS
+    the named, authorized, durably recorded declaration (the issue-177/179 invariant,
+    held as the ad-hoc loop holds it) — and SHALL reuse the existing phase vocabulary
+    (`needs-review`, `complete`, `cleanup`).
+  - A review is a **guest** (`GUEST_LOOPS`, generalizing the contribution carve-out):
+    it SHALL NOT adopt the repository it reviews in, and in an unadopted repository
+    the spec tree (the graph-state cache) SHALL stay out of git via the existing
+    `repoInitialized` seam.
 - **Every work-item-level loop ends at a `cleanup` node** (issue-186). `pdlc-work-item-loop`,
-  `pdlc-contribution-loop` and `pdlc-adhoc-loop` SHALL each declare a terminal `cleanup`
+  `pdlc-contribution-loop`, `pdlc-adhoc-loop` and `pdlc-review-loop` SHALL each declare a
+  terminal `cleanup`
   node — phase
   `cleanup`, `actor: code`, entry chain `set-phase-label` + `log-entry` — that the-loop
   enters just **before** it releases the work item's local resources (its tmux sessions,
@@ -779,6 +817,7 @@ reader.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-279 | A fifth shipped loop, `pdlc-review-loop` (2026-08-24): the-loop as a pull request's **reviewer**, never its author. Armed by a ninth control keyword (`the-loop review`) that — alone among the keywords — binds to the pull request itself rather than its linked ticket; gated by a `required: true` brief gate (`review-brief` posts a fill-in template, freezes an authorized reviewer's questions/angles/validations with provenance); each agent round answers the frozen brief in one self-marked comment; the `follow-up` gate reuses `classify-adhoc-reply`, so any authorized reply that is not "done" is another round. No `produces`, no `phase-selection`, no code changed by contract, and no adoption — the contribution loop's guest carve-out generalized to `GUEST_LOOPS` | [spec](../specs/issue-279/), [decision-101](../decisions/decision-101.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/279) |
 | issue-273 | `phase-selection` stopped being routed around by default (2026-08-20): the ingress→graph coupling gated **every** graph action on `<specDir>/<id>/` already existing, so a work item minted as a plain ticket — no `/create-ticket`, no committed spec folder — had its graph declined at spawn (`graph.skipped`, `no-spec-dir`, twice) and its session walked into `requirements-definition` with the outer loop's one `required: true` node never having run: no checklist, no `the-loop execute`, no frozen graph, and nothing for `the-loop check` to attribute. `start` and `context` are now exempt (the directory is created by the work the gate holds back; `advance` and `clean` keep the check), and the read-before-spawn context of an unplaced work item renders its start node as `pending` — a block that names the gate and forbids beginning a phase before the node's assignment arrives, instead of the empty block that let the session start on its own | [spec](../specs/issue-273/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/273) |
 | issue-247 | The one hook that writes markdown into a checked-in artifact stopped writing markdown the project's own linter rejects (2026-08-16): `record-feedback`'s attribution gained trailing text (`**@handle** wrote:`), because emphasis alone on a line is precisely MD036's target — so every approval-with-comments had been leaving `design.md` and `testing-plan.md` failing `make lint`, and a session hand-editing the paper trail to unblock itself. A comment with an empty body now becomes one attribution line instead of a blank-line run (MD012). The reviewer's body stays verbatim, which is the other half of the rule: the harness fixes its own markdown and never a human's words, so a body that fails lint on its own merits is out of scope by decision rather than by omission | [spec](../specs/issue-247/), [decision-089](../decisions/decision-089.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/247) |
 | issue-238 | A gate that read nothing stopped counting as a gate that passed: when `graph/check` began answering a non-resolving `repo` with a position-unknown report instead of raising, that report had no nodes and so no blocking node, and `the-loop check --fail-on block` — the automated-gate mode — would have exited 0 on a mistyped `--repo`. Both modes now refuse it ahead of either rule, and the row renders `UNREAD — <path> is not a directory` instead of `UNMET (at )` with nothing under it. Found by self-review of the control-plane fix, not by the fix's own tests | [spec](../specs/issue-238/), [control-plane](control-plane.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/238) |

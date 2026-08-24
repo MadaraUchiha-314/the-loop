@@ -11,9 +11,9 @@ and Cursor are how an agent picks up the operating model — one delivery surfac
 product. Once a plan is approved, the harness delivers a work item end-to-end with minimal
 or no human intervention, escalating only when a decision is genuinely needed.
 
-## Four loops
+## Five loops
 
-The PDLC is **four** graphs, all shipped as package data inside the CLI:
+The PDLC is **five** graphs, all shipped as package data inside the CLI:
 
 - **`pdlc-work-item-loop`** — the **outer** loop: one *work item*, from a fuzzy idea to a
   closed ticket.
@@ -35,6 +35,12 @@ The PDLC is **four** graphs, all shipped as package data inside the CLI:
   done" is more work, and the item ends when you say so or close it. See the
   [quickstart](/guide/quickstart#ad-hoc-tasks) for the
   exact comment.
+- **`pdlc-review-loop`** — the **review** loop: the-loop as a pull request's
+  **reviewer**, never its author (comment `the-loop review` on the PR — it binds to the
+  PR itself, linked ticket or not). It cannot begin until an authorized reviewer states
+  a **brief** — questions to answer, angles to examine, validations to run; the-loop
+  posts the fill-in template if the arming comment didn't carry one — then it reviews
+  round after round until the reviewer says done, changing **no code** along the way.
 
 The first two meet at exactly **one seam**: the outer `implementation` node waits at
 `await-inner-loops` until every inner loop that was started reaches `complete`, after which

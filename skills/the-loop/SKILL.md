@@ -87,7 +87,13 @@ met — see `reference/workflow.md` § The contribution loop. A fourth,
 `pdlc-adhoc-loop` (issue-225), is the smallest of them: a **tactical task that
 runs no PDLC process at all** (`the-loop do`) — `work → review → complete`, no
 spec chain, no phase selection, no artifact gates, no review chain, finished
-when the requester says so. See `reference/workflow.md` § The ad-hoc loop.
+when the requester says so. See `reference/workflow.md` § The ad-hoc loop. A
+fifth, `pdlc-review-loop` (issue-279), makes the-loop the **reviewer of a pull
+request rather than its author** (`the-loop review`, binding to the PR itself):
+no brief, no review — an authorized reviewer's questions/angles/validations are
+frozen first — then review rounds and follow-ups on the thread until the
+reviewer says done, with **no code changed**. See `reference/workflow.md`
+§ The review loop.
 When a node's work is done, tell the graph so —
 `the-loop graph complete <id>` — rather than only narrating the transition.
 
@@ -386,6 +392,10 @@ Granular commands (one step at a time; same flow `work-on` runs end-to-end):
 - `/the-loop:do-task <id>` — do an **ad-hoc, tactical** task with no PDLC process: walk
   `pdlc-adhoc-loop`, author no spec chain, ask follow-ups on the thread, and continue
   until the requester declares it done (issue-225).
+- `/the-loop:review-pr <id>` — **review** a pull request against an authorized
+  reviewer's brief: walk `pdlc-review-loop`, answer every question, examine every
+  angle, run every validation, converse until the reviewer says done — and change no
+  code (issue-279).
 
 ## Knowledge the loop maintains
 

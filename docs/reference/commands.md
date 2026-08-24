@@ -30,13 +30,13 @@ Run the same flow one step at a time:
 
 ## Loop-specific commands
 
-Two work items in three do not walk the outer loop. These drive the other two shipped
-loops:
+Not every work item walks the outer loop. These drive the other shipped loops:
 
 | Command | What it does |
 |---------|--------------|
 | `/the-loop:contribute-to <id>` | Join an **existing, in-progress** issue or PR as a contributor (`pdlc-contribution-loop`): one `contribution.md` instead of the spec chain, working toward a human-stated goal and success criteria. Armed with `the-loop contribute`. |
 | `/the-loop:do-task <id>` | Do an **ad-hoc, tactical** task with **no PDLC process** (`pdlc-adhoc-loop`): no spec chain, no phase gates, no review chain — work, ask follow-ups on the thread, and continue until the requester says it is done. Armed with `the-loop do`. |
+| `/the-loop:review-pr <id>` | **Review** a pull request against an authorized reviewer's brief (`pdlc-review-loop`): answer every question, examine every angle, run every validation, converse until the reviewer says done — and change **no code**. Armed with `the-loop review` on the PR itself. |
 
 See the [operating model](/operating-model/) reference for what happens
 inside each phase, and the [CLI commands](/cli/commands/) for the separate `the-loop`

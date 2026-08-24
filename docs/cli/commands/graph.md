@@ -161,7 +161,7 @@ there rather than being skipped.
 
 ```text
 $ the-loop graph --repo /srv/checkouts/app hooks
-shipped hooks (19): await-inner-loops, classify-adhoc-reply, classify-feedback, …
+shipped hooks (21): await-inner-loops, classify-adhoc-reply, classify-feedback, …
 
 this repository declares 1 module(s) and 1 attachment(s) — nothing here has been imported:
   module  .the-loop/hooks/house_rules.py
