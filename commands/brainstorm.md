@@ -13,7 +13,7 @@ tasks → implementation`. If the work is already clear, skip this and go straig
 `/the-loop:new-requirement`.
 
 **Read the `the-loop` skill and `reference/workflow.md` first** (phases, the
-iterate-until-locked-then-advance principle, reviews).
+gate-owned-lock principle, reviews).
 
 ## Steps
 
@@ -30,13 +30,13 @@ iterate-until-locked-then-advance principle, reviews).
    front-matter `phase: brainstorming`, `status: draft`, `workItem: draft-<slug>`, and the
    `collaborators` you want to think with.
 
-3. **Iterate with feedback until locked.** The brainstorm is meant to *change*: gather
-   feedback (interactively or via ticket comments — paper trail), refine the options, and
-   resolve the open questions. RULE: **iteration happens on every artifact; you only
-   advance once the current one is locked.** When the direction is settled, set
-   `status: approved` (locked) and record who locked it in `approvedBy`.
+3. **Iterate with feedback until it converges.** The brainstorm is meant to *change*:
+   gather feedback (interactively or via ticket comments — paper trail), refine the
+   options, and resolve the open questions. The brainstorm has **no approval gate**
+   (issue-281): never set `status: approved` or ask for a sign-off — it has converged
+   when its author says the direction is settled, on the record.
 
-4. **Point to the next step:** convert the locked brainstorm into requirements with
+4. **Point to the next step:** convert the converged brainstorm into requirements with
    `/the-loop:new-requirement <title>` (it reads the sibling `brainstorm.md` and derives
    `requirements.md` from it), then `/the-loop:create-ticket` to mint the ticket.
 

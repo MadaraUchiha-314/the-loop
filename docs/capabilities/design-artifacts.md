@@ -1,7 +1,7 @@
 # Capability: design-artifacts
 
 > UI/UX design as a first-class, tracked artifact of the design phase — Figma links
-> and/or self-contained HTML prototypes, iterated with the designer until locked.
+> and/or self-contained HTML prototypes, iterated with the designer until they sign off.
 
 ## What it is
 
@@ -16,10 +16,12 @@ become the contract the implementation must match.
   inventoried in `design.md`; backend/CLI/infra work records `N/A`.
 - Artifacts SHALL be Figma links and/or **self-contained** HTML+CSS+JS prototypes
   (`design.uiArtifacts.format`, `selfContained: true` — no external network deps).
-- Artifacts SHALL be iterated-until-locked with the **designer** persona on the
-  *rendered* output, exactly like every other artifact in the chain.
-- WHEN an artifact is locked THEN rendered screenshots SHALL be captured as evidence
-  (`design.uiArtifacts.screenshotEvidence`).
+- Artifacts SHALL be iterated with the **designer** persona on the *rendered* output
+  until the designer signs off — recorded as a row-level `approved` in `design.md`'s
+  inventory, while the chain's front-matter locks stay with the approval gates
+  (issue-281).
+- WHEN the designer signs an artifact off THEN rendered screenshots SHALL be captured
+  as evidence (`design.uiArtifacts.screenshotEvidence`).
 
 ## Design
 

@@ -38,8 +38,9 @@ For each component: responsibility, inputs/outputs, public interface/contract.
 > `N/A`). Architecture/HLD/LLD stays above in markdown + mermaid; the **visual** design is
 > tracked as first-class artifacts — Figma links and/or self-contained HTML+CSS+JS
 > prototypes (Claude-artifact style) — under `<specDir>/<id>/design/`
-> (`design.uiArtifacts.dir`). Iterate each with the **designer** until locked
-> (`status: approved`), exactly like every other artifact. See `reference/design-artifacts.md`.
+> (`design.uiArtifacts.dir`). Iterate each with the **designer** until the designer is
+> satisfied; this document itself is locked at the `design-approval` gate (issue-281).
+> See `reference/design-artifacts.md`.
 
 | Artifact | Type | Location / link | Covers (screen · requirement) | Status |
 |----------|------|-----------------|-------------------------------|--------|

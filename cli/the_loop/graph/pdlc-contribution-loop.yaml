@@ -110,7 +110,9 @@ nodes:
       - lint-artifacts
 
   # The intervention's requirements-and-design thinking, scoped: approach and
-  # verification plan complete the artifact and lock it. `Verification
+  # verification plan complete the artifact — `plan-approval` locks it
+  # (issue-281: a producing node gates shape; the approval node that follows
+  # owns the approval, so the plan never costs the human two). `Verification
   # results` is gated here too, authored up front holding "not yet executed",
   # so `verification` fills a section rather than inventing one (the
   # testing-plan.md pattern).
@@ -124,7 +126,6 @@ nodes:
     exit:
       - hook: validate-artifacts
         with:
-          locked: true
           sections:
             - Goal
             - Success criteria
@@ -151,6 +152,7 @@ nodes:
     exit:
       - classify-feedback
       - {hook: record-feedback, with: {into: contribution.md}}
+      - {hook: lock-artifacts, with: {artifacts: [contribution.md]}}
 
   # The intervention itself. The pdlc-pr-loop shape: no task DAG to gate —
   # the scope is the goal, not a decomposed work item.

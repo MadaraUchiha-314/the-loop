@@ -34,14 +34,20 @@ NO human intervention, escalating only when a decision/opinion is genuinely requ
 ## The artifact chain (optional brainstorm → spec → testing plan, Kiro-style)
 
 Every work item is a chain of artifacts, each **derived from and iterated after** the one
-before it. The rule holds at every link: an artifact is refined with human feedback until
-it is **locked** (`status: approved`), and only then is the next one derived. Specs live in
-`docs/specs/<id>/`:
+before it. An artifact with a human gate is refined with feedback **at that gate** until
+the gate **locks** it (`status: approved`) — and the gate is the *only* locker
+(issue-281): when it classifies an authorized approval it writes the status and the
+approver into the front matter itself. The session never sets `status: approved` and
+never requests an approval of its own — one gate, one human reply. An artifact **without**
+a gate (`brainstorm.md`, `tasks.md`) advances on shape alone, with no human stop. Specs
+live in `docs/specs/<id>/`:
 
 0. **`brainstorm.md`** *(optional, the root artifact)* — a free-form scratchpad to explore
    a fuzzy idea before committing to requirements: problem, options, open questions,
    working hypothesis. Created by `/the-loop:brainstorm`; converted to requirements once
-   locked. Phase: `brainstorming`. Skip it when the work is already clear.
+   its author says it has converged — it has no approval gate, so it is never
+   `status: approved` (issue-281). Phase: `brainstorming`. Skip it when the work is
+   already clear.
 1. **`requirements.md`** (or **`bugfix.md`** for bugs) — user stories + EARS acceptance
    criteria (`WHEN <event> THEN the system SHALL <response>`). Phase: `requirements-definition`.
    Both names clear the same gate, and **exactly one of them may be present** — two would
@@ -56,12 +62,15 @@ it is **locked** (`status: approved`), and only then is the next one derived. Sp
 3. **`testing-plan.md`** — how this work item will be **proved**: a matrix of testing
    types (each either in scope, or `n/a` *with a reason*), the verification environment,
    the evidence to capture, and the activities checklist. Phase: `test-planning`.
-   Derived from `design.md` and **reviewed together with it** — one human gate approves
-   the pair, so the plan gets human review without a stop of its own. It is authored
-   here and **completed at the `verification` node** — one artifact, written once as a
-   plan and once as a record. See `reference/testing.md`.
+   Derived from `design.md` and **reviewed together with it** — one human gate
+   (`design-approval`) approves **and locks** the pair, so the plan gets human review
+   without a stop of its own. It is authored here and **completed at the
+   `verification` node** — one artifact, written once as a plan and once as a record.
+   See `reference/testing.md`.
 4. **`tasks.md`** — a **DAG** of small, verifiable tasks referencing requirements; each
-   task's `_Test:_` names a row of the testing plan. Phase: `tasks-breakdown`.
+   task's `_Test:_` names a row of the testing plan. Phase: `tasks-breakdown`. Derived
+   mechanically from the two artifacts the human just approved, so it has **no approval
+   gate and needs no human sign-off** (issue-281) — it advances on shape alone.
 
 The work item's **phase** is tracked on the ticket via a label
 (`<workflow.phaseLabelPrefix><phase>`) and mirrored in the execution log (`brainstorming`
@@ -106,12 +115,22 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   Jira) ticket.
 - **Spec before execution.** Create the spec chain and get each phase
   reviewed/approved by the required collaborators before writing code.
-- **Iterate each artifact until locked, then advance.** Starting from the optional
-  `brainstorm.md` root, every artifact is refined with human feedback until it is **locked**
-  (`status: approved`); only then is the next artifact derived and the phase advanced.
-  Never write a downstream artifact against an unlocked upstream one. Brainstorming is
-  optional — a well-defined work item starts at requirements.
-- **Human review per phase** (`workflow.requireHumanReviewPerPhase`, default true).
+- **Approvals are owned by approval nodes** (issue-281). The graph's human gates
+  (`requirements-approval`, `design-approval`, and `human-approval` on the PR) are where
+  feedback is classified and where locking happens: an authorized approval at the gate
+  writes `status: approved` and the approver into the artifact via `lock-artifacts`.
+  **Never set `status: approved` yourself, and never post an approval request of your
+  own** — the gate's `request-review` is the one ask, and a session-invented stop just
+  costs the human a second approval the gate will discard. An artifact whose gate lies
+  ahead is complete when its sections are; iterate it with the feedback the gate
+  records into it.
+- **Gate-less artifacts advance on shape alone.** `brainstorm.md` and `tasks.md` have no
+  approval node — do not hold them for a human "approved". `tasks.md` is derived from
+  the pair the human just approved at `design-approval`; the brainstorm converges when
+  its author says so on the thread. Never write a downstream artifact against an
+  upstream one whose gate has not yet approved it.
+- **Human review per phase** (`workflow.requireHumanReviewPerPhase`, default true) —
+  delivered by the graph's approval nodes, never re-implemented in a session.
 - **Skips are declared by humans, never taken by the harness** (issue-177,
   decision-067). Every work item starts at **`phase-selection`**: the-loop posts a
   checklist of the selectable phases on the ticket and waits for an **authorized user**

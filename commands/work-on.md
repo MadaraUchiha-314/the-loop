@@ -38,10 +38,12 @@ it only when the work needs a scratchpad; otherwise start at `requirements-defin
 
 `not-started → brainstorming → requirements-definition → design → test-planning → tasks-breakdown → implementation → verification → needs-review → complete`
 
-**Iterate, then advance.** Every artifact — starting from the optional `brainstorm.md`
-root — is refined with human feedback until it is **locked** (`status: approved`); only
-then does the loop move to the next phase. This is the same rule at every phase, not just
-requirements.
+**Iterate at the gate; the gate locks.** An artifact with an approval node
+(`requirements.md`/`bugfix.md`, and `design.md` + `testing-plan.md` as a pair) is
+refined with the feedback that gate records, and the gate itself writes
+`status: approved` plus the approver on the human's one approval (issue-281). Never set
+`status: approved` and never post an approval request of your own. Artifacts without a
+gate (`brainstorm.md`, `tasks.md`) advance on shape alone.
 
 ## The loop
 
@@ -82,8 +84,9 @@ requirements.
 3. **Phase 0 — Brainstorm (optional)** (`brainstorming`). When the work starts as a fuzzy
    idea, create `docs/specs/<id>/brainstorm.md` (the **root artifact**) from the template:
    problem, options, open questions, working hypothesis. Iterate it with feedback until
-   locked, then **derive** `requirements.md` from it. Skip this phase when the work is
-   already well-defined.
+   its author says it has converged (no approval gate, never `status: approved` —
+   issue-281), then **derive** `requirements.md` from it. Skip this phase when the work
+   is already well-defined.
 
 4. **Phase 1 — Requirements** (`requirements-definition`). Create
    `docs/specs/<id>/requirements.md` (or `bugfix.md` for a bug — one artifact, two
@@ -91,9 +94,12 @@ requirements.
    introduction, user stories, and EARS acceptance criteria — **including the Security
    considerations section** (threat-model-lite: untrusted actors, trust boundaries,
    abuse cases, fail-closed; `security.threatModel.required` — "no new attack surface"
-   is written and justified, see `reference/security.md`). Post/link it on the ticket
-   and **request human review**. Do not proceed until approved (record approver →
-   paper trail). `requireHumanReviewPerPhase` defaults to true.
+   is written and justified, see `reference/security.md`). Post/link it on the ticket,
+   run `the-loop graph complete`, and let the **`requirements-approval` gate** run the
+   review (issue-281): its `request-review` posts the one ask, and on an authorized
+   approval the gate records the approver and locks the artifact itself. Never post an
+   approval request of your own and never set `status: approved`.
+   `requireHumanReviewPerPhase` defaults to true and is delivered by that gate.
 
 5. **Phase 2 — Design** (`design`). Create `docs/specs/<id>/design.md` derived from the
    approved requirements: architecture, components/interfaces, data models, error
@@ -103,7 +109,8 @@ requirements.
    surface**, also
    produce **UI/UX design artifacts** under `docs/specs/<id>/design/` (self-contained
    HTML+CSS+JS prototypes and/or a linked Figma file), inventory them in `design.md`, and
-   iterate them with the **designer** until locked (`reference/design-artifacts.md`).
+   iterate them with the **designer** until the designer is satisfied
+   (`reference/design-artifacts.md`).
    **Do not request review yet** — the testing plan (next step) is reviewed with it.
 
 6. **Testing plan** (`test-planning`). Create `docs/specs/<id>/testing-plan.md` from the
@@ -116,16 +123,20 @@ requirements.
    heading. Nothing here is mandatory in itself — the matrix is work-item dependent — but
    every row gets a decision. the-loop **facilitates** verification and owns no runner:
    name the project's own commands, and link the operator's `customInstructions` docs
-   rather than restating them. Lock it (`status: approved`); it names commands an agent
-   will run, so review it like code. See `reference/testing.md`. **Then request the one
-   human review covering both `design.md` and this plan** — feedback is recorded into
-   each, and `changes-requested` returns to the design step, which re-derives the plan.
-   Do not proceed until approved.
+   rather than restating them. Leave it a draft — it names commands an agent will run,
+   so review it like code, but **the `design-approval` gate is what locks it**
+   (issue-281). See `reference/testing.md`. Run `the-loop graph complete` and let that
+   gate run **the one human review covering both `design.md` and this plan**: feedback
+   is recorded into each, an approval locks both (recording the approver), and
+   `changes-requested` returns to the design step, which re-derives the plan. Never
+   post an approval request of your own.
 
 7. **Tasks** (`tasks-breakdown`). Create `docs/specs/<id>/tasks.md`: a DAG of
    small, verifiable tasks, each referencing the requirement(s) it satisfies, the
-   testing-plan row that proves it, and its dependencies. Request human review; do not
-   proceed until approved.
+   testing-plan row that proves it, and its dependencies. **No approval gate follows
+   this phase** (issue-281): the DAG is derived from the pair the human just approved,
+   so do not request a review and do not wait for one — the graph advances on shape
+   alone.
 
    **After each phase doc is established, update the ticket with a reference (link) to
    the checked-in artifact** — single source of truth, not a copy. Later changes to a

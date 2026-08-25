@@ -1,8 +1,8 @@
 # Capability: spec-workflow
 
 > The core loop: a work item is specified as a chain of artifacts — optional brainstorm,
-> then a Kiro-style 3-phase spec plus a testing plan — each iterated with human feedback
-> until locked, then
+> then a Kiro-style 3-phase spec plus a testing plan — each iterated with the human
+> feedback its approval gate records, locked by that gate, then
 > executed end-to-end with minimal intervention.
 
 ## What it is
@@ -36,9 +36,16 @@ the `/the-loop:work-on` superset command and granular per-step commands
   `## Requirements` and `## Security considerations` sections the gate requires, so the
   choice is about which shape fits the work — reproduction and root cause, or user stories
   — and never about which one will pass.
-- Each artifact SHALL be iterated with feedback until **locked** (`status: approved`);
-  no downstream artifact is written against an unlocked upstream one
-  (`workflow.requireHumanReviewPerPhase`, default true).
+- An artifact with an approval gate SHALL be iterated with the feedback that gate
+  records and SHALL be **locked by the gate itself**
+  ([issue-281](https://github.com/MadaraUchiha-314/the-loop/issues/281)): on an
+  authorized approval, `lock-artifacts` writes `status: approved` and the approver into
+  the front matter. The session SHALL NOT set `status: approved` and SHALL NOT request
+  an approval of its own — one gate, one human reply
+  (`workflow.requireHumanReviewPerPhase`, default true, is delivered by the gates).
+  An artifact with **no** gate (`brainstorm.md`, `tasks.md`) advances on shape alone.
+  No downstream artifact is written against an upstream one whose gate has not yet
+  approved it.
 - The spec chain SHALL live in the **origin** repository — the one the ticket was created
   in — however many repositories the work item touches, and each contributing repository
   SHALL get one pull request walking its own inner loop (issue-183,
@@ -57,7 +64,8 @@ the `/the-loop:work-on` superset command and granular per-step commands
   iterated on that thread and its record carries no surface.
 - WHEN a work item starts as a fuzzy idea THEN the loop SHALL begin with a
   `brainstorm.md` root artifact (optional Phase 0) and convert it to requirements once
-  locked.
+  its author says it has converged — the brainstorm has no approval gate and is never
+  `status: approved` (issue-281).
 - The work item's phase SHALL be tracked on the ticket via labels
   (`<workflow.phaseLabelPrefix><phase>`) through the state machine
   `not-started → brainstorming (optional) → requirements-definition → design →
@@ -67,9 +75,10 @@ the `/the-loop:work-on` superset command and granular per-step commands
   task's `_Test:_` naming a row of `testing-plan.md`'s matrix; checkmarks are kept
   current during implementation.
 - **How the work item will be proved SHALL be planned, then executed as its own phase**
-  ([testing-and-contracts](testing-and-contracts.md), issue-163): `test-planning` locks
-  `testing-plan.md` before the task DAG — and sits before `design-approval`, so **one
-  human gate approves the design and the plan derived from it** — and `verification`
+  ([testing-and-contracts](testing-and-contracts.md), issue-163): `test-planning`
+  authors `testing-plan.md` before the task DAG — and sits before `design-approval`, so
+  **one human gate approves and locks the design and the plan derived from it** — and
+  `verification`
   executes it after implementation and before the review chain, with results and
   committed evidence recorded in the same artifact. An activity that could not run is
   never ticked.
@@ -142,6 +151,7 @@ the `/the-loop:work-on` superset command and granular per-step commands
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-281 | Approvals became gate-owned (2026-08-25): every artifact phase had been costing the human **two** approvals — one out-of-band to let the session set `status: approved` (demanded by `locked: true` on the producing node's exit), one at the graph's approval node, which discards pre-gate feedback — and `tasks-breakdown` demanded one with no gate at all. Producing nodes now gate shape only; a new `lock-artifacts` hook on `requirements-approval`, `design-approval` and the contribution loop's `plan-approval` writes `status: approved` plus the approvers as part of classifying the human's one reply; gate-less artifacts (`brainstorm.md`, `tasks.md`) advance with no human stop; and the skills/commands stopped re-implementing approvals in prose | [spec](../specs/issue-281/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/281) |
 | issue-224 | The learnings tree joined the other two knowledge directories as a configured location: `workflow.learningsDir`, defaulting to `docs/learnings` instead of a hardcoded top-level `learnings/`, with the-loop's own tree moved there and the upgrade command presenting (never taking) the relocation | [spec](../specs/issue-224/), [decision-082](../decisions/decision-082.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/224) |
 | issue-183 | The chain got a **place**: it lives in the repository the ticket was created in, one PR per contributing repository delivers it, and each work item declares at `phase-selection` whether the outer loop's artifacts are iterated on that repository's PR or on the work item itself (the default) — the inner loop deliberately not configurable. `execution-log.md` gained an optional `repos:` declaration that `await-inner-loops` gates on | [spec](../specs/issue-183/), [decision-069](../decisions/decision-069.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/183) |
 | issue-163 | The chain gained `testing-plan.md` between design and tasks, and the state machine gained the `test-planning` and `verification` phases — how a work item is proved is now planned, gated and evidenced rather than assumed | [spec](../specs/issue-163/), [decision-060](../decisions/decision-060.md), [testing-and-contracts](testing-and-contracts.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/163) |

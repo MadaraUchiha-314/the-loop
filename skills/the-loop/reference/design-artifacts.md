@@ -16,8 +16,8 @@ represented as either:
 
 the-loop treats both as **first-class, tracked design-phase artifacts**, siblings of
 `design.md` — not throwaway attachments. They live in the work item's spec folder, are
-iterated-until-locked with the **designer** persona exactly like every other artifact, and
-are referenced from the ticket (single source of truth).
+iterated with the **designer** persona on the rendered output until the designer signs
+off, and are referenced from the ticket (single source of truth).
 
 ## Where they live
 
@@ -56,11 +56,14 @@ constraint Claude design artifacts render under:
 - Keep it a **prototype**, not production code: it communicates layout, flow, states and
   interaction — implementation derives from it, it is not lifted verbatim.
 
-## The designer iteration loop (iterate-until-locked, applied to visuals)
+## The designer iteration loop (applied to visuals)
 
-Visual artifacts obey the same core rule as every artifact in the chain: **iterate with
-feedback until locked (`status: approved`), then advance.** For UI/UX the feedback is on
-the **rendered output**, not the raw markup:
+Visual artifacts are iterated with feedback until the **designer signs off**; the
+sign-off is a row-level `approved` in `design.md`'s inventory table, recorded from the
+designer's ticket comment. (The chain's front-matter locks belong to the approval
+gates — issue-281; this inventory status is the designer's own record, and the
+`design-approval` gate is still the one human stop that approves the design phase.)
+For UI/UX the feedback is on the **rendered output**, not the raw markup:
 
 ```mermaid
 flowchart LR
@@ -84,12 +87,14 @@ flowchart LR
 4. **Iterate.** Fold feedback back into the artifact (regenerate the HTML / edit the
    Figma). Changes are **edits to the checked-in artifact, not new copies** — one
    canonical version, clean history.
-5. **Lock.** When the designer approves, mark the artifact `status: approved` in the
-   inventory and record the approver (paper trail). Only then does the design phase
-   advance. This is gated by `workflow.requireHumanReviewPerPhase` just like `design.md`.
+5. **Record the sign-off.** When the designer approves (a ticket comment — paper
+   trail), mark the artifact `approved` in the inventory row and note who. The design
+   *phase*'s one human stop remains the `design-approval` gate (issue-281): the
+   designer's reply there counts like any authorized reviewer's, and no separate
+   approval is requested for the visuals.
 
 If no `designer` is assigned to the work item, the engineer/PM who owns the surface plays
-that role — the *review-until-locked* step is what matters, not the title.
+that role — the review-the-rendering step is what matters, not the title.
 
 ## Figma ↔ code: which is the source
 

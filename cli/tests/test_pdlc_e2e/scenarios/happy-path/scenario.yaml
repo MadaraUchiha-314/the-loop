@@ -49,8 +49,12 @@ steps:
 expect:
   finalNode: complete
   completed: true
+  # The fixtures are emitted as DRAFTS: these three say `approved` at
+  # implementation only because the approval gates locked them (issue-281).
+  # tasks.md is deliberately absent — no approval node follows tasks-breakdown,
+  # so nothing locks the DAG and no human is asked to.
   lockedBeforeImplementation:
-    [requirements.md, design.md, testing-plan.md, tasks.md]
+    [requirements.md, design.md, testing-plan.md]
   executionLogSections:
     ["Review cycles", "Security review (gate)", "Pull requests"]
   executionLogEntries:

@@ -60,14 +60,16 @@ def run_scenario(tmp_path, monkeypatch) -> Callable[[str], ScenarioRun]:
 def test_a_tier_3_work_item_walks_the_full_outer_loop(run_scenario):
     """
     Requirement: docs/specs/issue-217/requirements.md#R1, #R2.3
+        and docs/specs/issue-281/bugfix.md#AC-1.5
     Scenario: a tier-3 work item flows ticket → complete with no interventions
         Given a work item whose authorized author selects the full process
-        And a scripted agent that emits locked spec-chain fixtures phase by phase
+        And a scripted agent that emits DRAFT spec-chain fixtures phase by phase
         And one inner PR loop simulated at its graph-state file seam
-        When each phase is completed and each human gate is approved
+        When each phase is completed and each human gate is approved exactly once
         Then the phases are entered in the configured order with no gate skipped
         And the loop:<phase> label advances at every transition, never regressing
-        And the spec chain is locked before implementation is entered
+        And the gated artifacts are locked BY the approval gates (issue-281) so
+            requirements, design and testing plan say approved before implementation
         And the expected events land in the event log in order
         And the inner loop parks implementation until it completes
     """
@@ -104,14 +106,15 @@ def test_an_agent_question_parks_the_run_and_a_reply_resumes_it(run_scenario):
 
 
 @covers("gate-rejection")
-def test_an_unlocked_artifact_blocks_its_phase_gate(run_scenario):
+def test_a_malformed_artifact_blocks_its_phase_gate(run_scenario):
     """
-    Requirement: docs/specs/issue-217/requirements.md#R2.3
+    Requirement: docs/specs/issue-217/requirements.md#R2.3, issue-281 AC 1.1
     Scenario: a malformed artifact fails the phase gate rather than silently advancing
-        Given requirements emitted with status draft instead of a locked artifact
+        Given requirements emitted with the gated Security considerations section missing
         When the agent claims the phase complete
         Then the gate blocks, the pointer and the phase label do not move
-        And the repaired, locked artifact advances the run
+        And the repaired artifact advances the run while still a draft — locking
+            is the approval gate's act, never the producing node's (issue-281)
     """
     run_scenario("gate-rejection")
 

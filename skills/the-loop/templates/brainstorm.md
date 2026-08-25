@@ -2,8 +2,8 @@
 type: brainstorm
 phase: brainstorming
 workItem: ""                 # ticket id (or draft-<slug> when no ticket exists yet)
-status: draft                # draft | in-review | approved  (approved == "locked")
-approvedBy: []               # handles/roles who locked this artifact (paper trail)
+status: draft                # draft | in-review — no gate approves a brainstorm (issue-281)
+approvedBy: []               # stays empty: convergence is the author's call on the thread
 collaborators: []            # roles pulled in to brainstorm, e.g. [product-manager, architect]
 overrides: {}                # per-work-item overrides of .the-loop/harness-config.yaml
 ---
@@ -12,9 +12,10 @@ overrides: {}                # per-work-item overrides of .the-loop/harness-conf
 
 > Phase 0 (optional) — the **root artifact**. A scratchpad for exploring the problem
 > *before* committing to requirements. Free-form on purpose: capture the idea, the
-> options and the open questions here, iterate on it with feedback, and once it is
-> **locked** (`status: approved`) derive `requirements.md` from it
-> (`/the-loop:new-requirement`). Skip this phase entirely when the work is already clear.
+> options and the open questions here, iterate on it with feedback, and once its author
+> says it has converged derive `requirements.md` from it (`/the-loop:new-requirement`).
+> No approval gate reads this file, so it is never `status: approved` (issue-281).
+> Skip this phase entirely when the work is already clear.
 
 ## Problem / opportunity
 

@@ -1,5 +1,6 @@
 ---
 status: approved
+approvedBy: ["owner"]
 ---
 
 # Testing plan: the e2e fixture work item

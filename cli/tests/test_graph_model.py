@@ -214,6 +214,10 @@ class TestTestingIsPlannedAndVerifiedAsNodes:
 
         `verification` then fills a section rather than inventing one, and a
         reader of the locked plan sees the shape of the record it will become.
+
+        No `locked:` here (issue-281): the plan is locked at `design-approval`,
+        by the gate that classifies the human's one approval — a producing node
+        demanding `status: approved` forced a second, out-of-band approval.
         """
         graph = load_graph()
         gate = next(
@@ -221,7 +225,7 @@ class TestTestingIsPlannedAndVerifiedAsNodes:
             for spec in graph.node("test-planning").exit
             if isinstance(spec, dict) and spec["hook"] == "validate-artifacts"
         )
-        assert gate["with"]["locked"] is True
+        assert "locked" not in gate["with"]
         assert set(gate["with"]["sections"]) == {
             "Test matrix",
             "Verification environment",

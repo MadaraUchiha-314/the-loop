@@ -1,9 +1,12 @@
 # Error case: a malformed artifact fails the phase gate rather than silently
-# advancing. The requirements are emitted UNLOCKED (`status: draft`); the
-# completion claim blocks, the label does not move, and only the repaired
-# (locked) artifact advances the run.
+# advancing. The requirements are emitted with the gated `## Security
+# considerations` section MISSING; the completion claim blocks, the label does
+# not move, and only the repaired artifact advances the run. (The artifact is
+# never `status: approved` here — locking is the approval gate's act, not the
+# producing node's, issue-281 — so the run ends parked at
+# `requirements-approval` with the artifact still a draft.)
 name: gate-rejection
-description: an unlocked artifact blocks its phase gate; the repaired artifact advances
+description: a malformed artifact blocks its phase gate; the repaired artifact advances
 tier: 3
 workItem: issue-11
 steps:
@@ -13,7 +16,7 @@ steps:
         the-loop execute
 
         - [ ] brainstorming
-  - emit: {artifact: requirements.md, fixture: requirements-draft.md}
+  - emit: {artifact: requirements.md, fixture: requirements-malformed.md}
   - complete: {node: requirements-definition, status: block}
   - expect:
       currentNode: requirements-definition

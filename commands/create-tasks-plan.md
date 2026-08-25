@@ -28,7 +28,10 @@ last spec artifact. A slice of `/the-loop:work-on`; `work-on` remains the supers
 3. **Advance the phase.** Set the ticket label to `<phaseLabelPrefix>tasks-breakdown` and
    mirror `phase: tasks-breakdown`.
 
-4. **Reference on the ticket** (link the checked-in `tasks.md`) and **request human
-   review**. Do not start implementation until approved — record the approver.
+4. **Reference on the ticket** (link the checked-in `tasks.md`). `tasks-breakdown` has
+   **no approval gate** (issue-281): the DAG is derived mechanically from the pair the
+   human just approved at `design-approval`, so do **not** request a human review or
+   wait for one — never set `status: approved` yourself; the graph advances on the
+   artifact's shape alone.
 
 5. **Next step:** `/the-loop:execute-tasks <id>`.
