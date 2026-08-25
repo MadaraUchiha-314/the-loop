@@ -13,7 +13,12 @@ import pytest
 from the_loop.cli import main
 from the_loop.graph import hooks  # noqa: F401
 from the_loop.graph.contract import HookContext, WorkItem
-from the_loop.graph.hooks.feedback import classify_feedback, record_feedback
+from the_loop.graph.frontmatter import read_front_matter
+from the_loop.graph.hooks.feedback import (
+    classify_feedback,
+    lock_artifacts,
+    record_feedback,
+)
 from the_loop.graph.model import compile_graph
 from the_loop.graph.runtime import Runtime, force
 from the_loop.graph.state import GraphState
@@ -258,6 +263,144 @@ def test_a_comment_with_no_body_is_recorded_without_a_blank_line_pair(repo):
     assert "@second" in text  # an empty approval is still a fact about the gate
     assert "\n\n\n" not in text
     assert not _emphasis_only_lines(text)
+
+
+# -- lock-artifacts: the gate is the locker (issue-281) -------------------------
+
+TEMPLATE_FRONT = (
+    "---\n"
+    "status: draft                # draft | in-review | approved\n"
+    "approvedBy: []               # handles who approved this phase\n"
+    "---\n\n# D\n\n## Architecture\n\nreal content\n"
+)
+
+
+def _gate_ctx(repo, comments, artifacts):
+    ctx = HookContext(
+        work_item=WorkItem(ref="github:o/r#1", id="issue-1", spec_dir=_spec(repo)),
+        node={"id": "design-approval"},
+        boundary="exit",
+        repo=repo,
+        config={"authorizedUsers": ["owner", "second"]},
+        event={"comments": comments},
+    )
+    ctx.results = [classify_feedback(ctx)]
+    ctx.params = {"artifacts": artifacts}
+    return ctx
+
+
+def test_an_approval_locks_the_artifact_and_records_the_approver(repo):
+    """
+    Feature: the-loop's process graph
+    Scenario: one human approval both routes the gate and locks the artifact
+      Given a draft design awaiting the design approval gate
+      When an authorized reviewer approves
+      Then lock-artifacts flips the front matter to status approved
+      And the approver is recorded in approvedBy
+      And the template's inline front-matter comments survive the splice
+    Requirement: docs/specs/issue-281/bugfix.md#AC-1.2
+    """
+    (_spec(repo) / "design.md").write_text(TEMPLATE_FRONT)
+    ctx = _gate_ctx(repo, [{"author": "owner", "body": "approved"}], ["design.md"])
+    result = lock_artifacts(ctx)
+
+    assert result.status == "pass"
+    assert result.data["locked"] == ["design.md"]
+    front = read_front_matter(_spec(repo) / "design.md")
+    assert front["status"] == "approved"
+    assert front["approvedBy"] == ["owner"]
+    text = (_spec(repo) / "design.md").read_text()
+    assert "# draft | in-review | approved" in text  # the splice, not a round-trip
+    assert "outcome" not in result.data  # the classifier routes; the lock never does
+
+
+def test_changes_requested_leaves_the_artifact_unlocked(repo):
+    """
+    Feature: the-loop's process graph
+    Scenario: a changes-requested verdict must not change the artifact's lock state
+      Given a draft design awaiting the design approval gate
+      When the authorized reviewer requests changes
+      Then lock-artifacts skips and the front matter still says draft
+    Requirement: docs/specs/issue-281/bugfix.md#AC-1.3
+    """
+    (_spec(repo) / "design.md").write_text(TEMPLATE_FRONT)
+    ctx = _gate_ctx(
+        repo,
+        [{"author": "owner", "body": "changes requested: bound the input"}],
+        ["design.md"],
+    )
+    assert lock_artifacts(ctx).status == "skip"
+    assert read_front_matter(_spec(repo) / "design.md")["status"] == "draft"
+
+
+def test_without_a_classification_nothing_is_locked(repo):
+    """An undecided gate (or a chain with no classifier) never locks."""
+    (_spec(repo) / "design.md").write_text(TEMPLATE_FRONT)
+    ctx = _gate_ctx(repo, [], ["design.md"])  # no comments → classify waits
+    assert lock_artifacts(ctx).status == "skip"
+    assert read_front_matter(_spec(repo) / "design.md")["status"] == "draft"
+
+
+def test_an_absent_artifact_is_a_planned_absence_not_a_block(repo):
+    """
+    Feature: the-loop's process graph
+    Scenario: the gate still locks what exists when a phase was declared away
+      Given design declared skipped, so design.md does not exist
+      When the reviewer approves the testing plan at the same gate
+      Then lock-artifacts locks testing-plan.md and skips the absent design
+    Requirement: docs/specs/issue-281/bugfix.md#AC-1.4
+    """
+    (_spec(repo) / "testing-plan.md").write_text(TEMPLATE_FRONT)
+    ctx = _gate_ctx(
+        repo,
+        [{"author": "owner", "body": "approved"}],
+        ["design.md", "testing-plan.md"],
+    )
+    result = lock_artifacts(ctx)
+    assert result.status == "pass"
+    assert result.data["locked"] == ["testing-plan.md"]
+    assert read_front_matter(_spec(repo) / "testing-plan.md")["status"] == "approved"
+
+
+def test_the_lock_accepts_either_name_of_an_alternation(repo):
+    """A bug's phase-1 spec is bugfix.md; the gate locks it through the same slot."""
+    (_spec(repo) / "bugfix.md").write_text(TEMPLATE_FRONT)
+    ctx = _gate_ctx(
+        repo, [{"author": "owner", "body": "approved"}], ["requirements.md|bugfix.md"]
+    )
+    result = lock_artifacts(ctx)
+    assert result.status == "pass"
+    assert result.data["locked"] == ["bugfix.md"]
+
+
+def test_an_ambiguous_slot_blocks_the_lock(repo):
+    """Two names filling one slot have no source of truth — fail closed."""
+    (_spec(repo) / "requirements.md").write_text(TEMPLATE_FRONT)
+    (_spec(repo) / "bugfix.md").write_text(TEMPLATE_FRONT)
+    ctx = _gate_ctx(
+        repo, [{"author": "owner", "body": "approved"}], ["requirements.md|bugfix.md"]
+    )
+    assert lock_artifacts(ctx).status == "block"
+
+
+def test_repeated_approvals_merge_approvers_idempotently(repo):
+    """A second pass through the gate adds approvers, never duplicates them."""
+    (_spec(repo) / "design.md").write_text(TEMPLATE_FRONT)
+    first = _gate_ctx(repo, [{"author": "owner", "body": "approved"}], ["design.md"])
+    assert lock_artifacts(first).status == "pass"
+    second = _gate_ctx(
+        repo,
+        [
+            {"author": "owner", "body": "approved"},
+            {"author": "second", "body": "lgtm"},
+        ],
+        ["design.md"],
+    )
+    assert lock_artifacts(second).status == "pass"
+    assert read_front_matter(_spec(repo) / "design.md")["approvedBy"] == [
+        "owner",
+        "second",
+    ]
 
 
 def test_forcing_past_a_gate_leaves_recompute_honest(repo):

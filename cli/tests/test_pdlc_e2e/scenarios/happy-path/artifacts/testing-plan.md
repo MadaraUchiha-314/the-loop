@@ -1,5 +1,5 @@
 ---
-status: approved
+status: draft
 ---
 
 # Testing plan: the e2e fixture work item

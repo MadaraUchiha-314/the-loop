@@ -395,9 +395,10 @@ The other default, at the same gate and by the same person
   (which names a human) and never as `pass`. A work item whose state predates the node
   SHALL therefore skip it rather than block on it.
 - The shipped opt-in phase is **`design-critic-review`** (outer loop only), between
-  `design` and `test-planning`: a different model reading the locked `design.md` against
-  the requirements before the testing plan and task DAG derive from it, gating the
-  execution log's `Design critic review` section. See [review-loop](review-loop.md).
+  `design` and `test-planning`: a different model reading the completed `design.md`
+  against the requirements before the testing plan and task DAG derive from it (it is
+  locked later, at `design-approval` — issue-281), gating the execution log's
+  `Design critic review` section. See [review-loop](review-loop.md).
 - An **edge** SHALL route on a hook **outcome** only (`on: pass`, `on: changes-requested`,
   …). There is no expression language: the LLM produces facts, declared edges route on
   them. That split is what makes judgement and determinism coexist.
@@ -502,7 +503,7 @@ included, however empty the log was.
 
 `validate-artifacts` · `lint-artifacts` · `verify-tests` · `set-phase-label` ·
 `log-entry` · `request-review` · `notify` · `classify-feedback` · `record-feedback` ·
-`mcp-call`.
+`lock-artifacts` · `mcp-call`.
 
 - `validate-artifacts` SHALL check front matter, required sections and the security
   boundary mapping (`enforces-boundaries-from`) — the design's Security design section
@@ -511,6 +512,17 @@ included, however empty the log was.
   outcomes via a schema-constrained harness call, and SHALL only accept feedback from
   **authorized authors**; anything indecisive keeps the gate `wait`ing rather than
   guessing (negative test: an unauthorized author's "lgtm" does not advance the node).
+- `lock-artifacts` SHALL be the **only** thing that locks a gated artifact
+  ([issue-281](https://github.com/MadaraUchiha-314/the-loop/issues/281)): on an approval
+  outcome from the `classify-feedback` result of the **same chain run** it SHALL write
+  `status: approved` and merge the approving authors into `approvedBy` — as a
+  front-matter **splice** that preserves every other line and comment — and SHALL verify
+  the write landed, blocking (fail closed) when it cannot. On any other outcome it SHALL
+  skip, leaving the artifact untouched; an absent artifact is a planned absence, and an
+  ambiguous slot blocks. It SHALL never declare an `outcome`, so the classifier alone
+  routes the edge. Producing nodes SHALL NOT demand `locked:` — one gate, one human
+  approval, and a node with no gate (`brainstorming`, `tasks-breakdown`) needs no human
+  sign-off at all.
 - `record-feedback` SHALL append approve-with-comments feedback to the artifact's own
   `## Review comments` section, append-only and attributed. An approval never silently
   discards a reviewer's suggestions, and the feedback travels with the document it
@@ -563,11 +575,12 @@ included, however empty the log was.
 ### Testing is planned and verified as nodes (issue-163)
 
 - **`test-planning`** SHALL sit between `design` and `design-approval` and produce
-  `testing-plan.md`, gating on the artifact being locked and carrying non-empty
-  **Test matrix**, **Verification environment**, **Evidence plan** and **Verification
-  results** sections. Placing it *before* the human gate means **one approval covers
-  `design.md` and the plan derived from it** — the plan gets human review without a stop
-  of its own, and is still locked before the `tasks.md` that references its rows.
+  `testing-plan.md`, gating on the artifact carrying non-empty **Test matrix**,
+  **Verification environment**, **Evidence plan** and **Verification results** sections
+  (never on it being locked — issue-281). Placing it *before* the human gate means **one
+  approval covers `design.md` and the plan derived from it** — the plan gets human
+  review without a stop of its own, and `design-approval`'s `lock-artifacts` locks both
+  before the `tasks.md` that references its rows.
   `design-approval` SHALL record feedback into **both** artifacts, because a reviewer's
   note about the test matrix belongs in the plan rather than filed under the design, and
   `changes-requested` SHALL return to `design`, which re-derives the plan. The results heading is gated at *planning* time deliberately:
@@ -596,8 +609,9 @@ included, however empty the log was.
 ### The human gate
 
 - A human review/approval step SHALL be a **node**, not a hook. It lasts days rather than
-  milliseconds, receives events while it waits, runs an internal iterate-until-locked
-  loop, and produces artifacts — none of which a hook's request/response shape can carry.
+  milliseconds, receives events while it waits, runs an internal iterate-until-approved
+  loop, and locks the artifacts it approves — none of which a hook's request/response
+  shape can carry alone.
 - A gate node SHALL default to `session: inherit`: it reuses the harness session of the
   node that produced the artifact, so the reviewer's questions land in the context that
   wrote the thing. WHEN that session is gone THEN the gate SHALL fall back to a fresh
@@ -825,6 +839,7 @@ reader.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-281 | The gate became the locker (2026-08-25): `validate-artifacts` stopped demanding `locked: true` on any producing node — brainstorming, requirements-definition, design, test-planning, tasks-breakdown, and the contribution loop's scoped-plan gate shape only — and a new `lock-artifacts` hook on the approval nodes' exit chains (after `classify-feedback` and `record-feedback`) writes `status: approved` and merges the approving authors into `approvedBy` as a comment-preserving front-matter splice, verified after the write and failing closed. It consumes the classifier's verdict from the same chain run (never re-reading comments), skips on `changes-requested` or an absent artifact, and declares no outcome, so the classifier alone routes. This ends the double-ask the stacked layers produced: one human approval per gate, and no approval at all for nodes the graph gives no gate | [spec](../specs/issue-281/), [spec-workflow](spec-workflow.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/281) |
 | issue-279 | A fifth shipped loop, `pdlc-review-loop` (2026-08-24): the-loop as a pull request's **reviewer**, never its author. Armed by a ninth control keyword (`the-loop review`) that — alone among the keywords — binds to the pull request itself rather than its linked ticket; gated by a `required: true` brief gate (`review-brief` posts a fill-in template, freezes an authorized reviewer's questions/angles/validations with provenance); each agent round answers the frozen brief in one self-marked comment; the `follow-up` gate reuses `classify-adhoc-reply`, so any authorized reply that is not "done" is another round. No `produces`, no `phase-selection`, no code changed by contract, and no adoption — the contribution loop's guest carve-out generalized to `GUEST_LOOPS` | [spec](../specs/issue-279/), [decision-101](../decisions/decision-101.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/279) |
 | issue-273 | `phase-selection` stopped being routed around by default (2026-08-20): the ingress→graph coupling gated **every** graph action on `<specDir>/<id>/` already existing, so a work item minted as a plain ticket — no `/create-ticket`, no committed spec folder — had its graph declined at spawn (`graph.skipped`, `no-spec-dir`, twice) and its session walked into `requirements-definition` with the outer loop's one `required: true` node never having run: no checklist, no `the-loop execute`, no frozen graph, and nothing for `the-loop check` to attribute. `start` and `context` are now exempt (the directory is created by the work the gate holds back; `advance` and `clean` keep the check), and the read-before-spawn context of an unplaced work item renders its start node as `pending` — a block that names the gate and forbids beginning a phase before the node's assignment arrives, instead of the empty block that let the session start on its own | [spec](../specs/issue-273/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/273) |
 | issue-247 | The one hook that writes markdown into a checked-in artifact stopped writing markdown the project's own linter rejects (2026-08-16): `record-feedback`'s attribution gained trailing text (`**@handle** wrote:`), because emphasis alone on a line is precisely MD036's target — so every approval-with-comments had been leaving `design.md` and `testing-plan.md` failing `make lint`, and a session hand-editing the paper trail to unblock itself. A comment with an empty body now becomes one attribution line instead of a blank-line run (MD012). The reviewer's body stays verbatim, which is the other half of the rule: the harness fixes its own markdown and never a human's words, so a body that fails lint on its own merits is out of scope by decision rather than by omission | [spec](../specs/issue-247/), [decision-089](../decisions/decision-089.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/247) |

@@ -64,7 +64,7 @@ configurable: it runs on its pull request.
 
 ![the-loop's two loops. A ticket is opened, then the spec chain — optional
 brainstorm.md, requirements.md or bugfix.md, design.md, testing-plan.md, tasks.md — is
-iterated with feedback until each artifact is locked, gated by human review. Below it the
+iterated with feedback at its human approval gate, which locks each artifact on the human's one approval. Below it the
 outer pdlc-work-item-loop runs implementation, verification across all PRs, the review
 chain (self, critic and security review, evidence, capability docs, reviewer briefing), a
 human approval, then complete and learn. Below that the inner pdlc-pr-loop runs one per
@@ -90,9 +90,11 @@ not-started → brainstorming (optional) → requirements-definition → design 
 
 ## The artifact chain
 
-A work item is a chain of documents, each **derived from the one before it** and iterated
-with feedback until it is **locked** (`status: approved`) — only then is the next one
-written. They live in `docs/specs/<id>/`, in the
+A work item is a chain of documents, each **derived from the one before it**. An
+artifact with a human approval gate is iterated with the feedback that gate records,
+and the gate **locks** it (`status: approved`) on the human's one approval — only then
+is the next one written. Artifacts with no gate (the brainstorm, the task DAG)
+advance on shape alone. They live in `docs/specs/<id>/`, in the
 [Kiro](https://kiro.dev/docs/specs/) spirit:
 
 | Artifact | What it settles |
@@ -199,7 +201,7 @@ Details: [installation](https://madarauchiha-314.github.io/the-loop/guide/instal
 
 Every work item has a ticket and a spec chain approved phase by phase. Reviews — self, then
 critic, then security — run **before** a human is asked for anything, and a work item can
-opt in to one more: a critic reading the **locked design** before anything is derived from
+opt in to one more: a critic reading the **completed design** before anything is derived from
 it. Tests come first,
 evidence is committed, and every human decision leaves a paper trail on the ticket or PR.
 Capability docs and the user-facing documentation, this README included, are updated **in

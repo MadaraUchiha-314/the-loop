@@ -125,8 +125,16 @@ nodes:
     command: brainstorm
     stage: brainstorm
     entry: [set-phase-label, log-entry, deliver-assignment]
+    # No `locked:` on any producing node (issue-281): a producing node's gate
+    # checks SHAPE — the artifact exists and carries its sections — and the
+    # approval node that follows is what locks it (`lock-artifacts` on its
+    # exit). Demanding `status: approved` here forced the session to obtain an
+    # out-of-band approval before the gate opened, which the gate then
+    # discarded and re-asked — every phase cost the human two approvals, and
+    # this node (which has no approval node at all) cost one it was never
+    # meant to have.
     exit:
-      - {hook: validate-artifacts, with: {locked: true, sections: ["Problem / opportunity", "Open questions"]}}
+      - {hook: validate-artifacts, with: {sections: ["Problem / opportunity", "Open questions"]}}
       - lint-artifacts
 
   - id: requirements-definition
@@ -143,9 +151,14 @@ nodes:
     stage: requirements
     entry: [set-phase-label, log-entry, deliver-assignment]
     exit:
-      - {hook: validate-artifacts, with: {locked: true, sections: ["Requirements", "Security considerations"]}}
+      - {hook: validate-artifacts, with: {sections: ["Requirements", "Security considerations"]}}
       - lint-artifacts
 
+  # The gate is the locker (issue-281): one human approval, classified here,
+  # both routes the edge AND writes `status: approved` + the approvers into the
+  # artifact — `lock-artifacts` consumes `classify-feedback`'s verdict from the
+  # same chain run, so nothing widens who can approve. On `changes-requested`
+  # (or an undecided gate) it skips and the artifact stays unlocked.
   - id: requirements-approval
     actor: human
     session: inherit
@@ -156,6 +169,7 @@ nodes:
     exit:
       - classify-feedback
       - {hook: record-feedback, with: {into: requirements.md}}
+      - {hook: lock-artifacts, with: {artifacts: ["requirements.md|bugfix.md"]}}
 
   - id: design
     phase: design
@@ -166,7 +180,7 @@ nodes:
     stage: design
     entry: [set-phase-label, log-entry, deliver-assignment]
     exit:
-      - {hook: validate-artifacts, with: {locked: true, sections: ["Architecture", "Security design", "Testing strategy"]}}
+      - {hook: validate-artifacts, with: {sections: ["Architecture", "Security design", "Testing strategy"]}}
       # Same two names as phase 1. Naming only requirements.md here meant this
       # check resolved to nothing for every bug, skipped, and passed the chain —
       # a security gate reporting success without running (issue-124).
@@ -191,8 +205,9 @@ nodes:
     actor: agent
     optIn: true             # off unless selected — implies `skippable`
     description: >-
-      a different model/harness reviews the LOCKED design.md against the
-      requirements, before the testing plan and the task DAG are derived from it
+      a different model/harness reviews the completed design.md against the
+      requirements, before the testing plan and the task DAG are derived from
+      it (the design is locked later, at design-approval — issue-281)
     stage: critic-review
     entry: [log-entry, deliver-assignment]
     exit:
@@ -224,7 +239,6 @@ nodes:
     exit:
       - hook: validate-artifacts
         with:
-          locked: true
           sections:
             - Test matrix
             - Verification environment
@@ -236,6 +250,9 @@ nodes:
   # it. Feedback is recorded into BOTH, because a reviewer's note about the test
   # matrix belongs in the plan, not filed under the design — the whole point of
   # record-feedback is that feedback travels with the document it concerns.
+  # And the one approval locks both (issue-281): `lock-artifacts` skips an
+  # absent artifact, so with `design` declared away the gate still locks the
+  # plan alone.
   - id: design-approval
     actor: human
     session: inherit
@@ -247,7 +264,12 @@ nodes:
       - classify-feedback
       - {hook: record-feedback, with: {into: design.md}}
       - {hook: record-feedback, with: {into: testing-plan.md}}
+      - {hook: lock-artifacts, with: {artifacts: [design.md, testing-plan.md]}}
 
+  # No approval node follows this one, on purpose — and therefore no lock
+  # (issue-281): `tasks.md` is derived mechanically from the two artifacts the
+  # human just approved at `design-approval`, so a human stop here would be a
+  # third gate the graph never declared. The DAG is gated on shape alone.
   - id: tasks-breakdown
     phase: tasks-breakdown
     actor: agent
@@ -258,7 +280,7 @@ nodes:
     stage: tasks
     entry: [set-phase-label, log-entry, deliver-assignment]
     exit:
-      - {hook: validate-artifacts, with: {locked: true, sections: ["Task list"]}}
+      - {hook: validate-artifacts, with: {sections: ["Task list"]}}
       - lint-artifacts
 
   - id: implementation

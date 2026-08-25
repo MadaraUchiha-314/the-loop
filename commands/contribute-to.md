@@ -42,8 +42,9 @@ management); only the node set differs.
    author a single `<workflow.specDir>/<id>/contribution.md` — goal, success criteria,
    context, approach, verification plan — from the bundled `contribution.md` template.
    Requirements-and-design thinking still happens; it just lands in sections, not
-   files. Lock it (`status: approved`) at `scoped-plan`, iterate it with the human at
-   `plan-approval`.
+   files. Leave it a draft at `scoped-plan` and iterate it with the human at
+   `plan-approval` — the gate locks it on the human's one approval (issue-281); never
+   set `status: approved` yourself.
 
 3. **Do not bloat the existing item.** Post only what the gates require (goal request,
    phase-selection checklist, confirmations, review requests). Work products live in

@@ -34,10 +34,11 @@ spec chain. A slice of `/the-loop:work-on`; `work-on` remains the superset.
    (`design.uiArtifacts.dir`): self-contained **HTML+CSS+JS prototypes**
    (`design.uiArtifacts.format: html`, Claude-artifact style — inline CSS/JS, no external
    deps) and/or a linked **Figma** file. Fill in the *UI/UX design* inventory in
-   `design.md`. **Iterate each artifact with the `designer` persona until locked**
-   (`status: approved`) — review the **rendered** output, feedback as ticket comments,
-   capture screenshots as evidence. Skip this step (write `N/A`) for backend/CLI/infra
-   work with no UI. **Read `reference/design-artifacts.md`** for the full pattern.
+   `design.md`. **Iterate each visual artifact with the `designer` persona until the
+   designer is satisfied** — review the **rendered** output, feedback as ticket
+   comments, capture screenshots as evidence. (`design.md` itself is locked at the
+   `design-approval` gate, never by the session — issue-281.) Skip this step (write
+   `N/A`) for backend/CLI/infra work with no UI. **Read `reference/design-artifacts.md`** for the full pattern.
 
 4. **Advance the phase.** Set the ticket label to `<phaseLabelPrefix>design` and mirror
    `phase: design` in the spec/execution log.

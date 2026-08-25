@@ -52,7 +52,7 @@ the split.
 
 ![the-loop's two loops. A ticket is opened, then the spec chain — optional
 brainstorm.md, requirements.md or bugfix.md, design.md, testing-plan.md, tasks.md — is
-iterated with feedback until each artifact is locked, gated by human review. Below it the
+iterated with feedback at its human approval gate, which locks each artifact on the human's one approval. Below it the
 outer pdlc-work-item-loop runs implementation, verification across all PRs, the review
 chain (self, critic and security review, evidence, capability docs, reviewer briefing), a
 human approval, then complete and learn. Below that the inner pdlc-pr-loop runs one per
@@ -81,9 +81,11 @@ Full detail: [the process-graph capability](/capabilities/process-graph).
 
 ## The artifact chain
 
-A work item is a chain of documents, each derived from the one before it and **iterated
-with feedback until it is locked** (`status: approved`) — only then is the next one written
-and the phase advanced. They live under `docs/specs/<id>/`, in the
+A work item is a chain of documents, each derived from the one before it. An artifact
+with a human approval gate is **iterated with the feedback that gate records, and the
+gate locks it** (`status: approved`, written with the approver on the human's one
+approval) — only then is the next one written and the phase advanced. Artifacts with
+no gate (the brainstorm, the task DAG) advance on shape alone, with no human stop. They live under `docs/specs/<id>/`, in the
 [Kiro](https://kiro.dev/docs/specs/) spirit:
 
 | Artifact | What it settles |
@@ -110,7 +112,7 @@ intent and outcome sit in one diff. Evidence is committed under
 - Every human decision leaves a **paper trail** on the ticket or pull request.
 - Self-checks run tests at logical checkpoints; progress is logged for visibility.
 - Configured self-reviews and critic reviews run **before** escalating to a human, and a
-  work item may **opt in** to one more: a critic reading the locked `design.md` before
+  work item may **opt in** to one more: a critic reading the completed `design.md` before
   the testing plan and the task DAG are derived from it, so a structural finding costs
   an edit rather than a rewrite. Off unless it is ticked at `phase-selection`.
 - **Testing is planned, then executed**: `test-planning` decides which kinds of testing
@@ -135,8 +137,8 @@ intent and outcome sit in one diff. Evidence is committed under
   wrong, recorded in the execution log's `## Documentation` section — which the
   `capability-docs` node gates.
 - **UI/UX design is a first-class artifact**: for user-facing work the design phase tracks
-  Figma links and/or self-contained HTML+CSS+JS prototypes, iterated-until-locked with the
-  designer.
+  Figma links and/or self-contained HTML+CSS+JS prototypes, iterated with the designer
+  on the rendered output until the designer signs off.
 - All commits follow **Conventional Commits**.
 - Pull requests are written **for the reviewer**: a condensed, prioritized summary,
   **mermaid** diagrams, and documented low-level decisions — and the loop educates the user

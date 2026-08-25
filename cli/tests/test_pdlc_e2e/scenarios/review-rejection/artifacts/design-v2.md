@@ -1,5 +1,5 @@
 ---
-status: approved
+status: draft
 ---
 
 # Design: the e2e fixture work item (revised)

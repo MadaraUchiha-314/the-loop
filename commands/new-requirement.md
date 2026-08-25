@@ -44,9 +44,12 @@ into requirements rather than starting from a blank page.
 
 4. **Identify collaborators up-front** (see `reference/collaboration.md`).
 
-5. **Request human review** of the requirements (`workflow.requireHumanReviewPerPhase`,
-   default true). Because there is no ticket yet, review happens wherever the user
-   prefers (PR/interactively); record the approver — paper trail.
+5. **Leave the approval to the gate.** The human review of the requirements
+   (`workflow.requireHumanReviewPerPhase`, default true) happens at the graph's
+   `requirements-approval` node once a ticket exists — the gate classifies the reply,
+   records the approver and locks the artifact itself (issue-281). Do **not** request
+   an approval here and never set `status: approved` yourself; iterate the draft's
+   content with whatever feedback the user offers, and leave `status: draft`.
 
 6. **Point to the next step:** `/the-loop:create-ticket docs/specs/draft-<slug>/requirements.md`
    to mint the ticket and promote the folder out of `draft-`.

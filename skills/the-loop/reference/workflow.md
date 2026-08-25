@@ -4,7 +4,7 @@ The end-to-end loop to complete a work item. Once `requirements.md`, `design.md`
 `tasks.md` are finalized and approved, the harness executes end-to-end with MINIMAL or
 NO user intervention.
 
-## The artifact chain & the iterate-until-locked rule
+## The artifact chain & the gate-owned lock
 
 Every work item is a chain of artifacts, each **derived from the one before it**:
 
@@ -13,10 +13,17 @@ brainstorm.md (optional, root) → requirements.md → design.md → testing-pla
                                → tasks.md → implementation → verification
 ```
 
-The core rule holds at **every** link, not just requirements: an artifact is **iterated
-on with human feedback until it is locked** (`status: approved`), and only then does the
-loop derive the next artifact and advance the phase. Feedback and refinement happen on
-each artifact in turn; nothing downstream is written against an unlocked upstream artifact.
+The core rule (issue-281): **approvals are owned by approval nodes, and the gate is the
+locker.** An artifact whose gate lies ahead is complete when its sections are; the
+approval node then classifies the human's feedback, records it into the artifact, and —
+on an approval — writes `status: approved` plus the approver into the front matter
+itself (`lock-artifacts`). One gate, one human reply: `requirements-approval` locks
+`requirements.md`/`bugfix.md`; `design-approval` locks `design.md` **and**
+`testing-plan.md` together. The session never sets `status: approved` and never posts
+an approval request of its own — a session-invented stop costs the human a second
+approval the gate then discards. Artifacts with **no** gate (`brainstorm.md`,
+`tasks.md`) advance on shape alone. Nothing downstream is written against an upstream
+artifact whose gate has not yet approved it.
 
 ## Phase 0 — brainstorm (optional, the root artifact)
 
@@ -24,10 +31,12 @@ When work starts as a **fuzzy idea** rather than a well-formed requirement, begi
 `brainstorm.md` scratchpad (`/the-loop:brainstorm`) — the **root artifact** the rest of
 the chain grows from. It is deliberately free-form: problem/opportunity, context &
 constraints, ideas & options (including rejected ones and *why*), sketches, open
-questions, and a working hypothesis. Iterate it with feedback until locked, then
-**convert** it to `requirements.md` (`/the-loop:new-requirement` reads the sibling
-brainstorm and derives requirements from it). Everything considered-and-dropped stays in
-`brainstorm.md` as the record; only the chosen direction carries forward.
+questions, and a working hypothesis. Iterate it with feedback until its author says it
+has converged — the brainstorm has **no approval gate**, so it is never
+`status: approved` (issue-281) — then **convert** it to `requirements.md`
+(`/the-loop:new-requirement` reads the sibling brainstorm and derives requirements from
+it). Everything considered-and-dropped stays in `brainstorm.md` as the record; only the
+chosen direction carries forward.
 
 **Brainstorming is optional.** A work item whose scope is already clear starts directly at
 `requirements-definition` — nothing forces a brainstorm.
@@ -42,8 +51,12 @@ good place to converge on them) and confirm via a ticket comment.
 
 The Kiro 3-phase spec (requirements → design → tasks) plus the **testing plan** that
 sits between design and tasks (issue-163). Stored in `<workflow.specDir>/<id>/` (default
-`docs/specs/<id>/`). Each of the first two phases ends with a **human review** (`workflow.requireHumanReviewPerPhase`, default true). Do not advance
-until the current phase is approved; record the approver (paper trail).
+`docs/specs/<id>/`). The human review per phase
+(`workflow.requireHumanReviewPerPhase`, default true) is delivered by the graph's
+approval nodes — `requirements-approval`, and `design-approval` covering design and
+testing plan together — which classify the feedback, record the approver, and lock the
+artifact (issue-281). The paper trail is the gate's own record; never re-request an
+approval from the session.
 
 1. **`requirements.md`** (or **`bugfix.md`** for bugs) — introduction, user stories, and
    acceptance criteria in **EARS** notation
@@ -51,9 +64,10 @@ until the current phase is approved; record the approver (paper trail).
    The two names are alternatives for **one** artifact: the process graph accepts either
    (`produces: ["requirements.md|bugfix.md"]`), and blocks when **both** are present,
    because two phase-1 artifacts in one folder have no defined source of truth
-   (decision-045). The gate is otherwise identical for both — same `status: approved` lock,
-   same required `## Requirements` and `## Security considerations` sections — so pick the
-   template that fits the work, not the gate.
+   (decision-045). The gate is otherwise identical for both — the same required
+   `## Requirements` and `## Security considerations` sections, and the same lock
+   written by `requirements-approval` — so pick the template that fits the work, not
+   the gate.
    Includes the **Security considerations** section — a threat-model-lite (untrusted
    actors, trust boundaries, abuse cases, fail-closed expectations) captured with the
    requirements (`security.threatModel.required`); an empty section fails the gate,
@@ -220,9 +234,10 @@ already away says nothing, so it is refused at compile time. The agent never tic
 for the same reason it never declares a skip.
 
 **The loop ships exactly one:** `design-critic-review` (`reference/reviewing.md` § The
-design critic round) — a different model reading the **locked `design.md`** against the
-requirements, after `design` and before `test-planning`, so a structural finding costs an
-edit rather than a rewrite. It records into the execution log's `## Design critic review`
+design critic round) — a different model reading the **completed `design.md`** against
+the requirements, after `design` and before `test-planning` (it is locked later, at
+`design-approval` — issue-281), so a structural finding costs an edit rather than a
+rewrite. It records into the execution log's `## Design critic review`
 section and blocks until that section is written. Like declared skips, opt-in phases are
 outer-loop only: neither `pdlc-pr-loop` nor `pdlc-contribution-loop` declares one.
 
@@ -349,8 +364,8 @@ Two rules keep the intervention light without losing rigor:
 
 - **One artifact, not four.** `context-intake` and `scoped-plan` author a single
   `contribution.md` (goal, success criteria, context, approach, verification plan —
-  bundled template), locked at `scoped-plan` and iterated with the human at
-  `plan-approval`. Requirements-and-design thinking still happens; it lands in sections
+  bundled template), iterated with the human at `plan-approval`, which locks it on the
+  human's one approval (issue-281). Requirements-and-design thinking still happens; it lands in sections
   rather than files. The review chain gates the shared execution log exactly as the
   other loops do. **Never bloat the existing item's thread**: gates' comments only,
   each self-marked; work products live in the repository.
@@ -520,7 +535,7 @@ copy of its contents. The checked-in file is the single source of truth.
 ## Verification — executing the plan
 
 `implementation` ends when the task DAG is done; the work item then enters
-**`verification`**, which runs the plan `test-planning` locked and turns it into a
+**`verification`**, which runs the plan `design-approval` locked and turns it into a
 record. The node re-gates the **same** `testing-plan.md`: every activity ticked, and a
 non-empty **Verification results** section — the produce-then-re-gate shape
 `tasks-breakdown` → `implementation` already uses for `tasks.md`.
@@ -560,8 +575,8 @@ distinction and per-harness mechanics):
 - **Never reset without a checkpoint** — checkmarks current, an execution-log entry
   with a concrete **Next:**, phase label in sync, WIP committed or noted.
 - **Phase boundaries clear** (`contextManagement.phaseBoundary`, default `clear`):
-  once `tasks.md` is locked, start implementation on a **fresh window** that re-reads
-  the approved spec from disk — the same separation Claude Code's plan mode makes
+  once `tasks.md` clears its gate, start implementation on a **fresh window** that
+  re-reads the approved spec from disk — the same separation Claude Code's plan mode makes
   between planning and execution. Spec→spec transitions derive each artifact from the
   locked file, not the chat that produced it.
 - **Task boundaries compact** (default): drop the finished task's exploration/diff/test

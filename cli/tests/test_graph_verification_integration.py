@@ -81,16 +81,18 @@ def _evaluate(repo, node_id: str):
     return runtime.evaluate(node_id, runtime.work_item("issue-1"))
 
 
-def test_planning_blocks_until_the_plan_exists_and_is_locked(repo):
+def test_planning_blocks_until_the_plan_exists(repo):
     """
     Feature: testing is planned and verified as nodes of the PDLC
-    Scenario: the test-planning node will not pass without a locked plan
+    Scenario: the test-planning node will not pass without a plan
       Given a work item whose spec folder has no testing plan
       When the test-planning node's exit chain is evaluated
       Then it blocks and names the missing artifact
-      When the plan is written but left in draft
-      Then it still blocks, naming the unmet lock
-    Requirement: docs/specs/issue-163/requirements.md#R1
+      When the plan is written, still in draft
+      Then it passes — the plan is locked later, at design-approval, by the
+        gate that classifies the human's one approval (issue-281)
+    Requirement: docs/specs/issue-163/requirements.md#R1,
+        docs/specs/issue-281/bugfix.md#AC-1.1
     """
     missing = _evaluate(repo, "test-planning")
     assert missing.status == "block"
@@ -99,9 +101,7 @@ def test_planning_blocks_until_the_plan_exists_and_is_locked(repo):
     (_spec(repo) / "testing-plan.md").write_text(
         PLANNED.replace("status: approved", "status: draft"), encoding="utf-8"
     )
-    unlocked = _evaluate(repo, "test-planning")
-    assert unlocked.status == "block"
-    assert any("status: draft" in m.render() for m in unlocked.messages)
+    assert _evaluate(repo, "test-planning").status == "pass"
 
 
 def test_planning_passes_once_the_four_sections_are_authored(repo):

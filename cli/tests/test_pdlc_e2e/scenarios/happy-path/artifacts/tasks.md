@@ -1,5 +1,5 @@
 ---
-status: approved
+status: draft
 ---
 
 # Tasks: the e2e fixture work item
