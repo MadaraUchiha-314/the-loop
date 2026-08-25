@@ -24,7 +24,7 @@
       "outcome": "",
       "enteredAt": "2026-08-25T04:16:09+00:00",
       "exitedAt": "",
-      "lastBlock": "",
+      "lastBlock": "`validate-artifacts` did not pass:\n- artifact is not locked \u2014 front-matter says status: draft, expected status: approved (docs/specs/issue-213/requirements.md)",
       "forced": false
     }
   },
@@ -198,7 +198,12 @@
     "runner": "tmux",
     "alive": true
   },
-  "completions": {},
+  "completions": {
+    "requirements-definition": {
+      "at": "2026-08-25T04:20:27+00:00",
+      "by": "cli"
+    }
+  },
   "skips": {
     "brainstorming": {
       "via": "selection",
