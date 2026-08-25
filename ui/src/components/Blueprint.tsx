@@ -1,24 +1,12 @@
 /**
- * The frame every card, figure and primary button wears in the Industry system:
- * square, hairline-bordered, with `+` registration marks at the four corners.
- *
- * The marks are four `<i class="corner …">` children the stylesheet draws
- * outside the box — the readme is explicit that a framed element never drops
- * them, so they are baked in here rather than left to each call site to repeat.
+ * A plain framed container. The Industry system's `+` corner registration
+ * marks and all-caps blueprint styling were retired in the issue-283 calm-down
+ * (bloat #5): the data — refs, rails, dots — provides the texture, so cards
+ * are quiet hairline boxes. The component keeps its name and prop shape so the
+ * call sites that predate the change read unchanged.
  */
 
 import type { ElementType, ReactNode } from "react";
-
-export function Corners() {
-  return (
-    <>
-      <i className="corner tl" />
-      <i className="corner tr" />
-      <i className="corner bl" />
-      <i className="corner br" />
-    </>
-  );
-}
 
 interface BlueprintProps {
   as?: ElementType;
@@ -29,8 +17,7 @@ interface BlueprintProps {
 
 export function Blueprint({ as: Tag = "div", className = "", children, ...rest }: BlueprintProps) {
   return (
-    <Tag className={`blueprint ${className}`.trim()} {...rest}>
-      <Corners />
+    <Tag className={`lp-card ${className}`.trim()} {...rest}>
       {children}
     </Tag>
   );

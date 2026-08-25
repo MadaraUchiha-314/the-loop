@@ -194,7 +194,11 @@ export function useControlPlane(
         setFetchedAt(Date.now());
         setLoading(false);
 
-        const graphs = await fetchGraphs(api, workItems, sessions, signal);
+        // Held reports are passed back in so loops nothing is driving — a
+        // closed session's, say — are answered from cache instead of a fresh
+        // `graph/check` every cycle (issue-283, feature #9): each check builds
+        // a runtime server-side, and a dormant item's answer cannot change.
+        const graphs = await fetchGraphs(api, workItems, sessions, signal, latest.current?.graphs);
         if (cancelled || signal.aborted) return;
         // Held for `refreshGraph`: a streamed graph move re-checks one loop
         // against these rows rather than refetching the board to find them.
@@ -287,10 +291,12 @@ export async function fetchGraphs(
   workItems: WorkItemRecord[],
   sessions: SessionRecord[],
   signal: AbortSignal,
+  cached?: GraphReports,
 ): Promise<GraphReports> {
   const sessionByRef = new Map(sessions.map((session) => [session.ref, session]));
   const recordByRef = new Map(workItems.map((item) => [item.ref, item]));
   const jobs: GraphJob[] = [];
+  const held: GraphReports = { outer: {}, inner: {} };
 
   for (const ref of new Set([...recordByRef.keys(), ...sessionByRef.keys()])) {
     const session = sessionByRef.get(ref);
@@ -299,6 +305,22 @@ export async function fetchGraphs(
     // No checkout on this machine means no graph state to read. The row still
     // renders — `railFromFrozen` covers it — so this is a skip, not a failure.
     if (!repo || !spec) continue;
+
+    // A loop nothing is driving cannot move: a session that is neither active
+    // nor paused holds a graph no agent advances, so a report already fetched
+    // is reused instead of re-checked every poll cycle (issue-283, feature #9).
+    // The first load — no cache — still reads it once.
+    const dormant = session !== undefined && session.status !== "active" && session.status !== "paused";
+    const cachedOuter = cached?.outer[ref];
+    if (dormant && cachedOuter) {
+      held.outer[ref] = cachedOuter;
+      for (const pr of session.pullRequests ?? []) {
+        const key = innerKey(ref, pr.workItem.ref);
+        const cachedInner = cached?.inner[key];
+        if (cachedInner) held.inner[key] = cachedInner;
+      }
+      continue;
+    }
 
     jobs.push({ key: ref, outer: true, run: (s) => api.graphCheck({ repo, workItem: spec }, s) });
 
@@ -314,7 +336,7 @@ export async function fetchGraphs(
     }
   }
 
-  const reports: GraphReports = { outer: {}, inner: {} };
+  const reports: GraphReports = held;
   let cursor = 0;
 
   async function worker(): Promise<void> {

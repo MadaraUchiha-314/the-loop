@@ -16,13 +16,13 @@ import { useEffect, useRef, useState, type UIEvent } from "react";
 
 import { ApiError } from "../api/client.ts";
 import {
+  attentionEntries,
   describeEvent,
   eventRef,
   levelTag,
   questionOf,
   relativeTime,
   sessionState,
-  stampOf,
   timeOf,
   transcriptPath,
   type PullRequestView,
@@ -34,7 +34,6 @@ import { NodeRail } from "../components/NodeRail.tsx";
 import { SessionDot, sessionLabel } from "../components/SessionDot.tsx";
 import { ChatBar, TranscriptView } from "../components/Transcript.tsx";
 import { useApi } from "../state/ApiContext.tsx";
-import { hrefFor } from "../state/route.ts";
 import { useAsync } from "../state/useAsync.ts";
 
 /** How close to the bottom still counts as "following the newest entry". */
@@ -62,13 +61,18 @@ interface DetailProps {
    * one connection per tab — so this is how the news reaches the panel.
    */
   transcriptTick?: number;
+  /**
+   * Pre-select one of this item's session traces — a pre-283 `#/sessions/<ref>`
+   * deep link names a PR endpoint's session, and the link should land on it.
+   */
+  initialTraceRef?: string | undefined;
 }
 
-export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0 }: DetailProps) {
+export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, initialTraceRef }: DetailProps) {
   const { api } = useApi();
   const [busy, setBusy] = useState<SessionVerb | "gate" | "reply" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [traceRef, setTraceRef] = useState<string>(view.ref);
+  const [traceRef, setTraceRef] = useState<string>(initialTraceRef ?? view.ref);
   const [reply, setReply] = useState("");
 
   const events = useAsync(
@@ -125,12 +129,13 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0 }: D
     if (pinned.current) panel.scrollTop = panel.scrollHeight;
   }, [entryCount, traceRef]);
 
+  // What this item needs beyond the question and gate cards below — its waits
+  // and errors, expanded with their age, so clicking an error flag lands on
+  // the error rather than a generic page (issue-283, feature #7).
+  const needs = attentionEntries([view]).filter((entry) => entry.tier >= 2);
+
   return (
     <>
-      <a className="lp-back" href={hrefFor({ name: "dashboard" })}>
-        ← All work items
-      </a>
-
       <div className="lp-detail-head">
         <div>
           <div className="lp-detail-ref">
@@ -196,7 +201,9 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0 }: D
             <div className="lp-callout-kicker">Human gate — {view.parked.node}</div>
             <div className="lp-gate-detail">{view.parked.reason}</div>
             {view.parked.since ? (
-              <div className="lp-subtle">waiting since {stampOf(view.parked.since)}</div>
+              <div className="lp-subtle" title={view.parked.since}>
+                waiting {relativeTime(view.parked.since)}
+              </div>
             ) : null}
           </div>
           <button
@@ -220,6 +227,23 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0 }: D
             Request changes on the ticket ↗
           </a>
         </Blueprint>
+      ) : null}
+
+      {needs.length > 0 ? (
+        <div className="lp-needs">
+          {needs.map((entry) => (
+            <div key={entry.key} className="lp-needs-row">
+              <span className="lp-needs-kind">{entry.kind}</span>
+              {entry.count > 1 ? <span className="lp-inbox-count">×{entry.count}</span> : null}
+              <span className="lp-needs-detail">{entry.detail}</span>
+              {entry.at ? (
+                <span className="lp-subtle" title={entry.at}>
+                  {relativeTime(entry.at)}
+                </span>
+              ) : null}
+            </div>
+          ))}
+        </div>
       ) : null}
 
       <h2 className="lp-h2">Outer loop · {view.record.graph?.loop ?? "pdlc-work-item-loop"}</h2>
@@ -306,12 +330,15 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0 }: D
           </>
         ) : (
           <>
+            {/* The server's reason and this page's follow-on are two sentences
+                on two lines (issue-283 B9) — joined with a bare space they read
+                as one broken one. */}
             <div className="lp-empty">
-              <strong>No transcript served for this session.</strong>{" "}
-              {transcript.error instanceof ApiError && transcript.error.kind === "network"
-                ? transcript.error.advice
-                : (transcript.error?.message ?? "")}{" "}
-              Falling back to the event-log trail for this work item.
+              <div>
+                <strong>No transcript served for this session.</strong>{" "}
+                {fallbackReason(transcript.error)}
+              </div>
+              <div>Falling back to the event-log trail for this work item.</div>
             </div>
             {events.loading && !events.data ? (
               <div className="lp-empty">Loading events…</div>
@@ -333,24 +360,41 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0 }: D
           loop's is (issue-230). */}
       <ChatBar refFor={traceRef} state={sessionState(traceSession)} onSent={onChanged} />
 
-      <h2 className="lp-h2">Events for this item</h2>
-      {events.error ? (
-        <div className="lp-subtle">Could not read the event log: {events.error.message}</div>
-      ) : (
-        (events.data ?? [])
-          .toReversed()
-          .slice(0, 25)
-          .map((event, index) => (
-            <div className="lp-event-row" key={`${event.ts}-row-${index}`}>
-              <span className="lp-event-ts">{stampOf(event.ts)}</span>
-              <span className={`tag ${levelTag(event.level)}`}>{event.level ?? "info"}</span>
-              <span className="lp-event-name">{event.event}</span>
-              <span className="lp-event-detail">{describeEvent(event)}</span>
-            </div>
-          ))
-      )}
+      {/* Rendered only while the trace above shows a real transcript: when it
+          has fallen back to the event trail, this section would repeat the
+          identical rows on the same screen (issue-283 B8). */}
+      {transcript.data && !transcript.error ? (
+        <>
+          <h2 className="lp-h2">Events for this item</h2>
+          {events.error ? (
+            <div className="lp-subtle">Could not read the event log: {events.error.message}</div>
+          ) : (
+            (events.data ?? [])
+              .toReversed()
+              .slice(0, 25)
+              .map((event, index) => (
+                <div className="lp-event-row" key={`${event.ts}-row-${index}`}>
+                  <span className="lp-event-ts" title={event.ts}>
+                    {relativeTime(event.ts)}
+                  </span>
+                  <span className={`tag ${levelTag(event.level)}`}>{event.level ?? "info"}</span>
+                  <span className="lp-event-name">{event.event}</span>
+                  <span className="lp-event-detail">{describeEvent(event)}</span>
+                </div>
+              ))
+          )}
+        </>
+      ) : null}
     </>
   );
+}
+
+/** The server's reason for a missing transcript, as its own sentence. */
+function fallbackReason(error: Error | null): string {
+  if (error instanceof ApiError && error.kind === "network") return error.advice;
+  const message = (error?.message ?? "").trim();
+  if (!message) return "";
+  return message.endsWith(".") ? message : `${message}.`;
 }
 
 function PrCard({ pr }: { pr: PullRequestView }) {
@@ -426,9 +470,6 @@ function NeedsInputCard({
     <Blueprint className="lp-callout">
       <div className="lp-callout-head">
         <div className="lp-callout-kicker">Agent is waiting for your input</div>
-        <div className="lp-callout-path">
-          via <code>the-loop ask</code> → gh comment on issue/PR + session.awaiting_input → /api/v1/attention
-        </div>
       </div>
       <div className="lp-callout-body">{text}</div>
       <div className="lp-reply">

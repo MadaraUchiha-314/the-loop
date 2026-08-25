@@ -43,15 +43,11 @@ export function Settings() {
   return (
     <>
       <h1 className="lp-h1">Settings</h1>
-      <div className="lp-subtle lp-page-note">
-        this dashboard is a static page — it can be hosted anywhere (GitHub Pages, S3) and pointed at any workstation
-        running <code className="lp-code">the-loop start</code>
-      </div>
 
       <Blueprint className="lp-settings-card">
         <div className="lp-settings-kicker">API server</div>
         <label className="lp-settings-label" htmlFor="lp-baseurl">
-          Base URL
+          Base URL — the workstation running <code className="lp-code">the-loop start</code>
         </label>
         <div className="lp-settings-row">
           <input
@@ -76,17 +72,18 @@ export function Settings() {
           <span>{probeText(probe, settings.baseUrl)}</span>
         </div>
 
-        <div className="lp-note">
-          The service binds loopback by default and refuses a non-loopback bind unless{" "}
-          <code>service.exposed: true</code>, and it carries no in-app auth. This page&rsquo;s origin is
-          allowed to read it out of the box (<code>service.cors.allowOrigins</code>); a copy hosted
-          anywhere else has to be added there. A service on another machine still needs to reach this
-          browser — an SSH tunnel (<code>ssh -L 8787:127.0.0.1:8787 workstation</code>) or a gateway that
-          terminates auth.
-        </div>
-        <div className="lp-hint">
-          saved in this browser (localStorage) · health check: GET {normalizeBaseUrl(draft)}/api/v1/health
-        </div>
+        <details className="lp-learn">
+          <summary>Learn more</summary>
+          <div className="lp-note">
+            This dashboard is a static page — hosted anywhere, pointed at any workstation. The service binds loopback
+            by default and refuses a non-loopback bind unless <code>service.exposed: true</code>, and it carries no
+            in-app auth. This page&rsquo;s origin is allowed to read it out of the box
+            (<code>service.cors.allowOrigins</code>); a copy hosted anywhere else has to be added there. A service on
+            another machine still needs to reach this browser — an SSH tunnel
+            (<code>ssh -L 8787:127.0.0.1:8787 workstation</code>) or a gateway that terminates auth. The URL is saved
+            in this browser (localStorage); the health check is GET {normalizeBaseUrl(draft)}/api/v1/health.
+          </div>
+        </details>
       </Blueprint>
 
       <Blueprint className="lp-settings-card">
@@ -99,11 +96,14 @@ export function Settings() {
             Demo fixture
           </ModeButton>
         </div>
-        <div className="lp-note">
-          The demo serves a bundled fixture in the same record shapes the service uses, so the screens can be evaluated
-          without a reachable workstation. Control verbs in demo mode mutate an in-memory copy and never leave the
-          browser.
-        </div>
+        <details className="lp-learn">
+          <summary>Learn more</summary>
+          <div className="lp-note">
+            The demo serves a bundled fixture in the same record shapes the service uses, so the screens can be
+            evaluated without a reachable workstation. Control verbs in demo mode mutate an in-memory copy and never
+            leave the browser.
+          </div>
+        </details>
       </Blueprint>
 
       <RefreshSection />
@@ -111,10 +111,6 @@ export function Settings() {
       <RestartSection />
 
       <CliConfigSection />
-
-      <div className="lp-more">
-        More to come: event-log retention view, default reply actor, per-workstation profiles.
-      </div>
     </>
   );
 }
@@ -192,12 +188,16 @@ function RefreshSection() {
         </div>
       ) : null}
 
-      <div className="lp-note">
-        Each poll cycle is four list calls plus one <code>graph/check</code> per loop, so a large board against a
-        remote workstation is happier at 30s. Streaming costs one held-open connection instead, and refreshes only
-        what each change touches — a graph move re-reads that one work item&rsquo;s position, anything else re-reads
-        the lists. A stream that cannot be opened says so in the header and falls back to polling.
-      </div>
+      <details className="lp-learn">
+        <summary>Learn more</summary>
+        <div className="lp-note">
+          Each poll cycle is four list calls plus one <code>graph/check</code> per active loop, so a large board
+          against a remote workstation is happier at 30s. Streaming costs one held-open connection instead, and
+          refreshes only what each change touches — a graph move re-reads that one work item&rsquo;s position,
+          anything else re-reads the lists. A stream that cannot be opened says so in the header&rsquo;s health dot
+          and falls back to polling.
+        </div>
+      </details>
     </Blueprint>
   );
 }
@@ -257,11 +257,14 @@ function RestartSection() {
         </div>
       ) : null}
       {state.kind === "failed" ? <div className="lp-config-report fail">{state.message}</div> : null}
-      <div className="lp-note">
-        Stops every running the-loop service on the workstation, then starts every enabled one —
-        the same thing <code className="lp-code">the-loop restart</code> does. With the upgrade, the
-        CLI is upgraded in between; a failed upgrade still restarts the current version.
-      </div>
+      <details className="lp-learn">
+        <summary>Learn more</summary>
+        <div className="lp-note">
+          Stops every running the-loop service on the workstation, then starts every enabled one —
+          the same thing <code className="lp-code">the-loop restart</code> does. With the upgrade, the
+          CLI is upgraded in between; a failed upgrade still restarts the current version.
+        </div>
+      </details>
     </Blueprint>
   );
 }

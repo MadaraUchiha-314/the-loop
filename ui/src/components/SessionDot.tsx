@@ -1,4 +1,8 @@
-/** The three-state session mark: filled active, grey paused, hollow otherwise. */
+/**
+ * The session mark: filled active, grey paused, hollow closed — round, so it
+ * never affords toggling. "No session" is a dash, not a hollow square: the
+ * square read as an unchecked checkbox in a clickable row (issue-283 B13).
+ */
 
 import type { SessionState } from "../api/model.ts";
 
@@ -6,7 +10,7 @@ const DOT_CLASS: Record<SessionState, string> = {
   active: "active",
   paused: "paused",
   closed: "idle",
-  none: "idle",
+  none: "none",
 };
 
 const LABEL: Record<SessionState, string> = {

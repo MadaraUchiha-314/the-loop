@@ -1,8 +1,8 @@
 /**
- * End-to-end through the React layer, against the demo transport: the board
- * renders, a row navigates, and every surface behaves the way the service
- * does — including the transcript-backed trace panel (issue-209), which
- * shipped visibly disabled until the route existed.
+ * End-to-end through the React layer, against the demo transport: the Work
+ * screen renders (sidebar + inbox + main pane, issue-283), a sidebar row
+ * opens its item, and every surface behaves the way the service does —
+ * including the transcript-backed trace panel (issue-209).
  */
 
 import { render, screen, waitFor, within } from "@testing-library/react";
@@ -35,20 +35,12 @@ afterEach(() => {
   globalThis.location.hash = "#/";
 });
 
-/**
- * Assert on a dashboard row once it has settled.
- *
- * The board paints twice on purpose — the flat lists first, then one
- * `graph/check` per loop — so anything derived from a graph report (the current
- * node, a parked-gate flag) is absent on the first paint. Re-reading the row
- * inside `waitFor` is what makes that a race the test tolerates rather than one
- * it loses.
- */
-async function expectInRow(rowLabel: string, text: string): Promise<void> {
-  await waitFor(() => {
-    const row = screen.getByRole("link", { name: rowLabel });
-    expect(within(row).getByText(text)).toBeInTheDocument();
-  });
+/** The sidebar row for one work item, once it has rendered. */
+async function sidebarRow(shortRef: string): Promise<HTMLElement> {
+  const rows = await screen.findAllByRole("link", { name: new RegExp(shortRef.replace("#", "#")) });
+  const row = rows.find((el) => el.className.includes("lp-side-row"));
+  expect(row).toBeDefined();
+  return row!;
 }
 
 describe("the control plane, on demo data", () => {
@@ -57,27 +49,45 @@ describe("the control plane, on demo data", () => {
     expect(await screen.findByText(/Demo data/)).toBeInTheDocument();
   });
 
-  it("lists every tracked work item with its loop position", async () => {
+  it("lists every tracked work item in the sidebar, grouped by state", async () => {
     renderApp();
 
-    // Nine fixture items, all present — the armed item with no session and the
-    // ad-hoc item (issue-230) included.
-    expect(await screen.findByText(/9 tracked/)).toBeInTheDocument();
-    // The position arrives in the second round (one graph/check per loop), so
-    // the row is re-read until it does rather than asserted on the first paint.
-    await expectInRow("Open loop-lab#214", "implementation");
+    // Nine fixture items in the overview line — the armed item with no session
+    // and the ad-hoc item (issue-230) included.
+    expect(await screen.findByText(/9 work items tracked/)).toBeInTheDocument();
+    expect(await sidebarRow("loop-lab#214")).toBeInTheDocument();
+    // Grouping by state (issue-283, feature #6): the group headers render.
+    expect(screen.getByText("Running")).toBeInTheDocument();
   });
 
   it("flags the item whose graph is parked on a human gate", async () => {
     renderApp();
-    await expectInRow("Open loop-lab#205", "human gate");
+    // The gate arrives with the graph round (one check per loop), so the row
+    // is re-read until the flag lands rather than asserted on the first paint.
+    await waitFor(async () => {
+      const row = await sidebarRow("loop-lab#205");
+      expect(within(row).getByText("human gate")).toBeInTheDocument();
+    });
+  });
+
+  it("shows the inbox grouped by work item, gates above errors", async () => {
+    renderApp();
+
+    // The overview pane is the inbox (issue-283 B3/B4): the human gate is
+    // approvable in place, and the paused/armed waits are listed.
+    await waitFor(() => {
+      expect(screen.getAllByText("human gate").length).toBeGreaterThan(0);
+    });
+    expect(screen.getAllByRole("button", { name: "Approve" }).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("session paused").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("armed without session").length).toBeGreaterThan(0);
   });
 
   it("opens a work item and shows its PRs, each on its own inner loop", async () => {
     const user = userEvent.setup();
     renderApp();
 
-    await user.click(await screen.findByRole("link", { name: "Open loop-lab#214" }));
+    await user.click(await sidebarRow("loop-lab#214"));
 
     expect(await screen.findByRole("heading", { name: /Control plane UI/ })).toBeInTheDocument();
     expect(screen.getByText(/Outer loop · pdlc-work-item-loop/)).toBeInTheDocument();
@@ -89,7 +99,7 @@ describe("the control plane, on demo data", () => {
     const user = userEvent.setup();
     renderApp();
 
-    await user.click(await screen.findByRole("link", { name: "Open loop-lab#214" }));
+    await user.click(await sidebarRow("loop-lab#214"));
 
     expect(await screen.findByText(/Agent is waiting for your input/)).toBeInTheDocument();
     // An empty reply has nothing to deliver, so it cannot be sent.
@@ -109,7 +119,7 @@ describe("the control plane, on demo data", () => {
     const user = userEvent.setup();
     renderApp();
 
-    await user.click(await screen.findByRole("link", { name: "Open loop-lab#214" }));
+    await user.click(await sidebarRow("loop-lab#214"));
 
     // The panel is live (issue-209): real turns, with tool invocations, and a
     // server-flagged malformed line surfaced rather than dropped.
@@ -120,24 +130,15 @@ describe("the control plane, on demo data", () => {
     expect(screen.getByText(/~\/\.claude\/projects\/.*\.jsonl/)).toBeInTheDocument();
   });
 
-  it("routes the attention tab to the union of /attention and the graph gates", async () => {
-    const user = userEvent.setup();
-    renderApp();
-
-    // Gates come from the graph round; leaving before it lands would test an
-    // empty board rather than the union this page exists to show.
-    await expectInRow("Open loop-lab#205", "human gate");
-    await user.click(screen.getByRole("link", { name: /^Attention/ }));
-
-    expect(await screen.findByRole("heading", { name: "Needs attention" })).toBeInTheDocument();
-    expect(screen.getAllByText("human gate").length).toBeGreaterThan(0);
-    expect(screen.getByText("session paused")).toBeInTheDocument();
-    expect(screen.getByText("armed without session")).toBeInTheDocument();
-  });
-
   it("survives a deep link to an item that is not on this service", async () => {
     globalThis.location.hash = "#/item/github:octo/nope%23999";
     renderApp();
     await waitFor(() => expect(screen.getByText(/No work item/)).toBeInTheDocument());
+  });
+
+  it("lands a pre-283 sessions deep link on the owning work item", async () => {
+    globalThis.location.hash = "#/sessions/github%3Aocto%2Floop-lab%23214";
+    renderApp();
+    expect(await screen.findByRole("heading", { name: /Control plane UI/ })).toBeInTheDocument();
   });
 });

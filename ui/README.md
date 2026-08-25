@@ -32,9 +32,10 @@ Settings offers three ways, stored per browser:
 
 Streaming refreshes only what a change touches — a graph move re-reads that one work
 item's loop position, anything else re-reads the four lists — so watching a busy work item
-costs less than the 15-second poll it replaces, not more. The header says whether the
-screen is **live**, **reconnecting**, or has fallen back to polling and why; it never
-shows a stale board that looks current. A service older than the stream, or one with
+costs less than the 15-second poll it replaces, not more. The header's health dot opens
+into the stream's state — **live**, **reconnecting**, or fallen back to polling and why —
+beside each daemon's last cycle (issue-283 B10); it never shows a stale board that looks
+current. A service older than the stream, or one with
 `service.stream.enabled: false`, answers 404 and the page polls instead.
 
 Demo mode streams too: the frames a demo viewer sees are the ones their own clicks
@@ -82,15 +83,17 @@ translates that into the same advice rather than "failed to fetch".
 Nothing here is a new endpoint. The interesting part is the **join**, which lives in
 [`src/api/model.ts`](src/api/model.ts):
 
-| Screen | Reads |
+Three screens (issue-283): **Work** — a persistent sidebar (the inbox, then every work
+item grouped by what it needs from you, then standing sessions) beside one main pane
+showing the selected item's rail, trace and chat bar — plus **Events** and **Settings**.
+
+| Surface | Reads |
 |---|---|
-| Dashboard | `GET /work-items` + `GET /sessions` + `GET /attention`, then one `POST /graph/check` per loop |
-| Work item | the same, plus `GET /events?workItem=…` |
-| Sessions | the board's join again, as a sidebar tree (outer session + one child per PR inner loop; ad-hoc items treeless), plus `GET /sessions/transcript?ref=…` for the selected stream and `POST /sessions/reply` from its chat bar (issue-230) |
-| Standing | `GET /standing-sessions`, plus `POST /standing-sessions/{create,delete,control,say}` — the sessions that belong to no work item (issue-277) |
-| Attention | `GET /attention`, unioned with the parked gates from the graph reports |
-| Events | `GET /events` |
-| Chrome | `GET /daemons` |
+| Work sidebar + inbox | `GET /work-items` + `GET /sessions` + `GET /attention`, then one `POST /graph/check` per active loop; inbox entries deduped per (item, kind) and tiered needs-input &gt; gate &gt; waits &gt; errors, with gates approvable in place (`POST /graph/complete`) and questions answerable in place (`POST /sessions/reply`) |
+| Work item pane | the same, plus `GET /events?workItem=…`, `GET /sessions/transcript?ref=…` for the selected trace (outer session or a PR endpoint's) and `POST /sessions/reply` from the chat bar (issue-230) |
+| Standing (a sidebar section of Work) | `GET /standing-sessions`, plus `POST /standing-sessions/{create,delete,control,say}` — the sessions that belong to no work item (issue-277) |
+| Events | `GET /events`, with the UI's own `api.request` traffic hidden unless asked for, an event-namespace and work-item filter (permalink: `#/events/<ref>`), and a live tail |
+| Chrome | `GET /daemons`, folded with the stream state into one health dot + popover |
 | Settings | `GET /health`, plus `GET /config` + `GET /config/schema` and `POST /config` for the CLI-config editor (issue-222) |
 
 The config editor is the one screen that renders itself: its sections, labels, prose,
@@ -112,9 +115,9 @@ Two facts shape that:
   `=== false` — it is absent, not `true`, on a normal answer.
 - **A standing session joins nothing.** It has no work item, so it appears on no other
   screen and needs none of the board's join — `GET /standing-sessions` is the whole of it.
-  That is also why it is its own tab rather than a row on Sessions: the Sessions screen is
-  a tree of work items, and a session with no ticket, no phases and no completion would be
-  a row lying about being part of one
+  That is also why it sits under its own sidebar divider rather than among the work-item
+  rows: a session with no ticket, no phases and no completion must not be a row lying
+  about being part of one
   ([issue-277](https://github.com/MadaraUchiha-314/the-loop/issues/277),
   [decision-100](../docs/decisions/decision-100.md)). The screen surfaces the service's
   refusals **verbatim** rather than re-wording them, and offers `delete` only for a
