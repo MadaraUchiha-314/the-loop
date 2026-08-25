@@ -1057,6 +1057,54 @@ def test_first_sight_spawns_and_baselines_comments(tmp_path):
     assert state.seen_comments("github:octo/repo#15") == {"IC_1"}
 
 
+def test_poll_caches_the_items_title_in_the_portable_record(tmp_path):
+    """issue-283 B1 — the record serves the title the listing already carried.
+
+    Feature: Ticket titles on the control plane
+      Scenario: The poller caches the title it just listed
+        Given a labelled issue with a title
+        When a poll cycle processes it
+        Then the portable record's poll section carries that title
+        And a later cycle refreshes it
+    """
+    ref = "github:octo/repo#15"
+    store = WorkItemStore(tmp_path / "portable")
+    state = PollState(store)
+    item = WorkItem(
+        "github",
+        OWNER,
+        REPO,
+        15,
+        "issue",
+        title="Fix the flaky spawn",
+        author="octocat",
+        labels=[LABEL],
+    )
+    provider = FakeProvider(items=[item], comments={15: [_comment("IC_1")]})
+    make_poller(
+        provider, SessionRegistry(tmp_path / "sessions"), RecordingDispatcher(), state
+    ).poll_once()
+    assert (store.section(ref, POLL) or {}).get("title") == "Fix the flaky spawn"
+
+    renamed = WorkItem(
+        "github",
+        OWNER,
+        REPO,
+        15,
+        "issue",
+        title="Fix the flaky spawn, properly",
+        author="octocat",
+        labels=[LABEL],
+    )
+    provider2 = FakeProvider(items=[renamed], comments={15: [_comment("IC_1")]})
+    make_poller(
+        provider2, SessionRegistry(tmp_path / "sessions"), RecordingDispatcher(), state
+    ).poll_once()
+    assert (store.section(ref, POLL) or {}).get(
+        "title"
+    ) == "Fix the flaky spawn, properly"
+
+
 def test_the_id_ledger_holds_a_whole_merged_thread(tmp_path):
     """One ledger now carries three streams of ids, so the cap must fit them.
 

@@ -663,7 +663,9 @@ EVENT_TYPES: Dict[str, str] = {
     # -- control-plane API service (source: service) — issue-161 --------------
     "api.request": (
         "One control-plane API operation completed (method, path, status). "
-        "Every mutating and reading route lands here; /health is exempt."
+        "Every mutating and reading route lands here; /health is exempt. "
+        "Debug level (issue-283): a polling dashboard's own reads must not "
+        "drown the events an operator reads the log for."
     ),
     "mcp.call": (
         "An MCP tool call was served over the control-plane's HTTP endpoint "

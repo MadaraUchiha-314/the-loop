@@ -253,8 +253,15 @@ def _core_route_class(holder: ConfigHolder):
                         status_code=400, content={"detail": str(exc)}
                     )
                 if operation_id not in _UNAUDITED_OPERATIONS:
+                    # Debug level (issue-283 B7): a dashboard polling every 15s
+                    # emits ~25 of these per cycle, and at info they push the
+                    # events an operator actually reads (gates, dispatches,
+                    # poll errors) out of every default window — the UI's own
+                    # reads become ~100% of the log it renders. The audit trail
+                    # is intact; a debug-level query still returns them.
                     eventlog.emit(
                         "api.request",
+                        level="debug",
                         method=request.method,
                         path=request.url.path,
                         status=response.status_code,
