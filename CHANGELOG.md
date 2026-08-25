@@ -1,3 +1,9 @@
+## v11.3.1 (2026-08-25)
+
+### Fix
+
+- **issue-281**: approvals are owned by approval nodes — the gate locks (#282)
+
 ## v11.3.0 (2026-08-24)
 
 ### Feat
