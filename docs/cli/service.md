@@ -224,5 +224,6 @@ must not forge.
 ## Observability
 
 Every API operation lands in the [event log](/cli/commands/events) as an
-`api.request` record (source `service`). `the-loop events --source service` is the
-query.
+`api.request` record (source `service`, level `debug` since issue-283 — a polling
+dashboard's own reads must not drown the events an operator reads the log for).
+`the-loop events --source service` is the query.
