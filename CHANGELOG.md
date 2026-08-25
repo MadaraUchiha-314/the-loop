@@ -1,3 +1,9 @@
+## v11.4.0 (2026-08-25)
+
+### Feat
+
+- **control-plane**: implement the issue-283 UI audit — service fixes + three-pane redesign (#297)
+
 ## v11.3.1 (2026-08-25)
 
 ### Fix
