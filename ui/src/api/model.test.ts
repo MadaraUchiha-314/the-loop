@@ -6,10 +6,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  attentionByItem,
   attentionEntries,
   awaitingInput,
   buildWorkItemViews,
   innerKey,
+  itemGroup,
   parseRef,
   questionOf,
   railFromStatus,
@@ -19,6 +21,7 @@ import {
   sessionTree,
   shortRef,
   specId,
+  timeOf,
   transcriptPath,
   transcriptThread,
 } from "./model.ts";
@@ -457,6 +460,120 @@ describe("attentionEntries", () => {
     });
     const entries = attentionEntries(views);
     expect(entries.map((entry) => entry.kind)).toEqual(["awaiting input"]);
+  });
+
+  it("dedupes repeated reports per (item, kind), newest first, with a count (issue-283 B3)", () => {
+    const views = buildWorkItemViews({
+      workItems: [RECORD],
+      sessions: [SESSION],
+      attention: [
+        { workItem: RECORD.ref, kind: "recent-error", detail: "poll.item_error at t1", at: "2026-08-19T10:00:00Z" },
+        { workItem: RECORD.ref, kind: "recent-error", detail: "poll.item_error at t3", at: "2026-08-19T12:00:00Z" },
+        { workItem: RECORD.ref, kind: "recent-error", detail: "poll.item_error at t2", at: "2026-08-19T11:00:00Z" },
+      ],
+    });
+    const entries = attentionEntries(views);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      kind: "recent error",
+      count: 3,
+      at: "2026-08-19T12:00:00Z",
+      detail: "poll.item_error at t3",
+    });
+  });
+
+  it("tiers the ordering: a gate is never buried under newer errors (issue-283 B4)", () => {
+    const gated = buildWorkItemViews({
+      workItems: [RECORD],
+      sessions: [SESSION],
+      attention: [],
+      graphs: {
+        outer: {
+          [RECORD.ref]: status("human-approval", {
+            parked: { node: "human-approval", reason: "waiting", since: "2026-08-10T00:00:00Z" },
+          }),
+        },
+        inner: {},
+      },
+    });
+    const erroring = buildWorkItemViews({
+      workItems: [{ ref: "github:octo/repo#99" }],
+      sessions: [],
+      attention: [
+        { workItem: "github:octo/repo#99", kind: "recent-error", detail: "boom", at: "2026-08-20T00:00:00Z" },
+      ],
+    });
+    const entries = attentionEntries([...erroring, ...gated]);
+    expect(entries.map((entry) => entry.kind)).toEqual(["human gate", "recent error"]);
+  });
+
+  it("groups the inbox by work item — one card per item, needs listed together", () => {
+    const views = buildWorkItemViews({
+      workItems: [RECORD],
+      sessions: [SESSION],
+      attention: [
+        { workItem: RECORD.ref, kind: "recent-error", detail: "boom", at: "2026-08-19T10:00:00Z" },
+        { workItem: RECORD.ref, kind: "session-paused", detail: "session paused" },
+      ],
+      graphs: {
+        outer: { [RECORD.ref]: status("human-approval", { parked: { node: "human-approval", reason: "x" } }) },
+        inner: {},
+      },
+    });
+    const groups = attentionByItem(views);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.entries.map((entry) => entry.kind)).toEqual(["human gate", "session paused", "recent error"]);
+  });
+
+  it("hands a gate entry what /graph/complete needs to approve it in place", () => {
+    const views = buildWorkItemViews({
+      workItems: [RECORD],
+      sessions: [SESSION],
+      attention: [],
+      graphs: {
+        outer: { [RECORD.ref]: status("human-approval", { parked: { node: "human-approval", reason: "x" } }) },
+        inner: {},
+      },
+    });
+    const [gate] = attentionEntries(views);
+    expect(gate!.gate).toEqual({ repo: "/checkout/issue-15", workItem: "issue-15", node: "human-approval" });
+  });
+});
+
+describe("itemGroup", () => {
+  it("puts a gated item in needs-you, an active one in running, the rest in idle", () => {
+    const [gated] = buildWorkItemViews({
+      workItems: [RECORD],
+      sessions: [SESSION],
+      attention: [],
+      graphs: {
+        outer: { [RECORD.ref]: status("human-approval", { parked: { node: "human-approval", reason: "x" } }) },
+        inner: {},
+      },
+    });
+    expect(itemGroup(gated!)).toBe("needs-you");
+
+    const [running] = buildWorkItemViews({ workItems: [RECORD], sessions: [SESSION], attention: [] });
+    expect(itemGroup(running!)).toBe("running");
+
+    const [idle] = buildWorkItemViews({ workItems: [RECORD], sessions: [], attention: [] });
+    expect(itemGroup(idle!)).toBe("idle");
+  });
+});
+
+describe("timeOf", () => {
+  const now = new Date("2026-08-25T12:00:00");
+
+  it("keeps a bare clock time for entries from today", () => {
+    expect(timeOf(new Date("2026-08-25T10:34:52").toISOString(), now)).toBe("10:34:52");
+  });
+
+  it("includes the date once the entry is not from today (issue-283 B12)", () => {
+    expect(timeOf(new Date("2026-08-20T10:34:52").toISOString(), now)).toBe("2026-08-20 10:34");
+  });
+
+  it("passes unparseable input through", () => {
+    expect(timeOf("whenever", now)).toBe("whenever");
   });
 });
 

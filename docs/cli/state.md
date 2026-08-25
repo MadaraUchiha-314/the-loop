@@ -114,7 +114,8 @@ item itself.
     "seenComments": ["2451…", "2452…"],
     "commentAttempts": {"2453…": 1},
     "spawn": {"attempts": 0, "gaveUp": false, "deliveryId": ""},
-    "lastPolledAt": "2026-07-31T10:42:00Z"
+    "lastPolledAt": "2026-07-31T10:42:00Z",
+    "title": "Rate-limit the poller's gh calls"
   },
   "graph": {
     "loop": "pdlc-work-item-loop",
@@ -208,6 +209,7 @@ back to routing by the operator's configured default.
 | `commentAttempts` | in-flight delivery attempts per comment, against [`maxRetries`](/config/cli/polling-options#maxretries) — **only deliveries that may still be retried** |
 | `spawn` | the presence/spawn retry ledger: attempts, whether it gave up, the in-flight delivery id |
 | `lastPolledAt` | the last cycle that saw the item |
+| `title` | the ticket's title, cached each cycle so the control plane can serve it (issue-283) — refreshed, so a renamed ticket converges |
 
 An item is *baselined* on first sight — the whole existing thread is marked seen, because
 the spawned session reads it itself — and the section is dropped when the item ends, so a

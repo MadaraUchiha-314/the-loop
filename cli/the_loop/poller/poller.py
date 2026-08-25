@@ -278,7 +278,7 @@ class PollState:
         return abandoned
 
     def baseline_comments(
-        self, ref: str, comment_ids: Sequence[str], polled_at: str
+        self, ref: str, comment_ids: Sequence[str], polled_at: str, title: str = ""
     ) -> None:
         """First-sight baseline: mark the whole existing thread seen (the
         spawned session reads it itself), with no attempts pending."""
@@ -290,6 +290,8 @@ class PollState:
             "spawn": spawn,
             "lastPolledAt": polled_at,
         }
+        if title:
+            self._items[ref]["title"] = title
         self._dirty.add(ref)
 
     # -- spawn retry ledger -----------------------------------------------------
@@ -380,7 +382,7 @@ class PollState:
     # -- end of cycle -----------------------------------------------------------
 
     def finalize(
-        self, ref: str, live_comment_ids: Sequence[str], polled_at: str
+        self, ref: str, live_comment_ids: Sequence[str], polled_at: str, title: str = ""
     ) -> None:
         """Prune the ledger to the live thread and stamp the poll time.
 
@@ -388,6 +390,11 @@ class PollState:
         ``seenComments`` and ``commentAttempts`` (they can never reappear),
         keeping the record bounded — the same windowing the old flat baseline
         did, extended to the attempt counters.
+
+        ``title`` caches the ticket's title in the portable record so the
+        control plane can serve it (issue-283 B1): the listing already carried
+        it, and without a cached copy every dashboard falls back to a bare
+        ref-and-link. Refreshed each cycle, so a renamed ticket converges.
         """
         live = set(live_comment_ids)
         item = self._item(ref)
@@ -405,6 +412,8 @@ class PollState:
         # follows the same pruning as the rest of the ledger (issue-146).
         item["gaveUp"] = {**record, "comments": abandoned} if abandoned else {}
         item["lastPolledAt"] = polled_at
+        if title:
+            item["title"] = title
 
     def flush(self, ref: str) -> None:
         """Write **one** item's record, if this cycle changed it (issue-159).
@@ -780,7 +789,10 @@ class Poller:
         if first_sight:
             pending = self._pending_control_ids(ref, comments)
             self.state.baseline_comments(
-                ref, [cid for cid in live_ids if cid not in pending], _utcnow()
+                ref,
+                [cid for cid in live_ids if cid not in pending],
+                _utcnow(),
+                title=item.title,
             )
             if not pending:
                 if spawn_authorized and not has_session:
@@ -841,7 +853,7 @@ class Poller:
         for comment in candidates:
             self._process_comment(provider, item, comment, refs, summary)
 
-        self.state.finalize(ref, live_ids, _utcnow())
+        self.state.finalize(ref, live_ids, _utcnow(), title=item.title)
 
     def _try_spawn(
         self,

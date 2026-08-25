@@ -1,12 +1,10 @@
 /* Control-plane app layer.
  *
- * The prototype in the handoff bundle carried its styling as inline `style="…"`
- * on every element. Those declarations are lifted here as classes, value for
- * value, so the rendered result matches the sign-off while the components stay
- * readable. Every colour, font and shadow still comes from an Industry token
- * (see industry.css); the bare px numbers are the design's own measurements,
- * which is why they live here rather than being rounded onto the --space-*
- * scale.
+ * Rewritten for the issue-283 calm-down: one quiet sidebar, one main pane,
+ * sentence case, hairline borders, one accent color. Every colour and font
+ * still comes from an Industry token (industry.css); the blueprint corner
+ * marks and the all-caps letter-spaced headings are gone on purpose — the
+ * data (refs, rails, dots) provides the texture (bloat #5).
  */
 
 body {
@@ -59,8 +57,8 @@ a:hover {
   display: flex;
   align-items: center;
   gap: 24px;
-  padding: 0 28px;
-  height: 56px;
+  padding: 0 20px;
+  height: 52px;
   border-bottom: 1px solid var(--color-neutral-300);
   background: var(--color-bg);
   flex-wrap: wrap;
@@ -69,13 +67,11 @@ a:hover {
 .lp-nav-brand {
   font-family: var(--font-heading);
   font-weight: 600;
-  font-size: 18px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  margin-right: 0;
+  font-size: 17px;
 }
 .lp-nav-brand span {
-  color: var(--color-accent-700);
+  color: var(--color-neutral-600);
+  font-weight: 400;
 }
 
 .lp-nav-tabs {
@@ -89,47 +85,26 @@ a:hover {
   border: none;
   cursor: pointer;
   padding: 6px 12px;
-  font-family: var(--font-heading);
-  font-size: 12px;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--color-neutral-600);
+  font-family: var(--font-body);
+  font-size: 13.5px;
+  color: var(--color-neutral-700);
   border-bottom: 2px solid transparent;
 }
 .lp-tab:hover {
   color: var(--color-accent-700);
+  text-decoration: none;
 }
 .lp-tab[aria-current="page"] {
   color: var(--color-accent-900);
   border-bottom-color: var(--color-accent);
 }
-
-.lp-daemons {
-  display: flex;
-  gap: 16px;
-  align-items: center;
-  font-size: 12px;
-  font-family: var(--font-heading);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--color-neutral-700);
-}
-.lp-daemon {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.lp-daemon-dot {
-  width: 8px;
-  height: 8px;
-  display: inline-block;
-  box-sizing: border-box;
-}
-.lp-daemon-dot.on {
-  background: var(--color-accent);
-}
-.lp-daemon-dot.off {
-  border: 1px solid var(--color-neutral-500);
+.lp-tab-badge {
+  margin-left: 6px;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--color-accent-200);
+  color: var(--color-accent-900);
 }
 
 .lp-main {
@@ -137,38 +112,94 @@ a:hover {
   max-width: 1240px;
   width: 100%;
   margin: 0 auto;
-  padding: 28px 28px 64px;
+  padding: 24px 24px 64px;
   box-sizing: border-box;
 }
+/* The Work screen owns its own two-column grid and wants the full width. */
+.lp-main-work {
+  max-width: none;
+  padding: 0;
+}
 
-.lp-footer {
-  border-top: 1px solid var(--color-neutral-300);
-  padding: 10px 28px;
-  font-size: 11px;
-  color: var(--color-neutral-600);
+.lp-offer-demo {
+  padding: 0 24px 24px;
+}
+
+/* — health dot (issue-283 B10) ————————————————————————————————————————— */
+
+.lp-health {
+  position: relative;
+  font-size: 12.5px;
+  color: var(--color-neutral-700);
+}
+.lp-health > summary {
   display: flex;
-  gap: 18px;
-  font-family: ui-monospace, monospace;
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  list-style: none;
+  padding: 6px 4px;
+}
+.lp-health > summary::-webkit-details-marker {
+  display: none;
+}
+.lp-health-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+.lp-health-dot.ok {
+  background: var(--color-accent);
+}
+.lp-health-dot.warn {
+  background: transparent;
+  border: 2px solid var(--color-accent-900);
+}
+.lp-health-dot.unknown {
+  background: transparent;
+  border: 1px solid var(--color-neutral-500);
+}
+.lp-health-pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  min-width: 280px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-neutral-400);
+  box-shadow: var(--shadow-md);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lp-health-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  line-height: 1.4;
+}
+.lp-health-refresh {
+  align-self: flex-start;
+  font-size: 12px;
 }
 
 /* — page furniture ————————————————————————————————————————————————— */
 
 .lp-h1 {
   font-family: var(--font-heading);
-  font-size: 26px;
+  font-size: 24px;
   font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
   margin: 0;
 }
 
 .lp-h2 {
   font-family: var(--font-heading);
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
   margin: 28px 0 10px;
   color: var(--color-neutral-800);
 }
@@ -177,7 +208,7 @@ a:hover {
   display: flex;
   align-items: baseline;
   gap: 12px;
-  margin: 0 0 12px;
+  margin: 0 0 14px;
   flex-wrap: wrap;
 }
 
@@ -190,17 +221,41 @@ a:hover {
   font-family: ui-monospace, monospace;
 }
 
-/* The line of provenance under a page title — which routes fed this screen. */
-.lp-page-note {
-  margin: 4px 0 18px;
-  max-width: 860px;
-}
-
 .lp-code {
   font-size: 11px;
   background: var(--color-neutral-200);
   padding: 2px 5px;
   font-family: ui-monospace, monospace;
+}
+
+.lp-card {
+  border: 1px solid var(--color-neutral-300);
+  background: transparent;
+}
+
+.lp-skeleton {
+  color: var(--color-neutral-600);
+  font-size: 13px;
+  padding: 24px 0;
+}
+
+.lp-empty {
+  padding: 18px;
+  font-size: 13px;
+  color: var(--color-neutral-700);
+  line-height: 1.6;
+}
+
+.lp-linklike {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--color-accent-700);
+  cursor: pointer;
+}
+.lp-linklike:hover {
+  text-decoration: underline;
 }
 
 /* — banners ————————————————————————————————————————————————————————— */
@@ -210,7 +265,7 @@ a:hover {
   gap: 12px;
   align-items: center;
   flex-wrap: wrap;
-  padding: 10px 28px;
+  padding: 10px 20px;
   font-size: 12.5px;
   border-bottom: 1px solid var(--color-neutral-300);
 }
@@ -223,132 +278,232 @@ a:hover {
   color: var(--color-neutral-900);
 }
 .lp-banner-kicker {
-  font-family: var(--font-heading);
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-weight: 600;
+  font-size: 12px;
 }
 .lp-banner-spacer {
   flex: 1;
 }
 
-/* — attention strip ————————————————————————————————————————————————— */
+/* — the Work screen: sidebar + main pane (issue-283, bloat #1) ————————— */
 
-.lp-strip {
+.lp-work {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  align-items: start;
+  min-height: calc(100vh - 52px);
+}
+@media (max-width: 900px) {
+  .lp-work {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+}
+
+.lp-side {
+  border-right: 1px solid var(--color-neutral-300);
+  position: sticky;
+  top: 0;
+  max-height: 100vh;
+  overflow-y: auto;
+  padding: 14px 0 24px;
+  background: var(--color-neutral-100);
+}
+@media (max-width: 900px) {
+  .lp-side {
+    position: static;
+    max-height: none;
+    border-right: none;
+    border-bottom: 1px solid var(--color-neutral-300);
+  }
+}
+
+.lp-side-group {
+  margin-top: 14px;
+}
+.lp-side-head {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--color-neutral-600);
+  padding: 4px 16px;
+}
+.lp-side-row {
   display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 24px;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 16px;
+  font-size: 12.5px;
+  color: inherit;
+  text-decoration: none;
+  min-width: 0;
+}
+.lp-side-row:hover {
+  background: var(--color-neutral-200);
+  text-decoration: none;
+  color: inherit;
+}
+.lp-side-row.current {
+  background: var(--color-neutral-200);
+  box-shadow: inset 2px 0 0 var(--color-accent-700);
+}
+.lp-side-ref {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.lp-side-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-neutral-600);
+  flex: 1;
+  min-width: 0;
+}
+.lp-side-flag {
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--color-accent-700);
+  color: var(--color-bg);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.lp-side-when {
+  font-size: 11px;
+  color: var(--color-neutral-500);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.lp-side-banner {
+  margin: 10px 16px 0;
+  padding: 8px 10px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--color-neutral-700);
+  border: 1px solid var(--color-neutral-300);
+  background: var(--color-bg);
+}
+.lp-side-clear {
+  padding: 6px 16px;
+  font-size: 12px;
+  color: var(--color-neutral-600);
+}
+.lp-side-more {
+  display: block;
+  padding: 4px 16px;
+  font-size: 12px;
+}
+.lp-side-manage {
+  font-size: 12px;
+  color: var(--color-accent-700);
 }
 
-.lp-strip-card {
-  position: relative;
-  flex: 1;
-  min-width: 220px;
-  text-align: left;
-  background: transparent;
-  padding: 12px 14px;
-  cursor: pointer;
-  font-family: var(--font-body);
+.lp-pane {
+  min-width: 0;
+  padding: 24px 28px 64px;
+  max-width: 1080px;
+}
+.lp-overview-line {
+  margin: 4px 0 18px;
+}
+
+/* — the inbox (issue-283 B3/B4/B6, features #2/#3) ————————————————————— */
+
+.lp-inbox {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 760px;
+}
+.lp-inbox.compact {
+  gap: 8px;
+  padding: 0 10px;
+  max-width: none;
+}
+.lp-inbox-card {
   border: 1px solid var(--color-neutral-400);
+  background: var(--color-bg);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
-.lp-strip-card:hover {
-  background: var(--color-accent-100);
-}
-.lp-strip-card.hot {
+.lp-inbox-card.hot {
   border-color: var(--color-accent);
 }
-.lp-strip-kind {
-  font-family: var(--font-heading);
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--color-neutral-700);
-  margin-bottom: 4px;
+.lp-inbox-head {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
 }
-.lp-strip-card.hot .lp-strip-kind {
-  color: var(--color-accent-900);
-}
-.lp-strip-ref {
-  font-size: 13px;
-  color: var(--color-text);
-}
-.lp-strip-detail {
-  font-size: 12px;
-  color: var(--color-neutral-700);
-  margin-top: 2px;
-}
-
-/* — work-item table ————————————————————————————————————————————————— */
-
-.lp-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-.lp-table thead tr {
-  font-family: var(--font-heading);
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  font-size: 11px;
-  color: var(--color-neutral-700);
-  text-align: left;
-}
-.lp-table th {
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--color-neutral-400);
-  text-align: left;
-  font-weight: 600;
-}
-.lp-table td {
-  padding: 10px;
-  border-bottom: 1px solid var(--color-neutral-200);
-  vertical-align: top;
-}
-.lp-table tbody tr.lp-row {
-  cursor: pointer;
-}
-.lp-table tbody tr.lp-row:hover,
-.lp-table tbody tr.lp-row:focus-visible {
-  background: var(--color-accent-100);
-}
-.lp-td-nowrap {
-  white-space: nowrap;
-}
-.lp-td-ref {
-  white-space: nowrap;
+.lp-inbox-ref {
   font-family: ui-monospace, monospace;
   font-size: 12px;
 }
-.lp-td-title {
-  max-width: 300px;
-}
-.lp-td-dim {
-  white-space: nowrap;
-  color: var(--color-neutral-700);
-  font-size: 12px;
-}
-.lp-td-prs {
-  white-space: nowrap;
-  font-size: 12px;
-}
-
-.lp-flag {
-  margin-left: 8px;
-  font-family: var(--font-heading);
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  padding: 2px 6px;
-  color: var(--color-bg);
-  background: var(--color-accent-700);
-  white-space: nowrap;
-}
-
-.lp-progress {
-  color: var(--color-neutral-600);
+.lp-inbox-when {
   font-size: 11px;
-  margin-left: 4px;
+  color: var(--color-neutral-500);
+  margin-left: auto;
+  white-space: nowrap;
 }
+.lp-inbox-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lp-inbox-line {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.lp-inbox-kind {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--color-neutral-700);
+}
+.lp-inbox-card.hot .lp-inbox-kind {
+  color: var(--color-accent-900);
+}
+.lp-inbox-count {
+  font-size: 10.5px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--color-neutral-200);
+  color: var(--color-neutral-700);
+}
+.lp-inbox-detail {
+  font-size: 12.5px;
+  color: var(--color-neutral-800);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.lp-inbox-act {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.lp-inbox-act textarea {
+  flex: 1;
+  min-width: 140px;
+  resize: vertical;
+  font: inherit;
+  font-size: 12.5px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-neutral-400);
+  background: var(--color-neutral-100);
+}
+.lp-inbox-act .btn {
+  font-size: 12px;
+}
+.lp-inbox-error {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: var(--color-accent-900);
+}
+
+/* — session dots (issue-283 B13: round, and "none" is a dash) ———————————— */
 
 .lp-session-dot {
   display: inline-block;
@@ -356,6 +511,8 @@ a:hover {
   height: 7px;
   margin-right: 6px;
   box-sizing: border-box;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 .lp-session-dot.small {
   width: 6px;
@@ -374,24 +531,31 @@ a:hover {
   background: transparent;
   border: 1px solid var(--color-neutral-500);
 }
+.lp-session-dot.none {
+  height: 1px;
+  border-radius: 0;
+  background: var(--color-neutral-500);
+  border: none;
+  align-self: center;
+}
+
+/* — legacy daemon dot (Standing cards) ————————————————————————————————— */
+
+.lp-daemon-dot {
+  width: 8px;
+  height: 8px;
+  display: inline-block;
+  box-sizing: border-box;
+  border-radius: 50%;
+}
+.lp-daemon-dot.on {
+  background: var(--color-accent);
+}
+.lp-daemon-dot.off {
+  border: 1px solid var(--color-neutral-500);
+}
 
 /* — detail header ——————————————————————————————————————————————————— */
-
-.lp-back {
-  background: none;
-  border: none;
-  padding: 0;
-  margin: 0 0 16px;
-  cursor: pointer;
-  font-family: var(--font-heading);
-  font-size: 12px;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--color-accent-700);
-}
-.lp-back:hover {
-  text-decoration: underline;
-}
 
 .lp-detail-head {
   display: flex;
@@ -411,9 +575,8 @@ a:hover {
 }
 .lp-detail-title {
   font-family: var(--font-heading);
-  font-size: 28px;
+  font-size: 26px;
   font-weight: 600;
-  letter-spacing: 0.02em;
   margin: 4px 0 8px;
 }
 .lp-detail-tags {
@@ -432,10 +595,37 @@ a:hover {
   font-size: 12px;
 }
 
+/* What this item needs — its waits and errors, expanded (feature #7). */
+.lp-needs {
+  margin: 14px 0;
+  border: 1px solid var(--color-neutral-300);
+}
+.lp-needs-row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  border-bottom: 1px solid var(--color-neutral-200);
+  flex-wrap: wrap;
+}
+.lp-needs-row:last-child {
+  border-bottom: none;
+}
+.lp-needs-kind {
+  font-weight: 600;
+  color: var(--color-neutral-700);
+  white-space: nowrap;
+}
+.lp-needs-detail {
+  flex: 1;
+  min-width: 200px;
+  overflow-wrap: anywhere;
+}
+
 /* — call-out cards (needs input, human gate) ————————————————————————— */
 
 .lp-callout {
-  position: relative;
   padding: 16px 18px;
   margin: 18px 0;
   border: 1px solid var(--color-accent);
@@ -450,21 +640,9 @@ a:hover {
   flex-wrap: wrap;
 }
 .lp-callout-kicker {
-  font-family: var(--font-heading);
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-weight: 600;
+  font-size: 13px;
   color: var(--color-accent-900);
-}
-.lp-callout-path {
-  font-family: ui-monospace, monospace;
-  font-size: 10.5px;
-  color: var(--color-neutral-700);
-}
-.lp-callout-path code {
-  background: var(--color-neutral-100);
-  padding: 1px 4px;
-  border: 1px solid var(--color-neutral-300);
 }
 .lp-callout-body {
   font-size: 14px;
@@ -498,7 +676,6 @@ a:hover {
 }
 
 .lp-gate {
-  position: relative;
   border: 1px solid var(--color-accent-700);
   padding: 14px 18px;
   margin: 18px 0;
@@ -545,15 +722,16 @@ a:hover {
   min-width: 46px;
 }
 .lp-node-mark {
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
   box-sizing: border-box;
   background: transparent;
   border: 1px solid var(--color-neutral-400);
+  border-radius: 50%;
 }
 .lp-rail.inner .lp-node-mark {
-  width: 10px;
-  height: 10px;
+  width: 9px;
+  height: 9px;
 }
 .lp-node-mark.done {
   background: var(--color-accent);
@@ -570,17 +748,13 @@ a:hover {
   border: 1px solid var(--color-neutral-700);
 }
 .lp-node-label {
-  font-family: var(--font-heading);
   font-size: 10.5px;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
   color: var(--color-neutral-500);
   text-align: center;
   white-space: nowrap;
 }
 .lp-rail.inner .lp-node-label {
-  font-size: 9px;
-  letter-spacing: 0.04em;
+  font-size: 9.5px;
 }
 .lp-node-label.done {
   color: var(--color-neutral-800);
@@ -607,7 +781,6 @@ a:hover {
   gap: 14px;
 }
 .lp-pr-card {
-  position: relative;
   padding: 14px 16px;
 }
 .lp-pr-head {
@@ -627,10 +800,6 @@ a:hover {
 }
 .lp-pr-tags .tag {
   font-size: 10.5px;
-}
-.lp-pr-title {
-  font-size: 13px;
-  margin: 4px 0 10px;
 }
 .lp-pr-foot {
   font-size: 11.5px;
@@ -662,13 +831,10 @@ a:hover {
   overflow-wrap: anywhere;
 }
 /* issue-239 R6.2/R6.5: the panel scrolls inside its own bounds rather than
-   extending the page, which is what used to put the chat bar a whole
-   transcript's worth of scrolling away. `clamp` keeps it useful on a short
-   viewport without collapsing to a letterbox: never below 240px, never taller
-   than 720px, 55vh in between. `overscroll-behavior` stops a flick at the
-   bottom of the list from scrolling the page instead. */
+   extending the page. `clamp` keeps it useful on a short viewport without
+   collapsing to a letterbox; `overscroll-behavior` stops a flick at the bottom
+   of the list from scrolling the page instead. */
 .lp-trace {
-  position: relative;
   border: 1px solid var(--color-neutral-300);
   padding: 4px 0;
   max-height: clamp(240px, 55vh, 720px);
@@ -690,10 +856,8 @@ a:hover {
 }
 .lp-trace-kind {
   min-width: 118px;
-  font-family: var(--font-heading);
-  font-size: 10.5px;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 600;
   color: var(--color-neutral-700);
   padding-top: 2px;
 }
@@ -703,11 +867,13 @@ a:hover {
 .lp-trace-kind.hot {
   color: var(--color-accent-900);
 }
+.lp-trace-kind.dim {
+  color: var(--color-neutral-500);
+}
 .lp-trace-ts {
   color: var(--color-neutral-500);
   margin-top: 2px;
-  letter-spacing: 0;
-  text-transform: none;
+  font-weight: 400;
   font-family: ui-monospace, monospace;
 }
 .lp-trace-main {
@@ -725,27 +891,6 @@ a:hover {
   flex-direction: column;
   gap: 3px;
   margin-top: 8px;
-}
-.lp-trace-tool {
-  font-family: ui-monospace, monospace;
-  font-size: 11.5px;
-  color: var(--color-neutral-800);
-  background: var(--color-neutral-200);
-  padding: 4px 8px;
-  display: flex;
-  gap: 10px;
-}
-.lp-trace-tool-name {
-  color: var(--color-accent-700);
-  min-width: 64px;
-}
-.lp-trace-tool-detail {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.lp-trace-kind.dim {
-  color: var(--color-neutral-500);
 }
 .lp-trace-meta {
   font-size: 12px;
@@ -804,105 +949,10 @@ a:hover {
   color: var(--color-neutral-700);
 }
 
-/* — sessions screen (issue-230) ——————————————————————————————————————— */
-
-.lp-sessions {
-  display: grid;
-  grid-template-columns: 300px 1fr;
-  gap: 20px;
-  align-items: start;
-}
-@media (max-width: 860px) {
-  .lp-sessions {
-    grid-template-columns: 1fr;
-  }
-}
-.lp-sessions-side {
-  border: 1px solid var(--color-neutral-300);
-  position: sticky;
-  top: 12px;
-}
-.lp-sessions-side-head {
-  font-family: var(--font-heading);
-  font-size: 10.5px;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--color-neutral-600);
-  padding: 10px 12px 6px;
-  border-bottom: 1px solid var(--color-neutral-200);
-}
-.lp-sessions-item {
-  border-bottom: 1px solid var(--color-neutral-200);
-}
-.lp-sessions-item:last-child {
-  border-bottom: none;
-}
-.lp-sessions-item.selected {
-  background: var(--color-neutral-100);
-}
-.lp-sessions-row {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 7px 12px;
-  font-size: 12px;
-  color: inherit;
-  text-decoration: none;
-}
-.lp-sessions-row:hover {
-  background: var(--color-neutral-200);
-}
-.lp-sessions-row.current {
-  background: var(--color-neutral-200);
-  box-shadow: inset 2px 0 0 var(--color-accent-700);
-}
-.lp-sessions-ref {
-  font-family: ui-monospace, monospace;
-  font-size: 12px;
-}
-.lp-sessions-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--color-neutral-600);
-  flex: 1;
-  min-width: 0;
-}
-.lp-sessions-tree {
-  padding: 0 0 6px;
-}
-.lp-sessions-tree .lp-sessions-row {
-  padding-left: 26px;
-  font-size: 11.5px;
-}
-.lp-sessions-row.lp-sessions-inner {
-  padding-left: 44px;
-  font-family: ui-monospace, monospace;
-}
-.lp-sessions-none {
-  padding: 2px 12px 6px 44px;
-  font-size: 11px;
-  color: var(--color-neutral-500);
-}
-.lp-sessions-adhoc {
-  padding: 0 12px 8px 26px;
-  font-size: 11px;
-  color: var(--color-neutral-500);
-  font-family: ui-monospace, monospace;
-}
-.lp-sessions-main {
-  min-width: 0;
-}
-.lp-sessions-main .lp-trace-head {
-  margin-top: 0;
-}
-
 /* — chat bar (issue-230) —————————————————————————————————————————————— */
 
-/* issue-239 R6.1: the message box stays in reach. Sticky rather than fixed, so
-   it is still in normal flow — it traps no focus, covers nothing at the end of
-   the page, and needs no spacer under it. The gradient keeps the trace from
-   appearing to run underneath a floating bar. */
+/* issue-239 R6.1: sticky rather than fixed, so it is still in normal flow —
+   it traps no focus, covers nothing, needs no spacer. */
 .lp-chat {
   margin-top: 10px;
   position: sticky;
@@ -937,14 +987,45 @@ a:hover {
   margin-bottom: 6px;
 }
 
-.lp-empty {
-  padding: 18px;
-  font-size: 13px;
-  color: var(--color-neutral-700);
-  line-height: 1.6;
-}
-
 /* — events ———————————————————————————————————————————————————————————— */
+
+.lp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  table-layout: auto;
+}
+.lp-table thead tr {
+  font-size: 11.5px;
+  color: var(--color-neutral-700);
+  text-align: left;
+}
+.lp-table th {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-neutral-400);
+  text-align: left;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.lp-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-neutral-200);
+  vertical-align: middle;
+}
+.lp-td-nowrap {
+  white-space: nowrap;
+}
+.lp-td-ref {
+  white-space: nowrap;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+.lp-td-dim {
+  white-space: nowrap;
+  color: var(--color-neutral-700);
+  font-size: 12px;
+}
 
 .lp-event-row {
   display: flex;
@@ -957,7 +1038,7 @@ a:hover {
 .lp-event-ts {
   font-family: ui-monospace, monospace;
   color: var(--color-neutral-600);
-  min-width: 132px;
+  min-width: 72px;
 }
 .lp-event-name {
   font-family: ui-monospace, monospace;
@@ -970,85 +1051,44 @@ a:hover {
 }
 .lp-filters {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   margin-bottom: 14px;
   flex-wrap: wrap;
-}
-
-/* — attention inbox ——————————————————————————————————————————————————— */
-
-.lp-inbox {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  max-width: 860px;
-}
-.lp-inbox-card {
-  position: relative;
-  border: 1px solid var(--color-neutral-400);
-  padding: 14px 18px;
-  display: flex;
-  gap: 16px;
   align-items: center;
-  flex-wrap: wrap;
 }
-.lp-inbox-card.hot {
-  border-color: var(--color-accent);
+.lp-filter-select {
+  width: auto;
+  min-height: 30px;
+  font-size: 12.5px;
+  padding: 3px 8px;
 }
-.lp-inbox-main {
-  flex: 1;
-  min-width: 280px;
-}
-.lp-inbox-head {
-  display: flex;
-  gap: 10px;
-  align-items: baseline;
-  flex-wrap: wrap;
-}
-.lp-inbox-kind {
-  font-family: var(--font-heading);
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.lp-filter-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12.5px;
   color: var(--color-neutral-700);
-}
-.lp-inbox-card.hot .lp-inbox-kind {
-  color: var(--color-accent-900);
-}
-.lp-inbox-ref {
-  font-family: ui-monospace, monospace;
-  font-size: 12px;
-}
-.lp-inbox-detail {
-  font-size: 13px;
-  margin-top: 4px;
-  color: var(--color-neutral-800);
+  cursor: pointer;
 }
 
 /* — settings —————————————————————————————————————————————————————————— */
 
 .lp-settings-card {
-  position: relative;
   border: 1px solid var(--color-neutral-300);
   padding: 20px 22px;
-  max-width: 640px;
+  max-width: 760px;
   margin-bottom: 16px;
 }
 .lp-settings-kicker {
   font-family: var(--font-heading);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
   color: var(--color-neutral-800);
   margin-bottom: 12px;
 }
 .lp-settings-label {
   display: block;
-  font-family: var(--font-heading);
-  font-size: 11px;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
+  font-size: 12px;
   color: var(--color-neutral-700);
   margin-bottom: 6px;
 }
@@ -1060,13 +1100,19 @@ a:hover {
 }
 .lp-settings-row .input {
   flex: 1;
-  min-width: 280px;
+  /* Wide enough to show its own value (issue-283, bloat #4). */
+  min-width: 380px;
   font-family: ui-monospace, monospace;
   font-size: 13px;
   padding: 8px 10px;
   border: 1px solid var(--color-neutral-400);
   background: var(--color-neutral-100);
   box-sizing: border-box;
+}
+@media (max-width: 640px) {
+  .lp-settings-row .input {
+    min-width: 0;
+  }
 }
 .lp-conn {
   display: flex;
@@ -1082,6 +1128,7 @@ a:hover {
   box-sizing: border-box;
   border: 1px solid var(--color-neutral-500);
   background: transparent;
+  border-radius: 50%;
 }
 .lp-conn-dot.ok {
   background: var(--color-accent);
@@ -1095,9 +1142,7 @@ a:hover {
   font-size: 12px;
   color: var(--color-neutral-700);
   line-height: 1.6;
-  margin-top: 14px;
-  border-top: 1px solid var(--color-neutral-200);
-  padding-top: 12px;
+  margin-top: 10px;
 }
 .lp-note code {
   background: var(--color-neutral-200);
@@ -1111,16 +1156,18 @@ a:hover {
   font-family: ui-monospace, monospace;
   overflow-wrap: anywhere;
 }
-.lp-more {
-  font-size: 12px;
-  color: var(--color-neutral-600);
-  margin-top: 16px;
-}
 
-.lp-skeleton {
-  color: var(--color-neutral-600);
-  font-size: 13px;
-  padding: 24px 0;
+/* One line per control; the prose waits behind a disclosure (bloat #4). */
+.lp-learn {
+  margin-top: 12px;
+  border-top: 1px solid var(--color-neutral-200);
+  padding-top: 10px;
+}
+.lp-learn > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--color-accent-700);
+  list-style-position: inside;
 }
 
 /* — settings: the CLI config editor (issue-222) ————————————————————————— */
@@ -1238,15 +1285,19 @@ a:hover {
 .lp-mode-interval {
   margin: 12px 0 0 34px;
 }
+.lp-restart-upgrade {
+  margin-bottom: 0;
+}
 
-/* — Standing sessions (issue-277) —
-   The screen has no tree and no board: a create form, then one card per
-   session. Every rule below is layout only; the palette is `industry.css`'s,
-   so a theme change reaches this screen without a second edit. */
+/* — standing sessions (issue-277) ————————————————————————————————————— */
+
 .lp-standing {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+.lp-standing .lp-trace-head {
+  margin-top: 0;
 }
 .lp-standing-createbar {
   display: flex;
@@ -1265,7 +1316,6 @@ a:hover {
   gap: 4px;
 }
 .lp-standing-field label {
-  font-family: var(--font-heading);
   font-size: 13px;
   color: var(--color-neutral-800);
 }
@@ -1305,8 +1355,7 @@ a:hover {
   margin: 0;
 }
 /* The declared/created split decides whether `delete` is offered, so it is a
-   worded chip rather than a colour — it has to survive being read in
-   monochrome, and it is the first thing an operator needs from the card. */
+   worded chip rather than a colour. */
 .lp-standing-tag {
   font-size: 12px;
   padding: 2px 8px;
@@ -1331,8 +1380,6 @@ a:hover {
 }
 .lp-standing-facts dt {
   font-size: 11.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
   color: var(--color-neutral-600);
 }
 .lp-standing-facts dd {

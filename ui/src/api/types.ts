@@ -56,6 +56,8 @@ export interface WorkItemRecord {
     commentAttempts?: Record<string, number>;
     spawn?: { attempts?: number; gaveUp?: boolean; deliveryId?: string };
     lastPolledAt?: string;
+    /** The ticket's title, cached by the poller each cycle (issue-283 B1). */
+    title?: string;
   } | null;
   graph?: {
     loop?: string;
@@ -185,9 +187,11 @@ export interface EventRecord {
 /** `GET /api/v1/attention`. */
 export interface AttentionItem {
   workItem: string;
-  /** `session-paused` | `armed-without-session` | `recent-error`. */
+  /** `session-paused` | `armed-without-session` | `awaiting-input` | `recent-error`. */
   kind: string;
   detail: string;
+  /** The raw event timestamp behind a `recent-error`, so age is renderable. */
+  at?: string;
 }
 
 /** `GET /api/v1/daemons`. */

@@ -653,7 +653,32 @@ export interface AttentionEntry {
   detail: string;
   urgent: boolean;
   action: string;
+  /** How many raw reports collapsed into this entry (issue-283 B3). */
+  count: number;
+  /** The newest raw timestamp behind it, `""` when none is known. */
+  at: string;
+  /** Priority tier — lower is more actionable (issue-283 B4). */
+  tier: number;
+  /**
+   * Set on a human-gate entry: what `POST /graph/complete` needs to approve it
+   * from the inbox card (issue-283, feature #2). `repo` is `""` when no
+   * session on this machine recorded a checkout — the button disables.
+   */
+  gate?: { repo: string; workItem: string; node: string; pr?: number; prRepo?: string };
 }
+
+/** needs input > human gate > awaiting/armed/paused > errors (issue-283 B4). */
+const TIER_NEEDS_INPUT = 0;
+const TIER_GATE = 1;
+const TIER_WAITING = 2;
+const TIER_ERROR = 3;
+
+const KIND_TIER: Record<string, number> = {
+  "awaiting-input": TIER_NEEDS_INPUT,
+  "session-paused": TIER_WAITING,
+  "armed-without-session": TIER_WAITING,
+  "recent-error": TIER_ERROR,
+};
 
 /**
  * The inbox: what `/attention` reports, plus the graph gates it cannot see.
@@ -662,6 +687,14 @@ export interface AttentionEntry {
  * which is why `core.attention` deliberately leaves them out and documents that
  * they surface through `graphs.check` per work item. Having already fetched
  * those reports for the rails, the UI folds them back in here.
+ *
+ * Two rules the raw list does not have (issue-283 B3/B4): entries are
+ * **deduplicated per (work item, kind)** — the service reports one
+ * `recent-error` per error event, so one flaky item would otherwise fill the
+ * inbox with copies differing only in timestamp; the newest survives with a
+ * count. And ordering is **tiered** — a question outranks a gate outranks a
+ * wait outranks an error, newest first within a tier — so the one entry that
+ * needs a human is never buried under stale errors.
  */
 export function attentionEntries(views: WorkItemView[]): AttentionEntry[] {
   const entries: AttentionEntry[] = [];
@@ -675,6 +708,9 @@ export function attentionEntries(views: WorkItemView[]): AttentionEntry[] {
         detail: questionOf(view.question),
         urgent: true,
         action: "Reply",
+        count: 1,
+        at: view.question.ts,
+        tier: TIER_NEEDS_INPUT,
       });
     }
     if (view.parked) {
@@ -686,6 +722,10 @@ export function attentionEntries(views: WorkItemView[]): AttentionEntry[] {
         detail: `${view.parked.node} — ${view.parked.reason}`,
         urgent: true,
         action: "Review",
+        count: 1,
+        at: view.parked.since ?? "",
+        tier: TIER_GATE,
+        gate: { repo: view.repoPath, workItem: view.specId ?? "", node: view.parked.node },
       });
     }
     for (const pr of view.pullRequests) {
@@ -698,37 +738,130 @@ export function attentionEntries(views: WorkItemView[]): AttentionEntry[] {
         detail: `${pr.status.parked.node} — ${pr.status.parked.reason}`,
         urgent: true,
         action: "Review",
+        count: 1,
+        at: pr.status.parked.since ?? "",
+        tier: TIER_GATE,
+        gate: {
+          repo: view.repoPath,
+          workItem: view.specId ?? "",
+          node: pr.status.parked.node,
+          pr: pr.number,
+          prRepo: pr.prRepo,
+        },
       });
     }
-    for (const [index, item] of view.attention.entries()) {
+    // Dedupe the raw reports per kind: newest timestamp wins, the rest become
+    // a count badge (issue-283 B3).
+    const byKind = new Map<string, { item: AttentionItem; count: number; at: string }>();
+    for (const item of view.attention) {
       // The service reports the wait as `awaiting-input` too (issue-208). When
       // the question entry above is already on the board — same wait, richer
       // Reply action — the raw row would be a duplicate. It is kept only when
       // the event window missed the question the service can still see.
       if (item.kind === "awaiting-input" && view.question) continue;
+      const at = item.at ?? "";
+      const held = byKind.get(item.kind);
+      if (!held) {
+        byKind.set(item.kind, { item, count: 1, at });
+      } else {
+        held.count += 1;
+        if (at > held.at) {
+          held.at = at;
+          held.item = item;
+        }
+      }
+    }
+    for (const [kind, held] of byKind) {
+      const tier = KIND_TIER[kind] ?? TIER_WAITING;
       entries.push({
-        key: `${view.ref}:${item.kind}:${index}`,
-        kind: item.kind.replaceAll("-", " "),
+        key: `${view.ref}:${kind}`,
+        kind: kind.replaceAll("-", " "),
         ref: view.ref,
         shortRef: view.shortRef,
-        detail: item.detail,
-        urgent: item.kind === "recent-error",
+        detail: held.item.detail,
+        urgent: tier <= TIER_GATE,
         action: "Open",
+        count: held.count,
+        at: held.at,
+        tier,
       });
     }
   }
-  // Urgent first, otherwise the order the service reported them in.
-  return entries.toSorted((a, b) => Number(b.urgent) - Number(a.urgent));
+  // Most actionable tier first; newest first within a tier; ref as the stable
+  // tie-break so an idle board keeps its order.
+  return entries.toSorted(
+    (a, b) => a.tier - b.tier || b.at.localeCompare(a.at) || a.ref.localeCompare(b.ref),
+  );
 }
 
-/** `2026-08-12T10:41:12Z` → `10:41:12`, and anything unparseable unchanged. */
-export function timeOf(ts: string): string {
-  const date = new Date(ts);
-  if (Number.isNaN(date.getTime())) return ts;
-  return date.toLocaleTimeString(undefined, { hour12: false });
+/** One inbox card per work item: its entries, led by the most actionable. */
+export interface AttentionGroup {
+  ref: string;
+  shortRef: string;
+  entries: AttentionEntry[];
+  /** The group's rank — its most actionable entry's tier and newest time. */
+  tier: number;
+  at: string;
+}
+
+/**
+ * The inbox grouped by work item (issue-283, feature 3): one card per item
+ * listing everything it needs — a gate plus its errors — instead of one card
+ * per raw event. Groups sort exactly as entries do.
+ */
+export function attentionByItem(views: WorkItemView[]): AttentionGroup[] {
+  const groups = new Map<string, AttentionGroup>();
+  for (const entry of attentionEntries(views)) {
+    const held = groups.get(entry.ref);
+    if (held) {
+      held.entries.push(entry);
+    } else {
+      groups.set(entry.ref, {
+        ref: entry.ref,
+        shortRef: shortRef(entry.ref),
+        entries: [entry],
+        tier: entry.tier,
+        at: entry.at,
+      });
+    }
+  }
+  return [...groups.values()].toSorted(
+    (a, b) => a.tier - b.tier || b.at.localeCompare(a.at) || a.ref.localeCompare(b.ref),
+  );
+}
+
+/** Which sidebar band a work item belongs to (issue-283, feature 6). */
+export type ItemGroup = "needs-you" | "running" | "idle";
+
+export function itemGroup(view: WorkItemView): ItemGroup {
+  if (view.question || view.parked || view.rail.some((node) => node.state === "blocked")) {
+    return "needs-you";
+  }
+  if (view.sessionState === "active") return "running";
+  return "idle";
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
+
+/**
+ * A trace row's stamp: `10:41:12` for today, `2026-08-12 10:41` otherwise
+ * (issue-283 B12) — a five-day-old row must never read as if it happened this
+ * morning. `now` is injected so the boundary is testable. Anything unparseable
+ * passes through.
+ */
+export function timeOf(ts: string, now: Date = new Date()): string {
+  const date = new Date(ts);
+  if (Number.isNaN(date.getTime())) return ts;
+  const sameDay =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+  if (sameDay) return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
+    `${pad(date.getHours())}:${pad(date.getMinutes())}`
+  );
+}
 
 /** `2026-08-12T10:41:12Z` → `2026-08-12 10:41:12` in the viewer's zone. */
 export function stampOf(ts: string): string {

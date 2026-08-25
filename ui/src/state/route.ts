@@ -6,48 +6,54 @@
  * refreshed. The hash keeps the whole route client-side, which also means the
  * app works unchanged whether it is mounted at `/the-loop/ui/`, at a domain
  * root, or opened from a local `preview`.
+ *
+ * Three screens (issue-283, bloat #1): **Work** — the sidebar + main-pane home,
+ * where a `ref` selects a work item (or one of its sessions); **Events**; and
+ * **Settings**. `standing` is Work with the standing-sessions pane selected.
+ * The pre-283 hashes (`dashboard`, `attention`, `sessions[/ref]`) still parse,
+ * so every bookmarked deep link lands on the surface that replaced its screen.
  */
 
 import { useEffect, useState } from "react";
 
 export type Route =
-  | { name: "dashboard" }
-  | { name: "detail"; ref: string }
-  | { name: "sessions"; ref?: string }
+  | { name: "work"; ref?: string }
   | { name: "standing" }
-  | { name: "attention" }
-  | { name: "events" }
+  | { name: "events"; ref?: string }
   | { name: "settings" };
 
 export function parseHash(hash: string): Route {
   const path = hash.replace(/^#\/?/, "");
-  if (path === "" || path === "dashboard") return { name: "dashboard" };
-  if (path === "attention") return { name: "attention" };
+  if (path === "" || path === "dashboard" || path === "attention" || path === "sessions") {
+    return { name: "work" };
+  }
+  if (path === "standing") return { name: "standing" };
   if (path === "events") return { name: "events" };
   if (path === "settings") return { name: "settings" };
-  if (path === "sessions") return { name: "sessions" };
-  if (path === "standing") return { name: "standing" };
+  if (path.startsWith("events/")) {
+    // The permalink for one work item's filtered event view (feature #4).
+    const ref = decodeURIComponent(path.slice("events/".length));
+    return ref ? { name: "events", ref } : { name: "events" };
+  }
   if (path.startsWith("sessions/")) {
-    // The selected *session's* ref — the work item's for the outer loop, the
-    // PR's for an inner loop; the sidebar derives which item owns it.
+    // Pre-283 deep link: the selected *session's* ref — the work item's for the
+    // outer loop, the PR's for an inner loop. The Work pane resolves the owner.
     const ref = decodeURIComponent(path.slice("sessions/".length));
-    return ref ? { name: "sessions", ref } : { name: "sessions" };
+    return ref ? { name: "work", ref } : { name: "work" };
   }
   if (path.startsWith("item/")) {
     const ref = decodeURIComponent(path.slice("item/".length));
-    if (ref) return { name: "detail", ref };
+    if (ref) return { name: "work", ref };
   }
-  return { name: "dashboard" };
+  return { name: "work" };
 }
 
 export function hrefFor(route: Route): string {
   switch (route.name) {
-    case "dashboard":
-      return "#/";
-    case "detail":
-      return `#/item/${encodeURIComponent(route.ref)}`;
-    case "sessions":
-      return route.ref ? `#/sessions/${encodeURIComponent(route.ref)}` : "#/sessions";
+    case "work":
+      return route.ref ? `#/item/${encodeURIComponent(route.ref)}` : "#/";
+    case "events":
+      return route.ref ? `#/events/${encodeURIComponent(route.ref)}` : "#/events";
     default:
       return `#/${route.name}`;
   }

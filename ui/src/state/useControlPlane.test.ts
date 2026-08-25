@@ -28,13 +28,14 @@ const SESSION: SessionRecord = {
   status: "closed",
 };
 
-function apiAnswering(status: GraphStatus): TheLoopApi {
-  return { graphCheck: vi.fn(() => Promise.resolve(status)) } as unknown as TheLoopApi;
+function apiAnswering(status: GraphStatus): { api: TheLoopApi; graphCheck: ReturnType<typeof vi.fn> } {
+  const graphCheck = vi.fn(() => Promise.resolve(status));
+  return { api: { graphCheck } as unknown as TheLoopApi, graphCheck };
 }
 
 describe("fetchGraphs", () => {
   it("stores nothing when the server says the checkout did not resolve", async () => {
-    const api = apiAnswering({
+    const { api } = apiAnswering({
       workItem: "issue-7",
       currentNode: "",
       ok: false,
@@ -56,13 +57,54 @@ describe("fetchGraphs", () => {
     };
 
     const reports = await fetchGraphs(
-      apiAnswering(status),
+      apiAnswering(status).api,
       [WORK_ITEM],
       [SESSION],
       new AbortController().signal,
     );
 
     expect(reports.outer[REF]).toEqual(status);
+  });
+
+  it("answers a dormant loop from the cached report instead of re-checking (issue-283 #9)", async () => {
+    const cachedStatus: GraphStatus = {
+      workItem: "issue-7",
+      currentNode: "verification",
+      ok: true,
+      nodes: [{ node: "verification", status: "pass", outcome: "pass" }],
+    };
+    const { api, graphCheck } = apiAnswering(cachedStatus);
+
+    // SESSION is closed: nothing advances its graph, so a held report answers.
+    const reports = await fetchGraphs(api, [WORK_ITEM], [SESSION], new AbortController().signal, {
+      outer: { [REF]: cachedStatus },
+      inner: {},
+    });
+
+    expect(reports.outer[REF]).toEqual(cachedStatus);
+    expect(graphCheck).not.toHaveBeenCalled();
+  });
+
+  it("still checks an active loop even when a cached report exists", async () => {
+    const fresh: GraphStatus = {
+      workItem: "issue-7",
+      currentNode: "implementation",
+      ok: true,
+      nodes: [{ node: "implementation", status: "pass", outcome: "pass" }],
+    };
+    const { api, graphCheck } = apiAnswering(fresh);
+    const stale: GraphStatus = { workItem: "issue-7", currentNode: "design", ok: true, nodes: [] };
+
+    const reports = await fetchGraphs(
+      api,
+      [WORK_ITEM],
+      [{ ...SESSION, status: "active" }],
+      new AbortController().signal,
+      { outer: { [REF]: stale }, inner: {} },
+    );
+
+    expect(reports.outer[REF]).toEqual(fresh);
+    expect(graphCheck).toHaveBeenCalled();
   });
 });
 
