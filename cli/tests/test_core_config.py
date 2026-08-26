@@ -6,12 +6,14 @@ half-write it" are different claims, and only the second one protects the operat
 daemon.
 """
 
+import json
 from pathlib import Path
 
 import pytest
 import yaml
 
-from the_loop import yamlpatch
+from the_loop import configschema, yamlpatch
+from the_loop.migrations import CURRENT_CONFIG_VERSION
 from the_loop.core import config as core_config
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -61,7 +63,7 @@ def test_a_workstation_with_no_config_reads_as_empty_not_as_an_error(tmp_path):
 def test_reading_serves_the_document_as_authored(config_file):
     document = core_config.get_config(config_file)
     assert document["exists"] is True
-    assert document["version"] == "0.5.0"
+    assert document["version"] == CURRENT_CONFIG_VERSION
     assert document["config"] == yaml.safe_load(TEMPLATE.read_text(encoding="utf-8"))
     # `load_cli_config` would fan `integrations.github.cli.binary` out into private
     # `_ghBinary` keys; they are not in the schema and would fail the next save.
@@ -84,8 +86,19 @@ def test_an_unparseable_config_is_an_error_not_an_empty_config(config_file):
 
 
 def test_the_schema_is_served_with_its_refs_resolved():
+    """A client renders a form from this; it must not have to fetch a second document.
+
+    The CLI config's one cross-schema ``$ref`` (``collaborators``) was retired in
+    issue-304, so the assertion is the invariant rather than that one key: nothing
+    ``$ref``-shaped survives into what is served, here or in the schema that still has
+    refs to resolve.
+    """
     schema = core_config.get_schema()
-    assert schema["properties"]["collaborators"]["items"]["properties"]["handle"]
+    assert schema["properties"]["routing"]["properties"]["authorizedUsers"]
+    assert "$ref" not in json.dumps(schema)
+    collaborators = configschema.load_schema("collaborators")
+    assert collaborators["properties"]["collaborators"]["items"]["properties"]["handle"]
+    assert "$ref" not in json.dumps(collaborators)
 
 
 # -- writing -----------------------------------------------------------------------
@@ -153,7 +166,7 @@ def test_a_missing_file_is_created_with_its_modeline_and_version(tmp_path):
     assert result["written"] is True
     text = path.read_text(encoding="utf-8")
     assert text.startswith("# yaml-language-server: $schema=")
-    assert yaml.safe_load(text)["version"] == "0.5.0"
+    assert yaml.safe_load(text)["version"] == CURRENT_CONFIG_VERSION
     assert yaml.safe_load(text)["routing"] == {"enabled": True}
     assert path.stat().st_mode & 0o777 == 0o600
 

@@ -149,8 +149,9 @@ to the plugin's install directory.)
 6. **Confirm collaborators.** If `.the-loop/collaborators.yaml` is still empty after
    the onboarding (step 2), ask the user (via a ticket comment if a ticket exists,
    otherwise interactively) to define at least one collaborator holding the approver
-   role — collaborators.yaml is the single source for people and their notification
-   channels (issue-82, decision-035). RULE: every decision needs a paper trail.
+   role — collaborators.yaml is the single source for people and the roles they hold
+   (issue-82, decision-035; it declares no delivery of its own — issue-304). RULE: every
+   decision needs a paper trail.
 
 7. **Wire local hooks & CI parity.** Set up pre-commit / pre-push hooks that run the
    `hooks.preCommit` / `hooks.prePush` steps (lint, typecheck, unit-test) using the

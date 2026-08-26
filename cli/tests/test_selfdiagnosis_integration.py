@@ -19,6 +19,7 @@ from the_loop.authz import is_self_authored
 from the_loop.control import ControlConfig, parse_command
 from the_loop.core import selfdiagnosis as sd
 from the_loop.critics import CriticResult
+from the_loop.migrations import CURRENT_CONFIG_VERSION
 from the_loop.runlock import RunLock
 
 NOW = 1786000000.0
@@ -364,7 +365,7 @@ class TestDiagnoseCommand:
     def _config_file(self, tmp_path, extra=""):
         path = tmp_path / "cli-config.yaml"
         path.write_text(
-            'version: "0.5.0"\n'
+            f'version: "{CURRENT_CONFIG_VERSION}"\n'
             f"state:\n  root: {tmp_path / 'state'}\n"
             f"eventLog:\n  enabled: true\n  path: {tmp_path / 'events.jsonl'}\n" + extra
         )

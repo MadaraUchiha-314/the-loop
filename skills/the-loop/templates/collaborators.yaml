@@ -5,27 +5,23 @@
 # line points your editor at the published copy of it.
 #
 # The stewards of the repository (CODEOWNERS-like) and the SINGLE source of truth
-# for who collaborates on this project and how they are notified (issue-82,
-# decision-035). Collaborators may be individuals or groups; a user can hold
-# multiple roles. All collaboration happens through ticket/PR comments (the paper
-# trail); the channels below are the primary way the agent harness NOTIFIES a
-# collaborator that their action is pending — never where decisions land.
+# for WHO collaborates on this project and in which ROLES (issue-82, decision-035).
+# Collaborators may be individuals or groups; a user can hold multiple roles. All
+# collaboration happens through ticket/PR comments — the paper trail.
 #
-# Which events notify which roles is configured in harness-config.yaml
-# (notifications.events). The CLI daemon never reads this file: the operator
-# declares their own recipients, in this same structure, in cli-config.yaml.
+# This file declares no DELIVERY (issue-304). Roles are what everything else
+# targets: harness-config.yaml's notifications.events names the roles an event
+# concerns, and the loop pulls a phase's required reviewers and approvers from
+# here. The notification itself goes to a CHANNEL — one Slack bot for the whole
+# daemon, configured under `channels.slack` in cli-config.yaml and subscribed to
+# the events you want by name. Per-person routing is not built.
+#
+# The CLI daemon never reads this file: it watches many repositories and belongs
+# to none of them.
 
-version: "0.1.0"
+version: "0.2.0"
 
 collaborators: []
   # - handle: "@MadaraUchiha-314"
   #   kind: individual              # individual | group
   #   roles: [product-manager, architect, engineer, approver]
-  #   notifications:
-  #     enabled: true               # per-user master switch
-  #     channels:
-  #       - type: slack             # only supported type for now
-  #         enabled: true           # per-channel switch
-  #         via: mcp                # mcp | cli | api — same primitives as externalTools.kind
-  #         config:                 # channel-type-specific config
-  #           channel-list: []      # slack: channels to notify, e.g. ["#the-loop"]

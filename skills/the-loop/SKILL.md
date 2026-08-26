@@ -353,9 +353,10 @@ config**, formerly `config.yaml` — issue-82, decision-035), validated against
 `workflow`, `tooling`, `customInstructions`, `testing`, `apiSpecs`, `design`,
 `localOrchestration`, `hooks`, `observability`, `reviews`, `autonomy`, `security`, `tdd`,
 `minimalism`, `tokenEconomy`, `selfImprovement`, `contextManagement`, `userInteraction`,
-`notifications`, `externalTools`. People (collaborators + their notification channels)
-live in `.the-loop/collaborators.yaml` (validated against `collaborators.schema.json`) —
-the single source of truth; `notifications`
+`notifications`, `externalTools`. People (collaborators and the roles they hold — no
+delivery config of their own, issue-304) live in `.the-loop/collaborators.yaml`
+(validated against `collaborators.schema.json`) — the single source of truth;
+`notifications`
 references roles only. A subset of keys can be overridden per work
 item via the YAML front-matter `overrides` of the work-item / spec markdown. Managed
 files are listed in `.the-loop/manifest.yaml`.

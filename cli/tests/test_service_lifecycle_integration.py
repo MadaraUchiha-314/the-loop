@@ -10,6 +10,7 @@ import sys
 import pytest
 
 from the_loop.api.config import service_pidfile
+from the_loop.migrations import CURRENT_CONFIG_VERSION
 from the_loop.runlock import RunLock
 
 
@@ -24,7 +25,7 @@ def service_env(tmp_path, monkeypatch):
     port = _free_port()
     config_path = tmp_path / "cli-config.yaml"
     config_path.write_text(
-        "version: '0.5.0'\n"
+        f"version: '{CURRENT_CONFIG_VERSION}'\n"
         f"state:\n  root: {tmp_path / '.the-loop'}\n"
         f"service:\n  port: {port}\n"
     )
@@ -202,7 +203,7 @@ def test_a_routed_command_fails_closed_when_no_service_can_start(
     """
     config_path = tmp_path / "no-autostart.yaml"
     config_path.write_text(
-        "version: '0.5.0'\n"
+        f"version: '{CURRENT_CONFIG_VERSION}'\n"
         f"state:\n  root: {tmp_path / '.the-loop'}\n"
         f"service:\n  port: {_free_port()}\n  autoStart: false\n"
     )

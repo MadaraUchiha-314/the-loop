@@ -9,6 +9,7 @@ ambiguity), the CLI's paper-trail comment body, and the durable
 import pytest
 
 from the_loop.authz import SELF_COMMENT_MARKER, is_self_authored
+from the_loop.migrations import CURRENT_CONFIG_VERSION
 from the_loop.control import (
     COMMANDS,
     DEFAULT_KEYWORDS,
@@ -67,7 +68,7 @@ def test_the_binary_now_comes_from_the_integrations_block(tmp_path):
     path.write_text(
         yaml.safe_dump(
             {
-                "version": "0.5.0",
+                "version": CURRENT_CONFIG_VERSION,
                 "integrations": {"github": {"cli": {"binary": "/usr/bin/gh"}}},
                 "routing": {"control": {"enabled": True}},
             }

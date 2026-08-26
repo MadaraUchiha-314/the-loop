@@ -86,7 +86,7 @@ so no inbound event can replace your `autonomy` tiers, `sensitivePaths` or
 | `selfImprovement` | Learnings index cap and write-gate occurrence threshold. Where the learnings live is `workflow.learningsDir` (default `docs/learnings`) — note that a project which **publishes** its `docs/` tree publishes its learnings with it unless it points that key elsewhere. |
 | `contextManagement` | Checkpoint-then-reset behaviour at phase/task boundaries — see [context reference](/operating-model/reference/context). |
 | `userInteraction` | Diagram format, mandatory PR briefing/education requirements, and `writingStyle` — the diagram-first rule and formal-language carve-out the bundled `the-loop:writing` skill reads (no length limits, by decision). See [writing-style](/capabilities/writing-style). |
-| `notifications` | Which harness-raised events notify which roles (recipients resolve from `.the-loop/collaborators.yaml`). |
+| `notifications` | Which harness-raised events notify which roles — the gate the graph's `notify` hook reads. Delivery is a channel's ([`channels.slack`](/config/cli/channels-options)); the roles name who the event concerns and are printed in the message. |
 | `externalTools` | Inline registry of MCPs/CLIs/skills the harness may use. |
 | `graph` | Hooks **this repository** brings to the-loop's process graph (`graph.hooks`) — see [process-graph](/capabilities/process-graph) and [adding a hook](/cli/extending#adding-a-hook). |
 
@@ -128,7 +128,7 @@ where no CLI config exists.
 |---|---|---|
 | `workflow.phaseLabelPrefix` | `check`, `graph`, and the daemon's graph coupling | The `loop:<phase>` label namespace is this project's convention. |
 | `workflow.specDir` | `check`, `graph`, and the daemon's graph coupling | Where this project keeps its specs is a fact about its layout. |
-| `notifications` | `check`, `graph`, and the daemon's graph coupling | Recipients resolve against this repository's own `collaborators.yaml`. |
+| `notifications` | `check`, `graph`, and the daemon's graph coupling | Which of this repository's own events are worth raising is this repository's call; the roles it names are its own `collaborators.yaml`'s. |
 | `reviews.critics` | `critic` | The review bar is a property of the project — and the skill reads the same entries, so a second source could make the two disagree. |
 | `testing.integrationTestGlobs` | `scenarios` | Where the integration tests live is part of the layout. |
 | `ticketing.github` | `check`, `graph`, and the daemon's graph coupling | The repository the ticket was created in is what makes `pr-loops/pr-<n>/` attributable once a work item spans several repositories ([issue #183](https://github.com/MadaraUchiha-314/the-loop/issues/183)). |
@@ -157,37 +157,34 @@ module other than `the_loop.harness_config` opens the file.
 
 ## Collaborators
 
-`.the-loop/collaborators.yaml` — the single source of truth for who collaborates on the
-project and how they are notified
-([decision-035](/decisions/decision-035)). CODEOWNERS-like: the stewards of the
-repository. Validated against the plugin's `collaborators.schema.json`.
+`.the-loop/collaborators.yaml` — the single source of truth for **who** collaborates on
+the project and in which **roles** ([decision-035](/decisions/decision-035)).
+CODEOWNERS-like: the stewards of the repository. Validated against the plugin's
+`collaborators.schema.json`.
 
-Each collaborator declares a handle, `kind` (individual/group), `roles`, and their
-`notifications`: a per-user `enabled` switch and a list of channels — each with a `type`
-(only `slack` for now), its own `enabled` switch, `via` (`mcp` \| `cli` \| `api` — how the
-harness reaches the channel) and channel-specific `config`. Recipients of a harness-raised
-notification are resolved from this file by the roles listed in the harness config's
-`notifications.events`; decisions themselves always land as ticket/PR comments.
+Each collaborator declares a handle, `kind` (individual/group) and `roles`. Roles are what
+everything else targets: the harness config's `notifications.events` names the roles an
+event concerns, and the loop pulls a phase's required reviewers and approvers from this
+file. Decisions themselves always land as ticket/PR comments — the paper trail.
 
 ```yaml
 collaborators:
   - handle: "@octocat"
     kind: individual
     roles: [engineer, approver]
-    notifications:
-      enabled: true
-      channels:
-        - type: slack
-          enabled: true
-          via: mcp
-          config:
-            channel-list: ["#the-loop"]
 ```
 
-::: tip The daemon has its own copy
-`cli-config.yaml` carries a `collaborators` list of the same shape, because the CLI daemon
-never reads any repository's `collaborators.yaml` — see
-[collaborators](/config/cli/observability-options#collaborators).
+::: warning People, not delivery
+A collaborator declares no channel of their own. Until issue-304 this file also carried a
+per-person `notifications` block — an `enabled` switch, a channel `type`, a `via`
+transport and a `channel-list` — and **no code ever read it**, so an operator who filled it
+in configured nothing and was never told.
+
+A notification goes to a **channel**: one Slack bot for the whole daemon, configured under
+[`channels.slack`](/config/cli/channels-options) in the CLI config and subscribed to the
+events you want by name. Per-person routing is not built. A `collaborators.yaml` still
+carrying the old block is refused by the schema, with `channels.slack` and
+[`the-loop migrate-config`](/cli/commands/migrate-config) named in the message.
 :::
 
 ## Manifest

@@ -15,7 +15,7 @@
 # See .the-loop/config.yaml for the-loop's own PLUGIN config (ticketing,
 # workflow, tooling, reviews, …).
 
-version: "0.5.0"
+version: "0.6.0"
 
 # Everything the CLI GENERATES lives under this root (issue-106), organised by
 # whether it travels between machines (issue-128, decision-046):
@@ -276,32 +276,6 @@ selfDiagnosis:
   # intervalSeconds: 3600                  # watcher cadence inside the poller/gh-webhook daemons
   # maxIssuesPerDay: 3                     # rolling cap; excess candidates defer, never drop
   # maxRetries: 3                          # failed attempts per fingerprint before abandoning
-
-# The operator's own notification recipients (issue-82, decision-035) — the same
-# collaborator structure as .the-loop/collaborators.schema.json, DECLARED here:
-# the CLI daemon never reads any repo's collaborators.yaml.
-collaborators: []
-  # - handle: "@MadaraUchiha-314"
-  #   kind: individual
-  #   roles: [engineer, approver]
-  #   notifications:
-  #     enabled: true
-  #     channels:
-  #       - type: slack             # only supported type for now
-  #         enabled: true
-  #         via: mcp                # mcp | cli | api
-  #         config:
-  #           channel-list: []      # e.g. ["#the-loop-daemon"]
-
-# Which DAEMON-side events notify which roles from `collaborators` above.
-# Disjoint from the harness-side taxonomy in harness-config.yaml.
-notifications:
-  enabled: true
-  events: {}                        # event → roles; omitted event = nobody notified
-    # work-item-spawned: [engineer]
-    # dispatch-failed: [engineer]
-    # session-died: [engineer]
-    # event-dropped-unauthorized: [engineer]
 
 # How the-loop's OWN calls reach external services (issue-109, decision-042).
 # This governs the CONTROL PLANE only: what the AGENT does from inside its

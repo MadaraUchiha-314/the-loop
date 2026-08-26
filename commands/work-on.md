@@ -172,8 +172,9 @@ gate (`brainstorm.md`, `tasks.md`) advance on shape alone.
    risk tier ≥ `security.review.humanSignOffMinTier` waits for a named human security
    sign-off. Record every review as a PR/ticket comment and in the execution log's
    review table (the security round in its Security review section). Notify per the
-   `notifications.events` filters (harness-config.yaml), resolving recipients by role
-   from `.the-loop/collaborators.yaml`, when a human action is pending.
+   `notifications.events` filters (harness-config.yaml) when a human action is pending —
+   the event's roles name who it concerns; delivery is the configured channel's
+   (`channels.slack`), not a per-person lookup.
 
 11. **Complete** (`complete`). Present validated evidence that the acceptance criteria
    are met — **summarised from the verification results** rather than re-derived — on the

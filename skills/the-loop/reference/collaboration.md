@@ -10,11 +10,13 @@ PR.
   ticketing system** (GitHub issue / Jira), not resolved silently in files.
 - **PR reviews** → happen **on the PR** as comments and replies.
 - **Self & critic reviews** → also as PR/ticket comments.
-- **Notifications/escalations** when a human action is pending → driven by the
-  `notifications.events` filters in `harness-config.yaml` (event → roles), with
-  recipients resolved by role from `.the-loop/collaborators.yaml` and delivered on each
-  recipient's enabled channels (issue-82, decision-035). Notification only; the
-  decision itself still lands as a comment.
+- **Notifications/escalations** when a human action is pending → gated by the
+  `notifications.events` filters in `harness-config.yaml` (event → roles) and delivered
+  to a **channel**: the Slack bot under the CLI config's `channels.slack`, which posts
+  every event its own `events` allow-list subscribes to (issue-245). The roles name who
+  the event concerns and are printed in the message; they are not a delivery address —
+  per-person routing is not built (issue-304). Notification only; the decision itself
+  still lands as a comment.
 
 ## Where questions go, and where artifacts are iterated (issue-134)
 
@@ -169,24 +171,26 @@ behalf.
 ## Personas, roles and groups
 
 - The full list of available collaborators is defined up-front in the repo, in
-  **`.the-loop/collaborators.yaml`** — the SINGLE source of truth for people and their
-  notification config, validated against the plugin's `collaborators.schema.json`
-  (issue-82, decision-035; the former `config.personas`/`config.messaging` keys are
-  retired). CODEOWNERS-like: these are the stewards of the repository.
+  **`.the-loop/collaborators.yaml`** — the SINGLE source of truth for **who** works on
+  this project and in **which roles**, validated against the plugin's
+  `collaborators.schema.json` (issue-82, decision-035; the former
+  `config.personas`/`config.messaging` keys are retired). CODEOWNERS-like: these are the
+  stewards of the repository.
 - A collaborator may be an **individual** or a **group** (e.g. a GitHub team
   `@org/team`). A single user may hold **multiple roles**.
 - Supported roles: `product-manager`, `architect`, `designer`, `engineer`, `qa`,
   `reviewer`, `approver`.
-- Each collaborator declares their **notification channels** — the primary way the
-  harness notifies them that an action is pending (never where decisions land). Per
-  user: `notifications.enabled`. Per channel: `enabled`, a `type` (only `slack` for
-  now), `via` (how to interact with the channel — `mcp`/`cli`/`api`, the same
-  primitives as `externalTools.kind`), and channel-specific `config` (slack:
-  `channel-list`). Which events notify which roles is the harness config's
-  `notifications.events`.
-- The CLI daemon never reads this file (decision-032): the operator declares their own
-  recipients, in the same collaborator structure, in `cli-config.yaml` — see
-  `reference/automation.md`.
+- A collaborator declares **no delivery of their own** (issue-304). Roles are what
+  every filter and every phase gate targets; the notification itself goes to the one
+  Slack bot configured under the CLI config's `channels.slack`. A `collaborators.yaml`
+  still carrying the retired per-person `notifications` block is refused by the schema,
+  with `channels.slack` and `the-loop migrate-config` named in the message.
+- **Human identity is declared in exactly two places**, both hand-maintained and neither
+  in this file: `routing.authorizedUsers` (GitHub logins — who may arm and command a
+  work item) and `channels.slack.authorizedUsers` (Slack member ids — whose thread reply
+  is acted on).
+- The CLI daemon never reads this file (decision-032): it watches many repositories and
+  belongs to none of them — see `reference/automation.md`.
 
 ## RULE: identify collaborators up-front
 

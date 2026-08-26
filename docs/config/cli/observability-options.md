@@ -1,24 +1,18 @@
 # Observability options
 
-Three top-level blocks that answer "what happened, and who hears about it":
-`eventLog` (the trail the daemon writes), `collaborators` (who the operator is) and
-`notifications` (which daemon events reach them).
+One top-level block that answers "what happened": `eventLog`, the trail the daemon writes.
 
 ```yaml
 eventLog:
   enabled: true
   path: .the-loop/logs/events.jsonl
-
-collaborators:
-  - handle: "@octocat"
-    roles: [engineer, approver]
-
-notifications:
-  enabled: true
-  events:
-    dispatch-failed: [engineer]
-    event-dropped-unauthorized: [approver]
 ```
+
+Who *hears* about it is a different question, answered on a different page —
+[channels options](/config/cli/channels-options). The CLI config used to carry an
+operator `collaborators` list and a daemon-side `notifications.events` filter beside the
+event log; both were removed in issue-304 because **no code read either of them**. See
+[what replaced them](#where-the-notifications-went).
 
 ## Event log
 
@@ -49,86 +43,39 @@ Append-only JSONL file; git-ignored runtime state. Unset, it resolves under
 [`state.root`](/config/cli/#state-root) — `.the-loop/logs/events.jsonl` with the default
 root.
 
-## Operator collaborators
+## Where the notifications went
 
-### `collaborators`
+Until issue-304 this page also documented two blocks that looked like notification config
+and were not:
 
-- **Type:** `object[]`
-- **Default:** `[]`
-- **Related:** [decision-035](/decisions/decision-035)
+| Removed | What it claimed | What actually happened |
+|---------|-----------------|------------------------|
+| `collaborators` | the operator's own recipients, resolved by role | nothing read the list |
+| `notifications.events` | four daemon events → roles (`work-item-spawned`, `dispatch-failed`, `session-died`, `event-dropped-unauthorized`) | those event names are raised by no code; the filter was never consulted |
 
-The **operator's own** notification recipients — typically just themself. Same structure as
-a repository's `.the-loop/collaborators.yaml` (`handle`, `kind`, `roles`, `notifications`
-with per-channel settings — see [collaborators](/config/harness-config#collaborators)), but
-**declared here rather than looked up**.
+An operator who filled them in configured nothing, and nothing said so. They are gone, and
+[`the-loop migrate-config`](/cli/commands/migrate-config) strips them from an existing
+config and bumps its version — a config still carrying either is **refused** at load,
+naming the key and the fix, rather than loaded half-configured.
 
-::: warning Declared, not discovered
-The daemon never reads any repository's `collaborators.yaml`. It watches many repos and
-belongs to none of them, so the people it may ping are a property of the operator, not of
-whichever repo raised the event.
-:::
+What to use instead:
 
-`roles` is what the [notifications](#notifications) events target.
+- **To be notified:** [`channels.slack`](/config/cli/channels-options). One bot for the
+  whole daemon — `botTokenEnv`, a `channel` id, and an `events` allow-list you subscribe to
+  the event names you care about. It carries replies back, too.
+- **To say who may drive the daemon:**
+  [`routing.authorizedUsers`](/config/cli/routing-options#authorizedusers) (GitHub logins).
+- **To say whose Slack reply is acted on:**
+  [`channels.slack.authorizedUsers`](/config/cli/channels-options) (Slack member ids).
 
-## Notifications
+Those two lists are the only places human identity is declared. Per-person notification
+routing is **not built**: a notification goes to a channel, not to a person.
 
-Which **daemon-side** events notify which roles from `collaborators` above.
-
-These are disjoint from the harness-side taxonomy in
-[`harness-config.yaml`](/config/harness-config) — decision pending, PR review pending, and
-so on. Those are raised by the harness *inside* a repository checkout; these concern the
-daemon itself. An event with no roles listed notifies nobody.
-
-### `notifications.enabled`
-
-- **Type:** `boolean`
-- **Default:** `true`
-
-Master switch for daemon-raised notifications.
-
-### `notifications.events.work-item-spawned`
-
-- **Type:** `string[]` (roles)
-- **Default:** none — nobody notified
-
-A session was spawned for a work item (auto-execute label, or `spawnOnUnmatched: always`).
-
-### `notifications.events.dispatch-failed`
-
-- **Type:** `string[]` (roles)
-- **Default:** none — nobody notified
-
-A harness dispatch failed **terminally**: `poll.spawn_failed` / `poll.comment_failed` after
-[`polling.maxRetries`](/config/cli/polling-options#maxretries), or a webhook dispatch
-error. This is the one most operators want on — it is the difference between "the-loop is
-quiet because there is nothing to do" and "the-loop is quiet because it is broken".
-
-Independently of this setting, an abandoned **comment** is also reported on the work item
-itself (`poll.giveup_reported`, issue-240), so the person who wrote it learns it never
-reached the session even if nobody wired this notification up.
-
-### `notifications.events.session-died`
-
-- **Type:** `string[]` (roles)
-- **Default:** none — nobody notified
-
-A registered tmux session was found dead, and respawned where possible.
-
-### `notifications.events.event-dropped-unauthorized`
-
-- **Type:** `string[]` (roles)
-- **Default:** none — nobody notified
-
-An event was dropped by the authorized-actor guard
-([`routing.authorizedUsers`](/config/cli/routing-options#authorizedusers)). Worth routing
-somewhere: a steady trickle is normal (other people commenting on your tickets), but a
-sudden burst is either a misconfigured `authorizedUsers` or somebody probing.
-
-::: tip How a notification is actually delivered
-Through the [channels](/config/cli/channels-options) layer — the Slack bot posts every
-event a channel's `events` allow-list subscribes to, with the token taken from an
-environment variable, never from this file. (The old `integrations.slack` incoming
-webhook converged into channels — issue-245; `the-loop migrate-config` retires it.)
+::: tip The harness side is unaffected
+`harness-config.yaml`'s own [`notifications.events`](/config/harness-config) is a different
+taxonomy — `decision-pending`, `phase-approval-pending`, and friends — and it is still
+read: it gates the process graph's `notify` hook, which then posts through the channels
+layer.
 :::
 
 ## Next
