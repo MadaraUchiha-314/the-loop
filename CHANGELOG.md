@@ -1,3 +1,19 @@
+## v12.0.0 (2026-08-26)
+
+### BREAKING CHANGE
+
+- the CLI config's top-level `collaborators` and `notifications`
+blocks are removed (config version 0.5.0 → 0.6.0). A config still declaring
+either is refused at load, naming the key and the fix; `the-loop migrate-config`
+removes both and bumps the version, idempotently. `collaborators.yaml`'s
+per-collaborator `notifications` sub-object is removed from the schema; a file
+still carrying it fails validation with `channels.slack` and
+`the-loop migrate-config` named in the message.
+
+### Feat
+
+- **issue-304**: one Slack surface, two identity allow-lists (#305)
+
 ## v11.6.1 (2026-08-26)
 
 ### Fix
