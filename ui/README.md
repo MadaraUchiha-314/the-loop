@@ -32,7 +32,7 @@ Settings offers three ways, stored per browser:
 
 Streaming refreshes only what a change touches — a graph move re-reads that one work
 item's loop position, anything else re-reads the four lists — so watching a busy work item
-costs less than the 15-second poll it replaces, not more. The header's health dot opens
+costs less than the 15-second poll it replaces, not more. The sidebar's health dot opens
 into the stream's state — **live**, **reconnecting**, or fallen back to polling and why —
 beside each daemon's last cycle (issue-283 B10); it never shows a stale board that looks
 current. A service older than the stream, or one with
@@ -83,9 +83,12 @@ translates that into the same advice rather than "failed to fetch".
 Nothing here is a new endpoint. The interesting part is the **join**, which lives in
 [`src/api/model.ts`](src/api/model.ts):
 
-Three screens (issue-283): **Work** — a persistent sidebar (the inbox, then every work
-item grouped by what it needs from you, then standing sessions) beside one main pane
-showing the selected item's rail, trace and chat bar — plus **Events** and **Settings**.
+Three screens (issue-283, restyled by issue-298 onto the Classical design system):
+**Work** — a persistent sidebar (the brand block, the inbox, then every work item
+grouped by what it needs from you, then standing sessions, with Events, Settings and
+the health dot in its footer — since issue-298 the sidebar is also the navigation)
+beside one main pane showing the selected item's rail, trace and chat bar — plus
+**Events** and **Settings**, reading columns reached from the sidebar footer.
 
 | Surface | Reads |
 |---|---|
@@ -93,7 +96,7 @@ showing the selected item's rail, trace and chat bar — plus **Events** and **S
 | Work item pane | the same, plus `GET /events?workItem=…`, `GET /sessions/transcript?ref=…` for the selected trace (outer session or a PR endpoint's) and `POST /sessions/reply` from the chat bar (issue-230) |
 | Standing (a sidebar section of Work) | `GET /standing-sessions`, plus `POST /standing-sessions/{create,delete,control,say}` — the sessions that belong to no work item (issue-277) |
 | Events | `GET /events`, with the UI's own `api.request` traffic hidden unless asked for, an event-namespace and work-item filter (permalink: `#/events/<ref>`), and a live tail |
-| Chrome | `GET /daemons`, folded with the stream state into one health dot + popover |
+| Sidebar footer | `GET /daemons`, folded with the stream state into one health dot + popover |
 | Settings | `GET /health`, plus `GET /config` + `GET /config/schema` and `POST /config` for the CLI-config editor (issue-222) |
 
 The config editor is the one screen that renders itself: its sections, labels, prose,
@@ -178,10 +181,13 @@ src/
   demo/       the bundled fixture, behind the same interface as the HTTP client
   state/      settings (localStorage) · hash route · the board's fetch loop
               stream.ts (what a frame makes stale) · useStream.ts (the connection)
-  components/ the Industry primitives: blueprint frame, node rail, session dot
+  components/ the shared primitives: card frame, node-rail tick bar, session dot,
+              health dot, transcript + chat bar
   views/      one file per screen
-  styles/     industry.css (vendored design system — do not hand-edit) · app.css
+  styles/     classical.css (vendored design system — do not hand-edit) · app.css
 ```
 
-`src/styles/industry.css` is the design-system export, copied verbatim so the app renders
+`src/styles/classical.css` is the Classical design-system export
+([issue-298](https://github.com/MadaraUchiha-314/the-loop/issues/298); the signed-off
+source lives under `docs/specs/issue-298/design/`), copied verbatim so the app renders
 what was signed off. Retuning the look means re-exporting it; app rules go in `app.css`.

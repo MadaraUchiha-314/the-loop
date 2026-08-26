@@ -23,6 +23,9 @@
     "docs/.vitepress/cache/**",
     // synced from skills/the-loop/reference/ at build time
     // (docs/scripts/sync-content.mts) — lint the source, not the copy
-    "docs/operating-model/reference/**"
+    "docs/operating-model/reference/**",
+    // signed-off UI design exports checked in verbatim (design.uiArtifacts) —
+    // the artifact is the contract; lint the app, not the export
+    "docs/specs/*/design/**"
   ]
 }

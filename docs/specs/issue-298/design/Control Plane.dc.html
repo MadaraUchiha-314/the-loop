@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/classical-c7d4f5c1-6b1b-4315-b206-a4d3c91f56fa/styles.css">
+<script src="_ds/classical-c7d4f5c1-6b1b-4315-b206-a4d3c91f56fa/_ds_bundle.js"></script>
+<style>
+body{margin:0;overflow:hidden}
+a:hover{color:var(--color-accent-600)}
+@keyframes lpPulse{0%,100%{opacity:1}50%{opacity:.3}}
+textarea{font-family:var(--font-body)}
+summary::marker{color:var(--color-neutral-500);font-size:10px}
+</style>
+</helmet>
+<div style="display:grid;grid-template-columns:296px 1fr;height:100vh;background:var(--color-bg);color:var(--color-text);font-family:var(--font-body)" data-screen-label="Work">
+  <div style="border-right:1px solid var(--color-divider);display:flex;flex-direction:column;min-height:0">
+    <div style="padding:20px 20px 14px;border-bottom:1px solid var(--color-divider)">
+      <div style="font-family:var(--font-heading);font-weight:600;font-size:23px;line-height:1.1">the-loop</div>
+      <div style="font-size:10.5px;letter-spacing:0.12em;text-transform:uppercase;color:var(--color-neutral-600);margin-top:2px">Control plane</div>
+    </div>
+    <div style="flex:1;overflow-y:auto;min-height:0;padding:10px 0 18px">
+      <div style="font-family:var(--font-heading);font-weight:600;font-size:11.5px;letter-spacing:0.09em;text-transform:uppercase;color:var(--color-neutral-600);padding:8px 20px 6px">Work items</div>
+      <sc-for list="{{items}}" as="item" hint-placeholder-count="9">
+        <div onClick="{{item.select}}" style="display:grid;grid-template-columns:10px 1fr auto;column-gap:8px;row-gap:1px;padding:9px 20px 10px;cursor:pointer;background:{{item.bg}}" style-hover="background:color-mix(in srgb, var(--color-neutral-300) 40%, transparent)">
+          <span style="width:7px;height:7px;border-radius:50%;background:{{item.dot}};margin-top:5px"></span>
+          <span style="font-size:12px;font-feature-settings:'tnum';color:var(--color-neutral-700)">{{item.shortRef}}</span>
+          <span style="font-size:10.5px;font-feature-settings:'tnum';color:var(--color-neutral-500)">{{item.time}}</span>
+          <span></span>
+          <span style="font-size:13.5px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{item.title}}</span>
+          <sc-if value="{{item.needsYou}}" hint-placeholder-val="{{false}}">
+            <span style="align-self:center;font-family:var(--font-heading);font-weight:600;font-size:9.5px;letter-spacing:0.07em;text-transform:uppercase;color:var(--color-accent-700);border:1px solid color-mix(in srgb, var(--color-accent) 50%, transparent);border-radius:3px;padding:1px 6px 0">Needs you</span>
+          </sc-if>
+        </div>
+      </sc-for>
+      <sc-if value="{{showStanding}}" hint-placeholder-val="{{true}}">
+        <div style="height:1px;background:var(--color-divider);margin:14px 20px"></div>
+        <div style="font-family:var(--font-heading);font-weight:600;font-size:11.5px;letter-spacing:0.09em;text-transform:uppercase;color:var(--color-neutral-600);padding:2px 20px 6px">Standing sessions</div>
+        <sc-for list="{{standing}}" as="s" hint-placeholder-count="2">
+          <div style="display:grid;grid-template-columns:10px 1fr;column-gap:8px;padding:7px 20px">
+            <span style="width:7px;height:7px;border-radius:50%;background:{{s.dot}};margin-top:5px"></span>
+            <span style="font-size:13px">{{s.name}} <span style="color:var(--color-neutral-600);font-size:12px">— {{s.desc}}</span></span>
+          </div>
+        </sc-for>
+      </sc-if>
+    </div>
+    <div style="border-top:1px solid var(--color-divider);padding:12px 20px">
+      <a href="Settings.dc.html" style="font-size:12.5px;color:var(--color-neutral-600);text-decoration:none" style-hover="color:var(--color-accent-700)">Settings →</a>
+    </div>
+  </div>
+  <div style="display:flex;flex-direction:column;min-height:0">
+    <div style="padding:20px 40px 16px;border-bottom:1px solid var(--color-divider)">
+      <div style="font-size:12px;font-feature-settings:'tnum';color:var(--color-neutral-600);display:flex;gap:10px;flex-wrap:wrap">
+        <span>{{sel.fullRef}}</span>
+        <span>·</span>
+        <a href="{{sel.url}}" target="_blank" rel="noreferrer" style="color:var(--color-accent-700)">Open on GitHub ↗</a>
+        <span>·</span>
+        <span>{{sel.sessionLine}}</span>
+      </div>
+      <div style="font-family:var(--font-heading);font-weight:600;font-size:30px;line-height:1.12;letter-spacing:-0.015em;margin:4px 0 12px">{{sel.title}}</div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <div style="display:flex;align-items:flex-end;gap:3px;height:14px">
+          <sc-for list="{{sel.ticks}}" as="tick" hint-placeholder-count="19">
+            <span title="{{tick.name}}" style="width:4px;border-radius:1px;background:{{tick.bg}};height:{{tick.h}};animation:{{tick.anim}}"></span>
+          </sc-for>
+        </div>
+        <span style="font-size:12px;font-feature-settings:'tnum';color:var(--color-neutral-700)">{{sel.railLabel}}</span>
+        <sc-if value="{{sel.hasNote}}" hint-placeholder-val="{{false}}">
+          <span style="font-size:12px;font-style:italic;color:var(--color-accent-700)">{{sel.note}}</span>
+        </sc-if>
+      </div>
+    </div>
+    <div style="flex:1;overflow-y:auto;min-height:0;padding:30px 40px 16px">
+      <div style="max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:24px">
+        <sc-for list="{{traceRows}}" as="row" hint-placeholder-count="6">
+          <div>
+            <sc-if value="{{row.isMeta}}" hint-placeholder-val="{{false}}">
+              <div style="text-align:center;font-size:12px;font-style:italic;color:var(--color-neutral-500);padding:2px 40px">{{row.text}}</div>
+            </sc-if>
+            <sc-if value="{{row.isTurn}}" hint-placeholder-val="{{true}}">
+              <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:5px">
+                <span style="font-family:var(--font-heading);font-weight:600;font-size:11.5px;letter-spacing:0.1em;text-transform:uppercase;color:{{row.labelColor}}">{{row.label}}</span>
+                <span style="font-size:11px;font-feature-settings:'tnum';color:var(--color-neutral-500)">{{row.time}}</span>
+              </div>
+              <sc-if value="{{row.hasThinking}}" hint-placeholder-val="{{false}}">
+                <details open="{{foldsOpen}}" style="border:1px solid var(--color-divider);border-radius:var(--radius-md);background:var(--color-neutral-100);margin:0 0 8px">
+                  <summary style="padding:6px 12px;cursor:pointer;font-size:12px;color:var(--color-neutral-600)"><span style="font-style:italic">thinking</span> <span style="color:var(--color-neutral-500)">— {{row.thinkingFirst}}</span></summary>
+                  <div style="border-top:1px solid var(--color-divider);padding:10px 14px;font-size:13px;font-style:italic;color:var(--color-neutral-700);white-space:pre-wrap">{{row.thinking}}</div>
+                </details>
+              </sc-if>
+              <sc-if value="{{row.hasText}}" hint-placeholder-val="{{true}}">
+                <div style="font-size:15px;line-height:1.62;text-wrap:pretty">{{row.text}}</div>
+              </sc-if>
+              <sc-for list="{{row.tools}}" as="tool" hint-placeholder-count="0">
+                <details open="{{foldsOpen}}" style="border:1px solid var(--color-divider);border-radius:var(--radius-md);background:var(--color-neutral-100);margin:8px 0 0">
+                  <summary style="padding:7px 12px;cursor:pointer;display:inline-flex;flex-wrap:wrap;align-items:baseline;gap:10px;max-width:100%">
+                    <span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--color-accent-700)">{{tool.name}}</span>
+                    <span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;color:var(--color-neutral-600);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:480px">{{tool.sum}}</span>
+                    <sc-if value="{{tool.err}}" hint-placeholder-val="{{false}}">
+                      <span style="font-family:var(--font-heading);font-weight:600;font-size:9.5px;letter-spacing:0.07em;text-transform:uppercase;color:var(--color-neutral-700);border:1px solid var(--color-neutral-400);border-radius:3px;padding:1px 6px 0">Error</span>
+                    </sc-if>
+                  </summary>
+                  <div style="border-top:1px solid var(--color-divider);padding:9px 14px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;color:var(--color-neutral-800);white-space:pre-wrap;max-height:220px;overflow-y:auto">{{tool.body}}</div>
+                </details>
+              </sc-for>
+            </sc-if>
+            <sc-if value="{{row.isQuestion}}" hint-placeholder-val="{{false}}">
+              <div style="border:1px solid color-mix(in srgb, var(--color-accent) 45%, transparent);border-radius:var(--radius-md);background:var(--color-neutral-100);padding:16px 20px">
+                <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px">
+                  <span style="font-family:var(--font-heading);font-weight:600;font-size:11.5px;letter-spacing:0.1em;text-transform:uppercase;color:var(--color-accent-700)">The loop asks</span>
+                  <span style="font-size:11px;font-feature-settings:'tnum';color:var(--color-neutral-500)">{{row.time}}</span>
+                </div>
+                <div style="font-size:15.5px;line-height:1.6;text-wrap:pretty">{{row.text}}</div>
+                <div style="font-size:11.5px;color:var(--color-neutral-600);margin-top:10px">Reply below — delivered into the session, recorded on the ticket. <a href="{{sel.url}}" target="_blank" rel="noreferrer" style="color:var(--color-accent-700)">Answer on the ticket instead ↗</a></div>
+              </div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    <div style="border-top:1px solid var(--color-divider);padding:14px 40px 18px">
+      <div style="max-width:760px;margin:0 auto">
+        <div style="display:flex;gap:12px;align-items:stretch">
+          <textarea rows="2" value="{{chatText}}" onChange="{{onChatChange}}" onKeyDown="{{onChatKey}}" placeholder="{{chatPlaceholder}}" disabled="{{chatDisabled}}" aria-label="Message the session" style="flex:1;border:1px solid var(--color-divider);border-radius:var(--radius-md);background:var(--color-neutral-100);padding:10px 13px;font-size:14px;line-height:1.5;color:var(--color-text);resize:none"></textarea>
+          <button type="button" class="btn btn-primary" onClick="{{sendChat}}" disabled="{{sendDisabled}}" style="align-self:stretch;padding:0 22px">Send</button>
+        </div>
+        <div style="font-size:11px;color:var(--color-neutral-500);margin-top:6px">{{chatHint}}</div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;showStanding&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Sidebar&quot;},&quot;showThinking&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Trace&quot;},&quot;openFolds&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Trace&quot;}}">
+const OUTER = ["phase-selection","brainstorming","requirements-definition","requirements-approval","design","design-critic-review","test-planning","design-approval","tasks-breakdown","implementation","verification","self-review","critic-review","security-review","evidence","capability-docs","reviewer-briefing","human-approval","complete"];
+const ADHOC = ["work","review","complete"];
+const ITEMS = [
+  {num:214, ref:"github:octo/loop-lab#214", title:"Control plane UI over /api/v1", state:"active", time:"4m", needsYou:true, nodes:OUTER, current:"implementation", skipped:["brainstorming"]},
+  {num:219, ref:"github:octo/loop-lab#219", title:"Rate-limit the poll ingress", state:"active", time:"5m", nodes:OUTER, current:"requirements-definition", skipped:["brainstorming"]},
+  {num:223, ref:"github:octo/loop-lab#223", title:"Ad-hoc: bump the CI cache key", state:"active", time:"11m", nodes:ADHOC, current:"work", skipped:[]},
+  {num:209, ref:"github:octo/loop-lab#209", title:"Poller heartbeat drops pid", state:"active", time:"18m", nodes:OUTER, current:"verification", skipped:["brainstorming","design-critic-review"]},
+  {num:178, ref:"github:octo/loop-lab#178", title:"Cleanup keyword on closed items", state:"active", time:"31m", nodes:OUTER, current:"implementation", skipped:["brainstorming"], blocked:"blocked — checks failing on the head commit"},
+  {num:205, ref:"github:octo/loop-lab#205", title:"Session announce comment loops back", state:"active", time:"1h", needsYou:true, nodes:OUTER, current:"human-approval", skipped:["brainstorming"], note:"parked — awaiting your approval"},
+  {num:198, ref:"github:octo/loop-lab#198", title:"Multi-repo PR routing for GHE hosts", state:"paused", time:"2d", nodes:OUTER, current:"requirements-definition", skipped:["brainstorming"]},
+  {num:187, ref:"github:octo/loop-lab#187", title:"Webhook replay protection", state:"none", time:"3d", nodes:OUTER, current:"phase-selection", skipped:[]},
+  {num:181, ref:"github:octo/loop-lab#181", title:"Evidence folder linting", state:"closed", time:"6d", nodes:OUTER, current:"complete", skipped:["brainstorming"]},
+];
+const turn = (label, time, text, extra) => Object.assign({kind:"turn", label, time, text}, extra || {});
+const meta = (text) => ({kind:"meta", text});
+const TRACES = {
+  214: [
+    meta("Context compacted — 14 earlier turns summarised."),
+    turn("You","42m","Wire the reviewer briefing into the PR before requesting review."),
+    turn("the-loop","41m","Reading the briefing template and the PR body first.",{
+      thinking:"The briefing template is a gate — read it before touching the PR body.",
+      tools:[{name:"Read", sum:"skills/the-loop/templates/pr-briefing.md", body:"# <PR title> — reviewer briefing\n\nFocus order, the risk table, and the mermaid map of touched modules…"}]}),
+    turn("the-loop","39m","Template read. Drafting the briefing with the focus order and the mermaid map.",{
+      tools:[
+        {name:"Write", sum:"briefing.md", body:"wrote briefing.md (2,4 kB)"},
+        {name:"Bash", sum:"gh pr edit --body-file briefing.md", err:true, body:"gh: Validation Failed — body too long"}]}),
+    meta("…one line truncated by the harness mid-write…"),
+    turn("the-loop","36m","Briefing posted; requesting review next."),
+    {kind:"question", time:"4m", text:"The reply endpoint pastes into the tmux pane. Should it require an actor login for the audit trail (the event log names who answered), or accept anonymous replies on loopback?"},
+  ],
+  219: [
+    turn("You","2h","Cap the poll ingress per source — the GHE farm is hammering us."),
+    turn("the-loop","5m","Drafting requirements.md: EARS acceptance criteria for per-source rate limits, plus the security-considerations section on spoofed sources.",{
+      tools:[{name:"Write", sum:"docs/specs/issue-219/requirements.md", body:"wrote requirements.md (3,1 kB)"}]}),
+  ],
+  223: [
+    turn("You","1h","the-loop do: bump the CI cache key — the runner image changed and every job is cold."),
+    turn("the-loop","11m","Bumped the key prefix to v4 and pruned the stale restore-keys; the first run repopulates, the rest hit warm.",{
+      tools:[
+        {name:"Read", sum:".github/workflows/ci.yml", body:"…cache:\n  key: ci-v3-${{ hashFiles('**/uv.lock') }}…"},
+        {name:"Edit", sum:".github/workflows/ci.yml", body:"replaced ci-v3 → ci-v4 in the cache key and restore-keys"}]}),
+  ],
+  209: [
+    turn("the-loop","18m","Verification: running the testing plan's rows against the heartbeat fix.",{
+      tools:[
+        {name:"Bash", sum:"pytest cli/tests/test_poll_heartbeat.py", body:"14 passed in 3.2s"},
+        {name:"Bash", sum:"the-loop graph complete issue-209", body:"verification: pass — advancing to self-review"}]}),
+  ],
+  178: [
+    turn("the-loop","31m","Retrying the dispatch — the paste buffer failed on the last cycle.",{
+      tools:[{name:"Bash", sum:"tmux paste-buffer -t loop-github-octo-loop-lab-180", err:true, body:"dispatch.failed — paste-buffer failed; will retry next cycle"}]}),
+    meta("Blocked at implementation — checks are failing on the head commit of PR #180."),
+  ],
+  205: [
+    turn("the-loop","1h","Review chain complete — self, critic and security review all passed; the reviewer briefing is posted on the ticket."),
+    meta("Parked at human-approval for a day — verification passed across all PRs; approving moves the item to complete."),
+  ],
+  198: [meta("The session was paused two days ago (last control: pause). Resume it to continue requirements-definition.")],
+  187: [
+    meta("No session on this machine — start was recorded on the ticket, but the spawn budget was exhausted. Showing the event trail."),
+    meta("poll.spawn_failed — armed but spawn budget exhausted · 3d ago"),
+  ],
+  181: [meta("Complete — the session was cleaned six days ago (tmux killed, checkout removed).")],
+};
+const CHAT_BLOCK = {198:"The session is paused — resume it first; delivery is held.", 181:"The session is closed; there is no pane to deliver into.", 187:"No session is registered for this ref on this machine."};
+const DOT = {active:"var(--color-accent-500)", paused:"var(--color-accent-300)", none:"var(--color-neutral-400)", closed:"var(--color-neutral-400)"};
+const SESSION_LINE = {active:"Session active · claude", paused:"Session paused", none:"No session on this machine", closed:"Session closed"};
+
+class Component extends DCLogic {
+  state = { selectedNum: 214, chatText: "", sent: {} };
+  select(num) { this.setState({ selectedNum: num, chatText: "" }); }
+  send() {
+    const num = this.state.selectedNum;
+    const text = this.state.chatText.trim();
+    if (!text || CHAT_BLOCK[num]) return;
+    this.setState((s) => ({ chatText: "", sent: Object.assign({}, s.sent, { [num]: (s.sent[num] || []).concat(text) }) }));
+  }
+  renderVals() {
+    const showStanding = this.props.showStanding ?? true;
+    const showThinking = this.props.showThinking ?? true;
+    const foldsOpen = this.props.openFolds ?? false;
+    const selNum = this.state.selectedNum;
+    const it = ITEMS.find((x) => x.num === selNum) || ITEMS[0];
+
+    const items = ITEMS.map((x) => ({
+      shortRef: "#" + x.num, title: x.title, time: x.time,
+      needsYou: !!x.needsYou, dot: DOT[x.state],
+      bg: x.num === selNum ? "var(--color-accent-100)" : "transparent",
+      select: () => this.select(x.num),
+    }));
+
+    const active = it.nodes.filter((n) => !it.skipped.includes(n));
+    const curIdx = it.nodes.indexOf(it.current);
+    const ticks = it.nodes.map((n, i) => {
+      if (it.skipped.includes(n)) return { name: n + " — skipped", bg: "var(--color-neutral-200)", h: "6px", anim: "none" };
+      if (i < curIdx) return { name: n + " — done", bg: "var(--color-accent-400)", h: "10px", anim: "none" };
+      if (i === curIdx) return { name: n + " — current", bg: it.blocked ? "var(--color-neutral-900)" : "var(--color-accent-600)", h: "14px", anim: "lpPulse 2s ease-in-out infinite" };
+      return { name: n, bg: "var(--color-neutral-300)", h: "10px", anim: "none" };
+    });
+    const pos = active.indexOf(it.current) + 1;
+    const note = it.blocked || it.note || "";
+
+    const rows = (TRACES[selNum] || []).concat((this.state.sent[selNum] || []).map((t) => turn("You", "now", t)));
+    const traceRows = rows.map((r) => ({
+      isMeta: r.kind === "meta", isTurn: r.kind === "turn", isQuestion: r.kind === "question",
+      label: r.label || "", time: r.time || "",
+      labelColor: r.label === "You" ? "var(--color-neutral-600)" : "var(--color-accent-700)",
+      text: r.text || "", hasText: !!r.text,
+      hasThinking: showThinking && !!r.thinking, thinking: r.thinking || "",
+      thinkingFirst: (r.thinking || "").split("\n")[0],
+      tools: (r.tools || []).map((t) => ({ name: t.name, sum: t.sum, err: !!t.err, body: t.body })),
+    }));
+
+    const blocked = CHAT_BLOCK[selNum] || "";
+    const canSend = !blocked && this.state.chatText.trim().length > 0;
+    return {
+      items, showStanding, foldsOpen, traceRows,
+      standing: [
+        { name: "supervisor", desc: "watches the items in flight, reports what is stuck", dot: DOT.active },
+        { name: "triage", desc: "created for the release; stopped", dot: DOT.none },
+      ],
+      sel: {
+        fullRef: it.ref, url: "https://github.com/octo/loop-lab/issues/" + it.num,
+        title: it.title, sessionLine: SESSION_LINE[it.state],
+        ticks, railLabel: it.current + " · " + pos + " of " + active.length,
+        hasNote: !!note, note,
+      },
+      chatText: this.state.chatText,
+      chatPlaceholder: blocked || "Message the session — pasted into its tmux pane",
+      chatDisabled: !!blocked,
+      sendDisabled: !canSend,
+      chatHint: blocked ? "" : "Delivered into the session's tmux pane and recorded on the ticket · ⌘⏎ to send",
+      onChatChange: (e) => this.setState({ chatText: e.target.value }),
+      onChatKey: (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) this.send(); },
+      sendChat: () => this.send(),
+    };
+  }
+}
+</script>
+</body>
+</html>

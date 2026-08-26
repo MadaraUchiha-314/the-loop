@@ -90,7 +90,9 @@ describe("the control plane, on demo data", () => {
     await user.click(await sidebarRow("loop-lab#214"));
 
     expect(await screen.findByRole("heading", { name: /Control plane UI/ })).toBeInTheDocument();
-    expect(screen.getByText(/Outer loop · pdlc-work-item-loop/)).toBeInTheDocument();
+    // The outer loop draws as the header's tick rail (issue-298); its position
+    // caption names the current node among the phases the item kept.
+    expect(screen.getAllByRole("list", { name: "loop position" }).length).toBeGreaterThan(0);
     expect(await screen.findByRole("link", { name: "loop-lab#216 ↗" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "loop-docs#47 ↗" })).toBeInTheDocument();
   });
@@ -101,7 +103,7 @@ describe("the control plane, on demo data", () => {
 
     await user.click(await sidebarRow("loop-lab#214"));
 
-    expect(await screen.findByText(/Agent is waiting for your input/)).toBeInTheDocument();
+    expect(await screen.findByText(/The loop asks/)).toBeInTheDocument();
     // An empty reply has nothing to deliver, so it cannot be sent.
     expect(screen.getByRole("button", { name: /Send to session/ })).toBeDisabled();
 
@@ -111,7 +113,7 @@ describe("the control plane, on demo data", () => {
     // POST /sessions/reply emits session.reply_sent (the demo transport mirrors
     // it), and a reply newer than the question closes the card on refresh.
     await waitFor(() => {
-      expect(screen.queryByText(/Agent is waiting for your input/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/The loop asks/)).not.toBeInTheDocument();
     });
   });
 

@@ -137,25 +137,36 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, ini
   return (
     <>
       <div className="lp-detail-head">
-        <div>
+        <div className="lp-detail-id">
           <div className="lp-detail-ref">
-            {view.ref}
+            <span>{view.ref}</span>
             {view.url ? (
               <>
-                {" · "}
+                <span>·</span>
                 <a href={view.url} target="_blank" rel="noreferrer">
-                  open on GitHub ↗
+                  Open on GitHub ↗
                 </a>
               </>
             ) : null}
+            <span>·</span>
+            <span>{sessionLine(view)}</span>
           </div>
           <h1 className="lp-detail-title">{title ?? view.shortRef}</h1>
+          <div className="lp-detail-rail">
+            <NodeRail
+              nodes={view.rail}
+              emptyMessage={
+                view.repoPath
+                  ? "The checkout has no graph state for this item yet — it starts at phase-selection."
+                  : "No session on this machine recorded a checkout, so the graph state cannot be read from here."
+              }
+            />
+          </div>
           <div className="lp-detail-tags">
-            {view.currentNode ? <span className="tag tag-accent">{view.currentNode}</span> : null}
-            <span className="tag tag-outline">control: {view.control?.command ?? "none"}</span>
+            <span>control: {view.control?.command ?? "none"}</span>
             {view.tmuxTarget ? (
-              <span className="lp-subtle">
-                tmux: <code className="lp-code">{view.tmuxTarget}</code>
+              <span>
+                tmux <code className="lp-code">{view.tmuxTarget}</code>
               </span>
             ) : null}
           </div>
@@ -175,6 +186,7 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, ini
         </div>
       </div>
 
+      <div className="lp-pane-body">
       {actionError ? (
         <div className="lp-banner lp-banner-error" role="alert">
           <span className="lp-banner-kicker">Action failed</span>
@@ -245,16 +257,6 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, ini
           ))}
         </div>
       ) : null}
-
-      <h2 className="lp-h2">Outer loop · {view.record.graph?.loop ?? "pdlc-work-item-loop"}</h2>
-      <NodeRail
-        nodes={view.rail}
-        emptyMessage={
-          view.repoPath
-            ? "The checkout has no graph state for this item yet — it starts at phase-selection."
-            : "No session on this machine recorded a checkout, so the graph state cannot be read from here."
-        }
-      />
 
       <h2 className="lp-h2">Pull requests · one inner loop each</h2>
       {view.pullRequests.length === 0 ? (
@@ -355,11 +357,6 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, ini
         )}
       </Blueprint>
 
-      {/* The chat bar delivers into the *viewed* session's pane — the outer
-          loop's when the work-item tab is selected, that PR's when an inner
-          loop's is (issue-230). */}
-      <ChatBar refFor={traceRef} state={sessionState(traceSession)} onSent={onChanged} />
-
       {/* Rendered only while the trace above shows a real transcript: when it
           has fallen back to the event trail, this section would repeat the
           identical rows on the same screen (issue-283 B8). */}
@@ -385,8 +382,21 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, ini
           )}
         </>
       ) : null}
+      </div>
+
+      {/* The chat bar delivers into the *viewed* session's pane — the outer
+          loop's when the work-item tab is selected, that PR's when an inner
+          loop's is (issue-230). It sits at the pane's foot, under its own
+          hairline, per the design. */}
+      <ChatBar refFor={traceRef} state={sessionState(traceSession)} onSent={onChanged} />
     </>
   );
+}
+
+/** The header's one-line session summary, the way the design words it. */
+function sessionLine(view: WorkItemView): string {
+  if (view.sessionState === "none") return "No session on this machine";
+  return `Session ${sessionLabel(view.sessionState, view.session?.harness)}`;
 }
 
 /** The server's reason for a missing transcript, as its own sentence. */
@@ -469,7 +479,7 @@ function NeedsInputCard({
   return (
     <Blueprint className="lp-callout">
       <div className="lp-callout-head">
-        <div className="lp-callout-kicker">Agent is waiting for your input</div>
+        <div className="lp-callout-kicker">The loop asks</div>
       </div>
       <div className="lp-callout-body">{text}</div>
       <div className="lp-reply">
@@ -490,8 +500,8 @@ function NeedsInputCard({
         </button>
       </div>
       <div className="lp-hint">
-        Delivered straight into the session's tmux pane and recorded on the ticket; the wait
-        clears once the reply lands.
+        Reply below — delivered into the session, recorded on the ticket; the wait clears once
+        the reply lands.
         {commentUrl ? (
           <>
             {" "}

@@ -36,11 +36,17 @@ export function TranscriptView({ entries }: { entries: TranscriptEntry[] }) {
   );
 }
 
+/** The speaker names the design gives the two conversational rows. */
+const ROW_LABEL: Partial<Record<ThreadRow["kind"], string>> = {
+  user: "You",
+  assistant: "the-loop",
+};
+
 function ThreadRowView({ row }: { row: ThreadRow }) {
   return (
     <div className="lp-trace-entry">
       <div className={`lp-trace-kind ${ROW_CLASS[row.kind]}`.trim()}>
-        {row.kind === "meta" ? (row.label || "meta") : row.kind}
+        {row.kind === "meta" ? (row.label || "meta") : (ROW_LABEL[row.kind] ?? row.kind)}
         {row.time ? <div className="lp-trace-ts">{timeOf(row.time)}</div> : null}
       </div>
       <div className="lp-trace-main">
@@ -148,32 +154,40 @@ export function ChatBar({
 
   return (
     <div className="lp-chat">
-      {error ? (
-        <div className="lp-chat-error" role="alert">
-          {error}
+      <div className="lp-chat-inner">
+        {error ? (
+          <div className="lp-chat-error" role="alert">
+            {error}
+          </div>
+        ) : null}
+        <div className="lp-chat-row">
+          <textarea
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            placeholder={blocked || `Message the session — pasted into its tmux pane`}
+            aria-label={`Message the session for ${refFor}`}
+            disabled={busy || blocked !== ""}
+            rows={2}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && text.trim() && !blocked) void send();
+            }}
+          />
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={busy || blocked !== "" || !text.trim()}
+            title={blocked || undefined}
+            onClick={() => void send()}
+          >
+            {busy ? "Sending…" : "Send"}
+          </button>
         </div>
-      ) : null}
-      <div className="lp-chat-row">
-        <textarea
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-          placeholder={blocked || `Message the session — pasted into its tmux pane (bracketed paste, then Enter)`}
-          aria-label={`Message the session for ${refFor}`}
-          disabled={busy || blocked !== ""}
-          rows={2}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && text.trim() && !blocked) void send();
-          }}
-        />
-        <button
-          type="button"
-          className="btn btn-primary"
-          disabled={busy || blocked !== "" || !text.trim()}
-          title={blocked || undefined}
-          onClick={() => void send()}
-        >
-          {busy ? "Sending…" : "Send"}
-        </button>
+        {blocked ? null : (
+          <div className="lp-chat-hint">
+            Delivered into the session&rsquo;s tmux pane (bracketed paste, then Enter) and recorded on the ticket
+            · ⌘⏎ to send
+          </div>
+        )}
       </div>
     </div>
   );

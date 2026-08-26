@@ -1,13 +1,18 @@
-/** The shell: chrome, banners, and one of the three screens (issue-283). */
+/**
+ * The shell: banners and one of the three screens (issue-283).
+ *
+ * Since the issue-298 redesign the Work screen owns the whole viewport — its
+ * sidebar is the navigation — and Events and Settings are reading columns with
+ * a "← Work items" way back, per the signed-off design
+ * (docs/specs/issue-298/design/).
+ */
 
 import { useMemo } from "react";
 
-import { attentionByItem } from "./api/model.ts";
 import { ConnectionBanner, DemoBanner } from "./components/Banner.tsx";
-import { Nav } from "./components/Nav.tsx";
 import { DEMO_TITLES } from "./demo/fixture.ts";
 import { useApi } from "./state/ApiContext.tsx";
-import { navigate, useRoute } from "./state/route.ts";
+import { hrefFor, navigate, useRoute } from "./state/route.ts";
 import { useControlPlane } from "./state/useControlPlane.ts";
 import { Events } from "./views/Events.tsx";
 import { Settings } from "./views/Settings.tsx";
@@ -40,18 +45,8 @@ export function App() {
   }, [board.views]);
   const titleFor = (ref: string) => titles.get(ref) ?? (api.isDemo ? DEMO_TITLES[ref] : undefined);
 
-  const needsYou = attentionByItem(board.views).length;
-
   return (
     <div className="lp-shell">
-      <Nav
-        route={route}
-        needsYouCount={needsYou}
-        daemons={board.daemons}
-        stream={board.stream}
-        onRefresh={board.refresh}
-      />
-
       {api.isDemo ? <DemoBanner onGoLive={() => updateSettings({ mode: "live" })} /> : null}
       {!api.isDemo && board.error ? <ConnectionBanner error={board.error} baseUrl={api.baseUrl} /> : null}
 
@@ -65,12 +60,19 @@ export function App() {
             standing={route.name === "standing"}
             onChanged={board.refresh}
             transcriptTick={board.transcriptTick}
+            daemons={board.daemons}
+            stream={board.stream}
           />
         </main>
       ) : (
         <main className="lp-main">
-          {route.name === "events" ? <Events refFilter={route.ref ?? ""} /> : null}
-          {route.name === "settings" ? <Settings /> : null}
+          <div className={`lp-page ${route.name === "events" ? "lp-page-wide" : ""}`.trim()}>
+            <a className="lp-back" href={hrefFor({ name: "work" })}>
+              ← Work items
+            </a>
+            {route.name === "events" ? <Events refFilter={route.ref ?? ""} /> : null}
+            {route.name === "settings" ? <Settings /> : null}
+          </div>
         </main>
       )}
 

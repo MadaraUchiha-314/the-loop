@@ -1,12 +1,13 @@
 /**
- * The Work screen (issue-283, bloat #1): the claude.ai/code shape. One
- * persistent sidebar — the inbox at the top, then every work item grouped by
- * what it needs from you, then standing sessions under a divider — and one
- * main pane showing the selected item (rail, trace, chat), the standing
- * screen, or, with nothing selected, the inbox at full width.
+ * The Work screen (issue-283, restyled by issue-298): one persistent sidebar —
+ * the brand block on top, the inbox strip, then every work item grouped by
+ * what it needs from you, then standing sessions under a divider, with Events,
+ * Settings and the health dot in the footer — and one main pane showing the
+ * selected item (rail, trace, chat), the standing screen, or, with nothing
+ * selected, the inbox at full width.
  *
- * Dashboard, Sessions and Attention were three projections of the same rows;
- * this screen is the one projection, so their deep links all land here.
+ * Since issue-298 the sidebar is also the app's navigation: the old header bar
+ * is gone, per the signed-off design (docs/specs/issue-298/design/).
  */
 
 import { useState } from "react";
@@ -22,10 +23,13 @@ import {
   type ItemGroup,
   type WorkItemView,
 } from "../api/model.ts";
+import type { DaemonStatus } from "../api/types.ts";
+import { HealthDot } from "../components/Nav.tsx";
 import { SessionDot } from "../components/SessionDot.tsx";
 import { useApi } from "../state/ApiContext.tsx";
 import { hrefFor } from "../state/route.ts";
 import { useAsync } from "../state/useAsync.ts";
+import type { StreamState } from "../state/useStream.ts";
 import { Standing } from "./Standing.tsx";
 import { WorkItemDetail } from "./WorkItemDetail.tsx";
 
@@ -45,6 +49,8 @@ interface WorkProps {
   standing: boolean;
   onChanged: () => void;
   transcriptTick: number;
+  daemons: DaemonStatus[];
+  stream: StreamState;
 }
 
 /** The view that owns `ref` — the item itself, or the item whose PR it is. */
@@ -52,7 +58,17 @@ function findOwner(views: WorkItemView[], ref: string): WorkItemView | undefined
   return views.find((view) => view.ref === ref || view.pullRequests.some((pr) => pr.ref === ref));
 }
 
-export function Work({ views, loading, titleFor, selectedRef, standing, onChanged, transcriptTick }: WorkProps) {
+export function Work({
+  views,
+  loading,
+  titleFor,
+  selectedRef,
+  standing,
+  onChanged,
+  transcriptTick,
+  daemons,
+  stream,
+}: WorkProps) {
   const { api } = useApi();
   const groups = attentionByItem(views);
   const selected = selectedRef ? findOwner(views, selectedRef) : undefined;
@@ -68,63 +84,81 @@ export function Work({ views, loading, titleFor, selectedRef, standing, onChange
   return (
     <div className="lp-work">
       <aside className="lp-side">
-        {showStrip ? <Inbox groups={groups} onChanged={onChanged} compact /> : null}
+        <a className="lp-side-brand" href={hrefFor({ name: "work" })}>
+          <div className="lp-side-brand-name">the-loop</div>
+          <div className="lp-side-brand-sub">Control plane</div>
+        </a>
 
-        {noSessions ? (
-          <div className="lp-side-banner">
-            No sessions are registered on this workstation; positions are shown from each item&rsquo;s frozen node
-            list.
-          </div>
-        ) : null}
+        <div className="lp-side-scroll">
+          {showStrip ? <Inbox groups={groups} onChanged={onChanged} compact /> : null}
 
-        {loading && views.length === 0 ? <div className="lp-empty">Loading…</div> : null}
-        {!loading && views.length === 0 ? (
-          <div className="lp-empty">
-            Nothing is tracked on this machine yet. A work item appears once the poller or webhook receiver sees a
-            control keyword on its ticket, or after <code className="lp-code">the-loop sessions register</code>.
-          </div>
-        ) : null}
+          {noSessions ? (
+            <div className="lp-side-banner">
+              No sessions are registered on this workstation; positions are shown from each item&rsquo;s frozen node
+              list.
+            </div>
+          ) : null}
 
-        {GROUPS.map(({ key, label }) => {
-          const members = views.filter((view) => itemGroup(view) === key);
-          if (members.length === 0) return null;
-          return (
-            <section key={key} className="lp-side-group">
-              <div className="lp-side-head">{label}</div>
-              {members.map((view) => (
-                <ItemRow
-                  key={view.ref}
-                  view={view}
-                  title={titleFor(view.ref)}
-                  selected={selected?.ref === view.ref && !standing}
-                />
-              ))}
-            </section>
-          );
-        })}
+          {loading && views.length === 0 ? <div className="lp-empty lp-side-clear">Loading…</div> : null}
+          {!loading && views.length === 0 ? (
+            <div className="lp-empty lp-side-banner">
+              Nothing is tracked on this machine yet. A work item appears once the poller or webhook receiver sees a
+              control keyword on its ticket, or after <code className="lp-code">the-loop sessions register</code>.
+            </div>
+          ) : null}
 
-        <section className="lp-side-group">
-          <div className="lp-side-head">Standing sessions</div>
-          {(standingSessions.data ?? []).map((session) => (
+          {GROUPS.map(({ key, label }) => {
+            const members = views.filter((view) => itemGroup(view) === key);
+            if (members.length === 0) return null;
+            return (
+              <section key={key} className="lp-side-group">
+                <div className="lp-side-head">{label}</div>
+                {members.map((view) => (
+                  <ItemRow
+                    key={view.ref}
+                    view={view}
+                    title={titleFor(view.ref)}
+                    selected={selected?.ref === view.ref && !standing}
+                  />
+                ))}
+              </section>
+            );
+          })}
+
+          <section className="lp-side-group">
+            <div className="lp-side-head">Standing sessions</div>
+            {(standingSessions.data ?? []).map((session) => (
+              <a
+                key={session.name}
+                className={`lp-side-row ${standing ? "current" : ""}`.trim()}
+                href={hrefFor({ name: "standing" })}
+              >
+                <span className={`lp-health-dot ${session.running ? "ok" : "unknown"}`} aria-hidden="true" />
+                <span className="lp-side-ref">{session.name}</span>
+                <span className="lp-side-title">{session.description}</span>
+              </a>
+            ))}
             <a
-              key={session.name}
-              className={`lp-side-row ${standing ? "current" : ""}`.trim()}
+              className={`lp-side-row lp-side-manage ${standing ? "current" : ""}`.trim()}
               href={hrefFor({ name: "standing" })}
             >
-              <span className={`lp-health-dot ${session.running ? "ok" : "unknown"}`} aria-hidden="true" />
-              <span className="lp-side-ref">{session.name}</span>
-              <span className="lp-side-title">{session.description}</span>
+              Manage standing sessions
             </a>
-          ))}
-          <a className={`lp-side-row lp-side-manage ${standing ? "current" : ""}`.trim()} href={hrefFor({ name: "standing" })}>
-            Manage standing sessions
-          </a>
-        </section>
+          </section>
+        </div>
+
+        <div className="lp-side-foot">
+          <a href={hrefFor({ name: "events" })}>Events →</a>
+          <a href={hrefFor({ name: "settings" })}>Settings →</a>
+          <HealthDot daemons={daemons} stream={stream} onRefresh={onChanged} />
+        </div>
       </aside>
 
       <section className="lp-pane">
         {standing ? (
-          <Standing />
+          <div className="lp-pane-body">
+            <Standing />
+          </div>
         ) : selected ? (
           <WorkItemDetail
             view={selected}
@@ -134,14 +168,20 @@ export function Work({ views, loading, titleFor, selectedRef, standing, onChange
             initialTraceRef={selectedRef !== selected.ref ? selectedRef : undefined}
           />
         ) : selectedRef && !loading ? (
-          <div className="lp-empty">
-            No work item <code className="lp-code">{selectedRef}</code> on this service.{" "}
-            <a href={hrefFor({ name: "work" })}>Back to the overview</a>.
+          <div className="lp-pane-body">
+            <div className="lp-empty">
+              No work item <code className="lp-code">{selectedRef}</code> on this service.{" "}
+              <a href={hrefFor({ name: "work" })}>Back to the overview</a>.
+            </div>
           </div>
         ) : selectedRef ? (
-          <div className="lp-empty">Loading…</div>
+          <div className="lp-pane-body">
+            <div className="lp-empty">Loading…</div>
+          </div>
         ) : (
-          <Overview groups={groups} views={views} onChanged={onChanged} />
+          <div className="lp-pane-body">
+            <Overview groups={groups} views={views} onChanged={onChanged} />
+          </div>
         )}
       </section>
     </div>
@@ -158,11 +198,11 @@ function ItemRow({ view, title, selected }: { view: WorkItemView; title: string 
     >
       <SessionDot state={view.sessionState} small />
       <span className="lp-side-ref">{view.shortRef}</span>
-      <span className="lp-side-title">{title ?? positionLabel(view)}</span>
-      {flag ? <span className="lp-side-flag">{flag.label}</span> : null}
       <span className="lp-side-when" title={view.lastActivity || undefined}>
         {relativeTime(view.lastActivity)}
       </span>
+      <span className="lp-side-title">{title ?? positionLabel(view)}</span>
+      {flag ? <span className="lp-side-flag">{flag.label}</span> : null}
     </a>
   );
 }
