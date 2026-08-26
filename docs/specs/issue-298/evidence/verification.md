@@ -44,11 +44,13 @@ Captured from the Vite dev server in demo mode with headless Chromium:
 
 | Screen | File | Design reference |
 |---|---|---|
-| Work — overview (inbox) | [`overview.png`](overview.png) | `Control Plane.dc.html` |
-| Work — item detail (rail, trace, chat) | [`item.png`](item.png) | `Control Plane.dc.html` |
+| Work — default canvas (most recent item) | [`overview.png`](overview.png) | `Control Plane.dc.html` |
+| Work — item canvas (rail, trace, chat) | [`item.png`](item.png) | `Control Plane.dc.html` |
 | Work — standing sessions | [`standing.png`](standing.png) | restyled, not in the export |
-| Events | [`events.png`](events.png) | restyled, not in the export |
 | Settings | [`settings.png`](settings.png) | `Settings.dc.html` |
+
+(The Events screen retired in round two, so it captures nothing; the event trail
+appears in `overview.png` as the trace's fallback for an item with no session.)
 
 ## Not run, and why
 

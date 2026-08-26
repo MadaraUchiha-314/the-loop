@@ -83,6 +83,33 @@ Results and raw output: [`evidence/verification.md`](evidence/verification.md);
 screenshots of all five surfaces (overview, item, standing, events, settings) beside
 it. Contract/integration/perf testing: n/a — no API, route or model change.
 
+## Round two — the owner's decluttering direction (2026-08-26)
+
+On [PR #299](https://github.com/MadaraUchiha-314/the-loop/pull/299) the owner replied
+that round one was still too cluttered and restated the design's intent — *"a clean
+design with just the sidebar and the main canvas and the settings page"* — with the
+rendered design screenshot as the reference. Round two pares the surface to exactly
+that:
+
+- **Sidebar**: one flat "Work items" list, newest activity first (chips carry the
+  attention); standing sessions as flowing `name — description` rows; the footer is
+  Settings → plus the health dot. The inbox strip, the group headers and the
+  no-sessions banner are gone.
+- **Canvas**: header (ref line · serif title · tick rail with a parked/blocked note),
+  the trace flowing unboxed at the reading measure, the chat bar at the foot. With
+  nothing selected the most recently active item shows. Removed: the overview inbox,
+  the waits/errors rows, the PR cards (PR sessions stay reachable as trace tabs), the
+  control/tmux tags line and the second per-item event list.
+- **The question card matches the design**: question + "Reply below" pointer — the
+  chat bar is the reply box, posting the same `POST /sessions/reply`. The parked-gate
+  card keeps its Approve (the one in-place action the design's flow needs).
+- **The Events screen is retired** per the owner's sentence; the event trail remains
+  as the trace's fallback and `#/events[/ref]` hashes land on Work (a ref permalink on
+  that item's canvas). Connectors remain untouched.
+- Tests reworked to the new surface (168/168 green); `WorkItemDetail` keyed by ref so
+  switching items resets the viewed trace (a latent staleness the auto-selection
+  exposed).
+
 ## Documentation
 
 - `ui/README.md` — the design-system section, screen map and layout tree now

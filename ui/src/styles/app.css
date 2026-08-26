@@ -86,15 +86,11 @@ a:hover {
   margin: 0 auto;
   padding: 26px 24px 64px;
 }
-.lp-page-wide {
-  max-width: 1080px;
-}
 .lp-back {
   font-size: 12.5px;
   color: var(--color-accent-700);
 }
-.lp-page > .lp-h1,
-.lp-page-head .lp-h1 {
+.lp-page > .lp-h1 {
   margin: 10px 0 4px;
 }
 .lp-page-sub {
@@ -141,8 +137,7 @@ a:hover {
   color: var(--color-neutral-600);
 }
 
-.lp-code,
-.lp-mono {
+.lp-code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.92em;
 }
@@ -158,19 +153,6 @@ a:hover {
   font-style: italic;
   color: var(--color-neutral-500);
   padding: 14px 0;
-}
-
-.lp-linklike {
-  background: none;
-  border: none;
-  padding: 0;
-  font: inherit;
-  color: var(--color-accent-700);
-  cursor: pointer;
-}
-.lp-linklike:hover {
-  color: var(--color-accent-600);
-  text-decoration: underline;
 }
 
 .lp-visually-hidden {
@@ -342,22 +324,24 @@ a:hover {
   font-style: italic;
 }
 
-.lp-side-clear {
-  font-size: 12.5px;
-  color: var(--color-neutral-600);
-  padding: 8px 20px;
-}
-
-.lp-side-manage,
-.lp-side-more {
+.lp-side-manage {
   display: block;
   font-size: 12.5px;
   color: var(--color-neutral-600);
   padding: 7px 20px;
 }
-.lp-side-manage:hover,
-.lp-side-more:hover {
+.lp-side-manage:hover {
   color: var(--color-accent-700);
+}
+
+/* Standing rows read as one flowing line: name — description, wrapping. */
+.lp-side-standing {
+  font-size: 13px;
+  line-height: 1.45;
+}
+.lp-side-standing .lp-side-desc {
+  color: var(--color-neutral-600);
+  font-size: 12px;
 }
 
 .lp-side-foot {
@@ -386,9 +370,23 @@ a:hover {
   display: flex;
   flex-direction: column;
 }
-/* Everything except the detail's own head/trace/chat sits in a reading column. */
+/* The middle of the pane: a column that lets the trace take the remaining
+   height, so the chat bar sits at the foot without a page of scroll. */
 .lp-pane-body {
-  padding: 24px 40px 32px;
+  padding: 18px 40px 8px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The actionable cards sit in the same reading column as the trace. */
+.lp-callout,
+.lp-gate {
+  width: 100%;
+  max-width: 760px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 @media (max-width: 860px) {
@@ -520,102 +518,6 @@ a:hover {
   margin-bottom: 14px;
 }
 
-/* — the inbox ———————————————————————————————————————————————————————— */
-
-.lp-inbox {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin: 14px 0;
-}
-.lp-inbox.compact {
-  gap: 0;
-  margin: 0 0 4px;
-}
-.lp-inbox-card {
-  border: 1px solid var(--color-divider);
-  border-radius: var(--radius-md);
-  padding: 12px 16px;
-}
-.lp-inbox-card.hot {
-  border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
-  background: var(--color-neutral-100);
-}
-.lp-inbox.compact .lp-inbox-card {
-  border: none;
-  border-radius: 0;
-  border-bottom: 1px solid var(--color-divider);
-  padding: 8px 20px 10px;
-}
-.lp-inbox.compact .lp-inbox-card.hot {
-  background: transparent;
-}
-.lp-inbox-head {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  margin-bottom: 4px;
-}
-.lp-inbox-ref {
-  font-size: 12px;
-  font-feature-settings: "tnum";
-  color: var(--color-accent-700);
-}
-.lp-inbox-when {
-  font-size: 10.5px;
-  font-feature-settings: "tnum";
-  color: var(--color-neutral-500);
-  margin-left: auto;
-}
-.lp-inbox-entry {
-  margin-top: 6px;
-}
-.lp-inbox-line {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-.lp-inbox-kind {
-  color: var(--color-accent-700);
-  font-size: 10.5px;
-}
-.lp-inbox-count {
-  font-size: 11px;
-  font-feature-settings: "tnum";
-  color: var(--color-neutral-600);
-}
-.lp-inbox-detail {
-  font-size: 13px;
-  line-height: 1.5;
-  margin-top: 2px;
-}
-.lp-inbox-act {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin-top: 8px;
-  flex-wrap: wrap;
-}
-.lp-inbox-act textarea {
-  flex: 1;
-  min-width: 220px;
-  border: 1px solid var(--color-divider);
-  border-radius: var(--radius-md);
-  background: var(--color-bg);
-  padding: 8px 12px;
-  font: inherit;
-  font-size: 13.5px;
-  line-height: 1.5;
-  color: var(--color-text);
-  resize: none;
-}
-.lp-inbox-error {
-  flex-basis: 100%;
-  font-size: 12px;
-  font-style: italic;
-  color: var(--color-accent-800);
-}
-
 /* — the work-item detail —————————————————————————————————————————————— */
 
 .lp-detail-head {
@@ -660,15 +562,6 @@ a:hover {
   font-size: 12px;
   font-style: italic;
   color: var(--color-accent-700);
-}
-.lp-detail-tags {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  margin-top: 10px;
-  flex-wrap: wrap;
-  font-size: 12px;
-  color: var(--color-neutral-600);
 }
 .lp-detail-actions {
   display: flex;
@@ -743,7 +636,7 @@ a:hover {
   border-radius: var(--radius-md);
   background: var(--color-neutral-100);
   padding: 16px 20px;
-  margin: 14px 0;
+  margin: 14px auto;
 }
 .lp-callout-head {
   display: flex;
@@ -758,24 +651,6 @@ a:hover {
   font-size: 15.5px;
   line-height: 1.6;
   text-wrap: pretty;
-}
-.lp-reply {
-  display: flex;
-  gap: 12px;
-  align-items: stretch;
-  margin-top: 12px;
-}
-.lp-reply textarea {
-  flex: 1;
-  border: 1px solid var(--color-divider);
-  border-radius: var(--radius-md);
-  background: var(--color-bg);
-  padding: 10px 13px;
-  font: inherit;
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--color-text);
-  resize: none;
 }
 .lp-hint {
   font-size: 11.5px;
@@ -799,63 +674,6 @@ a:hover {
   margin: 4px 0;
 }
 
-.lp-needs {
-  border: 1px solid var(--color-divider);
-  border-radius: var(--radius-md);
-  padding: 10px 16px;
-  margin: 14px 0;
-}
-.lp-needs-row {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  padding: 4px 0;
-}
-.lp-needs-kind {
-  color: var(--color-accent-700);
-  white-space: nowrap;
-}
-.lp-needs-detail {
-  flex: 1;
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-/* — PR cards ————————————————————————————————————————————————————————— */
-
-.lp-pr-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 12px;
-}
-.lp-pr-card {
-  margin-bottom: 0;
-}
-.lp-pr-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.lp-pr-ref {
-  font-size: 13px;
-  font-feature-settings: "tnum";
-}
-.lp-pr-tags {
-  display: flex;
-  gap: 6px;
-}
-.lp-pr-foot {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11.5px;
-  color: var(--color-neutral-600);
-  margin-top: 8px;
-  flex-wrap: wrap;
-}
-
 /* — the trace ———————————————————————————————————————————————————————— */
 
 .lp-trace-head {
@@ -863,9 +681,9 @@ a:hover {
   align-items: baseline;
   gap: 14px;
   flex-wrap: wrap;
-}
-.lp-trace-head .lp-h2 {
-  margin-bottom: 0;
+  max-width: 760px;
+  margin: 0 auto;
+  width: 100%;
 }
 .lp-trace-source {
   margin-left: auto;
@@ -878,10 +696,17 @@ a:hover {
   white-space: nowrap;
 }
 
+/* The trace is the canvas, not a card (the design draws no box around it):
+   Blueprint's border and padding are undone here, and the panel takes the
+   pane's remaining height so the chat bar stays in reach (R6). */
 .lp-trace {
-  padding: 22px 24px;
-  margin: 10px 0 0;
-  max-height: 60vh;
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  padding: 26px 0 10px;
+  margin: 0;
+  flex: 1;
+  min-height: 220px;
   overflow-y: auto;
 }
 .lp-trace:focus-visible {
@@ -906,11 +731,14 @@ a:hover {
 .lp-trace-kind.accent {
   color: var(--color-accent-700);
 }
+/* Meta and malformed rows read as centered asides, label included. */
 .lp-trace-kind.dim {
   color: var(--color-neutral-500);
+  justify-content: center;
 }
 .lp-trace-kind.hot {
   color: var(--color-neutral-900);
+  justify-content: center;
 }
 .lp-trace-ts {
   font-family: var(--font-body);
@@ -1066,42 +894,7 @@ a:hover {
   margin-bottom: 6px;
 }
 
-/* — event rows on the detail page ———————————————————————————————————— */
-
-.lp-event-row {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  padding: 6px 0;
-  border-bottom: 1px solid var(--color-divider);
-  font-size: 12.5px;
-}
-.lp-event-row:last-child {
-  border-bottom: none;
-}
-.lp-event-ts {
-  font-feature-settings: "tnum";
-  color: var(--color-neutral-500);
-  white-space: nowrap;
-}
-.lp-event-name {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11.5px;
-  color: var(--color-accent-700);
-}
-.lp-event-detail {
-  color: var(--color-neutral-700);
-  overflow-wrap: anywhere;
-}
-
-/* — the Events screen ————————————————————————————————————————————————— */
-
-.lp-page-head {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  flex-wrap: wrap;
-}
+/* — the trace-source tabs (one per PR session) ———————————————————————— */
 
 .lp-filters {
   display: flex;
@@ -1129,45 +922,6 @@ a:hover {
   color: var(--color-accent-700);
   border-color: color-mix(in srgb, var(--color-accent) 50%, transparent);
 }
-.lp-filter-select {
-  width: auto;
-  min-height: 30px;
-  font-size: 12.5px;
-}
-.lp-filter-check {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12.5px;
-  color: var(--color-neutral-700);
-  cursor: pointer;
-}
-.lp-filter-check input {
-  accent-color: var(--color-accent);
-}
-
-.lp-table {
-  font-size: 12.5px;
-}
-.lp-table td {
-  vertical-align: baseline;
-}
-.lp-td-dim {
-  color: var(--color-neutral-500);
-  white-space: nowrap;
-}
-.lp-td-nowrap {
-  white-space: nowrap;
-}
-.lp-td-ref {
-  white-space: nowrap;
-}
-
-/* level tags stay stroke, not fill, per the system's direction */
-.tag {
-  font-feature-settings: "tnum";
-}
-
 /* — Settings ————————————————————————————————————————————————————————— */
 
 .lp-settings-card {
@@ -1497,6 +1251,3 @@ a:hover {
   background: color-mix(in srgb, var(--color-neutral-900) 16%, transparent);
 }
 
-.lp-overview-line {
-  margin: 0 0 18px;
-}

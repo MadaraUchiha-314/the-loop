@@ -83,19 +83,21 @@ translates that into the same advice rather than "failed to fetch".
 Nothing here is a new endpoint. The interesting part is the **join**, which lives in
 [`src/api/model.ts`](src/api/model.ts):
 
-Three screens (issue-283, restyled by issue-298 onto the Classical design system):
-**Work** — a persistent sidebar (the brand block, the inbox, then every work item
-grouped by what it needs from you, then standing sessions, with Events, Settings and
-the health dot in its footer — since issue-298 the sidebar is also the navigation)
-beside one main pane showing the selected item's rail, trace and chat bar — plus
-**Events** and **Settings**, reading columns reached from the sidebar footer.
+Two surfaces (issue-298's design, deliberately bare): **Work** — one flat sidebar of
+work items (dot · ref · age · title · a small-caps chip when one needs a human), then
+standing sessions, with Settings and the health dot in the footer; the sidebar is the
+whole navigation — beside one main canvas showing the selected item's header, rail,
+trace and chat bar (nothing selected shows the most recently active item) — plus
+**Settings**, a reading column behind "← Work items". The pre-298 screens fold in
+rather than disappear: the inbox's gate approval and question reply live on the item's
+canvas, and the standalone Events screen is retired — the event trail still renders as
+the trace's fallback, and legacy `#/events` hashes land on Work.
 
 | Surface | Reads |
 |---|---|
-| Work sidebar + inbox | `GET /work-items` + `GET /sessions` + `GET /attention`, then one `POST /graph/check` per active loop; inbox entries deduped per (item, kind) and tiered needs-input &gt; gate &gt; waits &gt; errors, with gates approvable in place (`POST /graph/complete`) and questions answerable in place (`POST /sessions/reply`) |
-| Work item pane | the same, plus `GET /events?workItem=…`, `GET /sessions/transcript?ref=…` for the selected trace (outer session or a PR endpoint's) and `POST /sessions/reply` from the chat bar (issue-230) |
+| Work sidebar | `GET /work-items` + `GET /sessions` + `GET /attention`, then one `POST /graph/check` per active loop — the rows' chips are the deduped, tiered attention (needs-input &gt; gate &gt; waits &gt; errors) |
+| Work item canvas | the same, plus `GET /events?workItem=…` (the trace's fallback trail), `GET /sessions/transcript?ref=…` for the viewed trace (outer session or a PR endpoint's), `POST /graph/complete` from the parked-gate card, and `POST /sessions/reply` from the chat bar (issue-230 — the chat bar is also how an agent's question is answered) |
 | Standing (a sidebar section of Work) | `GET /standing-sessions`, plus `POST /standing-sessions/{create,delete,control,say}` — the sessions that belong to no work item (issue-277) |
-| Events | `GET /events`, with the UI's own `api.request` traffic hidden unless asked for, an event-namespace and work-item filter (permalink: `#/events/<ref>`), and a live tail |
 | Sidebar footer | `GET /daemons`, folded with the stream state into one health dot + popover |
 | Settings | `GET /health`, plus `GET /config` + `GET /config/schema` and `POST /config` for the CLI-config editor (issue-222) |
 

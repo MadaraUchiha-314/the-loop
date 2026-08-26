@@ -1,10 +1,10 @@
 /**
- * The shell: banners and one of the three screens (issue-283).
- *
- * Since the issue-298 redesign the Work screen owns the whole viewport — its
- * sidebar is the navigation — and Events and Settings are reading columns with
- * a "← Work items" way back, per the signed-off design
- * (docs/specs/issue-298/design/).
+ * The shell: banners and the two surfaces the issue-298 design keeps — the
+ * Work screen (sidebar + canvas, owning the whole viewport) and Settings, a
+ * reading column behind "← Work items". The owner's direction on PR #299 is
+ * exactly that surface area: the standalone Events screen is retired (the
+ * event trail still appears as the trace's fallback), and every other hash —
+ * `#/events` and the legacy pre-283 routes included — lands on Work.
  */
 
 import { useMemo } from "react";
@@ -14,7 +14,6 @@ import { DEMO_TITLES } from "./demo/fixture.ts";
 import { useApi } from "./state/ApiContext.tsx";
 import { hrefFor, navigate, useRoute } from "./state/route.ts";
 import { useControlPlane } from "./state/useControlPlane.ts";
-import { Events } from "./views/Events.tsx";
 import { Settings } from "./views/Settings.tsx";
 import { Work } from "./views/Work.tsx";
 
@@ -25,7 +24,11 @@ export function App() {
   // pane: the pane comes and goes with the route, and a connection that opened
   // and closed on every navigation would replay a cursor for nothing. The
   // viewed ref travels down instead, and the detail pane reads `transcriptTick`.
-  const watched = route.name === "work" && route.ref ? route.ref : "";
+  // A legacy `#/events/<ref>` permalink names a work item, so it lands on
+  // that item's canvas rather than a generic board.
+  const selectedRef =
+    (route.name === "work" || route.name === "events") && route.ref ? route.ref : "";
+  const watched = selectedRef;
   const board = useControlPlane(
     api,
     { mode: settings.refreshMode, pollSeconds: settings.pollSeconds },
@@ -50,29 +53,28 @@ export function App() {
       {api.isDemo ? <DemoBanner onGoLive={() => updateSettings({ mode: "live" })} /> : null}
       {!api.isDemo && board.error ? <ConnectionBanner error={board.error} baseUrl={api.baseUrl} /> : null}
 
-      {route.name === "work" || route.name === "standing" ? (
+      {route.name === "settings" ? (
+        <main className="lp-main">
+          <div className="lp-page">
+            <a className="lp-back" href={hrefFor({ name: "work" })}>
+              ← Work items
+            </a>
+            <Settings />
+          </div>
+        </main>
+      ) : (
         <main className="lp-main lp-main-work">
           <Work
             views={board.views}
             loading={board.loading}
             titleFor={titleFor}
-            selectedRef={route.name === "work" ? (route.ref ?? "") : ""}
+            selectedRef={selectedRef}
             standing={route.name === "standing"}
             onChanged={board.refresh}
             transcriptTick={board.transcriptTick}
             daemons={board.daemons}
             stream={board.stream}
           />
-        </main>
-      ) : (
-        <main className="lp-main">
-          <div className={`lp-page ${route.name === "events" ? "lp-page-wide" : ""}`.trim()}>
-            <a className="lp-back" href={hrefFor({ name: "work" })}>
-              ← Work items
-            </a>
-            {route.name === "events" ? <Events refFilter={route.ref ?? ""} /> : null}
-            {route.name === "settings" ? <Settings /> : null}
-          </div>
         </main>
       )}
 

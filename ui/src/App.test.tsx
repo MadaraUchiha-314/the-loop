@@ -49,15 +49,17 @@ describe("the control plane, on demo data", () => {
     expect(await screen.findByText(/Demo data/)).toBeInTheDocument();
   });
 
-  it("lists every tracked work item in the sidebar, grouped by state", async () => {
+  it("lists every tracked work item in one flat sidebar list, newest first", async () => {
     renderApp();
 
-    // Nine fixture items in the overview line — the armed item with no session
-    // and the ad-hoc item (issue-230) included.
-    expect(await screen.findByText(/9 work items tracked/)).toBeInTheDocument();
+    // One flat "Work items" list (issue-298) — the armed item with no session
+    // and the ad-hoc item (issue-230) included, ordered by recency.
+    expect(await screen.findByText("Work items")).toBeInTheDocument();
     expect(await sidebarRow("loop-lab#214")).toBeInTheDocument();
-    // Grouping by state (issue-283, feature #6): the group headers render.
-    expect(screen.getByText("Running")).toBeInTheDocument();
+    expect(await sidebarRow("loop-lab#181")).toBeInTheDocument();
+    // Nothing selected: the canvas shows the most recently active item
+    // (the fixture's armed #187, whose spawn failure is the newest event).
+    expect(await screen.findByRole("heading", { name: /Webhook replay protection/ })).toBeInTheDocument();
   });
 
   it("flags the item whose graph is parked on a human gate", async () => {
@@ -70,20 +72,18 @@ describe("the control plane, on demo data", () => {
     });
   });
 
-  it("shows the inbox grouped by work item, gates above errors", async () => {
+  it("offers the parked human gate on the item's canvas, approvable in place", async () => {
+    const user = userEvent.setup();
     renderApp();
 
-    // The overview pane is the inbox (issue-283 B3/B4): the human gate is
-    // approvable in place, and the paused/armed waits are listed.
-    await waitFor(() => {
-      expect(screen.getAllByText("human gate").length).toBeGreaterThan(0);
-    });
-    expect(screen.getAllByRole("button", { name: "Approve" }).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("session paused").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("armed without session").length).toBeGreaterThan(0);
+    await user.click(await sidebarRow("loop-lab#205"));
+
+    // The gate arrives with the graph round, so the card is awaited.
+    expect(await screen.findByText(/Human gate — human-approval/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Approve — advance graph/ })).toBeInTheDocument();
   });
 
-  it("opens a work item and shows its PRs, each on its own inner loop", async () => {
+  it("opens a work item with the rail in the header and one trace tab per PR session", async () => {
     const user = userEvent.setup();
     renderApp();
 
@@ -93,22 +93,24 @@ describe("the control plane, on demo data", () => {
     // The outer loop draws as the header's tick rail (issue-298); its position
     // caption names the current node among the phases the item kept.
     expect(screen.getAllByRole("list", { name: "loop position" }).length).toBeGreaterThan(0);
-    expect(await screen.findByRole("link", { name: "loop-lab#216 ↗" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "loop-docs#47 ↗" })).toBeInTheDocument();
+    // The PRs' sessions are reachable as trace tabs (issue-172/230).
+    expect(await screen.findByRole("button", { name: "loop-lab#216" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "loop-docs#47" })).toBeInTheDocument();
   });
 
-  it("shows the agent's question and sends a reply that closes the card", async () => {
+  it("shows the agent's question; the chat bar's reply closes the card", async () => {
     const user = userEvent.setup();
     renderApp();
 
     await user.click(await sidebarRow("loop-lab#214"));
 
     expect(await screen.findByText(/The loop asks/)).toBeInTheDocument();
-    // An empty reply has nothing to deliver, so it cannot be sent.
-    expect(screen.getByRole("button", { name: /Send to session/ })).toBeDisabled();
+    // The card carries no reply box of its own (issue-298): the chat bar at
+    // the pane's foot IS the reply, posting the same POST /sessions/reply.
+    expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
 
-    await user.type(screen.getByRole("textbox", { name: /Reply to the agent/ }), "Use OAuth.");
-    await user.click(screen.getByRole("button", { name: /Send to session/ }));
+    await user.type(screen.getByRole("textbox", { name: /Message the session/ }), "Use OAuth.");
+    await user.click(screen.getByRole("button", { name: "Send" }));
 
     // POST /sessions/reply emits session.reply_sent (the demo transport mirrors
     // it), and a reply newer than the question closes the card on refresh.

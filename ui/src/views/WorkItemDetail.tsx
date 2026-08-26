@@ -1,15 +1,20 @@
 /**
- * One work item: the outer loop, every PR delivering it with its own inner
- * loop, the trace of what the harness did, and the controls.
+ * One work item, the way the issue-298 design draws it: a header (ref line,
+ * title, the loop as a tick rail with a note when the item is parked or
+ * blocked), the trace on the canvas, and the chat bar at the foot. The
+ * owner's direction on PR #299 keeps this pane deliberately bare — what the
+ * old pane listed as extra sections (inbox-style waits, PR cards, a second
+ * event list) now lives in the rail note, the sidebar chips and the trace
+ * tabs; only the two actionable cards (the agent's question, a parked human
+ * gate) remain as cards.
  *
  * The **turns & tool calls** trace renders the session's own transcript from
  * `GET /api/v1/sessions/transcript` (issue-209 — the JSONL resolved
- * server-side from the recorded cwd + session id). It shipped visibly
- * disabled in issue-207 because that route did not exist; when the route
- * answers 404 — no session, no file yet, a Cursor session, an older service —
- * the panel says why and falls back to the event-log trail, which is the
- * pre-route behaviour. The reply box walked the same disabled-then-live path
- * via issue-208's `POST /api/v1/sessions/reply`.
+ * server-side from the recorded cwd + session id). When the route answers
+ * 404 — no session, no file yet, a Cursor session, an older service — the
+ * panel says why and falls back to the event-log trail, which is the
+ * pre-route behaviour. The reply box posts via issue-208's
+ * `POST /api/v1/sessions/reply`.
  */
 
 import { useEffect, useRef, useState, type UIEvent } from "react";
@@ -19,19 +24,17 @@ import {
   attentionEntries,
   describeEvent,
   eventRef,
-  levelTag,
   questionOf,
   relativeTime,
   sessionState,
   timeOf,
   transcriptPath,
-  type PullRequestView,
   type WorkItemView,
 } from "../api/model.ts";
 import type { EventRecord, SessionVerb } from "../api/types.ts";
 import { Blueprint } from "../components/Blueprint.tsx";
 import { NodeRail } from "../components/NodeRail.tsx";
-import { SessionDot, sessionLabel } from "../components/SessionDot.tsx";
+import { sessionLabel } from "../components/SessionDot.tsx";
 import { ChatBar, TranscriptView } from "../components/Transcript.tsx";
 import { useApi } from "../state/ApiContext.tsx";
 import { useAsync } from "../state/useAsync.ts";
@@ -70,10 +73,9 @@ interface DetailProps {
 
 export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, initialTraceRef }: DetailProps) {
   const { api } = useApi();
-  const [busy, setBusy] = useState<SessionVerb | "gate" | "reply" | null>(null);
+  const [busy, setBusy] = useState<SessionVerb | "gate" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [traceRef, setTraceRef] = useState<string>(initialTraceRef ?? view.ref);
-  const [reply, setReply] = useState("");
 
   const events = useAsync(
     (signal) => api.events({ workItem: view.ref, limit: 200 }, signal),
@@ -89,7 +91,7 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, ini
     [api, traceRef, transcriptTick],
   );
 
-  async function run(label: SessionVerb | "gate" | "reply", action: () => Promise<unknown>): Promise<void> {
+  async function run(label: SessionVerb | "gate", action: () => Promise<unknown>): Promise<void> {
     setBusy(label);
     setActionError(null);
     try {
@@ -129,11 +131,6 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, ini
     if (pinned.current) panel.scrollTop = panel.scrollHeight;
   }, [entryCount, traceRef]);
 
-  // What this item needs beyond the question and gate cards below — its waits
-  // and errors, expanded with their age, so clicking an error flag lands on
-  // the error rather than a generic page (issue-283, feature #7).
-  const needs = attentionEntries([view]).filter((entry) => entry.tier >= 2);
-
   return (
     <>
       <div className="lp-detail-head">
@@ -161,14 +158,7 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, ini
                   : "No session on this machine recorded a checkout, so the graph state cannot be read from here."
               }
             />
-          </div>
-          <div className="lp-detail-tags">
-            <span>control: {view.control?.command ?? "none"}</span>
-            {view.tmuxTarget ? (
-              <span>
-                tmux <code className="lp-code">{view.tmuxTarget}</code>
-              </span>
-            ) : null}
+            {railNote(view) ? <span className="lp-detail-note">{railNote(view)}</span> : null}
           </div>
         </div>
         <div className="lp-detail-actions">
@@ -193,19 +183,6 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, ini
           <span>{actionError}</span>
         </div>
       ) : null}
-
-      <NeedsInputCard
-        question={view.question}
-        reply={reply}
-        onReply={setReply}
-        busy={busy}
-        onSend={() =>
-          void run("reply", async () => {
-            await api.replySession(view.ref, reply);
-            setReply("");
-          })
-        }
-      />
 
       {view.parked ? (
         <Blueprint className="lp-gate">
@@ -241,60 +218,32 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, ini
         </Blueprint>
       ) : null}
 
-      {needs.length > 0 ? (
-        <div className="lp-needs">
-          {needs.map((entry) => (
-            <div key={entry.key} className="lp-needs-row">
-              <span className="lp-needs-kind">{entry.kind}</span>
-              {entry.count > 1 ? <span className="lp-inbox-count">×{entry.count}</span> : null}
-              <span className="lp-needs-detail">{entry.detail}</span>
-              {entry.at ? (
-                <span className="lp-subtle" title={entry.at}>
-                  {relativeTime(entry.at)}
-                </span>
-              ) : null}
-            </div>
-          ))}
-        </div>
-      ) : null}
-
-      <h2 className="lp-h2">Pull requests · one inner loop each</h2>
-      {view.pullRequests.length === 0 ? (
-        <div className="lp-subtle">
-          No pull requests yet — the outer loop has not reached implementation, or this item is delivered in a single
-          session.
-        </div>
-      ) : (
-        <div className="lp-pr-grid">
-          {view.pullRequests.map((pr) => (
-            <PrCard key={pr.ref} pr={pr} />
-          ))}
-        </div>
-      )}
-
+      {/* One trace per session; the tabs appear only when PRs bring their own
+          sessions (issue-172/230), and the caption names the served file. */}
       <div className="lp-trace-head">
-        <h2 className="lp-h2">Trace · turns &amp; tool calls</h2>
-        <div className="lp-filters">
-          <button
-            type="button"
-            className="lp-tab"
-            aria-current={traceRef === view.ref ? "page" : undefined}
-            onClick={() => setTraceRef(view.ref)}
-          >
-            work item session
-          </button>
-          {view.pullRequests.map((pr) => (
+        {view.pullRequests.length > 0 ? (
+          <div className="lp-filters">
             <button
-              key={pr.ref}
               type="button"
               className="lp-tab"
-              aria-current={traceRef === pr.ref ? "page" : undefined}
-              onClick={() => setTraceRef(pr.ref)}
+              aria-current={traceRef === view.ref ? "page" : undefined}
+              onClick={() => setTraceRef(view.ref)}
             >
-              {pr.shortRef}
+              work item session
             </button>
-          ))}
-        </div>
+            {view.pullRequests.map((pr) => (
+              <button
+                key={pr.ref}
+                type="button"
+                className="lp-tab"
+                aria-current={traceRef === pr.ref ? "page" : undefined}
+                onClick={() => setTraceRef(pr.ref)}
+              >
+                {pr.shortRef}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <span className="lp-trace-source">{transcriptPath(traceSession) ?? "no derivable transcript path"}</span>
       </div>
 
@@ -357,31 +306,10 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, ini
         )}
       </Blueprint>
 
-      {/* Rendered only while the trace above shows a real transcript: when it
-          has fallen back to the event trail, this section would repeat the
-          identical rows on the same screen (issue-283 B8). */}
-      {transcript.data && !transcript.error ? (
-        <>
-          <h2 className="lp-h2">Events for this item</h2>
-          {events.error ? (
-            <div className="lp-subtle">Could not read the event log: {events.error.message}</div>
-          ) : (
-            (events.data ?? [])
-              .toReversed()
-              .slice(0, 25)
-              .map((event, index) => (
-                <div className="lp-event-row" key={`${event.ts}-row-${index}`}>
-                  <span className="lp-event-ts" title={event.ts}>
-                    {relativeTime(event.ts)}
-                  </span>
-                  <span className={`tag ${levelTag(event.level)}`}>{event.level ?? "info"}</span>
-                  <span className="lp-event-name">{event.event}</span>
-                  <span className="lp-event-detail">{describeEvent(event)}</span>
-                </div>
-              ))
-          )}
-        </>
-      ) : null}
+      {/* The agent's open question sits between the trace and the chat bar,
+          where the conversation is — and the chat bar IS the reply box: it
+          posts the same POST /sessions/reply the old card-local box did. */}
+      <NeedsInputCard question={view.question} />
       </div>
 
       {/* The chat bar delivers into the *viewed* session's pane — the outer
@@ -399,6 +327,18 @@ function sessionLine(view: WorkItemView): string {
   return `Session ${sessionLabel(view.sessionState, view.session?.harness)}`;
 }
 
+/**
+ * The italic note beside the rail — the design's one line for "this item is
+ * stuck": the parked gate, or the newest wait/error the attention model holds.
+ */
+function railNote(view: WorkItemView): string {
+  if (view.parked) return `parked — awaiting a human at ${view.parked.node}`;
+  const entry = attentionEntries([view]).find((candidate) => candidate.tier >= 2);
+  if (!entry) return "";
+  const detail = entry.detail || entry.kind;
+  return detail.length > 90 ? `${detail.slice(0, 89)}…` : detail;
+}
+
 /** The server's reason for a missing transcript, as its own sentence. */
 function fallbackReason(error: Error | null): string {
   if (error instanceof ApiError && error.kind === "network") return error.advice;
@@ -407,71 +347,17 @@ function fallbackReason(error: Error | null): string {
   return message.endsWith(".") ? message : `${message}.`;
 }
 
-function PrCard({ pr }: { pr: PullRequestView }) {
-  return (
-    <Blueprint className="card lp-pr-card">
-      <div className="lp-pr-head">
-        <div className="lp-pr-ref">
-          {pr.url ? (
-            <a href={pr.url} target="_blank" rel="noreferrer">
-              {pr.shortRef} ↗
-            </a>
-          ) : (
-            pr.shortRef
-          )}
-        </div>
-        <div className="lp-pr-tags">
-          {pr.status ? (
-            <span className="tag tag-accent">{pr.status.currentNode}</span>
-          ) : (
-            <span className="tag tag-neutral">no inner-loop state</span>
-          )}
-          {pr.status?.parked ? <span className="tag tag-outline">awaiting human</span> : null}
-        </div>
-      </div>
-      {/* Checks and review state are GitHub's, and no /api/v1 route serves them —
-          the portable record deliberately keeps no copy of the ticket's mutable
-          fields. The PR link above is the honest way to reach them. */}
-      <NodeRail nodes={pr.rail} variant="inner" emptyMessage="No pdlc-pr-loop state for this PR yet." />
-      <div className="lp-pr-foot">
-        session <SessionDot state={pr.sessionState} small />
-        {sessionLabel(pr.sessionState, pr.session.harness)}
-        {pr.tmuxTarget ? (
-          <>
-            {" · tmux "}
-            <code>{pr.tmuxTarget}</code>
-          </>
-        ) : null}
-        {pr.session.lastEventAt ? ` · ${relativeTime(pr.session.lastEventAt)}` : null}
-      </div>
-    </Blueprint>
-  );
-}
-
 /**
- * The question card.
+ * The question card, the way the design draws it: the question and a pointer
+ * to the chat bar beneath — no second reply box.
  *
  * The question is derived once for the whole board (`awaitingInput` in
  * `model.ts`) from the `session.awaiting_input` event `the-loop ask` emits
- * (issue-208 — the verb the interaction directive routes agents through, so
- * the loop-prevention marker is stamped centrally). The reply box posts to
+ * (issue-208). The chat bar below posts the answer to
  * `POST /api/v1/sessions/reply`, which pastes into the session's tmux pane and
  * emits the `session.reply_sent` that closes this card on the next refresh.
- * It shipped disabled in issue-207 because that route did not exist yet.
  */
-function NeedsInputCard({
-  question,
-  reply,
-  onReply,
-  busy,
-  onSend,
-}: {
-  question: EventRecord | null;
-  reply: string;
-  onReply: (value: string) => void;
-  busy: string | null;
-  onSend: () => void;
-}) {
+function NeedsInputCard({ question }: { question: EventRecord | null }) {
   if (!question) return null;
   const text = questionOf(question) || "(the event carried no question text)";
   const commentUrl = typeof question["comment_url"] === "string" ? question["comment_url"] : "";
@@ -480,28 +366,13 @@ function NeedsInputCard({
     <Blueprint className="lp-callout">
       <div className="lp-callout-head">
         <div className="lp-callout-kicker">The loop asks</div>
+        <span className="lp-trace-ts" title={question.ts}>
+          {relativeTime(question.ts)}
+        </span>
       </div>
       <div className="lp-callout-body">{text}</div>
-      <div className="lp-reply">
-        <textarea
-          value={reply}
-          onChange={(event) => onReply(event.target.value)}
-          placeholder="Your answer — pasted into the session's TUI (bracketed paste, then Enter)"
-          aria-label="Reply to the agent"
-          disabled={busy !== null}
-        />
-        <button
-          type="button"
-          className="btn btn-primary"
-          disabled={busy !== null || !reply.trim()}
-          onClick={onSend}
-        >
-          {busy === "reply" ? "Sending…" : "Send to session"}
-        </button>
-      </div>
       <div className="lp-hint">
-        Reply below — delivered into the session, recorded on the ticket; the wait clears once
-        the reply lands.
+        Reply below — delivered into the session, recorded on the ticket.
         {commentUrl ? (
           <>
             {" "}
@@ -535,5 +406,3 @@ function TraceEntry({ event }: { event: EventRecord }) {
     </div>
   );
 }
-
-

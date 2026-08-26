@@ -2,8 +2,8 @@
  * The health dot and its popover.
  *
  * The issue-298 redesign retired the top header bar: the Work screen's sidebar
- * is the navigation (brand block on top, Events and Settings links in the
- * footer), the way the signed-off design draws it. What survives from the old
+ * is the navigation (brand block on top, the Settings link in the footer),
+ * the way the signed-off design draws it. What survives from the old
  * chrome is the one dot that answers "is anything actually watching GitHub
  * right now?" (issue-283 B10) — it now sits in the sidebar footer, with the
  * same popover: the stream's state (from the one `useStream` the board owns,
