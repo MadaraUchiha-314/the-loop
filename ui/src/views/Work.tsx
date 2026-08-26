@@ -1,21 +1,30 @@
 /**
- * The Work screen (issue-283, redesigned by issue-298): one flat sidebar of
- * work items — dot, ref, age, title, and a small-caps chip when one needs a
- * human — with standing sessions under a hairline and Settings plus the
- * health dot in the footer, beside one main canvas showing the selected
- * item's trace. Nothing selected shows the most recently active item, the
- * way the signed-off design does (docs/specs/issue-298/design/).
+ * The Work screen (issue-283, redesigned by issue-298): a sidebar of work
+ * items — dot, ref, age, title, and a small-caps chip when one needs a human
+ * — with each item's pull requests nested beneath it (issue-300), standing
+ * sessions under a hairline, and Settings plus the health dot in the footer,
+ * beside one main canvas showing the selected item's trace. Nothing selected
+ * shows the most recently active item, the way the signed-off design does
+ * (docs/specs/issue-298/design/).
  *
  * The sidebar is the whole navigation: the owner's direction on the redesign
  * (PR #299) is a clean surface of exactly the sidebar, the canvas and the
  * Settings page — the earlier inbox strip, overview inbox and group headers
  * were projections of what the rows' chips and the detail's cards already
- * say, so they are gone rather than restyled.
+ * say, so they are gone rather than restyled. The nesting issue-300 adds is
+ * not another projection: a PR's inner loop is a session of its own, and it
+ * had no row anywhere on this surface.
+ *
+ * One ref selects, whichever level it names — the hash is the single source
+ * of truth for what the canvas shows, so a PR row and the canvas's trace tabs
+ * are the same navigation and cannot disagree.
  */
 
 import {
   relativeTime,
   rowFlag,
+  sessionTree,
+  type SessionNode,
   type WorkItemView,
 } from "../api/model.ts";
 import type { DaemonStatus } from "../api/types.ts";
@@ -61,11 +70,18 @@ export function Work({
   const { api } = useApi();
   const standingSessions = useAsync((signal) => api.standingSessions(signal), [api]);
 
-  // One flat list, newest activity first — the design's ordering.
+  // Work items newest activity first — the design's ordering. `sessionTree`
+  // hangs each item's PR sessions off it, and leaves an ad-hoc / contribution
+  // / review item treeless, because those loops run no outer/inner split.
   const sorted = [...views].toSorted((a, b) => (b.lastActivity || "").localeCompare(a.lastActivity || ""));
+  const tree = sessionTree(sorted);
   // With no ref in the hash the canvas shows the most recent item, the way
   // the design always has something on the canvas; a deep link still wins.
   const selected = selectedRef ? findOwner(views, selectedRef) : sorted[0];
+  // What the hash actually selects, resolved: the ref itself, or — with an
+  // empty hash — the item the canvas fell back to. One value drives both the
+  // highlighted row and the trace the canvas opens on.
+  const activeRef = standing ? "" : selectedRef || selected?.ref || "";
 
   return (
     <div className="lp-work">
@@ -84,13 +100,27 @@ export function Work({
               control keyword on its ticket, or after <code className="lp-code">the-loop sessions register</code>.
             </div>
           ) : null}
-          {sorted.map((view) => (
-            <ItemRow
-              key={view.ref}
-              view={view}
-              title={titleFor(view.ref)}
-              selected={selected?.ref === view.ref && !standing}
-            />
+          {tree.map(({ view, inner }) => (
+            <div className="lp-side-item" key={view.ref}>
+              <ItemRow
+                view={view}
+                title={titleFor(view.ref)}
+                selected={activeRef === view.ref}
+                // A selected PR leaves its work item unhighlighted, which reads
+                // as "nothing is open" even though the canvas is showing that
+                // item. The parent keeps a lighter marker instead.
+                owner={inner.some((pr) => pr.ref === activeRef)}
+              />
+              {inner.length > 0 ? (
+                <ul className="lp-side-prs" aria-label={`Pull requests for ${view.shortRef}`}>
+                  {inner.map((pr) => (
+                    <li key={pr.ref}>
+                      <PullRequestRow node={pr} selected={activeRef === pr.ref} />
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
           ))}
 
           <section className="lp-side-group">
@@ -139,7 +169,7 @@ export function Work({
             title={titleFor(selected.ref)}
             onChanged={onChanged}
             transcriptTick={transcriptTick}
-            initialTraceRef={selectedRef && selectedRef !== selected.ref ? selectedRef : undefined}
+            traceRef={activeRef || selected.ref}
           />
         ) : selectedRef && !loading ? (
           <div className="lp-pane-body">
@@ -160,11 +190,22 @@ export function Work({
   );
 }
 
-function ItemRow({ view, title, selected }: { view: WorkItemView; title: string | undefined; selected: boolean }) {
+function ItemRow({
+  view,
+  title,
+  selected,
+  owner,
+}: {
+  view: WorkItemView;
+  title: string | undefined;
+  selected: boolean;
+  /** One of this item's PRs is the selected row — the canvas is on this item. */
+  owner: boolean;
+}) {
   const flag = rowFlag(view);
   return (
     <a
-      className={`lp-side-row ${selected ? "current" : ""}`.trim()}
+      className={["lp-side-row", selected && "current", owner && "owner"].filter(Boolean).join(" ")}
       href={hrefFor({ name: "work", ref: view.ref })}
       aria-current={selected ? "page" : undefined}
     >
@@ -175,6 +216,29 @@ function ItemRow({ view, title, selected }: { view: WorkItemView; title: string 
       </span>
       <span className="lp-side-title">{title ?? positionLabel(view)}</span>
       {flag ? <span className="lp-side-flag">{flag.label}</span> : null}
+    </a>
+  );
+}
+
+/**
+ * One pull request under its work item: the PR's own session, selectable.
+ *
+ * Deliberately quieter than the row above it — dot, number, age, no title and
+ * no chip. The nesting is what says which item the PR belongs to, and the
+ * work item's own row already carries the attention that needs a human.
+ */
+function PullRequestRow({ node, selected }: { node: SessionNode; selected: boolean }) {
+  return (
+    <a
+      className={["lp-side-row", "lp-side-pr", selected && "current"].filter(Boolean).join(" ")}
+      href={hrefFor({ name: "work", ref: node.ref })}
+      aria-current={selected ? "page" : undefined}
+    >
+      <SessionDot state={node.state} small />
+      <span className="lp-side-ref">{node.label}</span>
+      <span className="lp-side-when" title={node.lastActivity || undefined}>
+        {relativeTime(node.lastActivity)}
+      </span>
     </a>
   );
 }

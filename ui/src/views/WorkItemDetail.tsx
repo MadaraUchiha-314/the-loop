@@ -37,6 +37,7 @@ import { NodeRail } from "../components/NodeRail.tsx";
 import { sessionLabel } from "../components/SessionDot.tsx";
 import { ChatBar, TranscriptView } from "../components/Transcript.tsx";
 import { useApi } from "../state/ApiContext.tsx";
+import { hrefFor } from "../state/route.ts";
 import { useAsync } from "../state/useAsync.ts";
 
 /** How close to the bottom still counts as "following the newest entry". */
@@ -65,17 +66,25 @@ interface DetailProps {
    */
   transcriptTick?: number;
   /**
-   * Pre-select one of this item's session traces — a pre-283 `#/sessions/<ref>`
-   * deep link names a PR endpoint's session, and the link should land on it.
+   * Which of this item's session traces the canvas shows — the work item's own
+   * session, or one of its PR endpoints'. It comes from the hash (the sidebar's
+   * nested PR rows and a pre-283 `#/sessions/<ref>` deep link both name a PR's
+   * ref), so the sidebar, the trace tabs and the URL cannot disagree about what
+   * is on screen (issue-300). Defaults to the item's own session.
    */
-  initialTraceRef?: string | undefined;
+  traceRef?: string;
 }
 
-export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, initialTraceRef }: DetailProps) {
+export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, traceRef }: DetailProps) {
   const { api } = useApi();
   const [busy, setBusy] = useState<SessionVerb | "gate" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [traceRef, setTraceRef] = useState<string>(initialTraceRef ?? view.ref);
+  // A ref the item does not own (a stale deep link) falls back to its own
+  // session rather than asking the transcript route for somebody else's file.
+  const viewed =
+    traceRef && (traceRef === view.ref || view.pullRequests.some((pr) => pr.ref === traceRef))
+      ? traceRef
+      : view.ref;
 
   const events = useAsync(
     (signal) => api.events({ workItem: view.ref, limit: 200 }, signal),
@@ -87,8 +96,8 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, ini
   // route that owns the path validation (issue-209) rather than rendering
   // anything the stream handed it.
   const transcript = useAsync(
-    (signal) => api.transcript(traceRef, 200, signal),
-    [api, traceRef, transcriptTick],
+    (signal) => api.transcript(viewed, 200, signal),
+    [api, viewed, transcriptTick],
   );
 
   async function run(label: SessionVerb | "gate", action: () => Promise<unknown>): Promise<void> {
@@ -108,7 +117,7 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, ini
     view.sessionState === "active" ? ["pause", "stop"] : view.sessionState === "paused" ? ["resume", "stop"] : ["start"];
 
   const traceSession =
-    traceRef === view.ref ? view.session : (view.pullRequests.find((pr) => pr.ref === traceRef)?.session ?? null);
+    viewed === view.ref ? view.session : (view.pullRequests.find((pr) => pr.ref === viewed)?.session ?? null);
 
   const traceScroll = useRef<HTMLDivElement | null>(null);
   const entryCount = transcript.data?.entries.length ?? 0;
@@ -129,7 +138,7 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, ini
     const panel = traceScroll.current;
     if (!panel) return;
     if (pinned.current) panel.scrollTop = panel.scrollHeight;
-  }, [entryCount, traceRef]);
+  }, [entryCount, viewed]);
 
   return (
     <>
@@ -219,28 +228,29 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, ini
       ) : null}
 
       {/* One trace per session; the tabs appear only when PRs bring their own
-          sessions (issue-172/230), and the caption names the served file. */}
+          sessions (issue-172/230), and the caption names the served file. They
+          are links, not buttons: the sidebar's nested PR rows select the same
+          traces, so both go through the hash rather than through two states
+          that would drift apart (issue-300). */}
       <div className="lp-trace-head">
         {view.pullRequests.length > 0 ? (
           <div className="lp-filters">
-            <button
-              type="button"
+            <a
               className="lp-tab"
-              aria-current={traceRef === view.ref ? "page" : undefined}
-              onClick={() => setTraceRef(view.ref)}
+              href={hrefFor({ name: "work", ref: view.ref })}
+              aria-current={viewed === view.ref ? "page" : undefined}
             >
               work item session
-            </button>
+            </a>
             {view.pullRequests.map((pr) => (
-              <button
+              <a
                 key={pr.ref}
-                type="button"
                 className="lp-tab"
-                aria-current={traceRef === pr.ref ? "page" : undefined}
-                onClick={() => setTraceRef(pr.ref)}
+                href={hrefFor({ name: "work", ref: pr.ref })}
+                aria-current={viewed === pr.ref ? "page" : undefined}
               >
                 {pr.shortRef}
-              </button>
+              </a>
             ))}
           </div>
         ) : null}
@@ -295,7 +305,7 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, ini
               <div className="lp-empty">Loading events…</div>
             ) : events.data && events.data.length > 0 ? (
               events.data
-                .filter((event) => (traceRef === view.ref ? true : eventRef(event) === traceRef))
+                .filter((event) => (viewed === view.ref ? true : eventRef(event) === viewed))
                 .toReversed()
                 .slice(0, 40)
                 .map((event, index) => <TraceEntry key={`${event.ts}-${index}`} event={event} />)
@@ -316,7 +326,7 @@ export function WorkItemDetail({ view, title, onChanged, transcriptTick = 0, ini
           loop's when the work-item tab is selected, that PR's when an inner
           loop's is (issue-230). It sits at the pane's foot, under its own
           hairline, per the design. */}
-      <ChatBar refFor={traceRef} state={sessionState(traceSession)} onSent={onChanged} />
+      <ChatBar refFor={viewed} state={sessionState(traceSession)} onSent={onChanged} />
     </>
   );
 }

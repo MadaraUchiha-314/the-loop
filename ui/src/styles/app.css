@@ -277,6 +277,12 @@ a:hover {
 .lp-side-row.current {
   background: var(--color-accent-100);
 }
+/* The work item whose PR is the selected row: the canvas is on this item, so
+   it keeps a marker — lighter than the selection itself, which belongs to the
+   PR row below it (issue-300). */
+.lp-side-row.owner {
+  background: color-mix(in srgb, var(--color-accent-100) 45%, transparent);
+}
 .lp-side-row .lp-session-dot,
 .lp-side-row .lp-health-dot {
   margin-top: 5px;
@@ -314,6 +320,39 @@ a:hover {
   border-radius: 3px;
   padding: 1px 6px 0;
   white-space: nowrap;
+}
+
+/* A work item and its pull requests read as one group: the PR rows sit inside
+   the item's block, indented past the dot column and tied to it by a hairline
+   in the gutter, so the nesting is visible without a second list style. */
+.lp-side-item + .lp-side-item {
+  margin-top: 1px;
+}
+.lp-side-prs {
+  list-style: none;
+  margin: 0 0 4px;
+  padding: 0;
+}
+.lp-side-pr {
+  padding-top: 5px;
+  padding-bottom: 5px;
+  padding-left: 38px;
+  position: relative;
+}
+/* The gutter rule runs the height of each PR row, so a run of them draws one
+   continuous line down from the work item above. */
+.lp-side-pr::before {
+  content: "";
+  position: absolute;
+  left: 26px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--color-divider);
+}
+.lp-side-pr .lp-side-ref {
+  font-size: 11.5px;
+  color: var(--color-neutral-600);
 }
 
 .lp-side-banner {

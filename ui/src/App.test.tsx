@@ -1,8 +1,9 @@
 /**
  * End-to-end through the React layer, against the demo transport: the Work
- * screen renders (sidebar + inbox + main pane, issue-283), a sidebar row
- * opens its item, and every surface behaves the way the service does —
- * including the transcript-backed trace panel (issue-209).
+ * screen renders (sidebar + main pane, issue-283), a sidebar row opens its
+ * item, its PRs are nested under it and open their own session (issue-300),
+ * and every surface behaves the way the service does — including the
+ * transcript-backed trace panel (issue-209).
  */
 
 import { render, screen, waitFor, within } from "@testing-library/react";
@@ -93,9 +94,53 @@ describe("the control plane, on demo data", () => {
     // The outer loop draws as the header's tick rail (issue-298); its position
     // caption names the current node among the phases the item kept.
     expect(screen.getAllByRole("list", { name: "loop position" }).length).toBeGreaterThan(0);
-    // The PRs' sessions are reachable as trace tabs (issue-172/230).
-    expect(await screen.findByRole("button", { name: "loop-lab#216" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "loop-docs#47" })).toBeInTheDocument();
+    // The PRs' sessions are reachable as trace tabs (issue-172/230). They are
+    // links on the same hash the sidebar's nested rows use (issue-300), so the
+    // two selectors cannot disagree about what the canvas shows.
+    const tab = await screen.findByRole("link", { name: "loop-lab#216" });
+    expect(tab).toHaveAttribute("href", `#/item/${encodeURIComponent("github:octo/loop-lab#216")}`);
+    expect(screen.getByRole("link", { name: "loop-docs#47" })).toBeInTheDocument();
+  });
+
+  it("nests each work item's pull requests under it in the sidebar", async () => {
+    renderApp();
+
+    // The item's own row still reads the way it did; its PRs hang off it in a
+    // list of their own, named for the item so a screen reader keeps the
+    // nesting the indent shows (issue-300).
+    await sidebarRow("loop-lab#214");
+    const prs = await screen.findByRole("list", { name: "Pull requests for loop-lab#214" });
+    const rows = within(prs).getAllByRole("link");
+    expect(rows).toHaveLength(2);
+    // Same repository as the work item: the number alone. Elsewhere: qualified.
+    expect(within(prs).getByText("#216")).toBeInTheDocument();
+    expect(within(prs).getByText("loop-docs#47")).toBeInTheDocument();
+
+    // An item whose loop runs no inner PR loops brings no nested list at all —
+    // the ad-hoc item (issue-230) has no PR sessions to show.
+    expect(screen.queryByRole("list", { name: "Pull requests for loop-lab#223" })).not.toBeInTheDocument();
+  });
+
+  it("opens the PR's own session from its nested sidebar row", async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    const prs = await screen.findByRole("list", { name: "Pull requests for loop-lab#214" });
+    await user.click(within(prs).getByRole("link", { name: /#216/ }));
+
+    // The canvas stays on the owning work item and switches the viewed trace to
+    // that PR's session: the tab is current, and the row is the selected one.
+    expect(await screen.findByRole("heading", { name: /Control plane UI/ })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: "loop-lab#216" })).toHaveAttribute("aria-current", "page");
+    });
+    const row = within(prs).getByRole("link", { name: /#216/ });
+    expect(row).toHaveAttribute("aria-current", "page");
+    // …and the work item's own row is no longer the current one, but still
+    // marks that the canvas is on it.
+    const owner = await sidebarRow("loop-lab#214");
+    expect(owner).not.toHaveAttribute("aria-current");
+    expect(owner.className).toContain("owner");
   });
 
   it("shows the agent's question; the chat bar's reply closes the card", async () => {

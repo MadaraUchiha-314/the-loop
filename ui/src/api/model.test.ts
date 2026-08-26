@@ -246,8 +246,41 @@ describe("sessionTree", () => {
     expect(tree[0]!.treeless).toBe(false);
     expect(tree[0]!.outer).toMatchObject({ ref: "github:octo/lab#1", scope: "outer", state: "active" });
     expect(tree[0]!.inner).toEqual([
-      { ref: "github:octo/lab#2", shortRef: "lab#2", scope: "inner", state: "active", tmuxTarget: "tmux-2" },
+      {
+        ref: "github:octo/lab#2",
+        shortRef: "lab#2",
+        // Same repository as its work item, so the row prints the number alone
+        // — the parent row above it already names the repository (issue-300).
+        label: "#2",
+        scope: "inner",
+        state: "active",
+        tmuxTarget: "tmux-2",
+        lastActivity: "",
+      },
     ]);
+  });
+
+  it("qualifies a PR that lives in another repository, and carries its last activity", () => {
+    const endpoint = session("github:octo/lab#1", ["github:octo/lab#2"]);
+    endpoint.pullRequests = [
+      {
+        workItem: { ref: "github:octo/docs#47", provider: "github", owner: "octo", repo: "docs", number: 47 },
+        harness: "claude",
+        harnessSessionId: "sid-pr",
+        status: "active",
+        tmuxTarget: "tmux-47",
+        lastEventAt: "2026-08-26T10:00:00Z",
+      },
+    ];
+    const views = buildWorkItemViews({
+      workItems: [record("github:octo/lab#1", "pdlc-work-item-loop")],
+      sessions: [endpoint],
+      attention: [],
+    });
+    expect(sessionTree(views)[0]!.inner[0]).toMatchObject({
+      label: "docs#47",
+      lastActivity: "2026-08-26T10:00:00Z",
+    });
   });
 
   it("flags ad-hoc, contribution and review loops treeless — one session, no inner level", () => {
