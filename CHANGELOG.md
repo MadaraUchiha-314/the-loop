@@ -1,3 +1,9 @@
+## v11.5.0 (2026-08-26)
+
+### Feat
+
+- **ui**: redesign the control plane on the Classical design system (#299)
+
 ## v11.4.0 (2026-08-25)
 
 ### Feat
