@@ -71,9 +71,9 @@ locked spec files read from disk, not the drafting conversation (plan-mode style
    `reference/security.md`); risk tier ≥ `security.review.humanSignOffMinTier` waits
    for a named human security sign-off. Record every review as a PR/ticket comment and
    in the log's review table (the security round in its Security review section).
-   Notify per the `notifications.events` filters (harness-config.yaml), resolving
-   recipients by role from `.the-loop/collaborators.yaml`, when a human action is
-   pending.
+   Notify per the `notifications.events` filters (harness-config.yaml) when a human
+   action is pending — the event's roles name who it concerns; delivery is the
+   configured channel's (`channels.slack`), not a per-person lookup.
 
 5. **Evidence + reviewer briefing (required gate).** Present validated evidence that the
    acceptance criteria are met — **summarised from the verification results** rather than

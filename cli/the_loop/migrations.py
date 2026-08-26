@@ -12,6 +12,12 @@ from the config's shape rather than from a comment. The owner's call was to make
 these **breaking** changes rather than carry shadow overrides forever: *"Let's
 make breaking changes. /upgrade should be able to handle it."*
 
+issue-304 removes ``collaborators`` and ``notifications`` for the plainest reason
+of all: **nothing ever read either block.** The daemon events the filter named
+are raised nowhere under ``the_loop/``, so an operator who filled it in
+configured nothing and was never told. A config surface that quietly does nothing
+is worse than one that is gone, because it looks like the job is done.
+
 A breaking change is only as good as its migration, so four properties hold:
 
 1. **Version the schema, don't sniff for keys** — detection is exact.
@@ -40,9 +46,9 @@ __all__ = [
     "needs_migration",
 ]
 
-#: Bumped by issue-109, then issue-128, then issue-142, then issue-245. A config
-#: below this needs `/the-loop:upgrade-the-loop`.
-CURRENT_CONFIG_VERSION = "0.5.0"
+#: Bumped by issue-109, then issue-128, then issue-142, then issue-245, then
+#: issue-304. A config below this needs `/the-loop:upgrade-the-loop`.
+CURRENT_CONFIG_VERSION = "0.6.0"
 
 _UPGRADE = "/the-loop:upgrade-the-loop"
 
@@ -81,6 +87,16 @@ _STATE_FILE_REPLACEMENT = "state.root"
 _SLACK_SITE: Tuple[str, ...] = ("integrations",)
 _SLACK_KEY = "slack"
 _SLACK_REPLACEMENT = "channels.slack"
+
+
+# issue-304 removes the two blocks that were declared and never read: an operator's own
+# `collaborators` list and the daemon-side `notifications.events` filter that targeted its
+# roles. Nothing under `the_loop/` looks either of them up — the four event names appear
+# in no emitter — so the block promised a delivery it never made. Slack is declared once,
+# under `channels.slack`, and identity in exactly two places: `routing.authorizedUsers`
+# (GitHub logins) and `channels.slack.authorizedUsers` (Slack member ids).
+_UNREAD_KEYS: Tuple[str, ...] = ("collaborators", "notifications")
+_UNREAD_REPLACEMENT = "channels.slack"
 
 
 class ConfigTooOld(RuntimeError):
@@ -132,6 +148,8 @@ def needs_migration(config: Mapping[str, Any]) -> bool:
     if (_dig(config, _ROUTING_SITE) or {}).get(_ROUTING_KEY) is not None:
         return True
     if (_dig(config, _SLACK_SITE) or {}).get(_SLACK_KEY) is not None:
+        return True
+    if any(key in config for key in _UNREAD_KEYS):
         return True
     return any(
         (section or {}).get("ghBinary") is not None
@@ -202,6 +220,21 @@ def assert_current(config: Mapping[str, Any]) -> None:
             f"silently going nowhere is worse than an error. Run `{_UPGRADE}` "
             "to migrate."
         )
+    unread = [key for key in _UNREAD_KEYS if key in config]
+    if unread:
+        raise ConfigTooOld(
+            "this CLI config still declares "
+            + ", ".join(f"`{key}`" for key in unread)
+            + (". That block was" if len(unread) == 1 else ". Those blocks were")
+            + " removed in issue-304 because no code ever read the value — the "
+            "daemon events named there are raised nowhere, so a notification "
+            "configured there was never sent and never reported. Slack "
+            f"is declared once, under `{_UNREAD_REPLACEMENT}`, and human identity in "
+            "exactly two places: `routing.authorizedUsers` (GitHub logins) and "
+            f"`{_UNREAD_REPLACEMENT}.authorizedUsers` (Slack member ids). Nothing "
+            "here is being ignored — loading half-configured is how an operator comes to "
+            f"believe they wired something up. Run `{_UPGRADE}` to migrate."
+        )
     declared = config.get("version")
     if declared is not None and _parts(str(declared)) < _parts(CURRENT_CONFIG_VERSION):
         raise ConfigTooOld(
@@ -257,6 +290,21 @@ def _promote_routing(data: Dict[str, Any], report: MigrationReport) -> None:
             webhooks.pop("ghWebhook", None)
             if not webhooks:
                 data.pop("webhooks", None)
+
+
+def _was_filled_in(key: str, value: Any) -> bool:
+    """Did the operator put a *recipient* in this block, or is it the shipped default?
+
+    Not `bool(value)`: the template shipped ``collaborators: []`` and a
+    ``notifications`` block whose ``events`` map is empty, so both are truthy-ish
+    without naming anybody. The distinction decides whether the migration report says
+    "gone" or "gone, and here is where to configure it instead" — and a report that
+    lectures every operator who never touched the block stops being read.
+    """
+    if key == "collaborators":
+        return bool(value)
+    events = (value or {}).get("events") if isinstance(value, Mapping) else None
+    return any((events or {}).values())
 
 
 def migrate_cli_config(config: Mapping[str, Any]) -> MigrationReport:
@@ -327,6 +375,29 @@ def migrate_cli_config(config: Mapping[str, Any]) -> MigrationReport:
         )
         if not integrations:
             data.pop("integrations", None)
+
+    # issue-304: drop the two unread blocks. There is nothing to convert — a role list
+    # that resolved to no recipient and no channel has no equivalent under
+    # `channels.slack`, which subscribes by EVENT NAME and posts to one channel — so the
+    # note says what to configure instead rather than pretending to migrate a value.
+    declared_something = False
+    for key in [k for k in _UNREAD_KEYS if k in data]:
+        declared_something = _was_filled_in(key, data.pop(key)) or declared_something
+        report.changed = True
+        report.moves.append(
+            f"{key} removed — nothing read it (issue-304); Slack is declared once "
+            f"under `{_UNREAD_REPLACEMENT}`"
+        )
+    if declared_something:
+        # Only when the operator had actually filled something in. Telling somebody
+        # whose `collaborators: []` was the shipped default to go and set a Slack bot up
+        # is noise, and a report that is mostly noise stops being read.
+        report.notes.append(
+            "what you had declared there was never delivered on. To be notified, set "
+            f"`{_UNREAD_REPLACEMENT}`'s `botTokenEnv` and `channel` and subscribe its "
+            "`events` list to the event names you want — one channel for the daemon, "
+            "not one list per person; per-person routing is not built"
+        )
 
     if _parts(str(data.get("version", "0"))) < _parts(CURRENT_CONFIG_VERSION):
         report.moves.append(

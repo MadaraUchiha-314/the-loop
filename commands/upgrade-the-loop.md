@@ -68,13 +68,25 @@ command reconciles them.
    delete any leftover `.the-loop/config.schema.json` without replacing it (step 3), and
    then migrate the retired people keys: move each `personas` entry into
    `.the-loop/collaborators.yaml` as a collaborator (creating the file from
-   `templates/collaborators.yaml` if absent), fold any `messaging.channels` targets into
-   a collaborator `notifications.channels` entry (`type: slack` → a slack channel with
-   its target in `config.channel-list`; flag `whatsapp`/`email` entries with
-   `# TODO: verify` — those types are not supported yet), add the template's default
-   `notifications` event filters to harness-config.yaml, and re-validate all three
-   files. Report this migration explicitly so the operator sees exactly what moved
-   where.
+   `templates/collaborators.yaml` if absent) with its `handle`, `kind` and `roles` only,
+   add the template's default `notifications` event filters to harness-config.yaml, and
+   re-validate all three files. Report this migration explicitly so the operator sees
+   exactly what moved where.
+
+   Any `messaging.channels` targets are **not** folded into a collaborator: per-person
+   notification config was retired in issue-304 because nothing ever read it. Slack is
+   declared once, for the whole daemon, under the CLI config's `channels.slack` — tell
+   the operator what their old targets were and point them there, rather than writing a
+   shape the schema now refuses.
+
+   **Retired-block migration (issue-304):** if `.the-loop/cli-config.yaml` still carries
+   a top-level `collaborators` or `notifications` block, or a collaborator in
+   `.the-loop/collaborators.yaml` still carries a `notifications` sub-object, those are
+   the unread shapes. Run `the-loop migrate-config` for the CLI config (it removes both
+   blocks and bumps the version, idempotently, keeping a `.bak`); strip the collaborator
+   sub-object by hand and report what it said, since no code ever acted on it. The
+   runtime refuses a CLI config that still declares either block, so this is not
+   optional cleanup.
 
    For **any** of the three schemas, when it changed, migrate the corresponding config
    file to the new shape (there is no project copy of the schema to update — read the

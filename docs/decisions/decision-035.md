@@ -1,6 +1,13 @@
 # Decision 035: collaborators.yaml is the single source for people + notification config; the plugin config is renamed harness-config.yaml
 
-- **Status:** accepted
+- **Status:** accepted — **superseded in part by** `docs/specs/issue-304/`: the
+  per-collaborator notification config of Decision 1, and the CLI config's
+  operator-declared `collaborators` array and daemon-side `notifications.events` filter
+  of Decision 2, are removed. No code ever read any of them, so they promised a delivery
+  that never happened. What stands: collaborators.yaml is the single source for **people
+  and their roles**, the harness config's `notifications.events` is the harness-side
+  event gate, and the two configs stay separate. Delivery is a channel's
+  (`channels.slack`, issue-245/decision-094); per-person routing is not built.
 - **Date:** 2026-07-24
 - **Deciders:** @MadaraUchiha-314 (issue #82)
 - **Work item:** issue-82

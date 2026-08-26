@@ -49,6 +49,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 __all__ = [
     "CONSTRAINING",
+    "RETIRED",
     "SUPPORTED",
     "SchemaNotFound",
     "load_schema",
@@ -108,6 +109,40 @@ CONSTRAINING = frozenset(
         "pattern",
     }
 )
+
+#: Keys the-loop used to accept, and what replaced each. A removed key is refused by
+#: ``additionalProperties: false`` either way; this table is what turns "unknown key" into
+#: an answer. It is the validation-time twin of :mod:`the_loop.migrations`' ledger — that
+#: one *moves* an operator's CLI config, this one explains a file no migration owns.
+#:
+#: Keys are option paths with the array indices normalised out
+#: (``collaborators[0].notifications`` → ``collaborators[].notifications``), so one row
+#: covers every element of a list. Adding a row is the whole cost of the next removal.
+RETIRED: Dict[str, str] = {
+    "collaborators[].notifications": (
+        "per-collaborator notification channels were removed in issue-304 — nothing "
+        "ever read them. Slack is configured once, for the whole daemon, under "
+        "`channels.slack` in the CLI config (a bot token, a channel id, and an "
+        "`events` allow-list); `channels.slack.authorizedUsers` is who may reply. "
+        "Run `the-loop migrate-config` to strip the retired blocks from a CLI config"
+    ),
+    "collaborators": (
+        "the CLI config's operator-collaborator list was removed in issue-304 — "
+        "nothing read it. Identity is declared in exactly two places now: "
+        "`routing.authorizedUsers` (GitHub logins) and `channels.slack.authorizedUsers` "
+        "(Slack member ids). Run `the-loop migrate-config`"
+    ),
+    "notifications": (
+        "the CLI config's daemon-side `notifications` block was removed in issue-304 — "
+        "its event names were never raised. Subscribe `channels.slack.events` to the "
+        "events you want instead; the harness config keeps its own "
+        "`notifications.events`, which still gates the graph's `notify` hook. "
+        "Run `the-loop migrate-config`"
+    ),
+}
+
+#: Turns ``collaborators[0].notifications`` into the shape :data:`RETIRED` is keyed by.
+_INDEX = re.compile(r"\[\d+\]")
 
 _JSON_TYPES: Dict[str, Tuple[type, ...]] = {
     "object": (dict,),
@@ -277,9 +312,19 @@ def _check_object(
         if key in properties:
             _check(entry, properties[key], child, errors)
         elif extra is False:
-            errors.append(f"{child}: unknown key")
+            errors.append(f"{child}: unknown key{_retired(child)}")
         elif isinstance(extra, Mapping):
             _check(entry, extra, child, errors)
+
+
+def _retired(path: str) -> str:
+    """`` — <what replaced it>`` when ``path`` names a key the-loop has retired.
+
+    Empty for every other unknown key: a typo deserves "unknown key" and nothing more,
+    and a guess about what the operator meant would be worse than silence.
+    """
+    guidance = RETIRED.get(_INDEX.sub("[]", path))
+    return f" — {guidance}" if guidance else ""
 
 
 def _check_array(

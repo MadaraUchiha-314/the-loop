@@ -27,7 +27,18 @@ A breaking change is only as good as its migration, so four properties hold:
 
 ## What it migrates today
 
-Current version: **`0.5.0`**.
+Current version: **`0.6.0`**.
+
+**`collaborators` and `notifications` removed** (issue-304). Both were declarable and
+**neither was ever read**: the daemon events the filter named (`work-item-spawned`,
+`dispatch-failed`, `session-died`, `event-dropped-unauthorized`) are raised by no code, so
+an operator who filled them in configured nothing and was never told. There is nothing to
+convert — a role list that resolved to no recipient has no equivalent — so both blocks are
+removed and, if you had actually filled one in, the report points at
+[`channels.slack`](/config/cli/channels-options): one bot for the whole daemon, subscribed
+to the events you want by name. Identity stays where it already was, in
+[`routing.authorizedUsers`](/config/cli/routing-options#authorizedusers) and
+`channels.slack.authorizedUsers`.
 
 **`integrations.slack` removed** (issue-245). Slack converged on the
 [channels](/config/cli/channels-options) layer — one `channels.slack` section configures
@@ -61,10 +72,12 @@ migrated the CLI config:
   · webhooks.ghWebhook.routing.reactions.ghBinary → integrations.github.cli.binary ('gh')
   · webhooks.ghWebhook.routing.announce.ghBinary → integrations.github.cli.binary ('gh')
   · webhooks.ghWebhook.routing → routing (top level; it governs the poller too)
-  · version '0.1.0' → '0.5.0'
+  · collaborators removed — nothing read it (issue-304); Slack is declared once under `channels.slack`
+  · notifications removed — nothing read it (issue-304); Slack is declared once under `channels.slack`
+  · version '0.1.0' → '0.6.0'
 
 --- /home/you/.the-loop/cli-config.yaml (preview, not written) ---
-version: 0.5.0
+version: 0.6.0
 …
 ```
 

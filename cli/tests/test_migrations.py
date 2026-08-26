@@ -4,11 +4,15 @@ A breaking change is only as good as its migration, so each is tested both
 ways: an old config migrates to the expected new one, AND the runtime refuses
 an un-migrated one.
 
-Three so far — `ghBinary` (one `integrations` block replaced three copies),
+Five so far — `ghBinary` (one `integrations` block replaced three copies),
 `polling.stateFile` (the poller's ledger became one record per work item under
-`state.root`, so a file path has nothing left to point at), and
+`state.root`, so a file path has nothing left to point at),
 `webhooks.ghWebhook.routing` (promoted to a top-level `routing`, because the
-poller reads that same block and a key named `webhooks` said otherwise).
+poller reads that same block and a key named `webhooks` said otherwise),
+`integrations.slack` (the incoming webhook converged on the `channels.slack`
+bot), and `collaborators` / `notifications` (issue-304 — the plainest case of
+all: nothing ever read either block, so an operator who filled one in
+configured nothing and was never told).
 """
 
 from __future__ import annotations
@@ -343,6 +347,138 @@ def test_migrating_a_slack_only_integrations_block_leaves_no_husk():
 
 def test_the_slack_integration_migration_is_idempotent():
     once = migrate_cli_config(WITH_SLACK_INTEGRATION)
+    twice = migrate_cli_config(once.config)
+    assert twice.changed is False
+    assert twice.config == once.config
+
+
+# --- the unread collaborator / notification blocks retired (issue-304) ----------
+
+#: A 0.5.0 config carrying both retired blocks, filled in the way an operator who
+#: believed they were configuring notifications would have filled them, plus the
+#: neighbours that must survive untouched — including the two allow-lists that are the
+#: only places human identity is declared.
+WITH_UNREAD_BLOCKS = {
+    "version": "0.5.0",
+    "state": {"root": ".the-loop"},
+    "routing": {"enabled": True, "authorizedUsers": ["octocat"]},
+    "collaborators": [
+        {
+            "handle": "@octocat",
+            "kind": "individual",
+            "roles": ["engineer", "approver"],
+            "notifications": {
+                "enabled": True,
+                "channels": [
+                    {
+                        "type": "slack",
+                        "enabled": True,
+                        "via": "mcp",
+                        "config": {"channel-list": ["#the-loop-daemon"]},
+                    }
+                ],
+            },
+        }
+    ],
+    "notifications": {
+        "enabled": True,
+        "events": {"dispatch-failed": ["engineer"], "session-died": ["engineer"]},
+    },
+    "channels": {"slack": {"enabled": True, "authorizedUsers": ["U024BE7LH"]}},
+}
+
+
+def test_a_config_still_declaring_the_unread_blocks_is_detected():
+    assert needs_migration(WITH_UNREAD_BLOCKS) is True
+
+
+def test_a_config_that_lies_about_its_version_is_still_detected():
+    """
+    Feature: detection is by key, not by the version the file claims
+      Scenario: a hand-edited config stamps the current version but keeps the block
+        Given a config declaring the current version and a `collaborators` list
+        When it is checked
+        Then it still needs migration, and the runtime still refuses it
+
+    Requirement: docs/specs/issue-304/requirements.md abuse case A1
+    """
+    lying = {"version": CURRENT_CONFIG_VERSION, "collaborators": []}
+    assert needs_migration(lying) is True
+    with pytest.raises(ConfigTooOld):
+        assert_current(lying)
+
+
+@pytest.mark.parametrize("key", ["collaborators", "notifications"])
+def test_the_runtime_refuses_an_unread_block_and_names_channels_slack(key):
+    """
+    Feature: a removed block stops the daemon rather than loading half-configured
+      Scenario: a config still declares a block nothing ever read
+        Given a config carrying `collaborators` or `notifications`
+        When the runtime checks it
+        Then it refuses, naming the key, `channels.slack`, both allow-lists and the
+             upgrade command
+
+    Requirement: docs/specs/issue-304/requirements.md R2.2, abuse case A2
+    """
+    with pytest.raises(ConfigTooOld) as exc:
+        assert_current({"version": "0.5.0", key: {} if key == "notifications" else []})
+    message = str(exc.value)
+    assert f"`{key}`" in message
+    assert "channels.slack" in message
+    assert "routing.authorizedUsers" in message
+    assert "upgrade-the-loop" in message
+
+
+def test_migration_removes_both_blocks_and_leaves_everything_else_alone():
+    """
+    Feature: the migration is a deterministic key removal
+      Scenario: a 0.5.0 config with both retired blocks is migrated
+        Given a config also carrying state, routing and channels
+        When it is migrated
+        Then both blocks are gone, the version is bumped, both removals are reported,
+             and every neighbouring key is byte-identical to what went in
+
+    Requirement: docs/specs/issue-304/requirements.md R3.1, R3.2, abuse case A3
+    """
+    before = copy.deepcopy(WITH_UNREAD_BLOCKS)
+    report = migrate_cli_config(WITH_UNREAD_BLOCKS)
+
+    assert report.changed is True
+    assert "collaborators" not in report.config
+    assert "notifications" not in report.config
+    assert report.config["version"] == CURRENT_CONFIG_VERSION
+    assert len([m for m in report.moves if "issue-304" in m]) == 2
+    # Untouched: the poller's root, and the only two places identity is declared.
+    assert report.config["state"] == before["state"]
+    assert report.config["routing"] == before["routing"]
+    assert report.config["channels"] == before["channels"]
+    assert WITH_UNREAD_BLOCKS == before  # the input is never mutated
+    assert_current(report.config)
+
+
+def test_a_filled_in_block_is_told_where_to_configure_the_channel():
+    """R3.4 — "removed" and "removed, and here is where it went" are different
+    messages to somebody who set the value."""
+    report = migrate_cli_config(WITH_UNREAD_BLOCKS)
+    assert any(
+        "channels.slack" in note and "per-person routing is not built" in note
+        for note in report.notes
+    )
+
+
+def test_an_empty_block_is_removed_without_a_lecture():
+    """The shipped default was `collaborators: []` / `events: {}`. Telling that
+    operator to go and set a Slack bot up is noise, and a noisy report goes unread."""
+    report = migrate_cli_config(
+        {"version": "0.5.0", "collaborators": [], "notifications": {"events": {}}}
+    )
+    assert report.changed is True
+    assert report.notes == []
+
+
+def test_the_unread_block_migration_is_idempotent():
+    """R3.3 — safe to wire into an upgrade command an operator may re-run."""
+    once = migrate_cli_config(WITH_UNREAD_BLOCKS)
     twice = migrate_cli_config(once.config)
     assert twice.changed is False
     assert twice.config == once.config

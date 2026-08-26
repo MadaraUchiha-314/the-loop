@@ -32,6 +32,22 @@ an integration is a transport for one call; a channel is a conversation with sta
   `integrations.slack` no longer exists; resolving it is a named refusal pointing at
   `channels.slack`, and `the-loop migrate-config` (config version 0.5.0) retires an
   old section.
+- **`channels.slack` is the ONLY Slack surface, and identity is declared in exactly two
+  places.** `routing.authorizedUsers` (GitHub logins) says who may arm and command a work
+  item; `channels.slack.authorizedUsers` (Slack member ids) says whose thread reply is
+  acted on. Both are hand-maintained. A notification is addressed to a **channel**, never
+  to a person: WHEN an event fires THEN it SHALL reach every enabled channel whose
+  `events` allow-list names it, and nothing resolves a role to a recipient.
+  Per-collaborator routing is not built.
+- The config surfaces that pretended otherwise are gone (config version 0.6.0): the CLI
+  config's top-level `collaborators` and `notifications`, and `collaborators.yaml`'s
+  per-collaborator `notifications` block. WHEN a config still declares any of them THEN
+  it SHALL be refused — at load for the CLI config, at validation for the collaborators
+  file — with a message naming `channels.slack` and `the-loop migrate-config`, never
+  loaded with the value silently ignored. `the-loop migrate-config` removes the two CLI
+  blocks and bumps the version, idempotently. `collaborators.yaml` keeps `handle`, `kind`
+  and `roles`, and `harness-config.yaml`'s `notifications.events` still gates the `notify`
+  hook.
 - The Slack bot channel SHALL post through the official `slack-sdk` `WebClient` with a
   bot token read **at call time** from the env var named by
   `channels.slack.botTokenEnv` (default `THE_LOOP_SLACK_BOT_TOKEN`); one Slack thread
@@ -77,10 +93,16 @@ an integration is a transport for one call; a channel is a conversation with sta
   carrying it is refused, and `the-loop migrate-config` removes it.
   [`decision-094`](../decisions/decision-094.md) records the split and the remaining
   deferrals (per-collaborator targeting, more channel types).
+- [`docs/specs/issue-304/design.md`](../specs/issue-304/design.md) — why the
+  declared-but-unread notification config was **removed** rather than wired: a schema
+  refusal for the repository's collaborators file, the fifth entry in the CLI config's
+  migration ledger for the operator's, and what a future per-person design would still be
+  free to do.
 
 ## History
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-304 | Retired every Slack- and collaborator-related config surface that no code read, leaving one Slack surface (`channels.slack`) and two identity allow-lists (`routing.authorizedUsers`, `channels.slack.authorizedUsers`). Removed: the CLI config's top-level `collaborators` and `notifications` blocks (behind a versioned migration to 0.6.0, so an un-migrated config is refused rather than half-loaded) and `collaborators.yaml`'s per-collaborator `notifications` sub-object (refused by the schema, with the replacement named in the message). `collaborators.yaml` now declares people and roles only; `harness-config.yaml`'s `notifications.events` is unchanged and still gates the `notify` hook. Per-person routing stays deferred — the config no longer claims otherwise | [spec](../specs/issue-304/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/304) |
 | issue-277 | A Slack thread can now carry a [standing session](standing-sessions.md) instead of a work item: the binding key is `standing:<name>`, the mirror step is **skipped** (there is no ticket to mirror onto, recorded as `channel.mirror_skipped`) and the delivery goes to that session's pane. The bot drop, the authorized-member allow-list and the cursor advance are unchanged, and the bot still reads only threads it is bound to | [spec](../specs/issue-277/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/277) |
 | issue-245 | Introduced the capability: the channel abstraction (events filter, verbosity, best-effort broadcast from `the-loop ask`), the Slack bot channel (slack-sdk, thread per work item, poll + Socket Mode reads), the authorize → mirror → deliver inbound pipeline with the work item as source of truth, the `channels` CLI verb, and the `channel.*` event types. In the same PR's review the owner converged Slack entirely onto this layer: the graph's `notify` hook broadcasts through channels and `integrations.slack` (the incoming webhook) was removed behind a versioned migration (0.5.0). | [spec](../specs/issue-245/), [decision-094](../decisions/decision-094.md), [PR #267](https://github.com/MadaraUchiha-314/the-loop/pull/267) |
