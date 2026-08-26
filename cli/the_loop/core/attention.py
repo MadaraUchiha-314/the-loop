@@ -36,6 +36,16 @@ def list_attention(config: Optional[dict] = None) -> List[Dict[str, Any]]:
 
     sessions = core_sessions.list_sessions(config=config)
     by_ref = {s["ref"]: s for s in sessions}
+    # A pull request's session is stored *nested* under the work item it
+    # delivers (``pullRequests``, issue-172), never as a record of its own — so
+    # asking "does this ref have a session?" against the top level alone reports
+    # every linked, labeled PR as stalled forever (issue-302). A ref's own
+    # record still wins, matching ``SessionRegistry.record_owning``.
+    for session in sessions:
+        for endpoint in session.get("pullRequests") or []:
+            ref = str((endpoint.get("workItem") or {}).get("ref") or "")
+            if ref:
+                by_ref.setdefault(ref, endpoint)
     for session in sessions:
         if session["status"] == "paused":
             last = (session.get("control") or {}).get("command") or "unknown"

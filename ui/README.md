@@ -86,7 +86,8 @@ Nothing here is a new endpoint. The interesting part is the **join**, which live
 Two surfaces (issue-298's design, deliberately bare): **Work** — a sidebar of work
 items (dot · ref · age · title · a small-caps chip when one needs a human), each with
 its pull requests nested beneath it (issue-300: dot · `#216`, or `loop-docs#47` when
-the PR is in another repository · age), then standing sessions, with Settings and the
+the PR is in another repository · age; a linked PR appears there and *not* also as a
+top-level row, issue-302), then standing sessions, with Settings and the
 health dot in the footer; the sidebar is the whole navigation — beside one main canvas
 showing the selected item's header, rail, trace and chat bar (nothing selected shows
 the most recently active item) — plus **Settings**, a reading column behind
@@ -97,7 +98,7 @@ the trace's fallback, and legacy `#/events` hashes land on Work.
 
 | Surface | Reads |
 |---|---|
-| Work sidebar | `GET /work-items` + `GET /sessions` + `GET /attention`, then one `POST /graph/check` per active loop — the rows' chips are the deduped, tiered attention (needs-input &gt; gate &gt; waits &gt; errors), and the nested PR rows are `sessionTree`'s inner level over the same `/sessions` records (a loop with no outer/inner split renders treeless) |
+| Work sidebar | `GET /work-items` + `GET /sessions` + `GET /attention`, then one `POST /graph/check` per active loop — the rows' chips are the deduped, tiered attention (needs-input &gt; gate &gt; waits &gt; errors), and the nested PR rows are `sessionTree`'s inner level over the same `/sessions` records (a loop with no outer/inner split renders treeless). A labeled PR has a portable record of its own *and* a nested endpoint, so the join reconciles them and draws it once, under the item it delivers (issue-302) |
 | Work item canvas | the same, plus `GET /events?workItem=…` (the trace's fallback trail), `GET /sessions/transcript?ref=…` for the viewed trace (outer session or a PR endpoint's), `POST /graph/complete` from the parked-gate card, and `POST /sessions/reply` from the chat bar (issue-230 — the chat bar is also how an agent's question is answered) |
 | Standing (a sidebar section of Work) | `GET /standing-sessions`, plus `POST /standing-sessions/{create,delete,control,say}` — the sessions that belong to no work item (issue-277) |
 | Sidebar footer | `GET /daemons`, folded with the stream state into one health dot + popover |

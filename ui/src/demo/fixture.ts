@@ -188,8 +188,32 @@ function makeAdhocItem(number: number): WorkItemRecord {
   };
 }
 
+/**
+ * A labeled **pull request's** own portable record: the poll ledger the poller
+ * flushes under the PR's own ref each cycle, so the next cycle does not re-read
+ * its comments. It is deliberately not a work item — #216 is delivered by #214
+ * and belongs on the board as #214's nested row — and the demo carries one so
+ * the screens exercise the reconciliation a real board needs (issue-302).
+ */
+function makePullRequestRecord(number: number): WorkItemRecord {
+  return {
+    ref: `github:octo/loop-lab#${number}`,
+    url: `https://github.com/octo/loop-lab/pull/${number}`,
+    control: {
+      command: "start",
+      source: "comment",
+      actor: "maintainer",
+      requestedAt: iso(140),
+      note: "",
+    },
+    poll: { seenComments: [], commentAttempts: {}, spawn: { attempts: 0, gaveUp: false, deliveryId: "" }, lastPolledAt: iso(2) },
+    graph: null,
+  };
+}
+
 export const DEMO_WORK_ITEMS: WorkItemRecord[] = [
   makeWorkItem(214, { skipped: ["brainstorming"] }),
+  makePullRequestRecord(216),
   makeAdhocItem(223),
   makeWorkItem(209, { skipped: ["brainstorming", "design-critic-review"] }),
   makeWorkItem(205, { skipped: ["brainstorming"] }),

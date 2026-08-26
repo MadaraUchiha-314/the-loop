@@ -302,6 +302,27 @@ package — there are no install extras (owner decision, PR #162).
   back to that item's own session rather than requesting a transcript for
   another item's (the service's fail-closed resolution, issue-209, remains the
   enforcing boundary).
+- A pull request SHALL appear on the board **once** (issue-302). A labeled PR
+  has two identities the service writes on purpose — a portable record keyed by
+  its own ref (the poller's ledger) and a session endpoint nested under the work
+  item it delivers — and the browser join reconciles them: a ref drawn as some
+  item's nested PR row SHALL NOT also be a top-level work item. The claim SHALL
+  be refused, leaving the PR top-level, when nothing would draw it (a treeless
+  owner), when the ref has a **session record of its own** (worked standalone
+  before it was linked — `record_owning` resolves it the same way, and its
+  nested endpoint is a stub), when a session claims itself, and when the
+  claimant is itself claimed. A PR **no** session claims — one linked to no
+  issue — stays top-level: that is the standalone-PR path. Removing a row SHALL
+  move what it carried, not delete it: the nested row takes the PR's portable
+  record (so its age falls back to `poll.lastPolledAt`), and the PR's attention
+  and open question surface on the **owning item's** card and chip, named for
+  the pull request. `GET /api/v1/work-items` is unchanged — it still serves
+  every portable record, and the client is where the two sources meet.
+- `attention` SHALL answer "is this being worked?" against the place the
+  session actually is (issue-302): a live **nested** pull-request endpoint
+  counts as a session for its ref, so a linked, labeled PR no longer reports
+  `armed-without-session` for as long as it is worked. Only `active`/`paused`
+  count, and a ref's own record still wins over an endpoint claiming it.
 - Attention SHALL stay **deduplicated and tiered** (issue-283) and SHALL
   surface without an inbox surface of its own (issue-298): one entry per
   (work item, kind), the newest first by tier (needs-input &gt; human gate &gt;
@@ -350,6 +371,7 @@ package — there are no install extras (owner decision, PR #162).
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-302 | A pull request stopped appearing twice on the board. A labeled, linked PR carries two identities the service writes on purpose — the poller's portable ledger under its own ref, and a session endpoint nested under the work item it delivers — and `buildWorkItemViews` unioned them, so PR #301's nesting made the same PR render as a live nested row *and* a dead top-level shell (grey dot, "no session", because its session is nested elsewhere). The join now reconciles the two: a ref another item's row draws as its pull request is not a work item, unless nothing would draw it (a treeless owner), it has a session record of its own, or the claim is a self- or two-level claim a hand-edited record could use to hide a row. What the removed row carried is folded onto the nested one — its portable record for the age fallback, and its attention and open question onto the owning item's card and chip — so the drop moves information rather than deleting it. Service side, `list_attention` now counts a live nested PR endpoint as a session for its ref, which is what made every linked, labeled PR report a permanent stall | [spec](../specs/issue-302/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/302) |
 | issue-300 | The Work sidebar stopped flattening the board: each work item now carries its pull requests as nested rows (dot &middot; number-or-qualified-ref &middot; age), rendered from the `sessionTree` join the retired Sessions screen left behind rather than a second derivation, so treeless loops stay treeless. Selecting a PR row opens that PR's session on its work item's canvas, and the parent row keeps a lighter marker so the open item is still visible. The viewed trace moved from pane-local state to the hash — the trace tabs became links to the same route the sidebar rows use — which removes the second source of truth and, with it, the class of bug where a PR of the already-open item could be selected and change nothing | [spec](../specs/issue-300/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/300) |
 | issue-298 | The dashboard's design overhaul, in two rounds. Round one: the Industry system replaced wholesale by **Classical** (Cormorant Garamond over Lora, hairline rules, color as stroke), vendored as `ui/src/styles/classical.css` from the owner's signed-off export (checked in under `docs/specs/issue-298/design/`); the header bar retired into the sidebar; the labelled node rail became a tick bar captioned `current · n of m` (node names in tooltips); the transcript an editorial "You" / "the-loop" thread. Round two, on the owner's decluttering direction: one flat Work-items sidebar (chips carry the attention), the canvas pared to header + trace + chat with the most recent item shown by default, the question answered by the chat bar itself, the inbox/overview and PR cards folded into chips, cards and trace tabs, and the standalone Events screen retired (the trail remains as the trace's fallback; `#/events` lands on Work). Presentation only: every API connector, model join and control verb is unchanged | [design](../specs/issue-298/design/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/298) |
 | issue-283 | The dashboard calmed down to the claude.ai/code shape: six tabs became three (Work · Events · Settings) with a persistent sidebar (deduped, tiered inbox with in-place gate approval and question replies; items grouped needs-you/running/idle; standing sessions under a divider) and one main pane. Service side: the poller caches ticket titles in the portable record, `recent-error` attention ages out and clears on a clean poll, and `api.request` dropped to debug level. Plus the audit's contained fixes — frozen rail rendered instead of "no graph state", relative timestamps with the date when not today, the duplicated event trail and the broken fallback sentence on the detail pane, round session dots with a dash for "no session", provenance notes and the route footer removed, Settings prose behind disclosures — and dormant loops answered from the held graph report instead of a fresh check per poll | [audit](https://github.com/MadaraUchiha-314/the-loop/issues/283) |

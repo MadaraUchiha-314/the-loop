@@ -392,6 +392,19 @@ export interface PullRequestView {
   rail: RailNode[];
   /** Null until the inner-loop graph report for this PR has been fetched. */
   status: GraphStatus | null;
+  /**
+   * The PR's **own** portable record — its poll ledger and cached title — or
+   * `{ ref }` when the poller has never seen it. Folded in by issue-302: this
+   * row is now the only one the PR gets, so what its top-level row used to
+   * carry has to arrive here or be lost.
+   */
+  record: WorkItemRecord;
+  /** The service's attention for this PR's ref, surfaced on its item's card. */
+  attention: AttentionItem[];
+  /** The PR loop's open `the-loop ask` question, when one is open. */
+  question: EventRecord | null;
+  /** The endpoint's newest event, else the record's poll stamp, else `""`. */
+  lastActivity: string;
 }
 
 export interface WorkItemView {
@@ -498,9 +511,12 @@ export function buildWorkItemViews(input: BuildInput): WorkItemView[] {
   // register` can create one for an item the poller has never seen.
   const refs = new Set<string>([...input.workItems.map((i) => i.ref), ...input.sessions.map((s) => s.ref)]);
   const recordByRef = new Map(input.workItems.map((item) => [item.ref, item]));
+  const claimed = pullRequestClaims(input.sessions, recordByRef, sessionByRef);
 
   const views: WorkItemView[] = [];
   for (const ref of refs) {
+    // Somebody else's pull request is not a work item of its own (issue-302).
+    if (claimed.has(ref)) continue;
     const record = recordByRef.get(ref) ?? { ref };
     const session = sessionByRef.get(ref) ?? null;
     const parsed = parseRef(ref);
@@ -530,7 +546,7 @@ export function buildWorkItemViews(input: BuildInput): WorkItemView[] {
       progress: railProgress(rail),
       currentNode: status?.currentNode ?? "",
       parked: status?.parked ?? null,
-      pullRequests: buildPullRequests(ref, session, input.graphs),
+      pullRequests: buildPullRequests(ref, session, input, recordByRef, attentionByRef, claimed),
       attention: attentionByRef.get(ref) ?? [],
       lastActivity: session?.lastEventAt ?? record.poll?.lastPolledAt ?? "",
       question: input.awaiting?.[ref] ?? null,
@@ -541,16 +557,88 @@ export function buildWorkItemViews(input: BuildInput): WorkItemView[] {
   return views.toSorted((a, b) => b.lastActivity.localeCompare(a.lastActivity) || a.ref.localeCompare(b.ref));
 }
 
+/**
+ * Which refs are somebody else's pull request: PR ref -> the work item whose
+ * sidebar row draws it as a nested child.
+ *
+ * A labeled pull request has two identities on this machine, and both are
+ * written on purpose. The poller flushes a portable record keyed by the PR's
+ * own ref (`state.flush(item.ref)` in `poller/poller.py`) because that ledger
+ * is what stops the next cycle re-reading the same comments; the registry
+ * appends a session endpoint for the same PR to the record of the work item it
+ * delivers (`link_pull_request`, one level deep by design). Unioned without
+ * reconciliation, the board draws one PR twice — once live under its parent,
+ * once as a top-level shell whose session is somewhere else (issue-302). The
+ * nested row wins, because that is where the PR's session, rail and transcript
+ * actually are.
+ *
+ * Only a claim that is really *drawn* counts. A loop with no outer/inner split
+ * renders treeless, so its linked endpoint never becomes a row: honouring that
+ * claim would delete the pull request from the board rather than move it. And a
+ * PR **no** session claims — one linked to no issue, which `extract_work_items`
+ * deliberately routes as its own work item — is nobody's child and stays where
+ * it is.
+ *
+ * Neither does a PR that has a **session record of its own**: it was worked
+ * standalone before it was linked, so the top-level record is the live one and
+ * the nested endpoint is the stub `link_pull_request` writes (no tmux target,
+ * no conversation id). `SessionRegistry.record_owning` resolves that ref to its
+ * own record for the same reason, and folding it away would hide a running
+ * session behind a row that cannot reach it. An extra row is the cheaper wrong
+ * answer.
+ */
+function pullRequestClaims(
+  sessions: SessionRecord[],
+  recordByRef: Map<string, WorkItemRecord>,
+  sessionByRef: Map<string, SessionRecord>,
+): Map<string, string> {
+  const claims = new Map<string, string>();
+  for (const session of sessions) {
+    if (treeless(recordByRef.get(session.ref))) continue;
+    for (const endpoint of session.pullRequests ?? []) {
+      const ref = endpoint.workItem.ref;
+      // A work item does not deliver itself. `link_pull_request` refuses to
+      // record such an entry; a record that carries one anyway must not be able
+      // to erase its own row.
+      if (ref === session.ref || sessionByRef.has(ref)) continue;
+      if (!claims.has(ref)) claims.set(ref, session.ref);
+    }
+  }
+  // The registry nests exactly one level — `Session.from_dict` drops a nested
+  // endpoint's own `pullRequests` — so a two-level claim can only come from a
+  // hand-edited record. Fail closed to "top-level" rather than drop both rows.
+  // Decided against the *snapshot*, never the map being edited: a mutual pair
+  // resolved in map order would delete one claim and then honour the other.
+  const claimedRefs = new Set(claims.keys());
+  for (const [ref, owner] of claims) if (claimedRefs.has(owner)) claims.delete(ref);
+  return claims;
+}
+
+/** A loop with no outer/inner split: one session, and no nested PR rows. */
+function treeless(record: WorkItemRecord | undefined): boolean {
+  return TREELESS_LOOPS.has(record?.graph?.loop ?? "");
+}
+
 function buildPullRequests(
   workItemRef: string,
   session: SessionRecord | null,
-  graphs: GraphReports | undefined,
+  input: BuildInput,
+  recordByRef: Map<string, WorkItemRecord>,
+  attentionByRef: Map<string, AttentionItem[]>,
+  claimed: Map<string, string>,
 ): PullRequestView[] {
   const parent = parseRef(workItemRef);
   return (session?.pullRequests ?? []).map((endpoint) => {
     const ref = endpoint.workItem.ref;
     const parsed = parseRef(ref);
-    const status = graphs?.inner[innerKey(workItemRef, ref)] ?? null;
+    const status = input.graphs?.inner[innerKey(workItemRef, ref)] ?? null;
+    const record = recordByRef.get(ref) ?? { ref };
+    // Whether *this* row is the only one the PR gets. It is not when the claim
+    // was refused — a treeless owner draws no nested rows, a hand-edited
+    // two-level claim is discarded — and the PR keeps a top-level row of its
+    // own. Reporting its wait in both places would be the duplicate this work
+    // item removes, wearing different clothes (issue-302).
+    const sole = claimed.get(ref) === workItemRef;
     // `prRepo` qualifies the number only when the PR is somewhere else; sending
     // it needlessly would point the graph call at `pr-loops/<owner>__<repo>/`
     // for an item whose state lives at `pr-loops/pr-<n>/` (issue-183).
@@ -567,6 +655,12 @@ function buildPullRequests(
       tmuxTarget: endpoint.tmuxTarget ?? "",
       rail: railFromStatus(status),
       status,
+      record,
+      attention: sole ? (attentionByRef.get(ref) ?? []) : [],
+      question: sole ? (input.awaiting?.[ref] ?? null) : null,
+      // The same fallback a work item's own row uses, so a PR whose endpoint
+      // has never recorded an event still shows the age its top-level row did.
+      lastActivity: endpoint.lastEventAt ?? record.poll?.lastPolledAt ?? "",
     };
   });
 }
@@ -621,10 +715,10 @@ const TREELESS_LOOPS = new Set([
  */
 export function sessionTree(views: WorkItemView[]): SessionTreeItem[] {
   return views.map((view) => {
-    const treeless = TREELESS_LOOPS.has(view.record.graph?.loop ?? "");
+    const flat = treeless(view.record);
     return {
       view,
-      treeless,
+      treeless: flat,
       outer: {
         ref: view.ref,
         shortRef: view.shortRef,
@@ -634,7 +728,7 @@ export function sessionTree(views: WorkItemView[]): SessionTreeItem[] {
         tmuxTarget: view.tmuxTarget,
         lastActivity: view.lastActivity,
       },
-      inner: treeless
+      inner: flat
         ? []
         : view.pullRequests.map((pr) => ({
             ref: pr.ref,
@@ -643,7 +737,7 @@ export function sessionTree(views: WorkItemView[]): SessionTreeItem[] {
             scope: "inner" as const,
             state: pr.sessionState,
             tmuxTarget: pr.tmuxTarget,
-            lastActivity: pr.session.lastEventAt ?? "",
+            lastActivity: pr.lastActivity,
           })),
     };
   });
@@ -651,7 +745,13 @@ export function sessionTree(views: WorkItemView[]): SessionTreeItem[] {
 
 /** The flag a dashboard row wears, or null. Human gates outrank paused sessions. */
 export function rowFlag(view: WorkItemView): { label: string; urgent: boolean } | null {
-  if (view.question) return { label: "needs input", urgent: true };
+  // A PR loop's question used to raise the chip on the PR's own top-level row.
+  // That row is gone (issue-302) and a nested row carries no chip by design
+  // (issue-300 R2.4), so the question surfaces on the item that owns it —
+  // restoring what the removed row showed, and nothing more.
+  if (view.question || view.pullRequests.some((pr) => pr.question)) {
+    return { label: "needs input", urgent: true };
+  }
   if (view.parked) return { label: "human gate", urgent: true };
   if (view.rail.some((node) => node.state === "blocked")) return { label: "blocked", urgent: true };
   if (view.attention.some((a) => a.kind === "recent-error")) return { label: "error", urgent: false };
@@ -743,50 +843,63 @@ export function attentionEntries(views: WorkItemView[]): AttentionEntry[] {
         gate: { repo: view.repoPath, workItem: view.specId ?? "", node: view.parked.node },
       });
     }
+    // A pull request the sidebar draws under this item has no card of its own
+    // — its top-level row was the duplicate issue-302 removed — so everything
+    // reported against the PR's ref surfaces here, named for the pull request
+    // the way the gate entry has always been.
     for (const pr of view.pullRequests) {
-      if (!pr.status?.parked) continue;
-      entries.push({
-        key: `${view.ref}:${pr.ref}:gate`,
-        kind: "human gate · PR",
-        ref: view.ref,
-        shortRef: pr.shortRef,
-        detail: `${pr.status.parked.node} — ${pr.status.parked.reason}`,
-        urgent: true,
-        action: "Review",
-        count: 1,
-        at: pr.status.parked.since ?? "",
-        tier: TIER_GATE,
-        gate: {
-          repo: view.repoPath,
-          workItem: view.specId ?? "",
-          node: pr.status.parked.node,
-          pr: pr.number,
-          prRepo: pr.prRepo,
-        },
-      });
-    }
-    // Dedupe the raw reports per kind: newest timestamp wins, the rest become
-    // a count badge (issue-283 B3).
-    const byKind = new Map<string, { item: AttentionItem; count: number; at: string }>();
-    for (const item of view.attention) {
-      // The service reports the wait as `awaiting-input` too (issue-208). When
-      // the question entry above is already on the board — same wait, richer
-      // Reply action — the raw row would be a duplicate. It is kept only when
-      // the event window missed the question the service can still see.
-      if (item.kind === "awaiting-input" && view.question) continue;
-      const at = item.at ?? "";
-      const held = byKind.get(item.kind);
-      if (!held) {
-        byKind.set(item.kind, { item, count: 1, at });
-      } else {
-        held.count += 1;
-        if (at > held.at) {
-          held.at = at;
-          held.item = item;
-        }
+      if (pr.question) {
+        entries.push({
+          key: `${view.ref}:${pr.ref}:question`,
+          kind: "needs input · PR",
+          ref: view.ref,
+          shortRef: pr.shortRef,
+          detail: questionOf(pr.question),
+          urgent: true,
+          action: "Reply",
+          count: 1,
+          at: pr.question.ts,
+          tier: TIER_NEEDS_INPUT,
+        });
+      }
+      if (pr.status?.parked) {
+        entries.push({
+          key: `${view.ref}:${pr.ref}:gate`,
+          kind: "human gate · PR",
+          ref: view.ref,
+          shortRef: pr.shortRef,
+          detail: `${pr.status.parked.node} — ${pr.status.parked.reason}`,
+          urgent: true,
+          action: "Review",
+          count: 1,
+          at: pr.status.parked.since ?? "",
+          tier: TIER_GATE,
+          gate: {
+            repo: view.repoPath,
+            workItem: view.specId ?? "",
+            node: pr.status.parked.node,
+            pr: pr.number,
+            prRepo: pr.prRepo,
+          },
+        });
+      }
+      for (const [kind, held] of collapseByKind(pr.attention, pr.question !== null)) {
+        const tier = KIND_TIER[kind] ?? TIER_WAITING;
+        entries.push({
+          key: `${view.ref}:${pr.ref}:${kind}`,
+          kind: `${kind.replaceAll("-", " ")} · PR`,
+          ref: view.ref,
+          shortRef: pr.shortRef,
+          detail: held.item.detail,
+          urgent: tier <= TIER_GATE,
+          action: "Open",
+          count: held.count,
+          at: held.at,
+          tier,
+        });
       }
     }
-    for (const [kind, held] of byKind) {
+    for (const [kind, held] of collapseByKind(view.attention, view.question !== null)) {
       const tier = KIND_TIER[kind] ?? TIER_WAITING;
       entries.push({
         key: `${view.ref}:${kind}`,
@@ -807,6 +920,39 @@ export function attentionEntries(views: WorkItemView[]): AttentionEntry[] {
   return entries.toSorted(
     (a, b) => a.tier - b.tier || b.at.localeCompare(a.at) || a.ref.localeCompare(b.ref),
   );
+}
+
+/**
+ * Dedupe raw attention reports per kind: newest timestamp wins, the rest become
+ * a count badge (issue-283 B3).
+ *
+ * `asked` is whether a richer question entry — same wait, with a Reply action
+ * — is already on the board for this ref (issue-208). The service reports the
+ * wait as `awaiting-input` too, and the raw row would then be a duplicate; it
+ * is kept only when the event window missed the question the service can still
+ * see. One function for a work item and for its pull requests, so the two
+ * cannot drift (issue-302).
+ */
+function collapseByKind(
+  items: AttentionItem[],
+  asked: boolean,
+): Map<string, { item: AttentionItem; count: number; at: string }> {
+  const byKind = new Map<string, { item: AttentionItem; count: number; at: string }>();
+  for (const item of items) {
+    if (item.kind === "awaiting-input" && asked) continue;
+    const at = item.at ?? "";
+    const held = byKind.get(item.kind);
+    if (!held) {
+      byKind.set(item.kind, { item, count: 1, at });
+    } else {
+      held.count += 1;
+      if (at > held.at) {
+        held.at = at;
+        held.item = item;
+      }
+    }
+  }
+  return byKind;
 }
 
 /** One inbox card per work item: its entries, led by the most actionable. */

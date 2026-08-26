@@ -234,6 +234,180 @@ const session = (ref: string, prRefs: string[] = []): SessionRecord => ({
   })),
 });
 
+/**
+ * The two identities a labeled pull request has on a real board (issue-302):
+ * its own portable record, flushed by the poller as a poll ledger, and a
+ * session endpoint nested under the work item it delivers.
+ */
+const prRecord = (ref: string, polledAt = "2026-08-26T09:00:00Z"): WorkItemRecord => ({
+  ref,
+  url: "https://github.com/octo/lab/pull/2",
+  control: { command: "start", source: "comment", actor: "maintainer", requestedAt: polledAt },
+  poll: { lastPolledAt: polledAt },
+});
+
+describe("buildWorkItemViews · a pull request is not a work item of its own", () => {
+  it("renders a linked, labeled PR once — under its work item, not beside it", () => {
+    const views = buildWorkItemViews({
+      workItems: [record("github:octo/lab#1", "pdlc-work-item-loop"), prRecord("github:octo/lab#2")],
+      sessions: [session("github:octo/lab#1", ["github:octo/lab#2"])],
+      attention: [],
+    });
+    expect(views.map((view) => view.ref)).toEqual(["github:octo/lab#1"]);
+    expect(views[0]!.pullRequests.map((pr) => pr.ref)).toEqual(["github:octo/lab#2"]);
+  });
+
+  it("leaves a PR no session claims top-level — the standalone-PR path", () => {
+    const views = buildWorkItemViews({
+      // #2 is linked to no issue, so nothing delivers it and it is its own
+      // work item: exactly what `extract_work_items` routes it as.
+      workItems: [record("github:octo/lab#1", "pdlc-work-item-loop"), prRecord("github:octo/lab#2")],
+      sessions: [session("github:octo/lab#1")],
+      attention: [],
+    });
+    expect(views.map((view) => view.ref).toSorted()).toEqual(["github:octo/lab#1", "github:octo/lab#2"]);
+  });
+
+  it("keeps a treeless owner's PR top-level: a claim nobody draws would delete it", () => {
+    for (const loop of ["pdlc-adhoc-loop", "pdlc-contribution-loop", "pdlc-review-loop"]) {
+      const views = buildWorkItemViews({
+        workItems: [record("github:octo/lab#1", loop), prRecord("github:octo/lab#2")],
+        sessions: [session("github:octo/lab#1", ["github:octo/lab#2"])],
+        attention: [],
+      });
+      expect(sessionTree(views)[0]!.inner).toEqual([]);
+      expect(views.map((view) => view.ref).toSorted()).toEqual(["github:octo/lab#1", "github:octo/lab#2"]);
+    }
+  });
+
+  it("leaves a PR that has a session record of its own top-level", () => {
+    // Worked standalone before it was linked: the top-level record is the live
+    // one and the nested endpoint is `link_pull_request`'s stub, with no tmux
+    // target to reach. Hiding the live session behind it would be worse than
+    // an extra row — `record_owning` resolves the ref the same way.
+    const owner = session("github:octo/lab#1", ["github:octo/lab#2"]);
+    owner.pullRequests![0]!.tmuxTarget = "";
+    const views = buildWorkItemViews({
+      workItems: [record("github:octo/lab#1", "pdlc-work-item-loop"), prRecord("github:octo/lab#2")],
+      sessions: [owner, session("github:octo/lab#2")],
+      attention: [],
+    });
+    expect(views.map((view) => view.ref).toSorted()).toEqual(["github:octo/lab#1", "github:octo/lab#2"]);
+    expect(views.find((view) => view.ref === "github:octo/lab#2")!.tmuxTarget).toBe("tmux-2");
+  });
+
+  it("ignores a self-claim, so a record cannot erase its own row (abuse case A1)", () => {
+    const views = buildWorkItemViews({
+      workItems: [record("github:octo/lab#1", "pdlc-work-item-loop")],
+      sessions: [session("github:octo/lab#1", ["github:octo/lab#1"])],
+      attention: [],
+    });
+    expect(views.map((view) => view.ref)).toEqual(["github:octo/lab#1"]);
+  });
+
+  it("discards a claim by a ref that is itself claimed — the registry nests one level", () => {
+    const views = buildWorkItemViews({
+      workItems: [
+        record("github:octo/lab#1", "pdlc-work-item-loop"),
+        record("github:octo/lab#2", "pdlc-work-item-loop"),
+      ],
+      // A hand-edited pair claiming each other. Failing closed keeps both rows;
+      // honouring both would empty the board.
+      sessions: [session("github:octo/lab#1", ["github:octo/lab#2"]), session("github:octo/lab#2", ["github:octo/lab#1"])],
+      attention: [],
+    });
+    expect(views.map((view) => view.ref).toSorted()).toEqual(["github:octo/lab#1", "github:octo/lab#2"]);
+  });
+});
+
+describe("buildWorkItemViews · what the removed row carried is folded, not dropped", () => {
+  const owner = "github:octo/lab#1";
+  const pr = "github:octo/lab#2";
+
+  it("gives the nested row the PR's record, and its poll stamp as a fallback age", () => {
+    const endpoint = session(owner, [pr]);
+    // The endpoint has never recorded an event, so its age used to come from
+    // the top-level row's poll ledger.
+    endpoint.pullRequests![0]!.lastEventAt = null;
+    const [view] = buildWorkItemViews({
+      workItems: [record(owner, "pdlc-work-item-loop"), prRecord(pr, "2026-08-26T09:00:00Z")],
+      sessions: [endpoint],
+      attention: [],
+    });
+    expect(view!.pullRequests[0]!.record.poll?.lastPolledAt).toBe("2026-08-26T09:00:00Z");
+    expect(view!.pullRequests[0]!.lastActivity).toBe("2026-08-26T09:00:00Z");
+    expect(sessionTree([view!])[0]!.inner[0]!.lastActivity).toBe("2026-08-26T09:00:00Z");
+  });
+
+  it("surfaces the PR's attention on its work item's card, named for the PR", () => {
+    const [view] = buildWorkItemViews({
+      workItems: [record(owner, "pdlc-work-item-loop"), prRecord(pr)],
+      sessions: [session(owner, [pr])],
+      attention: [{ workItem: pr, kind: "recent-error", detail: "delivery failed", at: "2026-08-26T09:30:00Z" }],
+    });
+    const [entry] = attentionEntries([view!]);
+    expect(entry).toMatchObject({ kind: "recent error · PR", ref: owner, shortRef: "lab#2", detail: "delivery failed" });
+    // One card, the owner's — a PR ref would open a row that no longer exists.
+    expect(attentionByItem([view!]).map((group) => group.ref)).toEqual([owner]);
+  });
+
+  it("raises the owner's needs-input chip for a question asked inside the PR loop", () => {
+    const [view] = buildWorkItemViews({
+      workItems: [record(owner, "pdlc-work-item-loop"), prRecord(pr)],
+      sessions: [session(owner, [pr])],
+      attention: [{ workItem: pr, kind: "awaiting-input", detail: "agent is waiting for input: which one?" }],
+      awaiting: { [pr]: ask(pr, "2026-08-26T09:45:00Z", "rebase or merge?") },
+    });
+    expect(rowFlag(view!)).toEqual({ label: "needs input", urgent: true });
+    const entries = attentionEntries([view!]);
+    // The richer Reply entry replaces the service's raw `awaiting-input` row,
+    // exactly as it does for a work item's own question (issue-208).
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      kind: "needs input · PR",
+      ref: owner,
+      shortRef: "lab#2",
+      detail: "rebase or merge?",
+      action: "Reply",
+    });
+  });
+
+  it("folds nothing for a PR that kept a row of its own", () => {
+    // A treeless owner draws no nested rows, so its linked PR stays top-level
+    // (R1.3) — and reporting its question in both places would be the same
+    // duplicate in different clothes.
+    const views = buildWorkItemViews({
+      workItems: [record(owner, "pdlc-adhoc-loop"), prRecord(pr)],
+      sessions: [session(owner, [pr])],
+      attention: [{ workItem: pr, kind: "recent-error", detail: "delivery failed", at: "2026-08-26T09:30:00Z" }],
+      awaiting: { [pr]: ask(pr, "2026-08-26T09:45:00Z", "rebase or merge?") },
+    });
+    const ownerView = views.find((view) => view.ref === owner)!;
+    const prView = views.find((view) => view.ref === pr)!;
+    expect(rowFlag(ownerView)).toBeNull();
+    expect(rowFlag(prView)).toEqual({ label: "needs input", urgent: true });
+    // One card, and it is the pull request's own.
+    expect(attentionByItem(views).map((group) => group.ref)).toEqual([pr]);
+  });
+
+  it("promotes nothing else: a PR's human gate stays off the owner's row", () => {
+    const [view] = buildWorkItemViews({
+      workItems: [record(owner, "pdlc-work-item-loop"), prRecord(pr)],
+      sessions: [session(owner, [pr])],
+      attention: [],
+      graphs: {
+        outer: {},
+        inner: {
+          [innerKey(owner, pr)]: status("pr-approval", { parked: { node: "pr-approval", reason: "waiting" } }),
+        },
+      },
+    });
+    expect(rowFlag(view!)).toBeNull();
+    // It is on the inbox, where it has always been.
+    expect(attentionEntries([view!])[0]).toMatchObject({ kind: "human gate · PR", shortRef: "lab#2" });
+  });
+});
+
 describe("sessionTree", () => {
   it("builds a two-level tree: the outer session, then one child per PR endpoint", () => {
     const views = buildWorkItemViews({

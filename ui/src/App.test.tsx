@@ -121,6 +121,23 @@ describe("the control plane, on demo data", () => {
     expect(screen.queryByRole("list", { name: "Pull requests for loop-lab#223" })).not.toBeInTheDocument();
   });
 
+  it("draws a linked pull request once, under its work item and not beside it", async () => {
+    renderApp();
+
+    // The fixture gives #216 both identities a real board gives a labeled PR:
+    // its own portable record (the poller's ledger) and a session endpoint
+    // nested under #214, which delivers it. It is one pull request, so it gets
+    // one row — the nested one, where its session and transcript are
+    // (issue-302).
+    const prs = await screen.findByRole("list", { name: "Pull requests for loop-lab#214" });
+    expect(within(prs).getByText("#216")).toBeInTheDocument();
+
+    const rows = screen
+      .getAllByRole("link")
+      .filter((el) => el.className.includes("lp-side-row") && !el.className.includes("lp-side-pr"));
+    expect(rows.some((el) => el.textContent?.includes("loop-lab#216"))).toBe(false);
+  });
+
   it("opens the PR's own session from its nested sidebar row", async () => {
     const user = userEvent.setup();
     renderApp();
