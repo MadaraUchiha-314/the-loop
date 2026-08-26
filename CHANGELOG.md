@@ -1,3 +1,9 @@
+## v11.6.1 (2026-08-26)
+
+### Fix
+
+- **issue-302**: draw a linked pull request once, under the item it delivers (#303)
+
 ## v11.6.0 (2026-08-26)
 
 ### Feat
