@@ -1468,7 +1468,7 @@ wheels = [
 
 [[package]]
 name = "the-loopy-one"
-version = "11.4.0"
+version = "11.5.0"
 source = { editable = "cli" }
 dependencies = [
     { name = "fastapi" },

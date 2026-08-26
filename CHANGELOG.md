@@ -1,3 +1,9 @@
+## v11.6.0 (2026-08-26)
+
+### Feat
+
+- **ui**: nest each work item's pull requests under it in the sidebar (#301)
+
 ## v11.5.0 (2026-08-26)
 
 ### Feat
