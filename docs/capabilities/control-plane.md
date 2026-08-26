@@ -268,10 +268,11 @@ package — there are no install extras (owner decision, PR #162).
   an unknown shape degrades to a labelled row rather than disappearing or
   throwing. All of it renders as text (React escaping), never as markup.
 - The dashboard SHALL be **two surfaces** (issue-298, the owner's decluttering
-  direction, superseding issue-283's three screens): **Work** — one flat
-  sidebar of work items (dot · ref · age · title · a small-caps chip when one
-  needs a human), then standing sessions, with Settings and the health dot in
-  the footer; the sidebar is the whole navigation — beside one main canvas
+  direction, superseding issue-283's three screens): **Work** — a sidebar of
+  work items (dot · ref · age · title · a small-caps chip when one needs a
+  human), each with **its pull requests nested beneath it** (issue-300), then
+  standing sessions, with Settings and the health dot in the footer; the
+  sidebar is the whole navigation — beside one main canvas
   rendering the selected item's header, tick rail, trace and chat bar, with
   the most recently active item shown when nothing is selected — plus
   **Settings**, a reading column behind "← Work items". The visual system is
@@ -282,10 +283,25 @@ package — there are no install extras (owner decision, PR #162).
   Dashboard/Sessions/Attention routes and `#/events` alike — SHALL keep
   parsing and land on the Work surface (an `#/events/<ref>` permalink on that
   item's canvas). A selected session — the outer loop's or a PR endpoint's —
-  is the hash route (PR sessions as trace tabs), its stream is the readable
-  transcript (event-trail fallback unchanged), and the **chat bar** at the
-  canvas foot posts to `/sessions/reply` with the viewed ref, disabled with
-  the reason when that session cannot receive (issue-230).
+  is the hash route, its stream is the readable transcript (event-trail
+  fallback unchanged), and the **chat bar** at the canvas foot posts to
+  `/sessions/reply` with the viewed ref, disabled with the reason when that
+  session cannot receive (issue-230).
+- The Work sidebar SHALL be **two levels deep, and no deeper** (issue-300): a
+  work item, then one row per pull request whose inner `pdlc-pr-loop` has a
+  session — a PR has no pull requests, so the tree mirrors the registry's own
+  nesting. A PR row SHALL carry its session dot, its identity and its age, and
+  neither a title nor an attention chip (the item's row carries the attention);
+  it SHALL print the number alone (`#216`) when the PR is in its work item's
+  repository and the qualified ref (`loop-docs#47`) when it is elsewhere
+  (issue-183's multi-repo delivery). A loop with no outer/inner split —
+  `pdlc-adhoc-loop`, `pdlc-contribution-loop`, `pdlc-review-loop` — SHALL render
+  treeless. The **hash is the single source of truth** for the viewed trace: a
+  nested PR row and the canvas's trace tabs are the same navigation, both
+  ordinary links to `#/item/<ref>`, and a ref the shown item does not own falls
+  back to that item's own session rather than requesting a transcript for
+  another item's (the service's fail-closed resolution, issue-209, remains the
+  enforcing boundary).
 - Attention SHALL stay **deduplicated and tiered** (issue-283) and SHALL
   surface without an inbox surface of its own (issue-298): one entry per
   (work item, kind), the newest first by tier (needs-input &gt; human gate &gt;
@@ -334,6 +350,7 @@ package — there are no install extras (owner decision, PR #162).
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-300 | The Work sidebar stopped flattening the board: each work item now carries its pull requests as nested rows (dot &middot; number-or-qualified-ref &middot; age), rendered from the `sessionTree` join the retired Sessions screen left behind rather than a second derivation, so treeless loops stay treeless. Selecting a PR row opens that PR's session on its work item's canvas, and the parent row keeps a lighter marker so the open item is still visible. The viewed trace moved from pane-local state to the hash — the trace tabs became links to the same route the sidebar rows use — which removes the second source of truth and, with it, the class of bug where a PR of the already-open item could be selected and change nothing | [spec](../specs/issue-300/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/300) |
 | issue-298 | The dashboard's design overhaul, in two rounds. Round one: the Industry system replaced wholesale by **Classical** (Cormorant Garamond over Lora, hairline rules, color as stroke), vendored as `ui/src/styles/classical.css` from the owner's signed-off export (checked in under `docs/specs/issue-298/design/`); the header bar retired into the sidebar; the labelled node rail became a tick bar captioned `current · n of m` (node names in tooltips); the transcript an editorial "You" / "the-loop" thread. Round two, on the owner's decluttering direction: one flat Work-items sidebar (chips carry the attention), the canvas pared to header + trace + chat with the most recent item shown by default, the question answered by the chat bar itself, the inbox/overview and PR cards folded into chips, cards and trace tabs, and the standalone Events screen retired (the trail remains as the trace's fallback; `#/events` lands on Work). Presentation only: every API connector, model join and control verb is unchanged | [design](../specs/issue-298/design/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/298) |
 | issue-283 | The dashboard calmed down to the claude.ai/code shape: six tabs became three (Work · Events · Settings) with a persistent sidebar (deduped, tiered inbox with in-place gate approval and question replies; items grouped needs-you/running/idle; standing sessions under a divider) and one main pane. Service side: the poller caches ticket titles in the portable record, `recent-error` attention ages out and clears on a clean poll, and `api.request` dropped to debug level. Plus the audit's contained fixes — frozen rail rendered instead of "no graph state", relative timestamps with the date when not today, the duplicated event trail and the broken fallback sentence on the detail pane, round session dots with a dash for "no session", provenance notes and the route footer removed, Settings prose behind disclosures — and dormant loops answered from the held graph report instead of a fresh check per poll | [audit](https://github.com/MadaraUchiha-314/the-loop/issues/283) |
 | issue-277 | The plane gained a second session namespace: `GET /api/v1/standing-sessions`, `…/one`, `POST …/control` and `POST …/say` over one core implementation, with `list`/`get`/`say` on MCP and **control deliberately off** it (an agent that could stop a standing session could stop the one supervising it), plus `loop.standing` on the SDK and a **Standing** screen on the dashboard (list, create, delete, start/stop/restart, per-session message box). `the-loop start`/`stop`/`status` report the sessions in their own section beside the services | [spec](../specs/issue-277/), [standing-sessions](standing-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/277) |

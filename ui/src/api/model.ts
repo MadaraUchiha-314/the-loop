@@ -576,13 +576,22 @@ export interface SessionNode {
   /** What `/sessions/transcript` and `/sessions/reply` are called with. */
   ref: string;
   shortRef: string;
+  /**
+   * What the row prints. A PR in the work item's own repository is just its
+   * number (`#216`) — the parent row above it already names the repository, and
+   * repeating it is the noise nesting exists to remove; a PR somewhere else
+   * keeps the qualified `loop-docs#47` (issue-300).
+   */
+  label: string;
   /** `outer` — the work item's own loop; `inner` — one PR's `pdlc-pr-loop`. */
   scope: "outer" | "inner";
   state: SessionState;
   tmuxTarget: string;
+  /** Newest activity on this session, `""` when none was recorded. */
+  lastActivity: string;
 }
 
-/** One work item's row in the Sessions sidebar: the item, then its sessions. */
+/** One work item's group in the Work sidebar: the item, then its sessions. */
 export interface SessionTreeItem {
   view: WorkItemView;
   /**
@@ -602,11 +611,13 @@ const TREELESS_LOOPS = new Set([
 ]);
 
 /**
- * The Sessions sidebar: every work item, its sessions as a two-level tree.
+ * The Work sidebar: every work item, its sessions as a two-level tree.
  *
  * Two levels is not a rendering choice — the registry's nesting is one level
  * deep by design (a PR does not have pull requests), so the tree mirrors the
- * data it draws.
+ * data it draws. Written for the pre-298 Sessions screen and left unrendered by
+ * that screen's retirement; issue-300 nests the sidebar on it rather than
+ * re-deriving a second, divergent notion of "this item's PRs".
  */
 export function sessionTree(views: WorkItemView[]): SessionTreeItem[] {
   return views.map((view) => {
@@ -617,18 +628,22 @@ export function sessionTree(views: WorkItemView[]): SessionTreeItem[] {
       outer: {
         ref: view.ref,
         shortRef: view.shortRef,
+        label: view.shortRef,
         scope: "outer" as const,
         state: view.sessionState,
         tmuxTarget: view.tmuxTarget,
+        lastActivity: view.lastActivity,
       },
       inner: treeless
         ? []
         : view.pullRequests.map((pr) => ({
             ref: pr.ref,
             shortRef: pr.shortRef,
+            label: pr.prRepo ? pr.shortRef : `#${pr.number}`,
             scope: "inner" as const,
             state: pr.sessionState,
             tmuxTarget: pr.tmuxTarget,
+            lastActivity: pr.session.lastEventAt ?? "",
           })),
     };
   });
