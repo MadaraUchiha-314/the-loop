@@ -1,9 +1,8 @@
 /**
- * A plain framed container. The Industry system's `+` corner registration
- * marks and all-caps blueprint styling were retired in the issue-283 calm-down
- * (bloat #5): the data — refs, rails, dots — provides the texture, so cards
- * are quiet hairline boxes. The component keeps its name and prop shape so the
- * call sites that predate the change read unchanged.
+ * A plain framed container: the Classical system's bordered, unfilled surface
+ * (issue-298) — a quiet hairline box, drawn with the divider token rather than
+ * a fill. The component keeps its Industry-era name and prop shape so the call
+ * sites that predate the redesigns read unchanged.
  */
 
 import type { ElementType, ReactNode } from "react";

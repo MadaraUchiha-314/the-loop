@@ -32,7 +32,7 @@ Settings offers three ways, stored per browser:
 
 Streaming refreshes only what a change touches — a graph move re-reads that one work
 item's loop position, anything else re-reads the four lists — so watching a busy work item
-costs less than the 15-second poll it replaces, not more. The header's health dot opens
+costs less than the 15-second poll it replaces, not more. The sidebar's health dot opens
 into the stream's state — **live**, **reconnecting**, or fallen back to polling and why —
 beside each daemon's last cycle (issue-283 B10); it never shows a stale board that looks
 current. A service older than the stream, or one with
@@ -83,17 +83,22 @@ translates that into the same advice rather than "failed to fetch".
 Nothing here is a new endpoint. The interesting part is the **join**, which lives in
 [`src/api/model.ts`](src/api/model.ts):
 
-Three screens (issue-283): **Work** — a persistent sidebar (the inbox, then every work
-item grouped by what it needs from you, then standing sessions) beside one main pane
-showing the selected item's rail, trace and chat bar — plus **Events** and **Settings**.
+Two surfaces (issue-298's design, deliberately bare): **Work** — one flat sidebar of
+work items (dot · ref · age · title · a small-caps chip when one needs a human), then
+standing sessions, with Settings and the health dot in the footer; the sidebar is the
+whole navigation — beside one main canvas showing the selected item's header, rail,
+trace and chat bar (nothing selected shows the most recently active item) — plus
+**Settings**, a reading column behind "← Work items". The pre-298 screens fold in
+rather than disappear: the inbox's gate approval and question reply live on the item's
+canvas, and the standalone Events screen is retired — the event trail still renders as
+the trace's fallback, and legacy `#/events` hashes land on Work.
 
 | Surface | Reads |
 |---|---|
-| Work sidebar + inbox | `GET /work-items` + `GET /sessions` + `GET /attention`, then one `POST /graph/check` per active loop; inbox entries deduped per (item, kind) and tiered needs-input &gt; gate &gt; waits &gt; errors, with gates approvable in place (`POST /graph/complete`) and questions answerable in place (`POST /sessions/reply`) |
-| Work item pane | the same, plus `GET /events?workItem=…`, `GET /sessions/transcript?ref=…` for the selected trace (outer session or a PR endpoint's) and `POST /sessions/reply` from the chat bar (issue-230) |
+| Work sidebar | `GET /work-items` + `GET /sessions` + `GET /attention`, then one `POST /graph/check` per active loop — the rows' chips are the deduped, tiered attention (needs-input &gt; gate &gt; waits &gt; errors) |
+| Work item canvas | the same, plus `GET /events?workItem=…` (the trace's fallback trail), `GET /sessions/transcript?ref=…` for the viewed trace (outer session or a PR endpoint's), `POST /graph/complete` from the parked-gate card, and `POST /sessions/reply` from the chat bar (issue-230 — the chat bar is also how an agent's question is answered) |
 | Standing (a sidebar section of Work) | `GET /standing-sessions`, plus `POST /standing-sessions/{create,delete,control,say}` — the sessions that belong to no work item (issue-277) |
-| Events | `GET /events`, with the UI's own `api.request` traffic hidden unless asked for, an event-namespace and work-item filter (permalink: `#/events/<ref>`), and a live tail |
-| Chrome | `GET /daemons`, folded with the stream state into one health dot + popover |
+| Sidebar footer | `GET /daemons`, folded with the stream state into one health dot + popover |
 | Settings | `GET /health`, plus `GET /config` + `GET /config/schema` and `POST /config` for the CLI-config editor (issue-222) |
 
 The config editor is the one screen that renders itself: its sections, labels, prose,
@@ -178,10 +183,13 @@ src/
   demo/       the bundled fixture, behind the same interface as the HTTP client
   state/      settings (localStorage) · hash route · the board's fetch loop
               stream.ts (what a frame makes stale) · useStream.ts (the connection)
-  components/ the Industry primitives: blueprint frame, node rail, session dot
+  components/ the shared primitives: card frame, node-rail tick bar, session dot,
+              health dot, transcript + chat bar
   views/      one file per screen
-  styles/     industry.css (vendored design system — do not hand-edit) · app.css
+  styles/     classical.css (vendored design system — do not hand-edit) · app.css
 ```
 
-`src/styles/industry.css` is the design-system export, copied verbatim so the app renders
+`src/styles/classical.css` is the Classical design-system export
+([issue-298](https://github.com/MadaraUchiha-314/the-loop/issues/298); the signed-off
+source lives under `docs/specs/issue-298/design/`), copied verbatim so the app renders
 what was signed off. Retuning the look means re-exporting it; app rules go in `app.css`.

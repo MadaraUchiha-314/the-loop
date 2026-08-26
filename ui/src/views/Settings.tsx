@@ -43,6 +43,7 @@ export function Settings() {
   return (
     <>
       <h1 className="lp-h1">Settings</h1>
+      <p className="lp-page-sub">Where this browser points, and the daemon&rsquo;s own configuration.</p>
 
       <Blueprint className="lp-settings-card">
         <div className="lp-settings-kicker">API server</div>
@@ -194,7 +195,7 @@ function RefreshSection() {
           Each poll cycle is four list calls plus one <code>graph/check</code> per active loop, so a large board
           against a remote workstation is happier at 30s. Streaming costs one held-open connection instead, and
           refreshes only what each change touches — a graph move re-reads that one work item&rsquo;s position,
-          anything else re-reads the lists. A stream that cannot be opened says so in the header&rsquo;s health dot
+          anything else re-reads the lists. A stream that cannot be opened says so in the sidebar&rsquo;s health dot
           and falls back to polling.
         </div>
       </details>

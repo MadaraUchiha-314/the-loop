@@ -267,25 +267,33 @@ package — there are no install extras (owner decision, PR #162).
   a result whose call fell outside the served tail is its own visible row, and
   an unknown shape degrades to a labelled row rather than disappearing or
   throwing. All of it renders as text (React escaping), never as markup.
-- The dashboard SHALL be **three screens** (issue-283, superseding the six-tab
-  layout): **Work** — one persistent sidebar (the deduped inbox, then every work
-  item grouped needs-you / running / idle, then standing sessions under a
-  divider) beside one main pane rendering the selected item — plus **Events**
-  and **Settings**. Dashboard, Sessions and Attention were three projections of
-  the same rows; their hash routes SHALL keep parsing and land on the Work
-  surface that replaced them. A selected session — the outer loop's or a PR
-  endpoint's — is the hash route, its stream is the readable transcript
-  (event-trail fallback unchanged), and a **chat bar** beneath the stream posts
-  to `/sessions/reply` with the viewed ref, disabled with the reason when that
-  session cannot receive (issue-230).
-- The inbox SHALL be **deduplicated and tiered** (issue-283): one entry per
-  (work item, kind) with the newest timestamp and a count — the service reports
-  one `recent-error` per event, and copies differing only in timestamp are not
-  separate needs — grouped one card per work item, ordered needs-input &gt;
-  human gate &gt; waits &gt; errors, newest first within a tier. A gate SHALL be
-  approvable and a question answerable **from the card** (`POST /graph/complete`
-  / `POST /sessions/reply`, the paper trail posted by the service), with the
-  navigate-and-review path kept beside it.
+- The dashboard SHALL be **two surfaces** (issue-298, the owner's decluttering
+  direction, superseding issue-283's three screens): **Work** — one flat
+  sidebar of work items (dot · ref · age · title · a small-caps chip when one
+  needs a human), then standing sessions, with Settings and the health dot in
+  the footer; the sidebar is the whole navigation — beside one main canvas
+  rendering the selected item's header, tick rail, trace and chat bar, with
+  the most recently active item shown when nothing is selected — plus
+  **Settings**, a reading column behind "← Work items". The visual system is
+  **Classical** (`ui/src/styles/classical.css`, vendored from the signed-off
+  export under `docs/specs/issue-298/design/`): the loop position draws as a
+  tick bar captioned `current · n of m`, each node's name and state kept in
+  the tick's tooltip and aria-label. Every earlier hash — the pre-283
+  Dashboard/Sessions/Attention routes and `#/events` alike — SHALL keep
+  parsing and land on the Work surface (an `#/events/<ref>` permalink on that
+  item's canvas). A selected session — the outer loop's or a PR endpoint's —
+  is the hash route (PR sessions as trace tabs), its stream is the readable
+  transcript (event-trail fallback unchanged), and the **chat bar** at the
+  canvas foot posts to `/sessions/reply` with the viewed ref, disabled with
+  the reason when that session cannot receive (issue-230).
+- Attention SHALL stay **deduplicated and tiered** (issue-283) and SHALL
+  surface without an inbox surface of its own (issue-298): one entry per
+  (work item, kind), the newest first by tier (needs-input &gt; human gate &gt;
+  waits &gt; errors), rendered as the sidebar rows' chips and the canvas's
+  cards and rail note. A parked gate SHALL be approvable from the item's
+  canvas (`POST /graph/complete`, the paper trail posted by the service) with
+  the ticket link beside it, and an agent's question SHALL be answered by the
+  chat bar (`POST /sessions/reply`) the question card points at.
 - The poller SHALL cache each ticket's **title** in the portable record's poll
   section, refreshed per cycle, so the board is human-readable against a live
   service and not only in the demo (issue-283 B1).
@@ -294,10 +302,10 @@ package — there are no install extras (owner decision, PR #162).
   converges to empty when nothing needs a human (issue-283 B5). Entries carry
   the raw timestamp so clients render age, not a bare ISO string.
 - `api.request` SHALL be emitted at **debug** level (issue-283 B7): the audit
-  trail is intact and queryable, but a dashboard's own reads must not fill every
-  default event window; the Events screen additionally hides API traffic unless
-  asked for, and offers an event-namespace filter, a work-item filter with a
-  permalink (`#/events/<ref>`) and a live tail.
+  trail is intact and queryable (`GET /api/v1/events`, `the-loop events`), but
+  a dashboard's own reads must not fill every default event window. The
+  standalone Events screen retired with issue-298; the trail the dashboard
+  still renders is the trace's event-log fallback per work item.
 - The three daemon chips SHALL be **one health dot** whose popover carries the
   stream state, each daemon's last cycle and a manual refresh (issue-283 B10);
   the stream state SHALL come from the one connection the board owns, so no two
@@ -326,6 +334,7 @@ package — there are no install extras (owner decision, PR #162).
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-298 | The dashboard's design overhaul, in two rounds. Round one: the Industry system replaced wholesale by **Classical** (Cormorant Garamond over Lora, hairline rules, color as stroke), vendored as `ui/src/styles/classical.css` from the owner's signed-off export (checked in under `docs/specs/issue-298/design/`); the header bar retired into the sidebar; the labelled node rail became a tick bar captioned `current · n of m` (node names in tooltips); the transcript an editorial "You" / "the-loop" thread. Round two, on the owner's decluttering direction: one flat Work-items sidebar (chips carry the attention), the canvas pared to header + trace + chat with the most recent item shown by default, the question answered by the chat bar itself, the inbox/overview and PR cards folded into chips, cards and trace tabs, and the standalone Events screen retired (the trail remains as the trace's fallback; `#/events` lands on Work). Presentation only: every API connector, model join and control verb is unchanged | [design](../specs/issue-298/design/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/298) |
 | issue-283 | The dashboard calmed down to the claude.ai/code shape: six tabs became three (Work · Events · Settings) with a persistent sidebar (deduped, tiered inbox with in-place gate approval and question replies; items grouped needs-you/running/idle; standing sessions under a divider) and one main pane. Service side: the poller caches ticket titles in the portable record, `recent-error` attention ages out and clears on a clean poll, and `api.request` dropped to debug level. Plus the audit's contained fixes — frozen rail rendered instead of "no graph state", relative timestamps with the date when not today, the duplicated event trail and the broken fallback sentence on the detail pane, round session dots with a dash for "no session", provenance notes and the route footer removed, Settings prose behind disclosures — and dormant loops answered from the held graph report instead of a fresh check per poll | [audit](https://github.com/MadaraUchiha-314/the-loop/issues/283) |
 | issue-277 | The plane gained a second session namespace: `GET /api/v1/standing-sessions`, `…/one`, `POST …/control` and `POST …/say` over one core implementation, with `list`/`get`/`say` on MCP and **control deliberately off** it (an agent that could stop a standing session could stop the one supervising it), plus `loop.standing` on the SDK and a **Standing** screen on the dashboard (list, create, delete, start/stop/restart, per-session message box). `the-loop start`/`stop`/`status` report the sessions in their own section beside the services | [spec](../specs/issue-277/), [standing-sessions](standing-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/277) |
 | issue-239 | The plane stops waiting to be asked: `GET /api/v1/stream` (SSE) holds a connection open and pushes event-log records, transcript-growth notifications and `desync` signals, fed by one shared tailer over `events.jsonl` with a bounded queue per subscriber and `service.stream.maxSubscribers` refusing the rest at `503`. SSE over WebSocket on a security argument — the WebSocket handshake is exempt from CORS. The stream never carries `api.request`/`mcp.call`, which would feed it from the control plane's own refreshes. The dashboard gains streaming/polling/manual as a per-browser choice with a visible connection state, refreshes one loop for a `graph.*` frame instead of sweeping the board, and finally puts the chat bar in reach with a self-scrolling trace panel | [spec](../specs/issue-239/), [decision-087](../decisions/decision-087.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/239) |

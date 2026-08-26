@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/classical-c7d4f5c1-6b1b-4315-b206-a4d3c91f56fa/styles.css">
+<script src="_ds/classical-c7d4f5c1-6b1b-4315-b206-a4d3c91f56fa/_ds_bundle.js"></script>
+<style>
+body{margin:0}
+a:hover{color:var(--color-accent-600)}
+input[type="checkbox"],input[type="radio"]{accent-color:var(--color-accent)}
+summary::marker{color:var(--color-neutral-500);font-size:10px}
+</style>
+</helmet>
+<div style="min-height:100vh;background:var(--color-bg);color:var(--color-text);font-family:var(--font-body)" data-screen-label="Settings">
+  <div style="max-width:720px;margin:0 auto;padding:26px 24px 64px">
+    <a href="Control Plane.dc.html" style="font-size:12.5px;color:var(--color-accent-700);text-decoration:none">← Work items</a>
+    <div style="font-family:var(--font-heading);font-weight:600;font-size:38px;line-height:1.1;letter-spacing:-0.015em;margin:10px 0 4px">Settings</div>
+    <div style="font-size:13.5px;color:var(--color-neutral-600);margin-bottom:26px">Where this browser points, and the daemon's own configuration.</div>
+    <div style="display:flex;flex-direction:column;gap:22px">
+
+      <div style="border:1px solid var(--color-divider);border-radius:var(--radius-md);padding:20px 22px">
+        <div style="font-family:var(--font-heading);font-weight:600;font-size:12px;letter-spacing:0.09em;text-transform:uppercase;color:var(--color-accent-700);margin-bottom:12px">API server</div>
+        <label for="baseurl" style="display:block;font-size:13px;margin-bottom:8px">Base URL — the workstation running <span style="font-family:ui-monospace,Menlo,monospace;font-size:12px">the-loop start</span></label>
+        <div style="display:flex;gap:10px">
+          <input id="baseurl" class="input" value="{{baseUrl}}" onChange="{{onBaseUrl}}" placeholder="http://127.0.0.1:8787" spellCheck="false" autoComplete="off" style="flex:1"></input>
+          <button type="button" class="btn btn-primary" onClick="{{saveAndTest}}">Save &amp; test</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12.5px;color:var(--color-neutral-600)">
+          <span style="width:7px;height:7px;border-radius:50%;background:{{probeDot}}"></span>
+          <span>{{probeText}}</span>
+        </div>
+        <sc-if value="{{showLearnMore}}" hint-placeholder-val="{{true}}">
+          <details style="margin-top:12px">
+            <summary style="font-size:12.5px;color:var(--color-accent-700);cursor:pointer">Learn more</summary>
+            <div style="font-size:12.5px;line-height:1.65;color:var(--color-neutral-600);margin-top:8px;text-wrap:pretty">This dashboard is a static page — hosted anywhere, pointed at any workstation. The service binds loopback by default and carries no in-app auth; this page's origin is allowed to read it out of the box (service.cors.allowOrigins). A service on another machine still needs to reach this browser — an SSH tunnel (ssh -L 8787:127.0.0.1:8787 workstation) or a gateway that terminates auth. The URL is saved in this browser; the health check is GET /api/v1/health.</div>
+          </details>
+        </sc-if>
+      </div>
+
+      <div style="border:1px solid var(--color-divider);border-radius:var(--radius-md);padding:20px 22px">
+        <div style="font-family:var(--font-heading);font-weight:600;font-size:12px;letter-spacing:0.09em;text-transform:uppercase;color:var(--color-accent-700);margin-bottom:12px">Data source</div>
+        <div style="display:flex;gap:10px">
+          <button type="button" class="btn {{liveBtn}}" onClick="{{pickLive}}">Live service</button>
+          <button type="button" class="btn {{demoBtn}}" onClick="{{pickDemo}}">Demo fixture</button>
+        </div>
+        <sc-if value="{{showLearnMore}}" hint-placeholder-val="{{true}}">
+          <details style="margin-top:12px">
+            <summary style="font-size:12.5px;color:var(--color-accent-700);cursor:pointer">Learn more</summary>
+            <div style="font-size:12.5px;line-height:1.65;color:var(--color-neutral-600);margin-top:8px;text-wrap:pretty">The demo serves a bundled fixture in the same record shapes the service uses, so the screens can be evaluated without a reachable workstation. Control verbs in demo mode mutate an in-memory copy and never leave the browser.</div>
+          </details>
+        </sc-if>
+      </div>
+
+      <div style="border:1px solid var(--color-divider);border-radius:var(--radius-md);padding:20px 22px">
+        <div style="font-family:var(--font-heading);font-weight:600;font-size:12px;letter-spacing:0.09em;text-transform:uppercase;color:var(--color-accent-700);margin-bottom:12px">Refresh</div>
+        <div style="font-size:13px;margin-bottom:10px">How this browser keeps the screen current</div>
+        <div role="radiogroup" aria-label="Refresh mode" style="display:flex;flex-direction:column;gap:10px">
+          <sc-for list="{{modes}}" as="m" hint-placeholder-count="3">
+            <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer">
+              <input type="radio" name="refresh-mode" checked="{{m.checked}}" onChange="{{m.pick}}" style="margin-top:3px"></input>
+              <span>
+                <span style="display:block;font-size:14px;font-weight:600">{{m.name}}</span>
+                <span style="display:block;font-size:12.5px;color:var(--color-neutral-600);line-height:1.55">{{m.why}}</span>
+              </span>
+            </label>
+          </sc-for>
+        </div>
+        <sc-if value="{{isPolling}}" hint-placeholder-val="{{false}}">
+          <div style="margin-top:14px;display:flex;align-items:center;gap:10px">
+            <label for="poll-interval" style="font-size:13px">Poll interval</label>
+            <select id="poll-interval" class="input" value="{{pollSeconds}}" onChange="{{onPollSeconds}}" style="max-width:160px">
+              <option value="5">every 5s</option>
+              <option value="10">every 10s</option>
+              <option value="15">every 15s</option>
+              <option value="30">every 30s</option>
+              <option value="60">every 60s</option>
+            </select>
+          </div>
+        </sc-if>
+        <sc-if value="{{showLearnMore}}" hint-placeholder-val="{{true}}">
+          <details style="margin-top:12px">
+            <summary style="font-size:12.5px;color:var(--color-accent-700);cursor:pointer">Learn more</summary>
+            <div style="font-size:12.5px;line-height:1.65;color:var(--color-neutral-600);margin-top:8px;text-wrap:pretty">Each poll cycle is four list calls plus one graph/check per active loop, so a large board against a remote workstation is happier at 30s. Streaming costs one held-open connection instead, and refreshes only what each change touches. A stream that cannot be opened says so in the header's health dot and falls back to polling.</div>
+          </details>
+        </sc-if>
+      </div>
+
+      <div style="border:1px solid var(--color-divider);border-radius:var(--radius-md);padding:20px 22px">
+        <div style="font-family:var(--font-heading);font-weight:600;font-size:12px;letter-spacing:0.09em;text-transform:uppercase;color:var(--color-accent-700);margin-bottom:12px">Service</div>
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+          <button type="button" class="btn btn-secondary" disabled="{{restartBusy}}" onClick="{{restart}}">{{restartLabel}}</button>
+          <label style="font-size:13px;display:flex;align-items:center;gap:7px;cursor:pointer">
+            <input type="checkbox" checked="{{withUpgrade}}" onChange="{{onWithUpgrade}}"></input>
+            upgrade the CLI first
+          </label>
+        </div>
+        <sc-if value="{{restartScheduled}}" hint-placeholder-val="{{false}}">
+          <div style="margin-top:12px;border:1px solid var(--color-accent-300);border-radius:var(--radius-md);background:var(--color-accent-100);color:var(--color-accent-900);font-size:12.5px;line-height:1.6;padding:9px 13px">{{restartReport}}</div>
+        </sc-if>
+        <sc-if value="{{showLearnMore}}" hint-placeholder-val="{{true}}">
+          <details style="margin-top:12px">
+            <summary style="font-size:12.5px;color:var(--color-accent-700);cursor:pointer">Learn more</summary>
+            <div style="font-size:12.5px;line-height:1.65;color:var(--color-neutral-600);margin-top:8px;text-wrap:pretty">Stops every running the-loop service on the workstation, then starts every enabled one — the same thing the-loop restart does. With the upgrade, the CLI is upgraded in between; a failed upgrade still restarts the current version.</div>
+          </details>
+        </sc-if>
+      </div>
+
+      <sc-if value="{{showConfigEditor}}" hint-placeholder-val="{{true}}">
+        <div style="border:1px solid var(--color-divider);border-radius:var(--radius-md);padding:20px 22px">
+          <div style="font-family:var(--font-heading);font-weight:600;font-size:12px;letter-spacing:0.09em;text-transform:uppercase;color:var(--color-accent-700);margin-bottom:12px">CLI config</div>
+          <div style="font-size:12.5px;line-height:1.65;color:var(--color-neutral-600);margin-bottom:14px;text-wrap:pretty">The daemon's own configuration, read from <span style="font-family:ui-monospace,Menlo,monospace;font-size:11.5px">~/.the-loop/cli-config.yaml</span>. A save changes only the fields you changed and leaves the file's comments alone; the poller and receiver pick it up on their next cycle.</div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <button type="button" class="btn btn-primary" disabled="{{cfgSaveDisabled}}" onClick="{{cfgSave}}">Save changes</button>
+            <button type="button" class="btn btn-secondary" disabled="{{cfgDiscardDisabled}}" onClick="{{cfgDiscard}}">Discard</button>
+            <span style="font-size:12.5px;color:var(--color-neutral-600)">{{cfgSummary}}</span>
+          </div>
+          <sc-if value="{{cfgSaved}}" hint-placeholder-val="{{false}}">
+            <div style="margin-top:12px;border:1px solid var(--color-accent-300);border-radius:var(--radius-md);background:var(--color-accent-100);color:var(--color-accent-900);font-size:12.5px;line-height:1.6;padding:9px 13px">{{cfgReport}}</div>
+          </sc-if>
+        </div>
+
+        <sc-for list="{{sections}}" as="sec" hint-placeholder-count="3">
+          <div style="border:1px solid var(--color-divider);border-radius:var(--radius-md);padding:20px 22px">
+            <div style="font-family:var(--font-heading);font-weight:600;font-size:12px;letter-spacing:0.09em;text-transform:uppercase;color:var(--color-accent-700);margin-bottom:6px">{{sec.label}}</div>
+            <div style="font-size:12.5px;line-height:1.6;color:var(--color-neutral-600);text-wrap:pretty">{{sec.desc}}</div>
+            <sc-for list="{{sec.fields}}" as="f" hint-placeholder-count="3">
+              <div style="margin-top:16px">
+                <label style="display:block;font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--color-neutral-800);margin-bottom:6px">{{f.key}}</label>
+                <sc-if value="{{f.isBool}}" hint-placeholder-val="{{false}}">
+                  <input type="checkbox" checked="{{f.bval}}" onChange="{{f.set}}" style="width:16px;height:16px"></input>
+                </sc-if>
+                <sc-if value="{{f.isEnum}}" hint-placeholder-val="{{false}}">
+                  <select class="input" value="{{f.sval}}" onChange="{{f.set}}" style="max-width:240px">
+                    <sc-for list="{{f.options}}" as="o" hint-placeholder-count="2">
+                      <option value="{{o}}">{{o}}</option>
+                    </sc-for>
+                  </select>
+                </sc-if>
+                <sc-if value="{{f.isInt}}" hint-placeholder-val="{{false}}">
+                  <input class="input" type="number" value="{{f.sval}}" min="{{f.min}}" onChange="{{f.set}}" style="max-width:160px"></input>
+                </sc-if>
+                <sc-if value="{{f.isText}}" hint-placeholder-val="{{false}}">
+                  <input class="input" type="text" value="{{f.sval}}" spellCheck="false" onChange="{{f.set}}"></input>
+                </sc-if>
+                <sc-if value="{{f.isList}}" hint-placeholder-val="{{false}}">
+                  <textarea class="input" rows="2" value="{{f.sval}}" spellCheck="false" onChange="{{f.set}}" style="font-family:ui-monospace,Menlo,monospace;font-size:12.5px;resize:vertical"></textarea>
+                </sc-if>
+                <sc-if value="{{f.isJson}}" hint-placeholder-val="{{false}}">
+                  <textarea class="input" rows="3" value="{{f.sval}}" spellCheck="false" onChange="{{f.set}}" style="font-family:ui-monospace,Menlo,monospace;font-size:12.5px;resize:vertical"></textarea>
+                </sc-if>
+                <sc-if value="{{f.desc}}" hint-placeholder-val="{{false}}">
+                  <div style="font-size:12px;line-height:1.55;color:var(--color-neutral-600);margin-top:5px;text-wrap:pretty">{{f.desc}}</div>
+                </sc-if>
+                <sc-if value="{{f.err}}" hint-placeholder-val="{{false}}">
+                  <div style="font-size:12px;font-style:italic;color:var(--color-accent-800);margin-top:5px">{{f.err}}</div>
+                </sc-if>
+              </div>
+            </sc-for>
+          </div>
+        </sc-for>
+      </sc-if>
+
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;showLearnMore&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Page&quot;},&quot;showConfigEditor&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Page&quot;}}">
+const FIELDS = [
+  { section: "Routing", secKey: "routing", secDesc: "What happens to an event once accepted: who may drive the loop, and how sessions are hosted.", defs: [
+    { key: "routing.enabled", kind: "bool", desc: "Route events to registered harness sessions.", val: true },
+    { key: "routing.defaultHarness", kind: "enum", options: ["claude", "cursor"], desc: "Which harness a spawned session runs.", val: "claude" },
+    { key: "routing.authorizedUsers", kind: "list", desc: "Logins whose comments may command the loop. Empty means nothing is actioned (fail closed).", val: "octocat" },
+    { key: "routing.maxConcurrentDispatches", kind: "int", min: 1, desc: "", val: "4" },
+  ]},
+  { section: "Polling", secKey: "polling", secDesc: "The poller's cadence and the repositories it watches.", defs: [
+    { key: "polling.intervalSeconds", kind: "int", min: 5, desc: "", val: "60" },
+    { key: "polling.sources", kind: "json", desc: "Poll sources. Rendered as JSON: a list of records has no typed control.", val: "[]" },
+  ]},
+  { section: "Event log", secKey: "eventLog", secDesc: "The structured JSONL trail the-loop events reads.", defs: [
+    { key: "eventLog.enabled", kind: "bool", desc: "", val: true },
+    { key: "eventLog.path", kind: "text", desc: "", val: ".the-loop/logs/events.jsonl" },
+  ]},
+];
+const MODES = [
+  { value: "stream", name: "Streaming", why: "The service pushes changes as they happen. One connection, held open. Best on loopback or a stable tunnel." },
+  { value: "poll", name: "Polling", why: "Ask again on a timer. A failed cycle costs one request, so this is the kinder mode over a flaky link." },
+  { value: "manual", name: "Manual", why: "No background request of any kind. The screen changes only when you ask it to." },
+];
+const initCfg = () => { const m = {}; FIELDS.forEach((s) => s.defs.forEach((d) => { m[d.key] = d.val; })); return m; };
+
+class Component extends DCLogic {
+  state = {
+    baseUrl: "http://127.0.0.1:8787", probe: "idle",
+    mode: "demo", refreshMode: "stream", pollSeconds: "15",
+    withUpgrade: false, restart: "idle",
+    cfg: initCfg(), base: initCfg(), invalid: {}, cfgSaved: false, savedSections: [],
+  };
+  setCfg(key, value, err) {
+    this.setState((s) => {
+      const invalid = Object.assign({}, s.invalid);
+      if (err) invalid[key] = err; else delete invalid[key];
+      return { cfg: Object.assign({}, s.cfg, { [key]: value }), invalid, cfgSaved: false };
+    });
+  }
+  changedSections() {
+    return FIELDS.filter((s) => s.defs.some((d) => this.state.cfg[d.key] !== this.state.base[d.key])).map((s) => s.secKey);
+  }
+  renderVals() {
+    const showLearnMore = this.props.showLearnMore ?? true;
+    const showConfigEditor = this.props.showConfigEditor ?? true;
+    const st = this.state;
+    const changed = this.changedSections();
+    const blocked = Object.keys(st.invalid).length > 0;
+
+    const sections = FIELDS.map((s) => ({
+      label: s.section, desc: s.secDesc,
+      fields: s.defs.map((d) => ({
+        key: d.key, desc: d.desc, min: d.min ?? 0,
+        isBool: d.kind === "bool", isEnum: d.kind === "enum", isInt: d.kind === "int",
+        isText: d.kind === "text", isList: d.kind === "list", isJson: d.kind === "json",
+        options: d.options || [],
+        bval: st.cfg[d.key] === true, sval: String(st.cfg[d.key]),
+        err: st.invalid[d.key] || "",
+        set: (e) => {
+          if (d.kind === "bool") return this.setCfg(d.key, e.target.checked);
+          const v = e.target.value;
+          if (d.kind === "json") {
+            let err = "";
+            try { JSON.parse(v); } catch { err = "this is not valid JSON, so it will not be saved"; }
+            return this.setCfg(d.key, v, err);
+          }
+          this.setCfg(d.key, v);
+        },
+      })),
+    }));
+
+    return {
+      showLearnMore, showConfigEditor, sections,
+      baseUrl: st.baseUrl,
+      onBaseUrl: (e) => this.setState({ baseUrl: e.target.value, probe: "idle" }),
+      saveAndTest: () => {
+        this.setState({ probe: "checking" });
+        setTimeout(() => this.setState({ probe: "ok" }), 700);
+      },
+      probeDot: st.probe === "ok" ? "var(--color-accent-500)" : st.probe === "checking" ? "var(--color-accent-300)" : "var(--color-neutral-400)",
+      probeText: st.probe === "checking" ? "checking /api/v1/health…" : st.probe === "ok" ? "connected — " + st.baseUrl + " (the-loop 0.4.0)" : "not tested — currently pointing at " + st.baseUrl,
+      liveBtn: st.mode === "live" ? "btn-primary" : "btn-secondary",
+      demoBtn: st.mode === "demo" ? "btn-primary" : "btn-secondary",
+      pickLive: () => this.setState({ mode: "live" }),
+      pickDemo: () => this.setState({ mode: "demo" }),
+      modes: MODES.map((m) => ({
+        name: m.name, why: m.why, checked: st.refreshMode === m.value,
+        pick: () => this.setState({ refreshMode: m.value }),
+      })),
+      isPolling: st.refreshMode === "poll",
+      pollSeconds: st.pollSeconds,
+      onPollSeconds: (e) => this.setState({ pollSeconds: e.target.value }),
+      withUpgrade: st.withUpgrade,
+      onWithUpgrade: (e) => this.setState({ withUpgrade: e.target.checked }),
+      restartBusy: st.restart === "asking",
+      restartLabel: st.restart === "asking" ? "Scheduling…" : st.withUpgrade ? "Restart with upgrade" : "Restart the-loop",
+      restart: () => {
+        this.setState({ restart: "asking" });
+        setTimeout(() => this.setState({ restart: "scheduled" }), 600);
+      },
+      restartScheduled: st.restart === "scheduled",
+      restartReport: "Restart scheduled (pid 4242" + (st.withUpgrade ? ", with upgrade" : "") + ") — the service will drop and come back; output at .the-loop/logs/restart.out on the workstation.",
+      cfgSaveDisabled: changed.length === 0 || blocked,
+      cfgDiscardDisabled: changed.length === 0 && !blocked,
+      cfgSummary: blocked ? "fix the highlighted field before saving" : changed.length === 0 ? "no changes" : changed.length + " section" + (changed.length === 1 ? "" : "s") + " changed",
+      cfgSave: () => this.setState((s) => ({ base: Object.assign({}, s.cfg), cfgSaved: true, savedSections: changed })),
+      cfgDiscard: () => this.setState((s) => ({ cfg: Object.assign({}, s.base), invalid: {}, cfgSaved: false })),
+      cfgSaved: st.cfgSaved,
+      cfgReport: "Saved " + st.savedSections.join(", ") + " to ~/.the-loop/cli-config.yaml. Live now.",
+    };
+  }
+}
+</script>
+</body>
+</html>

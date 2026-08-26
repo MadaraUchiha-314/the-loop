@@ -1,58 +1,19 @@
 /**
- * The header bar: brand, the three screens, and one health dot.
+ * The health dot and its popover.
  *
- * The pre-283 header carried three all-caps daemon chips on every screen, and
- * the stream chip disagreed with Settings about the same connection (B10). Now
- * one dot answers "is anything actually watching GitHub right now?" and a
- * popover carries the detail — the stream's state (from the one `useStream`
- * the board owns, so no second surface can disagree), each daemon's last
- * cycle, and a manual refresh.
+ * The issue-298 redesign retired the top header bar: the Work screen's sidebar
+ * is the navigation (brand block on top, the Settings link in the footer),
+ * the way the signed-off design draws it. What survives from the old
+ * chrome is the one dot that answers "is anything actually watching GitHub
+ * right now?" (issue-283 B10) — it now sits in the sidebar footer, with the
+ * same popover: the stream's state (from the one `useStream` the board owns,
+ * so no second surface can disagree), each daemon's last cycle, and a manual
+ * refresh.
  */
 
 import type { DaemonStatus } from "../api/types.ts";
-import { hrefFor, type Route } from "../state/route.ts";
 import { relativeTime } from "../api/model.ts";
 import type { StreamState } from "../state/useStream.ts";
-
-const TABS: { label: string; route: Route }[] = [
-  { label: "Work", route: { name: "work" } },
-  { label: "Events", route: { name: "events" } },
-  { label: "Settings", route: { name: "settings" } },
-];
-
-interface NavProps {
-  route: Route;
-  /** Work items needing a human — the badge on the Work tab. */
-  needsYouCount: number;
-  daemons: DaemonStatus[];
-  stream: StreamState;
-  onRefresh: () => void;
-}
-
-export function Nav({ route, needsYouCount, daemons, stream, onRefresh }: NavProps) {
-  return (
-    <nav className="nav lp-nav">
-      <div className="lp-nav-brand">
-        the-loop <span>control plane</span>
-      </div>
-      <div className="lp-nav-tabs">
-        {TABS.map((tab) => {
-          const active =
-            tab.route.name === route.name || (tab.route.name === "work" && route.name === "standing");
-          return (
-            <a key={tab.label} className="lp-tab" href={hrefFor(tab.route)} aria-current={active ? "page" : undefined}>
-              {tab.label}
-              {tab.route.name === "work" && needsYouCount > 0 ? (
-                <span className="lp-tab-badge">{needsYouCount}</span>
-              ) : null}
-            </a>
-          );
-        })}
-      </div>
-      <HealthDot daemons={daemons} stream={stream} onRefresh={onRefresh} />
-    </nav>
-  );
-}
 
 /** One word for the whole deployment's health, and the tone of the dot. */
 function healthTone(daemons: DaemonStatus[], stream: StreamState): { tone: string; label: string } {
@@ -84,7 +45,7 @@ function streamLine(stream: StreamState): string {
  * rather than hover state: it opens from the keyboard, stays open while the
  * operator reads it, and needs no positioning code beyond CSS.
  */
-function HealthDot({
+export function HealthDot({
   daemons,
   stream,
   onRefresh,
