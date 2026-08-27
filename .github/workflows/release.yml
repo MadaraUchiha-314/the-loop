@@ -142,3 +142,74 @@ jobs:
 
       - name: Publish to PyPI (Trusted Publishing / OIDC)
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  publish-container:
+    name: Publish the container image to GHCR
+    needs: release
+    # The same gate `publish-pypi` carries: a no-op release publishes neither artifact,
+    # so a `:12.0.0` tag on the registry and `the-loopy-one==12.0.0` on PyPI are always
+    # the same commit (issue-236, R4.2).
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write        # push to ghcr.io/<this repo> — the workflow's own token
+      id-token: write        # OIDC for the provenance attestation
+      attestations: write
+    env:
+      # Lowercase, because a registry reference must be: `github.repository` carries the
+      # owner's display casing.
+      IMAGE: ghcr.io/madarauchiha-314/the-loop
+    steps:
+      # The release job has already pushed `v<version>`, and its `cli/pyproject.toml`
+      # carries the bumped version — so the image installs the released code, and
+      # `/api/v1/health` reports the version this job tagged it with.
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ needs.release.outputs.version }}
+
+      - uses: docker/setup-qemu-action@v3     # arm64 under emulation; the deps are wheels
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # `type=semver,value=` supplies the version explicitly: this job is triggered by a
+      # push to main, so the git ref metadata-action would otherwise read is `main`.
+      - name: Tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}},value=v${{ needs.release.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=v${{ needs.release.outputs.version }}
+            type=semver,pattern={{major}},value=v${{ needs.release.outputs.version }}
+            type=raw,value=latest
+
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Containerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # What makes the published image checkable against this workflow run — the
+      # registry-side equivalent of PyPI's Trusted Publishing (decision-019).
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true

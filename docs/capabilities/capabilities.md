@@ -13,7 +13,7 @@ PR** as the work item that changes behaviour (a ready-to-ship gate item).
 | [process-graph](process-graph.md) | The same loop made executable: nodes, entry/exit hooks, declared edges, the human gate, and the forced-transition escape hatch. |
 | [review-loop](review-loop.md) | Self and critic review rounds before a human: the procedure, and how a configured critic harness is actually invoked. |
 | [capability-docs](capability-docs.md) | This layer itself: the organized view of specs and its fold-in gate. |
-| [distribution](distribution.md) | Shipping the-loop as a Claude Code and Cursor plugin from one repo. |
+| [distribution](distribution.md) | Shipping the-loop as a Claude Code and Cursor plugin, and its service as a container image, from one repo. |
 | [cli](cli.md) | The `the-loop` Python CLI companion and its commands. |
 | [control-plane](control-plane.md) | The core → API → clients layering: the HTTP API service, the service-routed CLI, the MCP endpoint, and the statically-hostable UI. |
 | [sdk](sdk.md) | the-loop as a component of somebody else's Python service: the importable capability surface, the mountable router, and the environment contract. |
@@ -25,7 +25,7 @@ PR** as the work item that changes behaviour (a ready-to-ship gate item).
 | [self-diagnosis](self-diagnosis.md) | the-loop filing redacted issues for its own failures: event-log detection, an isolated diagnosis agent, never-armed issue creation (opt-in, default off). |
 | [testing-and-contracts](testing-and-contracts.md) | The testing plan and the verification node (test-type matrix, environment, committed evidence), Gherkin scenario docstrings, the queryable scenario view, contract-first APIs. |
 | [design-artifacts](design-artifacts.md) | UI/UX design artifacts (Figma / HTML prototypes) in the design phase. |
-| [release-publishing](release-publishing.md) | Automatic semantic releases and PyPI publishing of the CLI. |
+| [release-publishing](release-publishing.md) | Automatic semantic releases; the CLI to PyPI and the service image to GHCR. |
 | [documentation](documentation.md) | The docs site: its information architecture, the authored-not-generated rule, and the docs↔code parity test. |
 | [token-economy](token-economy.md) | Token/cost-reduction levers (model routing, output verbosity, disclosure, sub-agents, telemetry); advisory, never at the expense of rigor. |
 | [writing-style](writing-style.md) | How the artifacts a human reads are written: the `the-loop:writing` skill, the document spine, the diagram-first rule and the formal-language carve-out. No length limits. |

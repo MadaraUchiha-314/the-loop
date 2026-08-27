@@ -28,6 +28,21 @@ the-loop --version
 The version is derived from the installed package metadata, not a hardcoded string, so it
 always reports what you actually have.
 
+## From a container image
+
+For the **control-plane service** alone there is nothing to install at all:
+
+```bash
+docker run -d -p 127.0.0.1:4114:4114 -v the-loop-data:/data \
+  ghcr.io/madarauchiha-314/the-loop:latest
+```
+
+The image is published to GHCR on every release, carries the same version as the PyPI
+distribution, and starts the service with a config it seeds into `/data` — which the
+[dashboard](https://madarauchiha-314.github.io/the-loop/ui/) then edits. It hosts the
+control plane only: no harness binary, so no agent sessions. See
+[running in a container](/cli/container).
+
 ## Upgrading (and installing the plugin)
 
 Once the CLI is on the machine it installs the rest of the-loop — and itself:

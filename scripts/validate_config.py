@@ -53,6 +53,12 @@ SCHEMA_TARGETS = [
         [
             ROOT / ".the-loop" / "cli-config.yaml",
             ROOT / "skills" / "the-loop" / "templates" / "cli-config.yaml",
+            # What the CONTAINER image seeds on its first start (issue-236). It is a
+            # config the-loop writes into somebody else's machine, exactly as the
+            # harness-config default above is — so it is validated here too, and its
+            # semantics (the exposure guard, the untouched CORS allowlist, the state
+            # root inside the volume) in cli/tests/test_container.py.
+            ROOT / "container" / "cli-config.default.yaml",
         ],
     ),
 ]

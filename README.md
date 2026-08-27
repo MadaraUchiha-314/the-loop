@@ -140,8 +140,22 @@ The graph **assigns as well as judges**: entering a node pushes that node's assi
 where the item stands, what to produce, the exact claim command — into the session bound to
 that loop.
 
+The control-plane service alone needs no install at all — it is published as a container
+image on every release:
+
+```bash
+docker run -d -p 127.0.0.1:4114:4114 -v the-loop-data:/data \
+  ghcr.io/madarauchiha-314/the-loop:latest
+```
+
+That is the API, its `/mcp` endpoint and the config the
+[dashboard](https://madarauchiha-314.github.io/the-loop/ui/) edits — not the harness, so
+it drives no sessions of its own
+([running in a container](https://madarauchiha-314.github.io/the-loop/cli/container)).
+
 Full reference: **[the-loop CLI](https://madarauchiha-314.github.io/the-loop/cli/)** ·
 [installation](https://madarauchiha-314.github.io/the-loop/cli/installation) ·
+[the container image](https://madarauchiha-314.github.io/the-loop/cli/container) ·
 [getting started](https://madarauchiha-314.github.io/the-loop/cli/getting-started) ·
 [concepts](https://madarauchiha-314.github.io/the-loop/cli/concepts) ·
 [every command](https://madarauchiha-314.github.io/the-loop/cli/commands/) ·

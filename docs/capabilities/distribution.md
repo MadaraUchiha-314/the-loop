@@ -1,7 +1,8 @@
 # Capability: distribution
 
-> Shipping the-loop as an installable plugin for **Claude Code and Cursor** from a
-> single repository — no bespoke marketplace publishing.
+> Shipping the-loop as an installable plugin for **Claude Code and Cursor**, and its
+> control-plane service as a container image, from a single repository — no bespoke
+> marketplace publishing.
 
 ## What it is
 
@@ -88,6 +89,30 @@ validating a config, never copied into the projects the-loop is run on.
   then `<state.root>/sessions/`) may be tidied away, but the daemon keeps READING what is
   there until each work item has been written forward, because an empty ledger would
   re-forward every watched thread (issue-106, issue-128).
+- The **control-plane service** SHALL also ship as a container image at
+  `ghcr.io/madarauchiha-314/the-loop` (issue-236), published by the release workflow
+  beside the PyPI distribution and gated on the same "a release happened" output, so an
+  image tag and a PyPI version are always the same commit. It SHALL be built for
+  `linux/amd64` and `linux/arm64`, tagged `latest`/`<major>`/`<major>.<minor>`/`<version>`,
+  labelled with its OCI source and version, and accompanied by a build-provenance
+  attestation pushed to the registry.
+- The image SHALL host the **control plane and nothing else**: the API, its `/mcp`
+  endpoint and the config surface, with no harness binary, `tmux` or `git` — so it drives
+  no agent sessions. It SHALL run as a non-root user and SHALL open no ingress on its own:
+  the receiver, the poller and standing sessions stay the opt-ins `the-loop start`
+  already makes them.
+- WHEN the container starts and its configured CLI config does not exist THEN the
+  entrypoint SHALL seed it from the image's container defaults and say so; IF the file
+  exists THEN it SHALL be left byte-identical, so an operator's edits — and the
+  dashboard's writes — survive a restart and an image upgrade.
+- The container's default config SHALL be a **checked-in, schema-validated file** whose
+  only opinions are the state root (inside the `/data` volume) and the bind: everything
+  else inherits the package default. Because a loopback bind inside a container's network
+  namespace is reachable by nothing, it SHALL set `service.host: 0.0.0.0` with
+  `service.exposed: true` — clearing the exposure guard **in configuration the operator
+  can read and change**, never in code — and the entrypoint SHALL state on **every** start
+  that the published port is now the boundary
+  ([decision-102](../decisions/decision-102.md)).
 - A CLI config that lives in the operator's **home directory** is outside upgrade's
   reach (it reconciles project files). Upgrade SHALL say so and print what to paste,
   and the runtime SHALL stay correct for an un-migrated config — every key added this
@@ -102,6 +127,7 @@ validating a config, never copied into the projects the-loop is run on.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-236 | The control-plane service ships as a container image on GHCR: a two-stage `Containerfile`, a seeded-once container config that moves the network boundary to the publish flag, a CI build-and-run gate on every pull request, and a `publish-container` release job with multi-arch build and provenance | [spec](../specs/issue-236/), [decision-102](../decisions/decision-102.md), [container](../cli/container.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/236) |
 | issue-220 | Config schemas made internal to the plugin (`manifest.schemasDir`); init stops copying up to 118 KB of them into each project, upgrade deletes the copies already there, and scaffolded configs carry a `# yaml-language-server: $schema=` modeline instead | [spec](../specs/issue-220/), [decision-080](../decisions/decision-080.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/220) |
 | issue-152 | The **Claude Code** plugin became installable and upgradable from the CLI (`the-loop install` / `upgrade`), at user or project scope, without opening a session — the terminal-side counterpart to the marketplace routes. Cursor stays in-editor-only, split out as issue-157 | [spec](../specs/issue-152/), [decision-057](../decisions/decision-057.md), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/152) |
 | issue-106 | A key whose default changes behaviour (`routing.control.requireStartCommand`) is reported as **needs-user**, not silently added; the `state`/`control` blocks are added with defaults and the poll-state move is offered, not forced | [spec](../specs/issue-106/), [decision-040](../decisions/decision-040.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/106) |

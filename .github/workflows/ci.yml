@@ -63,3 +63,63 @@ jobs:
       # `build` runs `tsc --noEmit` first, so this covers the type check too.
       - name: Build
         run: bun run build
+
+  # The container image (issue-236). Built AND run on every pull request: the release
+  # workflow must never be the first place `Containerfile` is exercised, and the only
+  # claims worth making about an image — that it starts, serves, and stops — cannot be
+  # made without running it. Single-arch here; the release job does amd64 + arm64.
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Containerfile
+          push: false
+          load: true
+          tags: the-loop:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The end-to-end row of docs/specs/issue-236/testing-plan.md (T4): a container
+      # started from nothing seeds its config, serves /api/v1/health, says where the
+      # network boundary went, and exits on SIGTERM instead of being killed.
+      - name: Run it, and read the service back
+        run: |
+          set -euo pipefail
+          docker run -d --name the-loop-ci -p 127.0.0.1:4114:4114 the-loop:ci
+
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:4114/api/v1/health -o health.json && break
+            sleep 1
+          done
+          cat health.json
+          grep -q '"status":"ok"' health.json
+
+          # The entrypoint seeded the config it is serving from, into the volume path.
+          docker exec the-loop-ci test -f /data/cli-config.yaml
+          docker exec the-loop-ci grep -q 'exposed: true' /data/cli-config.yaml
+
+          # …and warned, on stderr, about the one thing the image cannot enforce.
+          docker logs the-loop-ci 2>&1 | grep -q -- '-p 127.0.0.1:4114:4114'
+
+          # The image doubles as the CLI.
+          docker run --rm the-loop:ci the-loop --version
+
+          # PID 1 takes SIGTERM itself: a shell swallowing it would leave `docker stop`
+          # to the 10s timeout and a 137 exit.
+          docker stop --time 10 the-loop-ci
+          test "$(docker inspect -f '{{.State.ExitCode}}' the-loop-ci)" = "0"
+
+      - name: Container logs
+        if: always()
+        run: docker logs the-loop-ci 2>&1 || true
+
+      - name: Remove the container
+        if: always()
+        run: docker rm -f the-loop-ci || true

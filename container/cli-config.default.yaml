@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/MadaraUchiha-314/the-loop/main/.the-loop/cli-config.schema.json
+# container/cli-config.default.yaml — the CLI config the CONTAINER starts with.
+#
+# The image copies this to $THE_LOOP_CLI_CONFIG (/data/cli-config.yaml) the first time it
+# starts, and never again: from then on the file is yours. Edit it here, or from the
+# control-plane dashboard's Settings screen — saved changes are spliced into this text, so
+# these comments survive. Keys `service.host`, `service.port`, `service.exposed`,
+# `service.cors`, `service.mcp` and `service.hostIngresses` take effect on a restart of
+# the CONTAINER; everything else is live on the next request.
+#
+# It is four keys on purpose. Every option not written here — the port, the CORS
+# allowlist, the MCP endpoint, the ingresses — takes the package's own default, so this
+# file cannot drift from what `pip install the-loopy-one` does. See
+# https://madarauchiha-314.github.io/the-loop/cli/container for the whole picture.
+
+version: "0.6.0"
+
+# Everything the-loop GENERATES goes in the volume, not the container's writable layer:
+# the work-item records, the session handles and the event log outlive `docker rm`.
+state:
+  root: /data/state
+
+service:
+  # A loopback bind inside a container's network namespace is reachable by NOTHING —
+  # not even by the machine running the container — so 0.0.0.0 is the only value here
+  # that yields a service at all, and `exposed: true` is how the config says so out loud
+  # rather than a special case hidden in the code (decision-102).
+  #
+  # The bind is therefore no longer the boundary; the PUBLISH FLAG is. The service carries
+  # no authentication of its own and its API can spawn harness sessions, so publish it to
+  # the loopback address of the machine you run it on:
+  #
+  #     -p 127.0.0.1:4114:4114        reachable from that machine only
+  #     -p 4114:4114                  reachable from every network that machine is on —
+  #                                   only ever behind an auth-terminating gateway
+  host: 0.0.0.0
+  exposed: true

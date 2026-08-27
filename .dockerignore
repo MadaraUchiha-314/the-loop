@@ -1,0 +1,9 @@
+# The build context is `cli/` and `container/` — everything else only invalidates layers.
+# `podman build` reads this file too (it honours .containerignore first, then this).
+*
+!cli/
+!container/
+cli/**/__pycache__/
+cli/**/*.pyc
+cli/.pytest_cache/
+cli/tests/
