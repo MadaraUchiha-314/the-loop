@@ -90,7 +90,38 @@ $ make test
 
 ## T4 — the built image
 
-**Not executed here, and this is the one activity that was not.** This session's egress
+**Executed by the `container` job on [PR #306](https://github.com/MadaraUchiha-314/the-loop/pull/306)** —
+green, in 56s. The image built, ran, served, and stopped:
+
+```console
+the-loop: seeded /data/cli-config.yaml from the container defaults
+the-loop: the service binds every interface INSIDE this container, so the boundary is the
+          port you publish. Loopback of the host machine:  -p 127.0.0.1:4114:4114
+          Anything wider needs an auth-terminating gateway in front of it.
+INFO:     Started server process [1]
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:4114 (Press CTRL+C to quit)
+INFO:     172.17.0.1:52990 - "GET /api/v1/health HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1]
+```
+
+Four assertions are in those twelve lines, and the third is the one no local run could
+make: **`Started server process [1]`** — the service is PID 1, so `docker stop` reached
+uvicorn rather than a shell, and the job's `test "$(docker inspect -f
+'{{.State.ExitCode}}' …)" = "0"` passed instead of timing out to a 137. The other three:
+the config was seeded into `/data`, the boundary banner was printed, and
+`/api/v1/health` answered `200`. The steps between them — `docker exec … grep -q 'exposed:
+true' /data/cli-config.yaml`, the banner grep, and `docker run --rm the-loop:ci the-loop
+--version` — all passed, or the job would have failed on `set -euo pipefail`.
+
+The job also surfaced one thing worth fixing, and it was fixed: `docker stop --time` is
+deprecated in favour of `--timeout`, which the workflow now uses.
+
+### Why it was not run in this session
+
+This session's egress
 policy denies Docker Hub, so no base image can be pulled:
 
 ```console
@@ -105,12 +136,8 @@ $ curl -sS "$HTTPS_PROXY/__agentproxy/status"
 ```
 
 This is exactly why the work item put the build in **CI** rather than only on the release
-path (R4.5): the `container` job in `.github/workflows/ci.yml` builds the image, runs it,
-polls `/api/v1/health`, checks the seeded config and the banner, runs `the-loop --version`
-through it, and asserts a clean `SIGTERM` exit. Its result on this pull request is the
-evidence for this row, and the reviewer should read it there.
-
-What **was** proved locally is everything the image wraps — see T4a.
+path (R4.5) — and why the row above is a record rather than a gap. What was additionally
+proved locally is everything the image wraps: see T4a.
 
 ## T4a — the entrypoint booting the real service (the image's contents, minus the image)
 

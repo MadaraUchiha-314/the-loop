@@ -113,7 +113,7 @@ jobs:
 
           # PID 1 takes SIGTERM itself: a shell swallowing it would leave `docker stop`
           # to the 10s timeout and a 137 exit.
-          docker stop --time 10 the-loop-ci
+          docker stop --timeout 10 the-loop-ci
           test "$(docker inspect -f '{{.State.ExitCode}}' the-loop-ci)" = "0"
 
       - name: Container logs

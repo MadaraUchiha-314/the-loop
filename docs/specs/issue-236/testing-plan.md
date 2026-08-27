@@ -77,9 +77,9 @@ overrides: {}
 - [x] T10 — `test_an_operators_config_survives_a_restart_untouched`, and the same
   property observed against the live service (T4a)
 - [x] T12 — `make lint`, `make format-check`, `make typecheck`, `make validate`, `make test`
-- [ ] T4 — build the image and `GET /api/v1/health` from it — **not executed here**: this
-  session's egress policy denies Docker Hub, so no base image can be pulled. Proven by the
-  `container` job in CI on this pull request (which is why R4.5 put it there)
+- [x] T4 — build the image and `GET /api/v1/health` from it — run by the `container` job
+  in CI, green on the pull request. Not runnable in the authoring session (its egress
+  policy denies Docker Hub), which is why R4.5 put the build in CI in the first place
 - [x] T4a — the entrypoint booting the **real service**, seeding, serving, and exiting on
   `SIGTERM`: everything the image wraps, minus the image
 - [x] T11 — the config surface the dashboard drives (`GET`/`POST /api/v1/config`, the
@@ -97,12 +97,10 @@ All output in [`evidence/verification.md`](evidence/verification.md).
 | T12 | `make lint` · `make format-check` · `make typecheck` · `make validate` · `make test` | pass — 0 lint errors over 907 markdown files, 261 formatted, 0 type errors, 8 configs valid, **2713 passed / 2 skipped** | § T12 |
 | T4a | `sh container/entrypoint.sh` against a live `the_loop.api.serve` | pass — seeded, warned, bound `0.0.0.0:4114`, `/api/v1/health` → `{"status":"ok","version":"12.0.0"}`, clean `SIGTERM` exit in ~3s | § T4a |
 | T11 | `GET`/`POST /api/v1/config` and the dashboard-origin preflight | pass — read, wrote (`restartRequired: ["service.port"]`), comments preserved by the splice, `access-control-allow-origin` echoed, state under `/data/state` | § T11 |
-| T4 | `docker build -f Containerfile …` | **not executed** — egress policy denies Docker Hub (`403 to CONNECT`, `production.cloudfront.docker.com`) | § T4 |
+| T4 | the `container` job on [PR #306](https://github.com/MadaraUchiha-314/the-loop/pull/306) | pass — image built and run in 56s: seeded `/data/cli-config.yaml`, banner printed, `GET /api/v1/health` → `200`, `the-loop --version` through the image, **`Started server process [1]`** and a clean `docker stop` (exit 0) | § T4 |
 
-**Not executed:** T4 (build and run the image) — the container runtime in this environment
-cannot pull a base image. Not replanned and not escalated: the pull request's own
-`container` CI job performs exactly this activity on a runner that can, which is the
-arrangement R4.5 asked for. The reviewer reads its result on the PR; everything the image
-wraps was proved locally as T4a and T11.
+**Not executed:** nothing. T4 could not run in the authoring session — that environment's
+egress policy denies Docker Hub — so it ran where the plan said it would, on CI, and its
+output is quoted in the evidence file rather than left as a link that expires.
 
 ## Review comments

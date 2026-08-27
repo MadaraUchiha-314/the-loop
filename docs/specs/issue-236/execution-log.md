@@ -97,10 +97,13 @@ comments, the published origin's preflight echoed, state under `/data/state`, a 
 `SIGTERM` exit, and a restart that applied the saved `service.port` while leaving the
 config byte-identical.
 
-One activity was **not** executed: the image build itself. This environment's egress
-policy denies Docker Hub (`403 to CONNECT`, `production.cloudfront.docker.com`), so no
-base image can be pulled here. That row is the CI `container` job on this pull request —
-which is the arrangement R4.5 asked for, not a workaround for it.
+The one activity the authoring session could not run — the image build itself, since its
+egress policy denies Docker Hub — ran where the plan said it would: the `container` job on
+[#306](https://github.com/MadaraUchiha-314/the-loop/pull/306), green in 56s, with the
+image seeding its config, printing the banner, answering `GET /api/v1/health` with `200`,
+running `the-loop --version`, and stopping cleanly from **`Started server process [1]`** —
+the PID-1 assertion no local run could make. Its output is quoted in the evidence file
+rather than left as a link that expires.
 
 ## Documentation
 
@@ -148,9 +151,19 @@ Two things for the owner at the gate:
 - **Checkpoint/tests:** `make lint` · `make format-check` · `make typecheck` ·
   `make validate` · `make test` — all green (2713 passed, 2 skipped). The entrypoint was
   additionally driven against a live service; see the evidence file.
-- **Next:** the owner's review at the PR gate. The `container` CI job's result on the PR
-  is the T4 row of the testing plan.
-- **Blockers:** none. One activity deferred to CI with its reason recorded.
+- **Next:** the owner's review at the PR gate.
+- **Blockers:** none.
+
+### 2026-08-27 — CI green; the image built and ran
+
+- **Phase:** needs-review
+- **Did:** recorded the `container` job's output as the T4 evidence (the row is a record
+  now, not a deferral) and took the one finding it surfaced — `docker stop --time` is
+  deprecated in favour of `--timeout`.
+- **Checkpoint/tests:** all four checks green on the pull request — `checks`, `ui`,
+  `gate`, `container`.
+- **Next:** the owner's review at the PR gate.
+- **Blockers:** none.
 
 ## Verification results
 
