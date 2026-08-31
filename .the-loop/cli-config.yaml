@@ -55,10 +55,12 @@ routing:
   # resume`, which posts the same keyword back to the ticket). A comment
   # carrying a keyword is executed by the-loop, never forwarded to the agent.
   # Set requireStartCommand: false for the pre-issue-106 label-alone spawn.
-  # The keywords left out below keep their defaults — including
-  # `the-loop add-collaborator @login` / `remove-collaborator` (issue-307),
-  # which grant and revoke WORK-ITEM COLLABORATOR status: that login's comments
-  # on that one work item become input for its session, and nothing else.
+  # EVERY declared keyword is spelled out below, at its default, in the order
+  # the docs use. Omitted keys take their defaults, so this block was behaving
+  # identically when it listed only the first four — but a keyword this file
+  # does not name is one an operator reading it does not know exists, and seven
+  # had accumulated that way (PR #308 review). The vocabulary is the daemon's
+  # control surface: it belongs in the config that declares the daemon.
   control:
     enabled: true
     requireStartCommand: true
@@ -67,6 +69,27 @@ routing:
       stop: "the-loop stop"
       pause: "the-loop pause"
       resume: "the-loop resume"
+      # Answers the graph's phase-selection gate and freezes the choice
+      # (issue-177) — it touches no session, so it neither arms nor disarms.
+      execute: "the-loop execute"
+      # Arm as `start` AND select the outer loop this item walks: the
+      # CONTRIBUTION loop (issue-185, joins an in-progress item as a guest),
+      # the AD-HOC loop (issue-225, no PDLC process at all), or the REVIEW
+      # loop (issue-279, the-loop reviews a PR and changes no code).
+      contribute: "the-loop contribute"
+      do: "the-loop do"
+      review: "the-loop review"
+      # DESTRUCTIVE (issue-186): releases this work item's LOCAL resources —
+      # every endpoint's tmux session, the workspace checkout (uncommitted work
+      # in it is GONE), the machine-local record. Keeps the portable record.
+      cleanup: "the-loop cleanup"
+      # WORK-ITEM COLLABORATORS (issue-307): grant a login the right to be
+      # INPUT on THIS work item — their comments reach its session — and
+      # nothing else. A collaborator cannot command the-loop (these two
+      # included, so no transitive grant), cannot arm or spawn a session, and
+      # cannot answer a human gate; those keep reading authorizedUsers alone.
+      add-collaborator: "the-loop add-collaborator"
+      remove-collaborator: "the-loop remove-collaborator"
   # Where a session the daemon drives takes its ANSWERS from (issue-134).
   # Until this existed, a spawned session was never told whether a human was
   # at its terminal, so the model guessed — and both guesses fail: asking
