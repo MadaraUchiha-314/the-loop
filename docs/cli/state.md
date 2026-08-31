@@ -25,7 +25,7 @@ working directory), split by whether it travels:
 .the-loop/
 ├── portable/
 │   ├── index.json                 # what this directory holds, derived — tracked
-│   └── github-octo-repo-15.json   # one per work item: control + poll state — tracked
+│   └── github-octo-repo-15.json   # one per work item: control, poll, graph, collaborators — tracked
 ├── local/
 │   └── github-octo-repo-15.json   # that item's session handle(s) — never tracked
 ├── logs/
@@ -69,7 +69,7 @@ them, is what makes the `.gitignore` recipe three lines instead of a puzzle
 
 | Path | Written by | Holds | Travels? |
 |---|---|---|---|
-| `<root>/portable/<slug>.json` | execution control + the poller | what was armed, and which comments are already seen | **portable** |
+| `<root>/portable/<slug>.json` | execution control + the poller | what was armed, which phases were frozen, who was invited onto the item, and which comments are already seen | **portable** |
 | `<root>/portable/index.json` | the same store, derived | one entry per record: ref, url, file, sections | **portable** |
 | `<root>/local/<slug>.json` | the session registry | conversation id, `cwd`, tmux target, status, and the item's pull requests with their own sessions | **local** |
 | `<root>/local/standing/<name>.json` | the standing-session registry (issue-277, opt-in) | per standing session: harness, conversation id, `cwd`, tmux target, status, the Slack channel/thread its chat runs in — and, for a session created through the API, its whole definition | **local** |
@@ -125,6 +125,17 @@ item itself.
       {"id": "design", "phase": "design", "skipped": true, "selectable": true},
       {"id": "design-critic-review", "phase": "", "skipped": true, "selectable": true, "optIn": true},
       {"id": "verification", "phase": "verification", "skipped": false, "selectable": false}
+    ]
+  },
+  "collaborators": {
+    "users": [
+      {
+        "login": "dana",
+        "addedBy": "octocat",
+        "addedAt": "2026-08-31T16:20:11Z",
+        "source": "comment",
+        "note": "https://github.com/octo/repo/issues/15#issuecomment-1"
+      }
     ]
   }
 }
@@ -201,6 +212,30 @@ You lose the portable, checkout-free view of the item's agreed shape, and `sessi
 with it: this file is the **only** copy the daemon reads, so the item's pull requests fall
 back to routing by the operator's configured default.
 
+### `collaborators` — who else may speak to this work item
+
+| Field | Meaning |
+|---|---|
+| `login` | the GitHub login, canonicalised: no `@`, lower-cased (GitHub logins are case-insensitive) |
+| `addedBy` | who granted it — the authorized user who typed the keyword, or the local user who ran the CLI |
+| `addedAt` | when |
+| `source` | `comment` or `cli` |
+| `note` | the granting comment's URL, when there was one |
+
+Written when an authorized user issues `the-loop add-collaborator @login`
+([issue-307](https://github.com/MadaraUchiha-314/the-loop/issues/307)), from the ticket or
+from the CLI. Each login on this list may be **input** on this work item — their comments
+reach its session — and nothing else: no control command, no spawn, no arming, no human
+gate. It is here rather than in the session record for the same reason `control` is: *an
+authorized user invited Dana onto this item* is true on any machine.
+
+Cleared when the work item closes, and by `the-loop sessions reset`. `the-loop cleanup`
+keeps it, as it keeps `control`: cleanup releases *local resources*, and this is tracking.
+
+**If you delete it:** everyone invited onto the item goes quiet. Their comments are
+dropped at the ingress again — no error, exactly the behaviour of a work item nobody was
+invited to — and an authorized user has to grant again.
+
 ### `poll` — what the poller has already seen
 
 | Field | Meaning |
@@ -255,7 +290,7 @@ tracking?"* without opening every record ([issue-130](https://github.com/MadaraU
 |---|---|
 | `ref` / `url` | the work item, and its page — same rule as the record above (`url` is absent when none can be derived) |
 | `file` | the record's name inside `portable/` |
-| `sections` | which of `control` / `poll` that record actually holds |
+| `sections` | which of `control` / `poll` / `graph` / `collaborators` that record actually holds |
 | `sealed` | present only on an [upgrade tombstone](#upgrading-from-the-pre-issue-128-layout), which is why it has no sections |
 
 **Lifecycle.** Rewritten after every record write and every removal, by scanning the

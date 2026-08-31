@@ -55,6 +55,10 @@ routing:
   # resume`, which posts the same keyword back to the ticket). A comment
   # carrying a keyword is executed by the-loop, never forwarded to the agent.
   # Set requireStartCommand: false for the pre-issue-106 label-alone spawn.
+  # The keywords left out below keep their defaults — including
+  # `the-loop add-collaborator @login` / `remove-collaborator` (issue-307),
+  # which grant and revoke WORK-ITEM COLLABORATOR status: that login's comments
+  # on that one work item become input for its session, and nothing else.
   control:
     enabled: true
     requireStartCommand: true

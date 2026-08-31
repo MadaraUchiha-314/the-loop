@@ -7,7 +7,8 @@ true on any machine::
       "ref": "github:octo/repo#15",
       "url": "https://github.com/octo/repo/issues/15",
       "control": {"command": "start", "actor": "octocat", …},
-      "poll":    {"seenComments": [...], "commentAttempts": {...}, …}
+      "poll":    {"seenComments": [...], "commentAttempts": {...}, …},
+      "collaborators": {"users": [{"login": "dana", "addedBy": "octocat", …}]}
     }
 
 The ``url`` is a navigation aid derived from the ref (issue-130), because these
@@ -61,7 +62,15 @@ from .state import LegacyLayout
 
 logger = logging.getLogger("the-loop.workitem")
 
-__all__ = ["CONTROL", "GRAPH", "INDEX_FILE", "POLL", "SEALED", "WorkItemStore"]
+__all__ = [
+    "COLLABORATORS",
+    "CONTROL",
+    "GRAPH",
+    "INDEX_FILE",
+    "POLL",
+    "SEALED",
+    "WorkItemStore",
+]
 
 #: The two sections of a work-item record.
 CONTROL = "control"
@@ -73,9 +82,17 @@ POLL = "poll"
 #: it travels with `control` and survives a hand-off to another host.
 GRAPH = "graph"
 
+#: The logins an authorized user granted collaborator status on this work item
+#: (issue-307). **Portable** for the same reason as `control`: "an authorized user
+#: invited Dana onto this item" is true on any machine. See
+#: :mod:`the_loop.collaborators` — and note it is unrelated to
+#: `.the-loop/collaborators.yaml`, which names the project's stewards and their roles
+#: for the plugin and is never read by the daemon.
+COLLABORATORS = "collaborators"
+
 #: Every section a record may carry. A record with none of them is deleted
 #: rather than kept as an empty husk.
-SECTIONS = (CONTROL, POLL, GRAPH)
+SECTIONS = (CONTROL, POLL, GRAPH, COLLABORATORS)
 
 #: The directory's index (issue-130) — one file listing every record beside it,
 #: so ``portable/`` answers "what is being tracked?" without opening each record.

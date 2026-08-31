@@ -39,7 +39,7 @@ import subprocess
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Sequence
 
 from .. import __version__, eventlog
 from ..authz import is_authorized, is_self_authored, mark_self_authored
@@ -50,6 +50,9 @@ from ..sessions import SessionRegistry, WorkItemRef
 from ..workitem import POLL, WorkItemStore
 from ..webhook.dispatcher import Dispatcher
 from .base import Comment, PollProvider, ProviderError, WorkItem
+
+if TYPE_CHECKING:  # the roster is the dispatcher's, read here (issue-307)
+    from ..collaborators import CollaboratorStore
 
 logger = logging.getLogger("the-loop.poll")
 
@@ -485,6 +488,7 @@ class Poller:
         authorized_users: Sequence[str] = (),
         control: Optional[ControlConfig] = None,
         control_store: Optional[ControlStore] = None,
+        collaborator_store: Optional["CollaboratorStore"] = None,
         heartbeat: Optional[Callable[["PollSummary"], None]] = None,
         comment_runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
     ):
@@ -515,6 +519,7 @@ class Poller:
         # so a hot-reloaded control policy is honoured without a restart.
         self._control = control
         self._control_store = control_store
+        self._collaborator_store = collaborator_store
         # Work items whose abandoned comments this *run* has already considered
         # re-arming (issue-146) — the check is once per item per run, and the
         # re-arm itself only fires when a different CLI version recorded the
@@ -548,6 +553,17 @@ class Poller:
         if self._control_store is not None:
             return self._control_store
         return self.dispatcher.control_store
+
+    @property
+    def collaborator_store(self) -> "CollaboratorStore":
+        """The work-item collaborator rosters (issue-307).
+
+        The dispatcher's, exactly as ``control_store`` is: one roster per work item,
+        in one directory, whichever ingress reads it.
+        """
+        if self._collaborator_store is not None:
+            return self._collaborator_store
+        return self.dispatcher.collaborator_store
 
     # -- one cycle --------------------------------------------------------------
 
@@ -824,9 +840,15 @@ class Poller:
         for comment in comments:
             if not comment.id or comment.id in seen:
                 continue
-            if not is_authorized(
+            # Two ways to be an input, one of them narrower (issue-307): the
+            # global allow-list, or a collaborator grant on THIS item's refs. The
+            # grant buys delivery and nothing else — `spawn_authorized` above and
+            # `_pending_control_ids` below keep asking `is_authorized` alone, so a
+            # collaborator can neither arm the item nor command the daemon.
+            allowed = is_authorized(
                 comment.author, self.authorized_users
-            ) or is_self_authored(comment.body):
+            ) or self.collaborator_store.permits(comment.author, refs)
+            if not allowed or is_self_authored(comment.body):
                 self.state.resolve_comment(ref, comment.id)
                 continue
             candidates.append(comment)

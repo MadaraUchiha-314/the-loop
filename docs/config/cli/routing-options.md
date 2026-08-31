@@ -302,6 +302,54 @@ closure by an authorized user cleans up by itself. A closure the **poller** dete
 reconstructed from the item's state and names nobody — so on a polling deployment every
 closure defers, and this keyword is how cleanup happens.
 
+### `control.keywords.add-collaborator`
+
+- **Type:** `string`
+- **Default:** `the-loop add-collaborator`
+- **Related:** [`the-loop add-collaborator`](/cli/commands/add-collaborator) · [webhook-triggers](/capabilities/webhook-triggers)
+
+Grant a GitHub login **work-item collaborator** status on this work item
+([issue-307](https://github.com/MadaraUchiha-314/the-loop/issues/307)):
+
+```text
+the-loop add-collaborator @dana
+the-loop add-collaborator @dana @ann — they know the retry path
+```
+
+From then on that login's comments on this work item — and on the pull requests whose
+events already route to its session — are delivered to the session as **agent input**.
+
+That is the whole grant. A work-item collaborator cannot issue a control command (these
+two included, so a grant is never transitive), cannot spawn or arm a session, and cannot
+satisfy a human gate: `phase-selection`, `goal-definition`, the review brief, artifact
+approval and security sign-off all read
+[`authorizedUsers`](#authorizedusers), and a grant puts nobody on that list.
+
+Only a **named** login in `authorizedUsers` may grant. A grant is scoped to **one** work
+item — the same person on another one needs another grant — and is cleared when the item
+closes. Logins are matched case-insensitively and stored without the `@`.
+
+Several `@login` tokens may follow one keyword, and the keyword may appear more than once
+in a body; scanning stops at the first token after the keyword that is not an `@login`,
+so prose after the names is ignored. A body naming **no** valid login is refused
+(`control.rejected` / `missing-collaborator`) — and only GitHub's login shape counts, so
+nothing else from the comment reaches the roster, a path or an argv.
+
+:::tip Not `.the-loop/collaborators.yaml`
+That file names a *project's* stewards and their roles for the plugin, and the daemon
+never reads it. This is runtime state: a roster per work item.
+:::
+
+### `control.keywords.remove-collaborator`
+
+- **Type:** `string`
+- **Default:** `the-loop remove-collaborator`
+- **Related:** [`the-loop remove-collaborator`](/cli/commands/remove-collaborator)
+
+Revoke a grant. Same authorization — a named login in `authorizedUsers`, never the
+collaborator themselves — and it takes effect on the next event, because the roster is
+read per event and never cached in a running session.
+
 Keywords match as **whole tokens, case-insensitively, anywhere** in a comment body.
 Setting one to an empty string disables that command. A comment carrying **two different**
 keywords is refused outright — nothing executed, nothing forwarded. Commands live in

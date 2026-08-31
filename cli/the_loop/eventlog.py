@@ -77,6 +77,13 @@ EVENT_TYPES: Dict[str, str] = {
         "A verified event was not routed (reason: disabled-event | "
         "duplicate-delivery | no-work-item | unauthorized-actor; actor)."
     ),
+    "routing.collaborator": (
+        "A verified event was routed on a WORK-ITEM COLLABORATOR grant rather than "
+        "`routing.authorizedUsers` (gh_event, actor, work_items) — issue-307. An "
+        "authorized user granted this login the right to be *input* on these work "
+        "items: the comment reaches the session, and the control and spawn seams "
+        "still refuse it everything else."
+    ),
     "routing.linkage_dropped": (
         "A work-item ref an event named ONLY through the issue-<n> branch "
         "convention does not exist, so it was removed from that event's work "
@@ -93,8 +100,10 @@ EVENT_TYPES: Dict[str, str] = {
     "dispatch.dropped": (
         "A routed event was discarded at dispatch (reason: duplicate-delivery "
         "| already-processed | spawn-policy | awaiting-start | session-paused "
-        "| session-vanished | no-adapter | session-occupied | "
-        "work-item-not-found | no-work-item). "
+        "| collaborator-no-spawn | session-vanished | no-adapter | "
+        "session-occupied | work-item-not-found | no-work-item). "
+        "`collaborator-no-spawn` (issue-307) means the event reached dispatch on a "
+        "work-item collaborator grant, which admits input and never a new session. "
         "`work-item-not-found` (issue-269) means every work item the event named "
         "was a branch-invented ref the provider says does not exist, and "
         "`no-work-item` that it named none to begin with; in both cases the "
@@ -140,16 +149,20 @@ EVENT_TYPES: Dict[str, str] = {
     # -- execution control (source: any; issue-106) ---------------------------
     "control.command": (
         "A control command was recognised and applied (work_item, command: "
-        "start | stop | pause | resume, source: comment | cli, actor, effect: "
-        "spawned | resumed | paused | stopped | noop) — the record of who asked "
-        "for a run to start or stop."
+        "start | stop | pause | resume | add-collaborator | remove-collaborator, "
+        "source: comment | cli, actor, effect: spawned | resumed | paused | "
+        "stopped | noop | granted | revoked | already-granted | "
+        "not-a-collaborator) — the record of who asked for a run to start or "
+        "stop, and (issue-307, with `collaborator`: the login) of who was "
+        "invited onto a work item or removed from it."
     ),
     "control.rejected": (
         "A control command was recognised but refused (work_items, command, "
         "source, actor, reason: spawn-policy | awaiting-start | "
-        "nothing-to-resume | unauthorized-actor) — e.g. a start for a work item "
-        "that is not armed for autonomous execution (which is refused without "
-        "being remembered), or a command with no named authorized actor."
+        "nothing-to-resume | unauthorized-actor | missing-collaborator) — e.g. a "
+        "start for a work item that is not armed for autonomous execution (which "
+        "is refused without being remembered), a command with no named authorized "
+        "actor, or an `add-collaborator` naming no valid `@login`."
     ),
     "control.ambiguous": (
         "A comment carried two or more different control keywords, so nothing "
@@ -507,7 +520,8 @@ EVENT_TYPES: Dict[str, str] = {
         "A forwarded comment was resolved because the dispatcher is FINISHED "
         "with its delivery, not because it was delivered (work_item, "
         "comment_id, actor, outcome: awaiting-start | session-paused | "
-        "control-executed | control-rejected | control-ambiguous, "
+        "collaborator-no-spawn | control-executed | control-rejected | "
+        "control-ambiguous, "
         "will_retry=False) — issue-270. Either the event was suppressed on "
         "purpose (the work item is not started, or its session is paused) or it "
         "WAS a control command, executed here and never forwarded. The comment "

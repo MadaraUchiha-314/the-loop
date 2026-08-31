@@ -756,6 +756,41 @@ def test_router_drops_event_from_unauthorized_actor():
     assert router.route("issue_comment", _issue_comment_by("me"), "d-2") is not None
 
 
+# -- the second, narrower allow-list (issue-307) --------------------------------
+
+
+def test_router_lets_a_work_item_collaborators_comment_through(tmp_path):
+    """A grant on THIS item makes its author's comment an input for it."""
+    from the_loop.collaborators import CollaboratorStore
+
+    rosters = CollaboratorStore(tmp_path / "portable")
+    rosters.add("github:octo/repo#15", "dana", actor="me")
+    router = Router(events=[], authorized_users=["me"], collaborators=rosters)
+
+    assert router.route("issue_comment", _issue_comment_by("dana"), "d-1") is not None
+    # ...and only on that item: the grant does not travel
+    assert (
+        router.route("issue_comment", _issue_comment_by("dana", number=16), "d-2")
+        is None
+    )
+    # ...and only for that person
+    assert router.route("issue_comment", _issue_comment_by("mallory"), "d-3") is None
+
+
+def test_router_matches_a_grant_case_insensitively(tmp_path):
+    from the_loop.collaborators import CollaboratorStore
+
+    rosters = CollaboratorStore(tmp_path / "portable")
+    rosters.add("github:octo/repo#15", "@Dana", actor="me")
+    router = Router(events=[], authorized_users=["me"], collaborators=rosters)
+    assert router.route("issue_comment", _issue_comment_by("DANA"), "d-1") is not None
+
+
+def test_router_without_rosters_behaves_exactly_as_before():
+    router = Router(events=[], authorized_users=["me"], collaborators=None)
+    assert router.route("issue_comment", _issue_comment_by("dana"), "d-1") is None
+
+
 def test_router_empty_allowlist_fails_closed_for_human_events():
     router = Router(events=[], authorized_users=[])  # nobody authorized
     assert router.route("issue_comment", _issue_comment_by("anyone"), "d-1") is None
@@ -1657,21 +1692,26 @@ def make_control_dispatcher(tmp_path, tmux, **overrides):
     return make_dispatcher(tmp_path, tmux, **overrides)
 
 
-def test_the_settled_vocabulary_is_exactly_the_five_documented_outcomes():
+def test_the_settled_vocabulary_is_exactly_the_six_documented_outcomes():
     """Adding a settlement means adding it here — and to the event catalogue.
 
-    `poll.comment_settled` documents these five as its `outcome` values, and the
+    `poll.comment_settled` documents these six as its `outcome` values, and the
     poller records whatever it is handed without branching on it, so this tuple is
     the only place the vocabulary is stated.
     """
     assert SETTLED_OUTCOMES == (
         "awaiting-start",
         "session-paused",
+        "collaborator-no-spawn",
         "control-executed",
         "control-rejected",
         "control-ambiguous",
     )
-    assert SETTLED_SUPPRESSED == ("awaiting-start", "session-paused")
+    assert SETTLED_SUPPRESSED == (
+        "awaiting-start",
+        "session-paused",
+        "collaborator-no-spawn",
+    )
     catalogued = EVENT_TYPES["poll.comment_settled"]
     for outcome in SETTLED_OUTCOMES:
         assert outcome in catalogued

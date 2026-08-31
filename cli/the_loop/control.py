@@ -21,6 +21,14 @@ available from the CLI (``the-loop sessions start|stop|pause|resume|cleanup``),
 which posts the same keyword back to the ticket so the thread stays a complete
 record of who asked for what.
 
+Since issue-307 the vocabulary also carries two words that touch neither the
+session nor the graph: ``add-collaborator`` and ``remove-collaborator`` grant and
+revoke **work-item collaborator** status — a per-work-item allow-list whose
+members' comments become agent input on that item, and nothing more (see
+:mod:`the_loop.collaborators`). They are the first commands to take an argument,
+and they too have a CLI form (``the-loop add-collaborator @login --work-item …``)
+that posts the same keyword back to the ticket.
+
 ## Why the parser is this narrow
 
 Recognising a command in a comment opens a new trust boundary: comment text can
@@ -31,6 +39,10 @@ The boundary is kept narrow by construction rather than by review:
   of the declared constants or nothing, never a substring of the body, so no
   payload-derived text can reach an argv, a path, a prompt or a work-item ref
   (the item acted on comes from the router's own extraction);
+* the one **argument** any command takes (issue-307's ``@login``) is not an
+  exception to that: it is matched against GitHub's login grammar
+  (:data:`the_loop.collaborators.LOGIN_RE`) and refused if it does not fit, so
+  what reaches a caller is still a fixed-shape token rather than body text;
 * a comment carrying **two different** commands is refused outright rather than
   resolved by precedence — a half-"stop" must not be read as a "start";
 * it is only ever reached **after** the guards that already exist: the
@@ -64,6 +76,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from .authz import mark_self_authored
+from .collaborators import parse_logins
 from .sessions import WorkItemRef
 from .state import LegacyLayout
 from .workitem import CONTROL, GRAPH, WorkItemStore
@@ -71,6 +84,7 @@ from .workitem import CONTROL, GRAPH, WorkItemStore
 logger = logging.getLogger("the-loop.control")
 
 __all__ = [
+    "COLLABORATOR_COMMANDS",
     "COMMANDS",
     "GRAPH_COMMANDS",
     "SPAWN_COMMANDS",
@@ -114,12 +128,35 @@ START, STOP, PAUSE, RESUME, EXECUTE, CONTRIBUTE, CLEANUP, DO, REVIEW = (
     "do",
     "review",
 )
-COMMANDS = (START, STOP, PAUSE, RESUME, EXECUTE, CONTRIBUTE, CLEANUP, DO, REVIEW)
+# The tenth and eleventh (issue-307): the only commands that act on NEITHER the session
+# registry nor the graph, and the first to carry an argument. They grant and revoke
+# **work-item collaborator** status — a per-work-item allow-list whose members' comments
+# become agent input on that item and nothing else. See :mod:`the_loop.collaborators`.
+ADD_COLLABORATOR, REMOVE_COLLABORATOR = ("add-collaborator", "remove-collaborator")
+COMMANDS = (
+    START,
+    STOP,
+    PAUSE,
+    RESUME,
+    EXECUTE,
+    CONTRIBUTE,
+    CLEANUP,
+    DO,
+    REVIEW,
+    ADD_COLLABORATOR,
+    REMOVE_COLLABORATOR,
+)
 
 #: Commands the *graph* acts on rather than the session registry. The
 #: dispatcher records them and then lets the event through, because the thing
 #: that must see the comment is the phase-selection gate.
 GRAPH_COMMANDS = (EXECUTE,)
+
+#: Commands that act on the work item's **collaborator roster** (issue-307) rather than
+#: on its session or its graph. Named as a set for the same reason as the two above: the
+#: dispatcher branches on a constant, and the one class of command that carries an
+#: argument should be recognisable as such wherever it is handled.
+COLLABORATOR_COMMANDS = (ADD_COLLABORATOR, REMOVE_COLLABORATOR)
 
 #: Commands whose effect is **destruction of local state** rather than a
 #: session transition (issue-186). Named as a set so the dispatcher and the
@@ -158,6 +195,11 @@ DEFAULT_KEYWORDS: Dict[str, str] = {
     # `reviewer` all put a `\w` directly after `review`, so none of them
     # matches.
     REVIEW: "the-loop review",
+    # Two words like the rest, and the hyphen inside the second is one of the
+    # characters the boundary rule excludes on either side — so `the-loop
+    # add-collaborators` does not match `the-loop add-collaborator` (issue-307).
+    ADD_COLLABORATOR: "the-loop add-collaborator",
+    REMOVE_COLLABORATOR: "the-loop remove-collaborator",
 }
 
 # What may NOT sit directly against a keyword for it to count as a whole token.
@@ -216,11 +258,20 @@ class ControlResult:
     ``command`` is one of :data:`COMMANDS` or ``None``. ``ambiguous`` is set when
     the body carried two or more *different* commands — the caller must then do
     nothing at all (execute nothing, forward nothing).
+
+    ``subjects`` carries the command's argument for the one class of command that
+    has one (:data:`COLLABORATOR_COMMANDS`, issue-307): the ``@login`` tokens that
+    followed the keyword, canonicalised by
+    :func:`the_loop.collaborators.parse_logins` and therefore each a valid GitHub
+    login or absent. Empty for every other command, and empty for a collaborator
+    command whose body named nobody — which the caller refuses rather than
+    guessing at.
     """
 
     command: Optional[str] = None
     ambiguous: bool = False
     matched: List[str] = field(default_factory=list)
+    subjects: List[str] = field(default_factory=list)
 
     def __bool__(self) -> bool:
         return self.command is not None or self.ambiguous
@@ -236,21 +287,41 @@ def parse_command(body: Optional[str], config: ControlConfig) -> ControlResult:
     if not config.enabled or not body:
         return ControlResult()
     found: List[str] = []
+    patterns: Dict[str, str] = {}
     for command in COMMANDS:
         keyword = config.keyword(command)
         if not keyword:
             continue
         pattern = _BOUNDARY_BEFORE + re.escape(keyword) + _BOUNDARY_AFTER
+        patterns[command] = pattern
         if re.search(pattern, body, re.IGNORECASE):
             found.append(command)
     if not found:
         return ControlResult()
     if len(found) > 1:
         return ControlResult(ambiguous=True, matched=found)
-    return ControlResult(command=found[0], matched=found)
+    command = found[0]
+    subjects: List[str] = []
+    if command in COLLABORATOR_COMMANDS:
+        # Every occurrence, not just the first: two lines each naming one person is
+        # the natural way to write this, and honouring only the first would silently
+        # drop the second. What each contributes is `parse_logins`'s output — a run
+        # of valid logins, ending at the first token that is not one — so the prose
+        # around them reaches nothing.
+        for match in re.finditer(patterns[command], body, re.IGNORECASE):
+            for login in parse_logins(body[match.end() :]):
+                if login not in subjects:
+                    subjects.append(login)
+    return ControlResult(command=command, matched=found, subjects=subjects)
 
 
-def command_comment(command: str, config: ControlConfig, actor: str = "") -> str:
+def command_comment(
+    command: str,
+    config: ControlConfig,
+    actor: str = "",
+    subject: str = "",
+    invocation: str = "",
+) -> str:
     """The comment body the CLI posts for a control action (issue-106 R4.2).
 
     Carries the **same keyword** an authorized user would have typed, so the
@@ -260,15 +331,23 @@ def command_comment(command: str, config: ControlConfig, actor: str = "") -> str
     been applied locally — without it, both ingress paths would read the-loop's
     own comment back and apply it again (the issue-104 contract).
 
-    Built only from the configured keyword and the local ``actor`` name; no
-    payload-derived text reaches it.
+    Built only from the configured keyword, the local ``actor`` name and — for the
+    one class of command that takes an argument — a ``subject`` the caller has
+    already validated as a GitHub login (issue-307). No payload-derived text
+    reaches it.
+
+    ``invocation`` names the CLI form to quote; it defaults to
+    ``the-loop sessions <command>``, which is right for the session verbs and
+    wrong for the two top-level collaborator ones.
     """
     keyword = config.keyword(command) or command
+    line = f"{keyword} @{subject}" if subject else keyword
     who = f" by `{actor}`" if actor else ""
+    invocation = invocation or f"the-loop sessions {command}"
     return mark_self_authored(
-        f"{keyword}\n"
+        f"{line}\n"
         "\n"
-        f"_Issued from the-loop CLI{who} (`the-loop sessions {command}`). "
+        f"_Issued from the-loop CLI{who} (`{invocation}`). "
         "Recorded here so the work item's thread stays the full record of "
         "every control action; the-loop has already applied it locally._\n"
     )

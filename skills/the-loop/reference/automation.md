@@ -62,7 +62,7 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
   new issue is received and ignored. Label presence is read from the webhook payload (no
   extra API call).
 - **Execution control — the label is necessary, not sufficient** (`routing.control`,
-  issue-106). Five declared keywords, usable by an **authorized** user
+  issue-106). Declared keywords, usable by an **authorized** user
   (`routing.authorizedUsers`) in a comment on the work item or its PR, are interpreted
   by the-loop instead of being forwarded to the agent: `the-loop start`,
   `the-loop stop`, `the-loop pause`, `the-loop resume` (issue-135 default; an
@@ -82,6 +82,17 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
   to the ticket (marked as the-loop's own, so the daemon never reads its own action
   back). A comment carrying two different keywords executes nothing and forwards
   nothing. Decision: `docs/decisions/decision-040.md`.
+- **Work-item collaborators** (`routing.control.keywords.add-collaborator`, issue-307).
+  `authorizedUsers` is global, so the person who knows one answer on one issue had no
+  place at all: their comment was dropped before anything read it. An authorized user
+  now types `the-loop add-collaborator @login` (or runs
+  `the-loop add-collaborator @login --work-item <ref>`) and that login's comments **on
+  that one work item** — and on the pull requests routed to its session — reach the
+  session as agent input. Nothing else: a collaborator cannot issue a control command
+  (these two included, so a grant is never transitive), cannot spawn or arm a session,
+  and cannot satisfy a human gate, all of which keep reading `authorizedUsers`. A grant
+  covers one work item, is cleared when it closes, and is revoked with
+  `the-loop remove-collaborator @login`. Decision: `docs/decisions/decision-102.md`.
 - **Where the session takes its answers from** (`routing.interaction.mode`, issue-134):
   `work-item` (default) or `cli`. Until this existed the prompt never said, so the agent
   guessed — and a session guessing "the terminal" asks into a tmux pane nobody may be

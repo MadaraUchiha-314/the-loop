@@ -354,3 +354,32 @@ def test_work_items_with_state_is_empty_on_a_clean_machine(registry, store):
 def test_found_is_true_when_only_an_error_happened():
     outcome = ResetOutcome(ref=REF, errors=("could not remove …",))
     assert outcome.found is True and outcome.ok is False
+
+
+# -- the collaborator roster is state this machine holds too (issue-307) --------
+
+
+def test_reset_forgets_the_collaborator_roster(registry, store):
+    """A grant that outlived a start-over would be authority nobody re-issued."""
+    from the_loop.collaborators import CollaboratorStore
+    from the_loop.workitem import COLLABORATORS
+
+    rosters = CollaboratorStore(store.root)
+    rosters.add(REF, "dana", actor="octocat")
+
+    outcome = reset_work_item(
+        WorkItemRef.parse(REF), registry=registry, store=store, close=lambda s: False
+    )
+
+    assert COLLABORATORS in outcome.removed
+    assert rosters.logins(REF) == []
+    assert store.section(REF, COLLABORATORS) is None
+
+
+def test_a_work_item_known_only_by_its_roster_is_still_enumerated(registry, store):
+    """`--all` must not skip an item whose only state is who was invited to it."""
+    from the_loop.collaborators import CollaboratorStore
+
+    CollaboratorStore(store.root).add(REF, "dana", actor="octocat")
+
+    assert [ref.ref for ref in work_items_with_state(registry, store)] == [REF]
