@@ -1,3 +1,9 @@
+## v12.1.0 (2026-09-01)
+
+### Feat
+
+- **issue-307**: work-item collaborators — input for one work item, never authority (#308)
+
 ## v12.0.0 (2026-08-26)
 
 ### BREAKING CHANGE
