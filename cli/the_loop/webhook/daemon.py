@@ -179,6 +179,9 @@ def _build_routing(routing_config: dict, gh_webhook_config: dict):
         deduper=dispatcher.deduper,
         auto_execute_label=config.auto_execute_label,
         authorized_users=authorized,
+        # One roster, read by both halves: the router to let a granted login's
+        # comment through, the dispatcher to write it (issue-307).
+        collaborators=dispatcher.collaborator_store,
     )
 
     def apply(cfg: dict) -> None:

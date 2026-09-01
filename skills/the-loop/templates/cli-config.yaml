@@ -97,10 +97,22 @@ routing:
       # every endpoint's tmux session, the workspace checkout (uncommitted work
       # in it is GONE) and the machine-local session record — ignoring the
       # keepSessionOnClose/keepCheckoutOnClose retention settings. Keeps the
-      # portable record (control, poll, graph) and touches nothing remote.
-      # A closure by an AUTHORIZED user does this on its own; a closure naming
-      # no actor defers to this keyword. Set to "" to disable it.
+      # portable record (control, poll, graph, collaborators) and touches
+      # nothing remote. A closure by an AUTHORIZED user does this on its own; a
+      # closure naming no actor defers to this keyword. Set to "" to disable it.
       cleanup: "the-loop cleanup"
+      # INPUT, NOT AUTHORITY (issue-307). Grants a GitHub login WORK-ITEM
+      # COLLABORATOR status on THIS work item: their comments on it (and on the
+      # pull requests routed to its session) reach the session as agent input.
+      # That is the whole grant — a collaborator cannot issue a control command
+      # (these two included), cannot arm or spawn a session, and cannot satisfy
+      # a human gate; all of those keep reading routing.authorizedUsers alone,
+      # and only a NAMED user on that list may grant. One work item per grant:
+      # the same person on another item needs another grant, and the roster is
+      # cleared when the item closes. Written `the-loop add-collaborator @login`
+      # (several @logins may follow one keyword). Set either to "" to disable.
+      add-collaborator: "the-loop add-collaborator"
+      remove-collaborator: "the-loop remove-collaborator"
   # Where a session the daemon drives takes its ANSWERS from (issue-134).
   # Until this existed, a spawned session was never told whether a human was
   # at its terminal, so the model guessed — and both guesses fail: asking

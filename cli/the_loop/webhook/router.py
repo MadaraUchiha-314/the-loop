@@ -12,11 +12,14 @@ import logging
 import re
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import List, Optional, Sequence, Set, Tuple
+from typing import TYPE_CHECKING, List, Optional, Sequence, Set, Tuple
 
 from .. import eventlog
 from ..authz import is_authorized, is_self_authored
 from ..sessions import DEFAULT_GITHUB_HOST, WorkItemRef, host_from_url
+
+if TYPE_CHECKING:  # the roster is injected, never built here (issue-307)
+    from ..collaborators import CollaboratorStore
 
 logger = logging.getLogger("the-loop.gh-webhook")
 
@@ -479,12 +482,18 @@ class Router:
         deduper: Optional[Deduper] = None,
         auto_execute_label: str = "",
         authorized_users: Sequence[str] = (),
+        collaborators: Optional["CollaboratorStore"] = None,
     ):
         self.events = list(events)
         self.auto_execute_label = auto_execute_label
         # Prompt-injection guard: only these logins' actions are actionable
         # (empty => fail closed for human-authored events). See the_loop.authz.
         self.authorized_users = list(authorized_users)
+        # The second, narrower allow-list (issue-307): per work item, and injected
+        # rather than constructed, so the router keeps knowing nothing about where
+        # state lives. ``None`` means "no rosters" — a router built without one
+        # behaves exactly as it did before work-item collaborators existed.
+        self.collaborators = collaborators
         # Share the dispatcher's deduper so the router's early duplicate check
         # sees the ids the dispatcher marks as processed.
         self.deduper = deduper if deduper is not None else Deduper(maxsize=dedup_size)
@@ -552,7 +561,21 @@ class Router:
             str(payload.get("action") or "") == "closed"
         )
         actor = event_actor(event, payload)
-        if not is_lifecycle_close and not is_authorized(actor, self.authorized_users):
+        # A work-item collaborator is the narrower answer to the same question
+        # (issue-307): an authorized user granted this login the right to be *input*
+        # on these work items. Only the refs THIS event named are consulted, which is
+        # what keeps a grant on one work item from reaching another. What the grant
+        # does not buy is checked further in: the control seam and the spawn seam
+        # both re-check `authorizedUsers` for a named actor. Consulted only once the
+        # allow-list has said no, so the ordinary path reads no rosters at all.
+        authorized = is_lifecycle_close or is_authorized(actor, self.authorized_users)
+        collaborator = (
+            not authorized
+            and bool(actor)
+            and self.collaborators is not None
+            and self.collaborators.permits(actor, work_items)
+        )
+        if not authorized and not collaborator:
             logger.warning(
                 "ignoring %s for %s from unauthorized actor %r "
                 "(not in routing.authorizedUsers)",
@@ -571,6 +594,22 @@ class Router:
                 work_items=[w.ref for w in work_items],
             )
             return None
+        if collaborator:  # implies the allow-list said no — so say what let it in
+            logger.info(
+                "routing %s for %s from %r, a collaborator on it: their comment is "
+                "input for the session, and nothing more",
+                event,
+                ", ".join(w.ref for w in work_items),
+                actor,
+            )
+            eventlog.emit(
+                "routing.collaborator",
+                gh_event=event,
+                action=action,
+                delivery_id=delivery_id,
+                actor=actor,
+                work_items=[w.ref for w in work_items],
+            )
         labeled = event_carries_label(payload, self.auto_execute_label)
         eventlog.emit(
             "routing.routed",

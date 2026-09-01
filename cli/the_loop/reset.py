@@ -44,11 +44,12 @@ from typing import Callable, Dict, List, Optional, Tuple, Union
 
 from . import eventlog
 from .sessions import Session, SessionRegistry, WorkItemRef
-from .workitem import CONTROL, POLL, WorkItemStore
+from .workitem import COLLABORATORS, CONTROL, POLL, WorkItemStore
 
 logger = logging.getLogger("the-loop.reset")
 
 __all__ = [
+    "COLLABORATORS",
     "CONTROL",
     "PIECES",
     "POLL",
@@ -67,7 +68,7 @@ SESSION = "session"
 #: Everything a reset can remove, in removal order. A work item's pull-request
 #: endpoints need no piece of their own (issue-172): they live *inside* the
 #: session record, so deleting it takes them with it.
-PIECES: Tuple[str, ...] = (WORKSPACE, SESSION, CONTROL, POLL)
+PIECES: Tuple[str, ...] = (WORKSPACE, SESSION, CONTROL, POLL, COLLABORATORS)
 
 #: Ends a live session and reports whether a workspace checkout went with it.
 #: ``Dispatcher.close_session`` is the production implementation.
@@ -153,7 +154,10 @@ def reset_work_item(
             except OSError as exc:
                 errors.append(f"could not remove the session record: {exc}")
 
-    for section in (CONTROL, POLL):
+    # The collaborator roster goes with them (issue-307): a reset is "forget what
+    # this machine holds about this work item so it starts over", and a grant that
+    # outlived the start-over would be authority nobody re-issued.
+    for section in (CONTROL, POLL, COLLABORATORS):
         try:
             if store.section(ref, section) is None:
                 continue
@@ -224,6 +228,9 @@ def work_items_with_state(
                 "ignoring state file naming an unparseable work item: %s", ref
             )
             continue
-        if any(store.section(item, section) is not None for section in (CONTROL, POLL)):
+        if any(
+            store.section(item, section) is not None
+            for section in (CONTROL, POLL, COLLABORATORS)
+        ):
             found[ref] = item
     return [found[ref] for ref in sorted(found)]

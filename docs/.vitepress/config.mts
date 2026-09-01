@@ -110,6 +110,8 @@ const cliSidebar = [
       { text: "sessions", link: "/cli/commands/sessions" },
       { text: "standing", link: "/cli/commands/standing" },
       { text: "ask", link: "/cli/commands/ask" },
+      { text: "add-collaborator", link: "/cli/commands/add-collaborator" },
+      { text: "remove-collaborator", link: "/cli/commands/remove-collaborator" },
       { text: "channels", link: "/cli/commands/channels" },
       { text: "events", link: "/cli/commands/events" },
       { text: "check", link: "/cli/commands/check" },

@@ -773,3 +773,123 @@ def test_a_stop_that_predates_first_sight_leaves_the_item_disarmed(setup, tmp_pa
     assert _wait(lambda: True, 0.2)
     assert tmux.spawns == []
     assert provider.presence_events == 0
+
+
+# -- the two commands that write a roster (issue-307) ---------------------------
+
+
+def _rosters(dispatcher):
+    return dispatcher.collaborator_store
+
+
+def test_an_authorized_user_grants_and_revokes_collaborator_status(setup):
+    """
+    Feature: work-item collaborators
+      Scenario: the roster is written by the keyword, and only by an authorized user
+        Given a work item with a live session
+        When an authorized user comments the add-collaborator keyword naming @dana
+        Then dana is on that work item's roster
+        And the comment is consumed rather than delivered to the session
+        And no control record is written, because nothing was armed
+        When the same user comments the remove-collaborator keyword for @dana
+        Then the roster is empty again
+    Requirement: docs/specs/issue-307/requirements.md R1.1, R2.1, R4.7
+    """
+    dispatcher, registry, tmux, control = setup
+    register(registry)
+
+    dispatcher.handle(comment_event("the-loop add-collaborator @Dana", delivery="g-1"))
+    assert _wait(lambda: _rosters(dispatcher).logins(REF) == ["dana"])
+    assert tmux.delivers == [] and tmux.spawns == []
+    assert control.get(REF) is None
+    assert dispatcher.delivery_outcome("g-1") == "control-executed"
+
+    dispatcher.handle(
+        comment_event("the-loop remove-collaborator @dana", delivery="g-2")
+    )
+    assert _wait(lambda: _rosters(dispatcher).logins(REF) == [])
+    assert tmux.delivers == []
+
+
+def test_a_grant_that_names_nobody_is_refused(setup):
+    """
+    Feature: work-item collaborators
+      Scenario: the keyword with no valid login changes nothing
+        Given a work item with a live session
+        When an authorized user comments the add-collaborator keyword with no @login
+        Then the roster is unchanged
+        And the delivery is settled as a refusal rather than retried
+    Requirement: docs/specs/issue-307/requirements.md R4.4
+    """
+    dispatcher, registry, tmux, _ = setup
+    register(registry)
+
+    dispatcher.handle(
+        comment_event("the-loop add-collaborator someone please", delivery="g-3")
+    )
+    assert _wait(lambda: dispatcher.delivery_outcome("g-3") == "control-rejected")
+    assert _rosters(dispatcher).logins(REF) == []
+    assert tmux.delivers == []
+
+
+def test_a_collaborators_own_grant_attempt_is_refused(setup):
+    """
+    Feature: work-item collaborators
+      Scenario: a grant is not transitive
+        Given dana is a collaborator on the work item
+        When dana comments the add-collaborator keyword naming @mallory
+        Then the roster still names dana alone
+        And the refusal is recorded as an unauthorized actor
+    Requirement: docs/specs/issue-307/requirements.md R2.2 (abuse case A1)
+    """
+    dispatcher, registry, tmux, _ = setup
+    register(registry)
+    _rosters(dispatcher).add(REF, "dana", actor="octocat")
+
+    dispatcher.handle(
+        comment_event(
+            "the-loop add-collaborator @mallory", delivery="g-4", author="dana"
+        )
+    )
+    assert _wait(lambda: dispatcher.delivery_outcome("g-4") == "control-rejected")
+    assert _rosters(dispatcher).logins(REF) == ["dana"]
+    assert tmux.delivers == []
+
+
+def test_a_collaborators_comment_cannot_spawn_a_session(setup):
+    """
+    Feature: work-item collaborators
+      Scenario: a grant admits input, never a new session
+        Given a labelled work item that an authorized user has started
+        And dana is a collaborator on it
+        When dana comments on it before any session exists
+        Then no session is spawned
+        And the delivery is settled, so neither ingress retries it
+    Requirement: docs/specs/issue-307/requirements.md R3.2 (abuse case A6)
+    """
+    dispatcher, registry, tmux, control = setup
+    control.record(REF, "start", actor="octocat")
+    _rosters(dispatcher).add(REF, "dana", actor="octocat")
+
+    dispatcher.handle(comment_event("I can take this", delivery="g-5", author="dana"))
+    assert _wait(lambda: dispatcher.delivery_outcome("g-5") == "collaborator-no-spawn")
+    assert tmux.spawns == []
+
+
+def test_closing_the_work_item_forgets_its_roster(setup):
+    """
+    Feature: work-item collaborators
+      Scenario: a grant is scoped to the work item's active life
+        Given a work item with a live session and a collaborator on it
+        When the work item closes
+        Then the roster is cleared with the control record
+    Requirement: docs/specs/issue-307/requirements.md R1.6 (abuse case A9)
+    """
+    dispatcher, registry, tmux, control = setup
+    register(registry)
+    control.record(REF, "start", actor="octocat")
+    _rosters(dispatcher).add(REF, "dana", actor="octocat")
+
+    dispatcher.handle(close_event())
+    assert _wait(lambda: _rosters(dispatcher).logins(REF) == [])
+    assert control.get(REF) is None

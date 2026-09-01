@@ -161,6 +161,36 @@ Driving it from your editor instead of the thread: `/the-loop:review-pr <id>`.
 Configuring or disabling the word:
 [`control.keywords.review`](/config/cli/routing-options#controlkeywordsreview).
 
+## Bring one more person onto one work item
+
+`routing.authorizedUsers` is all-or-nothing: a login directs every work item your daemon
+watches, or none. So when the-loop asks a question that only your colleague can answer,
+their reply is dropped before anything reads it — unless you hand them the whole
+deployment.
+
+Instead, invite them onto that one work item:
+
+```text
+the-loop add-collaborator @dana
+```
+
+From then on Dana's comments **on this work item** (and on the pull requests delivering
+it) reach the session, exactly like yours. That is all they can do: Dana cannot start,
+stop, pause or clean up anything, cannot invite anyone else, and cannot approve a phase —
+those still need a login on `routing.authorizedUsers`. The grant covers this work item
+only, and it is cleared when the item closes; `the-loop remove-collaborator @dana` takes
+it back sooner.
+
+From a terminal it is the same two words:
+
+```bash
+the-loop add-collaborator @dana --work-item github:OWNER/REPO#307
+```
+
+Either way the keyword lands on the thread, so the ticket records who invited whom.
+Details: [`add-collaborator`](/cli/commands/add-collaborator) ·
+[`control.keywords.add-collaborator`](/config/cli/routing-options#controlkeywordsadd-collaborator).
+
 ## Next
 
 - [How it works](/guide/how-it-works) — configuration, templates, and where knowledge

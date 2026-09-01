@@ -57,6 +57,20 @@ self-learning/ML capabilities.
   not depend on anything else of the-loop running. The answer arrives as a forwarded
   ticket comment, or straight into the pane via `POST /api/v1/sessions/reply` (see
   [control-plane](control-plane.md)).
+- `the-loop add-collaborator @LOGIN [@LOGIN …] --work-item <ref>` and
+  `the-loop remove-collaborator @LOGIN … --work-item <ref>` SHALL grant and revoke
+  **work-item collaborator** status (issue-307,
+  [decision-102](../decisions/decision-102.md)): a login whose comments on that one work
+  item reach its session as agent input, and who can do nothing else — no control
+  command, no spawn, no arming, no human gate (see
+  [webhook-triggers](webhook-triggers.md)). Each SHALL apply the local effect **first**
+  and post the same keyword and login back to the work item after, self-marked, so a
+  failing `gh` never leaves the thread claiming a grant that was not made and never
+  loses one that was. Every login SHALL be validated before anything is written, so one
+  typo refuses the whole call rather than half-applying it; a login already on (or
+  absent from) the roster SHALL be reported as unchanged and SHALL NOT be announced.
+  Like `ask`, they SHALL execute **in-process** rather than through the service: a
+  roster must stay fixable when nothing else of the-loop is running.
 - `the-loop sessions reset --work-item <ref> [--work-item …] | --all [--dry-run]` SHALL
   remove everything this machine remembers about a work item (issue-137,
   [decision-050](../decisions/decision-050.md)) — the verb for "I fixed a bug in the-loop
@@ -320,6 +334,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-307 | `the-loop add-collaborator` / `remove-collaborator` join the CLI (2026-08-31), the terminal form of the two new control keywords: they write one work item's collaborator roster, post the same keyword and login back to the ticket self-marked, validate every login before writing any of them, and run in-process for the same reason `ask` does | [spec](../specs/issue-307/), [decision-102](../decisions/decision-102.md), [add-collaborator](../cli/commands/add-collaborator.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/307) |
 | issue-277 | `the-loop standing list` / `start` / `stop` / `restart` / `say` — the operator's surface onto the sessions that belong to no work item, addressed by name. `say` pastes a message straight into a running session's terminal, which is how you talk to a session that has no comment thread to answer on | [spec](../specs/issue-277/), [standing](../cli/commands/standing.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/277) |
 | issue-274 | `the-loop sessions link-pr --work-item <ref> --pull-request <ref\|N>` joins the registry surface, with `POST /api/v1/sessions/link-pr` and the `link_pull_request` MCP tool over the one core implementation: the session that opens a pull request records the binding the router prefers, instead of leaving it to be inferred from a closing reference, an `issue-<n>` branch or a closing keyword that a the-loop-authored pull request does not carry | [spec](../specs/issue-274/), [sessions](../cli/commands/sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/274) |
 | issue-245 | `the-loop channels` joins the CLI: `status` (config with token presence only), `poll` (one synchronous read cycle over the bound Slack threads — the cron/daemon-less form) and `listen` (Socket Mode, the no-polling reader). The daemons additionally run the poll-mode reader as a background watcher | [spec](../specs/issue-245/), [decision-094](../decisions/decision-094.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/245) |

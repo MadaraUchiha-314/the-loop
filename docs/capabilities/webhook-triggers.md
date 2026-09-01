@@ -130,8 +130,11 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   alone among the keywords — binds to the **pull request itself** when typed on one,
   even when the PR links a ticket (the subject of a review is the change) — and
   `the-loop cleanup` (issue-186), the
-  other end of the life cycle. All configurable (issue-135 — the
-  pre-issue-135 defaults were `the-loop:start-execution` and its three siblings).
+  other end of the life cycle — and, touching neither the session nor the graph,
+  `the-loop add-collaborator @login` / `the-loop remove-collaborator @login`
+  (issue-307), which write the work item's collaborator roster (below). All
+  configurable (issue-135 — the pre-issue-135 defaults were
+  `the-loop:start-execution` and its three siblings).
   - WHEN an **authorized** user's comment on the work item or its PR carries one of
     them THEN the-loop SHALL execute that command and SHALL NOT forward the comment to
     the harness; keywords match as whole tokens, case-insensitively, and a comment
@@ -190,11 +193,56 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
     otherwise), because the ingress guard intentionally allows an *actor-less*
     action — a CI event, or a comment whose author has been deleted — which must
     never be able to start or stop a session. The parser recognises the fixed
-    configured vocabulary and yields one of four commands — no text from a comment
-    reaches an argv, a path, a prompt or a work-item ref.
+    configured vocabulary and yields one of the declared commands — no text from a
+    comment reaches an argv, a path, a prompt or a work-item ref. The one **argument**
+    any command takes (issue-307's `@login`) is no exception: it is matched against
+    GitHub's login grammar and refused if it does not fit, so what the parser hands on
+    is still a fixed-shape token rather than body text.
   - Every command is recorded (`control.command` with actor, source and effect;
     `control.rejected` when a work item is not armed), and the last command per work
     item is kept beside its session (`<registryDir>/control/`).
+- **Work-item collaborators: input for one work item, and nothing more** (issue-307,
+  `routing.control.keywords.add-collaborator` / `remove-collaborator`).
+  `routing.authorizedUsers` is global — a login directs every work item this daemon
+  watches, or none — so the person who knows one answer on one issue had no place at
+  all: both ingresses dropped their comment before anything read it, and an agent
+  waiting on a question never heard the reply. A **work-item collaborator** is the
+  missing middle. (Unrelated to `.the-loop/collaborators.yaml`, which names a
+  *project's* stewards and their roles for the plugin and is never read by the daemon.)
+  - WHEN a **named** user in `authorizedUsers` comments `the-loop add-collaborator
+    @login` on a work item THEN that login SHALL be recorded on that work item's
+    roster, in the `collaborators` section of its portable record, with who granted it,
+    when, through which surface and the comment's URL. `remove-collaborator` revokes.
+    Several `@login` tokens MAY follow one keyword, and the keyword MAY appear more
+    than once; scanning stops at the first token after the keyword that is not an
+    `@login`, so prose after the names is ignored rather than refused. A body naming
+    **no** valid login is refused (`control.rejected` / `missing-collaborator`).
+  - WHEN a work-item collaborator comments on a work item they are granted on THEN that
+    comment SHALL be delivered to that work item's session as agent input, on both
+    ingress paths (`routing.collaborator`).
+  - A grant buys **that and nothing else**. A work-item collaborator SHALL NOT issue any
+    control command (these two included, so there is no transitive grant), SHALL NOT
+    spawn a session (`dispatch.dropped` / `collaborator-no-spawn`, settled rather than
+    retried), SHALL NOT arm one or satisfy `requireStartCommand`, and SHALL NOT satisfy
+    a human gate — `phase-selection`, `goal-definition`, the review brief, artifact
+    approval and security sign-off all read `authorizedUsers` and keep reading exactly
+    that. The command path's **named-and-allowlisted-actor** re-check is what enforces
+    the first of those, and it is asserted directly rather than inherited.
+  - A grant is scoped to **one work item**: it covers that item and the pull requests
+    whose events already route to its session, and reaches no other work item — because
+    membership is asked only about the refs the event itself named. The same person on
+    another work item needs another grant.
+  - Logins are matched case-insensitively and stored without the `@`, the way GitHub
+    treats them. (`authorizedUsers` still matches exactly; this changes nothing there.)
+  - WHEN the work item closes THEN its roster SHALL be cleared with its control record,
+    and `the-loop sessions reset` SHALL forget it with the rest of the portable record.
+    `the-loop cleanup` keeps it, as it keeps the control record: cleanup releases
+    *local resources*, and a roster is tracking.
+  - The same two verbs exist as CLI commands —
+    [`the-loop add-collaborator`](../cli/commands/add-collaborator) and
+    [`remove-collaborator`](../cli/commands/remove-collaborator) — which post the same
+    keyword and login back to the work item, self-marked, so the thread stays the record
+    of who granted what however it was issued.
   - **A command already on the thread when the poller first sees the work item still
     counts** (issue-119). First sight baselines the existing thread as read — the
     spawned session reads it itself — but a control command is an instruction to
@@ -693,6 +741,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-307 | A second identity allow-list, per work item (2026-08-31): `the-loop add-collaborator @login` / `remove-collaborator` (a tenth and eleventh control keyword, and two CLI commands) grant a GitHub login the right to be **input** on one work item — their comments reach its session on both ingresses — and nothing else: no control command (so no transitive grant), no spawn (`collaborator-no-spawn`), no arming, no human gate. The roster is a `collaborators` section of the work item's portable record, cleared when the item closes; membership is asked only about the refs an event itself named, so a grant does not travel | [spec](../specs/issue-307/), [decision-102](../decisions/decision-102.md), [routing](../config/cli/routing-options.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/307) |
 | issue-279 | A ninth control keyword, `the-loop review` (2026-08-24): arms and spawns exactly as `start` does and selects the **review loop** — and, alone among the keywords, its control record, spawn and session bind to the **pull request itself** when it is typed on one, not to the PR's linked ticket (`pr_work_item` on the control path; `_on_unmatched` takes an explicit target). Configurable at `routing.control.keywords.review`; an empty string disables the word | [spec](../specs/issue-279/), [process-graph](process-graph.md), [routing](../config/cli/routing-options.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/279) |
 | issue-274 | the-loop stopped opening pull requests it could not route events for (2026-08-20): a review comment on a **spec PR the-loop's own session opened** reached nothing. The router's three inference sources are all absent on such a PR — no `closingIssuesReferences` (a spec PR must not close its ticket), a `loop/<id>-…` head branch rather than `issue-<n>`, and a body that only *mentions* the issue — and the fourth, the durable `session.pr_linked` binding, was written **only** by the routing decision, which needs the linkage to route at all. So the comment resolved to the PR as a work item nobody armed, was refused as `awaiting-start`, and (since issue-270) settled with `will_retry: false`: the phase gate the-loop itself asks reviewers to answer was a dead letter, and repairing the linkage afterwards recovered nothing. The session that opens a pull request now records it in the same step — `the-loop sessions link-pr`, `POST /api/v1/sessions/link-pr`, or the `link_pull_request` MCP tool — and the workflow says so beside the rule that every PR is labelled | [spec](../specs/issue-274/), [sessions](../cli/commands/sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/274) |
 | issue-273 | A work item that begins life as a plain GitHub issue finally starts at `phase-selection` (2026-08-20): the coupling had declined to start a graph without `<specDir>/<id>/` on disk, which the gated work is what creates — so an armed, spawned ticket got two `graph.skipped` records, no phase checklist, no `the-loop execute`, and a session that began requirements work on its own. `start` and `context` no longer require the directory, and the spawn prompt of an unplaced work item now carries a `pending` process-state block naming the gate instead of nothing at all | [spec](../specs/issue-273/), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/273) |

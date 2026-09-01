@@ -189,6 +189,14 @@ behalf.
   in this file: `routing.authorizedUsers` (GitHub logins — who may arm and command a
   work item) and `channels.slack.authorizedUsers` (Slack member ids — whose thread reply
   is acted on).
+- **A "work-item collaborator" is a different thing entirely** (issue-307). This file's
+  collaborators are the project's stewards and their roles, read by the *plugin*. A
+  work-item collaborator is runtime state the *daemon* reads: an authorized user typing
+  `the-loop add-collaborator @login` on one work item grants that login the right to be
+  **input** on it — their comments reach that item's session — and nothing else. It is
+  neither hand-maintained nor declared here, it is not a role, and it grants no
+  authority: a work-item collaborator cannot command the-loop, arm a session, or answer
+  a phase gate. See `reference/automation.md`.
 - The CLI daemon never reads this file (decision-032): it watches many repositories and
   belongs to none of them — see `reference/automation.md`.
 

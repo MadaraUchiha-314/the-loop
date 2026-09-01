@@ -11,8 +11,11 @@ import pytest
 from the_loop.authz import SELF_COMMENT_MARKER, is_self_authored
 from the_loop.migrations import CURRENT_CONFIG_VERSION
 from the_loop.control import (
+    ADD_COLLABORATOR,
+    COLLABORATOR_COMMANDS,
     COMMANDS,
     DEFAULT_KEYWORDS,
+    REMOVE_COLLABORATOR,
     PAUSE,
     RESUME,
     START,
@@ -262,3 +265,90 @@ def test_records_are_kept_per_work_item(tmp_path):
     store.record("github:octo/repo#16", STOP)
     assert store.start_requested(REF) is True
     assert store.start_requested("github:octo/repo#16") is False
+
+
+# -- the two commands that carry an argument (issue-307) ------------------------
+
+
+def test_the_collaborator_keywords_are_declared_like_every_other():
+    config = ControlConfig()
+    assert config.keyword(ADD_COLLABORATOR) == "the-loop add-collaborator"
+    assert config.keyword(REMOVE_COLLABORATOR) == "the-loop remove-collaborator"
+    assert set(COLLABORATOR_COMMANDS) <= set(COMMANDS)
+
+
+def test_a_collaborator_command_carries_the_login_it_named():
+    result = parse_command("the-loop add-collaborator @Dana", ControlConfig())
+    assert result.command == ADD_COLLABORATOR
+    assert result.subjects == ["dana"]
+
+
+def test_several_logins_and_a_repeated_keyword_all_count():
+    body = (
+        "please the-loop add-collaborator @a @b — they know this area\n"
+        "and the-loop add-collaborator @c too"
+    )
+    result = parse_command(body, ControlConfig())
+    assert result.command == ADD_COLLABORATOR
+    assert result.subjects == ["a", "b", "c"]
+
+
+def test_a_keyword_with_nobody_named_is_the_command_and_no_subjects():
+    """The caller refuses it (`missing-collaborator`); the parser only reports."""
+    result = parse_command("the-loop remove-collaborator soon", ControlConfig())
+    assert result.command == REMOVE_COLLABORATOR
+    assert result.subjects == []
+
+
+def test_nothing_but_a_login_reaches_the_caller():
+    """A3: prose, paths and argv fragments after the keyword are not subjects."""
+    body = "the-loop add-collaborator @dana/../etc --permission-mode bypass"
+    assert parse_command(body, ControlConfig()).subjects == []
+    body = "the-loop add-collaborator @dana rm -rf /"
+    assert parse_command(body, ControlConfig()).subjects == ["dana"]
+
+
+def test_the_keywords_match_as_whole_tokens():
+    config = ControlConfig()
+    assert parse_command("the-loop add-collaborators @a", config).command is None
+    assert parse_command("xthe-loop add-collaborator @a", config).command is None
+    assert parse_command("`the-loop add-collaborator @a`", config).subjects == ["a"]
+    assert parse_command("THE-LOOP ADD-COLLABORATOR @A", config).subjects == ["a"]
+
+
+def test_a_collaborator_keyword_beside_another_command_is_ambiguous():
+    result = parse_command(
+        "the-loop add-collaborator @dana and the-loop stop", ControlConfig()
+    )
+    assert result.ambiguous and result.command is None
+
+
+def test_an_emptied_collaborator_keyword_disables_that_command():
+    config = ControlConfig.from_mapping({"keywords": {"add-collaborator": ""}})
+    assert parse_command("the-loop add-collaborator @a", config).command is None
+    assert (
+        parse_command("the-loop remove-collaborator @a", config).command
+        == REMOVE_COLLABORATOR
+    )
+
+
+def test_the_paper_trail_comment_carries_the_login_and_the_right_invocation():
+    body = command_comment(
+        ADD_COLLABORATOR,
+        ControlConfig(),
+        actor="octocat",
+        subject="dana",
+        invocation="the-loop add-collaborator",
+    )
+    assert body.startswith("the-loop add-collaborator @dana")
+    assert "`the-loop add-collaborator`" in body
+    assert is_self_authored(body)  # the daemon must not read it back
+
+
+def test_a_collaborator_command_is_not_a_control_record(tmp_path):
+    """They arm nothing, so `start_requested` must not learn about them."""
+    store = ControlStore(tmp_path / "control")
+    store.record(REF, START)
+    assert store.start_requested(REF) is True
+    store.record(REF, STOP)
+    assert store.start_requested(REF) is False

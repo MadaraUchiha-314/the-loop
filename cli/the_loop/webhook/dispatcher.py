@@ -24,8 +24,11 @@ from .. import eventlog
 from ..announce import AnnounceConfig, SessionAnnouncer
 from ..authz import is_authorized
 from ..cleanup import CleanupOutcome, cleanup_work_item
+from ..collaborators import CollaboratorStore
 from ..control import (
+    ADD_COLLABORATOR,
     CLEANUP,
+    COLLABORATOR_COMMANDS,
     GRAPH_COMMANDS,
     PAUSE,
     RESUME,
@@ -35,6 +38,7 @@ from ..control import (
     STOP,
     TEARDOWN_COMMANDS,
     ControlConfig,
+    ControlResult,
     ControlStore,
 )
 from ..control import parse_command as parse_control_command
@@ -96,7 +100,7 @@ _SESSION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 # instruction to the-loop and there was never a delivery to account for. Every
 # other end to an event stays as it was: enqueued (a session will record it) or
 # released (`deduper.discard`, so a redelivery or the next poll cycle retries).
-SETTLED_SUPPRESSED = ("awaiting-start", "session-paused")
+SETTLED_SUPPRESSED = ("awaiting-start", "session-paused", "collaborator-no-spawn")
 SETTLED_CONTROL_EXECUTED = "control-executed"
 SETTLED_CONTROL_REJECTED = "control-rejected"
 SETTLED_CONTROL_AMBIGUOUS = "control-ambiguous"
@@ -531,6 +535,7 @@ class Dispatcher:
         reactor: Optional[GitHubReactor] = None,
         announcer: Optional[SessionAnnouncer] = None,
         control_store: Optional[ControlStore] = None,
+        collaborator_store: Optional[CollaboratorStore] = None,
         verifier: Optional[WorkItemVerifier] = None,
     ):
         self.registry = registry
@@ -540,6 +545,14 @@ class Dispatcher:
         # so they follow `state.root` rather than the registry: a relocated
         # registry moves the machine-local handles, not the facts about the work.
         self.control_store = control_store or ControlStore(
+            self.config.portable_dir, legacy=self.config.legacy
+        )
+        # Work-item collaborators live in the same portable record, for the same
+        # reason (issue-307): "an authorized user invited Dana onto this item" is a
+        # fact about the work, not about this machine. Owned here because the
+        # dispatcher is where the two commands that write it are executed, and read
+        # from here by the router and the poller — one roster, one directory.
+        self.collaborator_store = collaborator_store or CollaboratorStore(
             self.config.portable_dir, legacy=self.config.legacy
         )
         # The one runner every session is hosted in (issue-156).
@@ -712,6 +725,23 @@ class Dispatcher:
         """
         if not self._is_armed(routed):
             return "spawn-policy"
+        # A grant is permission to be *input*, never to start anything (issue-307),
+        # so the seam that turns an event into a session asks whether input is all
+        # this actor has. Both halves of the test matter: outside `authorizedUsers`,
+        # and granted on one of the refs this event named — which is exactly the
+        # state a collaborator's comment arrives in, and no state any other event
+        # can be in, since a comment reaches dispatch only through one of those two
+        # lists. Actor-less events (CI status, and the poller's own presence, whose
+        # payload carries no sender) are untouched, which is what keeps
+        # decision-074 working: an unauthorized author's item still starts on an
+        # authorized user's recorded `start`.
+        actor = event_actor(routed.event, routed.payload)
+        if (
+            actor
+            and not is_authorized(actor, self.config.authorized_users)
+            and self.collaborator_store.permits(actor, routed.work_items)
+        ):
+            return "collaborator-no-spawn"
         if target is None:
             target = self._target_work_item(routed)
         if target is None:
@@ -828,6 +858,12 @@ class Dispatcher:
                     control.command, routed, actor or "", "unauthorized-actor"
                 )
                 return
+            if control.command in COLLABORATOR_COMMANDS:
+                # Neither the session registry nor the graph: these two write the
+                # work item's collaborator roster (issue-307) and the comment that
+                # carried them is consumed, never forwarded.
+                self._apply_collaborator(control, routed, actor)
+                return
             if control.command in GRAPH_COMMANDS:
                 # `the-loop execute` acts on the GRAPH, not the session
                 # registry (issue-177): it answers the phase-selection gate.
@@ -903,8 +939,12 @@ class Dispatcher:
                 self.close_session(session, routed)
                 # The work item ended: forget what it was last told to do, so a
                 # reopened item starts from a clean slate rather than inheriting
-                # a stale start/stop request.
+                # a stale start/stop request — and forget who was invited onto it,
+                # for the same reason (issue-307). A grant is scoped to the work
+                # item's active life; the thread and the event log stay the record
+                # that it was made.
                 self.control_store.clear(session.work_item)
+                self.collaborator_store.clear(session.work_item)
                 logger.info(
                     "auto-closed session %s (%s)", session.work_item.ref, reason
                 )
@@ -1282,6 +1322,62 @@ class Dispatcher:
             command,
             actor,
         )
+
+    def _apply_collaborator(
+        self, control: ControlResult, routed: RoutedEvent, actor: str
+    ) -> None:
+        """Grant or revoke work-item collaborator status (issue-307).
+
+        Reached only after the same named-and-allowlisted-actor check every other
+        control command passes, which is what makes a grant untransferable: a
+        collaborator's own `add-collaborator` is refused upstream, so there is no
+        transitive grant to reason about here.
+
+        Deliberately writes **no** :class:`ControlStore` record. These commands do not
+        arm, disarm or select a graph, and recording one as the work item's control
+        state would make an item look started because somebody was invited to it.
+        """
+        command = control.command or ""
+        target = self._target_work_item(routed)
+        if target is None:  # unreachable: handle() drops an event with no items
+            return
+        if not control.subjects:
+            # The keyword with nobody named. Refused rather than guessed at: the only
+            # text this command may act on is a token that matched GitHub's login
+            # grammar, and there was none.
+            self._reject_control(command, routed, actor, "missing-collaborator")
+            return
+        note = str((routed.payload.get("comment") or {}).get("html_url") or "")
+        for login in control.subjects:
+            if command == ADD_COLLABORATOR:
+                changed = self.collaborator_store.add(
+                    target, login, actor=actor, source="comment", note=note
+                )
+                effect = "granted" if changed else "already-granted"
+            else:
+                changed = self.collaborator_store.remove(target, login)
+                effect = "revoked" if changed else "not-a-collaborator"
+            logger.info(
+                "control command %s from %s on %s: %s %s",
+                command,
+                actor or "(unknown)",
+                target.ref,
+                effect,
+                login,
+            )
+            eventlog.emit(
+                "control.command",
+                work_item=target.ref,
+                command=command,
+                source="comment",
+                actor=actor or None,
+                collaborator=login,
+                effect=effect,
+                delivery_id=routed.delivery_id or None,
+            )
+        # The comment WAS the instruction — executed here, never forwarded — so the
+        # delivery it arrived on is finished with (issue-270).
+        self._settle(routed, SETTLED_CONTROL_EXECUTED)
 
     def _apply_control(self, command: str, routed: RoutedEvent) -> None:
         """Execute a control command carried by an authorized user's comment.

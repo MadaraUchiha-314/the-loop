@@ -256,7 +256,19 @@
                 "cleanup": {
                   "type": "string",
                   "default": "the-loop cleanup",
-                  "description": "The other end of the life cycle (issue-186): release the LOCAL resources this work item accumulated \u2014 the tmux session of every endpoint (its own plus one per pull request), the workspace checkout, and the machine-local session record. DESTRUCTIVE and deliberately unconditional: it ignores `tmux.keepSessionOnClose` and `workspace.keepCheckoutOnClose`, so uncommitted work in the checkout is gone. It keeps the PORTABLE record (control, poll, frozen graph) \u2014 that is persistence and tracking, not a resource \u2014 and performs NO remote action: no branch, pull request, issue or label is touched. Works retroactively on any work item the-loop tracked, with or without a live session, and durably disarms the item like `stop`. A closure by an AUTHORIZED user cleans up on its own; a closure that names no actor (or an unauthorized one) defers to this keyword, which is why it exists."
+                  "description": "The other end of the life cycle (issue-186): release the LOCAL resources this work item accumulated \u2014 the tmux session of every endpoint (its own plus one per pull request), the workspace checkout, and the machine-local session record. DESTRUCTIVE and deliberately unconditional: it ignores `tmux.keepSessionOnClose` and `workspace.keepCheckoutOnClose`, so uncommitted work in the checkout is gone. It keeps the PORTABLE record (control, poll, frozen graph, collaborator roster) \u2014 that is persistence and tracking, not a resource \u2014 and performs NO remote action: no branch, pull request, issue or label is touched. Works retroactively on any work item the-loop tracked, with or without a live session, and durably disarms the item like `stop`. A closure by an AUTHORIZED user cleans up on its own; a closure that names no actor (or an unauthorized one) defers to this keyword, which is why it exists."
+                },
+                "add-collaborator": {
+                  "type": "string",
+                  "default": "the-loop add-collaborator",
+                  "description": "Grants a GitHub login WORK-ITEM COLLABORATOR status on this work item (issue-307): from then on that login's comments on this item — and on the pull requests routed to its session — are delivered to the session as agent INPUT. Nothing else changes hands: a collaborator cannot issue a control command (this one included), cannot arm or spawn a session, and cannot satisfy a human gate, all of which keep reading `routing.authorizedUsers` alone. Only a NAMED user in `routing.authorizedUsers` may grant, a grant is scoped to ONE work item, and it is cleared when that item closes. Written as `the-loop add-collaborator @login`; several `@login` tokens may follow one keyword, and a body naming none is refused. Unrelated to `.the-loop/collaborators.yaml`, which names the project's stewards and their roles for the plugin and is never read by the daemon. Set to an empty string to disable the word entirely.",
+                  "examples": ["the-loop add-collaborator", ""]
+                },
+                "remove-collaborator": {
+                  "type": "string",
+                  "default": "the-loop remove-collaborator",
+                  "description": "Revokes a work-item collaborator's grant (issue-307). Same authorization as `add-collaborator` — a NAMED user in `routing.authorizedUsers`, never the collaborator themselves — and it takes effect on the next event, because the roster is read per event and never cached in the session. Set to an empty string to disable the word entirely.",
+                  "examples": ["the-loop remove-collaborator", ""]
                 }
               }
             }
