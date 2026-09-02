@@ -118,8 +118,9 @@ def test_an_asked_question_is_one_ledger_comment_and_one_slack_post(
     ref, body = records[0]
     assert ref == "github:o/r#7" and is_self_authored(body)
     assert _etype(body) == "session.awaiting_input"
-    assert len(slack.posted) == 1
-    buttons = slack.posted[0]["blocks"][-1]["elements"]
+    assert len(slack.posted) == 2  # the work item's root, then the ask as a reply
+    assert slack.posted[1]["thread_ts"] == "1700.000001"
+    buttons = slack.posted[1]["blocks"][-1]["elements"]
     assert buttons[0]["url"] == "https://gh/c/1"
     from the_loop.channels.publishers import publish_comment
 
@@ -149,17 +150,19 @@ def test_an_agents_comment_reaches_slack_and_a_humans_only_when_subscribed(
     _ledger_writer(monkeypatch, [])
     config = cli_config(tmp_path, subscribe=["session.awaiting_input", "comment.agent"])
     _bound_thread(tmp_path, config, slack)
-    assert len(slack.posted) == 1
+    assert len(slack.posted) == 2  # root + the ask (issue-312)
 
     def comment(body, author=OPERATOR):
         return {
             "action": "created",
             "repository": {"full_name": "o/r"},
-            "issue": {"number": 7, "html_url": "https://gh/o/r/issues/7"},
+            # github.com, so the ingress mints the ref the ask used
+            # (`github:o/r#7`): one work item, one thread (issue-312).
+            "issue": {"number": 7, "html_url": "https://github.com/o/r/issues/7"},
             "comment": {
                 "body": body,
                 "user": {"login": author},
-                "html_url": "https://gh/o/r/issues/7#c9",
+                "html_url": "https://github.com/o/r/issues/7#c9",
             },
         }
 
@@ -174,29 +177,29 @@ def test_an_agents_comment_reaches_slack_and_a_humans_only_when_subscribed(
         "issue_comment", comment(mark_self_authored("## Summary")), "d1"
     )
     assert agent is None  # dropped at ingress, exactly as before
-    assert len(slack.posted) == 2
-    assert slack.posted[1]["thread_ts"] == slack.posted[0]["thread_ts"]
-    assert "## Summary" in slack.posted[1]["text"]
+    assert len(slack.posted) == 3
+    assert slack.posted[2]["thread_ts"] == slack.posted[1]["thread_ts"]
+    assert "## Summary" in slack.posted[2]["text"]
 
     human = router.route("issue_comment", comment("looks good"), "d2")
     assert isinstance(human, RoutedEvent)
-    assert len(slack.posted) == 2  # not subscribed to comment.human
+    assert len(slack.posted) == 3  # not subscribed to comment.human
 
     holder["config"] = cli_config(
         tmp_path, subscribe=["session.awaiting_input", "comment.agent", "comment.human"]
     )
     assert router.route("issue_comment", comment("ship it"), "d3") is not None
-    assert len(slack.posted) == 3 and "ship it" in slack.posted[2]["text"]
-    assert "@octocat" in slack.posted[2]["blocks"][0]["text"]["text"]
+    assert len(slack.posted) == 4 and "ship it" in slack.posted[3]["text"]
+    assert "@octocat" in slack.posted[3]["blocks"][0]["text"]["text"]
 
     record = env.stamp(
         mark_self_authored("> yes"), env.Envelope("work-item.reply", "slack")
     )
     assert router.route("issue_comment", comment(record), "d4") is None
-    assert len(slack.posted) == 3  # A10: the bus's own record is never echoed
+    assert len(slack.posted) == 4  # A10: the bus's own record is never echoed
 
     assert router.route("issue_comment", comment("hi", author="stranger"), "d5") is None
-    assert len(slack.posted) == 3  # an unauthorized stranger is relayed nowhere
+    assert len(slack.posted) == 4  # an unauthorized stranger is relayed nowhere
 
 
 def test_a_slack_reply_with_the_gate_grant_is_recorded_unmarked_and_classified_on_ingress(

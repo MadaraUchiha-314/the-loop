@@ -23,6 +23,7 @@ class FakeSlackClient:
     def __init__(self):
         self.posted = []
         self.replies = {}
+        self.history = []  # top-level messages, for the kickoff read
 
     def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None):
         self.posted.append(
@@ -31,7 +32,7 @@ class FakeSlackClient:
         return {"ok": True, "channel": channel, "ts": f"1700.{len(self.posted):06d}"}
 
     def conversations_history(self, *, channel, oldest=None, limit=100):
-        return {"ok": True, "messages": list(getattr(self, "history", []))}
+        return {"ok": True, "messages": list(self.history)}
 
     def conversations_replies(self, *, channel, ts, oldest=None, limit=200):
         return {"ok": True, "messages": list(self.replies.get(ts, []))}
@@ -62,7 +63,8 @@ def test_ask_lands_on_the_work_item_and_fans_out(tmp_path, monkeypatch):
       session.awaiting_input
     When the agent runs `the-loop ask` for its work item
     Then the question is posted on the work item first
-    And the same question is posted to the Slack channel as a thread root
+    And the same question is posted to Slack as the first reply in the work
+      item's thread, whose root names the work item (issue-312)
     And the thread binding is recorded so replies can be attributed
 
     Requirement: docs/specs/issue-245/requirements.md R1.1, R1.2, R2.3, R3.2
@@ -85,8 +87,10 @@ def test_ask_lands_on_the_work_item_and_fans_out(tmp_path, monkeypatch):
 
     assert result["asked"] is True and result["exitCode"] == 0
     assert order == ["work-item"]  # the work item had it before any channel
-    assert len(client.posted) == 1 and client.posted[0]["thread_ts"] is None
-    assert "A or B?" in client.posted[0]["text"]
+    assert len(client.posted) == 2 and client.posted[0]["thread_ts"] is None
+    assert "github:o/r#7" in client.posted[0]["text"]  # the root is the work item's
+    assert client.posted[1]["thread_ts"] == "1700.000001"
+    assert "A or B?" in client.posted[1]["text"]
     from the_loop.channels.state import ChannelState
 
     state = ChannelState.load(tmp_path / "state" / "channels" / "slack.json")
@@ -377,14 +381,252 @@ def test_graph_notification_flows_through_the_channels(tmp_path, monkeypatch):
 
     subscribed = notify(ctx(["phase-approval-pending"]))
     assert subscribed.status == "pass" and subscribed.data["delivered"] is True
-    assert len(client.posted) == 1
-    assert "phase-approval-pending" in client.posted[0]["text"]
+    assert len(client.posted) == 2  # the work item's root, then the event as a reply
+    assert "phase-approval-pending" in client.posted[1]["text"]
+    assert client.posted[1]["thread_ts"] == "1700.000001"
 
     unsubscribed = notify(ctx(["session.awaiting_input"]))
     assert unsubscribed.status == "skip"
-    assert len(client.posted) == 1  # nothing further posted
+    assert len(client.posted) == 2  # nothing further posted
 
     from the_loop.graph.integrations import TransportUnavailable, resolve
 
     with pytest.raises(TransportUnavailable, match="channels.slack"):
         resolve("slack", {})
+
+
+# -- the thread is the work item's (issue-312) ----------------------------------
+
+
+def _enabled_client(monkeypatch, client=None):
+    client = client or FakeSlackClient()
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    monkeypatch.setattr("the_loop.channels.slack.build_client", lambda token: client)
+    return client
+
+
+def test_every_message_about_a_work_item_is_a_reply_in_its_one_thread(
+    tmp_path, monkeypatch
+):
+    """Scenario: Every message about a work item is a reply in its one thread
+
+    Given a Slack channel subscribed to the ask, a notification and the comments
+    When the ask, a graph notification and a human comment are published for one
+      work item, from different publishers
+    Then one thread is opened, its root names the work item
+    And every one of the three messages is a reply into it
+
+    Requirement: docs/specs/issue-312/requirements.md R1.1, R1.2, R1.3, R2.1
+    """
+    from the_loop.channels.base import Event
+    from the_loop.channels.bus import publish
+    from the_loop.channels.publishers import publish_comment
+    from the_loop.channels.state import ChannelState
+
+    client = _enabled_client(monkeypatch)
+    config = cli_config(
+        tmp_path,
+        subscribe=["session.awaiting_input", "phase-approval-pending", "comment.human"],
+    )
+    monkeypatch.setattr(
+        core_sessions,
+        "post_issue_comment_with_url",
+        lambda item, body, gh_binary="gh": (True, "", "https://gh/o/r/issues/7#c1"),
+    )
+    core_sessions.ask_session("github:o/r#7", "A or B?", config=config)
+    publish(
+        Event(
+            event_type="phase-approval-pending",
+            work_item="github:o/r#7",
+            text="design.md is ready",
+            url="https://github.com/o/r/issues/7",
+        ),
+        config,
+    )
+    publish_comment(
+        "human", "github:o/r#7", "octocat", "B, please", "https://gh/c/2", config
+    )
+
+    assert len(client.posted) == 4
+    root, *replies = client.posted
+    assert root["thread_ts"] is None
+    assert "github:o/r#7" in root["blocks"][0]["text"]["text"]
+    assert all(reply["thread_ts"] == "1700.000001" for reply in replies)
+    assert "A or B?" in replies[0]["text"]
+    assert "design.md is ready" in replies[1]["text"]
+    assert "B, please" in replies[2]["text"]
+    state = ChannelState.load(tmp_path / "state" / "channels" / "slack.json")
+    record = state.conversation("github:o/r#7")
+    assert record is not None and record["thread"] == "1700.000001"
+
+
+def test_two_writers_open_one_thread(tmp_path, monkeypatch):
+    """Scenario: Two writers open one thread
+
+    Given no conversation is bound to a work item
+    When two writers deliver its first events at the same moment
+    Then exactly one root is posted
+    And the other writer's event is a reply into it
+
+    Requirement: docs/specs/issue-312/requirements.md R1.4
+    """
+    from the_loop.channels.base import Event
+    from the_loop.channels.slack import SlackBotChannel, SlackChannelConfig
+
+    lock = threading.Lock()
+
+    class Slow(FakeSlackClient):
+        """A root post takes long enough for the second writer to arrive."""
+
+        def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None):
+            if thread_ts is None:
+                time.sleep(0.2)
+            with lock:
+                return super().chat_postMessage(
+                    channel=channel, text=text, thread_ts=thread_ts, blocks=blocks
+                )
+
+    client = _enabled_client(monkeypatch, Slow())
+    config = cli_config(tmp_path)
+    state_path = tmp_path / "state" / "channels" / "slack.json"
+    slack_config = SlackChannelConfig.from_mapping(config)
+
+    def writer(text):
+        SlackBotChannel(slack_config, state_path, client_factory=lambda t: client).post(
+            Event(
+                event_type="session.awaiting_input", work_item="github:o/r#7", text=text
+            )
+        )
+
+    threads = [threading.Thread(target=writer, args=(f"q{n}",)) for n in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    roots = [p for p in client.posted if p["thread_ts"] is None]
+    assert len(roots) == 1
+    assert len(client.posted) == 3
+    assert {p["thread_ts"] for p in client.posted if p["thread_ts"]} == {"1700.000001"}
+
+
+def test_a_kickoff_thread_is_the_work_items_conversation(tmp_path, monkeypatch):
+    """Scenario: A kickoff thread is the work item's conversation
+
+    Given the work-item.create grant and a kickoff repo
+    When an authorized member's top-level message becomes an issue
+    Then that thread is recorded as the work item's conversation, origin kickoff
+    And the next event for the work item is a reply into it — no root is opened
+
+    Requirement: docs/specs/issue-312/requirements.md R1.5, R3.1
+    """
+    from the_loop.channels.base import Event
+    from the_loop.channels.bus import publish
+    from the_loop.channels.state import ChannelState
+
+    client = _enabled_client(monkeypatch)
+    config = cli_config(
+        tmp_path,
+        publish=["work-item.reply", "work-item.create"],
+        kickoff={"repo": "o/r", "labels": []},
+    )
+    monkeypatch.setattr(
+        "the_loop.comments.create_issue",
+        lambda repo, title, body, labels, gh_binary="gh": (
+            True,
+            "",
+            "github:o/r#42",
+            "https://gh/o/r/issues/42",
+        ),
+    )
+    client.history = [{"ts": "1600.1", "user": "UHUMAN", "text": "baseline"}]
+    inbound.poll_once(config)
+    client.history.append({"ts": "1600.2", "user": "UHUMAN", "text": "Ship it"})
+    assert inbound.poll_once(config)["created"] == 1
+
+    state = ChannelState.load(tmp_path / "state" / "channels" / "slack.json")
+    record = state.conversation("github:o/r#42")
+    assert record is not None
+    assert record["thread"] == "1600.2" and record["origin"] == "kickoff"
+
+    publish(
+        Event(
+            event_type="session.awaiting_input",
+            work_item="github:o/r#42",
+            text="A or B?",
+        ),
+        config,
+        record=False,
+    )
+    assert all(p["thread_ts"] == "1600.2" for p in client.posted)
+
+
+def test_a_pre_issue_312_state_file_keeps_its_threads(tmp_path, monkeypatch):
+    """Scenario: A pre-issue-312 state file keeps its threads
+
+    Given a slack.json written by 13.0.1 — threads and cursors, no conversations
+    When an event for a bound work item is posted
+    Then it is a reply into the thread that file bound — no root is opened
+    And the file is rewritten with the conversation keyed by work item
+
+    Requirement: docs/specs/issue-312/requirements.md R3.4
+    """
+    import json
+
+    from the_loop.channels.base import Event
+    from the_loop.channels.bus import publish
+
+    client = _enabled_client(monkeypatch)
+    config = cli_config(tmp_path)
+    path = tmp_path / "state" / "channels" / "slack.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        json.dumps(
+            {
+                "threads": {"1500.1": {"workItem": "github:o/r#7", "channel": "C123"}},
+                "cursors": {"1500.1": "1500.3"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    publish(
+        Event(event_type="session.awaiting_input", work_item="github:o/r#7", text="?"),
+        config,
+        record=False,
+    )
+    assert len(client.posted) == 1 and client.posted[0]["thread_ts"] == "1500.1"
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    assert raw["conversations"]["github:o/r#7"]["thread"] == "1500.1"
+    assert raw["cursors"]["1500.1"] == "1500.3"
+
+
+def test_channels_threads_lists_the_conversation(tmp_path, monkeypatch, capsys):
+    """Scenario: channels threads lists the conversation
+
+    Given a work item whose ask opened a thread
+    When the operator runs `the-loop channels threads`
+    Then the work item, its channel, its thread and how it was opened are listed
+    And no token appears
+
+    Requirement: docs/specs/issue-312/requirements.md R3.3
+    """
+    import argparse
+    import json
+
+    from the_loop.commands.channels_cmd import ChannelsCommand
+
+    _enabled_client(monkeypatch)
+    config = cli_config(tmp_path)
+    monkeypatch.setattr(
+        core_sessions,
+        "post_issue_comment_with_url",
+        lambda item, body, gh_binary="gh": (True, "", "https://gh/o/r/issues/7#c1"),
+    )
+    core_sessions.ask_session("github:o/r#7", "A or B?", config=config)
+    monkeypatch.setenv("THE_LOOP_CLI_CONFIG", str(tmp_path / "cli-config.yaml"))
+    (tmp_path / "cli-config.yaml").write_text(json.dumps(config), encoding="utf-8")
+    parser = argparse.ArgumentParser()
+    ChannelsCommand().add_arguments(parser)
+    assert ChannelsCommand().run(parser.parse_args(["threads"])) == 0
+    out = capsys.readouterr().out
+    assert "github:o/r#7" in out and "C123" in out and "1700.000001" in out
+    assert "event" in out and "xoxb-test" not in out

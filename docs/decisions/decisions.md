@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [105](decision-105.md) | A work item's Slack thread is rooted on the work item, opened once under a lock, and every event is a reply | proposed | 2026-09-02 |
 | [104](decision-104.md) | A ref minted from configuration carries the resolved GitHub host; every outbound call reads the host off the ref | proposed | 2026-09-02 |
 | [103](decision-103.md) | Every channel is a peer on one event bus, and one channel is the ledger | proposed | 2026-09-02 |
 | [102](decision-102.md) | A work-item collaborator is input, never authority | proposed | 2026-08-31 |

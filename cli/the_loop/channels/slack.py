@@ -7,6 +7,12 @@ issue-309, render every event with Block Kit, carry Approve / Request changes
 buttons where a press can be received, and open a work item from a top-level
 message when granted.
 
+The thread is the **work item's** (issue-312, decision-105): the first event for
+a work item opens a root that names it — under the state file's lock, so two
+writers open one thread — and every event, that first one included, is a reply
+into it. Which thread a work item is in is a keyed record
+(``ChannelState.conversations``), listed by ``the-loop channels threads``.
+
 Tokens are read from the environment **at call time** (the ``_SlackBase._url()``
 rule: a provider outlives many transitions and must see the environment as it
 is), named by config, never held as values (R3.1).
@@ -21,6 +27,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
+from .. import eventlog
 from ..identity import Principal, ids_for, parse_authorized_users
 from .base import (
     DEFAULT_EVENTS,
@@ -50,6 +57,7 @@ __all__ = [
     "build_client",
     "kickoff_cursor_key",
     "render_blocks",
+    "render_root",
     "run_socket_listener",
     "slack_state_path",
 ]
@@ -420,6 +428,63 @@ def render_blocks(
     return blocks
 
 
+def _work_item_url(ref: str) -> str:
+    """The browser link for ``ref`` — derived through :class:`WorkItemRef`, so the
+    host it carries is honoured (issue-311); ``""`` for a ref that is not a work
+    item (a standing session's) or will not parse."""
+    from ..sessions import WorkItemRef
+
+    try:
+        return WorkItemRef.parse(ref).url
+    except ValueError:
+        return ""
+
+
+def render_root(
+    work_item: str, url: str = "", *, reading: bool = True
+) -> Tuple[str, List[Dict[str, Any]]]:
+    """The thread root for ``work_item`` — ``(text, blocks)`` built from the bound
+    ref and nothing else (issue-312 A2): a header naming it, a section saying what
+    the thread is for, and the link button when a URL can be derived.
+
+    ``reading`` says whether the channel reads replies (``read.mode != "off"``),
+    so the root promises only what the configuration delivers.
+    """
+    name = f"<{url}|{work_item}>" if url else f"`{work_item}`"
+    lines = [
+        f"This thread carries every message about {name} — questions, "
+        "approvals, comments — each as a reply."
+    ]
+    if reading:
+        lines.append("Replies here from an authorized member reach it.")
+    blocks: List[Dict[str, Any]] = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": f"the-loop · {work_item}"[:_HEADER_LIMIT],
+            },
+        },
+        {"type": "section", "text": {"type": "mrkdwn", "text": " ".join(lines)}},
+    ]
+    if url:
+        blocks.append(
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "Open on GitHub"},
+                        "url": url,
+                        "action_id": f"{ACTION_PREFIX}open",
+                    }
+                ],
+            }
+        )
+    link = f" — {url}" if url else ""
+    return f"the-loop: conversation for {work_item}{link}", blocks
+
+
 class SlackBotChannel:
     """The bot: one Slack channel, one thread per work item, replies read back."""
 
@@ -462,14 +527,29 @@ class SlackBotChannel:
     # -- outbound (R3) ---------------------------------------------------------
 
     def post(self, event: Event) -> PostResult:
+        """Deliver ``event`` as a reply in its work item's thread — opening the
+        thread first, once, when none is bound (issue-312 R1).
+
+        The lock covers the decision (is there a thread? open and bind one) and
+        not the delivery: the reply is posted after it is released, so a slow
+        Slack call never holds the watcher's cursor advance. A reply that fails
+        is a :class:`ChannelError` and never a second root (R2.3) — only "no
+        binding" opens one. An event with no work item posts top-level, unbound.
+        """
         if not self.config.channel:
             raise ChannelError(
                 "slack: no channel id configured — set channels.slack.channel "
                 "to the channel the bot posts into (C…)"
             )
         client = self._client()
-        state = ChannelState.load(self.state_path)
-        bound = state.thread_for(event.work_item) if event.work_item else None
+        bound: Optional[Tuple[str, str]] = None
+        if event.work_item:
+            with ChannelState.locked(self.state_path) as state:
+                bound = state.thread_for(event.work_item)
+                if not bound:
+                    bound = self._open_thread(client, state, event.work_item)
+                elif state.backfilled:
+                    state.save(self.state_path)  # a 13.0.1 file, now keyed (R3.4)
         text = render(event, self.config.verbosity)
         blocks = render_blocks(
             event,
@@ -488,13 +568,54 @@ class SlackBotChannel:
             raise
         except Exception as exc:  # SlackApiError and transport errors alike
             raise ChannelError(f"slack: post failed: {exc}") from None
-        ts = str(response.get("ts") or "")
         if bound:
             return PostResult(channel=self.name, ok=True, thread=bound[1])
-        if ts and event.work_item:
-            state.bind(ts, event.work_item, self.config.channel)
-            state.save(self.state_path)
-        return PostResult(channel=self.name, ok=True, thread=ts)
+        return PostResult(
+            channel=self.name, ok=True, thread=str(response.get("ts") or "")
+        )
+
+    def _open_thread(
+        self, client, state: ChannelState, work_item: str
+    ) -> Tuple[str, str]:
+        """Post the root for ``work_item``, bind it, save — inside the caller's
+        lock. Returns ``(channel_id, thread_ts)``. A root that fails to post
+        binds nothing, so the next event tries again."""
+        url = _work_item_url(work_item)
+        text, blocks = render_root(
+            work_item, url, reading=self.config.read_mode != "off"
+        )
+        try:
+            response = client.chat_postMessage(
+                channel=self.config.channel, text=text, blocks=blocks, thread_ts=None
+            )
+        except Exception as exc:  # SlackApiError and transport errors alike
+            raise ChannelError(f"slack: could not open a thread: {exc}") from None
+        ts = str(response.get("ts") or "")
+        if not ts:
+            raise ChannelError("slack: could not open a thread: no ts returned")
+        permalink = ""
+        try:
+            permalink = str(
+                client.chat_getPermalink(
+                    channel=self.config.channel, message_ts=ts
+                ).get("permalink")
+                or ""
+            )
+        except Exception as exc:  # noqa: BLE001 — a nicety; the binding stands (A3)
+            logger.debug("slack: no permalink for thread %s: %s", ts, exc)
+        state.bind(
+            ts, work_item, self.config.channel, origin="event", permalink=permalink
+        )
+        state.save(self.state_path)
+        eventlog.emit(
+            "channel.thread_opened",
+            channel=self.name,
+            work_item=work_item,
+            thread=ts,
+            channel_id=self.config.channel,
+            origin="event",
+        )
+        return (self.config.channel, ts)
 
     def say(self, thread: str, text: str, channel_id: str = "") -> bool:
         """A plain reply into ``thread`` — the kickoff's "here is your issue"."""
@@ -509,11 +630,29 @@ class SlackBotChannel:
             return False
         return True
 
-    def bind(self, thread: str, work_item: str, channel_id: str = "") -> None:
-        """Bind ``thread`` to ``work_item`` — a kickoff's thread to its new issue."""
-        state = ChannelState.load(self.state_path)
-        state.bind(thread, work_item, channel_id or self.config.channel)
-        state.save(self.state_path)
+    def bind(
+        self,
+        thread: str,
+        work_item: str,
+        channel_id: str = "",
+        *,
+        origin: str = "kickoff",
+    ) -> None:
+        """Bind ``thread`` to ``work_item`` — a kickoff's thread to its new issue.
+        The thread a member started **is** the conversation (issue-312 R1.5)."""
+        with ChannelState.locked(self.state_path) as state:
+            state.bind(
+                thread, work_item, channel_id or self.config.channel, origin=origin
+            )
+            state.save(self.state_path)
+        eventlog.emit(
+            "channel.thread_opened",
+            channel=self.name,
+            work_item=work_item,
+            thread=thread,
+            channel_id=channel_id or self.config.channel,
+            origin=origin,
+        )
 
     # -- inbound (R4) ----------------------------------------------------------
 
@@ -602,8 +741,7 @@ class SlackBotChannel:
         messages = [m for m in (response.get("messages") or []) if m.get("ts")]
         if not cursor:
             newest = max((str(m["ts"]) for m in messages), key=_ts_key, default="0")
-            state.advance(key, newest)
-            state.save(self.state_path)
+            self.advance(key, newest)
             logger.info(
                 "slack: kickoff read baselined at %s — earlier top-level messages "
                 "are never turned into work items",
@@ -640,10 +778,11 @@ class SlackBotChannel:
         return found
 
     def advance(self, thread: str, ts: str) -> None:
-        """Persist that everything in ``thread`` up to ``ts`` was processed."""
-        state = ChannelState.load(self.state_path)
-        state.advance(thread, ts)
-        state.save(self.state_path)
+        """Persist that everything in ``thread`` up to ``ts`` was processed —
+        under the lock, so a cursor never overwrites a binding written beside it."""
+        with ChannelState.locked(self.state_path) as state:
+            state.advance(thread, ts)
+            state.save(self.state_path)
 
     def advance_kickoff(self, ts: str) -> None:
         self.advance(kickoff_cursor_key(self.config.channel), ts)

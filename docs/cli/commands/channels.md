@@ -7,6 +7,7 @@ the-loop's event bus, starting with the Slack bot
 
 ```bash
 the-loop channels status    # ledger, subscribe/publish grants, catalog with ticks — no secrets
+the-loop channels threads   # which Slack thread carries which work item's conversation
 the-loop channels poll      # one read cycle: bound threads, and top-level messages when granted
 the-loop channels listen    # Socket Mode, foreground — replies, button presses, kickoffs
 ```
@@ -20,6 +21,14 @@ the-loop channels listen    # Socket Mode, foreground — replies, button presse
   channel state holds, and the **catalog**: every subscribable event with a tick where
   `subscribe` names it, and every publishable event with a tick where `publish` grants
   it — so neither list is ever configured by guessing names.
+- **`threads`** lists the **conversations**: one line per work item with the Slack
+  channel id, the thread ts, when it was opened, how (`event` — the-loop opened a root
+  for the first event it delivered; `kickoff` — a member's top-level message became the
+  work item and that thread is its conversation; `legacy` — a binding from before
+  [issue-312](https://github.com/MadaraUchiha-314/the-loop/issues/312), derived from the
+  thread map) and the thread's permalink when Slack returned one. `--work-item <ref>`
+  shows one (exit 1 when it has none); `--json` prints the records. It reads the state
+  file only — no Slack call, no token — and prints ids, never a message's text.
 - **`poll`** runs one synchronous read cycle: every bound Slack thread is checked for
   new replies and — with the `work-item.create` grant and a `kickoff.repo` — the
   channel for new top-level messages. Each message is classified into one event type,
@@ -50,7 +59,23 @@ ledger's own ingress is what acts on it; a `work-item.create` is the issue itsel
 
 | Flag | Default | Meaning |
 |------|---------|---------|
-| *(action)* | required | One of `status`, `poll`, `listen`. |
+| *(action)* | required | One of `status`, `threads`, `poll`, `listen`. |
+| `--work-item REF` | *(all)* | `threads` only: show one work item's conversation. |
+| `--json` | off | `threads` only: print the records as JSON. |
+
+## One thread per work item
+
+The thread is the **work item's**
+([issue-312](https://github.com/MadaraUchiha-314/the-loop/issues/312),
+[decision-105](/decisions/decision-105)). The first event the channel delivers for a work
+item opens a **root** that names it — the ref, and an *Open on GitHub* button when the
+ref has a link — and every event, that first one included, is posted as a **reply** into
+it: the ask, the graph's notifications, the mirrored comments. Opening is done once, under
+a lock on the channel's state file, so the agent's session, the daemons and the poll
+watcher cannot open two threads for one work item between them; a reply that fails is
+recorded (`channel.post_failed`) and never followed by a second root. A thread a member
+started that became a work item keeps being that work item's thread. `channels threads`
+is the listing; `channel.thread_opened` is the event.
 
 ## Notes
 

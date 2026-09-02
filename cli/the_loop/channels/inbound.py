@@ -353,7 +353,7 @@ def process_kickoff(
             error=(result.error if result else None) or None,
         )
     bot = channel or SlackBotChannel(config, slack_state_path(cli_config))
-    bot.bind(reply.thread, result.ref, reply.channel_id)
+    bot.bind(reply.thread, result.ref, reply.channel_id, origin="kickoff")
     link = f" — {result.url}" if result.url else ""
     bot.say(
         reply.thread,
@@ -501,9 +501,12 @@ def handle_socket_event(
     )
     if work_item and reply.ts:
         # Shared with the poll transport (R4.6): a mode switch cannot
-        # double-process what the socket already handled.
-        state.advance(thread, reply.ts)
-        state.save(state_path)
+        # double-process what the socket already handled. Under the state
+        # lock (issue-312): a cursor advance never overwrites a binding a
+        # writer in another process saved beside it.
+        with ChannelState.locked(state_path) as fresh:
+            fresh.advance(thread, reply.ts)
+            fresh.save(state_path)
     return outcome
 
 

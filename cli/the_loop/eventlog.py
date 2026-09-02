@@ -346,6 +346,14 @@ EVENT_TYPES: Dict[str, str] = {
         "the new ref, actor, thread) — the `work-item.create` grant (issue-309). "
         "The issue is the ledger's record; the thread is bound to it."
     ),
+    "channel.thread_opened": (
+        "A conversation was bound to a work item (channel, work_item, thread: "
+        "the root's ts, channel_id, origin: event | kickoff) — issue-312. "
+        "`event` means the-loop opened a root for the first event it delivered; "
+        "`kickoff` means a member's top-level message became the work item and "
+        "that thread is its conversation. Every later message is a reply into "
+        "it. Ids only, never text."
+    ),
     # -- the bus (issue-309, decision-103) --------------------------------------
     "bus.published": (
         "An event went through the bus (event_type, work_item, source, recorded: "

@@ -48,6 +48,16 @@ control keyword or a new work item by grant — each recorded on the ledger and 
 by the ledger's own ingress**, never around it. Operate it with
 [`the-loop channels`](/cli/commands/channels).
 
+**One thread per work item, and the thread is the work item's**
+([issue-312](https://github.com/MadaraUchiha-314/the-loop/issues/312),
+[decision-105](/decisions/decision-105)). The first event the channel delivers for a work
+item opens a root message that names it (the ref, with an *Open on GitHub* button), and
+every event — that first one included — is a **reply** into it. The root is opened once,
+under a lock on the channel's state, whichever of the-loop's processes delivers first; a
+thread a member started that became a work item (`work-item.create`) is that work item's
+thread. [`the-loop channels threads`](/cli/commands/channels) lists which thread carries
+which work item.
+
 ## The ledger
 
 ### `ledger`
