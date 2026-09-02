@@ -27,7 +27,7 @@ status: in-progress
 
 | PR | Scope / tasks | Status |
 |----|---------------|--------|
-| PR from `claude/github-issue-311-hp66sw` (number recorded on the ticket) | tasks 1–8: the whole work item | open |
+| [#313](https://github.com/MadaraUchiha-314/the-loop/pull/313) | tasks 1–8: the whole work item | open |
 
 ## Progress entries
 
