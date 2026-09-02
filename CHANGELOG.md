@@ -1,3 +1,9 @@
+## v13.1.1 (2026-09-02)
+
+### Fix
+
+- **issue-315**: one repository's failure is that repository's — the poller keeps polling the rest (#316)
+
 ## v13.1.0 (2026-09-02)
 
 ### Feat
