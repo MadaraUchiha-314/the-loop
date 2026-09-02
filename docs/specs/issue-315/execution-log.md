@@ -27,7 +27,7 @@ status: in-progress
 
 | PR | Scope / tasks | Status |
 |----|---------------|--------|
-| PR_PLACEHOLDER | tasks 1–6: the whole work item | open |
+| [#316](https://github.com/MadaraUchiha-314/the-loop/pull/316) | tasks 1–6: the whole work item | open |
 
 ## Progress entries
 
