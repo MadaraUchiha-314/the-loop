@@ -869,3 +869,60 @@ class TestReviewWalk:
 
         runtime.advance(WORK_ITEM, ref=REF, event=_reply("Angles:\n- migration safety"))
         assert GraphState.load(_spec_dir(repo), WORK_ITEM).current_node == "review"
+
+
+# -- the host (issue-311, R3) ----------------------------------------------------
+
+GHE = "ghe.corp.example"
+GHE_REF = f"github:{GHE}/o/r#9"
+
+
+def _hosted_ctx(repo, event):
+    ctx = _ctx(repo, event)
+    return HookContext(
+        work_item=WorkItem(ref=GHE_REF, id=WORK_ITEM, spec_dir=_spec_dir(repo)),
+        node=ctx.node,
+        boundary=ctx.boundary,
+        repo=repo,
+        event=event,
+        decisions={},
+        config=ctx.config,
+    )
+
+
+def test_a_stated_pull_request_url_keeps_its_host(repo, fake_github):
+    """R3.1 — a pull request stated by URL freezes as a ref on that URL's host;
+    slugs and bare numbers take the work item's (R3.2)."""
+    result = classify_review_brief(
+        _hosted_ctx(
+            repo,
+            _reply(
+                "Questions:\n- anything odd?\n"
+                "Pull requests:\n"
+                "- #12\n"
+                "- octo/lab#7\n"
+                f"- https://{GHE}/acme/widgets/pull/3\n"
+                "- https://github.com/acme/widgets/pull/4\n"
+            ),
+        )
+    )
+    assert result.outcome == "briefed"
+    assert result.data["brief"]["pullRequests"] == [
+        f"github:{GHE}/o/r#12",
+        f"github:{GHE}/octo/lab#7",
+        f"github:{GHE}/acme/widgets#3",
+        "github:acme/widgets#4",
+    ]
+
+
+def test_detected_pull_requests_carry_the_work_items_host(repo, fake_github):
+    """R3.3 — the pr-loops state names numbers and repositories, never a host;
+    the refs the-loop suggests inherit the ticket's."""
+    fake_github.kind = "issue"
+    pr_loops = _spec_dir(repo) / "pr-loops"
+    (pr_loops / "pr-12").mkdir(parents=True)
+    (pr_loops / "acme__widgets" / "pr-7").mkdir(parents=True)
+    post_review_brief(_hosted_ctx(repo, {"comments": []}))
+    body = fake_github.posted[0]
+    assert f"- github:{GHE}/o/r#12" in body
+    assert f"- github:{GHE}/acme/widgets#7" in body

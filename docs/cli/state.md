@@ -167,6 +167,12 @@ If you were already running the-loop against a GitHub Enterprise host, its work 
 are **re-identified** by this change — a new file name, so the poll ledger re-baselines
 the thread once and any session for it should be re-registered
 (`the-loop sessions register`). github.com work items are untouched.
+
+A ref minted **in-session** — by `the-loop graph` from the repository's
+`ticketing.github`, which names no host — carries the host
+[`integrations.github.host`](/config/cli/integrations-options#github-host) resolves
+(issue-311), so its `url` here and the link the `notify` hook posts agree with the
+ingress's refs.
 :::
 
 ### `control` — what an authorized user asked for

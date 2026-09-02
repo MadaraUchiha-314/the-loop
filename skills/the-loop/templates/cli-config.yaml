@@ -377,6 +377,11 @@ eventLog:                           # structured JSONL o11y trail; `the-loop eve
 integrations:
   github:
     transport: auto             # auto | api | cli
+    # Which GitHub the-loop is on (issue-311): set your GitHub Enterprise domain
+    # and every link it posts and every `gh` call it makes name that host. Unset,
+    # it resolves from `api.baseUrl` (an enterprise base), then `$GH_HOST`, then
+    # the checkout's origin remote (in-session), then github.com.
+    # host: ghe.corp.example
     api:
       tokenEnv: [GH_TOKEN, GITHUB_TOKEN]
       baseUrl: https://api.github.com

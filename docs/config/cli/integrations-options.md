@@ -59,6 +59,37 @@ How GitHub calls are made:
 | `cli` | the operator's authenticated `gh`, inheriting enterprise and SSO settings |
 | `auto` | token first, then binary; fails closed naming both remedies |
 
+### `github.host`
+
+- **Type:** `string`
+- **Default:** none — resolved (see below)
+
+**Which GitHub the-loop is on** (issue-311). Set it to your GitHub Enterprise domain
+(`ghe.corp.example`, or `ghe.corp.example:8443`) and every link the-loop posts — the Slack
+notification for a pending decision, the ask's "answer on the ticket", the portable
+record's `url`, the reviewer's suggested pull requests — and every `gh` call it makes
+(`gh api --hostname …`, `gh issue … --repo HOST/OWNER/REPO`) name that host.
+
+You rarely need to set it. A work item that arrives through a webhook or a poll already
+carries its host in its ref, read off the event. This key answers for the refs the-loop
+**mints from configuration** — the graph's own work item, derived from the repository's
+`ticketing.github` — and it is the first of five tiers, resolved in this order:
+
+| Tier | Source |
+|------|--------|
+| 1 | `integrations.github.host` — this key |
+| 2 | the host of `github.api.baseUrl`, when it is not the public API (`https://<host>/api/v3`) |
+| 3 | `$GH_HOST` — `gh`'s own override |
+| 4 | the `origin` remote of the repository the loop is running in — `gh`'s own next answer; only in-session, never in a daemon |
+| 5 | `github.com` |
+
+A value that is not the shape of a host — a scheme, a path, credentials, a bare word with
+no dot and no port — is skipped with a warning and the next tier answers. `github.com`
+stays unwritten in refs and adds nothing to any `gh` argv, so a deployment on github.com
+sees no change. The checkout directory's host is a separate, explicit key:
+[`routing.workspace.defaultHost`](/config/cli/routing-options#workspace-defaulthost).
+See [decision-104](/decisions/decision-104).
+
 ### `github.api.tokenEnv`
 
 - **Type:** `string[]`
@@ -75,7 +106,11 @@ This is a list of *variable names*. Putting a token in this file commits it.
 - **Type:** `string`
 - **Default:** none (github.com)
 
-API base URL — set it for a GitHub Enterprise host.
+API base URL — set it for a GitHub Enterprise host (`https://<host>/api/v3`). An
+enterprise base also answers
+[`github.host`](/config/cli/integrations-options#github-host) when that key is unset; and a
+work item on an enterprise host is addressed at `https://<host>/api/v3` when this key is
+left at the public default (issue-311).
 
 ### `github.cli.binary`
 

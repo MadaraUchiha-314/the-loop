@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [104](decision-104.md) | A ref minted from configuration carries the resolved GitHub host; every outbound call reads the host off the ref | proposed | 2026-09-02 |
 | [103](decision-103.md) | Every channel is a peer on one event bus, and one channel is the ledger | proposed | 2026-09-02 |
 | [102](decision-102.md) | A work-item collaborator is input, never authority | proposed | 2026-08-31 |
 | [101](decision-101.md) | A review is a fifth loop, a guest, and bound to the pull request itself | proposed | 2026-08-24 |

@@ -34,6 +34,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 from . import eventlog
+from .sessions import DEFAULT_GITHUB_HOST
 from .webhook.router import RoutedEvent
 
 logger = logging.getLogger("the-loop.reactions")
@@ -107,6 +108,7 @@ class ReactionTarget:
     rest_path: str = ""  # relative REST path, when the target has a numeric id
     node_id: str = ""  # GraphQL subject id, when that's what the payload has
     description: str = ""  # human-readable, for logs/eventlog only
+    host: str = ""  # the work item's GitHub when not github.com (issue-311)
 
 
 def target_from_event(routed: RoutedEvent) -> Optional[ReactionTarget]:
@@ -127,10 +129,20 @@ def target_from_event(routed: RoutedEvent) -> Optional[ReactionTarget]:
     if not sep or not _NAME_RE.match(owner) or not _NAME_RE.match(repo):
         return None
 
+    # The host is the work item's (issue-311): every work item on one event
+    # came off one payload, so the first GitHub one answers for the call.
+    host = next(
+        (item.host for item in routed.work_items if item.provider == "github"), ""
+    )
+    if host == DEFAULT_GITHUB_HOST:
+        host = ""
+
     comment = payload.get("comment") or {}
     node_id = str(comment.get("node_id") or "")
     if node_id and _NODE_ID_RE.match(node_id):
-        return ReactionTarget(owner, repo, node_id=node_id, description="comment")
+        return ReactionTarget(
+            owner, repo, node_id=node_id, description="comment", host=host
+        )
     raw_id = comment.get("id")
     if raw_id is not None:
         comment_id = str(raw_id)
@@ -140,12 +152,14 @@ def target_from_event(routed: RoutedEvent) -> Optional[ReactionTarget]:
                 "pulls" if routed.event == "pull_request_review_comment" else "issues"
             )
             path = f"repos/{owner}/{repo}/{base}/comments/{comment_id}/reactions"
-            return ReactionTarget(owner, repo, rest_path=path, description="comment")
+            return ReactionTarget(
+                owner, repo, rest_path=path, description="comment", host=host
+            )
         if _NODE_ID_RE.match(comment_id):
             # Poll-path comments carry the GraphQL node id in `id`
             # (GhClient._comment_from_json).
             return ReactionTarget(
-                owner, repo, node_id=comment_id, description="comment"
+                owner, repo, node_id=comment_id, description="comment", host=host
             )
         return None
 
@@ -154,7 +168,7 @@ def target_from_event(routed: RoutedEvent) -> Optional[ReactionTarget]:
     if number.isdigit():
         path = f"repos/{owner}/{repo}/issues/{number}/reactions"
         kind = "issue" if payload.get("issue") else "pull-request"
-        return ReactionTarget(owner, repo, rest_path=path, description=kind)
+        return ReactionTarget(owner, repo, rest_path=path, description=kind, host=host)
     return None
 
 
@@ -243,9 +257,12 @@ class GitHubReactor:
 
     @staticmethod
     def _argv(target: ReactionTarget, content: str) -> list:
+        from .comments import gh_host_args
+
         if target.rest_path:
             return [
                 "api",
+                *gh_host_args(target.host),
                 "--method",
                 "POST",
                 target.rest_path,
@@ -254,6 +271,7 @@ class GitHubReactor:
             ]
         return [
             "api",
+            *gh_host_args(target.host),
             "graphql",
             "-f",
             f"query={_ADD_REACTION_MUTATION}",

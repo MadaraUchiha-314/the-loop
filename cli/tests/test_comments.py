@@ -137,3 +137,70 @@ def test_with_url_shares_the_failure_contract(gh_present):
         REF, "hello", runner=FakeRunStdout(returncode=1)
     )
     assert not ok and "gh exited 1" in error and url == ""
+
+
+# -- the host (issue-311, R4) ----------------------------------------------------
+
+from the_loop.comments import create_issue, gh_host_args, issue_argv  # noqa: E402
+
+GHE = "ghe.corp.example"
+GHE_REF = WorkItemRef.parse(f"github:{GHE}/octo/repo#15")
+
+
+def test_gh_host_args_is_written_only_off_the_default():
+    """A5: a github.com ref adds nothing to any argv it always had."""
+    assert gh_host_args(REF) == []
+    assert gh_host_args(GHE_REF) == ["--hostname", GHE]
+    assert gh_host_args("") == []
+    assert gh_host_args("github.com") == []
+    assert gh_host_args(GHE) == ["--hostname", GHE]
+
+
+def test_a_hosted_comment_is_posted_on_its_host():
+    assert comment_argv(GHE_REF, "hi") == [
+        "api",
+        "--hostname",
+        GHE,
+        "--method",
+        "POST",
+        "repos/octo/repo/issues/15/comments",
+        "-f",
+        "body=hi",
+    ]
+
+
+def test_a_hosted_issue_is_opened_on_its_host():
+    argv = issue_argv("octo", "repo", "t", "b", host=GHE)
+    assert argv[:3] == ["api", "--hostname", GHE]
+    assert "repos/octo/repo/issues" in argv
+    assert "--hostname" not in issue_argv("octo", "repo", "t", "b")
+
+
+def test_a_kickoff_slug_may_name_its_host(gh_present):
+    """R4.4 — the ref the ledger composes from GitHub's answer carries the host
+    it was asked on, so the Slack thread binds to the right work item."""
+    run = FakeRunStdout(
+        stdout='{"number": 9, "html_url": "https://ghe.corp.example/octo/repo/issues/9"}'
+    )
+    ok, error, ref, url = create_issue(f"{GHE}/octo/repo", "t", "b", runner=run)
+    assert ok, error
+    assert ref == f"github:{GHE}/octo/repo#9"
+    assert url.startswith(f"https://{GHE}/")
+    assert run.calls[0][1:4] == ["api", "--hostname", GHE]
+
+
+def test_a_github_com_kickoff_slug_is_unchanged(gh_present):
+    run = FakeRunStdout(stdout='{"number": 9}')
+    ok, _, ref, _ = create_issue("octo/repo", "t", "b", runner=run)
+    assert ok and ref == "github:octo/repo#9"
+    assert "--hostname" not in run.calls[0]
+
+
+@pytest.mark.parametrize(
+    "slug", ["https://ghe.corp.example/octo/repo", "ghe/octo/repo", "a/b/c/d"]
+)
+def test_a_kickoff_slug_with_a_bad_host_is_refused(gh_present, slug):
+    run = FakeRunStdout(stdout='{"number": 9}')
+    ok, error, ref, _ = create_issue(slug, "t", "b", runner=run)
+    assert ok is False and ref == ""
+    assert run.calls == []

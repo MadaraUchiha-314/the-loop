@@ -83,3 +83,117 @@ def test_slack_is_a_named_refusal_pointing_at_channels():
     embedder still resolving the old integration learns the replacement."""
     with pytest.raises(TransportUnavailable, match="channels.slack"):
         resolve("slack", {"integrations": {"slack": {"transport": "sdk"}}})
+
+
+# -- the host (issue-311, R4) ----------------------------------------------------
+
+import json  # noqa: E402
+
+from the_loop.graph.integrations.github import (  # noqa: E402
+    _linked_pull_refs,
+    _ref_parts,
+)
+
+GHE = "ghe.corp.example"
+GHE_REF = f"github:{GHE}/octo/repo#42"
+
+
+def test_ref_parts_reads_a_hosted_ref():
+    assert _ref_parts(GHE_REF) == (GHE, "octo", "repo", "42")
+    assert _ref_parts("github:octo/repo#42") == ("", "octo", "repo", "42")
+    assert _split_ref(GHE_REF) == ("octo", "repo", "42")
+
+
+def test_a_ref_with_a_bad_host_is_malformed():
+    from the_loop.graph.integrations.base import IntegrationError
+
+    with pytest.raises(IntegrationError, match="malformed"):
+        _split_ref("github:ghe/octo/repo#42")
+
+
+class _Runs:
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, args):
+        self.calls.append(list(args))
+        return "{}"
+
+
+def test_the_cli_transport_names_the_host_on_every_operation(monkeypatch):
+    runs = _Runs()
+    provider = GitHubCli()
+    monkeypatch.setattr(provider, "_run", runs)
+    provider.call("add-comment", ref=GHE_REF, body="hi")
+    provider.call("set-labels", ref=GHE_REF, labels=["a"])
+    provider.call("get-labels", ref=GHE_REF)
+    provider.call("get-thread", ref=GHE_REF)
+    provider.call("linked-pulls", ref=GHE_REF)
+    provider.call("list-comments", ref=GHE_REF)
+    for argv in runs.calls:
+        if argv[0] == "api":
+            assert argv[1:3] == ["--hostname", GHE], argv
+        else:
+            assert argv[argv.index("--repo") + 1] == f"{GHE}/octo/repo", argv
+
+
+def test_the_cli_transport_is_unchanged_for_github_com(monkeypatch):
+    runs = _Runs()
+    provider = GitHubCli()
+    monkeypatch.setattr(provider, "_run", runs)
+    provider.call("add-comment", ref="github:octo/repo#42", body="hi")
+    provider.call("get-thread", ref="github:octo/repo#42")
+    assert all("--hostname" not in argv for argv in runs.calls)
+    assert runs.calls[0][runs.calls[0].index("--repo") + 1] == "octo/repo"
+
+
+def test_the_api_transport_derives_the_enterprise_base(monkeypatch):
+    seen = []
+
+    def fake_open(req, timeout=30):
+        seen.append(req.full_url)
+
+        class _Resp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return b"{}"
+
+        return _Resp()
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_open)
+    monkeypatch.setenv("GH_TOKEN", "x")
+    GitHubApi(["GH_TOKEN"]).call("get-thread", ref=GHE_REF)
+    GitHubApi(["GH_TOKEN"]).call("get-thread", ref="github:octo/repo#42")
+    GitHubApi(["GH_TOKEN"], "https://explicit.example/api/v3").call(
+        "get-thread", ref=GHE_REF
+    )
+    assert seen == [
+        f"https://{GHE}/api/v3/repos/octo/repo/issues/42",
+        "https://api.github.com/repos/octo/repo/issues/42",
+        "https://explicit.example/api/v3/repos/octo/repo/issues/42",
+    ]
+
+
+def test_linked_pulls_carry_the_host_they_were_asked_on():
+    data = {
+        "data": {
+            "repository": {
+                "issue": {
+                    "closedByPullRequestsReferences": {
+                        "nodes": [
+                            {"number": 3, "repository": {"nameWithOwner": "octo/repo"}}
+                        ]
+                    }
+                }
+            }
+        }
+    }
+    assert _linked_pull_refs(json.loads(json.dumps(data)), GHE) == [
+        f"github:{GHE}/octo/repo#3"
+    ]
+    assert _linked_pull_refs(data, "") == ["github:octo/repo#3"]

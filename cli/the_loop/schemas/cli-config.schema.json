@@ -798,7 +798,7 @@
                 "repo": {
                   "type": "string",
                   "default": "",
-                  "description": "The `owner/repo` the issue is created in. Empty = kickoff disabled."
+                  "description": "The `[host/]owner/repo` the issue is created in \u2014 gh's own --repo grammar, the host present for GitHub Enterprise (issue-311). Empty = kickoff disabled."
                 },
                 "labels": {
                   "type": "array",
@@ -871,6 +871,10 @@
               ],
               "default": "auto",
               "description": "auto | api (stdlib HTTP + token) | cli (the operator's authenticated gh, inheriting enterprise/SSO)"
+            },
+            "host": {
+              "type": "string",
+              "description": "Which GitHub the-loop is on (issue-311): the host every link it posts and every gh call it makes name, for a work item whose ref was minted from configuration rather than from an event. A dotted name or one with a port, no scheme or path (e.g. ghe.corp.example). Unset, it resolves from api.baseUrl (an enterprise base), then $GH_HOST, then the checkout's origin remote (in-session only), then github.com. A value that is not the shape of a host is skipped with a warning."
             },
             "api": {
               "type": "object",

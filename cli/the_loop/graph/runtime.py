@@ -259,7 +259,9 @@ class Runtime:
             resolved = str(self.config.get("prRef") or "")
         else:
             resolved = derive_ref(
-                work_item_id, str(self.config.get("originRepo") or "")
+                work_item_id,
+                str(self.config.get("originRepo") or ""),
+                host=str(self.config.get("githubHost") or ""),
             )
         if not ref and resolved:
             logger.debug("derived ref %s for %s", resolved, work_item_id)

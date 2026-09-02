@@ -122,6 +122,16 @@ def build_runtime(
         if isinstance(cli_cfg, dict)
         else True
     )
+    # Which GitHub a ref minted here lives on (issue-311): the one resolver's
+    # answer, taken once per runtime so `derive_ref` and `prRef` below agree
+    # with every link and every `gh` call downstream of the ref. Resolved with
+    # this checkout at hand, because in-session the origin remote is `gh`'s
+    # own answer; a daemon passes no root and stops at its config.
+    from ..ghhost import github_host
+
+    config["githubHost"] = github_host(
+        cli_cfg if isinstance(cli_cfg, dict) else {}, repo_root=root
+    )
     if isinstance(cli_cfg, dict):
         config["integrations"] = cli_cfg.get("integrations") or {}
         # The channels layer (issue-245): the `notify` hook broadcasts through
@@ -169,7 +179,9 @@ def build_runtime(
         # pull request's review comments on the ticket.
         from .refs import ref_for
 
-        config["prRef"] = ref_for(pr_repo or config["originRepo"], pr_number)
+        config["prRef"] = ref_for(
+            pr_repo or config["originRepo"], pr_number, host=config["githubHost"]
+        )
         return Runtime(
             root,
             graph=load_graph(

@@ -64,6 +64,14 @@ github.com, so ordinary refs are exactly what they always were. Neither ingress 
 be told which it is: the webhook receiver reads the host from the repository's
 `html_url`, and the poller from the item's own URL.
 
+A ref the-loop **mints from configuration** rather than from an event — the graph's own
+work item, derived from the repository's `ticketing.github` — takes its host from
+[`integrations.github.host`](/config/cli/integrations-options#github-host), then from
+`gh`'s own answers (`$GH_HOST`, the checkout's `origin` remote), then github.com
+(issue-311). Every link the-loop posts and every `gh` call it makes read the host back
+off the ref, so on GitHub Enterprise the Slack link for a pending decision and the
+comment it describes land on the same GitHub.
+
 The invariant: **one work item, one active session.** The
 [registry](/cli/commands/sessions) is the source of truth, one human-inspectable JSON file
 per session under `<state.root>/local/`, written atomically so concurrent sessions on

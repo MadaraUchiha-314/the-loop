@@ -153,26 +153,65 @@ def parse_brief(body: str) -> Optional[Dict[str, List[str]]]:
 #: slug, or a bare number (the work item's own repository). Anything else is
 #: dropped — the frozen list is a fact rendered back into comments and
 #: prompts, so it holds refs the-loop composed, never free text.
+#: A pull request stated by URL keeps the URL's host (issue-311, R3.1): a
+#: reviewer on GitHub Enterprise pastes an enterprise link, and the ref frozen
+#: from it must name that GitHub, not github.com.
 _PULL_URL = re.compile(
-    r"https?://github\.com/(?P<owner>[\w.-]+)/(?P<repo>[\w.-]+)/pull/(?P<n>\d+)"
+    r"https?://(?P<host>[^/\s]+)/(?P<owner>[\w.-]+)/(?P<repo>[\w.-]+)/pull/(?P<n>\d+)"
 )
+#: A slug may carry a host the way a ref does (`github:ghe.corp/o/r#7`), which
+#: is what the-loop's own detected refs look like on GitHub Enterprise; a bare
+#: `o/r#7` is on the work item's host.
 _PULL_SLUG = re.compile(
-    r"^(?:github:)?(?P<owner>[\w.-]+)/(?P<repo>[\w.-]+)#(?P<n>\d+)$"
+    r"^(?:github:)?(?:(?P<host>[^/\s#]+)/)?(?P<owner>[\w.-]+)/(?P<repo>[\w.-]+)"
+    r"#(?P<n>\d+)$"
 )
 _PULL_BARE = re.compile(r"^#?(?P<n>\d+)$")
 
 
-def _own_repo(ref: str) -> tuple[str, str]:
-    """``github:owner/repo#9`` → ``("owner", "repo")`` — or ``("", "")``."""
-    body = ref.split(":", 1)[1] if ":" in ref else ref
-    slug = body.partition("#")[0]
-    owner, _, repo = slug.partition("/")
-    return (owner, repo) if owner and repo else ("", "")
+def _own_coords(ref: str) -> tuple[str, str, str]:
+    """``github:[host/]owner/repo#9`` → ``(host, owner, repo)`` — or three ``""``.
+
+    The host is ``""`` for github.com, so a ref spelled from it leaves the
+    default unwritten (issue-311).
+    """
+    from ...sessions import DEFAULT_GITHUB_HOST, WorkItemRef
+
+    try:
+        parsed = WorkItemRef.parse(ref)
+    except ValueError:
+        return "", "", ""
+    host = "" if parsed.host == DEFAULT_GITHUB_HOST else parsed.host
+    return host, parsed.owner, parsed.repo
+
+
+def _pull_ref(host: str, owner: str, repo: str, number: str) -> str:
+    """One spelling for every ref this module composes — or ``""``.
+
+    Through ``WorkItemRef`` so the host is written exactly when it is not the
+    default and a host that is not a host (a pasted URL on some other service)
+    yields nothing rather than a ref pointing somewhere else.
+    """
+    from ...sessions import DEFAULT_GITHUB_HOST, WorkItemRef, is_github_host
+
+    if host and host != DEFAULT_GITHUB_HOST and not is_github_host(host):
+        return ""
+    try:
+        return WorkItemRef(
+            provider="github", owner=owner, repo=repo, number=int(number), host=host
+        ).ref
+    except ValueError:
+        return ""
 
 
 def _normalize_pulls(items: List[str], work_item_ref: str) -> List[str]:
-    """Stated/detected pull requests as ``github:owner/repo#n`` refs, deduped."""
-    owner, repo = _own_repo(work_item_ref)
+    """Stated/detected pull requests as ``github:[host/]owner/repo#n`` refs, deduped.
+
+    A URL keeps its own host; a slug or a bare number is on the **work item's**
+    host — the ticket's GitHub is the default for everything named beside it
+    (issue-311, R3.2).
+    """
+    own_host, owner, repo = _own_coords(work_item_ref)
     refs: List[str] = []
     for item in items:
         text = str(item or "").strip().rstrip(".,;")
@@ -180,14 +219,21 @@ def _normalize_pulls(items: List[str], work_item_ref: str) -> List[str]:
         slug = _PULL_SLUG.match(text)
         bare = _PULL_BARE.match(text)
         if url:
-            ref = f"github:{url.group('owner')}/{url.group('repo')}#{url.group('n')}"
+            ref = _pull_ref(
+                url.group("host"), url.group("owner"), url.group("repo"), url.group("n")
+            )
         elif slug:
-            ref = f"github:{slug.group('owner')}/{slug.group('repo')}#{slug.group('n')}"
+            ref = _pull_ref(
+                slug.group("host") or own_host,
+                slug.group("owner"),
+                slug.group("repo"),
+                slug.group("n"),
+            )
         elif bare and owner:
-            ref = f"github:{owner}/{repo}#{bare.group('n')}"
+            ref = _pull_ref(own_host, owner, repo, bare.group("n"))
         else:
             continue
-        if ref not in refs:
+        if ref and ref not in refs:
             refs.append(ref)
     return refs
 
@@ -237,7 +283,7 @@ def _state_pulls(ctx: HookContext) -> List[str]:
     work item's own repository, ``<owner>__<repo>/pr-<n>/`` for a
     contributing one.
     """
-    own_owner, own_repo = _own_repo(ctx.work_item.ref)
+    own_host, own_owner, own_repo = _own_coords(ctx.work_item.ref)
     root = Path(ctx.work_item.spec_dir) / "pr-loops"
     refs: List[str] = []
     try:
@@ -247,7 +293,7 @@ def _state_pulls(ctx: HookContext) -> List[str]:
     for entry in entries:
         name = entry.name
         if name.startswith("pr-") and name[3:].isdigit() and own_owner:
-            refs.append(f"github:{own_owner}/{own_repo}#{name[3:]}")
+            refs.append(_pull_ref(own_host, own_owner, own_repo, name[3:]))
             continue
         if "__" not in name or not entry.is_dir():
             continue
@@ -259,8 +305,10 @@ def _state_pulls(ctx: HookContext) -> List[str]:
         for pr_dir in inner:
             pr_name = pr_dir.name
             if pr_name.startswith("pr-") and pr_name[3:].isdigit():
-                refs.append(f"github:{owner}/{repo}#{pr_name[3:]}")
-    return refs
+                # A contributing repository inherits the work item's host: the
+                # state directory names owner and repo, never a host.
+                refs.append(_pull_ref(own_host, owner, repo, pr_name[3:]))
+    return [ref for ref in refs if ref]
 
 
 def _detected_pulls(ctx: HookContext) -> List[str]:

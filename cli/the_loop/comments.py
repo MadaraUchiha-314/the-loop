@@ -27,15 +27,16 @@ import logging
 import re
 import shutil
 import subprocess
-from typing import Callable, Optional, Tuple
+from typing import Callable, Optional, Tuple, Union
 
-from .sessions import WorkItemRef
+from .sessions import DEFAULT_GITHUB_HOST, WorkItemRef, is_github_host
 
 logger = logging.getLogger("the-loop.comments")
 
 __all__ = [
     "comment_argv",
     "create_issue",
+    "gh_host_args",
     "issue_argv",
     "post_issue_comment",
     "post_issue_comment_with_url",
@@ -47,13 +48,39 @@ __all__ = [
 _NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
+def gh_host_args(item_or_host: Union[WorkItemRef, str]) -> list:
+    """The ``gh api`` arguments that select ``item``'s GitHub — or nothing.
+
+    The one spelling of a host on the ``gh api`` command line (issue-311, R4):
+    ``--hostname <host>`` when the work item is not on github.com, and **nothing**
+    when it is, so every argv a github.com deployment ever produced is
+    byte-identical. ``gh`` keeps its credentials per host and sends only the one
+    it holds for the host named here. Every ``gh api`` the-loop composes — a
+    comment, a reaction, an issue, an existence check, a poll read — goes through
+    this rather than spelling the flag itself, which is what stops a call site
+    from forgetting it.
+
+    Accepts a :class:`WorkItemRef` or a bare host string.
+    """
+    host = (
+        item_or_host.host
+        if isinstance(item_or_host, WorkItemRef)
+        else str(item_or_host or "")
+    )
+    if not host or host == DEFAULT_GITHUB_HOST:
+        return []
+    return ["--hostname", host]
+
+
 def comment_argv(item: WorkItemRef, body: str) -> list:
     """The ``gh`` arguments that post ``body`` on ``item``.
 
     The issues endpoint serves PR conversations too, so one argv covers both.
+    A work item on GitHub Enterprise is addressed on its own host (issue-311).
     """
     return [
         "api",
+        *gh_host_args(item),
         "--method",
         "POST",
         f"repos/{item.owner}/{item.repo}/issues/{item.number}/comments",
@@ -136,15 +163,19 @@ def _html_url(stdout: str) -> str:
     return url if isinstance(url, str) else ""
 
 
-def issue_argv(owner: str, repo: str, title: str, body: str, labels=()) -> list:
+def issue_argv(
+    owner: str, repo: str, title: str, body: str, labels=(), host: str = ""
+) -> list:
     """The ``gh`` arguments that open an issue on ``owner/repo`` (issue-309).
 
     ``gh api`` rather than ``gh issue create``: the API form returns the created
     issue as JSON, so the number and ``html_url`` come back in one call and no
-    URL has to be parsed out of prose.
+    URL has to be parsed out of prose. ``host`` addresses an enterprise GitHub
+    (issue-311); empty means github.com.
     """
     args = [
         "api",
+        *gh_host_args(host),
         "--method",
         "POST",
         f"repos/{owner}/{repo}/issues",
@@ -174,10 +205,23 @@ def create_issue(
     contract as the comment writer: the operator's credentials, best-effort, an
     injectable runner, and coordinates validated before they reach an argv. The
     body is the caller's to compose — this function never builds one.
+
+    ``repo_slug`` is ``[<host>/]<owner>/<repo>`` — ``gh``'s own ``--repo``
+    grammar (issue-311): a kickoff on GitHub Enterprise names its host, and the
+    ref handed back carries it, so the thread binds to the right work item.
     """
-    owner, _, repo = repo_slug.strip().partition("/")
-    if not owner or not repo or "/" in repo:
-        return False, f"kickoff repo {repo_slug!r} is not owner/repo", "", ""
+    parts = repo_slug.strip().split("/")
+    host = ""
+    if len(parts) == 3:
+        host, owner, repo = parts
+        if not is_github_host(host):
+            return False, f"kickoff repo {repo_slug!r} does not name a host", "", ""
+    elif len(parts) == 2:
+        owner, repo = parts
+    else:
+        return False, f"kickoff repo {repo_slug!r} is not [host/]owner/repo", "", ""
+    if not owner or not repo:
+        return False, f"kickoff repo {repo_slug!r} is not [host/]owner/repo", "", ""
     if not _NAME_RE.match(owner) or not _NAME_RE.match(repo):
         return False, f"unusable repo coordinates in {repo_slug!r}", "", ""
     if not title.strip():
@@ -185,7 +229,12 @@ def create_issue(
     if shutil.which(gh_binary) is None:
         return False, f"gh CLI {gh_binary!r} not found on PATH", "", ""
     cmd = [gh_binary] + issue_argv(
-        owner, repo, title, body, [str(lbl) for lbl in labels if str(lbl).strip()]
+        owner,
+        repo,
+        title,
+        body,
+        [str(lbl) for lbl in labels if str(lbl).strip()],
+        host=host,
     )
     try:
         proc = runner(cmd, capture_output=True, text=True, timeout=timeout)
@@ -201,4 +250,7 @@ def create_issue(
     number = data.get("number") if isinstance(data, dict) else None
     if not isinstance(number, int):
         return False, "gh returned no issue number", "", _html_url(proc.stdout or "")
-    return True, "", f"github:{owner}/{repo}#{number}", _html_url(proc.stdout or "")
+    ref = WorkItemRef(
+        provider="github", owner=owner, repo=repo, number=number, host=host
+    ).ref
+    return True, "", ref, _html_url(proc.stdout or "")

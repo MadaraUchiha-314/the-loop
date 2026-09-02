@@ -23,6 +23,9 @@ import urllib.error
 import urllib.request
 from typing import Any, Dict, FrozenSet, Sequence
 
+from ...comments import gh_host_args
+from ...ghhost import PUBLIC_API_BASE, api_base_for
+from ...sessions import DEFAULT_GITHUB_HOST, WorkItemRef, is_github_host
 from .base import IntegrationError, OperationUnsupported
 
 logger = logging.getLogger("the-loop.graph.integrations")
@@ -61,8 +64,14 @@ query($owner: String!, $repo: String!, $number: Int!) {
 """
 
 
-def _linked_pull_refs(data: Dict[str, Any]) -> list[str]:
-    """``github:owner/repo#n`` refs out of the GraphQL response — or empty."""
+def _linked_pull_refs(data: Dict[str, Any], host: str = "") -> list[str]:
+    """``github:[host/]owner/repo#n`` refs out of the GraphQL response — or empty.
+
+    ``host`` is the GitHub the question was asked on (issue-311, R4.4): the
+    answer names repositories by ``nameWithOwner`` alone, so the refs composed
+    from it carry the host the-loop already knew, spelled by ``WorkItemRef`` so
+    github.com stays unwritten.
+    """
     nodes = (((data.get("data") or {}).get("repository") or {}).get("issue") or {}).get(
         "closedByPullRequestsReferences"
     ) or {}
@@ -72,16 +81,35 @@ def _linked_pull_refs(data: Dict[str, Any]) -> list[str]:
             continue
         number = node.get("number")
         slug = (node.get("repository") or {}).get("nameWithOwner") or ""
-        if isinstance(number, int) and slug:
-            refs.append(f"github:{slug}#{number}")
+        owner, _, repo = str(slug).partition("/")
+        if isinstance(number, int) and owner and repo:
+            refs.append(
+                WorkItemRef(
+                    provider="github", owner=owner, repo=repo, number=number, host=host
+                ).ref
+            )
     return refs
 
 
-def _split_ref(ref: str) -> tuple[str, str, str]:
-    """``github:owner/repo#123`` → ``(owner, repo, "123")``."""
+def _ref_parts(ref: str) -> tuple[str, str, str, str]:
+    """``github:[host/]owner/repo#123`` → ``(host, owner, repo, "123")``.
+
+    ``host`` is ``""`` for github.com — the unwritten default — so a caller
+    spelling a ``--repo`` or a ``--hostname`` writes it exactly when it is not
+    the default (issue-311).
+    """
     body = ref.split(":", 1)[1] if ":" in ref else ref
     repo_part, _, number = body.partition("#")
-    owner, _, repo = repo_part.partition("/")
+    parts = repo_part.split("/")
+    host, owner, repo = "", "", ""
+    if len(parts) == 3:
+        host, owner, repo = parts
+        if not is_github_host(host):
+            host, owner, repo = "", "", ""  # a path fragment, not a host: malformed
+    elif len(parts) == 2:
+        owner, repo = parts
+    if host == DEFAULT_GITHUB_HOST:
+        host = ""
     if not (owner and repo and number):
         # Name both remedies (issue-194). The value that lands here is almost
         # always a bare work-item id, because no `--ref` was passed and none
@@ -93,6 +121,12 @@ def _split_ref(ref: str) -> tuple[str, str, str]:
             "ticketing.github in .the-loop/harness-config.yaml so the-loop can "
             "derive it."
         )
+    return host, owner, repo, number
+
+
+def _split_ref(ref: str) -> tuple[str, str, str]:
+    """``github:owner/repo#123`` → ``(owner, repo, "123")`` — the host dropped."""
+    _, owner, repo, number = _ref_parts(ref)
     return owner, repo, number
 
 
@@ -129,8 +163,25 @@ class GitHubApi:
             f"{', '.join(self.token_envs)}, or run `gh auth login`"
         )
 
-    def _request(self, method: str, path: str, payload: Dict[str, Any] | None = None):
-        url = f"{self.base_url}{path}"
+    def _base_for(self, host: str) -> str:
+        """The REST base a hosted ref is addressed at (issue-311, R4.3).
+
+        A ref on GitHub Enterprise against the **public** default derives
+        ``https://<host>/api/v3`` — the case nobody configured. An explicit
+        ``baseUrl`` is the operator's and is honoured verbatim (decision-042).
+        """
+        if host and self.base_url == PUBLIC_API_BASE:
+            return api_base_for(host)
+        return self.base_url
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        payload: Dict[str, Any] | None = None,
+        host: str = "",
+    ):
+        url = f"{self._base_for(host)}{path}"
         data = json.dumps(payload).encode() if payload is not None else None
         req = urllib.request.Request(url, data=data, method=method)
         req.add_header("Authorization", f"Bearer {self._token()}")
@@ -155,13 +206,14 @@ class GitHubApi:
     def call(self, op: str, **params: Any) -> Dict[str, Any]:
         if op not in self.operations:
             raise OperationUnsupported(f"github/api does not implement {op!r}")
-        owner, repo, number = _split_ref(str(params["ref"]))
+        host, owner, repo, number = _ref_parts(str(params["ref"]))
         if op == "add-comment":
             return {
                 "result": self._request(
                     "POST",
                     f"/repos/{owner}/{repo}/issues/{number}/comments",
                     {"body": str(params["body"])},
+                    host=host,
                 )
             }
         if op == "set-labels":
@@ -170,13 +222,18 @@ class GitHubApi:
                     "PUT",
                     f"/repos/{owner}/{repo}/issues/{number}/labels",
                     {"labels": list(params["labels"])},
+                    host=host,
                 )
             }
         if op == "get-labels":
-            data = self._request("GET", f"/repos/{owner}/{repo}/issues/{number}/labels")
+            data = self._request(
+                "GET", f"/repos/{owner}/{repo}/issues/{number}/labels", host=host
+            )
             return {"labels": [d.get("name") for d in data if isinstance(d, dict)]}
         if op == "get-thread":
-            data = self._request("GET", f"/repos/{owner}/{repo}/issues/{number}")
+            data = self._request(
+                "GET", f"/repos/{owner}/{repo}/issues/{number}", host=host
+            )
             kind = "pull-request" if "pull_request" in data else "issue"
             return {"kind": kind}
         if op == "linked-pulls":
@@ -191,9 +248,12 @@ class GitHubApi:
                         "number": int(number),
                     },
                 },
+                host=host,
             )
-            return {"pulls": _linked_pull_refs(data)}
-        data = self._request("GET", f"/repos/{owner}/{repo}/issues/{number}/comments")
+            return {"pulls": _linked_pull_refs(data, host)}
+        data = self._request(
+            "GET", f"/repos/{owner}/{repo}/issues/{number}/comments", host=host
+        )
         return {"comments": data}
 
 
@@ -231,8 +291,11 @@ class GitHubCli:
     def call(self, op: str, **params: Any) -> Dict[str, Any]:
         if op not in self.operations:
             raise OperationUnsupported(f"github/cli does not implement {op!r}")
-        owner, repo, number = _split_ref(str(params["ref"]))
-        slug = f"{owner}/{repo}"
+        host, owner, repo, number = _ref_parts(str(params["ref"]))
+        # gh's own grammars (issue-311): `--repo [HOST/]OWNER/REPO` for the
+        # issue verbs, `--hostname` for `api`; both written only off github.com.
+        slug = f"{host}/{owner}/{repo}" if host else f"{owner}/{repo}"
+        api = ["api", *gh_host_args(host)]
         if op == "add-comment":
             self._run(
                 [
@@ -259,14 +322,14 @@ class GitHubCli:
             data = json.loads(out or "{}")
             return {"labels": [d.get("name") for d in data.get("labels", [])]}
         if op == "get-thread":
-            out = self._run(["api", f"repos/{owner}/{repo}/issues/{number}"])
+            out = self._run([*api, f"repos/{owner}/{repo}/issues/{number}"])
             data = json.loads(out or "{}")
             kind = "pull-request" if "pull_request" in data else "issue"
             return {"kind": kind}
         if op == "linked-pulls":
             out = self._run(
                 [
-                    "api",
+                    *api,
                     "graphql",
                     "-f",
                     f"query={_LINKED_PULLS_QUERY}",
@@ -278,6 +341,6 @@ class GitHubCli:
                     f"number={number}",
                 ]
             )
-            return {"pulls": _linked_pull_refs(json.loads(out or "{}"))}
+            return {"pulls": _linked_pull_refs(json.loads(out or "{}"), host)}
         out = self._run(["issue", "view", number, "--repo", slug, "--json", "comments"])
         return {"comments": json.loads(out or "{}").get("comments", [])}

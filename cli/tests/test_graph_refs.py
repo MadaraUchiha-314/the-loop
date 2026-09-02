@@ -202,3 +202,57 @@ def test_degradation_message_is_the_loops_own_text():
     # the integration layer's own sentence. No token, no header, no body.
     assert reported == error
     assert "Bearer" not in reported and "token" not in reported.lower()
+
+
+# -- the host (issue-311, R2) ----------------------------------------------------
+
+
+GHE = "ghe.corp.example"
+
+
+def test_derive_ref_carries_a_resolved_host():
+    assert derive_ref("issue-311", "octo/repo", host=GHE) == (
+        f"github:{GHE}/octo/repo#311"
+    )
+
+
+def test_ref_for_carries_a_resolved_host():
+    assert ref_for("octo/repo", 7, host=GHE) == f"github:{GHE}/octo/repo#7"
+
+
+def test_github_com_stays_unwritten():
+    """A5: a github.com deployment mints the exact strings it always did."""
+    assert derive_ref("issue-311", "octo/repo", host="github.com") == (
+        "github:octo/repo#311"
+    )
+    assert ref_for("octo/repo", 7, host="github.com") == "github:octo/repo#7"
+
+
+def test_a_hosted_ref_round_trips_through_the_parser():
+    ref = derive_ref("issue-311", "octo/repo", host=GHE)
+    parsed = WorkItemRef.parse(ref)
+    assert (parsed.host, parsed.owner, parsed.repo, parsed.number) == (
+        GHE,
+        "octo",
+        "repo",
+        311,
+    )
+    assert parsed.url == f"https://{GHE}/octo/repo/issues/311"
+    assert spec_id_for(parsed) == "issue-311"
+
+
+@pytest.mark.parametrize(
+    "host",
+    ["https://ghe.corp.example", "ghe.corp.example/api", "ghe", "a b.example"],
+)
+def test_an_invalid_host_is_one_more_refusal(host):
+    """R2.3 — fail closed like every other bad input, never a partial ref."""
+    assert derive_ref("issue-311", "octo/repo", host=host) == ""
+    assert ref_for("octo/repo", 7, host=host) == ""
+
+
+def test_the_host_is_never_read_out_of_the_slug():
+    """R2.3 — the slug contract is unchanged: a host-qualified path is still
+    refused, and the host arrives as its own argument or not at all."""
+    assert ref_for(f"{GHE}/octo/repo", 7) == ""
+    assert ref_for(f"{GHE}/octo/repo", 7, host=GHE) == ""

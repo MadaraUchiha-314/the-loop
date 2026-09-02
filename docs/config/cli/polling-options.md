@@ -139,7 +139,12 @@ drives both ingresses.
 - **Type:** `string[]`
 - **Default:** none — **required** *(github)*
 
-Repositories to poll, as `OWNER/REPO`.
+Repositories to poll, as `[HOST/]OWNER/REPO` — `gh`'s own `--repo` grammar. A source on
+GitHub Enterprise names its host (`ghe.corp.example/octo/repo`, issue-311): every listing,
+comment, review and closure read for that repository is made on that host, the work items
+it discovers carry it in their refs, and the source claims only refs on that host — a
+github.com repository with the same `OWNER/REPO` is a different repository. A bare
+`OWNER/REPO` is on github.com (or wherever `gh` points).
 
 ::: danger No fallback
 There is no fallback to any repository's harness config. A source with no `repos`
