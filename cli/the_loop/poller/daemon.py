@@ -169,6 +169,34 @@ def heartbeat_lines(beat, running: bool) -> list:
         f"last cycle: {beat.last_cycle_at} ({age(beat.last_cycle_at)}{suffix}) — "
         f"{describe_cycle(beat.last_cycle)}"
     )
+    lines.extend(degraded_lines(beat.last_cycle))
+    return lines
+
+
+def degraded_lines(counters: dict) -> list:
+    """One ``degraded:`` line per scope the last cycle could not poll (issue-315).
+
+    A repository that could not be listed used to be a bare ``1 error(s)`` on
+    the line above — and when it took the whole source down with it, nothing
+    said that zero repositories were being polled. Each failed scope is named
+    with its error and whether it is retried; each skipped scope with the
+    standing reason; and a cycle in which no scope answered says so in words.
+    """
+    failed = [s for s in (counters.get("scopesFailed") or []) if isinstance(s, dict)]
+    skipped = [s for s in (counters.get("scopesSkipped") or []) if isinstance(s, dict)]
+    lines = []
+    if (failed or skipped) and not int(counters.get("scopesPolled") or 0):
+        lines.append(
+            "degraded:   no repository was polled — every listing failed or was skipped"
+        )
+    for entry in failed:
+        how = "permanent" if entry.get("permanent") else "retried next cycle"
+        lines.append(
+            f"degraded:   {entry.get('scope')} — listing failed, {how}: "
+            f"{entry.get('error')}"
+        )
+    for entry in skipped:
+        lines.append(f"degraded:   {entry.get('scope')} — {entry.get('error')}")
     return lines
 
 

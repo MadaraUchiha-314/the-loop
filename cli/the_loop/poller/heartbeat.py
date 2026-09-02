@@ -39,7 +39,7 @@ import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 logger = logging.getLogger("the-loop.poll")
 
@@ -174,7 +174,24 @@ def _counters(summary: Any) -> Dict[str, Any]:
         "failures": int(getattr(summary, "failures", 0)),
         "errors": len(getattr(summary, "errors", ()) or ()),
         "interrupted": bool(getattr(summary, "interrupted", False)),
+        # Which scopes (repositories) the cycle could not poll, and why
+        # (issue-315) — the facts `the-loop status` renders as degraded.
+        "scopesPolled": int(getattr(summary, "scopes_polled", 0) or 0),
+        "scopesFailed": _scopes(getattr(summary, "scopes_failed", ())),
+        "scopesSkipped": _scopes(getattr(summary, "scopes_skipped", ())),
     }
+
+
+def _scopes(entries: Any) -> List[Dict[str, Any]]:
+    """``ScopeFailure``-shaped entries as JSON, read duck-typed like the rest."""
+    return [
+        {
+            "scope": str(getattr(entry, "scope", "") or ""),
+            "error": str(getattr(entry, "error", "") or ""),
+            "permanent": bool(getattr(entry, "permanent", False)),
+        }
+        for entry in (entries or ())
+    ]
 
 
 def _unlink(path: str) -> None:

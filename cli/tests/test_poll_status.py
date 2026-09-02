@@ -205,3 +205,80 @@ def test_a_pid_left_in_an_older_heartbeat_is_never_reported(paths, capsys):
     row = _poller_row(capsys)
     assert row["running"] is False
     assert row["pid"] == 0
+
+
+# -- degraded scopes (issue-315) ----------------------------------------------
+
+
+def _degraded(paths, **counters):
+    from types import SimpleNamespace
+
+    def scope(s, error, permanent=False):
+        return SimpleNamespace(scope=s, error=error, permanent=permanent)
+
+    summary = SimpleNamespace(
+        items_seen=counters.pop("items_seen", 24),
+        spawns=0,
+        comments_forwarded=1,
+        closures=0,
+        failures=0,
+        errors=["octo/repo-m: the 'octo/repo-m' repository has disabled issues"],
+        interrupted=False,
+        scopes_failed=[
+            scope(
+                "octo/repo-m",
+                "gh issue list --repo exited 1: the 'octo/repo-m' repository has disabled issues",
+                True,
+            )
+        ],
+        scopes_skipped=[
+            scope("octo/repo-z", "issues are disabled on this repository", True)
+        ],
+        scopes_polled=counters.pop("scopes_polled", 12),
+    )
+    PollHeartbeat(paths["status"], interval_seconds=60).record(summary)
+
+
+def test_a_degraded_scope_is_named_beneath_the_last_cycle(paths, capsys):
+    """R3.2: one `degraded:` line per scope, with its reason."""
+    _degraded(paths)
+    lock = RunLock(paths["pidfile"], name="poller")
+    assert lock.acquire()
+    try:
+        assert _run() == 0  # R3.4: degraded is still running
+    finally:
+        lock.release()
+
+    out = capsys.readouterr().out
+    assert "24 item(s), 0 spawn(s), 1 comment(s) forwarded, 1 error(s)" in out
+    lines = [line.strip() for line in out.splitlines() if "degraded:" in line]
+    assert lines == [
+        "degraded:   octo/repo-m — listing failed, permanent: gh issue list --repo "
+        "exited 1: the 'octo/repo-m' repository has disabled issues",
+        "degraded:   octo/repo-z — issues are disabled on this repository",
+    ]
+    assert "no repository was polled" not in out
+
+
+def test_a_cycle_where_nothing_answered_says_so(paths, capsys):
+    """R3.3: zero scopes polled is written in words, not left to `0 item(s)`."""
+    _degraded(paths, items_seen=0, scopes_polled=0)
+    _run()
+    out = capsys.readouterr().out
+    assert "degraded:   no repository was polled — every listing failed" in out
+
+
+def test_a_clean_cycle_prints_no_degraded_line(paths, capsys):
+    _record(paths, interval_seconds=60)
+    _run()
+    assert "degraded" not in capsys.readouterr().out
+
+
+def test_json_carries_the_degraded_scopes(paths, capsys):
+    _degraded(paths)
+    _run("--format", "json")
+    row = _poller_row(capsys)
+    assert row["lastCycle"]["scopesPolled"] == 12
+    assert [s["scope"] for s in row["lastCycle"]["scopesFailed"]] == ["octo/repo-m"]
+    assert row["lastCycle"]["scopesFailed"][0]["permanent"] is True
+    assert [s["scope"] for s in row["lastCycle"]["scopesSkipped"]] == ["octo/repo-z"]

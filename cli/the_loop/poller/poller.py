@@ -49,7 +49,15 @@ from ..reload import Reloader
 from ..sessions import SessionRegistry, WorkItemRef
 from ..workitem import POLL, WorkItemStore
 from ..webhook.dispatcher import Dispatcher
-from .base import Comment, PollProvider, ProviderError, WorkItem
+from .base import (
+    REPROBE_EVERY_CYCLES,
+    Comment,
+    Listing,
+    PollProvider,
+    ProviderError,
+    ScopeFailure,
+    WorkItem,
+)
 
 if TYPE_CHECKING:  # the roster is the dispatcher's, read here (issue-307)
     from ..collaborators import CollaboratorStore
@@ -454,6 +462,11 @@ class PollSummary:
     failures: int = 0  # events given up after exhausting the retry budget (issue-80)
     errors: List[str] = field(default_factory=list)
     interrupted: bool = False  # a stop was requested mid-cycle (issue-159)
+    # Which scopes (repositories, for GitHub) answered, failed or were skipped
+    # this cycle (issue-315) — what `the-loop status` names as degraded.
+    scopes_polled: int = 0
+    scopes_failed: List[ScopeFailure] = field(default_factory=list)
+    scopes_skipped: List[ScopeFailure] = field(default_factory=list)
 
 
 def _utcnow() -> str:
@@ -590,14 +603,22 @@ class Poller:
                 break
             self._poll_provider(provider, summary, stop_event)
         self.state.save()
+        # Distinct scopes: a repository whose issues AND pull requests failed is
+        # one degraded scope, not two.
+        degraded = list(
+            dict.fromkeys(
+                s.scope for s in summary.scopes_failed + summary.scopes_skipped
+            )
+        )
         logger.info(
-            "poll cycle: %d item(s), %d spawn(s), %d comment(s) forwarded%s%s%s%s",
+            "poll cycle: %d item(s), %d spawn(s), %d comment(s) forwarded%s%s%s%s%s",
             summary.items_seen,
             summary.spawns,
             summary.comments_forwarded,
             f", {summary.closures} closed" if summary.closures else "",
             f", {summary.failures} gave up" if summary.failures else "",
             f", {len(summary.errors)} error(s)" if summary.errors else "",
+            f", {len(degraded)} scope(s) degraded" if degraded else "",
             " (interrupted by a stop request)" if summary.interrupted else "",
         )
         eventlog.emit(
@@ -608,6 +629,8 @@ class Poller:
             closures=summary.closures or None,
             failures=summary.failures or None,
             errors=summary.errors or None,
+            scopes_polled=summary.scopes_polled or None,
+            scopes_degraded=degraded or None,
             interrupted=summary.interrupted or None,
         )
         self._beat(summary)
@@ -634,7 +657,7 @@ class Poller:
         stop_event: Optional[threading.Event] = None,
     ) -> None:
         try:
-            items = provider.list_work_items()
+            listing = provider.listing()
         except ProviderError as exc:
             logger.error("polling %s failed: %s", provider.describe(), exc)
             eventlog.emit(
@@ -646,8 +669,9 @@ class Poller:
             )
             summary.errors.append(f"{provider.describe()}: {exc}")
             return
+        self._record_scopes(provider, listing, summary)
         open_refs = set()
-        for item in items:
+        for item in listing.items:
             if stop_event is not None and stop_event.is_set():
                 # Stop between work items, never inside one: an item abandoned
                 # half-processed is exactly the partially-written state the
@@ -685,11 +709,78 @@ class Poller:
         # walk. Reconciliation closes every active session whose item is absent
         # from `open_refs`, so a partial set would read as "everything below the
         # interruption closed" and end live sessions — the same reason issue-94
-        # skips it for a failed listing (issue-159, AC4.2).
-        self._reconcile_closures(provider, open_refs, summary)
+        # skips it for a failed listing (issue-159, AC4.2). A listing that is
+        # complete for some scopes and failed for others (issue-315) reconciles
+        # the former and leaves the latter alone: the rule, at the finer grain.
+        self._reconcile_closures(provider, open_refs, summary, listing.degraded)
+
+    def _record_scopes(
+        self, provider: PollProvider, listing: Listing, summary: PollSummary
+    ) -> None:
+        """Log, event and count what a listing could not ask (issue-315).
+
+        A transient failure is an error every cycle it recurs, like a provider
+        failure was. A permanent one is a *warning*, once: the provider has
+        already stopped asking, and while it stays skipped the only trace is
+        the heartbeat — which is what `the-loop status` renders as degraded —
+        so a log is not the same line every minute for a condition that only an
+        operator can change. A recovery is said once too.
+        """
+        name = provider.describe()
+        for failure in listing.failures:
+            summary.errors.append(f"{failure.scope}: {failure.error}")
+            summary.scopes_failed.append(failure)
+            if failure.permanent:
+                logger.warning(
+                    "polling %s: %s cannot be listed and will not be retried "
+                    "every cycle — %s. Re-probed every %d cycles, on a config "
+                    "reload and on restart; `the-loop status` shows it as "
+                    "degraded meanwhile",
+                    name,
+                    failure.scope,
+                    failure.error,
+                    REPROBE_EVERY_CYCLES,
+                )
+                eventlog.emit(
+                    "poll.scope_degraded",
+                    level="warning",
+                    provider=name,
+                    scope=failure.scope,
+                    error=failure.error,
+                    retry_after_cycles=REPROBE_EVERY_CYCLES,
+                )
+                continue
+            logger.error(
+                "polling %s: %s could not be listed (the source's other scopes "
+                "were still polled): %s",
+                name,
+                failure.scope,
+                failure.error,
+            )
+            eventlog.emit(
+                "poll.scope_error",
+                level="error",
+                provider=name,
+                scope=failure.scope,
+                error=failure.error,
+                will_retry=True,
+            )
+        for skip in listing.skipped:
+            summary.scopes_skipped.append(skip)
+            logger.debug("polling %s: %s skipped — %s", name, skip.scope, skip.error)
+        for scope in listing.recovered:
+            logger.info(
+                "polling %s: %s answers again; polling it normally", name, scope
+            )
+            eventlog.emit("poll.scope_recovered", provider=name, scope=scope)
+        summary.scopes_polled += len(listing.polled)
 
     def _reconcile_closures(
-        self, provider: PollProvider, open_refs: set, summary: PollSummary
+        self,
+        provider: PollProvider,
+        open_refs: set,
+        summary: PollSummary,
+        degraded: Optional[set] = None,
     ) -> None:
         """Close sessions whose work item has ended (issue-94).
 
@@ -704,10 +795,22 @@ class Poller:
         catches items that ended while the poller was down — there is no memory
         to lose across restarts. Under any doubt (still open, or the provider
         could not answer) the session is left running.
+
+        ``degraded`` names the scopes this cycle's listing could not ask
+        (issue-315); a session in one of them is not even checked, because its
+        absence from ``open_refs`` says nothing about it.
         """
+        degraded = degraded or set()
         for session in self.registry.list_sessions(status="active"):
             ref = session.work_item
             if ref.ref in open_refs or not provider.owns(ref):
+                continue
+            if provider.scope_of(ref) in degraded:
+                logger.debug(
+                    "%s is in a scope this cycle could not list; not asking "
+                    "whether it ended",
+                    ref.ref,
+                )
                 continue
             try:
                 closure = provider.closure(ref)

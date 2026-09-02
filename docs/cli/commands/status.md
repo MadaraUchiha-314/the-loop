@@ -29,6 +29,25 @@ poller      running (hosted in the service, pid 24846) [enabled]
             ...
 ```
 
+A repository the last cycle could not poll is named beneath that line, one `degraded:`
+per repository, with the error and whether it is retried (issue-315,
+[decision-106](/decisions/decision-106)). A repository whose Issues are disabled is skipped
+for issues only and shows the standing reason; a cycle in which no repository answered
+says so in words rather than leaving you to read it off `0 item(s)`:
+
+```console
+$ the-loop status
+poller      running (pid 24913) [enabled]
+            started:    2026-09-02T20:41:12Z (3h ago)
+            last cycle: 2026-09-02T23:43:02Z (10s ago) — 24 item(s), 0 spawn(s), 1 comment(s) forwarded, 1 error(s)
+            degraded:   octo/repo-b — listing failed, retried next cycle: gh issue list --repo exited 1: HTTP 502
+            degraded:   octo/repo-m — issues are disabled on this repository; its issues are skipped and re-probed every 60 cycles, its pull requests are still polled
+```
+
+The exit code does not change for a degraded poller — it is running, and restarting it
+would degrade identically; the lines are the signal. `--format json` carries the same
+facts in the poller row's `lastCycle` (`scopesPolled`, `scopesFailed`, `scopesSkipped`).
+
 Two properties carried over from the removed `poll status` (issue-191/205):
 
 - **Liveness and the pid come from the pidfile's lock, never from a file's claim.** A

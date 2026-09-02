@@ -333,6 +333,20 @@ self-learning/ML capabilities.
   start; a heartbeat that cannot be written is swallowed).
 - A daemon started **by the control plane** SHALL have its output redirected to that
   daemon's logfile rather than to `/dev/null` — no start path silently discards the log.
+- **A poll source SHALL list in scopes, and a scope SHALL fail alone** (issue-315,
+  [decision-106](../decisions/decision-106.md)). The provider contract's `listing()`
+  returns the items found plus the scopes (repositories, for GitHub) that failed, were
+  skipped or recovered; one scope's failure SHALL NOT discard another's items, SHALL be
+  recorded per scope (`poll.scope_error`), and SHALL keep that scope's sessions out of
+  closure reconciliation — issue-159's "a partial listing proves nothing ended", per
+  scope. A provider that has not learned scopes keeps its all-or-nothing behaviour. A
+  repository whose GitHub Issues are disabled SHALL be classified **permanent**: surfaced
+  once at warning level (`poll.scope_degraded`), its issues skipped while its pull
+  requests are still polled, re-probed every 60 cycles, on a reload and on restart
+  (`poll.scope_recovered` when it answers). The heartbeat SHALL carry the scope facts
+  (`scopesPolled`, `scopesFailed`, `scopesSkipped`) and `the-loop status` SHALL render
+  one `degraded:` line per scope — and say in words when no scope answered — without
+  changing its exit code.
 
 ## Design
 
@@ -344,6 +358,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-315 | One repository's failure is that repository's (2026-09-02): the provider contract lists in scopes (`Listing`, `ScopeFailure`, `PollProvider.listing`/`scope_of`), the GitHub provider lists each repository on its own and keeps a per-repository quarantine for the one permanent condition (`gh`'s *has disabled issues* — issues skipped, pull requests still polled, re-probed every 60 cycles), the core records `poll.scope_error` / `poll.scope_degraded` / `poll.scope_recovered` and reconciles closures per scope, and the heartbeat's `scopesPolled` / `scopesFailed` / `scopesSkipped` become `the-loop status`'s `degraded:` lines. Before it, one repository with Issues disabled took every repository in the source down with it while `status` reported a healthy poller | [spec](../specs/issue-315/), [decision-106](../decisions/decision-106.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/315) |
 | issue-311 | Audited every `github.com` assumption and made the host the ref's everywhere (2026-09-02): one resolver (`ghhost.github_host` — `integrations.github.host`, an enterprise `api.baseUrl`, `$GH_HOST`, the checkout's origin remote, github.com) answers for refs minted from `ticketing.github` and for inner-loop `prRef`s; every `gh` writer and reader (`comments`, `reactions`, `linkage`, the poller's `GhClient`, both graph transports) spells the host through `comments.gh_host_args` / `[host/]owner/repo`; the API transport derives `https://<host>/api/v3` against the public default; the review brief accepts pull-request URLs on any host and puts slugs and bare numbers on the work item's; poll sources accept `[HOST/]OWNER/REPO` and own by host | [spec](../specs/issue-311/), [decision-104](../decisions/decision-104.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/311) |
 | issue-307 | `the-loop add-collaborator` / `remove-collaborator` join the CLI (2026-08-31), the terminal form of the two new control keywords: they write one work item's collaborator roster, post the same keyword and login back to the ticket self-marked, validate every login before writing any of them, and run in-process for the same reason `ask` does | [spec](../specs/issue-307/), [decision-102](../decisions/decision-102.md), [add-collaborator](../cli/commands/add-collaborator.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/307) |
 | issue-277 | `the-loop standing list` / `start` / `stop` / `restart` / `say` — the operator's surface onto the sessions that belong to no work item, addressed by name. `say` pastes a message straight into a running session's terminal, which is how you talk to a session that has no comment thread to answer on | [spec](../specs/issue-277/), [standing](../cli/commands/standing.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/277) |

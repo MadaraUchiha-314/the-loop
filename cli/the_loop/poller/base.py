@@ -113,6 +113,56 @@ class WorkItem:
         ).ref
 
 
+#: How many cycles a scope with a *permanent* condition stays skipped before the
+#: provider re-probes it once (issue-315) — one hour at the default interval.
+#: The core's policy, honoured by every provider that quarantines; a config
+#: reload or a restart rebuilds the provider and re-probes at once.
+REPROBE_EVERY_CYCLES = 60
+
+
+@dataclass(frozen=True)
+class ScopeFailure:
+    """One scope of a source that could not be polled this cycle (issue-315).
+
+    A *scope* is the provider's own unit of listing — a repository for GitHub,
+    a project for a Jira provider — and the core never learns what one is
+    beyond the string. ``permanent`` marks a condition no retry changes
+    (configuration drift, e.g. a repository with Issues turned off), which the
+    core surfaces once at warning level instead of as an error every cycle.
+    The provider decides, because only it can read its backing system's
+    vocabulary.
+    """
+
+    scope: str
+    error: str  # what failed — or, for a skipped scope, why it is skipped
+    permanent: bool = False
+
+
+@dataclass
+class Listing:
+    """What one discovery pass over a source found — and what it could not ask.
+
+    ``items`` are the work items from every scope that answered. ``failures``
+    are this cycle's listing failures, one per scope and listing that failed;
+    ``skipped`` are scopes deliberately not asked because of a standing
+    permanent condition; ``recovered`` are scopes a re-probe brought back;
+    ``polled`` are the scopes that answered, fully or partly. A scope in
+    ``failures`` or ``skipped`` is *degraded*: nothing in it is reconciled as
+    closed, because a listing that did not happen proves nothing ended
+    (issue-159's rule, now per scope).
+    """
+
+    items: List[WorkItem] = field(default_factory=list)
+    failures: List[ScopeFailure] = field(default_factory=list)
+    skipped: List[ScopeFailure] = field(default_factory=list)
+    recovered: List[str] = field(default_factory=list)
+    polled: List[str] = field(default_factory=list)
+
+    @property
+    def degraded(self) -> set:
+        return {f.scope for f in self.failures} | {s.scope for s in self.skipped}
+
+
 class PollProvider:
     """Contract a poll source implements. One instance per configured source.
 
@@ -139,6 +189,28 @@ class PollProvider:
     def list_work_items(self) -> List[WorkItem]:
         """Discover the labelled work items in this source's scope."""
         raise NotImplementedError
+
+    def listing(self) -> Listing:
+        """Discover the labelled work items, scope by scope (issue-315).
+
+        What the poller core calls. The default wraps :meth:`list_work_items`
+        all-or-nothing, so a provider that has not learned scopes keeps its
+        behaviour: a :class:`ProviderError` raised here means the provider
+        could not be asked at all — no scopes configured, its binary missing —
+        and fails the whole source, exactly as before. A provider that *can*
+        isolate its scopes overrides this, reports each failed scope in the
+        :class:`Listing`, and reserves the exception for that whole-source case.
+        """
+        return Listing(items=self.list_work_items())
+
+    def scope_of(self, ref: WorkItemRef) -> str:
+        """The scope ``ref`` lives in, spelled as :class:`ScopeFailure` spells it.
+
+        ``""`` when this provider has no scopes, or ``ref`` is not its. The core
+        uses it to keep a degraded scope's sessions out of closure
+        reconciliation (issue-315).
+        """
+        return ""
 
     def list_comments(self, item: WorkItem) -> List[Comment]:
         """All conversation comments currently on ``item``."""

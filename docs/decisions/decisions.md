@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [106](decision-106.md) | A poll source lists in scopes, a scope fails alone, and a permanent condition is surfaced once and re-probed slowly | proposed | 2026-09-02 |
 | [105](decision-105.md) | A work item's Slack thread is rooted on the work item, opened once under a lock, and every event is a reply | proposed | 2026-09-02 |
 | [104](decision-104.md) | A ref minted from configuration carries the resolved GitHub host; every outbound call reads the host off the ref | proposed | 2026-09-02 |
 | [103](decision-103.md) | Every channel is a peer on one event bus, and one channel is the ledger | proposed | 2026-09-02 |

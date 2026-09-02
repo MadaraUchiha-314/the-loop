@@ -1097,3 +1097,108 @@ def test_a_ledger_left_pending_by_an_older_version_settles_on_the_next_cycle(tmp
     assert (on_disk.get("gaveUp") or {}).get("comments") in (None, [])
     assert poller.state.rearm_gave_up_comments(REF) == []
     assert poster.bodies == []
+
+
+class TwoRepoGh(GhState):
+    """`octo/repo` answers as GhState does; `octo/repo-m` has Issues disabled.
+
+    Records which listings were asked per repository, so a cycle can prove the
+    quarantined repository's issues were not asked while its pull requests were.
+    """
+
+    ISSUES_OFF = "the 'octo/repo-m' repository has disabled issues"
+
+    def __init__(self):
+        super().__init__()
+        self.listings = []  # (repo, "issue"|"pr")
+        self.repo_m_prs = [
+            {
+                "number": 42,
+                "title": "p",
+                "labels": [{"name": LABEL}],
+                "url": "https://github.com/octo/repo-m/pull/42",
+                "headRefName": "x",
+                "body": "",
+                "author": {"login": "octocat"},
+            }
+        ]
+
+    def runner(self, cmd, **kwargs):
+        sub = (cmd[1], cmd[2])
+        if sub in (("issue", "list"), ("pr", "list")):
+            repo = cmd[4]
+            self.listings.append((repo, sub[0]))
+            if repo == "octo/repo-m":
+                if sub[0] == "issue":
+                    return subprocess.CompletedProcess(cmd, 1, "", self.ISSUES_OFF)
+                return subprocess.CompletedProcess(
+                    cmd, 0, json.dumps(self.repo_m_prs), ""
+                )
+        return super().runner(cmd, **kwargs)
+
+
+def test_one_repository_with_issues_disabled_does_not_blind_the_others(tmp_path):
+    """Scenario: one repository with Issues disabled does not blind the others.
+
+    Given a source polling `octo/repo` (healthy, one labelled issue) and
+          `octo/repo-m` (Issues disabled, one labelled pull request)
+    When the first poll cycle runs
+    Then the healthy issue's session is spawned and the pull request is discovered
+    And the failure is recorded once, per repository, as permanent
+    When a comment lands on the healthy issue and a second cycle runs
+    Then `octo/repo-m` is not asked for issues, is still asked for pull requests,
+         and the comment is delivered into the healthy issue's session
+
+    Requirement: docs/specs/issue-315/bugfix.md#requirement-1--per-scope-fault-isolation
+    """
+    gh = TwoRepoGh()
+    registry = SessionRegistry(tmp_path / "sessions")
+    tmux = FakeTmux()
+    dispatcher = _dispatcher(
+        registry,
+        tmux,
+        RoutingConfig(
+            spawn_on_unmatched="labeled",
+            control=ControlConfig(require_start_command=False),
+            authorized_users=["octocat"],
+            portable_dir=str(tmp_path / "portable"),
+        ),
+    )
+    provider = GitHubPollProvider(
+        parse_repos(["octo/repo", "octo/repo-m"]),
+        LABEL,
+        monitor_prs=True,
+        gh=GhClient(runner=gh.runner),
+    )
+    poller = Poller(
+        providers=[provider],
+        registry=registry,
+        dispatcher=dispatcher,
+        config=PollConfig(max_retries=3),
+        state=PollState(WorkItemStore(tmp_path / "portable")),
+        authorized_users=["octocat"],
+    )
+
+    first = poller.poll_once()
+    assert wait_until(lambda: len(tmux.spawns) >= 1)
+    assert first.items_seen == 2 and first.spawns >= 1
+    assert [(f.scope, f.permanent) for f in first.scopes_failed] == [
+        ("octo/repo-m", True)
+    ]
+    assert first.scopes_polled == 2  # repo-m's pull requests answered
+    assert registry.find_by_work_item(REF) is not None
+    assert ("octo/repo-m", "issue") in gh.listings
+
+    gh.listings.clear()
+    gh.comments = [_comment("IC_1", "please continue")]
+    second = poller.poll_once()
+    assert wait_until(lambda: len(tmux.delivers) >= 1)
+    dispatcher.stop()
+
+    assert ("octo/repo-m", "issue") not in gh.listings
+    assert ("octo/repo-m", "pr") in gh.listings
+    assert second.scopes_failed == [] and [s.scope for s in second.scopes_skipped] == [
+        "octo/repo-m"
+    ]
+    assert second.comments_forwarded == 1
+    assert "please continue" in tmux.delivers[0][1]

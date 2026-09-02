@@ -55,6 +55,9 @@ def test_record_then_read_round_trips(tmp_path):
         "failures": 0,
         "errors": 0,
         "interrupted": False,
+        "scopesPolled": 0,
+        "scopesFailed": [],
+        "scopesSkipped": [],
     }
 
 
@@ -211,3 +214,65 @@ def test_writing_a_heartbeat_over_the_pidfile_would_free_the_lock(tmp_path):
         )
     finally:
         lock.release()
+
+
+# -- the scopes a cycle could not poll (issue-315) ------------------------------
+
+
+def _scope(scope, error, permanent=False):
+    return SimpleNamespace(scope=scope, error=error, permanent=permanent)
+
+
+def test_the_heartbeat_carries_the_scopes_that_failed_or_were_skipped(tmp_path):
+    """R3.1: which scopes failed (and how), which were skipped, how many answered."""
+    path = tmp_path / "poll-status.json"
+    summary = _summary(
+        errors=["octo/repo-m: off"],
+        scopes_failed=[_scope("octo/repo-m", "gh issue list exited 1: off", True)],
+        scopes_skipped=[_scope("octo/repo-z", "issues are disabled", True)],
+        scopes_polled=12,
+    )
+    PollHeartbeat(path).record(summary)
+
+    beat = PollHeartbeat.read(path)
+    assert beat is not None
+    assert beat.last_cycle["errors"] == 1
+    assert beat.last_cycle["scopesPolled"] == 12
+    assert beat.last_cycle["scopesFailed"] == [
+        {
+            "scope": "octo/repo-m",
+            "error": "gh issue list exited 1: off",
+            "permanent": True,
+        }
+    ]
+    assert beat.last_cycle["scopesSkipped"] == [
+        {"scope": "octo/repo-z", "error": "issues are disabled", "permanent": True}
+    ]
+
+
+def test_a_summary_without_scope_facts_writes_empty_ones(tmp_path):
+    """A double from before issue-315 (no scope fields) still records."""
+    path = tmp_path / "poll-status.json"
+    PollHeartbeat(path).record(_summary())
+    beat = PollHeartbeat.read(path)
+    assert beat is not None
+    assert beat.last_cycle["scopesPolled"] == 0
+    assert (
+        beat.last_cycle["scopesFailed"] == [] and beat.last_cycle["scopesSkipped"] == []
+    )
+
+
+def test_an_older_heartbeat_without_scope_keys_still_reads(tmp_path):
+    path = tmp_path / "poll-status.json"
+    path.write_text(
+        json.dumps(
+            {
+                "startedAt": "2026-08-10T09:58:03Z",
+                "lastCycleAt": "2026-08-10T10:42:00Z",
+                "intervalSeconds": 60,
+                "lastCycle": {"itemsSeen": 5, "errors": 1},
+            }
+        )
+    )
+    beat = PollHeartbeat.read(path)
+    assert beat is not None and beat.last_cycle == {"itemsSeen": 5, "errors": 1}
