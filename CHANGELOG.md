@@ -1,3 +1,9 @@
+## v13.1.0 (2026-09-02)
+
+### Feat
+
+- **issue-312**: the Slack thread is the work item's — one root, opened once, every event a reply (#314)
+
 ## v13.0.1 (2026-09-02)
 
 ### Fix
