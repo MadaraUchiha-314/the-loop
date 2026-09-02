@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [103](decision-103.md) | Every channel is a peer on one event bus, and one channel is the ledger | proposed | 2026-09-02 |
 | [102](decision-102.md) | A work-item collaborator is input, never authority | proposed | 2026-08-31 |
 | [101](decision-101.md) | A review is a fifth loop, a guest, and bound to the pull request itself | proposed | 2026-08-24 |
 | [100](decision-100.md) | Standing sessions are created and deleted at runtime; the control plane is not a channel | accepted | 2026-08-20 |

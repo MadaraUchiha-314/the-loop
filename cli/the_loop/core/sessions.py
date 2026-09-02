@@ -629,9 +629,46 @@ def ask_session(
         raise ValueError("the question is empty; nothing to ask")
     control = _control_config(config)
     actor = _local_actor()
-    ok, error, url = post_issue_comment_with_url(
-        work_item, mark_self_authored(question), gh_binary=control.gh_binary
+    # One event on the bus (issue-309): the ledger records it FIRST — the record
+    # IS the question comment, marked and enveloped — and then every subscribed
+    # channel gets it, best-effort by contract (R1.2): the result computed below
+    # never depends on what any channel did. The ledger is built over this
+    # verb's own writer so a `gh` binary chosen here is the one used.
+    from ..channels.base import Event
+    from ..channels.bus import publish as bus_publish
+    from ..channels.github import GitHubLedger
+
+    ledger = GitHubLedger(
+        dict(config or {}),
+        post_comment=lambda item, body, gh_binary="gh": post_issue_comment_with_url(
+            item, body, gh_binary=control.gh_binary
+        ),
     )
+    channel_results = []
+    ok, error, url = False, "", ""
+    try:
+        published = bus_publish(
+            Event(
+                event_type="session.awaiting_input",
+                work_item=work_item.ref,
+                text=question,
+                detail={"actor": actor},
+                source="cli",
+            ),
+            dict(config or {}),
+            ledger=ledger,
+        )
+        record = published.record
+        ok = bool(record and record.ok)
+        error = (record.error if record else "") or ""
+        url = (record.url if record else "") or ""
+        channel_results = published.posts
+    except Exception as exc:  # noqa: BLE001 — a channel bug never fails the ask
+        logger.warning("channel broadcast failed: %s", exc)
+        if not ok:
+            ok, error, url = post_issue_comment_with_url(
+                work_item, mark_self_authored(question), gh_binary=control.gh_binary
+            )
     eventlog.emit(
         "session.awaiting_input",
         level="info" if ok else "warning",
@@ -641,23 +678,6 @@ def ask_session(
         comment_url=url or None,
         comment_posted=ok,
     )
-    # Fan the question out to the configured channels (issue-245, R2.3) —
-    # AFTER the work item has it, and best-effort by contract (R1.2): the
-    # result computed below never depends on what any channel did.
-    channel_results = []
-    try:
-        from ..channels.broadcast import broadcast as channel_broadcast
-
-        channel_results = channel_broadcast(
-            "session.awaiting_input",
-            work_item.ref,
-            question,
-            url=url or "",
-            detail={"actor": actor},
-            cli_config=dict(config or {}),
-        )
-    except Exception as exc:  # noqa: BLE001 — a channel bug never fails the ask
-        logger.warning("channel broadcast failed: %s", exc)
     messages: List[Dict[str, str]] = []
     if ok:
         where = f" — {url}" if url else ""

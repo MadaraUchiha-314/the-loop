@@ -643,3 +643,72 @@ def test_the_quiet_skip_paths_stay_quiet(repo, tmp_path):
     _link(repo, runtime).on_spawn(WorkItemRef.parse("jira:acme/proj#42"), str(repo))
 
     assert [r for r in _records(events) if r["event"] == "graph.skipped"] == []
+
+
+# -- envelope re-attribution (issue-309, decision-103 D4) --------------------------
+
+
+def _routed_comment(login, body):
+    return RoutedEvent(
+        event="issue_comment",
+        action="created",
+        delivery_id="d",
+        work_items=[REF],
+        payload={"comment": {"body": body, "user": {"login": login}}},
+    )
+
+
+def _relayed(named_login):
+    from the_loop.channels import envelope as env
+
+    return env.stamp(
+        "> approved",
+        env.Envelope(
+            "gate.feedback", "slack", actor={"github": named_login, "slack": "U1"}
+        ),
+    )
+
+
+def test_an_envelope_reattributes_only_between_authorized_people():
+    """The poster must be authorized AND the named login must be — both, or the
+    poster stays the author. An envelope narrows, never widens."""
+    body = _relayed("dana").strip()
+    authorized = ["operator", "dana"]
+    assert comments_from(_routed_comment("operator", body), authorized) == [
+        {"author": "dana", "body": body}
+    ]
+    # A3: a collaborator (not authorized) forging the same envelope names nobody.
+    assert comments_from(_routed_comment("collab", body), authorized) == [
+        {"author": "collab", "body": body}
+    ]
+    # Naming someone outside the list rewrites nothing either.
+    stranger = _relayed("stranger").strip()
+    assert comments_from(_routed_comment("operator", stranger), authorized) == [
+        {"author": "operator", "body": stranger}
+    ]
+    # No authorized list at all: the pre-issue-309 behaviour, verbatim.
+    assert comments_from(_routed_comment("operator", body)) == [
+        {"author": "operator", "body": body}
+    ]
+
+
+def test_graphlink_threads_its_authorized_users_into_the_attribution(
+    tmp_path, monkeypatch
+):
+    seen = {}
+
+    class FakeRuntime:
+        def advance(self, item, ref="", event=None):
+            seen["event"] = event
+            return None
+
+    link = GraphLink(
+        GraphLinkConfig(enabled=True), authorized_users=["operator", "dana"]
+    )
+    monkeypatch.setattr(
+        link,
+        "_guarded",
+        lambda action, wi, cwd, call, **k: call(FakeRuntime(), "issue-113"),
+    )
+    link.on_event(REF, str(tmp_path), _routed_comment("operator", _relayed("dana")))
+    assert seen["event"]["comments"][0]["author"] == "dana"

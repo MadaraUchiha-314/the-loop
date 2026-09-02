@@ -319,9 +319,13 @@ EVENT_TYPES: Dict[str, str] = {
     ),
     "channel.dropped": (
         "An inbound channel message was not processed (reason: unmapped | "
-        "self-authored | unauthorized-actor | undeliverable; channel, "
-        "work_item, actor, error). undeliverable means the mirror stood but "
-        "no session could take the reply."
+        "self-authored | unauthorized-actor | undeliverable | "
+        "unpublishable-event | kickoff-disabled | create-failed; channel, "
+        "work_item, actor, kind: the classified event type, error). "
+        "undeliverable means the mirror "
+        "stood but no session could take the reply; unpublishable-event means "
+        "the message classified as a type the channel's `publish` list does "
+        "not grant (issue-309) — dropped, never downgraded."
     ),
     "channel.mirrored": (
         "A channel reply was posted onto its work item as the-loop's own "
@@ -336,6 +340,28 @@ EVENT_TYPES: Dict[str, str] = {
     "channel.mirror_failed": (
         "The work-item mirror of a channel reply could not be posted "
         "(channel, work_item, error); the delivery attempt still proceeds."
+    ),
+    "channel.created": (
+        "A top-level channel message became a work item (channel, work_item: "
+        "the new ref, actor, thread) — the `work-item.create` grant (issue-309). "
+        "The issue is the ledger's record; the thread is bound to it."
+    ),
+    # -- the bus (issue-309, decision-103) --------------------------------------
+    "bus.published": (
+        "An event went through the bus (event_type, work_item, source, recorded: "
+        "whether the ledger wrote it — null when the catalog says it is not "
+        "recorded, posted: how many channels took it, channels). Debug level: "
+        "one line per event, ids only."
+    ),
+    "bus.recorded": (
+        "The ledger wrote an event that originated elsewhere (ledger, work_item, "
+        "event_type, source, url) — a comment with an envelope, or the issue a "
+        "`work-item.create` opened. Always before any other channel sees it."
+    ),
+    "bus.record_failed": (
+        "The ledger could not write an event (ledger, work_item, event_type, "
+        "source, error). Best-effort by contract: the publisher decides what it "
+        "means — the ask still reports its exit code, a reply still delivers."
     ),
     "standing.started": (
         "A standing session — one that belongs to no work item — was spawned on "

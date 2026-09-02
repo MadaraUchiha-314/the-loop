@@ -47,8 +47,8 @@ __all__ = [
 ]
 
 #: Bumped by issue-109, then issue-128, then issue-142, then issue-245, then
-#: issue-304. A config below this needs `/the-loop:upgrade-the-loop`.
-CURRENT_CONFIG_VERSION = "0.6.0"
+#: issue-304, then issue-309. A config below this needs `/the-loop:upgrade-the-loop`.
+CURRENT_CONFIG_VERSION = "0.7.0"
 
 _UPGRADE = "/the-loop:upgrade-the-loop"
 
@@ -97,6 +97,18 @@ _SLACK_REPLACEMENT = "channels.slack"
 # (GitHub logins) and `channels.slack.authorizedUsers` (Slack member ids).
 _UNREAD_KEYS: Tuple[str, ...] = ("collaborators", "notifications")
 _UNREAD_REPLACEMENT = "channels.slack"
+
+# issue-309 makes every channel a peer on one event bus (decision-103). Two keys of
+# `channels.slack` go: `events` is renamed `subscribe`, because a channel now also
+# holds a `publish` list and one word cannot name both directions; and
+# `authorizedUsers` moves into `routing.authorizedUsers`, where each entry is now one
+# PERSON carrying their id on every channel — identity declared once (owner's call on
+# the ticket), read per channel.
+_SLACK_CHANNEL_SITE: Tuple[str, ...] = ("channels", "slack")
+_SLACK_EVENTS_KEY = "events"
+_SLACK_EVENTS_REPLACEMENT = "channels.slack.subscribe"
+_SLACK_USERS_KEY = "authorizedUsers"
+_SLACK_USERS_REPLACEMENT = "routing.authorizedUsers"
 
 
 class ConfigTooOld(RuntimeError):
@@ -150,6 +162,9 @@ def needs_migration(config: Mapping[str, Any]) -> bool:
     if (_dig(config, _SLACK_SITE) or {}).get(_SLACK_KEY) is not None:
         return True
     if any(key in config for key in _UNREAD_KEYS):
+        return True
+    slack = _dig(config, _SLACK_CHANNEL_SITE) or {}
+    if _SLACK_EVENTS_KEY in slack or _SLACK_USERS_KEY in slack:
         return True
     return any(
         (section or {}).get("ghBinary") is not None
@@ -234,6 +249,26 @@ def assert_current(config: Mapping[str, Any]) -> None:
             f"`{_UNREAD_REPLACEMENT}.authorizedUsers` (Slack member ids). Nothing "
             "here is being ignored — loading half-configured is how an operator comes to "
             f"believe they wired something up. Run `{_UPGRADE}` to migrate."
+        )
+    slack = _dig(config, _SLACK_CHANNEL_SITE) or {}
+    if _SLACK_EVENTS_KEY in slack:
+        raise ConfigTooOld(
+            "this CLI config still declares `channels.slack.events`. A channel "
+            "now SUBSCRIBES to events and may PUBLISH them (issue-309), so the "
+            f"list is `{_SLACK_EVENTS_REPLACEMENT}` — one word cannot name both "
+            "directions. It is NOT being ignored: a notification you subscribed "
+            f"to silently going nowhere is worse than an error. Run `{_UPGRADE}` "
+            "to migrate."
+        )
+    if _SLACK_USERS_KEY in slack:
+        raise ConfigTooOld(
+            "this CLI config still declares `channels.slack.authorizedUsers`. "
+            "Identity is declared ONCE now (issue-309): each entry of "
+            f"`{_SLACK_USERS_REPLACEMENT}` is a person — a GitHub login, or a "
+            "mapping of channel name to that channel's id (`github:`, `slack:`). "
+            "It is NOT being ignored — a member id the daemon silently stopped "
+            f"honouring would lock you out of your own thread. Run `{_UPGRADE}` "
+            "to migrate."
         )
     declared = config.get("version")
     if declared is not None and _parts(str(declared)) < _parts(CURRENT_CONFIG_VERSION):
@@ -399,6 +434,8 @@ def migrate_cli_config(config: Mapping[str, Any]) -> MigrationReport:
             "not one list per person; per-person routing is not built"
         )
 
+    _migrate_slack_channel(data, report)
+
     if _parts(str(data.get("version", "0"))) < _parts(CURRENT_CONFIG_VERSION):
         report.moves.append(
             f"version {data.get('version', '(unset)')!r} → {CURRENT_CONFIG_VERSION!r}"
@@ -407,3 +444,74 @@ def migrate_cli_config(config: Mapping[str, Any]) -> MigrationReport:
         report.changed = True
 
     return report
+
+
+def _migrate_slack_channel(data: Dict[str, Any], report: MigrationReport) -> None:
+    """Rename ``channels.slack.events`` and move its member ids (issue-309).
+
+    The rename is mechanical. The move is not quite: a Slack member id and a GitHub
+    login are the same person, but the file cannot know which member is which login,
+    so each id becomes its own ``{slack: U…}`` entry and the report asks the operator
+    to fold it into that person's GitHub entry. Nothing is guessed, and a member the
+    operator authorized keeps being authorized on Slack the moment the migration
+    lands — just as a separate entry until somebody merges it.
+    """
+    slack = _dig(data, _SLACK_CHANNEL_SITE)
+    if slack is None:
+        return
+    if _SLACK_EVENTS_KEY in slack:
+        events = slack.pop(_SLACK_EVENTS_KEY)
+        report.changed = True
+        if "subscribe" in slack:
+            report.notes.append(
+                "`channels.slack.subscribe` was already declared; kept it and "
+                f"dropped `channels.slack.events` ({events!r})"
+            )
+        else:
+            slack["subscribe"] = events
+        report.moves.append(
+            f"channels.slack.{_SLACK_EVENTS_KEY} → {_SLACK_EVENTS_REPLACEMENT} "
+            "(a channel subscribes AND publishes now, issue-309)"
+        )
+    if _SLACK_USERS_KEY in slack:
+        members = slack.pop(_SLACK_USERS_KEY) or []
+        report.changed = True
+        routing = data.setdefault("routing", {})
+        if not isinstance(routing, dict):
+            report.notes.append(
+                f"the existing top-level `routing` is {routing!r}, not a block; "
+                "the Slack member ids were dropped — re-declare them by hand under "
+                f"`{_SLACK_USERS_REPLACEMENT}`"
+            )
+            members = []
+        else:
+            users = routing.setdefault("authorizedUsers", [])
+            if not isinstance(users, list):
+                report.notes.append(
+                    f"`{_SLACK_USERS_REPLACEMENT}` is {users!r}, not a list; the "
+                    "Slack member ids were dropped — re-declare them by hand"
+                )
+                members = []
+            else:
+                already = {
+                    str(u.get("slack"))
+                    for u in users
+                    if isinstance(u, dict) and u.get("slack")
+                }
+                for member in members if isinstance(members, list) else []:
+                    member_s = str(member).strip()
+                    if member_s and member_s not in already:
+                        users.append({"slack": member_s})
+                        already.add(member_s)
+        report.moves.append(
+            f"channels.slack.{_SLACK_USERS_KEY} → {_SLACK_USERS_REPLACEMENT} "
+            f"({len(members) if isinstance(members, list) else 0} Slack member "
+            "id(s), one `{slack: …}` entry each — identity is declared once, "
+            "issue-309)"
+        )
+        if isinstance(members, list) and members:
+            report.notes.append(
+                "each Slack member id is now its own entry; fold it into that "
+                "person's GitHub entry (`- github: <login>` + `  slack: <U…>`) so "
+                "the ledger can record their approvals under their login"
+            )

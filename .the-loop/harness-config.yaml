@@ -253,7 +253,9 @@ notifications:
     pr-review-pending: [reviewer, approver]
     security-sign-off-pending: [approver]
     conflict-escalated: [approver]
-    # work-item-complete: []      # omitted = nobody notified
+    # work-item-complete: []      # roles ride along as detail; whether the event
+    #                             # goes anywhere is each channel's `subscribe`
+    #                             # list in the CLI config (issue-309)
 
 externalTools:                    # inline registry — one YAML for easy onboarding (issue-37)
   tools:

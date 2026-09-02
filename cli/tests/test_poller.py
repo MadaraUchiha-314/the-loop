@@ -1036,6 +1036,7 @@ def make_poller(
     authorized=("octocat",),
     max_retries=3,
     comment_runner=None,
+    publisher=None,
 ):
     # provider/dispatcher/reloader/comment_runner intentionally unannotated so
     # the in-process doubles satisfy the typed Poller params without casts (see
@@ -1049,6 +1050,7 @@ def make_poller(
         state=state,
         reloader=reloader,
         authorized_users=list(authorized),
+        publisher=publisher,
         **({"comment_runner": comment_runner} if comment_runner else {}),
     )
 
@@ -3000,3 +3002,48 @@ def test_a_collaborators_control_keyword_is_not_a_pending_command(tmp_path):
 
     poller = make_poller(provider, registry, disp, state, authorized=("octocat",))
     assert poller._pending_control_ids(ref, provider.list_comments(_item(15))) == set()
+
+
+# -- the bus (issue-309): what the poller publishes --------------------------------
+
+
+def test_the_poller_publishes_agent_and_human_comments_once_each(tmp_path):
+    """R6.1 — an agent's marked comment is baselined AND published as
+    comment.agent; a human's is published as comment.human on first sight only,
+    so a forward retried on a later cycle is not re-published; a stranger's is
+    published nowhere; a bus record (enveloped) is never echoed."""
+    from the_loop.authz import mark_self_authored
+    from the_loop.channels import envelope as env
+
+    record = env.stamp(
+        mark_self_authored("> yes"), env.Envelope("work-item.reply", "slack")
+    )
+    provider = FakeProvider(items=[_item(15)], comments={15: [_comment("IC_0")]})
+    registry = SessionRegistry(tmp_path / "sessions")
+    disp = RecordingDispatcher()
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    seen = []
+    poller = make_poller(
+        provider,
+        registry,
+        disp,
+        state,
+        publisher=lambda kind, ref, author, body, url: seen.append(
+            (kind, author, body)
+        ),
+    )
+    poller.poll_once()  # first sight baselines; nothing is published from history
+    assert seen == []
+
+    provider._comments[15] = [
+        _comment("IC_0"),
+        _comment("IC_1", body=mark_self_authored("## Summary")),
+        _comment("IC_2", body="looks good"),
+        _comment("IC_3", body="evil", author="stranger"),
+        _comment("IC_4", body=record),
+    ]
+    poller.poll_once()
+    assert [(k, a) for k, a, _ in seen] == [("agent", "octocat"), ("human", "octocat")]
+    assert "## Summary" in seen[0][2] and seen[1][2] == "looks good"
+    poller.poll_once()  # the human comment may be retried; it is not re-published
+    assert len(seen) == 2

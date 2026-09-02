@@ -21,7 +21,7 @@ PR** as the work item that changes behaviour (a ready-to-ship gate item).
 | [interactive-sessions](interactive-sessions.md) | tmux-hosted harness sessions humans can watch/steer live (local, SSH, browser). |
 | [standing-sessions](standing-sessions.md) | Named, long-lived sessions that belong to no work item — the ones the-loop keeps for itself, addressed by name on the control plane and in Slack. |
 | [observability](observability.md) | Structured JSONL event log of the CLI's actions and the `events` query command. |
-| [channels](channels.md) | Back-and-forth conversation surfaces (the Slack bot) mirroring every reply onto the work item. |
+| [channels](channels.md) | Every channel a peer on one event bus — subscribe, publish by grant, render natively — with GitHub as the ledger every event is recorded on. |
 | [self-diagnosis](self-diagnosis.md) | the-loop filing redacted issues for its own failures: event-log detection, an isolated diagnosis agent, never-armed issue creation (opt-in, default off). |
 | [testing-and-contracts](testing-and-contracts.md) | The testing plan and the verification node (test-type matrix, environment, committed evidence), Gherkin scenario docstrings, the queryable scenario view, contract-first APIs. |
 | [design-artifacts](design-artifacts.md) | UI/UX design artifacts (Figma / HTML prototypes) in the design phase. |

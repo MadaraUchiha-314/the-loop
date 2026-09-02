@@ -169,39 +169,105 @@ def _recipients(ctx: HookContext, event: str) -> List[str]:
     return [str(r) for r in roles]
 
 
+#: How much of an artifact a notification carries (issue-309 R4.4). The channel
+#: caps it again at its own `maxChars`; this keeps the event itself bounded.
+EXCERPT_MAX_CHARS = 4_000
+
+
+def _excerpt(ctx: HookContext) -> str:
+    """The named artifact's body after its front matter, capped — or empty.
+
+    A missing artifact is an empty excerpt, never a failure: the node that names
+    one may have declared its authoring phase away.
+    """
+    artifact = str(ctx.params.get("artifact") or "")
+    if not artifact:
+        return ""
+    from ..model import resolve_produces
+
+    try:
+        slots = resolve_produces([artifact], ctx.work_item.spec_dir)
+        present = [p for slot in slots for p in slot.present]
+    except Exception:  # noqa: BLE001 — a slot the model cannot resolve is no excerpt
+        present = []
+    path = present[0] if present else ctx.work_item.spec_dir / artifact
+    if not path.is_file():
+        return ""
+    try:
+        from ..frontmatter import split_front_matter
+
+        _, body = split_front_matter(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, ValueError):
+        return ""
+    body = str(body or "").strip()
+    if len(body) > EXCERPT_MAX_CHARS:
+        body = body[:EXCERPT_MAX_CHARS].rstrip() + "\n… (truncated)"
+    return body
+
+
+def _work_item_url(ref: str) -> str:
+    from ...sessions import WorkItemRef
+
+    try:
+        return WorkItemRef.parse(ref).url
+    except ValueError:
+        return ""
+
+
 @hook("notify")
 def notify(ctx: HookContext) -> HookResult:
-    """Notify the configured roles. Never wedges the graph if a channel is down.
+    """Publish the node's notification event. Never wedges the graph if a
+    channel is down.
 
-    Posts through the **channels** layer (issue-245, owner's convergence call on
-    PR #267): the graph's notification is one more outbound event, filtered by
-    each channel's ``events`` allow-list — so an operator subscribes their Slack
-    channel to ``phase-approval-pending`` and friends, and the reply path those
-    channels carry works for notifications too. The incoming-webhook integration
-    this hook used to call is gone (`the-loop migrate-config`).
+    One event on the **bus** (issue-309, decision-103): the graph's notification
+    is one more event, and whether it goes anywhere is each channel's
+    ``subscribe`` list — so an operator subscribes their Slack channel to
+    ``phase-approval-pending`` and friends, and the reply path those channels
+    carry works for notifications too. The event carries the work item's URL
+    and, when the node names an ``artifact``, an excerpt of it (R4.4), so a
+    ``quiet`` channel finally gets the link its contract promised and a
+    ``normal`` one sees what it is approving.
+
+    The harness config's ``notifications.events`` roles ride along as detail;
+    they no longer gate the hook — nothing ever resolved a role to a person
+    (issue-304), and the subscription is the channel's decision now.
     """
     name = "notify"
     event = str(ctx.params.get("event") or "phase-approval-pending")
     roles = _recipients(ctx, event)
-    if not roles:
-        return HookResult.skipped(name, f"no roles configured for {event}")
-    text = (
-        f"the-loop: {ctx.work_item.id} is at *{ctx.node_id}* ({event}). "
-        f"Roles: {', '.join(roles)}"
-    )
+    text = f"the-loop: {ctx.work_item.id} is at *{ctx.node_id}* ({event})."
+    if roles:
+        text += f" Roles: {', '.join(roles)}"
+    detail = {"node": ctx.node_id}
+    if roles:
+        detail["roles"] = ", ".join(roles)
+    excerpt = _excerpt(ctx)
+    if excerpt:
+        detail["excerpt"] = excerpt
+        detail["artifact"] = str(ctx.params.get("artifact") or "")
     # Call-time import, the `_integration` rule: the test seam and any embedder
     # patch the channels module, and a module-level binding would slip past them.
-    from ...channels.broadcast import broadcast
+    from ...channels.base import Event
+    from ...channels.bus import publish
 
-    results = broadcast(event, ctx.work_item.ref, text, cli_config=ctx.config)
-    if not results:
+    result = publish(
+        Event(
+            event_type=event,
+            work_item=ctx.work_item.ref,
+            text=text,
+            url=_work_item_url(ctx.work_item.ref),
+            detail=detail,
+            source="loop",
+        ),
+        cli_config=ctx.config,
+    )
+    if not result.posts:
         return HookResult.skipped(
             name,
-            f"no channel subscribed to {event} — add it to channels.slack.events",
+            f"no channel subscribed to {event} — add it to channels.slack.subscribe",
         )
-    delivered = any(result.ok for result in results)
-    errors = "; ".join(result.error for result in results if not result.ok)
-    if not delivered:
+    errors = "; ".join(post.error for post in result.posts if not post.ok)
+    if not result.delivered:
         logger.warning("notification not delivered: %s", errors)
         return HookResult.ok(name, delivered=False, roles=roles, error=errors)
     return HookResult.ok(name, delivered=True, roles=roles)

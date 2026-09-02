@@ -31,6 +31,7 @@ from typing import Optional
 
 from .. import cli_config, eventlog
 from ..authz import resolve_authorized_users
+from ..channels.publishers import comment_publisher
 from ..runlock import RunLock
 from ..state import StateLayout, layout_from_config, legacy_layout
 from ..workitem import WorkItemStore
@@ -370,6 +371,9 @@ def _run_locked(
         heartbeat=lambda summary: heartbeat.record(
             summary, interval_seconds=config.interval_seconds
         ),
+        # The bus (issue-309): accepted and agent comments go to the subscribed
+        # channels. Reads the config per call, so a reload is honoured.
+        publisher=comment_publisher(lambda: cli_config.load_cli_config(_config_path())),
     )
     providers = plan.providers
 

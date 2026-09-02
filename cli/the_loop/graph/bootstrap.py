@@ -150,7 +150,13 @@ def build_runtime(
             (routing.get("tmux") or {}).get("sessionPerPr")
         )
         if authorized_users is None:
-            config["authorizedUsers"] = routing.get("authorizedUsers") or []
+            # The `github` projection of the person entries (issue-309): the
+            # gates read logins, whatever else an entry declares.
+            from ..authz import resolve_authorized_users
+
+            config["authorizedUsers"] = resolve_authorized_users(
+                routing.get("authorizedUsers") or []
+            )
     if pr_number is not None:
         # One expression of the layout, shared with the hook that reads it back
         # (`await-inner-loops`) and with the repo-name validation it carries —

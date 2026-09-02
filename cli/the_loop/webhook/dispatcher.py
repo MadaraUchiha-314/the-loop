@@ -18,7 +18,7 @@ import uuid
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from string import Template
-from typing import Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 from .. import eventlog
 from ..announce import AnnounceConfig, SessionAnnouncer
@@ -68,6 +68,7 @@ from ..runner import SESSION_LIVE, TmuxRunner
 from ..sessions import Session, SessionRegistry, WorkItemRef
 from ..state import LegacyLayout, StateLayout, legacy_layout
 from ..harness_plugins import PluginConfig
+from ..identity import github_logins, parse_authorized_users
 from ..linkage import WorkItemVerifier
 from ..trust import TrustConfig, TrustResult, is_too_broad
 from ..workspace import RepoTarget, Workspace, WorkspaceError, repo_target_from_payload
@@ -345,8 +346,12 @@ class RoutingConfig:
     # loaded when it reads the work-on prompt (issue-143).
     harness_plugins: PluginConfig = field(default_factory=PluginConfig)
     # GitHub logins whose actions the-loop may act on (prompt-injection guard,
-    # issue-34 review). Empty => fail closed for human-authored actions.
+    # issue-34 review). Empty => fail closed for human-authored actions. Since
+    # issue-309 the config entry is a PERSON — a login, or a mapping of channel
+    # name to native id — and this is the `github` projection of that list;
+    # `principals` is the whole of it, for the channels that read other ids.
     authorized_users: List[str] = field(default_factory=list)
+    principals: List[Any] = field(default_factory=list)
     # Dispatch-lifecycle emoji reactions on the triggering entity (issue-84).
     reactions: ReactionConfig = field(default_factory=ReactionConfig)
     # "Here is your tmux session" comment on spawn/respawn (issue-86).
@@ -377,6 +382,7 @@ class RoutingConfig:
         """
         data = data or {}
         layout = layout or StateLayout()
+        principals = parse_authorized_users(data.get("authorizedUsers"))
         leftover = str(data.get("runner", "tmux") or "tmux")
         if leftover != "tmux":
             # The key was removed with the process runner (issue-156). Warn,
@@ -411,7 +417,8 @@ class RoutingConfig:
             harness_args=dict(data.get("harnessArgs") or {}),
             harness_trust=TrustConfig.from_mapping(data.get("harnessTrust") or {}),
             harness_plugins=PluginConfig.from_mapping(data.get("harnessPlugins") or {}),
-            authorized_users=[str(u) for u in (data.get("authorizedUsers") or [])],
+            authorized_users=github_logins(principals),
+            principals=list(principals),
             reactions=ReactionConfig.from_mapping(data.get("reactions") or {}),
             announce=AnnounceConfig.from_mapping(data.get("announce") or {}),
             control=ControlConfig.from_mapping(data.get("control") or {}),

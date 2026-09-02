@@ -202,7 +202,7 @@ def _is_contained(root: Path, spec_dir: str) -> bool:
     return resolved == base or base in resolved.parents
 
 
-def comments_from(routed) -> List[Dict[str, str]]:
+def comments_from(routed, authorized: Sequence[str] = ()) -> List[Dict[str, str]]:
     """The human-authored comments an event carries, each with its author.
 
     Author and body travel **together, always**: ``classify-feedback`` decides
@@ -214,6 +214,15 @@ def comments_from(routed) -> List[Dict[str, str]]:
     ``authorizedUsers`` and does not drop self-authored bodies. That decision
     already lives in ``classify-feedback``, and an authorization check
     implemented in two places is one that will eventually disagree with itself.
+
+    One thing it does do, since issue-309 (decision-103 D4): a comment carrying a
+    ledger **envelope** — the bus's record of a gate answer given on a channel —
+    is attributed to the person the envelope names, so ``approvedBy`` records a
+    person rather than the credential that relayed them. **Only** when the
+    comment's real poster is in ``authorized`` and the named GitHub login is too:
+    an envelope is comment text, so it may narrow from one authorized identity
+    to another and never widen. A work-item collaborator's forged envelope
+    (A3) rewrites nothing.
     """
     key = _COMMENT_EVENTS.get(getattr(routed, "event", ""))
     if not key:
@@ -223,7 +232,22 @@ def comments_from(routed) -> List[Dict[str, str]]:
     author = str((raw.get("user") or {}).get("login") or "").strip()
     if not body or not author:
         return []
-    return [{"author": author, "body": body}]
+    return [{"author": _attributed(author, body, authorized), "body": body}]
+
+
+def _attributed(author: str, body: str, authorized: Sequence[str]) -> str:
+    """The envelope's GitHub login when both the poster and it are authorized."""
+    if not authorized or author not in set(authorized):
+        return author
+    from .channels.envelope import parse as parse_envelope
+
+    envelope = parse_envelope(body)
+    if envelope is None:
+        return author
+    named = str(envelope.actor.get("github") or "").strip()
+    if named and named in set(authorized):
+        return named
+    return author
 
 
 @dataclass(frozen=True)
@@ -524,7 +548,9 @@ class GraphLink:
             if report is None or not self._entered_a_human_gate(rt, report):
                 return
             rt.advance(
-                item, ref=work_item.ref, event={"comments": comments_from(routed)}
+                item,
+                ref=work_item.ref,
+                event={"comments": comments_from(routed, self.authorized_users)},
             )
 
         self._guarded("start", work_item, cwd, call)
@@ -541,7 +567,7 @@ class GraphLink:
         on any skip or fault (issue-148, D4) — the consult-first path renders
         the gate's verdict into the prompt it delivers.
         """
-        event = {"comments": comments_from(routed)}
+        event = {"comments": comments_from(routed, self.authorized_users)}
         return self._guarded(
             "advance",
             work_item,
@@ -649,7 +675,7 @@ class GraphLink:
         being advanced from a PR's events. That one-way flow is what keeps a PR
         from walking the work item past gates the work item has not earned.
         """
-        event = {"comments": comments_from(routed)}
+        event = {"comments": comments_from(routed, self.authorized_users)}
         return self._guarded(
             "advance",
             work_item,

@@ -32,16 +32,67 @@ Whether the receiver dispatches at all. With routing off it still
 verifies, logs and drops — useful for confirming deliveries arrive before letting anything
 spawn.
 
-### `authorizedUsers`
+### authorizedUsers
 
-- **Type:** `string[]`
+- **Type:** `(string | object)[]`
 - **Default:** `[]`
-- **Related:** [Guards](/cli/concepts#guards) · [decision-023](/decisions/decision-023)
+- **Related:** [Guards](/cli/concepts#guards) · [decision-023](/decisions/decision-023) ·
+  [decision-103](/decisions/decision-103)
 
 ::: danger Prompt-injection guard. Required, no fallback, fails closed.
-GitHub logins whose actions the-loop may act on. A comment, review or label from anyone not
-listed is ignored by **both** the receiver and the poller, before dispatch — judged by the
-author of the action itself, so who opened the issue or PR it sits on is irrelevant.
+The **people** whose actions the-loop may act on, declared once with their id on every
+channel they act on ([issue-309](https://github.com/MadaraUchiha-314/the-loop/issues/309)).
+A comment, review or label from anyone not listed is ignored by **both** the receiver and
+the poller, before dispatch — judged by the author of the action itself, so who opened the
+issue or PR it sits on is irrelevant.
+
+Each entry is one person. A bare string is a GitHub login — the ledger's identity, and
+what this list has meant since issue-63. A mapping names that person's id on every
+channel they act on, plus an optional `name` for logs:
+
+```yaml
+routing:
+  authorizedUsers:
+    - octocat                          # a GitHub login
+    - github: hubot                    # one person, every channel they act on
+      slack: U0456GHIJKL               # the Slack MEMBER id (U…), never a display name
+      name: Hu
+```
+
+Every consumer reads the ids of its own channel: the receiver, the poller, the control
+seam and the graph's human gates read exactly the `github` logins; the
+[Slack channel](/config/cli/channels-options#who-may-speak) reads the `slack` ids (its own
+`channels.slack.authorizedUsers` is gone — `the-loop migrate-config` folds it in here).
+An entry naming no `github` id is a person who may act on the channels they are named
+on and on nothing that reads GitHub logins. An entry that is neither a string nor a
+mapping is dropped with a warning, never coerced.
+
+### `authorizedUsers[].github`
+
+- **Type:** `string`
+- **Default:** none
+
+The person's GitHub login — the **ledger's** identity, and what every login consumer
+reads: the receiver, the poller, the control seam, the graph's human gates. Exact
+match, as it has always been. A bare string entry is shorthand for exactly this key.
+
+### `authorizedUsers[].slack`
+
+- **Type:** `string`
+- **Default:** none
+
+The person's Slack **member id** (`U…`, never a display name — names are
+attacker-chosen): what the [Slack channel](/config/cli/channels-options) authorizes
+replies, button presses and kickoffs on, and what a ledger record of their message
+carries in its envelope beside their login.
+
+### `authorizedUsers[].name`
+
+- **Type:** `string`
+- **Default:** none
+
+An optional label for logs and `the-loop channels status`. Never an identity: nothing
+authorizes on it.
 
 - **REQUIRED.** There is **no** fallback to any repository's harness config. Which logins
   may drive your daemon is a property of your machine, not of a repo anyone can open a PR

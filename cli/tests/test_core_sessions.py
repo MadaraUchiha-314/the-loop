@@ -204,7 +204,9 @@ def test_ask_stamps_the_marker_centrally_and_records_the_wait(tmp_path, monkeypa
     assert SELF_COMMENT_ATTRIBUTION in posted["body"]
     assert result["exitCode"] == 0 and result["asked"] is True
     assert result["commentUrl"].endswith("#issuecomment-1")
-    event, level, fields = events[0]
+    # The bus emits its own `bus.*` lines around the ask's (issue-309); the wait
+    # is the record this verb is about.
+    event, level, fields = next(e for e in events if e[0] == "session.awaiting_input")
     assert event == "session.awaiting_input" and level == "info"
     assert fields["work_item"] == REF
     assert fields["question"] == "Which auth mode?"
@@ -245,7 +247,7 @@ def test_ask_still_records_the_wait_when_gh_fails(tmp_path, monkeypatch):
     )
 
     assert result["exitCode"] == 1 and result["asked"] is False
-    event, level, fields = events[0]
+    event, level, fields = next(e for e in events if e[0] == "session.awaiting_input")
     assert event == "session.awaiting_input" and level == "warning"
     assert fields["comment_posted"] is False
     # Passed as None, which the real emit drops from the record.

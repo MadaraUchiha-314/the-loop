@@ -2386,3 +2386,116 @@ def test_the_control_target_is_the_running_record_whatever_the_ref_order(tmp_pat
         lambda: registry.find_by_work_item("github:org/planning#285") is None
     )
     dispatcher.stop()
+
+
+# -- the bus (issue-309): what the router publishes ------------------------------
+
+
+def _publishing_router(**kwargs):
+    seen = []
+    router = Router(
+        events=[],
+        authorized_users=["me"],
+        publisher=lambda kind, ref, author, body, url: seen.append(
+            (kind, ref, author, body, url)
+        ),
+        **kwargs,
+    )
+    return router, seen
+
+
+def _comment_payload(login, body, url="https://gh/c/1"):
+    payload = _issue_comment_by(login)
+    payload["comment"]["body"] = body
+    payload["comment"]["html_url"] = url
+    return payload
+
+
+def test_the_router_publishes_the_agents_comment_it_drops():
+    """R6.1 — the marked comment is dropped at ingress exactly as before, and
+    published as comment.agent to whoever subscribed."""
+    from the_loop.authz import mark_self_authored
+
+    router, seen = _publishing_router()
+    assert (
+        router.route(
+            "issue_comment",
+            _comment_payload("me", mark_self_authored("## Summary")),
+            "d1",
+        )
+        is None
+    )
+    assert seen == [
+        (
+            "agent",
+            "github:octo/repo#15",
+            "me",
+            mark_self_authored("## Summary"),
+            "https://gh/c/1",
+        )
+    ]
+
+
+def test_the_router_publishes_an_accepted_humans_comment_and_no_strangers():
+    router, seen = _publishing_router()
+    assert (
+        router.route("issue_comment", _comment_payload("me", "looks good"), "d1")
+        is not None
+    )
+    assert (
+        router.route("issue_comment", _comment_payload("attacker", "evil"), "d2")
+        is None
+    )
+    assert [(kind, author) for kind, _, author, _, _ in seen] == [("human", "me")]
+
+
+def test_the_router_never_republishes_a_bus_record():
+    """A10 — a record the bus made carries an envelope; its channel has it."""
+    from the_loop.authz import mark_self_authored
+    from the_loop.channels import envelope as env
+
+    router, seen = _publishing_router()
+    marked = env.stamp(
+        mark_self_authored("> yes"), env.Envelope("work-item.reply", "slack")
+    )
+    relayed = env.stamp("> approved", env.Envelope("gate.feedback", "slack"))
+    assert router.route("issue_comment", _comment_payload("me", marked), "d1") is None
+    assert (
+        router.route("issue_comment", _comment_payload("me", relayed), "d2") is not None
+    )
+    assert seen == []
+
+
+def test_a_router_without_a_publisher_publishes_nothing_and_a_raising_one_is_contained():
+    from the_loop.authz import mark_self_authored
+
+    plain = Router(events=[], authorized_users=["me"])
+    assert plain.route("issue_comment", _comment_payload("me", "hi"), "d1") is not None
+
+    def boom(*a):
+        raise RuntimeError("bus down")
+
+    loud = Router(events=[], authorized_users=["me"], publisher=boom)
+    assert (
+        loud.route(
+            "issue_comment", _comment_payload("me", mark_self_authored("x")), "d2"
+        )
+        is None
+    )
+    assert loud.route("issue_comment", _comment_payload("me", "hi"), "d3") is not None
+
+
+def test_only_comment_shaped_events_are_published():
+    router, seen = _publishing_router()
+    router.route(
+        "issues",
+        {
+            "action": "labeled",
+            "label": {"name": LABEL},
+            "repository": {"full_name": "octo/repo"},
+            "issue": {"number": 15, "body": "a body", "user": {"login": "me"}},
+            "sender": {"login": "me"},
+        },
+        "d1",
+    )
+    assert seen == []

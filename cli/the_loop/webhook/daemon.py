@@ -174,6 +174,8 @@ def _build_routing(routing_config: dict, gh_webhook_config: dict):
     # delivery ids, the router drops duplicates before extraction.
     events = resolve_events(gh_webhook_config)
     warn_on_missing_lifecycle_events(events)
+    from ..channels.publishers import comment_publisher
+
     router = Router(
         events=events,
         deduper=dispatcher.deduper,
@@ -182,6 +184,9 @@ def _build_routing(routing_config: dict, gh_webhook_config: dict):
         # One roster, read by both halves: the router to let a granted login's
         # comment through, the dispatcher to write it (issue-307).
         collaborators=dispatcher.collaborator_store,
+        # The bus (issue-309): accepted and agent comments go to the subscribed
+        # channels. Reads the config per call, so a reload is honoured.
+        publisher=comment_publisher(lambda: cli_config.load_cli_config(_config_path())),
     )
 
     def apply(cfg: dict) -> None:

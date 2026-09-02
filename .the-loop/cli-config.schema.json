@@ -315,9 +315,30 @@
         "authorizedUsers": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": [
+              "string",
+              "object"
+            ],
+            "additionalProperties": {
+              "type": "string"
+            },
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Optional label for this person, used in logs and `the-loop channels status`. Never an identity."
+              },
+              "github": {
+                "type": "string",
+                "description": "The person's GitHub login \u2014 the LEDGER's identity: what the webhook receiver, the poller, the control seam and the graph's human gates authorize on."
+              },
+              "slack": {
+                "type": "string",
+                "description": "The person's Slack MEMBER ID (U\u2026, never a display name \u2014 names are attacker-chosen): what the Slack channel authorizes replies, button presses and kickoffs on."
+              }
+            },
+            "description": "One PERSON (issue-309, decision-103): a bare string is a GitHub login; a mapping names that person's id on every channel they act on (`github`, `slack`, \u2026 \u2014 any channel name a provider registers), plus an optional `name`. An entry naming no `github` id may act on the channels it is named on and on nothing that reads GitHub logins."
           },
-          "description": "SECURITY (prompt-injection guard): GitHub logins whose actions the-loop may act on. Comments/reviews/labels/items authored by anyone not listed are ignored by BOTH the webhook receiver and the poller. REQUIRED to actually route anything: no fallback to any repo's harness (plugin) config (.the-loop/harness-config.yaml) \u2014 which logins may trigger the daemon is a CLI-config-only concern (issue-63 review). Empty means human-authored events are all ignored (fail closed). Each operator runs their own instance for their own logins.",
+          "description": "SECURITY (prompt-injection guard): the PEOPLE whose actions the-loop may act on, declared ONCE with their id on every channel (issue-309). Their GitHub logins are what BOTH the webhook receiver and the poller authorize comments/reviews/labels/items on; their Slack member ids are what the Slack channel authorizes replies on (`channels.slack.authorizedUsers` is gone). REQUIRED to actually route anything: no fallback to any repo's harness (plugin) config (.the-loop/harness-config.yaml) \u2014 who may trigger the daemon is a CLI-config-only concern (issue-63 review). Empty means human-authored events are all ignored, on every channel (fail closed). Each operator runs their own instance for their own logins.",
           "default": []
         },
         "spawnWorkdir": {
@@ -698,12 +719,20 @@
     "channels": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Communication channels (issue-245): named surfaces the-loop holds a back-and-forth conversation on, each with its own event filter and verbosity. Distinct from `integrations` (transports for the-loop's own calls): a channel also reads, and mirrors every reply onto the work item \u2014 the single source of truth \u2014 with the self-authored marker.",
+      "description": "Communication channels (issue-245, issue-309): the surfaces the-loop talks on, each a PEER on one event bus \u2014 it SUBSCRIBES to the event types it wants and may PUBLISH the ones it is granted \u2014 and one of them is the LEDGER every event is recorded on (decision-103). Distinct from `integrations` (transports for the-loop's own calls): a channel also reads, and everything it reads is recorded on the ledger before anything acts on it.",
       "properties": {
+        "ledger": {
+          "type": "string",
+          "enum": [
+            "github"
+          ],
+          "default": "github",
+          "description": "The channel of record: every event that originates elsewhere is written here first (a comment with a machine-readable envelope, or the issue itself for `work-item.create`), and the ledger's own ingress is what judges a relayed gate answer or control command. GitHub is the only ledger this release ships; the key is the extension point the owner named (issue-309). An unknown value is refused at load."
+        },
         "slack": {
           "type": "object",
           "additionalProperties": false,
-          "description": "The Slack BOT channel \u2014 the official slack-sdk WebClient, a bot token, one Slack channel, one thread per work item. THE Slack surface: the graph's notify hook broadcasts through it too (the old integrations.slack incoming webhook was removed \u2014 issue-245, PR #267).",
+          "description": "The Slack BOT channel \u2014 the official slack-sdk WebClient, a bot token, one Slack channel, one thread per work item. THE Slack surface: the graph's notify hook, the ask and the ledger's comment events all reach it through the bus, filtered by `subscribe`; what a Slack message may become is `publish` (issue-309). Who may speak is `routing.authorizedUsers` \u2014 the `slack` id of each person entry.",
           "properties": {
             "enabled": {
               "type": "boolean",
@@ -725,7 +754,7 @@
               "default": "",
               "description": "The Slack channel id the bot posts into (C\u2026, from the channel's details pane \u2014 ids, not names, survive renames). Empty disables posting."
             },
-            "events": {
+            "subscribe": {
               "type": "array",
               "items": {
                 "type": "string"
@@ -733,7 +762,17 @@
               "default": [
                 "session.awaiting_input"
               ],
-              "description": "Event-type allow-list: only these are posted to this channel. session.awaiting_input is the ask (`the-loop ask`); the graph's notify hook posts its notification events here too (phase-approval-pending, pr-review-pending, decision-pending, security-sign-off-pending, conflict-escalated) \u2014 add the ones you want. See `the-loop events --types` for the catalog."
+              "description": "The event types this channel RECEIVES (was `events` before issue-309). session.awaiting_input is the ask (`the-loop ask`); the graph's notification events (phase-approval-pending, pr-review-pending, decision-pending, security-sign-off-pending, conflict-escalated, work-item-complete) and the ledger's comment events (comment.agent \u2014 the agent's own comments; comment.human \u2014 an authorized user's or collaborator's) are the rest of the catalog \u2014 add the ones you want. `the-loop channels status` prints the catalog with ticks."
+            },
+            "publish": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [
+                "work-item.reply"
+              ],
+              "description": "The event types a message on this channel MAY BECOME \u2014 the channel's authority, per event (issue-309, decision-103 D2). Default `work-item.reply`: a reply is input to the waiting session and nothing more (12.1.0 behaviour). Add `gate.feedback` to let an authorized member's reply answer an open human gate; `control.command` to let a typed control keyword run; `work-item.create` to let a top-level message open a work item (needs `kickoff.repo`). Every one of them is recorded on the ledger FIRST, under your own credential, and judged by the ledger's own ingress \u2014 a grant never bypasses a guard. A message classified as a type not listed is dropped (`unpublishable-event`), never downgraded. A name the catalog does not mark publishable is ignored with a warning."
             },
             "verbosity": {
               "type": "string",
@@ -745,18 +784,36 @@
               "default": "normal",
               "description": "quiet = one line + the work-item link; normal = + the question text; verbose = + context detail. Strict supersets, so turning it down never changes the words."
             },
-            "authorizedUsers": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              },
-              "default": [],
-              "description": "Slack MEMBER IDS (U\u2026, not display names \u2014 names are attacker-chosen) whose replies the-loop acts on. Empty denies every reply (fail closed), the routing.authorizedUsers posture."
+            "maxChars": {
+              "type": "integer",
+              "minimum": 200,
+              "default": 1500,
+              "description": "Cap on the text one Slack message carries (a comment body, an artifact excerpt). Longer text is cut with a note and the link button points at the rest."
+            },
+            "kickoff": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Where a top-level message becomes a work item, when this channel holds the `work-item.create` grant. Both the grant and `repo` are needed: there is no sensible inferred answer to \u201cwhich repository does this DM become an issue in\u201d, so an empty `repo` disables the path whatever `publish` says.",
+              "properties": {
+                "repo": {
+                  "type": "string",
+                  "default": "",
+                  "description": "The `owner/repo` the issue is created in. Empty = kickoff disabled."
+                },
+                "labels": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "default": [],
+                  "description": "Labels applied to the created issue \u2014 from here and ONLY here, never from the message. Add `routing.autoExecuteLabel` to arm the item for `the-loop start`; leave empty to file it and stop."
+                }
+              }
             },
             "read": {
               "type": "object",
               "additionalProperties": false,
-              "description": "How replies come back. Both transports read ONLY threads the-loop itself started.",
+              "description": "How replies come back. Both transports read the threads the-loop itself started \u2014 and, only with the `work-item.create` grant and a `kickoff.repo`, the channel's top-level messages.",
               "properties": {
                 "mode": {
                   "type": "string",

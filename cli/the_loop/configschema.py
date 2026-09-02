@@ -122,22 +122,33 @@ RETIRED: Dict[str, str] = {
     "collaborators[].notifications": (
         "per-collaborator notification channels were removed in issue-304 — nothing "
         "ever read them. Slack is configured once, for the whole daemon, under "
-        "`channels.slack` in the CLI config (a bot token, a channel id, and an "
-        "`events` allow-list); `channels.slack.authorizedUsers` is who may reply. "
-        "Run `the-loop migrate-config` to strip the retired blocks from a CLI config"
+        "`channels.slack` in the CLI config (a bot token, a channel id, and a "
+        "`subscribe` allow-list); who may reply is the `slack` id of a "
+        "`routing.authorizedUsers` entry. Run `the-loop migrate-config` to strip the "
+        "retired blocks from a CLI config"
     ),
     "collaborators": (
         "the CLI config's operator-collaborator list was removed in issue-304 — "
-        "nothing read it. Identity is declared in exactly two places now: "
-        "`routing.authorizedUsers` (GitHub logins) and `channels.slack.authorizedUsers` "
-        "(Slack member ids). Run `the-loop migrate-config`"
+        "nothing read it. Identity is declared in exactly one place now: each "
+        "`routing.authorizedUsers` entry is a person with their id on every channel "
+        "(`github:`, `slack:`). Run `the-loop migrate-config`"
     ),
     "notifications": (
         "the CLI config's daemon-side `notifications` block was removed in issue-304 — "
-        "its event names were never raised. Subscribe `channels.slack.events` to the "
-        "events you want instead; the harness config keeps its own "
-        "`notifications.events`, which still gates the graph's `notify` hook. "
+        "its event names were never raised. Subscribe `channels.slack.subscribe` to "
+        "the events you want instead; the harness config keeps its own "
+        "`notifications.events`, which the graph's `notify` hook carries as detail. "
         "Run `the-loop migrate-config`"
+    ),
+    "channels.slack.events": (
+        "renamed `channels.slack.subscribe` in issue-309 — a channel subscribes to "
+        "events AND may publish them (`channels.slack.publish`), so one word cannot "
+        "name both directions. Run `the-loop migrate-config`"
+    ),
+    "channels.slack.authorizedUsers": (
+        "moved into `routing.authorizedUsers` in issue-309 — each entry there is one "
+        "person, a GitHub login or a mapping of channel name to id (`slack: U…`), so "
+        "identity is declared once and read per channel. Run `the-loop migrate-config`"
     ),
 }
 

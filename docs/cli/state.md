@@ -553,12 +553,15 @@ the file by hand leaves the tmux session running).
 
 What the [channels](/config/cli/channels-options) surface — opt-in, off by default —
 remembers about its conversations, one file per channel type (today: `slack.json`).
-Two maps: `threads` binds a Slack thread to the work item whose question started it,
-and `cursors` records the last reply in each thread this deployment already mirrored
-and delivered. Bounded (the oldest binding is dropped past a cap), rewritten
-atomically, and **local**: the cursors are a ledger of what *this* machine processed,
-and the thread and member ids name conversations in the operator's own workspace —
-neither belongs in a repository.
+Two maps: `threads` binds a Slack thread to the work item whose question started it —
+or, since issue-309, the work item a top-level message **created** — and `cursors`
+records the last reply in each thread this deployment already recorded and delivered,
+plus one `channel:<id>` key per channel read for kickoffs (the newest top-level message
+already considered; the first read after the `work-item.create` grant is turned on
+baselines it, so nothing already in the channel becomes an issue). Bounded (the oldest
+binding is dropped past a cap), rewritten atomically, and **local**: the cursors are a
+ledger of what *this* machine processed, and the thread and member ids name
+conversations in the operator's own workspace — neither belongs in a repository.
 
 **If you delete it:** the bot forgets its open conversations. Replies in old threads
 stop being read (an unbound thread is dropped as `unmapped`), and the next `the-loop
