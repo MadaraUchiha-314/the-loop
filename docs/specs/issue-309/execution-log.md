@@ -27,7 +27,7 @@ status: in-progress
 
 | PR | Scope / tasks | Status |
 |----|---------------|--------|
-| (raised from `claude/the-loop-architecture-h5cfh9`) | tasks 1–13: the whole work item | open |
+| [#310](https://github.com/MadaraUchiha-314/the-loop/pull/310) | tasks 1–13: the whole work item | open |
 
 ## Progress entries
 
