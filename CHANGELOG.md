@@ -1,3 +1,9 @@
+## v13.0.1 (2026-09-02)
+
+### Fix
+
+- **issue-311**: every link and every gh call names the GitHub it is on (#313)
+
 ## v13.0.0 (2026-09-02)
 
 ### BREAKING CHANGE
