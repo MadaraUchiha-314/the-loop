@@ -1,3 +1,18 @@
+## v13.0.0 (2026-09-02)
+
+### BREAKING CHANGE
+
+- CLI config version 0.7.0. Identity is declared once —
+each routing.authorizedUsers entry is a person (a GitHub login, or a
+mapping of channel name to id); channels.slack.authorizedUsers is removed
+and channels.slack.events is renamed channels.slack.subscribe. A config
+still declaring either is refused at load; `the-loop migrate-config`
+moves both.
+
+### Feat
+
+- **issue-309**: one event bus, many channels, one ledger (#310)
+
 ## v12.1.0 (2026-09-01)
 
 ### Feat
