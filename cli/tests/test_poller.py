@@ -3047,3 +3047,109 @@ def test_the_poller_publishes_agent_and_human_comments_once_each(tmp_path):
     assert "## Summary" in seen[0][2] and seen[1][2] == "looks good"
     poller.poll_once()  # the human comment may be retried; it is not re-published
     assert len(seen) == 2
+
+
+# -- the host (issue-311, R4, R5) -------------------------------------------------
+
+GHE = "ghe.corp.example"
+
+
+def test_repospec_parses_a_host_qualified_repo():
+    spec = RepoSpec.parse(f"{GHE}/octo/repo")
+    assert (spec.host, spec.owner, spec.repo) == (GHE, "octo", "repo")
+    assert spec.full_name == "octo/repo"  # the payload's repository.full_name
+    assert spec.gh_repo == f"{GHE}/octo/repo"  # gh's own --repo grammar
+    plain = RepoSpec.parse("octo/repo")
+    assert (plain.host, plain.gh_repo) == ("", "octo/repo")
+
+
+@pytest.mark.parametrize("bad", ["ghe/octo/repo", "https://x.example/o/r", "a/b/c/d"])
+def test_repospec_refuses_a_path_that_is_not_a_host(bad):
+    """A1 — three segments are a host and a repo only when the first is a host."""
+    with pytest.raises(ValueError):
+        RepoSpec.parse(bad)
+
+
+def test_parse_repos_tells_hosts_apart():
+    specs = parse_repos([f"{GHE}/a/b", "a/b"])
+    assert [s.gh_repo for s in specs] == [f"{GHE}/a/b", "a/b"]
+
+
+def test_gh_listings_on_an_enterprise_host_name_it_in_repo():
+    run = FakeRun(stdout="[]")
+    client = GhClient(runner=run)
+    client.list_labeled_issues(OWNER, REPO, LABEL, host=GHE)
+    client.list_labeled_prs(OWNER, REPO, LABEL, host=GHE)
+    for argv in run.calls:
+        assert argv[3:5] == ["--repo", f"{GHE}/octo/repo"], argv
+        assert "--hostname" not in argv  # `issue list` takes the host in --repo
+
+
+def test_gh_comment_reads_on_an_enterprise_host_name_it():
+    """Every one of the three PR surfaces (issue-246) goes to the same host."""
+    run = FakeRun(stdout="[]")
+    client = GhClient(runner=run)
+    client.list_comments(OWNER, REPO, 15, is_pr=True, host=GHE)
+    views = [argv for argv in run.calls if argv[1] == "pr"]
+    apis = [argv for argv in run.calls if argv[1] == "api"]
+    assert views and all(f"{GHE}/octo/repo" in argv for argv in views)
+    assert len(apis) == 2 and all(argv[2:4] == ["--hostname", GHE] for argv in apis)
+
+
+def test_gh_item_state_is_asked_of_its_host():
+    run = FakeRun(stdout='{"number": 15, "state": "open"}')
+    GhClient(runner=run).fetch_item_state(OWNER, REPO, 15, host=GHE)
+    assert run.calls[0][1:4] == ["api", "--hostname", GHE]
+
+
+def test_a_github_com_read_is_byte_identical():
+    """A5 — nothing changes for a source that names no host."""
+    run = FakeRun(stdout="[]")
+    client = GhClient(runner=run)
+    client.list_labeled_issues(OWNER, REPO, LABEL)
+    client.list_comments(OWNER, REPO, 15, is_pr=False)
+    run.stdout = '{"number": 15, "state": "open"}'
+    client.fetch_item_state(OWNER, REPO, 15)
+    for argv in run.calls:
+        assert "--hostname" not in argv and GHE not in " ".join(argv)
+
+
+def test_provider_owns_by_host_too():
+    """R5.3 — an enterprise source does not claim the github.com twin."""
+    ghe_provider = GitHubPollProvider(parse_repos([f"{GHE}/octo/repo"]), LABEL)
+    assert ghe_provider.owns(WorkItemRef.parse(f"github:{GHE}/octo/repo#1"))
+    assert not ghe_provider.owns(WorkItemRef.parse("github:octo/repo#1"))
+    plain = GitHubPollProvider(parse_repos(["octo/repo"]), LABEL)
+    assert plain.owns(WorkItemRef.parse("github:octo/repo#1"))
+    assert not plain.owns(WorkItemRef.parse(f"github:{GHE}/octo/repo#1"))
+
+
+def test_provider_discovery_and_reads_go_to_the_sources_host():
+    listing = json.dumps(
+        [
+            {
+                "number": 15,
+                "title": "t",
+                "labels": [{"name": LABEL}],
+                "updatedAt": "2026-07-20T00:00:00Z",
+                "url": f"https://{GHE}/octo/repo/issues/15",
+            }
+        ]
+    )
+    run = FakeRun(stdout=listing)
+    provider = GitHubPollProvider(
+        parse_repos([f"{GHE}/octo/repo"]),
+        LABEL,
+        monitor_prs=False,
+        gh=GhClient(runner=run),
+    )
+    items = provider.list_work_items()
+    ref = WorkItemRef.parse(items[0].ref)
+    assert ref.host == GHE
+    run.stdout = '{"comments": []}'
+    provider.list_comments(items[0])
+    run.stdout = '{"number": 15, "state": "closed"}'
+    provider.closure(ref)
+    assert run.calls[0][3:5] == ["--repo", f"{GHE}/octo/repo"]
+    assert f"{GHE}/octo/repo" in run.calls[1]
+    assert run.calls[2][1:4] == ["api", "--hostname", GHE]

@@ -76,6 +76,18 @@ _HOST_RE = re.compile(
     r"|[A-Za-z0-9-]+:\d+"  # or a bare name with an explicit port
 )
 
+
+def is_github_host(value: str) -> bool:
+    """Whether ``value`` is the shape of a GitHub host — the one grammar for a host.
+
+    Public since issue-311: the host resolver (``ghhost``), ``ref_for``, a poll
+    source's ``[HOST/]OWNER/REPO`` and a kickoff slug all refuse through this one
+    expression **before** a value is interpolated into a URL or a ``--hostname``
+    argument. Two copies of it is how one of them comes to accept a scheme.
+    """
+    return bool(_HOST_RE.fullmatch(value or ""))
+
+
 #: The host a ``github:`` ref means when it does not say (github.com). A ref
 #: names its host only when it is somewhere else, so every ref written before
 #: issue-130 keeps its exact form — and its file name.

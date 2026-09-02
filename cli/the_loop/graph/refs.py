@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import re
 
-from ..sessions import WorkItemRef, is_github_name
+from ..sessions import WorkItemRef, is_github_host, is_github_name
 
 __all__ = ["derive_ref", "ref_for"]
 
@@ -35,12 +35,17 @@ __all__ = ["derive_ref", "ref_for"]
 _ISSUE_ID_RE = re.compile(r"^issue-(\d+)$")
 
 
-def derive_ref(work_item_id: str, origin_repo: str) -> str:
+def derive_ref(work_item_id: str, origin_repo: str, host: str = "") -> str:
     """``issue-194`` + ``octo/repo`` → ``github:octo/repo#194``; ``""`` if it cannot.
 
     ``origin_repo`` is ``<owner>/<repo>`` as :func:`harness_config.origin_repo`
     produces it — empty when the project is not GitHub-ticketed or has not said,
     in which case there is nothing to derive from and nothing is derived.
+
+    ``host`` is the GitHub the ref lives on (issue-311) — the resolver's answer
+    (:func:`the_loop.ghhost.github_host`), carried as its own argument so the
+    slug contract above stays exactly one shape. Empty means github.com, which
+    :class:`WorkItemRef` leaves unwritten.
 
     Total: every failure path returns ``""``. A caller gets a usable ref or
     nothing, never a partial one and never an exception — this runs on the way
@@ -50,10 +55,10 @@ def derive_ref(work_item_id: str, origin_repo: str) -> str:
     match = _ISSUE_ID_RE.match(work_item_id.strip())
     if not match:
         return ""  # not a GitHub-shaped id: another provider's, or a draft
-    return ref_for(origin_repo, int(match.group(1)))
+    return ref_for(origin_repo, int(match.group(1)), host=host)
 
 
-def ref_for(repo_slug: str, number: int) -> str:
+def ref_for(repo_slug: str, number: int, host: str = "") -> str:
     """``octo/repo`` + ``7`` → ``github:octo/repo#7``; ``""`` if it cannot.
 
     The primitive :func:`derive_ref` is built on, and the one an **inner** loop
@@ -72,4 +77,11 @@ def ref_for(repo_slug: str, number: int) -> str:
         return ""
     if number <= 0:
         return ""
-    return WorkItemRef(provider="github", owner=owner, repo=repo, number=number).ref
+    host = (host or "").strip()
+    if host and not is_github_host(host):
+        # The same fail-closed direction as a bad slug (issue-311, A1): a value
+        # that is not a host never becomes part of a ref, a URL or an argv.
+        return ""
+    return WorkItemRef(
+        provider="github", owner=owner, repo=repo, number=number, host=host
+    ).ref

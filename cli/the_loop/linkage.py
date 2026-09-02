@@ -37,6 +37,7 @@ import subprocess
 from collections import OrderedDict
 from typing import Callable, Optional
 
+from .comments import gh_host_args
 from .sessions import WorkItemRef, is_github_name
 
 logger = logging.getLogger("the-loop.linkage")
@@ -83,8 +84,11 @@ def existence_argv(item: WorkItemRef) -> list:
     the public GitHub about an enterprise work item would be an answer to a
     different question.
     """
-    host = [] if item.default_host else ["--hostname", item.host]
-    return ["api"] + host + [f"repos/{item.owner}/{item.repo}/issues/{item.number}"]
+    return [
+        "api",
+        *gh_host_args(item),
+        f"repos/{item.owner}/{item.repo}/issues/{item.number}",
+    ]
 
 
 class WorkItemVerifier:

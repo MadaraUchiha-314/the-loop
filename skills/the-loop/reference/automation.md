@@ -108,7 +108,9 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
   event concerns. Set `routing.workspace.root` to turn it on (leave empty to keep the
   legacy static `spawnWorkdir`), then pick a `strategy`:
   - **`worktree`** (default) — one shared clone per repo under
-    `<root>/<host>/<owner>/<repo>` (`host` = `github.com` or an enterprise domain), plus
+    `<root>/<host>/<owner>/<repo>` (`host` = `github.com` or an enterprise domain — the
+    checkout's host from the payload or `workspace.defaultHost`; which GitHub the-loop
+    *talks to* is `integrations.github.host`, issue-311), plus
     a **git worktree per work item** (quarantined under `<root>/.worktrees/…`), so N
     concurrent work items on one repo share objects instead of paying for N full clones.
     The shared clone stays on the default branch and is `git fetch`ed to stay fresh; a

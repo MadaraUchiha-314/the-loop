@@ -533,7 +533,9 @@ Preferred clone URL scheme. `https` uses the payload's `clone_url` (or
 
 Host directory used when the event payload carries no `html_url` to infer it from — the
 poller's leaner payloads, for instance. Set it to your enterprise domain on a GitHub
-Enterprise deployment.
+Enterprise deployment. This names a **directory** under `workspace.root`; which GitHub
+the-loop *talks to* is [`integrations.github.host`](/config/cli/integrations-options#github-host)
+(issue-311), and the two are deliberately separate keys.
 
 ### `workspace.keepCheckoutOnClose`
 

@@ -280,3 +280,47 @@ def test_the_binary_comes_from_the_integrations_block():
     )
     section = data["routing"]["reactions"]
     assert ReactionConfig.from_mapping(section).gh_binary == "/opt/gh"
+
+
+# -- the host (issue-311, R4) ----------------------------------------------------
+
+GHE = "ghe.corp.example"
+GHE_REF = f"github:{GHE}/octo/repo#15"
+
+
+def test_the_target_carries_the_work_items_host():
+    target = target_from_event(
+        routed(
+            payload=comment_payload({"id": 7}),
+            work_items=[WorkItemRef.parse(GHE_REF)],
+        )
+    )
+    assert target is not None and target.host == GHE
+    default = target_from_event(routed(payload=comment_payload({"id": 7})))
+    assert default is not None and default.host == ""
+
+
+def test_a_hosted_reaction_is_posted_on_its_host():
+    target = target_from_event(
+        routed(
+            payload=comment_payload({"id": 7}),
+            work_items=[WorkItemRef.parse(GHE_REF)],
+        )
+    )
+    assert target is not None
+    argv = GitHubReactor._argv(target, "eyes")
+    assert argv[:3] == ["api", "--hostname", GHE]
+    node = target_from_event(
+        routed(
+            payload=comment_payload({"node_id": "IC_kwDOAbCdEf4AAAAB"}),
+            work_items=[WorkItemRef.parse(GHE_REF)],
+        )
+    )
+    assert node is not None
+    assert GitHubReactor._argv(node, "eyes")[:3] == ["api", "--hostname", GHE]
+
+
+def test_a_github_com_reaction_argv_is_unchanged():
+    target = target_from_event(routed(payload=comment_payload({"id": 7})))
+    assert target is not None
+    assert "--hostname" not in GitHubReactor._argv(target, "eyes")

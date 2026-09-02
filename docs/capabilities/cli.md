@@ -130,7 +130,17 @@ self-learning/ML capabilities.
   derivations SHALL agree, because one keys the routing and the other keys the poll
   ledger. A path that is neither `<owner>/<repo>` nor `<host>/<owner>/<repo>` — where a
   host is a dotted name or one with an explicit port — SHALL be rejected as a malformed
-  ref rather than read as a work item whose identity is a path fragment.
+  ref rather than read as a work item whose identity is a path fragment. A ref the-loop
+  **mints from configuration** rather than from an event — the graph's own work item
+  derived from `ticketing.github`, an inner loop's pull-request ref — SHALL carry the host
+  one resolver answers (issue-311, decision-104): `integrations.github.host`, else the
+  host of an enterprise `github.api.baseUrl`, else `$GH_HOST`, else the checkout's
+  `origin` remote (in-session only), else github.com. Every outbound `gh` call SHALL read
+  the host back off the ref through one spelling — `--hostname <host>` for `gh api`,
+  `[<host>/]<owner>/<repo>` for `--repo` — written exactly when the host is not
+  github.com, so a github.com deployment's argvs, refs and URLs are unchanged. A poll
+  source's `repos` entry SHALL accept `[HOST/]OWNER/REPO` and SHALL claim only refs on
+  that host.
 - The pre-issue-128 locations (`<root>/sessions/`, `<root>/sessions/control/`,
   `<root>/sessions/poll-state.json`, and the pre-issue-106 `.the-loop/poll-state.json`)
   SHALL still be **read** when a work item's new record has no such section, and written
@@ -334,6 +344,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-311 | Audited every `github.com` assumption and made the host the ref's everywhere (2026-09-02): one resolver (`ghhost.github_host` — `integrations.github.host`, an enterprise `api.baseUrl`, `$GH_HOST`, the checkout's origin remote, github.com) answers for refs minted from `ticketing.github` and for inner-loop `prRef`s; every `gh` writer and reader (`comments`, `reactions`, `linkage`, the poller's `GhClient`, both graph transports) spells the host through `comments.gh_host_args` / `[host/]owner/repo`; the API transport derives `https://<host>/api/v3` against the public default; the review brief accepts pull-request URLs on any host and puts slugs and bare numbers on the work item's; poll sources accept `[HOST/]OWNER/REPO` and own by host | [spec](../specs/issue-311/), [decision-104](../decisions/decision-104.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/311) |
 | issue-307 | `the-loop add-collaborator` / `remove-collaborator` join the CLI (2026-08-31), the terminal form of the two new control keywords: they write one work item's collaborator roster, post the same keyword and login back to the ticket self-marked, validate every login before writing any of them, and run in-process for the same reason `ask` does | [spec](../specs/issue-307/), [decision-102](../decisions/decision-102.md), [add-collaborator](../cli/commands/add-collaborator.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/307) |
 | issue-277 | `the-loop standing list` / `start` / `stop` / `restart` / `say` — the operator's surface onto the sessions that belong to no work item, addressed by name. `say` pastes a message straight into a running session's terminal, which is how you talk to a session that has no comment thread to answer on | [spec](../specs/issue-277/), [standing](../cli/commands/standing.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/277) |
 | issue-274 | `the-loop sessions link-pr --work-item <ref> --pull-request <ref\|N>` joins the registry surface, with `POST /api/v1/sessions/link-pr` and the `link_pull_request` MCP tool over the one core implementation: the session that opens a pull request records the binding the router prefers, instead of leaving it to be inferred from a closing reference, an `issue-<n>` branch or a closing keyword that a the-loop-authored pull request does not carry | [spec](../specs/issue-274/), [sessions](../cli/commands/sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/274) |

@@ -183,8 +183,9 @@ Longer text is cut with a note, and the link button points at the rest.
 - **Type:** `string`
 - **Default:** `""`
 
-The `owner/repo` a top-level message becomes an issue in, when the channel holds the
-`work-item.create` grant. Both are needed: there is no sensible inferred answer to
+The `[host/]owner/repo` a top-level message becomes an issue in, when the channel holds
+the `work-item.create` grant — `gh`'s own `--repo` grammar, so a GitHub Enterprise
+deployment names its host and the bound ref carries it (issue-311). Both are needed: there is no sensible inferred answer to
 "which repository does this DM become an issue in", so an empty `repo` disables the
 path whatever `publish` says. The first read after the grant is turned on
 **baselines** the channel: nothing already there becomes an issue. The created

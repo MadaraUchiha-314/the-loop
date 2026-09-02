@@ -29,7 +29,8 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Sequence
 
-from ..sessions import WorkItemRef
+from ..comments import gh_host_args
+from ..sessions import DEFAULT_GITHUB_HOST, WorkItemRef, is_github_host
 from ..webhook.router import RoutedEvent, event_carries_label, extract_work_items
 from .base import (
     Closure,
@@ -173,6 +174,17 @@ class GhClient:
 
     # -- primitives -------------------------------------------------------------
 
+    @staticmethod
+    def _repo_flag(owner: str, repo: str, host: str = "") -> str:
+        """``[HOST/]OWNER/REPO`` — ``gh``'s own ``--repo`` grammar (issue-311).
+
+        The host is written exactly when it is not github.com, so every argv a
+        github.com source ever produced is unchanged.
+        """
+        if host and host != DEFAULT_GITHUB_HOST:
+            return f"{host}/{owner}/{repo}"
+        return f"{owner}/{repo}"
+
     def _run_json(self, argv: Sequence[str]):
         """Run ``gh <argv>`` and parse its stdout as JSON."""
         cmd = [self.binary] + list(argv)
@@ -197,14 +209,16 @@ class GhClient:
 
     # -- listing ---------------------------------------------------------------
 
-    def list_labeled_issues(self, owner: str, repo: str, label: str) -> List[GhItem]:
+    def list_labeled_issues(
+        self, owner: str, repo: str, label: str, host: str = ""
+    ) -> List[GhItem]:
         """Open issues in ``owner/repo`` carrying ``label`` (PRs excluded)."""
         data = self._run_json(
             [
                 "issue",
                 "list",
                 "--repo",
-                f"{owner}/{repo}",
+                self._repo_flag(owner, repo, host),
                 "--label",
                 label,
                 "--state",
@@ -217,7 +231,9 @@ class GhClient:
         )
         return [self._item_from_json(row, is_pr=False) for row in data or []]
 
-    def list_labeled_prs(self, owner: str, repo: str, label: str) -> List[GhItem]:
+    def list_labeled_prs(
+        self, owner: str, repo: str, label: str, host: str = ""
+    ) -> List[GhItem]:
         """Open PRs in ``owner/repo`` carrying ``label``, with their linked issues.
 
         Degrades (once, then latched) to the legacy field list when the installed
@@ -228,7 +244,7 @@ class GhClient:
         """
         fields = _PR_FIELDS_LEGACY if self._no_link_field else _PR_FIELDS
         try:
-            data = self._list_prs(owner, repo, label, fields)
+            data = self._list_prs(owner, repo, label, fields, host)
         except GhError as exc:
             if self._no_link_field or _PR_LINK_FIELD.lower() not in str(exc).lower():
                 raise
@@ -241,16 +257,16 @@ class GhClient:
                 _GH_INSTALL_HINT,
             )
             self._no_link_field = True
-            data = self._list_prs(owner, repo, label, _PR_FIELDS_LEGACY)
+            data = self._list_prs(owner, repo, label, _PR_FIELDS_LEGACY, host)
         return [self._item_from_json(row, is_pr=True) for row in data or []]
 
-    def _list_prs(self, owner: str, repo: str, label: str, fields: str):
+    def _list_prs(self, owner: str, repo: str, label: str, fields: str, host: str = ""):
         return self._run_json(
             [
                 "pr",
                 "list",
                 "--repo",
-                f"{owner}/{repo}",
+                self._repo_flag(owner, repo, host),
                 "--label",
                 label,
                 "--state",
@@ -263,7 +279,7 @@ class GhClient:
         )
 
     def list_comments(
-        self, owner: str, repo: str, number: int, is_pr: bool
+        self, owner: str, repo: str, number: int, is_pr: bool, host: str = ""
     ) -> List[GhComment]:
         """Every comment on an issue/PR, whichever surface GitHub filed it under.
 
@@ -292,7 +308,7 @@ class GhClient:
                 "view",
                 str(number),
                 "--repo",
-                f"{owner}/{repo}",
+                self._repo_flag(owner, repo, host),
                 "--json",
                 "comments",
             ]
@@ -302,12 +318,14 @@ class GhClient:
         ]
         if not is_pr:
             return comments
-        comments += self.list_reviews(owner, repo, number)
-        comments += self.list_review_comments(owner, repo, number)
+        comments += self.list_reviews(owner, repo, number, host)
+        comments += self.list_review_comments(owner, repo, number, host)
         # Stable sort: same-timestamp items keep their source order.
         return sorted(comments, key=lambda c: c.created_at)
 
-    def list_reviews(self, owner: str, repo: str, number: int) -> List[GhComment]:
+    def list_reviews(
+        self, owner: str, repo: str, number: int, host: str = ""
+    ) -> List[GhComment]:
         """Submitted PR reviews that carry an instruction (issue-246).
 
         Two are dropped here rather than downstream, because "carries no
@@ -319,7 +337,9 @@ class GhClient:
         comments pass, unchanged.
         """
         reviews: List[GhComment] = []
-        for row in self._run_rest_list(f"repos/{owner}/{repo}/pulls/{number}/reviews"):
+        for row in self._run_rest_list(
+            f"repos/{owner}/{repo}/pulls/{number}/reviews", host
+        ):
             state = str(row.get("state") or "").upper()
             body = str(row.get("body") or "")
             if state == _REVIEW_PENDING or not body.strip():
@@ -338,7 +358,7 @@ class GhClient:
         return reviews
 
     def list_review_comments(
-        self, owner: str, repo: str, number: int
+        self, owner: str, repo: str, number: int, host: str = ""
     ) -> List[GhComment]:
         """Inline review-thread comments, each with the file/line it is on.
 
@@ -355,7 +375,9 @@ class GhClient:
         was never told about.
         """
         inline: List[GhComment] = []
-        for row in self._run_rest_list(f"repos/{owner}/{repo}/pulls/{number}/comments"):
+        for row in self._run_rest_list(
+            f"repos/{owner}/{repo}/pulls/{number}/comments", host
+        ):
             line = row.get("line")
             if not isinstance(line, int):
                 line = row.get("original_line")
@@ -373,7 +395,7 @@ class GhClient:
             )
         return inline
 
-    def _run_rest_list(self, path: str) -> List[dict]:
+    def _run_rest_list(self, path: str, host: str = "") -> List[dict]:
         """Every page of a REST array endpoint, as dicts.
 
         ``--paginate`` matters rather than being a nicety: REST returns reviews
@@ -385,7 +407,12 @@ class GhClient:
         pull request.
         """
         data = self._run_json(
-            ["api", f"{path}?per_page={_REST_PAGE_SIZE}", "--paginate"]
+            [
+                "api",
+                *gh_host_args(host),
+                f"{path}?per_page={_REST_PAGE_SIZE}",
+                "--paginate",
+            ]
         )
         if data is None:
             return []
@@ -395,14 +422,18 @@ class GhClient:
             )
         return [row for row in data if isinstance(row, dict)]
 
-    def fetch_item_state(self, owner: str, repo: str, number: int) -> GhItemState:
+    def fetch_item_state(
+        self, owner: str, repo: str, number: int, host: str = ""
+    ) -> GhItemState:
         """Lifecycle state of one issue/PR — the closure question (issue-94).
 
         Uses the REST ``issues`` endpoint deliberately: the session registry
         records a bare ``#<number>`` with no kind, and ``gh issue view`` refuses
         PR numbers (and vice-versa), while this one endpoint answers for both.
         """
-        data = self._run_json(["api", f"repos/{owner}/{repo}/issues/{number}"])
+        data = self._run_json(
+            ["api", *gh_host_args(host), f"repos/{owner}/{repo}/issues/{number}"]
+        )
         if not isinstance(data, dict) or not data:
             raise GhError(
                 f"gh api repos/{owner}/{repo}/issues/{number} returned no object"
@@ -459,33 +490,61 @@ class GhClient:
 
 @dataclass
 class RepoSpec:
-    """An ``owner/repo`` target parsed from config/flags."""
+    """A ``[host/]owner/repo`` target parsed from config/flags.
+
+    ``host`` is ``""`` for github.com (issue-311): ``full_name`` stays the
+    ``owner/repo`` a webhook payload's ``repository.full_name`` carries, and
+    ``gh_repo`` is ``gh``'s own ``--repo`` grammar with the host written exactly
+    when it is not the default.
+    """
 
     owner: str
     repo: str
+    host: str = ""
 
     @property
     def full_name(self) -> str:
         return f"{self.owner}/{self.repo}"
 
+    @property
+    def gh_repo(self) -> str:
+        return f"{self.host}/{self.full_name}" if self.host else self.full_name
+
     @classmethod
     def parse(cls, value: str) -> "RepoSpec":
-        owner, sep, repo = str(value).strip().partition("/")
-        if not sep or not owner or not repo:
+        parts = str(value).strip().split("/")
+        host = ""
+        if len(parts) == 3:
+            # Three segments are a host and a repository only when the first
+            # is recognisably a host (A1): `ghe/octo/repo` is a typo, not a
+            # work item on a machine called "ghe".
+            host, owner, repo = parts
+            if not is_github_host(host):
+                raise ValueError(
+                    f"invalid repo {value!r}; expected [HOST/]OWNER/REPO where HOST "
+                    "is a dotted name or one with a port (e.g. ghe.corp/octo/hello)"
+                )
+        elif len(parts) == 2:
+            owner, repo = parts
+        else:
+            owner = repo = ""
+        if not owner or not repo:
             raise ValueError(
-                f"invalid repo {value!r}; expected OWNER/REPO (e.g. octo/hello)"
+                f"invalid repo {value!r}; expected [HOST/]OWNER/REPO (e.g. octo/hello)"
             )
-        return cls(owner=owner, repo=repo)
+        if host == DEFAULT_GITHUB_HOST:
+            host = ""
+        return cls(owner=owner, repo=repo, host=host)
 
 
 def parse_repos(values: Sequence[str]) -> List[RepoSpec]:
-    """Parse a list of ``owner/repo`` strings, de-duplicated in order."""
+    """Parse a list of ``[host/]owner/repo`` strings, de-duplicated in order."""
     seen = set()
     specs: List[RepoSpec] = []
     for value in values:
         spec = RepoSpec.parse(value)
-        if spec.full_name not in seen:
-            seen.add(spec.full_name)
+        if spec.gh_repo not in seen:
+            seen.add(spec.gh_repo)
             specs.append(spec)
     return specs
 
@@ -546,19 +605,23 @@ class GitHubPollProvider(PollProvider):
         for spec in self.repos:
             if self.monitor_issues:
                 for gh_item in self.gh.list_labeled_issues(
-                    spec.owner, spec.repo, self.label
+                    spec.owner, spec.repo, self.label, host=spec.host
                 ):
                     items.append(self._work_item(spec, gh_item))
             if self.monitor_prs:
                 for gh_item in self.gh.list_labeled_prs(
-                    spec.owner, spec.repo, self.label
+                    spec.owner, spec.repo, self.label, host=spec.host
                 ):
                     items.append(self._work_item(spec, gh_item))
         return items
 
     def list_comments(self, item: WorkItem) -> List[Comment]:
         gh_comments = self.gh.list_comments(
-            item.owner, item.repo, item.number, is_pr=item.kind == _KIND_PR
+            item.owner,
+            item.repo,
+            item.number,
+            is_pr=item.kind == _KIND_PR,
+            host=item.host,
         )
         return [
             Comment(
@@ -674,12 +737,18 @@ class GitHubPollProvider(PollProvider):
         """True when ``ref`` is a GitHub item in one of this source's repos."""
         if ref.provider != self.name:
             return False
+        # Host too (issue-311, R5.3): an enterprise source must not claim the
+        # github.com repository that happens to share its owner/repo.
         full_name = f"{ref.owner}/{ref.repo}".lower()
-        return any(spec.full_name.lower() == full_name for spec in self.repos)
+        return any(
+            spec.full_name.lower() == full_name
+            and (spec.host or DEFAULT_GITHUB_HOST) == ref.host
+            for spec in self.repos
+        )
 
     def closure(self, ref: WorkItemRef) -> Optional[Closure]:
         """Whether ``ref`` has ended, and how (``None`` while it is still open)."""
-        state = self.gh.fetch_item_state(ref.owner, ref.repo, ref.number)
+        state = self.gh.fetch_item_state(ref.owner, ref.repo, ref.number, host=ref.host)
         if state.open or not state.state:
             return None
         return Closure(
