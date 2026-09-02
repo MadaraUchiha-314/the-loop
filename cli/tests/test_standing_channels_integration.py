@@ -165,9 +165,11 @@ def test_a_slack_thread_reply_reaches_a_standing_session_and_no_ticket(
 
     core_standing.start_standing(config=config)
 
-    # The announcement is the thread, and it is bound to the SESSION's ref.
-    assert len(slack.posted) == 1
+    # The root names the session's ref and is bound to it; the announcement is
+    # its first reply (issue-312).
+    assert len(slack.posted) == 2
     thread = slack.posted[0]["ts"]
+    assert slack.posted[1]["thread_ts"] == thread
     state = ChannelState.load(
         __import__("pathlib").Path(layout_from_config(config).channels_dir)
         / "slack.json"
@@ -245,7 +247,7 @@ def test_a_restart_keeps_talking_in_the_same_thread(tmp_path, tmux, slack):
     core_standing.start_standing(config=config)
     core_standing.stop_standing(config=config)
     core_standing.start_standing(config=config)
-    assert len(slack.posted) == 1
+    assert len(slack.posted) == 2  # the root and the announcement, once
 
 
 def test_a_slack_failure_never_stops_the_session_starting(tmp_path, tmux, monkeypatch):

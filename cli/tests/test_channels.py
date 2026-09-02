@@ -40,6 +40,7 @@ class FakeSlackClient:
         self.token = token
         self.posted = []
         self.replies = replies or {}  # thread ts -> [message dict, ...]
+        self.history = []  # top-level messages, for the kickoff read
 
     def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None):
         self.posted.append(
@@ -48,7 +49,7 @@ class FakeSlackClient:
         return {"ok": True, "channel": channel, "ts": f"1700.{len(self.posted):06d}"}
 
     def conversations_history(self, *, channel, oldest=None, limit=100):
-        return {"ok": True, "messages": list(getattr(self, "history", []))}
+        return {"ok": True, "messages": list(self.history)}
 
     def conversations_replies(self, *, channel, ts, oldest=None, limit=200):
         return {"ok": True, "messages": list(self.replies.get(ts, []))}
@@ -603,3 +604,413 @@ def test_channels_status_prints_the_catalog_with_ticks(tmp_path, monkeypatch, ca
     out = capsys.readouterr().out
     assert "[x] phase-approval-pending" in out
     assert "[ ] session.awaiting_input" in out
+
+
+# -- the thread is the work item's (issue-312) ----------------------------------
+
+
+def _state_path(tmp_path):
+    return tmp_path / "state" / "channels" / "slack.json"
+
+
+def _conversation(state, work_item):
+    record = state.conversation(work_item)
+    assert record is not None, f"no conversation for {work_item}"
+    return record
+
+
+def test_bind_records_the_conversation_per_work_item(tmp_path):
+    """R3.1: one keyed record per work item, beside the reader's thread map."""
+    path = tmp_path / "slack.json"
+    state = ChannelState.load(path)
+    state.bind(
+        "1700.1", "github:o/r#7", "C123", origin="kickoff", permalink="https://s/p1"
+    )
+    state.save(path)
+    reloaded = ChannelState.load(path)
+    assert reloaded.thread_for("github:o/r#7") == ("C123", "1700.1")
+    record = reloaded.conversation("github:o/r#7")
+    assert record is not None
+    assert record["channel"] == "C123" and record["thread"] == "1700.1"
+    assert record["origin"] == "kickoff" and record["permalink"] == "https://s/p1"
+    assert record["opened"].endswith("Z")
+    assert reloaded.work_item_for("1700.1") == "github:o/r#7"
+    assert reloaded.conversation("github:o/r#8") is None
+
+
+def test_a_pre_issue_312_state_file_backfills_its_conversations(tmp_path):
+    """R3.4: a threads-only file (13.0.1) still answers, and is rewritten keyed."""
+    path = tmp_path / "slack.json"
+    path.write_text(
+        json.dumps(
+            {
+                "threads": {
+                    "1700.1": {"workItem": "github:o/r#7", "channel": "C123"},
+                    "1700.2": {"workItem": "github:o/r#7", "channel": "C123"},
+                },
+                "cursors": {"1700.1": "1700.5"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    state = ChannelState.load(path)
+    assert state.thread_for("github:o/r#7") == ("C123", "1700.2")  # newest binding
+    assert _conversation(state, "github:o/r#7")["origin"] == "legacy"
+    state.save(path)
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    assert raw["conversations"]["github:o/r#7"]["thread"] == "1700.2"
+    assert raw["cursors"] == {"1700.1": "1700.5"}  # untouched
+
+
+def test_a_ref_spelled_with_the_default_host_shares_the_thread(tmp_path):
+    """R1.3: one work item, two spellings of its ref, one conversation."""
+    state = ChannelState.load(tmp_path / "slack.json")
+    state.bind("1700.1", "github:o/r#7", "C123")
+    assert state.thread_for("github:github.com/o/r#7") == ("C123", "1700.1")
+    assert _conversation(state, "github:github.com/o/r#7")["thread"] == "1700.1"
+    state.bind("1700.2", "github:github.com/o/r#7", "C123")
+    assert state.work_item_for("1700.2") == "github:o/r#7"
+    assert len(state.conversations) == 1
+    assert state.thread_for("standing:supervisor") is None
+
+
+def test_eviction_drops_the_conversation_with_the_thread(tmp_path):
+    state = ChannelState.load(tmp_path / "slack.json")
+    for n in range(THREAD_CAP + 1):
+        state.bind(f"1700.{n}", f"github:o/r#{n}", "C123")
+    assert state.work_item_for("1700.0") is None
+    assert state.conversation("github:o/r#0") is None
+    assert state.thread_for("github:o/r#0") is None
+    assert state.conversation(f"github:o/r#{THREAD_CAP}") is not None
+
+
+def test_locked_sections_on_one_path_serialize(tmp_path):
+    """R1.4: the second writer waits for the first's critical section."""
+    import threading
+    import time
+
+    path = tmp_path / "slack.json"
+    order = []
+
+    def first():
+        with ChannelState.locked(path) as state:
+            order.append("first-in")
+            time.sleep(0.2)
+            state.bind("1700.1", "github:o/r#7", "C123")
+            state.save(path)
+            order.append("first-out")
+
+    def second():
+        time.sleep(0.05)
+        with ChannelState.locked(path) as state:
+            order.append("second-in")
+            assert state.thread_for("github:o/r#7") == ("C123", "1700.1")
+
+    a, b = threading.Thread(target=first), threading.Thread(target=second)
+    a.start()
+    b.start()
+    a.join()
+    b.join()
+    assert order == ["first-in", "first-out", "second-in"]
+    assert (tmp_path / "slack.json.lock").exists()
+
+
+def test_without_flock_the_lock_degrades_to_today(tmp_path, monkeypatch, caplog):
+    """A5: no `flock` on the platform — one debug line, an unlocked section, delivery."""
+    from the_loop import runlock
+
+    monkeypatch.setattr(runlock, "HAVE_FLOCK", False)
+    path = tmp_path / "slack.json"
+    with caplog.at_level("DEBUG", logger="the-loop.channels"):
+        with ChannelState.locked(path) as state:
+            state.bind("1700.1", "github:o/r#7", "C123")
+            state.save(path)
+    assert ChannelState.load(path).thread_for("github:o/r#7") == ("C123", "1700.1")
+    assert any("flock" in rec.message for rec in caplog.records)
+
+
+def test_the_first_post_opens_a_root_and_replies_into_it(tmp_path, monkeypatch):
+    """R1.1, R1.2: the root names the work item; the event is the first reply."""
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    client = FakeSlackClient()
+    channel = make_channel(tmp_path, client)
+    result = channel.post(event())
+    assert len(client.posted) == 2
+    root, reply = client.posted
+    assert root["thread_ts"] is None and root["channel"] == "C123"
+    assert root["blocks"][0]["type"] == "header"
+    assert "github:o/r#7" in root["blocks"][0]["text"]["text"]
+    assert "https://github.com/o/r/issues/7" in root["blocks"][1]["text"]["text"]
+    assert root["blocks"][-1]["type"] == "actions"
+    assert root["blocks"][-1]["elements"][0]["url"] == "https://github.com/o/r/issues/7"
+    assert "github:o/r#7" in root["text"]
+    assert reply["thread_ts"] == "1700.000001" == result.thread
+    assert reply["blocks"][0]["text"]["text"].startswith("Question from the agent")
+    assert "approach A or B" in reply["text"]
+    record = _conversation(ChannelState.load(_state_path(tmp_path)), "github:o/r#7")
+    assert record == {
+        "channel": "C123",
+        "thread": "1700.000001",
+        "opened": record["opened"],
+        "origin": "event",
+        "permalink": "",
+    }
+
+
+def test_the_second_post_is_one_reply(tmp_path, monkeypatch):
+    """R1.3: a bound work item never gets a second top-level message."""
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    client = FakeSlackClient()
+    channel = make_channel(tmp_path, client)
+    first = channel.post(event())
+    second = channel.post(event(text="follow-up?", event_type="comment.agent"))
+    assert len(client.posted) == 3
+    assert client.posted[2]["thread_ts"] == first.thread == second.thread
+    assert [p["thread_ts"] for p in client.posted].count(None) == 1
+
+
+def test_a_standing_ref_gets_a_bare_root_and_no_link(tmp_path, monkeypatch):
+    """R1.6: a ref that is not a work item is named as it is, with no button."""
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    client = FakeSlackClient()
+    channel = make_channel(tmp_path, client)
+    channel.post(
+        OutboundEvent(
+            event_type="standing.started", work_item="standing:supervisor", text="up"
+        )
+    )
+    root = client.posted[0]
+    assert "standing:supervisor" in root["blocks"][0]["text"]["text"]
+    assert all(block["type"] != "actions" for block in root["blocks"])
+    assert client.posted[1]["thread_ts"] == "1700.000001"
+
+
+def test_the_root_says_replies_reach_it_only_when_the_channel_reads(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    reading = FakeSlackClient()
+    make_channel(tmp_path, reading).post(event())
+    assert "Replies" in reading.posted[0]["blocks"][1]["text"]["text"]
+    off = FakeSlackClient()
+    make_channel(tmp_path / "off", off, read={"mode": "off"}).post(event())
+    assert "Replies" not in off.posted[0]["blocks"][1]["text"]["text"]
+
+
+def test_a_failed_reply_opens_no_second_thread(tmp_path, monkeypatch):
+    """R2.3: a transient failure is a ChannelError, never a new root."""
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+
+    class Flaky(FakeSlackClient):
+        fail_replies = False
+
+        def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None):
+            if thread_ts is not None and self.fail_replies:
+                raise RuntimeError("ratelimited")
+            return super().chat_postMessage(
+                channel=channel, text=text, thread_ts=thread_ts, blocks=blocks
+            )
+
+    client = Flaky()
+    channel = make_channel(tmp_path, client)
+    first = channel.post(event())
+    client.fail_replies = True
+    with pytest.raises(ChannelError):
+        channel.post(event(text="again"))
+    assert [p["thread_ts"] for p in client.posted].count(None) == 1
+    state = ChannelState.load(_state_path(tmp_path))
+    assert state.thread_for("github:o/r#7") == ("C123", first.thread)
+
+
+def test_a_failed_root_binds_nothing_and_the_next_event_retries(tmp_path, monkeypatch):
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+
+    class RootFails(FakeSlackClient):
+        fail_root = False
+
+        def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None):
+            if thread_ts is None and self.fail_root:
+                raise RuntimeError("channel_not_found")
+            return super().chat_postMessage(
+                channel=channel, text=text, thread_ts=thread_ts, blocks=blocks
+            )
+
+    client = RootFails()
+    client.fail_root = True
+    channel = make_channel(tmp_path, client)
+    with pytest.raises(ChannelError):
+        channel.post(event())
+    assert ChannelState.load(_state_path(tmp_path)).conversation("github:o/r#7") is None
+    client.fail_root = False
+    result = channel.post(event())
+    assert result.ok and result.thread == "1700.000001"
+
+
+def test_thread_opened_is_emitted_with_ids_only(tmp_path, monkeypatch):
+    """R3.2: channel, work item, thread, channel id, origin — never text."""
+    from the_loop.channels import slack as slack_mod
+
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    events = []
+    monkeypatch.setattr(
+        slack_mod.eventlog,
+        "emit",
+        lambda name, level="info", **f: events.append((name, f)),
+    )
+    channel = make_channel(tmp_path, FakeSlackClient())
+    channel.post(event(text="secret question text"))
+    channel.post(event(text="second"))
+    opened = [f for name, f in events if name == "channel.thread_opened"]
+    assert len(opened) == 1
+    assert opened[0]["channel"] == "slack" and opened[0]["work_item"] == "github:o/r#7"
+    assert opened[0]["thread"] == "1700.000001" and opened[0]["channel_id"] == "C123"
+    assert opened[0]["origin"] == "event"
+    assert "secret question text" not in json.dumps(opened[0])
+
+
+def test_the_permalink_is_recorded_when_slack_returns_one(tmp_path, monkeypatch):
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+
+    class WithPermalink(FakeSlackClient):
+        def chat_getPermalink(self, *, channel, message_ts):
+            return {
+                "ok": True,
+                "permalink": f"https://x.slack.com/{channel}/p{message_ts}",
+            }
+
+    channel = make_channel(tmp_path, WithPermalink())
+    channel.post(event())
+    record = _conversation(ChannelState.load(_state_path(tmp_path)), "github:o/r#7")
+    assert record["permalink"] == "https://x.slack.com/C123/p1700.000001"
+
+
+def test_a_failed_permalink_still_binds_the_thread(tmp_path, monkeypatch):
+    """A3: the nicety fails; the binding and the delivery stand."""
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+
+    class PermalinkBroken(FakeSlackClient):
+        def chat_getPermalink(self, *, channel, message_ts):
+            raise RuntimeError("missing_scope")
+
+    client = PermalinkBroken()
+    result = make_channel(tmp_path, client).post(event())
+    assert result.ok and len(client.posted) == 2
+    record = _conversation(ChannelState.load(_state_path(tmp_path)), "github:o/r#7")
+    assert record["thread"] == "1700.000001" and record["permalink"] == ""
+
+
+def test_the_root_is_built_from_the_ref_alone(tmp_path, monkeypatch):
+    """A2: an event's text and detail never reach the root."""
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    client = FakeSlackClient()
+    make_channel(tmp_path, client).post(
+        event(
+            text="<https://evil.example|click me> *bold* github:o/r#99",
+            detail={"author": "mallory", "excerpt": "https://evil.example/x"},
+        )
+    )
+    root = json.dumps(client.posted[0])
+    assert "evil.example" not in root and "mallory" not in root
+    assert "github:o/r#99" not in root
+
+
+def test_a_corrupt_state_file_opens_a_fresh_thread(tmp_path, monkeypatch):
+    """A4: garbage on disk loads as empty; the next event binds cleanly."""
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    path = _state_path(tmp_path)
+    path.parent.mkdir(parents=True)
+    path.write_text("{not json", encoding="utf-8")
+    client = FakeSlackClient()
+    result = make_channel(tmp_path, client).post(event())
+    assert result.ok and client.posted[0]["thread_ts"] is None
+    assert ChannelState.load(path).thread_for("github:o/r#7") == ("C123", result.thread)
+
+
+def test_a_members_root_shaped_message_binds_nothing(tmp_path, monkeypatch):
+    """A1: a top-level message that looks like the-loop's root is not a binding."""
+    from the_loop.channels import inbound
+
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    client = FakeSlackClient()
+    monkeypatch.setattr("the_loop.channels.slack.build_client", lambda token: client)
+    config = cli_config(tmp_path)
+    client.history = [
+        {
+            "ts": "1600.1",
+            "user": "UHUMAN",
+            "text": "the-loop · github:o/r#7 — this thread carries every message",
+        }
+    ]
+    inbound.poll_once(config)
+    inbound.poll_once(config)
+    state = ChannelState.load(_state_path(tmp_path))
+    assert state.threads == {} and state.conversation("github:o/r#7") is None
+    result = make_channel(tmp_path, client).post(event())
+    assert result.thread != "1600.1"
+
+
+def _threads_command(tmp_path, monkeypatch, *argv):
+    from the_loop.commands.channels_cmd import ChannelsCommand
+    import argparse
+
+    monkeypatch.setenv("THE_LOOP_CLI_CONFIG", str(tmp_path / "cli-config.yaml"))
+    (tmp_path / "cli-config.yaml").write_text(
+        json.dumps(cli_config(tmp_path)), encoding="utf-8"
+    )
+    parser = argparse.ArgumentParser()
+    ChannelsCommand().add_arguments(parser)
+    return ChannelsCommand().run(parser.parse_args(list(argv)))
+
+
+def test_channels_threads_lists_and_filters_conversations(
+    tmp_path, monkeypatch, capsys
+):
+    """R3.3: every conversation, one of them, or the records as JSON."""
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    channel = make_channel(tmp_path, FakeSlackClient())
+    channel.post(event())
+    channel.bind("1600.2", "github:o/r#42", "C123", origin="kickoff")
+
+    assert _threads_command(tmp_path, monkeypatch, "threads") == 0
+    out = capsys.readouterr().out
+    assert "github:o/r#7" in out and "1700.000001" in out and "event" in out
+    assert "github:o/r#42" in out and "1600.2" in out and "kickoff" in out
+
+    assert (
+        _threads_command(
+            tmp_path, monkeypatch, "threads", "--work-item", "github:o/r#42"
+        )
+        == 0
+    )
+    out = capsys.readouterr().out
+    assert "github:o/r#42" in out and "github:o/r#7" not in out
+
+    assert (
+        _threads_command(
+            tmp_path, monkeypatch, "threads", "--work-item", "github:github.com/o/r#42"
+        )
+        == 0
+    )
+    assert (
+        "github:o/r#42" in capsys.readouterr().out
+    )  # the default host is one spelling
+
+    assert (
+        _threads_command(
+            tmp_path, monkeypatch, "threads", "--work-item", "github:o/r#9"
+        )
+        == 1
+    )
+    assert "no conversation" in capsys.readouterr().out
+
+    assert _threads_command(tmp_path, monkeypatch, "threads", "--json") == 0
+    records = json.loads(capsys.readouterr().out)
+    assert {r["workItem"] for r in records} == {"github:o/r#7", "github:o/r#42"}
+    assert "xoxb-test" not in json.dumps(records)
+
+
+def test_channels_status_counts_work_items(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    make_channel(tmp_path, FakeSlackClient()).post(event())
+    assert _threads_command(tmp_path, monkeypatch, "status") == 0
+    assert "1 work item(s)" in capsys.readouterr().out

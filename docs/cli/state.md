@@ -32,7 +32,8 @@ working directory), split by whether it travels:
 │   ├── events.jsonl               # the decision trail
 │   └── poller.out                 # a daemonized poller's stdout/stderr
 ├── channels/
-│   └── slack.json                 # channel conversations: thread bindings + read cursors — never tracked
+│   ├── slack.json                 # channel conversations: thread bindings, per-work-item threads, read cursors — never tracked
+│   └── slack.json.lock            # the writers' flock — empty, never tracked
 ├── gh-webhook.pid                 # the running receiver
 ├── poll.pid                       # the running poller — and its lock
 └── poll-status.json               # the poller's heartbeat, read by `the-loop status`
@@ -79,7 +80,7 @@ them, is what makes the `.gitignore` recipe three lines instead of a puzzle
 | `<root>/poll.pid` | the poller | the poller's pid — and the lock proving it is the only one | **local** |
 | `<root>/poll-status.json` | the poller, after every cycle | the heartbeat `the-loop status` reads: `startedAt`, `lastCycleAt`, last cycle's counters — and no pid, which is `poll.pid`'s to name | **local** |
 | `<root>/self-diagnosis.json` | self-diagnosis (issue-242, opt-in) | which failure fingerprints this machine already reported (with the issue URL), abandoned or is retrying, and when it last posted | **local** |
-| `<root>/channels/<channel>.json` | the channels reader/writer (issue-245, opt-in) | per channel type: which Slack thread carries which work item's conversation, and the last reply this deployment mirrored and delivered | **local** |
+| `<root>/channels/<channel>.json` | the channels reader/writer (issue-245, issue-312, opt-in) | per channel type: which Slack thread carries which work item's conversation (both ways: thread → work item, and work item → its one thread with when/how it opened and its permalink), and the last reply this deployment mirrored and delivered | **local** |
 
 The same table is declared in code, in
 [`the_loop/state.py`](https://github.com/MadaraUchiha-314/the-loop/blob/main/cli/the_loop/state.py)
@@ -559,19 +560,31 @@ the file by hand leaves the tmux session running).
 
 What the [channels](/config/cli/channels-options) surface — opt-in, off by default —
 remembers about its conversations, one file per channel type (today: `slack.json`).
-Two maps: `threads` binds a Slack thread to the work item whose question started it —
-or, since issue-309, the work item a top-level message **created** — and `cursors`
-records the last reply in each thread this deployment already recorded and delivered,
-plus one `channel:<id>` key per channel read for kickoffs (the newest top-level message
-already considered; the first read after the `work-item.create` grant is turned on
-baselines it, so nothing already in the channel becomes an issue). Bounded (the oldest
-binding is dropped past a cap), rewritten atomically, and **local**: the cursors are a
-ledger of what *this* machine processed, and the thread and member ids name
-conversations in the operator's own workspace — neither belongs in a repository.
+Three maps. `threads` binds a Slack thread to a work item — the reader's map: the poll
+transport iterates it, the socket transport looks a `thread_ts` up in it. `conversations`
+(since [issue-312](https://github.com/MadaraUchiha-314/the-loop/issues/312)) is keyed the
+other way, **work item → the one thread that carries it**: the channel id, the thread ts,
+when it was opened, how (`event`: the-loop opened a root for the first event it
+delivered; `kickoff`: a member's top-level message became the work item; `legacy`: a
+binding from before issue-312, derived from `threads` on load and written here on the
+next save) and the permalink Slack returned — this is what `the-loop channels threads`
+prints and what decides where a work item's next message goes. `cursors` records the last
+reply in each thread this deployment already recorded and delivered, plus one
+`channel:<id>` key per channel read for kickoffs (the newest top-level message already
+considered; the first read after the `work-item.create` grant is turned on baselines it,
+so nothing already in the channel becomes an issue). Bounded (the oldest binding is
+dropped past a cap, its conversation with it), rewritten atomically, and **local**: the
+cursors are a ledger of what *this* machine processed, and the thread and member ids
+name conversations in the operator's own workspace — neither belongs in a repository.
 
-**If you delete it:** the bot forgets its open conversations. Replies in old threads
-stop being read (an unbound thread is dropped as `unmapped`), and the next `the-loop
-ask` starts a fresh thread instead of continuing the old one. Nothing is
+Beside it sits `slack.json.lock`, an empty file the writers `flock` around every
+read-modify-write — the agent's session, the two daemons and the poll watcher all write
+this file, and the lock is what makes "one thread per work item" hold between them. It
+carries nothing; deleting it is harmless.
+
+**If you delete `slack.json`:** the bot forgets its open conversations. Replies in old
+threads stop being read (an unbound thread is dropped as `unmapped`), and the next event
+for a work item opens a fresh thread instead of continuing the old one. Nothing is
 double-processed — the bindings are how replies are *found*, not how they are deduped
 against the ticket.
 

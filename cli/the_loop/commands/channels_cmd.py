@@ -1,9 +1,11 @@
 """``the-loop channels`` — operate the communication channels (issue-245).
 
-Three actions, one per read posture: ``status`` (what is configured, with
-token *presence* only — never values), ``poll`` (one synchronous read cycle,
-for cron and daemon-less deployments, R4.1), and ``listen`` (Socket Mode in
-the foreground — push, no polling, no exposed endpoint, R4.2).
+Four actions: ``status`` (what is configured, with token *presence* only —
+never values), ``threads`` (which Slack thread carries which work item's
+conversation, issue-312 — reads the state file, calls nothing), ``poll`` (one
+synchronous read cycle, for cron and daemon-less deployments, R4.1), and
+``listen`` (Socket Mode in the foreground — push, no polling, no exposed
+endpoint, R4.2).
 
 Spec: docs/specs/issue-245/design.md §D9.
 """
@@ -11,6 +13,7 @@ Spec: docs/specs/issue-245/design.md §D9.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 
 from .base import Command, register
@@ -19,7 +22,7 @@ from .. import eventlog
 from ..channels import inbound
 from ..channels.events import SUBSCRIBABLE_EVENTS
 from ..channels.slack import SlackChannelConfig, run_socket_listener, slack_state_path
-from ..channels.state import ChannelState
+from ..channels.state import ChannelState, canonical
 
 
 def _presence(env_name: str) -> str:
@@ -78,8 +81,9 @@ def _status(config: dict) -> int:
     print(f"  bot token:    {_presence(slack.bot_token_env)} ({slack.bot_token_env})")
     print(f"  app token:    {_presence(slack.app_token_env)} ({slack.app_token_env})")
     print(
-        f"  conversations: {len(state.threads)} bound thread(s), "
-        f"{len(state.cursors)} cursor(s)"
+        f"  conversations: {len(state.conversations)} work item(s) in "
+        f"{len(state.threads)} bound thread(s), {len(state.cursors)} cursor(s) "
+        "— `the-loop channels threads` lists them"
     )
     # The common event definition (PR #267 review): what CAN be subscribed,
     # with what IS — so configuring `subscribe` never means guessing names.
@@ -98,6 +102,53 @@ def _status(config: dict) -> int:
         tick = "x" if name in slack.publish else " "
         print(
             f"  [{tick}] {name} — {SUBSCRIBABLE_EVENTS.get(name) or _publish_meaning(name)}"
+        )
+    return 0
+
+
+def _threads(config: dict, work_item: str, as_json: bool) -> int:
+    """Which thread carries which work item's conversation (issue-312 R3.3).
+
+    Reads the channel state only — no Slack call, no token needed — and prints
+    ids, timestamps and the permalink Slack returned; never a message's text.
+    """
+    state = ChannelState.load(slack_state_path(config))
+    wanted = canonical(work_item) if work_item else ""
+    records = [
+        {"workItem": item, **record}
+        for item, record in state.conversations.items()
+        if not wanted or item == wanted
+    ]
+    if work_item and not records:
+        print(f"no conversation for {work_item}")
+        return 1
+    if as_json:
+        print(json.dumps(records, indent=2))
+        return 0
+    if not records:
+        print("no conversations — no work item has a bound thread yet")
+        return 0
+    widths = {
+        "workItem": max(len("work item"), *(len(r["workItem"]) for r in records)),
+        "channel": max(len("channel"), *(len(r.get("channel", "")) for r in records)),
+        "thread": max(len("thread"), *(len(r.get("thread", "")) for r in records)),
+        "opened": max(len("opened"), *(len(r.get("opened", "")) for r in records)),
+        "origin": max(len("origin"), *(len(r.get("origin", "")) for r in records)),
+    }
+    header = (
+        f"{'work item':<{widths['workItem']}}  {'channel':<{widths['channel']}}  "
+        f"{'thread':<{widths['thread']}}  {'opened':<{widths['opened']}}  "
+        f"{'origin':<{widths['origin']}}  link"
+    )
+    print(header)
+    for record in records:
+        print(
+            f"{record['workItem']:<{widths['workItem']}}  "
+            f"{record.get('channel', ''):<{widths['channel']}}  "
+            f"{record.get('thread', ''):<{widths['thread']}}  "
+            f"{record.get('opened', ''):<{widths['opened']}}  "
+            f"{record.get('origin', ''):<{widths['origin']}}  "
+            f"{record.get('permalink') or '—'}"
         )
     return 0
 
@@ -123,6 +174,22 @@ class ChannelsCommand(Command):
             "status",
             help="Resolved channel config and conversation counts (no secrets)",
         )
+        threads = sub.add_parser(
+            "threads",
+            help=(
+                "Which Slack thread carries which work item's conversation "
+                "(reads the state file; no secrets)"
+            ),
+        )
+        threads.add_argument(
+            "--work-item",
+            default="",
+            metavar="REF",
+            help="Show one work item's conversation (exit 1 when it has none)",
+        )
+        threads.add_argument(
+            "--json", action="store_true", help="Print the records as JSON"
+        )
         sub.add_parser(
             "poll",
             help=(
@@ -141,6 +208,8 @@ class ChannelsCommand(Command):
         config = _cli_config()
         if args.channels_command == "status":
             return _status(config)
+        if args.channels_command == "threads":
+            return _threads(config, args.work_item, args.json)
         if args.channels_command == "poll":
             summary = inbound.poll_once(config)
             if summary.get("skipped"):
