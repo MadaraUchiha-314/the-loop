@@ -27,7 +27,16 @@ A breaking change is only as good as its migration, so four properties hold:
 
 ## What it migrates today
 
-Current version: **`0.6.0`**.
+Current version: **`0.7.0`**.
+
+**`channels.slack.events` → `channels.slack.subscribe`, and `channels.slack.authorizedUsers`
+→ `routing.authorizedUsers`** (issue-309). A channel now subscribes to events *and* may
+publish them (`channels.slack.publish`), so one word cannot name both directions; and
+identity is declared **once** — each `routing.authorizedUsers` entry is a person with
+their id on every channel. The rename is verbatim. The move cannot pair a Slack member
+id with a GitHub login on its own, so each id becomes its own `{slack: U…}` entry and the
+report asks you to fold it into that person's GitHub entry (a `github:` line and a
+`slack:` line on one entry); the member stays authorized on Slack meanwhile.
 
 **`collaborators` and `notifications` removed** (issue-304). Both were declarable and
 **neither was ever read**: the daemon events the filter named (`work-item-spawned`,
@@ -36,9 +45,9 @@ an operator who filled them in configured nothing and was never told. There is n
 convert — a role list that resolved to no recipient has no equivalent — so both blocks are
 removed and, if you had actually filled one in, the report points at
 [`channels.slack`](/config/cli/channels-options): one bot for the whole daemon, subscribed
-to the events you want by name. Identity stays where it already was, in
+to the events you want by name. Identity stayed in
 [`routing.authorizedUsers`](/config/cli/routing-options#authorizedusers) and
-`channels.slack.authorizedUsers`.
+`channels.slack.authorizedUsers` — until issue-309 folded the second into the first.
 
 **`integrations.slack` removed** (issue-245). Slack converged on the
 [channels](/config/cli/channels-options) layer — one `channels.slack` section configures
@@ -74,10 +83,12 @@ migrated the CLI config:
   · webhooks.ghWebhook.routing → routing (top level; it governs the poller too)
   · collaborators removed — nothing read it (issue-304); Slack is declared once under `channels.slack`
   · notifications removed — nothing read it (issue-304); Slack is declared once under `channels.slack`
-  · version '0.1.0' → '0.6.0'
+  · channels.slack.events → channels.slack.subscribe (a channel subscribes AND publishes now, issue-309)
+  · channels.slack.authorizedUsers → routing.authorizedUsers (1 Slack member id(s), one `{slack: …}` entry each — identity is declared once, issue-309)
+  · version '0.1.0' → '0.7.0'
 
 --- /home/you/.the-loop/cli-config.yaml (preview, not written) ---
-version: 0.6.0
+version: 0.7.0
 …
 ```
 

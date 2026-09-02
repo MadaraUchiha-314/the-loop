@@ -42,7 +42,25 @@ VALID = [
             "cors": {"allowOrigins": ["*"], "allowCredentials": False},
         }
     },
-    {"channels": {"slack": {"enabled": True, "authorizedUsers": ["U123"]}}},
+    {
+        "routing": {
+            "authorizedUsers": [
+                "octocat",
+                {"github": "dana", "slack": "U123", "name": "Dana"},
+                {"slack": "U9"},
+            ]
+        },
+        "channels": {
+            "ledger": "github",
+            "slack": {
+                "enabled": True,
+                "subscribe": ["session.awaiting_input", "comment.agent"],
+                "publish": ["work-item.reply", "gate.feedback"],
+                "maxChars": 800,
+                "kickoff": {"repo": "o/r", "labels": ["the-loop: auto-execute"]},
+            },
+        },
+    },
 ]
 INVALID = [
     ({"nope": 1}, "unknown top-level key"),
@@ -69,6 +87,20 @@ INVALID = [
         {"notifications": {"enabled": True, "events": {"session-died": ["engineer"]}}},
         "the other block retired in issue-304",
     ),
+    (
+        {"channels": {"slack": {"enabled": True, "authorizedUsers": ["U123"]}}},
+        "the Slack allow-list moved into routing.authorizedUsers in issue-309",
+    ),
+    (
+        {"channels": {"slack": {"events": ["session.awaiting_input"]}}},
+        "renamed `subscribe` in issue-309",
+    ),
+    ({"channels": {"ledger": "jira"}}, "a ledger this release does not ship"),
+    (
+        {"routing": {"authorizedUsers": [{"github": 42}]}},
+        "a channel id that is not a string",
+    ),
+    ({"channels": {"slack": {"maxChars": 10}}}, "a cap below the minimum"),
 ]
 
 #: The collaborators file is validated against its own schema, so its corpus is its own.
@@ -288,7 +320,7 @@ def test_a_retired_cli_config_block_names_its_replacement(key):
     assert len(errors) == 1
     (error,) = errors
     assert error.startswith(f"{key}: unknown key")
-    assert "channels.slack" in error
+    assert ("channels.slack" in error) or ("routing.authorizedUsers" in error)
     assert "the-loop migrate-config" in error
 
 
@@ -297,30 +329,37 @@ def test_an_ordinary_typo_gets_no_invented_guidance():
     assert configschema.validate({"nope": 1}) == ["nope: unknown key"]
 
 
-def test_both_identity_allow_lists_survive_the_removal():
+def test_identity_is_declared_once_and_read_per_channel():
     """
-    Feature: identity is declared in exactly two places
-      Scenario: the retired notification blocks are gone
-        Given a config naming a GitHub login and a Slack member id
+    Feature: identity is declared in exactly one place
+      Scenario: a person entry names a GitHub login and a Slack member id
+        Given a config whose routing.authorizedUsers carries a string and a mapping
         When it is validated
-        Then both allow-lists are accepted, and both are still schema leaves
+        Then it is accepted, and channels.slack has no allow-list of its own
 
-    Requirement: docs/specs/issue-304/requirements.md R2.3, R2.4 (threat model T1)
+    Requirement: docs/specs/issue-309/requirements.md R5.1, R5.3
     """
     schema = configschema.load_schema("cli-config")
     assert schema["properties"]["routing"]["properties"]["authorizedUsers"]
-    assert schema["properties"]["channels"]["properties"]["slack"]["properties"][
-        "authorizedUsers"
-    ]
+    slack = schema["properties"]["channels"]["properties"]["slack"]["properties"]
+    assert "authorizedUsers" not in slack and "events" not in slack
+    assert "subscribe" in slack and "publish" in slack
     assert (
         configschema.validate(
             {
-                "routing": {"authorizedUsers": ["octocat"]},
-                "channels": {"slack": {"authorizedUsers": ["U024BE7LH"]}},
+                "routing": {
+                    "authorizedUsers": ["octocat", {"github": "dana", "slack": "U1"}]
+                },
+                "channels": {"slack": {"subscribe": ["comment.agent"]}},
             }
         )
         == []
     )
+    (error,) = configschema.validate(
+        {"channels": {"slack": {"authorizedUsers": ["U024BE7LH"]}}}
+    )
+    assert error.startswith("channels.slack.authorizedUsers: unknown key")
+    assert "routing.authorizedUsers" in error and "migrate-config" in error
 
 
 def test_every_retired_key_is_absent_from_the_schema_it_names():
@@ -332,10 +371,14 @@ def test_every_retired_key_is_absent_from_the_schema_it_names():
     assert "collaborators" not in cli
     assert "notifications" not in cli
     assert "notifications" not in collaborator
+    slack = cli["channels"]["properties"]["slack"]["properties"]
+    assert "events" not in slack and "authorizedUsers" not in slack
     assert set(configschema.RETIRED) == {
         "collaborators",
         "notifications",
         "collaborators[].notifications",
+        "channels.slack.events",
+        "channels.slack.authorizedUsers",
     }
 
 

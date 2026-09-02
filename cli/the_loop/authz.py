@@ -101,16 +101,22 @@ def mark_self_authored(body: str) -> str:
     return f"{body.rstrip()}\n\n{SELF_COMMENT_ATTRIBUTION}\n{SELF_COMMENT_MARKER}\n"
 
 
-def resolve_authorized_users(configured: Sequence[str]) -> List[str]:
-    """The effective allowlist: exactly ``routing.authorizedUsers``
-    from the CLI config, normalized (falsy entries dropped, cast to ``str``).
+def resolve_authorized_users(configured: Sequence) -> List[str]:
+    """The effective allowlist: the **GitHub logins** in ``routing.authorizedUsers``.
+
+    Since issue-309 an entry is a person — a bare login, or a mapping of channel name
+    to native id (:mod:`the_loop.identity`) — and this function is what keeps every
+    login consumer unchanged: it returns exactly the ``github`` ids, in order, and a
+    person named on other channels only contributes nothing here.
 
     Deliberately has no fallback to the plugin config's ``ticketing.github.owner``
     (issue-63 review): who may trigger the daemon is a CLI-config concern, same as
     which repos it watches — the plugin config is for the Claude/Cursor plugin only.
     An empty list fails closed — callers should warn about that.
     """
-    return [str(u) for u in configured if u]
+    from .identity import github_logins, parse_authorized_users
+
+    return github_logins(parse_authorized_users(list(configured or [])))
 
 
 def is_authorized(actor: Optional[str], authorized: Sequence[str]) -> bool:

@@ -126,7 +126,7 @@ the-loop standing say supervisor --text "what has not moved today?"
                             # the sessions the-loop keeps for ITSELF: no work item, no
                             # ticket to comment on — addressed by name, from here or Slack
 the-loop events --follow    # the structured trail of every routing and dispatch decision
-the-loop channels poll      # the Slack-bot conversation channel: read thread replies —
+the-loop channels poll      # the Slack-bot channel, a peer on the event bus: read thread replies —
                             # each mirrored onto its work item, delivered to its session
 
 the-loop graph status <id>            # where a work item sits in the outer loop

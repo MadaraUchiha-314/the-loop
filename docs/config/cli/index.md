@@ -71,7 +71,7 @@ human-authored event, and polls nothing.
 
 - **Type:** `string`
 - **Default:** none — unset is accepted
-- **Current:** `0.4.0`
+- **Current:** `0.7.0`
 
 Schema version of this file. The CLI **refuses to start** against a config that declares
 a version older than the one it needs, naming the key, its replacement and the exact
@@ -170,7 +170,7 @@ Everything else takes its default. Build up from here with the option pages belo
 | [Standing-session options](/config/cli/standing-sessions-options) | `standingSessions` — the sessions the-loop keeps for itself, which belong to no work item |
 | [Polling options](/config/cli/polling-options) | `polling` — the pull-based ingress and its sources |
 | [Integrations options](/config/cli/integrations-options) | `integrations` — how the-loop's own calls reach GitHub, Slack and Jira |
-| [Channels options](/config/cli/channels-options) | `channels` — the back-and-forth conversation surfaces (the Slack bot) |
+| [Channels options](/config/cli/channels-options) | `channels` — the peers on the event bus (the Slack bot) and the ledger they record on |
 | [Service options](/config/cli/service-options) | `service` — the control-plane API's bind, auto-start and cross-origin allowlist |
 | [Observability options](/config/cli/observability-options) | `eventLog` — the JSONL trail the daemon writes |
 | [Self-diagnosis options](/config/cli/self-diagnosis-options) | `selfDiagnosis` — the-loop filing issues for its own failures (opt-in) |

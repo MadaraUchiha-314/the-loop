@@ -15,7 +15,7 @@
 # See .the-loop/config.yaml for the-loop's own PLUGIN config (ticketing,
 # workflow, tooling, reviews, …).
 
-version: "0.6.0"
+version: "0.7.0"
 
 # Everything the CLI GENERATES lives under this root (issue-106), organised by
 # whether it travels between machines (issue-128, decision-046):
@@ -114,7 +114,14 @@ routing:
   # SECURITY: no fallback to this repo's plugin config (issue-63 review) —
   # empty here means nothing human-authored is actioned (fail closed).
   # Set this explicitly, e.g. ["MadaraUchiha-314"], to actually route events.
+  # Each entry is one PERSON, declared once with their id on every channel
+  # they act on (issue-309, decision-103): a bare string is a GitHub login; a
+  # mapping names the channel ids — `github:` is what both ingresses and the
+  # graph's human gates read, `slack:` the MEMBER id (U…) the Slack channel
+  # reads. `channels.slack.authorizedUsers` is gone: one list, read per channel.
   authorizedUsers: []
+  # - github: MadaraUchiha-314
+  #   slack: U0123456789
   spawnWorkdir: "."             # used only when workspace.root is unset (below)
   # Per-work-item checkout workspace (issue-76): set `root` to check out each event's
   # repo under it and run the spawned session there, cleaned up on PR merge/close.
@@ -324,24 +331,32 @@ integrations:
   # the incoming webhook converged into `channels.slack` below, and
   # `the-loop migrate-config` retires an old section.
 
-# Back-and-forth conversation channels (issue-245) — THE Slack surface. Opt-in,
-# default off. When enabled, `the-loop ask` fans the question out to every
-# subscribed channel, the graph's `notify` hook posts its notification events
-# through the same filter, and an authorized member's thread reply is mirrored
-# onto the work item (with the self-authored marker — the single source of
-# truth) and delivered into the waiting session. Reads happen with polling
-# (the daemons, or `the-loop channels poll`) or without (Socket Mode via
-# `the-loop channels listen`).
+# Channels (issue-245, issue-309) — every channel is a peer on ONE event bus:
+# it SUBSCRIBES to the event types it wants and may PUBLISH the ones it is
+# granted, and one channel is the LEDGER every event is recorded on before
+# anything acts on it (decision-103). GitHub is the only ledger this release
+# ships. The Slack bot is opt-in, default off: when enabled, the ask, the
+# graph's notifications and the ledger's comment events reach it through the
+# bus filtered by `subscribe`; what an authorized member's message may become
+# is `publish` — session input by default, a gate answer / a control keyword /
+# a new work item by grant, each recorded on the ledger first and judged by the
+# ledger's own ingress. Reads happen with polling (the daemons, or `the-loop
+# channels poll`) or without (Socket Mode via `the-loop channels listen`).
 channels:
+  ledger: github
   slack:
     enabled: false
     # botTokenEnv: THE_LOOP_SLACK_BOT_TOKEN  # xoxb-, chat:write + channels.history
     # appTokenEnv: THE_LOOP_SLACK_APP_TOKEN  # xapp-, only for read.mode: socket
     # channel: ""                            # the channel id the bot posts into (C…)
-    # events: [session.awaiting_input]       # event-type allow-list; add the
-    #                                        # notify events (phase-approval-pending, …) to carry graph notifications
+    # subscribe: [session.awaiting_input]    # what this channel RECEIVES
+    # publish: [work-item.reply]             # what a message here MAY BECOME
+    #                                        # (+ gate.feedback, control.command, work-item.create)
     # verbosity: normal                      # quiet | normal | verbose
-    # authorizedUsers: []                    # Slack MEMBER ids (U…); empty = deny all
+    # maxChars: 1500
+    # kickoff:                               # only with the work-item.create grant
+    #   repo: ""                             # owner/repo; empty = off
+    #   labels: []
     # read:
     #   mode: poll                           # poll | socket | off
     #   intervalSeconds: 30

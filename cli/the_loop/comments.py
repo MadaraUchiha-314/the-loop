@@ -33,7 +33,13 @@ from .sessions import WorkItemRef
 
 logger = logging.getLogger("the-loop.comments")
 
-__all__ = ["comment_argv", "post_issue_comment", "post_issue_comment_with_url"]
+__all__ = [
+    "comment_argv",
+    "create_issue",
+    "issue_argv",
+    "post_issue_comment",
+    "post_issue_comment_with_url",
+]
 
 # Defensive validation of the API coordinates before they reach a `gh` argv.
 # They come from an already-parsed WorkItemRef rather than a payload, but the
@@ -128,3 +134,71 @@ def _html_url(stdout: str) -> str:
         return ""
     url = data.get("html_url") if isinstance(data, dict) else None
     return url if isinstance(url, str) else ""
+
+
+def issue_argv(owner: str, repo: str, title: str, body: str, labels=()) -> list:
+    """The ``gh`` arguments that open an issue on ``owner/repo`` (issue-309).
+
+    ``gh api`` rather than ``gh issue create``: the API form returns the created
+    issue as JSON, so the number and ``html_url`` come back in one call and no
+    URL has to be parsed out of prose.
+    """
+    args = [
+        "api",
+        "--method",
+        "POST",
+        f"repos/{owner}/{repo}/issues",
+        "-f",
+        f"title={title}",
+        "-f",
+        f"body={body}",
+    ]
+    for label in labels:
+        args += ["-f", f"labels[]={label}"]
+    return args
+
+
+def create_issue(
+    repo_slug: str,
+    title: str,
+    body: str,
+    labels=(),
+    *,
+    gh_binary: str = "gh",
+    runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+    timeout: Optional[float] = 30.0,
+) -> Tuple[bool, str, str, str]:
+    """Open an issue. Returns ``(ok, error, ref, html_url)``; never raises.
+
+    The ledger's record of a ``work-item.create`` event (issue-309). The same
+    contract as the comment writer: the operator's credentials, best-effort, an
+    injectable runner, and coordinates validated before they reach an argv. The
+    body is the caller's to compose — this function never builds one.
+    """
+    owner, _, repo = repo_slug.strip().partition("/")
+    if not owner or not repo or "/" in repo:
+        return False, f"kickoff repo {repo_slug!r} is not owner/repo", "", ""
+    if not _NAME_RE.match(owner) or not _NAME_RE.match(repo):
+        return False, f"unusable repo coordinates in {repo_slug!r}", "", ""
+    if not title.strip():
+        return False, "an issue needs a title", "", ""
+    if shutil.which(gh_binary) is None:
+        return False, f"gh CLI {gh_binary!r} not found on PATH", "", ""
+    cmd = [gh_binary] + issue_argv(
+        owner, repo, title, body, [str(lbl) for lbl in labels if str(lbl).strip()]
+    )
+    try:
+        proc = runner(cmd, capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, str(exc), "", ""
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or "").strip()
+        return False, f"gh exited {proc.returncode}: {detail}", "", ""
+    try:
+        data = json.loads(proc.stdout or "")
+    except ValueError:
+        data = {}
+    number = data.get("number") if isinstance(data, dict) else None
+    if not isinstance(number, int):
+        return False, "gh returned no issue number", "", _html_url(proc.stdout or "")
+    return True, "", f"github:{owner}/{repo}#{number}", _html_url(proc.stdout or "")

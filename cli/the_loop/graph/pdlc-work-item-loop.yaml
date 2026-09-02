@@ -165,7 +165,7 @@ nodes:
     skippable: true         # nothing to approve when phase 1 is declared away;
                             # skipped alone, the artifact still meets the final
                             # human-approval gate in the PR (issue-177)
-    entry: [set-phase-label, request-review, {hook: notify, with: {event: phase-approval-pending}}]
+    entry: [set-phase-label, request-review, {hook: notify, with: {event: phase-approval-pending, artifact: requirements.md}}]
     exit:
       - classify-feedback
       - {hook: record-feedback, with: {into: requirements.md}}
@@ -259,7 +259,7 @@ nodes:
     skippable: true         # issue-177: with design skipped this gate has only
                             # the testing plan to read, and that plan still gets
                             # its human eyes at `human-approval`
-    entry: [set-phase-label, request-review, {hook: notify, with: {event: phase-approval-pending}}]
+    entry: [set-phase-label, request-review, {hook: notify, with: {event: phase-approval-pending, artifact: design.md}}]
     exit:
       - classify-feedback
       - {hook: record-feedback, with: {into: design.md}}
@@ -436,7 +436,9 @@ nodes:
     command: finish-tasks
     stage: complete
     terminal: true
-    entry: [set-phase-label, log-entry]
+    # `work-item-complete` was in the catalog and fired by nothing (issue-309,
+    # gap 4): the "done" now reaches every channel subscribed to it.
+    entry: [set-phase-label, log-entry, {hook: notify, with: {event: work-item-complete}}]
     exit: []
 
   # The other end of the life cycle (issue-186). the-loop accumulates LOCAL

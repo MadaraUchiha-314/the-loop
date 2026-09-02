@@ -49,17 +49,28 @@ A session driven by the CLI daemon is **told** where its answers come from, via
 When no daemon is involved (a human ran `/the-loop:work-on` themselves), the human is by
 definition at the terminal — that is `cli` behaviour, with the same paper-trail obligation.
 
-**Conversation channels fan the question out; the work item stays the source of truth**
-(issue-245). When the operator's CLI config declares `channels` (today: a Slack bot —
-`channels.slack`, with its own event allow-list and verbosity), `the-loop ask` also posts
-the question to every subscribed channel, as a thread per work item — *after* the
-work-item comment, best-effort, never changing the ask's outcome. A reply given on a
-channel by an **authorized member** (a fail-closed Slack-member-id allow-list, the
-`routing.authorizedUsers` posture) is **mirrored onto the work item** as the-loop's own
-comment — visible attribution naming the channel and author, plus the self-authored
-marker, so ingress drops it and the reply is processed exactly once — and then delivered
-into the waiting session through the same fail-closed path the reply route uses. Whatever
-channel carried the conversation, the ticket carries the record.
+**Every channel is a peer on one event bus, and the work item is the ledger**
+(issue-245, issue-309, decision-103). When the operator's CLI config declares `channels`
+(today: a Slack bot — `channels.slack`), everything the loop says is an **event**: the
+ask, the graph's notifications (an approval request carries the work item's link and an
+excerpt of the artifact; `work-item-complete` fires at the end), and the comments the
+ledger's ingress sees (`comment.agent` — your own marked comments; `comment.human` — an
+authorized user's or collaborator's). A channel receives the ones its `subscribe` list
+names, renders them natively (Slack: Block Kit, a link button, Approve / Request changes
+buttons where a press can be received), and the ledger records every event that started
+elsewhere **first** — the ask's record *is* the question comment. What a message on a
+channel may become is the channel's `publish` grant: session input by default
+(`work-item.reply`: mirrored onto the work item as the-loop's own marked, defanged
+comment, then delivered into the waiting session); by grant, an answer to an open human
+gate (`gate.feedback`) or a control keyword (`control.command`) — both recorded on the
+ledger as an **unmarked** comment under the operator's credential, carrying an envelope
+that names the person, so the ledger's own ingress classifies or executes it through the
+guards a typed comment goes through and the artifact's `approvedBy` names the person; or
+a new work item (`work-item.create`, a top-level message opening an issue in the
+configured repo). Who may speak on any channel is the one list `routing.authorizedUsers`,
+each entry a person with their id on every channel. Whatever channel carried the
+conversation, the ticket carries the record — and a channel advances the loop *through
+the ledger, never around it*.
 
 ### 2. RULE: a generated artifact is iterated on a durable, reviewable surface
 

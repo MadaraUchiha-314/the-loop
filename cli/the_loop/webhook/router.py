@@ -12,7 +12,7 @@ import logging
 import re
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, List, Optional, Sequence, Set, Tuple
+from typing import TYPE_CHECKING, Callable, List, Optional, Sequence, Set, Tuple
 
 from .. import eventlog
 from ..authz import is_authorized, is_self_authored
@@ -472,6 +472,14 @@ def branch_derived_refs(event: str, payload: dict) -> List[str]:
     ]
 
 
+#: The events that carry a comment body, and the payload object it sits in.
+_COMMENT_EVENTS = {
+    "issue_comment": "comment",
+    "pull_request_review_comment": "comment",
+    "pull_request_review": "review",
+}
+
+
 class Router:
     """Filter (R3.5) + dedup check (R3.4) + work-item extraction (R3.1)."""
 
@@ -483,9 +491,15 @@ class Router:
         auto_execute_label: str = "",
         authorized_users: Sequence[str] = (),
         collaborators: Optional["CollaboratorStore"] = None,
+        publisher: Optional[Callable[[str, str, str, str, str], None]] = None,
     ):
         self.events = list(events)
         self.auto_execute_label = auto_execute_label
+        # The bus (issue-309): a comment this ingress drops as the agent's own, or
+        # accepts as a human's, is published to the subscribed channels —
+        # `comment.agent` / `comment.human`. Injected, so a router built without
+        # one (tests, embedders) publishes nothing and knows no config.
+        self.publisher = publisher
         # Prompt-injection guard: only these logins' actions are actionable
         # (empty => fail closed for human-authored events). See the_loop.authz.
         self.authorized_users = list(authorized_users)
@@ -542,6 +556,7 @@ class Router:
         # so it applies regardless of who technically posted it.
         if is_self_authored(event_body(event, payload)):
             logger.debug("ignoring %s: the-loop's own reply (marker present)", event)
+            self._publish("agent", event, payload, work_items)
             eventlog.emit(
                 "routing.dropped",
                 level="debug",
@@ -610,6 +625,8 @@ class Router:
                 actor=actor,
                 work_items=[w.ref for w in work_items],
             )
+        if actor and not is_lifecycle_close:
+            self._publish("human", event, payload, work_items)
         labeled = event_carries_label(payload, self.auto_execute_label)
         eventlog.emit(
             "routing.routed",
@@ -628,3 +645,30 @@ class Router:
             payload=payload,
             labeled=labeled,
         )
+
+    def _publish(self, kind: str, event: str, payload: dict, work_items) -> None:
+        """Hand a comment to the bus as ``comment.<kind>`` — best-effort, and only
+        for the events that carry a comment body (a label or a CI event is not
+        a comment). The first work item the event names is the one the comment
+        sits on; a PR review's linked issue hears it through that binding."""
+        if self.publisher is None or not work_items:
+            return
+        body = event_body(event, payload)
+        if not body or event not in _COMMENT_EVENTS:
+            return
+        from ..channels.envelope import has_envelope
+
+        if has_envelope(body):
+            return  # the bus's own record (A10): its source channel has it
+        container = _COMMENT_EVENTS[event]
+        url = str((payload.get(container) or {}).get("html_url") or "")
+        try:
+            self.publisher(
+                kind,
+                work_items[0].ref,
+                event_actor(event, payload) or "",
+                str(body),
+                url,
+            )
+        except Exception:  # noqa: BLE001 — the bus never touches ingress
+            logger.exception("comment publisher raised for %s", event)

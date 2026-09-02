@@ -41,9 +41,14 @@ class FakeSlackClient:
         self.posted = []
         self.replies = replies or {}  # thread ts -> [message dict, ...]
 
-    def chat_postMessage(self, *, channel, text, thread_ts=None):
-        self.posted.append({"channel": channel, "text": text, "thread_ts": thread_ts})
+    def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None):
+        self.posted.append(
+            {"channel": channel, "text": text, "thread_ts": thread_ts, "blocks": blocks}
+        )
         return {"ok": True, "channel": channel, "ts": f"1700.{len(self.posted):06d}"}
+
+    def conversations_history(self, *, channel, oldest=None, limit=100):
+        return {"ok": True, "messages": list(getattr(self, "history", []))}
 
     def conversations_replies(self, *, channel, ts, oldest=None, limit=200):
         return {"ok": True, "messages": list(self.replies.get(ts, []))}
@@ -52,15 +57,20 @@ class FakeSlackClient:
         return {"ok": True, "user_id": "UBOT"}
 
 
-def cli_config(tmp_path, **slack):
+def cli_config(tmp_path, authorized=("UHUMAN",), **slack):
     """A CLI config mapping with a channels.slack section and a temp state root."""
-    section = {
-        "enabled": True,
-        "channel": "C123",
-        "authorizedUsers": ["UHUMAN"],
-        **slack,
+    section = {"enabled": True, "channel": "C123", **slack}
+    return {
+        "state": {"root": str(tmp_path / "state")},
+        # Identity in one place (issue-309): the Slack member id sits on a
+        # person entry beside their GitHub login.
+        "routing": {
+            "authorizedUsers": [
+                {"github": f"gh-{member}", "slack": member} for member in authorized
+            ]
+        },
+        "channels": {"slack": section},
     }
-    return {"state": {"root": str(tmp_path / "state")}, "channels": {"slack": section}}
 
 
 def make_channel(tmp_path, client, **slack):
@@ -107,7 +117,10 @@ def test_config_defaults_match_the_schema():
     assert config.bot_token_env == slack["botTokenEnv"]["default"]
     assert config.app_token_env == slack["appTokenEnv"]["default"]
     assert config.verbosity == slack["verbosity"]["default"]
-    assert list(config.events) == slack["events"]["default"]
+    assert list(config.subscribe) == slack["subscribe"]["default"]
+    assert list(config.publish) == slack["publish"]["default"]
+    assert config.max_chars == slack["maxChars"]["default"]
+    assert config.kickoff_repo == slack["kickoff"]["properties"]["repo"]["default"]
     read = slack["read"]["properties"]
     assert config.read_mode == read["mode"]["default"]
     assert config.read_interval_seconds == read["intervalSeconds"]["default"]
@@ -136,7 +149,7 @@ def test_default_events_carry_the_ask(tmp_path):
 def test_off_list_event_posts_nothing(tmp_path, monkeypatch):
     monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
     client = FakeSlackClient()
-    channel = make_channel(tmp_path, client, events=["dispatch.failed"])
+    channel = make_channel(tmp_path, client, subscribe=["dispatch.failed"])
     assert not channel.wants("session.awaiting_input")
 
 
@@ -300,11 +313,13 @@ def pipeline(tmp_path, reply, *, authorized=("UHUMAN",), deliver_raises=None):
         )
         return {"delivered": True}
 
-    config = SlackChannelConfig.from_mapping(
-        cli_config(tmp_path, authorizedUsers=list(authorized))
-    )
+    config = SlackChannelConfig.from_mapping(cli_config(tmp_path, authorized))
     outcome = inbound.process_reply(
-        reply, config, cli_config(tmp_path), post_comment=post_comment, deliver=deliver
+        reply,
+        config,
+        cli_config(tmp_path, authorized),
+        post_comment=post_comment,
+        deliver=deliver,
     )
     return outcome, posts, deliveries
 
@@ -329,7 +344,12 @@ def test_unlisted_member_id_is_denied(tmp_path):
 
 def test_accepted_reply_is_mirrored_then_delivered(tmp_path):
     outcome, posts, deliveries = pipeline(tmp_path, a_reply())
-    assert outcome == {"outcome": "processed", "mirrored": True, "delivered": True}
+    assert outcome == {
+        "outcome": "processed",
+        "event": "work-item.reply",
+        "mirrored": True,
+        "delivered": True,
+    }
     assert posts[0][0] == "github:o/r#7"
     body = posts[0][1]
     assert is_self_authored(body)  # R1.3: dropped by ingress, never reprocessed
@@ -339,18 +359,64 @@ def test_accepted_reply_is_mirrored_then_delivered(tmp_path):
     assert deliveries[0]["comment"] is False  # the mirror is the ticket record
 
 
-def test_mirror_defangs_control_keywords(tmp_path):
-    outcome, posts, _ = pipeline(tmp_path, a_reply(text="please the-loop start now"))
+def test_a_control_keyword_without_the_grant_is_dropped_not_delivered(tmp_path):
+    """A2 (issue-309): dropped, never downgraded — the keyword reaches neither the
+    ticket nor the agent when the channel may not publish `control.command`."""
+    outcome, posts, deliveries = pipeline(
+        tmp_path, a_reply(text="please the-loop start now")
+    )
+    assert outcome == {"outcome": "unpublishable-event"}
+    assert posts == [] and deliveries == []
+
+
+def test_a_control_keyword_with_the_grant_is_recorded_unmarked_for_ingress(tmp_path):
+    """R3.5 (issue-309): with the grant the record is a HUMAN comment — no
+    self-marker, the keyword intact — so the ledger's ingress executes it through
+    the control seam; the pipeline itself delivers nothing."""
+    reply = a_reply(text="please the-loop start now")
+    posts, deliveries = [], []
+
+    def post_comment(item, body, gh_binary="gh"):
+        posts.append((item.ref, body))
+        return True, "", "https://x/c1"
+
+    config = SlackChannelConfig.from_mapping(
+        cli_config(tmp_path, publish=["work-item.reply", "control.command"])
+    )
+    outcome = inbound.process_reply(
+        reply,
+        config,
+        cli_config(tmp_path),
+        post_comment=post_comment,
+        deliver=lambda *a, **k: deliveries.append(a) or {"delivered": True},
+    )
+    assert outcome == {
+        "outcome": "processed",
+        "event": "control.command",
+        "mirrored": True,
+    }
+    assert deliveries == []
     body = posts[0][1]
-    marker_free = body.split("<!--")[0]
-    assert parse_command(marker_free, ControlConfig(enabled=True)).command is None
+    assert not is_self_authored(body)
+    assert parse_command(body, ControlConfig(enabled=True)).command == "start"
+    from the_loop.channels.envelope import parse as parse_envelope
+
+    envelope = parse_envelope(body)
+    assert envelope is not None and envelope.type == "control.command"
+    assert envelope.source == "slack"
+    assert envelope.actor == {"github": "gh-UHUMAN", "slack": "UHUMAN"}
 
 
 def test_undeliverable_reply_still_mirrors(tmp_path):
     outcome, posts, deliveries = pipeline(
         tmp_path, a_reply(), deliver_raises=LookupError("no session")
     )
-    assert outcome == {"outcome": "processed", "mirrored": True, "delivered": False}
+    assert outcome == {
+        "outcome": "processed",
+        "event": "work-item.reply",
+        "mirrored": True,
+        "delivered": False,
+    }
     assert len(posts) == 1 and deliveries == []
 
 
@@ -504,7 +570,7 @@ def test_an_unknown_event_name_warns_but_is_kept(tmp_path, caplog):
     a custom graph's own notify event must still be subscribable."""
     with caplog.at_level("WARNING", logger="the-loop.channels"):
         config = SlackChannelConfig.from_mapping(
-            cli_config(tmp_path, events=["phase-approval-pending", "phse-typo"])
+            cli_config(tmp_path, subscribe=["phase-approval-pending", "phse-typo"])
         )
     assert config.events == ("phase-approval-pending", "phse-typo")
     warning = "\n".join(r.getMessage() for r in caplog.records)
@@ -514,7 +580,9 @@ def test_an_unknown_event_name_warns_but_is_kept(tmp_path, caplog):
 def test_a_catalog_only_events_list_warns_nothing(tmp_path, caplog):
     with caplog.at_level("WARNING", logger="the-loop.channels"):
         SlackChannelConfig.from_mapping(
-            cli_config(tmp_path, events=["session.awaiting_input", "pr-review-pending"])
+            cli_config(
+                tmp_path, subscribe=["session.awaiting_input", "pr-review-pending"]
+            )
         )
     assert not caplog.records
 
@@ -524,7 +592,7 @@ def test_channels_status_prints_the_catalog_with_ticks(tmp_path, monkeypatch, ca
 
     monkeypatch.setenv("THE_LOOP_CLI_CONFIG", str(tmp_path / "cli-config.yaml"))
     (tmp_path / "cli-config.yaml").write_text(
-        json.dumps(cli_config(tmp_path, events=["phase-approval-pending"])),
+        json.dumps(cli_config(tmp_path, subscribe=["phase-approval-pending"])),
         encoding="utf-8",
     )
     import argparse

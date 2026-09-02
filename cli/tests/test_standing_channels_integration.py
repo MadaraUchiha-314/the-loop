@@ -28,7 +28,7 @@ class FakeSlackClient:
         self.posted = []
         self.replies = {}
 
-    def chat_postMessage(self, *, channel, text, thread_ts=None):
+    def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None):
         ts = f"1700.{len(self.posted) + 1:06d}"
         self.posted.append(
             {"channel": channel, "text": text, "thread_ts": thread_ts, "ts": ts}
@@ -107,7 +107,12 @@ def tmux(monkeypatch):
 def _config(tmp_path, *, channel="", slack_channel="C123", authorized=("UHUMAN",)):
     return {
         "state": {"root": str(tmp_path / "state")},
-        "routing": {"defaultHarness": "claude", "spawnWorkdir": str(tmp_path)},
+        "routing": {
+            "defaultHarness": "claude",
+            "spawnWorkdir": str(tmp_path),
+            # Identity in one place (issue-309): Slack member ids on person entries.
+            "authorizedUsers": [{"slack": member} for member in authorized],
+        },
         "standingSessions": {
             "enabled": True,
             "sessions": [
@@ -118,7 +123,6 @@ def _config(tmp_path, *, channel="", slack_channel="C123", authorized=("UHUMAN",
             "slack": {
                 "enabled": True,
                 "channel": slack_channel,
-                "authorizedUsers": list(authorized),
             }
         },
     }

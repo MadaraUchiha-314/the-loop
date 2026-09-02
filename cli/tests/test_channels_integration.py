@@ -24,9 +24,14 @@ class FakeSlackClient:
         self.posted = []
         self.replies = {}
 
-    def chat_postMessage(self, *, channel, text, thread_ts=None):
-        self.posted.append({"channel": channel, "text": text, "thread_ts": thread_ts})
+    def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None):
+        self.posted.append(
+            {"channel": channel, "text": text, "thread_ts": thread_ts, "blocks": blocks}
+        )
         return {"ok": True, "channel": channel, "ts": f"1700.{len(self.posted):06d}"}
+
+    def conversations_history(self, *, channel, oldest=None, limit=100):
+        return {"ok": True, "messages": list(getattr(self, "history", []))}
 
     def conversations_replies(self, *, channel, ts, oldest=None, limit=200):
         return {"ok": True, "messages": list(self.replies.get(ts, []))}
@@ -35,14 +40,19 @@ class FakeSlackClient:
         return {"ok": True, "user_id": "UBOT"}
 
 
-def cli_config(tmp_path, **slack):
-    section = {
-        "enabled": True,
-        "channel": "C123",
-        "authorizedUsers": ["UHUMAN"],
-        **slack,
+def cli_config(tmp_path, authorized=("UHUMAN",), **slack):
+    section = {"enabled": True, "channel": "C123", **slack}
+    return {
+        "state": {"root": str(tmp_path / "state")},
+        # Identity in one place (issue-309): the Slack member id sits on a
+        # person entry beside their GitHub login.
+        "routing": {
+            "authorizedUsers": [
+                {"github": f"gh-{member}", "slack": member} for member in authorized
+            ]
+        },
+        "channels": {"slack": section},
     }
-    return {"state": {"root": str(tmp_path / "state")}, "channels": {"slack": section}}
 
 
 def test_ask_lands_on_the_work_item_and_fans_out(tmp_path, monkeypatch):
@@ -117,7 +127,7 @@ def test_channel_outage_never_fails_the_ask(tmp_path, monkeypatch):
 def seeded_thread(tmp_path, monkeypatch, client, config):
     """Post one ask through the channel so a bound thread exists, then seed
     a human reply into it."""
-    from the_loop.channels.broadcast import broadcast
+    from the_loop.channels.bus import broadcast
 
     monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
     results = broadcast(
@@ -154,9 +164,9 @@ def test_thread_reply_is_mirrored_and_delivered(tmp_path, monkeypatch):
 
     mirrors, deliveries = [], []
     monkeypatch.setattr(
-        "the_loop.comments.post_issue_comment",
+        "the_loop.comments.post_issue_comment_with_url",
         lambda item, body, gh_binary="gh": (
-            mirrors.append((item.ref, body)) or (True, "")
+            mirrors.append((item.ref, body)) or (True, "", "")
         ),
     )
     monkeypatch.setattr(
@@ -198,8 +208,8 @@ def test_reply_with_no_session_still_lands_on_the_ticket(tmp_path, monkeypatch):
 
     mirrors = []
     monkeypatch.setattr(
-        "the_loop.comments.post_issue_comment",
-        lambda item, body, gh_binary="gh": mirrors.append(body) or (True, ""),
+        "the_loop.comments.post_issue_comment_with_url",
+        lambda item, body, gh_binary="gh": mirrors.append(body) or (True, "", ""),
     )
 
     def no_session(ref, text, actor="", comment=True, config=None):
@@ -222,13 +232,13 @@ def test_unauthorized_reply_is_neither_mirrored_nor_delivered(tmp_path, monkeypa
     Requirement: docs/specs/issue-245/requirements.md R5.1
     """
     client = FakeSlackClient()
-    config = cli_config(tmp_path, authorizedUsers=[])
+    config = cli_config(tmp_path, authorized=())
     seeded_thread(tmp_path, monkeypatch, client, config)
 
     mirrors, deliveries = [], []
     monkeypatch.setattr(
-        "the_loop.comments.post_issue_comment",
-        lambda item, body, gh_binary="gh": mirrors.append(body) or (True, ""),
+        "the_loop.comments.post_issue_comment_with_url",
+        lambda item, body, gh_binary="gh": mirrors.append(body) or (True, "", ""),
     )
     monkeypatch.setattr(
         core_sessions,
@@ -258,8 +268,8 @@ def test_socket_event_reaches_the_same_pipeline(tmp_path, monkeypatch):
 
     mirrors, deliveries = [], []
     monkeypatch.setattr(
-        "the_loop.comments.post_issue_comment",
-        lambda item, body, gh_binary="gh": mirrors.append(body) or (True, ""),
+        "the_loop.comments.post_issue_comment_with_url",
+        lambda item, body, gh_binary="gh": mirrors.append(body) or (True, "", ""),
     )
     monkeypatch.setattr(
         core_sessions,
@@ -354,7 +364,7 @@ def test_graph_notification_flows_through_the_channels(tmp_path, monkeypatch):
     monkeypatch.setattr("the_loop.channels.slack.build_client", lambda token: client)
 
     def ctx(events):
-        config = cli_config(tmp_path, events=events)
+        config = cli_config(tmp_path, subscribe=events)
         config["notifications"] = {"events": {"phase-approval-pending": ["approver"]}}
         return HookContext(
             work_item=WorkItem(id="issue-7", ref="github:o/r#7", spec_dir=tmp_path),

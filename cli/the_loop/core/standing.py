@@ -532,6 +532,10 @@ def _announce(
         if entry.slack.channel:
             slack_config = _replace(slack_config, channel=entry.slack.channel)
         channel = SlackBotChannel(slack_config, slack_state_path(config))
+        # Through the bus (issue-309) with this one channel and no record: a
+        # standing session owns no ticket, and its announcement must reach the
+        # channel whether or not `standing.started` is in the subscribe list —
+        # so it is posted directly rather than filtered, as before.
         result = channel.post(
             OutboundEvent(
                 event_type="standing.started",

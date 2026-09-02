@@ -450,8 +450,12 @@ def test_migration_removes_both_blocks_and_leaves_everything_else_alone():
     assert len([m for m in report.moves if "issue-304" in m]) == 2
     # Untouched: the poller's root, and the only two places identity is declared.
     assert report.config["state"] == before["state"]
-    assert report.config["routing"] == before["routing"]
-    assert report.config["channels"] == before["channels"]
+    # issue-309 folds the Slack member id into the one identity list, so the two
+    # blocks that used to be byte-identical now differ by exactly that move.
+    assert report.config["routing"]["authorizedUsers"] == before["routing"][
+        "authorizedUsers"
+    ] + [{"slack": "U024BE7LH"}]
+    assert report.config["channels"] == {"slack": {"enabled": True}}
     assert WITH_UNREAD_BLOCKS == before  # the input is never mutated
     assert_current(report.config)
 
@@ -482,3 +486,102 @@ def test_the_unread_block_migration_is_idempotent():
     twice = migrate_cli_config(once.config)
     assert twice.changed is False
     assert twice.config == once.config
+
+
+# -- issue-309: one identity list, `events` → `subscribe` ---------------------------
+
+WITH_SLACK_KEYS = {
+    "version": "0.6.0",
+    "routing": {"authorizedUsers": ["octocat", {"github": "dana", "slack": "U2"}]},
+    "channels": {
+        "slack": {
+            "enabled": True,
+            "events": ["session.awaiting_input", "phase-approval-pending"],
+            "authorizedUsers": ["U1", "U2", "U1"],
+        }
+    },
+}
+
+
+def test_a_config_still_declaring_the_slack_keys_is_detected():
+    assert needs_migration(WITH_SLACK_KEYS) is True
+    assert needs_migration({"version": "0.7.0", "channels": {"slack": {"events": []}}})
+    assert needs_migration(
+        {"version": "0.7.0", "channels": {"slack": {"authorizedUsers": []}}}
+    )
+
+
+@pytest.mark.parametrize("key", ["events", "authorizedUsers"])
+def test_the_runtime_refuses_the_old_slack_keys_and_names_the_replacement(key):
+    """
+    Feature: a renamed or moved key stops the daemon rather than loading half-configured
+      Scenario: a config still declares channels.slack.events or .authorizedUsers
+        Given a config carrying either key
+        When the runtime checks it
+        Then it refuses, naming the key, its replacement and the upgrade command
+
+    Requirement: docs/specs/issue-309/requirements.md R7.2
+    """
+    with pytest.raises(ConfigTooOld) as exc:
+        assert_current({"version": "0.7.0", "channels": {"slack": {key: []}}})
+    message = str(exc.value)
+    assert f"channels.slack.{key}" in message
+    assert ("subscribe" if key == "events" else "routing.authorizedUsers") in message
+    assert "upgrade-the-loop" in message
+
+
+def test_migration_renames_events_and_moves_member_ids_into_the_identity_list():
+    """
+    Feature: identity is declared once
+      Scenario: a 0.6.0 config with both Slack keys is migrated
+        Given `channels.slack.events` and `channels.slack.authorizedUsers`
+        When it is migrated
+        Then `events` is `subscribe`, verbatim
+        And each Slack member id not already declared becomes a `{slack: …}` entry
+             under routing.authorizedUsers, once, after the entries that were there
+        And the report names both moves and asks the operator to fold the ids into
+             the person's GitHub entry
+
+    Requirement: docs/specs/issue-309/requirements.md R7.2, R5.3
+    """
+    before = copy.deepcopy(WITH_SLACK_KEYS)
+    report = migrate_cli_config(WITH_SLACK_KEYS)
+
+    assert report.changed is True
+    slack = report.config["channels"]["slack"]
+    assert "events" not in slack and "authorizedUsers" not in slack
+    assert slack["subscribe"] == ["session.awaiting_input", "phase-approval-pending"]
+    assert report.config["routing"]["authorizedUsers"] == [
+        "octocat",
+        {"github": "dana", "slack": "U2"},
+        {"slack": "U1"},  # U2 was already declared on a person; U1 once, not twice
+    ]
+    assert report.config["version"] == CURRENT_CONFIG_VERSION
+    assert any("channels.slack.events" in m and "subscribe" in m for m in report.moves)
+    assert any("channels.slack.authorizedUsers" in m for m in report.moves)
+    assert any("fold it into that person's GitHub entry" in n for n in report.notes)
+    assert WITH_SLACK_KEYS == before
+    assert_current(report.config)
+
+
+def test_the_slack_key_migration_is_idempotent():
+    once = migrate_cli_config(WITH_SLACK_KEYS)
+    twice = migrate_cli_config(once.config)
+    assert twice.changed is False
+    assert twice.config == once.config
+
+
+def test_a_config_with_no_routing_block_gets_one_for_the_member_ids():
+    report = migrate_cli_config(
+        {"version": "0.6.0", "channels": {"slack": {"authorizedUsers": ["U9"]}}}
+    )
+    assert report.config["routing"]["authorizedUsers"] == [{"slack": "U9"}]
+
+
+def test_an_empty_member_list_moves_nothing_and_says_nothing_more():
+    report = migrate_cli_config(
+        {"version": "0.6.0", "channels": {"slack": {"authorizedUsers": []}}}
+    )
+    assert "authorizedUsers" not in report.config["channels"]["slack"]
+    assert report.config.get("routing", {}).get("authorizedUsers", []) == []
+    assert not any("fold it" in n for n in report.notes)

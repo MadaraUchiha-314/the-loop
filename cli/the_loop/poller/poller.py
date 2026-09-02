@@ -491,7 +491,13 @@ class Poller:
         collaborator_store: Optional["CollaboratorStore"] = None,
         heartbeat: Optional[Callable[["PollSummary"], None]] = None,
         comment_runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+        publisher: Optional[Callable[[str, str, str, str, str], None]] = None,
     ):
+        # The bus (issue-309): a comment this ingress drops as the agent's own, or
+        # forwards as a human's, is published to the subscribed channels —
+        # `comment.agent` / `comment.human`. Injected like the router's, so a
+        # poller built without one publishes nothing.
+        self.publisher = publisher
         self.providers = list(providers)
         self.registry = registry
         self.dispatcher = dispatcher
@@ -849,8 +855,14 @@ class Poller:
                 comment.author, self.authorized_users
             ) or self.collaborator_store.permits(comment.author, refs)
             if not allowed or is_self_authored(comment.body):
+                if is_self_authored(comment.body):
+                    self._publish("agent", ref, comment)
                 self.state.resolve_comment(ref, comment.id)
                 continue
+            if self.state.comment_attempts(ref, comment.id) == 0:
+                # First sight only: a forward retried on a later cycle must not
+                # re-publish the comment to every channel each time.
+                self._publish("human", ref, comment)
             candidates.append(comment)
         # A genuinely-new comment (never attempted) re-arms a spawn that had been
         # given up — a new comment retriggers the item (issue-80, AC6).
@@ -944,6 +956,19 @@ class Poller:
         self.state.note_spawn_attempt(ref, event.delivery_id)
         self._attempted[event.delivery_id] = (ref, "")
         summary.spawns += 1
+
+    def _publish(self, kind: str, ref: str, comment: Comment) -> None:
+        """Hand a comment to the bus as ``comment.<kind>`` — best-effort."""
+        if self.publisher is None or not comment.body:
+            return
+        from ..channels.envelope import has_envelope
+
+        if has_envelope(comment.body):
+            return  # the bus's own record (A10): its source channel has it
+        try:
+            self.publisher(kind, ref, comment.author or "", comment.body, comment.url)
+        except Exception:  # noqa: BLE001 — the bus never touches ingress
+            logger.exception("comment publisher raised for %s", ref)
 
     def _pending_control_ids(self, ref: str, comments: Sequence[Comment]) -> set:
         """Ids of comments carrying a control command nobody has processed (issue-119).
