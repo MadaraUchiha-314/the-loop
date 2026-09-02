@@ -27,16 +27,19 @@ import shutil
 import subprocess
 import uuid
 from dataclasses import dataclass, field
-from typing import Callable, List, Optional, Sequence
+from typing import Callable, Dict, List, Optional, Sequence
 
 from ..comments import gh_host_args
 from ..sessions import DEFAULT_GITHUB_HOST, WorkItemRef, is_github_host
 from ..webhook.router import RoutedEvent, event_carries_label, extract_work_items
 from .base import (
+    REPROBE_EVERY_CYCLES,
     Closure,
     Comment,
+    Listing,
     PollProvider,
     ProviderError,
+    ScopeFailure,
     WorkItem,
     register_provider,
 )
@@ -81,6 +84,19 @@ _REVIEW_PENDING = "PENDING"
 # Page size for the REST reads below. `--paginate` walks every page, so this
 # only decides how many round trips a long thread costs.
 _REST_PAGE_SIZE = 100
+
+# What `gh issue list` says about a repository whose GitHub Issues are turned
+# off — the ONE condition this provider classifies as permanent (issue-315). It
+# is configuration drift, not a fault: retrying it every cycle can only fail
+# the same way, and it used to take the whole source down with it. If GitHub
+# ever rewords the message the failure degrades to transient — retried,
+# isolated, visible — never to silence.
+_ISSUES_DISABLED = "has disabled issues"
+_ISSUES_OFF_REASON = (
+    "issues are disabled on this repository; its issues are skipped and "
+    f"re-probed every {REPROBE_EVERY_CYCLES} cycles, its pull requests are "
+    "still polled"
+)
 
 
 class GhError(ProviderError):
@@ -573,6 +589,12 @@ class GitHubPollProvider(PollProvider):
         self.monitor_issues = monitor_issues
         self.monitor_prs = monitor_prs
         self.gh = gh or GhClient()
+        # Repositories whose Issues are off (issue-315): scope -> the cycle the
+        # condition was last seen. In memory on purpose — a hot reload rebuilds
+        # the provider and a restart starts fresh, and both are exactly the
+        # moments an operator who just re-enabled Issues wants a re-probe.
+        self._issues_off: Dict[str, int] = {}
+        self._cycles = 0
 
     @classmethod
     def from_source(cls, source: dict, *, default_label: str) -> "GitHubPollProvider":
@@ -596,24 +618,110 @@ class GitHubPollProvider(PollProvider):
     # -- discovery -------------------------------------------------------------
 
     def list_work_items(self) -> List[WorkItem]:
+        """The strict form: the first repository that cannot be listed fails the call.
+
+        Kept for callers that want all-or-nothing; the poller core reads
+        :meth:`listing` instead, which is what keeps one repository's failure
+        that repository's (issue-315).
+        """
+        listing = self.listing()
+        unlisted = listing.failures + listing.skipped
+        if unlisted:
+            raise ProviderError(f"{unlisted[0].scope}: {unlisted[0].error}")
+        return listing.items
+
+    def listing(self) -> Listing:
+        """Every configured repository, each listed on its own (issue-315).
+
+        A repository is this provider's *scope*. One that cannot be listed is
+        reported in the listing's ``failures`` and the walk continues, so the
+        source's other repositories are polled exactly as if the failing one
+        were not configured. The one whole-source failure left is having no
+        repositories at all.
+        """
         if not self.repos:
             raise ProviderError(
                 "github polling source has no repositories — set the source's "
                 "'repos' (OWNER/REPO) in the CLI config"
             )
-        items: List[WorkItem] = []
+        self._cycles += 1
+        out = Listing()
         for spec in self.repos:
-            if self.monitor_issues:
-                for gh_item in self.gh.list_labeled_issues(
+            self._list_scope(spec, out)
+        return out
+
+    @staticmethod
+    def _scope(spec: RepoSpec) -> str:
+        """How a repository is named in a :class:`ScopeFailure` — and compared."""
+        return spec.gh_repo.lower()
+
+    def scope_of(self, ref: WorkItemRef) -> str:
+        if ref.provider != self.name:
+            return ""
+        host = "" if ref.host == DEFAULT_GITHUB_HOST else ref.host
+        return self._scope(RepoSpec(owner=ref.owner, repo=ref.repo, host=host))
+
+    def _list_scope(self, spec: RepoSpec, out: Listing) -> None:
+        """List one repository's issues and pull requests into ``out``.
+
+        Each listing fails alone: a repository whose issues cannot be read still
+        has its pull requests read, and vice versa. The repository counts as
+        *polled* when at least one of its listings answered.
+        """
+        scope = self._scope(spec)
+        answered = False
+        if self.monitor_issues:
+            answered = self._list_issues(spec, scope, out)
+        if self.monitor_prs:
+            try:
+                prs = self.gh.list_labeled_prs(
                     spec.owner, spec.repo, self.label, host=spec.host
-                ):
-                    items.append(self._work_item(spec, gh_item))
-            if self.monitor_prs:
-                for gh_item in self.gh.list_labeled_prs(
-                    spec.owner, spec.repo, self.label, host=spec.host
-                ):
-                    items.append(self._work_item(spec, gh_item))
-        return items
+                )
+            except GhError as exc:
+                out.failures.append(ScopeFailure(scope, str(exc)))
+            else:
+                answered = True
+                out.items.extend(self._work_item(spec, gh_item) for gh_item in prs)
+        if answered:
+            out.polled.append(scope)
+
+    def _list_issues(self, spec: RepoSpec, scope: str, out: Listing) -> bool:
+        """One repository's issues, under the disabled-Issues quarantine.
+
+        Returns whether the listing answered. A repository whose Issues are off
+        (``_ISSUES_DISABLED``) is reported ONCE, as a permanent failure, and
+        then simply not asked for issues — it lands in ``skipped`` with the
+        standing reason — until ``REPROBE_EVERY_CYCLES`` cycles have passed. A
+        re-probe that still fails renews the skip silently; one that answers
+        reports the repository in ``recovered`` and polls it normally again.
+        Every other failure stays transient: reported every cycle, never
+        quarantined.
+        """
+        since = self._issues_off.get(scope)
+        if since is not None and self._cycles - since < REPROBE_EVERY_CYCLES:
+            out.skipped.append(ScopeFailure(scope, _ISSUES_OFF_REASON, permanent=True))
+            return False
+        try:
+            issues = self.gh.list_labeled_issues(
+                spec.owner, spec.repo, self.label, host=spec.host
+            )
+        except GhError as exc:
+            if _ISSUES_DISABLED not in str(exc).lower():
+                out.failures.append(ScopeFailure(scope, str(exc)))
+            elif since is None:  # first sighting: surfaced, then quarantined
+                self._issues_off[scope] = self._cycles
+                out.failures.append(ScopeFailure(scope, str(exc), permanent=True))
+            else:  # a re-probe that still fails: renewed, not re-announced
+                self._issues_off[scope] = self._cycles
+                out.skipped.append(
+                    ScopeFailure(scope, _ISSUES_OFF_REASON, permanent=True)
+                )
+            return False
+        if since is not None:
+            del self._issues_off[scope]
+            out.recovered.append(scope)
+        out.items.extend(self._work_item(spec, gh_item) for gh_item in issues)
+        return True
 
     def list_comments(self, item: WorkItem) -> List[Comment]:
         gh_comments = self.gh.list_comments(

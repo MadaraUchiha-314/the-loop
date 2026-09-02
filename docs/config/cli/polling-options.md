@@ -151,6 +151,26 @@ There is no fallback to any repository's harness config. A source with no `repos
 discovers nothing.
 :::
 
+**One repository's failure is that repository's** (issue-315,
+[decision-106](/decisions/decision-106)). Each repository is listed on its own — issues,
+then pull requests — and one that cannot be listed costs exactly that: the source's other
+repositories are polled as if it were not configured, the failure is recorded per
+repository (`poll.scope_error`, retried next cycle), and nothing in the failing repository
+is reconciled as closed, because a listing that did not happen proves nothing ended. It
+used to be the whole source: the first `gh` failure aborted the pass, and thirteen
+repositories stopped delivering because one had Issues turned off.
+
+That one condition is classified as **permanent** — configuration drift, not a fault.
+A repository whose Issues are disabled (`gh`'s own *has disabled issues*) is surfaced
+once, as a warning (`poll.scope_degraded`), and then simply not asked for issues; its
+**pull requests are still polled**, since `gh pr list` does not need Issues. It is
+re-probed every 60 cycles (one hour at the default interval), on a config edit that
+reloads the sources, and on restart; a re-probe that answers logs
+`poll.scope_recovered` and the repository is polled normally again. Every other failure
+stays transient — retried next cycle, isolated, never quarantined. While anything is
+failed or skipped, [`the-loop status`](/cli/commands/status) names it beneath the last
+cycle as `degraded:`.
+
 ### `sources[].monitor.issues`
 
 - **Type:** `boolean`

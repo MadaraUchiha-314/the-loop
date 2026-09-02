@@ -508,7 +508,8 @@ EVENT_TYPES: Dict[str, str] = {
     # -- poller (source: poll) ------------------------------------------------
     "poll.cycle": (
         "One poll cycle finished (items_seen, spawns, comments_forwarded, "
-        "closures, errors)."
+        "closures, errors; scopes_polled and scopes_degraded — the repositories "
+        "that answered, and the ones that failed or were skipped, issue-315)."
     ),
     "poll.closure_detected": (
         "A poll cycle found that an active session's work item had ended "
@@ -523,6 +524,26 @@ EVENT_TYPES: Dict[str, str] = {
     "poll.item_error": (
         "Processing one polled work item failed; retried next cycle "
         "(work_item, error, will_retry)."
+    ),
+    "poll.scope_error": (
+        "One scope of a source — a repository, for GitHub — could not be listed; "
+        "the source's other scopes were still polled, and nothing in this one "
+        "is reconciled as closed (provider, scope, error, will_retry=True) — "
+        "issue-315. Before it, one repository's failure was the whole "
+        "provider's, and every repository stopped being polled."
+    ),
+    "poll.scope_degraded": (
+        "A scope's listing failed with a condition no retry changes — for "
+        "GitHub, a repository whose Issues are disabled. Surfaced ONCE, at "
+        "warning level: the poller stops asking it for issues (its pull "
+        "requests are still polled), re-probes it every retry_after_cycles "
+        "cycles, on a config reload and on restart, and `the-loop status` shows "
+        "it as degraded meanwhile (provider, scope, error, retry_after_cycles) "
+        "— issue-315."
+    ),
+    "poll.scope_recovered": (
+        "A degraded scope answered again on a re-probe and is polled normally "
+        "(provider, scope) — issue-315."
     ),
     "poll.unauthorized": (
         "A polled item was not started by the poller itself: its author is not "

@@ -8,10 +8,13 @@ others). GitHub is reached solely through a configured provider.
 """
 
 from .base import (  # noqa: F401
+    REPROBE_EVERY_CYCLES,
     Closure,
     Comment,
+    Listing,
     PollProvider,
     ProviderError,
+    ScopeFailure,
     WorkItem,
     build_provider,
     provider_names,
@@ -51,6 +54,7 @@ __all__ = [
     "GhItemState",
     "GitHubPollProvider",
     "Heartbeat",
+    "Listing",
     "PollConfig",
     "PollHeartbeat",
     "PollPlan",
@@ -59,8 +63,10 @@ __all__ = [
     "PollSummary",
     "Poller",
     "ProviderError",
+    "REPROBE_EVERY_CYCLES",
     "Reloader",
     "RepoSpec",
+    "ScopeFailure",
     "WorkItem",
     "build_provider",
     "check_gh_dependency",

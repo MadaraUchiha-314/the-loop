@@ -456,10 +456,22 @@ started, when it last finished a cycle, and what that cycle did.
   "intervalSeconds": 60,
   "lastCycle": {
     "itemsSeen": 5, "spawns": 1, "commentsForwarded": 0,
-    "closures": 0, "failures": 0, "errors": 0, "interrupted": false
+    "closures": 0, "failures": 0, "errors": 1, "interrupted": false,
+    "scopesPolled": 12,
+    "scopesFailed": [
+      {"scope": "octo/repo-m", "error": "gh issue list --repo exited 1: the 'octo/repo-m' repository has disabled issues", "permanent": true}
+    ],
+    "scopesSkipped": []
   }
 }
 ```
+
+The three `scopes*` keys (issue-315) say which repositories the cycle could not poll and
+why — what `the-loop status` prints as `degraded:` lines. `scopesFailed` are this cycle's
+listing failures (`permanent: true` for a condition no retry changes, such as Issues being
+disabled), `scopesSkipped` the repositories deliberately not asked because of a standing
+permanent condition, and `scopesPolled` how many answered. A heartbeat written before
+these keys existed reads unchanged; they are simply absent.
 
 ::: warning It is never the answer to "is the poller running?"
 That answer is the lock on `poll.pid`, and only the lock — the one formulation immune to

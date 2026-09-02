@@ -3153,3 +3153,379 @@ def test_provider_discovery_and_reads_go_to_the_sources_host():
     assert run.calls[0][3:5] == ["--repo", f"{GHE}/octo/repo"]
     assert f"{GHE}/octo/repo" in run.calls[1]
     assert run.calls[2][1:4] == ["api", "--hostname", GHE]
+
+
+# -- per-scope fault isolation (issue-315) ------------------------------------
+#
+# One repository with Issues disabled used to blind a whole source: the first
+# `gh` failure aborted the listing pass, the core saw one ProviderError, and
+# nothing was polled for any repository. A source now lists in SCOPES (a
+# repository, for GitHub); a scope fails alone, "has disabled issues" is
+# classified permanent and quarantined (issues only, re-probed slowly), and the
+# heartbeat names what was not polled.
+
+ISSUES_OFF = "the 'octo/repo-m' repository has disabled issues"
+
+
+def _two_repo_gh(issue_fail=None, pr_fail=None, healthy_items=True):
+    """A gh double for `octo/repo` (healthy) and `octo/repo-m` (configurable).
+
+    ``issue_fail`` / ``pr_fail``: stderr for repo-m's `gh issue list` / `gh pr
+    list` (None = succeed). Records every argv, so a test can prove which
+    listings were (not) asked.
+    """
+
+    class Router:
+        calls = []
+
+        def __call__(self, cmd, **kwargs):
+            self.calls.append(list(cmd))
+            sub = (cmd[1], cmd[2])
+            repo = cmd[4]
+            if repo == "octo/repo-m":
+                if sub == ("issue", "list") and issue_fail:
+                    return subprocess.CompletedProcess(cmd, 1, "", issue_fail)
+                if sub == ("pr", "list") and pr_fail:
+                    return subprocess.CompletedProcess(cmd, 1, "", pr_fail)
+            if sub == ("issue", "list"):
+                rows = (
+                    [
+                        {
+                            "number": 15,
+                            "title": "i",
+                            "labels": [{"name": LABEL}],
+                            "url": f"https://github.com/{repo}/issues/15",
+                        }
+                    ]
+                    if (repo == "octo/repo" and healthy_items)
+                    else []
+                )
+                return subprocess.CompletedProcess(cmd, 0, json.dumps(rows), "")
+            if sub == ("pr", "list"):
+                rows = (
+                    [
+                        {
+                            "number": 42,
+                            "title": "p",
+                            "labels": [{"name": LABEL}],
+                            "url": f"https://github.com/{repo}/pull/42",
+                        }
+                    ]
+                    if repo == "octo/repo-m"
+                    else []
+                )
+                return subprocess.CompletedProcess(cmd, 0, json.dumps(rows), "")
+            return subprocess.CompletedProcess(cmd, 0, json.dumps({"comments": []}), "")
+
+    return Router()
+
+
+def _two_repo_provider(runner):
+    return GitHubPollProvider(
+        parse_repos(["octo/repo", "octo/repo-m"]), LABEL, gh=GhClient(runner=runner)
+    )
+
+
+def _listings(calls, repo):
+    return [(c[1], c[2]) for c in calls if c[4] == repo and c[2] == "list"]
+
+
+def test_listing_isolates_one_repositorys_failure(tmp_path):
+    """R1.1/R1.2: the healthy repository's items survive the other's failure."""
+    runner = _two_repo_gh(issue_fail="HTTP 502: upstream")
+    listing = _two_repo_provider(runner).listing()
+
+    assert [(i.repo, i.number) for i in listing.items] == [("repo", 15), ("repo-m", 42)]
+    assert [(f.scope, f.permanent) for f in listing.failures] == [
+        ("octo/repo-m", False)
+    ]
+    assert "502" in listing.failures[0].error
+    assert listing.skipped == [] and listing.recovered == []
+    assert listing.polled == ["octo/repo", "octo/repo-m"]  # repo-m's PRs answered
+    assert listing.degraded == {"octo/repo-m"}
+
+
+def test_a_pull_request_listing_failure_is_isolated_too():
+    runner = _two_repo_gh(pr_fail="HTTP 502: upstream")
+    listing = _two_repo_provider(runner).listing()
+    assert [(i.repo, i.number) for i in listing.items] == [("repo", 15)]
+    assert [f.scope for f in listing.failures] == ["octo/repo-m"]
+    assert listing.failures[0].permanent is False
+
+
+def test_a_repository_that_answers_nothing_is_not_polled():
+    runner = _two_repo_gh(issue_fail="HTTP 502", pr_fail="HTTP 502")
+    listing = _two_repo_provider(runner).listing()
+    assert listing.polled == ["octo/repo"]
+    assert len(listing.failures) == 2  # one per listing, both transient
+
+
+def test_disabled_issues_is_permanent_and_still_lists_pull_requests():
+    """R2.1/R2.2 (A2): the quarantine withholds `gh issue list` only."""
+    runner = _two_repo_gh(issue_fail=ISSUES_OFF)
+    provider = _two_repo_provider(runner)
+
+    first = provider.listing()
+    assert [(f.scope, f.permanent) for f in first.failures] == [("octo/repo-m", True)]
+    assert ISSUES_OFF in first.failures[0].error
+    assert [(i.repo, i.number) for i in first.items] == [("repo", 15), ("repo-m", 42)]
+
+    runner.calls.clear()
+    second = provider.listing()
+    assert second.failures == []  # surfaced once
+    assert [(s.scope, s.permanent) for s in second.skipped] == [("octo/repo-m", True)]
+    assert "disabled" in second.skipped[0].error
+    assert _listings(runner.calls, "octo/repo-m") == [("pr", "list")]
+    assert _listings(runner.calls, "octo/repo") == [("issue", "list"), ("pr", "list")]
+    assert [(i.repo, i.number) for i in second.items] == [("repo", 15), ("repo-m", 42)]
+
+
+def test_a_quarantined_repository_is_reprobed_every_sixty_cycles():
+    """R2.3: renewed silently while it still fails, recovered when it answers."""
+    from the_loop.poller import github as gh_mod
+
+    runner = _two_repo_gh(issue_fail=ISSUES_OFF)
+    provider = _two_repo_provider(runner)
+    provider.listing()  # cycle 1: detected
+    for _ in range(gh_mod.REPROBE_EVERY_CYCLES - 1):
+        provider.listing()  # cycles 2..60: skipped
+    runner.calls.clear()
+    renewed = provider.listing()  # cycle 61: re-probed, still off
+    assert _listings(runner.calls, "octo/repo-m") == [("issue", "list"), ("pr", "list")]
+    assert renewed.failures == []  # no second warning
+    assert [s.scope for s in renewed.skipped] == ["octo/repo-m"]
+
+    runner.calls.clear()
+    provider.listing()  # cycle 62: skipped again, the clock restarted
+    assert _listings(runner.calls, "octo/repo-m") == [("pr", "list")]
+
+    # The operator re-enables Issues: the next re-probe recovers.
+    healed = _two_repo_gh()
+    provider.gh = GhClient(runner=healed)
+    # The clock restarted at cycle 61: cycles 63..120 are skipped, 121 re-probes.
+    for _ in range(gh_mod.REPROBE_EVERY_CYCLES - 2):
+        provider.listing()
+    healed.calls.clear()
+    back = provider.listing()
+    assert _listings(healed.calls, "octo/repo-m") == [("issue", "list"), ("pr", "list")]
+    assert back.recovered == ["octo/repo-m"]
+    assert back.skipped == [] and back.failures == []
+    assert provider.listing().recovered == []  # said once
+
+
+def test_only_ghs_own_message_classifies_as_permanent():
+    """A3: a 502 stays transient — retried, isolated, never quarantined."""
+    runner = _two_repo_gh(issue_fail="HTTP 502: upstream")
+    provider = _two_repo_provider(runner)
+    provider.listing()
+    runner.calls.clear()
+    again = provider.listing()
+    assert _listings(runner.calls, "octo/repo-m") == [("issue", "list"), ("pr", "list")]
+    assert [f.permanent for f in again.failures] == [False] and again.skipped == []
+
+
+def test_the_strict_form_still_raises_on_any_failure():
+    """`list_work_items` keeps its contract: the first failure fails the call."""
+    provider = _two_repo_provider(_two_repo_gh(issue_fail=ISSUES_OFF))
+    with pytest.raises(ProviderError) as exc:
+        provider.list_work_items()
+    assert "octo/repo-m" in str(exc.value)
+    with pytest.raises(ProviderError):  # skipped counts as not listed, too
+        provider.list_work_items()
+
+
+def test_listing_without_repos_is_still_a_whole_provider_failure():
+    with pytest.raises(ProviderError):
+        GitHubPollProvider([], LABEL, gh=_gh_client()).listing()
+
+
+@pytest.mark.parametrize(
+    "ref, scope",
+    [
+        ("github:octo/repo-m#3", "octo/repo-m"),
+        ("github:OCTO/Repo-M#3", "octo/repo-m"),
+        (f"github:{GHE}/octo/repo-m#3", f"{GHE}/octo/repo-m"),
+        ("jira:octo/repo-m#3", ""),
+    ],
+)
+def test_scope_of_spells_the_repository_the_way_failures_do(ref, scope):
+    assert _two_repo_provider(_two_repo_gh()).scope_of(WorkItemRef.parse(ref)) == scope
+
+
+def test_the_base_provider_lists_all_or_nothing_and_has_no_scope():
+    """R1.4: a provider that has not learned scopes behaves exactly as before."""
+    provider = FakeProvider(items=[_item(15)])
+    listing = provider.listing()
+    assert [i.number for i in listing.items] == [15]
+    assert listing.failures == [] and listing.skipped == [] and listing.polled == []
+    assert provider.scope_of(WorkItemRef.parse(REF15)) == ""
+
+
+class ScopedProvider(FakeProvider):
+    """A double that answers `listing()` with canned scope facts (the contract)."""
+
+    name = "scoped"
+
+    def __init__(self, listing, scopes=None, **kwargs):
+        super().__init__(items=listing.items, **kwargs)
+        self._listing = listing
+        self._scopes = scopes or {}  # ref -> scope
+
+    def listing(self):
+        return self._listing
+
+    def scope_of(self, ref):
+        return self._scopes.get(ref.ref, "")
+
+
+def test_the_core_processes_the_healthy_scopes_items_beside_a_failure(tmp_path):
+    """R1.1: one scope's failure costs that scope only."""
+    from the_loop.poller import Listing, ScopeFailure
+
+    log = tmp_path / "events.jsonl"
+    eventlog.configure("poll", path=log)
+    try:
+        listing = Listing(
+            items=[_item(15)],
+            failures=[ScopeFailure("octo/repo-m", "gh issue list exited 1: 502")],
+            polled=["octo/repo"],
+        )
+        disp = RecordingDispatcher()
+        summary = make_poller(
+            ScopedProvider(listing),
+            SessionRegistry(tmp_path / "s"),
+            disp,
+            PollState(WorkItemStore(tmp_path / "portable")),
+        ).poll_once()
+
+        assert summary.items_seen == 1 and summary.spawns == 1
+        assert [e.delivery_id for e in disp.events] == [f"presence-{REF15}"]
+        assert summary.errors == ["octo/repo-m: gh issue list exited 1: 502"]
+        assert [f.scope for f in summary.scopes_failed] == ["octo/repo-m"]
+        assert summary.scopes_skipped == [] and summary.scopes_polled == 1
+        (event,) = [e for e in _poll_events(log) if e["event"] == "poll.scope_error"]
+        assert event["scope"] == "octo/repo-m" and event["provider"] == "fake"
+        assert event["will_retry"] is True and event["level"] == "error"
+        assert "502" in event["error"]
+        assert "poll.provider_error" not in [e["event"] for e in _poll_events(log)]
+    finally:
+        eventlog.reset()
+
+
+def test_a_permanent_failure_is_a_warning_and_a_skip_is_silent(tmp_path):
+    """R2.1/R2.3: surfaced once at warning level; a standing skip emits nothing."""
+    from the_loop.poller import Listing, ScopeFailure
+
+    log = tmp_path / "events.jsonl"
+    eventlog.configure("poll", path=log)
+    try:
+        first = Listing(
+            items=[],
+            failures=[ScopeFailure("octo/repo-m", ISSUES_OFF, permanent=True)],
+        )
+        provider = ScopedProvider(first)
+        state = PollState(WorkItemStore(tmp_path / "portable"))
+        poller = make_poller(
+            provider, SessionRegistry(tmp_path / "s"), RecordingDispatcher(), state
+        )
+        summary = poller.poll_once()
+        assert summary.errors == [f"octo/repo-m: {ISSUES_OFF}"]
+        (event,) = [e for e in _poll_events(log) if e["event"].startswith("poll.scope")]
+        assert event["event"] == "poll.scope_degraded" and event["level"] == "warning"
+        assert event["scope"] == "octo/repo-m" and event["retry_after_cycles"] == 60
+
+        provider._listing = Listing(
+            items=[],
+            skipped=[ScopeFailure("octo/repo-m", "issues off", permanent=True)],
+        )
+        summary = poller.poll_once()
+        assert summary.errors == [] and summary.scopes_failed == []
+        assert [s.scope for s in summary.scopes_skipped] == ["octo/repo-m"]
+        assert (
+            len([e for e in _poll_events(log) if e["event"].startswith("poll.scope")])
+            == 1
+        )
+
+        provider._listing = Listing(
+            items=[], recovered=["octo/repo-m"], polled=["octo/repo-m"]
+        )
+        poller.poll_once()
+        recovered = [
+            e for e in _poll_events(log) if e["event"] == "poll.scope_recovered"
+        ]
+        assert [e["scope"] for e in recovered] == ["octo/repo-m"]
+    finally:
+        eventlog.reset()
+
+
+def test_reconciliation_skips_a_degraded_scope_and_keeps_the_rest(tmp_path):
+    """R1.3 (A4): a partial listing proves nothing ended — per scope now."""
+    from the_loop.poller import Listing, ScopeFailure
+
+    registry = SessionRegistry(tmp_path / "sessions")
+    _active_session(registry, "github:octo/repo#15")
+    _active_session(registry, "github:octo/repo-m#3")
+    listing = Listing(
+        items=[],
+        failures=[ScopeFailure("octo/repo-m", "502")],
+        polled=["octo/repo"],
+    )
+    provider = ScopedProvider(
+        listing,
+        scopes={
+            "github:octo/repo#15": "octo/repo",
+            "github:octo/repo-m#3": "octo/repo-m",
+        },
+        closures={
+            "github:octo/repo#15": Closure(state="closed"),
+            "github:octo/repo-m#3": Closure(state="closed"),
+        },
+    )
+    disp = RecordingDispatcher()
+    summary = make_poller(
+        provider, registry, disp, PollState(WorkItemStore(tmp_path / "portable"))
+    ).poll_once()
+
+    assert provider.closure_asks == ["github:octo/repo#15"]
+    assert summary.closures == 1
+    assert [(e.event, e.action, e.work_items[0].ref) for e in disp.events] == [
+        ("issues", "closed", "github:octo/repo#15")
+    ]
+
+
+def test_a_skipped_scope_is_not_reconciled_either(tmp_path):
+    from the_loop.poller import Listing, ScopeFailure
+
+    registry = SessionRegistry(tmp_path / "sessions")
+    _active_session(registry, "github:octo/repo-m#3")
+    provider = ScopedProvider(
+        Listing(items=[], skipped=[ScopeFailure("octo/repo-m", "off", permanent=True)]),
+        scopes={"github:octo/repo-m#3": "octo/repo-m"},
+        closures={"github:octo/repo-m#3": Closure(state="closed")},
+    )
+    make_poller(
+        provider,
+        registry,
+        RecordingDispatcher(),
+        PollState(WorkItemStore(tmp_path / "portable")),
+    ).poll_once()
+    assert provider.closure_asks == []
+    assert registry.find_by_work_item("github:octo/repo-m#3") is not None
+
+
+def test_the_cycle_line_counts_degraded_scopes(tmp_path, caplog):
+    from the_loop.poller import Listing, ScopeFailure
+
+    listing = Listing(
+        items=[],
+        failures=[ScopeFailure("a/b", "x")],
+        skipped=[ScopeFailure("c/d", "y", True)],
+    )
+    with caplog.at_level("INFO", logger="the-loop.poll"):
+        make_poller(
+            ScopedProvider(listing),
+            SessionRegistry(tmp_path / "s"),
+            RecordingDispatcher(),
+            PollState(WorkItemStore(tmp_path / "portable")),
+        ).poll_once()
+    assert "2 scope(s) degraded" in caplog.text
