@@ -41,6 +41,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = parser.parse_args(argv)
     if args.once and args.daemon != "poller":
         parser.error("--once applies to the poller only")
+    # A daemon started here directly (systemd, cron) sees the same variables as one
+    # `the-loop start` spawned: the env file the config names is loaded first
+    # (issue-318), before the daemon module reads any secret's variable.
+    from .cli_config import load_env_file
+
+    load_env_file()
     if args.daemon == "poller":
         from .poller import daemon as poller_daemon
 

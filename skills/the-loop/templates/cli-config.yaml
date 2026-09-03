@@ -30,6 +30,17 @@ version: "0.7.0"
 state:
   root: .the-loop
 
+# A .env file loaded when a the-loop process starts (issue-318). Every credential
+# below is NAMED here (secretEnv, botTokenEnv, tokenEnv) and READ from the
+# environment; this names the file that holds the values, so you need not
+# export them by hand before every `the-loop start`. A relative path is
+# resolved against THIS file's directory (~ expands); a variable already set
+# in the environment is never overwritten; read once, at start (a change needs
+# a restart). Keep the file out of git and chmod 600 — a missing or malformed
+# file is a warning, never a value in a log. Unset = nothing loaded.
+env:
+  file: ""                      # e.g. .env  (→ ~/.the-loop/.env beside this file)
+
 webhooks:
   ghWebhook:
     enabled: false                  # `the-loop start` brings the receiver up when true

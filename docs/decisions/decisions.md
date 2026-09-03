@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [108](decision-108.md) | The env file is loaded by a stdlib parser, resolved against the config, and never overrides the environment | proposed | 2026-09-03 |
 | [107](decision-107.md) | A work item's channel conversation opens on the spawn path, as a channel operation, best-effort | proposed | 2026-09-03 |
 | [106](decision-106.md) | A poll source lists in scopes, a scope fails alone, and a permanent condition is surfaced once and re-probed slowly | proposed | 2026-09-02 |
 | [105](decision-105.md) | A work item's Slack thread is rooted on the work item, opened once under a lock, and every event is a reply | proposed | 2026-09-02 |

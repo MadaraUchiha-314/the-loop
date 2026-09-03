@@ -25,6 +25,18 @@
         }
       }
     },
+    "env": {
+      "type": "object",
+      "description": "An env file the-loop loads at process start (issue-318). Every credential the-loop uses is NAMED in this config (webhooks.ghWebhook.secretEnv, channels.slack.botTokenEnv, integrations.github.api.tokenEnv, …) and READ from the process environment; this block names the file that holds the values, so they need not be exported by hand before every `the-loop start`. Loaded once, first, by every entry point (the CLI, `python -m the_loop.daemon_entry`, `python -m the_loop.api.serve`); the daemons and the service the CLI spawns inherit its environment and load the file again on their own start. A variable already set in the environment is never overwritten. Not re-read on config reload — a change needs a restart.",
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "type": "string",
+          "default": "",
+          "description": "Path of a dotenv-format file: one NAME=value per line, `#` comments, an optional leading `export`, double quotes with \\n \\t \\r \\\\ \\\" unescaped, single quotes literal, an unquoted value trimmed and cut at a trailing ` #` comment; no interpolation. A relative path resolves against the directory of THIS config file (not the working directory), and `~` is expanded — so `~/.the-loop/cli-config.yaml` naming `.env` finds `~/.the-loop/.env` from anywhere. Unset or empty: nothing is loaded. A missing, unreadable or malformed file is a warning naming the path (never a value) and the process continues; a file readable by group or others is warned about and still loaded. Keep the file out of git."
+        }
+      }
+    },
     "webhooks": {
       "type": "object",
       "description": "Config for the the-loop CLI webhook receiver(s), started by `the-loop start` when `ghWebhook.enabled` is true (issue-228).",

@@ -140,6 +140,62 @@ default. (This differs from
 expand `~`.)
 :::
 
+## Environment file
+
+### `env.file`
+
+- **Type:** `string`
+- **Default:** `""` (nothing loaded)
+
+Path of a **dotenv-format** file the-loop loads into its own environment when a process
+starts — before any command, daemon or service reads a variable. Every credential the-loop
+uses is *named* in this file and *read* from the environment
+([`secretEnv`](/config/cli/webhook-options#secretenv),
+[`botTokenEnv`](/config/cli/channels-options#slack-bottokenenv),
+[`tokenEnv`](/config/cli/integrations-options)); `env.file` names where the values live,
+so you need not `export` them by hand before every `the-loop start`:
+
+```yaml
+env:
+  file: .env          # beside this config file; ~ is expanded
+```
+
+```bash
+# ~/.the-loop/.env — keep it out of git, chmod 600
+THE_LOOP_GH_WEBHOOK_SECRET='the same secret you gave GitHub'
+export THE_LOOP_SLACK_BOT_TOKEN="xoxb-…"
+```
+
+What the loader does, and does not do ([decision-108](/decisions/decision-108)):
+
+- **A relative path resolves against this config file's directory**, not the working
+  directory, and `~` is expanded — so `~/.the-loop/cli-config.yaml` naming `.env` finds
+  `~/.the-loop/.env` from anywhere. (This differs from `state.root`, above.)
+- **The environment wins.** A variable already set — exported in the shell, or by
+  systemd — is never overwritten; the file fills the gaps.
+- **Every entry point loads it**, first: the `the-loop` CLI, `python -m
+  the_loop.daemon_entry`, `python -m the_loop.api.serve`. The daemons and the service
+  `the-loop start` spawns inherit the CLI's environment *and* load the file again on
+  their own start, so a systemd unit that runs the daemon directly sees the same
+  variables.
+- **Read once, at start.** A change to the file needs a restart; the daemons' hot reload
+  of `cli-config.yaml` does not re-read it, so a reload can never change the credentials
+  a running process holds.
+- **The grammar** is the usual one: `NAME=value` per line, `#` comments, an optional
+  leading `export`, double quotes with `\n \t \r \\ \"` unescaped, single quotes
+  literal, an unquoted value trimmed and cut at a trailing comment (a space, then `#`). There is **no
+  interpolation** (`${OTHER}` is four characters) and no multi-line value.
+- **Failures are warnings, never a stop.** A missing or unreadable file, or a malformed
+  line, is logged — the resolved path, the line *number*, the error class, and never a
+  value — and the process continues; each credential-dependent feature then keeps its
+  own fail-closed behaviour (an unsigned receiver warns, a channel without a token is
+  refused). A file readable by group or others is warned about and still loaded.
+
+::: warning The config names a path, never a value
+`cli-config.yaml` may be tracked in git; the env file must not be. Nothing the-loop writes
+— state, event log, warnings — ever carries a loaded value.
+:::
+
 ## A minimal working config
 
 ```yaml
