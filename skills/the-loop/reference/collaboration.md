@@ -58,8 +58,8 @@ ledger's ingress sees (`comment.agent` — your own marked comments; `comment.hu
 authorized user's or collaborator's). A channel receives the ones its `subscribe` list
 names, renders them natively (Slack: Block Kit, a link button, Approve / Request changes
 buttons where a press can be received) into **one thread per work item, rooted on the
-work item** — the first event opens a root that names it and every event is a reply
-(issue-312) — and the ledger records every event that started
+work item** — opened the moment the work item starts (issue-317), root only, with every
+event a reply into it (issue-312) — and the ledger records every event that started
 elsewhere **first** — the ask's record *is* the question comment. What a message on a
 channel may become is the channel's `publish` grant: session input by default
 (`work-item.reply`: mirrored onto the work item as the-loop's own marked, defanged

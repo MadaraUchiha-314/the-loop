@@ -27,7 +27,7 @@ import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from .. import cli_config, eventlog
 from ..authz import resolve_authorized_users
@@ -87,20 +87,31 @@ def default_options(once: bool = False) -> PollerOptions:
 
 
 def _build_dispatcher(
-    routing_map: Optional[dict], layout: Optional[StateLayout] = None
+    routing_map: Optional[dict],
+    layout: Optional[StateLayout] = None,
+    cli_config_getter: Optional[Callable[[], dict]] = None,
 ):
-    """Compose the same registry + adapters + dispatcher the receiver uses."""
+    """Compose the same registry + adapters + dispatcher the receiver uses.
+
+    ``cli_config_getter`` is where the dispatcher's conversation opener
+    (issue-317) reads the CLI config from, per call: the daemon leaves it unset
+    and the file at the resolved path is read; the core facade passes the config
+    it was handed, so a caller's explicit config is never overruled by disk.
+    """
+    from ..channels.publishers import conversation_opener
     from ..harness import build_adapters
     from ..sessions import SessionRegistry
     from ..webhook.dispatcher import Dispatcher, RoutingConfig
 
     routing = RoutingConfig.from_mapping(routing_map or {}, layout or _state_layout())
+    getter = cli_config_getter or (lambda: cli_config.load_cli_config(_config_path()))
     dispatcher = Dispatcher(
         registry=SessionRegistry(routing.registry_dir),
         adapters=build_adapters(
             routing.harness_args, routing.harness_trust, routing.harness_plugins
         ),
         config=routing,
+        opener=conversation_opener(getter),
     )
     return dispatcher, routing
 

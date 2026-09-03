@@ -112,7 +112,13 @@ def _dispatcher_for(config: Optional[dict], registry_dir: str, portable_dir: str
 
     routing = dict(_routing(config))
     routing["registryDir"] = registry_dir
-    dispatcher, resolved = _build_dispatcher(routing, _layout(config))
+    # The config this call was given, never the default path (the `_routing`
+    # rule): the opener (issue-317) reads it per call through the getter.
+    dispatcher, resolved = _build_dispatcher(
+        routing,
+        _layout(config),
+        cli_config_getter=(lambda: dict(config)) if config else None,
+    )
     dispatcher.control_store = _control_store(config, portable_dir)
     return dispatcher, resolved
 

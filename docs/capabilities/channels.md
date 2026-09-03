@@ -102,6 +102,23 @@ flowchart LR
   `channel.thread_opened` (ids only). A ref spelled with the default host
   (`github:github.com/o/r#7`) and without it (`github:o/r#7`) are one conversation; a
   state file from before issue-312 is backfilled from its newest binding on load.
+- **The thread opens when the work item starts** (issue-317, decision-107). WHEN a
+  session is spawned for a work item — a `the-loop start` / `contribute` / `do` /
+  `review` comment, `the-loop sessions start`, the control plane's start route, or the
+  poller's presence spawn for an authorized author — THEN, before the workspace checkout
+  and the harness boot, the dispatcher SHALL ask every enabled channel that has a
+  conversation to open to open the work item's: the Slack channel posts the root alone
+  (no reply) and binds it with origin `start`; the GitHub ledger opens nothing, because
+  the issue is its conversation. A work item that already has a conversation SHALL keep
+  it (a restart, a kickoff thread, a thread the first event already opened). A refused
+  start — unarmed, unauthorized, spawn policy — SHALL open nothing, because the open sits
+  on the spawn path behind every refusal. Best-effort by contract: a channel that raises
+  or returns no `ts` is `channel.open_failed`, the session spawns regardless, nothing is
+  bound, and the next event opens the thread lazily as before. The first subscribed event
+  is then the thread's first reply. The opener is injected into the dispatcher
+  (`channels.publishers.conversation_opener`, reading the CLI config per call — both
+  daemons and the core facade wire it, the facade with the config it was handed); a
+  dispatcher built without one behaves as at 13.1.1.
 - **Rendering is the channel's.** The Slack channel posts Block Kit: a header (event,
   person, work item), the text capped at `maxChars` with the remainder behind the link,
   a context line at `verbose`, a link button whenever the event has a URL, and
@@ -118,11 +135,18 @@ flowchart LR
   and cursors in `<state.root>/channels/slack.json` (plus a `channel:<id>` cursor).
 - Every step is observable: `bus.published`, `bus.recorded`, `bus.record_failed`, the
   `channel.*` types, `channel.dropped` with `unpublishable-event` / `kickoff-disabled` /
-  `create-failed`, `channel.created` and `channel.thread_opened`. Payloads carry ids and
-  event types, never text.
+  `create-failed`, `channel.created`, `channel.thread_opened` (origin `event` |
+  `kickoff` | `start`) and `channel.open_failed`. Payloads carry ids and event types,
+  never text.
 
 ## Design
 
+- [`docs/specs/issue-317/design.md`](../specs/issue-317/design.md) — `open` on the
+  channel, `open_conversation` on the bus, the injected opener on the dispatcher's spawn
+  path and its wiring through both daemons and the facade.
+- [`decision-107`](../decisions/decision-107.md) — the open is a channel operation on the
+  spawn path, not a bus event; before the checkout, not beside the announcement;
+  best-effort; the ledger opens nothing.
 - [`docs/specs/issue-312/design.md`](../specs/issue-312/design.md) — the per-work-item
   conversation map and the sibling `flock`; the root-then-reply post; `channels threads`.
 - [`decision-105`](../decisions/decision-105.md) — the root is the work item's; open-and-bind
@@ -142,6 +166,7 @@ flowchart LR
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-317 | The Slack thread opens when the work item **starts**, not when its first event arrives: the dispatcher's one spawn path — which every way of starting converges on — asks every configured channel to open the work item's conversation (`SlackBotChannel.open`, root only, origin `start`, through `bus.open_conversation`) before the checkout; a bound work item keeps its thread, a refused start opens nothing, a channel failure is `channel.open_failed` and never touches the spawn, and the first event replies into the thread that already exists. Wired as an injected opener on the dispatcher (`conversation_opener`, config per call) by both daemons and the core facade | [spec](../specs/issue-317/), [decision-107](../decisions/decision-107.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/317) |
 | issue-312 | The Slack thread is the work item's: the first event opens a root naming the work item (ref + link button) and every event, the first included, is a reply into it; open-and-bind runs under a `flock` on the channel state so the agent's session, the daemons and the poll watcher open one thread between them, and a failed reply never opens a second; the conversation is a keyed record (work item → channel, thread, opened, origin, permalink) backfilled from a pre-existing file, listed by `the-loop channels threads` and announced by `channel.thread_opened`; refs with and without the default host share one thread. Before this the root was whichever event arrived first, the binding a newest-wins scan, and four unlocked writers could open two threads or drop a binding | [spec](../specs/issue-312/), [decision-105](../decisions/decision-105.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/312) |
 | issue-311 | The link every notification and ask carries names the work item's own GitHub: a ref the graph mints from `ticketing.github` now carries the resolved host (`integrations.github.host`, `$GH_HOST`, the checkout's remote), the ledger's `gh api` writes pass `--hostname` for it, and a kickoff `repo` may be `[HOST/]OWNER/REPO` with the bound ref carrying the host | [spec](../specs/issue-311/), [decision-104](../decisions/decision-104.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/311) |
 | issue-309 | Made every channel a peer on one event bus with one ledger: a unified catalog with subscribe/publish/recorded flags; `bus.publish` as the only caller of a channel (the ask, the `notify` hook and both ingresses publish through it); the GitHub ledger with four record shapes and the envelope; identity declared once (`routing.authorizedUsers` person entries; `channels.slack.authorizedUsers` removed, `events` renamed `subscribe`, config version 0.7.0); per-channel `publish` grants — `gate.feedback` and `control.command` recorded unmarked for the ledger's ingress, `work-item.create` opening an issue from a top-level DM; Block Kit rendering with link and Approve buttons; `comment.agent` / `comment.human` mirrored into the bound thread; notifications carrying a link and an artifact excerpt; `work-item-complete` fired by the `complete` node. The five gaps @jc1993 named close as consequences | [spec](../specs/issue-309/), [decision-103](../decisions/decision-103.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/309) |

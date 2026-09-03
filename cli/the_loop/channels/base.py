@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, List, Mapping, Optional, Protocol, Tuple
+from typing import Any, List, Mapping, Optional, Protocol, Tuple, runtime_checkable
 
 from ..identity import Principal
 
@@ -24,6 +24,7 @@ __all__ = [
     "VERBOSITIES",
     "Channel",
     "ChannelError",
+    "Conversational",
     "Event",
     "InboundReply",
     "Ledger",
@@ -140,6 +141,20 @@ class Channel(Protocol):
     def may_publish(self, event_type: str) -> bool: ...
 
     def post(self, event: Event) -> PostResult: ...
+
+
+@runtime_checkable
+class Conversational(Protocol):
+    """A channel with a conversation of its own to open (issue-317).
+
+    The Slack bot is one — a thread per work item — so a start can open it
+    before any event. The ledger is **not** one: the work item *is* its
+    conversation, and the bus skips a channel that lacks ``open``. ``open`` is
+    idempotent — a bound work item gets its thread back and nothing is posted —
+    and raises :class:`ChannelError` where ``post`` would.
+    """
+
+    def open(self, work_item: str) -> PostResult: ...
 
 
 class Ledger(Protocol):

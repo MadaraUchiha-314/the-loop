@@ -20,7 +20,7 @@ from the_loop.channels.base import (
     load_channels,
     load_ledger,
 )
-from the_loop.channels.bus import broadcast, publish
+from the_loop.channels.bus import broadcast, open_conversation, publish
 from the_loop.channels.events import (
     APPROVAL_EVENTS,
     EVENTS,
@@ -30,7 +30,11 @@ from the_loop.channels.events import (
     is_recorded,
 )
 from the_loop.channels.github import GitHubLedger, issue_title
-from the_loop.channels.publishers import comment_publisher, publish_comment
+from the_loop.channels.publishers import (
+    comment_publisher,
+    conversation_opener,
+    publish_comment,
+)
 from the_loop.channels.slack import (
     APPROVE_VALUE,
     CHANGES_VALUE,
@@ -536,3 +540,70 @@ def test_kickoff_needs_the_grant_and_a_repo():
         publish=["work-item.create"], kickoff={"repo": "o/r", "labels": ["x"]}
     )
     assert granted.kickoff_enabled is True and granted.kickoff_labels == ("x",)
+
+
+# -- the start opens the conversation (issue-317) -------------------------------------
+
+
+class OpeningChannel(FakeChannel):
+    """A channel with a conversation to open."""
+
+    def __init__(self, fail=False, name="slack"):
+        super().__init__(name=name, fail=fail)
+        self.opened = []
+
+    def open(self, work_item):
+        if self.fail:
+            raise RuntimeError("down")
+        self.opened.append(work_item)
+        return PostResult(channel=self.name, ok=True, thread="t-root")
+
+
+def test_open_conversation_opens_on_every_channel_that_can_and_skips_the_ledger():
+    """R1.6, R3.1: every channel with `open` is asked; one without (the ledger
+    shape) is skipped; an empty work item opens nothing."""
+    slack = OpeningChannel(name="slack")
+    other = OpeningChannel(name="other")
+    plain = FakeChannel(name="plain")  # no `open`: nothing to do
+    results = open_conversation("github:o/r#7", channels=[slack, plain, other])
+    assert [r.channel for r in results] == ["slack", "other"]
+    assert all(r.ok and r.thread == "t-root" for r in results)
+    assert slack.opened == ["github:o/r#7"] and other.opened == ["github:o/r#7"]
+    assert open_conversation("", channels=[slack]) == [] and slack.opened == [
+        "github:o/r#7"
+    ]
+
+
+def test_a_failing_open_is_a_result_and_an_event_never_an_exception(monkeypatch):
+    """R1.5, R2.2: a channel that raises is `channel.open_failed`, ids only, and
+    the other channels are still asked."""
+    log = []
+    monkeypatch.setattr(eventlog, "emit", lambda event, **f: log.append((event, f)))
+    down = OpeningChannel(fail=True, name="slack")
+    fine = OpeningChannel(name="other")
+    results = open_conversation("github:o/r#7", channels=[down, fine])
+    assert [(r.channel, r.ok) for r in results] == [("slack", False), ("other", True)]
+    assert results[0].error == "down"
+    assert [name for name, _ in log] == ["channel.open_failed"]
+    assert log[0][1]["channel"] == "slack" and log[0][1]["work_item"] == "github:o/r#7"
+    assert fine.opened == ["github:o/r#7"]
+
+
+def test_the_daemon_opener_reads_the_config_per_call_and_needs_a_channels_section(
+    monkeypatch,
+):
+    """R3.1: the comment publisher's shape — config per call, nothing built
+    without a `channels` section, a raising getter opens nothing, never raises."""
+    seen = []
+    monkeypatch.setattr(
+        "the_loop.channels.bus.open_conversation",
+        lambda ref, cli_config=None, **kw: seen.append((ref, cli_config)) or [],
+    )
+    configs = [{}, {"channels": {"slack": {"enabled": True}}}]
+    opener = conversation_opener(lambda: configs.pop(0))
+    opener("github:o/r#7")  # no channels: not even built
+    opener("github:o/r#7")
+    assert seen == [("github:o/r#7", {"channels": {"slack": {"enabled": True}}})]
+    broken = conversation_opener(lambda: (_ for _ in ()).throw(OSError("mid-edit")))
+    broken("github:o/r#7")  # never raises
+    assert len(seen) == 1

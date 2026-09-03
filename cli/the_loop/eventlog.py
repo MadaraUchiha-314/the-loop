@@ -348,11 +348,18 @@ EVENT_TYPES: Dict[str, str] = {
     ),
     "channel.thread_opened": (
         "A conversation was bound to a work item (channel, work_item, thread: "
-        "the root's ts, channel_id, origin: event | kickoff) — issue-312. "
+        "the root's ts, channel_id, origin: event | kickoff | start) — issue-312. "
         "`event` means the-loop opened a root for the first event it delivered; "
         "`kickoff` means a member's top-level message became the work item and "
-        "that thread is its conversation. Every later message is a reply into "
-        "it. Ids only, never text."
+        "that thread is its conversation; `start` means the-loop opened the root "
+        "when the work item started, before any event (issue-317). Every later "
+        "message is a reply into it. Ids only, never text."
+    ),
+    "channel.open_failed": (
+        "A work item started but a channel could not open its conversation "
+        "(channel, work_item, error) — issue-317. Best-effort by contract: the "
+        "session was spawned regardless, nothing was bound, and the next event "
+        "for the work item opens the thread lazily as before issue-317."
     ),
     # -- the bus (issue-309, decision-103) --------------------------------------
     "bus.published": (

@@ -630,3 +630,254 @@ def test_channels_threads_lists_the_conversation(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "github:o/r#7" in out and "C123" in out and "1700.000001" in out
     assert "event" in out and "xoxb-test" not in out
+
+
+# -- the start opens the conversation (issue-317) --------------------------------
+
+
+def _start_setup(tmp_path, monkeypatch, client=None):
+    """A real dispatcher (tmux and the harness faked) whose opener runs the real
+    bus over the real Slack channel with the SDK client faked."""
+    from conftest import FakeTmux, StubInteractiveAdapter
+    from the_loop.channels.publishers import conversation_opener
+    from the_loop.control import ControlConfig
+    from the_loop.sessions import SessionRegistry
+    from the_loop.webhook.dispatcher import Dispatcher, RoutingConfig
+
+    client = client or FakeSlackClient()
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    monkeypatch.setattr("the_loop.channels.slack.build_client", lambda token: client)
+    config = cli_config(tmp_path)
+    registry = SessionRegistry(tmp_path / "local")
+    tmux = FakeTmux()
+    routing = RoutingConfig(
+        registry_dir=str(tmp_path / "local"),
+        portable_dir=str(tmp_path / "portable"),
+        spawn_on_unmatched="labeled",
+        auto_execute_label="the-loop: auto-execute",
+        spawn_workdir=str(tmp_path),
+        control=ControlConfig(),
+        authorized_users=["gh-UHUMAN"],
+    )
+    dispatcher = Dispatcher(
+        registry=registry,
+        adapters={"claude": StubInteractiveAdapter()},
+        config=routing,
+        tmux_runner=tmux,
+        opener=conversation_opener(lambda: config),
+    )
+    return dispatcher, registry, tmux, client, config
+
+
+def _start_events(body="the-loop start", labelled=True, author="gh-UHUMAN"):
+    from the_loop.webhook.router import RoutedEvent, extract_work_items
+
+    labels = [{"name": "the-loop: auto-execute"}] if labelled else []
+    labeled = {
+        "action": "labeled",
+        "label": {"name": "the-loop: auto-execute"},
+        "repository": {"full_name": "octo/repo"},
+        "issue": {"number": 15, "labels": labels},
+        "sender": {"login": author},
+    }
+    comment = {
+        "action": "created",
+        "repository": {"full_name": "octo/repo"},
+        "issue": {"number": 15, "labels": labels},
+        "comment": {
+            "id": 1,
+            "body": body,
+            "html_url": "https://c/1",
+            "user": {"login": author},
+        },
+        "sender": {"login": author},
+    }
+    return (
+        RoutedEvent(
+            event="issues",
+            action="labeled",
+            delivery_id="l-1",
+            work_items=extract_work_items("issues", labeled),
+            payload=labeled,
+            labeled=True,
+        ),
+        RoutedEvent(
+            event="issue_comment",
+            action="created",
+            delivery_id="d-1",
+            work_items=extract_work_items("issue_comment", comment),
+            payload=comment,
+            labeled=False,
+        ),
+    )
+
+
+def _until(predicate, timeout=5.0):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.01)
+    return predicate()
+
+
+START_REF = "github:octo/repo#15"
+
+
+def test_a_start_opens_the_work_items_thread_before_any_event(tmp_path, monkeypatch):
+    """Scenario: A start opens the work item's thread before any event
+
+    Given a Slack channel enabled and a labelled work item
+    When an authorized user comments the start keyword
+    Then the Slack channel carries exactly one message: the root naming the work item
+    And the conversation is recorded with origin start
+    And when the agent asks a question it is the thread's first reply
+
+    Requirement: docs/specs/issue-317/requirements.md R1.1, R1.2, R1.7, R2.1
+    """
+    from the_loop.channels.state import ChannelState
+
+    dispatcher, registry, tmux, client, config = _start_setup(tmp_path, monkeypatch)
+    labeled, start = _start_events()
+    try:
+        dispatcher.handle(labeled)
+        dispatcher.handle(start)
+        assert _until(lambda: len(tmux.spawns) == 1)
+    finally:
+        dispatcher.stop(timeout=5)
+    assert registry.find_by_work_item(START_REF) is not None
+    assert len(client.posted) == 1
+    root = client.posted[0]
+    assert root["thread_ts"] is None and START_REF in root["text"]
+    state_path = tmp_path / "state" / "channels" / "slack.json"
+    record = ChannelState.load(state_path).conversation(START_REF)
+    assert record is not None and record["origin"] == "start"
+    assert record["thread"] == "1700.000001"
+
+    monkeypatch.setattr(
+        core_sessions,
+        "post_issue_comment_with_url",
+        lambda item, body, gh_binary="gh": (True, "", "https://gh/c/1"),
+    )
+    result = core_sessions.ask_session(START_REF, "A or B?", config=config)
+    assert result["asked"] is True
+    assert len(client.posted) == 2
+    assert client.posted[1]["thread_ts"] == "1700.000001"
+    assert "A or B?" in client.posted[1]["text"]
+
+
+def test_a_refused_start_opens_no_thread_scenario(tmp_path, monkeypatch):
+    """Scenario: A refused start opens no thread
+
+    Given a Slack channel enabled and a work item that is not armed
+    When an authorized user comments the start keyword
+    Then no session is spawned and nothing is posted to Slack
+    And no conversation is recorded for the work item
+
+    Requirement: docs/specs/issue-317/requirements.md R1.4
+    """
+    from the_loop.channels.state import ChannelState
+
+    dispatcher, registry, tmux, client, _ = _start_setup(tmp_path, monkeypatch)
+    _, start = _start_events(labelled=False)
+    try:
+        dispatcher.handle(start)
+        assert _until(lambda: True, 0.2)
+    finally:
+        dispatcher.stop(timeout=5)
+    assert tmux.spawns == [] and client.posted == []
+    state_path = tmp_path / "state" / "channels" / "slack.json"
+    assert ChannelState.load(state_path).conversation(START_REF) is None
+
+
+def test_a_restarted_work_item_keeps_its_thread(tmp_path, monkeypatch):
+    """Scenario: A restarted work item keeps its thread
+
+    Given a work item that was started and then stopped
+    When an authorized user starts it again
+    Then a second session is spawned
+    And the Slack channel still carries one root, bound to the same thread
+
+    Requirement: docs/specs/issue-317/requirements.md R1.3
+    """
+    from the_loop.channels.state import ChannelState
+
+    dispatcher, registry, tmux, client, _ = _start_setup(tmp_path, monkeypatch)
+    labeled, start = _start_events()
+    from dataclasses import replace
+
+    _, stop = _start_events(body="the-loop stop")
+    stop = replace(stop, delivery_id="d-2")
+    again = replace(start, delivery_id="d-3")
+    try:
+        dispatcher.handle(labeled)
+        dispatcher.handle(start)
+        assert _until(lambda: len(tmux.spawns) == 1)
+        dispatcher.handle(stop)
+        assert _until(lambda: registry.find_by_work_item(START_REF) is None)
+        dispatcher.handle(again)
+        assert _until(lambda: len(tmux.spawns) == 2)
+    finally:
+        dispatcher.stop(timeout=5)
+    assert len(client.posted) == 1
+    state_path = tmp_path / "state" / "channels" / "slack.json"
+    record = ChannelState.load(state_path).conversation(START_REF)
+    assert record is not None and record["thread"] == "1700.000001"
+    assert record["origin"] == "start"
+
+
+def test_a_channel_outage_never_fails_the_spawn(tmp_path, monkeypatch):
+    """Scenario: A Slack outage never fails the spawn
+
+    Given a Slack channel whose API is down
+    When an authorized user starts a labelled work item
+    Then the session is spawned as before
+    And the failure is recorded as channel.open_failed with ids only
+    And no conversation is bound, so the next event opens the thread lazily
+
+    Requirement: docs/specs/issue-317/requirements.md R1.5 (A3)
+    """
+    from the_loop import eventlog
+    from the_loop.channels.state import ChannelState
+
+    class Flaky(FakeSlackClient):
+        down = True
+
+        def chat_postMessage(self, **kwargs):
+            if self.down:
+                raise RuntimeError("slack is down")
+            return super().chat_postMessage(**kwargs)
+
+    log = []
+    monkeypatch.setattr(
+        eventlog, "emit", lambda name, level="info", **f: log.append((name, f))
+    )
+    client = Flaky()
+    dispatcher, registry, tmux, client, config = _start_setup(
+        tmp_path, monkeypatch, client=client
+    )
+    labeled, start = _start_events()
+    try:
+        dispatcher.handle(labeled)
+        dispatcher.handle(start)
+        assert _until(lambda: len(tmux.spawns) == 1)
+    finally:
+        dispatcher.stop(timeout=5)
+    assert registry.find_by_work_item(START_REF) is not None
+    failed = [f for name, f in log if name == "channel.open_failed"]
+    assert len(failed) == 1
+    assert failed[0]["channel"] == "slack" and failed[0]["work_item"] == START_REF
+    assert "slack is down" in failed[0]["error"]
+    state_path = tmp_path / "state" / "channels" / "slack.json"
+    assert ChannelState.load(state_path).conversation(START_REF) is None
+
+    client.down = False
+    monkeypatch.setattr(
+        core_sessions,
+        "post_issue_comment_with_url",
+        lambda item, body, gh_binary="gh": (True, "", "https://gh/c/1"),
+    )
+    core_sessions.ask_session(START_REF, "A or B?", config=config)
+    assert len(client.posted) == 2  # the root, then the ask as its first reply
+    record = ChannelState.load(state_path).conversation(START_REF)
+    assert record is not None and record["origin"] == "event"

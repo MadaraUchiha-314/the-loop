@@ -12,6 +12,10 @@ a work item opens a root that names it — under the state file's lock, so two
 writers open one thread — and every event, that first one included, is a reply
 into it. Which thread a work item is in is a keyed record
 (``ChannelState.conversations``), listed by ``the-loop channels threads``.
+Since issue-317 the thread is opened **when the work item starts** — the
+dispatcher's spawn path asks every channel to :meth:`SlackBotChannel.open` its
+conversation, root only, no reply — and the first event replies into it; a start
+that could not open one leaves the lazy path above as the fallback.
 
 Tokens are read from the environment **at call time** (the ``_SlackBase._url()``
 rule: a provider outlives many transitions and must see the environment as it
@@ -574,12 +578,40 @@ class SlackBotChannel:
             channel=self.name, ok=True, thread=str(response.get("ts") or "")
         )
 
+    def open(self, work_item: str) -> PostResult:
+        """Open ``work_item``'s thread now — the root alone, no reply — or
+        return the one it already has (issue-317 R1.2, R1.3).
+
+        What the dispatcher's spawn path calls, through the bus, the moment a
+        start is accepted: the same lock, root, bind and save as the lazy path
+        in :meth:`post`, with ``origin="start"`` on the record, and nothing
+        posted for a work item that is already bound. The refusals are
+        :meth:`post`'s — no channel id, no token — raised before any call; a
+        root that fails to post raises and binds nothing, so the next event
+        opens the thread lazily as before (R1.5).
+        """
+        if not self.config.channel:
+            raise ChannelError(
+                "slack: no channel id configured — set channels.slack.channel "
+                "to the channel the bot posts into (C…)"
+            )
+        client = self._client()
+        with ChannelState.locked(self.state_path) as state:
+            bound = state.thread_for(work_item)
+            if not bound:
+                bound = self._open_thread(client, state, work_item, origin="start")
+            elif state.backfilled:
+                state.save(self.state_path)  # a 13.0.1 file, now keyed (R3.4)
+        return PostResult(channel=self.name, ok=True, thread=bound[1])
+
     def _open_thread(
-        self, client, state: ChannelState, work_item: str
+        self, client, state: ChannelState, work_item: str, *, origin: str = "event"
     ) -> Tuple[str, str]:
         """Post the root for ``work_item``, bind it, save — inside the caller's
         lock. Returns ``(channel_id, thread_ts)``. A root that fails to post
-        binds nothing, so the next event tries again."""
+        binds nothing, so the next event tries again. ``origin`` is how the
+        record and ``channel.thread_opened`` say the thread came to be:
+        ``event`` (the lazy path) or ``start`` (issue-317)."""
         url = _work_item_url(work_item)
         text, blocks = render_root(
             work_item, url, reading=self.config.read_mode != "off"
@@ -604,7 +636,7 @@ class SlackBotChannel:
         except Exception as exc:  # noqa: BLE001 — a nicety; the binding stands (A3)
             logger.debug("slack: no permalink for thread %s: %s", ts, exc)
         state.bind(
-            ts, work_item, self.config.channel, origin="event", permalink=permalink
+            ts, work_item, self.config.channel, origin=origin, permalink=permalink
         )
         state.save(self.state_path)
         eventlog.emit(
@@ -613,7 +645,7 @@ class SlackBotChannel:
             work_item=work_item,
             thread=ts,
             channel_id=self.config.channel,
-            origin="event",
+            origin=origin,
         )
         return (self.config.channel, ts)
 

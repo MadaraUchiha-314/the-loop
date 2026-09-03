@@ -16,6 +16,11 @@ gate answer, the ask) — the channel that raised it has it — and is never
 re-published: that is loop prevention across channels (A10). The publisher is a
 callable the daemons build over their config holder, so a reload is honoured and a
 router built without one (tests, embedders) publishes nothing.
+
+The same shape carries the other thing the daemons hand the bus (issue-317): the
+**conversation opener** the dispatcher calls on its spawn path, so a work item's
+thread exists the moment its start is accepted. Config per call, nothing built
+without a ``channels`` section, never raises — the publisher's contract exactly.
 """
 
 from __future__ import annotations
@@ -28,10 +33,20 @@ from .envelope import has_envelope
 
 logger = logging.getLogger("the-loop.channels")
 
-__all__ = ["Publisher", "comment_publisher", "publish_comment"]
+__all__ = [
+    "Opener",
+    "Publisher",
+    "comment_publisher",
+    "conversation_opener",
+    "publish_comment",
+]
 
 #: ``(kind, work_item_ref, author, body, url) -> None``; ``kind`` is ``agent``/``human``.
 Publisher = Callable[[str, str, str, str, str], None]
+
+#: ``(work_item_ref) -> None`` — open the work item's conversation on every
+#: configured channel (issue-317). What the dispatcher is handed.
+Opener = Callable[[str], None]
 
 _TYPES = {"agent": "comment.agent", "human": "comment.human"}
 
@@ -86,3 +101,27 @@ def comment_publisher(config_getter: Callable[[], Mapping[str, Any]]) -> Publish
         publish_comment(kind, work_item, author, body, url, cli_config)
 
     return publish
+
+
+def conversation_opener(config_getter: Callable[[], Mapping[str, Any]]) -> Opener:
+    """An :data:`Opener` reading the CLI config afresh on every call — the
+    daemons' and the facade's form (issue-317 R3.1). A getter that raises opens
+    nothing; a config with no ``channels`` section builds nothing; the bus's
+    contract makes every channel failure a result, so this never raises."""
+
+    def opener(work_item: str) -> None:
+        try:
+            cli_config = dict(config_getter() or {})
+        except Exception:  # noqa: BLE001 — a half-saved config is not the spawn's problem
+            logger.debug("conversation opener: could not read the CLI config")
+            return
+        if not cli_config.get("channels"):
+            return  # nothing to open on; do not even load the channels
+        from .bus import open_conversation as bus_open
+
+        try:
+            bus_open(work_item, cli_config)
+        except Exception:  # noqa: BLE001 — belt and braces over the bus's own catch
+            logger.exception("opening the conversation for %s raised", work_item)
+
+    return opener

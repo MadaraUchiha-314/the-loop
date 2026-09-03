@@ -172,6 +172,13 @@ still carrying the key is warned about and otherwise ignored).
   process or a refused signal is logged (`session.harness_terminated`) and the close
   completes regardless. `killHarnessOnClose: false` keeps the pre-issue-94 behaviour
   (a retained session keeps its harness running).
+- WHEN a start is accepted — every refusal passed, the spawn about to begin — THEN the
+  dispatcher SHALL ask every configured [channel](channels.md) to open the work item's
+  conversation (the Slack thread, root only) **before** the workspace checkout and the
+  harness boot (issue-317, decision-107), so the thread exists the moment the work item
+  starts rather than when its first event arrives. Best-effort: a channel failure is
+  `channel.open_failed` and never affects the spawn; a dispatcher built without an opener
+  opens nothing.
 - WHEN a session is spawned THEN the-loop SHALL comment on the work item
   with the tmux session name and the `tmux attach -t loop-<slug>` command
   (`routing.announce`, default on), so the attach details reach the humans on the
@@ -274,6 +281,7 @@ belongs to does not.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-317 | The spawn path opens the work item's channel conversations first: `Dispatcher` takes an injected opener (`channels.publishers.conversation_opener`), called with the ref at the top of `_spawn_for` — behind every refusal, before the checkout — and contained if it raises; both daemons and the core facade's dispatcher wire it | [spec](../specs/issue-317/), [decision-107](../decisions/decision-107.md), [channels](channels.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/317) |
 | issue-277 | The runner learned to be addressed by **target** rather than by work item (`spawn_in`, `deliver_to`, `kill_target`, `terminate_harness_in`), so a session with no work item can be hosted the same way; the four work-item entry points delegate and keep their exact refusals. The first caller is [standing-sessions](standing-sessions.md) | [spec](../specs/issue-277/), [decision-099](../decisions/decision-099.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/277) |
 | issue-240 | A read-only observer no longer blocks delivery: the submit keystroke is a second, unbracketed `paste-buffer` instead of `send-keys … Enter`, so no tmux command in the delivery resolves a client. tmux ≥ 3.7 refused `send-keys` with `client is read-only` whenever anyone was attached with `--read-only`, and `-t` could not avoid it — the guard tests the *target client*, which is resolved from `-c`/the current client | [spec](../specs/issue-240/), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/240) |
 | issue-186 | `the-loop cleanup` — a control keyword, a CLI/API/MCP verb and an authorized closure all release a finished work item's **local** resources: every endpoint's tmux session, the workspace checkout and the machine-local registry record, ignoring the two retention settings. The portable record is kept and nothing remote is touched; a closure that names no authorized actor defers to the keyword rather than destroying state on an unattributable event | [spec](../specs/issue-186/), [cli](cli.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/186) |

@@ -18,7 +18,7 @@ import uuid
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from string import Template
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set
 
 from .. import eventlog
 from ..announce import AnnounceConfig, SessionAnnouncer
@@ -544,10 +544,19 @@ class Dispatcher:
         control_store: Optional[ControlStore] = None,
         collaborator_store: Optional[CollaboratorStore] = None,
         verifier: Optional[WorkItemVerifier] = None,
+        opener: Optional[Callable[[str], None]] = None,
     ):
         self.registry = registry
         self.adapters = adapters
         self.config = config or RoutingConfig()
+        # The conversation opener (issue-317): called with the work item's ref
+        # the moment a start is accepted — first thing on the spawn path — so a
+        # channel's thread exists before the first event, not because of it.
+        # Injected like the announcer (the daemons build it over their config
+        # getter, `channels.publishers.conversation_opener`), and it reads the
+        # config per call, so `reload` leaves it alone. None (tests, embedders
+        # that opted out) opens nothing: the 13.1.1 behaviour, exactly.
+        self.opener = opener
         # Control records are the portable half of a work item's state (issue-128),
         # so they follow `state.root` rather than the registry: a relocated
         # registry moves the machine-local handles, not the facts about the work.
@@ -2078,6 +2087,19 @@ class Dispatcher:
             self.deduper.discard(routed.delivery_id)
         return False
 
+    def _open_conversations(self, work_item: WorkItemRef) -> None:
+        """Ask every configured channel to open ``work_item``'s conversation now
+        (issue-317 R1.1). Best-effort twice over: the opener never raises by
+        its own contract, and a bug in it is contained here — the spawn outcome
+        never depends on a channel. Handed the router's ref and nothing else:
+        no payload text can reach a root."""
+        if self.opener is None:
+            return
+        try:
+            self.opener(work_item.ref)
+        except Exception:  # noqa: BLE001 — a channel bug never blocks a spawn
+            logger.exception("opening the conversations for %s raised", work_item.ref)
+
     def _spawn_for(self, work_item: WorkItemRef, routed: RoutedEvent) -> bool:
         adapter = self.adapters.get(self.config.default_harness)
         if adapter is None:
@@ -2094,6 +2116,12 @@ class Dispatcher:
                 will_retry=False,
             )
             return False
+        # The start is accepted — every refusal lies behind us, the adapter
+        # exists — so the work item's conversations open NOW (issue-317), before
+        # the checkout that can take a minute and before the harness boots. A
+        # spawn that fails below leaves a thread with no replies; the retry
+        # reuses it.
+        self._open_conversations(work_item)
         try:
             cwd = self._prepare_workspace(work_item, routed)
         except WorkspaceError as exc:
