@@ -97,4 +97,3 @@ uv run --project cli python -m pytest -q cli
 2997 passed, 1 skipped in 142.01s (0:02:22)
 exit=0
 ```
-
