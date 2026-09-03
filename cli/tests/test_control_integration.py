@@ -893,3 +893,146 @@ def test_closing_the_work_item_forgets_its_roster(setup):
     dispatcher.handle(close_event())
     assert _wait(lambda: _rosters(dispatcher).logins(REF) == [])
     assert control.get(REF) is None
+
+
+# -- the start opens the work item's conversations (issue-317) ------------------
+
+
+def _dispatcher_with_opener(tmp_path, opener):
+    registry = SessionRegistry(tmp_path / "local")
+    tmux = FakeTmux()
+    config = RoutingConfig(
+        registry_dir=str(tmp_path / "local"),
+        portable_dir=str(tmp_path / "portable"),
+        spawn_on_unmatched="labeled",
+        auto_execute_label=LABEL,
+        spawn_workdir=str(tmp_path),
+        control=ControlConfig(),
+        authorized_users=["octocat"],
+    )
+    dispatcher = Dispatcher(
+        registry=registry,
+        adapters={"claude": StubInteractiveAdapter()},
+        config=config,
+        tmux_runner=tmux,
+        opener=opener,
+    )
+    return dispatcher, registry, tmux
+
+
+def test_a_start_opens_the_conversation_once_before_the_checkout(tmp_path):
+    """
+    Feature: the start opens the work item's conversations
+      Scenario: an accepted start asks the channels to open, before anything spawns
+        Given a labelled work item and a dispatcher with a conversation opener
+        When an authorized user comments the start keyword
+        Then the opener is called exactly once, with the work item's ref
+        And it is called before the tmux session is spawned
+        And the session is spawned as before
+    Requirement: docs/specs/issue-317/requirements.md R1.1, R3.3
+    """
+    calls = []
+    dispatcher, registry, tmux = _dispatcher_with_opener(
+        tmp_path, lambda ref: calls.append((ref, len(tmux.spawns)))
+    )
+    try:
+        dispatcher.handle(labeled_event())
+        dispatcher.handle(comment_event(START_KEYWORD))
+        assert _wait(lambda: len(tmux.spawns) == 1)
+        assert calls == [(REF, 0)]  # once, with the ref, before the spawn
+        assert registry.find_by_work_item(REF) is not None
+    finally:
+        dispatcher.stop(timeout=5)
+
+
+def test_a_refused_start_opens_no_thread(tmp_path):
+    """
+    Feature: the start opens the work item's conversations
+      Scenario: a start the dispatcher refuses opens nothing anywhere
+        Given a work item with no auto-execute label
+        When an authorized user comments the start keyword
+        Then no session is spawned and the opener is never called
+    Requirement: docs/specs/issue-317/requirements.md R1.4 (A2)
+    """
+    calls = []
+    dispatcher, _, tmux = _dispatcher_with_opener(tmp_path, calls.append)
+    try:
+        dispatcher.handle(comment_event(START_KEYWORD, labels=()))
+        assert _wait(lambda: True, 0.2)
+        assert tmux.spawns == [] and calls == []
+    finally:
+        dispatcher.stop(timeout=5)
+
+
+def test_an_unauthorized_start_opens_no_thread(tmp_path):
+    """
+    Feature: the start opens the work item's conversations
+      Scenario: a stranger's start keyword opens nothing
+        Given a labelled work item
+        When a user outside authorizedUsers comments the start keyword
+        Then no session is spawned and the opener is never called
+    Requirement: docs/specs/issue-317/requirements.md R1.4 (A1)
+    """
+    calls = []
+    dispatcher, _, tmux = _dispatcher_with_opener(tmp_path, calls.append)
+    try:
+        dispatcher.handle(labeled_event())
+        dispatcher.handle(comment_event(START_KEYWORD, author="mallory"))
+        assert _wait(lambda: True, 0.2)
+        assert tmux.spawns == [] and calls == []
+    finally:
+        dispatcher.stop(timeout=5)
+
+
+def test_a_raising_opener_never_fails_the_spawn(tmp_path):
+    """
+    Feature: the start opens the work item's conversations
+      Scenario: an opener that raises is contained
+        Given a dispatcher whose opener raises
+        When an authorized user starts a labelled work item
+        Then the session is spawned exactly as it would be without an opener
+    Requirement: docs/specs/issue-317/requirements.md R1.5 (A3)
+    """
+
+    def explode(ref):
+        raise RuntimeError("channel bug")
+
+    dispatcher, registry, tmux = _dispatcher_with_opener(tmp_path, explode)
+    try:
+        dispatcher.handle(labeled_event())
+        dispatcher.handle(comment_event(START_KEYWORD))
+        assert _wait(lambda: len(tmux.spawns) == 1)
+        assert registry.find_by_work_item(REF) is not None
+    finally:
+        dispatcher.stop(timeout=5)
+
+
+def test_the_opener_is_handed_the_ref_alone(tmp_path):
+    """
+    Feature: the start opens the work item's conversations
+      Scenario: nothing from the spawning comment reaches the opener
+        Given a start comment carrying a planted link and markup
+        When the work item is started
+        Then the opener receives the router's ref and nothing else
+    Requirement: docs/specs/issue-317/requirements.md A4
+    """
+    calls = []
+    dispatcher, _, tmux = _dispatcher_with_opener(tmp_path, lambda *a: calls.append(a))
+    try:
+        dispatcher.handle(labeled_event())
+        body = f"{START_KEYWORD} <https://evil.example|click> *now* github:x/y#1"
+        dispatcher.handle(comment_event(body))
+        assert _wait(lambda: len(tmux.spawns) == 1)
+        assert calls == [(REF,)]
+    finally:
+        dispatcher.stop(timeout=5)
+
+
+def test_a_dispatcher_without_an_opener_opens_nothing(setup):
+    """R3.3: the 13.1.1 shape — no opener, no call, the spawn unchanged."""
+    dispatcher, registry, tmux, _ = setup
+    assert dispatcher.opener is None
+    dispatcher.handle(labeled_event())
+    dispatcher.handle(comment_event(START_KEYWORD))
+    assert _wait(lambda: len(tmux.spawns) == 1)
+    assert registry.find_by_work_item(REF) is not None

@@ -749,3 +749,38 @@ def test_link_pull_request_refuses_malformed_input(tmp_path, work_item, pull_req
             work_item, pull_request, config=_config(tmp_path)
         )
     assert _linked_refs(tmp_path) == []
+
+
+# -- the start opens the work item's conversations (issue-317) ---------------------
+
+
+def test_the_facade_dispatcher_opens_with_the_config_it_was_given(
+    tmp_path, monkeypatch
+):
+    """R3.2: `the-loop sessions start`, the control plane's route and the MCP tool
+    build their dispatcher through the facade, and its opener reads the config the
+    caller passed — never the default path on disk."""
+    seen = []
+    monkeypatch.setattr(
+        "the_loop.channels.bus.open_conversation",
+        lambda ref, cli_config=None, **kw: seen.append((ref, cli_config)) or [],
+    )
+    config = {
+        **_config(tmp_path),
+        "channels": {"slack": {"enabled": True, "channel": "C1"}},
+    }
+    dispatcher, _ = core_sessions._dispatcher_for(
+        config, str(tmp_path / "local"), str(tmp_path / "portable")
+    )
+    assert dispatcher.opener is not None
+    dispatcher.opener(REF)
+    assert seen == [(REF, config)]
+
+
+def test_the_poll_builder_wires_an_opener_by_default(tmp_path, monkeypatch):
+    """R3.2: the poller's builder — shared with the facade — always carries one."""
+    from the_loop.poller import daemon as poll
+
+    monkeypatch.setenv("THE_LOOP_CONFIG", str(tmp_path / "missing.yaml"))
+    dispatcher, _ = poll._build_dispatcher({"registryDir": str(tmp_path / "local")})
+    assert dispatcher.opener is not None

@@ -1014,3 +1014,123 @@ def test_channels_status_counts_work_items(tmp_path, monkeypatch, capsys):
     make_channel(tmp_path, FakeSlackClient()).post(event())
     assert _threads_command(tmp_path, monkeypatch, "status") == 0
     assert "1 work item(s)" in capsys.readouterr().out
+
+
+# -- the start opens the conversation (issue-317) --------------------------------
+
+
+def _emitted(monkeypatch):
+    from the_loop.channels import slack as slack_mod
+
+    events = []
+    monkeypatch.setattr(
+        slack_mod.eventlog,
+        "emit",
+        lambda name, level="info", **f: events.append((name, f)),
+    )
+    return events
+
+
+def test_open_posts_the_root_alone_and_binds_with_origin_start(tmp_path, monkeypatch):
+    """R1.2, R2.1, R2.2: a start posts the root and nothing else; the record says
+    `start`; `channel.thread_opened` carries ids only."""
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    events = _emitted(monkeypatch)
+    client = FakeSlackClient()
+    result = make_channel(tmp_path, client).open("github:o/r#7")
+    assert result.ok and result.channel == "slack" and result.thread == "1700.000001"
+    assert len(client.posted) == 1
+    root = client.posted[0]
+    assert root["thread_ts"] is None and root["channel"] == "C123"
+    assert root["blocks"][0]["type"] == "header"
+    assert "github:o/r#7" in root["blocks"][0]["text"]["text"]
+    assert root["blocks"][-1]["elements"][0]["url"] == "https://github.com/o/r/issues/7"
+    record = _conversation(ChannelState.load(_state_path(tmp_path)), "github:o/r#7")
+    assert record["origin"] == "start" and record["thread"] == "1700.000001"
+    opened = [f for name, f in events if name == "channel.thread_opened"]
+    assert opened == [
+        {
+            "channel": "slack",
+            "work_item": "github:o/r#7",
+            "thread": "1700.000001",
+            "channel_id": "C123",
+            "origin": "start",
+        }
+    ]
+
+
+def test_open_is_idempotent_for_a_bound_work_item(tmp_path, monkeypatch):
+    """R1.3: a second start, and a start after an event, post nothing."""
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    client = FakeSlackClient()
+    channel = make_channel(tmp_path, client)
+    first = channel.open("github:o/r#7")
+    again = channel.open("github:o/r#7")
+    assert again.ok and again.thread == first.thread and len(client.posted) == 1
+    # A thread an event opened is kept, origin and all.
+    other = FakeSlackClient()
+    bound = make_channel(tmp_path, other, channel="C9")
+    eight = OutboundEvent(
+        event_type="session.awaiting_input", work_item="github:o/r#8", text="A or B?"
+    )
+    posted = bound.post(eight)
+    assert len(other.posted) == 2  # root + reply
+    assert bound.open("github:o/r#8").thread == posted.thread
+    assert len(other.posted) == 2
+    record = _conversation(ChannelState.load(_state_path(tmp_path)), "github:o/r#8")
+    assert record["origin"] == "event"
+
+
+def test_open_fails_closed_like_post(tmp_path, monkeypatch):
+    """R1.5: no channel id and no token refuse before any call, as `post` does."""
+    client = FakeSlackClient()
+    monkeypatch.delenv(DEFAULT_BOT_TOKEN_ENV, raising=False)
+    with pytest.raises(ChannelError, match="no bot token"):
+        make_channel(tmp_path, client).open("github:o/r#7")
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    with pytest.raises(ChannelError, match="no channel id"):
+        make_channel(tmp_path, client, channel="").open("github:o/r#7")
+    assert client.posted == []
+    assert ChannelState.load(_state_path(tmp_path)).conversation("github:o/r#7") is None
+
+
+def test_a_failed_open_binds_nothing(tmp_path, monkeypatch):
+    """R1.5: a root that fails to post is a ChannelError and no binding — the
+    next event opens the thread lazily, as before."""
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+
+    class Down(FakeSlackClient):
+        def chat_postMessage(self, **kwargs):
+            raise RuntimeError("slack is down")
+
+    with pytest.raises(ChannelError, match="could not open a thread"):
+        make_channel(tmp_path, Down()).open("github:o/r#7")
+    assert ChannelState.load(_state_path(tmp_path)).conversation("github:o/r#7") is None
+    client = FakeSlackClient()
+    result = make_channel(tmp_path, client).post(event())
+    assert result.ok and len(client.posted) == 2  # root, then the reply
+
+
+def test_a_corrupt_state_file_still_opens_on_start(tmp_path, monkeypatch):
+    """A5: garbage on disk loads as empty; the start binds a fresh root cleanly."""
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    path = _state_path(tmp_path)
+    path.parent.mkdir(parents=True)
+    path.write_text("{not json", encoding="utf-8")
+    client = FakeSlackClient()
+    result = make_channel(tmp_path, client).open("github:o/r#7")
+    assert result.ok and len(client.posted) == 1
+    assert ChannelState.load(path).thread_for("github:o/r#7") == ("C123", result.thread)
+
+
+def test_an_unknown_origin_is_coerced_to_event(tmp_path):
+    """R2.1 / T10: `start` is a known origin; anything else reads as `event`, so
+    a record written by a newer version is still a valid one to an older reader."""
+    state = ChannelState()
+    state.bind("1.1", "github:o/r#7", "C123", origin="start")
+    state.bind("1.2", "github:o/r#8", "C123", origin="bogus")
+    assert _conversation(state, "github:o/r#7")["origin"] == "start"
+    assert _conversation(state, "github:o/r#8")["origin"] == "event"
+    state.save(_state_path(tmp_path))
+    reloaded = ChannelState.load(_state_path(tmp_path))
+    assert _conversation(reloaded, "github:o/r#7")["origin"] == "start"

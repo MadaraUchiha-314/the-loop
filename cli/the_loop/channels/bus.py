@@ -15,6 +15,14 @@ failed record means to *it* (the ask's exit code still says the post failed; a
 reply's pipeline still delivers).
 
 ``broadcast`` is the pre-issue-309 spelling, kept as a wrapper that never records.
+
+``open_conversation`` (issue-317) is the bus's other verb: not an event, an
+**operation** — ask every enabled channel that has a conversation to open (a
+Slack thread; the ledger has none, the issue *is* its conversation) to open the
+work item's, now. The dispatcher calls it on the spawn path, so the thread exists
+the moment a start is accepted rather than when the first event arrives. Same
+contract as ``publish``: best-effort per channel, a failure is a ``PostResult``
+and a ``channel.open_failed`` line, never an exception to the caller.
 """
 
 from __future__ import annotations
@@ -27,6 +35,7 @@ from .. import eventlog
 from .base import (
     Channel,
     ChannelError,
+    Conversational,
     Event,
     Ledger,
     PostResult,
@@ -38,7 +47,7 @@ from .events import is_recorded
 
 logger = logging.getLogger("the-loop.channels")
 
-__all__ = ["broadcast", "publish"]
+__all__ = ["broadcast", "open_conversation", "publish"]
 
 
 def publish(
@@ -129,6 +138,56 @@ def publish(
         channels=[post.channel for post in posts],
     )
     return PublishResult(record=recorded, posts=posts)
+
+
+def open_conversation(
+    work_item: str,
+    cli_config: Optional[Mapping[str, Any]] = None,
+    *,
+    channels: Optional[Sequence[Channel]] = None,
+    client_factory: Optional[Callable] = None,
+) -> List[PostResult]:
+    """Open ``work_item``'s conversation on every enabled channel that can
+    (issue-317 R1.1, R1.6).
+
+    A channel *can* when it is :class:`Conversational` — the Slack bot is; the
+    GitHub ledger is not, because the work item is its conversation — and the
+    call is idempotent by the channel's contract: a bound work item gets its
+    existing thread back and nothing is posted. Best-effort per channel (R1.5):
+    a ``ChannelError`` or any other exception is a failed ``PostResult`` plus
+    ``channel.open_failed`` (ids only), and the remaining channels are still
+    asked. A fresh open is announced by the channel itself
+    (``channel.thread_opened``); an idempotent one is silent. An empty
+    ``work_item`` opens nothing.
+    """
+    if not work_item:
+        return []
+    resolved = (
+        list(channels)
+        if channels is not None
+        else load_channels(cli_config, client_factory=client_factory)
+    )
+    results: List[PostResult] = []
+    for channel in resolved:
+        if not isinstance(channel, Conversational):
+            continue
+        try:
+            result = channel.open(work_item)
+        except ChannelError as exc:
+            result = PostResult(channel=channel.name, ok=False, error=str(exc))
+        except Exception as exc:  # a provider bug never breaks the caller
+            logger.exception("channel %s open raised", channel.name)
+            result = PostResult(channel=channel.name, ok=False, error=str(exc))
+        if not result.ok:
+            eventlog.emit(
+                "channel.open_failed",
+                level="warning",
+                channel=result.channel,
+                work_item=work_item,
+                error=result.error or None,
+            )
+        results.append(result)
+    return results
 
 
 def broadcast(

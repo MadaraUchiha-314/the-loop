@@ -148,6 +148,7 @@ def _build_routing(routing_config: dict, gh_webhook_config: dict):
     dispatcher so :func:`run` can drain it on shutdown.
     """
     from ..authz import resolve_authorized_users
+    from ..channels.publishers import comment_publisher, conversation_opener
     from ..harness import build_adapters
     from ..reload import Reloader
     from ..sessions import SessionRegistry
@@ -162,6 +163,9 @@ def _build_routing(routing_config: dict, gh_webhook_config: dict):
             config.harness_args, config.harness_trust, config.harness_plugins
         ),
         config=config,
+        # The bus (issue-317): a start opens the work item's conversation on
+        # every configured channel. Reads the config per call, like the publisher.
+        opener=conversation_opener(lambda: cli_config.load_cli_config(_config_path())),
     )
     authorized = resolve_authorized_users(config.authorized_users)
     if not authorized:
@@ -174,7 +178,6 @@ def _build_routing(routing_config: dict, gh_webhook_config: dict):
     # delivery ids, the router drops duplicates before extraction.
     events = resolve_events(gh_webhook_config)
     warn_on_missing_lifecycle_events(events)
-    from ..channels.publishers import comment_publisher
 
     router = Router(
         events=events,

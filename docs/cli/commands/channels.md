@@ -67,15 +67,23 @@ ledger's own ingress is what acts on it; a `work-item.create` is the issue itsel
 
 The thread is the **work item's**
 ([issue-312](https://github.com/MadaraUchiha-314/the-loop/issues/312),
-[decision-105](/decisions/decision-105)). The first event the channel delivers for a work
-item opens a **root** that names it — the ref, and an *Open on GitHub* button when the
-ref has a link — and every event, that first one included, is posted as a **reply** into
-it: the ask, the graph's notifications, the mirrored comments. Opening is done once, under
-a lock on the channel's state file, so the agent's session, the daemons and the poll
-watcher cannot open two threads for one work item between them; a reply that fails is
-recorded (`channel.post_failed`) and never followed by a second root. A thread a member
-started that became a work item keeps being that work item's thread. `channels threads`
-is the listing; `channel.thread_opened` is the event.
+[decision-105](/decisions/decision-105)), and it opens **when the work item starts**
+([issue-317](https://github.com/MadaraUchiha-314/the-loop/issues/317),
+[decision-107](/decisions/decision-107)): the moment a start is accepted — a `the-loop
+start` comment, [`the-loop sessions start`](/cli/commands/sessions), the control plane, or
+the poller starting an authorized author's item — the dispatcher asks the channel to open
+the **root** that names the work item (the ref, and an *Open on GitHub* button when the
+ref has a link), before the checkout and the harness boot, and posts nothing else. Every
+event is then a **reply** into it: the ask, the graph's notifications, the mirrored
+comments. A work item that already has a thread keeps it; a refused start opens nothing;
+if the channel is down at start time the failure is recorded (`channel.open_failed`) and
+the first event opens the root lazily instead. Opening is done once, under a lock on the
+channel's state file, so the agent's session, the daemons and the poll watcher cannot
+open two threads for one work item between them; a reply that fails is recorded
+(`channel.post_failed`) and never followed by a second root. A thread a member started
+that became a work item keeps being that work item's thread. `channels threads` is the
+listing (its `origin` column says `start`, `event` or `kickoff`); `channel.thread_opened`
+is the event.
 
 ## Notes
 

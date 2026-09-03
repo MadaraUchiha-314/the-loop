@@ -214,9 +214,10 @@ one bad ref in a list resets none of them. Nothing is posted to the ticket — t
 [comment keyword](/config/cli/routing-options#execution-control) applies, from the machine
 running the-loop:
 
-- **`start`** spawns through the same dispatcher the daemon uses — workspace checkout,
-  harness trust, tmux hosting, announcement — or resumes a paused session, and prints
-  the tmux target it spawned into.
+- **`start`** spawns through the same dispatcher the daemon uses — the work item's
+  [channel conversation](/cli/commands/channels#one-thread-per-work-item) opened first
+  (the Slack thread, issue-317), then workspace checkout, harness trust, tmux hosting,
+  announcement — or resumes a paused session, and prints the tmux target it spawned into.
 - **`pause`** holds events; the session keeps its conversation.
 - **`resume`** delivers events again.
 - **`stop`** takes the normal close path.

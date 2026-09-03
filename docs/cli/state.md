@@ -576,10 +576,12 @@ Three maps. `threads` binds a Slack thread to a work item — the reader's map: 
 transport iterates it, the socket transport looks a `thread_ts` up in it. `conversations`
 (since [issue-312](https://github.com/MadaraUchiha-314/the-loop/issues/312)) is keyed the
 other way, **work item → the one thread that carries it**: the channel id, the thread ts,
-when it was opened, how (`event`: the-loop opened a root for the first event it
-delivered; `kickoff`: a member's top-level message became the work item; `legacy`: a
-binding from before issue-312, derived from `threads` on load and written here on the
-next save) and the permalink Slack returned — this is what `the-loop channels threads`
+when it was opened, how (`start`: the-loop opened the root when the work item started,
+before any event — [issue-317](https://github.com/MadaraUchiha-314/the-loop/issues/317);
+`event`: the-loop opened a root for the first event it delivered; `kickoff`: a member's
+top-level message became the work item; `legacy`: a binding from before issue-312,
+derived from `threads` on load and written here on the next save) and the permalink Slack
+returned — this is what `the-loop channels threads`
 prints and what decides where a work item's next message goes. `cursors` records the last
 reply in each thread this deployment already recorded and delivered, plus one
 `channel:<id>` key per channel read for kickoffs (the newest top-level message already

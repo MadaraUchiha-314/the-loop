@@ -50,8 +50,10 @@ THREAD_CAP = 200
 
 #: How a conversation came to be bound: the-loop opened a root for an event;
 #: a member's top-level message became the work item (``work-item.create``);
-#: or the binding predates issue-312 and was derived from the thread map.
-CONVERSATION_ORIGINS: Tuple[str, ...] = ("event", "kickoff", "legacy")
+#: the binding predates issue-312 and was derived from the thread map; or
+#: the-loop opened the root when the work item **started** (issue-317) — before
+#: any event, on the dispatcher's spawn path.
+CONVERSATION_ORIGINS: Tuple[str, ...] = ("event", "kickoff", "legacy", "start")
 
 _LOCK_WARNED = False
 
