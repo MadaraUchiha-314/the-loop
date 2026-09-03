@@ -1,3 +1,9 @@
+## v13.2.0 (2026-09-03)
+
+### Feat
+
+- **issue-317**: the work item's channel conversation opens when the work item starts (#319)
+
 ## v13.1.1 (2026-09-02)
 
 ### Fix
