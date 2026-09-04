@@ -1,3 +1,9 @@
+## v13.3.0 (2026-09-04)
+
+### Feat
+
+- **issue-318**: the CLI loads the env file the CLI config names, at start (#320)
+
 ## v13.2.0 (2026-09-03)
 
 ### Feat
