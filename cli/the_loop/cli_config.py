@@ -29,9 +29,11 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Optional, Union
+from typing import Mapping, Optional, Union
 
 import yaml
+
+from . import envfile
 
 logger = logging.getLogger("the-loop.cli-config")
 
@@ -161,6 +163,77 @@ class ConfigHolder:
         fresh = self._reloader.poll_for_change()
         if fresh is not None:
             self.current = fresh
+
+
+def resolve_env_file(config: Mapping, config_path: Path) -> Optional[Path]:
+    """The env file ``config`` names (``env.file``), resolved; ``None`` when it names none.
+
+    A relative path is joined onto the **config file's directory**, not the working
+    directory (issue-318, decision-108 D2): the config is found in four places, two of
+    them outside any checkout, and "the file beside my config" is the one rule that reads
+    the same from all four. ``~`` is expanded. A wrong type is a warning and ``None`` —
+    the schema rejects it for the dashboard, but a hand-written file bypasses the schema,
+    and a list must not be ``str()``-ed into a path.
+    """
+    block = config.get("env")
+    if block is None:
+        return None
+    if not isinstance(block, Mapping):
+        envfile.logger.warning("env.file: `env` is not a mapping; no env file loaded")
+        return None
+    value = block.get("file")
+    if value is None or value == "":
+        return None
+    if not isinstance(value, str):
+        envfile.logger.warning("env.file must be a string path; no env file loaded")
+        return None
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = Path(config_path).parent / path
+    return path
+
+
+def load_env_file(
+    config_path: Optional[Union[str, Path]] = None,
+) -> Optional[envfile.LoadResult]:
+    """Load the env file the CLI config names into ``os.environ`` (issue-318).
+
+    Called **first** by every process entry point — ``cli.main``, ``daemon_entry.main``,
+    ``api.serve.main`` — so the variables are there before any command, daemon or
+    service reads the environment. The config is read **leniently** here, on purpose:
+    a parse error or a stale version loads nothing and leaves its refusal to the command
+    that reads the config proper, so ``migrate-config`` and ``--version`` keep working.
+    Never raises.
+    """
+    try:
+        path = (
+            Path(config_path) if config_path is not None else default_cli_config_path()
+        )
+        try:
+            # Strict, and silent about it: a missing or unparseable config is the
+            # command's to report once, not this loader's to report first.
+            data = _load_cli_config_raw(path, strict=True)
+        except Exception:  # noqa: BLE001 — FileNotFoundError, a YAMLError
+            return None
+        if data:
+            from .migrations import ConfigTooOld, assert_current
+
+            try:
+                assert_current(data)
+            except ConfigTooOld:
+                # The command will refuse this config and say why; a config the-loop
+                # is about to refuse must not have loaded secrets on the way.
+                envfile.logger.debug(
+                    "config %s predates the current version; no env file loaded", path
+                )
+                return None
+        resolved = resolve_env_file(data, path)
+        if resolved is None:
+            return None
+        return envfile.load(resolved, os.environ)
+    except Exception:  # noqa: BLE001 — a broken env file must not break the CLI
+        envfile.logger.warning("could not load the env file; continuing without it")
+        return None
 
 
 def load_routing_config(path: Optional[Union[str, Path]] = None) -> dict:

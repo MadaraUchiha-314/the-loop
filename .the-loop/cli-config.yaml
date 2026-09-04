@@ -28,6 +28,16 @@ version: "0.7.0"
 state:
   root: .the-loop
 
+# A .env file loaded when a the-loop process starts (issue-318): the file that
+# holds the values for the variables this config NAMES (secretEnv, botTokenEnv,
+# tokenEnv). Relative to this file's directory; never overrides a variable
+# already set; read once at start. Left unset here — this config is tracked
+# in git and the file is per-machine (a set path that is absent warns on every
+# run from this checkout). An operator running the-loop from this checkout
+# sets `file: .env` and keeps .the-loop/.env out of git.
+env:
+  file: ""
+
 webhooks:
   ghWebhook:
     host: 127.0.0.1

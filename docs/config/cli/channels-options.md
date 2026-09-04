@@ -97,6 +97,8 @@ The environment variable holding the bot token (`xoxb-…`, needing `chat:write`
 and `channels:history` to read). The config names the *variable*, the token is read from
 the environment **at call time**, and the value never appears in config, state files,
 `channels status` output or the event log.
+The variable can be set in the shell or in a `.env` file the config names
+([`env.file`](/config/cli/#env-file)), loaded when each process starts.
 
 ### `slack.appTokenEnv`
 

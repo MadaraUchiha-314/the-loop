@@ -92,7 +92,8 @@ the-loop start
 ```
 
 If the variable is unset, HMAC verification is not performed — anyone who can reach the
-port can post an event. Set it.
+port can post an event. Set it — in the shell, or in a `.env` file the config names
+([`env.file`](/config/cli/#env-file)), loaded before the receiver reads the variable.
 :::
 
 ## Event filter

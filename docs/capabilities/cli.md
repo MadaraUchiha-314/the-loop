@@ -348,6 +348,25 @@ self-learning/ML capabilities.
   one `degraded:` line per scope — and say in words when no scope answered — without
   changing its exit code.
 
+- The CLI config MAY name an **env file** (`env.file`, issue-318,
+  [decision-108](../decisions/decision-108.md)), and every the-loop process SHALL load
+  it into its own environment **first**, at start — the `the-loop` CLI before it builds
+  its parser, `python -m the_loop.daemon_entry` before the daemon runs, `python -m
+  the_loop.api.serve` before it reads the config proper — so the variables the config
+  names for its credentials (`secretEnv`, `botTokenEnv`, `tokenEnv`) are present before
+  anything reads them; the daemons and the service the CLI spawns inherit its
+  environment and load the file again on their own start. The file SHALL be read in
+  dotenv format by a stdlib parser (`the_loop.envfile`; no interpolation, no multi-line
+  values), a relative path SHALL resolve against the **config file's directory** with
+  `~` expanded, and a variable already set in the environment SHALL NOT be overwritten.
+  The config SHALL be read leniently for this purpose — a config the command will refuse
+  (stale version, parse error) loads nothing. A missing, unreadable or malformed file
+  SHALL be a warning naming the path, the line **number** or the error class — never a
+  value or a line's text — and the process SHALL continue; a file readable by group or
+  others SHALL be warned about and still loaded. The file is read once, at start, and
+  SHALL NOT be re-read on config reload. The SDK does not load it: an embedding host
+  owns its process environment.
+
 ## Design
 
 [CLI documentation](https://madarauchiha-314.github.io/the-loop/cli/) (source: [`docs/cli/`](../cli/)) ·
@@ -358,6 +377,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-318 | The CLI config names an env file (`env.file`) that every process entry point loads first, at start: a stdlib dotenv parser, config-relative resolution, the environment never overwritten, failures warned without a value | [spec](../specs/issue-318/), [decision-108](../decisions/decision-108.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/318) |
 | issue-315 | One repository's failure is that repository's (2026-09-02): the provider contract lists in scopes (`Listing`, `ScopeFailure`, `PollProvider.listing`/`scope_of`), the GitHub provider lists each repository on its own and keeps a per-repository quarantine for the one permanent condition (`gh`'s *has disabled issues* — issues skipped, pull requests still polled, re-probed every 60 cycles), the core records `poll.scope_error` / `poll.scope_degraded` / `poll.scope_recovered` and reconciles closures per scope, and the heartbeat's `scopesPolled` / `scopesFailed` / `scopesSkipped` become `the-loop status`'s `degraded:` lines. Before it, one repository with Issues disabled took every repository in the source down with it while `status` reported a healthy poller | [spec](../specs/issue-315/), [decision-106](../decisions/decision-106.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/315) |
 | issue-311 | Audited every `github.com` assumption and made the host the ref's everywhere (2026-09-02): one resolver (`ghhost.github_host` — `integrations.github.host`, an enterprise `api.baseUrl`, `$GH_HOST`, the checkout's origin remote, github.com) answers for refs minted from `ticketing.github` and for inner-loop `prRef`s; every `gh` writer and reader (`comments`, `reactions`, `linkage`, the poller's `GhClient`, both graph transports) spells the host through `comments.gh_host_args` / `[host/]owner/repo`; the API transport derives `https://<host>/api/v3` against the public default; the review brief accepts pull-request URLs on any host and puts slugs and bare numbers on the work item's; poll sources accept `[HOST/]OWNER/REPO` and own by host | [spec](../specs/issue-311/), [decision-104](../decisions/decision-104.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/311) |
 | issue-307 | `the-loop add-collaborator` / `remove-collaborator` join the CLI (2026-08-31), the terminal form of the two new control keywords: they write one work item's collaborator roster, post the same keyword and login back to the ticket self-marked, validate every login before writing any of them, and run in-process for the same reason `ask` does | [spec](../specs/issue-307/), [decision-102](../decisions/decision-102.md), [add-collaborator](../cli/commands/add-collaborator.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/307) |

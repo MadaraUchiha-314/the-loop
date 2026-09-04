@@ -100,6 +100,7 @@ sessions, tmux hosting, guards, prompts — and differ only in how events arrive
 # Needs an inbound route to your machine.
 # Enable it in the CLI config (webhooks.ghWebhook.enabled: true), then:
 export THE_LOOP_GH_WEBHOOK_SECRET='the same secret you gave GitHub'
+#   — or put it in a .env file the config names (env.file) and skip the export
 the-loop start
 
 # GitHub → repo Settings → Webhooks → Add:

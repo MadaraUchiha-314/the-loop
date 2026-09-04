@@ -57,6 +57,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     # caches the resolved path at import any more (issue-228): every module
     # resolves it per call, so the override needs no refresh step.
     cli_config.set_override(_peek_config_flag(argv))
+    # The env file the config names is loaded before the parser is built (issue-318):
+    # each command's add_arguments() reads the config for its defaults, and the
+    # daemons and the service this process spawns inherit what is set here.
+    cli_config.load_env_file()
     parser = build_parser()
     args = parser.parse_args(argv)
     handler = getattr(args, "_handler", None)

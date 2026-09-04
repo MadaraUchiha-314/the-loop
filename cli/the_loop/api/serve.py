@@ -20,7 +20,7 @@ import logging
 import sys
 
 from .. import eventlog
-from ..cli_config import default_cli_config_path, load_cli_config
+from ..cli_config import default_cli_config_path, load_cli_config, load_env_file
 from ..runlock import RunLock
 from .config import cors_config, is_loopback, service_config, service_pidfile
 
@@ -28,6 +28,9 @@ logger = logging.getLogger("the-loop.service")
 
 
 def main() -> int:
+    # The env file the config names, before the config proper (issue-318): the
+    # service may host the ingresses, which read the same secret variables.
+    load_env_file()
     config_path = default_cli_config_path()
     try:
         cli_config = load_cli_config(config_path)

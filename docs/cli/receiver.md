@@ -25,7 +25,10 @@ the-loop start
 ```
 
 The secret is read from the **environment**, never from a flag, so it cannot leak into a
-process listing — and never from the config file, so it cannot be committed.
+process listing — and never from the config file, so it cannot be committed. The
+environment can come from a file: name one in the config
+([`env.file`](/config/cli/#env-file)) and it is loaded when the process starts, before
+the receiver reads the variable — the config still names a path, never a value.
 
 ::: warning Unset means unverified
 With the variable unset the receiver starts, warns, and accepts unsigned deliveries. Anyone
