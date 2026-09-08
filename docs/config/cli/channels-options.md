@@ -165,16 +165,23 @@ typed on a channel without the grant does not reach the agent as prose either.
 | Grant | A message becomes it when | What happens |
 |-------|---------------------------|--------------|
 | `work-item.reply` | none of the below applies | mirrored onto the work item as the-loop's own marked comment (quoted, scrubbed, keywords defanged) and **delivered into the waiting session** — 12.1.0's behaviour, the default |
-| `gate.feedback` | the work item's graph is parked at a human gate | recorded on the ledger as an **unmarked** comment under your own credential, with the envelope and a visible "answer from `slack:U…`" attribution; the ledger's ingress then classifies it exactly as a typed approval, and the artifact's `approvedBy` names the person the envelope names |
+| `gate.feedback` | the work item's graph is parked at a human gate — or the pipeline **cannot tell** (no session record, no checkout, a read fault) | recorded on the ledger as an **unmarked** comment under your own credential, with the envelope and a visible "answer from `slack:U…`" attribution (a "reply from" when the gate could not be read); the ledger's ingress then classifies it exactly as a typed approval — with the graph it actually keeps — and the artifact's `approvedBy` names the person the envelope names |
 | `control.command` | the text carries a [control keyword](/config/cli/routing-options#execution-control) | recorded the same way, keyword intact; the ledger's ingress executes it through the same named-actor control seam |
 | `work-item.create` | the message is **top-level** in the configured channel | an issue is created in `kickoff.repo` with `kickoff.labels` — needs both the grant and the repo |
 
 The ordering (keyword → gate → reply) means an approval word inside a control comment
-never becomes a gate answer, and "not at a gate" — no session, no graph coupling — is
-the fail-closed direction: the message is a reply. A relayed gate answer or control
-keyword moves the loop on the ledger's **next ingress**: a webhook delivery, or one poll
-interval. A name the catalog does not mark publishable is ignored with a warning — a
-typo can never widen what a chat message may do.
+never becomes a gate answer. The gate is read through the dispatcher's own coupling —
+the same control policy, control store and registry the ingress reads with (issue-321,
+[decision-109](/decisions/decision-109)) — and the read has three answers. *At a gate*
+is a gate answer. *Not at a gate*, or `routing.graph.enabled: false`, is a reply with
+direct delivery. *Cannot tell* — no session record, a record with no checkout, a read
+fault — defers to the reader that can: with this grant the reply is recorded unmarked
+and the ledger's ingress judges it; without it the reply is the marked mirror it always
+was, so a channel that may not answer gates still never does. The event log says which
+(`channel.reply_received`, `gate: open | none | unknown`). A relayed gate answer or
+control keyword moves the loop on the ledger's **next ingress**: a webhook delivery, or
+one poll interval. A name the catalog does not mark publishable is ignored with a
+warning — a typo can never widen what a chat message may do.
 
 ### `slack.verbosity`
 

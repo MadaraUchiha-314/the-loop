@@ -1134,3 +1134,255 @@ def test_an_unknown_origin_is_coerced_to_event(tmp_path):
     state.save(_state_path(tmp_path))
     reloaded = ChannelState.load(_state_path(tmp_path))
     assert _conversation(reloaded, "github:o/r#7")["origin"] == "start"
+
+
+# -- issue-321: the gate the pipeline reads, and what "cannot tell" becomes ---------
+
+
+def _gate_config(tmp_path, **slack):
+    return cli_config(tmp_path, publish=["work-item.reply", "gate.feedback"], **slack)
+
+
+def _run(tmp_path, reply, config):
+    """``process_reply`` over ``config``; the caller patches the graph read."""
+    posts, deliveries = [], []
+
+    def post_comment(item, body, gh_binary="gh"):
+        posts.append((item.ref, body))
+        return True, "", "https://x/c1"
+
+    outcome = inbound.process_reply(
+        reply,
+        SlackChannelConfig.from_mapping(config),
+        config,
+        post_comment=post_comment,
+        deliver=lambda *a, **k: deliveries.append(a) or {"delivered": True},
+    )
+    return outcome, posts, deliveries
+
+
+def test_the_pipeline_reads_the_graph_through_the_dispatchers_own_coupling(tmp_path):
+    """R1.2 (issue-321): the drift guard. The reader's control config, control-store
+    root, allow-list, coupling config and registry directory are a ``Dispatcher``'s
+    built over the same config — the second construction that drifted was the bug."""
+    from the_loop.sessions import SessionRegistry
+    from the_loop.state import layout_from_config
+    from the_loop.webhook.dispatcher import Dispatcher, RoutingConfig
+
+    config = cli_config(tmp_path)
+    config["routing"]["control"] = {"requireStartCommand": True, "keywords": {}}
+    routing_cfg = RoutingConfig.from_mapping(
+        config["routing"], layout_from_config(config)
+    )
+    dispatcher = Dispatcher(
+        registry=SessionRegistry(routing_cfg.registry_dir),
+        adapters={},
+        config=routing_cfg,
+    )
+
+    routing, registry, link = inbound._graph_reader(config)
+
+    assert link.control == dispatcher.graphlink.control
+    assert link.control.enabled and link.control.require_start_command
+    assert link.control_store is not None
+    assert link.control_store.root == dispatcher.control_store.root
+    assert (
+        link.authorized_users == dispatcher.graphlink.authorized_users == ["gh-UHUMAN"]
+    )
+    assert link.config == dispatcher.graphlink.config
+    assert registry.root == dispatcher.registry.root
+    assert routing.registry_dir == routing_cfg.registry_dir
+    # A reader, not a driver: no sink the dispatcher's coupling carries.
+    assert link.assignment_sink is None and link.frozen_graph_sink is None
+
+
+def test_no_session_record_is_an_unknown_gate_not_a_closed_one(tmp_path):
+    """R1.3 (issue-321): with no record the pipeline cannot tell — ``None`` — while
+    an empty ref and a standing session are definite: nothing to relay onto."""
+    config = cli_config(tmp_path)
+    assert inbound._at_human_gate("github:o/r#7", config) is None
+    assert inbound._at_human_gate("", config) is False
+    assert inbound._at_human_gate("standing:review", config) is False
+
+
+def test_a_disabled_graph_coupling_means_no_gate_to_answer(tmp_path):
+    """R1.5 (issue-321): nothing drives a graph, so nothing is parked at a gate — the
+    reply keeps its direct delivery even with the grant."""
+    config = _gate_config(tmp_path)
+    config["routing"]["graph"] = {"enabled": False}
+    assert inbound._at_human_gate("github:o/r#7", config) is False
+
+    outcome, posts, deliveries = _run(tmp_path, a_reply(text="approved"), config)
+    assert outcome["event"] == "work-item.reply" and len(deliveries) == 1
+    assert is_self_authored(posts[0][1])
+
+
+def test_the_pipelines_read_moves_nothing(tmp_path, monkeypatch):
+    """A5 (issue-321): the reader calls the coupling's read-only ``context`` and
+    nothing else — never an advance, a spawn or a cleanup."""
+    from the_loop import graphlink
+    from the_loop.sessions import Session, WorkItemRef
+
+    config = cli_config(tmp_path)
+    ref = WorkItemRef.parse("github:o/r#7")
+    _, registry, _ = inbound._graph_reader(config)
+    registry.register(
+        Session(work_item=ref, harness="claude", harness_session_id="s", cwd="/nowhere")
+    )
+    calls = []
+
+    class Parked:
+        at_human_gate = True
+
+    monkeypatch.setattr(
+        graphlink.GraphLink,
+        "context",
+        lambda self, item, cwd: calls.append(("context", item.ref, cwd)) or Parked(),
+    )
+    for name in ("on_event", "on_spawn", "on_pr_event", "on_cleanup"):
+        monkeypatch.setattr(
+            graphlink.GraphLink,
+            name,
+            lambda self, *a, **k: (_ for _ in ()).throw(AssertionError(name)),
+        )
+    assert inbound._at_human_gate("github:o/r#7", config) is True
+    assert calls == [("context", "github:o/r#7", "/nowhere")]
+
+
+def test_a_graph_fault_is_cannot_tell(tmp_path, monkeypatch):
+    """R1.3 (issue-321): a read that raises is ``None``, never a closed gate."""
+    from the_loop.sessions import Session, WorkItemRef
+
+    config = cli_config(tmp_path)
+    ref = WorkItemRef.parse("github:o/r#7")
+    _, registry, _ = inbound._graph_reader(config)
+    registry.register(
+        Session(work_item=ref, harness="claude", harness_session_id="s", cwd="/nowhere")
+    )
+    monkeypatch.setattr(
+        "the_loop.graphlink.GraphLink.context",
+        lambda self, item, cwd: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+    assert inbound._at_human_gate("github:o/r#7", config) is None
+
+
+def test_an_unreadable_gate_defers_to_the_ledger_when_the_channel_may_answer_gates(
+    tmp_path, monkeypatch
+):
+    """R1.3, R2.2, A4 (issue-321): with the grant, "cannot tell" is an unmarked
+    ``gate.feedback`` record attributed as a *reply* — for the ledger's ingress to
+    judge — and the pipeline delivers nothing itself."""
+    from the_loop.channels.envelope import parse as parse_envelope
+
+    monkeypatch.setattr(inbound, "_at_human_gate", lambda ref, cfg: None)
+    outcome, posts, deliveries = _run(
+        tmp_path, a_reply(text="approved"), _gate_config(tmp_path)
+    )
+    assert outcome == {
+        "outcome": "processed",
+        "event": "gate.feedback",
+        "mirrored": True,
+    }
+    assert deliveries == []
+    body = posts[0][1]
+    assert not is_self_authored(body) and "approved" in body
+    assert "reply from" in body and "answer to the open gate" not in body
+    envelope = parse_envelope(body)
+    assert envelope is not None and envelope.type == "gate.feedback"
+    assert inbound.classify(a_reply(text="approved"), _gate_config(tmp_path)) == (
+        "work-item.reply"
+    )
+    assert (
+        inbound.classify(
+            a_reply(text="approved"), _gate_config(tmp_path), ["gate.feedback"]
+        )
+        == "gate.feedback"
+    )
+
+
+def test_an_unreadable_gate_without_the_grant_is_a_marked_reply_as_before(
+    tmp_path, monkeypatch
+):
+    """R1.4, A1 (issue-321): without the grant the grant still bounds what a message
+    may become — the marked mirror, direct delivery, the gate never sees it."""
+    monkeypatch.setattr(inbound, "_at_human_gate", lambda ref, cfg: None)
+    outcome, posts, deliveries = _run(
+        tmp_path, a_reply(text="approved"), cli_config(tmp_path)
+    )
+    assert outcome["event"] == "work-item.reply" and outcome["delivered"] is True
+    assert is_self_authored(posts[0][1])
+
+
+def test_a_graph_that_says_not_at_a_gate_keeps_the_reply_direct(tmp_path, monkeypatch):
+    """R1.6 (issue-321): a definite "no" is a reply whatever the grants."""
+    monkeypatch.setattr(inbound, "_at_human_gate", lambda ref, cfg: False)
+    outcome, posts, deliveries = _run(
+        tmp_path, a_reply(text="approved"), _gate_config(tmp_path)
+    )
+    assert outcome["event"] == "work-item.reply" and len(deliveries) == 1
+    assert is_self_authored(posts[0][1])
+
+
+def test_a_control_keyword_outranks_an_unreadable_gate(tmp_path, monkeypatch):
+    """R1.7, A3 (issue-321): keyword → gate → reply, whatever the read returns; the
+    graph is not even consulted for a keyword."""
+
+    def never(ref, cfg):
+        raise AssertionError("the graph must not be read for a control keyword")
+
+    monkeypatch.setattr(inbound, "_at_human_gate", never)
+    granted = _gate_config(tmp_path)
+    granted["channels"]["slack"]["publish"].append("control.command")
+    outcome, posts, deliveries = _run(tmp_path, a_reply(text="the-loop start"), granted)
+    assert outcome["event"] == "control.command" and deliveries == []
+    assert not is_self_authored(posts[0][1])
+
+    monkeypatch.setattr(inbound, "_at_human_gate", lambda ref, cfg: None)
+    outcome, posts, deliveries = _run(
+        tmp_path, a_reply(text="the-loop start"), _gate_config(tmp_path)
+    )
+    assert outcome == {"outcome": "unpublishable-event"}  # never a gate answer
+    assert posts == [] and deliveries == []
+
+
+def test_an_unlisted_member_is_dropped_before_the_gate_is_even_read(
+    tmp_path, monkeypatch
+):
+    """A2 (issue-321): authorization precedes classification — a stranger's
+    "approved" reads no graph and records nothing, grant or no grant."""
+
+    def never(ref, cfg):
+        raise AssertionError("the graph must not be read for an unlisted member")
+
+    monkeypatch.setattr(inbound, "_at_human_gate", never)
+    outcome, posts, deliveries = _run(
+        tmp_path,
+        a_reply(text="approved", author="UEVIL"),
+        _gate_config(tmp_path),
+    )
+    assert outcome == {"outcome": "unauthorized-actor"}
+    assert posts == [] and deliveries == []
+
+
+def test_the_reply_event_says_what_the_gate_read_returned(tmp_path, monkeypatch):
+    """R2.1 (issue-321): ``channel.reply_received`` carries ``gate`` — open, none or
+    unknown — so "why did my approval not lock the gate" has an answer."""
+    log = tmp_path / "events.jsonl"
+    eventlog.configure("test", path=log, enabled=True)
+    try:
+        for read in (True, False, None):
+            monkeypatch.setattr(inbound, "_at_human_gate", lambda ref, cfg, r=read: r)
+            _run(tmp_path, a_reply(text="approved"), _gate_config(tmp_path))
+    finally:
+        eventlog.reset()
+    received = [
+        json.loads(line)
+        for line in log.read_text().splitlines()
+        if '"channel.reply_received"' in line
+    ]
+    assert [(r["gate"], r["kind"]) for r in received] == [
+        ("open", "gate.feedback"),
+        ("none", "work-item.reply"),
+        ("unknown", "gate.feedback"),
+    ]
+    assert "approved" not in log.read_text()

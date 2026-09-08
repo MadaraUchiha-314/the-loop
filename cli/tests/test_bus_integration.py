@@ -531,3 +531,171 @@ def test_an_approve_button_press_enters_the_pipeline_as_that_members_reply(
     assert press("UHUMAN", "x", action_id="someone-elses:button") == {
         "outcome": "ignored"
     }
+
+
+# -- issue-321: the gate the pipeline reads is the gate the dispatcher reads ---------
+
+
+def _parked_checkout(root, ref, node="requirements-approval"):
+    """A checkout of ``ref``'s own repository with its graph parked at ``node``.
+
+    A real ``git init`` + ``origin``, because the coupling refuses to read a graph
+    in a checkout it cannot prove is the work item's (issue-113 A6) — the same
+    proof the dispatcher demands.
+    """
+    import subprocess
+
+    from the_loop.graph.state import GraphState
+
+    root.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(root),
+            "remote",
+            "add",
+            "origin",
+            f"https://github.com/{ref.owner}/{ref.repo}.git",
+        ],
+        check=True,
+    )
+    spec = root / "docs" / "specs" / f"issue-{ref.number}"
+    spec.mkdir(parents=True)
+    (spec / "execution-log.md").write_text("# Execution Log\n", encoding="utf-8")
+    (spec / "requirements.md").write_text(
+        "---\nstatus: draft\n---\n\n# R\n", encoding="utf-8"
+    )
+    state = GraphState.load(spec, f"issue-{ref.number}")
+    state.enter(node)
+    state.park(node, "awaiting an authorized human")
+    state.save(spec)
+    return root
+
+
+def _armed_session(config, ref, cwd):
+    """The daemon's own record of a running, armed session — through the same
+    ``RoutingConfig`` the daemons build theirs from."""
+    from the_loop.control import ControlStore
+    from the_loop.sessions import Session, SessionRegistry
+    from the_loop.state import layout_from_config
+    from the_loop.webhook.dispatcher import RoutingConfig
+
+    routing = RoutingConfig.from_mapping(config["routing"], layout_from_config(config))
+    SessionRegistry(routing.registry_dir).register(
+        Session(work_item=ref, harness="claude", harness_session_id="s1", cwd=str(cwd))
+    )
+    ControlStore(routing.portable_dir, legacy=routing.legacy).record(
+        ref, "start", actor=OPERATOR
+    )
+
+
+def test_an_approval_from_slack_reaches_the_gate_under_the_default_control_policy(
+    tmp_path, monkeypatch, slack
+):
+    """Scenario: An approval from Slack reaches the gate under the daemon's default
+    control policy
+
+    Given a work item whose graph is parked at requirements-approval in a checkout
+      of its own repository
+    And the daemon's registry records a session for it in that checkout
+    And an authorized user armed it (`start` recorded) under the default control
+      policy (enabled, requireStartCommand)
+    And its Slack thread is bound and the channel holds the gate.feedback grant
+    When the authorized member replies "approved" in the thread
+    Then the pipeline reads the gate the dispatcher reads — and NOT through a
+      graph read of its own that cannot see the control store
+    And the record is an unmarked gate.feedback comment the ledger's ingress
+      attributes to the person
+    And the pipeline delivers nothing itself
+    And the graph is untouched by the read
+
+    Requirement: docs/specs/issue-321/bugfix.md R1.1, R1.2, R1.8 (A5)
+    """
+    from the_loop.graph.state import GraphState
+    from the_loop.sessions import WorkItemRef
+
+    ref = WorkItemRef.parse("github:o/r#7")
+    checkout = _parked_checkout(tmp_path / "checkout", ref)
+    spec = checkout / "docs" / "specs" / "issue-7"
+    before = (spec / "graph-state.json").read_bytes()
+
+    records, deliveries = [], []
+    _ledger_writer(monkeypatch, records)
+    monkeypatch.setattr(
+        core_sessions,
+        "reply_session",
+        lambda *a, **k: deliveries.append(a) or {"delivered": True},
+    )
+    config = cli_config(tmp_path, publish=["work-item.reply", "gate.feedback"])
+    _armed_session(config, ref, checkout)
+    thread = _bound_thread(tmp_path, config, slack)
+    records.clear()
+    slack.replies[thread] = [{"ts": "1800.1", "user": "UHUMAN", "text": "approved"}]
+
+    summary = inbound.poll_once(config)
+
+    assert summary["processed"] == 1 and deliveries == []
+    body = records[0][1]
+    assert not is_self_authored(body), (
+        "an authorized approval must never wear the-loop's own marker (issue-321)"
+    )
+    assert _etype(body) == "gate.feedback" and "approved" in body
+    assert "answer to the open gate" in body
+    assert comments_from(
+        RoutedEvent(
+            event="issue_comment",
+            action="created",
+            delivery_id="d",
+            work_items=[],
+            payload={"comment": {"body": body, "user": {"login": OPERATOR}}},
+        ),
+        [OPERATOR],
+    ) == [{"author": OPERATOR, "body": body.strip()}]
+    assert (spec / "graph-state.json").read_bytes() == before
+    assert GraphState.load(spec, "issue-7").current_node == "requirements-approval"
+
+
+def test_a_reply_for_a_work_item_with_no_session_record_is_left_to_the_ledger(
+    tmp_path, monkeypatch, slack
+):
+    """Scenario: A reply for a work item with no session record is left to the ledger
+
+    Given a bound thread for a work item the daemon holds no session record for
+    And the channel holds the gate.feedback grant
+    When an authorized member replies "approved"
+    Then the pipeline cannot tell whether the item is at a gate
+    And the record is an unmarked gate.feedback comment, attributed as a reply —
+      for the ledger's ingress to judge with the graph it keeps
+    And the pipeline delivers nothing itself
+    When the channel holds only the default grant
+    Then the same reply is the marked mirror it always was
+
+    Requirement: docs/specs/issue-321/bugfix.md R1.3, R1.4, R2.2 (A1)
+    """
+    records, deliveries = [], []
+    _ledger_writer(monkeypatch, records)
+    monkeypatch.setattr(
+        core_sessions,
+        "reply_session",
+        lambda *a, **k: deliveries.append(a) or {"delivered": True},
+    )
+    config = cli_config(tmp_path, publish=["work-item.reply", "gate.feedback"])
+    thread = _bound_thread(tmp_path, config, slack)
+    records.clear()
+    slack.replies[thread] = [{"ts": "1800.1", "user": "UHUMAN", "text": "approved"}]
+
+    assert inbound.poll_once(config)["processed"] == 1
+    assert deliveries == []
+    body = records[0][1]
+    assert not is_self_authored(body) and _etype(body) == "gate.feedback"
+    assert "reply from" in body and "answer to the open gate" not in body
+
+    records.clear()
+    plain = cli_config(tmp_path)  # publish defaults to [work-item.reply]
+    slack.replies[thread] = [{"ts": "1800.2", "user": "UHUMAN", "text": "approved"}]
+    assert inbound.poll_once(plain)["delivered"] == 1
+    assert (
+        is_self_authored(records[0][1]) and _etype(records[0][1]) == "work-item.reply"
+    )

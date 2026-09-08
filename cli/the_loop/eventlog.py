@@ -314,8 +314,10 @@ EVENT_TYPES: Dict[str, str] = {
     ),
     "channel.reply_received": (
         "An authorized reply arrived through a channel and entered the "
-        "pipeline (channel, work_item, actor: the channel-native member id). "
-        "Payloads carry ids, never message text."
+        "pipeline (channel, work_item, actor: the channel-native member id, "
+        "kind: the event type it became, gate: open | none | unknown — what "
+        "the graph read returned, issue-321). Payloads carry ids, never "
+        "message text."
     ),
     "channel.dropped": (
         "An inbound channel message was not processed (reason: unmapped | "

@@ -64,7 +64,10 @@ elsewhere **first** — the ask's record *is* the question comment. What a messa
 channel may become is the channel's `publish` grant: session input by default
 (`work-item.reply`: mirrored onto the work item as the-loop's own marked, defanged
 comment, then delivered into the waiting session); by grant, an answer to an open human
-gate (`gate.feedback`) or a control keyword (`control.command`) — both recorded on the
+gate (`gate.feedback` — read through the dispatcher's own graph coupling, and, when the
+pipeline cannot read the gate at all, deferred to the ledger under the same grant rather
+than mirrored where the gate never looks; issue-321) or a control keyword
+(`control.command`) — both recorded on the
 ledger as an **unmarked** comment under the operator's credential, carrying an envelope
 that names the person, so the ledger's own ingress classifies or executes it through the
 guards a typed comment goes through and the artifact's `approvedBy` names the person; or
