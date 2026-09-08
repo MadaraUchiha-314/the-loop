@@ -1,3 +1,9 @@
+## v13.3.1 (2026-09-08)
+
+### Fix
+
+- **issue-321**: a channel's gate answer is read through the dispatcher's coupling and never hidden from the gate (#323)
+
 ## v13.3.0 (2026-09-04)
 
 ### Feat
