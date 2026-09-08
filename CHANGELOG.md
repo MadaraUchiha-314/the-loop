@@ -1,3 +1,9 @@
+## v13.5.0 (2026-09-08)
+
+### Feat
+
+- **issue-325**: the Slack channel acknowledges an accepted reply with a reaction on the reply itself (#326)
+
 ## v13.4.0 (2026-09-08)
 
 ### Feat
