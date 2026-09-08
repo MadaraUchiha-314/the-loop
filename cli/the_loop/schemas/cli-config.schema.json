@@ -37,6 +37,44 @@
         }
       }
     },
+    "instance": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "This instance of the-loop: its identity and the work items it manages (issue-322). Several instances can watch one repository, each in its own environment (a machine, a container, a checkout root \u2014 the-loop's concern stops at the session); this block says which one THIS config is and how new work items reach it. Unset: an unnamed, open instance, which behaves exactly as before the block existed. Hot-reloaded with the rest of the config, so a scope edit is live without a restart. The managed set is derived, never kept: the declared list below, plus every work item this instance holds a live session record or a control record for.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "default": "",
+          "pattern": "^$|^[a-z0-9][a-z0-9-]{0,39}$",
+          "description": "The instance's name: lowercase letters, digits and hyphens, not starting with a hyphen, at most 40 characters (the standing-session grammar) \u2014 narrow because it is interpolated into a tmux argv (`-e THE_LOOP_INSTANCE=<name>`, so a spawned session can derive a port or a container name from it) and into the comments the CLI posts (`the-loop start instance:<name>`). Empty: unnamed \u2014 nothing can address it, and `scope.mode: addressed` resolves to `locked`. A name outside the grammar is warned about and treated as unset."
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "How a work item this instance does not yet manage reaches it. A work item it already manages \u2014 declared here, or with a session or control record on this instance \u2014 is handled in every mode exactly as before.",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "open",
+                "addressed",
+                "locked"
+              ],
+              "default": "open",
+              "description": "`open` (default): any armed, authorized start is taken \u2014 the pre-issue-322 behaviour, and the reason a lone instance that names itself changes nothing; two OPEN instances on one repository both take the same start. `addressed`: a new work item is taken only when the comment names this instance (`the-loop start instance:<name>`), or when `the-loop sessions start` is run on it \u2014 the steady state for several instances. `locked`: nothing new is taken, addressed or not; editing `workItems` is the only door. An address to ANOTHER instance is authoritative in every mode: this instance drops the event even for a work item it manages. A value the daemon does not know is warned about and resolves to `locked`, never to `open`. Every drop is a `dispatch.dropped` (or, for an authorized command, a `control.rejected`) in the event log with the reason \u2014 `unaddressed`, `instance-locked`, `addressed-elsewhere`, `ambiguous-address` \u2014 and leaves no reaction, comment or record: another instance may own the work item."
+            },
+            "workItems": {
+              "type": "array",
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "description": "Work items this instance manages by declaration, each a `<provider>:[<host>/]<owner>/<repo>#<n>` ref (`github:octo/repo#15`) or a GitHub issue / pull-request URL. The way into a `locked` instance, and a pre-address on an `addressed` one: an unaddressed start on a declared work item is taken. An entry that does not parse is warned about by position and skipped. A work item declared on two instances is managed by both \u2014 that is your declaration, honoured."
+            }
+          }
+        }
+      }
+    },
     "webhooks": {
       "type": "object",
       "description": "Config for the the-loop CLI webhook receiver(s), started by `the-loop start` when `ghWebhook.enabled` is true (issue-228).",

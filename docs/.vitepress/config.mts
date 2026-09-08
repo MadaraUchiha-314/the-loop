@@ -97,6 +97,7 @@ const cliSidebar = [
       { text: "State on disk", link: "/cli/state" },
       { text: "The control-plane service", link: "/cli/service" },
       { text: "The webhook receiver", link: "/cli/receiver" },
+      { text: "Running several instances", link: "/cli/instances" },
     ],
   },
   {
@@ -165,6 +166,7 @@ const configSidebar = [
     text: "CLI config",
     items: [
       { text: "Configuring the CLI", link: "/config/cli/" },
+      { text: "Instance options", link: "/config/cli/instance-options" },
       { text: "Webhook options", link: "/config/cli/webhook-options" },
       { text: "Routing options", link: "/config/cli/routing-options" },
       { text: "Standing-session options", link: "/config/cli/standing-sessions-options" },

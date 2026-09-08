@@ -109,7 +109,8 @@ item itself.
     "source": "comment",
     "actor": "octocat",
     "requestedAt": "2026-07-31T09:11:58Z",
-    "note": ""
+    "note": "",
+    "instance": "laptop-b"
   },
   "poll": {
     "seenComments": ["2451…", "2452…"],
@@ -184,6 +185,7 @@ ingress's refs.
 | `source` | `comment` (a keyword on the ticket) or `cli` (`the-loop sessions …`) |
 | `actor` | the GitHub login that asked |
 | `requestedAt` | when |
+| `instance` | which [instance](/cli/instances) of the-loop recorded it (issue-322) — `""` for an unnamed instance, and for every record written before the field existed |
 
 Written when a control keyword is accepted (from either ingress) or a
 `sessions start|stop|pause|resume|cleanup` runs; cleared when the work item ends. It answers one

@@ -221,6 +221,7 @@ Everything else takes its default. Build up from here with the option pages belo
 
 | Page | Block |
 |------|-------|
+| [Instance options](/config/cli/instance-options) | `instance` — which instance of the-loop this config is, and the work items it manages |
 | [Webhook options](/config/cli/webhook-options) | `webhooks.ghWebhook` — bind address, path, HMAC secret, event filter |
 | [Routing options](/config/cli/routing-options) | `routing` — who may trigger, what spawns, how sessions are hosted |
 | [Standing-session options](/config/cli/standing-sessions-options) | `standingSessions` — the sessions the-loop keeps for itself, which belong to no work item |

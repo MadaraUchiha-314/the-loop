@@ -10,12 +10,18 @@ the-loop status [--format text|json]
 
 ```console
 $ the-loop status
+instance    laptop-b [addressed] — 2 declared, 5 managed
 service     running (pid 24846) [enabled] — http://127.0.0.1:4114, healthy
 gh-webhook  not running [disabled]
 poller      running (pid 24913) [enabled]
             started:    2026-08-14T20:41:12Z (2m ago)
             last cycle: 2026-08-14T20:43:02Z (10s ago) — 5 item(s), 1 spawn(s), 0 comment(s) forwarded
 ```
+
+The first line is the [instance](/cli/instances) this config is (issue-322): its name (or
+`(unnamed)`), its scope mode, how many work items it declares and how many it manages in
+all. `--format json` carries the whole document as `instance` — the same one
+`GET /api/v1/instance` serves.
 
 An ingress running [inside the service](/config/cli/service-options#hostingresses)
 (issue-231) says so — same lock-based liveness, its lock is simply held by the

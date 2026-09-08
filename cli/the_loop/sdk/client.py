@@ -34,6 +34,7 @@ from ..core import config as core_config
 from ..core import daemons as core_daemons
 from ..core import events as core_events
 from ..core import graphs as core_graphs
+from ..core import instance as core_instance
 from ..core import lifecycle as core_lifecycle
 from ..core import repo as core_repo
 from ..core import sessions as core_sessions
@@ -465,6 +466,15 @@ class TheLoop:
         executed. See :mod:`the_loop.sdk.environment`.
         """
         return check_environment(self.config)
+
+    def instance(self) -> Dict[str, Any]:
+        """This instance's identity and managed set (issue-322).
+
+        The same document ``GET /api/v1/instance`` serves: the name, the scope mode,
+        the declared work items and every work item the instance manages with the
+        source of each — the seam a manager of several instances aggregates across.
+        """
+        return core_instance.describe_instance(self.config)
 
     def status(self) -> Dict[str, Any]:
         """Per-service status of the *standalone* deployment this config describes.

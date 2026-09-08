@@ -204,3 +204,41 @@ def test_a_failed_upgrade_never_leaves_the_system_down(tmp_path, monkeypatch):
     )
     assert main(["restart", "--with-upgrade"]) == 1
     assert order == ["stop", "upgrade", "start"]
+
+
+def test_status_prints_the_instance_line(tmp_path, monkeypatch, capsys):
+    """
+    Feature: `the-loop status`
+    Scenario: the instance line (issue-322)
+        Given a status report carrying the instance document
+        When `the-loop status` runs in text form
+        Then the first line names the instance, its mode and the sizes of its
+             declared and managed sets
+    Requirement: docs/specs/issue-322/requirements.md R4.5
+    """
+    monkeypatch.chdir(tmp_path)
+    report = {
+        "services": [],
+        "instance": {
+            "name": "laptop-b",
+            "scope": {"mode": "addressed", "workItems": ["github:octo/repo#15"]},
+            "managed": [
+                {"ref": "github:octo/repo#15", "sources": ["declared"]},
+                {"ref": "github:octo/repo#16", "sources": ["session"]},
+            ],
+        },
+        "ok": True,
+    }
+    monkeypatch.setattr(lifecycle, "status_all", lambda config: report)
+    assert main(["status"]) == 0
+    first = capsys.readouterr().out.splitlines()[0]
+    assert first == "instance    laptop-b [addressed] — 1 declared, 2 managed"
+
+    report["instance"] = {
+        "name": "",
+        "scope": {"mode": "open", "workItems": []},
+        "managed": [],
+    }
+    assert main(["status"]) == 0
+    first = capsys.readouterr().out.splitlines()[0]
+    assert first == "instance    (unnamed) [open] — 0 declared, 0 managed"

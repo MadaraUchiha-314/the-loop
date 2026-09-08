@@ -26,6 +26,7 @@ You want the CLI when you stop driving the loop by hand:
 | Answer "why did nothing happen?" | [`events`](/cli/commands/events) |
 | Gate CI on a work item's own phase rules | [`check`](/cli/commands/check) |
 | Hand a review round to a *different* model | [`critic`](/cli/commands/critic) |
+| Run more than one the-loop against a repository, each with its own work items | the [`instance`](/config/cli/instance-options) block — see [running several instances](/cli/instances) |
 
 ## What it is
 

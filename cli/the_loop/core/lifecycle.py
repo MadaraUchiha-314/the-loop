@@ -37,6 +37,7 @@ from ..daemonize import open_logfile
 from ..runlock import RunLock
 from ..state import layout_from_config
 from . import daemons as core_daemons
+from . import instance as core_instance
 from . import standing as core_standing
 
 #: Start order. The service first, so anything the daemons spawn can reach it;
@@ -425,6 +426,9 @@ def status_all(config: Optional[dict] = None) -> Dict[str, Any]:
     return {
         "services": rows,
         "standingSessions": standing["sessions"],
+        # Which instance this is and what it manages (issue-322) — the same
+        # document `GET /api/v1/instance` serves.
+        "instance": core_instance.describe_instance(config),
         "ok": ok and standing["ok"],
     }
 

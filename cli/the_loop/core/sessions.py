@@ -41,6 +41,7 @@ from ..control import (
     command_comment,
 )
 from ..harness import ClaudeCodeAdapter, CursorAgentAdapter
+from ..instance import INSTANCE_LOCKED, LOCKED, InstanceConfig
 from ..runner import TmuxRunner
 from ..sessions.registry import RegistryError, Session, SessionRegistry
 from ..state import layout_from_config, legacy_layout
@@ -96,6 +97,17 @@ def _tmux_config(config: Optional[dict] = None) -> TmuxConfig:
 
 def _control_config(config: Optional[dict] = None) -> ControlConfig:
     return ControlConfig.from_mapping(_routing(config).get("control") or {})
+
+
+def _instance(config: Optional[dict]) -> InstanceConfig:
+    """This instance's identity (issue-322), read as the dispatcher reads it."""
+    from .instance import instance_config
+
+    return (
+        instance_config(config)
+        if config
+        else InstanceConfig.from_mapping(_routing(config).get("_instance") or {})
+    )
 
 
 def _local_actor() -> str:
@@ -914,14 +926,51 @@ def control_session(
     store = _control_store(config, portable_dir)
     actor = _local_actor()
     messages: List[Dict[str, str]] = []
+    instance = _instance(config)
+
+    # A start typed ON an instance is addressed to it (issue-322 R2.7) — except on
+    # a locked one, whose only door is the config: refused before anything is
+    # recorded or posted, so nothing stands and nothing is said on the ticket.
+    if (
+        verb == START
+        and instance.mode == LOCKED
+        and not _managed_here(work_item, instance, registry_dir, store)
+    ):
+        messages.append(
+            {
+                "stream": "err",
+                "text": (
+                    f"error: this instance ({instance.name or 'unnamed'}) is locked "
+                    f"and does not manage {work_item.ref}; declare it under "
+                    "instance.scope.workItems in cli-config.yaml to add it"
+                ),
+            }
+        )
+        eventlog.emit(
+            "control.rejected",
+            level="warning",
+            work_items=[work_item.ref],
+            command=verb,
+            source="cli",
+            actor=actor,
+            reason=INSTANCE_LOCKED,
+        )
+        return {
+            "verb": verb,
+            "workItem": work_item.ref,
+            "effect": INSTANCE_LOCKED,
+            "exitCode": 1,
+            "messages": messages,
+            "output": "\n".join(m["text"] for m in messages),
+        }
 
     if verb in (PAUSE, STOP, CLEANUP):
-        store.record(work_item, verb, source="cli", actor=actor)
+        store.record(work_item, verb, source="cli", actor=actor, instance=instance.name)
 
     effect, code = _apply(verb, work_item, config, registry_dir, portable_dir, messages)
 
     if verb in (START, RESUME) and effect in ("resumed", "running"):
-        store.record(work_item, verb, source="cli", actor=actor)
+        store.record(work_item, verb, source="cli", actor=actor, instance=instance.name)
 
     eventlog.emit(
         "control.command",
@@ -943,6 +992,20 @@ def control_session(
         # Kept for callers that only rendered the flat text before.
         "output": "\n".join(m["text"] for m in messages),
     }
+
+
+def _managed_here(
+    work_item: WorkItemRef,
+    instance: InstanceConfig,
+    registry_dir: str,
+    store: ControlStore,
+) -> bool:
+    """The dispatcher's managed-set reading (design §3), for the CLI path."""
+    if instance.declares(work_item.ref):
+        return True
+    if SessionRegistry(registry_dir).record_owning(work_item) is not None:
+        return True
+    return store.get(work_item) is not None
 
 
 def _apply(
@@ -1146,7 +1209,13 @@ def _spawn_for_start(
         dispatcher.stop(timeout=5)
         return "rejected", 1
 
-    store.record(work_item, START, source="cli", actor=_local_actor())
+    store.record(
+        work_item,
+        START,
+        source="cli",
+        actor=_local_actor(),
+        instance=_instance(config).name,
+    )
     routed = RoutedEvent(
         event="issues",
         action="control-start",
@@ -1206,7 +1275,7 @@ def _announce(
     config = _control_config(cli_conf)
     ok, error = post_issue_comment(
         work_item,
-        command_comment(verb, config, actor=actor),
+        command_comment(verb, config, actor=actor, address=_instance(cli_conf).name),
         gh_binary=config.gh_binary,
     )
     if ok:

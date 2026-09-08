@@ -321,6 +321,7 @@ def command_comment(
     actor: str = "",
     subject: str = "",
     invocation: str = "",
+    address: str = "",
 ) -> str:
     """The comment body the CLI posts for a control action (issue-106 R4.2).
 
@@ -339,9 +340,18 @@ def command_comment(
     ``invocation`` names the CLI form to quote; it defaults to
     ``the-loop sessions <command>``, which is right for the session verbs and
     wrong for the two top-level collaborator ones.
+
+    ``address`` is the posting **instance's** name (issue-322): a named instance
+    adds ``instance:<name>`` to the keyword line so the thread says which
+    instance acted. Every instance — this one included — ignores the comment
+    through the self-authored marker; the token is for the humans and for a
+    future manager reading the thread. Like ``subject``, it is a value the
+    caller validated (``instance.NAME_RE``), never text from an event.
     """
     keyword = config.keyword(command) or command
     line = f"{keyword} @{subject}" if subject else keyword
+    if address:
+        line = f"{line} instance:{address}"
     who = f" by `{actor}`" if actor else ""
     invocation = invocation or f"the-loop sessions {command}"
     return mark_self_authored(
@@ -363,6 +373,11 @@ class ControlRecord:
     actor: str = ""
     requested_at: str = ""
     note: str = ""  # e.g. the comment url
+    # Which instance of the-loop recorded it (issue-322) — "" for an unnamed
+    # instance and for every record written before the field existed. The
+    # portable record travels; this is how a reader elsewhere (a future manager)
+    # learns who took the work item.
+    instance: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -372,6 +387,7 @@ class ControlRecord:
             "actor": self.actor,
             "requestedAt": self.requested_at,
             "note": self.note,
+            "instance": self.instance,
         }
 
     @classmethod
@@ -383,6 +399,7 @@ class ControlRecord:
             actor=str(data.get("actor") or ""),
             requested_at=str(data.get("requestedAt") or ""),
             note=str(data.get("note") or ""),
+            instance=str(data.get("instance") or ""),
         )
 
 
@@ -448,6 +465,7 @@ class ControlStore:
         source: str = "comment",
         actor: str = "",
         note: str = "",
+        instance: str = "",
     ) -> ControlRecord:
         """Persist ``command`` as the work item's current control state."""
         if command not in COMMANDS:
@@ -460,6 +478,7 @@ class ControlStore:
             actor=actor,
             requested_at=_utcnow(),
             note=note,
+            instance=instance,
         )
         self.store.write_section(item, CONTROL, record.to_dict())
         logger.info(

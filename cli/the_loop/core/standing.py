@@ -113,7 +113,13 @@ def _tmux_config(config: Optional[dict]) -> TmuxConfig:
 
 
 def _runner(config: Optional[dict]) -> TmuxRunner:
-    return TmuxRunner(remain_on_exit=_tmux_config(config).remain_on_exit)
+    from .instance import instance_config
+
+    return TmuxRunner(
+        remain_on_exit=_tmux_config(config).remain_on_exit,
+        # A standing session on a named instance knows its instance too (issue-322).
+        instance=instance_config(config).name,
+    )
 
 
 def _local_actor() -> str:

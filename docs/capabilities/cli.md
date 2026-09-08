@@ -12,6 +12,13 @@ self-learning/ML capabilities.
 ## Current behaviour
 
 - The CLI SHALL register commands via an extensible registry (`the_loop.commands`).
+- The CLI config MAY name the **instance** it is (issue-322, `instance`): `the-loop
+  status` SHALL print one line naming the instance (or `(unnamed)`), its scope mode and
+  the sizes of its declared and managed sets, and SHALL carry the full instance document
+  in `--format json`; `the-loop sessions start` on a `locked` instance SHALL refuse a work
+  item outside its managed set with exit code 1 before recording or posting anything; and
+  every keyword the CLI posts back to a ticket SHALL carry `instance:<name>` when the
+  instance is named. See [instances](instances.md).
 - The CLI SHALL have **exactly one** runtime dependency, `pyyaml>=6`, and be stdlib
   otherwise. PyYAML is REQUIRED, not an extra: the CLI config, the harness config and
   every default the daemons read are YAML, so a missing parser used to degrade each
@@ -377,6 +384,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-322 | The CLI config names the **instance** it is (`instance.name`, `instance.scope.mode`, `instance.scope.workItems`), `the-loop status` prints one line naming it with its mode and the size of its managed set (and carries the whole document as `instance` in JSON), `the-loop sessions start` on a `locked` instance is refused before anything is recorded or posted, and the keyword the CLI posts back carries `instance:<name>` on a named instance | [spec](../specs/issue-322/), [decision-110](../decisions/decision-110.md), [instances](instances.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/322) |
 | issue-318 | The CLI config names an env file (`env.file`) that every process entry point loads first, at start: a stdlib dotenv parser, config-relative resolution, the environment never overwritten, failures warned without a value | [spec](../specs/issue-318/), [decision-108](../decisions/decision-108.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/318) |
 | issue-315 | One repository's failure is that repository's (2026-09-02): the provider contract lists in scopes (`Listing`, `ScopeFailure`, `PollProvider.listing`/`scope_of`), the GitHub provider lists each repository on its own and keeps a per-repository quarantine for the one permanent condition (`gh`'s *has disabled issues* — issues skipped, pull requests still polled, re-probed every 60 cycles), the core records `poll.scope_error` / `poll.scope_degraded` / `poll.scope_recovered` and reconciles closures per scope, and the heartbeat's `scopesPolled` / `scopesFailed` / `scopesSkipped` become `the-loop status`'s `degraded:` lines. Before it, one repository with Issues disabled took every repository in the source down with it while `status` reported a healthy poller | [spec](../specs/issue-315/), [decision-106](../decisions/decision-106.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/315) |
 | issue-311 | Audited every `github.com` assumption and made the host the ref's everywhere (2026-09-02): one resolver (`ghhost.github_host` — `integrations.github.host`, an enterprise `api.baseUrl`, `$GH_HOST`, the checkout's origin remote, github.com) answers for refs minted from `ticketing.github` and for inner-loop `prRef`s; every `gh` writer and reader (`comments`, `reactions`, `linkage`, the poller's `GhClient`, both graph transports) spells the host through `comments.gh_host_args` / `[host/]owner/repo`; the API transport derives `https://<host>/api/v3` against the public default; the review brief accepts pull-request URLs on any host and puts slugs and bare numbers on the work item's; poll sources accept `[HOST/]OWNER/REPO` and own by host | [spec](../specs/issue-311/), [decision-104](../decisions/decision-104.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/311) |
