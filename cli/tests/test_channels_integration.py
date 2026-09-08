@@ -8,6 +8,7 @@ faked: the Slack SDK client (injected factory), the GitHub comment writer
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 
@@ -22,6 +23,7 @@ from the_loop.core import sessions as core_sessions
 class FakeSlackClient:
     def __init__(self):
         self.posted = []
+        self.reactions = []  # (channel, ts, name) — issue-325
         self.replies = {}
         self.history = []  # top-level messages, for the kickoff read
 
@@ -39,6 +41,10 @@ class FakeSlackClient:
 
     def auth_test(self):
         return {"ok": True, "user_id": "UBOT"}
+
+    def reactions_add(self, *, channel, name, timestamp):
+        self.reactions.append((channel, timestamp, name))
+        return {"ok": True}
 
 
 def cli_config(tmp_path, authorized=("UHUMAN",), **slack):
@@ -881,3 +887,163 @@ def test_a_channel_outage_never_fails_the_spawn(tmp_path, monkeypatch):
     assert len(client.posted) == 2  # the root, then the ask as its first reply
     record = ChannelState.load(state_path).conversation(START_REF)
     assert record is not None and record["origin"] == "event"
+
+
+# -- issue-325: the acknowledgment on the Slack message itself ------------------------
+
+
+def test_an_accepted_reply_is_acknowledged_on_the_reply_itself(tmp_path, monkeypatch):
+    """Scenario: An accepted Slack reply is acknowledged on the reply itself
+
+    Given a bound Slack thread for a work item with a waiting session
+    When an authorized member replies in the thread and a poll cycle runs
+    Then the reply's own message carries the received reaction before the record
+    And the completed reaction once the reply is recorded and delivered
+    And the ticket record and the session delivery are exactly as before
+
+    Requirement: docs/specs/issue-325/requirements.md R1.1, R1.2, R1.5
+    """
+    client = FakeSlackClient()
+    config = cli_config(tmp_path)
+    seeded_thread(tmp_path, monkeypatch, client, config)
+    mirrors, deliveries = [], []
+    monkeypatch.setattr(
+        "the_loop.comments.post_issue_comment_with_url",
+        lambda item, body, gh_binary="gh": mirrors.append(body) or (True, "", ""),
+    )
+    monkeypatch.setattr(
+        core_sessions,
+        "reply_session",
+        lambda ref, text, actor="", comment=True, config=None: (
+            deliveries.append(actor) or {"delivered": True}
+        ),
+    )
+
+    summary = inbound.poll_once(config, client_factory=lambda token: client)
+    assert summary["processed"] == 1 and summary["delivered"] == 1
+    assert len(mirrors) == 1 and deliveries == ["slack:UHUMAN"]
+    assert client.reactions == [
+        ("C123", "1800.1", "eyes"),
+        ("C123", "1800.1", "white_check_mark"),
+    ]
+    # Cursor semantics are untouched: a second cycle sees nothing, reacts to nothing.
+    inbound.poll_once(config, client_factory=lambda token: client)
+    assert len(client.reactions) == 2
+
+
+def test_a_socket_message_and_a_button_press_are_acknowledged(tmp_path, monkeypatch):
+    """Scenario: A button press is acknowledged on the message carrying the button
+
+    Given a bound thread on a channel reading over Socket Mode with the gate grant
+    When a message event arrives over Socket Mode
+    Then the message itself is acknowledged received then completed
+    When an authorized member presses Approve on a message in that thread
+    Then the message carrying the button is acknowledged, not the press's own ts
+
+    Requirement: docs/specs/issue-325/requirements.md R1.1, R1.2, R1.5
+    """
+    client = FakeSlackClient()
+    config = cli_config(
+        tmp_path,
+        publish=["work-item.reply", "gate.feedback"],
+        read={"mode": "socket"},
+    )
+    thread = seeded_thread(tmp_path, monkeypatch, client, config)
+    monkeypatch.setattr(
+        "the_loop.comments.post_issue_comment_with_url",
+        lambda item, body, gh_binary="gh": (True, "", ""),
+    )
+    monkeypatch.setattr(
+        core_sessions,
+        "reply_session",
+        lambda ref, text, actor="", comment=True, config=None: {"delivered": True},
+    )
+    monkeypatch.setattr(inbound, "_at_human_gate", lambda ref, cfg: False)
+
+    outcome = inbound.handle_socket_event(
+        {
+            "type": "message",
+            "channel": "C123",
+            "thread_ts": thread,
+            "ts": "1800.9",
+            "user": "UHUMAN",
+            "text": "go with A",
+        },
+        config,
+        client_factory=lambda token: client,
+    )
+    assert outcome["outcome"] == "processed"
+    assert client.reactions == [
+        ("C123", "1800.9", "eyes"),
+        ("C123", "1800.9", "white_check_mark"),
+    ]
+
+    client.reactions.clear()
+    monkeypatch.setattr(inbound, "_at_human_gate", lambda ref, cfg: True)
+    outcome = inbound.handle_socket_action(
+        {
+            "type": "block_actions",
+            "user": {"id": "UHUMAN"},
+            "channel": {"id": "C123"},
+            "message": {"ts": "1750.5", "thread_ts": thread},
+            "container": {"message_ts": "1750.5", "thread_ts": thread},
+            "actions": [{"action_id": "the-loop:approve", "value": "approved"}],
+            "action_ts": "1900.1",
+        },
+        config,
+        client_factory=lambda token: client,
+    )
+    assert outcome["outcome"] == "processed" and outcome["event"] == "gate.feedback"
+    assert client.reactions == [
+        ("C123", "1750.5", "eyes"),
+        ("C123", "1750.5", "white_check_mark"),
+    ]
+
+
+def test_a_slack_that_refuses_the_reaction_never_fails_the_delivery(
+    tmp_path, monkeypatch
+):
+    """Scenario: A Slack that refuses the reaction never fails the delivery
+
+    Given a bound thread and a bot token without the reactions:write scope
+    When an authorized reply arrives and a poll cycle runs
+    Then the reply is recorded and delivered exactly as before
+    And each refused reaction is one channel.reaction_failed event
+
+    Requirement: docs/specs/issue-325/requirements.md R3.1
+    """
+    from the_loop import eventlog
+
+    class Scopeless(FakeSlackClient):
+        def reactions_add(self, *, channel, name, timestamp):
+            raise RuntimeError("The request to the Slack API failed: missing_scope")
+
+    client = Scopeless()
+    config = cli_config(tmp_path)
+    seeded_thread(tmp_path, monkeypatch, client, config)
+    mirrors, deliveries = [], []
+    monkeypatch.setattr(
+        "the_loop.comments.post_issue_comment_with_url",
+        lambda item, body, gh_binary="gh": mirrors.append(body) or (True, "", ""),
+    )
+    monkeypatch.setattr(
+        core_sessions,
+        "reply_session",
+        lambda ref, text, actor="", comment=True, config=None: (
+            deliveries.append(actor) or {"delivered": True}
+        ),
+    )
+    log = tmp_path / "events.jsonl"
+    eventlog.configure("test", path=log, enabled=True)
+    try:
+        summary = inbound.poll_once(config, client_factory=lambda token: client)
+    finally:
+        eventlog.reset()
+    assert summary["processed"] == 1 and summary["delivered"] == 1
+    assert len(mirrors) == 1 and deliveries == ["slack:UHUMAN"]
+    failed = [
+        json.loads(line)
+        for line in log.read_text().splitlines()
+        if '"channel.reaction_failed"' in line
+    ]
+    assert [e["state"] for e in failed] == ["received", "completed"]

@@ -21,7 +21,12 @@ from .sessions_cmd import _cli_config
 from .. import eventlog
 from ..channels import inbound
 from ..channels.events import SUBSCRIBABLE_EVENTS
-from ..channels.slack import SlackChannelConfig, run_socket_listener, slack_state_path
+from ..channels.slack import (
+    REACTION_STATES,
+    SlackChannelConfig,
+    run_socket_listener,
+    slack_state_path,
+)
 from ..channels.state import ChannelState, canonical
 
 
@@ -70,6 +75,19 @@ def _status(config: dict) -> int:
         )
     )
     print(f"  kickoff:      {kickoff}")
+    reactions = slack.reactions
+    print(
+        "  reactions:    "
+        + (
+            " / ".join(
+                f"{state}={reactions.content_for(state) or '(skipped)'}"
+                for state in REACTION_STATES
+            )
+            + " (on the accepted message; needs reactions:write)"
+            if reactions.enabled
+            else "off"
+        )
+    )
     # Identity is one list now (issue-309): say how many PEOPLE it names and how
     # many of them can speak here — never the ids themselves.
     print(

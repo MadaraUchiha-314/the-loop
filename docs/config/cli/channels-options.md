@@ -38,6 +38,11 @@ channels:
     read:
       mode: socket                           # poll | socket | off
       intervalSeconds: 30
+    reactions:                               # acknowledge an accepted message on itself
+      enabled: true
+      received: eyes                         # 👀 the moment it is accepted
+      completed: white_check_mark            # ✅ when the action landed
+      error: warning                         # ⚠️ when it did not
 ```
 
 An asked question ([`the-loop ask`](/cli/commands/ask)) is recorded on the ledger first
@@ -93,10 +98,11 @@ closed, never half-enabled.
 - **Type:** `string`
 - **Default:** `THE_LOOP_SLACK_BOT_TOKEN`
 
-The environment variable holding the bot token (`xoxb-…`, needing `chat:write` to post
-and `channels:history` to read). The config names the *variable*, the token is read from
-the environment **at call time**, and the value never appears in config, state files,
-`channels status` output or the event log.
+The environment variable holding the bot token (`xoxb-…`, needing `chat:write` to post,
+`channels:history` to read, and `reactions:write` to
+[acknowledge](/config/cli/channels-options#slack-reactions-enabled) a reply on the reply itself). The config names
+the *variable*, the token is read from the environment **at call time**, and the value
+never appears in config, state files, `channels status` output or the event log.
 The variable can be set in the shell or in a `.env` file the config names
 ([`env.file`](/config/cli/#env-file)), loaded when each process starts.
 
@@ -246,6 +252,66 @@ accident.
 
 Poll-mode cadence. A cycle with no bound threads and no kickoff grant makes no API call
 at all.
+
+## Acknowledgments
+
+### `slack.reactions.enabled`
+
+- **Type:** `boolean`
+- **Default:** `true`
+
+Acknowledge an **accepted** inbound message with a reaction on that message
+([issue-325](https://github.com/MadaraUchiha-314/the-loop/issues/325),
+[decision-111](/decisions/decision-111)) — the channel-side mirror of the ticket's
+[`routing.reactions`](/config/cli/routing-options#reactions-enabled). The moment a
+thread reply, a button press or a top-level kickoff message passes authorization,
+classification and the `publish` grant — and *before* the ledger record — the bot adds
+`received` to it; when the pipeline's action has landed it adds `completed`, or `error`
+when it has not. So the operator replying from a phone sees 👀 within a poll interval
+(instantly over Socket Mode) and ✅ / ⚠️ when the-loop is done with the message, without
+opening GitHub.
+
+*Landed* is defined per event type, and only over what the pipeline itself does: a
+`work-item.reply` is complete when it is recorded **and** delivered into the session; a
+`gate.feedback` or `control.command` when its unmarked record reached the ledger — the
+ledger's ingress acts on it afterwards, and that outcome is not reported here; a
+`work-item.create` when the issue exists and the thread is bound to it. A **dropped**
+message — a bot's, an unlisted member's, an unpublishable type, an unmapped thread — gets
+no reaction: a drop leaves no mark on the channel, as it leaves none on the ticket.
+
+Best-effort by contract: the reaction is posted with the bot token (which needs the
+`reactions:write` scope for this and nothing else), a refused reaction is one
+`channel.reaction_failed` event and never affects the record or the delivery, and a
+missing token makes no call. Reaction-only, no text. Set `false` to opt out; the
+channel's own `enabled: false` already means nothing is read, so nothing is acknowledged.
+
+### `slack.reactions.received`
+
+- **Type:** Slack emoji name, or `""`
+- **Default:** `eyes` (👀)
+
+Added when the message is accepted, before the record. `""` skips this state.
+
+### `slack.reactions.completed`
+
+- **Type:** Slack emoji name, or `""`
+- **Default:** `white_check_mark` (✅)
+
+Added when the pipeline's action landed. `""` skips this state.
+
+### `slack.reactions.error`
+
+- **Type:** Slack emoji name, or `""`
+- **Default:** `warning` (⚠️)
+
+Added when the record could not be written, the reply could not be delivered, or the
+issue could not be created. `""` skips this state.
+
+Names are Slack emoji names **without colons** — built-in (`eyes`, `+1`, `tada`) or a
+workspace's custom emoji — matching `^[a-z0-9_+-]{1,100}$`; surrounding colons are
+stripped, and a name outside the grammar is refused at load with a warning and that
+state skipped. Slack's palette is open where GitHub's is fixed to eight, which is why
+the defaults here can be the ✅ that `routing.reactions` cannot offer.
 
 ## Who may speak
 

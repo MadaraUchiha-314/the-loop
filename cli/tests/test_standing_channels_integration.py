@@ -26,6 +26,7 @@ from the_loop.trust import TrustResult
 class FakeSlackClient:
     def __init__(self):
         self.posted = []
+        self.reactions = []  # (channel, ts, name) — issue-325
         self.replies = {}
 
     def chat_postMessage(self, *, channel, text, thread_ts=None, blocks=None):
@@ -40,6 +41,10 @@ class FakeSlackClient:
 
     def auth_test(self):
         return {"ok": True, "user_id": "UBOT"}
+
+    def reactions_add(self, *, channel, name, timestamp):
+        self.reactions.append((channel, timestamp, name))
+        return {"ok": True}
 
 
 class _Adapter(HarnessAdapter):
