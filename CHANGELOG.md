@@ -1,3 +1,9 @@
+## v13.4.0 (2026-09-08)
+
+### Feat
+
+- **issue-322**: an instance of the-loop is named and scoped to its own work items (#324)
+
 ## v13.3.1 (2026-09-08)
 
 ### Fix
