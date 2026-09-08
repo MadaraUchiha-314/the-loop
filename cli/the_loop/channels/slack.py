@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -55,9 +56,12 @@ __all__ = [
     "DEFAULT_APP_TOKEN_ENV",
     "DEFAULT_BOT_TOKEN_ENV",
     "DEFAULT_MAX_CHARS",
+    "DEFAULT_REACTIONS",
+    "REACTION_STATES",
     "READ_MODES",
     "SlackBotChannel",
     "SlackChannelConfig",
+    "SlackReactionConfig",
     "build_client",
     "kickoff_cursor_key",
     "render_blocks",
@@ -103,6 +107,70 @@ def kickoff_cursor_key(channel_id: str) -> str:
     return f"channel:{channel_id}"
 
 
+#: The three moments the channel acknowledges on the accepted message (issue-325):
+#: ``received`` after the last refusal and before the record, then ``completed``
+#: or ``error`` from the outcome — the lifecycle `routing.reactions` marks on GitHub.
+REACTION_STATES: Tuple[str, ...] = ("received", "completed", "error")
+#: Slack's own palette, which has the ✅ GitHub's does not (decision-111 D3).
+DEFAULT_REACTIONS: Dict[str, str] = {
+    "received": "eyes",
+    "completed": "white_check_mark",
+    "error": "warning",
+}
+#: A Slack emoji name — built-in or a workspace's custom one — as `reactions.add`
+#: takes it: no colons, no skin-tone suffix needed for a reaction.
+_EMOJI_NAME_RE = re.compile(r"^[a-z0-9_+-]{1,100}$")
+
+
+@dataclass(frozen=True)
+class SlackReactionConfig:
+    """The parsed ``channels.slack.reactions`` block (issue-325). Mirrors the
+    *contract* of ``routing.reactions`` — on by default, one name per state, ``""``
+    skips a state, best-effort — not its values: the two palettes differ."""
+
+    enabled: bool = True
+    received: str = DEFAULT_REACTIONS["received"]
+    completed: str = DEFAULT_REACTIONS["completed"]
+    error: str = DEFAULT_REACTIONS["error"]
+
+    def content_for(self, state: str) -> str:
+        """The emoji name for ``state`` — ``""`` for a skipped or unknown one."""
+        return {
+            "received": self.received,
+            "completed": self.completed,
+            "error": self.error,
+        }.get(state, "")
+
+    @classmethod
+    def from_mapping(cls, raw: Any) -> "SlackReactionConfig":
+        """Parse the block. A name outside the grammar is refused per state — a
+        warning, and that state skipped — so config can never craft an API
+        argument (R2.3, A4); surrounding colons are stripped first, because
+        ``:eyes:`` is how Slack renders a name and how people copy it."""
+        if raw is None:
+            return cls()
+        if not isinstance(raw, Mapping):
+            logger.warning(
+                "channels.slack.reactions is not a mapping — using the defaults"
+            )
+            return cls()
+        names: Dict[str, str] = {}
+        for state in REACTION_STATES:
+            value = raw.get(state, DEFAULT_REACTIONS[state])
+            name = str(value if value is not None else "").strip().strip(":")
+            if name and not _EMOJI_NAME_RE.match(name):
+                logger.warning(
+                    "channels.slack.reactions.%s %r is not a Slack emoji name "
+                    "(lowercase letters, digits, _ + -, no colons) — that "
+                    "reaction is skipped",
+                    state,
+                    value,
+                )
+                name = ""
+            names[state] = name
+        return cls(enabled=bool(raw.get("enabled", True)), **names)
+
+
 @dataclass(frozen=True)
 class SlackChannelConfig:
     """The parsed ``channels.slack`` CLI-config section. Frozen; fail-closed."""
@@ -122,6 +190,8 @@ class SlackChannelConfig:
     authorized_users: Tuple[str, ...] = ()
     read_mode: str = "poll"
     read_interval_seconds: float = 30.0
+    #: The acknowledgment on an accepted inbound message (issue-325).
+    reactions: SlackReactionConfig = SlackReactionConfig()
 
     @property
     def events(self) -> Tuple[str, ...]:
@@ -238,6 +308,7 @@ class SlackChannelConfig:
                 authorized_users=tuple(ids_for(principals, "slack")),
                 read_mode=mode,
                 read_interval_seconds=float(read.get("intervalSeconds") or 30),
+                reactions=SlackReactionConfig.from_mapping(section.get("reactions")),
             )
         except (TypeError, ValueError) as exc:
             logger.error(
@@ -685,6 +756,69 @@ class SlackBotChannel:
             channel_id=channel_id or self.config.channel,
             origin=origin,
         )
+
+    # -- acknowledgment (issue-325) ---------------------------------------------
+
+    def react(self, reply: InboundReply, state: str) -> bool:
+        """Add the configured reaction for ``state`` to ``reply``'s message.
+
+        **Never raises**: the acknowledgment is a decoration on a message the
+        pipeline already accepted, and a decoration must never fail, delay or
+        drop the record or the delivery — the ``GitHubReactor`` contract
+        (issue-84), restated for this channel. Every failure is a
+        ``channel.reaction_failed`` event and ``False``. A missing token is a
+        quiet no-op: the read that produced the message already reported it.
+        The call carries Slack's own ``channel``/``ts`` and a name the config
+        parser validated — never the message text.
+        """
+        config = self.config.reactions
+        if not config.enabled:
+            return False
+        content = config.content_for(state)
+        if not content:
+            return False  # the state is skipped ("") or unknown
+        channel_id = reply.channel_id or self.config.channel
+        if not reply.ts or not channel_id:
+            logger.debug(
+                "slack: nothing to react on for %s (%s)", reply.work_item, state
+            )
+            return False
+        try:
+            client = self._client()
+        except ChannelError as exc:
+            logger.debug("slack: %s reaction skipped: %s", state, exc)
+            return False
+        try:
+            client.reactions_add(channel=channel_id, name=content, timestamp=reply.ts)
+        except Exception as exc:  # SlackApiError and transport errors alike
+            logger.warning(
+                "slack: could not add the %s reaction (%s) for %s: %s",
+                state,
+                content,
+                reply.work_item or "a kickoff",
+                exc,
+            )
+            eventlog.emit(
+                "channel.reaction_failed",
+                level="warning",
+                channel=self.name,
+                work_item=reply.work_item or None,
+                state=state,
+                content=content,
+                thread=reply.thread or None,
+                error=str(exc),
+            )
+            return False
+        eventlog.emit(
+            "channel.reaction_added",
+            level="debug",
+            channel=self.name,
+            work_item=reply.work_item or None,
+            state=state,
+            content=content,
+            thread=reply.thread or None,
+        )
+        return True
 
     # -- inbound (R4) ----------------------------------------------------------
 

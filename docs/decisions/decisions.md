@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [111](decision-111.md) | A Slack message the pipeline accepts is acknowledged on that message, best-effort, with Slack's own palette | proposed | 2026-09-08 |
 | [110](decision-110.md) | An instance is a named, scoped `cli-config.yaml`; new work reaches it by mode and by address | proposed | 2026-09-08 |
 | [109](decision-109.md) | The channel pipeline reads the graph through the dispatcher's own coupling, and a gate it cannot read is left to the ledger | proposed | 2026-09-08 |
 | [108](decision-108.md) | The env file is loaded by a stdlib parser, resolved against the config, and never overrides the environment | proposed | 2026-09-03 |

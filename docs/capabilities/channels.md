@@ -146,17 +146,37 @@ flowchart LR
   authorized member posts a top-level message THEN the ledger SHALL create the issue with
   `kickoff.labels`, the thread SHALL be bound to the new ref and told the link. The first
   read baselines the channel; a failed creation is not retried.
+- **An accepted message is acknowledged on itself** (issue-325, decision-111). WHEN an
+  inbound Slack message — a thread reply, a button press, a kickoff — passes
+  authorization, classification and the `publish` grant THEN, before the ledger
+  record, the channel SHALL add the configured `received` reaction
+  (`channels.slack.reactions`, default 👀) to that message; WHEN the pipeline's action
+  has landed — a `work-item.reply` recorded and delivered, a `gate.feedback` /
+  `control.command` recorded on the ledger, a `work-item.create` with its issue opened
+  and the thread bound — THEN it SHALL add `completed` (default ✅), and `error`
+  (default ⚠️) when it has not. A dropped message SHALL get no reaction. For a button
+  press the target is the message carrying the button. Best-effort: posted with the bot
+  token (`reactions:write`), a refused reaction is `channel.reaction_failed` and never
+  touches the record or the delivery, a missing token makes no call, and a name outside
+  the emoji grammar is refused at load. On by default, mirroring `routing.reactions`'
+  contract with Slack's open palette rather than GitHub's fixed one.
 - Reads, tokens, state: as before — `poll` or `socket` (`listen` now also handles
   `block_actions` and top-level messages), env-named tokens read at call time, bindings
   and cursors in `<state.root>/channels/slack.json` (plus a `channel:<id>` cursor).
 - Every step is observable: `bus.published`, `bus.recorded`, `bus.record_failed`, the
   `channel.*` types, `channel.dropped` with `unpublishable-event` / `kickoff-disabled` /
   `create-failed`, `channel.created`, `channel.thread_opened` (origin `event` |
-  `kickoff` | `start`) and `channel.open_failed`. Payloads carry ids and event types,
-  never text.
+  `kickoff` | `start`), `channel.open_failed`, `channel.reaction_added` and
+  `channel.reaction_failed`. Payloads carry ids and event types, never text.
 
 ## Design
 
+- [`docs/specs/issue-325/design.md`](../specs/issue-325/design.md) — the
+  `channels.slack.reactions` block, `SlackBotChannel.react`, the two calls on each
+  accepted path of the pipeline, the socket handlers' channel.
+- [`decision-111`](../decisions/decision-111.md) — the acknowledgment sits after the
+  last refusal and before the record; its own block mirroring `routing.reactions`'
+  contract; Slack's palette; *completed* means the pipeline's own action landed.
 - [`docs/specs/issue-321/design.md`](../specs/issue-321/design.md) — the pipeline's
   graph reader as the dispatcher's own construction, the three-valued read, deferral to
   the ledger within the grant.
@@ -188,6 +208,7 @@ flowchart LR
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-325 | The Slack channel acknowledges an accepted inbound message on the message itself: `received` (👀) after the last refusal and before the ledger record, then `completed` (✅) when the pipeline's action landed or `error` (⚠️) when it did not; a dropped message gets none; configured by `channels.slack.reactions` (on by default, Slack emoji names, `""` skips a state), posted best-effort with the bot token's `reactions:write`, observable as `channel.reaction_added` / `channel.reaction_failed`. Before this, `routing.reactions` acknowledged only on GitHub and a Slack reply's only feedback was a later posted message | [spec](../specs/issue-325/), [decision-111](../decisions/decision-111.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/325) |
 | issue-321 | An authorized gate answer from Slack now locks the gate under the daemon's default control policy: the pipeline's graph read is built from the same `RoutingConfig` the dispatcher's coupling is (control policy, control store, allow-list, registry), where before it had no control store and read no graph at all; the read is three-valued, and a gate the pipeline cannot read (no session record, no checkout, a fault) is recorded unmarked as `gate.feedback` for the ledger's ingress to judge when the channel holds that grant — attributed as a reply — and stays the marked mirror without it; `channel.reply_received` carries `gate: open \| none \| unknown` | [spec](../specs/issue-321/), [decision-109](../decisions/decision-109.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/321) |
 | issue-317 | The Slack thread opens when the work item **starts**, not when its first event arrives: the dispatcher's one spawn path — which every way of starting converges on — asks every configured channel to open the work item's conversation (`SlackBotChannel.open`, root only, origin `start`, through `bus.open_conversation`) before the checkout; a bound work item keeps its thread, a refused start opens nothing, a channel failure is `channel.open_failed` and never touches the spawn, and the first event replies into the thread that already exists. Wired as an injected opener on the dispatcher (`conversation_opener`, config per call) by both daemons and the core facade | [spec](../specs/issue-317/), [decision-107](../decisions/decision-107.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/317) |
 | issue-312 | The Slack thread is the work item's: the first event opens a root naming the work item (ref + link button) and every event, the first included, is a reply into it; open-and-bind runs under a `flock` on the channel state so the agent's session, the daemons and the poll watcher open one thread between them, and a failed reply never opens a second; the conversation is a keyed record (work item → channel, thread, opened, origin, permalink) backfilled from a pre-existing file, listed by `the-loop channels threads` and announced by `channel.thread_opened`; refs with and without the default host share one thread. Before this the root was whichever event arrived first, the binding a newest-wins scan, and four unlocked writers could open two threads or drop a binding | [spec](../specs/issue-312/), [decision-105](../decisions/decision-105.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/312) |

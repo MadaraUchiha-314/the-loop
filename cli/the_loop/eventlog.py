@@ -363,6 +363,19 @@ EVENT_TYPES: Dict[str, str] = {
         "session was spawned regardless, nothing was bound, and the next event "
         "for the work item opens the thread lazily as before issue-317."
     ),
+    "channel.reaction_added": (
+        "The Slack channel acknowledged an accepted inbound message with a "
+        "reaction on that message (channel, work_item, state: received | "
+        "completed | error, content: the emoji name, thread) — issue-325, "
+        "channels.slack.reactions. Debug level: the decoration mirrors "
+        "reaction.added on GitHub. Ids and names only, never text."
+    ),
+    "channel.reaction_failed": (
+        "The Slack channel could not add an acknowledgment reaction (channel, "
+        "work_item, state, content, thread, error) — issue-325. Best-effort by "
+        "contract: the record and the delivery are unaffected. A missing "
+        "reactions:write scope on the bot token is the usual cause."
+    ),
     # -- the bus (issue-309, decision-103) --------------------------------------
     "bus.published": (
         "An event went through the bus (event_type, work_item, source, recorded: "

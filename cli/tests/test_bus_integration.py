@@ -29,6 +29,7 @@ def _etype(body):
 class FakeSlackClient:
     def __init__(self):
         self.posted = []
+        self.reactions = []  # (channel, ts, name) — issue-325
         self.replies = {}
         self.history = []
 
@@ -46,6 +47,10 @@ class FakeSlackClient:
 
     def auth_test(self):
         return {"ok": True, "user_id": "UBOT"}
+
+    def reactions_add(self, *, channel, name, timestamp):
+        self.reactions.append((channel, timestamp, name))
+        return {"ok": True}
 
 
 def cli_config(tmp_path, **slack):

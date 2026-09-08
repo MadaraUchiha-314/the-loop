@@ -20,7 +20,8 @@ the-loop channels listen    # Socket Mode, foreground — replies, button presse
   received, the kickoff target, how many conversations (thread bindings, cursors) the
   channel state holds, and the **catalog**: every subscribable event with a tick where
   `subscribe` names it, and every publishable event with a tick where `publish` grants
-  it — so neither list is ever configured by guessing names.
+  it — so neither list is ever configured by guessing names. Since issue-325 it also
+  prints the **reactions** line: which emoji acknowledge an accepted message, or `off`.
 - **`threads`** lists the **conversations**: one line per work item with the Slack
   channel id, the thread ts, when it was opened, how (`event` — the-loop opened a root
   for the first event it delivered; `kickoff` — a member's top-level message became the
@@ -54,6 +55,10 @@ first. A `work-item.reply` is then delivered into the waiting session through th
 fail-closed path `POST /api/v1/sessions/reply` uses — never spawning or resuming
 anything; a `gate.feedback` or `control.command` stops at its record, because the
 ledger's own ingress is what acts on it; a `work-item.create` is the issue itself.
+The message that was accepted is **acknowledged on itself**
+([`reactions`](/config/cli/channels-options#slack-reactions-enabled)): 👀 the moment it
+passes the grant, ✅ when the pipeline's action landed, ⚠️ when it did not — and nothing
+on a message that was dropped.
 
 ## Flags
 

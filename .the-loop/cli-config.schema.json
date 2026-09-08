@@ -882,6 +882,36 @@
                   "description": "Poll-mode cadence. A cycle with no bound threads makes no API call at all."
                 }
               }
+            },
+            "reactions": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Acknowledge an ACCEPTED inbound Slack message with a reaction on that message (issue-325) \u2014 the channel-side mirror of `routing.reactions`: `received` the moment a thread reply, button press or kickoff message passes authorization, classification and the `publish` grant (before the ledger record), then `completed` when the pipeline's action landed (a reply recorded AND delivered; a gate answer or control keyword recorded on the ledger; a kickoff's issue created) or `error` when it did not. A DROPPED message (a bot's, an unlisted member's, an unpublishable type) gets no reaction. Best-effort by contract: posted with the bot token, needing the `reactions:write` scope; a refused reaction is a `channel.reaction_failed` event and never affects the record or the delivery. Names are Slack emoji names without colons \u2014 Slack's palette is open (built-in and custom), unlike GitHub's fixed eight, which is why the defaults can be the \u2705 GitHub cannot offer.",
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "default": true,
+                  "description": "Default true, as `routing.reactions.enabled` is (owner decision, PR #85): visibility out of the box is the point. Reaction-only, no text. Set false to opt out; the channel's own `enabled: false` (the default) already means nothing is read, so nothing is acknowledged."
+                },
+                "received": {
+                  "type": "string",
+                  "pattern": "^([a-z0-9_+-]{1,100})?$",
+                  "default": "eyes",
+                  "description": "Reaction added when the message is accepted, before the record (\ud83d\udc40 by default). Empty string skips this state."
+                },
+                "completed": {
+                  "type": "string",
+                  "pattern": "^([a-z0-9_+-]{1,100})?$",
+                  "default": "white_check_mark",
+                  "description": "Reaction added when the pipeline's action landed (\u2705 by default \u2014 the mark issue-84 asked for, which GitHub lacks). For a relayed gate answer or control keyword this means the record reached the ledger; the ledger's ingress acts on it afterwards and that outcome is not reported here. Empty string skips this state."
+                },
+                "error": {
+                  "type": "string",
+                  "pattern": "^([a-z0-9_+-]{1,100})?$",
+                  "default": "warning",
+                  "description": "Reaction added when the record could not be written, the reply could not be delivered, or the issue could not be created (\u26a0\ufe0f by default). Empty string skips this state."
+                }
+              }
             }
           }
         }

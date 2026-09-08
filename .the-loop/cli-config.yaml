@@ -399,3 +399,8 @@ channels:
     # read:
     #   mode: poll                           # poll | socket | off
     #   intervalSeconds: 30
+    # reactions:                             # acknowledge an ACCEPTED message on itself (issue-325);
+    #   enabled: true                        # needs reactions:write on the bot token; best-effort
+    #   received: eyes                       # 👀 the moment it passes authorization + grant
+    #   completed: white_check_mark          # ✅ when the pipeline's action landed ("" skips)
+    #   error: warning                       # ⚠️ when it did not

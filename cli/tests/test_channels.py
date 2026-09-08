@@ -26,8 +26,11 @@ from the_loop.channels.base import (
 from the_loop.channels.slack import (
     DEFAULT_APP_TOKEN_ENV,
     DEFAULT_BOT_TOKEN_ENV,
+    DEFAULT_REACTIONS,
+    REACTION_STATES,
     SlackBotChannel,
     SlackChannelConfig,
+    SlackReactionConfig,
 )
 from the_loop.channels.state import THREAD_CAP, ChannelState
 from the_loop.control import ControlConfig, parse_command
@@ -39,6 +42,7 @@ class FakeSlackClient:
     def __init__(self, token=None, replies=None):
         self.token = token
         self.posted = []
+        self.reactions = []  # (channel, ts, name) — issue-325
         self.replies = replies or {}  # thread ts -> [message dict, ...]
         self.history = []  # top-level messages, for the kickoff read
 
@@ -56,6 +60,10 @@ class FakeSlackClient:
 
     def auth_test(self):
         return {"ok": True, "user_id": "UBOT"}
+
+    def reactions_add(self, *, channel, name, timestamp):
+        self.reactions.append((channel, timestamp, name))
+        return {"ok": True}
 
 
 def cli_config(tmp_path, authorized=("UHUMAN",), **slack):
@@ -300,11 +308,30 @@ def a_reply(**kwargs):
 
 
 def pipeline(tmp_path, reply, *, authorized=("UHUMAN",), deliver_raises=None):
+    return acked_pipeline(
+        tmp_path, reply, authorized=authorized, deliver_raises=deliver_raises
+    )[:3]
+
+
+def acked_pipeline(
+    tmp_path,
+    reply,
+    *,
+    authorized=("UHUMAN",),
+    deliver_raises=None,
+    post_ok=True,
+    client=None,
+    **slack,
+):
+    """``process_reply`` with a fake-client channel, so the acknowledgment
+    (issue-325) lands on the fake and never on a real client. Returns the outcome,
+    the ledger posts, the deliveries and the client."""
     posts, deliveries = [], []
+    client = client or FakeSlackClient()
 
     def post_comment(item, body, gh_binary="gh"):
         posts.append((item.ref, body))
-        return True, ""
+        return (True, "") if post_ok else (False, "gh exited 1")
 
     def deliver(ref, text, actor="", comment=True, config=None):
         if deliver_raises is not None:
@@ -314,15 +341,16 @@ def pipeline(tmp_path, reply, *, authorized=("UHUMAN",), deliver_raises=None):
         )
         return {"delivered": True}
 
-    config = SlackChannelConfig.from_mapping(cli_config(tmp_path, authorized))
+    config = cli_config(tmp_path, authorized, **slack)
     outcome = inbound.process_reply(
         reply,
+        SlackChannelConfig.from_mapping(config),
         config,
-        cli_config(tmp_path, authorized),
         post_comment=post_comment,
         deliver=deliver,
+        channel=make_channel(tmp_path, client, **slack),
     )
-    return outcome, posts, deliveries
+    return outcome, posts, deliveries, client
 
 
 def test_own_bot_message_is_dropped_before_anything(tmp_path):
@@ -513,6 +541,8 @@ def test_channels_status_shows_presence_never_values(tmp_path, monkeypatch, caps
     assert code == 0
     assert "slack" in out and "set" in out
     assert "xoxb-supersecret" not in out
+    # issue-325: the acknowledgment is shown as names, never a token
+    assert "reactions:    received=eyes / completed=white_check_mark" in out
 
 
 # -- the subscribable-event catalog (PR #267 review) ----------------------------
@@ -1386,3 +1416,439 @@ def test_the_reply_event_says_what_the_gate_read_returned(tmp_path, monkeypatch)
         ("unknown", "gate.feedback"),
     ]
     assert "approved" not in log.read_text()
+
+
+# -- issue-325: the channel acknowledges an accepted message with a reaction --------
+
+RECEIVED, COMPLETED, ERROR = DEFAULT_REACTIONS.values()
+
+
+class RefusingSlackClient(FakeSlackClient):
+    """A Slack that refuses every reaction — no `reactions:write` scope."""
+
+    def reactions_add(self, *, channel, name, timestamp):
+        raise RuntimeError("The request to the Slack API failed: missing_scope")
+
+
+def test_reaction_config_defaults_match_the_schema():
+    """R2.1, R2.4: what ``from_mapping`` defaults and what the schema documents agree,
+    and both are Slack's own palette (decision-111 D3)."""
+    schema = configschema.load_schema("cli-config")
+    block = schema["properties"]["channels"]["properties"]["slack"]["properties"][
+        "reactions"
+    ]["properties"]
+    config = SlackChannelConfig.from_mapping({}).reactions
+    assert config.enabled is block["enabled"]["default"] is True
+    for state in REACTION_STATES:
+        assert config.content_for(state) == block[state]["default"]
+        assert config.content_for(state) == DEFAULT_REACTIONS[state]
+    assert (config.received, config.completed, config.error) == (
+        "eyes",
+        "white_check_mark",
+        "warning",
+    )
+
+
+def test_a_config_without_the_block_reacts_with_the_defaults(tmp_path):
+    """R2.5: a 13.4.0 config is additive-by-default — nothing to migrate."""
+    config = SlackChannelConfig.from_mapping(cli_config(tmp_path))
+    assert config.reactions == SlackReactionConfig()
+    assert config.enabled and config.channel == "C123"  # the rest is untouched
+
+
+def test_reactions_can_be_disabled_or_skipped_per_state(tmp_path):
+    """R2.2, R2.1: ``enabled: false`` and ``""`` both mean no call for that state."""
+    off = SlackChannelConfig.from_mapping(
+        cli_config(tmp_path, reactions={"enabled": False})
+    ).reactions
+    assert off.enabled is False
+    skipped = SlackChannelConfig.from_mapping(
+        cli_config(tmp_path, reactions={"completed": ""})
+    ).reactions
+    assert skipped.enabled is True
+    assert skipped.content_for("received") == "eyes"
+    assert skipped.content_for("completed") == ""
+    assert skipped.content_for("not-a-state") == ""
+
+
+def test_a_malformed_reaction_name_is_refused_and_the_state_skipped(tmp_path, caplog):
+    """R2.3, A4: a name outside the grammar never becomes an API argument; the
+    other states keep their values and the block stays enabled."""
+    with caplog.at_level("WARNING", logger="the-loop.channels"):
+        config = SlackChannelConfig.from_mapping(
+            cli_config(
+                tmp_path,
+                reactions={"received": "eyes; rm -rf /", "error": "WARNING"},
+            )
+        ).reactions
+    assert config.enabled is True
+    assert config.received == ""
+    assert config.error == ""
+    assert config.completed == "white_check_mark"
+    assert "reactions.received" in caplog.text and "reactions.error" in caplog.text
+
+
+def test_colons_around_a_reaction_name_are_stripped(tmp_path):
+    """R2.3: ``:eyes:`` is how Slack renders a name and how people copy it."""
+    config = SlackChannelConfig.from_mapping(
+        cli_config(tmp_path, reactions={"received": ":thumbsup:", "completed": "+1"})
+    ).reactions
+    assert config.received == "thumbsup" and config.completed == "+1"
+
+
+def test_a_non_mapping_reactions_block_keeps_the_defaults(tmp_path, caplog):
+    with caplog.at_level("WARNING", logger="the-loop.channels"):
+        config = SlackChannelConfig.from_mapping(
+            cli_config(tmp_path, reactions="yes please")
+        )
+    assert config.reactions == SlackReactionConfig()
+    assert config.enabled  # the section itself is not disabled by the bad block
+    assert "reactions" in caplog.text
+
+
+def test_react_adds_the_named_reaction_on_the_message(tmp_path, monkeypatch):
+    """R1.5, R1.6, R3.3: the call carries the message's channel and ts and the
+    configured name, through the channel's own client; the event carries ids."""
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    client = FakeSlackClient()
+    channel = make_channel(tmp_path, client)
+    log = tmp_path / "events.jsonl"
+    eventlog.configure("test", path=log, enabled=True)
+    try:
+        assert channel.react(a_reply(ts="1800.7"), "received") is True
+        assert channel.react(a_reply(ts="1800.7"), "completed") is True
+    finally:
+        eventlog.reset()
+    assert client.reactions == [
+        ("C123", "1800.7", "eyes"),
+        ("C123", "1800.7", "white_check_mark"),
+    ]
+    events = [json.loads(line) for line in log.read_text().splitlines() if line.strip()]
+    added = [e for e in events if e["event"] == "channel.reaction_added"]
+    assert [e["state"] for e in added] == ["received", "completed"]
+    assert added[0]["content"] == "eyes" and added[0]["thread"] == "1700.1"
+    assert added[0]["work_item"] == "github:o/r#7" and "text" not in added[0]
+
+
+def test_react_uses_the_replys_channel_id_over_the_configured_one(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    client = FakeSlackClient()
+    channel = make_channel(tmp_path, client)
+    reply = InboundReply(
+        channel="slack",
+        work_item="github:o/r#7",
+        author="UHUMAN",
+        text="x",
+        thread="1700.1",
+        ts="1800.1",
+        channel_id="C999",
+    )
+    assert channel.react(reply, "received")
+    assert client.reactions == [("C999", "1800.1", "eyes")]
+
+
+def test_react_never_raises_and_records_the_failure(tmp_path, monkeypatch, caplog):
+    """R3.1, A3, A5: a refused reaction is ``False`` plus one warning-level event
+    naming the state and the error — never an exception to the pipeline."""
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    channel = make_channel(tmp_path, RefusingSlackClient())
+    log = tmp_path / "events.jsonl"
+    eventlog.configure("test", path=log, enabled=True)
+    try:
+        with caplog.at_level("WARNING", logger="the-loop.channels"):
+            assert channel.react(a_reply(), "received") is False
+    finally:
+        eventlog.reset()
+    assert "missing_scope" in caplog.text
+    events = [json.loads(line) for line in log.read_text().splitlines() if line.strip()]
+    failed = [e for e in events if e["event"] == "channel.reaction_failed"]
+    assert len(failed) == 1
+    assert failed[0]["state"] == "received" and failed[0]["content"] == "eyes"
+    assert "missing_scope" in failed[0]["error"] and failed[0]["level"] == "warning"
+
+
+def test_react_without_a_token_is_a_quiet_noop(tmp_path, monkeypatch, caplog):
+    """R3.2: the read already reported the missing token; the ack says nothing
+    above debug and makes no call."""
+    monkeypatch.delenv(DEFAULT_BOT_TOKEN_ENV, raising=False)
+    seen = []
+    channel = make_channel(tmp_path, FakeSlackClient())
+    channel._client_factory = lambda token: seen.append(token) or FakeSlackClient()
+    with caplog.at_level("WARNING", logger="the-loop.channels"):
+        assert channel.react(a_reply(), "received") is False
+    assert seen == [] and caplog.text == ""
+
+
+def test_react_disabled_or_skipped_makes_no_call(tmp_path, monkeypatch):
+    """R2.2: neither the client nor the token is touched for a state that is off."""
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    client = FakeSlackClient()
+    off = make_channel(tmp_path, client, reactions={"enabled": False})
+    assert off.react(a_reply(), "received") is False
+    skipped = make_channel(tmp_path, client, reactions={"completed": ""})
+    assert skipped.react(a_reply(), "completed") is False
+    assert client.reactions == []
+
+
+def test_an_accepted_reply_is_acknowledged_received_then_completed(
+    tmp_path, monkeypatch
+):
+    """R1.1, R1.2: 👀 before the record, ✅ once recorded and delivered — on the
+    reply's own message."""
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    outcome, posts, deliveries, client = acked_pipeline(tmp_path, a_reply())
+    assert outcome["outcome"] == "processed" and outcome["delivered"]
+    assert client.reactions == [
+        ("C123", "1800.1", RECEIVED),
+        ("C123", "1800.1", COMPLETED),
+    ]
+
+
+def test_the_received_reaction_precedes_the_record(tmp_path, monkeypatch):
+    """R3.5: the 👀 is on the message before the ledger write starts."""
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    client = FakeSlackClient()
+    order = []
+    client.reactions_add = lambda **kw: (
+        order.append(("react", kw["name"])) or {"ok": True}
+    )
+
+    def post_comment(item, body, gh_binary="gh"):
+        order.append(("record", item.ref))
+        return True, ""
+
+    config = cli_config(tmp_path)
+    inbound.process_reply(
+        a_reply(),
+        SlackChannelConfig.from_mapping(config),
+        config,
+        post_comment=post_comment,
+        deliver=lambda *a, **k: order.append(("deliver", a[0])) or {"delivered": True},
+        channel=make_channel(tmp_path, client),
+    )
+    assert order == [
+        ("react", RECEIVED),
+        ("record", "github:o/r#7"),
+        ("deliver", "github:o/r#7"),
+        ("react", COMPLETED),
+    ]
+
+
+def test_an_undeliverable_reply_is_acknowledged_with_error(tmp_path, monkeypatch):
+    """R1.3: no session to take the reply — the record stood, the action did not land."""
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    outcome, posts, deliveries, client = acked_pipeline(
+        tmp_path, a_reply(), deliver_raises=LookupError("no session")
+    )
+    assert outcome["delivered"] is False and outcome["mirrored"] is True
+    assert client.reactions == [("C123", "1800.1", RECEIVED), ("C123", "1800.1", ERROR)]
+
+
+def test_a_failed_mirror_is_acknowledged_with_error(tmp_path, monkeypatch):
+    """R1.3: a delivered reply whose paper trail failed is ⚠️, not ✅ — the log says why."""
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    outcome, posts, deliveries, client = acked_pipeline(
+        tmp_path, a_reply(), post_ok=False
+    )
+    assert outcome["mirrored"] is False and outcome["delivered"] is True
+    assert client.reactions == [("C123", "1800.1", RECEIVED), ("C123", "1800.1", ERROR)]
+
+
+def test_a_relayed_gate_answer_completes_on_its_record(tmp_path, monkeypatch):
+    """R1.2: for gate.feedback / control.command the pipeline's action IS the
+    unmarked record; ✅ says it reached the ledger, and claims nothing about the
+    ingress (decision-111 D4)."""
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    monkeypatch.setattr(inbound, "_at_human_gate", lambda ref, cfg: True)
+    outcome, posts, deliveries, client = acked_pipeline(
+        tmp_path,
+        a_reply(text="approved"),
+        publish=["work-item.reply", "gate.feedback"],
+    )
+    assert outcome == {
+        "outcome": "processed",
+        "event": "gate.feedback",
+        "mirrored": True,
+    }
+    assert deliveries == []
+    assert client.reactions == [
+        ("C123", "1800.1", RECEIVED),
+        ("C123", "1800.1", COMPLETED),
+    ]
+
+    client.reactions.clear()
+    outcome, posts, deliveries, client = acked_pipeline(
+        tmp_path,
+        a_reply(text="please the-loop start now"),
+        publish=["work-item.reply", "control.command"],
+        post_ok=False,
+        client=client,
+    )
+    assert outcome["event"] == "control.command" and outcome["mirrored"] is False
+    assert client.reactions == [("C123", "1800.1", RECEIVED), ("C123", "1800.1", ERROR)]
+
+
+def test_a_standing_sessions_reply_completes_on_delivery(tmp_path, monkeypatch):
+    """R1.2: a standing session has no ticket, so the skipped mirror is not a
+    failure — delivery alone is what lands."""
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    outcome, posts, deliveries, client = acked_pipeline(
+        tmp_path, a_reply(work_item="standing:supervisor")
+    )
+    assert outcome["mirrored"] is False and outcome["delivered"] is True
+    assert posts == [] and deliveries[0]["ref"] == "standing:supervisor"
+    assert client.reactions == [
+        ("C123", "1800.1", RECEIVED),
+        ("C123", "1800.1", COMPLETED),
+    ]
+
+    # A relayed keyword there has no ledger to reach: nothing landed, and the
+    # acknowledgment says so rather than claiming a success.
+    client.reactions.clear()
+    outcome, posts, deliveries, client = acked_pipeline(
+        tmp_path,
+        a_reply(work_item="standing:supervisor", text="the-loop start"),
+        publish=["work-item.reply", "control.command"],
+        client=client,
+    )
+    assert outcome["event"] == "control.command" and outcome["mirrored"] is False
+    assert client.reactions == [("C123", "1800.1", RECEIVED), ("C123", "1800.1", ERROR)]
+
+
+def _kickoff(tmp_path, client, *, create_ok=True, authorized=("UHUMAN",)):
+    config = cli_config(
+        tmp_path,
+        authorized,
+        publish=["work-item.reply", "work-item.create"],
+        kickoff={"repo": "o/r", "labels": ["the-loop: auto-execute"]},
+    )
+    message = InboundReply(
+        channel="slack",
+        work_item="",
+        author="UHUMAN",
+        text="Add a dark mode",
+        thread="1900.1",
+        ts="1900.1",
+        top_level=True,
+        channel_id="C123",
+    )
+
+    def create_issue(repo, title, body, labels, gh_binary="gh"):
+        if create_ok:
+            return True, "", "github:o/r#42", "https://github.com/o/r/issues/42"
+        return False, "gh exited 1", "", ""
+
+    channel = SlackBotChannel(
+        SlackChannelConfig.from_mapping(config),
+        tmp_path / "state" / "channels" / "slack.json",
+        client_factory=lambda token: client,
+    )
+    return inbound.process_kickoff(
+        message,
+        SlackChannelConfig.from_mapping(config),
+        config,
+        channel=channel,
+        post_comment=lambda *a, **k: (True, ""),
+        create_issue=create_issue,
+    )
+
+
+def test_a_kickoff_is_acknowledged_received_then_completed(tmp_path, monkeypatch):
+    """R1.1, R1.2 for a top-level message: 👀 before the issue is created, ✅ once
+    it exists and the thread is bound to it."""
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    client = FakeSlackClient()
+    outcome = _kickoff(tmp_path, client)
+    assert outcome["outcome"] == "created"
+    assert client.reactions == [
+        ("C123", "1900.1", RECEIVED),
+        ("C123", "1900.1", COMPLETED),
+    ]
+    assert (
+        client.posted[-1]["thread_ts"] == "1900.1"
+    )  # the "Opened …" reply still lands
+
+
+def test_a_failed_kickoff_is_acknowledged_with_error(tmp_path, monkeypatch):
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    client = FakeSlackClient()
+    outcome = _kickoff(tmp_path, client, create_ok=False)
+    assert outcome["outcome"] == "create-failed"
+    assert client.reactions == [("C123", "1900.1", RECEIVED), ("C123", "1900.1", ERROR)]
+
+
+@pytest.mark.parametrize(
+    "reply, authorized, publish, expected",
+    [
+        (a_reply(is_bot=True), ("UHUMAN",), None, "self-authored"),
+        (a_reply(), (), None, "unauthorized-actor"),
+        (a_reply(author="UEVIL"), ("UHUMAN",), None, "unauthorized-actor"),
+        (
+            a_reply(text="please the-loop start now"),
+            ("UHUMAN",),
+            None,
+            "unpublishable-event",
+        ),
+        (a_reply(work_item=""), ("UHUMAN",), None, "unmapped"),
+    ],
+    ids=["bot", "empty-allow-list", "unlisted-member", "unpublishable", "unmapped"],
+)
+def test_a_dropped_message_gets_no_reaction(
+    tmp_path, monkeypatch, reply, authorized, publish, expected
+):
+    """R1.4, A1, A2: every drop precedes the acknowledgment — no reaction tells a
+    stranger the bot reads the thread, and an unpublishable message is never
+    acknowledged as if it were accepted."""
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    slack = {"publish": publish} if publish else {}
+    outcome, posts, deliveries, client = acked_pipeline(
+        tmp_path, reply, authorized=authorized, **slack
+    )
+    assert outcome["outcome"] == expected
+    assert client.reactions == [] and posts == [] and deliveries == []
+
+
+def test_an_unauthorized_kickoff_gets_no_reaction(tmp_path, monkeypatch):
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    client = FakeSlackClient()
+    outcome = _kickoff(tmp_path, client, authorized=())
+    assert outcome["outcome"] == "unauthorized-actor"
+    assert client.reactions == [] and client.posted == []
+
+
+def test_a_refused_reaction_changes_no_outcome(tmp_path, monkeypatch, caplog):
+    """R3.1, A3: a Slack without the scope costs two warnings and nothing else —
+    the record, the delivery and the outcome are exactly 13.4.0's."""
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    with caplog.at_level("WARNING", logger="the-loop.channels"):
+        outcome, posts, deliveries, client = acked_pipeline(
+            tmp_path, a_reply(), client=RefusingSlackClient()
+        )
+    assert outcome == {
+        "outcome": "processed",
+        "event": "work-item.reply",
+        "mirrored": True,
+        "delivered": True,
+    }
+    assert len(posts) == 1 and len(deliveries) == 1
+    assert caplog.text.count("missing_scope") == 2
+
+
+def test_reaction_events_carry_no_text_or_token(tmp_path, monkeypatch):
+    """R3.4, A6."""
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-supersecret")
+    log = tmp_path / "events.jsonl"
+    eventlog.configure("test", path=log, enabled=True)
+    try:
+        acked_pipeline(tmp_path, a_reply(text="the secret answer"))
+        acked_pipeline(
+            tmp_path, a_reply(text="the secret answer"), client=RefusingSlackClient()
+        )
+    finally:
+        eventlog.reset()
+    raw = log.read_text()
+    assert "channel.reaction_added" in raw and "channel.reaction_failed" in raw
+    assert "xoxb-supersecret" not in raw
+    assert "the secret answer" not in raw

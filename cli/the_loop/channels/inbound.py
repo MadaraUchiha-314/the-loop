@@ -252,6 +252,10 @@ def process_reply(
         kind=event_type,
         gate=gate,
     )
+    # The acknowledgment (issue-325): after the last refusal, before the record,
+    # on the message itself. Best-effort — `react` never raises.
+    bot = channel or SlackBotChannel(config, slack_state_path(cli_config))
+    bot.react(reply, "received")
     actor = principal_for(config.principals, reply.channel, reply.author)
     detail: Dict[str, Any] = {"thread": reply.thread}
     if gate == GATE_UNKNOWN and event_type == "gate.feedback":
@@ -267,12 +271,20 @@ def process_reply(
         detail=detail,
     )
     recorded = _record(event, reply, cli_config, post_comment)
+    # A standing session has no ticket: a reply's skipped mirror is not a
+    # failure, so what "lands" for it is the delivery alone (decision-111 D4). A
+    # relayed type there has no ledger to reach, and did not land.
+    landed = recorded or (
+        event_type == "work-item.reply" and bool(parse_standing_ref(reply.work_item))
+    )
     if event_type != "work-item.reply":
         # The record IS the request: the ledger's ingress classifies a gate
         # answer and executes a control keyword. Delivering here too would hand
         # the session the text twice and bypass the dispatcher's control seam.
+        bot.react(reply, "completed" if landed else "error")
         return {"outcome": "processed", "event": event_type, "mirrored": recorded}
     delivered = _deliver(reply, cli_config, deliver)
+    bot.react(reply, "completed" if landed and delivered else "error")
     return {
         "outcome": "processed",
         "event": event_type,
@@ -416,6 +428,8 @@ def process_kickoff(
         return _drop(reply, "unauthorized-actor", level="warning", actor=reply.author)
     if not reply.text.strip():
         return _drop(reply, "unmapped", actor=reply.author)
+    bot = channel or SlackBotChannel(config, slack_state_path(cli_config))
+    bot.react(reply, "received")  # issue-325: accepted, about to become an issue
     actor = principal_for(config.principals, reply.channel, reply.author)
     event = Event(
         event_type="work-item.create",
@@ -434,6 +448,7 @@ def process_kickoff(
     )
     result = publish(event, cli_config, channels=[], ledger=ledger).record
     if not (result and result.ok and result.ref):
+        bot.react(reply, "error")
         return _drop(
             reply,
             "create-failed",
@@ -441,7 +456,6 @@ def process_kickoff(
             actor=reply.author,
             error=(result.error if result else None) or None,
         )
-    bot = channel or SlackBotChannel(config, slack_state_path(cli_config))
     bot.bind(reply.thread, result.ref, reply.channel_id, origin="kickoff")
     link = f" — {result.url}" if result.url else ""
     bot.say(
@@ -457,6 +471,7 @@ def process_kickoff(
         actor=reply.author,
         thread=reply.thread,
     )
+    bot.react(reply, "completed")
     return {"outcome": "created", "workItem": result.ref, "url": result.url}
 
 
@@ -539,6 +554,7 @@ def handle_socket_event(
     post_comment: Optional[Callable] = None,
     deliver: Optional[Callable] = None,
     create_issue: Optional[Callable] = None,
+    client_factory: Optional[Callable] = None,
 ) -> Dict[str, Any]:
     """One Socket Mode ``message`` event through the same pipeline (R4.2).
 
@@ -546,10 +562,13 @@ def handle_socket_event(
     dropped as ``unmapped`` — unless it is a top-level message in the configured
     channel and the channel holds the ``work-item.create`` grant, in which case
     it is a kickoff candidate through the same function the poll read uses.
+    ``client_factory`` is the same injection point ``poll_once`` has (issue-325):
+    the channel built here is what acknowledges the message.
     """
     config = SlackChannelConfig.from_mapping(cli_config)
     state_path = slack_state_path(cli_config)
     state = ChannelState.load(state_path)
+    bot = SlackBotChannel(config, state_path, client_factory=client_factory)
     ts = str(event.get("ts") or "")
     thread = str(event.get("thread_ts") or "")
     channel_id = str(event.get("channel") or "")
@@ -571,6 +590,7 @@ def handle_socket_event(
                 reply,
                 config,
                 cli_config,
+                channel=bot,
                 post_comment=post_comment,
                 create_issue=create_issue,
             )
@@ -586,7 +606,12 @@ def handle_socket_event(
         channel_id=channel_id,
     )
     outcome = process_reply(
-        reply, config, cli_config, post_comment=post_comment, deliver=deliver
+        reply,
+        config,
+        cli_config,
+        post_comment=post_comment,
+        deliver=deliver,
+        channel=bot,
     )
     if work_item and reply.ts:
         # Shared with the poll transport (R4.6): a mode switch cannot
@@ -605,6 +630,7 @@ def handle_socket_action(
     *,
     post_comment: Optional[Callable] = None,
     deliver: Optional[Callable] = None,
+    client_factory: Optional[Callable] = None,
 ) -> Dict[str, Any]:
     """A Block Kit ``block_actions`` press → that member's reply carrying the
     button's ``value`` as its text (R4.3, A9).
@@ -612,6 +638,9 @@ def handle_socket_action(
     Only actions the-loop rendered (``action_id`` under :data:`ACTION_PREFIX`) are
     read; the value is *text*, judged by the ordinary pipeline with the ordinary
     authorization — a crafted payload buys nothing a typed message would not.
+    The reply's ``ts`` is the **pressed message's** — the only message a press
+    has, and where the acknowledgment lands (issue-325 R1.5); the action path
+    advances no cursor, so nothing else reads it.
     """
     actions = [
         a
@@ -640,9 +669,19 @@ def handle_socket_action(
         author=str((payload.get("user") or {}).get("id") or ""),
         text=str(actions[0].get("value")),
         thread=thread,
-        ts=str(payload.get("action_ts") or container.get("message_ts") or ""),
+        ts=str(
+            container.get("message_ts")
+            or message.get("ts")
+            or payload.get("action_ts")
+            or ""
+        ),
         channel_id=str((payload.get("channel") or {}).get("id") or ""),
     )
     return process_reply(
-        reply, config, cli_config, post_comment=post_comment, deliver=deliver
+        reply,
+        config,
+        cli_config,
+        post_comment=post_comment,
+        deliver=deliver,
+        channel=SlackBotChannel(config, state_path, client_factory=client_factory),
     )

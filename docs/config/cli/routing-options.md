@@ -1024,6 +1024,11 @@ the poller, and hot-reloaded with the rest of `routing`.
 Reacting is the daemon's one **write** to GitHub, and it is reaction-only — no text. Set
 `false` to opt out.
 
+The Slack channel mirrors this on the message a reply arrived on
+([`channels.slack.reactions`](/config/cli/channels-options#slack-reactions-enabled),
+issue-325): 👀 when an authorized reply is accepted, ✅ / ⚠️ when the pipeline is done
+with it — on the operator's own Slack message, with Slack's own palette.
+
 ### `reactions.started`
 
 - **Type:** palette name, or `""`
