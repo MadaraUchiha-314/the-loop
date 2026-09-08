@@ -17,12 +17,19 @@ Two of the grantable types have no handler here at all. ``gate.feedback`` and
 the ledger's own ingress is what classifies a gate answer and executes a control
 keyword, through the very seams a typed GitHub comment goes through. That is how a
 channel advances the loop: *through the ledger, never around it* (decision-103 D1).
+
+Whether a reply answers a gate is read from the graph **through the dispatcher's own
+coupling** (issue-321, decision-109): the same control policy, control store and
+registry the ingress reads with. A gate the pipeline *cannot* read — no session
+record, no checkout, a fault — is not "no gate": with the ``gate.feedback`` grant the
+reply is recorded unmarked and left to the ledger's ingress, which can; without the
+grant it stays the marked mirror it always was.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Dict, Mapping, Optional
+from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple
 
 from .. import eventlog
 from ..identity import principal_for
@@ -59,56 +66,132 @@ def _control_config(cli_config: Optional[Mapping]):
     )
 
 
-def _at_human_gate(work_item: str, cli_config: Optional[Mapping]) -> bool:
-    """Whether ``work_item``'s graph is parked at a human-actor node.
+def _graph_reader(cli_config: Optional[Mapping]):
+    """The dispatcher's own coupling, built from the same config (issue-321).
+
+    ``RoutingConfig.from_mapping`` over ``routing`` and the state layout — what
+    both daemons build their dispatcher from — then the registry at its
+    ``registry_dir``, the ``ControlStore`` on its ``portable_dir`` and the
+    ``GraphLink`` with the control config and the allow-list: the four arguments
+    ``Dispatcher.__init__`` passes, in the same order. A second construction that
+    drifted from that one *was* issue-321: a link with no control store, which
+    under the default policy (``control.requireStartCommand``) reports every
+    work item as never started and so never at a gate. A test pins the two
+    constructions together.
+
+    Imported lazily, as the read always was: ``webhook.dispatcher`` is needed
+    only once a reply arrives, and the poll watcher and ``channels listen`` run
+    without it until then.
+    """
+    from ..control import ControlStore
+    from ..core.sessions import _layout, _routing
+    from ..graphlink import GraphLink
+    from ..sessions import SessionRegistry
+    from ..webhook.dispatcher import RoutingConfig
+
+    config = dict(cli_config or {})
+    routing = RoutingConfig.from_mapping(dict(_routing(config)), _layout(config))
+    registry = SessionRegistry(routing.registry_dir)
+    link = GraphLink(
+        routing.graph,
+        routing.control,
+        ControlStore(routing.portable_dir, legacy=routing.legacy),
+        routing.authorized_users,
+    )
+    return routing, registry, link
+
+
+def _at_human_gate(work_item: str, cli_config: Optional[Mapping]) -> Optional[bool]:
+    """Whether ``work_item``'s graph is parked at a human-actor node — or ``None``
+    when the pipeline **cannot tell** (issue-321).
 
     A read of state the daemon already keeps — the session's checkout, through
-    the registry, then the graph coupling's read-only ``context``. No session,
-    no coupling, no graph: **not** at a gate, which is the fail-closed direction
-    (the message is a reply, the default grant).
+    the registry, then the coupling's read-only ``context`` — made through the
+    dispatcher's own construction of that coupling (:func:`_graph_reader`).
+
+    Three answers, because "cannot tell" is not "no": ``True`` at a human gate;
+    ``False`` when the graph says it is not, when the coupling is off (nothing
+    drives a graph, so nothing is parked at a gate) or for a standing session
+    (no ticket, no graph); ``None`` for no session record, a record with no
+    checkout, no context, or a fault. Folding ``None`` into ``False`` chose the
+    marked record — the one shape no reader of the gate ever accepts — for
+    exactly the case where the pipeline knew least. :func:`_classify` decides
+    what ``None`` becomes.
     """
     if not work_item or parse_standing_ref(work_item):
         return False
     try:
-        from ..core.sessions import _registry_dir
-        from ..graphlink import GraphLink, GraphLinkConfig
-        from ..sessions import SessionRegistry, WorkItemRef
+        from ..sessions import WorkItemRef
 
-        config = dict(cli_config or {})
-        routing = config.get("routing") or {}
-        registry = SessionRegistry(_registry_dir(config, ""))
+        routing, registry, link = _graph_reader(cli_config)
+        if not routing.graph.enabled:
+            return False
         item = WorkItemRef.parse(work_item)
         record = registry.record_owning(item)
         if record is None or not record.cwd:
-            return False
-        link = GraphLink(GraphLinkConfig.from_mapping(routing.get("graph") or {}))
+            logger.debug("no session record for %s: gate unknown", work_item)
+            return None
         context = link.context(item, record.cwd)
-    except Exception as exc:  # noqa: BLE001 — a graph fault is "not at a gate"
+    except Exception as exc:  # noqa: BLE001 — a graph fault is "cannot tell"
         logger.debug("could not read the graph for %s: %s", work_item, exc)
-        return False
+        return None
     if context is None:
-        return False
+        return None
     gate = getattr(context, "at_human_gate", False)
     return bool(gate() if callable(gate) else gate)
 
 
-def classify(reply: InboundReply, cli_config: Optional[Mapping]) -> str:
-    """The one event type this message is (R2.3), in a fixed order:
+#: What the graph read returned, as `channel.reply_received` records it.
+GATE_OPEN, GATE_NONE, GATE_UNKNOWN = "open", "none", "unknown"
+
+
+def _classify(
+    reply: InboundReply, cli_config: Optional[Mapping], grants: Sequence[str]
+) -> Tuple[str, str]:
+    """The one event type this message is (R2.3) and what the gate read returned,
+    in a fixed order:
 
     1. a control keyword → ``control.command`` (an approval word inside a control
-       comment must not become a gate answer);
+       comment must not become a gate answer; the graph is not read);
     2. the work item parked at a human gate → ``gate.feedback``;
-    3. otherwise → ``work-item.reply``.
+    3. the pipeline **cannot tell** (issue-321) → ``gate.feedback`` when the channel
+       holds that grant — recorded unmarked for the ledger's ingress, which judges
+       it with the graph it actually keeps — and ``work-item.reply`` when it does
+       not: the grant stays the only thing that lets a message become a gate
+       answer;
+    4. otherwise → ``work-item.reply``.
+
+    The grant is a parameter of step 3 alone: a gate the read *saw* is a gate
+    answer whatever the grants (the grant check after classification drops it),
+    and a graph that *said* "not at a gate" is a reply whatever the grants.
     """
     if reply.top_level:
-        return "work-item.create"
+        return "work-item.create", "n/a"
     from ..control import parse_command
 
     if parse_command(reply.text, _control_config(cli_config)).command:
-        return "control.command"
-    if _at_human_gate(reply.work_item, cli_config):
-        return "gate.feedback"
-    return "work-item.reply"
+        return "control.command", "n/a"
+    gate = _at_human_gate(reply.work_item, cli_config)
+    if gate:
+        return "gate.feedback", GATE_OPEN
+    if gate is None:
+        if "gate.feedback" in set(grants):
+            logger.info(
+                "%s: the gate could not be read; the reply is left to the ledger",
+                reply.work_item,
+            )
+            return "gate.feedback", GATE_UNKNOWN
+        return "work-item.reply", GATE_UNKNOWN
+    return "work-item.reply", GATE_NONE
+
+
+def classify(
+    reply: InboundReply, cli_config: Optional[Mapping], grants: Sequence[str] = ()
+) -> str:
+    """The one event type this message is — :func:`_classify` without the gate
+    word. ``grants`` is the channel's ``publish`` list; without it a gate the
+    pipeline cannot read is a reply, the 13.3.0 answer."""
+    return _classify(reply, cli_config, grants)[0]
 
 
 def _drop(reply: InboundReply, reason: str, level: str = "info", **fields) -> Dict:
@@ -150,7 +233,7 @@ def process_reply(
         # would be a ticket write on an attacker's behalf.
         return _drop(reply, "unauthorized-actor", level="warning", actor=reply.author)
 
-    event_type = classify(reply, cli_config)
+    event_type, gate = _classify(reply, cli_config, config.publish)
     if event_type not in config.publish:
         # Dropped, never downgraded (R2.3): a keyword the channel may not run is
         # not handed to the agent as prose either.
@@ -167,15 +250,21 @@ def process_reply(
         work_item=reply.work_item,
         actor=reply.author,
         kind=event_type,
+        gate=gate,
     )
     actor = principal_for(config.principals, reply.channel, reply.author)
+    detail: Dict[str, Any] = {"thread": reply.thread}
+    if gate == GATE_UNKNOWN and event_type == "gate.feedback":
+        # The record must not claim an answer to a gate the pipeline never saw
+        # (R2.2): the ledger phrases a deferred reply as a reply.
+        detail["gate"] = GATE_UNKNOWN
     event = Event(
         event_type=event_type,
         work_item=reply.work_item,
         text=reply.text,
         source=reply.channel,
         actor=actor,
-        detail={"thread": reply.thread},
+        detail=detail,
     )
     recorded = _record(event, reply, cli_config, post_comment)
     if event_type != "work-item.reply":

@@ -74,6 +74,22 @@ flowchart LR
   rest, on its next delivery or poll — and the graph's `comments_from` attributes an
   enveloped record to the person it names **only** when the real poster is authorized and
   the named login is too.
+- **The gate is read through the dispatcher's own coupling, and "cannot tell" is left
+  to the ledger** (issue-321, decision-109). The pipeline reads whether the work item is
+  parked at a human gate through the same `RoutingConfig` the daemons build their
+  dispatcher from — the same control policy, control store, allow-list and registry —
+  so under the default control policy an armed item at a gate reads as *at a gate*. The
+  read has three answers: WHEN it says *at a gate* THEN the reply SHALL be
+  `gate.feedback`; WHEN it says *not at a gate*, or the coupling is off, THEN the reply
+  SHALL be `work-item.reply`; WHEN the pipeline **cannot tell** — no session record, no
+  checkout, no context, a fault — THEN, with the `gate.feedback` grant, the reply SHALL
+  be recorded unmarked as `gate.feedback` (attributed as a *reply*, not as an answer to
+  a gate the pipeline never saw) and delivered by nothing but the ledger's ingress, and
+  without the grant it SHALL stay the marked mirror with direct delivery. A control
+  keyword outranks every answer, as before. `channel.reply_received` carries
+  `gate: open | none | unknown`. Before this the pipeline's reader had no control store,
+  read no graph at all under the default policy, and turned every "cannot tell" into
+  the marked record the gate never reads.
 - **The comment mirror.** WHEN the router or poller accepts a human comment (authorized or
   collaborator) THEN it SHALL publish `comment.human`; WHEN it drops a marker-stamped,
   envelope-less comment THEN it SHALL publish `comment.agent` — once per comment, first
@@ -141,6 +157,12 @@ flowchart LR
 
 ## Design
 
+- [`docs/specs/issue-321/design.md`](../specs/issue-321/design.md) — the pipeline's
+  graph reader as the dispatcher's own construction, the three-valued read, deferral to
+  the ledger within the grant.
+- [`decision-109`](../decisions/decision-109.md) — the reader is the dispatcher's
+  coupling; "cannot tell" is a state; it defers to the ledger only within the grant; a
+  reply's mirror keeps its marker.
 - [`docs/specs/issue-317/design.md`](../specs/issue-317/design.md) — `open` on the
   channel, `open_conversation` on the bus, the injected opener on the dispatcher's spawn
   path and its wiring through both daemons and the facade.
@@ -166,6 +188,7 @@ flowchart LR
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-321 | An authorized gate answer from Slack now locks the gate under the daemon's default control policy: the pipeline's graph read is built from the same `RoutingConfig` the dispatcher's coupling is (control policy, control store, allow-list, registry), where before it had no control store and read no graph at all; the read is three-valued, and a gate the pipeline cannot read (no session record, no checkout, a fault) is recorded unmarked as `gate.feedback` for the ledger's ingress to judge when the channel holds that grant — attributed as a reply — and stays the marked mirror without it; `channel.reply_received` carries `gate: open \| none \| unknown` | [spec](../specs/issue-321/), [decision-109](../decisions/decision-109.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/321) |
 | issue-317 | The Slack thread opens when the work item **starts**, not when its first event arrives: the dispatcher's one spawn path — which every way of starting converges on — asks every configured channel to open the work item's conversation (`SlackBotChannel.open`, root only, origin `start`, through `bus.open_conversation`) before the checkout; a bound work item keeps its thread, a refused start opens nothing, a channel failure is `channel.open_failed` and never touches the spawn, and the first event replies into the thread that already exists. Wired as an injected opener on the dispatcher (`conversation_opener`, config per call) by both daemons and the core facade | [spec](../specs/issue-317/), [decision-107](../decisions/decision-107.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/317) |
 | issue-312 | The Slack thread is the work item's: the first event opens a root naming the work item (ref + link button) and every event, the first included, is a reply into it; open-and-bind runs under a `flock` on the channel state so the agent's session, the daemons and the poll watcher open one thread between them, and a failed reply never opens a second; the conversation is a keyed record (work item → channel, thread, opened, origin, permalink) backfilled from a pre-existing file, listed by `the-loop channels threads` and announced by `channel.thread_opened`; refs with and without the default host share one thread. Before this the root was whichever event arrived first, the binding a newest-wins scan, and four unlocked writers could open two threads or drop a binding | [spec](../specs/issue-312/), [decision-105](../decisions/decision-105.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/312) |
 | issue-311 | The link every notification and ask carries names the work item's own GitHub: a ref the graph mints from `ticketing.github` now carries the resolved host (`integrations.github.host`, `$GH_HOST`, the checkout's remote), the ledger's `gh api` writes pass `--hostname` for it, and a kickoff `repo` may be `[HOST/]OWNER/REPO` with the bound ref carrying the host | [spec](../specs/issue-311/), [decision-104](../decisions/decision-104.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/311) |

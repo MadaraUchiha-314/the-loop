@@ -118,11 +118,14 @@ def relay_body(event: Event) -> str:
     """The record of a ``gate.feedback`` / ``control.command`` — quoted, scrubbed,
     **unmarked**, keywords intact, so the ledger's ingress reads it as this
     person's own words. The attribution says which channel it was typed on."""
-    what = (
-        "answer to the open gate"
-        if event.event_type == "gate.feedback"
-        else ("control command")
-    )
+    if event.event_type != "gate.feedback":
+        what = "control command"
+    elif str(event.detail.get("gate") or "") == "unknown":
+        # The pipeline could not read the gate (issue-321): the record is a reply
+        # the ledger's ingress judges, and must not claim an answer it never saw.
+        what = "reply"
+    else:
+        what = "answer to the open gate"
     body = (
         f"🗣️ **the-loop** — {what} from {_who(event)} on the **{event.source}** "
         "channel, recorded here so the loop reads it from the work item:\n\n"
