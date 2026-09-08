@@ -121,6 +121,20 @@ class StopCommand(Command):
         return 0 if report["ok"] else 1
 
 
+def _print_instance(instance: dict) -> None:
+    """One line: which instance this is, its mode, and the size of its scope."""
+    if not instance:
+        return
+    scope = instance.get("scope") or {}
+    managed = instance.get("managed") or []
+    declared = len(scope.get("workItems") or [])
+    print(
+        f"{'instance':<11} {instance.get('name') or '(unnamed)'} "
+        f"[{scope.get('mode') or 'open'}] — {declared} declared, "
+        f"{len(managed)} managed"
+    )
+
+
 @register
 class StatusCommand(Command):
     name = "status"
@@ -137,6 +151,7 @@ class StatusCommand(Command):
         if args.format == "json":
             print(json.dumps(report, indent=2))
             return 0 if report["ok"] else 1
+        _print_instance(report.get("instance") or {})
         for row in report["services"]:
             flag = "enabled" if row["enabled"] else "disabled"
             liveness = (

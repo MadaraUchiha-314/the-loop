@@ -41,6 +41,30 @@ state:
 env:
   file: ""                      # e.g. .env  (→ ~/.the-loop/.env beside this file)
 
+# Which instance of the-loop THIS config is, and which work items it manages
+# (issue-322). Several instances can watch one repository, each in its own
+# environment — a machine, a container, a checkout root; the-loop's concern
+# stops at the session. Unset: an unnamed, OPEN instance — exactly the
+# pre-issue-322 behaviour, where any armed, authorized start is taken.
+#   name       the instance's identity: `instance:<name>` on a start comment
+#              addresses it, `THE_LOOP_INSTANCE=<name>` reaches every session
+#              it spawns, and the comments it posts carry the token.
+#   scope.mode open       take any armed, authorized start (default)
+#              addressed  take a new work item only when the comment names
+#                         this instance (`the-loop start instance:<name>`) or
+#                         `the-loop sessions start` is run here — the steady
+#                         state for several instances
+#              locked     take nothing new; `workItems` is the only door
+#   scope.workItems  refs or GitHub URLs this instance manages by declaration
+# A work item it already manages is handled in every mode as before; an
+# address to another instance is authoritative; every drop is in the event
+# log with its reason and leaves no mark on the thread.
+instance:
+  name: ""
+  scope:
+    mode: open
+    workItems: []
+
 webhooks:
   ghWebhook:
     enabled: false                  # `the-loop start` brings the receiver up when true

@@ -177,7 +177,7 @@ on an `addressed`/`locked` instance, which is right — there is nothing here to
 - `ControlRecord.instance: str = ""` — in `to_dict` / `from_dict`; `ControlStore.record`
   takes `instance=""`. The dispatcher's `record()` closure, `_record_graph_command` and
   `core.sessions.control_session` pass `config.instance.name`.
-- `command_comment(..., address="")` appends ` instance:<address>` to the keyword line;
+- `command_comment(..., address="")` appends `instance:<address>` (space-separated) to the keyword line;
   `core.sessions._announce` passes the instance name. The self-authored marker is what
   keeps every instance — this one and the others — from reading it back; the token is
   for the humans and for a future manager reading the thread.

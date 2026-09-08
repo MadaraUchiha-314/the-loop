@@ -43,6 +43,7 @@ from ..core import attention as core_attention
 from ..core import daemons as core_daemons
 from ..core import events as core_events
 from ..core import graphs as core_graphs
+from ..core import instance as core_instance
 from ..core import repo as core_repo
 from ..core import sessions as core_sessions
 from ..core import standing as core_standing
@@ -207,6 +208,12 @@ def build_server(cli_config: Optional[dict] = None) -> MCPServer:
     def control_daemon(daemon: str, verb: str) -> Dict[str, Any]:
         """Start or stop an ingress daemon (poller | gh-webhook)."""
         return core_daemons.control_daemon(daemon, verb, cli_config)
+
+    def get_instance() -> Dict[str, Any]:
+        """This instance of the-loop: its name, scope mode, declared work items
+        and the managed set (declared, live session, control record) — the
+        identity a manager of several instances reads (issue-322)."""
+        return core_instance.describe_instance(cli_config)
 
     def list_attention() -> List[Dict[str, Any]]:
         """Work items needing attention: paused sessions, armed items with no

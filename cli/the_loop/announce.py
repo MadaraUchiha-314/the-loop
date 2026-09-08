@@ -61,16 +61,20 @@ class AnnounceConfig:
         )
 
 
-def announcement_body(session: Session) -> str:
+def announcement_body(session: Session, instance: str = "") -> str:
     """The markdown comment announcing ``session`` and how to attach to it.
 
     Pure and payload-free (see the module docstring): every value comes from
     the session's own registry record — which is also why marking it as
     the-loop's own is safe here (:func:`mark_self_authored` must never be
-    applied to foreign text).
+    applied to foreign text). ``instance`` is the posting instance's name
+    (issue-322): a config value validated by ``instance.NAME_RE``, shown as one
+    more table row so a reader with several instances knows which machine to
+    attach on; empty for an unnamed instance, and then no row at all.
     """
     target = session.tmux_target
     ref = session.work_item.ref
+    instance_row = f"| instance | `{instance}` |\n" if instance else ""
     note = (
         "The session is kept after the work completes, so this transcript "
         "stays readable. A respawn reuses this same tmux session name, so "
@@ -83,6 +87,7 @@ def announcement_body(session: Session) -> str:
         "|---|---|\n"
         f"| tmux session | `{target}` |\n"
         f"| harness | `{session.harness}` |\n"
+        f"{instance_row}"
         "\n"
         "Attach from the machine running the-loop:\n"
         "\n"
@@ -110,8 +115,11 @@ class SessionAnnouncer:
         runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
         timeout: Optional[float] = 30.0,
         on_work_item_missing: Optional[Callable[[WorkItemRef], None]] = None,
+        instance: str = "",
     ):
         self.config = config or AnnounceConfig()
+        # The instance's name (issue-322), named in the body; "" adds nothing.
+        self.instance = instance
         self._runner = runner
         self.timeout = timeout
         self._warned_missing_gh = False
@@ -136,7 +144,7 @@ class SessionAnnouncer:
         item = session.work_item
         ok, error = post_issue_comment(
             item,
-            announcement_body(session),
+            announcement_body(session, instance=self.instance),
             gh_binary=config.gh_binary,
             runner=self._runner,
             timeout=self.timeout,

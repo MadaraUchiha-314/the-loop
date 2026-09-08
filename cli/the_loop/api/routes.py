@@ -42,6 +42,7 @@ from ..core import config as core_config
 from ..core import daemons as core_daemons
 from ..core import events as core_events
 from ..core import graphs as core_graphs
+from ..core import instance as core_instance
 from ..core import lifecycle as core_lifecycle
 from ..core import repo as core_repo
 from ..core import sessions as core_sessions
@@ -332,6 +333,12 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
         except PackageNotFoundError:  # pragma: no cover — source checkout
             v = "unknown"
         return {"status": "ok", "version": v}
+
+    @router.get(f"{API_PREFIX}/instance", operation_id="getInstance")
+    def get_instance() -> Dict[str, Any]:
+        # Which instance answered, and what it manages (issue-322): the seam a
+        # manager of several instances aggregates across (decision-110 D8).
+        return core_instance.describe_instance(holder.current)
 
     @router.get(
         f"{API_PREFIX}/work-items",

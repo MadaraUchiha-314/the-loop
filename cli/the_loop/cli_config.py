@@ -111,6 +111,31 @@ def apply_integrations(config: dict) -> dict:
     return config
 
 
+def apply_instance(config: dict) -> dict:
+    """Fan the top-level `instance` block into `routing` (issue-322).
+
+    The block is the instance's identity and scope — a fact about *this* daemon
+    set, so it sits beside `state` and `env` rather than under `routing`. The
+    dispatcher reads its policy from `RoutingConfig.from_mapping(routing, …)`
+    alone, and decision-109 D1 wants exactly one construction of that object; so
+    the block travels under a private key, the way `integrations.github.cli.binary`
+    reaches `routing.control` as `_ghBinary`. A `RoutingConfig` built from a bare
+    routing mapping is an unnamed, open instance: 13.3.1.
+    """
+    block = config.get("instance")
+    if block is None:
+        # No block declared: the routing mapping is left exactly as it was, so a
+        # config without one reads (and compares) as it did before the key
+        # existed; `RoutingConfig` then defaults to an unnamed, open instance.
+        return config
+    routing = config.get("routing")
+    if not isinstance(routing, dict):
+        routing = {}
+        config["routing"] = routing
+    routing["_instance"] = dict(block) if isinstance(block, dict) else block
+    return config
+
+
 def load_cli_config(path: Path, strict: bool = False) -> dict:
     """Load the CLI config, refusing one that predates a breaking change.
 
@@ -123,9 +148,11 @@ def load_cli_config(path: Path, strict: bool = False) -> dict:
         from .migrations import assert_current
 
         assert_current(data)
+        from .cli_config import apply_instance as _apply_instance
         from .cli_config import apply_integrations as _apply
 
         _apply(data)
+        _apply_instance(data)
     return data
 
 

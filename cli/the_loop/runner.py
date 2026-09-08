@@ -106,6 +106,15 @@ _PROBE_TIMEOUT_SECONDS = 10
 # exists. Matched only to decide whether to *re-probe* — never to authorise the
 # kill that may follow, which `session_state` decides.
 _DUPLICATE_SESSION_RE = re.compile(r"duplicate session", re.IGNORECASE)
+# `tmux new-session -e KEY=VALUE` arrived in tmux 3.2 (issue-322): the one way to
+# hand a spawned harness its instance's name without touching the tmux server's
+# own environment. Probed once per runner from `tmux -V` ("tmux 3.3a",
+# "tmux next-3.4"); an older or unreadable version omits the flag with one warning
+# rather than failing every spawn.
+_TMUX_ENV_MIN_VERSION = (3, 2)
+_TMUX_VERSION_RE = re.compile(r"(\d+)\.(\d+)")
+#: The variable a spawned session finds when its instance is named (issue-322).
+INSTANCE_ENV_VAR = "THE_LOOP_INSTANCE"
 
 _INSTALL_HINTS = {
     "tmux": (
@@ -219,9 +228,36 @@ class TmuxRunner:
     readable instead of tmux tearing the window down (issue-86).
     """
 
-    def __init__(self, binary: str = "tmux", remain_on_exit: bool = True):
+    def __init__(
+        self, binary: str = "tmux", remain_on_exit: bool = True, instance: str = ""
+    ):
         self.binary = binary
         self.remain_on_exit = remain_on_exit
+        # The instance's name (issue-322), exported into every spawned session as
+        # INSTANCE_ENV_VAR when set. A config value validated by
+        # ``instance.NAME_RE`` — the only thing ever interpolated into the argv.
+        self.instance = instance
+        self._env_support: Optional[bool] = None
+
+    def _supports_env(self, timeout: Optional[float] = None) -> bool:
+        """Whether this tmux accepts ``new-session -e`` (3.2+), probed once."""
+        if self._env_support is None:
+            result = self._run(["-V"], timeout)
+            match = _TMUX_VERSION_RE.search(result.output) if result.ok else None
+            supported = bool(
+                match
+                and (int(match.group(1)), int(match.group(2))) >= _TMUX_ENV_MIN_VERSION
+            )
+            if not supported:
+                logger.warning(
+                    "tmux %s does not support `new-session -e`; spawned sessions "
+                    "will not carry %s=%s (tmux 3.2 or newer does)",
+                    (result.output.strip() or result.error or "version unknown"),
+                    INSTANCE_ENV_VAR,
+                    self.instance,
+                )
+            self._env_support = supported
+        return self._env_support
 
     def is_available(self) -> bool:
         return shutil.which(self.binary) is not None
@@ -325,16 +361,10 @@ class TmuxRunner:
             )
         except UnsupportedRunnerError as exc:
             return TmuxResult(ok=False, error=str(exc))
-        argv = [
-            "new-session",
-            "-d",
-            "-s",
-            target,
-            "-c",
-            cwd,
-            "--",
-            adapter.binary,
-        ] + harness_argv
+        argv = ["new-session", "-d", "-s", target, "-c", cwd]
+        if self.instance and self._supports_env(timeout):
+            argv += ["-e", f"{INSTANCE_ENV_VAR}={self.instance}"]
+        argv += ["--", adapter.binary] + harness_argv
         blocked = self._clear_target(target, timeout)
         if blocked is not None:
             return blocked

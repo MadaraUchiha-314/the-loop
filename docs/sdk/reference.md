@@ -39,6 +39,7 @@ unparseable one raises `ValueError` naming it.
 |--------|---------|-------|
 | `check_environment()` | `dict` | which external binaries this config needs, and which are present — see [environment](/sdk/environment) |
 | `status()` | `dict` | per-service status of the **standalone** deployment this config describes |
+| `instance()` | `dict` | this instance's name, scope mode, declared work items and managed set — the document `GET /api/v1/instance` serves ([instances](/cli/instances)) |
 | `host_ingresses()` | `bool` | whether this process runs the enabled ingresses |
 
 `start`, `stop` and `restart` are deliberately absent: they spawn and kill the-loop's own

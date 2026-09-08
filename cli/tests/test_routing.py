@@ -1692,7 +1692,7 @@ def make_control_dispatcher(tmp_path, tmux, **overrides):
     return make_dispatcher(tmp_path, tmux, **overrides)
 
 
-def test_the_settled_vocabulary_is_exactly_the_six_documented_outcomes():
+def test_the_settled_vocabulary_is_exactly_the_ten_documented_outcomes():
     """Adding a settlement means adding it here — and to the event catalogue.
 
     `poll.comment_settled` documents these six as its `outcome` values, and the
@@ -1706,6 +1706,11 @@ def test_the_settled_vocabulary_is_exactly_the_six_documented_outcomes():
         "control-executed",
         "control-rejected",
         "control-ambiguous",
+        # issue-322: an event outside this instance's scope, refused for good
+        "addressed-elsewhere",
+        "unaddressed",
+        "instance-locked",
+        "ambiguous-address",
     )
     assert SETTLED_SUPPRESSED == (
         "awaiting-start",

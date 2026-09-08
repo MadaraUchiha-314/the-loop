@@ -22,6 +22,13 @@ from typing import Any, Callable, Dict, List, Optional, Set
 
 from .. import eventlog
 from ..announce import AnnounceConfig, SessionAnnouncer
+from ..instance import (
+    REFUSALS as SCOPE_REFUSALS,
+    InstanceConfig,
+    ScopeDecision,
+    decide as decide_scope,
+    parse_address,
+)
 from ..authz import is_authorized
 from ..cleanup import CleanupOutcome, cleanup_work_item
 from ..collaborators import CollaboratorStore
@@ -105,10 +112,18 @@ SETTLED_SUPPRESSED = ("awaiting-start", "session-paused", "collaborator-no-spawn
 SETTLED_CONTROL_EXECUTED = "control-executed"
 SETTLED_CONTROL_REJECTED = "control-rejected"
 SETTLED_CONTROL_AMBIGUOUS = "control-ambiguous"
-SETTLED_OUTCOMES = SETTLED_SUPPRESSED + (
-    SETTLED_CONTROL_EXECUTED,
-    SETTLED_CONTROL_REJECTED,
-    SETTLED_CONTROL_AMBIGUOUS,
+# An event this instance refused as out of its scope (issue-322): another
+# instance may own the work item, so the drop is deliberate and final — settled,
+# never retried into a different answer.
+SETTLED_OUT_OF_SCOPE = SCOPE_REFUSALS
+SETTLED_OUTCOMES = (
+    SETTLED_SUPPRESSED
+    + (
+        SETTLED_CONTROL_EXECUTED,
+        SETTLED_CONTROL_REJECTED,
+        SETTLED_CONTROL_AMBIGUOUS,
+    )
+    + SETTLED_OUT_OF_SCOPE
 )
 
 # Fallback when routing.promptTemplate does not exist. Templates are internal to
@@ -369,6 +384,10 @@ class RoutingConfig:
     # deliberately separate now, one tracked in git and one never.
     portable_dir: str = ".the-loop/portable"
     legacy: Optional[LegacyLayout] = None
+    # This instance's identity and scope (issue-322) — the top-level `instance`
+    # block, fanned in under `_instance` by `cli_config.apply_instance`. A bare
+    # routing mapping is an unnamed, open instance: 13.3.1.
+    instance: InstanceConfig = field(default_factory=InstanceConfig)
 
     @classmethod
     def from_mapping(
@@ -424,6 +443,7 @@ class RoutingConfig:
             control=ControlConfig.from_mapping(data.get("control") or {}),
             graph=GraphLinkConfig.from_mapping(data.get("graph") or {}),
             interaction=InteractionConfig.from_mapping(data.get("interaction") or {}),
+            instance=InstanceConfig.from_mapping(data.get("_instance") or {}),
         )
 
 
@@ -576,8 +596,14 @@ class Dispatcher:
         self.tmux = (
             tmux_runner
             if tmux_runner is not None
-            else TmuxRunner(remain_on_exit=self.config.tmux.remain_on_exit)
+            else TmuxRunner(
+                remain_on_exit=self.config.tmux.remain_on_exit,
+                instance=self.config.instance.name,
+            )
         )
+        # An injected runner (tests / embedding) still learns the instance's name:
+        # identity, not policy, so it is not behind the override guard.
+        self.tmux.instance = self.config.instance.name
         # A caller-supplied workspace (tests / embedding) wins and survives
         # reloads; otherwise it tracks routing.workspace across hot-reloads.
         self._workspace_override = workspace is not None
@@ -599,7 +625,9 @@ class Dispatcher:
         # Same override-survives-reload pattern for the session announcer.
         self._announcer_override = announcer is not None
         self.announcer = announcer or SessionAnnouncer(
-            self.config.announce, on_work_item_missing=self.verifier.record_missing
+            self.config.announce,
+            on_work_item_missing=self.verifier.record_missing,
+            instance=self.config.instance.name,
         )
         self.deduper = (
             deduper
@@ -675,10 +703,13 @@ class Dispatcher:
             self.verifier = WorkItemVerifier(gh_binary=config.control.gh_binary)
         if not self._announcer_override:
             self.announcer = SessionAnnouncer(
-                config.announce, on_work_item_missing=self.verifier.record_missing
+                config.announce,
+                on_work_item_missing=self.verifier.record_missing,
+                instance=config.instance.name,
             )
         if not self._tmux_override:
             self.tmux.remain_on_exit = config.tmux.remain_on_exit
+        self.tmux.instance = config.instance.name
         self.graphlink = GraphLink(
             config.graph,
             config.control,
@@ -859,6 +890,22 @@ class Dispatcher:
             # forwarded, and a retry could only reach the same reading.
             self._settle(routed, SETTLED_CONTROL_AMBIGUOUS)
             return
+
+        # Scope (issue-322): is this event for a work item THIS instance manages,
+        # or one it may claim? After linkage (a branch-invented item must not
+        # count as managed) and after the control parse (a refused command is
+        # recorded as a rejection, a refused delivery as a drop), and before
+        # anything is recorded or matched. A refusal is the only power here:
+        # nothing below can be reached that 13.3.1 would not have reached.
+        scope = decide_scope(
+            self.config.instance,
+            parse_address(event_body(routed.event, routed.payload)),
+            any(self._manages(item) for item in routed.work_items),
+        )
+        if not scope.accepted:
+            self._refuse_scope(routed, scope, control)
+            return
+
         if control.command:
             # A command needs a NAMED, allowlisted human — stricter than the
             # ingress guard, on purpose. `is_authorized` deliberately allows an
@@ -1034,6 +1081,59 @@ class Dispatcher:
             # the outcome (issue-270). A mixed match — one live, one paused — is a
             # delivery, and the session that took it records the id itself.
             self._settle(routed, "session-paused")
+
+    # -- scope (issue-322) --------------------------------------------------------
+
+    def _manages(self, item: WorkItemRef) -> bool:
+        """Whether ``item`` is in this instance's managed set (decision-110 D2).
+
+        Declared in the config, or a live session record, or a control record —
+        the facts the instance already keeps for every work item it acts on.
+        """
+        if self.config.instance.declares(item.ref):
+            return True
+        if self.registry.record_owning(item) is not None:
+            return True
+        return self.control_store.get(item) is not None
+
+    def _refuse_scope(
+        self, routed: RoutedEvent, scope: ScopeDecision, control: ControlResult
+    ) -> None:
+        """Record an out-of-scope refusal and settle the event; touch nothing else.
+
+        No reaction, no comment, no record (R2.6): another instance may own the
+        work item, and a mark from a non-owner is noise on the thread at best
+        and a second daemon steering the item at worst. An authorized command is
+        recorded as `control.rejected` so the person who typed it can find out
+        why nothing happened; everything else is a `dispatch.dropped`.
+        """
+        actor = event_actor(routed.event, routed.payload) or ""
+        refs = [item.ref for item in routed.work_items]
+        if (
+            control.command
+            and actor
+            and is_authorized(actor, self.config.authorized_users)
+        ):
+            self._reject_control(control.command, routed, actor, scope.outcome)
+            return
+        logger.info(
+            "instance %s (%s) is not handling %s on %s: %s",
+            self.config.instance.name or "(unnamed)",
+            self.config.instance.mode,
+            routed.event,
+            ", ".join(refs),
+            scope.outcome,
+        )
+        eventlog.emit(
+            "dispatch.dropped",
+            reason=scope.outcome,
+            instance=self.config.instance.name,
+            mode=self.config.instance.mode,
+            work_items=refs,
+            gh_event=routed.event,
+            delivery_id=routed.delivery_id or None,
+        )
+        self._settle(routed, scope.outcome)
 
     # -- linkage verification (issue-269) ----------------------------------------
 
@@ -1421,7 +1521,12 @@ class Dispatcher:
 
         def record() -> None:
             self.control_store.record(
-                target, command, source="comment", actor=actor, note=note
+                target,
+                command,
+                source="comment",
+                actor=actor,
+                note=note,
+                instance=self.config.instance.name,
             )
 
         # An **arming** command (start/resume/contribute/do) is recorded only when

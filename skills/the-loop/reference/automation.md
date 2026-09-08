@@ -93,6 +93,21 @@ CLI's whole configuration is YAML (decision-038) — and is stdlib otherwise.
   and cannot satisfy a human gate, all of which keep reading `authorizedUsers`. A grant
   covers one work item, is cleared when it closes, and is revoked with
   `the-loop remove-collaborator @login`. Decision: `docs/decisions/decision-102.md`.
+- **Several instances, one of them addressed** (`instance`, issue-322). One CLI config
+  is one *instance* of the-loop, and several can watch one repository from separate
+  environments (the environments are the operator's to provide). An instance has a
+  `name`, a `scope.mode` and a declared `scope.workItems` list; a work item it already
+  manages — declared, or with a session or control record on it — is handled in every
+  mode as before, and the mode decides only what happens to a new one: `open` (default)
+  takes any armed, authorized start; `addressed` takes only a start that names it; `locked`
+  takes nothing new. Any control keyword can carry the address token `instance:<name>`
+  (`the-loop start instance:laptop-b`), a whole-word token whose name must fit the
+  standing-session grammar; an address to another instance is authoritative, two
+  different addresses refuse the comment, and a refused instance leaves nothing on the
+  thread — one event-log line with the reason. `the-loop sessions start` on an instance is
+  addressed to it; a spawned session finds `THE_LOOP_INSTANCE=<name>`; the portable
+  record's `control.instance` and `GET /api/v1/instance` say who took what. Decision:
+  `docs/decisions/decision-110.md`.
 - **Where the session takes its answers from** (`routing.interaction.mode`, issue-134):
   `work-item` (default) or `cli`. Until this existed the prompt never said, so the agent
   guessed — and a session guessing "the terminal" asks into a tmux pane nobody may be

@@ -68,21 +68,27 @@ overrides: {}
 
 ## Verification activities
 
-- [ ] T1 — `uv run --project cli python -m pytest -q cli/tests/test_instance.py cli/tests/test_control.py cli/tests/test_announce.py cli/tests/test_lifecycle_cmd.py`
-- [ ] T2 — `uv run --project cli python -m pytest -q cli/tests/test_instance_integration.py`
-- [ ] T3 — `uv run --project cli python -m pytest -q cli/tests/test_api_contract_parity.py cli/tests/test_mcp_integration.py`
-- [ ] T8 — `uv run --project cli python -m pytest -q cli/tests -k "unauthorized_address or malformed_token or does_not_unlock or unknown_mode_resolves or leaves_no_mark or only_the_configured_name"`
-- [ ] T10 — `uv run --project cli python -m pytest -q cli/tests/test_config_schema_parity.py cli/tests/test_docs_parity.py cli/tests/test_sdk_docs_parity.py cli/tests/test_migrations.py cli/tests/test_control_integration.py cli/tests/test_graphlink_integration.py` and `make validate`
-- [ ] T12 — `make check`
-- [ ] T13 — `evidence/security-review.md`
+- [x] T1 — `uv run --project cli python -m pytest -q cli/tests/test_instance.py cli/tests/test_control.py cli/tests/test_announce.py cli/tests/test_lifecycle_cmd.py`
+- [x] T2 — `uv run --project cli python -m pytest -q cli/tests/test_instance_integration.py`
+- [x] T3 — `uv run --project cli python -m pytest -q cli/tests/test_api_contract_parity.py cli/tests/test_mcp_integration.py`
+- [x] T8 — `uv run --project cli python -m pytest -q cli/tests -k "unauthorized_address or malformed_token or does_not_unlock or unknown_mode_resolves or leaves_no_mark or only_the_configured_name"`
+- [x] T10 — `uv run --project cli python -m pytest -q cli/tests/test_config_schema_parity.py cli/tests/test_docs_parity.py cli/tests/test_sdk_docs_parity.py cli/tests/test_migrations.py cli/tests/test_control_integration.py cli/tests/test_graphlink_integration.py` and `make validate`
+- [x] T12 — `make check`
+- [x] T13 — `evidence/security-review.md`
 
 ## Verification results
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| | | | |
+| T1 | `uv run --project cli python -m pytest -q cli/tests/test_instance.py cli/tests/test_control.py cli/tests/test_announce.py cli/tests/test_lifecycle_cmd.py` | pass — 145 passed | [`evidence/verification.md`](evidence/verification.md) |
+| T2 | `uv run --project cli python -m pytest -q cli/tests/test_instance_integration.py` | pass — 14 passed (the fourteen scenarios) | [`evidence/verification.md`](evidence/verification.md) |
+| T3 | `uv run --project cli python -m pytest -q cli/tests/test_api_contract_parity.py cli/tests/test_mcp_integration.py` | pass — 9 passed | [`evidence/verification.md`](evidence/verification.md) |
+| T8 | `uv run --project cli python -m pytest -q cli/tests -k "unauthorized_address or malformed_token or does_not_unlock or unknown_mode_resolves or leaves_no_mark or only_the_configured_name"` | pass — 17 passed (A1–A6; eleven are A2's parametrised bodies) | [`evidence/verification.md`](evidence/verification.md) |
+| T10 | `uv run --project cli python -m pytest -q cli/tests/test_config_schema_parity.py cli/tests/test_docs_parity.py cli/tests/test_sdk_docs_parity.py cli/tests/test_migrations.py cli/tests/test_control_integration.py cli/tests/test_graphlink_integration.py` and `make validate` | pass — 104 passed; seven configs VALID; schemas byte-identical; the schema diff purely additive | [`evidence/verification.md`](evidence/verification.md) |
+| T12 | `make check` | pass — lint (ruff, markdownlint over 977 files), format, pyright, config validation, full suite: 3108 passed, 1 skipped in 147.51s | [`evidence/verification.md`](evidence/verification.md) |
+| T13 | the-loop checklist over A1–A6 | pass on the autonomous review; **human sign-off pending** (tier 4) — the owner's, at the PR | [`evidence/security-review.md`](evidence/security-review.md) |
 
-**Not executed:** —
+**Not executed:** none.
 
 ## Review comments
 

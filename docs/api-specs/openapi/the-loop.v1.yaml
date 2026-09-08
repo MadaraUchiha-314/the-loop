@@ -21,6 +21,19 @@ paths:
                   type: string
                 type: object
                 title: Response Health
+  /api/v1/instance:
+    get:
+      summary: Get Instance
+      operationId: getInstance
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                title: Response Getinstance
   /api/v1/work-items:
     get:
       summary: List Work Items

@@ -14,19 +14,19 @@ overrides: {}
 
 ## Task list
 
-- [ ] 1. The block — `cli/the_loop/instance.py`: `InstanceConfig`, `parse_address`,
+- [x] 1. The block — `cli/the_loop/instance.py`: `InstanceConfig`, `parse_address`,
   `decide`, the outcome constants; `cli_config.apply_instance`; `RoutingConfig.instance`
   - _Depends on:_ none
   - _Requirements:_ R1.1, R1.2, R1.4, R1.5, R3.1, R3.3, R3.4, R2.1–R2.4 (the table)
   - _Test:_ T1 — `test_instance.py::test_the_block_*`, `::test_the_token_*`,
     `::test_decide_*`, `::test_an_unknown_mode_resolves_to_locked`,
     `::test_a_malformed_token_is_not_an_address_and_reaches_no_record`
-- [ ] 2. The schema — `instance` in `.the-loop/cli-config.schema.json` and the packaged
+- [x] 2. The schema — `instance` in `.the-loop/cli-config.schema.json` and the packaged
   copy; the template and this repository's `cli-config.yaml`
   - _Depends on:_ 1
   - _Requirements:_ R1.1, R1.2, R5.3
   - _Test:_ T10 — `test_config_schema_parity.py`, `test_migrations.py`, `make validate`
-- [ ] 3. The seam — `Dispatcher._manages`, `_refuse_scope`, the call in `handle`;
+- [x] 3. The seam — `Dispatcher._manages`, `_refuse_scope`, the call in `handle`;
   `SETTLED_OUTCOMES`; `ControlRecord.instance` and the three `record` call sites;
   `core.sessions.control_session`'s locked refusal
   - _Depends on:_ 1
@@ -35,7 +35,7 @@ overrides: {}
     `test_an_unauthorized_address_grants_nothing`,
     `test_an_address_does_not_unlock_a_locked_instance`,
     `test_a_refused_event_leaves_no_mark`
-- [ ] 4. The marks — `command_comment(address=)` and `core.sessions._announce`;
+- [x] 4. The marks — `command_comment(address=)` and `core.sessions._announce`;
   `announcement_body(instance=)` and `SessionAnnouncer`; `TmuxRunner.instance`, the
   version probe and the `-e` argv; the dispatcher and `core.standing` setting it
   - _Depends on:_ 1
@@ -45,7 +45,7 @@ overrides: {}
     `test_instance.py::test_a_named_instance_spawns_with_the_environment_variable`,
     `::test_an_old_tmux_gets_no_environment_flag_and_one_warning`; T8 —
     `test_only_the_configured_name_reaches_tmux_and_the_comment`
-- [ ] 5. The surface — `core/instance.py::describe_instance`; `GET /api/v1/instance` in
+- [x] 5. The surface — `core/instance.py::describe_instance`; `GET /api/v1/instance` in
   `routes.py` and the authored contract; `status_all` and the `status` line; the SDK's
   `instance()` and its docs row
   - _Depends on:_ 1
@@ -54,7 +54,7 @@ overrides: {}
     `test_lifecycle_cmd.py::test_status_prints_the_instance_line`; T3 —
     `test_api_contract_parity.py`, `test_mcp_integration.py`; T10 —
     `test_sdk_docs_parity.py`
-- [ ] 6. Docs, capability docs, decision — `docs/config/cli/instance-options.md`,
+- [x] 6. Docs, capability docs, decision — `docs/config/cli/instance-options.md`,
   `docs/config/cli/index.md`, the sidebar, `docs/cli/instances.md`, `docs/cli/state.md`,
   `docs/cli/commands/status.md`, `skills/the-loop/reference/automation.md`,
   `docs/capabilities/instances.md` + index, rows in `webhook-triggers.md`, `cli.md`,
@@ -62,7 +62,7 @@ overrides: {}
   - _Depends on:_ 2, 5
   - _Requirements:_ R5.1–R5.3, the capability-docs gate
   - _Test:_ T10 — `test_docs_parity.py`; T12 — `make check`
-- [ ] 7. Verification — execute `testing-plan.md`, record `evidence/verification.md` and
+- [x] 7. Verification — execute `testing-plan.md`, record `evidence/verification.md` and
   `evidence/security-review.md`
   - _Depends on:_ 3, 4, 6
   - _Requirements:_ all
