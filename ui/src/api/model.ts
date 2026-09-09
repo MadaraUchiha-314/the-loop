@@ -12,6 +12,7 @@
 import type {
   AttentionItem,
   ControlRecord,
+  EndedRecord,
   EventRecord,
   GraphStatus,
   NodeReport,
@@ -83,6 +84,22 @@ export function specId(item: Pick<WorkItemRecord, "ref" | "graph">): string | nu
   if (recorded) return recorded;
   const parsed = parseRef(item.ref);
   return parsed ? `issue-${parsed.number}` : null;
+}
+
+/**
+ * The closure stamp, when the record carries a well-formed one (issue-329).
+ * Only a mapping with a string `state` counts: a malformed stamp reads as open,
+ * which fails towards *showing* the item — the safe direction for a board.
+ */
+export function endedOf(item: Pick<WorkItemRecord, "ended">): EndedRecord | null {
+  const ended = item.ended;
+  if (!ended || typeof ended !== "object" || typeof ended.state !== "string") return null;
+  return ended;
+}
+
+/** Merged, or an issue closed: the work shipped. A pull request closed unmerged did not. */
+export function endedAsShipped(ended: EndedRecord): boolean {
+  return ended.state === "merged" || ended.reason === "issue-closed";
 }
 
 export type SessionState = "active" | "paused" | "closed" | "none";
@@ -431,6 +448,12 @@ export interface WorkItemView {
   lastActivity: string;
   /** The agent's open question, when one was asked via `the-loop ask`. */
   question: EventRecord | null;
+  /**
+   * The work item ended upstream (issue-329). When set, `question` and
+   * `parked` are null whatever the events and the graph report say: nobody
+   * is waiting for the answer, and the gate can no longer be approved.
+   */
+  ended: EndedRecord | null;
 }
 
 export interface GraphReports {
@@ -528,6 +551,9 @@ export function buildWorkItemViews(input: BuildInput): WorkItemView[] {
     // the frozen node list would have said more.
     const known = status !== null && status.nodes.length > 0;
     const rail = known ? railFromStatus(status) : railFromFrozen(record);
+    // An ended item's stale signals are retired here, once, so every consumer
+    // — banners, inbox, row flag, grouping — follows (issue-329, decision-113).
+    const ended = endedOf(record);
 
     views.push({
       ref,
@@ -545,11 +571,12 @@ export function buildWorkItemViews(input: BuildInput): WorkItemView[] {
       status,
       progress: railProgress(rail),
       currentNode: status?.currentNode ?? "",
-      parked: status?.parked ?? null,
+      parked: ended ? null : (status?.parked ?? null),
       pullRequests: buildPullRequests(ref, session, input, recordByRef, attentionByRef, claimed),
       attention: attentionByRef.get(ref) ?? [],
       lastActivity: session?.lastEventAt ?? record.poll?.lastPolledAt ?? "",
-      question: input.awaiting?.[ref] ?? null,
+      question: ended ? null : (input.awaiting?.[ref] ?? null),
+      ended,
     });
   }
 
@@ -745,6 +772,9 @@ export function sessionTree(views: WorkItemView[]): SessionTreeItem[] {
 
 /** The flag a dashboard row wears, or null. Human gates outrank paused sessions. */
 export function rowFlag(view: WorkItemView): { label: string; urgent: boolean } | null {
+  // Ended outranks everything (issue-329): the item asks for nothing, and the
+  // one fact worth the slot is how it ended.
+  if (view.ended) return { label: view.ended.state === "merged" ? "merged" : "closed", urgent: false };
   // A PR loop's question used to raise the chip on the PR's own top-level row.
   // That row is gone (issue-302) and a nested row carries no chip by design
   // (issue-300 R2.4), so the question surfaces on the item that owns it —
@@ -814,6 +844,9 @@ const KIND_TIER: Record<string, number> = {
 export function attentionEntries(views: WorkItemView[]): AttentionEntry[] {
   const entries: AttentionEntry[] = [];
   for (const view of views) {
+    // Nothing under an ended item needs a human — its own question and gate
+    // are already null, and a pull request's under it retire with it (issue-329).
+    if (view.ended) continue;
     if (view.question) {
       entries.push({
         key: `${view.ref}:question`,
@@ -995,6 +1028,9 @@ export function attentionByItem(views: WorkItemView[]): AttentionGroup[] {
 export type ItemGroup = "needs-you" | "running" | "idle";
 
 export function itemGroup(view: WorkItemView): ItemGroup {
+  // An ended item never needs a human (issue-329): a blocked node in a stranded
+  // checkout is history, not a request.
+  if (view.ended) return view.sessionState === "active" ? "running" : "idle";
   if (view.question || view.parked || view.rail.some((node) => node.state === "blocked")) {
     return "needs-you";
   }

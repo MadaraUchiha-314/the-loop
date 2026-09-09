@@ -62,6 +62,11 @@ class Closure:
     kind: str = ""  # provider vocabulary, e.g. "issue" | "pull-request"
     title: str = ""
     url: str = ""
+    #: Who closed it, as the provider records it — "" when it names nobody
+    #: (issue-329). The synthesized close event carries it as the actor the
+    #: dispatcher's cleanup gate judges, with the same provenance a webhook's
+    #: `sender` has; it never relaxes that gate.
+    actor: str = ""
 
     @property
     def merged(self) -> bool:

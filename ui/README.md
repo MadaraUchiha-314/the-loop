@@ -84,7 +84,9 @@ Nothing here is a new endpoint. The interesting part is the **join**, which live
 [`src/api/model.ts`](src/api/model.ts):
 
 One screen, three columns (issue-327's design, Control Plane UI 3.0): a **sidebar** of work
-items grouped by what they need from you — *Needs you*, *In flight*, *Shipped*, *Idle* — each
+items grouped by what they need from you — *Needs you*, *In flight*, *Shipped*, *Idle*; an item
+whose record says it ended (issue-329) goes to *Shipped* or *Idle* with its stale question and
+gate retired, never to *Needs you* — each
 row `#n · title / repo · node · age`, with its pull requests nested beneath it (issue-300: `#216`,
 or `loop-docs#47` when the PR is in another repository; a linked PR appears there and *not* also
 as a top-level row, issue-302), a search box that filters the loaded rows, the standing

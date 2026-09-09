@@ -383,3 +383,14 @@ def test_a_work_item_known_only_by_its_roster_is_still_enumerated(registry, stor
     CollaboratorStore(store.root).add(REF, "dana", actor="octocat")
 
     assert [ref.ref for ref in work_items_with_state(registry, store)] == [REF]
+
+
+def test_reset_clears_the_ended_section(registry, store):
+    """R1.5 (issue-329) — a reset is start-over, so the closure stamp goes with the rest."""
+    from the_loop.workitem import ENDED
+
+    store.write_section(REF, ENDED, {"state": "closed", "reason": "issue-closed"})
+    outcome = reset_work_item(REF, registry=registry, store=store)
+    assert ENDED in outcome.removed
+    assert store.section(REF, ENDED) is None
+    assert not (store.root / "github-octo-repo-15.json").exists()

@@ -58,6 +58,16 @@ def list_attention(config: Optional[dict] = None) -> List[Dict[str, Any]]:
             )
 
     records = core_workitems.list_work_items(config)
+    # A work item that ended upstream asks for nothing (issue-329): its record
+    # carries the closure stamp the close path wrote, and the SAME rule the
+    # dashboard applies (ui/src/api/model.ts::buildWorkItemViews nulls the
+    # question and the gate for an ended record) applies here, so the two
+    # surfaces agree. Only a mapping counts — a malformed stamp reads as open.
+    ended = {
+        str(record.get("ref") or "")
+        for record in records
+        if isinstance(record.get("ended"), dict)
+    }
     for record in records:
         control = record.get("control") or {}
         armed = control.get("command") in ("start", "resume")
@@ -65,7 +75,7 @@ def list_attention(config: Optional[dict] = None) -> List[Dict[str, Any]]:
             "active",
             "paused",
         )
-        if armed and not live:
+        if armed and not live and record.get("ref") not in ended:
             items.append(
                 {
                     "workItem": record["ref"],
@@ -100,6 +110,8 @@ def list_attention(config: Optional[dict] = None) -> List[Dict[str, Any]]:
         reply_ts = answered.get(ref)
         if reply_ts is not None and reply_ts >= str(event.get("ts", "")):
             continue
+        if ref in ended:
+            continue  # the item ended; nobody is waiting for the answer
         question = str(event.get("question") or "").strip()
         items.append(
             {

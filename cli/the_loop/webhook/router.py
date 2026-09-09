@@ -52,6 +52,13 @@ SOURCE_KEYWORD = "keyword"  # a closing keyword in the pull request's body
 SOURCE_ENTITY = "entity"  # the issue/PR the event is about (GitHub said so)
 
 
+#: The delivery-id prefix of a closure the POLLER reconstructed from an item's
+#: state (issue-94) — the one mark that tells the dispatcher which ingress saw a
+#: close, so the stamp it writes can say `source: poll` (issue-329). Owned here,
+#: beside the event shape both ingresses share, so neither imports the other.
+POLL_CLOSURE_DELIVERY_PREFIX = "poll-close-"
+
+
 @dataclass
 class RoutedEvent:
     """A verified, filtered, deduplicated event ready for dispatch."""

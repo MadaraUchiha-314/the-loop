@@ -102,10 +102,12 @@ class GhState:
             out = json.dumps({"comments": self.comments})
         return subprocess.CompletedProcess(cmd, 0, out, "")
 
-    def close_issue(self, merged=None):
+    def close_issue(self, merged=None, closed_by=""):
         """Close issue #15 upstream: it leaves the listing and reports closed."""
         self.issues = []
         self.item_state = {"number": 15, "state": "closed"}
+        if closed_by:
+            self.item_state["closed_by"] = {"login": closed_by}
         if merged is not None:
             self.item_state["pull_request"] = {
                 "merged_at": "2026-07-25T00:00:00Z" if merged else None
@@ -575,6 +577,105 @@ def test_a_merged_pr_closes_its_session(tmp_path):
     assert poller.poll_once().closures == 1
     dispatcher.stop()
     assert registry.find_by_work_item(REF) is None
+
+
+def test_a_paused_sessions_closed_item_is_detected_and_stamped(tmp_path):
+    """
+    Feature: Poll GitHub and close finished work items
+    Scenario: A paused session's closed item is detected by the poller
+        Given a labelled issue with a spawned session that was then paused
+        When the issue is closed upstream and the next poll cycle runs
+        Then the closure is detected and the session is closed
+        And the work item's portable record is stamped ended, source poll
+        And its poll ledger is forgotten
+    Requirement: docs/specs/issue-329/requirements.md#R3 (R3.1, R1.1)
+    """
+    gh = GhState()
+    registry, tmux, dispatcher, poller = _make(tmp_path, gh)
+    poller.poll_once()
+    assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
+    registry.pause(REF)
+
+    gh.close_issue()
+    summary = poller.poll_once()
+    dispatcher.stop()
+
+    assert summary.closures == 1
+    assert registry.find_by_work_item(REF) is None
+    ended = dispatcher.control_store.ended(REF)
+    assert ended is not None
+    assert (ended["state"], ended["reason"], ended["source"], ended["actor"]) == (
+        "closed",
+        "issue-closed",
+        "poll",
+        "",
+    )
+    assert poller.state.is_known(REF) is False
+
+
+def test_a_polled_closure_by_an_authorized_closer_releases_the_item(tmp_path):
+    """
+    Feature: Poll GitHub and close finished work items
+    Scenario: A polled closure by an authorized closer releases the item
+        Given a labelled issue with a spawned, registered session
+        When an authorized user closes the issue and the next poll cycle runs
+        Then the synthesized close event names that user
+        And the item's local resources are cleaned up (the session record is gone)
+    Requirement: docs/specs/issue-329/requirements.md#R4 (R4.2, R4.3)
+    """
+    log = tmp_path / "events.jsonl"
+    eventlog.configure("poll", path=log, enabled=True)
+    try:
+        gh = GhState()
+        registry, tmux, dispatcher, poller = _make(tmp_path, gh)
+        poller.poll_once()
+        assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
+
+        gh.close_issue(closed_by="octocat")
+        assert poller.poll_once().closures == 1
+        dispatcher.stop()
+
+        assert registry.find_by_work_item(REF, include_closed=True) is None
+        events = [json.loads(line)["event"] for line in log.read_text().splitlines()]
+        assert "session.cleaned" in events and "cleanup.deferred" not in events
+        ended = dispatcher.control_store.ended(REF)
+        assert ended is not None and ended["actor"] == "octocat"
+    finally:
+        eventlog.reset()
+
+
+def test_a_polled_closure_by_an_unlisted_closer_is_deferred(tmp_path):
+    """
+    Feature: Poll GitHub and close finished work items
+    Scenario: A polled closure by an unlisted closer is deferred
+        Given a labelled issue with a spawned, registered session
+        When a user outside authorizedUsers closes the issue and the poll runs
+        Then the session is closed but its local resources are kept
+        And the deferral names that user as unauthorized
+    Requirement: docs/specs/issue-329/requirements.md#R4 (R4.3); abuse case A2
+    """
+    log = tmp_path / "events.jsonl"
+    eventlog.configure("poll", path=log, enabled=True)
+    try:
+        gh = GhState()
+        registry, tmux, dispatcher, poller = _make(tmp_path, gh)
+        poller.poll_once()
+        assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
+
+        gh.close_issue(closed_by="stranger")
+        assert poller.poll_once().closures == 1
+        dispatcher.stop()
+
+        assert registry.find_by_work_item(REF) is None  # closed…
+        assert registry.find_by_work_item(REF, include_closed=True) is not None  # …kept
+        rows = [json.loads(line) for line in log.read_text().splitlines()]
+        (deferred,) = [row for row in rows if row["event"] == "cleanup.deferred"]
+        assert (deferred["reason"], deferred["actor"]) == (
+            "unauthorized-actor",
+            "stranger",
+        )
+    finally:
+        eventlog.reset()
 
 
 def test_a_merged_pr_does_not_close_its_still_open_work_item(tmp_path):

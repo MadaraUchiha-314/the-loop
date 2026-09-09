@@ -268,3 +268,29 @@ def test_a_closed_nested_endpoint_still_reports_no_session(tmp_path):
         for i in attention.list_attention(config)
         if i["kind"] == "armed-without-session" and i["workItem"] == PR
     ]
+
+
+def test_an_ended_item_asks_for_no_attention(tmp_path):
+    """R5.4 (issue-329) — a closed work item's stale question and arming are
+    suppressed, the same rule the dashboard applies to its record."""
+    from the_loop.workitem import ENDED, WorkItemStore
+
+    config = _config(tmp_path)
+    layout = layout_from_config(config)
+    control = ControlStore(layout.portable_dir, legacy=legacy_layout(layout))
+    control.record(ARMED, "start", source="cli", actor="tester")
+    control.record_ended(ARMED, {"state": "closed", "reason": "issue-closed"})
+    _log(tmp_path, [_ask(ARMED, "2026-08-12T10:00:00.000Z")])
+    kinds = {i["kind"] for i in attention.list_attention(config)}
+    assert "awaiting-input" not in kinds and "armed-without-session" not in kinds
+
+    # Abuse case A6: a stamp that is not a mapping fails towards showing the item.
+    WorkItemStore(layout.portable_dir).write_section(ARMED, ENDED, None)
+    from pathlib import Path
+
+    path = Path(layout.portable_dir) / "github-octo-repo-6.json"
+    record = json.loads(path.read_text())
+    record[ENDED] = "closed"
+    path.write_text(json.dumps(record))
+    kinds = {i["kind"] for i in attention.list_attention(config)}
+    assert {"awaiting-input", "armed-without-session"} <= kinds

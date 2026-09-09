@@ -79,7 +79,7 @@ from .authz import mark_self_authored
 from .collaborators import parse_logins
 from .sessions import WorkItemRef
 from .state import LegacyLayout
-from .workitem import CONTROL, GRAPH, WorkItemStore
+from .workitem import CONTROL, ENDED, GRAPH, WorkItemStore
 
 logger = logging.getLogger("the-loop.control")
 
@@ -457,6 +457,43 @@ class ControlStore:
         which is every work item started before the choice existed.
         """
         return self.store.section(work_item, GRAPH)
+
+    # -- closure (issue-329) ------------------------------------------------------
+
+    def record_ended(
+        self, work_item: Union[str, WorkItemRef], ended: Dict[str, Any]
+    ) -> None:
+        """Stamp the work item as ended upstream (issue-329).
+
+        Beside `control` and `graph` in the same **portable** record, for the same
+        reason: "this work item is over — closed or merged, when, by whom" is true
+        on any machine. Written by the dispatcher's one close path, whichever
+        ingress delivered the closure; the two attention surfaces read it to
+        demote the item instead of asking a human about it (decision-113).
+        """
+        stamp = dict(ended)
+        stamp.setdefault("at", _utcnow())
+        self.store.write_section(work_item, ENDED, stamp)
+
+    def ended(self, work_item: Union[str, WorkItemRef]) -> Optional[Dict[str, Any]]:
+        """What :meth:`record_ended` wrote, or ``None`` while the item is open.
+
+        Only a mapping counts: a malformed stamp reads as *not ended*, which fails
+        towards showing the item — the safe direction for an attention surface.
+        """
+        section = self.store.section(work_item, ENDED)
+        return section if isinstance(section, dict) else None
+
+    def clear_ended(self, work_item: Union[str, WorkItemRef]) -> bool:
+        """Forget the closure stamp (the item was reopened). False if there was none.
+
+        Reads the raw section rather than :meth:`ended`, so a malformed stamp is
+        cleared too rather than left behind as an unreadable husk.
+        """
+        if self.store.section(work_item, ENDED) is None:
+            return False
+        self.store.write_section(work_item, ENDED, None)
+        return True
 
     def record(
         self,

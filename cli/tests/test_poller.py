@@ -725,6 +725,29 @@ def test_provider_closure_reads_state_for_issues_and_prs(payload, expected):
         assert closure is not None and (closure.state, closure.kind) == expected
 
 
+def test_provider_closure_carries_the_closer():
+    """R4.1 (issue-329) — `closed_by.login`, or "" when GitHub names nobody."""
+    ref = WorkItemRef.parse("github:octo/repo#15")
+    named = _provider(
+        _state_client(
+            {"number": 15, "state": "closed", "closed_by": {"login": "octocat"}}
+        )
+    ).closure(ref)
+    assert named is not None and named.actor == "octocat"
+    unnamed = _provider(_state_client({"number": 15, "state": "closed"})).closure(ref)
+    assert unnamed is not None and unnamed.actor == ""
+
+
+def test_provider_closure_event_names_the_closer_as_sender():
+    """R4.2 (issue-329) — the same `sender` a webhook carries, and none when unknown."""
+    provider = _provider(_gh_client())
+    ref = WorkItemRef.parse("github:octo/repo#15")
+    named = provider.closure_event(ref, Closure(state="closed", actor="octocat"))
+    assert named.payload["sender"] == {"login": "octocat"}
+    unnamed = provider.closure_event(ref, Closure(state="closed"))
+    assert "sender" not in unnamed.payload
+
+
 def test_provider_closure_propagates_a_gh_failure():
     def runner(cmd, **kwargs):
         return subprocess.CompletedProcess(cmd, 1, "", "HTTP 502")
@@ -2250,16 +2273,70 @@ def test_a_listed_items_linked_ref_is_not_reconciled(tmp_path):
     assert provider.closure_asks == [] and summary.closures == 0
 
 
-def test_an_already_closed_session_is_not_reconciled_again(tmp_path):
+def test_a_closed_session_is_asked_once_and_not_again_once_stamped(tmp_path):
+    """R3.1 (issue-329) — a session this machine already closed still learns its
+    item ended; the stamp the close path writes is what stops the asking."""
     registry = SessionRegistry(tmp_path / "sessions")
     _active_session(registry)
     registry.close(REF15)
     provider = FakeProvider(items=[], closures={REF15: Closure("closed")})
     disp = RecordingDispatcher()
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    summary = make_poller(provider, registry, disp, state).poll_once()
+    assert provider.closure_asks == [REF15] and summary.closures == 1
+
+    # The recording dispatcher stamps nothing; the real one does. Once stamped:
+    ControlStore(tmp_path / "portable").record_ended(REF15, {"state": "closed"})
+    summary = make_poller(provider, registry, disp, state).poll_once()
+    assert provider.closure_asks == [REF15] and summary.closures == 0
+
+
+def test_a_paused_sessions_closed_item_is_reconciled(tmp_path):
+    """R3.1 (issue-329) — paused is not exempt from ending."""
+    registry = SessionRegistry(tmp_path / "sessions")
+    _active_session(registry)
+    registry.pause(REF15)
+    provider = FakeProvider(items=[], closures={REF15: Closure("closed")})
+    disp = RecordingDispatcher()
     summary = make_poller(
         provider, registry, disp, PollState(WorkItemStore(tmp_path / "portable"))
     ).poll_once()
+    assert summary.closures == 1
+    assert [(e.event, e.action) for e in disp.events] == [("issues", "closed")]
+
+
+@pytest.mark.parametrize("section", ["control", "graph", "collaborators"])
+def test_a_record_without_a_session_is_reconciled(tmp_path, section):
+    """R3.1 (issue-329) — an armed, frozen or rostered item with no session on
+    this machine is asked whether it ended."""
+    registry = SessionRegistry(tmp_path / "sessions")
+    store = WorkItemStore(tmp_path / "portable")
+    store.write_section(REF15, section, {"x": 1})
+    provider = FakeProvider(items=[], closures={REF15: Closure("closed")})
+    disp = RecordingDispatcher()
+    summary = make_poller(provider, registry, disp, PollState(store)).poll_once()
+    assert provider.closure_asks == [REF15] and summary.closures == 1
+
+
+def test_a_poll_only_record_is_not_reconciled(tmp_path):
+    """R3.2 (issue-329) — the ledger of a thread once seen is not a tracked item."""
+    registry = SessionRegistry(tmp_path / "sessions")
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    state.baseline_comments(REF15, ["IC_1"], "t")
+    provider = FakeProvider(items=[], closures={REF15: Closure("closed")})
+    summary = make_poller(provider, registry, RecordingDispatcher(), state).poll_once()
     assert provider.closure_asks == [] and summary.closures == 0
+
+
+def test_a_listed_item_clears_its_ended_stamp(tmp_path):
+    """R2.2 (issue-329) — listed means open; a stamp on it is stale or forged (A4)."""
+    registry = SessionRegistry(tmp_path / "sessions")
+    control = ControlStore(tmp_path / "portable")
+    control.record_ended(REF15, {"state": "closed", "reason": "issue-closed"})
+    provider = FakeProvider(items=[_item(15)], comments={15: []})
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    make_poller(provider, registry, RecordingDispatcher(), state).poll_once()
+    assert control.ended(REF15) is None
 
 
 def test_poll_state_forget_drops_the_whole_ledger(tmp_path):
@@ -3529,3 +3606,17 @@ def test_the_cycle_line_counts_degraded_scopes(tmp_path, caplog):
             PollState(WorkItemStore(tmp_path / "portable")),
         ).poll_once()
     assert "2 scope(s) degraded" in caplog.text
+
+
+def test_a_live_session_beside_a_stamp_is_still_reconciled(tmp_path):
+    """R3.1 (issue-329) — a stamp written on another machine (the directory is
+    tracked) must not leave this machine's live session running forever."""
+    registry = SessionRegistry(tmp_path / "sessions")
+    _active_session(registry)
+    ControlStore(tmp_path / "portable").record_ended(REF15, {"state": "closed"})
+    provider = FakeProvider(items=[], closures={REF15: Closure(state="closed")})
+    disp = RecordingDispatcher()
+    summary = make_poller(
+        provider, registry, disp, PollState(WorkItemStore(tmp_path / "portable"))
+    ).poll_once()
+    assert provider.closure_asks == [REF15] and summary.closures == 1

@@ -352,3 +352,40 @@ def test_a_collaborator_command_is_not_a_control_record(tmp_path):
     assert store.start_requested(REF) is True
     store.record(REF, STOP)
     assert store.start_requested(REF) is False
+
+
+# -- the ended section (issue-329) --------------------------------------------
+
+
+def test_record_ended_and_clear_ended(tmp_path):
+    """R1.1, R1.6 — the closure fact lives beside `control`, and a reopen removes it."""
+    store = ControlStore(tmp_path / "portable")
+    assert store.ended(REF) is None
+    assert store.clear_ended(REF) is False  # nothing to clear, nothing written
+    store.record_ended(
+        REF,
+        {
+            "state": "merged",
+            "kind": "pull-request",
+            "reason": "pr-merged",
+            "actor": "o",
+        },
+    )
+    ended = store.ended(REF)
+    assert ended is not None and ended["state"] == "merged" and ended["actor"] == "o"
+    assert store.clear_ended(REF) is True
+    assert store.ended(REF) is None
+
+
+def test_a_malformed_ended_reads_as_not_ended(tmp_path):
+    """Abuse case A6 — a stamp that is not a mapping fails towards showing the item."""
+    import json
+
+    from the_loop.workitem import CONTROL, ENDED, WorkItemStore
+
+    WorkItemStore(tmp_path / "portable").write_section(REF, CONTROL, {"command": "x"})
+    path = tmp_path / "portable" / "github-octo-repo-15.json"
+    record = json.loads(path.read_text())
+    record[ENDED] = "closed"
+    path.write_text(json.dumps(record))
+    assert ControlStore(tmp_path / "portable").ended(REF) is None

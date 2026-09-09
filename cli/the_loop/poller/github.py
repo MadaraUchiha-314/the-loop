@@ -31,7 +31,12 @@ from typing import Callable, Dict, List, Optional, Sequence
 
 from ..comments import gh_host_args
 from ..sessions import DEFAULT_GITHUB_HOST, WorkItemRef, is_github_host
-from ..webhook.router import RoutedEvent, event_carries_label, extract_work_items
+from ..webhook.router import (
+    POLL_CLOSURE_DELIVERY_PREFIX,
+    RoutedEvent,
+    event_carries_label,
+    extract_work_items,
+)
 from .base import (
     REPROBE_EVERY_CYCLES,
     Closure,
@@ -139,6 +144,8 @@ class GhItemState:
     merged: bool = False
     title: str = ""
     url: str = ""
+    #: ``closed_by.login`` — who closed the item, or "" (issue-329).
+    closed_by: str = ""
 
     @property
     def open(self) -> bool:
@@ -462,6 +469,7 @@ class GhClient:
             merged=bool((pull_request or {}).get("merged_at")),
             title=str(data.get("title") or ""),
             url=str(data.get("html_url") or ""),
+            closed_by=str(((data.get("closed_by") or {}).get("login")) or ""),
         )
 
     # -- parsing ---------------------------------------------------------------
@@ -864,6 +872,7 @@ class GitHubPollProvider(PollProvider):
             kind=_KIND_PR if state.is_pr else _KIND_ISSUE,
             title=state.title,
             url=state.url,
+            actor=state.closed_by,
         )
 
     def closure_event(self, ref: WorkItemRef, closure: Closure) -> RoutedEvent:
@@ -884,6 +893,12 @@ class GitHubPollProvider(PollProvider):
             "action": "closed",
             "repository": {"full_name": f"{ref.owner}/{ref.repo}"},
         }
+        # The closer, as GitHub records it (issue-329): the same `sender` a
+        # webhook carries, so the dispatcher's cleanup gate judges a polled
+        # closure by the same rule. Absent when GitHub names nobody, so that
+        # payload stays byte-identical to the pre-issue-329 one.
+        if closure.actor:
+            payload["sender"] = {"login": closure.actor}
         if closure.kind == _KIND_PR:
             event = "pull_request"
             entity["merged"] = closure.merged
@@ -894,7 +909,7 @@ class GitHubPollProvider(PollProvider):
         return RoutedEvent(
             event=event,
             action="closed",
-            delivery_id=f"poll-close-{ref.ref}-{closure.state}",
+            delivery_id=f"{POLL_CLOSURE_DELIVERY_PREFIX}{ref.ref}-{closure.state}",
             work_items=[ref],
             payload=payload,
             labeled=False,

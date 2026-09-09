@@ -252,3 +252,24 @@ def test_an_ended_item_stays_ended_across_a_restart(tmp_path):
     restarted = ControlStore(tmp_path / "portable", legacy=legacy)
     assert restarted.get(REF) is None
     assert restarted.start_requested(REF) is False
+
+
+# -- the ended section (issue-329) --------------------------------------------
+
+
+def test_a_record_with_only_ended_is_kept_and_indexed(tmp_path):
+    """R1.4 — closure is the tracking that outlives the machine, so the stamp
+    alone keeps the record (and the index says so)."""
+    from the_loop.workitem import ENDED, SECTIONS
+
+    assert ENDED in SECTIONS
+    store = WorkItemStore(tmp_path / "portable")
+    ControlStore(tmp_path / "portable").record(REF, "start", actor="octocat")
+    store.write_section(REF, ENDED, {"state": "closed", "reason": "issue-closed"})
+    store.write_section(REF, CONTROL, None)
+
+    record = json.loads((tmp_path / "portable" / SLUG).read_text())
+    assert record["ended"]["state"] == "closed"
+    assert "control" not in record or record["control"] is None
+    index = json.loads((tmp_path / "portable" / INDEX_FILE).read_text())
+    assert index["workItems"][0]["sections"] == ["ended"]

@@ -45,6 +45,24 @@ export interface FrozenNode {
   optIn?: boolean;
 }
 
+/**
+ * `ended` on a portable record — the work item ended upstream (issue-329).
+ * Written by the daemon's close path; a record without it is open.
+ */
+export interface EndedRecord {
+  /** `closed` | `merged`. */
+  state: string;
+  /** `issue` | `pull-request`. */
+  kind?: string;
+  /** `issue-closed` | `pr-merged` | `pr-closed`. */
+  reason?: string;
+  at?: string;
+  /** `webhook` | `poll` — which ingress saw the closure. */
+  source?: string;
+  /** Who closed it, or `""` when the event named nobody. */
+  actor?: string;
+}
+
 /** `GET /api/v1/work-items` — `<state.root>/portable/<slug>.json`, verbatim. */
 export interface WorkItemRecord {
   ref: string;
@@ -64,6 +82,8 @@ export interface WorkItemRecord {
     workItem?: string;
     nodes?: FrozenNode[];
   } | null;
+  /** Absent on a 13.6.0 service and on every open item. */
+  ended?: EndedRecord | null;
 }
 
 /** One addressable harness conversation: a work item's session, or a PR's. */

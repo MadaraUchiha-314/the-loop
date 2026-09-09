@@ -44,13 +44,14 @@ from typing import Callable, Dict, List, Optional, Tuple, Union
 
 from . import eventlog
 from .sessions import Session, SessionRegistry, WorkItemRef
-from .workitem import COLLABORATORS, CONTROL, POLL, WorkItemStore
+from .workitem import COLLABORATORS, CONTROL, ENDED, POLL, WorkItemStore
 
 logger = logging.getLogger("the-loop.reset")
 
 __all__ = [
     "COLLABORATORS",
     "CONTROL",
+    "ENDED",
     "PIECES",
     "POLL",
     "SESSION",
@@ -156,8 +157,10 @@ def reset_work_item(
 
     # The collaborator roster goes with them (issue-307): a reset is "forget what
     # this machine holds about this work item so it starts over", and a grant that
-    # outlived the start-over would be authority nobody re-issued.
-    for section in (CONTROL, POLL, COLLABORATORS):
+    # outlived the start-over would be authority nobody re-issued. The closure
+    # stamp goes too (issue-329): a reset is start-over, and an item that starts
+    # over is open again as far as this machine knows.
+    for section in (CONTROL, POLL, COLLABORATORS, ENDED):
         try:
             if store.section(ref, section) is None:
                 continue

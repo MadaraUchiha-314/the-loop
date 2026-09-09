@@ -190,7 +190,10 @@ package — there are no install extras (owner decision, PR #162).
   `session.reply_sent` — the same rule the dashboard's `awaitingInput` model
   applies, so the two surfaces cannot disagree. An answer given on the **ticket**
   instead emits no `reply_sent`, so the row stays lit — a known, documented gap
-  (the poller cannot know which forwarded comment answered the question).
+  (the poller cannot know which forwarded comment answered the question). A work
+  item whose portable record carries an `ended` section (issue-329) SHALL report
+  neither `awaiting-input` nor `armed-without-session`: nobody is waiting for the
+  answer. The dashboard applies the same rule to the same record.
 - A session's **transcript** SHALL be served by `GET /api/v1/sessions/transcript`
   (issue-209): the harness runs as a CLI in tmux, so the record of a session's
   turns and tool calls is the harness's own file — for Claude Code,
@@ -280,7 +283,13 @@ package — there are no install extras (owner decision, PR #162).
   (*Needs you*, *In flight*, *Shipped*, *Idle*; each row `#n · title / repo · node
   · age`, a search box filtering the loaded rows, standing sessions as their own
   group, Settings and the health word in the footer), each item with **its pull
-  requests nested beneath it** (issue-300); a **main column** showing the
+  requests nested beneath it** (issue-300) — and a work item whose record says it
+  **ended** (`ended`, issue-329, [decision-113](../decisions/decision-113.md)) SHALL
+  sit under *Shipped* (merged, or an issue closed) or *Idle* (a pull request closed
+  unmerged), never under *Needs you*: its question, its parked gate and its blocked
+  nodes are retired at the join, its row wears a muted `merged` / `closed` chip, and
+  the inbox holds nothing for it or its pull requests; a record without the field, or
+  with a malformed one, reads as open; a **main column** showing the
   selected item's title and ref chip, its loop as a compacted node strip (first,
   last and two either side of the current node; *Full graph* expands it), one
   tab per session, the harness trace as a reading column with a *Tool calls*
@@ -392,6 +401,7 @@ package — there are no install extras (owner decision, PR #162).
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-329 | Closed work items leave *Needs you* (2026-09-09): the join reads the portable record's new `ended` section, nulls the item's question and parked gate, keeps it out of `needs-you`, groups it under *Shipped* (merged or issue closed) or *Idle* (PR closed unmerged) with a muted `merged` / `closed` chip, and contributes nothing to the inbox for it or its pull requests; `GET /attention` applies the same rule and reports neither `awaiting-input` nor `armed-without-session` for a stamped record. A record without the field, or with a malformed one, is open, as at 13.6.0. The demo's shipped item now carries the stamp | [spec](../specs/issue-329/), [decision-113](../decisions/decision-113.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/329) |
 | issue-322 | `GET /api/v1/instance` (`getInstance`; the `get_instance` MCP tool; `loop.instance()` on the SDK): which instance of the-loop answered — its name, scope mode, declared work items and the managed set with the source of each entry. The seam a manager of several instances aggregates across: every instance serves the same surface, and this document says which one it is | [spec](../specs/issue-322/), [decision-110](../decisions/decision-110.md), [instances](instances.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/322) |
 | issue-302 | A pull request stopped appearing twice on the board. A labeled, linked PR carries two identities the service writes on purpose — the poller's portable ledger under its own ref, and a session endpoint nested under the work item it delivers — and `buildWorkItemViews` unioned them, so PR #301's nesting made the same PR render as a live nested row *and* a dead top-level shell (grey dot, "no session", because its session is nested elsewhere). The join now reconciles the two: a ref another item's row draws as its pull request is not a work item, unless nothing would draw it (a treeless owner), it has a session record of its own, or the claim is a self- or two-level claim a hand-edited record could use to hide a row. What the removed row carried is folded onto the nested one — its portable record for the age fallback, and its attention and open question onto the owning item's card and chip — so the drop moves information rather than deleting it. Service side, `list_attention` now counts a live nested PR endpoint as a session for its ref, which is what made every linked, labeled PR report a permanent stall | [spec](../specs/issue-302/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/302) |
 | issue-300 | The Work sidebar stopped flattening the board: each work item now carries its pull requests as nested rows (dot &middot; number-or-qualified-ref &middot; age), rendered from the `sessionTree` join the retired Sessions screen left behind rather than a second derivation, so treeless loops stay treeless. Selecting a PR row opens that PR's session on its work item's canvas, and the parent row keeps a lighter marker so the open item is still visible. The viewed trace moved from pane-local state to the hash — the trace tabs became links to the same route the sidebar rows use — which removes the second source of truth and, with it, the class of bug where a PR of the already-open item could be selected and change nothing | [spec](../specs/issue-300/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/300) |

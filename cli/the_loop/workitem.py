@@ -8,7 +8,8 @@ true on any machine::
       "url": "https://github.com/octo/repo/issues/15",
       "control": {"command": "start", "actor": "octocat", …},
       "poll":    {"seenComments": [...], "commentAttempts": {...}, …},
-      "collaborators": {"users": [{"login": "dana", "addedBy": "octocat", …}]}
+      "collaborators": {"users": [{"login": "dana", "addedBy": "octocat", …}]},
+      "ended":   {"state": "merged", "reason": "pr-merged", "at": "…", …}
     }
 
 The ``url`` is a navigation aid derived from the ref (issue-130), because these
@@ -65,6 +66,7 @@ logger = logging.getLogger("the-loop.workitem")
 __all__ = [
     "COLLABORATORS",
     "CONTROL",
+    "ENDED",
     "GRAPH",
     "INDEX_FILE",
     "POLL",
@@ -90,9 +92,19 @@ GRAPH = "graph"
 #: for the plugin and is never read by the daemon.
 COLLABORATORS = "collaborators"
 
+#: The closure fact (issue-329): the work item ended upstream — how (`state`:
+#: closed | merged, `kind`, `reason`), when (`at`), which ingress saw it
+#: (`source`) and who closed it (`actor`, or "" when the event named none).
+#: **Portable** for the same reason `control` is: "this item is over" is true on
+#: any machine, and it is what lets a board anywhere demote the row instead of
+#: guessing from a closed session record. Written on the dispatcher's one close
+#: path, cleared by a reopen; a record carrying only this section is kept — it
+#: is the tracking that outlives the machine (decision-113).
+ENDED = "ended"
+
 #: Every section a record may carry. A record with none of them is deleted
 #: rather than kept as an empty husk.
-SECTIONS = (CONTROL, POLL, GRAPH, COLLABORATORS)
+SECTIONS = (CONTROL, POLL, GRAPH, COLLABORATORS, ENDED)
 
 #: The directory's index (issue-130) — one file listing every record beside it,
 #: so ``portable/`` answers "what is being tracked?" without opening each record.

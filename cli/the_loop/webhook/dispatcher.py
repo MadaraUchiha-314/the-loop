@@ -74,6 +74,7 @@ from ..reactions import (
 from ..runner import SESSION_LIVE, TmuxRunner
 from ..sessions import Session, SessionRegistry, WorkItemRef
 from ..state import LegacyLayout, StateLayout, legacy_layout
+from ..workitem import SECTIONS
 from ..harness_plugins import PluginConfig
 from ..identity import github_logins, parse_authorized_users
 from ..linkage import WorkItemVerifier
@@ -81,6 +82,7 @@ from ..trust import TrustConfig, TrustResult, is_too_broad
 from ..workspace import RepoTarget, Workspace, WorkspaceError, repo_target_from_payload
 from .excerpt import event_excerpt, payload_excerpt  # noqa: F401 — re-exported
 from .router import (
+    POLL_CLOSURE_DELIVERY_PREFIX,
     Deduper,
     RoutedEvent,
     branch_derived_refs,
@@ -906,6 +908,13 @@ class Dispatcher:
             self._refuse_scope(routed, scope, control)
             return
 
+        # A reopened item is open again (issue-329): the closure stamp goes before
+        # anything else reads the event, so a stale `ended` never outlives the
+        # closure. The event then takes its ordinary path (a labelled reopen may
+        # spawn, as any labelled event may).
+        if routed.event in _CLOSE_EVENTS and routed.action == "reopened":
+            self._record_reopen(routed, source="webhook")
+
         if control.command:
             # A command needs a NAMED, allowlisted human — stricter than the
             # ingress guard, on purpose. `is_authorized` deliberately allows an
@@ -1000,14 +1009,10 @@ class Dispatcher:
                     )
                     continue
                 self.close_session(session, routed)
-                # The work item ended: forget what it was last told to do, so a
-                # reopened item starts from a clean slate rather than inheriting
-                # a stale start/stop request — and forget who was invited onto it,
-                # for the same reason (issue-307). A grant is scoped to the work
-                # item's active life; the thread and the event log stay the record
-                # that it was made.
-                self.control_store.clear(session.work_item)
-                self.collaborator_store.clear(session.work_item)
+                # The work item ended: disarm it, drop its roster and stamp the
+                # closure on its portable record (issue-329) — before the cleanup
+                # below, which is where the pre-stamp order had the two clears.
+                self._record_closure(session.work_item, routed, reason)
                 logger.info(
                     "auto-closed session %s (%s)", session.work_item.ref, reason
                 )
@@ -1019,8 +1024,24 @@ class Dispatcher:
                     delivery_id=routed.delivery_id or None,
                 )
                 self._cleanup_after_close(session.work_item, routed, reason)
-            if not matched:
-                logger.debug("close event matched no active session; nothing to close")
+            # The closure is a fact about the WORK ITEM, not about a session
+            # (issue-329): a ref this machine tracks without a live session — a
+            # paused or stopped one, an armed record, a frozen graph — is stamped
+            # and disarmed exactly as a matched one is, minus the session close.
+            # A ref the-loop never tracked gains nothing: the webhook delivers
+            # every close in the repository.
+            closed_refs = {s.work_item.ref for s in matched}
+            stamped = 0
+            for item in routed.work_items:
+                if item.ref in closing and item.ref not in closed_refs:
+                    if self._tracks(item):
+                        self._record_closure(item, routed, reason)
+                        stamped += 1
+            if not matched and not stamped:
+                logger.debug(
+                    "close event matched no active session and no tracked "
+                    "record; nothing to close"
+                )
             return
 
         if not matched:
@@ -1412,6 +1433,69 @@ class Dispatcher:
         session handle.
         """
         self.control_store.record_frozen_graph(work_item, frozen)
+
+    def _tracks(self, work_item: WorkItemRef) -> bool:
+        """Whether this machine knows the work item at all (issue-329).
+
+        A session record of any status, or a portable record carrying any
+        section. The closure stamp is written only for these: an untracked
+        issue closing in the repository must not create a record.
+        """
+        if self.registry.find_by_work_item(work_item, include_closed=True) is not None:
+            return True
+        store = self.control_store.store
+        return any(store.section(work_item, name) is not None for name in SECTIONS)
+
+    def _record_closure(
+        self, work_item: WorkItemRef, routed: RoutedEvent, reason: str
+    ) -> None:
+        """Disarm the work item and stamp it `ended` (issue-329, decision-113).
+
+        The part of a close that needs no session: forget what the item was
+        last told to do, so a reopened item starts from a clean slate rather
+        than inheriting a stale start/stop request; forget who was invited onto
+        it, for the same reason (issue-307 — a grant is scoped to the item's
+        active life); and write the closure fact beside `graph`, which stays.
+        """
+        self.control_store.clear(work_item)
+        self.collaborator_store.clear(work_item)
+        actor = event_actor(routed.event, routed.payload) or ""
+        source = (
+            "poll"
+            if (routed.delivery_id or "").startswith(POLL_CLOSURE_DELIVERY_PREFIX)
+            else "webhook"
+        )
+        stamp = {
+            "state": "merged" if reason == "pr-merged" else "closed",
+            "kind": "issue" if routed.event == "issues" else "pull-request",
+            "reason": reason,
+            "source": source,
+            "actor": actor,
+        }
+        self.control_store.record_ended(work_item, stamp)
+        eventlog.emit(
+            "work_item.ended",
+            work_item=work_item.ref,
+            state=stamp["state"],
+            kind=stamp["kind"],
+            reason=reason,
+            source=source,
+            actor=actor or None,
+            delivery_id=routed.delivery_id or None,
+        )
+
+    def _record_reopen(self, routed: RoutedEvent, source: str) -> None:
+        """Clear the closure stamp of every ref the event reopened (issue-329)."""
+        reopened = _closing_refs(routed)  # the object the payload names, any action
+        for item in routed.work_items:
+            if item.ref in reopened and self.control_store.clear_ended(item):
+                logger.info("%s is open again; its closure stamp is cleared", item.ref)
+                eventlog.emit(
+                    "work_item.reopened",
+                    work_item=item.ref,
+                    source=source,
+                    delivery_id=routed.delivery_id or None,
+                )
 
     def _record_graph_command(
         self, command: str, routed: RoutedEvent, actor: str
