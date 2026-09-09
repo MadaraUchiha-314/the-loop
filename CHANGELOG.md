@@ -1,3 +1,9 @@
+## v13.7.1 (2026-09-09)
+
+### Fix
+
+- **issue-331**: a poll source's bare OWNER/REPO is on the resolved GitHub host, so closure reconciliation owns what listing polled (#333)
+
 ## v13.7.0 (2026-09-09)
 
 ### Feat
