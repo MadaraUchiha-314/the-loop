@@ -286,6 +286,7 @@ export default defineConfig({
             { text: "Installation", link: "/guide/installation" },
             { text: "Quickstart", link: "/guide/quickstart" },
             { text: "How it works", link: "/guide/how-it-works" },
+            { text: "Slack integration", link: "/guide/slack" },
           ],
         },
       ],

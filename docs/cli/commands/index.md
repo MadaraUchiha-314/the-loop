@@ -33,7 +33,7 @@ that item's own checkout, the same way the repo-scoped commands do.
 | [`ask`](/cli/commands/ask) | Post an agent's question on its work item — marker stamped centrally, wait recorded as `session.awaiting_input`. |
 | [`add-collaborator`](/cli/commands/add-collaborator) | Give one GitHub login a voice on **one** work item: their comments become input for its session, and nothing else. |
 | [`remove-collaborator`](/cli/commands/remove-collaborator) | Take that voice back; it lapses on the next event. |
-| [`channels`](/cli/commands/channels) | Operate the conversation channels (the Slack bot): `status`, one `poll` cycle, or the Socket Mode `listen`er. |
+| [`channels`](/cli/commands/channels) | Operate the conversation channels (the Slack bot): `status`, `threads`, one `poll` cycle, the Socket Mode `listen`er (replies, buttons, the `/the-loop` command), or the app `manifest` to import. |
 | [`events`](/cli/commands/events) | Query the structured event log — the answer to "why did nothing happen?". |
 
 ## Repo-scoped commands

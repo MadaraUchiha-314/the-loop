@@ -1047,3 +1047,208 @@ def test_a_slack_that_refuses_the_reaction_never_fails_the_delivery(
         if '"channel.reaction_failed"' in line
     ]
     assert [e["state"] for e in failed] == ["received", "completed"]
+
+
+# -- the /the-loop slash command (issue-334) ------------------------------------------
+
+
+def _slash(text, user="UHUMAN", trigger="t-1"):
+    return {
+        "command": "/the-loop",
+        "text": text,
+        "user_id": user,
+        "channel_id": "C123",
+        "trigger_id": trigger,
+        "response_url": "https://hooks.slack.com/commands/T/1/x",
+    }
+
+
+def _all_grants(tmp_path, **slack):
+    return cli_config(
+        tmp_path,
+        read={"mode": "socket"},
+        kickoff={"repo": "o/r"},
+        publish=[
+            "work-item.reply",
+            "control.command",
+            "instance.command",
+            "standing.command",
+        ],
+        **slack,
+    )
+
+
+def test_a_slash_command_start_records_what_a_thread_keyword_records(
+    tmp_path, monkeypatch
+):
+    """Scenario: A slash command start records what a thread keyword records
+
+    Given an authorized member and a channel granted control.command
+    When they run `/the-loop start #7` and, separately, type `the-loop start`
+         in the work item's bound thread
+    Then both land on the ledger as an unmarked comment carrying the keyword
+         intact and an envelope naming the person
+    And the ledger's own parser reads both as `start`
+    And the slash command delivers nothing into any session itself
+
+    Requirement: docs/specs/issue-334/requirements.md R1.1, R1.2, R3.3
+    """
+    from the_loop.channels import commands
+    from the_loop.channels.envelope import parse as parse_envelope
+    from the_loop.control import ControlConfig, parse_command
+
+    commands.reset_seen()
+    config = _all_grants(tmp_path)
+    client = FakeSlackClient()
+    thread = seeded_thread(tmp_path, monkeypatch, client, config)
+
+    records, deliveries, answers = [], [], []
+    monkeypatch.setattr(
+        "the_loop.comments.post_issue_comment_with_url",
+        lambda item, body, gh_binary="gh": (
+            records.append((item.ref, body)) or (True, "", "https://x/c1")
+        ),
+    )
+    monkeypatch.setattr(
+        core_sessions,
+        "reply_session",
+        lambda ref, text, actor="", comment=True, config=None: (
+            deliveries.append(actor) or {"delivered": True}
+        ),
+    )
+
+    outcome = commands.handle_slash_command(
+        _slash("start #7"),
+        config,
+        respond=lambda url, text: answers.append((url, text)) or True,
+    )
+    assert outcome["outcome"] == "recorded" and outcome["workItem"] == "github:o/r#7"
+    typed = inbound.handle_socket_event(
+        {
+            "type": "message",
+            "channel": "C123",
+            "thread_ts": thread,
+            "ts": "1800.1",
+            "user": "UHUMAN",
+            "text": "the-loop start",
+        },
+        config,
+        client_factory=lambda token: client,
+    )
+    assert typed["outcome"] == "processed" and typed["event"] == "control.command"
+
+    assert len(records) == 2 and deliveries == []
+    for ref, body in records:
+        assert ref == "github:o/r#7"
+        assert not is_self_authored(body)
+        assert parse_command(body, ControlConfig()).command == "start"
+        envelope = parse_envelope(body)
+        assert envelope is not None and envelope.type == "control.command"
+        assert envelope.source == "slack"
+        assert envelope.actor == {"github": "gh-UHUMAN", "slack": "UHUMAN"}
+    assert answers[0][0].startswith("https://hooks.slack.com/")
+    assert "https://x/c1" in answers[0][1]
+
+
+def test_a_slash_command_status_answers_from_the_facade(tmp_path, monkeypatch):
+    """Scenario: A slash command status answers from the facade
+
+    Given an authorized member and a channel granted instance.command
+    When they run `/the-loop status`
+    Then the answer is rendered from core.lifecycle.status_all's document
+    And it is posted ephemerally through the command's response_url
+
+    Requirement: docs/specs/issue-334/requirements.md R2.1, R3.5
+    """
+    from the_loop.channels import commands
+    from the_loop.core import lifecycle
+
+    commands.reset_seen()
+    monkeypatch.setattr(
+        lifecycle,
+        "status_all",
+        lambda config=None: {
+            "instance": {"name": "laptop-b", "scope": {"mode": "open"}},
+            "services": [
+                {"service": "service", "enabled": True, "running": False, "pid": 0}
+            ],
+            "standingSessions": [],
+            "ok": False,
+        },
+    )
+    sent = []
+    monkeypatch.setattr(
+        commands, "_send_webhook", lambda url, text: sent.append((url, text)) or True
+    )
+    outcome = commands.handle_slash_command(_slash("status"), _all_grants(tmp_path))
+    assert outcome == {
+        "outcome": "ok",
+        "family": "instance",
+        "verb": "status",
+        "answered": True,
+    }
+    assert sent[0][0] == "https://hooks.slack.com/commands/T/1/x"
+    assert "laptop-b" in sent[0][1] and "service: stopped (enabled)" in sent[0][1]
+
+
+def test_a_slash_command_starts_a_standing_session(tmp_path, monkeypatch):
+    """Scenario: A slash command starts a standing session
+
+    Given an authorized member and a channel granted standing.command
+    When they run `/the-loop standing start supervisor`
+    Then core.standing.control_standing is called with that name and verb
+    And the member is told the outcome
+
+    Requirement: docs/specs/issue-334/requirements.md R2.2, R3.5
+    """
+    from the_loop.channels import commands
+    from the_loop.core import standing
+
+    commands.reset_seen()
+    calls = []
+    monkeypatch.setattr(
+        standing,
+        "control_standing",
+        lambda name, verb, config=None, registry_dir="": (
+            calls.append((name, verb))
+            or {"sessions": [{"name": name, "outcome": "started", "detail": "up"}]}
+        ),
+    )
+    answers = []
+    outcome = commands.handle_slash_command(
+        _slash("standing start supervisor"),
+        _all_grants(tmp_path),
+        respond=lambda url, text: answers.append(text) or True,
+    )
+    assert outcome["outcome"] == "ok" and outcome["standing"] == "supervisor"
+    assert calls == [("supervisor", "start")]
+    assert "supervisor: started" in answers[0]
+
+
+def test_an_unlisted_members_slash_command_leaves_nothing(tmp_path, monkeypatch):
+    """Scenario: An unlisted member's slash command leaves nothing
+
+    Given a channel granted every command family
+    When a member outside routing.authorizedUsers runs `/the-loop restart`
+    Then nothing is scheduled, nothing is recorded and nothing is answered
+
+    Requirement: docs/specs/issue-334/requirements.md R3.1
+    """
+    from the_loop.channels import commands
+    from the_loop.core import lifecycle
+
+    commands.reset_seen()
+    monkeypatch.setattr(
+        lifecycle,
+        "schedule_restart",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not run")),
+    )
+    monkeypatch.setattr(
+        commands,
+        "_send_webhook",
+        lambda url, text: (_ for _ in ()).throw(AssertionError("must not answer")),
+    )
+    outcome = commands.handle_slash_command(
+        _slash("restart", user="UEVIL"), _all_grants(tmp_path)
+    )
+    assert outcome == {"outcome": "unauthorized-actor"}

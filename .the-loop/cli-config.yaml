@@ -390,7 +390,8 @@ channels:
     # channel: ""                            # the channel id the bot posts into (C…)
     # subscribe: [session.awaiting_input]    # what this channel RECEIVES
     # publish: [work-item.reply]             # what a message here MAY BECOME
-    #                                        # (+ gate.feedback, control.command, work-item.create)
+    #                                        # (+ gate.feedback, control.command, work-item.create,
+    #                                        #  instance.command, standing.command — issue-334)
     # verbosity: normal                      # quiet | normal | verbose
     # maxChars: 1500
     # kickoff:                               # only with the work-item.create grant

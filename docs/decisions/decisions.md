@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [116](decision-116.md) | Slack addresses the-loop itself through a slash command, not a workflow; a work-item verb still goes through the ledger, and the other verbs are grants of their own | proposed | 2026-09-09 |
 | [115](decision-115.md) | A ledger-only record is reconciled lazily — absent for a window on the ledger's own clock, asked once, capped per cycle | proposed | 2026-09-09 |
 | [114](decision-114.md) | A poll source's bare `OWNER/REPO` inherits the resolved GitHub host when the source is built, not when a ref is compared | proposed | 2026-09-09 |
 | [113](decision-113.md) | A closed work item is stamped `ended` on its portable record and demoted, never deleted; `graph` stays | proposed | 2026-09-09 |

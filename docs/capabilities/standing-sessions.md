@@ -13,6 +13,15 @@ directly into its **tmux session**, reply in its **Slack thread**, or reach it t
 plane is deliberately *not* modelled as a `channel`, and the existing way to talk to a
 tmux session is reused rather than reinvented.
 
+**Starting and stopping one from Slack** is the Slack channel's, since issue-334
+([decision-116](../decisions/decision-116.md)): `/the-loop standing list` and
+`/the-loop standing start|stop|restart <name>` call `control_standing` — the same core
+verb the CLI, the API and the dashboard call — under the `standing.command` grant in
+`channels.slack.publish`, over Socket Mode, judged by the same `routing.authorizedUsers`.
+This adds no fourth way to *talk* to a session: the thread stays the conversation; the
+command only brings the session up or down. Creating and deleting stay the control
+plane's. The [Slack integration guide](../guide/slack.md) has the setup.
+
 The dashboard screen is where a session is created and deleted without touching a config
 file: it lists both kinds, says which is which, and offers `delete` only for a **created**
 one — the service refuses it for a declared session, and a button whose only outcome is
@@ -233,4 +242,5 @@ runner these share) · [channels](channels.md) (the Slack bot and its pipeline) 
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-334 | `/the-loop standing list` and `/the-loop standing start\|stop\|restart <name>` from Slack, over Socket Mode, under the new `standing.command` grant — `core.standing.list_standing` / `control_standing` called from the Slack channel's slash-command handler and answered ephemerally; the name is validated against `NAME_RE` before any call; create/delete stay the control plane's | [spec](../specs/issue-334/), [decision-116](../decisions/decision-116.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/334) |
 | issue-277 | Introduced standing sessions: the `standingSessions` config block, the `StandingRegistry` under `<state.root>/local/standing/`, `loop-standing-<name>` tmux sessions, the `the-loop standing` command and its REST/MCP/SDK surfaces, the `start`/`stop`/`status` integration with resume-across-restart, the non-configurable boot directive, and the Slack thread a session is announced in and answered on. On review the owner ruled the control plane is **not** a channel and asked for create/delete instead, so a session can be brought into existence and removed through the API rather than only by editing the config — the record then carries the whole definition. The dashboard gained a **Standing** screen when the owner asked whether create works from the control-plane UI — it did not, and neither did `say`, so the third surface the ruling named was unwired | [spec](../specs/issue-277/), [decision-099](../decisions/decision-099.md), [decision-100](../decisions/decision-100.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/277) |

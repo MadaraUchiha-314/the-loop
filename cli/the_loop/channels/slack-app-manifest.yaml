@@ -1,0 +1,38 @@
+# The Slack app the-loop's channel needs — Slack's own app-manifest format
+# (https://api.slack.com/reference/manifests). Import it once: api.slack.com/apps
+# → Create New App → From a manifest → paste this file. Print it with
+# `the-loop channels manifest`. After the import, mint the app-level token
+# (Basic Information → App-Level Tokens, scope connections:write) for Socket Mode
+# and install the app to the workspace for the bot token; export both under the
+# names channels.slack.botTokenEnv / appTokenEnv name. (issue-334)
+display_information:
+  name: the-loop
+  description: Drive the-loop from Slack — one thread per work item, a slash command for the rest.
+  background_color: "#1f2937"
+features:
+  bot_user:
+    display_name: the-loop
+    always_online: false
+  slash_commands:
+    - command: /the-loop
+      description: "Drive the-loop: start a work item, check the instance, standing sessions"
+      usage_hint: "help | start #123 | status | upgrade | standing start <name>"
+      should_escape: false
+oauth_config:
+  scopes:
+    bot:
+      - chat:write          # post into the channel and its threads
+      - channels:history    # read thread replies and kickoffs in a public channel
+      - groups:history      # the same in a private channel
+      - reactions:write     # acknowledge an accepted message on itself (issue-325)
+      - commands            # the /the-loop slash command (issue-334)
+settings:
+  event_subscriptions:
+    bot_events:
+      - message.channels
+      - message.groups
+  interactivity:
+    is_enabled: true        # Approve / Request changes buttons (read.mode: socket)
+  org_deploy_enabled: false
+  socket_mode_enabled: true # `the-loop channels listen` — an outbound connection, nothing exposed
+  token_rotation_enabled: false

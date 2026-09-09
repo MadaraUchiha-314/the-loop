@@ -1,11 +1,12 @@
 """``the-loop channels`` — operate the communication channels (issue-245).
 
-Four actions: ``status`` (what is configured, with token *presence* only —
+Five actions: ``status`` (what is configured, with token *presence* only —
 never values), ``threads`` (which Slack thread carries which work item's
 conversation, issue-312 — reads the state file, calls nothing), ``poll`` (one
-synchronous read cycle, for cron and daemon-less deployments, R4.1), and
-``listen`` (Socket Mode in the foreground — push, no polling, no exposed
-endpoint, R4.2).
+synchronous read cycle, for cron and daemon-less deployments, R4.1), ``listen``
+(Socket Mode in the foreground — push, no polling, no exposed endpoint, R4.2;
+since issue-334 also the ``/the-loop`` slash command), and ``manifest`` (the
+packaged Slack app manifest an operator imports, issue-334).
 
 Spec: docs/specs/issue-245/design.md §D9.
 """
@@ -75,6 +76,21 @@ def _status(config: dict) -> int:
         )
     )
     print(f"  kickoff:      {kickoff}")
+    # The slash command (issue-334): which verb families this channel may run,
+    # or why none can arrive at all.
+    from ..channels.commands import FAMILY_GRANTS
+
+    if slack.read_mode == "socket":
+        families = " · ".join(
+            f"{family}: {'granted' if grant in slack.publish else 'not granted'}"
+            for family, grant in FAMILY_GRANTS.items()
+        )
+        print(f"  commands:     /the-loop over Socket Mode — {families}")
+    else:
+        print(
+            f"  commands:     off (read.mode is {slack.read_mode} — slash commands "
+            "need read.mode: socket)"
+        )
     reactions = slack.reactions
     print(
         "  reactions:    "
@@ -182,8 +198,8 @@ def _publish_meaning(name: str) -> str:
 class ChannelsCommand(Command):
     name = "channels"
     help = (
-        "Operate the communication channels: status, one poll cycle, or the "
-        "Socket Mode listener"
+        "Operate the communication channels: status, one poll cycle, the "
+        "Socket Mode listener, or the Slack app manifest"
     )
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
@@ -218,7 +234,17 @@ class ChannelsCommand(Command):
         )
         sub.add_parser(
             "listen",
-            help="Receive replies over Slack Socket Mode in the foreground",
+            help=(
+                "Receive replies, button presses and /the-loop commands over "
+                "Slack Socket Mode in the foreground"
+            ),
+        )
+        sub.add_parser(
+            "manifest",
+            help=(
+                "Print the Slack app manifest to import (scopes, events, Socket "
+                "Mode, the /the-loop command)"
+            ),
         )
 
     def run(self, args: argparse.Namespace) -> int:
@@ -228,6 +254,11 @@ class ChannelsCommand(Command):
             return _status(config)
         if args.channels_command == "threads":
             return _threads(config, args.work_item, args.json)
+        if args.channels_command == "manifest":
+            from ..channels.commands import manifest_text
+
+            print(manifest_text(), end="")
+            return 0
         if args.channels_command == "poll":
             summary = inbound.poll_once(config)
             if summary.get("skipped"):

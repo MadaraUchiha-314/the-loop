@@ -45,6 +45,10 @@ channels:
       error: warning                         # ⚠️ when it did not
 ```
 
+The operator's map of every way to drive the loop from Slack — setup, the thread, the
+buttons, the kickoff, the `/the-loop` slash command, standing sessions, the control
+plane — is the [Slack integration guide](/guide/slack).
+
 An asked question ([`the-loop ask`](/cli/commands/ask)) is recorded on the ledger first
 — the record *is* the question comment — then reaches every channel subscribed to
 `session.awaiting_input`; a thread reply from an authorized member becomes whatever
@@ -99,8 +103,10 @@ closed, never half-enabled.
 - **Default:** `THE_LOOP_SLACK_BOT_TOKEN`
 
 The environment variable holding the bot token (`xoxb-…`, needing `chat:write` to post,
-`channels:history` to read, and `reactions:write` to
-[acknowledge](/config/cli/channels-options#slack-reactions-enabled) a reply on the reply itself). The config names
+`channels:history` to read — `groups:history` in a private channel — `reactions:write` to
+[acknowledge](/config/cli/channels-options#slack-reactions-enabled) a reply on the reply
+itself, and `commands` for the [slash command](#the-slash-command); the packaged
+[app manifest](/guide/slack#_1-create-the-slack-app-from-the-manifest) declares them all). The config names
 the *variable*, the token is read from the environment **at call time**, and the value
 never appears in config, state files, `channels status` output or the event log.
 The variable can be set in the shell or in a `.env` file the config names
@@ -174,8 +180,13 @@ typed on a channel without the grant does not reach the agent as prose either.
 | `gate.feedback` | the work item's graph is parked at a human gate — or the pipeline **cannot tell** (no session record, no checkout, a read fault) | recorded on the ledger as an **unmarked** comment under your own credential, with the envelope and a visible "answer from `slack:U…`" attribution (a "reply from" when the gate could not be read); the ledger's ingress then classifies it exactly as a typed approval — with the graph it actually keeps — and the artifact's `approvedBy` names the person the envelope names |
 | `control.command` | the text carries a [control keyword](/config/cli/routing-options#execution-control) | recorded the same way, keyword intact; the ledger's ingress executes it through the same named-actor control seam |
 | `work-item.create` | the message is **top-level** in the configured channel | an issue is created in `kickoff.repo` with `kickoff.labels` — needs both the grant and the repo |
+| `instance.command` | a `/the-loop status`, `restart` or `upgrade` [slash command](#the-slash-command) | the core facade `the-loop status` / `the-loop restart [--with-upgrade]` run — answered ephemerally; **not recorded** (no ticket), the event log is the trail ([issue-334](https://github.com/MadaraUchiha-314/the-loop/issues/334)) |
+| `standing.command` | a `/the-loop standing list\|start\|stop\|restart <name>` slash command | the same core verb `the-loop standing <verb>` runs; not recorded |
 
-The ordering (keyword → gate → reply) means an approval word inside a control comment
+A `/the-loop <keyword> <work-item>` slash command is `control.command` too — the same
+unmarked record on the ticket, the same execution by the ledger's ingress — so one grant
+covers a keyword typed in the thread and a keyword sent as a command. The ordering
+(keyword → gate → reply) means an approval word inside a control comment
 never becomes a gate answer. The gate is read through the dispatcher's own coupling —
 the same control policy, control store and registry the ingress reads with (issue-321,
 [decision-109](/decisions/decision-109)) — and the read has three answers. *At a gate*
@@ -241,7 +252,8 @@ with the kickoff grant, new top-level messages) on a background thread, and
 `the-loop channels listen` receives them push-fashion over Socket Mode — no polling, no
 inbound HTTP endpoint — and it is the only mode that receives a **button press**, so
 Approve / Request changes buttons are rendered only here (and only with the
-`gate.feedback` grant): a button nobody can receive is worse than none. `off`: nothing
+`gate.feedback` grant): a button nobody can receive is worse than none — and it is the
+only mode the [`/the-loop` slash command](#the-slash-command) can arrive in. `off`: nothing
 is read. An unknown value resolves to `off` with a warning — never to a reading mode by
 accident.
 
@@ -252,6 +264,30 @@ accident.
 
 Poll-mode cadence. A cycle with no bound threads and no kickoff grant makes no API call
 at all.
+
+## The slash command
+
+`/the-loop` ([issue-334](https://github.com/MadaraUchiha-314/the-loop/issues/334),
+[decision-116](/decisions/decision-116)) is the channel's third inbound shape — the one
+for things that have **no thread to type into**: a work item that has not started, a
+standing session that is not running, this instance itself. It arrives over **Socket
+Mode only** (`read.mode: socket`; Slack needs an acknowledgment within seconds, which a
+poll cycle cannot give), is judged by the same `slack` ids of
+[`routing.authorizedUsers`](/config/cli/routing-options#authorizedusers) — an unlisted
+member gets no answer — and each verb family needs its grant in `publish`:
+
+| Verbs | Grant | Where it goes |
+|-------|-------|---------------|
+| `<keyword> <work-item> [@login] [instance:<name>]` — `start`, `stop`, `pause`, `resume`, `execute`, `contribute`, `do`, `review`, `cleanup`, `add-collaborator`, `remove-collaborator` | `control.command` | the ledger, as an unmarked comment composed from the configured keyword; the ingress executes it. The work item (`#N` against `kickoff.repo`, `owner/repo#N`, `github:…`, a URL) must be in a repository this instance is configured for (`kickoff.repo`, `polling.sources`) or one it already manages |
+| `status` · `restart` · `upgrade` | `instance.command` | `core.lifecycle` — what `the-loop status` and `the-loop restart [--with-upgrade]` run |
+| `standing list` · `standing start\|stop\|restart <name>` | `standing.command` | `core.standing` — what `the-loop standing <verb>` runs |
+
+The answer is ephemeral, through the command's `response_url` (Slack's own host only).
+The app manifest `the-loop channels manifest` prints declares the command; the
+[guide](/guide/slack#the-slash-command-in-full) has the full grammar and the limits.
+No configuration key is added: the grants and `read.mode` are the switches, and
+`the-loop channels status` prints a `commands:` line saying which families this channel
+may run, or why none can arrive.
 
 ## Acknowledgments
 

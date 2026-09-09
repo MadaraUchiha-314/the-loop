@@ -128,6 +128,9 @@ the-loop standing say supervisor --text "what has not moved today?"
 the-loop events --follow    # the structured trail of every routing and dispatch decision
 the-loop channels poll      # the Slack-bot channel, a peer on the event bus: read thread replies —
                             # each mirrored onto its work item, delivered to its session
+the-loop channels listen    # …or over Socket Mode: replies, Approve buttons, and the /the-loop
+                            # slash command (start a work item, a standing session, status,
+                            # upgrade) — see docs/guide/slack.md for every mode of interaction
 
 the-loop graph status <id>            # where a work item sits in the outer loop
 the-loop graph status <id> --pr <n>   # …and where a PR sits in its inner loop

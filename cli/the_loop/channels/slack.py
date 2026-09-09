@@ -969,13 +969,16 @@ def run_socket_listener(
     cli_config: Optional[Mapping[str, Any]],
     stop_event: Optional[threading.Event] = None,
 ) -> int:
-    """Receive replies, button presses and kickoffs push-fashion until stopped —
-    ``the-loop channels listen``.
+    """Receive replies, button presses, kickoffs and slash commands push-fashion
+    until stopped — ``the-loop channels listen``.
 
     Uses the SDK's built-in Socket Mode client (stdlib WebSocket — no extra
     dependency) over an *outbound* connection, so nothing is exposed. Every
-    accepted envelope is acknowledged, and everything converges on the same
-    pipeline the poll transport uses (:mod:`.inbound`).
+    accepted envelope is acknowledged **before** it is handled, so Slack's
+    deadline is met whatever the handling takes; messages and presses converge
+    on the same pipeline the poll transport uses (:mod:`.inbound`), and a
+    ``/the-loop`` slash command (issue-334) on :mod:`.commands`, which answers
+    through the command's ``response_url``.
     """
     config = SlackChannelConfig.from_mapping(cli_config)
     if not config.enabled:
@@ -1005,18 +1008,21 @@ def run_socket_listener(
         SocketModeResponse,
     )
 
-    from . import inbound
+    from . import commands, inbound
 
     frozen_config = dict(cli_config or {})
 
     def handle(client, request) -> None:
-        if request.type not in ("events_api", "interactive"):
+        if request.type not in ("events_api", "interactive", "slash_commands"):
             return
         client.send_socket_mode_response(
             SocketModeResponse(envelope_id=request.envelope_id)
         )
         payload = request.payload or {}
         try:
+            if request.type == "slash_commands":
+                commands.handle_slash_command(payload, frozen_config)
+                return
             if request.type == "interactive":
                 if payload.get("type") == "block_actions":
                     inbound.handle_socket_action(payload, frozen_config)
@@ -1031,7 +1037,10 @@ def run_socket_listener(
     client = SocketModeClient(app_token=app_token, web_client=build_client(bot_token))
     client.socket_mode_request_listeners.append(handle)
     client.connect()
-    logger.info("slack: Socket Mode connected — listening for thread replies")
+    logger.info(
+        "slack: Socket Mode connected — listening for thread replies, button "
+        "presses and /the-loop commands"
+    )
     waiter = stop_event or threading.Event()
     try:
         while not waiter.wait(1.0):

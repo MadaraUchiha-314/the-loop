@@ -454,8 +454,12 @@ channels:
     # publish: [work-item.reply]             # what a Slack message MAY BECOME (its authority):
     #                                        # + gate.feedback (answer a human gate),
     #                                        # + control.command (run a control keyword),
-    #                                        # + work-item.create (open an issue — needs kickoff.repo).
-    #                                        # Each is recorded on the ledger first and judged there.
+    #                                        # + work-item.create (open an issue — needs kickoff.repo),
+    #                                        # + instance.command (/the-loop status|restart|upgrade),
+    #                                        # + standing.command (/the-loop standing …) — issue-334;
+    #                                        # the slash command's work-item verbs ride on control.command.
+    #                                        # A ticket-bound one is recorded on the ledger first and
+    #                                        # judged there; the two instance-side ones log to the event log.
     # verbosity: normal                      # quiet | normal | verbose
     # maxChars: 1500                         # cap on one message's text; the link carries the rest
     # kickoff:                               # only with the work-item.create grant
