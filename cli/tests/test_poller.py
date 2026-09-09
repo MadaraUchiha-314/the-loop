@@ -3620,3 +3620,132 @@ def test_a_live_session_beside_a_stamp_is_still_reconciled(tmp_path):
         provider, registry, disp, PollState(WorkItemStore(tmp_path / "portable"))
     ).poll_once()
     assert provider.closure_asks == [REF15] and summary.closures == 1
+
+
+# -- a bare repo is on the resolved host (issue-331) ------------------------------
+#
+# Issue-311 made a written host explicit and taught `owns()` to compare hosts, but
+# a bare `OWNER/REPO` parsed to `host=""` — read as github.com by `owns()` while
+# the listing for the same entry went wherever `gh` resolved. On an enterprise
+# deployment every ref the listing minted was refused by the source that minted
+# it, and closure reconciliation silently did nothing. The host is now decided
+# once, where the source is built.
+
+
+def test_repospec_inherits_a_default_host_unless_it_names_its_own():
+    """R1.1, R1.3 — a bare entry takes the default; a written host wins."""
+    bare = RepoSpec.parse("octo/repo", default_host=GHE)
+    assert (bare.host, bare.gh_repo) == (GHE, f"{GHE}/octo/repo")
+    other = "other.corp.example"
+    written = RepoSpec.parse(f"{other}/octo/repo", default_host=GHE)
+    assert (written.host, written.gh_repo) == (other, f"{other}/octo/repo")
+
+
+def test_a_github_com_default_leaves_the_spec_unwritten():
+    """R1.2 / A3 — the resolver's default answer changes nothing."""
+    spec = RepoSpec.parse("octo/repo", default_host="github.com")
+    assert (spec.host, spec.gh_repo) == ("", "octo/repo")
+    assert parse_repos(["octo/repo"], default_host="github.com") == parse_repos(
+        ["octo/repo"]
+    )
+
+
+@pytest.mark.parametrize("bad", ["ghe", "https://x.example", "x.example/path", "a b"])
+def test_repospec_refuses_a_malformed_default_host(bad):
+    """A1 — an inherited host passes the one host grammar, like a written one."""
+    with pytest.raises(ValueError, match="default"):
+        RepoSpec.parse("octo/repo", default_host=bad)
+
+
+def test_parse_repos_dedupes_an_inherited_host_against_a_written_one():
+    specs = parse_repos(["octo/repo", f"{GHE}/octo/repo", "a/b"], default_host=GHE)
+    assert [s.gh_repo for s in specs] == [f"{GHE}/octo/repo", f"{GHE}/a/b"]
+
+
+def test_provider_from_source_binds_bare_repos_to_the_default_host():
+    other = "other.corp.example"
+    provider = GitHubPollProvider.from_source(
+        {"provider": "github", "repos": ["octo/repo", f"{other}/a/b"]},
+        default_label=LABEL,
+        default_host=GHE,
+    )
+    assert [s.gh_repo for s in provider.repos] == [f"{GHE}/octo/repo", f"{other}/a/b"]
+
+
+def test_build_provider_carries_the_default_host():
+    provider = build_provider(
+        {"provider": "github", "repos": ["octo/repo"]},
+        default_label=LABEL,
+        default_host=GHE,
+    )
+    assert isinstance(provider, GitHubPollProvider)
+    assert provider.repos[0].host == GHE
+
+
+def test_a_bare_repo_inherits_the_default_host_and_owns_its_refs():
+    """R1.4, R2.1 — the ticket's assertion, inverted; A2 — the github.com twin is
+    still refused (issue-311 R5.3 holds)."""
+    provider = GitHubPollProvider(
+        repos=parse_repos(["octo/hello"], default_host="ghe.example.com"), label=""
+    )
+    assert provider.owns(WorkItemRef.parse("github:ghe.example.com/octo/hello#42"))
+    assert not provider.owns(WorkItemRef.parse("github:octo/hello#42"))
+
+
+def test_a_bare_repos_reads_go_to_the_inherited_host():
+    """R1.4 — the listing, the closure read and the scope name all name the host."""
+    run = FakeRun(stdout="[]")
+    provider = GitHubPollProvider(
+        parse_repos(["octo/repo"], default_host=GHE),
+        LABEL,
+        monitor_prs=False,
+        gh=GhClient(runner=run),
+    )
+    provider.list_work_items()
+    assert run.calls[0][3:5] == ["--repo", f"{GHE}/octo/repo"]
+    ref = WorkItemRef.parse(f"github:{GHE}/octo/repo#15")
+    run.stdout = '{"number": 15, "state": "closed"}'
+    assert provider.closure(ref) is not None
+    assert run.calls[1][1:4] == ["api", "--hostname", GHE]
+    assert provider.scope_of(ref) == f"{GHE}/octo/repo"
+
+
+def test_describe_names_the_host_a_source_is_bound_to():
+    """R1.6 — the startup/reload line shows which GitHub a source polls."""
+    bound = GitHubPollProvider(parse_repos(["octo/repo", "a/b"], default_host=GHE), "")
+    assert bound.describe() == f"github {GHE}/octo/repo, {GHE}/a/b"
+    assert GitHubPollProvider(parse_repos(["octo/repo"]), "").describe() == (
+        "github octo/repo"
+    )
+
+
+@pytest.mark.parametrize(
+    "config_host,env_host,expected",
+    [
+        (GHE, "", GHE),  # integrations.github.host
+        ("", GHE, GHE),  # $GH_HOST, gh's own override
+        (GHE, "other.corp.example", GHE),  # the config key outranks the env
+        ("", "", ""),  # nothing configured: github.com, unwritten
+    ],
+    ids=["integrations.github.host", "GH_HOST", "config-over-env", "none"],
+)
+def test_the_daemon_binds_sources_to_the_resolved_host(
+    monkeypatch, config_host, env_host, expected
+):
+    """R1.1, R1.5 — the daemon resolves the host from the same loaded config it
+    reads `polling` from; the pre-flight, the first plan and the reloader all
+    call this one helper."""
+    from the_loop.poller import daemon
+
+    data: dict = {
+        "polling": {"sources": [{"provider": "github", "repos": ["octo/repo"]}]}
+    }
+    if config_host:
+        data["integrations"] = {"github": {"host": config_host}}
+    if env_host:
+        monkeypatch.setenv("GH_HOST", env_host)
+    else:
+        monkeypatch.delenv("GH_HOST", raising=False)
+    providers = daemon._build_providers(data, default_label=LABEL)
+    assert all(isinstance(p, GitHubPollProvider) for p in providers)
+    assert [s.host for p in providers for s in getattr(p, "repos")] == [expected]

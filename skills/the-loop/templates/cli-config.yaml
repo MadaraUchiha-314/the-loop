@@ -360,8 +360,9 @@ polling:
   intervalSeconds: 60               # seconds between poll cycles (all sources)
   sources: []                       # e.g. the github source below (empty = nothing polled)
     # - provider: github
-    #   repos: []                   # REQUIRED: OWNER/REPO list — no fallback to any
-    #                               # repo's harness (plugin) config; a source with none discovers nothing
+    #   repos: []                   # REQUIRED: [HOST/]OWNER/REPO list — no fallback to any
+    #                               # repo's harness (plugin) config; a source with none discovers nothing.
+    #                               # A bare OWNER/REPO is on integrations.github.host / $GH_HOST / github.com
     #   monitor:
     #     issues: true
     #     pullRequests: true

@@ -76,8 +76,10 @@ class GhState:
         self.list_fails = False
         self.state_fails = False
         self.api_calls = []
+        self.argv = []
 
     def runner(self, cmd, **kwargs):
+        self.argv.append(list(cmd))
         if cmd[1] == "api":
             path = cmd[2]
             self.api_calls.append(path)
@@ -146,6 +148,7 @@ def _make(
     max_retries=3,
     comment_runner=None,
     verifier=None,
+    default_host="",
 ):
     registry = SessionRegistry(tmp_path / "sessions")
     tmux = FakeTmux()
@@ -162,7 +165,7 @@ def _make(
         verifier=verifier,
     )
     provider = GitHubPollProvider(
-        parse_repos(["octo/repo"]),
+        parse_repos(["octo/repo"], default_host=default_host),
         LABEL,
         monitor_issues=monitor_issues,
         monitor_prs=monitor_prs,
@@ -1303,3 +1306,38 @@ def test_one_repository_with_issues_disabled_does_not_blind_the_others(tmp_path)
     ]
     assert second.comments_forwarded == 1
     assert "please continue" in tmux.delivers[0][1]
+
+
+# -- a bare repo on an enterprise host (issue-331) ----------------------------------
+
+GHE = "ghe.corp.example"
+REF_GHE = f"github:{GHE}/octo/repo#15"
+
+
+def test_a_closed_item_on_a_bare_enterprise_source_is_reconciled(tmp_path):
+    """
+    Feature: Poll GitHub and close finished work items
+    Scenario: A closed item on a bare enterprise source is reconciled
+        Given a poll source declared as bare `octo/repo` under a resolved enterprise host
+        And a labelled issue on that host with a spawned, registered session
+        When the issue is closed upstream and the next poll cycle runs
+        Then the closure is detected on the enterprise host
+        And the session is closed and the record is stamped ended
+    Requirement: docs/specs/issue-331/bugfix.md#R2 (R2.2, R1.4)
+    """
+    gh = GhState()
+    gh.issues[0]["url"] = f"https://{GHE}/octo/repo/issues/15"
+    registry, tmux, dispatcher, poller = _make(tmp_path, gh, default_host=GHE)
+    poller.poll_once()
+    assert wait_until(lambda: registry.find_by_work_item(REF_GHE) is not None)
+
+    gh.close_issue()
+    summary = poller.poll_once()
+    dispatcher.stop()
+
+    assert summary.closures == 1
+    assert registry.find_by_work_item(REF_GHE) is None
+    ended = dispatcher.control_store.ended(WorkItemRef.parse(REF_GHE))
+    assert ended is not None and ended["source"] == "poll"
+    # The closure question went to the enterprise host, like the listing did.
+    assert any(c[1:4] == ["api", "--hostname", GHE] for c in gh.argv)

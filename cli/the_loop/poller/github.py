@@ -520,6 +520,14 @@ class RepoSpec:
     ``owner/repo`` a webhook payload's ``repository.full_name`` carries, and
     ``gh_repo`` is ``gh``'s own ``--repo`` grammar with the host written exactly
     when it is not the default.
+
+    A bare ``owner/repo`` takes the *resolved* default host when it is parsed
+    (issue-331): the one the daemon resolves through ``ghhost.github_host``
+    from the CLI config and ``$GH_HOST``. Decided once here, so
+    the ``--repo`` argument, the scope name and :meth:`GitHubPollProvider.owns`
+    cannot disagree about where a bare repository is — which they did when
+    ``""`` meant github.com to ``owns()`` and "wherever ``gh`` points" to the
+    listing.
     """
 
     owner: str
@@ -535,7 +543,14 @@ class RepoSpec:
         return f"{self.host}/{self.full_name}" if self.host else self.full_name
 
     @classmethod
-    def parse(cls, value: str) -> "RepoSpec":
+    def parse(cls, value: str, default_host: str = "") -> "RepoSpec":
+        """``[HOST/]OWNER/REPO``; a bare entry is on ``default_host`` (issue-331).
+
+        A written host wins over the default. Either way the host then passes
+        the one normalisation (github.com stays unwritten) and the one grammar
+        (:func:`is_github_host`), so an inherited host that is not a host fails
+        the entry here rather than reaching a ``--repo`` argument.
+        """
         parts = str(value).strip().split("/")
         host = ""
         if len(parts) == 3:
@@ -556,17 +571,28 @@ class RepoSpec:
             raise ValueError(
                 f"invalid repo {value!r}; expected [HOST/]OWNER/REPO (e.g. octo/hello)"
             )
+        if not host and default_host:
+            host = str(default_host).strip()
+            if not is_github_host(host):
+                raise ValueError(
+                    f"invalid repo {value!r}: its default host {host!r} is not the "
+                    "shape of a host (a dotted name or one with a port)"
+                )
         if host == DEFAULT_GITHUB_HOST:
             host = ""
         return cls(owner=owner, repo=repo, host=host)
 
 
-def parse_repos(values: Sequence[str]) -> List[RepoSpec]:
-    """Parse a list of ``[host/]owner/repo`` strings, de-duplicated in order."""
+def parse_repos(values: Sequence[str], default_host: str = "") -> List[RepoSpec]:
+    """Parse ``[host/]owner/repo`` strings, de-duplicated in order.
+
+    ``default_host`` is what a bare entry is on (issue-331); the resolved host,
+    ``github.com`` included, which :meth:`RepoSpec.parse` keeps unwritten.
+    """
     seen = set()
     specs: List[RepoSpec] = []
     for value in values:
-        spec = RepoSpec.parse(value)
+        spec = RepoSpec.parse(value, default_host=default_host)
         if spec.gh_repo not in seen:
             seen.add(spec.gh_repo)
             specs.append(spec)
@@ -605,12 +631,14 @@ class GitHubPollProvider(PollProvider):
         self._cycles = 0
 
     @classmethod
-    def from_source(cls, source: dict, *, default_label: str) -> "GitHubPollProvider":
+    def from_source(
+        cls, source: dict, *, default_label: str, default_host: str = ""
+    ) -> "GitHubPollProvider":
         source = source or {}
         monitor = source.get("monitor") or {}
         repos = [str(r) for r in (source.get("repos") or [])]
         return cls(
-            repos=parse_repos(repos),
+            repos=parse_repos(repos, default_host=default_host),
             label=str(source.get("label") or "") or default_label,
             monitor_issues=bool(monitor.get("issues", True)),
             monitor_prs=bool(monitor.get("pullRequests", True)),
@@ -618,7 +646,9 @@ class GitHubPollProvider(PollProvider):
         )
 
     def describe(self) -> str:
-        return f"github {', '.join(s.full_name for s in self.repos) or '(no repos)'}"
+        # `gh_repo`, so the startup and reload lines say which GitHub each
+        # repository was bound to (issue-331) — unchanged for github.com.
+        return f"github {', '.join(s.gh_repo for s in self.repos) or '(no repos)'}"
 
     def check_dependencies(self) -> List[str]:
         return check_gh_dependency(self.gh.binary)

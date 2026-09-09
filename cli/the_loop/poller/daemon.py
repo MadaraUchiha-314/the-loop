@@ -27,14 +27,18 @@ import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, List, Mapping, Optional
 
 from .. import cli_config, eventlog
 from ..authz import resolve_authorized_users
 from ..channels.publishers import comment_publisher
+from ..ghhost import github_host
 from ..runlock import RunLock
 from ..state import StateLayout, layout_from_config, legacy_layout
 from ..workitem import WorkItemStore
+
+if TYPE_CHECKING:  # pragma: no cover
+    from .base import PollProvider
 
 logger = logging.getLogger("the-loop.poll")
 
@@ -65,6 +69,27 @@ def _config_path() -> Path:
 def _load_polling_config() -> dict:
     """Best-effort read of ``polling`` from the CLI config (or ``{}``)."""
     return cli_config.load_cli_config(_config_path(), strict=False).get("polling") or {}
+
+
+def _build_providers(
+    data: Mapping[str, Any], *, default_label: str
+) -> "List[PollProvider]":
+    """Every source in the CLI config ``data``, bound to the resolved host (issue-331).
+
+    The one loaded config answers both what to poll (``polling.sources``) and
+    where a bare ``OWNER/REPO`` is — ``ghhost.github_host`` over that same
+    mapping and ``$GH_HOST``, with no checkout to consult: a daemon runs outside
+    any. The pre-flight, the first plan and every hot reload come through here,
+    so an edit to ``integrations.github.host`` takes effect exactly as an edit
+    to ``repos`` does. Raises :class:`ProviderError` as ``build_provider`` does.
+    """
+    from . import PollConfig, build_provider
+
+    default_host = github_host(data)
+    return [
+        build_provider(source, default_label=default_label, default_host=default_host)
+        for source in PollConfig.from_mapping(data.get("polling") or {}).sources
+    ]
 
 
 def _state_layout() -> StateLayout:
@@ -269,11 +294,12 @@ def run(
     # successful start to a caller that samples at the wrong moment. This
     # pre-flight is pure (parse + construct, nothing touched), so it does not
     # loosen the lock-first rule below, which exists to fence *side effects*.
-    from . import PollConfig, ProviderError, build_provider
+    from . import ProviderError
 
     try:
-        for source in PollConfig.from_mapping(_load_polling_config()).sources:
-            build_provider(source, default_label="")
+        _build_providers(
+            cli_config.load_cli_config(_config_path(), strict=False), default_label=""
+        )
     except ProviderError as exc:
         logger.error("%s", exc)
         return 1
@@ -335,7 +361,6 @@ def _run_locked(
         PollState,
         ProviderError,
         Reloader,
-        build_provider,
     )
 
     dispatcher, routing = _build_dispatcher(
@@ -346,11 +371,9 @@ def _run_locked(
     # Used once for the initial plan and again by the Reloader on each edit,
     # so a hot reload and a cold start go through exactly the same code.
     def build_plan() -> PollPlan:
-        cfg = PollConfig.from_mapping(_load_polling_config())
-        providers = [
-            build_provider(source, default_label=routing.auto_execute_label)
-            for source in cfg.sources
-        ]
+        data = cli_config.load_cli_config(_config_path(), strict=False)
+        cfg = PollConfig.from_mapping(data.get("polling") or {})
+        providers = _build_providers(data, default_label=routing.auto_execute_label)
         return PollPlan(providers=providers, interval_seconds=cfg.interval_seconds)
 
     try:
