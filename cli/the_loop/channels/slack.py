@@ -63,6 +63,7 @@ __all__ = [
     "SlackChannelConfig",
     "SlackReactionConfig",
     "build_client",
+    "catch_up",
     "kickoff_cursor_key",
     "render_blocks",
     "render_root",
@@ -965,6 +966,39 @@ def _ts_key(ts: str) -> Tuple[int, Any]:
 # -- Socket Mode (R4.2) ----------------------------------------------------------
 
 
+def catch_up(cli_config: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
+    """One read cycle over the bound threads and the kickoff cursor — what the
+    listener runs right after it connects (issue-334, the downtime gap).
+
+    Slack retries an unacknowledged event only a few times over a few minutes;
+    a reply posted during a longer outage would otherwise stay on Slack and
+    never reach the ledger. The two transports share the per-thread cursors,
+    so the cycle processes exactly what accumulated since the last handled
+    ``ts`` and nothing twice. Best-effort: a failing cycle is logged and the
+    listener still listens.
+    """
+    from . import inbound
+
+    try:
+        summary = inbound.poll_once(cli_config)
+    except Exception as exc:  # noqa: BLE001 — never keep the listener from listening
+        logger.exception("slack: catch-up read raised; listening anyway")
+        return {"skipped": str(exc), "replies": 0}
+    if summary.get("skipped"):
+        logger.info("slack: catch-up read skipped: %s", summary["skipped"])
+        return summary
+    eventlog.emit(
+        "channel.caught_up",
+        channel="slack",
+        replies=summary.get("replies", 0),
+        processed=summary.get("processed", 0),
+        delivered=summary.get("delivered", 0),
+        created=summary.get("created", 0),
+        dropped=summary.get("dropped", 0),
+    )
+    return summary
+
+
 def run_socket_listener(
     cli_config: Optional[Mapping[str, Any]],
     stop_event: Optional[threading.Event] = None,
@@ -1041,6 +1075,7 @@ def run_socket_listener(
         "slack: Socket Mode connected — listening for thread replies, button "
         "presses and /the-loop commands"
     )
+    catch_up(frozen_config)
     waiter = stop_event or threading.Event()
     try:
         while not waiter.wait(1.0):

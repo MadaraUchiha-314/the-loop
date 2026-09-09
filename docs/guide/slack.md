@@ -304,6 +304,27 @@ an audit never needs Slack. This is also why a relayed keyword acts on the ledge
   both in the manifest above; an app created before issue-334 needs them added.
 - **No completion receipt for a relayed keyword** beyond the ✅ on the record: the thread
   that opens when a start is accepted, and the events you subscribe to, are the feedback.
+- **A command or a button press issued while no listener was connected is lost** — visibly,
+  to the member, who issues it again. Replies and kickoffs are caught up; see
+  [Downtime](#downtime).
+
+## Downtime
+
+What happens to what members did while the-loop was stopped, restarting or upgrading:
+
+| What | While the-loop is down | When it is back |
+|------|------------------------|-----------------|
+| a keyword or gate answer **already recorded on the ledger** | it is a GitHub comment; nothing is lost | the ledger's ingress executes it on its next cycle — the GitHub side reconciles with its own cursors |
+| a thread reply or kickoff message, `read.mode: poll` | stays on Slack | the next poll cycle reads every bound thread from its saved cursor and processes what accumulated, once |
+| a thread reply or kickoff message, `read.mode: socket` | Slack retries the undelivered event a few times over a few minutes; beyond that it stays on Slack | the listener runs one **catch-up read** over every bound thread and the kickoff cursor the moment it connects (`channel.caught_up`), so what accumulated is processed once; a retry Slack then delivers of a message the catch-up already handled is dropped as `duplicate` |
+| a `/the-loop` command or a button press | fails **visibly** to the member in Slack — no listener was connected to take it | the member issues it again; nothing was half-done |
+
+The two transports share the per-thread cursors in the channel state, so the same
+message is never processed twice whichever path read it. In a socket deployment you may
+also run `the-loop channels poll` from cron beside the listener as a reconciliation for a
+long outage — it is the same read cycle. This is the standard shape for a robust Slack
+integration, and the one the-loop already uses with GitHub: push for latency, a
+cursor-based pull for completeness.
 
 ## Why not Slack Workflow Builder
 

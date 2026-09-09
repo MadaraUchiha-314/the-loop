@@ -146,6 +146,15 @@ has a bound conversation. Any other target SHALL be refused (`unknown-target`) a
 nothing SHALL be recorded — the operator's credential never writes onto a repository
 this instance was not configured for.
 
+2.6 *(added at review — the owner's downtime question on PR #336.)* WHEN the Socket
+Mode listener connects THEN it SHALL run one read cycle over every bound thread and the
+kickoff cursor before waiting on the socket, so a reply or kickoff posted while no
+listener was connected is processed once from the shared cursors; WHEN Slack redelivers
+a message whose `ts` is at or before its thread's cursor THEN the socket handler SHALL
+drop it as `duplicate`; `poll_once` SHALL run in `socket` mode as a reconciliation
+(`the-loop channels poll`), refusing only `off`. A command or button press issued while
+nothing was connected is not recovered — it fails visibly to the member.
+
 2.5 A standing-session `<name>` SHALL match the standing-session grammar
 (`^[a-z0-9][a-z0-9-]{0,39}$`); an `instance:<name>` address SHALL match the instance
 grammar (the same); an `@login` SHALL match GitHub's login grammar. A token outside

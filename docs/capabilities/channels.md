@@ -191,6 +191,18 @@ flowchart LR
   events, interactivity, Socket Mode, the command — ships in the package and is printed
   by `the-loop channels manifest`; the [Slack integration guide](../guide/slack.md) is
   the operator's map of every mode of interaction.
+- **Downtime is reconciled from the shared cursors** (issue-334, the owner's review of
+  PR #336). WHEN the Socket Mode listener connects THEN it SHALL run one read cycle
+  (`poll_once`) over every bound thread and the kickoff cursor before it starts waiting
+  on the socket, so a reply or kickoff posted while no listener was connected — beyond
+  the few retries Slack makes — is processed once (`channel.caught_up`); WHEN Slack then
+  redelivers a message whose `ts` is at or before the thread's cursor THEN the socket
+  handler SHALL drop it as `duplicate`. `poll_once` SHALL run in `socket` mode as well
+  as `poll` (only `off` refuses), so `the-loop channels poll` is a reconciliation an
+  operator may schedule beside a listener. A slash command or button press issued while
+  nothing was connected fails visibly to the member and is not recovered — an
+  interactive gesture is re-issued, never replayed. A keyword or gate answer already on
+  the ledger survives any downtime: the ledger's ingress executes it on its next cycle.
 - Reads, tokens, state: as before — `poll` or `socket` (`listen` now also handles
   `block_actions`, top-level messages and `slash_commands`), env-named tokens read at
   call time, bindings and cursors in `<state.root>/channels/slack.json` (plus a
@@ -200,9 +212,9 @@ flowchart LR
   `create-failed`, `channel.created`, `channel.thread_opened` (origin `event` |
   `kickoff` | `start`), `channel.open_failed`, `channel.reaction_added`,
   `channel.reaction_failed`, and the slash command's `channel.command_received`,
-  `channel.command_completed`, `channel.command_answer_failed` and the drop reasons
-  `unknown-command` / `unknown-target` / `duplicate`. Payloads carry ids and event
-  types, never text.
+  `channel.command_completed`, `channel.command_answer_failed`, `channel.caught_up` and
+  the drop reasons `unknown-command` / `unknown-target` / `duplicate`. Payloads carry
+  ids and event types, never text.
 
 ## Design
 
@@ -249,7 +261,7 @@ flowchart LR
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
-| issue-334 | The `/the-loop` slash command over Socket Mode — the channel's third inbound shape, for what has no thread: `<keyword> <work-item>` publishes `control.command` and stops at the same unmarked ledger record a thread keyword makes (the ingress executes it; the target bounded to `kickoff.repo`, the poll sources, the managed set and the bound threads); `status` / `restart` / `upgrade` and `standing list\|start\|stop\|restart` call the core facade under two new grants, `instance.command` and `standing.command` (catalog rows, not recorded); authorized first, a fixed vocabulary, ephemeral answers to Slack's host only, a trigger acts once. A packaged Slack **app manifest** (`the-loop channels manifest`) and the [Slack integration guide](../guide/slack.md). Ask 1 of the ticket — a control keyword in the thread works as on the ticket — was already true by grant and is now pinned by tests and documented | [spec](../specs/issue-334/), [decision-116](../decisions/decision-116.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/334) |
+| issue-334 | The `/the-loop` slash command over Socket Mode — the channel's third inbound shape, for what has no thread: `<keyword> <work-item>` publishes `control.command` and stops at the same unmarked ledger record a thread keyword makes (the ingress executes it; the target bounded to `kickoff.repo`, the poll sources, the managed set and the bound threads); `status` / `restart` / `upgrade` and `standing list\|start\|stop\|restart` call the core facade under two new grants, `instance.command` and `standing.command` (catalog rows, not recorded); authorized first, a fixed vocabulary, ephemeral answers to Slack's host only, a trigger acts once. A packaged Slack **app manifest** (`the-loop channels manifest`) and the [Slack integration guide](../guide/slack.md). From the PR review: the listener runs a catch-up read over the shared cursors when it connects, `poll_once` runs in socket mode as a reconciliation, and a redelivered message at or before a thread's cursor is dropped as `duplicate`. Ask 1 of the ticket — a control keyword in the thread works as on the ticket — was already true by grant and is now pinned by tests and documented | [spec](../specs/issue-334/), [decision-116](../decisions/decision-116.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/334) |
 | issue-325 | The Slack channel acknowledges an accepted inbound message on the message itself: `received` (👀) after the last refusal and before the ledger record, then `completed` (✅) when the pipeline's action landed or `error` (⚠️) when it did not; a dropped message gets none; configured by `channels.slack.reactions` (on by default, Slack emoji names, `""` skips a state), posted best-effort with the bot token's `reactions:write`, observable as `channel.reaction_added` / `channel.reaction_failed`. Before this, `routing.reactions` acknowledged only on GitHub and a Slack reply's only feedback was a later posted message | [spec](../specs/issue-325/), [decision-111](../decisions/decision-111.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/325) |
 | issue-321 | An authorized gate answer from Slack now locks the gate under the daemon's default control policy: the pipeline's graph read is built from the same `RoutingConfig` the dispatcher's coupling is (control policy, control store, allow-list, registry), where before it had no control store and read no graph at all; the read is three-valued, and a gate the pipeline cannot read (no session record, no checkout, a fault) is recorded unmarked as `gate.feedback` for the ledger's ingress to judge when the channel holds that grant — attributed as a reply — and stays the marked mirror without it; `channel.reply_received` carries `gate: open \| none \| unknown` | [spec](../specs/issue-321/), [decision-109](../decisions/decision-109.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/321) |
 | issue-317 | The Slack thread opens when the work item **starts**, not when its first event arrives: the dispatcher's one spawn path — which every way of starting converges on — asks every configured channel to open the work item's conversation (`SlackBotChannel.open`, root only, origin `start`, through `bus.open_conversation`) before the checkout; a bound work item keeps its thread, a refused start opens nothing, a channel failure is `channel.open_failed` and never touches the spawn, and the first event replies into the thread that already exists. Wired as an injected opener on the dispatcher (`conversation_opener`, config per call) by both daemons and the core facade | [spec](../specs/issue-317/), [decision-107](../decisions/decision-107.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/317) |

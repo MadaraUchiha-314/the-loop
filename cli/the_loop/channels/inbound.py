@@ -41,6 +41,7 @@ from .slack import (
     ACTION_PREFIX,
     SlackBotChannel,
     SlackChannelConfig,
+    _ts_key,
     slack_state_path,
 )
 from .state import ChannelState
@@ -487,13 +488,20 @@ def poll_once(
     create_issue: Optional[Callable] = None,
 ) -> Dict[str, Any]:
     """One read cycle over every bound thread — and, with the grant, the
-    channel's top-level messages (R4.1, R6.5). Never raises."""
+    channel's top-level messages (R4.1, R6.5). Never raises.
+
+    Runs in ``poll`` mode (the daemons' background reader, cron) **and** in
+    ``socket`` mode (issue-334): the listener runs it once after connecting,
+    and an operator may run ``the-loop channels poll`` beside the listener as a
+    reconciliation — the cursors are shared, so nothing is processed twice.
+    Only ``off`` refuses.
+    """
     config = SlackChannelConfig.from_mapping(cli_config)
     if not config.enabled:
         return {"skipped": "channels.slack is not enabled", "replies": 0}
-    if config.read_mode != "poll":
+    if config.read_mode == "off":
         return {
-            "skipped": f"channels.slack.read.mode is {config.read_mode!r}, not 'poll'",
+            "skipped": "channels.slack.read.mode is 'off' — nothing is read",
             "replies": 0,
         }
     channel = SlackBotChannel(
@@ -605,6 +613,11 @@ def handle_socket_event(
         is_bot=is_bot,
         channel_id=channel_id,
     )
+    if work_item and ts and _ts_key(ts) <= _ts_key(state.cursor(thread)):
+        # Already processed — by the catch-up read after a reconnect, or by a
+        # poll cycle — and now redelivered by Slack's retry (issue-334). The
+        # shared cursor is the at-most-once contract across both transports.
+        return _drop(reply, "duplicate")
     outcome = process_reply(
         reply,
         config,

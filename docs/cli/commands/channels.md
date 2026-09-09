@@ -37,16 +37,22 @@ the-loop channels manifest  # the Slack app manifest to import (scopes, events, 
   checked against the channel's grants, recorded on the ledger and, for a plain reply,
   delivered into the waiting session. This is the cron-friendly form of what the
   daemons do continuously when [`read.mode`](/config/cli/channels-options#slack-read-mode)
-  is `poll`. Exit 1 when the cycle was skipped (channel disabled, wrong read mode,
-  missing token), with the reason printed.
+  is `poll` — and, since [issue-334](https://github.com/MadaraUchiha-314/the-loop/issues/334),
+  the reconciliation you may run beside a Socket Mode listener: the cursors are shared,
+  so a cycle in `socket` mode reads only what the listener missed. Exit 1 when the cycle
+  was skipped (channel disabled, `read.mode: off`, missing token), with the reason
+  printed.
 - **`listen`** connects over **Socket Mode** (the official SDK's built-in client, an
   *outbound* connection — nothing to expose) and processes messages push-fashion until
   interrupted: thread replies, top-level messages, Block Kit **button presses**,
   which enter the pipeline as that member's reply carrying the button's text, and — since
   [issue-334](https://github.com/MadaraUchiha-314/the-loop/issues/334) — the
   **`/the-loop` slash command**, acknowledged first and answered ephemerally through its
-  `response_url`. Needs both tokens: the bot token to act, the app-level token (`xapp-…`,
-  `connections:write`) to connect.
+  `response_url`. On connecting it runs one **catch-up read** (the `poll` cycle) over
+  every bound thread and the kickoff cursor, so replies posted while no listener was
+  connected are processed once (`channel.caught_up`); a retry Slack later delivers of a
+  message already handled is dropped as `duplicate`. Needs both tokens: the bot token
+  to act, the app-level token (`xapp-…`, `connections:write`) to connect.
 - **`manifest`** prints the packaged **Slack app manifest** — bot user, scopes
   (`chat:write`, `channels:history`, `groups:history`, `reactions:write`, `commands`),
   event subscriptions, interactivity, Socket Mode and the `/the-loop` command — for

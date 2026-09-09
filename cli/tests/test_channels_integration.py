@@ -1252,3 +1252,59 @@ def test_an_unlisted_members_slash_command_leaves_nothing(tmp_path, monkeypatch)
         _slash("restart", user="UEVIL"), _all_grants(tmp_path)
     )
     assert outcome == {"outcome": "unauthorized-actor"}
+
+
+def test_a_socket_listener_catches_up_after_downtime(tmp_path, monkeypatch):
+    """Scenario: A Socket Mode listener catches up on what was posted while down
+
+    Given a socket-mode channel with a bound thread
+    And a member replied in it while no listener was connected
+    When the listener connects and runs its catch-up read
+    Then the reply is mirrored and delivered exactly once
+    And Slack's later retry of the same message is dropped as a duplicate
+    And a second catch-up processes nothing
+
+    Requirement: docs/specs/issue-334/requirements.md R2.6
+    """
+    from the_loop.channels import slack as slack_mod
+
+    client = FakeSlackClient()
+    config = cli_config(tmp_path, read={"mode": "socket"})
+    thread = seeded_thread(tmp_path, monkeypatch, client, config)  # the reply: 1800.1
+    monkeypatch.setattr("the_loop.channels.slack.build_client", lambda token: client)
+
+    mirrors, deliveries = [], []
+    monkeypatch.setattr(
+        "the_loop.comments.post_issue_comment_with_url",
+        lambda item, body, gh_binary="gh": mirrors.append(body) or (True, "", ""),
+    )
+    monkeypatch.setattr(
+        core_sessions,
+        "reply_session",
+        lambda ref, text, actor="", comment=True, config=None: (
+            deliveries.append(actor) or {"delivered": True}
+        ),
+    )
+
+    summary = slack_mod.catch_up(config)
+    assert summary["processed"] == 1 and summary["delivered"] == 1
+    assert len(mirrors) == 1 and deliveries == ["slack:UHUMAN"]
+
+    retried = inbound.handle_socket_event(
+        {
+            "type": "message",
+            "channel": "C123",
+            "thread_ts": thread,
+            "ts": "1800.1",
+            "user": "UHUMAN",
+            "text": "go with A",
+        },
+        config,
+        client_factory=lambda token: client,
+    )
+    assert retried["outcome"] == "duplicate"
+    assert len(mirrors) == 1 and len(deliveries) == 1
+
+    again = slack_mod.catch_up(config)
+    assert again["processed"] == 0
+    assert len(mirrors) == 1 and len(deliveries) == 1

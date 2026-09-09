@@ -250,7 +250,10 @@ How messages come back. `poll`: the long-running daemons fetch new thread replie
 with the kickoff grant, new top-level messages) on a background thread, and
 `the-loop channels poll` runs one cycle for cron or daemon-less deployments. `socket`:
 `the-loop channels listen` receives them push-fashion over Socket Mode — no polling, no
-inbound HTTP endpoint — and it is the only mode that receives a **button press**, so
+inbound HTTP endpoint — running one **catch-up read** over the bound threads the moment
+it connects (issue-334), so what was posted while no listener was connected is processed
+once from the shared cursors (`the-loop channels poll` runs the same cycle on demand in
+this mode too, as a reconciliation); and it is the only mode that receives a **button press**, so
 Approve / Request changes buttons are rendered only here (and only with the
 `gate.feedback` grant): a button nobody can receive is worse than none — and it is the
 only mode the [`/the-loop` slash command](#the-slash-command) can arrive in. `off`: nothing

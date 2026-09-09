@@ -92,3 +92,22 @@ suite — passed on the head this evidence was written at.
 ## Row T13
 
 [`security-review.md`](security-review.md) — nine abuse cases, nine closed.
+
+## Addendum — the downtime gap closed at review (R2.6)
+
+Raised by the owner on PR #336 (*how are Slack events accounted for while the-loop is
+down?*). New tests, red first against the PR's previous head (`catch_up` did not exist;
+`poll_once` refused socket mode; a redelivered message was processed twice):
+
+| Test | Proves |
+|------|--------|
+| `test_channels_integration.py::test_a_socket_listener_catches_up_after_downtime` | the catch-up read processes a reply posted while no listener was connected exactly once; Slack's retry of the same `ts` is dropped as `duplicate`; a second catch-up processes nothing |
+| `test_channels.py::test_poll_once_runs_in_socket_mode_as_a_reconciliation` | `poll_once` runs in `socket` mode (only `off` refuses) |
+| `test_eventlog.py` | the catalog knows `channel.caught_up` |
+
+```text
+uv run --project cli python -m pytest -q cli/tests/test_channels.py cli/tests/test_channels_integration.py cli/tests/test_channels_commands.py cli/tests/test_eventlog.py
+187 passed in 6.01s
+make check
+3253 passed, 1 skipped in 178.14s (0:02:58)
+```

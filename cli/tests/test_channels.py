@@ -521,6 +521,17 @@ def test_poll_once_skips_when_disabled_or_off(tmp_path):
     assert inbound.poll_once(cli_config(tmp_path, read={"mode": "off"}))["skipped"]
 
 
+def test_poll_once_runs_in_socket_mode_as_a_reconciliation(tmp_path, monkeypatch):
+    """issue-334: the catch-up read and `channels poll` beside a listener — the
+    cursors are shared, so a cycle in socket mode reads what a listener missed."""
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    summary = inbound.poll_once(
+        cli_config(tmp_path, read={"mode": "socket"}),
+        client_factory=lambda token: FakeSlackClient(),
+    )
+    assert "skipped" not in summary and summary["replies"] == 0
+
+
 # -- the channels CLI verb (D9) -------------------------------------------------
 
 

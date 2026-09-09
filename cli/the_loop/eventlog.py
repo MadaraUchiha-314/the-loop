@@ -332,6 +332,14 @@ EVENT_TYPES: Dict[str, str] = {
         "the slash command's (issue-334): text outside its vocabulary, a work "
         "item this instance is not configured for, a trigger already handled."
     ),
+    "channel.caught_up": (
+        "The Socket Mode listener ran one read cycle over the bound threads "
+        "and the kickoff cursor right after connecting (replies, processed, "
+        "delivered, created, dropped) — issue-334. What accumulated while no "
+        "listener was connected is processed once, from the shared cursors; "
+        "a Slack retry of a message the catch-up already handled is dropped as "
+        "`duplicate`."
+    ),
     "channel.command_received": (
         "An authorized member's `/the-loop` slash command passed the grant "
         "check (channel, actor: the member id, family: work-item | instance | "

@@ -250,6 +250,15 @@ The acknowledgment precedes the handling, as for every other envelope, so Slack'
 handling stays: one bad command never ends the listener. Nothing in `poll_once` or the
 watcher changes — a slash command has no poll form (R2.1).
 
+**Catch-up on connect** (R2.6, added at review). `slack.catch_up(cli_config)` runs
+`inbound.poll_once` once after `client.connect()` and emits `channel.caught_up` with the
+cycle's counts; a raising cycle is logged and the listener listens anyway. `poll_once`
+refuses only `read.mode: off`, so the same cycle is `the-loop channels poll`'s
+reconciliation in a socket deployment. `handle_socket_event` drops a message whose `ts`
+is at or before its thread's cursor as `duplicate` — the shared cursor is the
+at-most-once contract across both transports, which the issue-245 design stated and
+this makes symmetric.
+
 `channels status` prints one more line:
 
 ```text

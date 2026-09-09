@@ -31,6 +31,22 @@ status: in-progress
 
 ## Progress entries
 
+### 2026-09-09 — the downtime gap closed at review
+
+- **Phase:** needs-review
+- **Did:** the owner asked how events are accounted for while the-loop is down. Answered
+  on the PR (poll mode: cursors, nothing lost; the ledger: durable; socket mode: Slack's
+  few retries, then a gap) and closed the gap: `slack.catch_up` runs `poll_once` when
+  the listener connects (`channel.caught_up`); `poll_once` refuses only `off`, so
+  `channels poll` reconciles beside a listener; `handle_socket_event` drops a
+  redelivered message at or before the thread's cursor as `duplicate`. R2.6 added to the
+  requirements, the design and the capability doc; a *Downtime* section in the guide.
+- **Checkpoint/tests:** `Scenario: A Socket Mode listener catches up on what was posted
+  while down`; `test_poll_once_runs_in_socket_mode_as_a_reconciliation`; the four
+  channel suites and the event catalog green; ruff, pyright.
+- **Next:** the owner's review.
+- **Blockers:** none.
+
 ### 2026-09-09 — review question answered
 
 - **Phase:** needs-review
