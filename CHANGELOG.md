@@ -1,3 +1,9 @@
+## v13.7.0 (2026-09-09)
+
+### Feat
+
+- **closure**: record a closed work item as ended and demote it on the board (#330)
+
 ## v13.6.0 (2026-09-09)
 
 ### Feat
