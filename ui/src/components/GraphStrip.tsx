@@ -123,11 +123,11 @@ export function GraphStrip({ nodes, loop, emptyMessage, note }: GraphStripProps)
         <ol className="scroll-thin mt-3 flex items-center gap-1 overflow-x-auto pb-1" role="list" aria-label="loop position">
           {visible.map((entry, index) =>
             entry === "gap" ? (
-              <li key={`gap-${index}`} className="px-1 font-mono text-xs text-muted-foreground" aria-label="nodes folded">
+              <li key={`gap-${index}`} className="shrink-0 px-1 font-mono text-xs text-muted-foreground" aria-label="nodes folded">
                 ···
               </li>
             ) : (
-              <li key={entry.id} className="flex items-center gap-1" role="listitem" data-node={entry.id}>
+              <li key={entry.id} className="flex shrink-0 items-center gap-1" role="listitem" data-node={entry.id}>
                 <GraphNode node={entry} />
                 {index < visible.length - 1 ? <span className="h-px w-3 shrink-0 bg-border-strong" aria-hidden="true" /> : null}
               </li>

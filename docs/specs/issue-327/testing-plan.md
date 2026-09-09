@@ -75,22 +75,28 @@ overrides: {}
 
 ## Verification activities
 
-- [ ] T1/T2/T8/T9/T10 — `cd ui && bun run test`
-- [ ] T12 — `cd ui && bun run lint && bun run build`
-- [ ] T13 — `npx --yes markdownlint-cli2@0.18.1 "**/*.md"`
-- [ ] T8 — `grep -rn "dangerouslySetInnerHTML\|innerHTML\|eval(" ui/src ui/index.html` (expect no matches)
-- [ ] T9 — `grep -n "prefers-reduced-motion" ui/src/styles/app.css` (expect a match)
-- [ ] T5 — `node ui/scripts/screenshots.mjs` against the built bundle; copy the captures into `evidence/`
+- [x] T1/T2/T8/T9/T10 — `cd ui && bun run test`
+- [x] T12 — `cd ui && bun run lint && bun run build`
+- [x] T13 — `npx --yes markdownlint-cli2@0.18.1 "**/*.md"`
+- [x] T8 — `grep -rn "dangerouslySetInnerHTML\|innerHTML\|eval(" ui/src ui/index.html` (expect no matches)
+- [x] T9 — `grep -n "prefers-reduced-motion" ui/src/styles/app.css` (expect a match)
+- [x] T5 — `node ui/scripts/screenshots.mjs` against the built bundle; copy the captures into `evidence/`
 
 ## Verification results
 
-_Not yet executed._
+Executed 2026-09-09 on `claude/github-issue-327-8vubsj`.
 
 | Activity | Command / procedure | Outcome | Evidence |
 |----------|--------------------|---------|----------|
-| | | | |
+| T1/T2/T8/T9/T10 | `cd ui && bun run test` | pass — 16 files, 212 tests (183 before; 29 new) | [`evidence/verification.md`](evidence/verification.md) § Tests |
+| T12 | `cd ui && bun run lint && bun run build` | pass — oxlint clean; `tsc --noEmit` clean; bundle 20.6 kB CSS + 310 kB JS | § Lint, § Build |
+| T13 | `npx --yes markdownlint-cli2@0.18.1 "**/*.md"` | pass — 991 files, 0 errors | § Markdown |
+| T8 | grep for HTML-injecting calls | pass — no matches; abuse cases 1–2 covered by tests, 3 by review | § Security |
+| T9 | role/name assertions in the suite; reduced-motion grep | pass | § Accessibility |
+| T5 | `node ui/scripts/screenshots.mjs` on `bun run preview` over `dist/`, demo mode, both themes, 1440×900 and 390×844 | pass — 26 stills, each mapped to its prototype still | § UI / visual, `evidence/*.png` |
 
-**Not executed:** —
+**Not executed:** T3, T4, T6, T7, T11 — n/a as planned (no API/route/model change; no live
+service here; the owner's PR review is the human pass).
 
 ## Review comments
 

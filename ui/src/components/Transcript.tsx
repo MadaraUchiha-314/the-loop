@@ -15,7 +15,7 @@
  * cannot receive.
  */
 
-import { useState, type KeyboardEvent } from "react";
+import { useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { ApiError } from "../api/client.ts";
 import { timeOf, transcriptThread, type SessionState, type ThreadRow, type ToolCallView } from "../api/model.ts";
@@ -45,12 +45,12 @@ export function MetaLine({
   tone = "",
   children,
 }: {
-  icon?: React.ReactNode;
+  icon?: ReactNode;
   label: string;
   detail?: string | undefined;
   time?: string | undefined;
   tone?: string;
-  children?: React.ReactNode;
+  children?: ReactNode;
 }) {
   return (
     <div className={`flex items-center gap-2 text-xs text-muted-foreground ${tone}`.trim()}>
@@ -154,11 +154,11 @@ function FoldGroup({
   extra,
   data,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
   detail?: string | undefined;
-  children: React.ReactNode;
-  extra?: React.ReactNode;
+  children: ReactNode;
+  extra?: ReactNode;
   data?: string | undefined;
 }) {
   return (

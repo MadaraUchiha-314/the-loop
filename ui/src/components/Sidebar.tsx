@@ -58,7 +58,10 @@ export function Sidebar({
   const tree = sessionTree(shown);
 
   return (
-    <aside className="flex h-full w-[19rem] shrink-0 flex-col border-r border-border bg-surface" aria-label="Work items">
+    <aside
+      className="flex h-full w-[19rem] shrink-0 flex-col border-r border-border bg-surface max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-20"
+      aria-label="Work items"
+    >
       <div className="flex items-center justify-between px-4 pt-4">
         <a href={hrefFor({ name: "work" })} className="flex items-center gap-2">
           <span className="grid h-6 w-6 place-items-center rounded-md bg-primary text-primary-foreground">
@@ -225,20 +228,20 @@ function ItemRow({
           {title ?? positionLabel(view)}
         </span>
       </div>
+      {/* repo · what it is at · age. The flag ("needs input", "human gate",
+          "blocked"…) is the more urgent fact, so it takes the node's slot. */}
       <div className="mt-0.5 flex items-center gap-1.5 pl-[1.1rem] text-[0.7rem] text-muted-foreground">
-        <span className="truncate font-mono">{repoOf(view.ref)}</span>
+        <span className="shrink-0 font-mono">{repoOf(view.ref)}</span>
         <span aria-hidden="true">·</span>
-        <span className="truncate font-mono">{view.currentNode || (view.rail.length > 0 ? "planned" : "no graph")}</span>
+        {flag ? (
+          <span className={`min-w-0 truncate font-mono ${flag.urgent ? STATUS_TEXT.blocked : ""}`}>{flag.label}</span>
+        ) : (
+          <span className="min-w-0 truncate font-mono">{view.currentNode || (view.rail.length > 0 ? "planned" : "no graph")}</span>
+        )}
         <span aria-hidden="true">·</span>
         <span className="shrink-0" title={view.lastActivity || undefined}>
           {relativeTime(view.lastActivity)}
         </span>
-        {flag ? (
-          <>
-            <span aria-hidden="true">·</span>
-            <span className={`shrink-0 font-mono ${flag.urgent ? STATUS_TEXT.blocked : ""}`}>{flag.label}</span>
-          </>
-        ) : null}
       </div>
     </a>
   );

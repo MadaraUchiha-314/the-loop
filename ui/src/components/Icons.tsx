@@ -123,13 +123,6 @@ export const GitPullRequestIcon = (p: IconProps) => (
     <line x1="6" x2="6" y1="9" y2="21" />
   </Svg>
 );
-export const GitMergeIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <circle cx="18" cy="18" r="3" />
-    <circle cx="6" cy="6" r="3" />
-    <path d="M6 21V9a9 9 0 0 0 9 9" />
-  </Svg>
-);
 export const SquareTerminalIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="m7 11 2-2-2-2" />
@@ -159,11 +152,6 @@ export const ChevronRightIcon = (p: IconProps) => (
     <path d="m9 18 6-6-6-6" />
   </Svg>
 );
-export const ChevronLeftIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="m15 18-6-6 6-6" />
-  </Svg>
-);
 export const WrenchIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
@@ -184,12 +172,6 @@ export const BotIcon = (p: IconProps) => (
     <path d="M20 14h2" />
     <path d="M15 13v2" />
     <path d="M9 13v2" />
-  </Svg>
-);
-export const UserIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
-    <circle cx="12" cy="7" r="4" />
   </Svg>
 );
 export const SettingsIcon = (p: IconProps) => (
@@ -216,17 +198,6 @@ export const CheckIcon = (p: IconProps) => (
     <path d="M20 6 9 17l-5-5" />
   </Svg>
 );
-export const XIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M18 6 6 18" />
-    <path d="m6 6 12 12" />
-  </Svg>
-);
-export const LoaderIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-  </Svg>
-);
 export const BrainIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
@@ -249,16 +220,5 @@ export const RefreshIcon = (p: IconProps) => (
     <path d="M21 3v5h-5" />
     <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
     <path d="M8 16H3v5" />
-  </Svg>
-);
-export const PlusIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M5 12h14" />
-    <path d="M12 5v14" />
-  </Svg>
-);
-export const ActivityIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2" />
   </Svg>
 );

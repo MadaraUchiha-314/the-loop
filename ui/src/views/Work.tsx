@@ -83,7 +83,7 @@ export function Work({
       : chrome;
 
   return (
-    <div className="flex min-h-0 flex-1">
+    <div className="relative flex min-h-0 flex-1">
       {panels.sidebarOpen ? (
         <Sidebar
           views={sorted}

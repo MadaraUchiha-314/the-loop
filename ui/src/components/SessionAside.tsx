@@ -71,7 +71,10 @@ export function SessionAside({ view, viewed, note, onChanged, onClose }: Session
   }
 
   return (
-    <aside className="scroll-thin flex h-full w-[19rem] shrink-0 flex-col overflow-y-auto border-l border-border bg-surface" aria-label="Session">
+    <aside
+      className="scroll-thin flex h-full w-[19rem] shrink-0 flex-col overflow-y-auto border-l border-border bg-surface max-md:absolute max-md:inset-y-0 max-md:right-0 max-md:z-20"
+      aria-label="Session"
+    >
       <div className="flex items-center justify-between px-4 py-3">
         <span className="text-[0.68rem] font-medium uppercase tracking-widest text-muted-foreground">Session</span>
         <button
@@ -111,8 +114,8 @@ export function SessionAside({ view, viewed, note, onChanged, onClose }: Session
               title="Copy to the clipboard"
               className="flex w-full items-center justify-center gap-2 rounded-md border border-border bg-surface-2 px-2 py-1.5 font-mono text-[0.7rem] text-muted-foreground transition-colors hover:text-foreground"
             >
-              <CopyIcon className="h-3 w-3" />
-              {copied ? "copied" : `tmux attach -t ${tmux}`}
+              <CopyIcon className="h-3 w-3 shrink-0" />
+              <span className="truncate">{copied ? "copied" : `tmux attach -t ${tmux}`}</span>
             </button>
           </div>
         ) : null}

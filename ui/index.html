@@ -29,7 +29,11 @@
           theme = "";
         }
         if (!theme) {
-          theme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+          try {
+            theme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+          } catch (_) {
+            theme = "light";
+          }
         }
         document.documentElement.classList.toggle("dark", theme === "dark");
         document.documentElement.style.colorScheme = theme;
