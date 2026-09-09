@@ -56,9 +56,11 @@ files stopped before reaching them; the tests then went green once the edits wer
 
 Existing assertions changed: one — `test_an_already_closed_session_is_not_reconciled_again`
 pinned the rule that was the gap and is now `test_a_closed_session_is_asked_once_and_not_again_once_stamped`.
-Three existing test files gained a tmp `portable_dir` (`test_routing.py`'s factory,
-`test_workspace.py`'s two builders): a close now writes a record, and `RoutingConfig`'s
-default portable directory is the checkout's own.
+Four existing test files gained a tmp portable directory (`test_routing.py`'s factory,
+`test_workspace.py`'s two builders, `test_tmux_runner_integration.py`'s `layout`): a
+close now writes a record, and `RoutingConfig`'s default portable directory is the
+checkout's own — found by checking the checkout for a stray `.the-loop/portable/`
+after each full run.
 
 ## Rows T1, T2, T3, T9, T11
 

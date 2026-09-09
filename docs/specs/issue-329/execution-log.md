@@ -54,9 +54,10 @@ status: in-progress
   `evidence/verification.md`. Existing assertions changed: one
   (`test_an_already_closed_session_is_not_reconciled_again` inverted into
   `test_a_closed_session_is_asked_once_and_not_again_once_stamped`, because the rule
-  it pinned was the gap). Three existing test files gained a tmp `portable_dir`
-  (`test_routing.py`'s factory, `test_workspace.py`'s two): a close now writes a
-  record, and `RoutingConfig`'s default directory is the checkout's own.
+  it pinned was the gap). Four existing test files gained a tmp portable directory
+  (`test_routing.py`'s factory, `test_workspace.py`'s two builders,
+  `test_tmux_runner_integration.py`'s `layout`): a close now writes a record, and
+  `RoutingConfig`'s default directory is the checkout's own.
 - **Self-review:** three passes over the diff. Pass one found a real gap — a stamp
   arriving through the tracked directory from another machine would have stopped this
   machine's poller from ever closing its still-live session; the skip now applies only

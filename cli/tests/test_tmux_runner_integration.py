@@ -21,6 +21,7 @@ from the_loop import runner as runner_mod
 from the_loop.harness import ClaudeCodeAdapter
 from the_loop.runner import TmuxRunner
 from the_loop.sessions import Session, SessionRegistry, WorkItemRef
+from the_loop.state import layout_from_config
 from the_loop.webhook.dispatcher import Dispatcher, RoutingConfig
 from the_loop.webhook.router import Router
 
@@ -191,7 +192,10 @@ def pipeline_factory(tmp_path, stub_tmux):
                 # not the start-command gate (which has its own tests).
                 "control": {"requireStartCommand": False},
                 **(overrides or {}),
-            }
+            },
+            # A close stamps the portable record (issue-329); keep it out of the
+            # checkout these tests run from (the default `state.root` is cwd's).
+            layout=layout_from_config({"state": {"root": str(tmp_path / ".the-loop")}}),
         )
         dispatcher = Dispatcher(
             registry=registry,
