@@ -70,7 +70,8 @@ work item, derived from the repository's `ticketing.github` — takes its host f
 `gh`'s own answers (`$GH_HOST`, the checkout's `origin` remote), then github.com
 (issue-311). Every link the-loop posts and every `gh` call it makes read the host back
 off the ref, so on GitHub Enterprise the Slack link for a pending decision and the
-comment it describes land on the same GitHub.
+comment it describes land on the same GitHub. A poll source's bare `OWNER/REPO` is on
+that same resolved host (issue-331), so the refs its listing mints are refs it owns.
 
 The invariant: **one work item, one active session.** The
 [registry](/cli/commands/sessions) is the source of truth, one human-inspectable JSON file

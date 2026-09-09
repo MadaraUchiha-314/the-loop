@@ -144,7 +144,14 @@ GitHub Enterprise names its host (`ghe.corp.example/octo/repo`, issue-311): ever
 comment, review and closure read for that repository is made on that host, the work items
 it discovers carry it in their refs, and the source claims only refs on that host — a
 github.com repository with the same `OWNER/REPO` is a different repository. A bare
-`OWNER/REPO` is on github.com (or wherever `gh` points).
+`OWNER/REPO` is on the GitHub the-loop resolves (issue-331):
+[`integrations.github.host`](/config/cli/integrations-options#github-host), else an
+enterprise `github.api.baseUrl`, else `$GH_HOST`, else github.com — resolved when the
+poller starts and again on every hot reload, and shown in the poller's startup line
+(`polling github ghe.corp.example/octo/repo`). Listing, comment reads and closure
+reconciliation therefore agree on where a bare repository is; before issue-331 the listing
+followed `gh` while ownership assumed github.com, so on GitHub Enterprise a closed item
+was never detected unless every entry was host-pinned.
 
 ::: danger No fallback
 There is no fallback to any repository's harness config. A source with no `repos`

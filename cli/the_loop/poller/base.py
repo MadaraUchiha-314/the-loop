@@ -179,8 +179,16 @@ class PollProvider:
     name: str = ""
 
     @classmethod
-    def from_source(cls, source: dict, *, default_label: str) -> "PollProvider":
-        """Build a bound provider from one ``polling.sources`` config entry."""
+    def from_source(
+        cls, source: dict, *, default_label: str, default_host: str = ""
+    ) -> "PollProvider":
+        """Build a bound provider from one ``polling.sources`` config entry.
+
+        ``default_host`` is the host a scope declared without one is on
+        (issue-331) — for GitHub, the one ``ghhost.github_host`` resolved from
+        the CLI config and the environment. A provider whose scopes have no
+        notion of a host ignores it.
+        """
         raise NotImplementedError
 
     def describe(self) -> str:
@@ -279,8 +287,13 @@ def provider_names() -> List[str]:
     return sorted(_PROVIDERS)
 
 
-def build_provider(source: dict, *, default_label: str) -> PollProvider:
-    """Resolve a ``polling.sources`` entry to a bound :class:`PollProvider`."""
+def build_provider(
+    source: dict, *, default_label: str, default_host: str = ""
+) -> PollProvider:
+    """Resolve a ``polling.sources`` entry to a bound :class:`PollProvider`.
+
+    ``default_host`` is handed to :meth:`PollProvider.from_source` as is.
+    """
     name = str((source or {}).get("provider") or "").strip()
     if not name:
         raise ProviderError(
@@ -293,4 +306,6 @@ def build_provider(source: dict, *, default_label: str) -> PollProvider:
             f"unknown polling provider {name!r} "
             f"(known providers: {', '.join(provider_names()) or 'none'})"
         )
-    return cls.from_source(source, default_label=default_label)
+    return cls.from_source(
+        source, default_label=default_label, default_host=default_host
+    )
