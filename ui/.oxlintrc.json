@@ -26,7 +26,10 @@
     "react/react-in-jsx-scope": "off",
     "react-perf/jsx-no-new-object-as-prop": "off",
     "react-perf/jsx-no-new-array-as-prop": "off",
-    "react-perf/jsx-no-new-function-as-prop": "off"
+    "react-perf/jsx-no-new-function-as-prop": "off",
+    // The design passes an icon element as a prop (a section's glyph, a
+    // notice's alert mark); memoising a 12 px SVG buys nothing.
+    "react-perf/jsx-no-jsx-as-prop": "off"
   },
   "overrides": [
     {
@@ -40,5 +43,5 @@
       }
     }
   ],
-  "ignorePatterns": ["dist", "node_modules", "coverage"]
+  "ignorePatterns": ["dist", "node_modules", "coverage", "scripts"]
 }

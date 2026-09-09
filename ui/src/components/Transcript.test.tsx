@@ -50,12 +50,19 @@ describe("TranscriptView", () => {
     // The paired result is in the details body, and the error is flagged.
     expect(screen.getByText("1 failed, 41 passed")).toBeInTheDocument();
     expect(screen.getByText("error")).toBeInTheDocument();
-    // Collapsed by default: the details element is not open.
-    const details = document.querySelector("details.lp-fold-tool");
+    // Collapsed by default: neither the group nor the call is open.
+    expect(document.querySelector("details[data-fold='tools']")).not.toHaveAttribute("open");
+    const details = document.querySelector("details[data-tool]");
     expect(details).not.toBeNull();
     expect(details).not.toHaveAttribute("open");
     // The result entry emitted no row of its own — one entry row total.
-    expect(document.querySelectorAll(".lp-trace-entry")).toHaveLength(1);
+    expect(document.querySelectorAll("[data-entry]")).toHaveLength(1);
+  });
+
+  it("drops the tool groups when the switch is off, and keeps the prose", () => {
+    render(<TranscriptView entries={PAIRED} showTools={false} />);
+    expect(screen.getByText("Running the suite.")).toBeInTheDocument();
+    expect(document.querySelector("[data-tools]")).toBeNull();
   });
 
   it("renders orphan results, thinking and bookkeeping as visible rows — never blank", () => {
@@ -73,9 +80,9 @@ describe("TranscriptView", () => {
     expect(screen.getByText("thinking")).toBeInTheDocument();
     expect(screen.getAllByText("Suspicious fixture.").length).toBeGreaterThan(0);
     expect(screen.getByText("Session compacted.")).toBeInTheDocument();
-    // Every row has visible content in its main column.
-    for (const main of document.querySelectorAll(".lp-trace-main")) {
-      expect(main.textContent?.trim()).not.toBe("");
+    // Every row has visible content.
+    for (const entry of document.querySelectorAll("[data-entry]")) {
+      expect(entry.textContent?.trim()).not.toBe("");
     }
   });
 

@@ -14,15 +14,18 @@ import { useState } from "react";
 
 import { ApiError, HttpApi, normalizeBaseUrl } from "../api/client.ts";
 import type { RestartSchedule } from "../api/types.ts";
-import { useApi } from "../state/ApiContext.tsx";
-import { Blueprint } from "../components/Blueprint.tsx";
 import { ConfigEditor } from "../components/ConfigEditor.tsx";
+import type { Chrome } from "../components/HeaderBar.tsx";
+import { HeaderBar } from "../components/HeaderBar.tsx";
+import { Card, ControlButton, FieldLabel, INPUT_CLASS, Kicker, LearnMore, Report } from "../components/primitives.tsx";
+import { StatusDot, type DotStatus } from "../components/StatusDot.tsx";
+import { useApi } from "../state/ApiContext.tsx";
 import { POLL_CHOICES, type DataMode, type RefreshMode } from "../state/settings.ts";
 import { useAsync } from "../state/useAsync.ts";
 
 type Probe = { state: "idle" } | { state: "checking" } | { state: "ok"; version: string } | { state: "fail"; advice: string };
 
-export function Settings() {
+export function Settings({ chrome }: { chrome: Chrome }) {
   const { settings, updateSettings } = useApi();
   const [draft, setDraft] = useState(settings.baseUrl);
   const [probe, setProbe] = useState<Probe>({ state: "idle" });
@@ -42,18 +45,19 @@ export function Settings() {
 
   return (
     <>
-      <h1 className="lp-h1">Settings</h1>
-      <p className="lp-page-sub">Where this browser points, and the daemon&rsquo;s own configuration.</p>
+      <HeaderBar chrome={chrome} title="Settings" meta={<span>Where this browser points, and the daemon&rsquo;s own configuration.</span>} />
+      <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-6 py-6">
+      <div className="mx-auto max-w-3xl space-y-4">
 
-      <Blueprint className="lp-settings-card">
-        <div className="lp-settings-kicker">API server</div>
-        <label className="lp-settings-label" htmlFor="lp-baseurl">
-          Base URL — the workstation running <code className="lp-code">the-loop start</code>
-        </label>
-        <div className="lp-settings-row">
+      <Card>
+        <Kicker>API server</Kicker>
+        <FieldLabel htmlFor="lp-baseurl">
+          Base URL — the workstation running <code className="ref-chip">the-loop start</code>
+        </FieldLabel>
+        <div className="flex flex-wrap items-center gap-2">
           <input
             id="lp-baseurl"
-            className="input"
+            className={`${INPUT_CLASS} max-w-md font-mono`}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
@@ -63,19 +67,18 @@ export function Settings() {
             spellCheck={false}
             autoComplete="off"
           />
-          <button type="button" className="btn btn-primary" onClick={() => void saveAndTest()}>
+          <ControlButton primary onClick={() => void saveAndTest()}>
             Save &amp; test
-          </button>
+          </ControlButton>
         </div>
 
-        <div className="lp-conn">
-          <span className={`lp-conn-dot ${probeClass(probe)}`} aria-hidden="true" />
-          <span>{probeText(probe, settings.baseUrl)}</span>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <StatusDot status={probeClass(probe)} />
+          <span className="font-mono text-[0.7rem]">{probeText(probe, settings.baseUrl)}</span>
         </div>
 
-        <details className="lp-learn">
-          <summary>Learn more</summary>
-          <div className="lp-note">
+        <LearnMore>
+          <p>
             This dashboard is a static page — hosted anywhere, pointed at any workstation. The service binds loopback
             by default and refuses a non-loopback bind unless <code>service.exposed: true</code>, and it carries no
             in-app auth. This page&rsquo;s origin is allowed to read it out of the box
@@ -83,13 +86,13 @@ export function Settings() {
             another machine still needs to reach this browser — an SSH tunnel
             (<code>ssh -L 8787:127.0.0.1:8787 workstation</code>) or a gateway that terminates auth. The URL is saved
             in this browser (localStorage); the health check is GET {normalizeBaseUrl(draft)}/api/v1/health.
-          </div>
-        </details>
-      </Blueprint>
+          </p>
+        </LearnMore>
+      </Card>
 
-      <Blueprint className="lp-settings-card">
-        <div className="lp-settings-kicker">Data source</div>
-        <div className="lp-settings-row">
+      <Card>
+        <Kicker>Data source</Kicker>
+        <div className="flex flex-wrap gap-2">
           <ModeButton current={settings.mode} value="live" onPick={updateSettings}>
             Live service
           </ModeButton>
@@ -97,21 +100,22 @@ export function Settings() {
             Demo fixture
           </ModeButton>
         </div>
-        <details className="lp-learn">
-          <summary>Learn more</summary>
-          <div className="lp-note">
+        <LearnMore>
+          <p>
             The demo serves a bundled fixture in the same record shapes the service uses, so the screens can be
             evaluated without a reachable workstation. Control verbs in demo mode mutate an in-memory copy and never
             leave the browser.
-          </div>
-        </details>
-      </Blueprint>
+          </p>
+        </LearnMore>
+      </Card>
 
       <RefreshSection />
 
       <RestartSection />
 
       <CliConfigSection />
+      </div>
+      </div>
     </>
   );
 }
@@ -146,23 +150,29 @@ const MODES: { value: RefreshMode; name: string; why: string }[] = [
 function RefreshSection() {
   const { settings, updateSettings } = useApi();
   return (
-    <Blueprint className="lp-settings-card">
-      <div className="lp-settings-kicker">Refresh</div>
-      <fieldset className="lp-modes-fieldset">
-        <legend className="lp-settings-label">How this browser keeps the screen current</legend>
-        <div className="lp-modes" role="radiogroup" aria-label="Refresh mode">
+    <Card>
+      <Kicker>Refresh</Kicker>
+      <fieldset className="space-y-2">
+        <legend className="text-xs text-muted-foreground">How this browser keeps the screen current</legend>
+        <div className="grid gap-1.5 sm:grid-cols-3" role="radiogroup" aria-label="Refresh mode">
           {MODES.map((mode) => (
-            <label className="lp-mode" key={mode.value}>
+            <label
+              className={`flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 transition-colors ${
+                settings.refreshMode === mode.value ? "border-primary/50 bg-accent text-accent-foreground" : "border-border hover:bg-surface-2/60"
+              }`}
+              key={mode.value}
+            >
               <input
                 type="radio"
                 name="lp-refresh-mode"
                 value={mode.value}
                 checked={settings.refreshMode === mode.value}
                 onChange={() => updateSettings({ refreshMode: mode.value })}
+                className="mt-1 accent-[var(--primary)]"
               />
-              <span>
-                <span className="lp-mode-name">{mode.name}</span>
-                <span className="lp-mode-why">{mode.why}</span>
+              <span className="min-w-0">
+                <span className="block text-sm">{mode.name}</span>
+                <span className="block text-[0.7rem] leading-relaxed text-muted-foreground">{mode.why}</span>
               </span>
             </label>
           ))}
@@ -170,13 +180,11 @@ function RefreshSection() {
       </fieldset>
 
       {settings.refreshMode === "poll" ? (
-        <div className="lp-mode-interval">
-          <label className="lp-settings-label" htmlFor="lp-poll">
-            Poll interval
-          </label>
+        <div className="flex flex-wrap items-center gap-2">
+          <FieldLabel htmlFor="lp-poll">Poll interval</FieldLabel>
           <select
             id="lp-poll"
-            className="input"
+            className={`${INPUT_CLASS} w-auto`}
             value={settings.pollSeconds}
             onChange={(event) => updateSettings({ pollSeconds: Number(event.target.value) })}
           >
@@ -189,17 +197,16 @@ function RefreshSection() {
         </div>
       ) : null}
 
-      <details className="lp-learn">
-        <summary>Learn more</summary>
-        <div className="lp-note">
-          Each poll cycle is four list calls plus one <code>graph/check</code> per active loop, so a large board
-          against a remote workstation is happier at 30s. Streaming costs one held-open connection instead, and
-          refreshes only what each change touches — a graph move re-reads that one work item&rsquo;s position,
-          anything else re-reads the lists. A stream that cannot be opened says so in the sidebar&rsquo;s health dot
+      <LearnMore>
+        <p>
+          Each poll cycle is four list calls plus one <code className="ref-chip">graph/check</code> per active loop, so a
+          large board against a remote workstation is happier at 30s. Streaming costs one held-open connection instead,
+          and refreshes only what each change touches — a graph move re-reads that one work item&rsquo;s position,
+          anything else re-reads the lists. A stream that cannot be opened says so in the sidebar&rsquo;s health word
           and falls back to polling.
-        </div>
-      </details>
-    </Blueprint>
+        </p>
+      </LearnMore>
+    </Card>
   );
 }
 
@@ -230,43 +237,38 @@ function RestartSection() {
   }
 
   return (
-    <Blueprint className="lp-settings-card">
-      <div className="lp-settings-kicker">Service</div>
-      <div className="lp-settings-row">
-        <button
-          type="button"
-          className="btn btn-secondary"
-          disabled={state.kind === "asking"}
-          onClick={() => void restart()}
-        >
+    <Card>
+      <Kicker>Service</Kicker>
+      <div className="flex flex-wrap items-center gap-3">
+        <ControlButton disabled={state.kind === "asking"} onClick={() => void restart()}>
           {state.kind === "asking" ? "Scheduling…" : withUpgrade ? "Restart with upgrade" : "Restart the-loop"}
-        </button>
-        <label className="lp-settings-label lp-restart-upgrade">
+        </ControlButton>
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
           <input
             type="checkbox"
             checked={withUpgrade}
             onChange={(event) => setWithUpgrade(event.target.checked)}
-          />{" "}
+            className="accent-[var(--primary)]"
+          />
           upgrade the CLI first
         </label>
       </div>
       {state.kind === "scheduled" ? (
-        <div className="lp-config-report ok">
+        <Report tone="ok" role="status">
           Restart scheduled (pid {state.schedule.pid}
           {state.schedule.withUpgrade ? ", with upgrade" : ""}) — the service will drop and come back;
-          output at <code className="lp-code">{state.schedule.logfile}</code> on the workstation.
-        </div>
+          output at <code className="ref-chip">{state.schedule.logfile}</code> on the workstation.
+        </Report>
       ) : null}
-      {state.kind === "failed" ? <div className="lp-config-report fail">{state.message}</div> : null}
-      <details className="lp-learn">
-        <summary>Learn more</summary>
-        <div className="lp-note">
+      {state.kind === "failed" ? <Report tone="fail" role="alert">{state.message}</Report> : null}
+      <LearnMore>
+        <p>
           Stops every running the-loop service on the workstation, then starts every enabled one —
-          the same thing <code className="lp-code">the-loop restart</code> does. With the upgrade, the
+          the same thing <code className="ref-chip">the-loop restart</code> does. With the upgrade, the
           CLI is upgraded in between; a failed upgrade still restarts the current version.
-        </div>
-      </details>
-    </Blueprint>
+        </p>
+      </LearnMore>
+    </Card>
   );
 }
 
@@ -290,19 +292,17 @@ function CliConfigSection() {
     [api, nonce],
   );
 
-  if (loaded.loading) return <div className="lp-skeleton">Reading the CLI config…</div>;
+  if (loaded.loading) return <p className="py-2 text-xs text-muted-foreground">Reading the CLI config…</p>;
   if (loaded.error || !loaded.data) {
     const advice = loaded.error instanceof ApiError ? loaded.error.advice : String(loaded.error);
     return (
-      <Blueprint className="lp-settings-card">
-        <div className="lp-settings-kicker">CLI config</div>
-        <div className="lp-config-report fail">{advice}</div>
-        <div className="lp-settings-row">
-          <button type="button" className="btn btn-secondary" onClick={() => setNonce((value) => value + 1)}>
-            Retry
-          </button>
+      <Card>
+        <Kicker>CLI config</Kicker>
+        <Report tone="fail" role="alert">{advice}</Report>
+        <div>
+          <ControlButton onClick={() => setNonce((value) => value + 1)}>Retry</ControlButton>
         </div>
-      </Blueprint>
+      </Card>
     );
   }
 
@@ -331,19 +331,24 @@ function ModeButton({
   return (
     <button
       type="button"
-      className={active ? "btn btn-primary" : "btn btn-secondary"}
       aria-pressed={active}
       onClick={() => onPick({ mode: value })}
+      className={`rounded-md border px-2 py-1.5 font-mono text-[0.7rem] transition-colors ${
+        active
+          ? "border-primary/50 bg-accent text-accent-foreground"
+          : "border-border text-muted-foreground hover:bg-surface-2 hover:text-foreground"
+      }`}
     >
       {children}
     </button>
   );
 }
 
-function probeClass(probe: Probe): string {
-  if (probe.state === "ok") return "ok";
-  if (probe.state === "fail") return "fail";
-  return "";
+function probeClass(probe: Probe): DotStatus {
+  if (probe.state === "ok") return "done";
+  if (probe.state === "fail") return "blocked";
+  if (probe.state === "checking") return "active";
+  return "pending";
 }
 
 function probeText(probe: Probe, baseUrl: string): string {

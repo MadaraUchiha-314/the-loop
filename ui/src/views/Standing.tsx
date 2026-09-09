@@ -1,29 +1,27 @@
 /**
- * The Standing screen (issue-277): the sessions that belong to no work item.
+ * The standing sessions pane (issue-277), in the design's idiom (issue-327):
+ * the sessions that belong to no work item — no ticket, no tree, no
+ * completion — each a card of key/value lines with the verbs as mono buttons
+ * and a message box that pastes straight into the pane.
  *
- * The Sessions screen is shaped like the work: a sidebar of work items, each
- * opening into an outer loop and its PR inner loops. A standing session has
- * none of that — no ticket, no tree, no completion — so it gets its own screen
- * rather than a row that lies about being part of one.
- *
- * What the screen has to make visible is the split the CLI makes visible too:
- * a **declared** session comes from `standingSessions.sessions` and is removed
- * by editing that file, while a **created** one lives only in the registry and
- * `delete` really deletes it. Every refusal the service makes is surfaced as
- * the service's own sentence, never re-worded here — the API is the authority
- * on why something was refused, and paraphrasing it is how a UI starts
- * disagreeing with the CLI.
+ * The split the CLI makes visible is visible here too: a **declared** session
+ * comes from `standingSessions.sessions` and is removed by editing that file;
+ * a **created** one lives only in the registry and `delete` really deletes
+ * it. Every refusal is the service's own sentence, never re-worded.
  */
 
 import { useState } from "react";
 
 import { relativeTime } from "../api/model.ts";
 import type { StandingSessionRecord, StandingVerb } from "../api/types.ts";
-import { Blueprint } from "../components/Blueprint.tsx";
+import type { Chrome } from "../components/HeaderBar.tsx";
+import { HeaderBar } from "../components/HeaderBar.tsx";
+import { Card, ControlButton, Empty, FieldLabel, INPUT_CLASS, KV, Report } from "../components/primitives.tsx";
+import { StatusDot } from "../components/StatusDot.tsx";
 import { useApi } from "../state/ApiContext.tsx";
 import { useAsync } from "../state/useAsync.ts";
 
-export function Standing() {
+export function Standing({ chrome, onChanged }: { chrome: Chrome; onChanged?: () => void }) {
   const { api } = useApi();
   const sessions = useAsync((signal) => api.standingSessions(signal), [api]);
   const [busy, setBusy] = useState("");
@@ -39,6 +37,7 @@ export function Standing() {
       await action();
       setNote(done);
       sessions.reload();
+      onChanged?.();
     } catch (cause: unknown) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -49,53 +48,51 @@ export function Standing() {
   const rows = sessions.data ?? [];
 
   return (
-    <div className="lp-standing">
-      <div className="lp-trace-head">
-        <h2 className="lp-h2">Standing sessions</h2>
-        <span className="lp-subtle">
-          Sessions that belong to no work item — no ticket, no phases, running until you stop them.
-        </span>
-      </div>
-
-      {error ? (
-        <Blueprint className="lp-standing-error">
-          <strong>The service refused that.</strong> {error}
-        </Blueprint>
-      ) : null}
-      {note && !error ? <div className="lp-empty">{note}</div> : null}
-
-      <CreateForm
-        busy={busy === "create"}
-        onCreate={(body) =>
-          run("create", () => api.createStandingSession(body), `Created and started ${body.name}.`)
-        }
+    <>
+      <HeaderBar
+        chrome={chrome}
+        title="Standing sessions"
+        meta={<span>Sessions that belong to no work item — no ticket, no phases, running until you stop them.</span>}
       />
+      <div className="scroll-thin min-h-0 flex-1 overflow-y-auto px-6 py-6">
+        <div className="mx-auto max-w-3xl space-y-4">
+          {error ? (
+            <Report tone="fail" role="alert">
+              <strong className="font-medium">The service refused that.</strong> {error}
+            </Report>
+          ) : null}
+          {note && !error ? <Report tone="ok" role="status">{note}</Report> : null}
 
-      {sessions.loading && rows.length === 0 ? <div className="lp-empty">Loading…</div> : null}
-      {!sessions.loading && rows.length === 0 ? (
-        <div className="lp-empty">
-          No standing sessions. Declare one under <code className="lp-code">standingSessions.sessions</code>, or create
-          one above.
+          <CreateForm
+            busy={busy === "create"}
+            onCreate={(body) => run("create", () => api.createStandingSession(body), `Created and started ${body.name}.`)}
+          />
+
+          {sessions.loading && rows.length === 0 ? <Empty>Loading…</Empty> : null}
+          {!sessions.loading && rows.length === 0 ? (
+            <Empty>
+              No standing sessions. Declare one under <code className="ref-chip">standingSessions.sessions</code>, or
+              create one above.
+            </Empty>
+          ) : null}
+
+          {rows.map((session) => (
+            <SessionCard
+              key={session.name}
+              session={session}
+              busy={busy}
+              onControl={(verb) =>
+                run(`${verb}:${session.name}`, () => api.controlStandingSession(session.name, verb), `${verb} ${session.name}.`)
+              }
+              onDelete={() => run(`delete:${session.name}`, () => api.deleteStandingSession(session.name), `Deleted ${session.name}.`)}
+              onSay={(text) =>
+                run(`say:${session.name}`, () => api.sayToStandingSession(session.name, text), `Delivered into ${session.name}.`)
+              }
+            />
+          ))}
         </div>
-      ) : null}
-
-      {rows.map((session) => (
-        <SessionCard
-          key={session.name}
-          session={session}
-          busy={busy}
-          onControl={(verb) =>
-            run(`${verb}:${session.name}`, () => api.controlStandingSession(session.name, verb), `${verb} ${session.name}.`)
-          }
-          onDelete={() =>
-            run(`delete:${session.name}`, () => api.deleteStandingSession(session.name), `Deleted ${session.name}.`)
-          }
-          onSay={(text) =>
-            run(`say:${session.name}`, () => api.sayToStandingSession(session.name, text), `Delivered into ${session.name}.`)
-          }
-        />
-      ))}
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -107,13 +104,8 @@ interface CreateBody {
 }
 
 /**
- * The create form.
- *
- * Four fields, not eleven: a name, where it runs, what it is for, and its
- * brief. Everything else the API accepts — the harness, its arguments, the
- * Slack binding, `autoStart` — has a `routing` default that is right far more
- * often than not, and a form that asks for all of them turns a two-second
- * action into a configuration exercise. The CLI and the API still take them.
+ * The create form. Four fields, not eleven: a name, where it runs, what it is
+ * for, and its brief; everything else the API accepts has a `routing` default.
  */
 function CreateForm({ busy, onCreate }: { busy: boolean; onCreate: (body: CreateBody) => void }) {
   const [open, setOpen] = useState(false);
@@ -122,17 +114,16 @@ function CreateForm({ busy, onCreate }: { busy: boolean; onCreate: (body: Create
 
   if (!open) {
     return (
-      <div className="lp-standing-createbar">
-        <button type="button" className="btn" onClick={() => setOpen(true)}>
-          Create a standing session
-        </button>
+      <div>
+        <ControlButton onClick={() => setOpen(true)}>Create a standing session</ControlButton>
       </div>
     );
   }
 
   return (
-    <Blueprint className="lp-standing-create">
+    <Card>
       <form
+        className="space-y-3"
         onSubmit={(event) => {
           event.preventDefault();
           if (!valid || busy) return;
@@ -141,39 +132,40 @@ function CreateForm({ busy, onCreate }: { busy: boolean; onCreate: (body: Create
           setOpen(false);
         }}
       >
-        <div className="lp-standing-field">
-          <label htmlFor="standing-name">Name</label>
+        <div className="space-y-1">
+          <FieldLabel htmlFor="standing-name">Name</FieldLabel>
           <input
             id="standing-name"
+            className={INPUT_CLASS}
             value={body.name}
             onChange={(event) => setBody({ ...body, name: event.target.value })}
             placeholder="supervisor"
             autoComplete="off"
           />
-          {/* The same expression the schema and the core enforce. Saying it
-              here turns a round-trip refusal into a typo you fix as you type. */}
-          <span className="lp-subtle">
+          <p className="text-[0.7rem] text-muted-foreground">
             Lowercase letters, digits and hyphens, not starting with a hyphen. Becomes{" "}
-            <code className="lp-code">loop-standing-{body.name || "name"}</code> in tmux.
-          </span>
+            <code className="ref-chip">loop-standing-{body.name || "name"}</code> in tmux.
+          </p>
         </div>
 
-        <div className="lp-standing-field">
-          <label htmlFor="standing-cwd">Working directory</label>
+        <div className="space-y-1">
+          <FieldLabel htmlFor="standing-cwd">Working directory</FieldLabel>
           <input
             id="standing-cwd"
+            className={INPUT_CLASS}
             value={body.cwd}
             onChange={(event) => setBody({ ...body, cwd: event.target.value })}
             placeholder="empty inherits routing.spawnWorkdir"
             autoComplete="off"
           />
-          <span className="lp-subtle">It must exist — a session is never spawned into a directory that is not there.</span>
+          <p className="text-[0.7rem] text-muted-foreground">It must exist — a session is never spawned into a directory that is not there.</p>
         </div>
 
-        <div className="lp-standing-field">
-          <label htmlFor="standing-description">Description</label>
+        <div className="space-y-1">
+          <FieldLabel htmlFor="standing-description">Description</FieldLabel>
           <input
             id="standing-description"
+            className={INPUT_CLASS}
             value={body.description}
             onChange={(event) => setBody({ ...body, description: event.target.value })}
             placeholder="What this session is for, in one line"
@@ -181,31 +173,30 @@ function CreateForm({ busy, onCreate }: { busy: boolean; onCreate: (body: Create
           />
         </div>
 
-        <div className="lp-standing-field">
-          <label htmlFor="standing-prompt">Brief</label>
+        <div className="space-y-1">
+          <FieldLabel htmlFor="standing-prompt">Brief</FieldLabel>
           <textarea
             id="standing-prompt"
+            className={INPUT_CLASS}
             rows={3}
             value={body.prompt}
             onChange={(event) => setBody({ ...body, prompt: event.target.value })}
             placeholder="Watch the work items in flight and tell me what is stuck."
           />
-          <span className="lp-subtle">
+          <p className="text-[0.7rem] text-muted-foreground">
             Appended to the-loop&rsquo;s own directive — you own no work item, do not answer a phase gate or post a
             control keyword on any ticket — never substituted for it.
-          </span>
+          </p>
         </div>
 
-        <div className="lp-standing-actions">
-          <button type="submit" className="btn btn-primary" disabled={!valid || busy}>
+        <div className="flex flex-wrap gap-2">
+          <ControlButton type="submit" primary disabled={!valid || busy}>
             {busy ? "Creating…" : "Create and start"}
-          </button>
-          <button type="button" className="btn btn-ghost" onClick={() => setOpen(false)}>
-            Cancel
-          </button>
+          </ControlButton>
+          <ControlButton onClick={() => setOpen(false)}>Cancel</ControlButton>
         </div>
       </form>
-    </Blueprint>
+    </Card>
   );
 }
 
@@ -227,84 +218,62 @@ function SessionCard({
   const working = busy.endsWith(`:${session.name}`);
 
   return (
-    <Blueprint className="lp-standing-card">
-      <div className="lp-standing-head">
-        <span className={`lp-daemon-dot ${session.running ? "on" : "off"}`} aria-hidden="true" />
-        <h3 className="lp-h3">{session.name}</h3>
+    <Card data-standing-card={session.name}>
+      <div className="flex flex-wrap items-center gap-2">
+        <StatusDot status={session.running ? "active" : "pending"} />
+        <h3 className="font-mono text-sm text-foreground">{session.name}</h3>
         {/* Text, never a dot alone: the declared/created split decides whether
-            `delete` is even offered, so it must survive being read without
-            colour. */}
-        <span className="lp-standing-tag">{session.declared ? "declared in config" : "created here"}</span>
-        <span className="lp-subtle">{session.running ? "running" : session.status}</span>
+            `delete` is even offered, so it must survive being read without colour. */}
+        <span className="rounded-md border border-border bg-surface-2 px-2 py-0.5 font-mono text-[0.68rem] text-muted-foreground">
+          {session.declared ? "declared in config" : "created here"}
+        </span>
+        <span className="font-mono text-[0.7rem] text-muted-foreground">{session.running ? "running" : session.status}</span>
       </div>
 
-      {session.description ? <p className="lp-standing-desc">{session.description}</p> : null}
+      {session.description ? <p className="text-sm leading-relaxed text-foreground/85">{session.description}</p> : null}
 
-      <dl className="lp-standing-facts">
-        <div>
-          <dt>tmux</dt>
-          <dd>
-            <code className="lp-code">{session.tmuxTarget}</code>
-          </dd>
-        </div>
-        <div>
-          <dt>harness</dt>
-          <dd>{session.harness || "—"}</dd>
-        </div>
-        <div>
-          <dt>directory</dt>
-          <dd>
-            <code className="lp-code">{session.cwd || "—"}</code>
-          </dd>
-        </div>
-        <div>
-          <dt>started</dt>
-          <dd>{session.startedAt ? relativeTime(session.startedAt) : "—"}</dd>
-        </div>
-        {session.slackThread ? (
-          <div>
-            <dt>slack</dt>
-            <dd>thread in {session.slackChannel || "the configured channel"}</dd>
-          </div>
-        ) : null}
-      </dl>
+      <div className="space-y-1.5">
+        <KV k="tmux" v={session.tmuxTarget} title={session.tmuxTarget} />
+        <KV k="harness" v={session.harness || "—"} />
+        <KV k="directory" v={session.cwd || "—"} title={session.cwd || undefined} />
+        <KV k="started" v={session.startedAt ? relativeTime(session.startedAt) : "—"} mono={false} title={session.startedAt || undefined} />
+        {session.slackThread ? <KV k="slack" v={`thread in ${session.slackChannel || "the configured channel"}`} mono={false} /> : null}
+      </div>
 
-      <div className="lp-standing-actions">
+      <div className="flex flex-wrap gap-1.5">
         {session.running ? (
           <>
-            <button type="button" className="btn" disabled={working} onClick={() => onControl("stop")}>
+            <ControlButton disabled={working} onClick={() => onControl("stop")}>
               Stop
-            </button>
-            <button type="button" className="btn btn-ghost" disabled={working} onClick={() => onControl("restart")}>
+            </ControlButton>
+            <ControlButton disabled={working} onClick={() => onControl("restart")}>
               Restart
-            </button>
+            </ControlButton>
           </>
         ) : (
-          <button type="button" className="btn btn-primary" disabled={working} onClick={() => onControl("start")}>
+          <ControlButton primary disabled={working} onClick={() => onControl("start")}>
             Start
-          </button>
+          </ControlButton>
         )}
-        {/* Offered only for a created session. The service refuses it for a
-            declared one — `the-loop start` would recreate the record — and a
-            button whose only outcome is that refusal is worse than no button. */}
+        {/* Offered only for a created session: the service refuses it for a
+            declared one, and a button whose only outcome is that refusal is
+            worse than no button. */}
         {session.declared ? null : confirming ? (
           <>
-            <button type="button" className="btn btn-danger" disabled={working} onClick={onDelete}>
+            <ControlButton disabled={working} onClick={onDelete} className="border-state-blocked/40 text-state-blocked hover:bg-surface-2 hover:text-state-blocked">
               Delete {session.name} for good
-            </button>
-            <button type="button" className="btn btn-ghost" onClick={() => setConfirming(false)}>
-              Keep it
-            </button>
+            </ControlButton>
+            <ControlButton onClick={() => setConfirming(false)}>Keep it</ControlButton>
           </>
         ) : (
-          <button type="button" className="btn btn-ghost" disabled={working} onClick={() => setConfirming(true)}>
+          <ControlButton disabled={working} onClick={() => setConfirming(true)}>
             Delete…
-          </button>
+          </ControlButton>
         )}
       </div>
 
       <form
-        className="lp-standing-say"
+        className="flex items-center gap-2"
         onSubmit={(event) => {
           event.preventDefault();
           if (!message.trim() || working) return;
@@ -312,25 +281,26 @@ function SessionCard({
           setMessage("");
         }}
       >
-        <label className="lp-visually-hidden" htmlFor={`say-${session.name}`}>
+        <label className="sr-only-label" htmlFor={`say-${session.name}`}>
           Message {session.name}
         </label>
         <input
           id={`say-${session.name}`}
+          className={INPUT_CLASS}
           value={message}
           onChange={(event) => setMessage(event.target.value)}
           placeholder={session.running ? `Message ${session.name}…` : "Start it to send a message"}
           disabled={!session.running || working}
           autoComplete="off"
         />
-        <button type="submit" className="btn" disabled={!session.running || !message.trim() || working}>
+        <ControlButton type="submit" disabled={!session.running || !message.trim() || working}>
           Send
-        </button>
+        </ControlButton>
       </form>
-      <span className="lp-subtle">
-        Pasted straight into the pane. Nothing is posted to any ticket — a standing session has none, so the event log
-        is the record.
-      </span>
-    </Blueprint>
+      <p className="text-[0.7rem] text-muted-foreground">
+        Pasted straight into the pane. Nothing is posted to any ticket — a standing session has none, so the event log is
+        the record.
+      </p>
+    </Card>
   );
 }

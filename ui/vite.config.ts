@@ -1,4 +1,5 @@
 /// <reference types="vitest/config" />
+import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
@@ -10,7 +11,7 @@ const base = process.env.UI_BASE ?? "/the-loop/ui/";
 
 export default defineConfig({
   base,
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   build: {
     outDir: "dist",
     sourcemap: true,

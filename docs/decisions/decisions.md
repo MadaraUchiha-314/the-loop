@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [112](decision-112.md) | The dashboard's presentational layer is rebuilt on the prototype's own utility layer, over unchanged connectors, and ships nothing the service cannot back | proposed | 2026-09-09 |
 | [111](decision-111.md) | A Slack message the pipeline accepts is acknowledged on that message, best-effort, with Slack's own palette | proposed | 2026-09-08 |
 | [110](decision-110.md) | An instance is a named, scoped `cli-config.yaml`; new work reaches it by mode and by address | proposed | 2026-09-08 |
 | [109](decision-109.md) | The channel pipeline reads the graph through the dispatcher's own coupling, and a gate it cannot read is left to the ledger | proposed | 2026-09-08 |

@@ -38,7 +38,7 @@ afterEach(() => {
 /** The card for one session, once the screen has settled. */
 async function card(name: string): Promise<HTMLElement> {
   const heading = await screen.findByRole("heading", { name, level: 3 }, { timeout: 4000 });
-  const element = heading.closest(".lp-standing-card");
+  const element = heading.closest("[data-standing-card]");
   if (!(element instanceof HTMLElement)) throw new Error(`no card for ${name}`);
   return element;
 }

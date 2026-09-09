@@ -274,24 +274,38 @@ package — there are no install extras (owner decision, PR #162).
   a result whose call fell outside the served tail is its own visible row, and
   an unknown shape degrades to a labelled row rather than disappearing or
   throwing. All of it renders as text (React escaping), never as markup.
-- The dashboard SHALL be **two surfaces** (issue-298, the owner's decluttering
-  direction, superseding issue-283's three screens): **Work** — a sidebar of
-  work items (dot · ref · age · title · a small-caps chip when one needs a
-  human), each with **its pull requests nested beneath it** (issue-300), then
-  standing sessions, with Settings and the health dot in the footer; the
-  sidebar is the whole navigation — beside one main canvas
-  rendering the selected item's header, tick rail, trace and chat bar, with
-  the most recently active item shown when nothing is selected — plus
-  **Settings**, a reading column behind "← Work items". The visual system is
-  **Classical** (`ui/src/styles/classical.css`, vendored from the signed-off
-  export under `docs/specs/issue-298/design/`): the loop position draws as a
-  tick bar captioned `current · n of m`, each node's name and state kept in
-  the tick's tooltip and aria-label. Every earlier hash — the pre-283
-  Dashboard/Sessions/Attention routes and `#/events` alike — SHALL keep
-  parsing and land on the Work surface (an `#/events/<ref>` permalink on that
-  item's canvas). A selected session — the outer loop's or a PR endpoint's —
-  is the hash route, its stream is the readable transcript (event-trail
-  fallback unchanged), and the **chat bar** at the canvas foot posts to
+- The dashboard SHALL be **one screen of three columns** (issue-327, the owner's
+  prototype — Control Plane UI 3.0 — superseding issue-298's Classical pair of
+  surfaces): a **sidebar** of work items grouped by what they need from a human
+  (*Needs you*, *In flight*, *Shipped*, *Idle*; each row `#n · title / repo · node
+  · age`, a search box filtering the loaded rows, standing sessions as their own
+  group, Settings and the health word in the footer), each item with **its pull
+  requests nested beneath it** (issue-300); a **main column** showing the
+  selected item's title and ref chip, its loop as a compacted node strip (first,
+  last and two either side of the current node; *Full graph* expands it), one
+  tab per session, the harness trace as a reading column with a *Tool calls*
+  switch, the parked gate and the agent's question as accent banners, and the
+  composer at the foot — the most recently active item when nothing is selected;
+  and a **session panel** naming the viewed session's harness, id, status,
+  current node and transcript file, its tmux target and cwd, the ticket or pull
+  request it delivers, and the work item's session verbs. `#/standing` and
+  `#/settings` SHALL swap the main column for those panes and keep the sidebar.
+  Either side panel SHALL collapse from its own control and reopen from the
+  header; below 1280 px the session panel and below 768 px the sidebar SHALL start
+  closed. The visual system is the prototype's: IBM Plex Sans, JetBrains Mono for
+  identifiers, Space Grotesk for the title, surfaces and hairlines instead of
+  shadows, one primary for the human's actions, five state colours behind a 6 px
+  dot — its oklch tokens declared once as a Tailwind theme
+  (`ui/src/styles/app.css`, decision-112). The dashboard SHALL render in **light
+  and dark**, following `prefers-color-scheme` until the operator chooses from the
+  header, persisting the choice beside the base URL and applying it before the
+  first paint; an unknown stored value SHALL be ignored. It SHALL render **no
+  control the service cannot back** (no *New work item*, no checks, no cleanup
+  verb). Every earlier hash — the pre-283 Dashboard/Sessions/Attention routes and
+  `#/events` alike — SHALL keep parsing and land on the Work surface (an
+  `#/events/<ref>` permalink on that item). A selected session — the outer loop's
+  or a PR endpoint's — is the hash route, its stream is the readable transcript
+  (event-trail fallback unchanged), and the **composer** posts to
   `/sessions/reply` with the viewed ref, disabled with the reason when that
   session cannot receive (issue-230).
 - The Work sidebar SHALL be **two levels deep, and no deeper** (issue-300): a
@@ -381,6 +395,7 @@ package — there are no install extras (owner decision, PR #162).
 | issue-322 | `GET /api/v1/instance` (`getInstance`; the `get_instance` MCP tool; `loop.instance()` on the SDK): which instance of the-loop answered — its name, scope mode, declared work items and the managed set with the source of each entry. The seam a manager of several instances aggregates across: every instance serves the same surface, and this document says which one it is | [spec](../specs/issue-322/), [decision-110](../decisions/decision-110.md), [instances](instances.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/322) |
 | issue-302 | A pull request stopped appearing twice on the board. A labeled, linked PR carries two identities the service writes on purpose — the poller's portable ledger under its own ref, and a session endpoint nested under the work item it delivers — and `buildWorkItemViews` unioned them, so PR #301's nesting made the same PR render as a live nested row *and* a dead top-level shell (grey dot, "no session", because its session is nested elsewhere). The join now reconciles the two: a ref another item's row draws as its pull request is not a work item, unless nothing would draw it (a treeless owner), it has a session record of its own, or the claim is a self- or two-level claim a hand-edited record could use to hide a row. What the removed row carried is folded onto the nested one — its portable record for the age fallback, and its attention and open question onto the owning item's card and chip — so the drop moves information rather than deleting it. Service side, `list_attention` now counts a live nested PR endpoint as a session for its ref, which is what made every linked, labeled PR report a permanent stall | [spec](../specs/issue-302/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/302) |
 | issue-300 | The Work sidebar stopped flattening the board: each work item now carries its pull requests as nested rows (dot &middot; number-or-qualified-ref &middot; age), rendered from the `sessionTree` join the retired Sessions screen left behind rather than a second derivation, so treeless loops stay treeless. Selecting a PR row opens that PR's session on its work item's canvas, and the parent row keeps a lighter marker so the open item is still visible. The viewed trace moved from pane-local state to the hash — the trace tabs became links to the same route the sidebar rows use — which removes the second source of truth and, with it, the class of bug where a PR of the already-open item could be selected and change nothing | [spec](../specs/issue-300/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/300) |
+| issue-327 | **Control Plane UI 3.0**: the dashboard's presentational layer rebuilt on the owner's prototype (https://the-loopy-one.lovable.app/), light and dark. One screen of three columns — a work-item sidebar grouped Needs you / In flight / Shipped / Idle with search and nested PR rows, a main column with the loop as a compacted node strip, session tabs, the harness trace as a reading column with a Tool calls switch and the composer, and a session panel (harness · tmux · ticket · controls); Standing and Settings as panes of the same column. Tokens are the prototype's oklch values in a Tailwind v4 `@theme`; the theme follows the browser until chosen, is persisted beside the base URL and applied before first paint. Presentation only: every connector, model join, route and control verb is unchanged, and nothing the service cannot back is rendered | [spec](../specs/issue-327/), [decision-112](../decisions/decision-112.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/327) |
 | issue-298 | The dashboard's design overhaul, in two rounds. Round one: the Industry system replaced wholesale by **Classical** (Cormorant Garamond over Lora, hairline rules, color as stroke), vendored as `ui/src/styles/classical.css` from the owner's signed-off export (checked in under `docs/specs/issue-298/design/`); the header bar retired into the sidebar; the labelled node rail became a tick bar captioned `current · n of m` (node names in tooltips); the transcript an editorial "You" / "the-loop" thread. Round two, on the owner's decluttering direction: one flat Work-items sidebar (chips carry the attention), the canvas pared to header + trace + chat with the most recent item shown by default, the question answered by the chat bar itself, the inbox/overview and PR cards folded into chips, cards and trace tabs, and the standalone Events screen retired (the trail remains as the trace's fallback; `#/events` lands on Work). Presentation only: every API connector, model join and control verb is unchanged | [design](../specs/issue-298/design/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/298) |
 | issue-283 | The dashboard calmed down to the claude.ai/code shape: six tabs became three (Work · Events · Settings) with a persistent sidebar (deduped, tiered inbox with in-place gate approval and question replies; items grouped needs-you/running/idle; standing sessions under a divider) and one main pane. Service side: the poller caches ticket titles in the portable record, `recent-error` attention ages out and clears on a clean poll, and `api.request` dropped to debug level. Plus the audit's contained fixes — frozen rail rendered instead of "no graph state", relative timestamps with the date when not today, the duplicated event trail and the broken fallback sentence on the detail pane, round session dots with a dash for "no session", provenance notes and the route footer removed, Settings prose behind disclosures — and dormant loops answered from the held graph report instead of a fresh check per poll | [audit](https://github.com/MadaraUchiha-314/the-loop/issues/283) |
 | issue-277 | The plane gained a second session namespace: `GET /api/v1/standing-sessions`, `…/one`, `POST …/control` and `POST …/say` over one core implementation, with `list`/`get`/`say` on MCP and **control deliberately off** it (an agent that could stop a standing session could stop the one supervising it), plus `loop.standing` on the SDK and a **Standing** screen on the dashboard (list, create, delete, start/stop/restart, per-session message box). `the-loop start`/`stop`/`status` report the sessions in their own section beside the services | [spec](../specs/issue-277/), [standing-sessions](standing-sessions.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/277) |

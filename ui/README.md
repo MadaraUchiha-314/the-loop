@@ -83,25 +83,27 @@ translates that into the same advice rather than "failed to fetch".
 Nothing here is a new endpoint. The interesting part is the **join**, which lives in
 [`src/api/model.ts`](src/api/model.ts):
 
-Two surfaces (issue-298's design, deliberately bare): **Work** — a sidebar of work
-items (dot · ref · age · title · a small-caps chip when one needs a human), each with
-its pull requests nested beneath it (issue-300: dot · `#216`, or `loop-docs#47` when
-the PR is in another repository · age; a linked PR appears there and *not* also as a
-top-level row, issue-302), then standing sessions, with Settings and the
-health dot in the footer; the sidebar is the whole navigation — beside one main canvas
-showing the selected item's header, rail, trace and chat bar (nothing selected shows
-the most recently active item) — plus **Settings**, a reading column behind
-"← Work items". The pre-298 screens fold in
-rather than disappear: the inbox's gate approval and question reply live on the item's
-canvas, and the standalone Events screen is retired — the event trail still renders as
-the trace's fallback, and legacy `#/events` hashes land on Work.
+One screen, three columns (issue-327's design, Control Plane UI 3.0): a **sidebar** of work
+items grouped by what they need from you — *Needs you*, *In flight*, *Shipped*, *Idle* — each
+row `#n · title / repo · node · age`, with its pull requests nested beneath it (issue-300: `#216`,
+or `loop-docs#47` when the PR is in another repository; a linked PR appears there and *not* also
+as a top-level row, issue-302), a search box that filters the loaded rows, the standing
+sessions as their own group, and a footer with Settings and the health word; the **main
+column** for the selected work item — title and ref, the loop as a compacted node strip
+(`Full graph` expands it), one tab per session, the harness trace as a reading column with
+a **Tool calls** switch, the parked gate and the agent's question as accent banners, and the
+composer at the foot (nothing selected shows the most recently active item); and a **session
+panel** — harness, tmux, ticket, controls. `#/standing` and `#/settings` swap the main column
+for those panes and keep the sidebar. Either side panel collapses from its own icon and
+reopens from the header. The standalone Events screen retired with issue-298 — the event
+trail still renders as the trace's fallback, and legacy `#/events` hashes land on Work.
 
 | Surface | Reads |
 |---|---|
 | Work sidebar | `GET /work-items` + `GET /sessions` + `GET /attention`, then one `POST /graph/check` per active loop — the rows' chips are the deduped, tiered attention (needs-input &gt; gate &gt; waits &gt; errors), and the nested PR rows are `sessionTree`'s inner level over the same `/sessions` records (a loop with no outer/inner split renders treeless). A labeled PR has a portable record of its own *and* a nested endpoint, so the join reconciles them and draws it once, under the item it delivers (issue-302) |
 | Work item canvas | the same, plus `GET /events?workItem=…` (the trace's fallback trail), `GET /sessions/transcript?ref=…` for the viewed trace (outer session or a PR endpoint's), `POST /graph/complete` from the parked-gate card, and `POST /sessions/reply` from the chat bar (issue-230 — the chat bar is also how an agent's question is answered) |
 | Standing (a sidebar section of Work) | `GET /standing-sessions`, plus `POST /standing-sessions/{create,delete,control,say}` — the sessions that belong to no work item (issue-277) |
-| Sidebar footer | `GET /daemons`, folded with the stream state into one health dot + popover |
+| Sidebar footer | `GET /daemons`, folded with the stream state into one health word + popover |
 | Settings | `GET /health`, plus `GET /config` + `GET /config/schema` and `POST /config` for the CLI-config editor (issue-222) |
 
 The config editor is the one screen that renders itself: its sections, labels, prose,
@@ -181,21 +183,42 @@ hash is also the *only* record of what the canvas shows: its ref may name a work
 one of its PR sessions, and the sidebar's nested rows and the canvas's trace tabs are the
 same links onto it — so no pane-local state can disagree with the URL (issue-300).
 
+## Design system
+
+The look is the owner's prototype, **Control Plane UI 3.0**
+([issue-327](https://github.com/MadaraUchiha-314/the-loop/issues/327); the prototype's
+stills are checked in under `docs/specs/issue-327/design/screenshots/`): IBM Plex Sans for
+copy, JetBrains Mono for every identifier, Space Grotesk for the title; three surface steps
+and 1 px hairlines instead of shadows; one burnt-orange primary reserved for the human's
+actions; five state colours behind a 6 px dot. The tokens are the prototype's own oklch
+values, declared once in `src/styles/app.css` as a Tailwind v4 `@theme`, so the JSX carries
+the prototype's utility classes and can be checked against it class for class
+([decision-112](../docs/decisions/decision-112.md)). Icons are inline SVG.
+
+**Light and dark.** The page follows the browser's `prefers-color-scheme` until you choose;
+the sun/moon control in the header switches, and the choice is kept in this browser's
+settings beside the base URL. A four-line script in `index.html` applies the stored theme
+before the first paint, so a reload never flashes the other one.
+
 ## Layout
 
 ```text
 src/
   api/        types.ts (the records /api/v1 serves) · client.ts (HTTP) · model.ts (the join)
   demo/       the bundled fixture, behind the same interface as the HTTP client
-  state/      settings (localStorage) · hash route · the board's fetch loop
+  state/      settings (localStorage, incl. the theme) · theme · hash route · the board's fetch loop
               stream.ts (what a frame makes stale) · useStream.ts (the connection)
-  components/ the shared primitives: card frame, node-rail tick bar, session dot,
-              health dot, transcript + chat bar
-  views/      one file per screen
-  styles/     classical.css (vendored design system — do not hand-edit) · app.css
+  components/ the design's pieces: Icons, StatusDot, primitives (chip, icon button, section,
+              notice…), Sidebar, HeaderBar, GraphStrip, SessionTabs, Transcript (trace +
+              composer), SessionAside, Banner, Nav (the health word)
+  views/      Work (the three columns) · WorkItemDetail · Standing · Settings · grouping
+  styles/     app.css — the tokens, the .dark theme, three custom utilities, Tailwind
+  scripts/    screenshots.mjs — the browser evidence run (both themes, two viewports)
 ```
 
-`src/styles/classical.css` is the Classical design-system export
-([issue-298](https://github.com/MadaraUchiha-314/the-loop/issues/298); the signed-off
-source lives under `docs/specs/issue-298/design/`), copied verbatim so the app renders
-what was signed off. Retuning the look means re-exporting it; app rules go in `app.css`.
+## Screenshot evidence
+
+`scripts/screenshots.mjs` drives the built app in demo mode through every surface and state
+in both themes and writes one PNG per state — the evidence a UI work item commits under its
+spec's `evidence/`. It needs Playwright resolvable from `ui/` (`npm i --no-save playwright`)
+and a preview server (`bun run build && bun run preview --port 4173`).

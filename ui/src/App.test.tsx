@@ -39,7 +39,7 @@ afterEach(() => {
 /** The sidebar row for one work item, once it has rendered. */
 async function sidebarRow(shortRef: string): Promise<HTMLElement> {
   const rows = await screen.findAllByRole("link", { name: new RegExp(shortRef.replace("#", "#")) });
-  const row = rows.find((el) => el.className.includes("lp-side-row"));
+  const row = rows.find((el) => el.dataset["row"] === "item");
   expect(row).toBeDefined();
   return row!;
 }
@@ -50,12 +50,13 @@ describe("the control plane, on demo data", () => {
     expect(await screen.findByText(/Demo data/)).toBeInTheDocument();
   });
 
-  it("lists every tracked work item in one flat sidebar list, newest first", async () => {
+  it("lists every tracked work item in the sidebar, grouped by what it needs", async () => {
     renderApp();
 
-    // One flat "Work items" list (issue-298) — the armed item with no session
-    // and the ad-hoc item (issue-230) included, ordered by recency.
-    expect(await screen.findByText("Work items")).toBeInTheDocument();
+    // The design's groups (issue-327): Needs you · In flight · Shipped · Idle —
+    // the armed item with no session and the ad-hoc item (issue-230) included.
+    expect(await screen.findByText("Needs you")).toBeInTheDocument();
+    expect(await screen.findByText("In flight")).toBeInTheDocument();
     expect(await sidebarRow("loop-lab#214")).toBeInTheDocument();
     expect(await sidebarRow("loop-lab#181")).toBeInTheDocument();
     // Nothing selected: the canvas shows the most recently active item
@@ -132,10 +133,8 @@ describe("the control plane, on demo data", () => {
     const prs = await screen.findByRole("list", { name: "Pull requests for loop-lab#214" });
     expect(within(prs).getByText("#216")).toBeInTheDocument();
 
-    const rows = screen
-      .getAllByRole("link")
-      .filter((el) => el.className.includes("lp-side-row") && !el.className.includes("lp-side-pr"));
-    expect(rows.some((el) => el.textContent?.includes("loop-lab#216"))).toBe(false);
+    const rows = screen.getAllByRole("link").filter((el) => el.dataset["row"] === "item");
+    expect(rows.some((el) => el.getAttribute("aria-label")?.includes("loop-lab#216"))).toBe(false);
   });
 
   it("opens the PR's own session from its nested sidebar row", async () => {
@@ -157,7 +156,7 @@ describe("the control plane, on demo data", () => {
     // marks that the canvas is on it.
     const owner = await sidebarRow("loop-lab#214");
     expect(owner).not.toHaveAttribute("aria-current");
-    expect(owner.className).toContain("owner");
+    expect(owner).toHaveAttribute("data-owner", "true");
   });
 
   it("shows the agent's question; the chat bar's reply closes the card", async () => {
@@ -192,8 +191,70 @@ describe("the control plane, on demo data", () => {
     expect(await screen.findByText(/Reading the briefing template/)).toBeInTheDocument();
     expect(screen.getByText("Read")).toBeInTheDocument();
     expect(screen.getByText(/truncated by the harness mid-write/)).toBeInTheDocument();
-    // The path caption stays: it names the file the served bytes came from.
+    // The path moved to the session panel: it still names the served file.
     expect(screen.getByText(/~\/\.claude\/projects\/.*\.jsonl/)).toBeInTheDocument();
+  });
+
+  it("hides the tool groups behind the Tool calls switch, from the mouse and the keyboard", async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(await sidebarRow("loop-lab#214"));
+    await screen.findByText(/Reading the briefing template/);
+    expect(document.querySelectorAll("[data-tools]").length).toBeGreaterThan(0);
+
+    const toggle = screen.getByRole("switch", { name: "Tool calls" });
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    expect(document.querySelectorAll("[data-tools]")).toHaveLength(0);
+
+    toggle.focus();
+    await user.keyboard(" ");
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    await user.keyboard("{Enter}");
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("switches theme from the header and keeps the choice in this browser", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await sidebarRow("loop-lab#214");
+
+    // jsdom has no matchMedia, so with nothing chosen the page is light.
+    expect(document.documentElement.classList.contains("dark")).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Switch to dark theme" }));
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+    expect(JSON.parse(globalThis.localStorage.getItem("the-loop:settings:v1") ?? "{}").theme).toBe("dark");
+
+    await user.click(screen.getByRole("button", { name: "Switch to light theme" }));
+    expect(document.documentElement.classList.contains("dark")).toBe(false);
+    expect(JSON.parse(globalThis.localStorage.getItem("the-loop:settings:v1") ?? "{}").theme).toBe("light");
+  });
+
+  it("collapses the sidebar and the session panel, and reopens both from the header", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await sidebarRow("loop-lab#214");
+
+    await user.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+    expect(screen.queryByRole("complementary", { name: "Work items" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Open sidebar" }));
+    expect(await screen.findByRole("complementary", { name: "Work items" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Close panel" }));
+    expect(screen.queryByRole("complementary", { name: "Session" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Open session panel" }));
+    expect(await screen.findByRole("complementary", { name: "Session" })).toBeInTheDocument();
+  });
+
+  it("filters the sidebar by what is typed into the search box", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await sidebarRow("loop-lab#214");
+
+    await user.type(screen.getByRole("searchbox", { name: "Search work items" }), "webhook replay");
+    expect(screen.getAllByRole("link").filter((el) => el.dataset["row"] === "item")).toHaveLength(1);
+    expect(await sidebarRow("loop-lab#187")).toBeInTheDocument();
   });
 
   it("survives a deep link to an item that is not on this service", async () => {
