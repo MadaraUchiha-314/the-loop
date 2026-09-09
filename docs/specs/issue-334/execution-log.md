@@ -31,6 +31,19 @@ status: in-progress
 
 ## Progress entries
 
+### 2026-09-09 — upgrading an existing Slack app
+
+- **Phase:** needs-review
+- **Did:** the owner asked whether the docs cover adding what the feature needs to a
+  new app *and* to an existing one. The guide covered the new app (the manifest); added
+  *1b. Or upgrade the app you already have* — replace the manifest (recommended, one
+  step, reinstall on the scope change) or a by-hand table (scopes, Socket Mode, the
+  command with no Request URL, `message.groups`, interactivity), then tokens, config,
+  `channels status`, `/the-loop help` as the end-to-end test. Linked from *Limits*.
+- **Checkpoint/tests:** markdownlint clean; the manifest pin green.
+- **Next:** the owner's review.
+- **Blockers:** none.
+
 ### 2026-09-09 — the dead-letter question
 
 - **Phase:** needs-review

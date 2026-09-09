@@ -80,6 +80,38 @@ The manifest is the "reusable, importable" definition the ticket asked about —
 own format, checked into the-loop, the same for every workspace. (It is *not* a Workflow
 Builder workflow; [why](#why-not-slack-workflow-builder).)
 
+### 1b. Or upgrade the app you already have
+
+An app created for an earlier the-loop (issue-245 / issue-309 — thread replies and
+buttons, no command) needs three things added: the `commands` scope and the `/the-loop`
+command, the private-channel scope and event (`groups:history`, `message.groups`), and —
+if it never used Socket Mode — Socket Mode itself. Two ways, pick one:
+
+- **Replace the manifest** (recommended, one step). At
+  [api.slack.com/apps](https://api.slack.com/apps) open the app → *App Manifest* → paste
+  the manifest above over the existing one → *Save Changes*. Slack shows the diff and,
+  because scopes changed, asks you to **reinstall** the app to the workspace — do it
+  (*Install App → Reinstall*). The manifest's `display_information.name` and
+  `bot_user.display_name` replace yours; edit those two lines first if you want to keep
+  a different name.
+- **By hand**, in the app's settings, then *Reinstall*:
+
+  | Page | Add |
+  |------|-----|
+  | *OAuth & Permissions → Bot Token Scopes* | `commands`, `groups:history` (and `reactions:write` if the app predates issue-325) |
+  | *Socket Mode* | *Enable Socket Mode* (if not already) |
+  | *Slash Commands → Create New Command* | command `/the-loop`, any description and usage hint; **no Request URL** is needed in Socket Mode |
+  | *Event Subscriptions → Subscribe to bot events* | `message.groups` (beside the existing `message.channels`) |
+  | *Interactivity & Shortcuts* | on (it already is if the buttons worked) |
+
+After either path: the **bot token** stays the one you have unless Slack issues a new one
+on reinstall (it shows it on the install page — re-export if it changed); mint an
+**app-level token** (`connections:write`) under *Basic Information → App-Level Tokens* if
+the app has none; then set `read.mode: socket` and the grants you want in
+`channels.slack.publish`, restart `the-loop channels listen`, and check
+`the-loop channels status` — its `commands:` line should read *`/the-loop` over Socket
+Mode* with the families you granted. `/the-loop help` in Slack is the end-to-end test.
+
 ### 2. Mint the two tokens
 
 - **Install the app to the workspace** (*OAuth & Permissions → Install*). The **bot
@@ -301,7 +333,8 @@ an audit never needs Slack. This is also why a relayed keyword acts on the ledge
   message, and the phase-selection gate reads only unquoted checklist lines; tick the
   checklist on the ticket and type the keyword in the thread.
 - **Private channels** need the `groups:history` scope and the `message.groups` event —
-  both in the manifest above; an app created before issue-334 needs them added.
+  both in the manifest above; an app created before issue-334 needs them added
+  ([upgrading an existing app](#_1b-or-upgrade-the-app-you-already-have)).
 - **No completion receipt for a relayed keyword** beyond the ✅ on the record: the thread
   that opens when a start is accepted, and the events you subscribe to, are the feedback.
 - **A command or a button press issued while no listener was connected is lost** — visibly,
