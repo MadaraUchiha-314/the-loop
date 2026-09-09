@@ -142,6 +142,16 @@ socket, and the ephemeral answer to a command is an outbound HTTPS POST to Slack
 is why the manifest carries `socket_mode_enabled: true` and no `request_url`. (Slack's
 classic HTTP delivery, which would need a public endpoint, is deliberately not offered.)
 
+**One long-lived connection.** The listener asks Slack for a one-time `wss://` URL
+(`apps.connections.open`), connects, and keeps that socket open — a ping every few seconds
+detects a dead one, and when Slack rotates the connection (it announces a `disconnect`
+first) the SDK reconnects on its own. Every envelope — message events, button presses,
+slash commands — arrives over that one socket and is acknowledged on it. Delivery happens
+only while a listener is connected: with none running, a `/the-loop` command fails visibly
+in Slack and message events are retried briefly, then dropped. Run **one** listener per
+instance — Slack load-balances envelopes across an app's open connections, so two would
+each see half of them.
+
 With `read.mode: poll` the daemons read thread replies on a background thread instead and
 `listen` is not needed — but no button press and no slash command can arrive that way,
 because Slack delivers both only to a connection that acknowledges within seconds.
