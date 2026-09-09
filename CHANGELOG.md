@@ -1,3 +1,9 @@
+## v13.8.0 (2026-09-09)
+
+### Feat
+
+- **issue-332**: a closed poll-only work item leaves the board by itself — ledger-only records are reconciled lazily (#335)
+
 ## v13.7.1 (2026-09-09)
 
 ### Fix
