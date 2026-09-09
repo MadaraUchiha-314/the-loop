@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 
 from .base import Command, register
 from .sessions_cmd import _cli_config
@@ -271,4 +272,34 @@ class ChannelsCommand(Command):
                 f"{summary['dropped']} dropped"
             )
             return 0
+        return _listen(config)
+
+
+def _listen(config: dict) -> int:
+    """The foreground listener, under the same single-instance lock the service
+    holds when it hosts one (issue-334): two listeners for one instance would
+    each see half of Slack's envelopes."""
+    from ..core import daemons as core_daemons
+    from ..runlock import RunLock
+
+    lock = RunLock(
+        core_daemons._pidfile(core_daemons.SLACK_LISTENER, config),
+        name=core_daemons.SLACK_LISTENER,
+    )
+    try:
+        if not lock.acquire():
+            holder = lock.holder() or "unknown"
+            print(
+                f"error: a slack listener is already running (pid {holder}) — "
+                "the service hosts one when service.hostIngresses is on; stop it "
+                "with `the-loop stop` to run the listener in the foreground",
+                file=sys.stderr,
+            )
+            return 1
+    except OSError as exc:
+        print(f"error: cannot use the listener lockfile: {exc}", file=sys.stderr)
+        return 1
+    try:
         return run_socket_listener(config)
+    finally:
+        lock.release()

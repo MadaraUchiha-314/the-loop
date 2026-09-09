@@ -42,9 +42,13 @@ the-loop channels manifest  # the Slack app manifest to import (scopes, events, 
   so a cycle in `socket` mode reads only what the listener missed. Exit 1 when the cycle
   was skipped (channel disabled, `read.mode: off`, missing token), with the reason
   printed.
-- **`listen`** connects over **Socket Mode** (the official SDK's built-in client, an
-  *outbound* connection — nothing to expose) and processes messages push-fashion until
-  interrupted: thread replies, top-level messages, Block Kit **button presses**,
+- **`listen`** is the **foreground** form of the Socket Mode listener that
+  [`the-loop start`](/cli/commands/start) hosts inside the service whenever
+  `channels.slack.read.mode` is `socket` (issue-334) — for `service.hostIngresses: false`,
+  or for watching the connection in a terminal. It takes the same single-instance lock
+  (`<root>/slack-listener.pid`) and refuses to run beside a hosted one. It connects over
+  **Socket Mode** (the official SDK's built-in client, an *outbound* connection —
+  nothing to expose) and processes messages push-fashion until interrupted: thread replies, top-level messages, Block Kit **button presses**,
   which enter the pipeline as that member's reply carrying the button's text, and — since
   [issue-334](https://github.com/MadaraUchiha-314/the-loop/issues/334) — the
   **`/the-loop` slash command**, acknowledged first and answered ephemerally through its

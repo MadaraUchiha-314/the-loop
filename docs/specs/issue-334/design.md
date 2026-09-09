@@ -259,6 +259,20 @@ is at or before its thread's cursor as `duplicate` — the shared cursor is the
 at-most-once contract across both transports, which the issue-245 design stated and
 this makes symmetric.
 
+**Hosted by the service** (R2.7, added at review). `api/ingress.py` gains
+`_start_slack_listener`: when `SlackChannelConfig` is enabled with `read.mode: socket`
+and both tokens are set, it takes the `slack-listener` lock (`core.daemons.SLACK_LISTENER`,
+pidfile `<root>/slack-listener.pid`, logfile beside the others) and runs
+`run_socket_listener(cli_config, stop_event)` on a thread wrapped in a `_HostedIngress`;
+a loop that ends on its own releases the lock and records `ingress.hosted_stopped`
+(`reason: exited`). `core.lifecycle` composes it: `enabled_services` gains
+`slack-listener`; `start_all` appends its row (`hosted` via `_await_hosted`, `manual`
+without hosting, `already-running` when a foreground listener holds the lock, `disabled`
+otherwise; `manual` keeps `ok` true); `stop_all` treats it like the other hosted locks;
+`status_all` appends its `daemon_status` row with `hosted`. `channels listen` acquires the
+same lock first and refuses when held. `DAEMONS` is unchanged — the daemons API and the
+daemon entry point enumerate it, and the listener has no standalone daemon form.
+
 `channels status` prints one more line:
 
 ```text

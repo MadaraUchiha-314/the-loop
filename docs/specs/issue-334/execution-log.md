@@ -31,6 +31,24 @@ status: in-progress
 
 ## Progress entries
 
+### 2026-09-09 — the service hosts the listener (review ask)
+
+- **Phase:** needs-review
+- **Did:** the owner asked on the guide's *Run it* step why the listener was not part
+  of `the-loop start`. Made it so: `_start_slack_listener` in `api/ingress.py` hosts
+  `run_socket_listener` under the service lifespan with its own pidfile lock
+  (`slack-listener.pid`), `enabled_services` / `start_all` / `stop_all` / `status_all`
+  carry a `slack-listener` row (`hosted` / `manual` / `already-running` / `disabled`),
+  and `channels listen` takes the same lock as the foreground form. R2.7 added; the
+  guide, `start`, `status`, `state`, service-options, the channels command page, the
+  capability doc and decision-116's cost line updated.
+- **Checkpoint/tests:** `test_hosted_listener.py` (6 new: hosting under this pid, stop
+  through the event, self-release on exit, poll/disabled host nothing, missing tokens
+  refuse loudly, a held lock is not fought over, `channels listen` refuses); four new
+  and seven updated lifecycle unit tests (the fourth row); `make check`.
+- **Next:** the owner's review.
+- **Blockers:** none.
+
 ### 2026-09-09 — one CI flake, re-run once, green
 
 - **Phase:** needs-review

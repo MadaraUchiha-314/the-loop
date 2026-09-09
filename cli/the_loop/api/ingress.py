@@ -7,6 +7,11 @@ lifespan: one pid, one logfile, one thing for a supervisor. The run loops are
 the same ones the standalone daemons execute (:mod:`the_loop.poller.daemon`,
 :mod:`the_loop.webhook.daemon`); only where they run changes.
 
+Since issue-334 the same lifespan hosts a third run loop when the Slack channel
+reads over Socket Mode: the listener (``the-loop channels listen``'s loop), so
+``the-loop start`` brings up the long-lived connection the config asks for and
+nothing has to be run in a foreground shell beside it.
+
 **The locks stay per ingress.** Each hosted ingress still acquires its own
 pidfile ``RunLock`` — now held by the service's pid — so everything built on
 the issue-159 discipline keeps answering truthfully: "at most one poller per
@@ -132,6 +137,65 @@ def _start_receiver(cli_config: dict) -> Optional[_HostedIngress]:
     return _HostedIngress("gh-webhook", lock, thread, httpd.shutdown)
 
 
+def _start_slack_listener(cli_config: dict) -> Optional[_HostedIngress]:
+    """The Slack Socket Mode listener as a hosted thread (issue-334).
+
+    Only when the channel is enabled with ``read.mode: socket`` — the same rule
+    ``channels listen`` applies — and only with both tokens present, refused
+    loudly otherwise so ``the-loop start`` reports it rather than hosting a
+    loop that would exit at once. A listener that stops on its own (a token
+    Slack rejects, an exception past the SDK's reconnect) releases its lock,
+    so ``status`` never reports a dead listener as running.
+    """
+    import os
+
+    from ..channels import slack as slack_channel
+    from ..core import daemons as core_daemons
+
+    config = slack_channel.SlackChannelConfig.from_mapping(cli_config)
+    if not config.enabled or config.read_mode != "socket":
+        return None
+    missing = [
+        env
+        for env in (config.app_token_env, config.bot_token_env)
+        if not os.environ.get(env)
+    ]
+    if missing:
+        logger.error(
+            "not hosting the slack listener: %s not set — Socket Mode needs the "
+            "app-level token (xapp-, connections:write) and the bot token (xoxb-)",
+            " and ".join(missing),
+        )
+        return None
+    lock = _acquire(
+        core_daemons.SLACK_LISTENER,
+        core_daemons._pidfile(core_daemons.SLACK_LISTENER, cli_config),
+    )
+    if lock is None:
+        return None
+    stop_event = threading.Event()
+
+    def serve() -> None:
+        try:
+            slack_channel.run_socket_listener(cli_config, stop_event)
+        except Exception:  # noqa: BLE001 — the service keeps serving
+            logger.exception("the hosted slack listener stopped on an error")
+        finally:
+            if not stop_event.is_set():
+                # Ended on its own, not by shutdown: drop the lock so `status`
+                # tells the truth and a restart can host it again.
+                lock.release()
+                eventlog.emit(
+                    "ingress.hosted_stopped",
+                    ingress=core_daemons.SLACK_LISTENER,
+                    reason="exited",
+                )
+
+    thread = threading.Thread(target=serve, name="the-loop-slack-listener", daemon=True)
+    thread.start()
+    return _HostedIngress(core_daemons.SLACK_LISTENER, lock, thread, stop_event.set)
+
+
 def start_hosted_ingresses(cli_config: Optional[dict]) -> List[_HostedIngress]:
     """Start every ingress this process should host; never raises.
 
@@ -146,6 +210,9 @@ def start_hosted_ingresses(cli_config: Optional[dict]) -> List[_HostedIngress]:
         starters.append(("gh-webhook", _start_receiver))
     if (config.get("polling") or {}).get("enabled", False):
         starters.append(("poller", _start_poller))
+    slack = (config.get("channels") or {}).get("slack") or {}
+    if isinstance(slack, dict) and slack.get("enabled", False):
+        starters.append(("slack-listener", _start_slack_listener))
     for name, start in starters:
         try:
             ingress = start(config)

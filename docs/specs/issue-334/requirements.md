@@ -155,6 +155,17 @@ drop it as `duplicate`; `poll_once` SHALL run in `socket` mode as a reconciliati
 (`the-loop channels poll`), refusing only `off`. A command or button press issued while
 nothing was connected is not recovered — it fails visibly to the member.
 
+2.7 *(added at review — the owner's ask on PR #336: "why can't this be encapsulated in
+a single command `the-loop start`?")* WHEN `the-loop start` runs with the Slack channel
+enabled and `read.mode: socket` under `service.hostIngresses` THEN the service SHALL
+host the Socket Mode listener as a thread under its lifespan, with its own pidfile lock
+held by the service's pid, reported `hosted` by `start`, shown by `status`, stopped
+with the service by `stop`; WHEN a token is missing from the service's environment THEN
+`start` SHALL report the row `failed` naming the variable and host nothing. `the-loop
+channels listen` SHALL remain the foreground form, take the same lock, and refuse to
+run beside a hosted listener; with `hostIngresses: false` the `start` row SHALL be
+`manual` and name it.
+
 2.5 A standing-session `<name>` SHALL match the standing-session grammar
 (`^[a-z0-9][a-z0-9-]{0,39}$`); an `instance:<name>` address SHALL match the instance
 grammar (the same); an `@login` SHALL match GitHub's login grammar. A token outside

@@ -37,6 +37,7 @@ from ..daemonize import open_logfile
 from ..runlock import RunLock
 from ..state import layout_from_config
 from . import daemons as core_daemons
+from .daemons import SLACK_LISTENER
 from . import instance as core_instance
 from . import standing as core_standing
 
@@ -68,6 +69,16 @@ def _polling(config: Optional[dict]) -> dict:
     return ((config or {}).get("polling")) or {}
 
 
+def _slack_listener_enabled(config: Optional[dict]) -> bool:
+    """Whether the config asks for the Socket Mode listener (issue-334): the
+    Slack channel enabled with ``read.mode: socket``."""
+    slack = ((config or {}).get("channels") or {}).get("slack") or {}
+    if not isinstance(slack, dict) or not slack.get("enabled", False):
+        return False
+    read = slack.get("read") or {}
+    return isinstance(read, dict) and str(read.get("mode", "poll")) == "socket"
+
+
 def enabled_services(config: Optional[dict] = None) -> Dict[str, bool]:
     """Which services the config asks ``start`` to compose (decision-084 D1)."""
     conf = service_config(config)
@@ -75,6 +86,7 @@ def enabled_services(config: Optional[dict] = None) -> Dict[str, bool]:
         "service": conf["enabled"],
         "gh-webhook": _webhook_enabled(config),
         "poller": bool(_polling(config).get("enabled", False)),
+        SLACK_LISTENER: _slack_listener_enabled(config),
     }
 
 
@@ -306,8 +318,53 @@ def start_all(config: Optional[dict] = None) -> Dict[str, Any]:
         except Exception as exc:  # noqa: BLE001
             rows.append(_row("poller", True, "failed", str(exc)))
 
+    # The Slack listener (issue-334) has no standalone daemon form: hosted by
+    # the service, or run in the foreground as `the-loop channels listen`.
+    if not enabled[SLACK_LISTENER]:
+        rows.append(
+            _row(
+                SLACK_LISTENER,
+                False,
+                "disabled",
+                "channels.slack.enabled is false or read.mode is not socket",
+            )
+        )
+    elif hosting:
+        try:
+            if not service_up:
+                rows.append(
+                    _row(
+                        SLACK_LISTENER,
+                        True,
+                        "failed",
+                        "the service hosts the listener (service.hostIngresses) "
+                        "and did not come up",
+                    )
+                )
+            else:
+                rows.append(_await_hosted(SLACK_LISTENER, config, service_pid))
+        except Exception as exc:  # noqa: BLE001
+            rows.append(_row(SLACK_LISTENER, True, "failed", str(exc)))
+    else:
+        lock = RunLock(
+            core_daemons._pidfile(SLACK_LISTENER, config), name=SLACK_LISTENER
+        )
+        rows.append(
+            _row(
+                SLACK_LISTENER,
+                True,
+                "already-running" if lock.is_held() else "manual",
+                (
+                    f"pid {lock.holder()}"
+                    if lock.is_held()
+                    else "service.hostIngresses is off — run `the-loop channels "
+                    "listen` in the foreground"
+                ),
+            )
+        )
+
     ok = all(
-        row["outcome"] in ("started", "already-running", "hosted", "disabled")
+        row["outcome"] in ("started", "already-running", "hosted", "disabled", "manual")
         for row in rows
     )
     standing = _start_standing(config)
@@ -334,7 +391,7 @@ def stop_all(config: Optional[dict] = None) -> Dict[str, Any]:
     service_lock = _service_lock(config)
     service_pid = service_lock.holder() if service_lock.is_held() else 0
     hosted: List[str] = []
-    for daemon in ("poller", "gh-webhook"):
+    for daemon in ("poller", "gh-webhook", SLACK_LISTENER):
         try:
             lock = RunLock(core_daemons._pidfile(daemon, config), name=daemon)
             if service_pid and lock.is_held() and lock.holder() == service_pid:
@@ -376,7 +433,9 @@ def stop_all(config: Optional[dict] = None) -> Dict[str, Any]:
                 else "hosted lock still held after the service stopped"
             ),
         )
-    rows = [by_name[name] for name in ("poller", "gh-webhook", "service")]
+    rows = [
+        by_name[name] for name in ("poller", "gh-webhook", SLACK_LISTENER, "service")
+    ]
     ok = all(row["outcome"] in ("stopped", "not-running") for row in rows)
     return {
         "services": rows,
@@ -421,6 +480,15 @@ def status_all(config: Optional[dict] = None) -> Dict[str, Any]:
     beat = PollHeartbeat.read(layout_from_config(config or {}).poll_status)
     rows[-1]["lastCycle"] = dict(beat.last_cycle) if beat else {}
     rows[-1]["intervalSeconds"] = beat.interval_seconds if beat else 0
+    # The Slack listener (issue-334): hosted by the service, or a foreground
+    # `channels listen` holding the same lock.
+    listener = core_daemons.daemon_status(SLACK_LISTENER, config)
+    listener["service"] = listener.pop("daemon")
+    listener["enabled"] = enabled[SLACK_LISTENER]
+    listener["hosted"] = bool(
+        running and listener["running"] and listener["pid"] == rows[0]["pid"]
+    )
+    rows.append(listener)
     ok = all(row["running"] for row in rows if row["enabled"])
     standing = _standing_status(config)
     return {

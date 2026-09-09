@@ -161,10 +161,24 @@ become** — the channel's authority, one grant per kind of act, all off except
 ### 4. Run it
 
 ```bash
-the-loop start              # the control-plane service and the daemons (the ledger's ingress)
-the-loop channels listen    # Socket Mode, in the foreground: replies, buttons, kickoffs, /the-loop
+the-loop start              # one process: the control-plane service, the ledger's ingresses,
+                            # and — with read.mode: socket — the Slack listener, hosted
+the-loop status             # …with a slack-listener row: running (hosted in the service, pid …)
 the-loop channels status    # what is configured, which grants hold, whether commands can arrive
 ```
+
+`the-loop start` reads the config and brings up everything it asks for, the long-lived
+Slack connection included: with `channels.slack.enabled: true` and `read.mode: socket`
+the service **hosts the listener** as a thread under its own lifespan
+([`service.hostIngresses`](/config/cli/service-options#hostingresses), the default), exactly
+as it hosts the poller and the webhook receiver. `the-loop stop` takes it down with the
+service, `the-loop restart --with-upgrade` brings it back on the new version, and
+`the-loop status` shows it as `slack-listener  running (hosted in the service, pid …)`. Both
+tokens must be in the service's environment (the `.env` file the config names is loaded
+at start); with one missing, `start` reports the row as `failed` and says which.
+`the-loop channels listen` remains the **foreground** form — for `hostIngresses: false`,
+or for watching the connection in a terminal — and takes the same single-instance lock,
+so it refuses to run beside a hosted one.
 
 **No webhook server, no Request URL.** Socket Mode is an *outbound* WebSocket the-loop
 opens to Slack with the app-level token; Slack then pushes message events, button presses
@@ -174,7 +188,7 @@ socket, and the ephemeral answer to a command is an outbound HTTPS POST to Slack
 is why the manifest carries `socket_mode_enabled: true` and no `request_url`. (Slack's
 classic HTTP delivery, which would need a public endpoint, is deliberately not offered.)
 
-**One long-lived connection.** The listener asks Slack for a one-time `wss://` URL
+**One long-lived connection.** The listener (hosted or foreground) asks Slack for a one-time `wss://` URL
 (`apps.connections.open`), connects, and keeps that socket open — a ping every few seconds
 detects a dead one, and when Slack rotates the connection (it announces a `disconnect`
 first) the SDK reconnects on its own. Every envelope — message events, button presses,
@@ -325,8 +339,11 @@ an audit never needs Slack. This is also why a relayed keyword acts on the ledge
 
 - **Socket Mode is required** for buttons and the slash command (`read.mode: socket`);
   in `poll` mode replies still work, on the daemons' interval.
-- **`the-loop channels listen` is a foreground process** — run it under your process
-  manager beside `the-loop start`; it is not one of the services `start` hosts.
+- **The listener needs the service's environment to carry both tokens.** `the-loop start`
+  hosts it only with `read.mode: socket` and both tokens set; `the-loop status` shows the
+  row, and `start` reports `failed` naming the missing variable. With
+  `service.hostIngresses: false` nothing hosts it — run `the-loop channels listen` in the
+  foreground under your own supervisor.
 - **A slash command cannot bind to the thread it was typed in** — Slack's payload carries
   no thread — so the work item is always an argument.
 - **A checklist inside a Slack `the-loop execute` is not read.** The record quotes your

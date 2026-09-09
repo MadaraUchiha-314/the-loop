@@ -111,3 +111,21 @@ uv run --project cli python -m pytest -q cli/tests/test_channels.py cli/tests/te
 make check
 3253 passed, 1 skipped in 178.14s (0:02:58)
 ```
+
+## Addendum — the service hosts the listener (R2.7)
+
+Raised by the owner on PR #336 (*why can't this be encapsulated in `the-loop start`?*).
+New tests, red first against the previous head (no `_start_slack_listener`, no
+`slack-listener` row, no lock on `channels listen`):
+
+| Test | Proves |
+|------|--------|
+| `test_hosted_listener.py` (6) | the service hosts the listener under its own pid and stops it through the stop event; a loop that exits on its own releases its lock; poll mode or a disabled channel hosts nothing; missing tokens refuse loudly; a held lock is not fought over; `channels listen` refuses beside a hosted listener |
+| `test_core_lifecycle.py` (4 new, 7 updated) | `enabled_services` knows the listener; `start_all` rows `hosted` / `manual` / `already-running` / `disabled`; `stop_all` and `status_all` carry the fourth row |
+
+```text
+uv run --project cli python -m pytest -q cli/tests/test_core_lifecycle.py cli/tests/test_hosted_listener.py cli/tests/test_lifecycle_cmd.py cli/tests/test_channels.py cli/tests/test_channels_commands.py
+181 passed in 1.17s
+make check
+3263 passed, 1 skipped in 175.82s (0:02:55)
+```

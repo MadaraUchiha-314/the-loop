@@ -47,9 +47,11 @@ and the guide names every mode of interaction with the grant that turns it on. A
 of the ticket needs no code: the pinning tests and the guide are its delivery.
 
 **Costs, accepted.** A work-item verb's effect is deferred to the ledger's next
-ingress (D2). The listener is still a foreground process (`channels listen`) rather
-than one `the-loop start` hosts — unchanged by this work item, and stated in the
-guide. Two more grants to understand; the guide's table is the mitigation. A slash
+ingress (D2). Two more grants to understand; the guide's table is the mitigation. (At
+the PR review the owner asked why the listener was not simply part of `the-loop start`;
+it now is — the service hosts it under `service.hostIngresses` like the poller and the
+receiver, and `channels listen` is the foreground form — so the "foreground process"
+cost this record first listed is gone.) A slash
 command cannot bind to the thread it was typed in (Slack's payload carries no
 `thread_ts`), so the work item is always an argument.
 

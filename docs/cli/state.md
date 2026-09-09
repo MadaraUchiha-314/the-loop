@@ -36,6 +36,7 @@ working directory), split by whether it travels:
 │   └── slack.json.lock            # the writers' flock — empty, never tracked
 ├── gh-webhook.pid                 # the running receiver
 ├── poll.pid                       # the running poller — and its lock
+├── slack-listener.pid             # the running Slack listener (hosted or foreground) — and its lock
 └── poll-status.json               # the poller's heartbeat, read by `the-loop status`
 ```
 
@@ -78,6 +79,7 @@ them, is what makes the `.gitignore` recipe three lines instead of a puzzle
 | `<root>/logs/poller.out` | a daemonized poller | its stdout and stderr, appended | **local** |
 | `<root>/gh-webhook.pid` | the receiver | the receiver's pid — and its single-instance lock (issue-228) | **local** |
 | `<root>/poll.pid` | the poller | the poller's pid — and the lock proving it is the only one | **local** |
+| `<root>/slack-listener.pid` | the Slack Socket Mode listener — hosted by the service or `the-loop channels listen` | its pid and the lock that keeps one listener per instance (issue-334) | **local** |
 | `<root>/poll-status.json` | the poller, after every cycle | the heartbeat `the-loop status` reads: `startedAt`, `lastCycleAt`, last cycle's counters — and no pid, which is `poll.pid`'s to name | **local** |
 | `<root>/self-diagnosis.json` | self-diagnosis (issue-242, opt-in) | which failure fingerprints this machine already reported (with the issue URL), abandoned or is retrying, and when it last posted | **local** |
 | `<root>/channels/<channel>.json` | the channels reader/writer (issue-245, issue-312, opt-in) | per channel type: which Slack thread carries which work item's conversation (both ways: thread → work item, and work item → its one thread with when/how it opened and its permalink), and the last reply this deployment mirrored and delivered | **local** |
