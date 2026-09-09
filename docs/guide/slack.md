@@ -80,7 +80,7 @@ The manifest is the "reusable, importable" definition the ticket asked about —
 own format, checked into the-loop, the same for every workspace. (It is *not* a Workflow
 Builder workflow; [why](#why-not-slack-workflow-builder).)
 
-### 1b. Or upgrade the app you already have
+### Upgrading the app you already have (1b)
 
 An app created for an earlier the-loop (issue-245 / issue-309 — thread replies and
 buttons, no command) needs three things added: the `commands` scope and the `/the-loop`
@@ -334,7 +334,7 @@ an audit never needs Slack. This is also why a relayed keyword acts on the ledge
   checklist on the ticket and type the keyword in the thread.
 - **Private channels** need the `groups:history` scope and the `message.groups` event —
   both in the manifest above; an app created before issue-334 needs them added
-  ([upgrading an existing app](#_1b-or-upgrade-the-app-you-already-have)).
+  ([upgrading an existing app](#upgrading-the-app-you-already-have-1b)).
 - **No completion receipt for a relayed keyword** beyond the ✅ on the record: the thread
   that opens when a start is accepted, and the events you subscribe to, are the feedback.
 - **A command or a button press issued while no listener was connected is lost** — visibly,
