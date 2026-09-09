@@ -31,6 +31,21 @@ status: in-progress
 
 ## Progress entries
 
+### 2026-09-09 — one CI flake, re-run once, green
+
+- **Phase:** needs-review
+- **Did:** the `checks` job on the docs-only commit `0fd9ef7` failed in
+  `test_hosted_ingress_integration.py::test_start_hosts_everything_in_one_process_and_stop_ends_it`
+  ("did not become healthy" — the real service spawned on the runner did not answer
+  `/health` inside `DAEMON_START_TIMEOUT_SECONDS`). The same test passed on the two
+  previous commits of this branch with identical Python code, and every other check
+  passed on the head, so the job was re-run once (the one re-run the rules allow) and
+  passed. Not this PR's; noted as a learning candidate — the hosted-ingress start test
+  is timing-sensitive on a loaded runner.
+- **Checkpoint/tests:** CI green on `0fd9ef7` after the re-run; `mergeable_state: clean`.
+- **Next:** the owner's review.
+- **Blockers:** none.
+
 ### 2026-09-09 — upgrading an existing Slack app
 
 - **Phase:** needs-review
