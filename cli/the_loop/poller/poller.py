@@ -47,7 +47,7 @@ from ..comments import post_issue_comment
 from ..control import ControlConfig, ControlStore, parse_command
 from ..reload import Reloader
 from ..sessions import SessionRegistry, WorkItemRef
-from ..workitem import POLL, WorkItemStore
+from ..workitem import COLLABORATORS, CONTROL, GRAPH, POLL, WorkItemStore
 from ..webhook.dispatcher import Dispatcher
 from .base import (
     REPROBE_EVERY_CYCLES,
@@ -539,6 +539,7 @@ class Poller:
         self._control = control
         self._control_store = control_store
         self._collaborator_store = collaborator_store
+        self._closure_store: Optional[ControlStore] = None
         # Work items whose abandoned comments this *run* has already considered
         # re-arming (issue-146) — the check is once per item per run, and the
         # re-arm itself only fires when a different CLI version recorded the
@@ -572,6 +573,20 @@ class Poller:
         if self._control_store is not None:
             return self._control_store
         return self.dispatcher.control_store
+
+    @property
+    def closure_store(self) -> ControlStore:
+        """The closure stamps, read over the poll ledger's own directory (issue-329).
+
+        Built over ``state.store`` rather than taken from the dispatcher: the
+        ledger and the stamp are two sections of the same record, so the
+        directory the poller writes `poll` into is by construction the one the
+        dispatcher stamps `ended` into.
+        """
+        if self._closure_store is None:
+            store = self.state.store
+            self._closure_store = ControlStore(store.root, legacy=store.legacy)
+        return self._closure_store
 
     @property
     def collaborator_store(self) -> "CollaboratorStore":
@@ -801,9 +816,17 @@ class Poller:
         absence from ``open_refs`` says nothing about it.
         """
         degraded = degraded or set()
-        for session in self.registry.list_sessions(status="active"):
-            ref = session.work_item
+        for ref in self._closure_candidates():
             if ref.ref in open_refs or not provider.owns(ref):
+                continue
+            if (
+                self.closure_store.ended(ref) is not None
+                and self.registry.find_by_work_item(ref) is None
+            ):
+                # Stamped, and no live session here: nothing on this machine
+                # still waits. A live session beside a stamp — the stamp arrived
+                # from another machine through the tracked directory — is still
+                # asked, so the session ends through the close path as before.
                 continue
             if provider.scope_of(ref) in degraded:
                 logger.debug(
@@ -844,6 +867,36 @@ class Poller:
             self.state.forget(ref.ref)
             summary.closures += 1
 
+    def _closure_candidates(self) -> List[WorkItemRef]:
+        """Every work item this machine tracks, in ref order (issue-329).
+
+        The active-sessions rule was the gap: a paused, stopped or never-here
+        item never learned it had ended. So: every session record whatever its
+        status, plus every portable record that is armed (`control`), frozen
+        (`graph`) or has a roster (`collaborators`). A record carrying only
+        `poll` is left out — it is the ledger of a thread once seen, puts no
+        urgent flag on the board, and would cost one provider call per
+        unlabelled open item per cycle. Stamped records are filtered by the
+        caller, so after one cycle the set is bounded by what is still open.
+        """
+        candidates: Dict[str, WorkItemRef] = {}
+        for session in self.registry.list_sessions():
+            candidates.setdefault(session.work_item.ref, session.work_item)
+        store = self.state.store
+        for ref in store.refs():
+            if ref in candidates:
+                continue
+            if not any(
+                store.section(ref, name) is not None
+                for name in (CONTROL, GRAPH, COLLABORATORS)
+            ):
+                continue
+            try:
+                candidates[ref] = WorkItemRef.parse(ref)
+            except ValueError:
+                logger.debug("not reconciling %r: not a work-item ref", ref)
+        return [candidates[ref] for ref in sorted(candidates)]
+
     def _process_item(
         self, provider: PollProvider, item: WorkItem, summary: PollSummary
     ) -> None:
@@ -851,6 +904,12 @@ class Poller:
         if not refs:
             return
         ref = item.ref
+        # A listed item is open (issue-329): a closure stamp on it — the item
+        # was reopened while the daemon was down, or the stamp was forged on a
+        # tracked repository — is cleared before anything else reads it.
+        if self.closure_store.clear_ended(ref):
+            logger.info("%s is listed again; its closure stamp is cleared", ref)
+            eventlog.emit("work_item.reopened", work_item=ref, source="poll")
 
         comments = provider.list_comments(item)
         live_ids = [c.id for c in comments if c.id]

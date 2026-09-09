@@ -20,6 +20,7 @@ from the_loop.sessions import (
     SessionRegistry,
     WorkItemRef,
 )
+from the_loop import eventlog
 from the_loop.eventlog import EVENT_TYPES
 from the_loop.webhook.dispatcher import (
     SETTLED_OUTCOMES,
@@ -946,6 +947,10 @@ def make_dispatcher(
     # Pre-issue-106 spawn behaviour by default: these cover the spawn mechanics,
     # while the start-command gate has its own tests below.
     config_overrides.setdefault("control", ControlConfig(require_start_command=False))
+    # A closure stamps the portable record (issue-329), and `RoutingConfig`'s
+    # default portable dir is the process's own `.the-loop/portable` — this
+    # repository's. Point it at the test's tmp path, as the receiver factory does.
+    config_overrides.setdefault("portable_dir", str(tmp_path / "portable"))
     config = RoutingConfig(**config_overrides)
     dispatcher = Dispatcher(
         registry=registry,
@@ -2504,3 +2509,139 @@ def test_only_comment_shaped_events_are_published():
         "d1",
     )
     assert seen == []
+
+
+# -- the closure stamp (issue-329) --------------------------------------------
+
+
+def _events(tmp_path, monkeypatch, name):
+    """The recorded events of one type, read on demand."""
+    log = tmp_path / "events.jsonl"
+    eventlog.configure("test", path=log, enabled=True)
+    monkeypatch.setattr(eventlog, "reset", eventlog.reset)  # restored below
+
+    def read():
+        if not log.exists():
+            return []
+        rows = [json.loads(line) for line in log.read_text().splitlines()]
+        return [row for row in rows if row["event"] == name]
+
+    return read
+
+
+def test_an_issue_close_stamps_the_work_item_ended(tmp_path):
+    """R1.1 — the closure is written beside `control`, naming how, when and by whom."""
+    tmux = FakeTmux()
+    registry, dispatcher = make_dispatcher(tmp_path, tmux)
+    registry.register(make_session())
+    closed = routed_issue_closed()
+    closed.payload["sender"] = {"login": "octocat"}
+    dispatcher.handle(closed)
+    dispatcher.stop()
+    ended = dispatcher.control_store.ended(REF)
+    assert ended is not None
+    assert (ended["state"], ended["kind"], ended["reason"]) == (
+        "closed",
+        "issue",
+        "issue-closed",
+    )
+    assert (ended["source"], ended["actor"]) == ("webhook", "octocat")
+    assert ended["at"].endswith("Z")
+    assert registry.find_by_work_item(REF) is None  # the session still closes
+
+
+def test_a_close_with_no_session_still_stamps_a_tracked_record(tmp_path):
+    """R1.3 — an armed item with no session on this machine learns it ended."""
+    tmux = FakeTmux()
+    registry, dispatcher = make_dispatcher(tmp_path, tmux)
+    dispatcher.control_store.record(REF, "start", actor="octocat")
+    dispatcher.handle(routed_issue_closed())  # names no sender
+    dispatcher.stop()
+    ended = dispatcher.control_store.ended(REF)
+    assert ended is not None and ended["actor"] == ""
+    assert dispatcher.control_store.get(REF) is None  # disarmed, as a matched close is
+    assert tmux.spawns == []
+
+
+def test_a_close_for_an_untracked_ref_creates_no_record(tmp_path):
+    """Abuse case A1 — closing any issue in the repository must not fill `portable/`."""
+    tmux = FakeTmux()
+    registry, dispatcher = make_dispatcher(tmp_path, tmux)
+    dispatcher.handle(routed_issue_closed(number=404))
+    dispatcher.stop()
+    assert dispatcher.control_store.ended("github:octo/repo#404") is None
+    assert not (tmp_path / "portable").exists()
+
+
+def test_a_closed_session_record_counts_as_tracked(tmp_path):
+    """A session this machine already closed (a stop) still makes the ref the-loop's."""
+    tmux = FakeTmux()
+    registry, dispatcher = make_dispatcher(tmp_path, tmux)
+    registry.register(make_session())
+    registry.close(REF)
+    dispatcher.handle(routed_issue_closed())
+    dispatcher.stop()
+    assert dispatcher.control_store.ended(REF) is not None
+
+
+def test_a_pr_merge_stamps_the_prs_own_record_and_not_the_linked_issue(tmp_path):
+    """R1.2 — only the object that closed is stamped (issue-101's rule, kept)."""
+    tmux = FakeTmux()
+    registry, dispatcher = make_dispatcher(tmp_path, tmux)
+    registry.register(make_session())  # the issue's session
+    registry.register(make_session(ref="github:octo/repo#16", session_id="pr-sess"))
+    dispatcher.handle(routed_pr_closed())  # PR #16 merged, links issue #15
+    dispatcher.stop()
+    ended = dispatcher.control_store.ended("github:octo/repo#16")
+    assert ended is not None
+    assert (ended["state"], ended["kind"], ended["reason"]) == (
+        "merged",
+        "pull-request",
+        "pr-merged",
+    )
+    assert dispatcher.control_store.ended(REF) is None  # #15 is still open
+
+
+def test_a_reopen_clears_the_ended_stamp(tmp_path, monkeypatch):
+    """R2.1, R1.6 — a reopened item is open again, and the log says so."""
+    events = _events(tmp_path, monkeypatch, "work_item.reopened")
+    tmux = FakeTmux()
+    registry, dispatcher = make_dispatcher(tmp_path, tmux)
+    dispatcher.control_store.record_ended(REF, {"state": "closed"})
+    reopened = routed_issue_closed(delivery="ic-2")
+    reopened.action = "reopened"
+    dispatcher.handle(reopened)
+    dispatcher.stop()
+    assert dispatcher.control_store.ended(REF) is None
+    assert [e["source"] for e in events()] == ["webhook"]
+
+
+def test_a_reopen_without_a_stamp_writes_nothing(tmp_path, monkeypatch):
+    """R2.3 — no stamp, no write, no event."""
+    events = _events(tmp_path, monkeypatch, "work_item.reopened")
+    tmux = FakeTmux()
+    registry, dispatcher = make_dispatcher(tmp_path, tmux)
+    reopened = routed_issue_closed(delivery="ic-3")
+    reopened.action = "reopened"
+    dispatcher.handle(reopened)
+    dispatcher.stop()
+    assert not (tmp_path / "portable").exists()
+    assert events() == []
+
+
+def test_the_stamp_is_logged_as_work_item_ended(tmp_path, monkeypatch):
+    """R1.6 — one `work_item.ended` per stamped ref, with the fields the stamp has."""
+    events = _events(tmp_path, monkeypatch, "work_item.ended")
+    tmux = FakeTmux()
+    registry, dispatcher = make_dispatcher(tmp_path, tmux)
+    registry.register(make_session())
+    dispatcher.handle(routed_issue_closed())
+    dispatcher.stop()
+    (event,) = events()
+    assert event["work_item"] == REF
+    assert (event["state"], event["reason"], event["source"]) == (
+        "closed",
+        "issue-closed",
+        "webhook",
+    )
+    assert "actor" not in event  # none named: dropped, never faked

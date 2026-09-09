@@ -344,9 +344,10 @@ self-learning/ML capabilities.
   [decision-106](../decisions/decision-106.md)). The provider contract's `listing()`
   returns the items found plus the scopes (repositories, for GitHub) that failed, were
   skipped or recovered; one scope's failure SHALL NOT discard another's items, SHALL be
-  recorded per scope (`poll.scope_error`), and SHALL keep that scope's sessions out of
-  closure reconciliation — issue-159's "a partial listing proves nothing ended", per
-  scope. A provider that has not learned scopes keeps its all-or-nothing behaviour. A
+  recorded per scope (`poll.scope_error`), and SHALL keep that scope's tracked items
+  out of closure reconciliation — issue-159's "a partial listing proves nothing ended",
+  per scope (reconciliation covers every tracked item since issue-329, not only active
+  sessions; see [webhook-triggers](webhook-triggers.md)). A provider that has not learned scopes keeps its all-or-nothing behaviour. A
   repository whose GitHub Issues are disabled SHALL be classified **permanent**: surfaced
   once at warning level (`poll.scope_degraded`), its issues skipped while its pull
   requests are still polled, re-probed every 60 cycles, on a reload and on restart

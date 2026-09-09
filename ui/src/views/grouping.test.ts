@@ -62,3 +62,28 @@ describe("filterViews", () => {
     expect(filterViews(views, "zzz-not-here", titleFor)).toEqual([]);
   });
 });
+
+describe("sidebarGroup for an ended item (issue-329)", () => {
+  const ended = (reason: string, state = reason === "pr-merged" ? "merged" : "closed"): WorkItemView => ({
+    ...view("loop-lab#205"), // parked on a human gate in the fixture
+    parked: null,
+    question: null,
+    ended: { state, reason },
+  });
+
+  it("puts a merged item and a closed issue under Shipped, green, whatever the rail says", () => {
+    expect(sidebarGroup(ended("pr-merged"))).toBe("shipped");
+    expect(itemStatus(ended("pr-merged"))).toBe("done");
+    expect(sidebarGroup(ended("issue-closed"))).toBe("shipped");
+  });
+
+  it("puts a pull request closed unmerged under Idle, grey", () => {
+    expect(sidebarGroup(ended("pr-closed"))).toBe("idle");
+    expect(itemStatus(ended("pr-closed"))).toBe("pending");
+  });
+
+  it("reads the demo's shipped item from its stamp", () => {
+    expect(view("loop-lab#181").ended?.reason).toBe("pr-merged");
+    expect(sidebarGroup(view("loop-lab#181"))).toBe("shipped");
+  });
+});

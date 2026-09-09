@@ -70,7 +70,7 @@ them, is what makes the `.gitignore` recipe three lines instead of a puzzle
 
 | Path | Written by | Holds | Travels? |
 |---|---|---|---|
-| `<root>/portable/<slug>.json` | execution control + the poller | what was armed, which phases were frozen, who was invited onto the item, and which comments are already seen | **portable** |
+| `<root>/portable/<slug>.json` | execution control + the poller | what was armed, which phases were frozen, who was invited onto the item, which comments are already seen, and whether — and how — the item ended | **portable** |
 | `<root>/portable/index.json` | the same store, derived | one entry per record: ref, url, file, sections | **portable** |
 | `<root>/local/<slug>.json` | the session registry | conversation id, `cwd`, tmux target, status, and the item's pull requests with their own sessions | **local** |
 | `<root>/local/standing/<name>.json` | the standing-session registry (issue-277, opt-in) | per standing session: harness, conversation id, `cwd`, tmux target, status, the Slack channel/thread its chat runs in — and, for a session created through the API, its whole definition | **local** |
@@ -96,7 +96,8 @@ portable half above is classified on exactly that reasoning.
 ## Work-item record — `<root>/portable/<slug>.json`
 
 One file per work item, named for its ref (`github:octo/repo#15` →
-`github-octo-repo-15.json`), with two independent sections and, since
+`github-octo-repo-15.json`), with independent sections — `control`, `poll`, `graph`,
+`collaborators` and, once the item has ended, `ended` — and, since
 [issue-130](https://github.com/MadaraUchiha-314/the-loop/issues/130), a link to the work
 item itself.
 
@@ -245,6 +246,49 @@ keeps it, as it keeps `control`: cleanup releases *local resources*, and this is
 dropped at the ingress again — no error, exactly the behaviour of a work item nobody was
 invited to — and an authorized user has to grant again.
 
+### `ended` — the work item is over
+
+```json
+"ended": {
+  "state": "merged",
+  "kind": "pull-request",
+  "reason": "pr-merged",
+  "at": "2026-09-09T06:10:30Z",
+  "source": "poll",
+  "actor": "octocat"
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `state` | `closed` or `merged` |
+| `kind` | `issue` or `pull-request` |
+| `reason` | `issue-closed`, `pr-merged` or `pr-closed` — the same vocabulary `session.autoclosed` uses |
+| `at` | when the daemon recorded it |
+| `source` | which ingress saw the closure: `webhook` (a `closed` event) or `poll` (the item left the listing and GitHub confirmed it) |
+| `actor` | who closed it — the webhook's `sender`, or GitHub's `closed_by` on a polled closure; `""` when neither names anyone |
+
+Written by the daemon's one close path
+([issue-329](https://github.com/MadaraUchiha-314/the-loop/issues/329),
+[decision-113](../decisions/decision-113.md)) for every closing item the-loop **tracks** —
+one with a session record of any status on this machine, or a portable record with any
+other section — whether or not a session was live. A `closed` event for an issue the-loop
+never tracked writes nothing. It is here rather than in the session record for the reason
+the others are: *this item is over* is true on any machine, and it is what lets a control
+plane anywhere demote the item to *Shipped* or *Idle* and stop showing its stale question
+and gate as work for a human. A record carrying only this section is **kept**; the
+`graph` section stays beside it (`Dispatcher._tmux_for` still reads it for a reopened
+item).
+
+Cleared when the item is **reopened** — a `reopened` event from an authorized user, or the
+next poll cycle that lists the item again — and by `the-loop sessions reset`. `the-loop
+cleanup` keeps it. It arms nothing and gates nothing: `the-loop cleanup` on a closed item
+works exactly as before.
+
+**If you delete it:** the item reads as open again on every machine, with whatever
+question or gate it last had, until the next poll cycle re-detects the closure (one
+provider call) and stamps it again.
+
 ### `poll` — what the poller has already seen
 
 | Field | Meaning |
@@ -299,7 +343,7 @@ tracking?"* without opening every record ([issue-130](https://github.com/MadaraU
 |---|---|
 | `ref` / `url` | the work item, and its page — same rule as the record above (`url` is absent when none can be derived) |
 | `file` | the record's name inside `portable/` |
-| `sections` | which of `control` / `poll` / `graph` / `collaborators` that record actually holds |
+| `sections` | which of `control` / `poll` / `graph` / `collaborators` / `ended` that record actually holds |
 | `sealed` | present only on an [upgrade tombstone](#upgrading-from-the-pre-issue-128-layout), which is why it has no sections |
 
 **Lifecycle.** Rewritten after every record write and every removal, by scanning the
@@ -614,7 +658,7 @@ flight is still holding a conversation the old code started.
 | Path | What a reset does to it |
 |---|---|
 | `<root>/local/<slug>.json` | deleted (the session is closed through the normal close path first) |
-| `<root>/portable/<slug>.json` | `control` and `poll` cleared — the file is removed, or left `sealed` while a pre-issue-128 tree still holds something for that item |
+| `<root>/portable/<slug>.json` | `control`, `poll`, `collaborators` and `ended` cleared — the file is removed, or left `sealed` while a pre-issue-128 tree still holds something for that item |
 | `<root>/portable/index.json` | rewritten to match, on the same write |
 | `<root>/logs/events.jsonl` | **appended to** — one `session.reset` line. Never rewritten: a command that could erase its own trail is not auditable |
 | `<root>/gh-webhook.pid` | untouched. Reset does not stop the daemon — it warns when one is running, because a daemon holds poll state in memory and can write it back |
@@ -638,7 +682,7 @@ that needs to start again.
 | Path | What a cleanup does to it |
 |---|---|
 | `<root>/local/<slug>.json` | deleted, and every endpoint's tmux session killed with it (harness ended first) |
-| `<root>/portable/<slug>.json` | **untouched** — `control` (rewritten to `cleanup`, which disarms the item), `poll` and `graph` all stay. This is the whole difference from a reset: persistence and tracking are what outlive the machine |
+| `<root>/portable/<slug>.json` | **untouched** — `control` (rewritten to `cleanup`, which disarms the item), `poll`, `graph` and `ended` all stay. This is the whole difference from a reset: persistence and tracking are what outlive the machine |
 | `<root>/portable/index.json` | untouched |
 | `<root>/logs/events.jsonl` | **appended to** — one `session.cleaned` line naming the actor, the source and the pieces |
 | the workspace checkout | removed **regardless** of [`workspace.keepCheckoutOnClose`](/config/cli/routing-options#workspace-keepcheckoutonclose) — uncommitted work in it is gone |
@@ -767,9 +811,10 @@ record already does, and the daemon re-records a PR from the first event that ro
 Tracking state in a repository is publishing it, and — if that repository accepts pull
 requests — accepting proposals about it. Both are bounded, and worth stating plainly.
 
-**What `portable/` discloses.** A work-item record holds a ref, one of four fixed
-keywords, a GitHub login, timestamps and comment ids. All of it is already visible on the
-ticket it describes. The file that would disclose something new — the session record, with
+**What `portable/` discloses.** A work-item record holds a ref, a few fixed keywords
+(the control commands; `closed` / `merged` and its reason on an ended item), GitHub
+logins, timestamps and comment ids. All of it is already visible on the ticket it
+describes. The file that would disclose something new — the session record, with
 its absolute paths and resume handle — is on the local side of the line, for that reason
 among others.
 

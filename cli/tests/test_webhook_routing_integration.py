@@ -517,6 +517,61 @@ def test_issue_close_auto_closes_session(server_factory, tmp_path):
     assert tmux.delivers == []  # closed, never delivered into the conversation
 
 
+def test_a_closed_issue_with_no_session_is_stamped_ended(server_factory, tmp_path):
+    """
+    Feature: Webhook event routing
+    Scenario: A closed issue with no session is stamped ended
+        Given a receiver whose work item 15 is armed but has no session on this machine
+        When a signed issues 'closed' webhook for that issue arrives
+        Then the work item's portable record is stamped ended, naming the closer
+        And the item is disarmed
+        And no session is spawned for the close
+    Requirement: docs/specs/issue-329/requirements.md#R1 (R1.1, R1.3)
+    """
+    port, registry, tmux = server_factory(events=["issues"])
+    dispatcher = server_factory.dispatcher
+    dispatcher.control_store.record(REF, "start", actor="octocat")
+    payload = {
+        "action": "closed",
+        "repository": {"full_name": "octo/repo"},
+        "issue": {"number": 15, "state_reason": "completed"},
+        "sender": {"login": "octocat"},
+    }
+    assert post_webhook(port, "issues", payload, "iclose-2") == 202
+    assert wait_until(lambda: dispatcher.control_store.ended(REF) is not None)
+    ended = dispatcher.control_store.ended(REF)
+    assert ended is not None
+    assert (ended["state"], ended["source"], ended["actor"]) == (
+        "closed",
+        "webhook",
+        "octocat",
+    )
+    assert dispatcher.control_store.get(REF) is None
+    assert tmux.spawns == []
+
+
+def test_reopening_an_issue_clears_the_stamp(server_factory, tmp_path):
+    """
+    Feature: Webhook event routing
+    Scenario: Reopening an issue clears the stamp
+        Given a work item whose portable record is stamped ended
+        When a signed issues 'reopened' webhook for that issue arrives
+        Then the stamp is removed
+    Requirement: docs/specs/issue-329/requirements.md#R2 (R2.1)
+    """
+    port, registry, tmux = server_factory(events=["issues"])
+    dispatcher = server_factory.dispatcher
+    dispatcher.control_store.record_ended(REF, {"state": "closed"})
+    payload = {
+        "action": "reopened",
+        "repository": {"full_name": "octo/repo"},
+        "issue": {"number": 15},
+        "sender": {"login": "octocat"},
+    }
+    assert post_webhook(port, "issues", payload, "ireopen-1") == 202
+    assert wait_until(lambda: dispatcher.control_store.ended(REF) is None)
+
+
 AUTO_LABEL = "the-loop: auto-execute"
 
 

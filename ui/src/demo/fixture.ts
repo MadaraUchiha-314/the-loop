@@ -112,7 +112,14 @@ function frozen(nodes: readonly string[], skipped: string[] = []) {
 
 function makeWorkItem(
   number: number,
-  options: { command?: string; actor?: string; polledMinutesAgo?: number; skipped?: string[] } = {},
+  options: {
+    command?: string;
+    actor?: string;
+    polledMinutesAgo?: number;
+    skipped?: string[];
+    /** The closure stamp (issue-329): `pr-merged` | `issue-closed` | `pr-closed`. */
+    ended?: string;
+  } = {},
 ): WorkItemRecord {
   return {
     ref: `github:octo/loop-lab#${number}`,
@@ -130,6 +137,18 @@ function makeWorkItem(
       workItem: `issue-${number}`,
       nodes: frozen(OUTER_NODES, options.skipped ?? []),
     },
+    ...(options.ended
+      ? {
+          ended: {
+            state: options.ended === "pr-merged" ? "merged" : "closed",
+            kind: options.ended === "issue-closed" ? "issue" : "pull-request",
+            reason: options.ended,
+            at: iso(options.polledMinutesAgo ?? 120),
+            source: "webhook",
+            actor: options.actor ?? "maintainer",
+          },
+        }
+      : {}),
   };
 }
 
@@ -221,7 +240,7 @@ export const DEMO_WORK_ITEMS: WorkItemRecord[] = [
   makeWorkItem(187, { command: "start", polledMinutesAgo: 4320 }),
   makeWorkItem(219, { skipped: ["brainstorming"] }),
   makeWorkItem(178, { skipped: ["brainstorming"] }),
-  makeWorkItem(181, { command: "cleanup", polledMinutesAgo: 8640 }),
+  makeWorkItem(181, { command: "cleanup", polledMinutesAgo: 8640, ended: "pr-merged" }),
 ];
 
 export const DEMO_SESSIONS: SessionRecord[] = [

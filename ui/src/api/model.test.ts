@@ -25,7 +25,7 @@ import {
   transcriptPath,
   transcriptThread,
 } from "./model.ts";
-import type { GraphStatus, SessionRecord, WorkItemRecord } from "./types.ts";
+import type { EventRecord, GraphStatus, SessionRecord, WorkItemRecord } from "./types.ts";
 
 describe("parseRef", () => {
   it("reads a github.com ref, whose host is unwritten", () => {
@@ -879,5 +879,74 @@ describe("rowFlag, with an open question", () => {
     expect(rowFlag(view!)).toEqual({ label: "needs input", urgent: true });
     // …and both still reach the inbox, question first.
     expect(attentionEntries([view!]).map((e) => e.kind)).toEqual(["needs input", "human gate"]);
+  });
+});
+
+describe("an ended work item (issue-329)", () => {
+  const ENDED: WorkItemRecord = {
+    ...RECORD,
+    ended: { state: "closed", kind: "issue", reason: "issue-closed", at: "2026-09-01T10:00:00Z", source: "poll", actor: "" },
+  };
+  const gated = () =>
+    status("human-approval", {
+      parked: { node: "human-approval", reason: "x" },
+      nodes: [{ node: "implementation", status: "block", outcome: "failed" }],
+    });
+  const asked: EventRecord = { ts: "2026-08-12T10:00:00Z", event: "session.awaiting_input", work_item: RECORD.ref, question: "Which?" };
+
+  it("carries the stamp and retires the question and the gate at the join", () => {
+    const [view] = buildWorkItemViews({
+      workItems: [ENDED],
+      sessions: [],
+      attention: [],
+      graphs: { outer: { [RECORD.ref]: gated() }, inner: {} },
+      awaiting: { [RECORD.ref]: asked },
+    });
+    expect(view!.ended?.reason).toBe("issue-closed");
+    expect(view!.question).toBeNull();
+    expect(view!.parked).toBeNull();
+    // The rail is history and stays true.
+    expect(view!.rail.some((node) => node.state === "blocked")).toBe(true);
+  });
+
+  it("never lands in needs-you, wears a muted flag naming the end, and asks for no attention", () => {
+    const [view] = buildWorkItemViews({
+      workItems: [ENDED],
+      sessions: [{ ...SESSION, status: "closed" }],
+      attention: [],
+      graphs: { outer: { [RECORD.ref]: gated() }, inner: {} },
+      awaiting: { [RECORD.ref]: asked, "github:octo/repo#16": { ...asked, work_item: "github:octo/repo#16" } },
+    });
+    expect(itemGroup(view!)).toBe("idle");
+    expect(rowFlag(view!)).toEqual({ label: "closed", urgent: false });
+    expect(attentionEntries([view!])).toEqual([]);
+  });
+
+  it("reads a merged stamp as merged", () => {
+    const [view] = buildWorkItemViews({
+      workItems: [{ ...RECORD, ended: { state: "merged", kind: "pull-request", reason: "pr-merged" } }],
+      sessions: [],
+      attention: [],
+    });
+    expect(rowFlag(view!)).toEqual({ label: "merged", urgent: false });
+  });
+
+  it("treats a record without the field, or with a malformed one, as open (13.6.0 behaviour)", () => {
+    const [plain] = buildWorkItemViews({
+      workItems: [RECORD],
+      sessions: [],
+      attention: [],
+      graphs: { outer: { [RECORD.ref]: gated() }, inner: {} },
+    });
+    expect(plain!.ended).toBeNull();
+    expect(itemGroup(plain!)).toBe("needs-you");
+    const [malformed] = buildWorkItemViews({
+      workItems: [{ ...RECORD, ended: "closed" } as unknown as WorkItemRecord],
+      sessions: [],
+      attention: [],
+      graphs: { outer: { [RECORD.ref]: gated() }, inner: {} },
+    });
+    expect(malformed!.ended).toBeNull();
+    expect(itemGroup(malformed!)).toBe("needs-you");
   });
 });

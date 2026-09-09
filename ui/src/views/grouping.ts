@@ -4,11 +4,12 @@
  * The design groups work items by what they need from the operator: **Needs
  * you**, **In flight**, **Shipped**, **Idle**. `itemGroup` in the model already
  * answers the first two; this refines its `idle` into shipped — every walked
- * node done — or idle. The search filters the rows already loaded, by ref,
- * title, repository and current node; it asks the service for nothing.
+ * node done — or idle, and reads the record's closure stamp first (issue-329).
+ * The search filters the rows already loaded, by ref, title, repository and
+ * current node; it asks the service for nothing.
  */
 
-import { itemGroup, parseRef, type WorkItemView } from "../api/model.ts";
+import { endedAsShipped, itemGroup, parseRef, type WorkItemView } from "../api/model.ts";
 import type { DotStatus } from "../components/StatusDot.tsx";
 
 export type SidebarGroup = "needs-you" | "in-flight" | "shipped" | "idle";
@@ -31,6 +32,9 @@ export function isShipped(view: WorkItemView): boolean {
 }
 
 export function sidebarGroup(view: WorkItemView): SidebarGroup {
+  // The record says it ended (issue-329): merged or an issue closed is Shipped;
+  // a pull request closed unmerged was abandoned, which is Idle.
+  if (view.ended) return endedAsShipped(view.ended) ? "shipped" : "idle";
   const group = itemGroup(view);
   if (group === "needs-you") return "needs-you";
   if (group === "running") return "in-flight";

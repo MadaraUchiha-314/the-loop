@@ -184,10 +184,11 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
     the session merely closed. A close action is not obliged to say who performed it,
     and an unattributable event must not destroy an operator's uncommitted work — the
     `cleanup` keyword from a named human is the remedy, which is why it exists.
-    In practice this splits the two ingresses: a **webhook** closure carries `sender`,
-    so it cleans up when that login is authorized, while a **polled** closure is
-    reconstructed from the item's state and names no actor at all — so on a polling
-    deployment every closure defers, and cleanup is always the keyword's job.
+    Both ingresses name the closer where GitHub does (issue-329): a **webhook** closure
+    carries `sender`, and a **polled** closure — reconstructed from the item's state —
+    carries GitHub's `closed_by` as its `sender`, so a closure by an authorized user
+    cleans up on either path and one by anyone else, or by nobody GitHub can name,
+    defers. Attribution, not relaxation: the gate itself is unchanged.
   - **pause** SHALL suspend delivery for a work item's session while keeping its
     conversation (`session.paused`; suppressed events are recorded as
     `dispatch.dropped`/`session-paused` and are **not** replayed on **resume**);
@@ -451,6 +452,25 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   signal that carries no free-form text and can only end the-loop's *own* session, it
   bypasses the authorized-actor guard (as PR-close always has) — narrowly: only the
   `closed` action.
+- **A closure is recorded on the work item, with or without a session** (issue-329,
+  [decision-113](../decisions/decision-113.md)). WHEN a `closed` event names a work item
+  the-loop **tracks** — a session record of any status on this machine, or a portable
+  record with any section — THEN the close path SHALL stamp the item's portable record
+  with an `ended` section (`state`, `kind`, `reason`, `at`, `source`, `actor`;
+  `work_item.ended`), disarm it (`control` and `collaborators` cleared) and, only when
+  a live session matched, close that session as above. A `closed` event for an item
+  the-loop never tracked SHALL write nothing. `graph` stays. WHEN an `issues` or
+  `pull_request` event with action `reopened` arrives for a stamped item THEN the stamp
+  SHALL be cleared (`work_item.reopened`) before the event is otherwise handled; the
+  poller clears it on the next listing that carries the item.
+- **Closure reconciliation asks about everything this machine tracks** (issue-329),
+  not only its active sessions: every session record — active, paused or closed — and
+  every portable record that is armed, frozen or has a roster, minus the items the
+  listing carries, minus those already stamped `ended`. A record carrying only `poll` is
+  not asked (it is the ledger of a thread once seen). The rules that bound
+  reconciliation are unchanged: nothing is asked after a failed, interrupted or degraded
+  listing, nothing outside the provider's scope, and an unanswerable item is left as it
+  is.
 - **One work item may be delivered by several PRs, and only the object that closed is
   ended.** WHEN a `pull_request` `closed` event is dispatched THEN the system SHALL
   auto-close only the session registered against **that PR's own ref**, and SHALL leave
@@ -751,6 +771,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-329 | A closed work item is recorded as ended (2026-09-09): the close path stamps an `ended` section (`state`, `kind`, `reason`, `at`, `source`, `actor`) on the portable record of every tracked item a `closed` event names — with or without a session on this machine — and a `reopened` event or a listing that carries the item clears it. Closure reconciliation widened from active sessions to every session record plus every armed, frozen or rostered portable record, skipping stamped ones; a polled closure now carries GitHub's `closed_by` as its `sender`, so an authorized closer's cleanup runs on a polling deployment as it does on a webhook one. Both attention surfaces read the stamp and demote the item. Before it, closed items sat under *Needs you* forever | [spec](../specs/issue-329/), [decision-113](../decisions/decision-113.md), [control plane](control-plane.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/329) |
 | issue-322 | An instance learned which work items are its own (2026-09-08): every instance judged every labelled event identically, so two instances on one repository both spawned for one start. The top-level `instance` block names the instance and its scope — `open` (unchanged), `addressed` (take only a start that names me: `the-loop start instance:<name>`), `locked` (take nothing new; `scope.workItems` is the door) — and one seam in `Dispatcher.handle`, after linkage and the control parse and before anything is recorded, refuses an event outside the managed set (declared ∪ session record ∪ control record) with a settled `dispatch.dropped` / `control.rejected` naming `unaddressed`, `instance-locked`, `addressed-elsewhere` or `ambiguous-address`, and no reaction, comment or record. An explicit address is authoritative in every mode; a control record now carries `instance`; the CLI's posted keyword and the announcement name it; a named instance spawns with `-e THE_LOOP_INSTANCE=<name>` | [spec](../specs/issue-322/), [decision-110](../decisions/decision-110.md), [instances](instances.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/322) |
 | issue-307 | A second identity allow-list, per work item (2026-08-31): `the-loop add-collaborator @login` / `remove-collaborator` (a tenth and eleventh control keyword, and two CLI commands) grant a GitHub login the right to be **input** on one work item — their comments reach its session on both ingresses — and nothing else: no control command (so no transitive grant), no spawn (`collaborator-no-spawn`), no arming, no human gate. The roster is a `collaborators` section of the work item's portable record, cleared when the item closes; membership is asked only about the refs an event itself named, so a grant does not travel | [spec](../specs/issue-307/), [decision-102](../decisions/decision-102.md), [routing](../config/cli/routing-options.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/307) |
 | issue-279 | A ninth control keyword, `the-loop review` (2026-08-24): arms and spawns exactly as `start` does and selects the **review loop** — and, alone among the keywords, its control record, spawn and session bind to the **pull request itself** when it is typed on one, not to the PR's linked ticket (`pr_work_item` on the control path; `_on_unmatched` takes an explicit target). Configurable at `routing.control.keywords.review`; an empty string disables the word | [spec](../specs/issue-279/), [process-graph](process-graph.md), [routing](../config/cli/routing-options.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/279) |

@@ -509,6 +509,9 @@ def _dispatcher(tmp_path, bare, **ws_over):
         workspace=WorkspaceConfig(root=str(tmp_path / "root"), **ws_over),
         # Pre-issue-106 spawn behaviour (the start gate has its own tests).
         control=ControlConfig(require_start_command=False),
+        # A close stamps the portable record (issue-329); keep it out of the
+        # checkout these tests run from.
+        portable_dir=str(tmp_path / "portable"),
     )
     tmux = FakeTmux()
     return registry, _make_dispatcher(registry, config, tmux), tmux
@@ -845,6 +848,7 @@ def _always_dispatcher(tmp_path, strategy):
         workspace=WorkspaceConfig(root=str(tmp_path / "root"), strategy=strategy),
         control=ControlConfig(require_start_command=False),
         tmux=TmuxConfig(session_per_pr="always"),
+        portable_dir=str(tmp_path / "portable"),
     )
     tmux = FakeTmux()
     return registry, _make_dispatcher(registry, config, tmux), tmux

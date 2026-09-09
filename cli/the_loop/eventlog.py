@@ -493,6 +493,19 @@ EVENT_TYPES: Dict[str, str] = {
         "— control, poll, graph — is deliberately untouched, and nothing remote "
         "is changed (issue-186)."
     ),
+    "work_item.ended": (
+        "A work item ended upstream and its portable record was stamped "
+        "`ended` (work_item, state: closed | merged, kind: issue | "
+        "pull-request, reason: issue-closed | pr-merged | pr-closed, source: "
+        "webhook | poll, actor: who closed it or none, delivery_id). Written "
+        "with or without a session on this machine; the attention surfaces "
+        "read it to demote the item (issue-329)."
+    ),
+    "work_item.reopened": (
+        "A work item's `ended` stamp was cleared because the item is open "
+        "again (work_item, source: webhook — a `reopened` event — or poll — "
+        "the item was listed) (issue-329)."
+    ),
     "cleanup.deferred": (
         "A work item closed but was NOT cleaned up, because the close event "
         "named no actor or an unauthorized one (work_item, reason: no-actor | "
@@ -534,10 +547,12 @@ EVENT_TYPES: Dict[str, str] = {
         "that answered, and the ones that failed or were skipped, issue-315)."
     ),
     "poll.closure_detected": (
-        "A poll cycle found that an active session's work item had ended "
-        "upstream and closed it (work_item, state: closed | merged, kind); "
-        "only ever after a successful listing, and never on an unanswerable "
-        "state."
+        "A poll cycle found that a tracked work item — one with a session "
+        "record of any status, or a portable record that is armed, frozen or "
+        "has a roster — had ended upstream and closed it (work_item, state: "
+        "closed | merged, kind); only ever after a successful listing, never "
+        "on an unanswerable state, and never twice for a stamped record "
+        "(issue-94, issue-329)."
     ),
     "poll.provider_error": (
         "Asking a provider for its work items failed; retried next cycle "
