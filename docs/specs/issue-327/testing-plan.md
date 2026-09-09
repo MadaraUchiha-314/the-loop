@@ -93,7 +93,7 @@ Executed 2026-09-09 on `claude/github-issue-327-8vubsj`.
 | T13 | `npx --yes markdownlint-cli2@0.18.1 "**/*.md"` | pass — 991 files, 0 errors | § Markdown |
 | T8 | grep for HTML-injecting calls | pass — no matches; abuse cases 1–2 covered by tests, 3 by review | § Security |
 | T9 | role/name assertions in the suite; reduced-motion grep | pass | § Accessibility |
-| T5 | `node ui/scripts/screenshots.mjs` on `bun run preview` over `dist/`, demo mode, both themes, 1440×900 and 390×844 | pass — 26 stills, each mapped to its prototype still | § UI / visual, `evidence/*.png` |
+| T5 | `node ui/scripts/screenshots.mjs` on `bun run preview` over `dist/`, demo mode, both themes, 1440×900 and 390×844 | pass — 28 stills (incl. a synthetic long-text pair), fonts and dimensions measured against the prototype | § UI / visual, `evidence/*.png` |
 
 **Not executed:** T3, T4, T6, T7, T11 — n/a as planned (no API/route/model change; no live
 service here; the owner's PR review is the human pass).

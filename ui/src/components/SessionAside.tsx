@@ -112,10 +112,10 @@ export function SessionAside({ view, viewed, note, onChanged, onClose }: Session
               type="button"
               onClick={() => void copyAttach()}
               title="Copy to the clipboard"
-              className="flex w-full items-center justify-center gap-2 rounded-md border border-border bg-surface-2 px-2 py-1.5 font-mono text-[0.7rem] text-muted-foreground transition-colors hover:text-foreground"
+              className="flex w-full items-start gap-2 rounded-md border border-border bg-surface-2 px-2 py-1.5 text-left font-mono text-[0.7rem] leading-relaxed text-muted-foreground transition-colors hover:text-foreground"
             >
-              <CopyIcon className="h-3 w-3 shrink-0" />
-              <span className="truncate">{copied ? "copied" : `tmux attach -t ${tmux}`}</span>
+              <CopyIcon className="mt-0.5 h-3 w-3 shrink-0" />
+              <span className="min-w-0 break-all">{copied ? "copied" : `tmux attach -t ${tmux}`}</span>
             </button>
           </div>
         ) : null}

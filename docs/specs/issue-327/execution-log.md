@@ -72,6 +72,23 @@ full because the rewrite touches every view.
 - **Next:** the owner's review on PR #328.
 - **Blockers:** none.
 
+### 2026-09-09 — the owner's first review round: fonts, spacing, wrapping
+
+- **Phase:** needs-review
+- **Did:** on PR #328 the owner asked that fonts and spacing match the prototype and that
+  long text wrap. Measured the built app against the prototype's recorded numbers — panel
+  widths, every bar height, chip / node / switch / icon-button sizes, the four font faces
+  and weights, the reading measure — all equal; one 3 px header difference from a
+  line-height added in the same round, reverted. Long values now wrap instead of
+  truncating: the page title, the sidebar row's title (two lines, clamped), every panel
+  value, the tmux attach command, the composer hint; the meta line and a collapsed tool
+  call's summary stay single-line with the full text in `title`. Evidence extended with
+  the measurement table and a synthetic long-text pair
+  ([`evidence/verification.md`](evidence/verification.md) § Fonts and dimensions).
+- **Checkpoint/tests:** lint clean, 212/212, build green, markdownlint clean.
+- **Next:** the owner's review.
+- **Blockers:** none.
+
 ### 2026-09-09 — prototype explored, spec chain drafted
 
 - **Phase:** phase-selection → tasks-breakdown

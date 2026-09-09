@@ -202,7 +202,7 @@ function ToolCall({ tool }: { tool: ToolCallView }) {
       <summary className="flex items-start gap-2 rounded-md py-0.5 hover:text-foreground">
         <TerminalIcon className="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />
         <span className="shrink-0 font-mono text-foreground/80">{tool.name}</span>
-        <span className="min-w-0 truncate font-mono text-muted-foreground">{firstLine(tool.summary)}</span>
+        <span className="min-w-0 truncate font-mono text-muted-foreground" title={tool.summary}>{firstLine(tool.summary)}</span>
         {tool.isError ? (
           <span className="ml-auto shrink-0 rounded-md border border-state-blocked/40 px-1.5 font-mono text-[0.65rem] text-state-blocked">error</span>
         ) : null}
@@ -338,7 +338,7 @@ export function ChatBar({
             <span>{blocked}</span>
           ) : (
             <>
-              <span className="truncate">delivers to tmux{tmuxTarget ? ` · ${tmuxTarget}` : ""}</span>
+              <span className="break-all">delivers to tmux{tmuxTarget ? ` · ${tmuxTarget}` : ""}</span>
               <span aria-hidden="true">·</span>
               <span>bracketed paste + enter</span>
               <span aria-hidden="true">·</span>

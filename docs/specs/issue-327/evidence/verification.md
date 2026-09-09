@@ -112,6 +112,33 @@ $ grep -n "prefers-reduced-motion" ui/src/styles/app.css
 169:  @media (prefers-reduced-motion: reduce) {
 ```
 
+## T5 — Fonts and dimensions against the prototype
+
+Measured in the built app (dark, 1440×900, work item #214) with `getBoundingClientRect` and
+`getComputedStyle`, against the prototype's numbers recorded during its exploration
+(`design.md` § UI/UX design; the prototype at the same viewport).
+
+| Measure | Prototype | Built |
+|---|---|---|
+| Fonts loaded at runtime | IBM Plex Sans 400/500/600 · JetBrains Mono 400 · Space Grotesk 600 | IBM Plex Sans 400/500 · JetBrains Mono 400 · Space Grotesk 600 (600 Plex is requested and loads when a `**bold**` ref renders) |
+| Sidebar · main · session panel width | 304 · 832 · 304 px | 304 · 832 · 304 px |
+| Header · graph strip · tabs row · trace header · composer block height | 88 · 83 · 42 · 33 · 101 px | 88 · 83 · 42 · 33 · 101 px |
+| Sidebar row · session tab · graph node · phase chip · ref chip · switch · icon button | 51 · 42 · 26 · 21 · 19 · 16 · 28 px | 51 · 42 · 26 · 21 · 19 · 16 · 28 px |
+| Page title | Space Grotesk 18 px / 600 / lh 28 | Space Grotesk 18 px / 600 / lh 28 |
+| Wordmark | Space Grotesk 14 px / 600 | Space Grotesk 14 px / 600 |
+| Body / row title / trace prose | IBM Plex Sans 14 px / 400; prose lh 1.625 | IBM Plex Sans 14 px / 400 / lh 20; prose lh 22.75 (1.625) |
+| Section label (kicker) | IBM Plex Sans 10.88 px / 500 / tracking .1em | IBM Plex Sans 10.88 px / 500 |
+| Mono identifiers (ref chip · row meta · panel values) | JetBrains Mono 11.52 · 11.2 · 11.2 px / 400 | JetBrains Mono 11.52 · 11.2 · 11.2 px / 400 |
+| Trace / composer reading column | 768 px (`max-w-3xl`) | 768 px |
+
+**Long text wraps** (the owner's review ask on PR #328): the page title, the sidebar row's
+title (two lines, then clamped), every session-panel value (session id, transcript path,
+tmux target, cwd), the tmux attach command and the composer's hint wrap rather than
+truncate; the sidebar's meta line and a collapsed tool call's one-line summary stay single
+line, with the full text in `title`. Exercised with a synthetic title and session id
+written into the DOM (the fixture's own strings are short):
+[`13-long-text-dark.png`](13-long-text-dark.png), [`13-long-text-light.png`](13-long-text-light.png).
+
 ## T5 — UI / visual (built app, demo fixture, headless Chromium)
 
 Captured by `ui/scripts/screenshots.mjs` against `bun run preview` over `dist/`, in both
@@ -133,6 +160,7 @@ themes, at 1440×900 and 390×844. The prototype still each screen answers to is
 | 11 | Both side panels collapsed; reopen controls in the header | [`11-panels-closed-dark.png`](11-panels-closed-dark.png) | [`11-panels-closed-light.png`](11-panels-closed-light.png) | `prototype-08-sidebar-collapsed-light.png` |
 | 12 | 390 px — panels start closed, the main column has the width | [`12-mobile-dark.png`](12-mobile-dark.png) | [`12-mobile-light.png`](12-mobile-light.png) | `prototype-19-mobile-390-dark.png` (the prototype's zero-width main, corrected here) |
 | 12b | 390 px — the sidebar opened, overlaying the column | [`12b-mobile-sidebar-dark.png`](12b-mobile-sidebar-dark.png) | [`12b-mobile-sidebar-light.png`](12b-mobile-sidebar-light.png) | — |
+| 13 | Long text (synthetic: title and session id written into the DOM) wrapping in the header, the sidebar row and the panel | [`13-long-text-dark.png`](13-long-text-dark.png) | [`13-long-text-light.png`](13-long-text-light.png) | — |
 
 The capture blocks nothing: the fonts load from Google Fonts as they do in production, and
 the demo transport is selected through `localStorage` before the page loads. The one

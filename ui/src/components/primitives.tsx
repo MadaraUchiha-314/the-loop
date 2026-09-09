@@ -110,7 +110,7 @@ export function KV({
     <div className="flex items-baseline gap-3 text-xs">
       <span className="w-20 shrink-0 text-muted-foreground">{k}</span>
       <span
-        className={`min-w-0 flex-1 truncate text-foreground/90 ${mono ? "font-mono text-[0.7rem]" : ""}`.trim()}
+        className={`min-w-0 flex-1 break-all text-foreground/90 ${mono ? "font-mono text-[0.7rem] leading-relaxed" : "break-words"}`.trim()}
         title={title}
       >
         {children ?? v}

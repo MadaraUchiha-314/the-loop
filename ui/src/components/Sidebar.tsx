@@ -221,10 +221,10 @@ function ItemRow({
         selected ? "bg-surface-2" : owner ? "bg-surface-2/40" : "hover:bg-surface-2/60"
       }`}
     >
-      <div className="flex items-center gap-2">
-        <StatusDot status={status} />
-        <span className="font-mono text-[0.7rem] text-muted-foreground">#{view.number}</span>
-        <span className={`truncate text-sm ${selected ? "text-foreground" : "text-foreground/85"}`}>
+      <div className="flex items-start gap-2">
+        <StatusDot status={status} className="mt-2" />
+        <span className="mt-[0.2rem] shrink-0 font-mono text-[0.7rem] text-muted-foreground">#{view.number}</span>
+        <span className={`line-clamp-2 min-w-0 break-words text-sm ${selected ? "text-foreground" : "text-foreground/85"}`}>
           {title ?? positionLabel(view)}
         </span>
       </div>

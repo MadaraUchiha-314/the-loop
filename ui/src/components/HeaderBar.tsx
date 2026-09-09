@@ -43,7 +43,7 @@ export function HeaderBar({
         </IconButton>
       )}
       <div className="min-w-0 flex-1">
-        <h1 className="truncate font-display text-lg font-semibold tracking-tight">{title}</h1>
+        <h1 className="break-words font-display text-lg font-semibold tracking-tight">{title}</h1>
         {meta ? <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">{meta}</div> : null}
       </div>
       <div className="flex shrink-0 items-center gap-1">
