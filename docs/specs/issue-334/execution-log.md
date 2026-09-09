@@ -31,6 +31,19 @@ status: in-progress
 
 ## Progress entries
 
+### 2026-09-09 — review question answered
+
+- **Phase:** needs-review
+- **Did:** the owner asked on the PR whether Socket Mode means the-loop needs a webhook
+  server Slack calls. Answered on the PR: no — Socket Mode is an outbound WebSocket the
+  listener opens, Slack pushes commands down it, the answer is an outbound POST to the
+  `response_url`; nothing inbound, no Request URL. Added a *No webhook server, no
+  Request URL* paragraph to the guide's *Run it* step so the next reader does not have
+  to ask.
+- **Checkpoint/tests:** markdownlint clean; the manifest pin green.
+- **Next:** the owner's review.
+- **Blockers:** none.
+
 ### 2026-09-09 — implemented, verified, ready for review
 
 - **Phase:** implementation → verification → needs-review

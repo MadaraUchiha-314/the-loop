@@ -134,6 +134,14 @@ the-loop channels listen    # Socket Mode, in the foreground: replies, buttons, 
 the-loop channels status    # what is configured, which grants hold, whether commands can arrive
 ```
 
+**No webhook server, no Request URL.** Socket Mode is an *outbound* WebSocket the-loop
+opens to Slack with the app-level token; Slack then pushes message events, button presses
+and slash commands down that connection, the listener acknowledges each on the same
+socket, and the ephemeral answer to a command is an outbound HTTPS POST to Slack's
+`response_url`. Nothing listens for Slack, nothing is exposed, no port is opened — which
+is why the manifest carries `socket_mode_enabled: true` and no `request_url`. (Slack's
+classic HTTP delivery, which would need a public endpoint, is deliberately not offered.)
+
 With `read.mode: poll` the daemons read thread replies on a background thread instead and
 `listen` is not needed — but no button press and no slash command can arrive that way,
 because Slack delivers both only to a connection that acknowledges within seconds.
