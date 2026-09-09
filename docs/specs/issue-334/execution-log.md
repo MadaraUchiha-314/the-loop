@@ -31,6 +31,19 @@ status: in-progress
 
 ## Progress entries
 
+### 2026-09-09 — the dead-letter question
+
+- **Phase:** needs-review
+- **Did:** the owner asked whether missed events have a dead-letter queue. Answered on
+  the PR: none, on purpose — an unread message is re-read from the cursor (the thread is
+  the queue); a message read but not acted on is recorded in the event log, marked ⚠️
+  on the member's message and not retried, because a retry can act twice (issue-245
+  R4.6); a manual `channels replay` is offered as a follow-up. Added the paragraph to
+  the guide's *Downtime* section.
+- **Checkpoint/tests:** markdownlint clean.
+- **Next:** the owner's review.
+- **Blockers:** none.
+
 ### 2026-09-09 — the downtime gap closed at review
 
 - **Phase:** needs-review

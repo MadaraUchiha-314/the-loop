@@ -319,8 +319,16 @@ What happens to what members did while the-loop was stopped, restarting or upgra
 | a thread reply or kickoff message, `read.mode: socket` | Slack retries the undelivered event a few times over a few minutes; beyond that it stays on Slack | the listener runs one **catch-up read** over every bound thread and the kickoff cursor the moment it connects (`channel.caught_up`), so what accumulated is processed once; a retry Slack then delivers of a message the catch-up already handled is dropped as `duplicate` |
 | a `/the-loop` command or a button press | fails **visibly** to the member in Slack — no listener was connected to take it | the member issues it again; nothing was half-done |
 
-The two transports share the per-thread cursors in the channel state, so the same
-message is never processed twice whichever path read it. In a socket deployment you may
+**There is no dead-letter queue, on purpose.** A message the-loop *read but could not act
+on* — the ledger refused the record, no session could take the delivery, the kickoff
+issue could not be created — is recorded (`channel.dropped` with `reason: undeliverable`,
+`channel.mirror_failed`, `bus.record_failed`, `create-failed`; ids and the error, never
+text — `the-loop events --types 'channel.*' --types 'bus.*'` lists them), marked ⚠️ on
+the member's own message, and **not retried**: a retried kickoff opens a second issue, a
+retried gate answer answers twice, a retried keyword starts twice. The cursor advances,
+and the person who typed it posts again — the safe retry for a message that is an
+instruction. The two transports share the per-thread cursors in the channel state, so
+the same message is never processed twice whichever path read it. In a socket deployment you may
 also run `the-loop channels poll` from cron beside the listener as a reconciliation for a
 long outage — it is the same read cycle. This is the standard shape for a robust Slack
 integration, and the one the-loop already uses with GitHub: push for latency, a
