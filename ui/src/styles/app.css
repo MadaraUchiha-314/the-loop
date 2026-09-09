@@ -1,1292 +1,188 @@
-/* Control-plane app layer.
+/* the-loop control plane — the Control Plane UI 3.0 design system (issue-327).
  *
- * Rewritten for the issue-298 design overhaul: the Classical system —
- * editorial, book-like, Cormorant Garamond headings over Lora body, hairline
- * rules, color as stroke rather than fill. Every colour, font, spacing and
- * radius comes from a Classical token (classical.css); layout and app-specific
- * composition live here. The reference the implementation matches is
- * docs/specs/issue-298/design/ (Control Plane.dc.html, Settings.dc.html).
+ * The tokens are the owner's prototype's own (https://the-loopy-one.lovable.app/,
+ * recorded in docs/specs/issue-327/design.md): authored in oklch, a warm
+ * off-white light theme and a cool near-black dark one, one burnt-orange
+ * primary, five state colours. Dark is the `.dark` class on <html>
+ * (state/theme.ts + the pre-paint script in index.html). Everything else is
+ * Tailwind utilities in the JSX, copied from the prototype's rendered markup so
+ * the implementation can be checked against it class for class.
  */
 
-body {
-  margin: 0;
-  background: var(--color-bg);
-  color: var(--color-text);
-  font-family: var(--font-body);
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* — the prototype's tokens ———————————————————————————————————————————— */
+
+:root {
+  --background: oklch(98.4% 0.004 85);
+  --foreground: oklch(24% 0.012 265);
+  --surface: oklch(99.8% 0.002 85);
+  --surface-2: oklch(96.2% 0.006 85);
+  --primary: oklch(63% 0.15 48);
+  --primary-foreground: oklch(99% 0.005 85);
+  --muted-foreground: oklch(53% 0.014 265);
+  --accent: oklch(94% 0.02 60);
+  --accent-foreground: oklch(30% 0.03 48);
+  --border: oklch(90% 0.006 85);
+  --border-strong: oklch(84% 0.008 85);
+  --state-done: oklch(55% 0.11 155);
+  --state-active: oklch(63% 0.15 48);
+  --state-blocked: oklch(56% 0.19 25);
+  --state-skipped: oklch(68% 0.01 265);
+  --state-pending: oklch(80% 0.008 265);
+  --human: oklch(52% 0.13 265);
+  --radius: 0.625rem;
+  color-scheme: light;
 }
 
-a {
-  color: var(--color-accent-700);
-  text-decoration: none;
-}
-a:hover {
-  color: var(--color-accent-600);
-  text-decoration: underline;
+.dark {
+  --background: oklch(16.5% 0.008 265);
+  --foreground: oklch(94% 0.006 85);
+  --surface: oklch(19.6% 0.009 265);
+  --surface-2: oklch(22.8% 0.01 265);
+  --primary: oklch(75% 0.14 55);
+  --primary-foreground: oklch(19% 0.03 48);
+  --muted-foreground: oklch(68% 0.012 265);
+  --accent: oklch(28% 0.03 55);
+  --accent-foreground: oklch(85% 0.08 65);
+  --border: oklch(100% 0 0 / 0.09);
+  --border-strong: oklch(100% 0 0 / 0.16);
+  --state-done: oklch(70% 0.13 158);
+  --state-active: oklch(78% 0.14 60);
+  --state-blocked: oklch(68% 0.18 25);
+  --state-skipped: oklch(50% 0.012 265);
+  --state-pending: oklch(40% 0.012 265);
+  --human: oklch(70% 0.12 268);
+  color-scheme: dark;
 }
 
-@keyframes lp-pulse {
-  0%,
-  100% {
-    opacity: 1;
+/* Tailwind reads these as `bg-surface-2`, `text-state-active`, `font-display`,
+   `rounded-lg`… — the names the prototype's markup uses. `inline` so the
+   utilities reference the variables above and follow the `.dark` swap. */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-state-done: var(--state-done);
+  --color-state-active: var(--state-active);
+  --color-state-blocked: var(--state-blocked);
+  --color-state-skipped: var(--state-skipped);
+  --color-state-pending: var(--state-pending);
+  --color-human: var(--human);
+
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --animate-loop-pulse: loop-pulse 2s ease-out infinite;
+
+  @keyframes loop-pulse {
+    0% {
+      opacity: 0.5;
+      transform: scale(0.7);
+    }
+    to {
+      opacity: 0;
+      transform: scale(1.35);
+    }
   }
-  50% {
-    opacity: 0.3;
+}
+
+/* — base ————————————————————————————————————————————————————————————— */
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    margin: 0;
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  /* The prototype authors no focus ring; a keyboard user still needs one. The
+     primary at half strength, outside the control, only for :focus-visible. */
+  :focus-visible {
+    outline: 2px solid color-mix(in oklab, var(--primary) 60%, transparent);
+    outline-offset: 1px;
+  }
+  /* Native disclosure markers are replaced by the chevrons the design draws. */
+  summary {
+    list-style: none;
+    cursor: pointer;
+  }
+  summary::-webkit-details-marker {
+    display: none;
   }
 }
 
-.lp-pulse {
-  animation: lp-pulse 2s ease-in-out infinite;
+/* — the three custom utilities the prototype defines ————————————————— */
+
+@utility ref-chip {
+  font-family: var(--font-mono);
+  letter-spacing: -0.01em;
+  font-size: 0.72rem;
+  background: var(--color-surface-2);
+  color: var(--color-muted-foreground);
+  border: 1px solid var(--color-border);
+  border-radius: 0.3rem;
+  padding: 0.05rem 0.35rem;
 }
 
-/* Respect a reduced-motion preference: the pulse is a redundant emphasis —
-   every pulsing element also carries a label or a border change. */
-@media (prefers-reduced-motion: reduce) {
-  .lp-pulse {
-    animation: none;
+@utility scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) transparent;
+}
+
+@utility pulse-dot {
+  position: relative;
+  &::after {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border: 1px solid;
+    border-radius: 999px;
+    opacity: 0.35;
+    animation: var(--animate-loop-pulse);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    &::after {
+      animation: none;
+    }
   }
 }
 
-/* The small-caps editorial label the design uses for every section head,
-   kicker and speaker name: Cormorant semibold, tracked out, uppercase. */
-.lp-h,
-.lp-side-head,
-.lp-settings-kicker,
-.lp-callout-kicker,
-.lp-banner-kicker,
-.lp-inbox-kind,
-.lp-needs-kind,
-.lp-trace-kind,
-.lp-config-group-name {
-  font-family: var(--font-heading);
-  font-weight: var(--font-heading-weight);
-  font-size: 11.5px;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--color-neutral-600);
-}
-
-/* — shell ——————————————————————————————————————————————————————————— */
-
-.lp-shell {
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
-}
-
-.lp-main {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  width: 100%;
-  box-sizing: border-box;
-}
-/* Centered reading column for Events and Settings, per Settings.dc.html. */
-.lp-page {
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 26px 24px 64px;
-}
-.lp-back {
-  font-size: 12.5px;
-  color: var(--color-accent-700);
-}
-.lp-page > .lp-h1 {
-  margin: 10px 0 4px;
-}
-.lp-page-sub {
-  font-size: 13.5px;
-  color: var(--color-neutral-600);
-  margin: 0 0 26px;
-}
-
-/* The Work screen owns the full viewport: sidebar beside pane. */
-.lp-main-work {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.lp-h1 {
-  font-family: var(--font-heading);
-  font-weight: var(--font-heading-weight);
-  font-size: 38px;
-  line-height: 1.1;
-  letter-spacing: -0.015em;
-  margin: 0 0 4px;
-}
-
-.lp-h2 {
-  font-family: var(--font-heading);
-  font-weight: var(--font-heading-weight);
-  font-size: 13px;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--color-neutral-700);
-  margin: 28px 0 10px;
-}
-
-.lp-h3 {
-  font-family: var(--font-heading);
-  font-weight: var(--font-heading-weight);
-  font-size: 19px;
-  margin: 0;
-}
-
-.lp-subtle {
-  font-size: 12.5px;
-  color: var(--color-neutral-600);
-}
-
-.lp-code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.92em;
-}
-
-.lp-empty {
-  font-size: 13px;
-  color: var(--color-neutral-600);
-  padding: 14px 0;
-}
-
-.lp-skeleton {
-  font-size: 13px;
-  font-style: italic;
-  color: var(--color-neutral-500);
-  padding: 14px 0;
-}
-
-.lp-visually-hidden {
+/* The visually-hidden idiom for labels a control needs but the design does not
+   draw (the standing session's message box). */
+@utility sr-only-label {
   position: absolute;
   width: 1px;
   height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-}
-
-.lp-offer-demo {
-  padding: 10px 24px;
-}
-
-/* — banners ————————————————————————————————————————————————————————— */
-
-.lp-banner {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  padding: 9px 20px;
-  font-size: 12.5px;
-  border-bottom: 1px solid var(--color-divider);
-  background: var(--color-neutral-100);
-  flex-wrap: wrap;
-}
-.lp-banner-kicker {
-  color: var(--color-accent-700);
-  white-space: nowrap;
-}
-.lp-banner-error .lp-banner-kicker {
-  color: var(--color-neutral-900);
-}
-.lp-banner-error {
-  background: var(--color-accent-100);
-}
-.lp-banner-spacer {
-  flex: 1;
-}
-.lp-banner .btn {
-  padding: 3px 12px;
-  font-size: 12.5px;
-}
-
-/* — the Work screen: sidebar + pane ————————————————————————————————— */
-
-.lp-work {
-  display: grid;
-  grid-template-columns: 296px 1fr;
-  height: 100%;
-  min-height: 0;
-}
-
-.lp-side {
-  border-right: 1px solid var(--color-divider);
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.lp-side-brand {
-  display: block;
-  padding: 20px 20px 14px;
-  border-bottom: 1px solid var(--color-divider);
-  color: inherit;
-}
-.lp-side-brand:hover {
-  color: inherit;
-  text-decoration: none;
-}
-.lp-side-brand-name {
-  font-family: var(--font-heading);
-  font-weight: var(--font-heading-weight);
-  font-size: 23px;
-  line-height: 1.1;
-}
-.lp-side-brand-sub {
-  font-size: 10.5px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--color-neutral-600);
-  margin-top: 2px;
-}
-
-.lp-side-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 10px 0 18px;
-}
-
-.lp-side-group {
-  margin: 0;
-}
-.lp-side-group + .lp-side-group::before {
-  content: "";
-  display: block;
-  height: 1px;
-  background: var(--color-divider);
-  margin: 14px 20px;
-}
-.lp-side-head {
-  padding: 8px 20px 6px;
-}
-
-.lp-side-row {
-  display: grid;
-  grid-template-columns: 10px 1fr auto;
-  column-gap: 8px;
-  row-gap: 1px;
-  padding: 9px 20px 10px;
-  cursor: pointer;
-  color: inherit;
-  text-decoration: none;
-}
-.lp-side-row:hover {
-  background: color-mix(in srgb, var(--color-neutral-300) 40%, transparent);
-  color: inherit;
-  text-decoration: none;
-}
-.lp-side-row.current {
-  background: var(--color-accent-100);
-}
-/* The work item whose PR is the selected row: the canvas is on this item, so
-   it keeps a marker — lighter than the selection itself, which belongs to the
-   PR row below it (issue-300). */
-.lp-side-row.owner {
-  background: color-mix(in srgb, var(--color-accent-100) 45%, transparent);
-}
-.lp-side-row .lp-session-dot,
-.lp-side-row .lp-health-dot {
-  margin-top: 5px;
-}
-.lp-side-ref {
-  font-size: 12px;
-  font-feature-settings: "tnum";
-  color: var(--color-neutral-700);
-}
-.lp-side-when {
-  font-size: 10.5px;
-  font-feature-settings: "tnum";
-  color: var(--color-neutral-500);
-  justify-self: end;
-}
-.lp-side-title {
-  grid-column: 2;
-  font-size: 13.5px;
-  line-height: 1.35;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.lp-side-flag {
-  grid-column: 3;
-  align-self: center;
-  justify-self: end;
-  font-family: var(--font-heading);
-  font-weight: var(--font-heading-weight);
-  font-size: 9.5px;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--color-accent-700);
-  border: 1px solid color-mix(in srgb, var(--color-accent) 50%, transparent);
-  border-radius: 3px;
-  padding: 1px 6px 0;
-  white-space: nowrap;
-}
-
-/* A work item and its pull requests read as one group: the PR rows sit inside
-   the item's block, indented past the dot column and tied to it by a hairline
-   in the gutter, so the nesting is visible without a second list style. */
-.lp-side-item + .lp-side-item {
-  margin-top: 1px;
-}
-.lp-side-prs {
-  list-style: none;
-  margin: 0 0 4px;
   padding: 0;
-}
-.lp-side-pr {
-  padding-top: 5px;
-  padding-bottom: 5px;
-  padding-left: 38px;
-  position: relative;
-}
-/* The gutter rule runs the height of each PR row, so a run of them draws one
-   continuous line down from the work item above. */
-.lp-side-pr::before {
-  content: "";
-  position: absolute;
-  left: 26px;
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  background: var(--color-divider);
-}
-.lp-side-pr .lp-side-ref {
-  font-size: 11.5px;
-  color: var(--color-neutral-600);
-}
-
-.lp-side-banner {
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--color-neutral-600);
-  padding: 8px 20px;
-  font-style: italic;
-}
-
-.lp-side-manage {
-  display: block;
-  font-size: 12.5px;
-  color: var(--color-neutral-600);
-  padding: 7px 20px;
-}
-.lp-side-manage:hover {
-  color: var(--color-accent-700);
-}
-
-/* Standing rows read as one flowing line: name — description, wrapping. */
-.lp-side-standing {
-  font-size: 13px;
-  line-height: 1.45;
-}
-.lp-side-standing .lp-side-desc {
-  color: var(--color-neutral-600);
-  font-size: 12px;
-}
-
-.lp-side-foot {
-  border-top: 1px solid var(--color-divider);
-  padding: 12px 20px;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  background: var(--color-bg);
-}
-.lp-side-foot a {
-  font-size: 12.5px;
-  color: var(--color-neutral-600);
-}
-.lp-side-foot a:hover {
-  color: var(--color-accent-700);
-  text-decoration: none;
-}
-.lp-side-foot .lp-health {
-  margin-left: auto;
-}
-
-.lp-pane {
-  min-height: 0;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-}
-/* The middle of the pane: a column that lets the trace take the remaining
-   height, so the chat bar sits at the foot without a page of scroll. */
-.lp-pane-body {
-  padding: 18px 40px 8px;
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-/* The actionable cards sit in the same reading column as the trace. */
-.lp-callout,
-.lp-gate {
-  width: 100%;
-  max-width: 760px;
-  margin-left: auto;
-  margin-right: auto;
-}
-
-@media (max-width: 860px) {
-  .lp-work {
-    grid-template-columns: 1fr;
-    height: auto;
-  }
-  .lp-side {
-    border-right: none;
-    border-bottom: 1px solid var(--color-divider);
-    max-height: 40vh;
-  }
-  .lp-pane-body,
-  .lp-detail-head,
-  .lp-chat {
-    padding-left: 20px;
-    padding-right: 20px;
-  }
-}
-
-/* — health dot + popover ———————————————————————————————————————————— */
-
-.lp-health {
-  position: relative;
-}
-.lp-health summary {
-  list-style: none;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--color-neutral-600);
-}
-.lp-health summary::-webkit-details-marker {
-  display: none;
-}
-.lp-health-word {
-  font-size: 12px;
-}
-.lp-health-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  display: inline-block;
-  background: var(--color-neutral-400);
-  flex: none;
-}
-.lp-health-dot.ok {
-  background: var(--color-accent-500);
-}
-.lp-health-dot.warn {
-  background: var(--color-neutral-900);
-}
-.lp-health-pop {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  right: 0;
-  z-index: 30;
-  width: 300px;
-  border: 1px solid var(--color-divider);
-  border-radius: var(--radius-md);
-  background: var(--color-bg);
-  box-shadow: var(--shadow-md);
-  padding: 12px 14px;
-  font-size: 12.5px;
-  line-height: 1.55;
-}
-.lp-health-row {
-  display: flex;
-  align-items: baseline;
-  gap: 7px;
-  margin-bottom: 6px;
-  color: var(--color-neutral-700);
-}
-.lp-health-row .lp-health-dot {
-  align-self: center;
-}
-.lp-health-refresh {
-  margin-top: 4px;
-}
-
-/* — session dots ———————————————————————————————————————————————————— */
-
-.lp-session-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  display: inline-block;
-  flex: none;
-}
-.lp-session-dot.active {
-  background: var(--color-accent-500);
-}
-.lp-session-dot.paused {
-  background: var(--color-accent-300);
-}
-.lp-session-dot.idle {
-  background: var(--color-neutral-400);
-}
-/* "No session" is a dash, not a hollow square (issue-283 B13). */
-.lp-session-dot.none {
-  width: 7px;
-  height: 1px;
-  border-radius: 0;
-  background: var(--color-neutral-400);
-  align-self: center;
-}
-
-.lp-daemon-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  display: inline-block;
-  flex: none;
-  background: var(--color-neutral-400);
-}
-.lp-daemon-dot.on {
-  background: var(--color-accent-500);
-}
-
-/* — cards (the quiet hairline surface everything sits on) ——————————— */
-
-.lp-card {
-  border: 1px solid var(--color-divider);
-  border-radius: var(--radius-md);
-  background: transparent;
-  padding: 16px 20px;
-  margin-bottom: 14px;
-}
-
-/* — the work-item detail —————————————————————————————————————————————— */
-
-.lp-detail-head {
-  padding: 20px 40px 16px;
-  border-bottom: 1px solid var(--color-divider);
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-.lp-detail-id {
-  min-width: 0;
-  flex: 1;
-}
-.lp-detail-ref {
-  font-size: 12px;
-  font-feature-settings: "tnum";
-  color: var(--color-neutral-600);
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.lp-detail-ref a {
-  color: var(--color-accent-700);
-}
-.lp-detail-title {
-  font-family: var(--font-heading);
-  font-weight: var(--font-heading-weight);
-  font-size: 30px;
-  line-height: 1.12;
-  letter-spacing: -0.015em;
-  margin: 4px 0 12px;
-}
-.lp-detail-rail {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
-}
-.lp-detail-note {
-  font-size: 12px;
-  font-style: italic;
-  color: var(--color-accent-700);
-}
-.lp-detail-actions {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-}
-.lp-detail-actions .btn {
-  padding: 4px 14px;
-  font-size: 13px;
-}
-
-/* — the node rail as a tick bar ———————————————————————————————————————— */
-
-.lp-rail-group {
-  display: inline-flex;
-  align-items: center;
-  gap: 14px;
-}
-.lp-rail {
-  display: flex;
-  align-items: flex-end;
-  gap: 3px;
-  height: 14px;
-}
-.lp-rail-tick {
-  width: 4px;
-  border-radius: 1px;
-  height: 10px;
-  background: var(--color-neutral-300);
-}
-.lp-rail-tick.done {
-  background: var(--color-accent-400);
-}
-.lp-rail-tick.current {
-  height: 14px;
-  background: var(--color-accent-600);
-}
-.lp-rail-tick.blocked {
-  height: 14px;
-  background: var(--color-neutral-900);
-}
-.lp-rail-tick.skipped {
-  height: 6px;
-  background: var(--color-neutral-200);
-}
-.lp-rail.inner {
-  height: 10px;
-  gap: 2px;
-}
-.lp-rail.inner .lp-rail-tick {
-  width: 3px;
-  height: 7px;
-}
-.lp-rail.inner .lp-rail-tick.current,
-.lp-rail.inner .lp-rail-tick.blocked {
-  height: 10px;
-}
-.lp-rail.inner .lp-rail-tick.skipped {
-  height: 4px;
-}
-.lp-rail-label {
-  font-size: 12px;
-  font-feature-settings: "tnum";
-  color: var(--color-neutral-700);
-}
-
-/* — callouts: the question card and the human gate ————————————————————— */
-
-.lp-callout,
-.lp-gate {
-  border: 1px solid color-mix(in srgb, var(--color-accent) 45%, transparent);
-  border-radius: var(--radius-md);
-  background: var(--color-neutral-100);
-  padding: 16px 20px;
-  margin: 14px auto;
-}
-.lp-callout-head {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  margin-bottom: 6px;
-}
-.lp-callout-kicker {
-  color: var(--color-accent-700);
-}
-.lp-callout-body {
-  font-size: 15.5px;
-  line-height: 1.6;
-  text-wrap: pretty;
-}
-.lp-hint {
-  font-size: 11.5px;
-  color: var(--color-neutral-600);
-  margin-top: 10px;
-}
-
-.lp-gate {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
-}
-.lp-gate-main {
-  flex: 1;
-  min-width: 260px;
-}
-.lp-gate-detail {
-  font-size: 14px;
-  line-height: 1.55;
-  margin: 4px 0;
-}
-
-/* — the trace ———————————————————————————————————————————————————————— */
-
-.lp-trace-head {
-  display: flex;
-  align-items: baseline;
-  gap: 14px;
-  flex-wrap: wrap;
-  max-width: 760px;
-  margin: 0 auto;
-  width: 100%;
-}
-.lp-trace-source {
-  margin-left: auto;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 10.5px;
-  color: var(--color-neutral-500);
+  margin: -1px;
   overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 46ch;
+  clip: rect(0, 0, 0, 0);
   white-space: nowrap;
+  border: 0;
 }
-
-/* The trace is the canvas, not a card (the design draws no box around it):
-   Blueprint's border and padding are undone here, and the panel takes the
-   pane's remaining height so the chat bar stays in reach (R6). */
-.lp-trace {
-  border: none;
-  background: transparent;
-  border-radius: 0;
-  padding: 26px 0 10px;
-  margin: 0;
-  flex: 1;
-  min-height: 220px;
-  overflow-y: auto;
-}
-.lp-trace:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-}
-
-.lp-trace-entry {
-  max-width: 760px;
-  margin: 0 auto 22px;
-}
-.lp-trace-entry:last-child {
-  margin-bottom: 0;
-}
-.lp-trace-kind {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  margin-bottom: 5px;
-  letter-spacing: 0.1em;
-}
-.lp-trace-kind.accent {
-  color: var(--color-accent-700);
-}
-/* Meta and malformed rows read as centered asides, label included. */
-.lp-trace-kind.dim {
-  color: var(--color-neutral-500);
-  justify-content: center;
-}
-.lp-trace-kind.hot {
-  color: var(--color-neutral-900);
-  justify-content: center;
-}
-.lp-trace-ts {
-  font-family: var(--font-body);
-  font-weight: 400;
-  font-size: 11px;
-  font-feature-settings: "tnum";
-  letter-spacing: 0;
-  text-transform: none;
-  color: var(--color-neutral-500);
-}
-.lp-trace-text {
-  font-size: 15px;
-  line-height: 1.62;
-  text-wrap: pretty;
-  white-space: pre-wrap;
-}
-.lp-trace-meta {
-  text-align: center;
-  font-size: 12px;
-  font-style: italic;
-  color: var(--color-neutral-500);
-  padding: 2px 40px;
-  white-space: normal;
-}
-.lp-trace-tools {
-  margin-top: 8px;
-}
-
-/* — folds: thinking, tool calls, tool output ———————————————————————— */
-
-.lp-fold {
-  border: 1px solid var(--color-divider);
-  border-radius: var(--radius-md);
-  background: var(--color-neutral-100);
-  margin: 8px 0 0;
-}
-.lp-fold summary {
-  padding: 7px 12px;
-  cursor: pointer;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 10px;
-  max-width: 100%;
-  font-size: 12px;
-  color: var(--color-neutral-600);
-}
-.lp-fold summary::marker {
-  color: var(--color-neutral-500);
-  font-size: 10px;
-}
-.lp-fold-name {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-  color: var(--color-accent-700);
-}
-.lp-fold-thinking .lp-fold-name {
-  font-family: var(--font-body);
-  font-style: italic;
-  color: var(--color-neutral-600);
-}
-.lp-fold-detail {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11.5px;
-  color: var(--color-neutral-600);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 480px;
-}
-.lp-fold-thinking .lp-fold-detail {
-  font-family: var(--font-body);
-}
-.lp-fold-error {
-  font-family: var(--font-heading);
-  font-weight: var(--font-heading-weight);
-  font-size: 9.5px;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--color-neutral-700);
-  background: transparent;
-  border: 1px solid var(--color-neutral-400);
-  border-radius: 3px;
-  padding: 1px 6px 0;
-}
-.lp-fold-body {
-  border-top: 1px solid var(--color-divider);
-  padding: 9px 14px;
-  margin: 0;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11.5px;
-  line-height: 1.55;
-  color: var(--color-neutral-800);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  max-height: 220px;
-  overflow-y: auto;
-}
-.lp-fold-thinking .lp-fold-body {
-  font-family: var(--font-body);
-  font-size: 13px;
-  font-style: italic;
-  color: var(--color-neutral-700);
-}
-.lp-fold-result {
-  border-top: 1px dashed var(--color-divider);
-}
-
-/* — the chat bar ————————————————————————————————————————————————————— */
-
-.lp-chat {
-  border-top: 1px solid var(--color-divider);
-  padding: 14px 40px 18px;
-  margin-top: 16px;
-  position: sticky;
-  bottom: 0;
-  background: var(--color-bg);
-}
-.lp-chat-inner {
-  max-width: 760px;
-  margin: 0 auto;
-}
-.lp-chat-row {
-  display: flex;
-  gap: 12px;
-  align-items: stretch;
-}
-.lp-chat-row textarea {
-  flex: 1;
-  border: 1px solid var(--color-divider);
-  border-radius: var(--radius-md);
-  background: var(--color-neutral-100);
-  padding: 10px 13px;
-  font: inherit;
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--color-text);
-  resize: none;
-}
-.lp-chat-row .btn {
-  align-self: stretch;
-  padding: 0 22px;
-}
-.lp-chat-hint {
-  font-size: 11px;
-  color: var(--color-neutral-500);
-  margin-top: 6px;
-}
-.lp-chat-error {
-  font-size: 12px;
-  font-style: italic;
-  color: var(--color-accent-800);
-  margin-bottom: 6px;
-}
-
-/* — the trace-source tabs (one per PR session) ———————————————————————— */
-
-.lp-filters {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  margin: 14px 0;
-}
-.lp-tab {
-  background: none;
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  padding: 3px 10px;
-  font-family: var(--font-body);
-  font-size: 12.5px;
-  color: var(--color-neutral-600);
-}
-.lp-tab:hover {
-  color: var(--color-accent-700);
-  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
-  text-decoration: none;
-}
-.lp-tab[aria-current="page"] {
-  color: var(--color-accent-700);
-  border-color: color-mix(in srgb, var(--color-accent) 50%, transparent);
-}
-/* — Settings ————————————————————————————————————————————————————————— */
-
-.lp-settings-card {
-  border: 1px solid var(--color-divider);
-  border-radius: var(--radius-md);
-  padding: 20px 22px;
-  margin-bottom: 22px;
-}
-.lp-settings-kicker {
-  font-size: 12px;
-  color: var(--color-accent-700);
-  margin-bottom: 12px;
-}
-.lp-settings-label {
-  display: block;
-  font-size: 13px;
-  margin-bottom: 8px;
-}
-.lp-settings-row {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-.lp-settings-row .input {
-  flex: 1;
-  min-width: 200px;
-}
-
-.lp-conn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
-  font-size: 12.5px;
-  color: var(--color-neutral-600);
-}
-.lp-conn-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--color-neutral-400);
-  flex: none;
-}
-.lp-conn-dot.ok {
-  background: var(--color-accent-500);
-}
-.lp-conn-dot.fail {
-  background: var(--color-neutral-900);
-}
-
-.lp-learn {
-  margin-top: 12px;
-}
-.lp-learn summary {
-  font-size: 12.5px;
-  color: var(--color-accent-700);
-  cursor: pointer;
-}
-.lp-learn summary::marker {
-  color: var(--color-neutral-500);
-  font-size: 10px;
-}
-.lp-note {
-  font-size: 12.5px;
-  line-height: 1.65;
-  color: var(--color-neutral-600);
-  margin-top: 8px;
-  text-wrap: pretty;
-}
-
-.lp-modes-fieldset {
-  border: none;
-  margin: 0;
-  padding: 0;
-}
-.lp-modes {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.lp-mode {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  cursor: pointer;
-}
-.lp-mode input {
-  margin-top: 3px;
-  accent-color: var(--color-accent);
-}
-.lp-mode-name {
-  display: block;
-  font-size: 14px;
-  font-weight: 600;
-}
-.lp-mode-why {
-  display: block;
-  font-size: 12.5px;
-  color: var(--color-neutral-600);
-  line-height: 1.55;
-}
-.lp-mode-interval {
-  margin-top: 14px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.lp-mode-interval .input {
-  max-width: 160px;
-}
-.lp-mode-interval .lp-settings-label {
-  margin-bottom: 0;
-}
-
-.lp-restart-upgrade {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  margin-bottom: 0;
-  cursor: pointer;
-}
-.lp-restart-upgrade input {
-  accent-color: var(--color-accent);
-}
-
-/* — the CLI-config editor ————————————————————————————————————————————— */
-
-.lp-config-head {
-  margin-top: 0;
-  margin-bottom: 14px;
-}
-.lp-config-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.lp-config-count {
-  font-size: 12.5px;
-  color: var(--color-neutral-600);
-}
-.lp-config-report {
-  margin-top: 12px;
-  border: 1px solid var(--color-divider);
-  border-radius: var(--radius-md);
-  background: var(--color-neutral-100);
-  color: var(--color-neutral-800);
-  font-size: 12.5px;
-  line-height: 1.6;
-  padding: 9px 13px;
-}
-.lp-config-report.ok {
-  border-color: var(--color-accent-300);
-  background: var(--color-accent-100);
-  color: var(--color-accent-900);
-}
-.lp-config-report.fail {
-  border-color: var(--color-neutral-400);
-  color: var(--color-neutral-900);
-  font-style: italic;
-}
-.lp-restart-now {
-  margin-left: 6px;
-  padding: 2px 10px;
-  font-size: 12px;
-}
-
-.lp-config-field {
-  margin-top: 16px;
-}
-.lp-config-field > .lp-settings-label {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-  color: var(--color-neutral-800);
-  margin-bottom: 6px;
-}
-.lp-config-field .input {
-  max-width: 420px;
-}
-.lp-config-field input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--color-accent);
-}
-.lp-config-prose {
-  font-size: 12px;
-  line-height: 1.55;
-  color: var(--color-neutral-600);
-  margin-top: 5px;
-  text-wrap: pretty;
-}
-.lp-config-group {
-  margin-top: 18px;
-  padding-left: 14px;
-  border-left: 1px solid var(--color-divider);
-}
-.lp-config-group-name {
-  font-size: 11px;
-  color: var(--color-neutral-700);
-}
-.lp-config-list,
-.lp-config-json {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12.5px;
-  resize: vertical;
-}
-.lp-config-json {
-  max-width: none;
-}
-
-/* — Standing sessions ————————————————————————————————————————————————— */
-
-.lp-standing {
-  max-width: 760px;
-}
-.lp-standing .lp-trace-head {
-  margin-bottom: 10px;
-}
-.lp-standing-error {
-  border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
-  font-size: 13px;
-}
-.lp-standing-createbar {
-  margin: 10px 0 16px;
-}
-.lp-standing-create {
-  margin: 10px 0 16px;
-}
-.lp-standing-field {
-  margin-bottom: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.lp-standing-field label {
-  font-size: 13px;
-}
-.lp-standing-field input,
-.lp-standing-field textarea {
-  border: 1px solid var(--color-divider);
-  border-radius: var(--radius-md);
-  background: transparent;
-  padding: 6px 10px;
-  font: inherit;
-  font-size: 14px;
-  color: var(--color-text);
-}
-.lp-standing-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 8px;
-}
-.lp-standing-card {
-  margin-bottom: 14px;
-}
-.lp-standing-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.lp-standing-tag {
-  font-family: var(--font-heading);
-  font-weight: var(--font-heading-weight);
-  font-size: 9.5px;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--color-neutral-700);
-  border: 1px solid var(--color-neutral-400);
-  border-radius: 3px;
-  padding: 1px 6px 0;
-}
-.lp-standing-desc {
-  font-size: 13.5px;
-  margin: 6px 0;
-}
-.lp-standing-facts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 6px 16px;
-  margin: 8px 0;
-}
-.lp-standing-facts div {
-  display: flex;
-  gap: 8px;
-  align-items: baseline;
-}
-.lp-standing-facts dt {
-  font-size: 10.5px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--color-neutral-500);
-}
-.lp-standing-facts dd {
-  margin: 0;
-  font-size: 12.5px;
-  overflow-wrap: anywhere;
-}
-.lp-standing-say {
-  display: flex;
-  gap: 10px;
-  margin: 10px 0 6px;
-}
-.lp-standing-say input {
-  flex: 1;
-  border: 1px solid var(--color-divider);
-  border-radius: var(--radius-md);
-  background: transparent;
-  padding: 6px 10px;
-  font: inherit;
-  font-size: 14px;
-  color: var(--color-text);
-}
-
-/* A destructive action stays stroke like every other button, drawn in ink
-   rather than accent so it reads as grave, not primary. */
-.btn-danger {
-  color: var(--color-neutral-900);
-  border-color: var(--color-neutral-900);
-}
-.btn-danger:hover {
-  background: color-mix(in srgb, var(--color-neutral-900) 8%, transparent);
-}
-.btn-danger:active {
-  background: color-mix(in srgb, var(--color-neutral-900) 16%, transparent);
-}
-

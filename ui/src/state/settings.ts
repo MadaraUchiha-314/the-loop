@@ -25,6 +25,15 @@ export type DataMode = "live" | "demo";
  */
 export type RefreshMode = "stream" | "poll" | "manual";
 
+/**
+ * The colour theme this browser chose (issue-327). Absent means "not chosen":
+ * the page follows `prefers-color-scheme` until the operator toggles, and only
+ * then is a value written. Two states on purpose — the toggle is the design's,
+ * and following the browser until asked gives what a third "system" state
+ * would with one fewer control (decision-112).
+ */
+export type Theme = "light" | "dark";
+
 const REFRESH_MODES: readonly RefreshMode[] = ["stream", "poll", "manual"];
 
 export interface Settings {
@@ -36,6 +45,8 @@ export interface Settings {
   refreshMode: RefreshMode;
   /** The interval used while `refreshMode` is `poll`. */
   pollSeconds: number;
+  /** Light or dark, once chosen; absent follows the browser (issue-327). */
+  theme?: Theme;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -84,6 +95,10 @@ export function loadSettings(storage: Storage | undefined = safeStorage()): Sett
       ? Math.min(candidate.pollSeconds, 3600)
       : null;
 
+  // Anything but the two literals is "not chosen" — an unknown value in
+  // storage must never pick a theme (issue-327, abuse case 2).
+  const theme = candidate.theme === "light" || candidate.theme === "dark" ? candidate.theme : undefined;
+
   return {
     baseUrl: baseUrl || DEFAULT_SETTINGS.baseUrl,
     mode,
@@ -92,6 +107,7 @@ export function loadSettings(storage: Storage | undefined = safeStorage()): Sett
     // `refreshMode: "manual"`. Keeping it here would give the poll timer a zero
     // to divide the world by.
     pollSeconds: storedSeconds && storedSeconds > 0 ? storedSeconds : DEFAULT_SETTINGS.pollSeconds,
+    ...(theme ? { theme } : {}),
   };
 }
 

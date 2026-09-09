@@ -8,6 +8,33 @@
       content="the-loop control plane — work items, sessions, process-graph position, attention and the event log for a workstation running `the-loop service start`."
     />
     <title>the-loop / control plane</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+    />
+    <script>
+      // The theme before the first paint (issue-327): the stored choice, else
+      // the browser's preference. Reads one key, compares it to two literals,
+      // adds one class — nothing from storage is evaluated. React re-applies
+      // the same decision once it mounts (state/theme.ts).
+      (function () {
+        var theme = "";
+        try {
+          var raw = localStorage.getItem("the-loop:settings:v1");
+          var stored = raw ? JSON.parse(raw).theme : "";
+          theme = stored === "light" || stored === "dark" ? stored : "";
+        } catch (_) {
+          theme = "";
+        }
+        if (!theme) {
+          theme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        }
+        document.documentElement.classList.toggle("dark", theme === "dark");
+        document.documentElement.style.colorScheme = theme;
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

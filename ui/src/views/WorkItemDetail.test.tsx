@@ -19,7 +19,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiProvider } from "../state/ApiContext.tsx";
 import { buildWorkItemViews } from "../api/model.ts";
 import { DEMO_SESSIONS, DEMO_WORK_ITEMS } from "../demo/fixture.ts";
+import type { Chrome } from "../components/HeaderBar.tsx";
 import { WorkItemDetail, isAtNewest } from "./WorkItemDetail.tsx";
+
+const chrome: Chrome = { theme: "light", onToggleTheme: () => {}, sidebarOpen: true, onOpenSidebar: () => {} };
 
 /** The first fixture item that has a session, so the trace panel has a subject. */
 function firstView() {
@@ -37,7 +40,7 @@ function renderDetail(transcriptTick = 0) {
   const view = firstView();
   return render(
     <ApiProvider>
-      <WorkItemDetail view={view} title={view.ref} onChanged={() => {}} transcriptTick={transcriptTick} />
+      <WorkItemDetail view={view} title={view.ref} onChanged={() => {}} transcriptTick={transcriptTick} chrome={chrome} />
     </ApiProvider>,
   );
 }
@@ -55,7 +58,7 @@ describe("the work-item detail page", () => {
     renderDetail();
     const panel = await screen.findByRole("log", { name: /session transcript/i });
     expect(panel).toHaveAttribute("tabindex", "0");
-    expect(panel.className).toContain("lp-trace");
+    expect(panel).toHaveAttribute("data-trace");
   });
 
   it("renders the chat bar in the same view as the trace (R6.1)", async () => {

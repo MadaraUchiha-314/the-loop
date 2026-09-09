@@ -21,7 +21,7 @@ import { useMemo, useState } from "react";
 import { ApiError } from "../api/client.ts";
 import { diff, getIn, isRecord, sectionsOf, setIn, type ConfigField, type ConfigGroup } from "../api/configModel.ts";
 import type { ConfigDocument, ConfigSaveResult, JsonSchema, RestartSchedule } from "../api/types.ts";
-import { Blueprint } from "./Blueprint.tsx";
+import { Card, ControlButton, FieldLabel, INPUT_CLASS, Kicker, Report } from "./primitives.tsx";
 
 type Saved =
   | { state: "idle" }
@@ -91,22 +91,20 @@ export function ConfigEditor({ document, schema, onSave, onSaved, onRestart }: C
 
   return (
     <>
-      <Blueprint className="lp-settings-card lp-config-card">
-        <div className="lp-settings-kicker">CLI config</div>
-        <div className="lp-note lp-config-head">
+      <Card>
+        <Kicker>CLI config</Kicker>
+        <p className="text-xs leading-relaxed text-muted-foreground">
           The daemon&rsquo;s own configuration, read from{" "}
-          <code>{document.path}</code>
+          <code className="ref-chip">{document.path}</code>
           {document.exists ? "" : " — which does not exist yet; saving creates it"}. A save changes only the
           fields you changed and leaves the file&rsquo;s comments alone, and the poller and receiver pick it up
           on their next cycle.
-        </div>
-        <div className="lp-config-actions">
-          <button type="button" className="btn btn-primary" disabled={!changedCount || blocked || saved.state === "saving"} onClick={() => void save()}>
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <ControlButton primary disabled={!changedCount || blocked || saved.state === "saving"} onClick={() => void save()}>
             {saved.state === "saving" ? "Saving…" : "Save changes"}
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary"
+          </ControlButton>
+          <ControlButton
             disabled={!changedCount}
             onClick={() => {
               setDraft(structuredClone(baseline));
@@ -116,18 +114,18 @@ export function ConfigEditor({ document, schema, onSave, onSaved, onRestart }: C
             }}
           >
             Discard
-          </button>
-          <span className="lp-config-count">{summarize(changedCount, blocked)}</span>
+          </ControlButton>
+          <span className="font-mono text-[0.7rem] text-muted-foreground">{summarize(changedCount, blocked)}</span>
         </div>
         <SaveReport saved={saved} onRestart={onRestart} />
-      </Blueprint>
+      </Card>
 
       {sections.map((section) => (
-        <Blueprint key={`${section.path.join(".")}:${revision}`} className="lp-settings-card lp-config-card">
-          <div className="lp-settings-kicker">{section.label}</div>
-          {section.description ? <div className="lp-config-prose">{section.description}</div> : null}
+        <Card key={`${section.path.join(".")}:${revision}`}>
+          <Kicker>{section.label}</Kicker>
+          {section.description ? <p className="text-xs leading-relaxed text-muted-foreground">{section.description}</p> : null}
           <GroupBody group={section} draft={draft} onChange={update} onInvalid={markInvalid} invalid={invalid} />
-        </Blueprint>
+        </Card>
       ))}
     </>
   );
@@ -140,18 +138,18 @@ function summarize(changed: number, blocked: boolean): string {
 }
 
 function SaveReport({ saved, onRestart }: { saved: Saved; onRestart?: (() => Promise<RestartSchedule>) | undefined }) {
-  if (saved.state === "failed") return <div className="lp-config-report fail">{saved.message}</div>;
+  if (saved.state === "failed") return <Report tone="fail" role="alert">{saved.message}</Report>;
   if (saved.state !== "done") return null;
   const { result } = saved;
-  if (!result.written) return <div className="lp-config-report">Nothing to save — the file already says that.</div>;
+  if (!result.written) return <Report role="status">Nothing to save — the file already says that.</Report>;
   return (
-    <div className="lp-config-report ok">
+    <Report tone="ok" role="status">
       Saved {result.changed.join(", ")} to {result.path}.
       {result.restartRequired.length
         ? ` ${result.restartRequired.join(", ")} ${result.restartRequired.length === 1 ? "takes" : "take"} effect when the service restarts.`
         : " Live now."}
       {result.restartRequired.length && onRestart ? <RestartNow onRestart={onRestart} /> : null}
-    </div>
+    </Report>
   );
 }
 
@@ -172,9 +170,9 @@ function RestartNow({ onRestart }: { onRestart: () => Promise<RestartSchedule> }
   return (
     <>
       {" "}
-      <button type="button" className="btn btn-secondary lp-restart-now" disabled={state === "asking"} onClick={() => void go()}>
+      <ControlButton disabled={state === "asking"} onClick={() => void go()}>
         {state === "asking" ? "Scheduling…" : "Restart now"}
-      </button>
+      </ControlButton>
     </>
   );
 }
@@ -201,9 +199,9 @@ function GroupBody({ group, draft, invalid, onChange, onInvalid }: BodyProps) {
         />
       ))}
       {group.groups.map((child) => (
-        <div className="lp-config-group" key={child.path.join(".")}>
-          <div className="lp-config-group-name">{child.path.join(".")}</div>
-          {child.description ? <div className="lp-config-prose">{child.description}</div> : null}
+        <div className="mt-3 space-y-3 border-l border-border pl-3" key={child.path.join(".")}>
+          <div className="font-mono text-[0.7rem] text-foreground/85">{child.path.join(".")}</div>
+          {child.description ? <p className="text-xs leading-relaxed text-muted-foreground">{child.description}</p> : null}
           <GroupBody group={child} draft={draft} invalid={invalid} onChange={onChange} onInvalid={onInvalid} />
         </div>
       ))}
@@ -223,17 +221,17 @@ function Field({ field, value, error, onChange, onInvalid }: FieldProps) {
   const id = `cfg-${field.path.join("-")}`;
   const describedBy = field.description ? `${id}-note` : undefined;
   return (
-    <div className="lp-config-field">
-      <label className="lp-settings-label" htmlFor={id}>
+    <div className="space-y-1">
+      <FieldLabel htmlFor={id} className="font-mono text-[0.7rem]">
         {field.path.join(".")}
-      </label>
+      </FieldLabel>
       <Control field={field} id={id} describedBy={describedBy} value={value} onChange={onChange} onInvalid={onInvalid} />
       {field.description ? (
-        <div className="lp-config-prose" id={describedBy}>
+        <p className="text-[0.7rem] leading-relaxed text-muted-foreground" id={describedBy}>
           {field.description}
-        </div>
+        </p>
       ) : null}
-      {error ? <div className="lp-config-report fail">{error}</div> : null}
+      {error ? <Report tone="fail" role="alert">{error}</Report> : null}
     </div>
   );
 }
@@ -255,13 +253,14 @@ function Control({ field, id, describedBy, value, onChange, onInvalid }: Control
           aria-describedby={describedBy}
           checked={value === true}
           onChange={(event) => onChange(field.path, event.target.checked)}
+          className="accent-[var(--primary)]"
         />
       );
     case "enum":
       return (
         <select
           id={id}
-          className="input"
+          className={INPUT_CLASS}
           aria-describedby={describedBy}
           value={typeof value === "string" ? value : ""}
           // "" is the unset option, and unset means *remove the key* — an empty string
@@ -281,7 +280,7 @@ function Control({ field, id, describedBy, value, onChange, onInvalid }: Control
       return (
         <input
           id={id}
-          className="input"
+          className={INPUT_CLASS}
           type="number"
           inputMode="numeric"
           aria-describedby={describedBy}
@@ -303,7 +302,7 @@ function Control({ field, id, describedBy, value, onChange, onInvalid }: Control
       return (
         <textarea
           id={id}
-          className="input lp-config-list"
+          className={`${INPUT_CLASS} font-mono text-[0.75rem]`}
           rows={Math.max(2, Array.isArray(value) ? value.length + 1 : 2)}
           aria-describedby={describedBy}
           placeholder={placeholder}
@@ -325,7 +324,7 @@ function Control({ field, id, describedBy, value, onChange, onInvalid }: Control
       return (
         <input
           id={id}
-          className="input"
+          className={INPUT_CLASS}
           type="text"
           spellCheck={false}
           autoComplete="off"
@@ -350,7 +349,7 @@ function StructuredControl({ field, id, describedBy, value, onChange, onInvalid 
   return (
     <textarea
       id={id}
-      className="input lp-config-json"
+      className={`${INPUT_CLASS} font-mono text-[0.75rem]`}
       rows={Math.min(14, Math.max(3, text.split("\n").length))}
       spellCheck={false}
       aria-describedby={describedBy}

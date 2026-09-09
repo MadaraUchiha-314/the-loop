@@ -108,3 +108,28 @@ describe("refreshMode (issue-239)", () => {
     });
   });
 });
+
+describe("the theme setting (issue-327)", () => {
+  it("is absent — follow the browser — for a store that never chose one", () => {
+    const store = storage();
+    store.setItem("the-loop:settings:v1", JSON.stringify({ baseUrl: "http://127.0.0.1:8787", mode: "live" }));
+    expect(loadSettings(store).theme).toBeUndefined();
+    expect("theme" in loadSettings(store)).toBe(false);
+  });
+
+  it("round-trips a chosen theme beside the other keys", () => {
+    const store = storage();
+    saveSettings({ ...DEFAULT_SETTINGS, theme: "dark" }, store);
+    expect(loadSettings(store).theme).toBe("dark");
+    saveSettings({ ...DEFAULT_SETTINGS, theme: "light" }, store);
+    expect(loadSettings(store).theme).toBe("light");
+  });
+
+  it("drops a value that is neither light nor dark", () => {
+    const store = storage();
+    store.setItem("the-loop:settings:v1", JSON.stringify({ theme: "<script>" }));
+    expect(loadSettings(store).theme).toBeUndefined();
+    store.setItem("the-loop:settings:v1", JSON.stringify({ theme: 1 }));
+    expect(loadSettings(store).theme).toBeUndefined();
+  });
+});

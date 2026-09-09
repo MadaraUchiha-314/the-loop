@@ -3,7 +3,6 @@ import { createRoot } from "react-dom/client";
 
 import { App } from "./App.tsx";
 import { ApiProvider } from "./state/ApiContext.tsx";
-import "./styles/classical.css";
 import "./styles/app.css";
 
 const container = document.querySelector("#root");
