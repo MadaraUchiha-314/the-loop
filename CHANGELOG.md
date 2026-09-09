@@ -1,3 +1,9 @@
+## v13.6.0 (2026-09-09)
+
+### Feat
+
+- **issue-327**: Control Plane UI 3.0 — the dashboard rebuilt on the prototype's design system (#328)
+
 ## v13.5.0 (2026-09-08)
 
 ### Feat
