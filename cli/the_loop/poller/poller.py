@@ -38,8 +38,9 @@ import logging
 import subprocess
 import threading
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Sequence
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Sequence, Tuple
 
 from .. import __version__, eventlog
 from ..authz import is_authorized, is_self_authored, mark_self_authored
@@ -75,6 +76,19 @@ logger = logging.getLogger("the-loop.poll")
 # upstream reads as new on the next cycle, is forwarded again, resolves, and is
 # evicted again. That is a delivery loop, not a forgotten comment.
 _SEEN_COMMENTS_CAP = 2000
+
+# A record carrying only `poll` — the ledger of a thread once seen, with no
+# session, no arming, no frozen graph and no roster — is asked whether it ended
+# only once it has been absent from complete listings for this many cycles'
+# worth of `polling.intervalSeconds` (one hour at the default), and at most this
+# many such records are asked per provider per cycle, longest-absent first
+# (issue-332, decision-115). Measured on the ledger's own timestamps rather
+# than as a cycle counter: `poll --once` from cron never accumulates a count,
+# and a count persisted per record would be a write per absent record per
+# cycle. Constants, like `REPROBE_EVERY_CYCLES`: bounds on a background
+# question, not policy.
+LEDGER_RECHECK_EVERY_CYCLES = 60
+LEDGER_CHECKS_PER_CYCLE = 20
 
 
 def giveup_notice(*, ref: str, comment_id: str, comment_url: str, attempts: int) -> str:
@@ -390,6 +404,39 @@ class PollState:
         self._dirty.discard(ref)
         self.store.write_section(ref, POLL, None)
 
+    # -- the closure schedule (issue-332) --------------------------------------
+
+    def absent_since(self, ref: str) -> str:
+        """When the item was last listed or last asked about, whichever is later.
+
+        The later of ``lastPolledAt`` (the last cycle that saw the item) and
+        ``closureCheckedAt`` (the last cycle that asked the provider whether
+        the unlisted item had ended and was not told *closed*). Both are
+        :func:`_utcnow` strings, which order as text; a value that is not one
+        is ignored, and ``""`` means neither is known — which the poller reads
+        as *due now*: the cost of a bad stamp is one question and then a
+        well-formed date.
+        """
+        item = self._read(ref)
+        stamps: List[str] = [
+            str(stamp)
+            for stamp in (item.get("lastPolledAt"), item.get("closureCheckedAt"))
+            if _parse_utc(stamp) is not None
+        ]
+        return max(stamps) if stamps else ""
+
+    def note_closure_check(self, ref: str, checked_at: str) -> None:
+        """Record that the provider was asked about this unlisted item and did
+        not confirm it closed (issue-332).
+
+        Written through at once, like :meth:`forget`: the whole point of the
+        date is that the next cycle does not ask again. The rest of the ledger
+        is kept — the item may be relabelled, and its baseline and give-up
+        record are still what the poller needs then.
+        """
+        self._item(ref)["closureCheckedAt"] = checked_at
+        self.flush(ref)
+
     # -- end of cycle -----------------------------------------------------------
 
     def finalize(
@@ -459,6 +506,7 @@ class PollSummary:
     spawns: int = 0
     comments_forwarded: int = 0
     closures: int = 0  # sessions closed because their item ended (issue-94)
+    ledger_checks: int = 0  # ledger-only records asked whether they ended (issue-332)
     failures: int = 0  # events given up after exhausting the retry budget (issue-80)
     errors: List[str] = field(default_factory=list)
     interrupted: bool = False  # a stop was requested mid-cycle (issue-159)
@@ -469,10 +517,26 @@ class PollSummary:
     scopes_skipped: List[ScopeFailure] = field(default_factory=list)
 
 
-def _utcnow() -> str:
-    from datetime import datetime, timezone
+_UTC_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+def _utcnow() -> str:
+    return datetime.now(timezone.utc).strftime(_UTC_FORMAT)
+
+
+def _parse_utc(stamp: object) -> Optional[datetime]:
+    """A :func:`_utcnow` string back to an aware datetime, or ``None``.
+
+    Only the one shape the poller itself writes is accepted; anything else —
+    a hand-edited record, a legacy value — reads as *unknown* rather than
+    raising, so a bad timestamp costs one question, never a cycle.
+    """
+    if not isinstance(stamp, str):
+        return None
+    try:
+        return datetime.strptime(stamp, _UTC_FORMAT).replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
 
 
 @dataclass
@@ -642,6 +706,7 @@ class Poller:
             spawns=summary.spawns,
             comments_forwarded=summary.comments_forwarded,
             closures=summary.closures or None,
+            ledger_checks=summary.ledger_checks or None,
             failures=summary.failures or None,
             errors=summary.errors or None,
             scopes_polled=summary.scopes_polled or None,
@@ -816,7 +881,8 @@ class Poller:
         absence from ``open_refs`` says nothing about it.
         """
         degraded = degraded or set()
-        for ref in self._closure_candidates():
+        tracked, ledger_only = self._candidate_sets()
+        for ref in tracked:
             if ref.ref in open_refs or not provider.owns(ref):
                 continue
             if (
@@ -835,67 +901,145 @@ class Poller:
                     ref.ref,
                 )
                 continue
-            try:
-                closure = provider.closure(ref)
-            except ProviderError as exc:
-                logger.warning(
-                    "could not check whether %s is still open: %s", ref.ref, exc
-                )
-                eventlog.emit(
-                    "poll.item_error",
-                    level="warning",
-                    work_item=ref.ref,
-                    error=str(exc),
-                    will_retry=True,
-                )
-                summary.errors.append(f"{ref.ref}: {exc}")
+            self._ask_closure(provider, ref, summary)
+
+        # The ledger-only set (issue-332): the same question, on a schedule.
+        # Nothing urgent waits on these, so they are asked only once absent for
+        # a window, at most a cap per cycle, longest-absent first — and a
+        # non-closure (still open, or unanswerable) dates the record so the
+        # next cycle moves on to the rest rather than asking the same head of
+        # the queue again. Ownership and the degraded scope are skips, not
+        # questions: they do not spend the cap.
+        now = _utcnow()
+        cutoff = datetime.now(timezone.utc) - timedelta(
+            seconds=LEDGER_RECHECK_EVERY_CYCLES
+            * max(1, int(self.config.interval_seconds))
+        )
+        asked = 0
+        for ref in self._ledger_candidates(ledger_only, open_refs, cutoff):
+            if not provider.owns(ref) or provider.scope_of(ref) in degraded:
                 continue
-            if closure is None:
-                continue  # still open (e.g. the label was removed) — leave it
-            logger.info(
-                "%s is %s upstream; closing its session",
-                ref.ref,
-                closure.state,
-            )
-            eventlog.emit(
-                "poll.closure_detected",
-                work_item=ref.ref,
-                state=closure.state,
-                kind=closure.kind or None,
-            )
-            self.dispatcher.handle(provider.closure_event(ref, closure))
-            self.state.forget(ref.ref)
-            summary.closures += 1
+            if asked >= LEDGER_CHECKS_PER_CYCLE:
+                logger.debug(
+                    "%d ledger-only record(s) asked this cycle (the cap); the "
+                    "rest wait for a later cycle",
+                    asked,
+                )
+                break
+            asked += 1
+            summary.ledger_checks += 1
+            if not self._ask_closure(provider, ref, summary):
+                self.state.note_closure_check(ref.ref, now)
 
-    def _closure_candidates(self) -> List[WorkItemRef]:
-        """Every work item this machine tracks, in ref order (issue-329).
+    def _ask_closure(
+        self, provider: PollProvider, ref: WorkItemRef, summary: PollSummary
+    ) -> bool:
+        """Ask the provider whether an unlisted item ended; close it if so.
 
-        The active-sessions rule was the gap: a paused, stopped or never-here
-        item never learned it had ended. So: every session record whatever its
-        status, plus every portable record that is armed (`control`), frozen
-        (`graph`) or has a roster (`collaborators`). A record carrying only
-        `poll` is left out — it is the ledger of a thread once seen, puts no
-        urgent flag on the board, and would cost one provider call per
-        unlabelled open item per cycle. Stamped records are filtered by the
-        caller, so after one cycle the set is bounded by what is still open.
+        ``True`` only when a closure was dispatched. A still-open item and an
+        unanswerable one both leave the item exactly as it is and answer
+        ``False`` — the caller decides what, if anything, that costs.
         """
-        candidates: Dict[str, WorkItemRef] = {}
+        try:
+            closure = provider.closure(ref)
+        except ProviderError as exc:
+            logger.warning("could not check whether %s is still open: %s", ref.ref, exc)
+            eventlog.emit(
+                "poll.item_error",
+                level="warning",
+                work_item=ref.ref,
+                error=str(exc),
+                will_retry=True,
+            )
+            summary.errors.append(f"{ref.ref}: {exc}")
+            return False
+        if closure is None:
+            return False  # still open (e.g. the label was removed) — leave it
+        logger.info(
+            "%s is %s upstream; closing its session",
+            ref.ref,
+            closure.state,
+        )
+        eventlog.emit(
+            "poll.closure_detected",
+            work_item=ref.ref,
+            state=closure.state,
+            kind=closure.kind or None,
+        )
+        # The dispatcher's closed branch runs inline: the record is stamped
+        # `ended` (its `poll` section is what makes it tracked) before the
+        # ledger is forgotten below, so a ledger-only record ends as a stamped
+        # record, never as a deleted one (issue-332, A4).
+        self.dispatcher.handle(provider.closure_event(ref, closure))
+        self.state.forget(ref.ref)
+        summary.closures += 1
+        return True
+
+    def _candidate_sets(self) -> Tuple[List[WorkItemRef], List[WorkItemRef]]:
+        """What this machine tracks, and what it has merely seen — in ref order.
+
+        **Tracked** (issue-329): every session record whatever its status, plus
+        every portable record that is armed (`control`), frozen (`graph`) or
+        has a roster (`collaborators`). The active-sessions rule was the gap —
+        a paused, stopped or never-here item never learned it had ended — and
+        these are asked every cycle they are absent and unstamped, because
+        something on the board waits on them.
+
+        **Ledger-only** (issue-332): a record carrying `poll` and none of those
+        three, with no session record — the ledger of a thread once seen. It
+        puts no urgent flag on the board, and asking about it every cycle would
+        cost one provider call per unlabelled open item per cycle, forever; so
+        it is returned separately, for :meth:`_ledger_candidates` to put on a
+        schedule. Stamped records are filtered by the callers, so after one
+        question each the sets are bounded by what is still open.
+        """
+        tracked: Dict[str, WorkItemRef] = {}
         for session in self.registry.list_sessions():
-            candidates.setdefault(session.work_item.ref, session.work_item)
+            tracked.setdefault(session.work_item.ref, session.work_item)
+        ledger_only: Dict[str, WorkItemRef] = {}
         store = self.state.store
         for ref in store.refs():
-            if ref in candidates:
+            if ref in tracked:
                 continue
-            if not any(
+            try:
+                item = WorkItemRef.parse(ref)
+            except ValueError:
+                logger.debug("not reconciling %r: not a work-item ref", ref)
+                continue
+            if any(
                 store.section(ref, name) is not None
                 for name in (CONTROL, GRAPH, COLLABORATORS)
             ):
+                tracked[ref] = item
+            elif store.section(ref, POLL) is not None:
+                ledger_only[ref] = item
+        return (
+            [tracked[ref] for ref in sorted(tracked)],
+            [ledger_only[ref] for ref in sorted(ledger_only)],
+        )
+
+    def _ledger_candidates(
+        self, ledger_only: Sequence[WorkItemRef], open_refs: set, cutoff: datetime
+    ) -> List[WorkItemRef]:
+        """The ledger-only records due a question this cycle, longest-absent first.
+
+        Due means: not listed this cycle, not stamped `ended`, and the later of
+        the last listing that saw it and the last check that asked about it is
+        no later than ``cutoff`` — or unknown. Longest-absent first, so that
+        under the per-cycle cap the likeliest-closed records are asked first
+        and, once asked, dated or stamped, the head of the queue always moves.
+        """
+        due: List[Tuple[str, WorkItemRef]] = []
+        for ref in ledger_only:
+            if ref.ref in open_refs or self.closure_store.ended(ref) is not None:
                 continue
-            try:
-                candidates[ref] = WorkItemRef.parse(ref)
-            except ValueError:
-                logger.debug("not reconciling %r: not a work-item ref", ref)
-        return [candidates[ref] for ref in sorted(candidates)]
+            since = self.state.absent_since(ref.ref)
+            when = _parse_utc(since)
+            if when is not None and when > cutoff:
+                continue
+            due.append((since, ref))
+        due.sort(key=lambda entry: (entry[0], entry[1].ref))
+        return [ref for _, ref in due]
 
     def _process_item(
         self, provider: PollProvider, item: WorkItem, summary: PollSummary

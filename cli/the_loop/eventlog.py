@@ -544,14 +544,17 @@ EVENT_TYPES: Dict[str, str] = {
     "poll.cycle": (
         "One poll cycle finished (items_seen, spawns, comments_forwarded, "
         "closures, errors; scopes_polled and scopes_degraded — the repositories "
-        "that answered, and the ones that failed or were skipped, issue-315)."
+        "that answered, and the ones that failed or were skipped, issue-315; "
+        "ledger_checks — how many ledger-only records were asked whether they "
+        "ended, issue-332)."
     ),
     "poll.closure_detected": (
         "A poll cycle found that a tracked work item — one with a session "
         "record of any status, or a portable record that is armed, frozen or "
-        "has a roster — had ended upstream and closed it (work_item, state: "
-        "closed | merged, kind); only ever after a successful listing, never "
-        "on an unanswerable state, and never twice for a stamped record "
+        "has a roster — or a ledger-only record absent from the listing for a "
+        "window (issue-332) had ended upstream and closed it (work_item, "
+        "state: closed | merged, kind); only ever after a successful listing, "
+        "never on an unanswerable state, and never twice for a stamped record "
         "(issue-94, issue-329)."
     ),
     "poll.provider_error": (
