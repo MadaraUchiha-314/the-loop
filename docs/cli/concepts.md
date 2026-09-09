@@ -97,7 +97,11 @@ that PR merged or closed — the session is auto-closed. No manual `sessions clo
 A PR merely *linked* to the work item closing leaves the session running: one item is often
 delivered by several PRs, so only the item's own close ends it. Both ingresses do this —
 the receiver on the `closed` event, the poller by noticing the item has left the open
-listing and confirming upstream that it really ended.
+listing and confirming upstream that it really ended. An item the poller only ever
+*listed* — never spawned, armed or invited anyone onto — is confirmed lazily: once its
+ledger is an hour old (at the default interval) it is asked about once, a few per cycle,
+so a closed one leaves the board by itself and an open one costs one call an hour
+([issue-332](https://github.com/MadaraUchiha-314/the-loop/issues/332)).
 
 ## Arming, then starting
 

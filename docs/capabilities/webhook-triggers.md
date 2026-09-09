@@ -466,11 +466,25 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 - **Closure reconciliation asks about everything this machine tracks** (issue-329),
   not only its active sessions: every session record — active, paused or closed — and
   every portable record that is armed, frozen or has a roster, minus the items the
-  listing carries, minus those already stamped `ended`. A record carrying only `poll` is
-  not asked (it is the ledger of a thread once seen). The rules that bound
+  listing carries, minus those already stamped `ended`. The rules that bound
   reconciliation are unchanged: nothing is asked after a failed, interrupted or degraded
   listing, nothing outside the provider's scope, and an unanswerable item is left as it
   is.
+- **A record carrying only `poll` is asked lazily** (issue-332,
+  [decision-115](../decisions/decision-115.md)) — the ledger of a thread once seen, with
+  no session record. WHEN such a record has been absent from complete listings for
+  sixty cycles' worth of `polling.intervalSeconds` (the later of its `lastPolledAt` and
+  its `closureCheckedAt`; an absent or unparsable stamp counts as due) THEN the next
+  complete listing SHALL ask the provider once, at most twenty such records per source
+  per cycle, longest-absent first. WHEN the answer is *closed* or *merged* THEN the
+  closure SHALL take the tracked set's path unchanged — stamped `ended` by the
+  dispatcher before the poller forgets `poll`, so the record is kept, demoted, and never
+  asked again. WHEN the answer is *still open*, or the provider cannot answer, THEN the
+  poller SHALL write `poll.closureCheckedAt` and nothing else: no stamp, no close, and no
+  question again before the window elapses. The cycle reports how many such questions it
+  asked (`ledger_checks` on `poll.cycle`). Ownership and a degraded scope are skips, not
+  questions. Before it, a closed item the poller had merely listed stayed a plain row on
+  the board until a full reset.
 - **One work item may be delivered by several PRs, and only the object that closed is
   ended.** WHEN a `pull_request` `closed` event is dispatched THEN the system SHALL
   auto-close only the session registered against **that PR's own ref**, and SHALL leave
@@ -771,6 +785,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-332 | A closed item the poller had merely listed leaves the board by itself (2026-09-09): a portable record carrying only `poll` — excluded from reconciliation by issue-329 because asking every cycle would cost one provider call per unlabelled open item, forever — is now asked once it has been absent from complete listings for sixty cycles' worth of `intervalSeconds` (measured on the ledger's own `lastPolledAt` / new `closureCheckedAt`, so `poll --once` from cron gets it too), at most twenty per source per cycle, longest-absent first. A closure takes the unchanged close path and the record ends as `ended` only; a *still open* or unanswerable answer writes only `closureCheckedAt`, deferring the question a window. `poll.cycle` counts the questions as `ledger_checks`. The tracked set is untouched | [spec](../specs/issue-332/), [decision-115](../decisions/decision-115.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/332) |
 | issue-329 | A closed work item is recorded as ended (2026-09-09): the close path stamps an `ended` section (`state`, `kind`, `reason`, `at`, `source`, `actor`) on the portable record of every tracked item a `closed` event names — with or without a session on this machine — and a `reopened` event or a listing that carries the item clears it. Closure reconciliation widened from active sessions to every session record plus every armed, frozen or rostered portable record, skipping stamped ones; a polled closure now carries GitHub's `closed_by` as its `sender`, so an authorized closer's cleanup runs on a polling deployment as it does on a webhook one. Both attention surfaces read the stamp and demote the item. Before it, closed items sat under *Needs you* forever | [spec](../specs/issue-329/), [decision-113](../decisions/decision-113.md), [control plane](control-plane.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/329) |
 | issue-322 | An instance learned which work items are its own (2026-09-08): every instance judged every labelled event identically, so two instances on one repository both spawned for one start. The top-level `instance` block names the instance and its scope — `open` (unchanged), `addressed` (take only a start that names me: `the-loop start instance:<name>`), `locked` (take nothing new; `scope.workItems` is the door) — and one seam in `Dispatcher.handle`, after linkage and the control parse and before anything is recorded, refuses an event outside the managed set (declared ∪ session record ∪ control record) with a settled `dispatch.dropped` / `control.rejected` naming `unaddressed`, `instance-locked`, `addressed-elsewhere` or `ambiguous-address`, and no reaction, comment or record. An explicit address is authoritative in every mode; a control record now carries `instance`; the CLI's posted keyword and the announcement name it; a named instance spawns with `-e THE_LOOP_INSTANCE=<name>` | [spec](../specs/issue-322/), [decision-110](../decisions/decision-110.md), [instances](instances.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/322) |
 | issue-307 | A second identity allow-list, per work item (2026-08-31): `the-loop add-collaborator @login` / `remove-collaborator` (a tenth and eleventh control keyword, and two CLI commands) grant a GitHub login the right to be **input** on one work item — their comments reach its session on both ingresses — and nothing else: no control command (so no transitive grant), no spawn (`collaborator-no-spawn`), no arming, no human gate. The roster is a `collaborators` section of the work item's portable record, cleared when the item closes; membership is asked only about the refs an event itself named, so a grant does not travel | [spec](../specs/issue-307/), [decision-102](../decisions/decision-102.md), [routing](../config/cli/routing-options.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/307) |

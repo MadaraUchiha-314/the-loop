@@ -616,6 +616,67 @@ def test_a_paused_sessions_closed_item_is_detected_and_stamped(tmp_path):
     assert poller.state.is_known(REF) is False
 
 
+def test_a_closed_ledger_only_item_is_stamped_after_the_window(tmp_path):
+    """
+    Feature: Poll GitHub and close finished work items
+    Scenario: A closed item the poller only ever listed is stamped after the window
+        Given a labelled issue by an unlisted author, listed once (a poll-only record, no session)
+        When the issue leaves the listing and its ledger is a window old
+        Then the next cycle asks GitHub once, and dates the record as still open
+        And the cycle after that does not ask again
+        When the issue is closed upstream and the record is a window old again
+        Then the closure is detected, the record is stamped ended (source poll)
+        And its poll ledger is forgotten — the record carries `ended` only
+    Requirement: docs/specs/issue-332/requirements.md#R1 (R1.1–R1.5); abuse case A4
+    """
+    gh = GhState()
+    # `nobody` authorizes no author and no comment: the item is listed and
+    # baselined, but never spawned — the ledger of a thread once seen.
+    registry, tmux, dispatcher, poller = _make(tmp_path, gh, authorized=("nobody",))
+    store = WorkItemStore(tmp_path / "portable")
+    poller.poll_once()
+    assert registry.find_by_work_item(REF) is None
+    assert store.section(REF, "poll") is not None
+
+    def age(stamp):
+        section = dict(store.section(REF, "poll") or {})
+        section["lastPolledAt"] = stamp
+        section.pop("closureCheckedAt", None)
+        store.write_section(REF, "poll", section)
+        poller.state._items.pop(REF, None)  # re-read the record next cycle
+
+    gh.issues = []  # the label was removed, or the issue closed: it is unlisted
+    age("2020-01-01T00:00:00Z")
+    summary = poller.poll_once()
+    assert summary.closures == 0 and summary.ledger_checks == 1
+    assert gh.api_calls.count("repos/octo/repo/issues/15") == 1
+    assert (store.section(REF, "poll") or {}).get("closureCheckedAt")
+    assert dispatcher.control_store.ended(REF) is None
+
+    summary = poller.poll_once()
+    assert summary.ledger_checks == 0
+    assert gh.api_calls.count("repos/octo/repo/issues/15") == 1
+
+    gh.close_issue(closed_by="octocat")
+    age("2020-01-01T00:00:00Z")
+    summary = poller.poll_once()
+    dispatcher.stop()
+    assert summary.closures == 1 and summary.ledger_checks == 1
+    ended = dispatcher.control_store.ended(REF)
+    assert ended is not None
+    assert (ended["state"], ended["reason"], ended["source"], ended["actor"]) == (
+        "closed",
+        "issue-closed",
+        "poll",
+        "octocat",
+    )
+    assert poller.state.is_known(REF) is False
+    # `forget` leaves the per-section tombstone (`"poll": null`); the one
+    # section with contents is the stamp — the record is kept, not deleted.
+    record = store.read(REF)
+    assert {k for k, v in record.items() if isinstance(v, dict)} == {"ended"}
+
+
 def test_a_polled_closure_by_an_authorized_closer_releases_the_item(tmp_path):
     """
     Feature: Poll GitHub and close finished work items
@@ -1290,7 +1351,9 @@ def test_one_repository_with_issues_disabled_does_not_blind_the_others(tmp_path)
         ("octo/repo-m", True)
     ]
     assert first.scopes_polled == 2  # repo-m's pull requests answered
-    assert registry.find_by_work_item(REF) is not None
+    # The dispatcher registers the session after `tmux.spawn` returns, on its
+    # own thread: wait for the record as the spawn was waited for.
+    assert wait_until(lambda: registry.find_by_work_item(REF) is not None)
     assert ("octo/repo-m", "issue") in gh.listings
 
     gh.listings.clear()

@@ -51,6 +51,7 @@ from the_loop.authz import (
     resolve_authorized_users,
 )
 from the_loop.poller.poller import (  # noqa: F401 (PollSummary re-exported too)
+    _utcnow,
     PollSummary,
     giveup_notice,
 )
@@ -2318,14 +2319,291 @@ def test_a_record_without_a_session_is_reconciled(tmp_path, section):
     assert provider.closure_asks == [REF15] and summary.closures == 1
 
 
-def test_a_poll_only_record_is_not_reconciled(tmp_path):
-    """R3.2 (issue-329) — the ledger of a thread once seen is not a tracked item."""
+# -- ledger-only records are reconciled lazily (issue-332) ---------------------
+#
+# Issue-329 left a record carrying only `poll` out of reconciliation: asking about
+# it every cycle would cost one provider call per unlabelled open item, forever,
+# for a row with no urgent flag. So a closed item the poller once listed stayed a
+# plain row on the board until a full reset. Now such a record is asked once it
+# has been absent from complete listings for a window (`lastPolledAt`, or the
+# last check's `closureCheckedAt`, a window old), at most a cap per cycle,
+# longest-absent first; a non-closure dates the record, a closure stamps it.
+
+OLD = "2020-01-01T00:00:00Z"
+
+
+def _poll_only(state, ref=REF15, polled_at=OLD, checked_at=None):
+    """A record carrying only `poll`: the ledger of a thread once seen."""
+    state.baseline_comments(ref, ["IC_1"], polled_at)
+    if checked_at is not None:
+        state.note_closure_check(ref, checked_at)
+    state.save()
+
+
+def _ledger(tmp_path, ref=REF15):
+    return WorkItemStore(tmp_path / "portable").section(ref, POLL)
+
+
+def test_poll_state_absent_since_is_the_later_timestamp(tmp_path):
+    """R1.2, R1.5 — the later of the two stamps; "" when neither parses."""
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    assert state.absent_since(REF15) == ""
+    state.baseline_comments(REF15, [], "2026-01-01T00:00:00Z")
+    assert state.absent_since(REF15) == "2026-01-01T00:00:00Z"
+    state.note_closure_check(REF15, "2026-02-01T00:00:00Z")
+    assert state.absent_since(REF15) == "2026-02-01T00:00:00Z"
+    state.baseline_comments(REF15, [], "not a timestamp")
+    assert state.absent_since(REF15) == ""
+
+
+def test_poll_state_note_closure_check_writes_through(tmp_path):
+    """R1.5 — dated at once, like `forget`: the point is not to ask next cycle."""
+    store = WorkItemStore(tmp_path / "portable")
+    state = PollState(store)
+    state.baseline_comments(REF15, ["IC_1"], OLD)
+    state.save()
+    state.note_closure_check(REF15, "2026-09-09T10:00:00Z")
+    section = store.section(REF15, POLL) or {}
+    assert section["closureCheckedAt"] == "2026-09-09T10:00:00Z"
+    assert section["seenComments"] == ["IC_1"]  # the rest of the ledger is kept
+
+
+def test_a_closed_ledger_only_item_is_forgotten_and_never_asked_again(tmp_path):
+    """R1.1, R1.4 — absent for the window: asked once, closed through the
+    dispatcher's path, its ledger forgotten; nothing is left to ask about."""
     registry = SessionRegistry(tmp_path / "sessions")
     state = PollState(WorkItemStore(tmp_path / "portable"))
-    state.baseline_comments(REF15, ["IC_1"], "t")
+    _poll_only(state)
+    provider = FakeProvider(items=[], closures={REF15: Closure("closed")})
+    disp = RecordingDispatcher()
+    summary = make_poller(provider, registry, disp, state).poll_once()
+    assert provider.closure_asks == [REF15]
+    assert summary.closures == 1 and summary.ledger_checks == 1
+    assert [(e.event, e.action) for e in disp.events] == [("issues", "closed")]
+    assert state.is_known(REF15) is False
+
+    summary = make_poller(provider, registry, disp, state).poll_once()
+    assert provider.closure_asks == [REF15] and summary.ledger_checks == 0
+
+
+def test_a_poll_only_record_seen_this_window_is_not_asked(tmp_path):
+    """R1.2 — listed recently means recently open; the window has not elapsed."""
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    _poll_only(state, polled_at=_utcnow())
+    provider = FakeProvider(items=[], closures={REF15: Closure("closed")})
+    summary = make_poller(
+        provider, SessionRegistry(tmp_path / "s"), RecordingDispatcher(), state
+    ).poll_once()
+    assert provider.closure_asks == [] and summary.closures == 0
+    assert summary.ledger_checks == 0
+
+
+def test_a_poll_only_record_checked_this_window_is_not_asked(tmp_path):
+    """R1.2, R1.5 — a check dates the record; the window runs from the check."""
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    _poll_only(state, polled_at=OLD, checked_at=_utcnow())
+    provider = FakeProvider(items=[], closures={REF15: Closure("closed")})
+    summary = make_poller(
+        provider, SessionRegistry(tmp_path / "s"), RecordingDispatcher(), state
+    ).poll_once()
+    assert provider.closure_asks == [] and summary.ledger_checks == 0
+
+
+def test_a_poll_only_record_with_an_unparsable_timestamp_is_due(tmp_path):
+    """R1.2 — nothing says when it was seen, so it is asked (and then dated)."""
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    _poll_only(state, polled_at="t")
+    provider = FakeProvider(items=[], closures={REF15: None})
+    make_poller(
+        provider, SessionRegistry(tmp_path / "s"), RecordingDispatcher(), state
+    ).poll_once()
+    assert provider.closure_asks == [REF15]
+    assert (_ledger(tmp_path) or {}).get("closureCheckedAt")
+
+
+def test_a_poll_only_record_with_a_future_timestamp_is_not_asked(tmp_path):
+    """A2 — a forged stamp delays the question; it never writes `ended`."""
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    _poll_only(state, polled_at="2999-01-01T00:00:00Z")
+    provider = FakeProvider(items=[], closures={REF15: Closure("closed")})
+    summary = make_poller(
+        provider, SessionRegistry(tmp_path / "s"), RecordingDispatcher(), state
+    ).poll_once()
+    assert provider.closure_asks == [] and summary.closures == 0
+    assert ControlStore(tmp_path / "portable").ended(REF15) is None
+
+
+def test_a_listed_poll_only_record_is_not_asked(tmp_path):
+    """R1.1 — listed means open, however old the ledger's last stamp was."""
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    _poll_only(state)
+    provider = FakeProvider(
+        items=[_item(15)], comments={15: []}, closures={REF15: Closure("closed")}
+    )
+    summary = make_poller(
+        provider, SessionRegistry(tmp_path / "s"), RecordingDispatcher(), state
+    ).poll_once()
+    assert provider.closure_asks == [] and summary.ledger_checks == 0
+
+
+def test_a_stamped_poll_only_record_is_not_asked(tmp_path):
+    """R1.1 — a record that already carries `ended` has nothing to learn."""
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    _poll_only(state)
+    ControlStore(tmp_path / "portable").record_ended(REF15, {"state": "closed"})
+    provider = FakeProvider(items=[], closures={REF15: Closure("closed")})
+    summary = make_poller(
+        provider, SessionRegistry(tmp_path / "s"), RecordingDispatcher(), state
+    ).poll_once()
+    assert provider.closure_asks == [] and summary.ledger_checks == 0
+
+
+def test_a_poll_only_record_beside_a_session_record_is_tracked_not_ledger_only(
+    tmp_path,
+):
+    """R2.1, R2.3 — a session record puts the item in the tracked set: asked with
+    no window, and once."""
+    registry = SessionRegistry(tmp_path / "sessions")
+    _active_session(registry)
+    registry.close(REF15)
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    _poll_only(state, polled_at=_utcnow())
     provider = FakeProvider(items=[], closures={REF15: Closure("closed")})
     summary = make_poller(provider, registry, RecordingDispatcher(), state).poll_once()
-    assert provider.closure_asks == [] and summary.closures == 0
+    assert provider.closure_asks == [REF15]
+    assert summary.closures == 1 and summary.ledger_checks == 0
+
+
+@pytest.mark.parametrize("section", ["control", "graph", "collaborators"])
+def test_a_record_with_poll_beside_another_section_is_asked_without_a_window(
+    tmp_path, section
+):
+    """R2.1, R2.3 — armed, frozen or rostered is the urgent set, `poll` or not."""
+    store = WorkItemStore(tmp_path / "portable")
+    state = PollState(store)
+    _poll_only(state, polled_at=_utcnow())
+    store.write_section(REF15, section, {"x": 1})
+    provider = FakeProvider(items=[], closures={REF15: Closure("closed")})
+    summary = make_poller(
+        provider, SessionRegistry(tmp_path / "s"), RecordingDispatcher(), state
+    ).poll_once()
+    assert provider.closure_asks == [REF15]
+    assert summary.closures == 1 and summary.ledger_checks == 0
+
+
+def test_a_still_open_ledger_only_item_is_dated_not_closed(tmp_path):
+    """R1.5 / A3 — the label was removed, the item is open: one write, no act."""
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    _poll_only(state)
+    provider = FakeProvider(items=[], closures={REF15: None})
+    disp = RecordingDispatcher()
+    summary = make_poller(
+        provider, SessionRegistry(tmp_path / "s"), disp, state
+    ).poll_once()
+    assert provider.closure_asks == [REF15]
+    assert summary.closures == 0 and summary.ledger_checks == 1
+    assert disp.events == [] and summary.errors == []
+    ledger = _ledger(tmp_path) or {}
+    assert ledger["closureCheckedAt"] and ledger["seenComments"] == ["IC_1"]
+    assert ControlStore(tmp_path / "portable").ended(REF15) is None
+
+    # Dated: not asked again inside the window.
+    summary = make_poller(
+        provider, SessionRegistry(tmp_path / "s"), disp, state
+    ).poll_once()
+    assert provider.closure_asks == [REF15] and summary.ledger_checks == 0
+
+
+def test_an_unanswerable_ledger_only_item_is_dated_not_retried_next_cycle(tmp_path):
+    """R1.5 / A1 — an item the provider cannot answer about is deferred a window,
+    so a record that never answers cannot sit at the head of the queue."""
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    _poll_only(state)
+    provider = FakeProvider(items=[], closures={REF15: ProviderError("HTTP 502")})
+    summary = make_poller(
+        provider, SessionRegistry(tmp_path / "s"), RecordingDispatcher(), state
+    ).poll_once()
+    assert provider.closure_asks == [REF15] and summary.ledger_checks == 1
+    assert summary.errors and "502" in summary.errors[0]
+    assert (_ledger(tmp_path) or {}).get("closureCheckedAt")
+
+    summary = make_poller(
+        provider, SessionRegistry(tmp_path / "s"), RecordingDispatcher(), state
+    ).poll_once()
+    assert provider.closure_asks == [REF15] and summary.ledger_checks == 0
+
+
+def test_ledger_only_records_are_asked_longest_absent_first_up_to_the_cap(tmp_path):
+    """R1.3 / A1 — twenty per cycle, the oldest first; the rest wait, and the
+    ones asked are dated so the head of the queue moves."""
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    refs = []
+    for n in range(1, 26):
+        ref = f"github:{OWNER}/{REPO}#{n}"
+        # Newer numbers were seen earlier: the expected order is descending.
+        _poll_only(state, ref=ref, polled_at=f"2020-01-{26 - n:02d}T00:00:00Z")
+        refs.append(ref)
+    provider = FakeProvider(items=[], closures={ref: None for ref in refs})
+    summary = make_poller(
+        provider, SessionRegistry(tmp_path / "s"), RecordingDispatcher(), state
+    ).poll_once()
+    assert provider.closure_asks == list(reversed(refs))[:20]
+    assert summary.ledger_checks == 20
+
+    summary = make_poller(
+        provider, SessionRegistry(tmp_path / "s"), RecordingDispatcher(), state
+    ).poll_once()
+    assert provider.closure_asks[20:] == list(reversed(refs))[20:]
+    assert summary.ledger_checks == 5
+
+
+def test_unowned_and_degraded_ledger_only_records_do_not_spend_the_cap(tmp_path):
+    """R1.3, R1.7 — the cap counts questions put to the provider; a record the
+    source does not own, or in a scope this cycle could not list, is a skip."""
+    from the_loop.poller import Listing, ScopeFailure
+
+    state = PollState(WorkItemStore(tmp_path / "portable"))
+    owned = [f"github:{OWNER}/{REPO}#{n}" for n in range(1, 21)]
+    unowned = f"github:{OWNER}/other#1"
+    degraded = f"github:{OWNER}/repo-m#1"
+    for ref in [*owned, unowned, degraded]:
+        _poll_only(state, ref=ref)
+    provider = ScopedProvider(
+        Listing(items=[], failures=[ScopeFailure("octo/repo-m", "502")]),
+        scopes={degraded: "octo/repo-m"},
+        closures={ref: None for ref in [*owned, degraded]},
+        owned=[*owned, degraded],
+    )
+    summary = make_poller(
+        provider, SessionRegistry(tmp_path / "s"), RecordingDispatcher(), state
+    ).poll_once()
+    assert sorted(provider.closure_asks) == sorted(owned)
+    assert summary.ledger_checks == 20
+    assert (_ledger(tmp_path, unowned) or {}).get("closureCheckedAt") is None
+    assert (_ledger(tmp_path, degraded) or {}).get("closureCheckedAt") is None
+
+
+def test_the_cycle_counts_ledger_checks(tmp_path):
+    """R1.6 — the provider calls this rule spends are on the cycle's record."""
+    log = tmp_path / "events.jsonl"
+    eventlog.configure("poll", path=log)
+    try:
+        state = PollState(WorkItemStore(tmp_path / "portable"))
+        provider = FakeProvider(items=[], closures={REF15: None})
+        make_poller(
+            provider, SessionRegistry(tmp_path / "s"), RecordingDispatcher(), state
+        ).poll_once()
+        (quiet,) = [e for e in _poll_events(log) if e["event"] == "poll.cycle"]
+        assert "ledger_checks" not in quiet  # zero is omitted, like `closures`
+
+        _poll_only(state)
+        make_poller(
+            provider, SessionRegistry(tmp_path / "s"), RecordingDispatcher(), state
+        ).poll_once()
+        cycles = [e for e in _poll_events(log) if e["event"] == "poll.cycle"]
+        assert cycles[-1]["ledger_checks"] == 1
+    finally:
+        eventlog.reset()
 
 
 def test_a_listed_item_clears_its_ended_stamp(tmp_path):

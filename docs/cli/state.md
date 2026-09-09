@@ -297,6 +297,7 @@ provider call) and stamps it again.
 | `commentAttempts` | in-flight delivery attempts per comment, against [`maxRetries`](/config/cli/polling-options#maxretries) — **only deliveries that may still be retried** |
 | `spawn` | the presence/spawn retry ledger: attempts, whether it gave up, the in-flight delivery id |
 | `lastPolledAt` | the last cycle that saw the item |
+| `closureCheckedAt` | the last cycle that asked GitHub whether this **unlisted** item had ended and was not told *closed* ([issue-332](https://github.com/MadaraUchiha-314/the-loop/issues/332)) — only ever on a record that carries nothing but `poll`; see below |
 | `title` | the ticket's title, cached each cycle so the control plane can serve it (issue-283) — refreshed, so a renamed ticket converges |
 
 An item is *baselined* on first sight — the whole existing thread is marked seen, because
@@ -311,8 +312,23 @@ attempting. Such a comment leaves `commentAttempts` empty and is recorded once a
 keyword: it was executed, not delivered. Nothing is lost — a spawned session is told to read
 the item's whole thread, which is where those comments still are.
 
+A record that carries **only** this section — the ledger of a thread the poller once
+listed, with no session, no arming, no frozen graph and no roster — is asked whether it
+ended **lazily** ([issue-332](https://github.com/MadaraUchiha-314/the-loop/issues/332),
+[decision-115](../decisions/decision-115.md)): once the later of `lastPolledAt` and
+`closureCheckedAt` is sixty cycles' worth of
+[`intervalSeconds`](/config/cli/polling-options#intervalseconds) old (one hour at the
+default), the next complete listing asks GitHub once — at most twenty such records per
+source per cycle, longest-absent first. Told *closed*, the item takes the same close path
+as any other and the record ends up carrying only `ended`; told *still open*, or not
+answered, only `closureCheckedAt` is written, so the question recurs once per window and
+never once per cycle. A record with a session or any other section is asked every cycle
+it is absent, as before — nothing waits on a ledger-only row, so it can wait.
+
 **If you delete it:** every watched thread is first-sight again. Nothing breaks, but the
 poller re-baselines them, and an item that had been given up on gets a fresh spawn budget.
+Deleting only `closureCheckedAt` makes the record due again as soon as `lastPolledAt` is a
+window old: one more question, then a fresh date.
 
 ::: tip Why one file, two writers
 Control comes from a keyword a human typed; the poll section from what the poller saw. They
