@@ -26,6 +26,13 @@ from ..state import layout_from_config
 
 DAEMONS = ("poller", "gh-webhook")
 
+#: The Slack Socket Mode listener (issue-334): hosted by the service, or run in the
+#: foreground as `the-loop channels listen` — never spawned as a standalone daemon,
+#: which is why it is not in :data:`DAEMONS` (the daemons API and the daemon entry
+#: point enumerate that tuple). It still holds a pidfile lock, so `status` and
+#: `stop` read it like the others and two listeners never run for one instance.
+SLACK_LISTENER = "slack-listener"
+
 #: How long ``stop`` waits for the daemon to actually exit.
 STOP_TIMEOUT_SECONDS = 30.0
 
@@ -36,6 +43,8 @@ def _pidfile(daemon: str, config: Optional[dict] = None) -> str:
         return layout.poll_pidfile
     if daemon == "gh-webhook":
         return layout.pidfile
+    if daemon == SLACK_LISTENER:
+        return str(Path(layout.root) / "slack-listener.pid")
     raise ValueError(f"unknown daemon {daemon!r} (one of {DAEMONS})")
 
 
@@ -52,6 +61,8 @@ def _logfile(daemon: str, config: Optional[dict] = None) -> str:
         return layout.poller_log
     if daemon == "gh-webhook":
         return str(Path(layout.root) / "logs" / "gh-webhook.out")
+    if daemon == SLACK_LISTENER:
+        return str(Path(layout.root) / "logs" / "slack-listener.out")
     raise ValueError(f"unknown daemon {daemon!r} (one of {DAEMONS})")
 
 

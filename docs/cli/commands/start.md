@@ -14,6 +14,7 @@ the-loop start
 | MCP endpoint (`/mcp`, mounted on the service) | [`service.mcp.enabled`](/config/cli/service-options#mcp-enabled) | **on** |
 | GitHub webhook receiver | [`webhooks.ghWebhook.enabled`](/config/cli/webhook-options#enabled) | off |
 | Poller | [`polling.enabled`](/config/cli/polling-options#enabled) | off |
+| Slack Socket Mode listener | [`channels.slack.enabled`](/config/cli/channels-options#slack-enabled) with [`read.mode: socket`](/config/cli/channels-options#slack-read-mode) | off |
 | [Standing sessions](/capabilities/standing-sessions) | [`standingSessions.enabled`](/config/cli/standing-sessions-options#enabled) | off |
 
 The ingresses are explicit opt-ins: a config that merely *describes* a receiver or a
@@ -30,16 +31,26 @@ With the service enabled and
 [`service.hostIngresses`](/config/cli/service-options#hostingresses) at its default
 (`true`, [issue-231](https://github.com/MadaraUchiha-314/the-loop/issues/231)), `start`
 boots **one process**: the service, which runs the enabled ingresses as background
-threads inside its own lifespan. Each hosted ingress still holds its own pidfile lock —
-under the service's pid — so `status`, `stop` and the daemons API answer unchanged, and
-an ingress already running standalone is skipped with a warning, never fought over.
+threads inside its own lifespan — and, since
+[issue-334](https://github.com/MadaraUchiha-314/the-loop/issues/334), the **Slack Socket
+Mode listener** when the channel reads that way, so the long-lived connection to Slack
+comes up with `start` and needs no shell of its own. Each hosted ingress still holds its
+own pidfile lock — under the service's pid — so `status`, `stop` and the daemons API
+answer unchanged, and an ingress already running standalone is skipped with a warning,
+never fought over.
 
 ```console
 $ the-loop start
-service     started          [enabled]  started at http://127.0.0.1:4114; /mcp exposed
-gh-webhook  hosted           [enabled]  in the service process (pid 24846)
-poller      hosted           [enabled]  in the service process (pid 24846)
+service         started          [enabled]  started at http://127.0.0.1:4114; /mcp exposed
+gh-webhook      hosted           [enabled]  in the service process (pid 24846)
+poller          hosted           [enabled]  in the service process (pid 24846)
+slack-listener  hosted           [enabled]  in the service process (pid 24846)
 ```
+
+The listener has **no standalone daemon form**: with `hostIngresses: false` its row reads
+`manual` and names `the-loop channels listen`, the foreground form, which takes the same
+lock. A listener whose tokens are not in the service's environment is reported `failed`
+with the missing variable named.
 
 Set `hostIngresses: false` to keep every enabled service in its own process (fault
 isolation). Then each daemon is spawned detached (its own session, output to its

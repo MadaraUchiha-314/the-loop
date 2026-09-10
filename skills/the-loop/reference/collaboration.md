@@ -73,9 +73,14 @@ that names the person, so the ledger's own ingress classifies or executes it thr
 guards a typed comment goes through and the artifact's `approvedBy` names the person; or
 a new work item (`work-item.create`, a top-level message opening an issue in the
 configured repo). Who may speak on any channel is the one list `routing.authorizedUsers`,
-each entry a person with their id on every channel. Whatever channel carried the
-conversation, the ticket carries the record — and a channel advances the loop *through
-the ledger, never around it*.
+each entry a person with their id on every channel. What has **no thread** — a work
+item that has not started, a standing session, the instance itself — is reached by the
+`/the-loop` slash command (issue-334): its work-item verbs are `control.command` through
+the same ledger record, and `status` / `restart` / `upgrade` and the `standing` verbs
+call the core facade under the `instance.command` / `standing.command` grants. Whatever
+channel carried the conversation, the ticket carries the record — and a channel advances
+the loop *through the ledger, never around it*. The operator's map of every mode is
+`docs/guide/slack.md`.
 
 ### 2. RULE: a generated artifact is iterated on a durable, reviewable surface
 
@@ -201,10 +206,11 @@ behalf.
   Slack bot configured under the CLI config's `channels.slack`. A `collaborators.yaml`
   still carrying the retired per-person `notifications` block is refused by the schema,
   with `channels.slack` and `the-loop migrate-config` named in the message.
-- **Human identity is declared in exactly two places**, both hand-maintained and neither
-  in this file: `routing.authorizedUsers` (GitHub logins — who may arm and command a
-  work item) and `channels.slack.authorizedUsers` (Slack member ids — whose thread reply
-  is acted on).
+- **Human identity is declared in exactly one place**, hand-maintained and not in this
+  file: `routing.authorizedUsers` — one entry per person, carrying their GitHub login
+  (who may arm and command a work item) and, since issue-309, their Slack member id
+  (whose thread reply, button press or `/the-loop` command is acted on). The retired
+  `channels.slack.authorizedUsers` is refused at load.
 - **A "work-item collaborator" is a different thing entirely** (issue-307). This file's
   collaborators are the project's stewards and their roles, read by the *plugin*. A
   work-item collaborator is runtime state the *daemon* reads: an authorized user typing

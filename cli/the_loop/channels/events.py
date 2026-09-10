@@ -134,6 +134,28 @@ EVENTS: Dict[str, EventSpec] = {
         "ticket, so nothing to record.",
         origin="loop",
     ),
+    # The two grants a `/the-loop` slash command needs beyond `control.command`
+    # (issue-334, decision-116 D3). Publishable, not subscribable, and NOT
+    # recorded: there is no ticket to record on, so the event log is their
+    # paper trail — as it is for a standing session's reply (issue-277).
+    "instance.command": EventSpec(
+        "A slash command on a channel that addresses this instance itself — "
+        "status, restart, upgrade — run through the core facade the API "
+        "exposes; not recorded (no ticket): the event log is its paper trail.",
+        origin="channel",
+        subscribable=False,
+        publishable=True,
+        recorded=False,
+    ),
+    "standing.command": EventSpec(
+        "A slash command on a channel that lists, starts, stops or restarts a "
+        "standing session — run through the core facade; not recorded (no "
+        "ticket): the event log is its paper trail.",
+        origin="channel",
+        subscribable=False,
+        publishable=True,
+        recorded=False,
+    ),
 }
 
 #: name → description of every event a channel may subscribe to (the shape the

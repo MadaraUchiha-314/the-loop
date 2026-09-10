@@ -1,11 +1,12 @@
 """``the-loop channels`` — operate the communication channels (issue-245).
 
-Four actions: ``status`` (what is configured, with token *presence* only —
+Five actions: ``status`` (what is configured, with token *presence* only —
 never values), ``threads`` (which Slack thread carries which work item's
 conversation, issue-312 — reads the state file, calls nothing), ``poll`` (one
-synchronous read cycle, for cron and daemon-less deployments, R4.1), and
-``listen`` (Socket Mode in the foreground — push, no polling, no exposed
-endpoint, R4.2).
+synchronous read cycle, for cron and daemon-less deployments, R4.1), ``listen``
+(Socket Mode in the foreground — push, no polling, no exposed endpoint, R4.2;
+since issue-334 also the ``/the-loop`` slash command), and ``manifest`` (the
+packaged Slack app manifest an operator imports, issue-334).
 
 Spec: docs/specs/issue-245/design.md §D9.
 """
@@ -15,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 
 from .base import Command, register
 from .sessions_cmd import _cli_config
@@ -75,6 +77,21 @@ def _status(config: dict) -> int:
         )
     )
     print(f"  kickoff:      {kickoff}")
+    # The slash command (issue-334): which verb families this channel may run,
+    # or why none can arrive at all.
+    from ..channels.commands import FAMILY_GRANTS
+
+    if slack.read_mode == "socket":
+        families = " · ".join(
+            f"{family}: {'granted' if grant in slack.publish else 'not granted'}"
+            for family, grant in FAMILY_GRANTS.items()
+        )
+        print(f"  commands:     /the-loop over Socket Mode — {families}")
+    else:
+        print(
+            f"  commands:     off (read.mode is {slack.read_mode} — slash commands "
+            "need read.mode: socket)"
+        )
     reactions = slack.reactions
     print(
         "  reactions:    "
@@ -182,8 +199,8 @@ def _publish_meaning(name: str) -> str:
 class ChannelsCommand(Command):
     name = "channels"
     help = (
-        "Operate the communication channels: status, one poll cycle, or the "
-        "Socket Mode listener"
+        "Operate the communication channels: status, one poll cycle, the "
+        "Socket Mode listener, or the Slack app manifest"
     )
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
@@ -218,7 +235,17 @@ class ChannelsCommand(Command):
         )
         sub.add_parser(
             "listen",
-            help="Receive replies over Slack Socket Mode in the foreground",
+            help=(
+                "Receive replies, button presses and /the-loop commands over "
+                "Slack Socket Mode in the foreground"
+            ),
+        )
+        sub.add_parser(
+            "manifest",
+            help=(
+                "Print the Slack app manifest to import (scopes, events, Socket "
+                "Mode, the /the-loop command)"
+            ),
         )
 
     def run(self, args: argparse.Namespace) -> int:
@@ -228,6 +255,11 @@ class ChannelsCommand(Command):
             return _status(config)
         if args.channels_command == "threads":
             return _threads(config, args.work_item, args.json)
+        if args.channels_command == "manifest":
+            from ..channels.commands import manifest_text
+
+            print(manifest_text(), end="")
+            return 0
         if args.channels_command == "poll":
             summary = inbound.poll_once(config)
             if summary.get("skipped"):
@@ -240,4 +272,34 @@ class ChannelsCommand(Command):
                 f"{summary['dropped']} dropped"
             )
             return 0
+        return _listen(config)
+
+
+def _listen(config: dict) -> int:
+    """The foreground listener, under the same single-instance lock the service
+    holds when it hosts one (issue-334): two listeners for one instance would
+    each see half of Slack's envelopes."""
+    from ..core import daemons as core_daemons
+    from ..runlock import RunLock
+
+    lock = RunLock(
+        core_daemons._pidfile(core_daemons.SLACK_LISTENER, config),
+        name=core_daemons.SLACK_LISTENER,
+    )
+    try:
+        if not lock.acquire():
+            holder = lock.holder() or "unknown"
+            print(
+                f"error: a slack listener is already running (pid {holder}) — "
+                "the service hosts one when service.hostIngresses is on; stop it "
+                "with `the-loop stop` to run the listener in the foreground",
+                file=sys.stderr,
+            )
+            return 1
+    except OSError as exc:
+        print(f"error: cannot use the listener lockfile: {exc}", file=sys.stderr)
+        return 1
+    try:
         return run_socket_listener(config)
+    finally:
+        lock.release()

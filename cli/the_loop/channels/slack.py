@@ -63,6 +63,7 @@ __all__ = [
     "SlackChannelConfig",
     "SlackReactionConfig",
     "build_client",
+    "catch_up",
     "kickoff_cursor_key",
     "render_blocks",
     "render_root",
@@ -965,17 +966,53 @@ def _ts_key(ts: str) -> Tuple[int, Any]:
 # -- Socket Mode (R4.2) ----------------------------------------------------------
 
 
+def catch_up(cli_config: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
+    """One read cycle over the bound threads and the kickoff cursor — what the
+    listener runs right after it connects (issue-334, the downtime gap).
+
+    Slack retries an unacknowledged event only a few times over a few minutes;
+    a reply posted during a longer outage would otherwise stay on Slack and
+    never reach the ledger. The two transports share the per-thread cursors,
+    so the cycle processes exactly what accumulated since the last handled
+    ``ts`` and nothing twice. Best-effort: a failing cycle is logged and the
+    listener still listens.
+    """
+    from . import inbound
+
+    try:
+        summary = inbound.poll_once(cli_config)
+    except Exception as exc:  # noqa: BLE001 — never keep the listener from listening
+        logger.exception("slack: catch-up read raised; listening anyway")
+        return {"skipped": str(exc), "replies": 0}
+    if summary.get("skipped"):
+        logger.info("slack: catch-up read skipped: %s", summary["skipped"])
+        return summary
+    eventlog.emit(
+        "channel.caught_up",
+        channel="slack",
+        replies=summary.get("replies", 0),
+        processed=summary.get("processed", 0),
+        delivered=summary.get("delivered", 0),
+        created=summary.get("created", 0),
+        dropped=summary.get("dropped", 0),
+    )
+    return summary
+
+
 def run_socket_listener(
     cli_config: Optional[Mapping[str, Any]],
     stop_event: Optional[threading.Event] = None,
 ) -> int:
-    """Receive replies, button presses and kickoffs push-fashion until stopped —
-    ``the-loop channels listen``.
+    """Receive replies, button presses, kickoffs and slash commands push-fashion
+    until stopped — ``the-loop channels listen``.
 
     Uses the SDK's built-in Socket Mode client (stdlib WebSocket — no extra
     dependency) over an *outbound* connection, so nothing is exposed. Every
-    accepted envelope is acknowledged, and everything converges on the same
-    pipeline the poll transport uses (:mod:`.inbound`).
+    accepted envelope is acknowledged **before** it is handled, so Slack's
+    deadline is met whatever the handling takes; messages and presses converge
+    on the same pipeline the poll transport uses (:mod:`.inbound`), and a
+    ``/the-loop`` slash command (issue-334) on :mod:`.commands`, which answers
+    through the command's ``response_url``.
     """
     config = SlackChannelConfig.from_mapping(cli_config)
     if not config.enabled:
@@ -1005,18 +1042,21 @@ def run_socket_listener(
         SocketModeResponse,
     )
 
-    from . import inbound
+    from . import commands, inbound
 
     frozen_config = dict(cli_config or {})
 
     def handle(client, request) -> None:
-        if request.type not in ("events_api", "interactive"):
+        if request.type not in ("events_api", "interactive", "slash_commands"):
             return
         client.send_socket_mode_response(
             SocketModeResponse(envelope_id=request.envelope_id)
         )
         payload = request.payload or {}
         try:
+            if request.type == "slash_commands":
+                commands.handle_slash_command(payload, frozen_config)
+                return
             if request.type == "interactive":
                 if payload.get("type") == "block_actions":
                     inbound.handle_socket_action(payload, frozen_config)
@@ -1031,7 +1071,11 @@ def run_socket_listener(
     client = SocketModeClient(app_token=app_token, web_client=build_client(bot_token))
     client.socket_mode_request_listeners.append(handle)
     client.connect()
-    logger.info("slack: Socket Mode connected — listening for thread replies")
+    logger.info(
+        "slack: Socket Mode connected — listening for thread replies, button "
+        "presses and /the-loop commands"
+    )
+    catch_up(frozen_config)
     waiter = stop_event or threading.Event()
     try:
         while not waiter.wait(1.0):

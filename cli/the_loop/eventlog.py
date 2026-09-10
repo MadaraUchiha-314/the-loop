@@ -322,12 +322,40 @@ EVENT_TYPES: Dict[str, str] = {
     "channel.dropped": (
         "An inbound channel message was not processed (reason: unmapped | "
         "self-authored | unauthorized-actor | undeliverable | "
-        "unpublishable-event | kickoff-disabled | create-failed; channel, "
+        "unpublishable-event | kickoff-disabled | create-failed | "
+        "unknown-command | unknown-target | duplicate | channel-disabled; channel, "
         "work_item, actor, kind: the classified event type, error). "
         "undeliverable means the mirror "
         "stood but no session could take the reply; unpublishable-event means "
         "the message classified as a type the channel's `publish` list does "
-        "not grant (issue-309) — dropped, never downgraded."
+        "not grant (issue-309) — dropped, never downgraded. The last three are "
+        "the slash command's (issue-334): text outside its vocabulary, a work "
+        "item this instance is not configured for, a trigger already handled."
+    ),
+    "channel.caught_up": (
+        "The Socket Mode listener ran one read cycle over the bound threads "
+        "and the kickoff cursor right after connecting (replies, processed, "
+        "delivered, created, dropped) — issue-334. What accumulated while no "
+        "listener was connected is processed once, from the shared cursors; "
+        "a Slack retry of a message the catch-up already handled is dropped as "
+        "`duplicate`."
+    ),
+    "channel.command_received": (
+        "An authorized member's `/the-loop` slash command passed the grant "
+        "check (channel, actor: the member id, family: work-item | instance | "
+        "standing, verb, target: the resolved work-item ref or the standing "
+        "name) — issue-334. Ids only, never the command text."
+    ),
+    "channel.command_completed": (
+        "A slash command was acted on (channel, actor, family, verb, work_item "
+        "or standing, outcome: recorded | record-failed | ok | failed) — "
+        "issue-334. `recorded` means the ledger holds the control keyword and "
+        "its ingress executes it next; `ok` means the core facade returned."
+    ),
+    "channel.command_answer_failed": (
+        "The ephemeral answer to a slash command could not be posted through "
+        "its response_url (channel, actor, error) — issue-334. The outcome "
+        "stands; only the member's receipt was lost."
     ),
     "channel.mirrored": (
         "A channel reply was posted onto its work item as the-loop's own "

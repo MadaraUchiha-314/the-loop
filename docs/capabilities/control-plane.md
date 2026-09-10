@@ -136,6 +136,13 @@ package — there are no install extras (owner decision, PR #162).
   surface; this document is what distinguishes them, and what a manager of several
   instances aggregates across ([decision-110](../decisions/decision-110.md) D8). The MCP
   registry exposes it as `get_instance`; the SDK as `loop.instance()`.
+- The Slack channel's **`/the-loop` slash command** (issue-334, decision-116) is one
+  more thin client of the facade for the verbs that have no ticket: `status`,
+  `restart`, `upgrade` (`core.lifecycle.status_all` / `schedule_restart`) and
+  `standing list|start|stop|restart` (`core.standing`), each behind its own grant in
+  `channels.slack.publish` and the same `routing.authorizedUsers`; a work-item verb
+  from the same command goes through the ledger, not the facade — see
+  [channels](channels.md) and the [Slack integration guide](../guide/slack.md).
 - A **static web dashboard** (`ui/`, issue-207) SHALL be the third client of the
   same surface, adding no state and no server of its own. It SHALL be a pure
   build artifact — published to GitHub Pages at `/the-loop/ui/`, beside the docs

@@ -115,6 +115,9 @@ def test_the_catalog_has_one_row_per_event_with_four_answers():
         "gate.feedback",
         "control.command",
         "work-item.create",
+        # The slash command's two grants (issue-334, decision-116 D3).
+        "instance.command",
+        "standing.command",
     }
     # A publishable event is never subscribable, and every subscribable one is
     # in the view the config parser and `channels status` read.
@@ -126,10 +129,13 @@ def test_the_catalog_has_one_row_per_event_with_four_answers():
 
 
 def test_recorded_is_the_ask_and_the_channel_events_and_nothing_else():
-    """D6: notifications are not recorded — `request-review` already comments."""
+    """D6: notifications are not recorded — `request-review` already comments.
+    The two command grants (issue-334) have no ticket to record on either."""
     assert is_recorded("session.awaiting_input")
     for name in PUBLISHABLE_EVENTS:
-        assert is_recorded(name), name
+        assert is_recorded(name) is (
+            name not in ("instance.command", "standing.command")
+        ), name
     for name in (*NOTIFICATION_EVENTS, "comment.human", "comment.agent"):
         assert not is_recorded(name), name
     assert not is_recorded("custom.notify")

@@ -25,6 +25,7 @@ def test_defaults_enable_the_service_and_nothing_else(tmp_path):
         "service": True,
         "gh-webhook": False,
         "poller": False,
+        "slack-listener": False,
     }
 
 
@@ -38,7 +39,19 @@ def test_explicit_flags_win(tmp_path):
         "service": False,
         "gh-webhook": True,
         "poller": True,
+        "slack-listener": False,
     }
+
+
+def test_the_slack_listener_is_enabled_by_socket_mode_alone(tmp_path):
+    """issue-334: the listener is a service `start` composes only when the
+    channel is enabled AND reads over Socket Mode."""
+    on = {"channels": {"slack": {"enabled": True, "read": {"mode": "socket"}}}}
+    assert lifecycle.enabled_services(on)["slack-listener"] is True
+    poll = {"channels": {"slack": {"enabled": True, "read": {"mode": "poll"}}}}
+    assert lifecycle.enabled_services(poll)["slack-listener"] is False
+    off = {"channels": {"slack": {"enabled": False, "read": {"mode": "socket"}}}}
+    assert lifecycle.enabled_services(off)["slack-listener"] is False
 
 
 # -- start_all (R1) ---------------------------------------------------------------
@@ -105,6 +118,7 @@ def test_start_starts_every_enabled_service(tmp_path, monkeypatch):
         "started",
         "started",
         "started",
+        "disabled",
     ]
 
 
@@ -169,6 +183,7 @@ def test_one_failed_service_never_hides_the_others(tmp_path, monkeypatch):
         "service": "failed",
         "gh-webhook": "started",
         "poller": "disabled",
+        "slack-listener": "disabled",
     }
     assert report["ok"] is False
 
@@ -203,7 +218,12 @@ def test_stop_ignores_the_enabled_flags(tmp_path, monkeypatch):
         ),
     )
     report = lifecycle.stop_all(_config(tmp_path, service={"enabled": False}))
-    assert asked == [("poller", "stop"), ("gh-webhook", "stop"), ("service", "stop")]
+    assert asked == [
+        ("poller", "stop"),
+        ("gh-webhook", "stop"),
+        ("slack-listener", "stop"),
+        ("service", "stop"),
+    ]
     assert report["ok"] is True
 
 
@@ -343,7 +363,105 @@ def test_hosting_skips_the_spawn_and_waits_for_the_hosted_locks(tmp_path, monkey
         "started",
         "hosted",
         "hosted",
+        "disabled",
     ]
+
+
+def _socket_channel():
+    return {"slack": {"enabled": True, "channel": "C1", "read": {"mode": "socket"}}}
+
+
+def test_the_service_hosts_the_slack_listener(tmp_path, monkeypatch):
+    """
+    Feature: single-process mode (service.hostIngresses)
+    Scenario: the Slack channel reads over Socket Mode
+        Given hostIngresses (the default) and channels.slack in socket mode
+        When start_all runs and the service comes up
+        Then the slack-listener row is `hosted` once its lock is held by the
+             service's pid — nothing to run in a foreground shell (issue-334)
+    Requirement: docs/specs/issue-334/requirements.md R2.7
+    """
+    monkeypatch.setattr(
+        lifecycle,
+        "start_service",
+        lambda config: {
+            "running": True,
+            "pid": 41,
+            "detail": "started",
+            "started": True,
+        },
+    )
+    awaited = []
+    monkeypatch.setattr(
+        lifecycle,
+        "_await_hosted",
+        lambda daemon, config, service_pid: (
+            awaited.append((daemon, service_pid))
+            or {"service": daemon, "enabled": True, "outcome": "hosted", "detail": ""}
+        ),
+    )
+    report = lifecycle.start_all(_config(tmp_path, channels=_socket_channel()))
+    assert report["ok"] is True
+    assert awaited == [("slack-listener", 41)]
+    assert {row["service"]: row["outcome"] for row in report["services"]} == {
+        "service": "started",
+        "gh-webhook": "disabled",
+        "poller": "disabled",
+        "slack-listener": "hosted",
+    }
+
+
+def test_without_hosting_the_listener_is_a_manual_row(tmp_path, monkeypatch):
+    """The listener has no standalone daemon form: with hostIngresses off the row
+    says to run `the-loop channels listen`, and `ok` stays true (issue-334)."""
+    monkeypatch.setattr(
+        lifecycle,
+        "start_service",
+        lambda config: {
+            "running": True,
+            "pid": 41,
+            "detail": "started",
+            "started": True,
+        },
+    )
+    monkeypatch.setattr(
+        lifecycle,
+        "_start_daemon",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("nothing to spawn")),
+    )
+    report = lifecycle.start_all(
+        _config(tmp_path, service={"hostIngresses": False}, channels=_socket_channel())
+    )
+    row = next(r for r in report["services"] if r["service"] == "slack-listener")
+    assert row["outcome"] == "manual" and "channels listen" in row["detail"]
+    assert report["ok"] is True
+
+
+def test_a_running_foreground_listener_is_already_running(tmp_path, monkeypatch):
+    from the_loop.runlock import RunLock
+
+    monkeypatch.setattr(
+        lifecycle,
+        "start_service",
+        lambda config: {
+            "running": True,
+            "pid": 41,
+            "detail": "started",
+            "started": True,
+        },
+    )
+    config = _config(
+        tmp_path, service={"hostIngresses": False}, channels=_socket_channel()
+    )
+    (tmp_path / ".the-loop").mkdir(parents=True, exist_ok=True)
+    lock = RunLock(tmp_path / ".the-loop" / "slack-listener.pid", name="slack-listener")
+    assert lock.acquire()
+    try:
+        report = lifecycle.start_all(config)
+    finally:
+        lock.release()
+    row = next(r for r in report["services"] if r["service"] == "slack-listener")
+    assert row["outcome"] == "already-running"
 
 
 def test_host_ingresses_false_keeps_the_standalone_spawn(tmp_path, monkeypatch):
@@ -464,5 +582,7 @@ def test_stop_stops_a_hosted_ingress_by_stopping_the_service(tmp_path, monkeypat
     outcomes = {row["service"]: row["outcome"] for row in report["services"]}
     assert outcomes["poller"] == "stopped"
     assert outcomes["service"] == "stopped"
-    assert signalled == ["gh-webhook"], "the hosted poller must not be signalled"
+    assert signalled == ["gh-webhook", "slack-listener"], (
+        "the hosted poller must not be signalled"
+    )
     assert report["ok"] is True

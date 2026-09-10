@@ -53,8 +53,10 @@ operator disabled must not resurrect because an unrelated CLI command wanted it
 Single-process mode ([issue-231](https://github.com/MadaraUchiha-314/the-loop/issues/231)):
 with the service enabled, the enabled ingresses — the [poller](/config/cli/polling-options)
 per `polling.enabled`, the [webhook receiver](/cli/receiver) per
-`webhooks.ghWebhook.enabled` — run as background threads **inside** the service process.
-One pid, one logfile, one `the-loop start`.
+`webhooks.ghWebhook.enabled`, and since issue-334 the [Slack Socket Mode
+listener](/guide/slack#_4-run-it) per `channels.slack.enabled` with `read.mode: socket` —
+run as background threads **inside** the service process. One pid, one logfile, one
+`the-loop start`.
 
 Each hosted ingress still holds its own pidfile flock (under the service's pid), so
 [`the-loop status`](/cli/commands/status)/[`stop`](/cli/commands/stop), the
