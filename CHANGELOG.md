@@ -1,3 +1,9 @@
+## v13.9.0 (2026-09-10)
+
+### Feat
+
+- **issue-334**: drive the loop from Slack — a /the-loop slash command, the app manifest, and the Slack integration guide (#336)
+
 ## v13.8.0 (2026-09-09)
 
 ### Feat
