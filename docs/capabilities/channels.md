@@ -182,10 +182,28 @@ flowchart LR
   while either cannot be received, prints only the steps that still apply — the
   app-level token is required because Slack delivers a press only to an acknowledging
   Socket Mode connection or a public Request URL, and the-loop exposes none.
-- **Kickoff.** WHEN the channel holds `work-item.create` AND `kickoff.repo` is set AND an
-  authorized member posts a top-level message THEN the ledger SHALL create the issue with
-  `kickoff.labels`, the thread SHALL be bound to the new ref and told the link. The first
-  read baselines the channel; a failed creation is not retried.
+- **Kickoff.** WHEN the channel holds `work-item.create` AND an authorized member posts a
+  top-level message THEN the ledger SHALL create the issue with `kickoff.labels`, the
+  thread SHALL be bound to the new ref and told the link. The first read baselines the
+  channel; a failed creation is not retried.
+- **The kickoff names its repository** (issue-341, [decision-120](../decisions/decision-120.md)).
+  WHEN the message's first line begins `<prefix>:` AND the prefix resolves to exactly one
+  repository of the **declared set** — `channels.slack.kickoff.repo` plus every `repos`
+  entry of every `github` source in `polling.sources`, the same set a slash command's
+  target is bounded to — THEN the issue SHALL be created there with the prefix stripped
+  from the message. A bare name, an `owner/repo` and a `host/owner/repo` SHALL each be
+  accepted, case-insensitively. WHEN a **qualified** prefix resolves to none, a **bare**
+  one to several, or a prefix leaves no message after it, THEN the kickoff SHALL be
+  refused — the `error` reaction on the member's own message and a reply in its thread
+  naming the candidates — and nothing SHALL be created, recorded or bound. WHEN a bare
+  prefix resolves to none THEN it SHALL NOT be treated as a prefix: the message goes to
+  `kickoff.repo` with its text intact, so a first line such as `fix: …` behaves as it
+  always has. WHEN no prefix is read AND `kickoff.repo` is empty THEN the message SHALL
+  be refused with a reply asking for one, rather than dropped in silence — so
+  `work-item.create` without `kickoff.repo` is a valid, prefix-only configuration.
+  Every refusal SHALL sit **below** the allow-list: an unlisted member is dropped in
+  silence and never told which repositories exist. Nothing but a **declared** slug ever
+  reaches the issue writer.
 - **An accepted message is acknowledged on itself** (issue-325, decision-111). WHEN an
   inbound Slack message — a thread reply, a button press, a kickoff — passes
   authorization, classification and the `publish` grant THEN, before the ledger
@@ -258,8 +276,9 @@ flowchart LR
   call time, bindings and cursors in `<state.root>/channels/slack.json` (plus a
   `channel:<id>` cursor).
 - Every step is observable: `bus.published`, `bus.recorded`, `bus.record_failed`, the
-  `channel.*` types, `channel.dropped` with `unpublishable-event` / `kickoff-disabled` /
-  `create-failed`, `channel.created`, `channel.thread_opened` (origin `event` |
+  `channel.*` types, `channel.dropped` with `unpublishable-event` /
+  `kickoff-unknown-repo` / `kickoff-ambiguous-repo` / `kickoff-no-target` /
+  `kickoff-empty-message` / `create-failed`, `channel.created`, `channel.thread_opened` (origin `event` |
   `kickoff` | `start`), `channel.open_failed`, `channel.reaction_added`,
   `channel.reaction_failed`, and the slash command's `channel.command_received`,
   `channel.command_completed`, `channel.command_answer_failed`, `channel.caught_up`,
@@ -325,6 +344,7 @@ flowchart LR
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-341 | A Slack kickoff **names its own repository**: a first-line `<repo>:` prefix — a bare name, an `owner/repo` or a `host/owner/repo` — resolved against the set the operator already declared (`kickoff.repo` + every `polling.sources[].repos` entry, now built once in `channels/repos.py` and shared with the slash command's `may_target`), stripped from the issue, with `kickoff.labels` unchanged. A qualified prefix matching none, a bare one matching several, or a prefix with no message after it is **refused in the thread with the candidates named**, never guessed; a bare word matching none is not a prefix, so `fix: …` still goes to `kickoff.repo`. `kickoff.repo` is demoted to the fallback and is no longer a precondition for reading top-level messages, making grant-without-target a valid prefix-only configuration instead of a dead one. Refusals sit below the allow-list, so the repository list never reaches an unlisted member. No schema key, grant, scope or state added | [spec](../specs/issue-341/), [decision-120](../decisions/decision-120.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/341) |
 | issue-338 | Long text reaches Slack as a **structural digest** instead of a mid-sentence cut: above `maxChars` (unchanged meaning and default) the channel puts the first question — or the *reply `…`* instruction — first in bold, renders lists as numbered lines with ☑ / ☐, replaces code fences, tables and stack traces with a sized pointer, shortens absolute paths, keeps the rest in the author's order, cuts at a sentence and closes with a link to the full text; the phone's notification text carries the same digest; a text within the cap is posted whole. `longMessages: digest \| truncate` (default `digest`; `truncate` is 13.10.0's cut) is the one new key. On every message, whatever its length, GitHub markdown is now drawn as mrkdwn and HTML comments (the-loop's markers, seen literally before) are removed; `<!channel>`-style broadcasts in a comment are neutralised. No model, no new call, grant, scope or state | [spec](../specs/issue-338/), [decision-118](../decisions/decision-118.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/338) |
 | issue-337 | **Execute** and **Start** buttons on the two Slack messages that asked for a keyword typed back — the phase-selection checklist mirror and the kickoff's "opened" reply — rendered only with `read.mode: socket` and the `control.command` grant, each carrying the configured keyword as its value so a press is exactly a typed keyword through the unchanged pipeline (allow-list, classification, grant, unmarked ledger record, the ingress executes). A processed press is written back onto the pressed message (buttons replaced by the outcome line with the record's link; kept beside a ⚠️ line when it did not land; a dropped press edits nothing), for the Approve pair too. `channels status` names both button sets and prints only the steps a configuration still needs — the app-level token is required because Slack delivers a press only to an acknowledging Socket Mode connection or a public Request URL. No new grant, scope, key or state | [spec](../specs/issue-337/), [decision-117](../decisions/decision-117.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/337) |
 | issue-334 | The `/the-loop` slash command over Socket Mode — the channel's third inbound shape, for what has no thread: `<keyword> <work-item>` publishes `control.command` and stops at the same unmarked ledger record a thread keyword makes (the ingress executes it; the target bounded to `kickoff.repo`, the poll sources, the managed set and the bound threads); `status` / `restart` / `upgrade` and `standing list\|start\|stop\|restart` call the core facade under two new grants, `instance.command` and `standing.command` (catalog rows, not recorded); authorized first, a fixed vocabulary, ephemeral answers to Slack's host only, a trigger acts once. A packaged Slack **app manifest** (`the-loop channels manifest`) and the [Slack integration guide](../guide/slack.md). From the PR review: `the-loop start` hosts the listener in the service (`slack-listener` row, its own pidfile lock; `channels listen` is the foreground form), the listener runs a catch-up read over the shared cursors when it connects, `poll_once` runs in socket mode as a reconciliation, and a redelivered message at or before a thread's cursor is dropped as `duplicate`. Ask 1 of the ticket — a control keyword in the thread works as on the ticket — was already true by grant and is now pinned by tests and documented | [spec](../specs/issue-334/), [decision-116](../decisions/decision-116.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/334) |

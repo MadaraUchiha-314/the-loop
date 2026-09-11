@@ -217,7 +217,7 @@ because Slack delivers both only to a connection that acknowledges within second
 | sign the phase-selection checklist | press **Execute** on the checklist message (or type `the-loop execute`) | `control.command` (+ `read.mode: socket`) | the same unmarked `the-loop execute` record; the message is edited to say so ([buttons](#the-buttons)) |
 | start a work item you just filed from Slack | press **Start** on the-loop's "opened …" reply (or type `the-loop start`) | `control.command` (+ socket) | the same unmarked `the-loop start` record; the message is edited to say so |
 | start a work item **that has no thread yet** | `/the-loop start #123` | `control.command` (+ `read.mode: socket`) | the same record on the ticket; the start opens the thread |
-| file a new work item | post a top-level message in the channel | `work-item.create` + `kickoff.repo` | an issue is created (with `kickoff.labels`), the thread is bound to it and told the link |
+| file a new work item | post a top-level message in the channel, optionally starting `<repo>:` | `work-item.create` | an issue is created in the repository the message named (or `kickoff.repo`) with `kickoff.labels`, the thread is bound to it and told the link |
 | talk to a standing session | reply in its thread | `work-item.reply` | delivered into its pane (no ticket, so no mirror — the event log is the trail) |
 | start, stop or restart a standing session | `/the-loop standing start <name>` | `standing.command` (+ socket) | the same verb `the-loop standing start` runs |
 | ask the instance how it is, restart it, upgrade it | `/the-loop status` · `/the-loop restart` · `/the-loop upgrade` | `instance.command` (+ socket) | what `the-loop status` / `the-loop restart [--with-upgrade]` do |
@@ -299,11 +299,28 @@ only a repository this instance is configured for (`kickoff.repo`, a poll source
 work item it already manages — anything else is refused, and nothing is written.
 
 **It does not exist yet.** Post a **top-level message** in the channel — the first line is
-the title, the rest the body. With the `work-item.create` grant and a `kickoff.repo`,
-the-loop opens the issue (labelled from `kickoff.labels`, so add the auto-execute label
-there to arm it), binds the message's thread to it and replies with the link. Then type
-`the-loop start` **in that thread** (with `control.command`), or run
-`/the-loop start #<n>` — either records the start on the new issue.
+the title, the rest the body. With the `work-item.create` grant, the-loop opens the issue
+(labelled from `kickoff.labels`, so add the auto-execute label there to arm it), binds
+the message's thread to it and replies with the link. Then type `the-loop start` **in
+that thread** (with `control.command`), or run `/the-loop start #<n>` — either records
+the start on the new issue.
+
+**Which repository?** The message's, if it says so
+([issue-341](https://github.com/MadaraUchiha-314/the-loop/issues/341)). Start the first
+line with a repository prefix and that is where the issue goes:
+
+```
+slim-gym: flaky teardown in the batch runner
+```
+
+A bare name, an `owner/repo` or a `host/owner/repo` all work, and the prefix is stripped
+from the title. It is resolved **only** against the repositories you declared —
+[`kickoff.repo`](/config/cli/channels-options#slack-kickoff-repo) plus every
+`polling.sources[].repos` entry — so a name matching none of them (when it is qualified)
+or several of them is **refused in the thread with the candidates listed**, never
+guessed. With no prefix, `kickoff.repo` takes it; with no prefix and no `kickoff.repo`,
+you are asked for one. A first line that merely happens to carry a colon
+(`fix: flaky teardown`) is not a prefix and goes to `kickoff.repo` as it always has.
 
 Once the loop runs, the thread carries its questions and approvals: answer the
 phase-selection checklist by ticking it **on the ticket** and pressing **Execute** on the

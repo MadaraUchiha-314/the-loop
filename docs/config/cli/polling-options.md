@@ -158,6 +158,13 @@ There is no fallback to any repository's harness config. A source with no `repos
 discovers nothing.
 :::
 
+**This list is also what a Slack kickoff may name** (issue-341). A top-level message
+whose first line starts `<repo>:` is resolved against these entries plus
+[`channels.slack.kickoff.repo`](/config/cli/channels-options#slack-kickoff-repo) — and
+against nothing else, so a prefix naming none of them (when it is qualified) or several
+of them is refused in the thread rather than guessed. Adding a repository here therefore
+does two things: the poller reads it, and a kickoff may pick it.
+
 **One repository's failure is that repository's** (issue-315,
 [decision-106](/decisions/decision-106)). Each repository is listed on its own — issues,
 then pull requests — and one that cannot be listed costs exactly that: the source's other

@@ -1737,3 +1737,170 @@ def test_a_notifications_artifact_excerpt_is_digested_too(tmp_path, monkeypatch)
     assert excerpt.rstrip().endswith(
         "_… full text: <https://github.com/o/r/issues/338|GitHub>_"
     )
+
+
+# -- issue-341: the kickoff names its own repository ---------------------------------
+
+
+def _kickoff_config(tmp_path, monkeypatch, *, kickoff_repo, polled, created=None):
+    """A channel with the create grant, a declared poll set, and a recording writer."""
+    config = cli_config(
+        tmp_path,
+        publish=["work-item.reply", "work-item.create"],
+        kickoff={"repo": kickoff_repo, "labels": ["the-loop: auto-execute"]},
+    )
+    config["polling"] = {"sources": [{"provider": "github", "repos": list(polled)}]}
+    calls = created if created is not None else []
+
+    def create_issue(repo, title, body, labels, gh_binary="gh"):
+        calls.append({"repo": repo, "title": title, "body": body, "labels": labels})
+        return True, "", "github:o/r#42", "https://gh/o/r/issues/42"
+
+    monkeypatch.setattr("the_loop.comments.create_issue", create_issue)
+    return config, calls
+
+
+def test_a_prefixed_kickoff_opens_in_the_repository_it_named(tmp_path, monkeypatch):
+    """Scenario: A prefixed kickoff opens its issue in the repository the message named
+
+    Given the work-item.create grant, a kickoff.repo fallback and a polled repo set
+    When an authorized member posts "agent-sims: flaky teardown" as a top-level message
+    Then the issue is created in expertise-help/agent-sims, not in the fallback repo
+    And the prefix is stripped from both the title and the body
+    And the configured kickoff labels are applied unchanged
+
+    Requirement: docs/specs/issue-341/requirements.md R1.1, R1.3, R1.5
+    """
+    client = _enabled_client(monkeypatch)
+    config, calls = _kickoff_config(
+        tmp_path,
+        monkeypatch,
+        kickoff_repo="octocat/hello-world",
+        polled=["expertise-help/agent-sims", "jchou2/devbox"],
+    )
+    client.history = [{"ts": "1600.1", "user": "UHUMAN", "text": "baseline"}]
+    inbound.poll_once(config)
+    client.history.append(
+        {
+            "ts": "1600.2",
+            "user": "UHUMAN",
+            "text": "agent-sims: flaky teardown in the batch runner",
+        }
+    )
+    assert inbound.poll_once(config)["created"] == 1
+
+    assert len(calls) == 1
+    assert calls[0]["repo"] == "expertise-help/agent-sims"
+    assert calls[0]["title"] == "flaky teardown in the batch runner"
+    assert "agent-sims:" not in calls[0]["body"]
+    assert calls[0]["labels"] == ["the-loop: auto-execute"]
+
+
+def test_an_ambiguous_kickoff_prefix_is_refused_in_the_thread(tmp_path, monkeypatch):
+    """Scenario: An ambiguous kickoff prefix is refused in the thread and creates nothing
+
+    Given two declared repositories that share a repository name
+    When an authorized member posts "slim-gym: flaky teardown"
+    Then no issue is created and no thread is bound
+    And the member's own message carries the error reaction
+    And a reply in its thread names both candidates
+
+    Requirement: docs/specs/issue-341/requirements.md R2.3, R2.5
+    """
+    from the_loop.channels.state import ChannelState
+
+    client = _enabled_client(monkeypatch)
+    config, calls = _kickoff_config(
+        tmp_path,
+        monkeypatch,
+        kickoff_repo="octocat/hello-world",
+        polled=["expertise-help/slim-gym", "other-org/slim-gym"],
+    )
+    client.history = [{"ts": "1600.1", "user": "UHUMAN", "text": "baseline"}]
+    inbound.poll_once(config)
+    client.history.append(
+        {"ts": "1600.2", "user": "UHUMAN", "text": "slim-gym: flaky teardown"}
+    )
+    summary = inbound.poll_once(config)
+
+    assert summary["created"] == 0 and summary["dropped"] == 1
+    assert calls == []
+    assert ("C123", "1600.2", "warning") in client.reactions
+    said = [p for p in client.posted if p["thread_ts"] == "1600.2"][-1]["text"]
+    assert "`expertise-help/slim-gym`" in said and "`other-org/slim-gym`" in said
+    state = ChannelState.load(tmp_path / "state" / "channels" / "slack.json")
+    assert state.conversations == {}
+
+
+def test_a_kickoff_with_no_prefix_still_uses_the_configured_repo(tmp_path, monkeypatch):
+    """Scenario: A kickoff with no prefix still opens in the configured fallback repository
+
+    Given a 13.11.1-shaped configuration — a kickoff.repo and no polled repositories
+    When an authorized member posts "fix: flaky teardown" with no repository prefix
+    Then the issue is created in kickoff.repo with the text untouched
+
+    Requirement: docs/specs/issue-341/requirements.md R3.1, R3.4
+    """
+    client = _enabled_client(monkeypatch)
+    config, calls = _kickoff_config(
+        tmp_path, monkeypatch, kickoff_repo="octocat/hello-world", polled=[]
+    )
+    client.history = [{"ts": "1600.1", "user": "UHUMAN", "text": "baseline"}]
+    inbound.poll_once(config)
+    client.history.append(
+        {"ts": "1600.2", "user": "UHUMAN", "text": "fix: flaky teardown"}
+    )
+    assert inbound.poll_once(config)["created"] == 1
+    assert calls[0]["repo"] == "octocat/hello-world"
+    assert calls[0]["title"] == "fix: flaky teardown"
+
+
+def test_without_a_fallback_a_kickoff_is_asked_for_a_prefix(tmp_path, monkeypatch):
+    """Scenario: With no fallback repository a kickoff is asked for a prefix, not dropped in silence
+
+    Given the work-item.create grant, no kickoff.repo, and a declared poll set
+    When an authorized member posts a top-level message with no repository prefix
+    Then no issue is created
+    And the thread is told to start the message with a repository prefix, naming the
+      repositories it knows
+
+    Requirement: docs/specs/issue-341/requirements.md R3.2, R3.3
+    """
+    client = _enabled_client(monkeypatch)
+    config, calls = _kickoff_config(
+        tmp_path, monkeypatch, kickoff_repo="", polled=["jchou2/devbox"]
+    )
+    client.history = [{"ts": "1600.1", "user": "UHUMAN", "text": "baseline"}]
+    inbound.poll_once(config)
+    client.history.append({"ts": "1600.2", "user": "UHUMAN", "text": "Ship it"})
+    summary = inbound.poll_once(config)
+
+    assert summary["created"] == 0 and summary["dropped"] == 1
+    assert calls == []
+    said = [p for p in client.posted if p["thread_ts"] == "1600.2"][-1]["text"]
+    assert "<repo>:" in said and "`jchou2/devbox`" in said
+
+
+def test_an_unlisted_members_kickoff_is_told_nothing(tmp_path, monkeypatch):
+    """Scenario: An unlisted member's kickoff is told nothing at all
+
+    Given a channel whose allow-list does not name the poster
+    When they post "stranger/repo: do a thing" as a top-level message
+    Then nothing is created, no reaction is added and no reply names any repository
+
+    Requirement: docs/specs/issue-341/requirements.md R2.6 (abuse case A1)
+    """
+    client = _enabled_client(monkeypatch)
+    config, calls = _kickoff_config(
+        tmp_path, monkeypatch, kickoff_repo="octocat/hello-world", polled=["o/secret"]
+    )
+    client.history = [{"ts": "1600.1", "user": "UHUMAN", "text": "baseline"}]
+    inbound.poll_once(config)
+    client.history.append(
+        {"ts": "1600.2", "user": "USTRANGER", "text": "stranger/repo: do a thing"}
+    )
+    summary = inbound.poll_once(config)
+
+    assert summary["created"] == 0 and summary["dropped"] == 1
+    assert calls == [] and client.reactions == []
+    assert not [p for p in client.posted if p["thread_ts"] == "1600.2"]

@@ -77,7 +77,9 @@ ledger as an **unmarked** comment under the operator's credential, carrying an e
 that names the person, so the ledger's own ingress classifies or executes it through the
 guards a typed comment goes through and the artifact's `approvedBy` names the person; or
 a new work item (`work-item.create`, a top-level message opening an issue in the
-configured repo). Who may speak on any channel is the one list `routing.authorizedUsers`,
+repository its own first line names — a `<repo>:` prefix resolved against the declared
+set, `kickoff.repo` and the poll sources, refused rather than guessed when it resolves
+to none or several; issue-341). Who may speak on any channel is the one list `routing.authorizedUsers`,
 each entry a person with their id on every channel. What has **no thread** — a work
 item that has not started, a standing session, the instance itself — is reached by the
 `/the-loop` slash command (issue-334): its work-item verbs are `control.command` through

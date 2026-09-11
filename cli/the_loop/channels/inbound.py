@@ -37,6 +37,7 @@ from ..standing import parse_standing_ref
 from .base import ChannelError, Event, InboundReply, PostResult
 from .bus import publish
 from .github import GitHubLedger
+from .kickoff import refusal_text, resolve_target
 from .slack import (
     ACTION_PREFIX,
     SlackBotChannel,
@@ -431,30 +432,47 @@ def process_kickoff(
     create_issue: Optional[Callable] = None,
 ) -> Dict[str, Any]:
     """A top-level message → ``work-item.create`` → the ledger opens the issue →
-    the thread is bound to it and told the link. Never raises."""
+    the thread is bound to it and told the link. Never raises.
+
+    The repository is the message's to name (issue-341): a first-line ``<repo>:``
+    prefix resolved against the declared set, ``kickoff.repo`` as the fallback, and
+    a prefix that resolves to none or to several refused in the thread — never
+    guessed (decision-120).
+    """
     if reply.is_bot:
         return _drop(reply, "self-authored")
     if "work-item.create" not in config.publish:
         return _drop(reply, "unpublishable-event", kind="work-item.create")
-    if not config.kickoff_repo:
-        # Both the grant and a target (A6): there is no sensible inferred answer
-        # to "which repository does this DM become an issue in".
-        return _drop(reply, "kickoff-disabled", level="warning")
     if not config.authorized_users or reply.author not in set(config.authorized_users):
         return _drop(reply, "unauthorized-actor", level="warning", actor=reply.author)
     if not reply.text.strip():
         return _drop(reply, "unmapped", actor=reply.author)
     bot = channel or SlackBotChannel(config, slack_state_path(cli_config))
     bot.react(reply, "received")  # issue-325: accepted, about to become an issue
+    # WHICH repository is the message's to name (issue-341), resolved against the
+    # set the operator declared and nothing else. This sits BELOW the allow-list
+    # on purpose: a refusal names the declared repositories, and an unlisted
+    # member is told nothing at all (R2.6).
+    target = resolve_target(reply.text, config, cli_config)
+    if not target.ok:
+        bot.react(reply, "error")
+        bot.say(reply.thread, refusal_text(target), reply.channel_id)
+        return _drop(
+            reply,
+            f"kickoff-{target.outcome}",
+            level="warning",
+            actor=reply.author,
+            kind=target.prefix or None,
+        )
     actor = principal_for(config.principals, reply.channel, reply.author)
     event = Event(
         event_type="work-item.create",
         work_item="",
-        text=reply.text,
+        text=target.text,
         source=reply.channel,
         actor=actor,
         detail={
-            "repo": config.kickoff_repo,
+            "repo": target.repo,
             "labels": ",".join(config.kickoff_labels),
             "thread": reply.thread,
         },

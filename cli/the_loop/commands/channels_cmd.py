@@ -29,6 +29,7 @@ from ..channels.slack import (
     run_socket_listener,
     slack_state_path,
 )
+from ..channels.repos import declared_repositories
 from ..channels.state import ChannelState, canonical
 
 
@@ -71,16 +72,23 @@ def _status(config: dict) -> int:
     )
     for line in _button_lines(slack):
         print(line)
-    kickoff = (
-        f"{slack.kickoff_repo} (labels: {', '.join(slack.kickoff_labels) or 'none'})"
-        if slack.kickoff_enabled
-        else "off"
-        + (
-            " — grant present, kickoff.repo unset"
-            if "work-item.create" in slack.publish and not slack.kickoff_repo
+    # Where a top-level message becomes an issue (issue-341): the message's own
+    # `<repo>:` prefix, resolved against the declared set, with kickoff.repo as
+    # the fallback — so `status` names both, and how many a prefix may pick from.
+    if slack.kickoff_enabled:
+        declared = declared_repositories(config)
+        target = slack.kickoff_repo or "(no fallback — every message must name one)"
+        kickoff = (
+            f"{target} (labels: {', '.join(slack.kickoff_labels) or 'none'}); "
+            f"a `<repo>:` prefix may name any of {len(declared)} declared "
+            "repositories"
+        )
+    else:
+        kickoff = "off" + (
+            " — channels.slack.publish does not grant work-item.create"
+            if slack.enabled and slack.channel
             else ""
         )
-    )
     print(f"  kickoff:      {kickoff}")
     # The slash command (issue-334): which verb families this channel may run,
     # or why none can arrive at all.
