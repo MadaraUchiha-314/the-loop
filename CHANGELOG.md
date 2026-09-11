@@ -1,3 +1,9 @@
+## v13.11.1 (2026-09-11)
+
+### Fix
+
+- **issue-339**: one configuration resolves to one state root, and health reports on what it hosts (#346)
+
 ## v13.11.0 (2026-09-11)
 
 ### Feat
