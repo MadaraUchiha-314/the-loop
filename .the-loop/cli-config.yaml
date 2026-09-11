@@ -15,7 +15,7 @@
 # See .the-loop/config.yaml for the-loop's own PLUGIN config (ticketing,
 # workflow, tooling, reviews, …).
 
-version: "0.7.0"
+version: "0.8.0"
 
 # Everything the CLI GENERATES lives under this root (issue-106), organised by
 # whether it travels between machines (issue-128, decision-046):
@@ -61,6 +61,20 @@ instance:
   scope:
     mode: open
     workItems: []
+
+# WHICH GITHUB REPOSITORIES this instance works with (issue-348). ONE list, read
+# by EVERY ingress: the gh-webhook receiver drops a delivery from a repository
+# that is not here, the poller polls exactly these, the `/the-loop` slash command
+# may only target them and a Slack kickoff prefix resolves against them. Until
+# 13.12.0 it lived in `polling.sources[].repos`, named after the one ingress that
+# read it — which is how the receiver came to be bounded by no repository list at
+# all. `OWNER/REPO` is on this instance's host; write `HOST/OWNER/REPO` for a
+# repository on another GitHub (issue-311). Empty bounds NOTHING, and the
+# receiver says so at start.
+# This checkout dogfoods the-loop on the-loop, so exactly one repository is
+# declared: an operator running from here adds their own.
+repositories:
+  - MadaraUchiha-314/the-loop
 
 webhooks:
   ghWebhook:
@@ -300,7 +314,9 @@ standingSessions:
 polling:
   intervalSeconds: 60
   maxRetries: 3                     # per-event delivery attempts before giving up (issue-80): a failing spawn/comment is retried each cycle up to this many times, then logged (poll.*_failed) and ignored until new activity re-arms it
-  sources: []                       # empty = nothing polled; this repo dogfoods webhooks, not poll
+  sources: []                       # empty = nothing polled; this repo dogfoods webhooks, not poll.
+                                    # WHAT a source polls is `repositories` above (issue-348);
+                                    # a source says only HOW — provider, label, monitor, binary.
 
 # The control-plane API service (issue-161) — the HTTP layer the CLI, the MCP
 # endpoint and the web dashboard all go through. Binding is left at its

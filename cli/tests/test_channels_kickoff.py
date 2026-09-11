@@ -6,7 +6,8 @@ from __future__ import annotations
 
 import pytest
 
-from the_loop.channels import kickoff, repos
+from the_loop import repos
+from the_loop.channels import kickoff
 from the_loop.channels.slack import SlackChannelConfig
 
 POLLED = [
@@ -17,10 +18,20 @@ POLLED = [
 ]
 
 
-def config_map(kickoff_repo="octocat/hello-world", polled=POLLED, publish=None):
-    """A CLI config with a kickoff repo and a polled set — the reporter's shape."""
+def config_map(
+    kickoff_repo="octocat/hello-world", polled=POLLED, publish=None, declared=None
+):
+    """A CLI config with a kickoff target and a declared set — the reporter's shape.
+
+    Since issue-348 the set is the top-level ``repositories`` and ``kickoff.repo``
+    points at one of them, so the default declaration carries both. ``declared``
+    overrides the list outright, for the cases that need a fallback outside it.
+    """
+    if declared is None:
+        declared = ([kickoff_repo] if kickoff_repo else []) + list(polled)
     return {
         "routing": {"authorizedUsers": [{"github": "gh-UHUMAN", "slack": "UHUMAN"}]},
+        "repositories": list(declared),
         "channels": {
             "slack": {
                 "enabled": True,
@@ -31,7 +42,7 @@ def config_map(kickoff_repo="octocat/hello-world", polled=POLLED, publish=None):
                 "kickoff": {"repo": kickoff_repo, "labels": ["the-loop: auto-execute"]},
             }
         },
-        "polling": {"sources": [{"provider": "github", "repos": list(polled)}]},
+        "polling": {"sources": [{"provider": "github"}]},
     }
 
 
@@ -40,13 +51,13 @@ def resolve(text, **kwargs):
     return kickoff.resolve_target(text, SlackChannelConfig.from_mapping(cfg), cfg)
 
 
-# -- the declared set (R2.1) --------------------------------------------------------
+# -- the declared set (R2.1; issue-348 moved the builder to `the_loop.repos`) -------
 
 
-def test_the_declared_set_is_kickoff_repo_and_every_poll_source():
+def test_the_declared_set_is_the_top_level_declaration():
     declared = repos.declared_repositories(config_map())
     assert [d.declared for d in declared] == ["octocat/hello-world"] + POLLED
-    assert declared[0].source == "kickoff" and declared[1].source == "polling"
+    assert {d.source for d in declared} == {"repositories"}
 
 
 def test_a_declared_entry_keeps_the_operators_own_slug():
@@ -56,38 +67,6 @@ def test_a_declared_entry_keeps_the_operators_own_slug():
     )
     assert declared[0].declared == "github.com/octocat/hello-world"
     assert declared[0].key == "github.com/octocat/hello-world"
-
-
-def test_the_set_is_deduplicated_by_key():
-    declared = repos.declared_repositories(
-        config_map(kickoff_repo="jchou2/devbox", polled=POLLED)
-    )
-    keys = [d.key for d in declared]
-    assert len(keys) == len(set(keys)) == len(POLLED)
-    assert declared[0].source == "kickoff"  # first writing wins
-
-
-def test_a_malformed_declared_entry_is_skipped():
-    declared = repos.declared_repositories(
-        config_map(kickoff_repo="", polled=["a/b/c/d", "not-a-path", "", "o/r"])
-    )
-    assert [d.declared for d in declared] == ["o/r"]
-
-
-def test_a_non_github_source_is_ignored():
-    cfg = config_map(kickoff_repo="")
-    cfg["polling"]["sources"].append({"provider": "gitlab", "repos": ["x/y"]})
-    assert "gitlab.com/x/y" not in {d.key for d in repos.declared_repositories(cfg)}
-    assert "x/y" not in {d.declared for d in repos.declared_repositories(cfg)}
-
-
-def test_a_malformed_polling_section_widens_nothing():
-    """A6: an unreadable source contributes nothing — a fault never widens the set."""
-    cfg = config_map(kickoff_repo="o/r")
-    cfg["polling"] = "not-a-mapping"
-    assert [d.declared for d in repos.declared_repositories(cfg)] == ["o/r"]
-    cfg["polling"] = {"sources": [None, {"provider": "github", "repos": "nope"}]}
-    assert [d.declared for d in repos.declared_repositories(cfg)] == ["o/r"]
 
 
 def test_repository_keys_is_the_same_set():
@@ -266,7 +245,7 @@ def test_the_candidate_list_is_capped():
 
 def test_refusal_text_with_no_declared_repositories():
     text = kickoff.refusal_text(resolve("plain", kickoff_repo="", polled=[]))
-    assert "channels.slack.kickoff.repo" in text and "polling.sources" in text
+    assert "`repositories`" in text and "polling.sources" not in text
 
 
 def test_the_refusal_carries_no_token_or_other_config(monkeypatch):

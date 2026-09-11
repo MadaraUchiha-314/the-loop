@@ -59,10 +59,12 @@ Resolved in priority order — the first that exists wins:
 4. **`~/.the-loop/cli-config.yaml`** — the always-available fallback, tied to no repo.
 
 ::: danger Two settings have no fallback
-`routing.authorizedUsers` (who may trigger the daemon) and a poll
-source's `repos` (what it watches) are **CLI-config only**. They do **not** fall back to
-any repository's harness config. Left unset, the daemon fails closed: it ignores every
-human-authored event, and polls nothing.
+`routing.authorizedUsers` (who may trigger the daemon) and the top-level
+[`repositories`](/config/cli/repositories-options) (which repositories it works with) are
+**CLI-config only**. They do **not** fall back to any repository's harness config. Left
+unset, `authorizedUsers` fails closed — every human-authored event is ignored — and
+`repositories` leaves the poller with nothing to poll and the receiver bounded by nothing,
+which it says at start.
 :::
 
 ## Versioning and migration
@@ -71,7 +73,7 @@ human-authored event, and polls nothing.
 
 - **Type:** `string`
 - **Default:** none — unset is accepted
-- **Current:** `0.7.0`
+- **Current:** `0.8.0`
 
 Schema version of this file. The CLI **refuses to start** against a config that declares
 a version older than the one it needs, naming the key, its replacement and the exact
@@ -86,7 +88,10 @@ The gate is narrow on purpose — it refuses exactly two things:
    record per work item under `state.root` (below) and a file path has nothing left to
    point at; and `webhooks.ghWebhook.routing`, promoted in issue-142 to the top-level
    [`routing`](/config/cli/routing-options) because the poller dispatches on that same
-   block and a key named `webhooks` said otherwise;
+   block and a key named `webhooks` said otherwise; and `polling.sources[].repos`,
+   promoted in issue-348 to the top-level
+   [`repositories`](/config/cli/repositories-options) because the repository list bounds
+   every ingress — the webhook receiver, which never read it, included;
 2. the config **declares** a version older than the current one — it says it is stale, so
    it is believed.
 

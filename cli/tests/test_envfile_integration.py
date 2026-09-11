@@ -26,7 +26,7 @@ def _operator_setup(tmp_path: Path) -> Path:
     (home / ".env").write_text(f"export {TOKEN_VAR}='xoxb-test-000000000000'\n")
     config = home / "cli-config.yaml"
     config.write_text(
-        "version: '0.7.0'\n"
+        "version: '0.8.0'\n"
         "env:\n"
         "  file: .env\n"
         "channels:\n"

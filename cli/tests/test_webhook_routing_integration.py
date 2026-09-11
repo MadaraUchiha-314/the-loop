@@ -59,6 +59,7 @@ class ServerFactory:
     def __init__(self, tmp_path):
         self._tmp_path = tmp_path
         self.started = []
+        self.routers = []
 
     def __call__(
         self,
@@ -67,6 +68,7 @@ class ServerFactory:
         events=None,
         tmux_config=None,
         verifier=None,
+        repositories=None,
         **routing_overrides,
     ):
         tmux = tmux if tmux is not None else FakeTmux()
@@ -107,6 +109,10 @@ class ServerFactory:
             # The rosters the daemon wires in (issue-307): one store, written by
             # the dispatcher and read by the router.
             collaborators=dispatcher.collaborator_store,
+            # The repository bound (issue-348). `None` — the default — is "the
+            # operator declared nothing", which is what every scenario written
+            # before that change assumes.
+            repositories=repositories,
         )
 
         def on_event(event, payload, delivery_id):
@@ -124,6 +130,7 @@ class ServerFactory:
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
         thread.start()
         self.started.append((httpd, dispatcher))
+        self.routers.append(router)
         return httpd.server_address[1], registry, tmux
 
     @property
@@ -136,6 +143,12 @@ class ServerFactory:
         itself, and reaches it here instead of widening that tuple everywhere.
         """
         return self.started[-1][1]
+
+    @property
+    def router(self):
+        """The router behind the receiver started last — what the daemon's
+        ``apply()`` hot-swaps policy on when the config file changes."""
+        return self.routers[-1]
 
 
 @pytest.fixture()
@@ -1424,3 +1437,119 @@ def test_a_collaborators_comment_never_spawns_a_session(server_factory, tmp_path
         == 202
     )
     assert wait_until(lambda: len(tmux.spawns) == 1)
+
+
+# -- the repository bound (issue-348) -----------------------------------------
+
+
+def undeclared_comment_payload(body, full_name="stranger/repo", author="octocat"):
+    payload = issue_comment_payload(body, author=author)
+    payload["repository"] = {"full_name": full_name}
+    return payload
+
+
+def test_an_undeclared_repository_is_acknowledged_and_dispatched_nowhere(
+    server_factory, tmp_path
+):
+    """
+    Feature: One declared repository list bounds every ingress
+    Scenario: A delivery for a repository the operator never declared is acknowledged
+      and dispatched nowhere
+        Given a receiver whose instance declares only github.com/octo/repo
+        And a session registered for github:octo/repo#15
+        When a correctly signed issue_comment for stranger/repo is POSTed
+        Then the delivery is acknowledged on the wire
+        And no prompt is delivered into any tmux session
+        And no session is spawned
+    Requirement: docs/specs/issue-348/requirements.md#R2 (R2.1, A1)
+    """
+    port, registry, tmux = server_factory(repositories={"github.com/octo/repo"})
+    register(registry, tmp_path)
+    assert (
+        post_webhook(
+            port,
+            "issue_comment",
+            undeclared_comment_payload("the-loop start"),
+            "d-undeclared",
+        )
+        == 202
+    )
+    assert not wait_until(lambda: bool(tmux.delivers or tmux.spawns), timeout=0.5)
+
+
+def test_a_declared_repository_still_dispatches(server_factory, tmp_path):
+    """
+    Feature: One declared repository list bounds every ingress
+    Scenario: A delivery for a declared repository is routed exactly as before
+        Given a receiver whose instance declares github.com/octo/repo
+        And a session registered for github:octo/repo#15
+        When a correctly signed issue_comment for octo/repo is POSTed
+        Then the prompt is delivered into that session
+    Requirement: docs/specs/issue-348/requirements.md#R2 (R2.1)
+    """
+    port, registry, tmux = server_factory(repositories={"github.com/octo/repo"})
+    register(registry, tmp_path)
+    assert (
+        post_webhook(
+            port, "issue_comment", issue_comment_payload("CI is red"), "d-declared"
+        )
+        == 202
+    )
+    assert wait_until(lambda: bool(tmux.delivers))
+    ((ref, _prompt),) = tmux.delivers
+    assert ref == REF
+
+
+def test_declaring_the_repository_routes_the_next_delivery(server_factory, tmp_path):
+    """
+    Feature: One declared repository list bounds every ingress
+    Scenario: Declaring the repository and reloading routes the next delivery
+        Given a receiver that has already dropped a delivery for stranger/repo
+        When the operator declares that repository and the config is hot-reloaded
+        And the same repository delivers again
+        Then the delivery is routed, because a dropped one was never marked processed
+    Requirement: docs/specs/issue-348/requirements.md#R2 (R2.5, R2.6)
+    """
+    port, registry, tmux = server_factory(repositories={"github.com/octo/repo"})
+    register(registry, tmp_path, ref="github:stranger/repo#15", session_id="sess-2")
+    payload = undeclared_comment_payload("CI is red")
+    assert post_webhook(port, "issue_comment", payload, "d-1") == 202
+    assert not wait_until(lambda: bool(tmux.delivers), timeout=0.5)
+
+    # what the daemon's `apply()` does on a config reload
+    server_factory.router.repositories = {
+        "github.com/octo/repo",
+        "github.com/stranger/repo",
+    }
+    assert post_webhook(port, "issue_comment", payload, "d-2") == 202
+    assert wait_until(lambda: bool(tmux.delivers))
+    ((ref, _prompt),) = tmux.delivers
+    assert ref == "github:stranger/repo#15"
+
+
+def test_the_wire_response_names_no_repository(server_factory, tmp_path):
+    """
+    Feature: One declared repository list bounds every ingress
+    Scenario: A refusal discloses nothing about what the operator declared
+        Given a receiver whose instance declares only github.com/octo/repo
+        When an unsigned-for-this-instance caller POSTs for a repository outside it
+        Then the response body is the same acknowledgement every delivery gets
+        And it names no repository
+    Requirement: docs/specs/issue-348/requirements.md#R2 (A9)
+    """
+    port, _registry, _tmux = server_factory(repositories={"github.com/octo/repo"})
+    body = json.dumps(undeclared_comment_payload("hi")).encode()
+    signature = "sha256=" + hmac.new(SECRET.encode(), body, hashlib.sha256).hexdigest()
+    request = urllib.request.Request(
+        f"http://127.0.0.1:{port}/gh-webhook",
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "X-GitHub-Event": "issue_comment",
+            "X-GitHub-Delivery": "d-quiet",
+            "X-Hub-Signature-256": signature,
+        },
+    )
+    with urllib.request.urlopen(request, timeout=10) as response:
+        text = response.read().decode()
+    assert "octo" not in text and "stranger" not in text

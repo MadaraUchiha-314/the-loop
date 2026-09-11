@@ -180,7 +180,7 @@ typed on a channel without the grant does not reach the agent as prose either.
 | `work-item.reply` | none of the below applies | mirrored onto the work item as the-loop's own marked comment (quoted, scrubbed, keywords defanged) and **delivered into the waiting session** — 12.1.0's behaviour, the default |
 | `gate.feedback` | the work item's graph is parked at a human gate — or the pipeline **cannot tell** (no session record, no checkout, a read fault) | recorded on the ledger as an **unmarked** comment under your own credential, with the envelope and a visible "answer from `slack:U…`" attribution (a "reply from" when the gate could not be read); the ledger's ingress then classifies it exactly as a typed approval — with the graph it actually keeps — and the artifact's `approvedBy` names the person the envelope names |
 | `control.command` | the text carries a [control keyword](/config/cli/routing-options#execution-control) — typed, or pressed as the **Execute** / **Start** button ([issue-337](https://github.com/MadaraUchiha-314/the-loop/issues/337)) | recorded the same way, keyword intact; the ledger's ingress executes it through the same named-actor control seam. With `read.mode: socket` this grant also renders the Execute button on the phase-selection checklist and the Start button on a kickoff's reply, each carrying the configured keyword as its value |
-| `work-item.create` | the message is **top-level** in the configured channel | an issue is created in `kickoff.repo` with `kickoff.labels` — needs both the grant and the repo |
+| `work-item.create` | the message is **top-level** in the configured channel | an issue is created in the repository the message named, else `kickoff.repo`, with `kickoff.labels` — needs the grant, and a target inside the declared `repositories` |
 | `instance.command` | a `/the-loop status`, `restart` or `upgrade` [slash command](#the-slash-command) | the core facade `the-loop status` / `the-loop restart [--with-upgrade]` run — answered ephemerally; **not recorded** (no ticket), the event log is the trail ([issue-334](https://github.com/MadaraUchiha-314/the-loop/issues/334)) |
 | `standing.command` | a `/the-loop standing list\|start\|stop\|restart <name>` slash command | the same core verb `the-loop standing <verb>` runs; not recorded |
 
@@ -269,9 +269,9 @@ Since [issue-341](https://github.com/MadaraUchiha-314/the-loop/issues/341) this 
 slim-gym: flaky teardown in the batch runner
 ```
 
-The prefix is resolved against the repositories **you** declared — this `repo` plus
-every `repos` entry of every `github` source in
-[`polling.sources`](/config/cli/polling-options) — as a bare repository name, an
+The prefix is resolved against the repositories **you** declared — the top-level
+[`repositories`](/config/cli/repositories-options), the one list every ingress reads
+(issue-348) — as a bare repository name, an
 `owner/repo`, or a `host/owner/repo`; the prefix is stripped before the issue is
 composed, and `kickoff.labels` applies whichever repository is chosen. Nothing is
 inferred beyond that list ([decision-120](/decisions/decision-120)):
@@ -283,6 +283,7 @@ inferred beyond that list ([decision-120](/decisions/decision-120)):
 | a bare word matching none (`fix: …`) | not treated as a prefix; the message goes to this `repo` unchanged |
 | a prefix and nothing after it | refused — there is no work item to open |
 | no prefix, this `repo` empty | refused, with a reply asking for a `<repo>:` prefix |
+| no prefix, this `repo` **not in `repositories`** | refused — it points at a declared repository, it does not declare one (issue-348) |
 
 So `work-item.create` with an empty `repo` is now a **valid** configuration —
 prefix-only kickoff — rather than a dead one. Every refusal reaches only a member on
@@ -348,7 +349,7 @@ member gets no answer — and each verb family needs its grant in `publish`:
 
 | Verbs | Grant | Where it goes |
 |-------|-------|---------------|
-| `<keyword> <work-item> [@login] [instance:<name>]` — `start`, `stop`, `pause`, `resume`, `execute`, `contribute`, `do`, `review`, `cleanup`, `add-collaborator`, `remove-collaborator` | `control.command` | the ledger, as an unmarked comment composed from the configured keyword; the ingress executes it. The work item (`#N` against `kickoff.repo`, `owner/repo#N`, `github:…`, a URL) must be in a repository this instance is configured for (`kickoff.repo`, `polling.sources`) or one it already manages |
+| `<keyword> <work-item> [@login] [instance:<name>]` — `start`, `stop`, `pause`, `resume`, `execute`, `contribute`, `do`, `review`, `cleanup`, `add-collaborator`, `remove-collaborator` | `control.command` | the ledger, as an unmarked comment composed from the configured keyword; the ingress executes it. The work item (`#N` against `kickoff.repo`, `owner/repo#N`, `github:…`, a URL) must be in a repository this instance is configured for (the top-level `repositories`) or one it already manages |
 | `status` · `restart` · `upgrade` | `instance.command` | `core.lifecycle` — what `the-loop status` and `the-loop restart [--with-upgrade]` run |
 | `standing list` · `standing start\|stop\|restart <name>` | `standing.command` | `core.standing` — what `the-loop standing <verb>` runs |
 

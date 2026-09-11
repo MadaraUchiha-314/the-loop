@@ -165,11 +165,22 @@ def _acquire(name: str, pidfile: str) -> _Acquired:
 
 def _start_poller(cli_config: dict) -> _Start:
     from ..poller import daemon as poller_daemon
+    from ..repos import repository_bounds
 
     polling = (cli_config.get("polling")) or {}
     if not polling.get("sources"):
         reason = (
             "polling.enabled is true but polling.sources is empty — nothing to poll"
+        )
+        logger.error("not hosting the poller: %s", reason)
+        return None, reason
+    if not repository_bounds(cli_config):
+        # issue-348: what is polled moved to the top level, so a fully configured
+        # source can still have nothing to poll. Refused here, as an empty
+        # `sources` is, rather than looping on a per-cycle provider error.
+        reason = (
+            "polling.enabled is true but the top-level `repositories` is empty "
+            "— nothing to poll"
         )
         logger.error("not hosting the poller: %s", reason)
         return None, reason

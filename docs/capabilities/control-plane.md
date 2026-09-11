@@ -106,7 +106,8 @@ package — there are no install extras (owner decision, PR #162).
   process is skipped with a warning; a hosting failure never takes down the API.
   An **enabled** ingress that does not start SHALL record `ingress.hosted_failed` at
   level `error` with the ingress and the reason (issue-339) — a lock another process
-  holds, an enabled poller with no `polling.sources`, a Slack token *variable* that is
+  holds, an enabled poller with no `polling.sources` or no top-level `repositories`
+  (issue-348), a Slack token *variable* that is
   not set (its name, never its value). Before it, that failure was a logfile line and
   nothing in the event log, so a poller that never came up was visible only as the
   *absence* of a `poller.started`, which nothing was computing. An ingress nobody

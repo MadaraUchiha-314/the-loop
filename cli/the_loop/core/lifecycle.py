@@ -34,6 +34,7 @@ from typing import Any, Dict, List, Optional
 from .. import cli_config, eventlog
 from ..api.config import base_url, service_config, service_pidfile
 from ..daemonize import open_logfile
+from ..repos import repository_bounds
 from ..runlock import RunLock
 from ..state import layout_from_config, rival_roots
 from . import daemons as core_daemons
@@ -354,6 +355,19 @@ def start_all(config: Optional[dict] = None) -> Dict[str, Any]:
                 True,
                 "misconfigured",
                 "polling.enabled is true but polling.sources is empty",
+            )
+        )
+    elif not repository_bounds(config or {}):
+        # The same contradiction, one key over (issue-348): since the repository
+        # list moved to the top level, a source can be fully configured and still
+        # have nothing to poll. Said here rather than once per cycle in a logfile.
+        rows.append(
+            _row(
+                "poller",
+                True,
+                "misconfigured",
+                "polling.enabled is true but the top-level `repositories` is empty "
+                "— nothing to poll",
             )
         )
     else:

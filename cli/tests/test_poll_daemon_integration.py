@@ -43,12 +43,12 @@ service:
 routing:
   enabled: false
   authorizedUsers: ["octocat"]
+repositories: ["octo/repo"]
 polling:
   enabled: true
   intervalSeconds: 1
   sources:
     - provider: github
-      repos: ["octo/repo"]
 """
 
 #: A `gh` that satisfies the dependency check and lists nothing, so a cycle runs
@@ -281,6 +281,7 @@ def test_start_reports_a_startup_failure_to_its_caller(env):
     """
     (env["root"] / "cli-config.yaml").write_text(
         "service:\n  enabled: false\nrouting:\n  enabled: false\n"
+        'repositories: ["octo/repo"]\n'
         "polling:\n  enabled: true\n  intervalSeconds: 1\n"
         "  sources:\n    - provider: nosuch\n"
     )
@@ -391,5 +392,34 @@ def test_status_reports_a_running_poller_its_pid_and_its_last_cycle(env):
         assert row["enabled"] is True
         assert row["lastCycleAt"]
         assert "itemsSeen" in row["lastCycle"]
+    finally:
+        _kill(pid)
+
+
+def test_the_poller_polls_the_top_level_declared_repositories(env):
+    """
+    Feature: One declared repository list bounds every ingress
+    Scenario: The poller builds its GitHub source from the top-level repositories
+        Given a CLI config whose `repositories` names octo/repo and whose one poll
+          source declares only `provider: github`
+        When `the-loop start` brings the poller up and it runs a cycle
+        Then the poller's log names the repository it was bound to
+        And the source itself declared no repository list of its own
+    Requirement: docs/specs/issue-348/requirements.md#R3 (R3.1, R3.2)
+    """
+    config = (env["root"] / "cli-config.yaml").read_text()
+    assert 'repositories: ["octo/repo"]' in config
+    assert "repos:" not in config  # the retired key is gone from the fixture
+
+    result = _cli(env, "start")
+    pid = _daemon_pid(env)
+    try:
+        assert result.returncode == 0, result.stderr
+        assert _wait_for(
+            lambda: (
+                env["logfile"].is_file()
+                and "github octo/repo" in env["logfile"].read_text()
+            )
+        ), env["logfile"].read_text() if env["logfile"].is_file() else "no log"
     finally:
         _kill(pid)

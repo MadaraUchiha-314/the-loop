@@ -20,11 +20,17 @@ from the_loop.api.app import create_app
 from the_loop.runlock import RunLock
 from the_loop.state import layout_from_config
 
-POLLING = {"enabled": True, "sources": [{"provider": "github", "repos": ["octo/repo"]}]}
+#: A configured poller. Since issue-348 the repositories it polls are the top-level
+#: declaration, so a fixture that wants a *workable* poller carries both.
+POLLING = {"enabled": True, "sources": [{"provider": "github"}]}
+REPOSITORIES = ["octo/repo"]
 
 
 def _config(tmp_path, **extra):
-    config = {"state": {"root": str(tmp_path / ".the-loop")}}
+    config = {
+        "state": {"root": str(tmp_path / ".the-loop")},
+        "repositories": REPOSITORIES,
+    }
     config.update(extra)
     return config
 

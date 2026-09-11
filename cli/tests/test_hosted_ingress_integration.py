@@ -73,12 +73,12 @@ webhooks:
 routing:
   enabled: false
   authorizedUsers: ["octocat"]
+repositories: ["octo/repo"]
 polling:
   enabled: true
   intervalSeconds: 1
   sources:
     - provider: github
-      repos: ["octo/repo"]
 """
     )
 

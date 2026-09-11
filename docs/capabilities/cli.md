@@ -286,7 +286,8 @@ self-learning/ML capabilities.
   (`webhooks.ghWebhook.enabled`, default off) and the poller (`polling.enabled`,
   default off) — reporting one outcome per service
   (`started | already-running | disabled | misconfigured | failed`, an enabled poller
-  with no `polling.sources` being the misconfigured case) and exiting `0` only when
+  with no `polling.sources` — or, since issue-348, no top-level `repositories` — being
+  the misconfigured case) and exiting `0` only when
   every enabled service came up; one service's failure SHALL NOT hide the others'
   outcomes. `stop` SHALL stop every running service regardless of the `enabled` flags.
   `restart` SHALL compose stop → start, `--with-upgrade` running the issue-152

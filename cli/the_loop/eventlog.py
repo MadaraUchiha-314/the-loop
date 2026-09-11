@@ -75,7 +75,13 @@ EVENT_TYPES: Dict[str, str] = {
     ),
     "routing.dropped": (
         "A verified event was not routed (reason: disabled-event | "
-        "duplicate-delivery | no-work-item | unauthorized-actor; actor)."
+        "duplicate-delivery | undeclared-repository | no-work-item | "
+        "unauthorized-actor; actor). `undeclared-repository` (issue-348) is the "
+        "repository bound: the delivery — or a work item it named — is outside the "
+        "top-level `repositories`, the one list every ingress reads. It carries "
+        "`repository` for a delivery judged on its own repository and `work_items` "
+        "for refs filtered out of one, and is checked ABOVE the actor guard, so an "
+        "undeclared repository's payload reaches nothing else."
     ),
     "routing.collaborator": (
         "A verified event was routed on a WORK-ITEM COLLABORATOR grant rather than "

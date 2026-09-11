@@ -24,6 +24,29 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
   `pull_request` THEN the receiver SHALL **warn at startup and on hot reload**: a
   work item that ends would never be seen, so its session (and tmux session) would
   leak. A warning, not an error — narrowing is the operator's call.
+- **The receiver is bounded by the repositories the operator declared** (issue-348,
+  [decision-121](../decisions/decision-121.md)). WHEN the top-level `repositories` is
+  non-empty AND a delivery's own repository — `repository.full_name` on the host its
+  `html_url` names, compared as one lowercased `host/owner/repo` key — is not in it THEN
+  the receiver SHALL drop the delivery, record `routing.dropped` with reason
+  `undeclared-repository` and the repository, and dispatch nothing. WHEN a delivery names
+  work items in repositories outside the list — the cross-repository linkage of issue-183
+  — THEN those refs SHALL be dropped and the rest kept; IF none remains THEN the delivery
+  SHALL be dropped with the same reason. The check SHALL run **above** the actor guard and
+  above the bus, so an undeclared repository's payload reaches neither
+  `routing.authorizedUsers` nor a channel, and the dropped delivery SHALL NOT be marked
+  processed, so a redelivery after the repository is declared still routes. The drop SHALL
+  leave no mark: the same acknowledgement every delivery gets, no reaction, no comment, and
+  no repository named on the wire.
+  - WHEN `repositories` is empty or absent THEN nothing is bounded — every delivery is
+    judged exactly as it was in 13.12.0 — and the receiver SHALL say so once at start,
+    naming the key. This is the one permissive direction in the declaration, and it exists
+    so that an upgrade cannot silently stop an instance.
+  - The bound is **not** authentication. It narrows what a forged or unsigned delivery can
+    address; the signature (only checked when `secretEnv` resolves) and the
+    authorized-actor guard ([decision-023](../decisions/decision-023.md)) are unchanged,
+    and so is `instance.scope`, which answers *which instance* takes a work item rather
+    than *which repositories may reach this machine*.
 - WHEN routing is enabled (`routing.enabled`) THEN a verified event
   SHALL be matched to a registered session (`.the-loop/sessions/*.json`, managed by
   `the-loop sessions`) and delivered into that session's tmux-hosted conversation
@@ -785,6 +808,7 @@ that item — the self-hosted equivalent of claude.ai/code PR watching.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-348 | The receiver gained the repository bound it never had: the list of repositories an instance works with moved out of `polling.sources[].repos` to a top-level `repositories`, and **every** ingress reads it — the receiver drops an undeclared delivery (and undeclared linked refs) as `undeclared-repository`, above the actor guard; the poller takes its scopes from it; `may_target` and the kickoff resolve against it. Breaking: config version 0.8.0, `the-loop migrate-config` moves the lists up (and `kickoff.repo` with them), an un-migrated config refuses to start. An empty list bounds nothing and says so at start | [spec](../specs/issue-348/), [decision-121](../decisions/decision-121.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/348) |
 | issue-332 | A closed item the poller had merely listed leaves the board by itself (2026-09-09): a portable record carrying only `poll` — excluded from reconciliation by issue-329 because asking every cycle would cost one provider call per unlabelled open item, forever — is now asked once it has been absent from complete listings for sixty cycles' worth of `intervalSeconds` (measured on the ledger's own `lastPolledAt` / new `closureCheckedAt`, so `poll --once` from cron gets it too), at most twenty per source per cycle, longest-absent first. A closure takes the unchanged close path and the record ends as `ended` only; a *still open* or unanswerable answer writes only `closureCheckedAt`, deferring the question a window. `poll.cycle` counts the questions as `ledger_checks`. The tracked set is untouched | [spec](../specs/issue-332/), [decision-115](../decisions/decision-115.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/332) |
 | issue-329 | A closed work item is recorded as ended (2026-09-09): the close path stamps an `ended` section (`state`, `kind`, `reason`, `at`, `source`, `actor`) on the portable record of every tracked item a `closed` event names — with or without a session on this machine — and a `reopened` event or a listing that carries the item clears it. Closure reconciliation widened from active sessions to every session record plus every armed, frozen or rostered portable record, skipping stamped ones; a polled closure now carries GitHub's `closed_by` as its `sender`, so an authorized closer's cleanup runs on a polling deployment as it does on a webhook one. Both attention surfaces read the stamp and demote the item. Before it, closed items sat under *Needs you* forever | [spec](../specs/issue-329/), [decision-113](../decisions/decision-113.md), [control plane](control-plane.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/329) |
 | issue-322 | An instance learned which work items are its own (2026-09-08): every instance judged every labelled event identically, so two instances on one repository both spawned for one start. The top-level `instance` block names the instance and its scope — `open` (unchanged), `addressed` (take only a start that names me: `the-loop start instance:<name>`), `locked` (take nothing new; `scope.workItems` is the door) — and one seam in `Dispatcher.handle`, after linkage and the control parse and before anything is recorded, refuses an event outside the managed set (declared ∪ session record ∪ control record) with a settled `dispatch.dropped` / `control.rejected` naming `unaddressed`, `instance-locked`, `addressed-elsewhere` or `ambiguous-address`, and no reaction, comment or record. An explicit address is authoritative in every mode; a control record now carries `instance`; the CLI's posted keyword and the announcement name it; a named instance spawns with `-e THE_LOOP_INSTANCE=<name>` | [spec](../specs/issue-322/), [decision-110](../decisions/decision-110.md), [instances](instances.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/322) |

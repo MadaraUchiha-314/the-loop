@@ -12,6 +12,12 @@ from the config's shape rather than from a comment. The owner's call was to make
 these **breaking** changes rather than carry shadow overrides forever: *"Let's
 make breaking changes. /upgrade should be able to handle it."*
 
+issue-348 removes ``polling.sources[].repos`` for a fifth: the list of repositories an
+instance works with was named after the one ingress that read it, so the ``gh-webhook``
+receiver — which never read it — was bounded by no repository list at all. It is promoted
+to a top-level ``repositories``, a sibling of ``routing``/``polling``/``channels``, and
+every ingress reads it.
+
 issue-304 removes ``collaborators`` and ``notifications`` for the plainest reason
 of all: **nothing ever read either block.** The daemon events the filter named
 are raised nowhere under ``the_loop/``, so an operator who filled it in
@@ -35,7 +41,7 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Tuple
+from typing import Any, Dict, List, Mapping, Set, Tuple
 
 __all__ = [
     "CURRENT_CONFIG_VERSION",
@@ -47,8 +53,9 @@ __all__ = [
 ]
 
 #: Bumped by issue-109, then issue-128, then issue-142, then issue-245, then
-#: issue-304, then issue-309. A config below this needs `/the-loop:upgrade-the-loop`.
-CURRENT_CONFIG_VERSION = "0.7.0"
+#: issue-304, then issue-309, then issue-348. A config below this needs
+#: `/the-loop:upgrade-the-loop`.
+CURRENT_CONFIG_VERSION = "0.8.0"
 
 _UPGRADE = "/the-loop:upgrade-the-loop"
 
@@ -110,6 +117,34 @@ _SLACK_EVENTS_REPLACEMENT = "channels.slack.subscribe"
 _SLACK_USERS_KEY = "authorizedUsers"
 _SLACK_USERS_REPLACEMENT = "routing.authorizedUsers"
 
+# issue-348 promotes the repository list. `polling.sources[].repos` named the set after
+# the one ingress that read it, and the webhook receiver read nothing of the kind — so a
+# delivery for a repository the operator never listed was judged on its actor and its
+# signature alone. The list is the same list for every ingress, so it is declared once, at
+# the top level, and `channels.slack.kickoff.repo` joins it: that key points AT a declared
+# repository now, it does not declare one.
+_REPOS_SITE = "polling.sources[].repos"
+_REPOS_KEY = "repos"
+_REPOS_REPLACEMENT = "repositories"
+_KICKOFF_SITE: Tuple[str, ...] = ("channels", "slack", "kickoff")
+_KICKOFF_KEY = "repo"
+
+
+def _github_sources(config: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    """Every ``provider: github`` entry of ``polling.sources``.
+
+    Only github's: ``repos`` under another provider is that provider's key, and
+    ``jira`` is reserved. Migrating or refusing one would be this module guessing at
+    a schema it does not own.
+    """
+    polling = _dig(config, ("polling",)) or {}
+    sources = polling.get("sources") if isinstance(polling, Mapping) else None
+    return [
+        source
+        for source in (sources if isinstance(sources, list) else [])
+        if isinstance(source, dict) and source.get("provider") == "github"
+    ]
+
 
 class ConfigTooOld(RuntimeError):
     """The config predates a breaking change. Always names the fix."""
@@ -165,6 +200,8 @@ def needs_migration(config: Mapping[str, Any]) -> bool:
         return True
     slack = _dig(config, _SLACK_CHANNEL_SITE) or {}
     if _SLACK_EVENTS_KEY in slack or _SLACK_USERS_KEY in slack:
+        return True
+    if any(_REPOS_KEY in source for source in _github_sources(config)):
         return True
     return any(
         (section or {}).get("ghBinary") is not None
@@ -269,6 +306,16 @@ def assert_current(config: Mapping[str, Any]) -> None:
             "It is NOT being ignored — a member id the daemon silently stopped "
             f"honouring would lock you out of your own thread. Run `{_UPGRADE}` "
             "to migrate."
+        )
+    if any(_REPOS_KEY in source for source in _github_sources(config)):
+        raise ConfigTooOld(
+            f"this CLI config still declares `{_REPOS_SITE}`. The repositories an "
+            "instance works with are declared ONCE now, at the top level "
+            f"(`{_REPOS_REPLACEMENT}`), and read by EVERY ingress (issue-348) — the "
+            "gh-webhook receiver included, which read no repository list at all while "
+            "the poller had one. It is NOT being ignored: the two doors into your "
+            "machine being bounded by two different answers is exactly the drift this "
+            f"key was removed to end. Run `{_UPGRADE}` to migrate."
         )
     declared = config.get("version")
     if declared is not None and _parts(str(declared)) < _parts(CURRENT_CONFIG_VERSION):
@@ -435,6 +482,7 @@ def migrate_cli_config(config: Mapping[str, Any]) -> MigrationReport:
         )
 
     _migrate_slack_channel(data, report)
+    _promote_repositories(data, report)
 
     if _parts(str(data.get("version", "0"))) < _parts(CURRENT_CONFIG_VERSION):
         report.moves.append(
@@ -515,3 +563,85 @@ def _migrate_slack_channel(data: Dict[str, Any], report: MigrationReport) -> Non
                 "person's GitHub entry (`- github: <login>` + `  slack: <U…>`) so "
                 "the ledger can record their approvals under their login"
             )
+
+
+def _promote_repositories(data: Dict[str, Any], report: MigrationReport) -> None:
+    """Move every ``polling.sources[].repos`` up to a top-level ``repositories``
+    (issue-348), and add ``channels.slack.kickoff.repo`` to it.
+
+    Order is the operator's own reading order: anything they already hand-wrote at the
+    top level first, then each github source's list in source order, then the kickoff
+    target. Deduplicated by the literal string — this module does not resolve a host, so
+    ``octo/app`` and ``github.com/octo/app`` both survive here and are collapsed by
+    :func:`the_loop.repos.declared_repositories`, which knows which host is which.
+
+    ``kickoff.repo`` is **kept** where it is. It is still the Slack channel's default
+    target; what changed is that it points AT a declared repository instead of declaring
+    one, so it has to appear in the new list for that channel to keep working.
+    """
+    sources = _github_sources(data)
+    lists = [source for source in sources if _REPOS_KEY in source]
+    kickoff = _dig(data, _KICKOFF_SITE) or {}
+    kickoff_repo = str(kickoff.get(_KICKOFF_KEY) or "").strip()
+    if not lists and not kickoff_repo:
+        return
+
+    existing = data.get(_REPOS_REPLACEMENT)
+    if existing is not None and not isinstance(existing, list):
+        report.notes.append(
+            f"the existing top-level `{_REPOS_REPLACEMENT}` is {existing!r}, not a "
+            "list; it was replaced by the promoted one — re-declare it by hand"
+        )
+        existing = None
+    moved: List[str] = []
+    seen: Set[str] = set()
+
+    def add(value: Any) -> None:
+        entry = str(value).strip()
+        if entry and entry not in seen:
+            seen.add(entry)
+            moved.append(entry)
+
+    for entry in existing or []:
+        add(entry)
+    for source in lists:
+        taken = source.pop(_REPOS_KEY) or []
+        for entry in taken if isinstance(taken, (list, tuple)) else [taken]:
+            add(entry)
+    if kickoff_repo:
+        add(kickoff_repo)
+
+    if not moved:
+        # Every list was empty and there is no kickoff target: the key still goes,
+        # because leaving it behind would keep failing `assert_current` forever.
+        if lists:
+            report.changed = True
+            report.moves.append(
+                f"{_REPOS_SITE} removed (it was empty) — repositories are declared "
+                f"at the top level now (`{_REPOS_REPLACEMENT}`, issue-348)"
+            )
+        return
+
+    if not lists and moved == list(existing or []):
+        return  # already migrated: a second run writes nothing and says nothing
+
+    data[_REPOS_REPLACEMENT] = moved
+    report.changed = True
+    report.moves.append(
+        f"{_REPOS_SITE} → {_REPOS_REPLACEMENT} (top level; EVERY ingress reads it, "
+        f"the gh-webhook receiver included) — {len(moved)} repositor"
+        f"{'y' if len(moved) == 1 else 'ies'}"
+    )
+    if kickoff_repo:
+        report.notes.append(
+            f"`{'.'.join(_KICKOFF_SITE)}.{_KICKOFF_KEY}` ({kickoff_repo!r}) was added "
+            "to "
+            f"`{_REPOS_REPLACEMENT}` and left where it is: it is still that channel's "
+            "default target, but it now POINTS AT a declared repository rather than "
+            "declaring one"
+        )
+    report.notes.append(
+        "your gh-webhook receiver is now bounded by this list too — a delivery for a "
+        "repository outside it is dropped (`undeclared-repository`). If you were relying "
+        "on it accepting a repository you never listed, add that repository here"
+    )

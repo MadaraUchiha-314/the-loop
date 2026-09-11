@@ -4,7 +4,7 @@ A breaking change is only as good as its migration, so each is tested both
 ways: an old config migrates to the expected new one, AND the runtime refuses
 an un-migrated one.
 
-Five so far — `ghBinary` (one `integrations` block replaced three copies),
+Six so far — `ghBinary` (one `integrations` block replaced three copies),
 `polling.stateFile` (the poller's ledger became one record per work item under
 `state.root`, so a file path has nothing left to point at),
 `webhooks.ghWebhook.routing` (promoted to a top-level `routing`, because the
@@ -12,7 +12,10 @@ poller reads that same block and a key named `webhooks` said otherwise),
 `integrations.slack` (the incoming webhook converged on the `channels.slack`
 bot), and `collaborators` / `notifications` (issue-304 — the plainest case of
 all: nothing ever read either block, so an operator who filled one in
-configured nothing and was never told).
+configured nothing and was never told), and `polling.sources[].repos` (issue-348 —
+the repository list was named after the one ingress that read it, so the webhook
+receiver was bounded by no repository list at all; it is a top-level
+`repositories` now, read by every ingress).
 """
 
 from __future__ import annotations
@@ -585,3 +588,119 @@ def test_an_empty_member_list_moves_nothing_and_says_nothing_more():
     assert "authorizedUsers" not in report.config["channels"]["slack"]
     assert report.config.get("routing", {}).get("authorizedUsers", []) == []
     assert not any("fold it" in n for n in report.notes)
+
+
+# -- issue-348: the repository list moves to the top level ---------------------
+
+
+WITH_POLL_REPOS = {
+    "version": "0.7.0",
+    "polling": {
+        "sources": [
+            {"provider": "github", "repos": ["octo/app", "octo/lib"], "label": "x"},
+            {"provider": "github", "repos": ["ghe.corp/team/svc"]},
+            {"provider": "jira", "repos": ["PROJ"]},
+        ]
+    },
+    "channels": {"slack": {"kickoff": {"repo": "octo/app"}}},
+}
+
+
+def test_the_current_config_version_is_0_8_0():
+    """R5.5 — the version the break is gated on."""
+    assert CURRENT_CONFIG_VERSION == "0.8.0"
+
+
+def test_the_repository_lists_move_up():
+    """R5.1 — every github source's list, in declaration order, deduplicated."""
+    before = copy.deepcopy(WITH_POLL_REPOS)
+    report = migrate_cli_config(WITH_POLL_REPOS)
+    assert report.config["repositories"] == [
+        "octo/app",
+        "octo/lib",
+        "ghe.corp/team/svc",
+    ]
+    assert [s for s in report.config["polling"]["sources"] if "repos" in s] == [
+        {"provider": "jira", "repos": ["PROJ"]}  # another provider's key, untouched
+    ]
+    assert report.config["polling"]["sources"][0] == {
+        "provider": "github",
+        "label": "x",
+    }
+    assert WITH_POLL_REPOS == before  # the input is never mutated
+    assert_current(report.config)
+
+
+def test_the_kickoff_repo_joins_the_declared_set_and_stays_where_it_is():
+    """R5.2 — it points AT a declared repository now; it no longer declares one."""
+    report = migrate_cli_config(
+        {
+            "version": "0.7.0",
+            "polling": {"sources": [{"provider": "github", "repos": ["octo/lib"]}]},
+            "channels": {"slack": {"kickoff": {"repo": "octo/app"}}},
+        }
+    )
+    assert report.config["repositories"] == ["octo/lib", "octo/app"]
+    assert report.config["channels"]["slack"]["kickoff"]["repo"] == "octo/app"
+    assert any("POINTS AT a declared repository" in n for n in report.notes)
+
+
+def test_a_hand_written_top_level_list_is_kept_first():
+    """R5.6 — both are kept, the operator's own top-level entries leading."""
+    report = migrate_cli_config(
+        {
+            "version": "0.7.0",
+            "repositories": ["octo/top"],
+            "polling": {
+                "sources": [{"provider": "github", "repos": ["octo/top", "octo/app"]}]
+            },
+        }
+    )
+    assert report.config["repositories"] == ["octo/top", "octo/app"]
+
+
+def test_an_empty_repos_list_still_retires_the_key():
+    """Leaving it behind would keep failing `assert_current` forever."""
+    report = migrate_cli_config(
+        {
+            "version": "0.7.0",
+            "polling": {"sources": [{"provider": "github", "repos": []}]},
+        }
+    )
+    assert "repos" not in report.config["polling"]["sources"][0]
+    assert_current(report.config)
+
+
+def test_the_repositories_migration_is_idempotent():
+    """R5.3 — a second run writes nothing and reports nothing."""
+    once = migrate_cli_config(WITH_POLL_REPOS)
+    twice = migrate_cli_config(once.config)
+    assert twice.changed is False
+    assert twice.config == once.config
+
+
+def test_the_migration_says_the_receiver_is_bounded_now():
+    """The one behaviour change on upgrade is stated, not discovered."""
+    report = migrate_cli_config(WITH_POLL_REPOS)
+    assert any("gh-webhook receiver is now bounded" in n for n in report.notes)
+
+
+def test_an_un_migrated_repos_key_is_refused():
+    """R5.4, A5 — the value is never ignored; the daemon refuses to start."""
+    assert needs_migration(WITH_POLL_REPOS)
+    with pytest.raises(ConfigTooOld) as excinfo:
+        assert_current(WITH_POLL_REPOS)
+    message = str(excinfo.value)
+    assert "polling.sources[].repos" in message
+    assert "`repositories`" in message
+    assert "/the-loop:upgrade-the-loop" in message
+
+
+def test_another_providers_repos_key_is_neither_migrated_nor_refused():
+    """`repos` under `jira` is that provider's key, and jira is reserved."""
+    config = {
+        "version": CURRENT_CONFIG_VERSION,
+        "polling": {"sources": [{"provider": "jira", "repos": ["PROJ"]}]},
+    }
+    assert needs_migration(config) is False
+    assert_current(config)

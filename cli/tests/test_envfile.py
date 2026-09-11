@@ -250,7 +250,7 @@ def test_an_absolute_or_parent_path_is_honoured_and_named(
 def test_a_config_without_an_env_block_loads_nothing(config_dir: Path, caplog):
     """T10: a 13.2.0 config behaves exactly as before — nothing resolved, nothing said."""
     config_path = _write_config(
-        config_dir, "version: '0.7.0'\nrouting:\n  enabled: false\n"
+        config_dir, "version: '0.8.0'\nrouting:\n  enabled: false\n"
     )
     with caplog.at_level(logging.DEBUG, logger="the-loop.env"):
         assert cli_config.resolve_env_file({"routing": {}}, config_path) is None
