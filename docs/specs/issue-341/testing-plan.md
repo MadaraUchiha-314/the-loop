@@ -75,17 +75,32 @@ value and never appears in evidence.
 
 ## Activities checklist
 
-- [ ] Red first: `test_channels_kickoff.py` fails to import against `cd1ae94`.
-- [ ] T1 unit suite green.
-- [ ] T2 scenarios green, each with a Gherkin docstring (`testing.gherkinDocstrings: required`).
-- [ ] T8 abuse cases green, one per A1–A7.
-- [ ] T10 migration suites green, including both schema copies.
-- [ ] T12 `make check` green.
-- [ ] T13 security review recorded.
+- [x] Red first: `test_channels_kickoff.py` fails to import against `cd1ae94`.
+- [x] T1 unit suite green.
+- [x] T2 scenarios green, each with a Gherkin docstring (`testing.gherkinDocstrings: required`).
+- [x] T8 abuse cases green, one per A1–A7.
+- [x] T10 migration suites green, including both schema copies.
+- [x] T12 `make check` green.
+- [x] T13 security review recorded.
 
 ## Verification results
 
-> Filled at the `verification` node.
+Executed 2026-09-11 on `claude/github-issue-341-k4mghj`. Full output and the requirement
+trace: [`evidence/verification.md`](evidence/verification.md).
+
+| Row | Command | Outcome |
+|-----|---------|---------|
+| T1 | `pytest -q cli/tests/test_channels_kickoff.py` | **47 passed** |
+| T2 | `pytest -q cli/tests/test_channels_integration.py -k kickoff` | **7 passed**, 30 deselected (5 new + 2 pre-existing) |
+| T8 | `pytest -q cli/tests/test_channels_kickoff.py -k "unauthorized or undeclared or metachar or host or leak or malformed or grant or told_nothing"` + the integration case | **12 passed** + **1 passed** |
+| T10 | the seven migration suites | **277 passed** |
+| T12 | `make check` | **3418 passed, 1 skipped**; ruff, markdownlint, format, pyright and config validation clean |
+| T13 | [`evidence/security-review.md`](evidence/security-review.md) | A1–A7 closed; tier 3, no human sign-off required |
+
+Red first: the unit suite did not collect against `cd1ae94`
+(`ImportError: cannot import name 'kickoff' from 'the_loop.channels'`). One existing
+assertion changed on purpose — `test_bus.py::test_kickoff_needs_the_grant_and_a_repo`
+pinned the precondition R3.3 removes, and is now `…_not_a_repo`.
 
 ## Review comments
 

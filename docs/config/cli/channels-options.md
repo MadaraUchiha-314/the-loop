@@ -281,6 +281,7 @@ inferred beyond that list ([decision-120](/decisions/decision-120)):
 | a prefix naming exactly one declared repository | the issue is opened there |
 | `owner/repo:` naming none, or a bare name matching several | **refused** — ⚠️ on your message and a reply naming the candidates; nothing is created |
 | a bare word matching none (`fix: …`) | not treated as a prefix; the message goes to this `repo` unchanged |
+| a prefix and nothing after it | refused — there is no work item to open |
 | no prefix, this `repo` empty | refused, with a reply asking for a `<repo>:` prefix |
 
 So `work-item.create` with an empty `repo` is now a **valid** configuration —
