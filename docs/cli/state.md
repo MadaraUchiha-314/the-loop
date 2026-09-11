@@ -18,8 +18,9 @@ them](#what-must-never-be-carried).
 ## Where it lives
 
 Everything the CLI **generates** sits under one configured root,
-[`state.root`](/config/cli/#state-root) (default `.the-loop`, relative to the process's
-working directory), split by whether it travels:
+[`state.root`](/config/cli/#state-root) — `.the-loop` **beside your config file** unless
+you say otherwise, never relative to whatever directory a command was run from
+([decision-119](/decisions/decision-119)) — split by whether it travels:
 
 ```
 .the-loop/
@@ -756,15 +757,16 @@ working, not state that failed to arrive.
 
 ### If `state.root` is outside a repository
 
-The default is relative, so running the daemon from a checkout puts state in that
-checkout. If yours is `~/.the-loop` (or any absolute path), there is no repository to
-track it in — two options:
+The default sits beside your config file, so a config tracked in a checkout puts state in
+that checkout. If yours resolves to `~/.the-loop` (or any absolute path), there is no
+repository to track it in — two options:
 
 - **Copy `portable/`.** With `rsync` or anything else. Nothing else is needed, and nothing
   else should come.
 - **Point `state.root` at a tracked directory** — the same "dev box repo" pattern the
-  [CLI config](/config/cli/#where-the-file-is-found) already supports. Note that
-  `state.root` does **not** expand `~`.
+  [CLI config](/config/cli/#where-the-file-is-found) already supports. A relative path
+  there is [resolved beside the config](/config/cli/#where-a-relative-root-lands), and
+  `~` is expanded.
 
 ### The two costs
 

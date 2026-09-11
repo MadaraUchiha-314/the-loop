@@ -10,6 +10,8 @@ the-loop status [--format text|json]
 
 ```console
 $ the-loop status
+config      /home/you/.the-loop/cli-config.yaml
+state       /home/you/.the-loop
 instance    laptop-b [addressed] — 2 declared, 5 managed
 service     running (pid 24846) [enabled] — http://127.0.0.1:4114, healthy
 gh-webhook  not running [disabled]
@@ -18,7 +20,25 @@ poller      running (pid 24913) [enabled]
             last cycle: 2026-08-14T20:43:02Z (10s ago) — 5 item(s), 1 spawn(s), 0 comment(s) forwarded
 ```
 
-The first line is the [instance](/cli/instances) this config is (issue-322): its name (or
+The first two lines say which files this answer is **about** (issue-339,
+[decision-119](/decisions/decision-119)): the CLI config that was read, and the
+[`state.root`](/config/cli/#state-root) resolved from it. They are there because their
+absence cost someone a day — `status` read a second, stale heartbeat under another root
+and reported a live poller as dead, with nothing on screen to say which file it had read.
+`--format json` carries them as `configPath` and `stateRoot`.
+
+A **`conflict`** line appears when another candidate root also holds a `poll-status.json`
+— usually state left by a pre-13.12.0 daemon started from a different directory:
+
+```console
+conflict    /home/you/.the-loop also holds a poller heartbeat — reporting on /repo/.the-loop
+```
+
+It is named, never merged or deleted: moving state is destructive and yours to do. It also
+does **not** move the exit code (`conflictingRoots` in JSON) — whether some other directory
+holds an old file says nothing about whether this instance's enabled services are running.
+
+The next line is the [instance](/cli/instances) this config is (issue-322): its name (or
 `(unnamed)`), its scope mode, how many work items it declares and how many it manages in
 all. `--format json` carries the whole document as `instance` — the same one
 `GET /api/v1/instance` serves.
@@ -88,3 +108,7 @@ and the poller's last-cycle counters.
 - [`start`](/cli/commands/start) · [`stop`](/cli/commands/stop) ·
   [`restart`](/cli/commands/restart)
 - [`events`](/cli/commands/events) — why something is not running.
+- [Keeping it running](/cli/supervision) — `start` is not a supervisor; the unit, and the
+  health check to watch.
+- [Keeping it running](/cli/supervision) — `start` is not a supervisor; the unit, and the
+  health check to watch.

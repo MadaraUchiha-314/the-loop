@@ -40,7 +40,11 @@ def _load_config() -> dict:
     """
     path = cli_config.default_cli_config_path()
     if not path.is_file():
-        return {}
+        # Still anchored (issue-339): these verbs spawn daemons that resolve the state
+        # root from this same path, so a fresh install with no config file must not
+        # leave the CLI on a cwd-relative root while its own daemon uses the anchored
+        # one — that is the divergence this work item closes.
+        return cli_config.apply_state_root({}, path)
     return cli_config.load_cli_config(path, strict=True)
 
 
@@ -121,6 +125,26 @@ class StopCommand(Command):
         return 0 if report["ok"] else 1
 
 
+def _print_provenance(report: dict) -> None:
+    """Which files this answer is about, and any rival root (issue-339, R4).
+
+    Printed first, above every other line, because it is the frame the rest is read in:
+    the bug that motivated it had `status` reporting a live poller as dead off a
+    different root's two-day-old heartbeat, with nothing on screen to say so. A rival
+    root is NAMED, never merged or deleted — moving state is destructive and the
+    operator's call — and it does not move the exit code (R4.3).
+    """
+    if report.get("configPath"):
+        print(f"{'config':<11} {report['configPath']}")
+    if report.get("stateRoot"):
+        print(f"{'state':<11} {report['stateRoot']}")
+    for rival in report.get("conflictingRoots") or []:
+        print(
+            f"{'conflict':<11} {rival} also holds a poller heartbeat — "
+            f"reporting on {report.get('stateRoot')}"
+        )
+
+
 def _print_instance(instance: dict) -> None:
     """One line: which instance this is, its mode, and the size of its scope."""
     if not instance:
@@ -147,10 +171,13 @@ class StatusCommand(Command):
         config = _config_or_error()
         if config is None:
             return 2
-        report = lifecycle.status_all(config)
+        report = lifecycle.status_all(
+            config, config_path=cli_config.default_cli_config_path()
+        )
         if args.format == "json":
             print(json.dumps(report, indent=2))
             return 0 if report["ok"] else 1
+        _print_provenance(report)
         _print_instance(report.get("instance") or {})
         for row in report["services"]:
             flag = "enabled" if row["enabled"] else "disabled"

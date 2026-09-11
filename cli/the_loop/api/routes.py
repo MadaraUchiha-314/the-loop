@@ -325,14 +325,37 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
     stream_broker = _build_broker(holder)
 
     @router.get(f"{API_PREFIX}/health", operation_id="health")
-    def health() -> Dict[str, str]:
+    def health() -> Dict[str, Any]:
+        # Liveness, and whether this process is doing the job it was configured for
+        # (issue-339). `status` is `degraded` — not `ok` — when an ingress the config
+        # ENABLES holds no lock: a service whose whole job is polling reported
+        # {"status": "ok"} for 17 hours while its poller was absent, and that is the
+        # report being corrected. The status CODE stays 200 while degraded (R2.4): it
+        # answers "did the service answer", which is what `client.healthy` measures and
+        # what `ensure_service` loops on — a non-2xx would make every unrelated CLI
+        # command conclude there is no service and spawn another, forever, on a box
+        # whose only fault is a stopped poller. Health lives in the body.
+        # `configPath`/`stateRoot` name the files this process is actually using — the
+        # one `curl` that would have ended that outage — and escalate nothing:
+        # GET /api/v1/config already serves the whole document across this boundary.
         from importlib.metadata import PackageNotFoundError, version
+
+        from ..state import layout_from_config
 
         try:
             v = version("the-loopy-one")
         except PackageNotFoundError:  # pragma: no cover — source checkout
             v = "unknown"
-        return {"status": "ok", "version": v}
+        config = holder.current
+        ingresses = core_lifecycle.ingress_health(config)
+        degraded = any(row["enabled"] and not row["running"] for row in ingresses)
+        return {
+            "status": "degraded" if degraded else "ok",
+            "version": v,
+            "configPath": str(holder.path),
+            "stateRoot": str(layout_from_config(config).root),
+            "ingresses": ingresses,
+        }
 
     @router.get(f"{API_PREFIX}/instance", operation_id="getInstance")
     def get_instance() -> Dict[str, Any]:

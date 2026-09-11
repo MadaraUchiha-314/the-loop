@@ -105,12 +105,20 @@ def healthy(config: Optional[dict] = None, timeout: float = 2.0) -> bool:
 
 
 def _spawn_service() -> None:
+    from ..cli_config import child_env
+
     subprocess.Popen(  # noqa: S603 — fixed argv, no shell
         [sys.executable, "-m", "the_loop.api.serve"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         stdin=subprocess.DEVNULL,
         start_new_session=True,
+        # The config THIS process resolved, `--config` included (issue-339): the
+        # service is a different, long-lived process that never sees the flag, and
+        # without this it re-resolves the config from scratch and lands on whichever
+        # branch its inherited working directory selects — two state roots, two
+        # heartbeats, and a `status` that reads the wrong one.
+        env=child_env(),
     )
 
 

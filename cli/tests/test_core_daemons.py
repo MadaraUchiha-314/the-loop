@@ -100,3 +100,34 @@ def test_start_redirects_the_daemon_to_its_logfile(tmp_path, monkeypatch):
     assert captured["stdout"] == captured["stderr"]
     assert captured["new_session"] is True
     assert str(logfile) in result["output"]
+
+
+def test_a_spawned_daemon_carries_the_config_this_process_resolved(
+    tmp_path, monkeypatch
+):
+    """The daemon must not re-resolve its config from its inherited cwd (issue-339).
+
+    A daemon is a different, long-lived process that never sees ``--config``. Before
+    issue-339 it fell through to whichever branch its working directory selected and
+    could write its heartbeat, registry and event log under a root the CLI never reads.
+    """
+    from the_loop import cli_config
+
+    captured = {}
+
+    class FakePopen:
+        def __init__(self, argv, **kwargs):
+            captured["env"] = kwargs.get("env")
+            self.pid = 9183
+
+    selected = tmp_path / "chosen" / ".the-loop" / "cli-config.yaml"
+    selected.parent.mkdir(parents=True)
+    selected.write_text("version: '0.7.0'\n")
+    monkeypatch.setattr(daemons.subprocess, "Popen", FakePopen)
+    cli_config.set_override(selected)
+    try:
+        daemons.control_daemon("poller", "start", _config(tmp_path))
+    finally:
+        cli_config.set_override(None)
+
+    assert captured["env"][cli_config.CLI_CONFIG_ENV] == str(selected)

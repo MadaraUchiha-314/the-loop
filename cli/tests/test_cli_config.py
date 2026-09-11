@@ -87,9 +87,19 @@ def test_set_override_none_clears_it(isolated_cwd):
 # -- load_cli_config: lenient vs strict ------------------------------------------
 
 
+def _without_state(config: dict) -> dict:
+    """The document minus the resolved ``state.root`` the loader injects (issue-339).
+
+    Every load now carries an absolute root anchored on the config file, the empty
+    document included — that is the fix for the two-roots bug — so "degrades to nothing"
+    is asserted about everything else.
+    """
+    return {key: value for key, value in config.items() if key != "state"}
+
+
 def test_missing_file_lenient_empty_strict_raises(tmp_path):
     missing = tmp_path / "config.yaml"
-    assert cli_config.load_cli_config(missing, strict=False) == {}
+    assert _without_state(cli_config.load_cli_config(missing, strict=False)) == {}
     with pytest.raises(FileNotFoundError):
         cli_config.load_cli_config(missing, strict=True)
 
@@ -97,7 +107,7 @@ def test_missing_file_lenient_empty_strict_raises(tmp_path):
 def test_unparseable_yaml_lenient_empty_strict_raises(tmp_path):
     cfg = tmp_path / "config.yaml"
     cfg.write_text("webhooks: [unclosed\n")
-    assert cli_config.load_cli_config(cfg, strict=False) == {}
+    assert _without_state(cli_config.load_cli_config(cfg, strict=False)) == {}
     with pytest.raises(Exception):
         cli_config.load_cli_config(cfg, strict=True)
 
@@ -115,8 +125,8 @@ def test_valid_yaml_parses_full_document(tmp_path):
 def test_empty_file_is_empty_mapping(tmp_path):
     cfg = tmp_path / "config.yaml"
     cfg.write_text("")
-    assert cli_config.load_cli_config(cfg, strict=False) == {}
-    assert cli_config.load_cli_config(cfg, strict=True) == {}
+    assert _without_state(cli_config.load_cli_config(cfg, strict=False)) == {}
+    assert _without_state(cli_config.load_cli_config(cfg, strict=True)) == {}
 
 
 # -- module-level command wiring -------------------------------------------------
@@ -280,3 +290,38 @@ def test_the_default_set_warns_about_nothing(caplog):
     with caplog.at_level(logging.WARNING, logger="the-loop.gh-webhook"):
         assert warn_on_missing_lifecycle_events(DEFAULT_EVENTS) == []
     assert caplog.text == ""
+
+
+# -- state.root: absolute, anchored on the config file (issue-339) ---------------
+
+
+def test_state_root_defaults_to_the_directory_the_config_lives_in(tmp_path):
+    path = tmp_path / "repo" / ".the-loop" / "cli-config.yaml"
+    assert cli_config.resolve_state_root({}, path) == str(
+        tmp_path / "repo" / ".the-loop"
+    )
+
+
+def test_state_root_anchors_on_a_config_that_is_not_inside_a_the_loop_directory(
+    tmp_path,
+):
+    """A config named directly (`--config /etc/loop.yaml`) anchors beside itself."""
+    path = tmp_path / "etc" / "loop.yaml"
+    assert cli_config.resolve_state_root({}, path) == str(
+        tmp_path / "etc" / ".the-loop"
+    )
+
+
+def test_a_non_string_state_root_warns_and_takes_the_default(tmp_path, caplog):
+    """A hand edit must not be `str()`-ed into a path — `env.file`'s posture."""
+    path = tmp_path / "repo" / ".the-loop" / "cli-config.yaml"
+    with caplog.at_level(logging.WARNING, logger="the-loop.cli-config"):
+        resolved = cli_config.resolve_state_root({"state": {"root": ["a", "b"]}}, path)
+    assert resolved == str(tmp_path / "repo" / ".the-loop")
+    assert "state.root must be a string path" in caplog.text
+
+
+def test_apply_state_root_replaces_a_non_mapping_state_block(tmp_path):
+    config = {"state": "nonsense"}
+    cli_config.apply_state_root(config, tmp_path / ".the-loop" / "cli-config.yaml")
+    assert config["state"] == {"root": str(tmp_path / ".the-loop")}

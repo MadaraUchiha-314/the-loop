@@ -103,7 +103,7 @@ idempotent, previewable with `--dry-run`, and it keeps a `.bak` of the file it r
 ### `state.root`
 
 - **Type:** `string`
-- **Default:** `.the-loop`
+- **Default:** `.the-loop`, resolved **beside the config file** — see below
 
 Root directory for everything the CLI **generates**. One value moves them all, because
 every generated path *defaults* from it:
@@ -132,12 +132,35 @@ delete it, and the three-line `.gitignore` block. Upgrading from the pre-issue-1
 (`<root>/sessions/…`) loses nothing: the old locations are read once per work item and
 written forward.
 
-::: warning `~` is not expanded here
-`state.root` is used as given. `root: ~/.the-loop` creates a directory literally named
-`~` in the process's working directory — write an absolute path, or leave the relative
-default. (This differs from
-[`routing.workspace.root`](/config/cli/routing-options#workspace-root), which **does**
-expand `~`.)
+### Where a relative root lands
+
+A **relative** `state.root` — the default `.the-loop` included — is resolved against the
+directory your config's `.the-loop/` sits in, **never** against the process's working
+directory:
+
+| Your config file | `state.root` | Resolves to |
+|---|---|---|
+| `/repo/.the-loop/cli-config.yaml` | *unset* | `/repo/.the-loop` |
+| `/repo/.the-loop/cli-config.yaml` | `.the-loop` | `/repo/.the-loop` |
+| `/repo/.the-loop/cli-config.yaml` | `var/state` | `/repo/var/state` |
+| `~/.the-loop/cli-config.yaml` | *unset* | `~/.the-loop` |
+| *anything* | `/srv/the-loop` | `/srv/the-loop` |
+| *anything* | `~/loop-state` | `~/loop-state`, expanded |
+
+This is the rule [`env.file`](/config/cli/#env-file) follows, one directory out — and it is what makes
+the daemon and the CLI read the *same* files. Before
+[decision-119](/decisions/decision-119) the root was relative to whoever asked, so a
+daemon started in one directory wrote a heartbeat, a session registry and an event log
+that `the-loop status`, run from another, never looked at
+([issue-339](https://github.com/MadaraUchiha-314/the-loop/issues/339)): it read a second,
+stale copy and reported a live poller as dead. `the-loop status` now prints the config and
+the root it is answering about, and names a second root when it finds one.
+
+::: tip `~` **is** expanded
+`root: ~/loop-state` is your home directory, as
+[`routing.workspace.root`](/config/cli/routing-options#workspace-root) has always been.
+Until 13.12.0 it created a directory literally *named* `~`; if you have one, it is that
+bug's, and moving its contents to the expanded path is safe while nothing is running.
 :::
 
 ## Environment file

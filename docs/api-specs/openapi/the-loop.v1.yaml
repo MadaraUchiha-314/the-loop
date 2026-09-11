@@ -13,12 +13,22 @@ paths:
       operationId: health
       responses:
         '200':
-          description: Successful Response
+          description: |
+            Successful Response. Always 200 while the service answers — the body
+            carries health, so that an unrelated CLI command probing for liveness
+            never concludes "no service" because an ingress stopped (issue-339).
+
+            `status` is `ok` when every ingress the config enables holds its lock, and
+            `degraded` when one does not. `version` is the installed distribution's.
+            `configPath` and `stateRoot` name the CLI config this process read and the
+            state root it resolved from it. `ingresses` carries one object per ingress
+            (`poller`, `gh-webhook`, `slack-listener`) with `name`, `enabled`,
+            `running` and, for an enabled ingress that is down, a `detail` naming the
+            config key that enables it and the pidfile nothing is holding.
           content:
             application/json:
               schema:
-                additionalProperties:
-                  type: string
+                additionalProperties: true
                 type: object
                 title: Response Health
   /api/v1/instance:

@@ -102,7 +102,14 @@ self-learning/ML capabilities.
   is touched: `docs/specs/<id>/graph-state.json` is checked in and re-derived from the
   artifacts.
 - Everything the CLI **generates** SHALL live under one configured root
-  (`state.root`, default `.the-loop`, issue-106), organised by **portability** rather
+  (`state.root`, default `.the-loop`, issue-106), **resolved to an absolute path against
+  the directory the config file's `.the-loop/` sits in** — never against a process's
+  working directory (issue-339, [decision-119](../decisions/decision-119.md)). The
+  resolution SHALL happen once, where the config is loaded, so that every consumer of that
+  document — the heartbeat, the session registry, the event log, the channels store —
+  names one directory in the daemon and the CLI alike; `~` SHALL be expanded. A mapping
+  built without a config file behind it keeps the relative default, having nothing to
+  anchor on. The tree SHALL be organised by **portability** rather
   than by which component writes it (issue-128, decision-046): `<root>/portable/<slug>.json`
   is one record per work item carrying a `control` section (the last authorized
   start/stop/pause/resume) and a `poll` section (which comments have been seen);
@@ -315,8 +322,13 @@ self-learning/ML capabilities.
   reports a daemon as started only once it holds its pidfile lock (the service, only
   once `/health` answers), so a process that exits during startup is a reported
   failure pointing at its logfile — never a silent one. Daemons are spawned into their
-  own session with stdout/stderr appended to `<state.root>/logs/`, and the working
-  directory is never changed — every path the-loop resolves is relative to it.
+  own session with stdout/stderr appended to `<state.root>/logs/`, and **SHALL carry the
+  config path the spawning process resolved** in `THE_LOOP_CLI_CONFIG` (issue-339): a
+  daemon never sees `--config`, and before it carried one it re-resolved the config from
+  its inherited working directory and could write its heartbeat, registry and event log
+  under a root the CLI never read. The value SHALL only ever be the path the spawning
+  process already resolved; a child that is itself a CLI invocation with `--config` SHALL
+  still win.
 - The poller's pidfile SHALL be written by the surviving process under the
   single-instance lock, and a pidfile no live poller holds SHALL be
   reported as stale and removed by the next poller start rather than left for the operator.
@@ -324,7 +336,11 @@ self-learning/ML capabilities.
   progress"** in one command: per service enabled/running/pid (plus the service's URL,
   health and MCP exposure), and for the poller `startedAt`, `lastCycleAt`
   and the last cycle's counters, as text or `--format json`, exiting `0` iff every
-  enabled service is running. **Liveness and the reported pid SHALL come from the lock
+  enabled service is running. It SHALL also **name the files the answer is about**
+  (issue-339): the resolved config path and state root, and one `conflict` line per other
+  candidate root that also holds a poller heartbeat — named and reported on, never merged,
+  copied or deleted, and never moving the exit code, which only the enabled services
+  decide. **Liveness and the reported pid SHALL come from the lock
   and never from the heartbeat** — the only formulation immune to pid reuse, and the only
   one a file cannot forge. The poller SHALL record that heartbeat at
   `<state.root>/poll-status.json` after every cycle, atomically; a heartbeat that cannot be
@@ -385,6 +401,7 @@ self-learning/ML capabilities.
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-339 | One configuration resolves to one state root, in every process (2026-09-11): `state.root` is made absolute where the config is **loaded**, anchored on the directory the config's `.the-loop/` sits in, so the ~30 `layout_from_config` call sites all name one directory whatever each process's cwd is; `~` is now expanded. Every spawn — the auto-started service, `lifecycle.spawn_service`, `core.daemons.control_daemon` — carries `THE_LOOP_CLI_CONFIG` = the path it resolved, the property `schedule_restart` already had. `the-loop status` prints its config, its root, and any rival root holding a second heartbeat. Before this, a daemon started in one directory and a CLI run from another silently addressed different files: a live poller was reported dead off a two-day-old heartbeat, and a dead one would have read as fine | [spec](../specs/issue-339/), [decision-119](../decisions/decision-119.md), [supervision](../cli/supervision.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/339) |
 | issue-331 | A poll source's bare `OWNER/REPO` is on the resolved GitHub host (2026-09-09): `RepoSpec.parse` / `parse_repos` take a `default_host`, `from_source` / `build_provider` carry it, and the daemon resolves it with `ghhost.github_host` from the CLI config it reads `polling` from — at pre-flight, at the first plan and on every hot reload — so listing, scope naming and `owns()` agree; `describe()` spells the host. Before it, a bare entry meant github.com to `owns()` and "wherever `gh` points" to the listing, and on GitHub Enterprise closure reconciliation silently refused every ref its own listing had minted | [spec](../specs/issue-331/), [decision-114](../decisions/decision-114.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/331) |
 | issue-322 | The CLI config names the **instance** it is (`instance.name`, `instance.scope.mode`, `instance.scope.workItems`), `the-loop status` prints one line naming it with its mode and the size of its managed set (and carries the whole document as `instance` in JSON), `the-loop sessions start` on a `locked` instance is refused before anything is recorded or posted, and the keyword the CLI posts back carries `instance:<name>` on a named instance | [spec](../specs/issue-322/), [decision-110](../decisions/decision-110.md), [instances](instances.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/322) |
 | issue-318 | The CLI config names an env file (`env.file`) that every process entry point loads first, at start: a stdlib dotenv parser, config-relative resolution, the environment never overwritten, failures warned without a value | [spec](../specs/issue-318/), [decision-108](../decisions/decision-108.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/318) |

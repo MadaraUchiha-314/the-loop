@@ -875,6 +875,13 @@ EVENT_TYPES: Dict[str, str] = {
         "gh-webhook) as an in-process task (`service.hostIngresses`, "
         "issue-231). Its pidfile lock is held by the service's pid."
     ),
+    "ingress.hosted_failed": (
+        "An ENABLED ingress (poller | gh-webhook | slack-listener) did not start "
+        "inside the control-plane service (ingress, reason). The service keeps "
+        "serving, so the reason stays reachable over the API. Before issue-339 this "
+        "was a logfile line and nothing else, so a poller that never came up was "
+        "visible only as the absence of a `poller.started`."
+    ),
     "ingress.hosted_stopped": (
         "A hosted ingress finished during the service's shutdown; its lock is "
         "released. issue-231."
