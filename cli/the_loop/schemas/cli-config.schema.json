@@ -852,7 +852,7 @@
             "kickoff": {
               "type": "object",
               "additionalProperties": false,
-              "description": "Where a top-level message becomes a work item, when this channel holds the `work-item.create` grant. Both the grant and `repo` are needed: there is no sensible inferred answer to \u201cwhich repository does this DM become an issue in\u201d, so an empty `repo` disables the path whatever `publish` says.",
+              "description": "Where a top-level message becomes a work item, when this channel holds the `work-item.create` grant. The grant alone opens the path (issue-341): the message names its own repository with a `<repo>:` prefix resolved against the declared set (this `repo` plus every `polling.sources[].repos` entry), and `repo` below is the fallback for a message that does not. An empty `repo` therefore means every kickoff must name one, not that the path is off.",
               "properties": {
                 "repo": {
                   "type": "string",
