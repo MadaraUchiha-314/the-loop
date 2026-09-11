@@ -104,6 +104,29 @@ package — there are no install extras (owner decision, PR #162).
   `status`/`stop` and the daemons API semantics are unchanged — and stops them,
   in reverse order, when the service shuts down. A lock already held by another
   process is skipped with a warning; a hosting failure never takes down the API.
+  An **enabled** ingress that does not start SHALL record `ingress.hosted_failed` at
+  level `error` with the ingress and the reason (issue-339) — a lock another process
+  holds, an enabled poller with no `polling.sources`, a Slack token *variable* that is
+  not set (its name, never its value). Before it, that failure was a logfile line and
+  nothing in the event log, so a poller that never came up was visible only as the
+  *absence* of a `poller.started`, which nothing was computing. An ingress nobody
+  enabled SHALL record nothing. A hosted run loop that **ends on its own** — without a
+  shutdown having been requested — SHALL release its pidfile lock and record the same
+  event: the lock is liveness, and a hosted ingress holds it under the *service's* pid,
+  so a thread that exited inside a living service would otherwise be reported as a
+  running ingress by `status` and `/api/v1/health` alike.
+- **`GET /api/v1/health` SHALL report on what this process is hosting** (issue-339):
+  `status` is `ok` only while every ingress the config *enables* holds its pidfile lock,
+  and `degraded` when one does not, with that row's `detail` naming the config key that
+  enables it and the pidfile nothing holds. Liveness SHALL be read from the same locks
+  `the-loop status` reads, so the two surfaces cannot disagree. The response SHALL also
+  carry the `configPath` and `stateRoot` this process resolved — the two facts that say
+  which files it is using, and no escalation beside `GET /api/v1/config`, which serves the
+  whole document across the same boundary. The **status code SHALL stay 200** while
+  degraded: it answers "did the service answer", which is what `client.healthy` measures
+  and what `ensure_service` loops on, and a non-2xx would have every unrelated CLI command
+  spawn a second service because a poller stopped. The response SHALL carry no pid, token
+  or environment value.
 - The service SHALL be the CLI's **only execution path** for core capabilities
   (owner decision, PR #162): a command auto-starts a local service when
   `service.autoStart` allows and otherwise fails closed naming `the-loop start`
@@ -408,6 +431,7 @@ package — there are no install extras (owner decision, PR #162).
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-339 | The plane stopped reporting `ok` for a job it was not doing (2026-09-11): `GET /api/v1/health` carries the enabled ingresses with a reason for each one that is down, plus the `configPath` and `stateRoot` this process resolved — at HTTP 200 still, because the code is what the CLI's auto-start loop reads. An enabled ingress that fails to start records `ingress.hosted_failed` instead of only a logfile line. Both spawns of the service now carry `THE_LOOP_CLI_CONFIG` so the service and everything it hosts read the operator's config rather than re-resolving one from the working directory they inherited | [spec](../specs/issue-339/), [decision-119](../decisions/decision-119.md), [supervision](../cli/supervision.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/339) |
 | issue-329 | Closed work items leave *Needs you* (2026-09-09): the join reads the portable record's new `ended` section, nulls the item's question and parked gate, keeps it out of `needs-you`, groups it under *Shipped* (merged or issue closed) or *Idle* (PR closed unmerged) with a muted `merged` / `closed` chip, and contributes nothing to the inbox for it or its pull requests; `GET /attention` applies the same rule and reports neither `awaiting-input` nor `armed-without-session` for a stamped record. A record without the field, or with a malformed one, is open, as at 13.6.0. The demo's shipped item now carries the stamp | [spec](../specs/issue-329/), [decision-113](../decisions/decision-113.md), [webhook-triggers](webhook-triggers.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/329) |
 | issue-322 | `GET /api/v1/instance` (`getInstance`; the `get_instance` MCP tool; `loop.instance()` on the SDK): which instance of the-loop answered — its name, scope mode, declared work items and the managed set with the source of each entry. The seam a manager of several instances aggregates across: every instance serves the same surface, and this document says which one it is | [spec](../specs/issue-322/), [decision-110](../decisions/decision-110.md), [instances](instances.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/322) |
 | issue-302 | A pull request stopped appearing twice on the board. A labeled, linked PR carries two identities the service writes on purpose — the poller's portable ledger under its own ref, and a session endpoint nested under the work item it delivers — and `buildWorkItemViews` unioned them, so PR #301's nesting made the same PR render as a live nested row *and* a dead top-level shell (grey dot, "no session", because its session is nested elsewhere). The join now reconciles the two: a ref another item's row draws as its pull request is not a work item, unless nothing would draw it (a treeless owner), it has a session record of its own, or the claim is a self- or two-level claim a hand-edited record could use to hide a row. What the removed row carried is folded onto the nested one — its portable record for the age fallback, and its attention and open question onto the owning item's card and chip — so the drop moves information rather than deleting it. Service side, `list_attention` now counts a live nested PR endpoint as a session for its ref, which is what made every linked, labeled PR report a permanent stall | [spec](../specs/issue-302/), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/302) |

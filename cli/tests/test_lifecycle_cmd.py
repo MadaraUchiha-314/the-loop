@@ -143,7 +143,9 @@ def test_status_json_is_the_report(tmp_path, monkeypatch, capsys):
         ],
         "ok": False,
     }
-    monkeypatch.setattr(lifecycle, "status_all", lambda config: report)
+    monkeypatch.setattr(
+        lifecycle, "status_all", lambda config, config_path=None: report
+    )
     assert main(["status", "--format", "json"]) == 1
     assert json.loads(capsys.readouterr().out) == report
 
@@ -229,7 +231,9 @@ def test_status_prints_the_instance_line(tmp_path, monkeypatch, capsys):
         },
         "ok": True,
     }
-    monkeypatch.setattr(lifecycle, "status_all", lambda config: report)
+    monkeypatch.setattr(
+        lifecycle, "status_all", lambda config, config_path=None: report
+    )
     assert main(["status"]) == 0
     first = capsys.readouterr().out.splitlines()[0]
     assert first == "instance    laptop-b [addressed] — 1 declared, 2 managed"

@@ -48,3 +48,36 @@ def test_api_error_carries_status_and_detail():
     error = client.ApiError(404, "no record for work item x")
     assert error.status == 404
     assert "no record" in str(error)
+
+
+def test_the_auto_started_service_carries_the_config_this_process_resolved(
+    tmp_path, monkeypatch
+):
+    """A service auto-started by an unrelated command reads the operator's config.
+
+    `the_loop.api.serve` has no `--config`; without the variable it re-resolves from its
+    inherited working directory, which is how one configuration ended up with two state
+    roots and a `status` that read the wrong heartbeat (issue-339, R1.5).
+    """
+    from the_loop import cli_config
+    from the_loop import client as client_mod
+
+    captured = {}
+
+    class FakePopen:
+        def __init__(self, argv, **kwargs):
+            captured["argv"] = argv
+            captured["env"] = kwargs.get("env")
+
+    selected = tmp_path / "chosen" / ".the-loop" / "cli-config.yaml"
+    selected.parent.mkdir(parents=True)
+    selected.write_text("version: '0.7.0'\n")
+    monkeypatch.setattr(client_mod.subprocess, "Popen", FakePopen)
+    cli_config.set_override(selected)
+    try:
+        client_mod._spawn_service()
+    finally:
+        cli_config.set_override(None)
+
+    assert captured["argv"][-2:] == ["-m", "the_loop.api.serve"]
+    assert captured["env"][cli_config.CLI_CONFIG_ENV] == str(selected)

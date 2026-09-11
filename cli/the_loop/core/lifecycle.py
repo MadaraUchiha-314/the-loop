@@ -31,11 +31,11 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .. import eventlog
+from .. import cli_config, eventlog
 from ..api.config import base_url, service_config, service_pidfile
 from ..daemonize import open_logfile
 from ..runlock import RunLock
-from ..state import layout_from_config
+from ..state import layout_from_config, rival_roots
 from . import daemons as core_daemons
 from .daemons import SLACK_LISTENER
 from . import instance as core_instance
@@ -90,6 +90,44 @@ def enabled_services(config: Optional[dict] = None) -> Dict[str, bool]:
     }
 
 
+#: Which config key turns each ingress on — named in a health `detail` so the operator
+#: reads the flag they would edit, not the internal service name (issue-339, R2.1).
+ENABLED_BY = {
+    "poller": "polling.enabled",
+    "gh-webhook": "webhooks.ghWebhook.enabled",
+    SLACK_LISTENER: "channels.slack.enabled with read.mode: socket",
+}
+
+
+def ingress_health(config: Optional[dict] = None) -> List[Dict[str, Any]]:
+    """One row per ingress: enabled, running, and why it counts as down (issue-339, R2).
+
+    Liveness is the pidfile lock — the same answer ``the-loop status`` gives, and for the
+    same reason (issue-159, decision-084): a lock held is a process running, race-free
+    under pid reuse, whether the ingress is hosted in the service or standalone. Reading
+    it here is what keeps ``GET /api/v1/health`` and ``the-loop status`` from disagreeing
+    about what is up.
+    """
+    enabled = enabled_services(config)
+    rows: List[Dict[str, Any]] = []
+    for name in ("poller", "gh-webhook", SLACK_LISTENER):
+        pidfile = core_daemons._pidfile(name, config)
+        running = RunLock(pidfile, name=name).is_held()
+        rows.append(
+            {
+                "name": name,
+                "enabled": enabled[name],
+                "running": running,
+                "detail": (
+                    f"{ENABLED_BY[name]} is true but nothing holds {pidfile}"
+                    if enabled[name] and not running
+                    else ""
+                ),
+            }
+        )
+    return rows
+
+
 def _row(service: str, enabled: bool, outcome: str, detail: str = "") -> Dict[str, Any]:
     return {
         "service": service,
@@ -110,13 +148,19 @@ def _healthy(config: Optional[dict]) -> bool:
 
 
 def spawn_service() -> "subprocess.Popen[bytes]":
-    """Spawn the control-plane service, detached — the one service spawn."""
+    """Spawn the control-plane service, detached — the one service spawn.
+
+    The child carries ``THE_LOOP_CLI_CONFIG`` (issue-339): the service and everything it
+    hosts must resolve the config file *this* process resolved, not the one its inherited
+    working directory happens to select.
+    """
     return subprocess.Popen(  # noqa: S603 — fixed argv, no shell
         [sys.executable, "-m", "the_loop.api.serve"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         stdin=subprocess.DEVNULL,
         start_new_session=True,
+        env=cli_config.child_env(),
     )
 
 
@@ -444,8 +488,15 @@ def stop_all(config: Optional[dict] = None) -> Dict[str, Any]:
     }
 
 
-def status_all(config: Optional[dict] = None) -> Dict[str, Any]:
-    """Per-service status; ``ok`` means every enabled service is running (R3.3)."""
+def status_all(
+    config: Optional[dict] = None,
+    config_path: Optional[os.PathLike] = None,
+) -> Dict[str, Any]:
+    """Per-service status; ``ok`` means every enabled service is running (R3.3).
+
+    ``config_path`` is reported, not read: the caller already loaded ``config`` from it,
+    and saying which file that was is half of issue-339's item 4.
+    """
     enabled = enabled_services(config)
     conf = service_config(config)
     lock = _service_lock(config)
@@ -491,12 +542,22 @@ def status_all(config: Optional[dict] = None) -> Dict[str, Any]:
     rows.append(listener)
     ok = all(row["running"] for row in rows if row["enabled"])
     standing = _standing_status(config)
+    layout = layout_from_config(config or {})
     return {
         "services": rows,
         "standingSessions": standing["sessions"],
         # Which instance this is and what it manages (issue-322) — the same
         # document `GET /api/v1/instance` serves.
         "instance": core_instance.describe_instance(config),
+        # Which files this answer is ABOUT (issue-339, R4). A `status` that reads one
+        # candidate root and names neither it nor the config it came from is how a
+        # live poller was reported dead off another root's two-day-old heartbeat.
+        # `conflictingRoots` reports, never repairs, and never moves `ok`: whether some
+        # other directory holds an old file is an observation about the filesystem, not
+        # a statement about whether this instance's enabled services are running.
+        "configPath": str(config_path or ""),
+        "stateRoot": str(layout.root),
+        "conflictingRoots": list(rival_roots(layout)),
         "ok": ok and standing["ok"],
     }
 

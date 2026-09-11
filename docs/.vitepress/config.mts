@@ -96,6 +96,7 @@ const cliSidebar = [
       { text: "Concepts", link: "/cli/concepts" },
       { text: "State on disk", link: "/cli/state" },
       { text: "The control-plane service", link: "/cli/service" },
+      { text: "Keeping it running", link: "/cli/supervision" },
       { text: "The webhook receiver", link: "/cli/receiver" },
       { text: "Running several instances", link: "/cli/instances" },
     ],

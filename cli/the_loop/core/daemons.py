@@ -19,6 +19,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from .. import cli_config
 from ..daemonize import open_logfile
 from ..poller.heartbeat import PollHeartbeat
 from ..runlock import RunLock
@@ -130,6 +131,10 @@ def control_daemon(
                 stderr=log_fd,
                 stdin=subprocess.DEVNULL,
                 start_new_session=True,
+                # The config this process resolved travels with the daemon (issue-339);
+                # otherwise it re-resolves from its inherited cwd and can write its
+                # heartbeat, registry and event log under a root the CLI never reads.
+                env=cli_config.child_env(),
             )
         finally:
             os.close(log_fd)

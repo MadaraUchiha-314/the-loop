@@ -484,7 +484,7 @@ class TheLoop:
         processes, which inside your service is either meaningless or actively wrong.
         Your process's lifecycle is yours.
         """
-        return core_lifecycle.status_all(self.config)
+        return core_lifecycle.status_all(self.config, config_path=self.config_path)
 
     # ---- the HTTP seam -------------------------------------------------------
 

@@ -34,6 +34,7 @@ from typing import Mapping, Optional, Union
 import yaml
 
 from . import envfile
+from .state import DEFAULT_STATE_ROOT
 
 logger = logging.getLogger("the-loop.cli-config")
 
@@ -88,6 +89,83 @@ def _load_cli_config_raw(path: Path, strict: bool = False) -> dict:
     except Exception:  # noqa: BLE001 — a broken config must not break ingress
         logger.warning("could not parse %s; using built-in defaults", path)
         return {}
+
+
+def config_base_dir(config_path: Union[str, Path]) -> Path:
+    """The directory a relative ``state.root`` is anchored on (issue-339, R1.2).
+
+    The config is found in four places, two of them outside any checkout, so the anchor
+    has to be a fact about the *file* — ``resolve_env_file``'s rule (issue-318,
+    decision-108 D2), shifted one directory out because the config lives **inside** the
+    directory ``state.root`` names: ``<repo>/.the-loop/cli-config.yaml`` belongs to
+    ``<repo>``, whose default root is then the ``<repo>/.the-loop`` it already was. The
+    working directory is deliberately not consulted — that it ever was is issue-339.
+    """
+    path = Path(os.path.abspath(Path(config_path).expanduser()))
+    parent = path.parent
+    return parent.parent if parent.name == DEFAULT_STATE_ROOT else parent
+
+
+def resolve_state_root(config: Mapping, config_path: Union[str, Path]) -> str:
+    """``state.root`` as an ABSOLUTE path (issue-339, R1.1-R1.3).
+
+    Absolute (or ``~``-prefixed) stays the operator's, verbatim; anything else — a
+    relative root, or none at all — is anchored on :func:`config_base_dir`. A non-string
+    takes the default with a warning, as ``env.file`` does and for its reason: a list
+    must not be ``str()``-ed into a path.
+    """
+    state = config.get("state") if isinstance(config, Mapping) else None
+    raw = state.get("root") if isinstance(state, Mapping) else None
+    if raw is not None and not isinstance(raw, str):
+        logger.warning(
+            "state.root must be a string path; using the default (%s)",
+            DEFAULT_STATE_ROOT,
+        )
+        raw = None
+    root = Path((raw or "").strip() or DEFAULT_STATE_ROOT).expanduser()
+    if not root.is_absolute():
+        root = config_base_dir(config_path) / root
+    return str(Path(os.path.abspath(root)))
+
+
+def apply_state_root(config: dict, config_path: Union[str, Path]) -> dict:
+    """Write the resolved absolute ``state.root`` back into ``config`` (issue-339).
+
+    At the **load** boundary rather than the read boundary, beside
+    :func:`apply_integrations` and :func:`apply_instance` and for the same reason: every
+    one of the ~30 ``layout_from_config(config)`` call sites — the heartbeat, the session
+    registry, the event log, the channels store — then resolves one directory, in the
+    daemon and the CLI alike, with no signature to thread. :func:`the_loop.state.layout_from_config`
+    is untouched, so a mapping that never came from a file (a test's literal, an SDK
+    caller's dict) keeps the behaviour it has.
+    """
+    resolved = resolve_state_root(config, config_path)
+    state = config.get("state")
+    if not isinstance(state, dict):
+        state = {}
+        config["state"] = state
+    state["root"] = resolved
+    return config
+
+
+def child_env(
+    config_path: Optional[Union[str, Path]] = None,
+    base: Optional[Mapping[str, str]] = None,
+) -> dict:
+    """The environment a spawned the-loop process inherits (issue-339, R1.5).
+
+    A daemon is a different, long-lived process that never sees ``--config``: without
+    this it re-resolves the config from scratch and lands on whichever branch its
+    inherited working directory selects. The value is only ever the path **this** process
+    already resolved — the issue-222 property ``schedule_restart`` holds — and it is
+    absolutized, because the cwd branch resolves to a relative path and the child may not
+    share the cwd. A child that is itself a CLI invocation with ``--config`` still wins:
+    the flag is priority 1, this variable priority 2.
+    """
+    env = dict(os.environ if base is None else base)
+    path = Path(config_path) if config_path is not None else default_cli_config_path()
+    env[CLI_CONFIG_ENV] = str(Path(os.path.abspath(path.expanduser())))
+    return env
 
 
 def apply_integrations(config: dict) -> dict:
@@ -153,6 +231,10 @@ def load_cli_config(path: Path, strict: bool = False) -> dict:
 
         _apply(data)
         _apply_instance(data)
+    # Applied to the EMPTY document too (issue-339): a fresh install with no config file
+    # would otherwise keep the cwd-relative default and keep this bug in the one
+    # configuration nobody has customised yet.
+    apply_state_root(data, path)
     return data
 
 

@@ -220,12 +220,14 @@ def test_default_options_resolve_under_the_state_root(tmp_path, monkeypatch):
         Given `state.root` is the only place generated paths are configured
         When the poller's options are resolved from the CLI config
         Then the pidfile, heartbeat and ledger all sit under that root
-    Requirement: github issue #191 (R2.2, R5.1); issue #228 (R2.2)
+    Requirement: github issue #191 (R2.2, R5.1); issue #228 (R2.2); issue #339 (R1.1)
     """
     _configure(tmp_path, monkeypatch)
     options = poller_daemon.default_options()
 
-    root = Path(".the-loop")
+    # Absolute, and anchored on the config file rather than on this process's cwd
+    # (issue-339): the poller and the CLI reading one config must name one directory.
+    root = tmp_path / ".the-loop"
     assert Path(options.pidfile) == root / "poll.pid"
     assert Path(options.status_file) == root / "poll-status.json"
     assert Path(options.state_dir) == root / "portable"

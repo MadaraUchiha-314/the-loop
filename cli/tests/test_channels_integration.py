@@ -1167,7 +1167,7 @@ def test_a_slash_command_status_answers_from_the_facade(tmp_path, monkeypatch):
     monkeypatch.setattr(
         lifecycle,
         "status_all",
-        lambda config=None: {
+        lambda config=None, config_path=None: {
             "instance": {"name": "laptop-b", "scope": {"mode": "open"}},
             "services": [
                 {"service": "service", "enabled": True, "running": False, "pid": 0}

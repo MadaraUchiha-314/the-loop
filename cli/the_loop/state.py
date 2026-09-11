@@ -46,6 +46,7 @@ Spec: docs/specs/issue-106/design.md §5, docs/specs/issue-128/design.md §2, §
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple
@@ -60,6 +61,7 @@ __all__ = [
     "StateLayout",
     "layout_from_config",
     "legacy_layout",
+    "rival_roots",
 ]
 
 DEFAULT_STATE_ROOT = ".the-loop"
@@ -358,7 +360,51 @@ GENERATED_PATHS: Tuple[GeneratedPath, ...] = (
 
 
 def layout_from_config(config: Optional[dict]) -> StateLayout:
-    """Read ``state.root`` from a loaded CLI config (best-effort, never raises)."""
+    """Read ``state.root`` from a loaded CLI config (best-effort, never raises).
+
+    A config that came through :func:`the_loop.cli_config.load_cli_config` carries an
+    **absolute** root, anchored on the config file (issue-339): every process that reads
+    that file resolves the same directory, whatever its working directory. A mapping
+    built by hand — a test's literal, an SDK caller's dict — has no file to anchor on and
+    keeps the relative default it always had.
+    """
     state = ((config or {}).get("state")) or {}
     root = str(state.get("root") or "").strip()
     return StateLayout(root=root or DEFAULT_STATE_ROOT)
+
+
+def rival_roots(layout: StateLayout) -> Tuple[str, ...]:
+    """Other directories that also hold a poller heartbeat (issue-339, R4.2).
+
+    The two candidates are the branches
+    :func:`the_loop.cli_config.default_cli_config_path` can fall through to — ``./.the-loop``
+    and ``~/.the-loop`` — which is where a pre-fix split left its second copy of the state.
+    Reported, never repaired: merging, copying or deleting state is destructive and the
+    operator's call. An unreadable candidate is skipped, because an observation must
+    never be what makes ``status`` fail.
+    """
+    resolved = Path(os.path.abspath(layout.root_path))
+    found = []
+    for candidate in _root_candidates():
+        try:
+            path = Path(os.path.abspath(candidate))
+            if path != resolved and (path / "poll-status.json").is_file():
+                found.append(str(path))
+        except OSError:  # unreadable or unstattable — not an answer we can give
+            continue
+    return tuple(dict.fromkeys(found))
+
+
+def _root_candidates() -> Tuple[Path, ...]:
+    """``./.the-loop`` and ``~/.the-loop``, skipping a home that cannot be resolved.
+
+    ``Path.home()`` raises when the environment has no home to speak of — a systemd
+    unit without ``HOME``, exactly where a daemon runs — and this is an observation, so
+    it drops the candidate instead of the answer.
+    """
+    candidates = [Path(DEFAULT_STATE_ROOT)]
+    try:
+        candidates.append(Path.home() / DEFAULT_STATE_ROOT)
+    except (RuntimeError, OSError):
+        logger.debug("no home directory to check for a second state root")
+    return tuple(candidates)

@@ -94,7 +94,7 @@ class FakeLifecycle:
         }
         self.raises = raises
 
-    def status_all(self, config=None):
+    def status_all(self, config=None, config_path=None):
         self.calls.append(("status_all",))
         if self.raises:
             raise self.raises

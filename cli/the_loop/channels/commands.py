@@ -414,6 +414,12 @@ def render_status(doc: Mapping[str, Any]) -> str:
         else:
             state = "stopped (enabled)"
         lines.append(f"• {row.get('service', '?')}: {state}")
+    for rival in doc.get("conflictingRoots") or []:
+        # Never silently picked between (issue-339, R4.2).
+        lines.append(
+            f"• conflict: `{rival}` also holds a poller heartbeat — reporting on "
+            f"`{doc.get('stateRoot')}`"
+        )
     standing = doc.get("standingSessions") or []
     lines.append(
         "• standing: "
@@ -644,9 +650,14 @@ def _instance_verb(invocation, cli_config, member, lifecycle):
     _received(member, invocation, "instance")
     config = dict(cli_config or {})
     try:
-        if invocation.verb == "status":
-            return "ok", render_status(lifecycle.status_all(config))
         from .. import cli_config as cli_config_module
+
+        if invocation.verb == "status":
+            return "ok", render_status(
+                lifecycle.status_all(
+                    config, config_path=cli_config_module.default_cli_config_path()
+                )
+            )
 
         upgrade = invocation.verb == "upgrade"
         scheduled = lifecycle.schedule_restart(

@@ -32,8 +32,13 @@ $ the-loop status
 service     running (pid 24846) [enabled] — http://127.0.0.1:4114, healthy
 
 $ curl -s http://127.0.0.1:4114/api/v1/health
-{"status":"ok","version":"7.1.1"}
+{"status":"ok","version":"13.12.0","configPath":"…/cli-config.yaml",
+ "stateRoot":"…/.the-loop","ingresses":[…]}
 ```
+
+`status` is `ok` only while every ingress your config **enables** is actually running;
+it is `degraded` — at HTTP 200, deliberately — when one is not. See
+[keeping it running](/cli/supervision#the-health-check-to-watch).
 
 You do not have to start it by hand. Any routed command starts one for you the first
 time it needs it, so a fresh install works immediately:
@@ -106,6 +111,10 @@ the lock to be released; [`status`](/cli/commands/status) reports
 - The pidfile **is** the lock (`<state.root>/local/service.pid`, flock — the
   issue-159 lifecycle discipline): a second `start` reports `already-running` and
   starts nothing; stop is idempotent.
+- **Nothing restarts it if it dies.** `start` starts each enabled service once and
+  returns; the package ships no supervisor. See
+  [keeping it running](/cli/supervision) for the systemd unit and the health check to
+  watch.
 - Binding beyond loopback refuses to boot unless
   [`service.exposed`](/config/cli/service-options#exposed) is explicitly true — the
   API can spawn harness sessions with the operator's credentials, so "accidentally on
