@@ -1,3 +1,19 @@
+## v14.0.0 (2026-09-11)
+
+### BREAKING CHANGE
+
+- `polling.sources[].repos` is removed at config version 0.8.0.
+`the-loop migrate-config` moves every github source's list up, adds
+`channels.slack.kickoff.repo` to it, and leaves that key in place as the
+channel's default target; an un-migrated config refuses to start, naming the key
+and the command. An empty or unset `repositories` bounds nothing — 13.12.0's
+behaviour for the receiver — and is warned about at start; failing closed there
+would stop every webhook-only instance on upgrade (decision-121 D4).
+
+### Feat
+
+- **issue-348**: one top-level `repositories` bounds every ingress, and the webhook receiver gains the bound it never had (#350)
+
 ## v13.12.0 (2026-09-11)
 
 ### Feat
