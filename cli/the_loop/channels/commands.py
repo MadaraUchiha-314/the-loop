@@ -54,6 +54,7 @@ from ..sessions.registry import is_github_host, is_github_name
 from ..standing import NAME_RE as STANDING_NAME_RE
 from .base import Event
 from .github import GitHubLedger
+from .repos import parse_repo_path, repository_keys
 from .slack import SlackChannelConfig, slack_state_path
 from .state import ChannelState, canonical
 
@@ -231,12 +232,10 @@ def _ref(host: str, owner: str, repo: str, number: int, cli_config) -> WorkItemR
 
 
 def _ref_from_path(path: str, number: int, cli_config) -> WorkItemRef:
-    parts = [p for p in path.strip().split("/")]
-    if len(parts) == 2:
-        return _ref("", parts[0], parts[1], number, cli_config)
-    if len(parts) == 3:
-        return _ref(parts[0], parts[1], parts[2], number, cli_config)
-    raise ValueError(f"{path!r} is not `[host/]owner/repo`")
+    """``[host/]owner/repo`` + a number → a ref, through the one repository-path
+    parse this instance has (:mod:`.repos`, issue-341)."""
+    entry = parse_repo_path(path, cli_config)
+    return _ref(entry.host, entry.owner, entry.repo, number, cli_config)
 
 
 def resolve_work_item(token: str, cli_config: Optional[Mapping]) -> WorkItemRef:
@@ -290,36 +289,12 @@ def _repo_key(ref: WorkItemRef) -> str:
     return f"{ref.host}/{ref.owner}/{ref.repo}".lower()
 
 
-def _configured_repositories(cli_config: Optional[Mapping]) -> Set[str]:
-    """`kickoff.repo` and every `polling.sources[].repos` entry, as host/owner/repo
-    keys. A source that cannot be read contributes nothing (A3)."""
-    keys: Set[str] = set()
-    config = dict(cli_config or {})
-    try:
-        kickoff = SlackChannelConfig.from_mapping(config).kickoff_repo
-        if kickoff:
-            keys.add(_repo_key(_ref_from_path(kickoff, 0, config)))
-    except Exception as exc:  # noqa: BLE001 — a malformed target widens nothing
-        logger.debug("kickoff.repo is not a repository path: %s", exc)
-    polling = config.get("polling") or {}
-    sources = polling.get("sources") if isinstance(polling, Mapping) else None
-    for source in sources if isinstance(sources, list) else []:
-        if not isinstance(source, Mapping) or source.get("provider") != "github":
-            continue
-        for repo in source.get("repos") or []:
-            try:
-                keys.add(_repo_key(_ref_from_path(str(repo), 0, config)))
-            except Exception as exc:  # noqa: BLE001
-                logger.debug("polling repo %r skipped: %s", repo, exc)
-    return keys
-
-
 def may_target(ref: WorkItemRef, cli_config: Optional[Mapping]) -> bool:
     """Whether this instance may act on ``ref`` from a slash command (R2.4, A3):
     a configured repository, an already managed work item, or a bound thread.
     Every read is best-effort and a failing one contributes nothing — the
     fail-closed direction."""
-    if _repo_key(ref) in _configured_repositories(cli_config):
+    if _repo_key(ref) in repository_keys(cli_config):
         return True
     wanted = canonical(ref.ref)
     try:

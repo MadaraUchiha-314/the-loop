@@ -822,7 +822,7 @@
               "default": [
                 "work-item.reply"
               ],
-              "description": "The event types a message on this channel MAY BECOME \u2014 the channel's authority, per event (issue-309, decision-103 D2). Default `work-item.reply`: a reply is input to the waiting session and nothing more (12.1.0 behaviour). Add `gate.feedback` to let an authorized member's reply answer an open human gate; `control.command` to let a typed control keyword run; `work-item.create` to let a top-level message open a work item (needs `kickoff.repo`); `instance.command` to let the `/the-loop` slash command ask this instance for its status or restart / upgrade it, and `standing.command` to let it list, start, stop or restart standing sessions (issue-334 \u2014 both need `read.mode: socket`, and their paper trail is the event log, there being no ticket). The slash command's work-item verbs need `control.command`. Every ticket-bound one of them is recorded on the ledger FIRST, under your own credential, and judged by the ledger's own ingress \u2014 a grant never bypasses a guard. A message classified as a type not listed is dropped (`unpublishable-event`), never downgraded. A name the catalog does not mark publishable is ignored with a warning."
+              "description": "The event types a message on this channel MAY BECOME \u2014 the channel's authority, per event (issue-309, decision-103 D2). Default `work-item.reply`: a reply is input to the waiting session and nothing more (12.1.0 behaviour). Add `gate.feedback` to let an authorized member's reply answer an open human gate; `control.command` to let a typed control keyword run; `work-item.create` to let a top-level message open a work item (the message names its repository with a `<repo>:` prefix, `kickoff.repo` is the fallback \u2014 issue-341); `instance.command` to let the `/the-loop` slash command ask this instance for its status or restart / upgrade it, and `standing.command` to let it list, start, stop or restart standing sessions (issue-334 \u2014 both need `read.mode: socket`, and their paper trail is the event log, there being no ticket). The slash command's work-item verbs need `control.command`. Every ticket-bound one of them is recorded on the ledger FIRST, under your own credential, and judged by the ledger's own ingress \u2014 a grant never bypasses a guard. A message classified as a type not listed is dropped (`unpublishable-event`), never downgraded. A name the catalog does not mark publishable is ignored with a warning."
             },
             "verbosity": {
               "type": "string",
@@ -857,7 +857,7 @@
                 "repo": {
                   "type": "string",
                   "default": "",
-                  "description": "The `[host/]owner/repo` the issue is created in \u2014 gh's own --repo grammar, the host present for GitHub Enterprise (issue-311). Empty = kickoff disabled."
+                  "description": "The `[host/]owner/repo` a kickoff opens its issue in when the message does not name one \u2014 gh's own --repo grammar, the host present for GitHub Enterprise (issue-311). Since issue-341 this is the FALLBACK, not the requirement: a message may start with `<repo>: ` to pick any repository declared in `kickoff.repo` or `polling.sources[].repos`, and an unresolvable or ambiguous prefix is refused in the thread rather than guessed. Empty = every kickoff must name its repository."
                 },
                 "labels": {
                   "type": "array",
@@ -872,7 +872,7 @@
             "read": {
               "type": "object",
               "additionalProperties": false,
-              "description": "How replies come back. Both transports read the threads the-loop itself started \u2014 and, only with the `work-item.create` grant and a `kickoff.repo`, the channel's top-level messages.",
+              "description": "How replies come back. Both transports read the threads the-loop itself started \u2014 and, with the `work-item.create` grant, the channel's top-level messages (the target is the message's to name; `kickoff.repo` is only its fallback \u2014 issue-341).",
               "properties": {
                 "mode": {
                   "type": "string",

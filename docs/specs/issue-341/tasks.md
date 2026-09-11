@@ -47,15 +47,20 @@ overrides: {}
   - _Depends on:_ 5
   - _Requirements:_ R1.1, R2.3, R3.1, R3.2
   - _Test:_ T2
-- [ ] 8. Schema + docs — the `kickoff.repo` and `publish` descriptions in both schema
-  copies, the guide, the channels options page, the capability doc and its history row,
-  `decision-120` + index row
+- [ ] 8. `channels status` — the `kickoff:` line names the fallback (or its absence) and
+  the size of the declared set
+  - _Depends on:_ 1, 4
+  - _Requirements:_ R5.1
+  - _Test:_ T1 — the status tests
+- [ ] 9. Schema + docs — the `kickoff.repo`, `publish` and `read` descriptions in both
+  schema copies, the guide, the channels options page, the capability doc and its
+  history row, `decision-120` + index row
   - _Depends on:_ 5
   - _Requirements:_ R3.4, R5.1
   - _Test:_ T10 — schema parity and docs parity
-- [ ] 9. Verification and evidence — run the matrix, write
+- [ ] 10. Verification and evidence — run the matrix, write
   `evidence/verification.md` and `evidence/security-review.md`
-  - _Depends on:_ 1–8
+  - _Depends on:_ 1–9
   - _Requirements:_ all
   - _Test:_ T12, T13
 

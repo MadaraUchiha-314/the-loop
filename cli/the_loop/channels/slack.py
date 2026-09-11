@@ -268,11 +268,12 @@ class SlackChannelConfig:
 
     @property
     def kickoff_enabled(self) -> bool:
+        """Whether a top-level message may be read at all: the channel, and the
+        grant. **Not** a target — the message names its own (issue-341,
+        decision-120 D4), and ``kickoff.repo`` is only the fallback it uses when
+        it does not."""
         return bool(
-            self.enabled
-            and self.channel
-            and self.kickoff_repo
-            and "work-item.create" in self.publish
+            self.enabled and self.channel and "work-item.create" in self.publish
         )
 
     @classmethod

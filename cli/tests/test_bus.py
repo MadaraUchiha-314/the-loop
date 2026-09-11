@@ -539,15 +539,19 @@ def test_slack_member_ids_come_from_routing_authorized_users():
     assert len(config.principals) == 3
 
 
-def test_kickoff_needs_the_grant_and_a_repo():
+def test_kickoff_needs_the_grant_not_a_repo():
+    """The grant opens the read; the TARGET is the message's to name (issue-341),
+    so `work-item.create` without a `kickoff.repo` is a valid configuration —
+    prefix-only kickoff — rather than the dead one it used to be."""
+
     def cfg(**slack):
         return SlackChannelConfig.from_mapping(
             {"channels": {"slack": {"enabled": True, "channel": "C1", **slack}}}
         )
 
     assert cfg().kickoff_enabled is False
-    assert cfg(publish=["work-item.create"]).kickoff_enabled is False
-    assert cfg(kickoff={"repo": "o/r"}).kickoff_enabled is False
+    assert cfg(kickoff={"repo": "o/r"}).kickoff_enabled is False  # no grant
+    assert cfg(publish=["work-item.create"]).kickoff_enabled is True  # no target
     granted = cfg(
         publish=["work-item.create"], kickoff={"repo": "o/r", "labels": ["x"]}
     )

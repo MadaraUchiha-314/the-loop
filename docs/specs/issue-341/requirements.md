@@ -82,8 +82,9 @@ repository, whatever `kickoff.repo` says.
 
 1.3 WHEN a prefix resolves THEN it SHALL be stripped from the message before the issue
 is composed, so neither the title (the first non-empty line) nor the body carries it.
-WHEN stripping the prefix would leave nothing at all THEN the message SHALL be refused
-as empty (`unmapped`), exactly as a blank kickoff is today.
+WHEN stripping it would leave nothing at all THEN the kickoff SHALL be refused like any
+other unsettled target (R2.5) — a prefix and no message is not a work item, and having
+named a repository the member is told so rather than left with a reaction and silence.
 
 1.4 The prefix SHALL be read from the **first line only**, and a message whose first
 line does not match the prefix grammar SHALL be treated as having no prefix (R3). The
@@ -170,7 +171,8 @@ No new event type SHALL be introduced.
 
 ### Requirement 5 — the documentation follows the change
 
-5.1 `docs/guide/slack.md` SHALL show the prefix in the modes-of-interaction table and a
+5.1 `the-loop channels status` SHALL name the fallback repository (or its absence) and
+how many declared repositories a prefix may pick from. `docs/guide/slack.md` SHALL show the prefix in the modes-of-interaction table and a
 worked example; `docs/config/cli/channels-options.md` SHALL rewrite
 `slack.kickoff.repo` as the fallback and state the resolution rule;
 `docs/capabilities/channels.md` SHALL carry the behaviour and a history row; the

@@ -108,7 +108,8 @@ path all fail to match and the message is prefix-less (A3). The separator is a l
 ```python
 @dataclass(frozen=True)
 class KickoffTarget:
-    outcome: str                    # resolved | fallback | unknown-repo | ambiguous-repo | no-target
+    outcome: str                    # resolved | fallback | unknown-repo
+                                    # | ambiguous-repo | no-target | empty-message
     repo: str = ""                  # the declared slug to create in
     text: str = ""                  # the message the issue is composed from
     prefix: str = ""                # what was read, for the refusal's wording
@@ -130,6 +131,7 @@ def resolve_target(text, config, cli_config) -> KickoffTarget: ...
 | **bare** prefix, exactly one declared `repo` component matches | that entry, prefix stripped | `resolved` |
 | **bare** prefix, two or more match | refuse, naming the matches | `ambiguous-repo` |
 | **bare** prefix, none match | *not a prefix* — fall through to row 1 | `fallback` / `no-target` |
+| any prefix resolves, nothing left after it | refuse, ask for a title | `empty-message` |
 
 Matching is case-insensitive on both sides. A qualified prefix is resolved by building
 its key the same way a declared entry's is built (`parse_repo_path`, this instance's
@@ -137,11 +139,11 @@ host when the prefix names none), so `evil.example/o/r` simply matches no key (A
 prefix that fails `parse_repo_path` — a segment that is not a GitHub name — is
 `unknown-repo` when qualified, and falls through when bare.
 
-Stripping (R1.3) replaces the first line with `rest` and keeps every following line; a
-first line that becomes empty is dropped along with the prefix, so
-`slim-gym:\n\nflaky teardown` titles as *flaky teardown*. When nothing is left,
-`resolve_target` returns the target anyway and `process_kickoff`'s existing empty-text
-check refuses it as `unmapped` — one rule for an empty kickoff, not two.
+Stripping (R1.3) replaces the first line with `rest` and keeps every following line, so
+`slim-gym:\n\nflaky teardown` leaves a blank first line and `issue_title` — which reads
+the first **non-empty** line — titles it *flaky teardown*. When nothing at all is left
+the outcome is `empty-message`, refused with the others: the member named a repository,
+so they are told what is missing rather than left with a 👀 and silence.
 
 ### 2.3 The refusal's words
 
@@ -156,7 +158,8 @@ Fixed sentences, the prefix quoted back, the candidate list capped at
 |---------|-----------|
 | `unknown-repo` | ``I don't know a repository called `evil/repo`. Start your message with one of these, or drop the prefix: `a/b`, `c/d` …`` |
 | `ambiguous-repo` | ``` `slim-gym` matches two repositories I know — name the owner: `expertise-help/slim-gym`, `other-org/slim-gym`. ``` |
-| `no-target` | ``This channel has no default repository, so a kickoff has to name one: start your message with `<repo>: `. I know: `a/b`, `c/d` …`` |
+| `no-target` | ``This channel has no default repository, so a kickoff has to name one: start your message with `<repo>:`. I know: `a/b`, `c/d` …`` |
+| `empty-message` | ``` `devbox` is a repository I know, but the message said nothing else — put the title after the prefix and I'll open it. ``` |
 | any, with an empty declared set | ``…I know no repositories — set `channels.slack.kickoff.repo` or a `polling.sources` entry.`` |
 
 Nothing from the message but the prefix, no token, no other config value (A5).
@@ -202,6 +205,13 @@ Both readers of the property — `fetch_kickoffs` (the poll and the catch-up) an
 `handle_socket_event` — thereby read top-level messages under the grant alone (R3.3).
 The first-sight baseline is unchanged, so turning the grant on still never converts a
 backlog into issues.
+
+## 5. `channels status` — `commands/channels_cmd.py`
+
+The `kickoff:` line becomes two facts instead of one: the fallback repository (or
+*(no fallback — every message must name one)*) with its labels, and how many declared
+repositories a `<repo>:` prefix may pick from. `off` now means only one thing — the
+grant is absent — because that is now the only thing that disables the path.
 
 ## Data models
 

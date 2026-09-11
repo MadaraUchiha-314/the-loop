@@ -258,14 +258,40 @@ shows a checklist before and after.
 - **Type:** `string`
 - **Default:** `""`
 
-The `[host/]owner/repo` a top-level message becomes an issue in, when the channel holds
-the `work-item.create` grant — `gh`'s own `--repo` grammar, so a GitHub Enterprise
-deployment names its host and the bound ref carries it (issue-311). Both are needed: there is no sensible inferred answer to
-"which repository does this DM become an issue in", so an empty `repo` disables the
-path whatever `publish` says. The first read after the grant is turned on
-**baselines** the channel: nothing already there becomes an issue. The created
-issue's body carries the envelope and no self-authored marker (it must be armable);
-the thread is bound to the new work item and told the link.
+The `[host/]owner/repo` a top-level message becomes an issue in **when the message does
+not name one** — `gh`'s own `--repo` grammar, so a GitHub Enterprise deployment names
+its host and the bound ref carries it (issue-311).
+
+Since [issue-341](https://github.com/MadaraUchiha-314/the-loop/issues/341) this is the
+**fallback, not the requirement**. A kickoff message may start with a repository prefix:
+
+```
+slim-gym: flaky teardown in the batch runner
+```
+
+The prefix is resolved against the repositories **you** declared — this `repo` plus
+every `repos` entry of every `github` source in
+[`polling.sources`](/config/cli/polling-options) — as a bare repository name, an
+`owner/repo`, or a `host/owner/repo`; the prefix is stripped before the issue is
+composed, and `kickoff.labels` applies whichever repository is chosen. Nothing is
+inferred beyond that list ([decision-120](/decisions/decision-120)):
+
+| The first line | What happens |
+|----------------|--------------|
+| a prefix naming exactly one declared repository | the issue is opened there |
+| `owner/repo:` naming none, or a bare name matching several | **refused** — ⚠️ on your message and a reply naming the candidates; nothing is created |
+| a bare word matching none (`fix: …`) | not treated as a prefix; the message goes to this `repo` unchanged |
+| no prefix, this `repo` empty | refused, with a reply asking for a `<repo>:` prefix |
+
+So `work-item.create` with an empty `repo` is now a **valid** configuration —
+prefix-only kickoff — rather than a dead one. Every refusal reaches only a member on
+`routing.authorizedUsers`: an unlisted member is still dropped in silence and told
+nothing, including which repositories exist.
+
+The first read after the grant is turned on **baselines** the channel: nothing already
+there becomes an issue. The created issue's body carries the envelope and no
+self-authored marker (it must be armable); the thread is bound to the new work item and
+told the link.
 
 ### `slack.kickoff.labels`
 
