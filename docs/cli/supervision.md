@@ -130,8 +130,8 @@ the-loop events --source service | tail
 ```
 
 An enabled ingress that failed to start records `ingress.hosted_failed` with the reason —
-a lock another process holds, an enabled poller with no `polling.sources`, a Slack token
-variable that is not set. The service keeps serving through it on purpose: the API being
+a lock another process holds, an enabled poller with no `polling.sources` or no top-level
+`repositories`, a Slack token variable that is not set. The service keeps serving through it on purpose: the API being
 up is what lets you read the reason.
 
 ## See also

@@ -632,13 +632,36 @@ class GitHubPollProvider(PollProvider):
 
     @classmethod
     def from_source(
-        cls, source: dict, *, default_label: str, default_host: str = ""
+        cls,
+        source: dict,
+        *,
+        default_label: str,
+        default_host: str = "",
+        repositories: Sequence[str] = (),
     ) -> "GitHubPollProvider":
+        """The source says *how* to poll; ``repositories`` says *what* (issue-348).
+
+        A source that still carries its own ``repos`` is refused rather than read:
+        the config gate (``migrations.assert_current``) stops a daemon long before
+        here, so reaching this point means a hand-built mapping — and honouring a
+        list the operator wrote in the retired place would poll a set nothing else
+        in this instance is bounded by.
+        """
         source = source or {}
+        if "repos" in source:
+            raise ProviderError(
+                "a github polling source still declares `repos`. The repositories "
+                "this instance works with are declared once, at the top level "
+                "(`repositories`), and read by every ingress — the receiver included "
+                "(issue-348). It is NOT being ignored: polling a different set from "
+                "the one that bounds your webhook receiver is the drift this key was "
+                "removed to end. Run `/the-loop:upgrade-the-loop` to migrate."
+            )
         monitor = source.get("monitor") or {}
-        repos = [str(r) for r in (source.get("repos") or [])]
         return cls(
-            repos=parse_repos(repos, default_host=default_host),
+            repos=parse_repos(
+                [str(r) for r in repositories], default_host=default_host
+            ),
             label=str(source.get("label") or "") or default_label,
             monitor_issues=bool(monitor.get("issues", True)),
             monitor_prs=bool(monitor.get("pullRequests", True)),
@@ -679,8 +702,9 @@ class GitHubPollProvider(PollProvider):
         """
         if not self.repos:
             raise ProviderError(
-                "github polling source has no repositories — set the source's "
-                "'repos' (OWNER/REPO) in the CLI config"
+                "this instance declares no repositories — set the top-level "
+                "`repositories` ([HOST/]OWNER/REPO) in the CLI config; it is the "
+                "one list every ingress reads (issue-348)"
             )
         self._cycles += 1
         out = Listing()

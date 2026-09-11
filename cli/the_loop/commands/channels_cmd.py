@@ -29,7 +29,7 @@ from ..channels.slack import (
     run_socket_listener,
     slack_state_path,
 )
-from ..channels.repos import declared_repositories
+from ..repos import declared_repositories
 from ..channels.state import ChannelState, canonical
 
 

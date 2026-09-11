@@ -295,7 +295,7 @@ delivery or poll cycle, exactly as a typed comment; the accepted start then open
 work item's thread here ([issue-317](https://github.com/MadaraUchiha-314/the-loop/issues/317)),
 and everything after that is a reply into it. `#123` resolves against
 [`kickoff.repo`](/config/cli/channels-options#slack-kickoff-repo); a work item may name
-only a repository this instance is configured for (`kickoff.repo`, a poll source) or a
+only a repository this instance is configured for (the top-level `repositories`) or a
 work item it already manages — anything else is refused, and nothing is written.
 
 **It does not exist yet.** Post a **top-level message** in the channel — the first line is
@@ -315,8 +315,8 @@ slim-gym: flaky teardown in the batch runner
 
 A bare name, an `owner/repo` or a `host/owner/repo` all work, and the prefix is stripped
 from the title. It is resolved **only** against the repositories you declared —
-[`kickoff.repo`](/config/cli/channels-options#slack-kickoff-repo) plus every
-`polling.sources[].repos` entry — so a name matching none of them (when it is qualified)
+the top-level [`repositories`](/config/cli/repositories-options) — so a name matching
+none of them (when it is qualified)
 or several of them is **refused in the thread with the candidates listed**, never
 guessed. With no prefix, `kickoff.repo` takes it; with no prefix and no `kickoff.repo`,
 you are asked for one. A first line that merely happens to carry a colon

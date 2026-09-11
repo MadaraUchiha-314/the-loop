@@ -4,7 +4,7 @@ Issue-341. Until 13.11.1 the answer was one config value, ``kickoff.repo``, and 
 empty one disabled the path — because *inferring* a repository from prose has no
 sensible answer. This module does not infer one. It reads a **selector** off the
 first line and resolves it against the closed set the operator already declared
-(:mod:`.repos`), which is the same set a slash command's target is bounded to:
+(:mod:`the_loop.repos`), which is the same set a slash command's target is bounded to:
 
     slim-gym: flaky teardown in the batch runner
 
@@ -13,7 +13,8 @@ Three shapes are accepted — a bare repository name, ``owner/repo``, and the
 five, never a guess (decision-120):
 
 ``resolved``        the prefix named exactly one declared repository
-``fallback``        no prefix was read; ``kickoff.repo`` takes it (13.11.1 behaviour)
+``fallback``        no prefix was read; ``kickoff.repo`` takes it, provided the
+                    operator declared it (issue-348)
 ``unknown-repo``    a *qualified* prefix named nothing declared — refused
 ``ambiguous-repo``  a *bare* prefix named several — refused, candidates listed
 ``no-target``       no prefix and no ``kickoff.repo`` — refused, a prefix asked for
@@ -35,7 +36,7 @@ import re
 from dataclasses import dataclass
 from typing import List, Mapping, Optional, Tuple
 
-from .repos import DeclaredRepo, declared_repositories, parse_repo_path
+from ..repos import DeclaredRepo, declared_repositories, parse_repo_path
 
 __all__ = [
     "CANDIDATE_LIMIT",
@@ -105,9 +106,18 @@ def resolve_target(
     fallback = (config.kickoff_repo or "").strip()
 
     def without_prefix() -> KickoffTarget:
-        if fallback:
-            return KickoffTarget("fallback", repo=fallback, text=text, candidates=names)
-        return KickoffTarget("no-target", text=text, candidates=names)
+        if not fallback:
+            return KickoffTarget("no-target", text=text, candidates=names)
+        # The fallback is bounded by the same declaration as everything else
+        # (issue-348, R4.3): `kickoff.repo` points AT a declared repository, it does
+        # not declare one. An instance that declared nothing is bounded by nothing,
+        # exactly as its receiver is — so the check only bites once there is a set
+        # to be outside of.
+        if declared and not _matches(fallback, declared, cli_config):
+            return KickoffTarget(
+                "unknown-repo", text=text, prefix=fallback, candidates=names
+            )
+        return KickoffTarget("fallback", repo=fallback, text=text, candidates=names)
 
     lines = text.splitlines()
     match = PREFIX_RE.match(lines[0]) if lines else None
@@ -155,8 +165,8 @@ def refusal_text(target: KickoffTarget) -> str:
     no token, no other config value, and nothing else of the member's message (A5)."""
     if not target.candidates:
         where = (
-            "I know no repositories — set `channels.slack.kickoff.repo` or a "
-            "`polling.sources` entry, then try again."
+            "I know no repositories — set the top-level `repositories` in the "
+            "CLI config, then try again."
         )
     else:
         where = f"I know: {_candidate_list(target.candidates)}."

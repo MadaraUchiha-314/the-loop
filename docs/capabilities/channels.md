@@ -188,8 +188,8 @@ flowchart LR
   channel; a failed creation is not retried.
 - **The kickoff names its repository** (issue-341, [decision-120](../decisions/decision-120.md)).
   WHEN the message's first line begins `<prefix>:` AND the prefix resolves to exactly one
-  repository of the **declared set** — `channels.slack.kickoff.repo` plus every `repos`
-  entry of every `github` source in `polling.sources`, the same set a slash command's
+  repository of the **declared set** — the top-level `repositories` (issue-348), the one
+  list every ingress reads and the same set a slash command's
   target is bounded to — THEN the issue SHALL be created there with the prefix stripped
   from the message. A bare name, an `owner/repo` and a `host/owner/repo` SHALL each be
   accepted, case-insensitively. WHEN a **qualified** prefix resolves to none, a **bare**
@@ -201,6 +201,10 @@ flowchart LR
   always has. WHEN no prefix is read AND `kickoff.repo` is empty THEN the message SHALL
   be refused with a reply asking for one, rather than dropped in silence — so
   `work-item.create` without `kickoff.repo` is a valid, prefix-only configuration.
+  WHEN no prefix is read AND `kickoff.repo` is set AND the instance declares
+  `repositories` that do not contain it THEN the fallback SHALL be refused as
+  `unknown-repo` (issue-348): `kickoff.repo` points AT a declared repository, it does not
+  declare one, and the kickoff is not the one path that may still write outside the list.
   Every refusal SHALL sit **below** the allow-list: an unlisted member is dropped in
   silence and never told which repositories exist. Nothing but a **declared** slug ever
   reaches the issue writer.
@@ -234,7 +238,7 @@ flowchart LR
   a keyword typed in the thread makes, executed by the ledger's ingress — and SHALL
   start, spawn or deliver nothing itself; the work item (`#N` against `kickoff.repo`,
   `owner/repo#N`, `github:…`, a URL on this instance's host) SHALL be in a repository
-  this instance is configured for (`kickoff.repo`, `polling.sources`) or one it already
+  this instance is configured for (the top-level `repositories`) or one it already
   manages or converses about, else refused (`unknown-target`). WHEN an instance or
   standing verb is accepted THEN the handler SHALL call the core facade the CLI and API
   route to (`core.lifecycle.status_all` / `schedule_restart`,
@@ -344,6 +348,7 @@ flowchart LR
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-348 | The kickoff resolves against the **top-level `repositories`** instead of `kickoff.repo` + `polling.sources[].repos`: one declaration, read by every ingress (issue-348). `kickoff.repo` keeps its job as the channel's default target but no longer declares a repository — a fallback outside the declared list is refused as `unknown-repo` — and the slash command's `may_target` reads the same list. The builder moved from `channels/repos.py` to `the_loop/repos.py`, since a receiver and a poller now read it too | [spec](../specs/issue-348/), [decision-121](../decisions/decision-121.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/348) |
 | issue-341 | A Slack kickoff **names its own repository**: a first-line `<repo>:` prefix — a bare name, an `owner/repo` or a `host/owner/repo` — resolved against the set the operator already declared (`kickoff.repo` + every `polling.sources[].repos` entry, now built once in `channels/repos.py` and shared with the slash command's `may_target`), stripped from the issue, with `kickoff.labels` unchanged. A qualified prefix matching none, a bare one matching several, or a prefix with no message after it is **refused in the thread with the candidates named**, never guessed; a bare word matching none is not a prefix, so `fix: …` still goes to `kickoff.repo`. `kickoff.repo` is demoted to the fallback and is no longer a precondition for reading top-level messages, making grant-without-target a valid prefix-only configuration instead of a dead one. Refusals sit below the allow-list, so the repository list never reaches an unlisted member. No schema key, grant, scope or state added | [spec](../specs/issue-341/), [decision-120](../decisions/decision-120.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/341) |
 | issue-338 | Long text reaches Slack as a **structural digest** instead of a mid-sentence cut: above `maxChars` (unchanged meaning and default) the channel puts the first question — or the *reply `…`* instruction — first in bold, renders lists as numbered lines with ☑ / ☐, replaces code fences, tables and stack traces with a sized pointer, shortens absolute paths, keeps the rest in the author's order, cuts at a sentence and closes with a link to the full text; the phone's notification text carries the same digest; a text within the cap is posted whole. `longMessages: digest \| truncate` (default `digest`; `truncate` is 13.10.0's cut) is the one new key. On every message, whatever its length, GitHub markdown is now drawn as mrkdwn and HTML comments (the-loop's markers, seen literally before) are removed; `<!channel>`-style broadcasts in a comment are neutralised. No model, no new call, grant, scope or state | [spec](../specs/issue-338/), [decision-118](../decisions/decision-118.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/338) |
 | issue-337 | **Execute** and **Start** buttons on the two Slack messages that asked for a keyword typed back — the phase-selection checklist mirror and the kickoff's "opened" reply — rendered only with `read.mode: socket` and the `control.command` grant, each carrying the configured keyword as its value so a press is exactly a typed keyword through the unchanged pipeline (allow-list, classification, grant, unmarked ledger record, the ingress executes). A processed press is written back onto the pressed message (buttons replaced by the outcome line with the record's link; kept beside a ⚠️ line when it did not land; a dropped press edits nothing), for the Approve pair too. `channels status` names both button sets and prints only the steps a configuration still needs — the app-level token is required because Slack delivers a press only to an acknowledging Socket Mode connection or a public Request URL. No new grant, scope, key or state | [spec](../specs/issue-337/), [decision-117](../decisions/decision-117.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/337) |

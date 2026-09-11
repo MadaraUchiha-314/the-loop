@@ -27,7 +27,18 @@ A breaking change is only as good as its migration, so four properties hold:
 
 ## What it migrates today
 
-Current version: **`0.7.0`**.
+Current version: **`0.8.0`**.
+
+**`polling.sources[].repos` → the top-level `repositories`** (issue-348). The list of
+repositories an instance works with was named after the one ingress that read it, so the
+`gh-webhook` receiver was bounded by no repository list at all. It is a top-level
+[`repositories`](/config/cli/repositories-options) now, read by **every** ingress. Every
+`github` source's list moves up, in declaration order, deduplicated, and
+`channels.slack.kickoff.repo` joins it — that key still names the Slack channel's default
+target, but it now points at a declared repository rather than declaring one. A source
+under another provider keeps its own `repos` untouched. The report says the one thing that
+changes behaviour: **your receiver is now bounded by this list too**, so a repository you
+were relying on it accepting without ever listing has to be added.
 
 **`channels.slack.events` → `channels.slack.subscribe`, and `channels.slack.authorizedUsers`
 → `routing.authorizedUsers`** (issue-309). A channel now subscribes to events *and* may
@@ -85,10 +96,10 @@ migrated the CLI config:
   · notifications removed — nothing read it (issue-304); Slack is declared once under `channels.slack`
   · channels.slack.events → channels.slack.subscribe (a channel subscribes AND publishes now, issue-309)
   · channels.slack.authorizedUsers → routing.authorizedUsers (1 Slack member id(s), one `{slack: …}` entry each — identity is declared once, issue-309)
-  · version '0.1.0' → '0.7.0'
+  · version '0.1.0' → '0.8.0'
 
 --- /home/you/.the-loop/cli-config.yaml (preview, not written) ---
-version: 0.7.0
+version: 0.8.0
 …
 ```
 

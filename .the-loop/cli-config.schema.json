@@ -75,6 +75,15 @@
         }
       }
     },
+    "repositories": {
+      "type": "array",
+      "description": "Every GitHub repository this instance of the-loop works with, as `[HOST/]OWNER/REPO` (issue-348). ONE declaration, read by EVERY ingress: the gh-webhook receiver drops a delivery for a repository outside this list (`routing.dropped`, reason `undeclared-repository`), the poller takes its scopes from it, the `/the-loop` slash command bounds its target to it (decision-116 D4) and a Slack kickoff prefix resolves against it (decision-120 D1). Until issue-348 the list lived in `polling.sources[].repos`, named after the one ingress that read it \u2014 which is how the receiver came to be bounded by no repository list at all. A bare `OWNER/REPO` is on this instance's host (`integrations.github.host`, issue-311); write the host in front for a repository on another. A malformed entry is skipped, never guessed at, so a fault can only shrink the set. EMPTY OR UNSET BOUNDS NOTHING: the receiver then accepts a delivery for any repository that reaches it (13.12.0 behaviour, warned about at start) and the poller has nothing to poll.",
+      "items": {
+        "type": "string"
+      },
+      "default": [],
+      "examples": [["octo/hello", "ghe.corp.example/team/service"]]
+    },
     "webhooks": {
       "type": "object",
       "description": "Config for the the-loop CLI webhook receiver(s), started by `the-loop start` when `ghWebhook.enabled` is true (issue-228).",
@@ -137,7 +146,7 @@
     },
     "polling": {
       "type": "object",
-      "description": "Config for the the-loop CLI poller (started by `the-loop start` when `polling.enabled` is true, or directly via `python -m the_loop.daemon_entry poller`) \u2014 a pull-based, provider-agnostic alternative to the webhook receiver for hosts a webhook cannot reach. Each entry in `sources` selects a provider (e.g. github) the system interfaces with; the core carries no provider-specific knobs. Dispatch behaviour (harness, runner, spawn policy, templates, registry) is the shared top-level `routing` block \u2014 the same one the webhook receiver runs on (issue-142).",
+      "description": "Config for the the-loop CLI poller (started by `the-loop start` when `polling.enabled` is true, or directly via `python -m the_loop.daemon_entry poller`) \u2014 a pull-based, provider-agnostic alternative to the webhook receiver for hosts a webhook cannot reach. Each entry in `sources` selects a provider (e.g. github) the system interfaces with and says HOW to poll; the core carries no provider-specific knobs. WHICH repositories are polled is the top-level `repositories` (issue-348) \u2014 one declaration, read by every ingress. Dispatch behaviour (harness, runner, spawn policy, templates, registry) is the shared top-level `routing` block \u2014 the same one the webhook receiver runs on (issue-142).",
       "additionalProperties": false,
       "properties": {
         "enabled": {
@@ -160,7 +169,7 @@
         },
         "sources": {
           "type": "array",
-          "description": "Ordered list of provider-specific poll sources. Each entry MUST name a `provider`; the remaining keys are that provider's own config (unknown to the core).",
+          "description": "Ordered list of provider-specific poll sources. Each entry MUST name a `provider`; the remaining keys are that provider's own config (unknown to the core) and describe HOW to poll \u2014 label, monitored entity kinds, binary. WHAT to poll is the top-level `repositories` (issue-348), read by every ingress; every github source polls every declared repository.",
           "items": {
             "type": "object",
             "required": [
@@ -178,13 +187,6 @@
                 "type": "string",
                 "default": "",
                 "description": "Label gating what this source polls. Empty = reuse routing.autoExecuteLabel."
-              },
-              "repos": {
-                "type": "array",
-                "description": "[github] Repositories to poll as OWNER/REPO. REQUIRED: no fallback to any repo's harness (plugin) config (.the-loop/harness-config.yaml) \u2014 which repos to watch is a CLI-config-only concern (issue-63 review). A source with no repos discovers nothing (list_work_items raises).",
-                "items": {
-                  "type": "string"
-                }
               },
               "monitor": {
                 "type": "object",

@@ -21,7 +21,8 @@ The ingresses are explicit opt-ins: a config that merely *describes* a receiver 
 polling source must not open a port or start a loop. `start` prints one line per
 service — `started`, `hosted` (see below), `already-running` (start is idempotent),
 `disabled` (naming the key that enables it), `misconfigured` (an enabled poller with no
-`polling.sources`), or `failed` (pointing at the service's logfile) — and exits 0 only
+`polling.sources`, or none of the top-level
+[`repositories`](/config/cli/repositories-options) it would poll), or `failed` (pointing at the service's logfile) — and exits 0 only
 when every enabled service came up. One service failing never hides the others'
 outcomes.
 

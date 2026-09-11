@@ -468,27 +468,47 @@ def _gh_client(issues=None, prs=None, comments=None):
     return GhClient(runner=Router())
 
 
-def test_provider_from_source_resolves_label_and_repos():
+def test_provider_from_source_takes_its_repositories_from_the_caller():
+    """issue-348 — the source says HOW to poll; the top-level `repositories` says
+    WHAT, and the daemon hands it in."""
     provider = GitHubPollProvider.from_source(
-        {
-            "provider": "github",
-            "repos": ["octo/repo"],
-            "monitor": {"pullRequests": False},
-        },
+        {"provider": "github", "monitor": {"pullRequests": False}},
         default_label=LABEL,
+        repositories=["octo/repo"],
     )
     assert provider.label == LABEL  # fell back to routing label
     assert [s.full_name for s in provider.repos] == ["octo/repo"]
     assert provider.monitor_prs is False
 
 
-def test_provider_from_source_with_no_repos_is_empty_not_a_fallback():
+def test_provider_from_source_with_no_repositories_is_empty_not_a_fallback():
     """No plugin-config (ticketing.github) fallback (issue-63 review): an
-    unconfigured source has zero repos, not whatever the repo happens to be."""
+    unconfigured instance has zero repos, not whatever the repo happens to be."""
     provider = GitHubPollProvider.from_source(
         {"provider": "github"}, default_label=LABEL
     )
     assert provider.repos == []
+
+
+def test_a_source_still_declaring_repos_is_refused():
+    """R3.5 — the retired key is never silently honoured. The config gate stops a
+    daemon long before here; this is the seam a hand-built mapping reaches."""
+    with pytest.raises(ProviderError) as excinfo:
+        GitHubPollProvider.from_source(
+            {"provider": "github", "repos": ["octo/repo"]},
+            default_label=LABEL,
+            repositories=["octo/other"],
+        )
+    assert "`repositories`" in str(excinfo.value)
+    assert "upgrade-the-loop" in str(excinfo.value)
+
+
+def test_a_provider_with_no_repositories_names_the_top_level_key():
+    """R3.4 — the one whole-source failure left says where to fix it."""
+    provider = GitHubPollProvider.from_source({"provider": "github"}, default_label="x")
+    with pytest.raises(ProviderError) as excinfo:
+        provider.listing()
+    assert "`repositories`" in str(excinfo.value)
 
 
 def test_provider_lists_issues_and_prs_as_work_items():
@@ -811,7 +831,7 @@ def test_build_provider_rejects_missing_and_unknown_provider():
 
 def test_build_provider_constructs_github():
     provider = build_provider(
-        {"provider": "github", "repos": ["octo/repo"]}, default_label=LABEL
+        {"provider": "github"}, default_label=LABEL, repositories=["octo/repo"]
     )
     assert isinstance(provider, GitHubPollProvider)
     assert "github octo/repo" == provider.describe()
@@ -3943,18 +3963,20 @@ def test_parse_repos_dedupes_an_inherited_host_against_a_written_one():
 def test_provider_from_source_binds_bare_repos_to_the_default_host():
     other = "other.corp.example"
     provider = GitHubPollProvider.from_source(
-        {"provider": "github", "repos": ["octo/repo", f"{other}/a/b"]},
+        {"provider": "github"},
         default_label=LABEL,
         default_host=GHE,
+        repositories=["octo/repo", f"{other}/a/b"],
     )
     assert [s.gh_repo for s in provider.repos] == [f"{GHE}/octo/repo", f"{other}/a/b"]
 
 
 def test_build_provider_carries_the_default_host():
     provider = build_provider(
-        {"provider": "github", "repos": ["octo/repo"]},
+        {"provider": "github"},
         default_label=LABEL,
         default_host=GHE,
+        repositories=["octo/repo"],
     )
     assert isinstance(provider, GitHubPollProvider)
     assert provider.repos[0].host == GHE
@@ -4016,7 +4038,8 @@ def test_the_daemon_binds_sources_to_the_resolved_host(
     from the_loop.poller import daemon
 
     data: dict = {
-        "polling": {"sources": [{"provider": "github", "repos": ["octo/repo"]}]}
+        "repositories": ["octo/repo"],
+        "polling": {"sources": [{"provider": "github"}]},
     }
     if config_host:
         data["integrations"] = {"github": {"host": config_host}}

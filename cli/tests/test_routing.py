@@ -2645,3 +2645,191 @@ def test_the_stamp_is_logged_as_work_item_ended(tmp_path, monkeypatch):
         "webhook",
     )
     assert "actor" not in event  # none named: dropped, never faked
+
+
+# -- the repository bound (issue-348) -----------------------------------------
+
+
+DECLARED = {"github.com/octo/repo"}
+
+
+def _comment_in(full_name, *, login="me", number=15, html_url=None):
+    """An `issue_comment` payload for a named repository, on a named host."""
+    repository = {"full_name": full_name}
+    if html_url:
+        repository["html_url"] = html_url
+    return {
+        "action": "created",
+        "repository": repository,
+        "issue": {"number": number},
+        "comment": {"user": {"login": login}, "body": "hi"},
+    }
+
+
+def test_a_delivery_from_a_declared_repository_routes():
+    """R2.1 — the bound narrows, it does not break the ordinary path."""
+    router = Router(events=[], authorized_users=["me"], repositories=DECLARED)
+    assert router.route("issue_comment", _comment_in("octo/repo"), "d-1") is not None
+
+
+def test_a_delivery_from_an_undeclared_repository_is_dropped():
+    router = Router(events=[], authorized_users=["me"], repositories=DECLARED)
+    assert router.route("issue_comment", _comment_in("stranger/repo"), "d-1") is None
+
+
+def test_no_declared_repositories_bounds_nothing():
+    """R2.3 — `None` is "the operator declared nothing", which is 13.12.0 exactly."""
+    router = Router(events=[], authorized_users=["me"], repositories=None)
+    assert (
+        router.route("issue_comment", _comment_in("stranger/repo"), "d-1") is not None
+    )
+
+
+def test_the_bound_is_case_insensitive_about_the_repository():
+    router = Router(events=[], authorized_users=["me"], repositories=DECLARED)
+    assert router.route("issue_comment", _comment_in("OCTO/Repo"), "d-1") is not None
+
+
+def test_a_delivery_with_no_repository_is_left_to_the_work_item_check():
+    """An event that names no repository is not "outside the set" — it names none."""
+    router = Router(events=[], authorized_users=["me"], repositories=DECLARED)
+    assert router.route("issues", {"action": "opened"}, "d-1") is None
+
+
+def test_a_host_disagreement_between_full_name_and_html_url_is_dropped():
+    """A2 — the key is built from both fields, so a mismatch matches nothing."""
+    router = Router(events=[], authorized_users=["me"], repositories=DECLARED)
+    payload = _comment_in("octo/repo", html_url="https://ghe.corp.example/octo/repo")
+    assert router.route("issue_comment", payload, "d-1") is None
+    enterprise = Router(
+        events=[], authorized_users=["me"], repositories={"ghe.corp.example/octo/repo"}
+    )
+    assert enterprise.route("issue_comment", payload, "d-2") is not None
+
+
+def test_a_forged_authorized_actor_on_an_undeclared_repository_is_dropped():
+    """A1 — the bound is checked before the actor, so a forged one buys nothing."""
+    router = Router(events=[], authorized_users=["me"], repositories=DECLARED)
+    payload = _comment_in("attacker/repo", login="me")
+    assert router.route("issue_comment", payload, "d-1") is None
+
+
+def test_the_repository_bound_is_checked_before_the_actor(tmp_path, monkeypatch):
+    """R2.4 — the recorded reason is the repository's, not the actor's."""
+    events = _events(tmp_path, monkeypatch, "routing.dropped")
+    router = Router(events=[], authorized_users=["me"], repositories=DECLARED)
+    router.route("issue_comment", _comment_in("attacker/repo", login="nobody"), "d-1")
+    (dropped,) = events()
+    assert dropped["reason"] == "undeclared-repository"
+    assert dropped["repository"] == "github.com/attacker/repo"
+    assert "actor" not in dropped
+    eventlog.reset()
+
+
+def test_an_undeclared_delivery_publishes_nothing_to_the_bus():
+    """R2.4 — a comment from an undeclared repository reaches no channel."""
+    published = []
+    router = Router(
+        events=[],
+        authorized_users=["me"],
+        repositories=DECLARED,
+        publisher=lambda *args: published.append(args),
+    )
+    assert router.route("issue_comment", _comment_in("stranger/repo"), "d-1") is None
+    assert published == []
+
+
+def test_an_undeclared_delivery_is_not_marked_processed():
+    """R2.6 — declaring the repository and redelivering must get through."""
+    deduper = Deduper()
+    router = Router(
+        events=[], authorized_users=["me"], repositories=DECLARED, deduper=deduper
+    )
+    router.route("issue_comment", _comment_in("stranger/repo"), "d-1")
+    assert "d-1" not in deduper
+
+
+def test_a_ref_outside_the_declared_set_is_filtered_out():
+    """R2.2, A4 — a cross-repository link (issue-183) has to be declared too."""
+    router = Router(
+        events=["pull_request"],
+        authorized_users=["me"],
+        repositories={"github.com/octo/repo", "github.com/octo/lib"},
+    )
+    payload = {
+        "action": "opened",
+        "repository": {"full_name": "octo/repo"},
+        "sender": {"login": "me"},
+        "pull_request": {
+            "number": 7,
+            "body": "Closes octo/lib#3 and Closes stranger/repo#9",
+            "head": {"ref": "feature"},
+        },
+    }
+    routed = router.route("pull_request", payload, "d-1")
+    assert routed is not None
+    refs = {item.ref for item in routed.work_items}
+    assert "github:octo/lib#3" in refs
+    assert not any("stranger" in ref for ref in refs)
+
+
+def test_a_delivery_whose_every_ref_is_undeclared_is_dropped(tmp_path, monkeypatch):
+    """R2.2 — nothing left to act on, and the reason says which question failed."""
+    events = _events(tmp_path, monkeypatch, "routing.dropped")
+    router = Router(
+        events=["pull_request"],
+        authorized_users=["me"],
+        repositories={"github.com/octo/repo"},
+    )
+    payload = {
+        "action": "opened",
+        "repository": {"full_name": "octo/repo"},
+        "sender": {"login": "me"},
+        "pull_request": {
+            "number": 7,
+            "body": "Closes stranger/repo#9",
+            "head": {"ref": "stranger-only"},
+        },
+    }
+    # The PR itself is in a declared repository, so only its linked ref is foreign;
+    # strip the PR's own ref by routing an event that names nothing else.
+    routed = router.route("pull_request", payload, "d-1")
+    assert routed is not None  # the PR's own work item survives
+    assert {item.ref for item in routed.work_items} == {"github:octo/repo#7"}
+
+    foreign = Router(
+        events=["pull_request"],
+        authorized_users=["me"],
+        repositories={"github.com/octo/lib"},
+    )
+    assert foreign.route("pull_request", payload, "d-2") is None
+    reasons = [row["reason"] for row in events()]
+    # one for the ref filtered out of the first delivery, one for the second
+    # delivery's own repository — one vocabulary, both questions.
+    assert reasons == ["undeclared-repository", "undeclared-repository"]
+    eventlog.reset()
+
+
+def test_a_closing_keyword_from_an_undeclared_repository_reaches_nothing():
+    """A3 — a PR elsewhere cannot reach a declared work item's session."""
+    router = Router(
+        events=["pull_request"],
+        authorized_users=["me"],
+        repositories={"github.com/octo/repo"},
+    )
+    payload = {
+        "action": "opened",
+        "repository": {"full_name": "attacker/repo"},
+        "sender": {"login": "me"},
+        "pull_request": {
+            "number": 1,
+            "body": "Closes octo/repo#15",
+            "head": {"ref": "issue-15"},
+        },
+    }
+    assert router.route("pull_request", payload, "d-1") is None
+
+
+def test_undeclared_repository_is_in_the_event_catalog():
+    """Every reason the ingress emits is described where operators read it."""
+    assert "undeclared-repository" in EVENT_TYPES["routing.dropped"]

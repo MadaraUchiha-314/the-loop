@@ -127,6 +127,11 @@ def _repo_parts(payload: dict) -> Optional[tuple]:
     return owner, repo
 
 
+def _ref_key(ref: WorkItemRef) -> str:
+    """A work item's repository, in the same comparable shape as a declared one."""
+    return f"{ref.host}/{ref.owner}/{ref.repo}".lower()
+
+
 def _host(payload: dict) -> str:
     """Which GitHub the event came from, read off the payload (issue-130 review).
 
@@ -144,6 +149,27 @@ def _host(payload: dict) -> str:
         if entity_url:
             return host_from_url(entity_url)
     return DEFAULT_GITHUB_HOST
+
+
+def repository_key(payload: dict) -> str:
+    """``host/owner/repo`` for the repository this delivery is *about*, lowercased.
+
+    The comparable shape of :attr:`the_loop.repos.DeclaredRepo.key`, built from the two
+    fields that carry the answer: ``repository.full_name`` for the owner and the name,
+    and the host :func:`_host` reads off ``repository.html_url``. Both are read from the
+    same payload object, so a delivery cannot name one repository in one field and
+    another in the other and have the mismatch average out — it simply yields a key that
+    is in nobody's declared set (abuse case A2).
+
+    ``""`` when the payload carries no repository at all, which is not a repository
+    outside the set: it is an event that names none, and :func:`extract_work_items`
+    already has the answer for that.
+    """
+    parts = _repo_parts(payload)
+    if not parts:
+        return ""
+    owner, repo = parts
+    return f"{_host(payload)}/{owner}/{repo}".lower()
 
 
 def _issue_from_branch(branch: str) -> Optional[int]:
@@ -499,9 +525,16 @@ class Router:
         authorized_users: Sequence[str] = (),
         collaborators: Optional["CollaboratorStore"] = None,
         publisher: Optional[Callable[[str, str, str, str, str], None]] = None,
+        repositories: Optional[Set[str]] = None,
     ):
         self.events = list(events)
         self.auto_execute_label = auto_execute_label
+        # The repository bound (issue-348): the operator's top-level `repositories`,
+        # as `host/owner/repo` keys — the same declaration the poller and the slash
+        # command read. ``None`` is "the operator declared nothing", which bounds
+        # nothing and is what this receiver did until issue-348; an empty set would
+        # say the same thing far less clearly, so the distinction is kept.
+        self.repositories = repositories
         # The bus (issue-309): a comment this ingress drops as the agent's own, or
         # accepts as a human's, is published to the subscribed channels —
         # `comment.agent` / `comment.human`. Injected, so a router built without
@@ -545,7 +578,59 @@ class Router:
                 delivery_id=delivery_id,
             )
             return None
+        # The repository bound (issue-348, R2.1/R2.4). Above the actor check and above
+        # the bus on purpose: a delivery for a repository the operator never declared
+        # should reach as little of this process as possible, and reading an actor off
+        # it — let alone publishing its comment to a channel — is already too much.
+        delivery_repo = repository_key(payload)
+        if (
+            self.repositories is not None
+            and delivery_repo
+            and delivery_repo not in self.repositories
+        ):
+            logger.warning(
+                "ignoring %s: %s is not a repository this instance is configured "
+                "for (top-level `repositories`)",
+                event,
+                delivery_repo,
+            )
+            eventlog.emit(
+                "routing.dropped",
+                level="warning",
+                reason="undeclared-repository",
+                gh_event=event,
+                action=action,
+                delivery_id=delivery_id,
+                repository=delivery_repo,
+            )
+            return None
         work_items = extract_work_items(event, payload)
+        if self.repositories is not None and work_items:
+            # A pull request may link a work item in ANOTHER repository (issue-183).
+            # That repository has to be declared too, or a linked ref becomes the way
+            # to name a work item on a repository nobody pointed this instance at.
+            kept, dropped = [], []
+            for item in work_items:
+                inside = _ref_key(item) in self.repositories
+                (kept if inside else dropped).append(item)
+            if dropped:
+                logger.warning(
+                    "dropping %d work item(s) outside this instance's repositories: %s",
+                    len(dropped),
+                    ", ".join(item.ref for item in dropped),
+                )
+                eventlog.emit(
+                    "routing.dropped",
+                    level="warning",
+                    reason="undeclared-repository",
+                    gh_event=event,
+                    action=action,
+                    delivery_id=delivery_id,
+                    work_items=[item.ref for item in dropped],
+                )
+            if not kept:
+                return None  # the reason is already recorded, with the refs it names
+            work_items = kept
         if not work_items:
             logger.debug("event %s maps to no work item; ignoring", event)
             eventlog.emit(

@@ -168,6 +168,7 @@ const configSidebar = [
     items: [
       { text: "Configuring the CLI", link: "/config/cli/" },
       { text: "Instance options", link: "/config/cli/instance-options" },
+      { text: "Repositories", link: "/config/cli/repositories-options" },
       { text: "Webhook options", link: "/config/cli/webhook-options" },
       { text: "Routing options", link: "/config/cli/routing-options" },
       { text: "Standing-session options", link: "/config/cli/standing-sessions-options" },

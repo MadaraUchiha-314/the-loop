@@ -61,7 +61,7 @@ only matching items ever cross the wire; nothing is fetched-then-filtered client
 | `--state open` | fixed | Closed/merged items never enter a cycle. |
 | `--limit 200` | `_LIST_LIMIT` constant | Hard cap per repo per kind. A labelled backlog larger than this is treated as pathological; the newest items still get through on later polls. |
 | `--json <fields>` | explicit field projection | `gh` shapes its underlying GraphQL query from the requested fields, so we pay only for the seven-to-eight fields we use. `body` is requested **only** on the PR listing (closing keywords live there, linking a PR to its issue); issue bodies are not fetched during discovery. |
-| `--repo OWNER/REPO` | from `polling.sources[].repos`, falling back to `ticketing.github` | Scope is an explicit allowlist of repos — never org-wide or search-wide queries. |
+| `--repo OWNER/REPO` | from the top-level `repositories` (issue-348), falling back to `ticketing.github` | Scope is an explicit allowlist of repos — never org-wide or search-wide queries. |
 | `monitor.issues` / `monitor.pullRequests` | config, both default `true` | Either listing can be switched off entirely, halving discovery queries for single-kind setups. |
 
 Two filters are intentionally **absent**:

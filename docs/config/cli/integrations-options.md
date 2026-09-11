@@ -73,8 +73,8 @@ record's `url`, the reviewer's suggested pull requests — and every `gh` call i
 You rarely need to set it. A work item that arrives through a webhook or a poll already
 carries its host in its ref, read off the event. This key answers for the refs the-loop
 **mints from configuration** — the graph's own work item, derived from the repository's
-`ticketing.github` — and for a poll source's bare `OWNER/REPO` entries
-([`polling.sources[].repos`](/config/cli/polling-options#sources-repos), issue-331), and
+`ticketing.github` — and for the bare `OWNER/REPO` entries of the top-level
+[`repositories`](/config/cli/repositories-options) (issue-331, issue-348), and
 it is the first of five tiers, resolved in this order:
 
 | Tier | Source |

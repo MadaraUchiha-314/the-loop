@@ -14,7 +14,7 @@ Spec: docs/specs/issue-34/design.md §2.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Type, TypeVar
+from typing import Dict, List, Optional, Sequence, Type, TypeVar
 
 from ..sessions import WorkItemRef, host_from_url
 from ..webhook.router import RoutedEvent
@@ -180,7 +180,12 @@ class PollProvider:
 
     @classmethod
     def from_source(
-        cls, source: dict, *, default_label: str, default_host: str = ""
+        cls,
+        source: dict,
+        *,
+        default_label: str,
+        default_host: str = "",
+        repositories: Sequence[str] = (),
     ) -> "PollProvider":
         """Build a bound provider from one ``polling.sources`` config entry.
 
@@ -188,6 +193,13 @@ class PollProvider:
         (issue-331) — for GitHub, the one ``ghhost.github_host`` resolved from
         the CLI config and the environment. A provider whose scopes have no
         notion of a host ignores it.
+
+        ``repositories`` is the instance's declared repository set — the top-level
+        ``repositories`` key, as the operator wrote each entry (issue-348). It is
+        handed *in* rather than read out of the source because the set is not the
+        source's to declare: one list bounds every ingress, and a source describes
+        how to poll, not what. A provider whose scopes are not repositories ignores
+        it.
         """
         raise NotImplementedError
 
@@ -288,11 +300,16 @@ def provider_names() -> List[str]:
 
 
 def build_provider(
-    source: dict, *, default_label: str, default_host: str = ""
+    source: dict,
+    *,
+    default_label: str,
+    default_host: str = "",
+    repositories: Sequence[str] = (),
 ) -> PollProvider:
     """Resolve a ``polling.sources`` entry to a bound :class:`PollProvider`.
 
-    ``default_host`` is handed to :meth:`PollProvider.from_source` as is.
+    ``default_host`` and ``repositories`` are handed to
+    :meth:`PollProvider.from_source` as is.
     """
     name = str((source or {}).get("provider") or "").strip()
     if not name:
@@ -307,5 +324,8 @@ def build_provider(
             f"(known providers: {', '.join(provider_names()) or 'none'})"
         )
     return cls.from_source(
-        source, default_label=default_label, default_host=default_host
+        source,
+        default_label=default_label,
+        default_host=default_host,
+        repositories=repositories,
     )

@@ -151,6 +151,7 @@ def _build_routing(routing_config: dict, gh_webhook_config: dict):
     from ..channels.publishers import comment_publisher, conversation_opener
     from ..harness import build_adapters
     from ..reload import Reloader
+    from ..repos import repository_bounds
     from ..sessions import SessionRegistry
     from .dispatcher import Dispatcher, RoutingConfig
     from .router import Router
@@ -167,6 +168,16 @@ def _build_routing(routing_config: dict, gh_webhook_config: dict):
         # every configured channel. Reads the config per call, like the publisher.
         opener=conversation_opener(lambda: cli_config.load_cli_config(_config_path())),
     )
+    # The repository bound (issue-348). Read from the whole document, not from
+    # `routing`: it is the one declaration every ingress reads, and the poller reads
+    # the very same key.
+    repositories = repository_bounds(cli_config.load_cli_config(_config_path()))
+    if repositories is None:
+        logger.warning(
+            "no repositories declared — this receiver will accept a delivery for ANY "
+            "repository that reaches it. Set the top-level `repositories` in the CLI "
+            "config to bound it to the ones this instance works with"
+        )
     authorized = resolve_authorized_users(config.authorized_users)
     if not authorized:
         logger.warning(
@@ -190,6 +201,7 @@ def _build_routing(routing_config: dict, gh_webhook_config: dict):
         # The bus (issue-309): accepted and agent comments go to the subscribed
         # channels. Reads the config per call, so a reload is honoured.
         publisher=comment_publisher(lambda: cli_config.load_cli_config(_config_path())),
+        repositories=repositories,
     )
 
     def apply(cfg: dict) -> None:
@@ -205,20 +217,29 @@ def _build_routing(routing_config: dict, gh_webhook_config: dict):
         warn_on_missing_lifecycle_events(router.events)
         router.auto_execute_label = new.auto_execute_label
         router.authorized_users = resolve_authorized_users(new.authorized_users)
+        # The whole document, not `routing`: `repositories` is a top-level sibling.
+        router.repositories = repository_bounds(cfg)
         logger.info(
             "hot-reloaded gh-webhook routing: spawnOnUnmatched=%s "
-            "label=%r events=%d authorizedUsers=%d",
+            "label=%r events=%d authorizedUsers=%d repositories=%s",
             new.spawn_on_unmatched,
             new.auto_execute_label,
             len(router.events),
             len(router.authorized_users),
+            len(router.repositories) if router.repositories is not None else "any",
         )
         eventlog.emit(
             "config.reloaded",
             detail=(
                 f"gh-webhook routing: spawnOnUnmatched={new.spawn_on_unmatched} "
                 f"events={len(router.events)} "
-                f"authorizedUsers={len(router.authorized_users)}"
+                f"authorizedUsers={len(router.authorized_users)} "
+                "repositories="
+                + (
+                    str(len(router.repositories))
+                    if router.repositories is not None
+                    else "any"
+                )
             ),
         )
 

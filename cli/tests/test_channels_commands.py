@@ -40,6 +40,9 @@ def cli_config(tmp_path, authorized=("UHUMAN",), publish=None, **extra):
     }
     config = {
         "state": {"root": str(tmp_path / "state")},
+        # issue-348: one declaration, read by every ingress — `kickoff.repo` above
+        # points at one of these rather than declaring its own.
+        "repositories": ["o/r"],
         "routing": {
             "authorizedUsers": [
                 {"github": f"gh-{member}", "slack": member, "name": member.lower()}
@@ -355,10 +358,8 @@ def test_resolve_applies_the_resolved_host(tmp_path):
     )
 
 
-def test_may_target_kickoff_repo_and_poll_sources(tmp_path):
-    config = cli_config(
-        tmp_path, polling={"sources": [{"provider": "github", "repos": ["Other/Repo"]}]}
-    )
+def test_may_target_every_declared_repository(tmp_path):
+    config = cli_config(tmp_path, repositories=["o/r", "Other/Repo"])
     assert commands.may_target(WorkItemRef.parse("github:o/r#7"), config)
     assert commands.may_target(WorkItemRef.parse("github:other/repo#1"), config)
     assert not commands.may_target(WorkItemRef.parse("github:stranger/repo#1"), config)
@@ -379,8 +380,8 @@ def test_may_target_a_bound_conversation_and_a_managed_item(tmp_path):
 
 
 def test_a_failing_read_contributes_nothing(tmp_path, monkeypatch):
-    """A3: a source that cannot be read never widens the target set."""
-    config = cli_config(tmp_path, polling={"sources": "not-a-list"})
+    """A3: a declaration that cannot be read never widens the target set."""
+    config = cli_config(tmp_path, repositories="not-a-list")
     config["channels"]["slack"]["kickoff"] = {}
     monkeypatch.setattr(
         "the_loop.core.instance.describe_instance",

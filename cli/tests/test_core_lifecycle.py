@@ -6,7 +6,13 @@ from the_loop.core import lifecycle
 
 
 def _config(tmp_path, **blocks):
-    return {"state": {"root": str(tmp_path / ".the-loop")}, **blocks}
+    # `repositories` (issue-348) is what a github poll source polls, so a config
+    # that enables the poller needs it to be anything but misconfigured.
+    return {
+        "state": {"root": str(tmp_path / ".the-loop")},
+        "repositories": ["octo/repo"],
+        **blocks,
+    }
 
 
 # -- which services the config enables (D1) --------------------------------------

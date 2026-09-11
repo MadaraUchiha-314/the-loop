@@ -28,11 +28,11 @@ routing:
     host: 127.0.0.1
     port: 7681
   authorizedUsers: ["octocat"]
+repositories: ["octo/repo"]
 polling:
   intervalSeconds: 60
   sources:
     - provider: github
-      repos: ["octo/repo"]
 """
 
 

@@ -54,7 +54,7 @@ from ..sessions.registry import is_github_host, is_github_name
 from ..standing import NAME_RE as STANDING_NAME_RE
 from .base import Event
 from .github import GitHubLedger
-from .repos import parse_repo_path, repository_keys
+from ..repos import parse_repo_path, repository_keys
 from .slack import SlackChannelConfig, slack_state_path
 from .state import ChannelState, canonical
 
@@ -580,8 +580,7 @@ def _work_item_verb(invocation, config, cli_config, member, post_comment, result
         return (
             "unknown-target",
             f"`{ref.ref}` — this instance is not configured for `{ref.path}` "
-            "(channels.slack.kickoff.repo, polling.sources, or a work item it "
-            "already manages).",
+            "(the top-level `repositories`, or a work item it already manages).",
         )
     _received(member, invocation, ref.ref)
     control = _control_config(cli_config)

@@ -15,13 +15,14 @@ guards — is reused verbatim from [routing options](/config/cli/routing-options
 dispatch stack, two ingresses.
 
 ```yaml
+repositories: [octo/repo]   # top level — WHAT is polled (issue-348)
+
 polling:
   enabled: false
   intervalSeconds: 60
   maxRetries: 3
   sources:
-    - provider: github
-      repos: [octo/repo]
+    - provider: github     # HOW it is polled
       monitor: { issues: true, pullRequests: true }
       label: ""            # empty = reuse routing.autoExecuteLabel
 ```
@@ -134,41 +135,22 @@ Label gating what this source polls. Empty reuses
 [`routing.autoExecuteLabel`](/config/cli/routing-options#autoexecutelabel), so one label
 drives both ingresses.
 
-### `sources[].repos`
+### Which repositories are polled
 
-- **Type:** `string[]`
-- **Default:** none — **required** *(github)*
+Not here. Since issue-348 the repositories an instance works with are declared once, at
+the top level, and read by **every** ingress — see
+[repositories](/config/cli/repositories-options). A source describes *how* to poll
+(provider, label, monitored entity kinds, binary); the top-level list describes *what*.
+Every `github` source polls every declared repository.
 
-Repositories to poll, as `[HOST/]OWNER/REPO` — `gh`'s own `--repo` grammar. A source on
-GitHub Enterprise names its host (`ghe.corp.example/octo/repo`, issue-311): every listing,
-comment, review and closure read for that repository is made on that host, the work items
-it discovers carry it in their refs, and the source claims only refs on that host — a
-github.com repository with the same `OWNER/REPO` is a different repository. A bare
-`OWNER/REPO` is on the GitHub the-loop resolves (issue-331):
-[`integrations.github.host`](/config/cli/integrations-options#github-host), else an
-enterprise `github.api.baseUrl`, else `$GH_HOST`, else github.com — resolved when the
-poller starts and again on every hot reload, and shown in the poller's startup line
-(`polling github ghe.corp.example/octo/repo`). Listing, comment reads and closure
-reconciliation therefore agree on where a bare repository is; before issue-331 the listing
-followed `gh` while ownership assumed github.com, so on GitHub Enterprise a closed item
-was never detected unless every entry was host-pinned.
-
-::: danger No fallback
-There is no fallback to any repository's harness config. A source with no `repos`
-discovers nothing.
-:::
-
-**This list is also what a Slack kickoff may name** (issue-341). A top-level message
-whose first line starts `<repo>:` is resolved against these entries plus
-[`channels.slack.kickoff.repo`](/config/cli/channels-options#slack-kickoff-repo) — and
-against nothing else, so a prefix naming none of them (when it is qualified) or several
-of them is refused in the thread rather than guessed. Adding a repository here therefore
-does two things: the poller reads it, and a kickoff may pick it.
+`polling.sources[].repos` was removed in that change. A config that still declares it
+makes the runtime refuse to start, naming the key and the command;
+[`the-loop migrate-config`](/cli/commands/migrate-config) moves it.
 
 **One repository's failure is that repository's** (issue-315,
 [decision-106](/decisions/decision-106)). Each repository is listed on its own — issues,
-then pull requests — and one that cannot be listed costs exactly that: the source's other
-repositories are polled as if it were not configured, the failure is recorded per
+then pull requests — and one that cannot be listed costs exactly that: the other declared
+repositories are polled as if it were not declared, the failure is recorded per
 repository (`poll.scope_error`, retried next cycle), and nothing in the failing repository
 is reconciled as closed, because a listing that did not happen proves nothing ended. It
 used to be the whole source: the first `gh` failure aborted the pass, and thirteen

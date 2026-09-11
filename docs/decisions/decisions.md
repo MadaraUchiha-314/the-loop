@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [121](decision-121.md) | The repositories an instance works with are declared once, at the top level, and every ingress reads that list — the webhook receiver included; `polling.sources[].repos` is removed and migrated; an empty list bounds nothing and says so | proposed | 2026-09-11 |
 | [120](decision-120.md) | A Slack kickoff names its repository with a first-line `<repo>:` prefix resolved against the declared set (`kickoff.repo` + poll sources); unresolvable or ambiguous is refused, an unmatched bare word falls back, and `kickoff.repo` stops being a precondition | proposed | 2026-09-11 |
 | [119](decision-119.md) | `state.root` resolved once at the load boundary, anchored on the config file; spawns carry the config path | proposed | 2026-09-11 |
 | [118](decision-118.md) | Long text reaches Slack as a structural digest the channel computes — never a model's summary — above `maxChars`, under one enum key | proposed | 2026-09-11 |

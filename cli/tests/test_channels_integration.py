@@ -1743,13 +1743,15 @@ def test_a_notifications_artifact_excerpt_is_digested_too(tmp_path, monkeypatch)
 
 
 def _kickoff_config(tmp_path, monkeypatch, *, kickoff_repo, polled, created=None):
-    """A channel with the create grant, a declared poll set, and a recording writer."""
+    """A channel with the create grant, a declared repository set, and a recording
+    writer. Since issue-348 the set is the top-level `repositories` and `kickoff.repo`
+    points at one of them, so the declaration carries both."""
     config = cli_config(
         tmp_path,
         publish=["work-item.reply", "work-item.create"],
         kickoff={"repo": kickoff_repo, "labels": ["the-loop: auto-execute"]},
     )
-    config["polling"] = {"sources": [{"provider": "github", "repos": list(polled)}]}
+    config["repositories"] = ([kickoff_repo] if kickoff_repo else []) + list(polled)
     calls = created if created is not None else []
 
     def create_issue(repo, title, body, labels, gh_binary="gh"):

@@ -74,20 +74,33 @@ def _load_polling_config() -> dict:
 def _build_providers(
     data: Mapping[str, Any], *, default_label: str
 ) -> "List[PollProvider]":
-    """Every source in the CLI config ``data``, bound to the resolved host (issue-331).
+    """Every source in the CLI config ``data``, bound to the resolved host (issue-331)
+    and to the instance's declared repositories (issue-348).
 
-    The one loaded config answers both what to poll (``polling.sources``) and
-    where a bare ``OWNER/REPO`` is — ``ghhost.github_host`` over that same
-    mapping and ``$GH_HOST``, with no checkout to consult: a daemon runs outside
-    any. The pre-flight, the first plan and every hot reload come through here,
-    so an edit to ``integrations.github.host`` takes effect exactly as an edit
-    to ``repos`` does. Raises :class:`ProviderError` as ``build_provider`` does.
+    The one loaded config answers all three questions: what to poll (the top-level
+    ``repositories`` — the same list that bounds the webhook receiver), how to poll it
+    (``polling.sources``: provider, label, monitor, binary), and where a bare
+    ``OWNER/REPO`` is — ``ghhost.github_host`` over that same mapping and ``$GH_HOST``,
+    with no checkout to consult: a daemon runs outside any. The pre-flight, the first
+    plan and every hot reload come through here, so an edit to ``repositories`` takes
+    effect exactly as an edit to ``polling.sources[].repos`` did. Raises
+    :class:`ProviderError` as ``build_provider`` does.
+
+    Each entry is passed as the operator **declared** it, not normalized: what reaches
+    ``gh --repo`` stays their own grammar (issue-311).
     """
+    from ..repos import declared_repositories
     from . import PollConfig, build_provider
 
     default_host = github_host(data)
+    repositories = [entry.declared for entry in declared_repositories(data)]
     return [
-        build_provider(source, default_label=default_label, default_host=default_host)
+        build_provider(
+            source,
+            default_label=default_label,
+            default_host=default_host,
+            repositories=repositories,
+        )
         for source in PollConfig.from_mapping(data.get("polling") or {}).sources
     ]
 
