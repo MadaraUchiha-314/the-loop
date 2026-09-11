@@ -32,7 +32,7 @@ settings:
       - message.channels
       - message.groups
   interactivity:
-    is_enabled: true        # Approve / Request changes buttons (read.mode: socket)
+    is_enabled: true        # Approve / Request changes, Execute / Start buttons (read.mode: socket)
   org_deploy_enabled: false
   socket_mode_enabled: true # `the-loop channels listen` — an outbound connection, nothing exposed
   token_rotation_enabled: false

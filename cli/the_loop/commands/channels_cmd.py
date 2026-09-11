@@ -58,14 +58,8 @@ def _status(config: dict) -> int:
             else ""
         )
     )
-    print(
-        f"  buttons:      {'approve / request changes' if slack.interactive else 'link only'}"
-        + (
-            ""
-            if slack.interactive
-            else " (Approve buttons need read.mode: socket and the gate.feedback grant)"
-        )
-    )
+    for line in _button_lines(slack):
+        print(line)
     kickoff = (
         f"{slack.kickoff_repo} (labels: {', '.join(slack.kickoff_labels) or 'none'})"
         if slack.kickoff_enabled
@@ -139,6 +133,53 @@ def _status(config: dict) -> int:
             f"  [{tick}] {name} — {SUBSCRIBABLE_EVENTS.get(name) or _publish_meaning(name)}"
         )
     return 0
+
+
+def _button_lines(slack: SlackChannelConfig) -> list:
+    """The ``buttons:`` block (issue-337 R3): both button sets with whether each
+    can be received, and — while either cannot — only the numbered steps that
+    still apply. The app-level token is genuinely required: Slack delivers a
+    press to an acknowledging Socket Mode connection or a public Request URL,
+    and the-loop exposes none (decision-116 D5, decision-117 D3). Token
+    presence only, never a value."""
+    approve = slack.interactive
+    commands = slack.command_buttons
+    head = (
+        f"  buttons:      Approve / Request changes: {'on' if approve else 'off'}"
+        f" · Execute / Start: {'on' if commands else 'off'}"
+    )
+    app_token = _presence(slack.app_token_env)
+    steps: list = []
+    if app_token != "set":
+        steps.append(
+            "mint an app-level token: api.slack.com/apps → your app → Basic "
+            "Information → App-Level Tokens → Generate (scope connections:write), "
+            f"and export it as {slack.app_token_env} (now: {app_token})"
+        )
+    if slack.read_mode != "socket":
+        steps.append(f"set channels.slack.read.mode: socket (now: {slack.read_mode})")
+    missing = [
+        f"{grant} ({label})"
+        for grant, label in (
+            ("gate.feedback", "Approve / Request changes"),
+            ("control.command", "Execute / Start"),
+        )
+        if grant not in slack.publish
+    ]
+    if missing:
+        steps.append("add to channels.slack.publish: " + ", ".join(missing))
+    if not steps:
+        return [head]
+    steps.append(
+        "the-loop restart — the service hosts the listener; `the-loop status` "
+        "shows the slack-listener row, and this line reads on"
+    )
+    lines = [
+        head + " — a press reaches the-loop only over a Socket Mode listener connected "
+        "with the app-level token. Still needed:"
+    ]
+    lines += [f"                  {n}. {step}" for n, step in enumerate(steps, 1)]
+    return lines
 
 
 def _threads(config: dict, work_item: str, as_json: bool) -> int:

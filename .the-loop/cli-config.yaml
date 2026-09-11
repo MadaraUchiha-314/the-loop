@@ -398,7 +398,9 @@ channels:
     #   repo: ""                             # owner/repo; empty = off
     #   labels: []
     # read:
-    #   mode: poll                           # poll | socket | off
+    #   mode: poll                           # poll | socket | off — only socket receives a button
+    #                                        # press (Approve, Execute, Start) or a /the-loop command;
+    #                                        # `the-loop channels status` prints the steps that remain
     #   intervalSeconds: 30
     # reactions:                             # acknowledge an ACCEPTED message on itself (issue-325);
     #   enabled: true                        # needs reactions:write on the bot token; best-effort

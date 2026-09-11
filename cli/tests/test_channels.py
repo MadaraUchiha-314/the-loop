@@ -423,6 +423,7 @@ def test_a_control_keyword_with_the_grant_is_recorded_unmarked_for_ingress(tmp_p
         "outcome": "processed",
         "event": "control.command",
         "mirrored": True,
+        "url": "https://x/c1",  # issue-337: where the record lives
     }
     assert deliveries == []
     body = posts[0][1]
@@ -445,6 +446,7 @@ def test_undeliverable_reply_still_mirrors(tmp_path):
         "event": "work-item.reply",
         "mirrored": True,
         "delivered": False,
+        "error": "no session",  # issue-337: the refusal, for the press report
     }
     assert len(posts) == 1 and deliveries == []
 
@@ -1323,6 +1325,7 @@ def test_an_unreadable_gate_defers_to_the_ledger_when_the_channel_may_answer_gat
         "outcome": "processed",
         "event": "gate.feedback",
         "mirrored": True,
+        "url": "https://x/c1",  # issue-337: where the record lives
     }
     assert deliveries == []
     body = posts[0][1]

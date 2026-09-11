@@ -5,7 +5,9 @@ one-shot calls. This is a **bot**: a token with an identity, able to post into a
 channel, thread a conversation per work item, read the replies back — and, since
 issue-309, render every event with Block Kit, carry Approve / Request changes
 buttons where a press can be received, and open a work item from a top-level
-message when granted.
+message when granted. Since issue-337 it also renders **Execute** / **Start**
+command buttons on the messages that expect those keywords typed back, and
+writes a press's outcome onto the pressed message.
 
 The thread is the **work item's** (issue-312, decision-105): the first event for
 a work item opens a root that names it — under the state file's lock, so two
@@ -28,7 +30,7 @@ import logging
 import os
 import re
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
@@ -52,11 +54,14 @@ logger = logging.getLogger("the-loop.channels")
 __all__ = [
     "ACTION_PREFIX",
     "APPROVE_VALUE",
+    "BUTTON_NAMES",
     "CHANGES_VALUE",
+    "COMMAND_BUTTONS",
     "DEFAULT_APP_TOKEN_ENV",
     "DEFAULT_BOT_TOKEN_ENV",
     "DEFAULT_MAX_CHARS",
     "DEFAULT_REACTIONS",
+    "PHASE_SELECTION_MARKER",
     "REACTION_STATES",
     "READ_MODES",
     "SlackBotChannel",
@@ -64,8 +69,10 @@ __all__ = [
     "SlackReactionConfig",
     "build_client",
     "catch_up",
+    "expected_commands",
     "kickoff_cursor_key",
     "render_blocks",
+    "render_reply_blocks",
     "render_root",
     "run_socket_listener",
     "slack_state_path",
@@ -86,6 +93,26 @@ ACTION_PREFIX = "the-loop:"
 APPROVE_VALUE = "approved"
 CHANGES_VALUE = "changes requested"
 _BUTTON_VALUES = (APPROVE_VALUE, CHANGES_VALUE)
+
+#: The command buttons (issue-337): control command → the label a member sees.
+#: Fixed; the button's VALUE is the configured keyword, read from
+#: ``routing.control.keywords`` so a press is exactly a typed keyword.
+COMMAND_BUTTONS: Dict[str, str] = {"execute": "Execute", "start": "Start"}
+#: action_id → the name the press outcome line uses — never the payload's own
+#: button text (R2.6).
+BUTTON_NAMES: Dict[str, str] = {
+    f"{ACTION_PREFIX}approve": "Approve",
+    f"{ACTION_PREFIX}changes": "Request changes",
+    **{
+        f"{ACTION_PREFIX}command:{command}": label
+        for command, label in COMMAND_BUTTONS.items()
+    },
+}
+#: The phase-selection hook's own marker (``graph/hooks/selection.py``) — the one
+#: message that asks for ``the-loop execute`` typed back, recognised in its
+#: ``comment.agent`` mirror. Pinned to the hook's constant by a test; spelled here
+#: so rendering a Slack message never imports the graph.
+PHASE_SELECTION_MARKER = "<!-- the-loop:phase-selection -->"
 
 
 def build_client(token: str):
@@ -193,6 +220,12 @@ class SlackChannelConfig:
     read_interval_seconds: float = 30.0
     #: The acknowledgment on an accepted inbound message (issue-325).
     reactions: SlackReactionConfig = SlackReactionConfig()
+    #: Every control command and its configured keyword (issue-337) — the values
+    #: the command buttons carry, read from ``routing.control.keywords``; the
+    #: shipped defaults when a config is built without one.
+    control_keywords: Tuple[Tuple[str, str], ...] = field(
+        default_factory=lambda: _control_keywords(None)
+    )
 
     @property
     def events(self) -> Tuple[str, ...]:
@@ -204,6 +237,29 @@ class SlackChannelConfig:
         """Whether an action button can be received: Socket Mode AND the grant
         (decision-103 D5) — a button nobody can receive is worse than none."""
         return self.read_mode == "socket" and "gate.feedback" in self.publish
+
+    @property
+    def command_buttons(self) -> bool:
+        """Whether an Execute / Start button can be received AND acted on: Socket
+        Mode and the ``control.command`` grant (issue-337 R1.4) — the same rule
+        :attr:`interactive` applies to the Approve pair."""
+        return self.read_mode == "socket" and "control.command" in self.publish
+
+    def keyword(self, command: str) -> str:
+        """The configured keyword for ``command`` — ``""`` for an unknown command
+        or one the operator disabled."""
+        return dict(self.control_keywords).get(command, "")
+
+    def command_buttons_for(self, *commands: str) -> Dict[str, str]:
+        """``command → keyword`` for the buttons this channel may render now:
+        empty unless :attr:`command_buttons`; a disabled keyword is left out."""
+        if not self.command_buttons:
+            return {}
+        return {
+            command: self.keyword(command)
+            for command in commands
+            if self.keyword(command)
+        }
 
     @property
     def kickoff_enabled(self) -> bool:
@@ -238,6 +294,9 @@ class SlackChannelConfig:
             parse_authorized_users(routing.get("authorizedUsers"))
             if isinstance(routing, Mapping)
             else ()
+        )
+        control_keywords = _control_keywords(
+            routing.get("control") if isinstance(routing, Mapping) else None
         )
         try:
             read = section.get("read") or {}
@@ -310,6 +369,7 @@ class SlackChannelConfig:
                 read_mode=mode,
                 read_interval_seconds=float(read.get("intervalSeconds") or 30),
                 reactions=SlackReactionConfig.from_mapping(section.get("reactions")),
+                control_keywords=control_keywords,
             )
         except (TypeError, ValueError) as exc:
             logger.error(
@@ -318,6 +378,29 @@ class SlackChannelConfig:
                 exc,
             )
             return cls()
+
+
+def _control_keywords(raw: Any) -> Tuple[Tuple[str, str], ...]:
+    """Every control command with its configured keyword (issue-337) — the
+    dispatcher's own parse of ``routing.control``, so a button's value is the
+    word the ingress will recognise. Imported at call time, as
+    ``inbound._control_config`` imports it."""
+    from ..control import COMMANDS, ControlConfig
+
+    try:
+        control = ControlConfig.from_mapping(
+            dict(raw) if isinstance(raw, Mapping) else {}
+        )
+    except (TypeError, ValueError, AttributeError) as exc:
+        # The dispatcher refuses such a config on its own; here the buttons
+        # simply carry the shipped keywords rather than taking the channel down.
+        logger.warning(
+            "routing.control could not be parsed (%s) — the command buttons "
+            "carry the default keywords",
+            exc,
+        )
+        control = ControlConfig()
+    return tuple((command, control.keyword(command)) for command in COMMANDS)
 
 
 def _subscribe_list(raw: Any) -> Tuple[str, ...]:
@@ -404,14 +487,18 @@ def render_blocks(
     *,
     interactive: bool = False,
     max_chars: int = DEFAULT_MAX_CHARS,
+    commands: Optional[Mapping[str, str]] = None,
 ) -> List[Dict[str, Any]]:
     """``event`` as Block Kit: header, text, context, and the buttons it earns.
 
     Strict supersets by verbosity, as :func:`render`: ``quiet`` is the header and
     the link; ``normal`` adds the text; ``verbose`` adds the detail. Buttons: a
-    link button whenever the event carries a URL; Approve / Request changes only
-    for an approval-shaped event **and** only when ``interactive`` (Socket Mode
-    with the ``gate.feedback`` grant) — decision-103 D5.
+    link button whenever the event carries a URL; one **command button** per
+    entry of ``commands`` (``command → keyword``, issue-337 — the caller decides
+    which message earns which, see :func:`expected_commands` and
+    :meth:`SlackChannelConfig.command_buttons_for`); Approve / Request changes
+    only for an approval-shaped event **and** only when ``interactive`` (Socket
+    Mode with the ``gate.feedback`` grant) — decision-103 D5.
     """
     title = _TITLES.get(event.event_type, event.event_type)
     who = f" · {event.actor.label}" if event.actor and event.actor.label else ""
@@ -480,6 +567,7 @@ def render_blocks(
                 "action_id": f"{ACTION_PREFIX}open",
             }
         )
+    actions.extend(_command_buttons(commands))
     if interactive and event.event_type in APPROVAL_EVENTS:
         actions.append(
             {
@@ -501,6 +589,55 @@ def render_blocks(
         )
     if actions:
         blocks.append({"type": "actions", "elements": actions})
+    return blocks
+
+
+def _command_buttons(commands: Optional[Mapping[str, str]]) -> List[Dict[str, Any]]:
+    """One primary button per command: the label from :data:`COMMAND_BUTTONS`,
+    the value the configured keyword, the ``action_id`` under the prefix the
+    action handler reads (issue-337 R1.5)."""
+    return [
+        {
+            "type": "button",
+            "text": {
+                "type": "plain_text",
+                "text": COMMAND_BUTTONS.get(command, command.title()),
+            },
+            "style": "primary",
+            "action_id": f"{ACTION_PREFIX}command:{command}",
+            "value": keyword,
+        }
+        for command, keyword in (commands or {}).items()
+        if keyword
+    ]
+
+
+def expected_commands(event: Event) -> Tuple[str, ...]:
+    """The control commands ``event``'s message asks the reader to type back —
+    the ones a button may stand in for (issue-337 R1.1, decision-117 D4).
+
+    One shape today: the phase-selection checklist, which reaches a channel as
+    the ``comment.agent`` mirror of the-loop's own comment and carries the hook's
+    marker, asks for ``execute``. Read from the marker rather than the prose, and
+    only on the agent's own comments: a human's comment never earns a button.
+    """
+    if event.event_type == "comment.agent" and PHASE_SELECTION_MARKER in event.text:
+        return ("execute",)
+    return ()
+
+
+def render_reply_blocks(
+    text: str, commands: Optional[Mapping[str, str]] = None
+) -> List[Dict[str, Any]]:
+    """A plain reply as Block Kit — one section — plus one actions block of
+    command buttons when ``commands`` names any (the kickoff's "opened, this
+    thread is the conversation" reply and its Start button, issue-337 R1.2)."""
+    blocks: List[Dict[str, Any]] = [
+        {"type": "section", "text": {"type": "mrkdwn", "text": text}}
+    ]
+    buttons = _command_buttons(commands)
+    if buttons:
+        blocks.append({"type": "actions", "elements": buttons})
     return blocks
 
 
@@ -632,6 +769,7 @@ class SlackBotChannel:
             self.config.verbosity,
             interactive=self.config.interactive,
             max_chars=self.config.max_chars,
+            commands=self.config.command_buttons_for(*expected_commands(event)),
         )
         try:
             response = client.chat_postMessage(
@@ -721,13 +859,21 @@ class SlackBotChannel:
         )
         return (self.config.channel, ts)
 
-    def say(self, thread: str, text: str, channel_id: str = "") -> bool:
-        """A plain reply into ``thread`` — the kickoff's "here is your issue"."""
+    def say(
+        self,
+        thread: str,
+        text: str,
+        channel_id: str = "",
+        blocks: Optional[List[Dict[str, Any]]] = None,
+    ) -> bool:
+        """A plain reply into ``thread`` — the kickoff's "here is your issue" —
+        with ``blocks`` when the caller rendered any (its Start button, issue-337)."""
         try:
             self._client().chat_postMessage(
                 channel=channel_id or self.config.channel,
                 text=text,
                 thread_ts=thread or None,
+                blocks=blocks,
             )
         except Exception as exc:  # best-effort; the issue exists either way
             logger.warning("slack: could not reply in thread %s: %s", thread, exc)
@@ -818,6 +964,74 @@ class SlackBotChannel:
             state=state,
             content=content,
             thread=reply.thread or None,
+        )
+        return True
+
+    # -- the press outcome (issue-337) ------------------------------------------
+
+    def report_press(
+        self,
+        reply: InboundReply,
+        message: Mapping[str, Any],
+        action_id: str,
+        outcome: Mapping[str, Any],
+    ) -> bool:
+        """Write what a button press did onto the pressed message (R2.1–R2.3).
+
+        The message's blocks are handed back with the pressed button set replaced
+        by a context line — ✅ / ⚠️, the button's name, the member, what landed
+        and where — and the link buttons kept. A landed press removes the
+        buttons (it acts once); a failed one keeps them (the retry). The line is
+        fixed words plus the ``action_id``'s name, the member id, the ref and the
+        record's URL — never ``reply.text``, never the payload's button text.
+
+        **Never raises**, the ``react`` contract: the outcome the pipeline
+        returned stands whatever Slack says. A refused edit (a message the bot
+        did not post, a transport fault) is ``channel.press_report_failed`` and
+        ``False``; a missing token is a quiet ``False``. Called only for a
+        *processed* press — a dropped one is not reported, because a refusal
+        leaves no mark (decision-111 D1).
+        """
+        channel_id = reply.channel_id or self.config.channel
+        if not reply.ts or not channel_id:
+            return False
+        try:
+            client = self._client()
+        except ChannelError as exc:
+            logger.debug("slack: press report skipped: %s", exc)
+            return False
+        landed, line = _press_line(reply, action_id, outcome)
+        blocks = _press_blocks(message, landed, line)
+        text = str(message.get("text") or "").rstrip()
+        text = f"{text}\n{line}" if text else line
+        try:
+            client.chat_update(
+                channel=channel_id, ts=reply.ts, text=text, blocks=blocks
+            )
+        except Exception as exc:  # SlackApiError and transport errors alike
+            logger.warning(
+                "slack: could not report the press of %s on %s: %s",
+                action_id,
+                reply.work_item or "a message",
+                exc,
+            )
+            eventlog.emit(
+                "channel.press_report_failed",
+                level="warning",
+                channel=self.name,
+                work_item=reply.work_item or None,
+                thread=reply.thread or None,
+                action=action_id,
+                error=str(exc),
+            )
+            return False
+        eventlog.emit(
+            "channel.press_reported",
+            channel=self.name,
+            work_item=reply.work_item or None,
+            thread=reply.thread or None,
+            action=action_id,
+            outcome="landed" if landed else "failed",
         )
         return True
 
@@ -953,6 +1167,87 @@ class SlackBotChannel:
 
     def advance_kickoff(self, ts: str) -> None:
         self.advance(kickoff_cursor_key(self.config.channel), ts)
+
+
+def _press_line(
+    reply: InboundReply, action_id: str, outcome: Mapping[str, Any]
+) -> Tuple[bool, str]:
+    """``(landed, line)`` for a processed press, from fixed words (R2.6)."""
+    event_type = str(outcome.get("event") or "")
+    mirrored = bool(outcome.get("mirrored"))
+    delivered = bool(outcome.get("delivered"))
+    error = str(outcome.get("error") or "").strip()
+    url = str(outcome.get("url") or "")
+    ref = reply.work_item or "the work item"
+    where = f"<{url}|{ref}>" if url else f"`{ref}`"
+    if event_type == "control.command":
+        landed = mirrored
+        what = (
+            f"recorded on {where} — the loop runs it on its next ingress"
+            if landed
+            else f"not recorded: {error or 'the ledger refused the comment'}"
+        )
+    elif event_type == "gate.feedback":
+        landed = mirrored
+        what = (
+            f"recorded on {where} as the answer of record — the gate reads it there"
+            if landed
+            else f"not recorded: {error or 'the ledger refused the comment'}"
+        )
+    else:  # work-item.reply — a standing session has no record to make
+        from ..standing import parse_standing_ref
+
+        standing = bool(parse_standing_ref(reply.work_item))
+        landed = delivered and (mirrored or standing)
+        if landed:
+            what = "delivered to the session" + (
+                f" (recorded on {where})" if mirrored else ""
+            )
+        elif not delivered:
+            what = f"not delivered: {error or 'no session could take it'}"
+        else:
+            what = f"delivered, not recorded: {error or 'the ledger refused it'}"
+    name = BUTTON_NAMES.get(action_id, "the button")
+    icon = "✅" if landed else "⚠️"
+    return landed, f"{icon} *{name}* — pressed by <@{reply.author}> · {what}"
+
+
+def _press_blocks(
+    message: Mapping[str, Any], landed: bool, line: str
+) -> List[Dict[str, Any]]:
+    """The pressed message's blocks, rebuilt: an ``actions`` block keeps its link
+    (``url``) elements only once the press landed — every element while it did
+    not — and is dropped when nothing remains; the outcome line closes the
+    message. A message with no blocks is its text."""
+    blocks: List[Dict[str, Any]] = []
+    source = message.get("blocks")
+    if not isinstance(source, list) or not source:
+        source = [
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": str(message.get("text") or " ")},
+            }
+        ]
+    for block in source:
+        if not isinstance(block, Mapping):
+            continue
+        if block.get("type") != "actions":
+            blocks.append(dict(block))
+            continue
+        elements = [
+            e
+            for e in (block.get("elements") or [])
+            if isinstance(e, Mapping) and (not landed or e.get("url"))
+        ]
+        if elements:
+            blocks.append({**block, "elements": elements})
+    blocks.append(
+        {
+            "type": "context",
+            "elements": [{"type": "mrkdwn", "text": line[:_SECTION_LIMIT]}],
+        }
+    )
+    return blocks
 
 
 def _ts_key(ts: str) -> Tuple[int, Any]:

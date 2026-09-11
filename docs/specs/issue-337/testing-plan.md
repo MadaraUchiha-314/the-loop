@@ -74,20 +74,25 @@ overrides: {}
 
 ## Verification activities
 
-- [ ] T1 — the unit selection above
-- [ ] T2 — the scenario selection above
-- [ ] T8 — the abuse-case selection above
-- [ ] T10 — the parity, catalog and existing-suite selection above
-- [ ] T12 — `make check`
-- [ ] T13 — `evidence/security-review.md`
+- [x] T1 — the unit selection above
+- [x] T2 — the scenario selection above
+- [x] T8 — the abuse-case selection above
+- [x] T10 — the parity, catalog and existing-suite selection above
+- [x] T12 — `make check`
+- [x] T13 — `evidence/security-review.md`
 
 ## Verification results
 
-> Filled at `verification`.
+> Filled at `verification` (2026-09-11, head of `claude/github-issue-337-8kq481`).
 
 | Row | Command | Outcome | Evidence |
 |-----|---------|---------|----------|
-| | | | |
+| T1 | `uv run --project cli python -m pytest -q cli/tests/test_channels_buttons.py` | pass — 30 passed | [`evidence/verification.md`](evidence/verification.md) |
+| T2 | `uv run --project cli python -m pytest -q cli/tests/test_channels_integration.py -k "press or button"` | pass — 5 passed (4 new scenarios + the issue-325 press pin) | [`evidence/verification.md`](evidence/verification.md) |
+| T8 | the abuse-case selection (`-k "unauthorized or unlisted or crafted or grant or …"`) | pass — 11 passed, A1–A7 each closed by a named test | [`evidence/verification.md`](evidence/verification.md), [`evidence/security-review.md`](evidence/security-review.md) |
+| T10 | `uv run --project cli python -m pytest -q cli/tests/test_config_schema_parity.py cli/tests/test_docs_parity.py cli/tests/test_eventlog.py cli/tests/test_channels.py cli/tests/test_channels_integration.py cli/tests/test_bus.py cli/tests/test_channels_commands.py` | pass — 239 passed; no schema change; the event catalog knows the two types; the manifest pinned to the guide | [`evidence/verification.md`](evidence/verification.md) |
+| T12 | `make check` | pass — ruff, ruff format, markdownlint (1034 files), pyright, `validate_config`, the full suite (3297 passed, 1 skipped) | [`evidence/verification.md`](evidence/verification.md) |
+| T13 | the-loop checklist | pass — seven abuse cases, seven closed; no human sign-off at tier 3 | [`evidence/security-review.md`](evidence/security-review.md) |
 
 ## Review comments
 

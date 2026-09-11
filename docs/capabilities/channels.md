@@ -139,11 +139,28 @@ flowchart LR
   dispatcher built without one behaves as at 13.1.1.
 - **Rendering is the channel's.** The Slack channel posts Block Kit: a header (event,
   person, work item), the text capped at `maxChars` with the remainder behind the link,
-  a context line at `verbose`, a link button whenever the event has a URL, and
+  a context line at `verbose`, a link button whenever the event has a URL,
   Approve / Request changes buttons for an approval-shaped event **only** when
-  `read.mode: socket` and the `gate.feedback` grant both hold. A press enters the
-  pipeline as that member's reply carrying the button's text; an unrecognised value is
-  plain text.
+  `read.mode: socket` and the `gate.feedback` grant both hold, and — since issue-337 —
+  an **Execute** button on the phase-selection checklist mirror (a `comment.agent`
+  carrying the hook's marker) and a **Start** button on the kickoff's "opened" reply,
+  each **only** when `read.mode: socket` and the `control.command` grant both hold,
+  each carrying the **configured keyword** as its value (a disabled keyword renders no
+  button). A press enters the pipeline as that member's reply carrying the button's
+  text; an unrecognised value is plain text.
+- **A press's outcome is written onto the pressed message** (issue-337, decision-117).
+  WHEN a button press is **processed** THEN the channel SHALL edit the pressed message:
+  the pressed button set replaced by a context line naming the button (from its
+  `action_id`, never the payload's text), the member, and what happened — recorded on
+  the work item with the record's link, delivered to the session, or the error — with
+  link buttons kept; WHEN the action landed THEN the non-link buttons SHALL be removed
+  (a press acts once); WHEN it did not THEN they SHALL stay beside a ⚠️ line (the
+  retry). A **dropped** press SHALL leave the message untouched. Best-effort: a refused
+  edit is `channel.press_report_failed` and changes nothing else; the issue-325
+  reactions are unchanged. `the-loop channels status` names both button sets and,
+  while either cannot be received, prints only the steps that still apply — the
+  app-level token is required because Slack delivers a press only to an acknowledging
+  Socket Mode connection or a public Request URL, and the-loop exposes none.
 - **Kickoff.** WHEN the channel holds `work-item.create` AND `kickoff.repo` is set AND an
   authorized member posts a top-level message THEN the ledger SHALL create the issue with
   `kickoff.labels`, the thread SHALL be bound to the new ref and told the link. The first
@@ -224,12 +241,20 @@ flowchart LR
   `create-failed`, `channel.created`, `channel.thread_opened` (origin `event` |
   `kickoff` | `start`), `channel.open_failed`, `channel.reaction_added`,
   `channel.reaction_failed`, and the slash command's `channel.command_received`,
-  `channel.command_completed`, `channel.command_answer_failed`, `channel.caught_up` and
-  the drop reasons `unknown-command` / `unknown-target` / `duplicate`. Payloads carry
-  ids and event types, never text.
+  `channel.command_completed`, `channel.command_answer_failed`, `channel.caught_up`,
+  the drop reasons `unknown-command` / `unknown-target` / `duplicate`, and the press
+  outcome's `channel.press_reported` / `channel.press_report_failed` (issue-337).
+  Payloads carry ids and event types, never text.
 
 ## Design
 
+- [`docs/specs/issue-337/design.md`](../specs/issue-337/design.md) — the renderer's
+  `commands`, `expected_commands` keyed on the checklist marker, the kickoff reply's
+  Start button, `report_press` and the rebuilt blocks, the `channels status` steps.
+- [`decision-117`](../decisions/decision-117.md) — a command button is a reply with
+  the keyword as its value under `control.command`; the outcome by editing the
+  message; Socket Mode and the app-level token stay required, `status` says how; which
+  message gets which button is a fixed table keyed on the event.
 - [`docs/specs/issue-334/design.md`](../specs/issue-334/design.md) — the two catalog
   rows, `channels/commands.py` (parse → target → handler per family), the
   `slash_commands` branch of the listener, the packaged manifest.
@@ -273,6 +298,7 @@ flowchart LR
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-337 | **Execute** and **Start** buttons on the two Slack messages that asked for a keyword typed back — the phase-selection checklist mirror and the kickoff's "opened" reply — rendered only with `read.mode: socket` and the `control.command` grant, each carrying the configured keyword as its value so a press is exactly a typed keyword through the unchanged pipeline (allow-list, classification, grant, unmarked ledger record, the ingress executes). A processed press is written back onto the pressed message (buttons replaced by the outcome line with the record's link; kept beside a ⚠️ line when it did not land; a dropped press edits nothing), for the Approve pair too. `channels status` names both button sets and prints only the steps a configuration still needs — the app-level token is required because Slack delivers a press only to an acknowledging Socket Mode connection or a public Request URL. No new grant, scope, key or state | [spec](../specs/issue-337/), [decision-117](../decisions/decision-117.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/337) |
 | issue-334 | The `/the-loop` slash command over Socket Mode — the channel's third inbound shape, for what has no thread: `<keyword> <work-item>` publishes `control.command` and stops at the same unmarked ledger record a thread keyword makes (the ingress executes it; the target bounded to `kickoff.repo`, the poll sources, the managed set and the bound threads); `status` / `restart` / `upgrade` and `standing list\|start\|stop\|restart` call the core facade under two new grants, `instance.command` and `standing.command` (catalog rows, not recorded); authorized first, a fixed vocabulary, ephemeral answers to Slack's host only, a trigger acts once. A packaged Slack **app manifest** (`the-loop channels manifest`) and the [Slack integration guide](../guide/slack.md). From the PR review: `the-loop start` hosts the listener in the service (`slack-listener` row, its own pidfile lock; `channels listen` is the foreground form), the listener runs a catch-up read over the shared cursors when it connects, `poll_once` runs in socket mode as a reconciliation, and a redelivered message at or before a thread's cursor is dropped as `duplicate`. Ask 1 of the ticket — a control keyword in the thread works as on the ticket — was already true by grant and is now pinned by tests and documented | [spec](../specs/issue-334/), [decision-116](../decisions/decision-116.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/334) |
 | issue-325 | The Slack channel acknowledges an accepted inbound message on the message itself: `received` (👀) after the last refusal and before the ledger record, then `completed` (✅) when the pipeline's action landed or `error` (⚠️) when it did not; a dropped message gets none; configured by `channels.slack.reactions` (on by default, Slack emoji names, `""` skips a state), posted best-effort with the bot token's `reactions:write`, observable as `channel.reaction_added` / `channel.reaction_failed`. Before this, `routing.reactions` acknowledged only on GitHub and a Slack reply's only feedback was a later posted message | [spec](../specs/issue-325/), [decision-111](../decisions/decision-111.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/325) |
 | issue-321 | An authorized gate answer from Slack now locks the gate under the daemon's default control policy: the pipeline's graph read is built from the same `RoutingConfig` the dispatcher's coupling is (control policy, control store, allow-list, registry), where before it had no control store and read no graph at all; the read is three-valued, and a gate the pipeline cannot read (no session record, no checkout, a fault) is recorded unmarked as `gate.feedback` for the ledger's ingress to judge when the channel holds that grant — attributed as a reply — and stays the marked mirror without it; `channel.reply_received` carries `gate: open \| none \| unknown` | [spec](../specs/issue-321/), [decision-109](../decisions/decision-109.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/321) |

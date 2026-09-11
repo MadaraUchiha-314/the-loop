@@ -34,7 +34,7 @@ from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple
 from .. import eventlog
 from ..identity import principal_for
 from ..standing import parse_standing_ref
-from .base import ChannelError, Event, InboundReply
+from .base import ChannelError, Event, InboundReply, PostResult
 from .bus import publish
 from .github import GitHubLedger
 from .slack import (
@@ -42,6 +42,7 @@ from .slack import (
     SlackBotChannel,
     SlackChannelConfig,
     _ts_key,
+    render_reply_blocks,
     slack_state_path,
 )
 from .state import ChannelState
@@ -271,27 +272,38 @@ def process_reply(
         actor=actor,
         detail=detail,
     )
-    recorded = _record(event, reply, cli_config, post_comment)
+    record = _record(event, reply, cli_config, post_comment)
+    recorded = bool(record and record.ok)
     # A standing session has no ticket: a reply's skipped mirror is not a
     # failure, so what "lands" for it is the delivery alone (decision-111 D4). A
     # relayed type there has no ledger to reach, and did not land.
     landed = recorded or (
         event_type == "work-item.reply" and bool(parse_standing_ref(reply.work_item))
     )
+    # The outcome names where the record lives and what went wrong (issue-337):
+    # the press report links the one and says the other. Absent keys mean "no
+    # record" / "no error", so every pre-existing reader sees what it saw.
+    outcome: Dict[str, Any] = {
+        "outcome": "processed",
+        "event": event_type,
+        "mirrored": recorded,
+    }
+    if recorded and record is not None and record.url:
+        outcome["url"] = record.url
+    if record is not None and not record.ok and record.error:
+        outcome["error"] = record.error
     if event_type != "work-item.reply":
         # The record IS the request: the ledger's ingress classifies a gate
         # answer and executes a control keyword. Delivering here too would hand
         # the session the text twice and bypass the dispatcher's control seam.
         bot.react(reply, "completed" if landed else "error")
-        return {"outcome": "processed", "event": event_type, "mirrored": recorded}
-    delivered = _deliver(reply, cli_config, deliver)
+        return outcome
+    delivered, error = _deliver(reply, cli_config, deliver)
     bot.react(reply, "completed" if landed and delivered else "error")
-    return {
-        "outcome": "processed",
-        "event": event_type,
-        "mirrored": recorded,
-        "delivered": delivered,
-    }
+    outcome["delivered"] = delivered
+    if error and "error" not in outcome:
+        outcome["error"] = error
+    return outcome
 
 
 def _record(
@@ -299,7 +311,9 @@ def _record(
     reply: InboundReply,
     cli_config: Optional[Mapping],
     post_comment: Optional[Callable],
-) -> bool:
+) -> Optional[PostResult]:
+    """The ledger's record of ``event`` — its :class:`PostResult`, or ``None``
+    for a standing session, which has nothing to record onto."""
     if parse_standing_ref(reply.work_item):
         # A standing session (issue-277) has no ticket, so there is nothing to
         # record onto. The paper trail does not vanish with the comment — it
@@ -311,7 +325,7 @@ def _record(
             work_item=reply.work_item,
             reason="standing-session",
         )
-        return False
+        return None
     ledger = GitHubLedger(cli_config, post_comment=post_comment)
     result = publish(event, cli_config, channels=[], ledger=ledger).record
     ok = bool(result and result.ok)
@@ -331,7 +345,7 @@ def _record(
             work_item=reply.work_item,
             error=(result.error if result else None) or None,
         )
-    return ok
+    return result
 
 
 def _standing_deliverer() -> Callable:
@@ -357,7 +371,8 @@ def _deliver(
     reply: InboundReply,
     cli_config: Optional[Mapping],
     deliver: Optional[Callable],
-) -> bool:
+) -> Tuple[bool, str]:
+    """``(delivered, error)`` — the error is the refusal's text when it was not."""
     if deliver is None and parse_standing_ref(reply.work_item):
         # The other namespace's delivery (issue-277). Bound late for the same
         # reason the work-item one is: a test or embedder patching
@@ -388,7 +403,7 @@ def _deliver(
             work_item=reply.work_item,
             error=str(exc),
         )
-        return False
+        return False, str(exc)
     except Exception as exc:  # transport trouble — same posture
         eventlog.emit(
             "channel.dropped",
@@ -398,9 +413,9 @@ def _deliver(
             work_item=reply.work_item,
             error=str(exc),
         )
-        return False
+        return False, str(exc)
     delivered = bool(result.get("delivered")) if isinstance(result, dict) else True
-    return delivered
+    return delivered, "" if delivered else "the session did not take the reply"
 
 
 # -- kickoff (R6.5) ----------------------------------------------------------------
@@ -459,11 +474,18 @@ def process_kickoff(
         )
     bot.bind(reply.thread, result.ref, reply.channel_id, origin="kickoff")
     link = f" — {result.url}" if result.url else ""
+    # The reply that asks for `the-loop start` typed back carries the Start
+    # button where a press can be received (issue-337 R1.2): the value is the
+    # configured keyword, so the press is exactly the typed keyword.
+    said = (
+        f"Opened {result.ref}{link}. This thread is now that work item's "
+        "conversation — replies here reach it."
+    )
     bot.say(
         reply.thread,
-        f"Opened {result.ref}{link}. This thread is now that work item's "
-        "conversation — replies here reach it.",
+        said,
         reply.channel_id,
+        blocks=render_reply_blocks(said, config.command_buttons_for("start")),
     )
     eventlog.emit(
         "channel.created",
@@ -651,8 +673,13 @@ def handle_socket_action(
     Only actions the-loop rendered (``action_id`` under :data:`ACTION_PREFIX`) are
     read; the value is *text*, judged by the ordinary pipeline with the ordinary
     authorization — a crafted payload buys nothing a typed message would not.
-    The reply's ``ts`` is the **pressed message's** — the only message a press
-    has, and where the acknowledgment lands (issue-325 R1.5); the action path
+    An Execute / Start button's value is the configured keyword (issue-337), so
+    its press is a typed keyword: ``control.command`` under that grant, recorded
+    unmarked, executed by the ledger's ingress. The reply's ``ts`` is the
+    **pressed message's** — the only message a press has, where the
+    acknowledgment lands (issue-325 R1.5) and where the outcome is written back
+    (:meth:`SlackBotChannel.report_press`, issue-337 R2) once the pipeline
+    *processed* the press; a dropped press leaves it untouched. The action path
     advances no cursor, so nothing else reads it.
     """
     actions = [
@@ -690,11 +717,20 @@ def handle_socket_action(
         ),
         channel_id=str((payload.get("channel") or {}).get("id") or ""),
     )
-    return process_reply(
+    bot = SlackBotChannel(config, state_path, client_factory=client_factory)
+    outcome = process_reply(
         reply,
         config,
         cli_config,
         post_comment=post_comment,
         deliver=deliver,
-        channel=SlackBotChannel(config, state_path, client_factory=client_factory),
+        channel=bot,
     )
+    if outcome.get("outcome") == "processed":
+        bot.report_press(
+            reply,
+            message if isinstance(message, Mapping) else {},
+            str(actions[0].get("action_id") or ""),
+            outcome,
+        )
+    return outcome
