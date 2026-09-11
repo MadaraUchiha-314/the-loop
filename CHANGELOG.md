@@ -1,3 +1,9 @@
+## v13.12.0 (2026-09-11)
+
+### Feat
+
+- **issue-341**: a Slack kickoff names its own repository, resolved against the repositories the-loop already polls (#347)
+
 ## v13.11.1 (2026-09-11)
 
 ### Fix
