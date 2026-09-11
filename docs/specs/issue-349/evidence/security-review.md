@@ -42,8 +42,8 @@ Three properties carry the whole review:
 | A7 | A pick arrives for an expired question | `pending_for` / `claim` treat a record past `PENDING_TTL_SECONDS` as absent, and an **undateable** one as expired rather than eternal. The refusal names no repository | `test_abuse_7_an_expired_pick_names_no_repository`, `test_an_undateable_question_is_expired_not_eternal`, scenario 97 |
 | A8 | A hostile message body — `<!channel>`, 200 `@here`s, Block Kit markup, 4000 characters — is used to style the question, ping the channel, or blow past Slack's limits | Nothing of the member's message is rendered into the question at all: it is fixed words plus declared slugs, and every option's text is capped at Slack's 75. The held text stays intact, because that is what the issue is made from | `test_abuse_8_a_hostile_message_neither_styles_nor_sizes_the_question` |
 | A9 | The state file is corrupt or unwritable | `ChannelState.load` already resolves a corrupt file to empty. Nothing is pending, so a press answers nothing — the failure mode is "the question cannot be answered", never "an issue is created without one" | `test_abuse_9_an_unreadable_state_file_asks_rather_than_creates` |
-
 | A10 | The operator revokes `work-item.create` (or leaves Socket Mode) while a question is outstanding, and the member then presses | Gate 1, above everything: `kickoff_picker` is **re-read at press time**, not trusted from when the question went out. This is the one gate a pending record could otherwise smuggle a member past, and it is the only place in the change where held state could have outlived a permission | `test_a_revoked_grant_is_re_read_at_press_time`, `test_leaving_socket_mode_revokes_the_answer_too` |
+
 Ten raised, ten closed.
 
 ## The checklist
