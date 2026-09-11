@@ -9,7 +9,7 @@ the-loop's event bus, starting with the Slack bot
 the-loop channels status    # ledger, subscribe/publish grants, catalog with ticks — no secrets
 the-loop channels threads   # which Slack thread carries which work item's conversation
 the-loop channels poll      # one read cycle: bound threads, and top-level messages when granted
-the-loop channels listen    # Socket Mode, foreground — replies, button presses, kickoffs, /the-loop
+the-loop channels listen    # Socket Mode, foreground — replies, button presses (Approve, Execute, Start), kickoffs, /the-loop
 the-loop channels manifest  # the Slack app manifest to import (scopes, events, the command)
 ```
 
@@ -17,8 +17,12 @@ the-loop channels manifest  # the Slack app manifest to import (scopes, events, 
 
 - **`status`** prints the ledger, the resolved Slack configuration — with token
   **presence** only (`set`/`unset` plus the env var's name), never a value — how many
-  people of `routing.authorizedUsers` can speak on it, whether Approve buttons can be
-  received, the kickoff target, how many conversations (thread bindings, cursors) the
+  people of `routing.authorizedUsers` can speak on it, whether the Approve / Request
+  changes and the Execute / Start buttons can be received — and, while either cannot,
+  the numbered steps that still apply: the app-level token (where to mint it, its
+  scope, its variable's name and presence), `read.mode: socket`, the missing grants,
+  the restart ([issue-337](https://github.com/MadaraUchiha-314/the-loop/issues/337)) —
+  the kickoff target, how many conversations (thread bindings, cursors) the
   channel state holds, and the **catalog**: every subscribable event with a tick where
   `subscribe` names it, and every publishable event with a tick where `publish` grants
   it — so neither list is ever configured by guessing names. Since issue-325 it also

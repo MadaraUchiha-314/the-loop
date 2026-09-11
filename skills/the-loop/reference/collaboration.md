@@ -57,7 +57,10 @@ excerpt of the artifact; `work-item-complete` fires at the end), and the comment
 ledger's ingress sees (`comment.agent` — your own marked comments; `comment.human` — an
 authorized user's or collaborator's). A channel receives the ones its `subscribe` list
 names, renders them natively (Slack: Block Kit, a link button, Approve / Request changes
-buttons where a press can be received) into **one thread per work item, rooted on the
+buttons where a press can be received — and, under the `control.command` grant, an
+Execute button on the phase-selection checklist and a Start button on a kickoff's reply,
+each a press of the configured keyword whose outcome is written back onto the message,
+issue-337) into **one thread per work item, rooted on the
 work item** — opened the moment the work item starts (issue-317), root only, with every
 event a reply into it (issue-312) — and the ledger records every event that started
 elsewhere **first** — the ask's record *is* the question comment. What a message on a

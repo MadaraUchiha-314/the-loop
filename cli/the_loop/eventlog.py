@@ -404,6 +404,20 @@ EVENT_TYPES: Dict[str, str] = {
         "contract: the record and the delivery are unaffected. A missing "
         "reactions:write scope on the bot token is the usual cause."
     ),
+    "channel.press_reported": (
+        "The Slack channel wrote a button press's outcome onto the pressed "
+        "message (channel, work_item, thread, action: the action_id the-loop "
+        "rendered, outcome: landed | failed) — issue-337. `landed` means the "
+        "pressed buttons were removed and the line links the record; `failed` "
+        "means the buttons stayed beside the error. Ids only, never the value."
+    ),
+    "channel.press_report_failed": (
+        "The Slack channel could not edit the pressed message to show the "
+        "press's outcome (channel, work_item, thread, action, error) — "
+        "issue-337. Best-effort by contract: the record and the reactions are "
+        "unaffected. A message the bot did not post (`cant_update_message`) is "
+        "the usual cause."
+    ),
     # -- the bus (issue-309, decision-103) --------------------------------------
     "bus.published": (
         "An event went through the bus (event_type, work_item, source, recorded: "

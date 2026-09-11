@@ -1308,3 +1308,301 @@ def test_a_socket_listener_catches_up_after_downtime(tmp_path, monkeypatch):
     again = slack_mod.catch_up(config)
     assert again["processed"] == 0
     assert len(mirrors) == 1 and len(deliveries) == 1
+
+
+# -- issue-337: command buttons, the outcome on the message ------------------------
+
+
+class UpdatingSlackClient(FakeSlackClient):
+    """The fake plus ``chat_update`` (issue-337)."""
+
+    def __init__(self, refuse_update=""):
+        super().__init__()
+        self.updates = []
+        self.refuse_update = refuse_update
+
+    def chat_update(self, *, channel, ts, text, blocks=None):
+        if self.refuse_update:
+            raise RuntimeError(
+                f"The request to the Slack API failed: {self.refuse_update}"
+            )
+        self.updates.append(
+            {"channel": channel, "ts": ts, "text": text, "blocks": blocks}
+        )
+        return {"ok": True, "channel": channel, "ts": ts}
+
+
+def _button_ids(blocks):
+    return [
+        element["action_id"]
+        for block in blocks or []
+        if block.get("type") == "actions"
+        for element in block["elements"]
+    ]
+
+
+def _press(message, action_id, value, author="UHUMAN"):
+    return {
+        "type": "block_actions",
+        "user": {"id": author},
+        "channel": {"id": message["channel"]},
+        "message": {
+            "ts": message["ts"],
+            "thread_ts": message["thread_ts"],
+            "text": message["text"],
+            "blocks": message["blocks"],
+        },
+        "container": {"message_ts": message["ts"], "thread_ts": message["thread_ts"]},
+        "actions": [{"action_id": action_id, "value": value}],
+        "action_ts": "1900.1",
+    }
+
+
+def _checklist_through_the_channel(client, config):
+    """The phase-selection checklist as the ledger's ingress mirrors it — a
+    `comment.agent` carrying the hook's marker — posted into the work item's thread."""
+    from the_loop.channels.publishers import publish_comment
+    from the_loop.graph.hooks.selection import SELECTION_MARKER
+
+    publish_comment(
+        "agent",
+        "github:o/r#7",
+        "the-operator",
+        "🤖 _the-loop_ — **which phases does this work item need?**\n\n"
+        "- [x] brainstorming\n- [x] design\n\n" + SELECTION_MARKER,
+        "https://github.com/o/r/issues/7#c1",
+        config,
+    )
+    posted = client.posted[-1]
+    return {**posted, "ts": f"1700.{len(client.posted):06d}"}
+
+
+def test_an_execute_press_records_what_a_typed_execute_records(tmp_path, monkeypatch):
+    """Scenario: An Execute press records what a typed the-loop execute records, and the message says so
+
+    Given a channel over Socket Mode granted control.command, subscribed to comment.agent
+    When the phase-selection checklist is mirrored into the work item's thread
+    Then the message carries an Execute button whose value is the configured keyword
+    When an authorized member presses it
+    Then the ledger holds an unmarked comment the ingress's parser reads as `execute`,
+         with an envelope naming the person — the same record a typed keyword makes
+    And the Slack code delivers nothing into any session itself
+    And the pressed message is edited: the Execute button gone, the link kept, a line
+         naming the button, the member and the record's link
+    And the message still carries the issue-325 reactions
+
+    Requirement: docs/specs/issue-337/requirements.md R1.1, R1.3, R2.1, R2.2, R2.5
+    """
+    from the_loop.channels.envelope import parse as parse_envelope
+    from the_loop.control import ControlConfig, parse_command
+
+    client = UpdatingSlackClient()
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    monkeypatch.setattr("the_loop.channels.slack.build_client", lambda token: client)
+    config = cli_config(
+        tmp_path,
+        read={"mode": "socket"},
+        subscribe=["comment.agent"],
+        publish=["work-item.reply", "control.command"],
+    )
+    records, deliveries = [], []
+    monkeypatch.setattr(
+        "the_loop.comments.post_issue_comment_with_url",
+        lambda item, body, gh_binary="gh": (
+            records.append((item.ref, body)) or (True, "", "https://x/c9")
+        ),
+    )
+    monkeypatch.setattr(
+        core_sessions,
+        "reply_session",
+        lambda ref, text, actor="", comment=True, config=None: (
+            deliveries.append(text) or {"delivered": True}
+        ),
+    )
+    monkeypatch.setattr(inbound, "_at_human_gate", lambda ref, cfg: False)
+
+    message = _checklist_through_the_channel(client, config)
+    assert _button_ids(message["blocks"]) == [
+        "the-loop:open",
+        "the-loop:command:execute",
+    ]
+    button = message["blocks"][-1]["elements"][1]
+    assert button["value"] == "the-loop execute"
+
+    outcome = inbound.handle_socket_action(
+        _press(message, button["action_id"], button["value"]),
+        config,
+        client_factory=lambda token: client,
+    )
+    assert outcome["outcome"] == "processed" and outcome["event"] == "control.command"
+    assert deliveries == []
+    assert len(records) == 1
+    ref, body = records[0]
+    assert ref == "github:o/r#7" and not is_self_authored(body)
+    assert parse_command(body, ControlConfig()).command == "execute"
+    envelope = parse_envelope(body)
+    assert envelope is not None and envelope.type == "control.command"
+    assert envelope.actor == {"github": "gh-UHUMAN", "slack": "UHUMAN"}
+
+    assert len(client.updates) == 1
+    edit = client.updates[0]
+    assert edit["ts"] == message["ts"] and edit["channel"] == "C123"
+    assert _button_ids(edit["blocks"]) == ["the-loop:open"]
+    line = edit["blocks"][-1]["elements"][0]["text"]
+    assert line.startswith("✅ *Execute*") and "<@UHUMAN>" in line
+    assert "<https://x/c9|github:o/r#7>" in line
+    assert [name for _, ts, name in client.reactions if ts == message["ts"]] == [
+        "eyes",
+        "white_check_mark",
+    ]
+
+
+def test_a_kickoff_reply_carries_start_and_its_press_records_the_keyword(
+    tmp_path, monkeypatch
+):
+    """Scenario: A kickoff reply carries Start and its press records the start keyword
+
+    Given the work-item.create and control.command grants over Socket Mode
+    When an authorized member's top-level message becomes an issue
+    Then the-loop's reply in that thread carries a Start button with the configured keyword
+    When the member presses it
+    Then the ledger holds an unmarked `the-loop start` on the new issue
+    And the reply is edited to say so, its Start button gone
+
+    Requirement: docs/specs/issue-337/requirements.md R1.2, R1.3, R2.1
+    """
+    from the_loop.control import ControlConfig, parse_command
+
+    client = UpdatingSlackClient()
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    monkeypatch.setattr("the_loop.channels.slack.build_client", lambda token: client)
+    config = cli_config(
+        tmp_path,
+        read={"mode": "socket"},
+        publish=["work-item.reply", "work-item.create", "control.command"],
+        kickoff={"repo": "o/r", "labels": []},
+    )
+    records = []
+    monkeypatch.setattr(
+        "the_loop.comments.create_issue",
+        lambda repo, title, body, labels, gh_binary="gh": (
+            True,
+            "",
+            "github:o/r#42",
+            "https://gh/o/r/issues/42",
+        ),
+    )
+    monkeypatch.setattr(
+        "the_loop.comments.post_issue_comment_with_url",
+        lambda item, body, gh_binary="gh": (
+            records.append((item.ref, body)) or (True, "", "https://x/c1")
+        ),
+    )
+    monkeypatch.setattr(inbound, "_at_human_gate", lambda ref, cfg: False)
+
+    outcome = inbound.handle_socket_event(
+        {
+            "type": "message",
+            "channel": "C123",
+            "ts": "1600.2",
+            "user": "UHUMAN",
+            "text": "Ship it",
+        },
+        config,
+        client_factory=lambda token: client,
+    )
+    assert outcome["outcome"] == "created"
+    reply = client.posted[-1]
+    assert reply["thread_ts"] == "1600.2" and "github:o/r#42" in reply["text"]
+    assert _button_ids(reply["blocks"]) == ["the-loop:command:start"]
+    button = reply["blocks"][-1]["elements"][0]
+    assert button["value"] == "the-loop start" and button["text"]["text"] == "Start"
+
+    message = {**reply, "ts": f"1700.{len(client.posted):06d}"}
+    pressed = inbound.handle_socket_action(
+        _press(message, button["action_id"], button["value"]),
+        config,
+        client_factory=lambda token: client,
+    )
+    assert pressed["outcome"] == "processed" and pressed["event"] == "control.command"
+    assert len(records) == 1 and records[0][0] == "github:o/r#42"
+    assert parse_command(records[0][1], ControlConfig()).command == "start"
+    assert not is_self_authored(records[0][1])
+    edit = client.updates[0]
+    assert edit["ts"] == message["ts"] and _button_ids(edit["blocks"]) == []
+    assert edit["blocks"][-1]["elements"][0]["text"].startswith("✅ *Start*")
+
+
+def test_an_unlisted_members_press_leaves_the_message_untouched(tmp_path, monkeypatch):
+    """Scenario: An unlisted member's press edits nothing
+
+    Given a message carrying an Execute button
+    When a member outside routing.authorizedUsers presses it
+    Then nothing is recorded, delivered, reacted to or edited — a refusal leaves no mark
+
+    Requirement: docs/specs/issue-337/requirements.md R1.3, R2.3 (A1)
+    """
+    client = UpdatingSlackClient()
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    monkeypatch.setattr("the_loop.channels.slack.build_client", lambda token: client)
+    config = cli_config(
+        tmp_path,
+        read={"mode": "socket"},
+        subscribe=["comment.agent"],
+        publish=["work-item.reply", "control.command"],
+    )
+    records = []
+    monkeypatch.setattr(
+        "the_loop.comments.post_issue_comment_with_url",
+        lambda item, body, gh_binary="gh": records.append(body) or (True, "", ""),
+    )
+    message = _checklist_through_the_channel(client, config)
+    outcome = inbound.handle_socket_action(
+        _press(message, "the-loop:command:execute", "the-loop execute", author="UEVIL"),
+        config,
+        client_factory=lambda token: client,
+    )
+    assert outcome == {"outcome": "unauthorized-actor"}
+    assert records == [] and client.updates == [] and client.reactions == []
+
+
+def test_a_press_whose_record_was_refused_keeps_its_button(tmp_path, monkeypatch):
+    """Scenario: A press whose record the ledger refused keeps its button and says why
+
+    Given a message carrying an Execute button and a ledger that refuses the comment
+    When an authorized member presses it
+    Then the press is processed but not recorded, marked ⚠️
+    And the message is edited to say it was not recorded, with the ledger's error,
+         and the Execute button stays so the member can press again
+
+    Requirement: docs/specs/issue-337/requirements.md R2.2, R2.3
+    """
+    client = UpdatingSlackClient()
+    monkeypatch.setenv(DEFAULT_BOT_TOKEN_ENV, "xoxb-test")
+    monkeypatch.setattr("the_loop.channels.slack.build_client", lambda token: client)
+    config = cli_config(
+        tmp_path,
+        read={"mode": "socket"},
+        subscribe=["comment.agent"],
+        publish=["work-item.reply", "control.command"],
+    )
+    monkeypatch.setattr(
+        "the_loop.comments.post_issue_comment_with_url",
+        lambda item, body, gh_binary="gh": (False, "gh exited 1: rate limited", ""),
+    )
+    monkeypatch.setattr(inbound, "_at_human_gate", lambda ref, cfg: False)
+    message = _checklist_through_the_channel(client, config)
+    outcome = inbound.handle_socket_action(
+        _press(message, "the-loop:command:execute", "the-loop execute"),
+        config,
+        client_factory=lambda token: client,
+    )
+    assert outcome["outcome"] == "processed" and outcome["mirrored"] is False
+    edit = client.updates[0]
+    assert _button_ids(edit["blocks"]) == ["the-loop:open", "the-loop:command:execute"]
+    line = edit["blocks"][-1]["elements"][0]["text"]
+    assert line.startswith("⚠️ *Execute*") and "not recorded: gh exited 1" in line
+    assert [name for _, ts, name in client.reactions if ts == message["ts"]] == [
+        "eyes",
+        "warning",
+    ]

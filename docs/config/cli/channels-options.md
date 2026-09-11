@@ -178,7 +178,7 @@ typed on a channel without the grant does not reach the agent as prose either.
 |-------|---------------------------|--------------|
 | `work-item.reply` | none of the below applies | mirrored onto the work item as the-loop's own marked comment (quoted, scrubbed, keywords defanged) and **delivered into the waiting session** — 12.1.0's behaviour, the default |
 | `gate.feedback` | the work item's graph is parked at a human gate — or the pipeline **cannot tell** (no session record, no checkout, a read fault) | recorded on the ledger as an **unmarked** comment under your own credential, with the envelope and a visible "answer from `slack:U…`" attribution (a "reply from" when the gate could not be read); the ledger's ingress then classifies it exactly as a typed approval — with the graph it actually keeps — and the artifact's `approvedBy` names the person the envelope names |
-| `control.command` | the text carries a [control keyword](/config/cli/routing-options#execution-control) | recorded the same way, keyword intact; the ledger's ingress executes it through the same named-actor control seam |
+| `control.command` | the text carries a [control keyword](/config/cli/routing-options#execution-control) — typed, or pressed as the **Execute** / **Start** button ([issue-337](https://github.com/MadaraUchiha-314/the-loop/issues/337)) | recorded the same way, keyword intact; the ledger's ingress executes it through the same named-actor control seam. With `read.mode: socket` this grant also renders the Execute button on the phase-selection checklist and the Start button on a kickoff's reply, each carrying the configured keyword as its value |
 | `work-item.create` | the message is **top-level** in the configured channel | an issue is created in `kickoff.repo` with `kickoff.labels` — needs both the grant and the repo |
 | `instance.command` | a `/the-loop status`, `restart` or `upgrade` [slash command](#the-slash-command) | the core facade `the-loop status` / `the-loop restart [--with-upgrade]` run — answered ephemerally; **not recorded** (no ticket), the event log is the trail ([issue-334](https://github.com/MadaraUchiha-314/the-loop/issues/334)) |
 | `standing.command` | a `/the-loop standing list\|start\|stop\|restart <name>` slash command | the same core verb `the-loop standing <verb>` runs; not recorded |
@@ -255,8 +255,13 @@ it connects (issue-334), so what was posted while no listener was connected is p
 once from the shared cursors (`the-loop channels poll` runs the same cycle on demand in
 this mode too, as a reconciliation); and it is the only mode that receives a **button press**, so
 Approve / Request changes buttons are rendered only here (and only with the
-`gate.feedback` grant): a button nobody can receive is worse than none — and it is the
-only mode the [`/the-loop` slash command](#the-slash-command) can arrive in. `off`: nothing
+`gate.feedback` grant), and so are the **Execute** / **Start** buttons (only with the
+`control.command` grant — [issue-337](https://github.com/MadaraUchiha-314/the-loop/issues/337)):
+a button nobody can receive is worse than none — and it is the only mode the
+[`/the-loop` slash command](#the-slash-command) can arrive in. A processed press is
+written back onto the pressed message (the buttons replaced by the outcome line);
+`the-loop channels status` prints the steps a configuration still needs before a press
+can arrive. See the [Slack guide's buttons section](/guide/slack#the-buttons). `off`: nothing
 is read. An unknown value resolves to `off` with a warning — never to a reading mode by
 accident.
 

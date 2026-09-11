@@ -2,7 +2,9 @@
 
 Slack is a **channel** for the-loop: a peer on its event bus that receives the events you
 subscribe it to, holds **one thread per work item**, and lets an authorized member drive
-the loop back — as a reply, a button press, a new work item, or, since
+the loop back — as a reply, a button press (Approve, Request changes, and since
+[issue-337](https://github.com/MadaraUchiha-314/the-loop/issues/337) **Execute** and
+**Start**), a new work item, or, since
 [issue-334](https://github.com/MadaraUchiha-314/the-loop/issues/334), a slash command.
 GitHub stays the **ledger**: everything that starts in Slack is recorded on the work item
 first, and the loop reads it from there ([decision-103](/decisions/decision-103)). This
@@ -12,7 +14,7 @@ where the limits are.
 ```mermaid
 flowchart LR
   subgraph slack["Slack"]
-    TH["the work item's thread<br/>reply · Approve button · control keyword"]
+    TH["the work item's thread<br/>reply · Approve / Execute / Start button · control keyword"]
     TOP["a top-level message"]
     CMD["/the-loop … (slash command)"]
     ST["a standing session's thread"]
@@ -70,7 +72,7 @@ settings:
       - message.channels
       - message.groups
   interactivity:
-    is_enabled: true        # Approve / Request changes buttons (read.mode: socket)
+    is_enabled: true        # Approve / Request changes, Execute / Start buttons (read.mode: socket)
   org_deploy_enabled: false
   socket_mode_enabled: true # `the-loop channels listen` — an outbound connection, nothing exposed
   token_rotation_enabled: false
@@ -164,7 +166,8 @@ become** — the channel's authority, one grant per kind of act, all off except
 the-loop start              # one process: the control-plane service, the ledger's ingresses,
                             # and — with read.mode: socket — the Slack listener, hosted
 the-loop status             # …with a slack-listener row: running (hosted in the service, pid …)
-the-loop channels status    # what is configured, which grants hold, whether commands can arrive
+the-loop channels status    # what is configured, which grants hold, whether buttons and
+                            # commands can arrive — and, when they cannot, the exact steps
 ```
 
 `the-loop start` reads the config and brings up everything it asks for, the long-lived
@@ -211,6 +214,8 @@ because Slack delivers both only to a connection that acknowledges within second
 | answer the agent's question | reply in the work item's thread | `work-item.reply` (default) | mirrored onto the work item as the-loop's own marked comment, delivered into the waiting session |
 | approve or reject a phase, a PR | reply `approved` / `changes requested`, or press the button | `gate.feedback` | recorded on the work item unmarked, as your answer; the gate reads it there |
 | start, stop, pause, resume, execute, cleanup… a work item **that has a thread** | type the control keyword in its thread (`the-loop start`) | `control.command` | recorded on the work item unmarked, keyword intact; the ledger's ingress executes it — exactly as if you had typed it on the ticket |
+| sign the phase-selection checklist | press **Execute** on the checklist message (or type `the-loop execute`) | `control.command` (+ `read.mode: socket`) | the same unmarked `the-loop execute` record; the message is edited to say so ([buttons](#the-buttons)) |
+| start a work item you just filed from Slack | press **Start** on the-loop's "opened …" reply (or type `the-loop start`) | `control.command` (+ socket) | the same unmarked `the-loop start` record; the message is edited to say so |
 | start a work item **that has no thread yet** | `/the-loop start #123` | `control.command` (+ `read.mode: socket`) | the same record on the ticket; the start opens the thread |
 | file a new work item | post a top-level message in the channel | `work-item.create` + `kickoff.repo` | an issue is created (with `kickoff.labels`), the thread is bound to it and told the link |
 | talk to a standing session | reply in its thread | `work-item.reply` | delivered into its pane (no ticket, so no mirror — the event log is the trail) |
@@ -249,10 +254,55 @@ there to arm it), binds the message's thread to it and replies with the link. Th
 `/the-loop start #<n>` — either records the start on the new issue.
 
 Once the loop runs, the thread carries its questions and approvals: answer the
-phase-selection checklist by ticking it **on the ticket** and typing `the-loop execute`
-in the thread — the execute is relayed and signs whatever is ticked there (a checklist
-written inside the Slack message is quoted in the record and not read; see
-[limits](#limits)).
+phase-selection checklist by ticking it **on the ticket** and pressing **Execute** on the
+checklist message — or typing `the-loop execute` in the thread — the execute is relayed
+and signs whatever is ticked there (a checklist written inside the Slack message is
+quoted in the record and not read; see [limits](#limits)).
+
+## The buttons
+
+Four buttons, on the messages that would otherwise ask you to type something back, each
+rendered **only where a press can be received and acted on**
+([issue-309](https://github.com/MadaraUchiha-314/the-loop/issues/309),
+[issue-337](https://github.com/MadaraUchiha-314/the-loop/issues/337)):
+
+| Button | On which message | It stands for | Rendered when |
+|--------|------------------|---------------|---------------|
+| **Approve** / **Request changes** | an approval request (`phase-approval-pending`, `pr-review-pending`, `security-sign-off-pending`) | the reply `approved` / `changes requested` | `read.mode: socket` + `gate.feedback` |
+| **Execute** | the phase-selection checklist, mirrored from the ticket (`comment.agent`) | the keyword `the-loop execute` (your configured [`routing.control.keywords.execute`](/config/cli/routing-options#execution-control)) | `read.mode: socket` + `control.command` |
+| **Start** | the-loop's "opened `#N` — this thread is now the conversation" reply to a kickoff | the keyword `the-loop start` | `read.mode: socket` + `control.command` |
+
+A press is **exactly the typed reply**: the button's value enters the same pipeline a
+message does — your member id against `routing.authorizedUsers`, the classification, the
+grant, the unmarked record on the ticket — so a button adds no authority the grant did
+not already give, and an unlisted member's press does nothing, silently. `Execute` and
+`Start` are one tap where a phone keyboard used to be the slowest part of the loop.
+
+**The outcome is written onto the message you pressed.** Once the press is processed the
+message is edited: the pressed buttons are replaced by a line saying who pressed what and
+what happened — *✅ Execute — pressed by @you · recorded on `o/r#337` (link) — the loop
+runs it on its next ingress* — and the *Open on GitHub* button stays. A press that did
+**not** land (the ledger refused the comment, no session could take the reply) keeps its
+buttons beside a ⚠️ line carrying the error, so you can press again once it is fixed. The
+👀 / ✅ / ⚠️ reactions stay too — they are the acknowledgment; the line is the outcome.
+
+**The app-level token is required, and here is why.** Slack delivers a button press to
+exactly two places: a public *Request URL* it can POST to, or a Socket Mode connection
+that acknowledges the press within three seconds. the-loop exposes no endpoint
+([decision-084](/decisions/decision-084)), so the only receiver is the Socket Mode
+listener — which connects with an app-level token (`xapp-…`, scope `connections:write`,
+minted under *Basic Information → App-Level Tokens*). A 60-second poller has nowhere to
+receive the click, which is why no button is rendered in `poll` mode: a button nobody
+can receive is worse than none. `the-loop channels status` prints, under its `buttons:`
+line, only the steps your configuration still needs:
+
+```text
+  buttons:      Approve / Request changes: off · Execute / Start: off — a press reaches the-loop only over a Socket Mode listener connected with the app-level token. Still needed:
+                  1. mint an app-level token: api.slack.com/apps → your app → Basic Information → App-Level Tokens → Generate (scope connections:write), and export it as THE_LOOP_SLACK_APP_TOKEN (now: unset)
+                  2. set channels.slack.read.mode: socket (now: poll)
+                  3. add to channels.slack.publish: gate.feedback (Approve / Request changes), control.command (Execute / Start)
+                  4. the-loop restart — the service hosts the listener; `the-loop status` shows the slack-listener row, and this line reads on
+```
 
 ## Standing sessions from Slack
 
@@ -337,8 +387,12 @@ an audit never needs Slack. This is also why a relayed keyword acts on the ledge
 
 ## Limits
 
-- **Socket Mode is required** for buttons and the slash command (`read.mode: socket`);
-  in `poll` mode replies still work, on the daemons' interval.
+- **Socket Mode is required** for buttons and the slash command (`read.mode: socket`),
+  and so is the app-level token it connects with — Slack delivers a press or a command
+  only to an acknowledging connection or a public Request URL, and the-loop exposes none
+  ([the buttons](#the-buttons)); in `poll` mode replies still work, on the daemons'
+  interval, and no button is rendered. `the-loop channels status` lists the steps that
+  remain.
 - **The listener needs the service's environment to carry both tokens.** `the-loop start`
   hosts it only with `read.mode: socket` and both tokens set; `the-loop status` shows the
   row, and `start` reports `failed` naming the missing variable. With
