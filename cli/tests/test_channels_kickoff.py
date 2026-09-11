@@ -307,3 +307,98 @@ def test_status_says_when_there_is_no_fallback(tmp_path, monkeypatch, capsys):
 def test_status_says_kickoff_is_off_without_the_grant(tmp_path, monkeypatch, capsys):
     out = _status_output(tmp_path, monkeypatch, capsys, publish=["work-item.reply"])
     assert "kickoff:      off — channels.slack.publish does not grant" in out
+
+
+# -- issue-349: what is askable, and one meaning for `text` -------------------------
+#
+# Spec: docs/specs/issue-349/{requirements,design,testing-plan}.md (T1). The resolver
+# gained one property and lost one inconsistency; the asking itself is exercised in
+# test_channels_kickoff_picker.py.
+
+
+@pytest.mark.parametrize(
+    "text, outcome",
+    [
+        ("agent-sims: flaky teardown", "resolved"),
+        ("flaky teardown", "fallback"),
+        ("slim-gym: flaky teardown", "ambiguous-repo"),
+        ("stranger/repo: flaky teardown", "unknown-repo"),
+        ("agent-sims:", "empty-message"),
+    ],
+)
+def test_ok_and_askable_partition_every_outcome(text, outcome):
+    """R1.1-R1.4: `ok` and `askable` cover all six between them, and
+    `empty-message` is the only one outside both — no pick puts words in a
+    message that has none."""
+    target = resolve(text)
+    assert target.outcome == outcome
+    assert not (target.ok and target.askable)
+    assert (target.ok or target.askable) is (outcome != "empty-message")
+
+
+def test_no_target_is_askable():
+    target = resolve("flaky teardown", kickoff_repo="")
+    assert target.outcome == "no-target" and target.askable
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        # a prefix that WAS read is stripped, whatever the outcome
+        ("slim-gym: flaky teardown", "flaky teardown"),
+        ("stranger/repo: flaky teardown", "flaky teardown"),
+        # no prefix was read, so the message is untouched
+        ("flaky teardown", "flaky teardown"),
+        ("fix: flaky teardown", "fix: flaky teardown"),
+    ],
+)
+def test_text_is_what_the_issue_would_be_composed_from(text, expected):
+    """R1.6: one meaning on every outcome, because a pending question composes
+    its issue from this field once a pick answers it."""
+    assert resolve(text).text == expected
+
+
+def test_the_fallback_arm_of_unknown_repo_reads_no_prefix():
+    """`kickoff.repo` pointing outside the declared set is the operator's
+    mistake, not a prefix in the member's message — so nothing is stripped."""
+    target = resolve("flaky teardown", kickoff_repo="stranger/repo", declared=POLLED)
+    assert target.outcome == "unknown-repo" and target.text == "flaky teardown"
+
+
+@pytest.mark.parametrize("text", ["slim-gym:", "stranger/repo:   "])
+def test_a_message_that_is_nothing_but_a_prefix_has_nothing_to_open(text):
+    """Consequence of R1.6, stated in decision-122: parking a question whose
+    only outcome is an empty issue helps nobody — one refusal instead of
+    another, with better words."""
+    assert resolve(text).outcome == "empty-message"
+
+
+def test_the_question_names_the_prefix_and_teaches_the_shortcut():
+    """R2.5 + A8: fixed words, the prefix quoted, and nothing of the message."""
+    target = resolve("stranger/repo: my secret plan")
+    asked = kickoff.question_text(target)
+    assert "`stranger/repo`" in asked
+    assert "`<repo>: `" in asked
+    assert "my secret plan" not in asked
+    assert "Nothing is created until you pick." in asked
+
+
+def test_each_askable_outcome_asks_its_own_question():
+    asked = {
+        outcome: kickoff.question_text(kickoff.KickoffTarget(outcome, prefix="slim"))
+        for outcome in ("no-target", "ambiguous-repo", "unknown-repo")
+    }
+    assert len(set(asked.values())) == 3
+    assert asked["no-target"].startswith("Which repository")
+    assert "more than one" in asked["ambiguous-repo"]
+    assert "don't know" in asked["unknown-repo"]
+
+
+def test_the_refusal_is_unchanged_for_every_outcome():
+    """The refusal still renders every case: it is what a channel that cannot
+    receive a press falls back to (decision-122 D1)."""
+    for text in ("slim-gym: t", "stranger/repo: t", "agent-sims:"):
+        assert kickoff.refusal_text(resolve(text))
+    assert "has no default repository" in kickoff.refusal_text(
+        resolve("flaky teardown", kickoff_repo="")
+    )

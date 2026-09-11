@@ -384,6 +384,14 @@ EVENT_TYPES: Dict[str, str] = {
         "The work-item mirror of a channel reply could not be posted "
         "(channel, work_item, error); the delivery attempt still proceeds."
     ),
+    "channel.kickoff_asked": (
+        "A top-level channel message could not be resolved to a repository, so "
+        "the-loop ASKED which one (channel, actor, thread, kind: the unresolved "
+        "outcome, count: how many repositories were offered) — issue-349. "
+        "Nothing was created, recorded or bound: the message is held until the "
+        "member picks, or until the question expires. Ids and counts only, never "
+        "the message text and never a repository name."
+    ),
     "channel.created": (
         "A top-level channel message became a work item (channel, work_item: "
         "the new ref, actor, thread) — the `work-item.create` grant (issue-309). "

@@ -15,10 +15,18 @@ five, never a guess (decision-120):
 ``resolved``        the prefix named exactly one declared repository
 ``fallback``        no prefix was read; ``kickoff.repo`` takes it, provided the
                     operator declared it (issue-348)
-``unknown-repo``    a *qualified* prefix named nothing declared — refused
-``ambiguous-repo``  a *bare* prefix named several — refused, candidates listed
-``no-target``       no prefix and no ``kickoff.repo`` — refused, a prefix asked for
+``unknown-repo``    a *qualified* prefix named nothing declared
+``ambiguous-repo``  a *bare* prefix named several
+``no-target``       no prefix and no ``kickoff.repo``
 ``empty-message``   the prefix resolved but nothing was left to open — refused
+
+Since issue-349 the three middle outcomes are **asked about** rather than refused
+where a pick can be received (:attr:`KickoffTarget.askable`, decision-122 D3): the
+declared repositories become options, and the answer finishes the kickoff. The rule
+is one sentence — *if a pick could answer it, ask; otherwise refuse* — so ``ok`` and
+``askable`` partition all six, and ``empty-message`` alone is outside both, because
+no pick puts words in a message that has none. :func:`refusal_text` still renders
+every case, and is what a channel that cannot receive a press falls back to.
 
 A **bare** word that matches nothing is deliberately *not* a refusal (decision-120
 D3): ``fix: flaky teardown`` is an ordinary English first line, and every configured
@@ -42,6 +50,7 @@ __all__ = [
     "CANDIDATE_LIMIT",
     "KickoffTarget",
     "PREFIX_RE",
+    "question_text",
     "refusal_text",
     "resolve_target",
 ]
@@ -64,13 +73,29 @@ class KickoffTarget:
 
     outcome: str
     repo: str = ""  #: the DECLARED slug to create in — never the member's text
-    text: str = ""  #: the message the issue is composed from (prefix stripped)
+    #: The message the issue is composed from, with any prefix that was actually
+    #: READ stripped off. One meaning on every outcome since issue-349, because a
+    #: pending question composes its issue from this field once it is answered —
+    #: where no prefix was read (``no-target``, the fallback arm of
+    #: ``unknown-repo``) the message is untouched, as it always was.
+    text: str = ""
     prefix: str = ""  #: what was read, for the refusal's wording
     candidates: Tuple[str, ...] = ()  #: what the member could have named
 
     @property
     def ok(self) -> bool:
         return self.outcome in ("resolved", "fallback")
+
+    @property
+    def askable(self) -> bool:
+        """Whether a pick could answer this (issue-349, decision-122 D3).
+
+        Every unresolved outcome except ``empty-message``: no pick puts words in
+        a message that has none. With :attr:`ok` this partitions all six, so the
+        caller forks on a property rather than on a list of outcome names that
+        would have to be kept in step with this module.
+        """
+        return self.outcome in ("no-target", "ambiguous-repo", "unknown-repo")
 
 
 def _strip_prefix(text: str, rest: str) -> str:
@@ -140,17 +165,35 @@ def resolve_target(
             prefix=prefix,
             candidates=names,
         )
+    # Both remaining arms READ a prefix, so both strip it (issue-349): `text` is
+    # what the issue would be composed from, and a question is answered by a pick
+    # that composes it. A message that is nothing BUT the prefix has nothing to
+    # open, so it lands on the one refusal a pick cannot answer.
     if len(found) > 1:
+        stripped = _strip_prefix(text, match["rest"])
+        candidates = tuple(entry.declared for entry in found)
+        if not stripped.strip():
+            return KickoffTarget(
+                "empty-message", text=text, prefix=prefix, candidates=candidates
+            )
         return KickoffTarget(
             "ambiguous-repo",
-            text=text,
+            text=stripped,
             prefix=prefix,
-            candidates=tuple(entry.declared for entry in found),
+            candidates=candidates,
         )
     if "/" in prefix:
-        # A qualified name has no reading as prose: refuse rather than let the
-        # fallback absorb a repository the member explicitly named (A2).
-        return KickoffTarget("unknown-repo", text=text, prefix=prefix, candidates=names)
+        # A qualified name has no reading as prose: never let the fallback absorb
+        # a repository the member explicitly named (A2) — ask which one they meant,
+        # or refuse where no pick can be received.
+        stripped = _strip_prefix(text, match["rest"])
+        if not stripped.strip():
+            return KickoffTarget(
+                "empty-message", text=text, prefix=prefix, candidates=names
+            )
+        return KickoffTarget(
+            "unknown-repo", text=stripped, prefix=prefix, candidates=names
+        )
     return without_prefix()  # a bare word that matches nothing is not a prefix
 
 
@@ -189,4 +232,32 @@ def refusal_text(target: KickoffTarget) -> str:
     return (
         "This channel has no default repository, so a kickoff has to name one: "
         f"start your message with `<repo>: `. {where}"
+    )
+
+
+def question_text(target: KickoffTarget) -> str:
+    """What the thread is ASKED when a pick could answer it (issue-349, R2.5).
+
+    The same discipline :func:`refusal_text` keeps: fixed words, the prefix quoted,
+    and **nothing else of the member's message** — the options carry the operator's
+    own declared slugs, so a hostile message can neither style the question nor
+    ping anyone through it (A8). One preamble per askable outcome, then the line
+    that teaches the shortcut, because a member who learns `<repo>: ` never sees
+    this question again.
+    """
+    if target.outcome == "ambiguous-repo":
+        opening = (
+            f"`{target.prefix}` names more than one repository I know. "
+            "Which one did you mean?"
+        )
+    elif target.outcome == "unknown-repo":
+        opening = (
+            f"I don't know a repository called `{target.prefix}`. "
+            "Pick the one you meant and I'll open it there:"
+        )
+    else:  # no-target — the common first-time case
+        opening = "Which repository should this go in?"
+    return (
+        f"{opening}\nNothing is created until you pick. Next time you can skip this "
+        "by starting your message with `<repo>: `."
     )

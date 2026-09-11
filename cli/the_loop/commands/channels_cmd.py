@@ -75,13 +75,28 @@ def _status(config: dict) -> int:
     # Where a top-level message becomes an issue (issue-341): the message's own
     # `<repo>:` prefix, resolved against the declared set, with kickoff.repo as
     # the fallback — so `status` names both, and how many a prefix may pick from.
+    # And since issue-349, whether the-loop may ASK when a message names none
+    # (R5.2): an operator finds that out here rather than from a member who did
+    # not get a question.
     if slack.kickoff_enabled:
         declared = declared_repositories(config)
         target = slack.kickoff_repo or "(no fallback — every message must name one)"
+        if not declared:
+            asks = "cannot ask which repository — nothing is declared"
+        elif not slack.kickoff_picker:
+            asks = (
+                f"cannot ask which repository — read.mode is {slack.read_mode}, so a "
+                "press cannot be received; an unresolved message is refused"
+            )
+        else:
+            asks = (
+                "asks which repository when a message names none, and opens it "
+                "where the member picks"
+            )
         kickoff = (
             f"{target} (labels: {', '.join(slack.kickoff_labels) or 'none'}); "
             f"a `<repo>:` prefix may name any of {len(declared)} declared "
-            "repositories"
+            f"repositories; {asks}"
         )
     else:
         kickoff = "off" + (
