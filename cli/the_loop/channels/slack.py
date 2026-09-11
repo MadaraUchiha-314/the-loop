@@ -30,7 +30,7 @@ import logging
 import os
 import re
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
@@ -46,6 +46,7 @@ from .base import (
     PostResult,
     render,
 )
+from .digest import DEFAULT_DIGEST_MODE, DIGEST_MODES, fit, truncate
 from .events import APPROVAL_EVENTS, PUBLISHABLE_EVENTS, SUBSCRIBABLE_EVENTS
 from .state import ChannelState
 
@@ -211,6 +212,10 @@ class SlackChannelConfig:
     publish: Tuple[str, ...] = DEFAULT_PUBLISH
     verbosity: str = "normal"
     max_chars: int = DEFAULT_MAX_CHARS
+    #: What happens to a text section longer than ``max_chars`` (issue-338):
+    #: ``digest`` (the default — the ask first, choices numbered, code and
+    #: traces as pointers, cut at a sentence) or ``truncate`` (13.10.0's cut).
+    long_messages: str = DEFAULT_DIGEST_MODE
     kickoff_repo: str = ""
     kickoff_labels: Tuple[str, ...] = ()
     #: The people of `routing.authorizedUsers`, and their Slack ids (issue-309).
@@ -337,6 +342,15 @@ class SlackChannelConfig:
                     )
             subscribe = _subscribe_list(section.get("subscribe"))
             publish = _publish_list(section.get("publish"))
+            long_messages = str(section.get("longMessages") or DEFAULT_DIGEST_MODE)
+            if long_messages not in DIGEST_MODES:
+                logger.warning(
+                    "channels.slack.longMessages %r is not one of %s — resolving to %r",
+                    long_messages,
+                    "/".join(DIGEST_MODES),
+                    DEFAULT_DIGEST_MODE,
+                )
+                long_messages = DEFAULT_DIGEST_MODE
             max_chars = int(section.get("maxChars") or DEFAULT_MAX_CHARS)
             if max_chars < 200:
                 logger.warning(
@@ -358,6 +372,7 @@ class SlackChannelConfig:
                 publish=publish,
                 verbosity=verbosity,
                 max_chars=min(max_chars, _SECTION_LIMIT),
+                long_messages=long_messages,
                 kickoff_repo=str(kickoff.get("repo") or "").strip(),
                 kickoff_labels=tuple(
                     str(lbl).strip()
@@ -473,12 +488,10 @@ _TITLES: Dict[str, str] = {
 }
 
 
-def _cap(text: str, max_chars: int) -> str:
-    text = text.strip()
-    if len(text) <= max_chars:
-        return text
-    rest = len(text) - max_chars
-    return text[:max_chars].rstrip() + f"\n… ({rest} more characters — see the link)"
+#: 13.10.0's cut, kept for the verbose context lines (a detail value is a label,
+#: not prose) and for `longMessages: truncate`; the text sections go through
+#: :func:`fit` (issue-338).
+_cap = truncate
 
 
 def render_blocks(
@@ -488,6 +501,7 @@ def render_blocks(
     interactive: bool = False,
     max_chars: int = DEFAULT_MAX_CHARS,
     commands: Optional[Mapping[str, str]] = None,
+    long_messages: str = DEFAULT_DIGEST_MODE,
 ) -> List[Dict[str, Any]]:
     """``event`` as Block Kit: header, text, context, and the buttons it earns.
 
@@ -498,8 +512,22 @@ def render_blocks(
     which message earns which, see :func:`expected_commands` and
     :meth:`SlackChannelConfig.command_buttons_for`); Approve / Request changes
     only for an approval-shaped event **and** only when ``interactive`` (Socket
-    Mode with the ``gate.feedback`` grant) — decision-103 D5.
+    Mode with the ``gate.feedback`` grant) — decision-103 D5. Every text section
+    — the text, the artifact excerpt — is drawn as mrkdwn and, above
+    ``max_chars``, digested or truncated per ``long_messages`` (issue-338,
+    :func:`fit`).
     """
+    cap = min(max_chars, _SECTION_LIMIT)
+
+    def section(text: str) -> Dict[str, Any]:
+        return {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": fit(text, cap, long_messages, event.url),
+            },
+        }
+
     title = _TITLES.get(event.event_type, event.event_type)
     who = f" · {event.actor.label}" if event.actor and event.actor.label else ""
     author = event.detail.get("author") if event.detail else ""
@@ -510,15 +538,7 @@ def render_blocks(
         {"type": "header", "text": {"type": "plain_text", "text": header}}
     ]
     if verbosity != "quiet" and event.text.strip():
-        blocks.append(
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": _cap(event.text, min(max_chars, _SECTION_LIMIT)),
-                },
-            }
-        )
+        blocks.append(section(event.text))
     if verbosity == "verbose" and event.detail:
         lines = [
             f"*{key}:* {_cap(str(value), 300)}"
@@ -527,15 +547,7 @@ def render_blocks(
         ]
         excerpt = str(event.detail.get("excerpt") or "").strip()
         if excerpt:
-            blocks.append(
-                {
-                    "type": "section",
-                    "text": {
-                        "type": "mrkdwn",
-                        "text": _cap(excerpt, min(max_chars, _SECTION_LIMIT)),
-                    },
-                }
-            )
+            blocks.append(section(excerpt))
         if lines:
             blocks.append(
                 {
@@ -546,17 +558,7 @@ def render_blocks(
                 }
             )
     elif verbosity == "normal" and event.detail.get("excerpt"):
-        blocks.append(
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": _cap(
-                        str(event.detail["excerpt"]), min(max_chars, _SECTION_LIMIT)
-                    ),
-                },
-            }
-        )
+        blocks.append(section(str(event.detail["excerpt"])))
     actions: List[Dict[str, Any]] = []
     if event.url:
         actions.append(
@@ -590,6 +592,14 @@ def render_blocks(
     if actions:
         blocks.append({"type": "actions", "elements": actions})
     return blocks
+
+
+def _section_text(blocks: List[Dict[str, Any]]) -> str:
+    """The first section's text — the message body as drawn — or ``""``."""
+    for block in blocks:
+        if block.get("type") == "section":
+            return str((block.get("text") or {}).get("text") or "")
+    return ""
 
 
 def _command_buttons(commands: Optional[Mapping[str, str]]) -> List[Dict[str, Any]]:
@@ -763,14 +773,21 @@ class SlackBotChannel:
                     bound = self._open_thread(client, state, event.work_item)
                 elif state.backfilled:
                     state.save(self.state_path)  # a 13.0.1 file, now keyed (R3.4)
-        text = render(event, self.config.verbosity)
         blocks = render_blocks(
             event,
             self.config.verbosity,
             interactive=self.config.interactive,
             max_chars=self.config.max_chars,
             commands=self.config.command_buttons_for(*expected_commands(event)),
+            long_messages=self.config.long_messages,
         )
+        # The plain-text fallback — what the phone's notification shows — carries
+        # the text section as drawn, so a digested message leads with the ask
+        # there too (issue-338 R1.5); a short text is the fallback it always was.
+        fallback = event
+        if len(event.text.strip()) > self.config.max_chars:
+            fallback = replace(event, text=_section_text(blocks))
+        text = render(fallback, self.config.verbosity)
         try:
             response = client.chat_postMessage(
                 channel=bound[0] if bound and bound[0] else self.config.channel,

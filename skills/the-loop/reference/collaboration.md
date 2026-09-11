@@ -60,7 +60,9 @@ names, renders them natively (Slack: Block Kit, a link button, Approve / Request
 buttons where a press can be received — and, under the `control.command` grant, an
 Execute button on the phase-selection checklist and a Start button on a kickoff's reply,
 each a press of the configured keyword whose outcome is written back onto the message,
-issue-337) into **one thread per work item, rooted on the
+issue-337; a text longer than `maxChars` arrives as a structural digest — the ask
+first, choices numbered, code and traces as pointers, cut at a sentence, the link for
+the rest — never a mid-sentence cut, issue-338) into **one thread per work item, rooted on the
 work item** — opened the moment the work item starts (issue-317), root only, with every
 event a reply into it (issue-312) — and the ledger records every event that started
 elsewhere **first** — the ask's record *is* the question comment. What a message on a

@@ -1606,3 +1606,134 @@ def test_a_press_whose_record_was_refused_keeps_its_button(tmp_path, monkeypatch
         "eyes",
         "warning",
     ]
+
+
+# -- long text is digested, never truncated (issue-338) ---------------------------
+
+
+def _long_agent_comment():
+    from test_channels_digest import REPORT
+
+    return REPORT
+
+
+def test_a_long_agent_comment_reaches_slack_as_a_digest(tmp_path, monkeypatch):
+    """Scenario: A long agent comment reaches Slack as a digest that leads with
+    the ask
+
+    Given a Slack channel subscribed to comment.agent with maxChars 600
+    When the ledger's ingress publishes an agent comment longer than that,
+      carrying a code fence, a traceback, a table and absolute paths, and
+      ending with a question
+    Then the Slack section opens with that question in bold
+    And carries no fence, no traceback, no table and no /home path — pointers
+      instead — within maxChars, and closes with the link to the full comment
+    And the phone's notification text (the fallback) leads with the same ask
+    And nothing was written to the ledger — a mirror is never re-recorded
+
+    Requirement: docs/specs/issue-338/requirements.md R1.1, R1.3, R1.5, R2.1, R3.1, R3.2
+    """
+    from the_loop.channels.publishers import publish_comment
+
+    client = _enabled_client(monkeypatch)
+    config = cli_config(tmp_path, subscribe=["comment.agent"], maxChars=600)
+    records = []
+    monkeypatch.setattr(
+        "the_loop.comments.post_issue_comment_with_url",
+        lambda item, body, gh_binary="gh": records.append(body) or (True, "", ""),
+    )
+
+    publish_comment(
+        "agent",
+        "github:o/r#338",
+        "the-loop",
+        _long_agent_comment(),
+        "https://gh/o/r/issues/338#c9",
+        config,
+    )
+
+    assert records == []
+    reply = client.posted[-1]
+    section = reply["blocks"][1]["text"]["text"]
+    assert section.startswith("*Which one should I take?*")
+    assert len(section) <= 600
+    for gone in ("```", "Traceback", "| case |", "/home/user"):
+        assert gone not in section
+    assert "_⟨code: 2 lines⟩_" in section
+    assert section.rstrip().endswith(
+        "_… full text: <https://gh/o/r/issues/338#c9|GitHub>_"
+    )
+    assert "*Which one should I take?*" in reply["text"]
+    assert reply["blocks"][-1]["elements"][0]["url"] == "https://gh/o/r/issues/338#c9"
+
+
+def test_a_short_comment_reaches_slack_untouched(tmp_path, monkeypatch):
+    """Scenario: A short comment reaches Slack untouched
+
+    Given a Slack channel subscribed to comment.human
+    When a collaborator's two-line comment is published
+    Then the Slack section is that comment, whole and in order, with no pointer
+      and no closing line — only the-loop's own marker drawn away
+    And the fallback text is what 13.10.0 sent
+
+    Requirement: docs/specs/issue-338/requirements.md R4.1, R3.3
+    """
+    from the_loop.channels.publishers import publish_comment
+
+    client = _enabled_client(monkeypatch)
+    config = cli_config(tmp_path, subscribe=["comment.human"])
+    body = "Go with B.\nThe cap stays at 1500 — see `docs/guide/slack.md`."
+
+    publish_comment("human", "github:o/r#338", "octocat", body, "https://gh/c", config)
+
+    reply = client.posted[-1]
+    assert reply["blocks"][1]["text"]["text"] == body
+    assert "full text" not in reply["blocks"][1]["text"]["text"]
+    assert reply["text"].endswith("\n\n" + body)
+
+
+def test_a_notifications_artifact_excerpt_is_digested_too(tmp_path, monkeypatch):
+    """Scenario: A notification's artifact excerpt is digested too
+
+    Given a Slack channel subscribed to phase-approval-pending with maxChars 500
+    And a work item whose requirements.md is longer than that
+    When the graph's notify hook fires for the requirements approval
+    Then the message's excerpt section is a digest within maxChars that closes
+      with the work item's link, and the short notification text is untouched
+
+    Requirement: docs/specs/issue-338/requirements.md R1.1, R4.1
+    """
+    from the_loop.graph.contract import HookContext, WorkItem
+    from the_loop.graph.hooks.sideeffects import notify
+
+    client = _enabled_client(monkeypatch)
+    spec_dir = tmp_path / "specs" / "issue-338"
+    spec_dir.mkdir(parents=True)
+    (spec_dir / "requirements.md").write_text(
+        "---\ntype: requirements\n---\n# Requirements: the digest\n\n"
+        "## Introduction\n\nIs this the shape you want?\n\n"
+        + "\n\n".join(
+            f"Paragraph {n} says something about requirement {n}." for n in range(60)
+        ),
+        encoding="utf-8",
+    )
+    config = cli_config(tmp_path, subscribe=["phase-approval-pending"], maxChars=500)
+    ctx = HookContext(
+        work_item=WorkItem(id="issue-338", ref="github:o/r#338", spec_dir=spec_dir),
+        node={"id": "requirements-approval"},
+        boundary="entry",
+        repo=tmp_path,
+        config=config,
+        params={"event": "phase-approval-pending", "artifact": "requirements.md"},
+    )
+
+    assert notify(ctx).status == "pass"
+    reply = client.posted[-1]
+    text_section, excerpt_section = reply["blocks"][1], reply["blocks"][2]
+    assert "requirements-approval" in text_section["text"]["text"]
+    excerpt = excerpt_section["text"]["text"]
+    assert excerpt.startswith("*Is this the shape you want?*")
+    assert len(excerpt) <= 500
+    assert excerpt.rstrip().endswith(
+        "_… full text: <https://github.com/o/r/issues/338|GitHub>_"
+    )

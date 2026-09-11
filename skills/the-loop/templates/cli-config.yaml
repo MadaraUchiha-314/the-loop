@@ -461,7 +461,10 @@ channels:
     #                                        # A ticket-bound one is recorded on the ledger first and
     #                                        # judged there; the two instance-side ones log to the event log.
     # verbosity: normal                      # quiet | normal | verbose
-    # maxChars: 1500                         # cap on one message's text; the link carries the rest
+    # maxChars: 1500                         # how much text one message carries; above it, longMessages
+    # longMessages: digest                   # digest (the ask first, choices numbered, code and traces
+    #                                        # as pointers, cut at a sentence, the link for the rest)
+    #                                        # | truncate (the first maxChars characters) — issue-338
     # kickoff:                               # only with the work-item.create grant
     #   repo: ""                             # owner/repo the issue is created in; empty = off
     #   labels: []                           # applied to the created issue — from here only

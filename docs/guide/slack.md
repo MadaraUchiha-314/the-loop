@@ -230,6 +230,58 @@ message that was dropped — a stranger's, a bot's, a kind the channel is not gr
 gets nothing: a refusal leaves no mark. A slash command has no message of yours to react
 on; its receipt is the ephemeral answer only you see.
 
+## Reading it on a phone
+
+The GitHub comment is the record; the Slack message is the interface — and since
+[issue-338](https://github.com/MadaraUchiha-314/the-loop/issues/338) they are no longer
+the same text. A message whose text fits in
+[`maxChars`](/config/cli/channels-options#slack-maxchars) (default 1500) arrives **as
+written**. A longer one arrives as a **digest** the channel computes from the text's own
+structure — no model reads it, so every sentence you see is the author's:
+
+- **the ask first** — the first question in the text (or the sentence that says *reply
+  `…`*), in bold, before any context;
+- **a choice as a numbered list** — bullets, numbering and GitHub task boxes become
+  `1.`, `2.`, … with ☑ / ☐ kept, so a reply can be one number;
+- **pointers for what Slack cannot use** — a code fence, a table or a stack trace is
+  replaced in place by *⟨code: 12 lines⟩* / *⟨table: 4 rows⟩* / *⟨stack trace: 9 lines⟩*,
+  and an absolute path keeps its last two segments (`…/channels/slack.py`);
+- **the rest in order, cut at a sentence** — never mid-sentence, then one closing line,
+  *… full text: GitHub*, linking the comment or the work item.
+
+The phase-selection checklist, with `maxChars: 700`:
+
+```text
+*🤖 _the-loop_ — which phases does this work item need?*
+
+Before the loop starts, tell it what this item actually needs. *Untick anything this
+work item does not need — right here on this comment — then reply `the-loop
+execute`.* The tick state at that moment is frozen and becomes the graph this item
+walks.
+
+1. ☑ brainstorming
+2. ☑ requirements-definition
+3. ☑ design
+4. ☑ test-planning
+5. ☑ tasks-breakdown
+6. ☑ implementation
+7. ☑ verification
+
+*Every phase of this loop is selectable — including the reviews, the security
+review and the approval gate.*
+
+_… full text: GitHub_
+[Open on GitHub] [Execute]
+```
+
+The phone's notification preview (Slack's fallback text) leads with the same ask.
+`maxChars` is the lever: turn it down and the digest fits the smaller screen; turn it
+up to Slack's 3000 and most comments arrive whole. To have the old behaviour back — the
+first `maxChars` characters and a note — set
+[`longMessages: truncate`](/config/cli/channels-options#slack-longmessages). Whatever
+the length, GitHub markdown is drawn as Slack mrkdwn (`**bold**`, headings, links, task
+boxes) and the-loop's own `<!-- … -->` markers no longer show.
+
 ## Starting a work item from Slack
 
 Two gestures, depending on whether the work item exists.
@@ -411,6 +463,12 @@ an audit never needs Slack. This is also why a relayed keyword acts on the ledge
 - **A command or a button press issued while no listener was connected is lost** — visibly,
   to the member, who issues it again. Replies and kickoffs are caught up; see
   [Downtime](#downtime).
+- **The digest is structural, not a summary.** It leads with the *first* question the
+  text asks, so a comment whose decision sits after a rhetorical question early on
+  leads with the wrong one; the closing link is the remedy, and conclusion-first
+  writing the prevention. A code block you wanted inline is a pointer —
+  `longMessages: truncate`, or a larger `maxChars`, brings it back
+  ([reading it on a phone](#reading-it-on-a-phone)).
 
 ## Downtime
 

@@ -127,7 +127,8 @@ the-loop standing say supervisor --text "what has not moved today?"
                             # ticket to comment on — addressed by name, from here or Slack
 the-loop events --follow    # the structured trail of every routing and dispatch decision
 the-loop channels poll      # the Slack-bot channel, a peer on the event bus: read thread replies —
-                            # each mirrored onto its work item, delivered to its session
+                            # each mirrored onto its work item, delivered to its session; long
+                            # text reaches the phone as a digest (the ask first), never cut mid-sentence
 the-loop channels listen    # …or over Socket Mode: replies, Approve / Execute / Start buttons, and the /the-loop
                             # slash command (start a work item, a standing session, status,
                             # upgrade) — see docs/guide/slack.md for every mode of interaction

@@ -50,6 +50,17 @@ def _status(config: dict) -> int:
     print(f"  publish:      {', '.join(slack.publish) or '(nothing)'}")
     print(f"  verbosity:    {slack.verbosity}")
     print(f"  maxChars:     {slack.max_chars}")
+    # Above the cap (issue-338): the digest, or 13.10.0's cut.
+    print(
+        "  longMessages: "
+        + (
+            "digest — above maxChars: the ask first, choices numbered, code and "
+            "traces as pointers, cut at a sentence, the link for the rest"
+            if slack.long_messages == "digest"
+            else "truncate — above maxChars: the first maxChars characters and a "
+            "note (13.10.0)"
+        )
+    )
     print(
         f"  read:         {slack.read_mode}"
         + (

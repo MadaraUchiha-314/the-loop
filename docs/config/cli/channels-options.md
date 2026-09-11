@@ -31,7 +31,8 @@ channels:
     subscribe: [session.awaiting_input, phase-approval-pending, comment.agent]
     publish: [work-item.reply, gate.feedback]
     verbosity: normal
-    maxChars: 1500
+    maxChars: 1500                           # and the threshold for longMessages
+    longMessages: digest                     # digest | truncate — above maxChars
     kickoff:
       repo: octocat/hello-world
       labels: ["the-loop: auto-execute"]
@@ -215,8 +216,42 @@ how many of them there are.
 - **Type:** `integer` (minimum 200)
 - **Default:** `1500`
 
-The cap on the text one Slack message carries — a comment body, an artifact excerpt.
-Longer text is cut with a note, and the link button points at the rest.
+How much text one Slack message carries — a comment body, an artifact excerpt — and
+the threshold above which `longMessages` (below) applies
+([issue-338](https://github.com/MadaraUchiha-314/the-loop/issues/338)). At most
+Slack's own 3000-character section limit. This is the lever for a small screen: a
+phone reader turns it *down*, and the digest fits the message to it.
+
+### `slack.longMessages`
+
+- **Type:** `'digest' | 'truncate'`
+- **Default:** `digest`
+
+What happens to a text section longer than `maxChars`
+([issue-338](https://github.com/MadaraUchiha-314/the-loop/issues/338),
+[decision-118](/decisions/decision-118)).
+
+`digest` — a **structural** digest the channel computes, with no model involved: the
+first question in the text (or, failing one, the sentence that says *reply `…`*) goes
+first, in bold; a list becomes numbered lines (`1.`, `2.`, … — GitHub task boxes drawn
+as ☑ / ☐); every code fence, markdown table and stack trace is replaced in place by a
+pointer (*⟨code: 12 lines⟩*, *⟨table: 4 rows⟩*, *⟨stack trace: 9 lines⟩*); an absolute
+path of three or more segments loses its head (`…/channels/slack.py`); the rest follows
+in the author's order until the budget is spent; the cut falls on a sentence (a clause,
+or a word, only when no sentence fits); and one closing line links the full text —
+*… full text: GitHub* — whenever anything was cut, left out or replaced. Every sentence
+in a digest is one the author wrote: the digest reorders, numbers and points; it never
+paraphrases.
+
+`truncate` — the first `maxChars` characters and a *… (N more characters — see the
+link)* note — 13.10.0's behaviour.
+
+A text at or under `maxChars` is posted **whole** either way, in the author's order,
+with no pointer and no closing line. Whatever the length, GitHub markdown is drawn as
+Slack mrkdwn (`**bold**` → `*bold*`, headings, links, task boxes, bullets) and an HTML
+comment — the-loop's own markers included — is removed: that changes how the words are
+drawn, never which words are there. The [Slack guide](/guide/slack#reading-it-on-a-phone)
+shows a checklist before and after.
 
 ### `slack.kickoff.repo`
 

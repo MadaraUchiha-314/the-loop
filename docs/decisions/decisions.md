@@ -5,6 +5,7 @@ record (`decision-<nnn>.md`). Newest first.
 
 | # | Title | Status | Date |
 |---|-------|--------|------|
+| [118](decision-118.md) | Long text reaches Slack as a structural digest the channel computes — never a model's summary — above `maxChars`, under one enum key | proposed | 2026-09-11 |
 | [117](decision-117.md) | A Slack command button is a reply with the keyword as its value under `control.command`; the outcome is shown by editing the pressed message; Socket Mode stays required and `channels status` says how | proposed | 2026-09-11 |
 | [116](decision-116.md) | Slack addresses the-loop itself through a slash command, not a workflow; a work-item verb still goes through the ledger, and the other verbs are grants of their own | proposed | 2026-09-09 |
 | [115](decision-115.md) | A ledger-only record is reconciled lazily — absent for a window on the ledger's own clock, asked once, capped per cycle | proposed | 2026-09-09 |

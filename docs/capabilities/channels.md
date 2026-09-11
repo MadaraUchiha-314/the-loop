@@ -138,8 +138,9 @@ flowchart LR
   daemons and the core facade wire it, the facade with the config it was handed); a
   dispatcher built without one behaves as at 13.1.1.
 - **Rendering is the channel's.** The Slack channel posts Block Kit: a header (event,
-  person, work item), the text capped at `maxChars` with the remainder behind the link,
-  a context line at `verbose`, a link button whenever the event has a URL,
+  person, work item), the text drawn as mrkdwn and — above `maxChars` — digested or
+  truncated per `longMessages` (the next bullet), a context line at `verbose`, a link
+  button whenever the event has a URL,
   Approve / Request changes buttons for an approval-shaped event **only** when
   `read.mode: socket` and the `gate.feedback` grant both hold, and — since issue-337 —
   an **Execute** button on the phase-selection checklist mirror (a `comment.agent`
@@ -148,6 +149,26 @@ flowchart LR
   each carrying the **configured keyword** as its value (a disabled keyword renders no
   button). A press enters the pipeline as that member's reply carrying the button's
   text; an unrecognised value is plain text.
+- **Long text is digested, never cut mid-sentence** (issue-338, decision-118). WHEN a
+  text section — an event's text, a notification's artifact excerpt — is longer than
+  `channels.slack.maxChars` AND `channels.slack.longMessages` is `digest` (the default)
+  THEN the channel SHALL post a **structural digest** within `maxChars`, computed with
+  no model: the first question in the text (else the sentence that says *reply `…`*)
+  first, in bold; every list as numbered lines with GitHub task boxes drawn ☑ / ☐;
+  every code fence, table and stack trace replaced in place by a pointer with its
+  size; absolute paths of three or more segments shortened to their last two; the rest
+  in the author's order until the budget is spent; the cut on a sentence boundary (a
+  clause, then a word, only when no sentence fits); and one closing line linking the
+  full text (the event's URL, never one from the text) whenever anything was cut, left
+  out or replaced. Every non-pointer line of a digest SHALL be text the author wrote.
+  WHEN `longMessages` is `truncate` THEN the first `maxChars` characters and a note, as
+  at 13.10.0. WHEN the text is at or under `maxChars` THEN it SHALL be posted whole, in
+  order, with no pointer and no closing line. The plain-text fallback (the phone's
+  notification) SHALL carry the same digest. Whatever the length, GitHub markdown is
+  drawn as Slack mrkdwn (`**bold**` → `*bold*`, headings, `[text](url)`, task boxes,
+  bullets), HTML comments — the-loop's markers and envelopes included — are removed,
+  and a Slack broadcast sequence (`<!channel>`, `<!here>`) in a comment is neutralised.
+  `the-loop channels status` prints the `longMessages` line beside `maxChars`.
 - **A press's outcome is written onto the pressed message** (issue-337, decision-117).
   WHEN a button press is **processed** THEN the channel SHALL edit the pressed message:
   the pressed button set replaced by a context line naming the button (from its
@@ -248,6 +269,12 @@ flowchart LR
 
 ## Design
 
+- [`docs/specs/issue-338/design.md`](../specs/issue-338/design.md) — `channels/digest.py`
+  (`to_mrkdwn`, `condense`, `fit`), the renderer's `long_messages`, the post's fallback
+  text, the key in both schema copies, the status line.
+- [`decision-118`](../decisions/decision-118.md) — a structural digest the channel
+  computes rather than a model's summary; one enum key with `maxChars` as the
+  threshold; mrkdwn drawing on every message, the digest only above the cap.
 - [`docs/specs/issue-337/design.md`](../specs/issue-337/design.md) — the renderer's
   `commands`, `expected_commands` keyed on the checklist marker, the kickoff reply's
   Start button, `report_press` and the rebuilt blocks, the `channels status` steps.
@@ -298,6 +325,7 @@ flowchart LR
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-338 | Long text reaches Slack as a **structural digest** instead of a mid-sentence cut: above `maxChars` (unchanged meaning and default) the channel puts the first question — or the *reply `…`* instruction — first in bold, renders lists as numbered lines with ☑ / ☐, replaces code fences, tables and stack traces with a sized pointer, shortens absolute paths, keeps the rest in the author's order, cuts at a sentence and closes with a link to the full text; the phone's notification text carries the same digest; a text within the cap is posted whole. `longMessages: digest \| truncate` (default `digest`; `truncate` is 13.10.0's cut) is the one new key. On every message, whatever its length, GitHub markdown is now drawn as mrkdwn and HTML comments (the-loop's markers, seen literally before) are removed; `<!channel>`-style broadcasts in a comment are neutralised. No model, no new call, grant, scope or state | [spec](../specs/issue-338/), [decision-118](../decisions/decision-118.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/338) |
 | issue-337 | **Execute** and **Start** buttons on the two Slack messages that asked for a keyword typed back — the phase-selection checklist mirror and the kickoff's "opened" reply — rendered only with `read.mode: socket` and the `control.command` grant, each carrying the configured keyword as its value so a press is exactly a typed keyword through the unchanged pipeline (allow-list, classification, grant, unmarked ledger record, the ingress executes). A processed press is written back onto the pressed message (buttons replaced by the outcome line with the record's link; kept beside a ⚠️ line when it did not land; a dropped press edits nothing), for the Approve pair too. `channels status` names both button sets and prints only the steps a configuration still needs — the app-level token is required because Slack delivers a press only to an acknowledging Socket Mode connection or a public Request URL. No new grant, scope, key or state | [spec](../specs/issue-337/), [decision-117](../decisions/decision-117.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/337) |
 | issue-334 | The `/the-loop` slash command over Socket Mode — the channel's third inbound shape, for what has no thread: `<keyword> <work-item>` publishes `control.command` and stops at the same unmarked ledger record a thread keyword makes (the ingress executes it; the target bounded to `kickoff.repo`, the poll sources, the managed set and the bound threads); `status` / `restart` / `upgrade` and `standing list\|start\|stop\|restart` call the core facade under two new grants, `instance.command` and `standing.command` (catalog rows, not recorded); authorized first, a fixed vocabulary, ephemeral answers to Slack's host only, a trigger acts once. A packaged Slack **app manifest** (`the-loop channels manifest`) and the [Slack integration guide](../guide/slack.md). From the PR review: `the-loop start` hosts the listener in the service (`slack-listener` row, its own pidfile lock; `channels listen` is the foreground form), the listener runs a catch-up read over the shared cursors when it connects, `poll_once` runs in socket mode as a reconciliation, and a redelivered message at or before a thread's cursor is dropped as `duplicate`. Ask 1 of the ticket — a control keyword in the thread works as on the ticket — was already true by grant and is now pinned by tests and documented | [spec](../specs/issue-334/), [decision-116](../decisions/decision-116.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/334) |
 | issue-325 | The Slack channel acknowledges an accepted inbound message on the message itself: `received` (👀) after the last refusal and before the ledger record, then `completed` (✅) when the pipeline's action landed or `error` (⚠️) when it did not; a dropped message gets none; configured by `channels.slack.reactions` (on by default, Slack emoji names, `""` skips a state), posted best-effort with the bot token's `reactions:write`, observable as `channel.reaction_added` / `channel.reaction_failed`. Before this, `routing.reactions` acknowledged only on GitHub and a Slack reply's only feedback was a later posted message | [spec](../specs/issue-325/), [decision-111](../decisions/decision-111.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/325) |
