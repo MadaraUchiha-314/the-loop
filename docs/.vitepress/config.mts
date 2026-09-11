@@ -218,6 +218,7 @@ const developerSidebar = [
       { text: "GitHub queries", link: "/reports/gh-queries" },
       { text: "Vendor SDKs vs. binaries", link: "/reports/vendor-sdk-analysis" },
       { text: "Status labels & dashboards", link: "/reports/labels-and-dashboards" },
+      { text: "Is harness-config.yaml required?", link: "/reports/harness-config-audit" },
     ],
   },
 ];

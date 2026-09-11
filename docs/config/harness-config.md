@@ -10,6 +10,10 @@ rather than being copied into your repository — see
 For the daemon's own, repo-independent settings see the [CLI config](/config/cli/) —
 the two never share a key ([decision-032](/decisions/decision-032)).
 
+Whether this file needs to exist at all, which of its keys are read by what, and which
+belong to the operator rather than the repository is audited in
+[Is `harness-config.yaml` required?](/reports/harness-config-audit) (issue-352).
+
 ## Writing it
 
 ```text
