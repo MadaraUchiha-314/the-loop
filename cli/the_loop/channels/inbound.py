@@ -33,16 +33,20 @@ from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple
 
 from .. import eventlog
 from ..identity import principal_for
+from ..repos import declared_repositories
 from ..standing import parse_standing_ref
 from .base import ChannelError, Event, InboundReply, PostResult
 from .bus import publish
 from .github import GitHubLedger
-from .kickoff import refusal_text, resolve_target
+from .kickoff import question_text, refusal_text, resolve_target
 from .slack import (
     ACTION_PREFIX,
     SlackBotChannel,
     SlackChannelConfig,
     _ts_key,
+    action_value,
+    is_kickoff_repo_action,
+    render_kickoff_question,
     render_reply_blocks,
     slack_state_path,
 )
@@ -56,6 +60,7 @@ __all__ = [
     "handle_socket_event",
     "poll_once",
     "process_kickoff",
+    "process_kickoff_answer",
     "process_reply",
 ]
 
@@ -454,25 +459,115 @@ def process_kickoff(
     # on purpose: a refusal names the declared repositories, and an unlisted
     # member is told nothing at all (R2.6).
     target = resolve_target(reply.text, config, cli_config)
-    if not target.ok:
-        bot.react(reply, "error")
-        bot.say(reply.thread, refusal_text(target), reply.channel_id)
-        return _drop(
+    if target.ok:
+        return _open_work_item(
             reply,
-            f"kickoff-{target.outcome}",
-            level="warning",
-            actor=reply.author,
-            kind=target.prefix or None,
+            config,
+            cli_config,
+            repo=target.repo,
+            text=target.text,
+            bot=bot,
+            post_comment=post_comment,
+            create_issue=create_issue,
         )
+    # Not resolved. If a pick could answer it, ASK (issue-349, decision-122 D3);
+    # otherwise refuse exactly as 14.0.0 did. `empty-message` is the one outcome
+    # no pick can answer, and it is the one `askable` leaves out.
+    # The options ARE `target.candidates`, already built by the resolver: the
+    # whole declared set for `no-target`/`unknown-repo`, and for `ambiguous-repo`
+    # only what the prefix matched — the narrow question the member already
+    # half-answered (R1.2). The same list the refusal names, so the two renderings
+    # can never disagree about what is on offer.
+    if target.askable and config.kickoff_picker and target.candidates:
+        return _ask_which_repository(reply, config, target, bot)
+    bot.react(reply, "error")
+    bot.say(reply.thread, refusal_text(target), reply.channel_id)
+    return _drop(
+        reply,
+        f"kickoff-{target.outcome}",
+        level="warning",
+        actor=reply.author,
+        kind=target.prefix or None,
+    )
+
+
+def _ask_which_repository(
+    reply: InboundReply,
+    config: SlackChannelConfig,
+    target,
+    bot: SlackBotChannel,
+) -> Dict[str, Any]:
+    """Hold the message and ask which repository it goes in (R1.1, R3.1).
+
+    Nothing is created, recorded or bound — a question is not a decision. The
+    message is parked under the state lock **before** it is posted, so a second
+    read of the same message (a poll cycle beside the listener, a Slack retry)
+    finds a question already outstanding and does not ask twice (R3.7). If the
+    post then fails the record is dropped again: a question nobody can see must
+    not suppress the next one.
+
+    The key is the message's own ``ts``. For a top-level message that is also its
+    ``thread``, which is what makes the record findable from a press: a
+    ``block_actions`` payload for a reply in the thread carries the ROOT's ts, and
+    nothing else of the message it answers.
+    """
+    options = target.candidates
+    with ChannelState.locked(bot.state_path) as state:
+        if state.pending_for(reply.ts):
+            return _drop(reply, "kickoff-already-asked", actor=reply.author)
+        state.ask(reply.ts, reply.channel_id, reply.author, target.text, options)
+        state.save(bot.state_path)
+    said = question_text(target)
+    if not bot.say(
+        reply.thread,
+        said,
+        reply.channel_id,
+        blocks=render_kickoff_question(said, options),
+    ):
+        with ChannelState.locked(bot.state_path) as state:
+            state.forget(reply.ts)
+            state.save(bot.state_path)
+        bot.react(reply, "error")
+        return _drop(reply, "kickoff-ask-failed", level="warning", actor=reply.author)
+    eventlog.emit(
+        "channel.kickoff_asked",
+        channel=reply.channel,
+        actor=reply.author,
+        thread=reply.thread,
+        kind=target.outcome,
+        count=len(options),
+    )
+    return {"outcome": "asked", "options": len(options)}
+
+
+def _open_work_item(
+    reply: InboundReply,
+    config: SlackChannelConfig,
+    cli_config: Optional[Mapping],
+    *,
+    repo: str,
+    text: str,
+    bot: SlackBotChannel,
+    post_comment: Optional[Callable] = None,
+    create_issue: Optional[Callable] = None,
+) -> Dict[str, Any]:
+    """`work-item.create` → the ledger opens the issue → the thread is bound to it
+    and told the link. The tail of the kickoff, shared by the two ways of reaching
+    it: a prefix that resolved, and a pick that answered the question (R4.3, R4.4).
+
+    ``repo`` is always a DECLARED slug — the resolver's or the picker's — so the
+    one rule that matters here holds by construction on both paths: nothing of the
+    member's text ever becomes a repository argument.
+    """
     actor = principal_for(config.principals, reply.channel, reply.author)
     event = Event(
         event_type="work-item.create",
         work_item="",
-        text=target.text,
+        text=text,
         source=reply.channel,
         actor=actor,
         detail={
-            "repo": target.repo,
+            "repo": repo,
             "labels": ",".join(config.kickoff_labels),
             "thread": reply.thread,
         },
@@ -514,6 +609,94 @@ def process_kickoff(
     )
     bot.react(reply, "completed")
     return {"outcome": "created", "workItem": result.ref, "url": result.url}
+
+
+def process_kickoff_answer(
+    reply: InboundReply,
+    config: SlackChannelConfig,
+    cli_config: Optional[Mapping],
+    *,
+    bot: SlackBotChannel,
+    post_comment: Optional[Callable] = None,
+    create_issue: Optional[Callable] = None,
+) -> Dict[str, Any]:
+    """A repository pick → the work item the question was holding (issue-349).
+
+    ``reply.text`` is the pressed value and ``reply.thread`` is the message the
+    question was asked about — the key the record is held under. Four gates, in
+    this order, and the order is the point:
+
+    1. **Authorized**, the same fail-closed allow-list every inbound goes through.
+    2. **The message's own author** (decision-122 D5). The issue is opened as the
+       person who wrote it, so another member — authorized or not — does not get
+       to decide where their message lands.
+    3. **A live record.** Expired, already-answered and never-asked are one read:
+       there is nothing to answer.
+    4. **A value that was offered AND is still declared.** Two bounds, not one —
+       the offered set stops a real repository that was never on *this* question,
+       and the declared re-check stops one the operator has since removed. What
+       reaches the ledger is the matched ``DeclaredRepo.declared``, never the
+       pressed string.
+
+    Gates 1 and 2 sit above the record read so an unauthorized presser learns
+    nothing, not even that a question exists. Never raises.
+
+    Above all four is the channel's own permission, re-read at press time rather
+    than trusted from when the question went out: an operator who revokes
+    ``work-item.create`` (or leaves Socket Mode) while a question is outstanding
+    has revoked it for the answer too. This is the only gate a *pending record*
+    could otherwise smuggle a member past.
+    """
+    if not config.kickoff_picker:
+        return _drop(
+            reply, "unpublishable-event", level="warning", kind="work-item.create"
+        )
+    if not config.authorized_users or reply.author not in set(config.authorized_users):
+        return _drop(reply, "unauthorized-actor", level="warning", actor=reply.author)
+    state = ChannelState.load(bot.state_path)
+    record = state.pending_for(reply.thread)
+    if record and record.get("author") != reply.author:
+        # Not theirs to direct: the record stands, untouched, for its author.
+        return _drop(reply, "not-your-kickoff", level="warning", actor=reply.author)
+    if not record:
+        return _drop(reply, "no-pending-kickoff", actor=reply.author)
+    chosen = reply.text.strip()
+    declared = {entry.declared: entry for entry in declared_repositories(cli_config)}
+    if chosen not in set(record.get("options") or ()) or chosen not in declared:
+        return _drop(
+            reply,
+            "undeclared-repository",
+            level="warning",
+            actor=reply.author,
+        )
+    # The acknowledgment (issue-325 R1.5): after the last refusal, before the
+    # record, on the message the press came from — here, the question itself.
+    bot.react(reply, "received")
+    # Claim before publishing (R3.4): the pop is inside the lock and the create is
+    # outside it, so a second press of the same question finds nothing to answer
+    # and exactly one issue is opened.
+    with ChannelState.locked(bot.state_path) as fresh:
+        claimed = fresh.claim(reply.thread)
+        if not claimed:
+            return _drop(reply, "no-pending-kickoff", actor=reply.author)
+        fresh.save(bot.state_path)
+    outcome = _open_work_item(
+        reply,
+        config,
+        cli_config,
+        repo=declared[chosen].declared,
+        text=str(claimed.get("text") or ""),
+        bot=bot,
+        post_comment=post_comment,
+        create_issue=create_issue,
+    )
+    if outcome.get("outcome") != "created":
+        # The question stays answerable (R3.5) — which is the same posture the
+        # press report takes, keeping the buttons on a press that did not land.
+        with ChannelState.locked(bot.state_path) as fresh:
+            fresh.restore(reply.thread, claimed)
+            fresh.save(bot.state_path)
+    return outcome
 
 
 # -- transports ------------------------------------------------------------------
@@ -683,6 +866,7 @@ def handle_socket_action(
     *,
     post_comment: Optional[Callable] = None,
     deliver: Optional[Callable] = None,
+    create_issue: Optional[Callable] = None,
     client_factory: Optional[Callable] = None,
 ) -> Dict[str, Any]:
     """A Block Kit ``block_actions`` press → that member's reply carrying the
@@ -691,6 +875,10 @@ def handle_socket_action(
     Only actions the-loop rendered (``action_id`` under :data:`ACTION_PREFIX`) are
     read; the value is *text*, judged by the ordinary pipeline with the ordinary
     authorization — a crafted payload buys nothing a typed message would not.
+    Since issue-349 one ``action_id`` is routed *before* that pipeline:
+    the repository picker's, whose value is an **argument** to a work item that
+    does not exist yet. ``create_issue`` is its injection seam, the same one
+    :func:`handle_socket_event` has for the kickoff itself.
     An Execute / Start button's value is the configured keyword (issue-337), so
     its press is a typed keyword: ``control.command`` under that grant, recorded
     unmarked, executed by the ledger's ingress. The reply's ``ts`` is the
@@ -705,7 +893,7 @@ def handle_socket_action(
         for a in (payload.get("actions") or [])
         if isinstance(a, Mapping)
         and str(a.get("action_id") or "").startswith(ACTION_PREFIX)
-        and str(a.get("value") or "").strip()
+        and action_value(a)
     ]
     if not actions:
         return {"outcome": "ignored"}
@@ -721,11 +909,12 @@ def handle_socket_action(
     config = SlackChannelConfig.from_mapping(cli_config)
     state_path = slack_state_path(cli_config)
     state = ChannelState.load(state_path)
+    action_id = str(actions[0].get("action_id") or "")
     reply = InboundReply(
         channel="slack",
         work_item=state.work_item_for(thread) or "" if thread else "",
         author=str((payload.get("user") or {}).get("id") or ""),
-        text=str(actions[0].get("value")),
+        text=action_value(actions[0]),
         thread=thread,
         ts=str(
             container.get("message_ts")
@@ -736,6 +925,36 @@ def handle_socket_action(
         channel_id=str((payload.get("channel") or {}).get("id") or ""),
     )
     bot = SlackBotChannel(config, state_path, client_factory=client_factory)
+    if is_kickoff_repo_action(action_id):
+        # The one press that is an ARGUMENT rather than an answer or a keyword
+        # (issue-349): there is no work item yet, so `process_reply` would drop it
+        # as `unmapped`. Routed above it, leaving every existing path untouched.
+        outcome = process_kickoff_answer(
+            reply,
+            config,
+            cli_config,
+            bot=bot,
+            post_comment=post_comment,
+            create_issue=create_issue,
+        )
+        # Written back onto the question for a press that got past the ALLOW-LIST
+        # — whether it then opened the work item, failed to, or was refused by one
+        # of the three gates below it. decision-111 D1 ("a refusal leaves no
+        # mark") is kept where it bites: an unauthorized press edits nothing and
+        # its presser learns nothing, not even that a question exists. Above that
+        # line decision-120 D2's narrowing applies — an authorized refusal
+        # answers — because a member who taps an expired question and sees
+        # absolutely nothing happen is the failure this work item exists to end.
+        # The report is in place on a message they can already see, so it
+        # discloses nothing new, and a press that did not land keeps its picker.
+        if outcome.get("outcome") != "unauthorized-actor":
+            bot.report_press(
+                reply,
+                message if isinstance(message, Mapping) else {},
+                action_id,
+                outcome,
+            )
+        return outcome
     outcome = process_reply(
         reply,
         config,
@@ -748,7 +967,7 @@ def handle_socket_action(
         bot.report_press(
             reply,
             message if isinstance(message, Mapping) else {},
-            str(actions[0].get("action_id") or ""),
+            action_id,
             outcome,
         )
     return outcome

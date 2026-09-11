@@ -208,6 +208,44 @@ flowchart LR
   Every refusal SHALL sit **below** the allow-list: an unlisted member is dropped in
   silence and never told which repositories exist. Nothing but a **declared** slug ever
   reaches the issue writer.
+- **The kickoff asks which repository when the message names none it knows** (issue-349,
+  [decision-122](../decisions/decision-122.md)). The rule is one sentence: *if a pick
+  could answer it, ask; otherwise refuse.* WHEN a top-level message from an authorized
+  member resolves to no target, to several, or to a repository that is not declared, AND
+  `read.mode` is `socket`, AND the instance declares at least one repository, THEN the
+  channel SHALL post a question in that message's thread offering the declared
+  repositories as Block Kit options — buttons at five or fewer, a static select menu
+  above that, capped at Slack's ceiling of 100 with the `<repo>:` prefix named for the
+  rest — and SHALL create, record and bind nothing. An **ambiguous** prefix SHALL offer
+  only the repositories it matched. Every option's label and value SHALL be the
+  operator's **declared** slug; nothing of the member's message SHALL be rendered into
+  the question. WHEN the message resolves to exactly one repository, by prefix or by the
+  `kickoff.repo` fallback, THEN the work item SHALL be created immediately and no
+  question SHALL be asked. WHEN a prefix leaves no message after it (`empty-message`)
+  THEN the kickoff SHALL be refused as before, because no pick puts words in an empty
+  message. WHEN `read.mode` is not `socket`, or nothing is declared, THEN the kickoff
+  SHALL be refused with the text it has always used, and `channels status` SHALL name
+  the reason. No new grant, scope or config key: the question requires the
+  `work-item.create` grant the kickoff already requires.
+- **A pending question is held, expires, and is answered once** (issue-349). WHEN a
+  question is asked THEN the message SHALL be held in the channel state's `pending` map
+  under its own `ts`, with the asking member, the text the issue will be composed from,
+  the offered slugs and the time asked. It SHALL be invisible once older than
+  `PENDING_TTL_SECONDS` (24 hours), the map SHALL hold at most `PENDING_CAP` (50) with
+  the oldest dropped first, and a second read of the same message SHALL NOT ask twice.
+  WHEN the picker is pressed THEN the press SHALL be judged by five gates in order — the
+  channel's own permission **re-read at that moment** (a revoked `work-item.create`, or a
+  channel no longer in Socket Mode, revokes the answer too), the same allow-list, the
+  **message's own author** (an issue is opened as the person who wrote it), a live
+  record, and a value that is both in that record's offered set and still declared — and
+  the record SHALL be removed under the state lock **before** the issue is created, so
+  two presses open one issue. IF the create fails THEN the record SHALL be restored and
+  the picker left in place. WHEN a press gets past the **allow-list** THEN its outcome —
+  opened, failed, or refused — SHALL be written onto the question message, in fixed words
+  naming no repository, no other member and no config value, with the picker removed only
+  once the work item is open. WHEN a press does **not** get past the allow-list THEN
+  nothing SHALL be created, no record touched, no message edited, no reaction added and
+  nothing posted.
 - **An accepted message is acknowledged on itself** (issue-325, decision-111). WHEN an
   inbound Slack message — a thread reply, a button press, a kickoff — passes
   authorization, classification and the `publish` grant THEN, before the ledger
@@ -282,7 +320,9 @@ flowchart LR
 - Every step is observable: `bus.published`, `bus.recorded`, `bus.record_failed`, the
   `channel.*` types, `channel.dropped` with `unpublishable-event` /
   `kickoff-unknown-repo` / `kickoff-ambiguous-repo` / `kickoff-no-target` /
-  `kickoff-empty-message` / `create-failed`, `channel.created`, `channel.thread_opened` (origin `event` |
+  `kickoff-empty-message` / `kickoff-already-asked` / `kickoff-ask-failed` /
+  `not-your-kickoff` / `no-pending-kickoff` / `undeclared-repository` /
+  `create-failed`, `channel.kickoff_asked`, `channel.created`, `channel.thread_opened` (origin `event` |
   `kickoff` | `start`), `channel.open_failed`, `channel.reaction_added`,
   `channel.reaction_failed`, and the slash command's `channel.command_received`,
   `channel.command_completed`, `channel.command_answer_failed`, `channel.caught_up`,
@@ -348,6 +388,7 @@ flowchart LR
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
+| issue-349 | An unresolved kickoff is **asked about** rather than refused: the declared repositories arrive as Block Kit options (buttons at five or fewer, a static select above), and the pick finishes opening the work item through exactly the path a resolved prefix takes — same `work-item.create` event, same ledger record, same binding, same Start button. The held message is a fourth map in the channel state (`pending`), keyed by the message `ts`, expiring after a day, capped at fifty, and claimed under the state lock before the create so a double press opens one issue; only the message's own author may answer, and an unauthorized presser is refused above the record read. `read.mode: socket` is required — in `poll` mode the typed prefix stays the only route and `channels status` says so — and `KickoffTarget.text` now means the same thing on every outcome, which makes a message that is nothing but an ambiguous or unknown prefix an `empty-message` refusal. No new grant, scope, config key or schema change | [spec](../specs/issue-349/), [decision-122](../decisions/decision-122.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/349) |
 | issue-348 | The kickoff resolves against the **top-level `repositories`** instead of `kickoff.repo` + `polling.sources[].repos`: one declaration, read by every ingress (issue-348). `kickoff.repo` keeps its job as the channel's default target but no longer declares a repository — a fallback outside the declared list is refused as `unknown-repo` — and the slash command's `may_target` reads the same list. The builder moved from `channels/repos.py` to `the_loop/repos.py`, since a receiver and a poller now read it too | [spec](../specs/issue-348/), [decision-121](../decisions/decision-121.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/348) |
 | issue-341 | A Slack kickoff **names its own repository**: a first-line `<repo>:` prefix — a bare name, an `owner/repo` or a `host/owner/repo` — resolved against the set the operator already declared (`kickoff.repo` + every `polling.sources[].repos` entry, now built once in `channels/repos.py` and shared with the slash command's `may_target`), stripped from the issue, with `kickoff.labels` unchanged. A qualified prefix matching none, a bare one matching several, or a prefix with no message after it is **refused in the thread with the candidates named**, never guessed; a bare word matching none is not a prefix, so `fix: …` still goes to `kickoff.repo`. `kickoff.repo` is demoted to the fallback and is no longer a precondition for reading top-level messages, making grant-without-target a valid prefix-only configuration instead of a dead one. Refusals sit below the allow-list, so the repository list never reaches an unlisted member. No schema key, grant, scope or state added | [spec](../specs/issue-341/), [decision-120](../decisions/decision-120.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/341) |
 | issue-338 | Long text reaches Slack as a **structural digest** instead of a mid-sentence cut: above `maxChars` (unchanged meaning and default) the channel puts the first question — or the *reply `…`* instruction — first in bold, renders lists as numbered lines with ☑ / ☐, replaces code fences, tables and stack traces with a sized pointer, shortens absolute paths, keeps the rest in the author's order, cuts at a sentence and closes with a link to the full text; the phone's notification text carries the same digest; a text within the cap is posted whole. `longMessages: digest \| truncate` (default `digest`; `truncate` is 13.10.0's cut) is the one new key. On every message, whatever its length, GitHub markdown is now drawn as mrkdwn and HTML comments (the-loop's markers, seen literally before) are removed; `<!channel>`-style broadcasts in a comment are neutralised. No model, no new call, grant, scope or state | [spec](../specs/issue-338/), [decision-118](../decisions/decision-118.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/338) |

@@ -32,7 +32,7 @@ import re
 import threading
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from .. import eventlog
 from ..identity import Principal, ids_for, parse_authorized_users
@@ -55,9 +55,13 @@ logger = logging.getLogger("the-loop.channels")
 __all__ = [
     "ACTION_PREFIX",
     "APPROVE_VALUE",
+    "BUTTON_CHOICE_LIMIT",
+    "KICKOFF_REFUSALS",
     "BUTTON_NAMES",
     "CHANGES_VALUE",
     "COMMAND_BUTTONS",
+    "KICKOFF_REPO_ACTION",
+    "OPTION_LIMIT",
     "DEFAULT_APP_TOKEN_ENV",
     "DEFAULT_BOT_TOKEN_ENV",
     "DEFAULT_MAX_CHARS",
@@ -70,9 +74,12 @@ __all__ = [
     "SlackReactionConfig",
     "build_client",
     "catch_up",
+    "action_value",
     "expected_commands",
+    "is_kickoff_repo_action",
     "kickoff_cursor_key",
     "render_blocks",
+    "render_kickoff_question",
     "render_reply_blocks",
     "render_root",
     "run_socket_listener",
@@ -99,11 +106,27 @@ _BUTTON_VALUES = (APPROVE_VALUE, CHANGES_VALUE)
 #: Fixed; the button's VALUE is the configured keyword, read from
 #: ``routing.control.keywords`` so a press is exactly a typed keyword.
 COMMAND_BUTTONS: Dict[str, str] = {"execute": "Execute", "start": "Start"}
+
+#: The repository picker (issue-349): the one action whose value is an ARGUMENT to
+#: something the-loop has not done yet, rather than an answer to a gate or a
+#: keyword typed back. Buttons and the select menu share it, so the handler has one
+#: branch to read rather than two.
+KICKOFF_REPO_ACTION = f"{ACTION_PREFIX}kickoff-repo"
+#: At or below this many repositories the question is buttons; above it, a select
+#: menu. Five is where a row of buttons stops being one glance on a phone.
+BUTTON_CHOICE_LIMIT = 5
+#: Slack's own ceiling for a static select. Past it the question offers the first
+#: `OPTION_LIMIT` in declaration order and names the `<repo>: ` prefix for the rest.
+OPTION_LIMIT = 100
+#: Slack's ceiling for one option's (or button's) visible text.
+_OPTION_TEXT_LIMIT = 75
+
 #: action_id → the name the press outcome line uses — never the payload's own
 #: button text (R2.6).
 BUTTON_NAMES: Dict[str, str] = {
     f"{ACTION_PREFIX}approve": "Approve",
     f"{ACTION_PREFIX}changes": "Request changes",
+    KICKOFF_REPO_ACTION: "Repository",
     **{
         f"{ACTION_PREFIX}command:{command}": label
         for command, label in COMMAND_BUTTONS.items()
@@ -275,6 +298,19 @@ class SlackChannelConfig:
         return bool(
             self.enabled and self.channel and "work-item.create" in self.publish
         )
+
+    @property
+    def kickoff_picker(self) -> bool:
+        """Whether the kickoff may ASK which repository (issue-349, decision-122 D1).
+
+        The same two-part rule :attr:`interactive` and :attr:`command_buttons`
+        apply, with the grant that is **already** required to reach the kickoff at
+        all: Socket Mode, because decision-116 D5 says an interactive payload
+        reaches the-loop no other way, and ``work-item.create``, because that is
+        what the answer does. No new grant, no new key. In ``poll`` mode the typed
+        ``<repo>: `` prefix stays the only route and the refusal is unchanged.
+        """
+        return self.read_mode == "socket" and self.kickoff_enabled
 
     @classmethod
     def from_mapping(cls, cli_config: Optional[Mapping]) -> "SlackChannelConfig":
@@ -650,6 +686,105 @@ def render_reply_blocks(
     if buttons:
         blocks.append({"type": "actions", "elements": buttons})
     return blocks
+
+
+def render_kickoff_question(text: str, options: Sequence[str]) -> List[Dict[str, Any]]:
+    """The "which repository?" question as Block Kit (issue-349, R2.1–R2.4).
+
+    ``text`` is :func:`~.kickoff.question_text`'s fixed words; ``options`` are the
+    operator's **declared** slugs. Both the visible label and the value of every
+    option are that same declared string, so what a press hands back is a selector
+    into the operator's own config — nothing of the member's message is rendered
+    here at all, which is what stops a hostile message styling the question or
+    pinging through it (A8).
+
+    Shape follows size: at most :data:`BUTTON_CHOICE_LIMIT` repositories are
+    buttons (one tap); more become a ``static_select`` (Slack's own widget for a
+    list). Past :data:`OPTION_LIMIT` — Slack's ceiling for a static select — the
+    first hundred are offered in declaration order and the caller's prose names
+    the ``<repo>: `` prefix for the rest.
+    """
+    shown = [str(option) for option in options][:OPTION_LIMIT]
+    body = text
+    extra = len(options) - len(shown)
+    if extra > 0:
+        body = (
+            f"{text}\n_Showing {len(shown)} of {len(options)} — for the rest, start "
+            "your message with `<repo>: `._"
+        )
+    blocks: List[Dict[str, Any]] = [
+        {"type": "section", "text": {"type": "mrkdwn", "text": body}}
+    ]
+    if not shown:
+        return blocks
+    if len(shown) <= BUTTON_CHOICE_LIMIT:
+        elements: List[Dict[str, Any]] = [
+            {
+                "type": "button",
+                "text": {
+                    "type": "plain_text",
+                    "text": option[:_OPTION_TEXT_LIMIT],
+                },
+                "action_id": f"{KICKOFF_REPO_ACTION}:{index}",
+                "value": option,
+            }
+            for index, option in enumerate(shown)
+        ]
+    else:
+        elements = [
+            {
+                "type": "static_select",
+                "placeholder": {"type": "plain_text", "text": "Choose a repository"},
+                "action_id": KICKOFF_REPO_ACTION,
+                "options": [
+                    {
+                        "text": {
+                            "type": "plain_text",
+                            "text": option[:_OPTION_TEXT_LIMIT],
+                        },
+                        "value": option,
+                    }
+                    for option in shown
+                ],
+            }
+        ]
+    blocks.append({"type": "actions", "elements": elements})
+    return blocks
+
+
+def is_kickoff_repo_action(action_id: str) -> bool:
+    """Whether ``action_id`` is the repository picker's.
+
+    Slack requires a unique ``action_id`` per element in one message, so the
+    button shape numbers itself (``…:0``, ``…:1``) while the select menu — one
+    element — carries the bare id. Both are the same question, and one predicate
+    is what keeps them one branch in the handler.
+    """
+    return action_id == KICKOFF_REPO_ACTION or action_id.startswith(
+        f"{KICKOFF_REPO_ACTION}:"
+    )
+
+
+def _button_name(action_id: str) -> str:
+    """The name the press outcome line uses for ``action_id`` (R2.6) — the
+    picker's numbered buttons all answer to its one entry."""
+    if is_kickoff_repo_action(action_id):
+        return BUTTON_NAMES[KICKOFF_REPO_ACTION]
+    return BUTTON_NAMES.get(action_id, "the button")
+
+
+def action_value(action: Mapping[str, Any]) -> str:
+    """What a member chose in ``action`` — ``""`` when they chose nothing.
+
+    A button carries its answer as a top-level ``value``; a ``static_select``
+    carries it as ``selected_option.value`` and has no top-level ``value`` at all
+    (issue-349 R4.2). One helper, so the handler's filter and its read agree and a
+    third widget shape is one line here rather than two branches there.
+    """
+    selected = action.get("selected_option")
+    if isinstance(selected, Mapping):
+        return str(selected.get("value") or "").strip()
+    return str(action.get("value") or "").strip()
 
 
 def _work_item_url(ref: str) -> str:
@@ -1191,6 +1326,11 @@ def _press_line(
     reply: InboundReply, action_id: str, outcome: Mapping[str, Any]
 ) -> Tuple[bool, str]:
     """``(landed, line)`` for a processed press, from fixed words (R2.6)."""
+    if is_kickoff_repo_action(action_id):
+        # The repository picker (issue-349): the press did not answer a gate or
+        # relay a keyword — it opened the work item the question was holding, or
+        # it did not, and the member is told which on the question itself.
+        return _kickoff_press_line(reply, action_id, outcome)
     event_type = str(outcome.get("event") or "")
     mirrored = bool(outcome.get("mirrored"))
     delivered = bool(outcome.get("delivered"))
@@ -1225,9 +1365,63 @@ def _press_line(
             what = f"not delivered: {error or 'no session could take it'}"
         else:
             what = f"delivered, not recorded: {error or 'the ledger refused it'}"
-    name = BUTTON_NAMES.get(action_id, "the button")
+    name = _button_name(action_id)
     icon = "✅" if landed else "⚠️"
     return landed, f"{icon} *{name}* — pressed by <@{reply.author}> · {what}"
+
+
+#: Why a repository pick did nothing — fixed words per drop reason (R2.6), and
+#: never a repository name: a refused pick names nothing the member did not
+#: already see on the question above it.
+KICKOFF_REFUSALS: Dict[str, str] = {
+    "no-pending-kickoff": (
+        "this question is no longer open — it was already answered, or it "
+        "expired. Post the message again to file it"
+    ),
+    "not-your-kickoff": (
+        "this question belongs to the member who posted the message, so only "
+        "they can answer it"
+    ),
+    "undeclared-repository": (
+        "that is not one of the repositories this question offered, so nothing "
+        "was created"
+    ),
+    "unpublishable-event": (
+        "this channel is no longer set up to open work items, so nothing was "
+        "created — ask whoever configured the-loop"
+    ),
+}
+
+
+def _kickoff_press_line(
+    reply: InboundReply, action_id: str, outcome: Mapping[str, Any]
+) -> Tuple[bool, str]:
+    """``(landed, line)`` for a press of the repository picker (issue-349).
+
+    Three shapes: the work item opened; the create was attempted and failed; or
+    one of the three gates below the allow-list refused it. Only the first
+    ``landed``, so only the first takes the picker away — the other two leave it
+    where it is, which is the same rule a failed command press already follows.
+    """
+    what = str(outcome.get("outcome") or "")
+    opened = str(outcome.get("workItem") or "")
+    if what == "created" and opened:
+        url = str(outcome.get("url") or "")
+        where = f"<{url}|{opened}>" if url else f"`{opened}`"
+        said = f"opened {where} — this thread is now its conversation"
+        landed = True
+    elif what in KICKOFF_REFUSALS:
+        said = KICKOFF_REFUSALS[what]
+        landed = False
+    else:
+        problem = str(outcome.get("error") or "").strip()
+        said = f"nothing was opened: {problem or 'the ledger refused it'}"
+        landed = False
+    return (
+        landed,
+        f"{'✅' if landed else '⚠️'} *{_button_name(action_id)}* — "
+        f"pressed by <@{reply.author}> · {said}",
+    )
 
 
 def _press_blocks(

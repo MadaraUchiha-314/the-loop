@@ -180,7 +180,7 @@ typed on a channel without the grant does not reach the agent as prose either.
 | `work-item.reply` | none of the below applies | mirrored onto the work item as the-loop's own marked comment (quoted, scrubbed, keywords defanged) and **delivered into the waiting session** — 12.1.0's behaviour, the default |
 | `gate.feedback` | the work item's graph is parked at a human gate — or the pipeline **cannot tell** (no session record, no checkout, a read fault) | recorded on the ledger as an **unmarked** comment under your own credential, with the envelope and a visible "answer from `slack:U…`" attribution (a "reply from" when the gate could not be read); the ledger's ingress then classifies it exactly as a typed approval — with the graph it actually keeps — and the artifact's `approvedBy` names the person the envelope names |
 | `control.command` | the text carries a [control keyword](/config/cli/routing-options#execution-control) — typed, or pressed as the **Execute** / **Start** button ([issue-337](https://github.com/MadaraUchiha-314/the-loop/issues/337)) | recorded the same way, keyword intact; the ledger's ingress executes it through the same named-actor control seam. With `read.mode: socket` this grant also renders the Execute button on the phase-selection checklist and the Start button on a kickoff's reply, each carrying the configured keyword as its value |
-| `work-item.create` | the message is **top-level** in the configured channel | an issue is created in the repository the message named, else `kickoff.repo`, with `kickoff.labels` — needs the grant, and a target inside the declared `repositories` |
+| `work-item.create` | the message is **top-level** in the configured channel | an issue is created in the repository the message named, else `kickoff.repo`, with `kickoff.labels` — needs the grant, and a target inside the declared `repositories`. With `read.mode: socket` this grant also renders the **repository picker** on a message that named none the-loop knows ([issue-349](https://github.com/MadaraUchiha-314/the-loop/issues/349)) |
 | `instance.command` | a `/the-loop status`, `restart` or `upgrade` [slash command](#the-slash-command) | the core facade `the-loop status` / `the-loop restart [--with-upgrade]` run — answered ephemerally; **not recorded** (no ticket), the event log is the trail ([issue-334](https://github.com/MadaraUchiha-314/the-loop/issues/334)) |
 | `standing.command` | a `/the-loop standing list\|start\|stop\|restart <name>` slash command | the same core verb `the-loop standing <verb>` runs; not recorded |
 
@@ -276,17 +276,41 @@ The prefix is resolved against the repositories **you** declared — the top-lev
 composed, and `kickoff.labels` applies whichever repository is chosen. Nothing is
 inferred beyond that list ([decision-120](/decisions/decision-120)):
 
+Since [issue-349](https://github.com/MadaraUchiha-314/the-loop/issues/349) a message
+that names no repository the-loop knows is **asked about** rather than refused, wherever
+a press can be received ([decision-122](/decisions/decision-122)). The rule is one
+sentence — *if a pick could answer it, ask; otherwise refuse* — and the column below says
+which you get:
+
 | The first line | What happens |
 |----------------|--------------|
-| a prefix naming exactly one declared repository | the issue is opened there |
-| `owner/repo:` naming none, or a bare name matching several | **refused** — ⚠️ on your message and a reply naming the candidates; nothing is created |
+| a prefix naming exactly one declared repository | the issue is opened there — you answered the question by typing it |
+| `owner/repo:` naming none, or a bare name matching several | **asked**: a reply offering your declared repositories as buttons or a select menu (a bare name matching several narrows the options to those). Refused as before where a press cannot be received — see below |
 | a bare word matching none (`fix: …`) | not treated as a prefix; the message goes to this `repo` unchanged |
-| a prefix and nothing after it | refused — there is no work item to open |
-| no prefix, this `repo` empty | refused, with a reply asking for a `<repo>:` prefix |
-| no prefix, this `repo` **not in `repositories`** | refused — it points at a declared repository, it does not declare one (issue-348) |
+| a prefix and nothing after it | **refused** — no pick puts words in an empty message |
+| no prefix, this `repo` empty | **asked**, offering every declared repository |
+| no prefix, this `repo` **not in `repositories`** | **asked** — it points at a declared repository, it does not declare one (issue-348) |
+
+A question is only asked where a press can be received and there is something to offer:
+[`read.mode: socket`](#slackreadmode) — the same rule the
+[buttons](#slackpublish) follow, because Slack delivers an interactive payload only to
+an acknowledging Socket Mode connection — **and** at least one declared repository.
+Without either, the kickoff is refused with the text it has always used, and
+`the-loop channels status` names the reason on its `kickoff:` line. No grant beyond the
+`work-item.create` the kickoff already needs.
+
+A pending question is held under the message's own ts in the channel state's `pending`
+map ([state](/cli/state#channels)): invisible after **24 hours**, at most **50**
+outstanding, answerable **once** (a double tap opens one issue) and only by the member
+who posted the message. Nothing is created, recorded or bound until the pick lands, and
+the grant is **re-read when the press arrives** — revoke `work-item.create` and the
+outstanding questions stop being answerable with it. A press from an authorized member
+that cannot be honoured is answered on the question message itself, with the options left
+in place; a press from anyone else edits nothing at all.
 
 So `work-item.create` with an empty `repo` is now a **valid** configuration —
-prefix-only kickoff — rather than a dead one. Every refusal reaches only a member on
+prefix-only kickoff, or no prefix at all and the question does the work — rather than a
+dead one. Every refusal *and every question* reaches only a member on
 `routing.authorizedUsers`: an unlisted member is still dropped in silence and told
 nothing, including which repositories exist.
 

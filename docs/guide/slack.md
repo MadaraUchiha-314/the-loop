@@ -217,7 +217,7 @@ because Slack delivers both only to a connection that acknowledges within second
 | sign the phase-selection checklist | press **Execute** on the checklist message (or type `the-loop execute`) | `control.command` (+ `read.mode: socket`) | the same unmarked `the-loop execute` record; the message is edited to say so ([buttons](#the-buttons)) |
 | start a work item you just filed from Slack | press **Start** on the-loop's "opened …" reply (or type `the-loop start`) | `control.command` (+ socket) | the same unmarked `the-loop start` record; the message is edited to say so |
 | start a work item **that has no thread yet** | `/the-loop start #123` | `control.command` (+ `read.mode: socket`) | the same record on the ticket; the start opens the thread |
-| file a new work item | post a top-level message in the channel, optionally starting `<repo>:` | `work-item.create` | an issue is created in the repository the message named (or `kickoff.repo`) with `kickoff.labels`, the thread is bound to it and told the link |
+| file a new work item | post a top-level message in the channel, optionally starting `<repo>:` | `work-item.create` | an issue is created in the repository the message named (or `kickoff.repo`) with `kickoff.labels`, the thread is bound to it and told the link. Named none it knows? the-loop asks, with your declared repositories as options (`read.mode: socket`) |
 | talk to a standing session | reply in its thread | `work-item.reply` | delivered into its pane (no ticket, so no mirror — the event log is the trail) |
 | start, stop or restart a standing session | `/the-loop standing start <name>` | `standing.command` (+ socket) | the same verb `the-loop standing start` runs |
 | ask the instance how it is, restart it, upgrade it | `/the-loop status` · `/the-loop restart` · `/the-loop upgrade` | `instance.command` (+ socket) | what `the-loop status` / `the-loop restart [--with-upgrade]` do |
@@ -315,12 +315,37 @@ slim-gym: flaky teardown in the batch runner
 
 A bare name, an `owner/repo` or a `host/owner/repo` all work, and the prefix is stripped
 from the title. It is resolved **only** against the repositories you declared —
-the top-level [`repositories`](/config/cli/repositories-options) — so a name matching
-none of them (when it is qualified)
-or several of them is **refused in the thread with the candidates listed**, never
-guessed. With no prefix, `kickoff.repo` takes it; with no prefix and no `kickoff.repo`,
-you are asked for one. A first line that merely happens to carry a colon
-(`fix: flaky teardown`) is not a prefix and goes to `kickoff.repo` as it always has.
+the top-level [`repositories`](/config/cli/repositories-options) — so it is never
+guessed. With no prefix, `kickoff.repo` takes it. A first line that merely happens to
+carry a colon (`fix: flaky teardown`) is not a prefix and goes to `kickoff.repo` as it
+always has.
+
+**And if the message names none it knows, it asks**
+([issue-349](https://github.com/MadaraUchiha-314/the-loop/issues/349)). You do not have
+to know the prefix to file your first issue. Post the message; the-loop replies in its
+thread with your declared repositories as **buttons** (five or fewer) or a **select
+menu** (more), and the one you pick is where the issue is opened — from exactly the text
+you wrote. Nothing is created until you pick, and the reply tells you about the `<repo>:`
+prefix so the next one skips the question:
+
+```text
+Which repository should this go in?
+Nothing is created until you pick. Next time you can skip this by starting your
+message with `<repo>: `.
+
+[ expertise-help/slim-gym ]  [ jchou2/devbox ]  [ octo/app ]
+```
+
+A prefix that matched **several** repositories narrows the question to those; one that
+matched none offers the whole list. Three things it will not do: ask where **it cannot
+receive a press** — `read.mode: socket` is required, exactly as it is for every other
+button, and in `poll` mode the refusal you already know is unchanged (`channels status`
+says which you have); ask when you have declared **no** repositories; and ask when your
+message is nothing but a prefix, because no pick puts words in an empty message. The
+question is held for **a day**, answered **once** — a double tap opens one issue — and
+only by the member who posted the message. A tap that cannot be honoured (the question
+expired, somebody already answered it, the grant was taken away) says so **on the
+question itself** and leaves the options in place, so you never tap into silence.
 
 Once the loop runs, the thread carries its questions and approvals: answer the
 phase-selection checklist by ticking it **on the ticket** and pressing **Execute** on the
@@ -330,8 +355,10 @@ quoted in the record and not read; see [limits](#limits)).
 
 ## The buttons
 
-Four buttons, on the messages that would otherwise ask you to type something back, each
-rendered **only where a press can be received and acted on**
+Five buttons, on the messages that would otherwise ask you to type something back — with
+one exception, the repository picker, which answers a question the-loop asked rather than
+standing in for a keyword. Each is rendered **only where a press can be received and
+acted on**
 ([issue-309](https://github.com/MadaraUchiha-314/the-loop/issues/309),
 [issue-337](https://github.com/MadaraUchiha-314/the-loop/issues/337)):
 
@@ -340,6 +367,7 @@ rendered **only where a press can be received and acted on**
 | **Approve** / **Request changes** | an approval request (`phase-approval-pending`, `pr-review-pending`, `security-sign-off-pending`) | the reply `approved` / `changes requested` | `read.mode: socket` + `gate.feedback` |
 | **Execute** | the phase-selection checklist, mirrored from the ticket (`comment.agent`) | the keyword `the-loop execute` (your configured [`routing.control.keywords.execute`](/config/cli/routing-options#execution-control)) | `read.mode: socket` + `control.command` |
 | **Start** | the-loop's "opened `#N` — this thread is now the conversation" reply to a kickoff | the keyword `the-loop start` | `read.mode: socket` + `control.command` |
+| **A repository** | the-loop's "which repository should this go in?" reply to a kickoff that named none it knows ([issue-349](https://github.com/MadaraUchiha-314/the-loop/issues/349)) | *not* a typed reply — the **argument** to the work item the question is holding | `read.mode: socket` + `work-item.create` |
 
 A press is **exactly the typed reply**: the button's value enters the same pipeline a
 message does — your member id against `routing.authorizedUsers`, the classification, the

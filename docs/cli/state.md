@@ -33,7 +33,7 @@ you say otherwise, never relative to whatever directory a command was run from
 │   ├── events.jsonl               # the decision trail
 │   └── poller.out                 # a daemonized poller's stdout/stderr
 ├── channels/
-│   ├── slack.json                 # channel conversations: thread bindings, per-work-item threads, read cursors — never tracked
+│   ├── slack.json                 # channel conversations: thread bindings, per-work-item threads, read cursors, pending questions — never tracked
 │   └── slack.json.lock            # the writers' flock — empty, never tracked
 ├── gh-webhook.pid                 # the running receiver
 ├── poll.pid                       # the running poller — and its lock
@@ -637,7 +637,7 @@ the file by hand leaves the tmux session running).
 
 What the [channels](/config/cli/channels-options) surface — opt-in, off by default —
 remembers about its conversations, one file per channel type (today: `slack.json`).
-Three maps. `threads` binds a Slack thread to a work item — the reader's map: the poll
+Four maps. `threads` binds a Slack thread to a work item — the reader's map: the poll
 transport iterates it, the socket transport looks a `thread_ts` up in it. `conversations`
 (since [issue-312](https://github.com/MadaraUchiha-314/the-loop/issues/312)) is keyed the
 other way, **work item → the one thread that carries it**: the channel id, the thread ts,
@@ -651,10 +651,21 @@ prints and what decides where a work item's next message goes. `cursors` records
 reply in each thread this deployment already recorded and delivered, plus one
 `channel:<id>` key per channel read for kickoffs (the newest top-level message already
 considered; the first read after the `work-item.create` grant is turned on baselines it,
-so nothing already in the channel becomes an issue). Bounded (the oldest binding is
+so nothing already in the channel becomes an issue). `pending` (since
+[issue-349](https://github.com/MadaraUchiha-314/the-loop/issues/349)) holds the questions
+the-loop is still waiting on: a top-level message that named no repository it knows, kept
+under its own `ts` with the asking member, the text the issue will be composed from, the
+declared repositories it was offered and when it was asked — so that a pick can finish
+opening it. It is the most transient of the four by construction: a record is invisible
+once it is more than a day old (`PENDING_TTL_SECONDS`), the map holds at most fifty
+(`PENDING_CAP`, the oldest dropped first), and an answered record is removed *before* the
+issue is created, which is what makes a double press open one issue. A file written before
+issue-349 simply has no `pending` key; it loads as an empty map and is written back with
+one. Bounded (the oldest binding is
 dropped past a cap, its conversation with it), rewritten atomically, and **local**: the
-cursors are a ledger of what *this* machine processed, and the thread and member ids
-name conversations in the operator's own workspace — neither belongs in a repository.
+cursors are a ledger of what *this* machine processed, the pending questions are messages
+nobody has filed yet, and the thread and member ids name conversations in the operator's
+own workspace — none of it belongs in a repository.
 
 Beside it sits `slack.json.lock`, an empty file the writers `flock` around every
 read-modify-write — the agent's session, the two daemons and the poll watcher all write
