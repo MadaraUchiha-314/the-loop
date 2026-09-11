@@ -393,7 +393,8 @@ channels:
     #                                        # (+ gate.feedback, control.command, work-item.create,
     #                                        #  instance.command, standing.command — issue-334)
     # verbosity: normal                      # quiet | normal | verbose
-    # maxChars: 1500
+    # maxChars: 1500                         # and the threshold for longMessages
+    # longMessages: digest                   # digest | truncate — above maxChars (issue-338)
     # kickoff:                               # only with the work-item.create grant
     #   repo: ""                             # owner/repo; empty = off
     #   labels: []

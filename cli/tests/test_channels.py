@@ -129,6 +129,7 @@ def test_config_defaults_match_the_schema():
     assert list(config.subscribe) == slack["subscribe"]["default"]
     assert list(config.publish) == slack["publish"]["default"]
     assert config.max_chars == slack["maxChars"]["default"]
+    assert config.long_messages == slack["longMessages"]["default"] == "digest"
     assert config.kickoff_repo == slack["kickoff"]["properties"]["repo"]["default"]
     read = slack["read"]["properties"]
     assert config.read_mode == read["mode"]["default"]

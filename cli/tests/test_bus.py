@@ -446,10 +446,16 @@ def test_render_blocks_verbosity_levels_are_strict_supersets():
 
 
 def test_render_blocks_caps_text_and_points_at_the_link():
+    """13.10.0's cut, kept behind `longMessages: truncate` (issue-338 R1.4); the
+    default above the cap is the digest — `test_channels_digest.py`."""
     event = an_event(text="x" * 5000, url="https://x")
-    blocks = render_blocks(event, "normal", max_chars=400)
+    blocks = render_blocks(event, "normal", max_chars=400, long_messages="truncate")
     text = blocks[1]["text"]["text"]
     assert text.startswith("x" * 400) and "more characters — see the link" in text
+    digested = render_blocks(event, "normal", max_chars=400)[1]["text"]["text"]
+    assert len(digested) <= 400 and digested.endswith(
+        "_… full text: <https://x|GitHub>_"
+    )
 
 
 @pytest.mark.parametrize("event_type", APPROVAL_EVENTS)

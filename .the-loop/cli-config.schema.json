@@ -838,7 +838,16 @@
               "type": "integer",
               "minimum": 200,
               "default": 1500,
-              "description": "Cap on the text one Slack message carries (a comment body, an artifact excerpt). Longer text is cut with a note and the link button points at the rest."
+              "description": "How much text one Slack message carries (a comment body, an artifact excerpt), and the threshold above which `longMessages` applies (issue-338). At most Slack's 3000-character section limit."
+            },
+            "longMessages": {
+              "type": "string",
+              "enum": [
+                "digest",
+                "truncate"
+              ],
+              "default": "digest",
+              "description": "What happens to a text section longer than `maxChars` (issue-338, decision-118). digest = a structural digest the channel computes, no model involved: the first question (or the `reply ...` instruction) first, lists as numbered lines, code fences / tables / stack traces replaced by a pointer, absolute paths shortened, the rest in the author's order, cut at a sentence, one closing line linking the full text. truncate = the first `maxChars` characters and a note (13.10.0's behaviour). A text at or under `maxChars` is posted whole either way."
             },
             "kickoff": {
               "type": "object",
