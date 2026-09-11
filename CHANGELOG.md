@@ -1,3 +1,9 @@
+## v14.1.0 (2026-09-11)
+
+### Feat
+
+- **issue-349**: a Slack kickoff asks which repository, with the declared set as options (#351)
+
 ## v14.0.0 (2026-09-11)
 
 ### BREAKING CHANGE
