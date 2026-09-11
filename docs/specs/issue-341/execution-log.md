@@ -27,7 +27,7 @@ status: in-progress
 
 | PR | Scope / tasks | Status |
 |----|---------------|--------|
-| [#PRNUM](https://github.com/MadaraUchiha-314/the-loop/pull/PRNUM) | tasks 1–10: the whole work item | open |
+| [#347](https://github.com/MadaraUchiha-314/the-loop/pull/347) | tasks 1–10: the whole work item | open |
 
 ## Progress entries
 
