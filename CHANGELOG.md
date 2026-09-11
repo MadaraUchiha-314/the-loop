@@ -1,3 +1,9 @@
+## v13.10.0 (2026-09-11)
+
+### Feat
+
+- **issue-337**: Execute and Start buttons on the Slack messages that expect the keyword, the press outcome on the message, and a `channels status` that says how (#342)
+
 ## v13.9.0 (2026-09-10)
 
 ### Feat
