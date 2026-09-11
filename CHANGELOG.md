@@ -1,3 +1,9 @@
+## v13.11.0 (2026-09-11)
+
+### Feat
+
+- **issue-338**: long text reaches Slack as a structural digest — the ask first, choices numbered, code and traces as pointers, cut at a sentence — instead of a mid-sentence cut (#345)
+
 ## v13.10.0 (2026-09-11)
 
 ### Feat
