@@ -17,11 +17,11 @@
 | T8 | the seven integration files named in the plan | green |
 | T9 | `pytest cli/tests/test_config_schema_parity.py cli/tests/test_docs_parity.py cli/tests/test_configschema.py cli/tests/test_manifest_schemas.py` and `uv run python scripts/validate_config.py` | green; every config `VALID` |
 | T10 | the abuse-case tests named in `security-review.md` | green |
-| T11 | `make check`; `grep -rn "harness_config\|harness-config.default\|repoInitialized\|allow_repo_hooks\|\.adopt(" cli/the_loop` | green; the grep is empty |
+| T11 | `make check`; `grep -rn "harness_config\|harness-config.default\|repoInitialized\|allow_repo_hooks\|\.adopt(" cli/the_loop`; a second grep over every shipped file for a dotted reference to a removed policy key (`autonomy.`, `security.review`, `tokenEconomy.`, `userInteraction.`, `externalTools.`, …) | green; the first grep is empty; the second finds only two past-tense history sentences in `docs/capabilities/writing-style.md` |
 
 ## The whole suite
 
-Final `make check` on the PR head (2026-09-12):
+Final `make check` on the PR head (2026-09-12, after the second review's pass):
 
 | Check | Result |
 |-------|--------|
@@ -30,7 +30,7 @@ Final `make check` on the PR head (2026-09-12):
 | `pyright` | 0 errors, 0 warnings |
 | `markdownlint-cli2 "**/*.md"` | 1086 files, 0 errors |
 | `scripts/validate_config.py` | every config validates against its schema |
-| `pytest` | 3492 passed, 1 skipped |
+| `pytest` | 3491 passed, 1 skipped (the schema-read length-limit test in `test_writing_parity` is gone with the key it read) |
 
 ## Red first
 

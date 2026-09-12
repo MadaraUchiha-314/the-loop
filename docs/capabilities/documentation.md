@@ -86,8 +86,8 @@ alone does not fix that; structure plus a test does.
 ### The README's workflow diagram
 
 - The README SHALL carry **one** diagram of the workflow, authored as an **Excalidraw**
-  scene (the exception issue-150 established for the hero image; `diagramFormat: mermaid`
-  continues to govern everything the harness produces). Two committed artifacts:
+  scene (the exception issue-150 established for the hero image; mermaid, the fixed
+  diagram format, continues to govern everything the harness produces). Two committed artifacts:
   `docs/assets/the-loop-workflow.excalidraw` (the scene) and
   `docs/assets/the-loop-workflow.svg` (what the README embeds, since GitHub cannot render
   `.excalidraw`).
@@ -117,8 +117,8 @@ alone does not fix that; structure plus a test does.
   changed no user-facing document SHALL say so **with the reason**; the section is never
   deleted to shorten the log.
 - The gate SHALL live on the existing node rather than a new one, and the node SHALL keep
-  its id, `stage` and phase — `stage: capability-docs` is a public key in operators'
-  `tokenEconomy.modelRouting.stages` and `thinkingEffort.stages` maps.
+  its id, `stage` and phase — `stage: capability-docs` is the key the token-economy
+  guidance's stage table is written against.
 - The inner `pdlc-pr-loop` SHALL gate neither section: a work item's documentation is
   decided once, at the outer level.
 - **What this proves SHALL be stated rather than implied**: the check is structural, so a

@@ -24,9 +24,8 @@ spec chain. A slice of `/the-loop:work-on`; `work-on` remains the superset.
    models, error handling, the testing **strategy** (a paragraph; the executable detail
    belongs to `testing-plan.md`), plus the **Security design** section —
    how each trust boundary from the requirements' Security considerations is enforced
-   (`security.design.required`; a boundary left unenforced fails the gate, see
-   `reference/security.md`). Map each requirement to a component. RULE:
-   all diagrams are **mermaid** (`config.userInteraction`).
+   (a boundary left unenforced fails the gate, see `reference/security.md`). Map each
+   requirement to a component. RULE: all diagrams are **mermaid**.
 
 3. **Produce UI/UX design artifacts — if the work item has a user-facing surface.**
    `design.md` (markdown + mermaid) captures architecture/HLD/LLD; **visual** UI/UX design

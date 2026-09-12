@@ -19,9 +19,9 @@ Load `.the-loop/harness-config.yaml`; read every custom instruction doc it regis
 config, issue-352);
 apply any per-task `overrides` from the spec front-matter.
 
-**Start clean.** Entering implementation crosses a phase boundary: apply
-`contextManagement.phaseBoundary` (default `clear`) so execution runs against the
-locked spec files read from disk, not the drafting conversation (plan-mode style).
+**Start clean.** Entering implementation crosses a phase boundary: clear the context
+window (the fixed rule of `reference/context.md`) so execution runs against the locked
+spec files read from disk, not the drafting conversation (plan-mode style).
 
 ## Steps
 
@@ -36,9 +36,9 @@ locked spec files read from disk, not the drafting conversation (plan-mode style
    task checkpoints — self-check as you go. Use the configured tooling; same commands as
    CI. Keep the ticket phase label in sync. **After each completed task, manage the
    context window: checkpoint first (checkmark, log entry with a concrete Next, WIP
-   committed/noted), then reset per `contextManagement.taskBoundary` (default
-   `compact`). Mid-task, compact only — never clear. Never reset without the
-   checkpoint.** See `reference/context.md`.
+   committed/noted), then compact (the fixed task-boundary rule). Mid-task, compact
+   only — never clear. Never reset without the checkpoint.** See
+   `reference/context.md`.
 
    **Stay monitorable.** Register the session for webhook/poll routing
    (`the-loop sessions register`, see the skill's `reference/automation.md`). When the
@@ -68,10 +68,10 @@ locked spec files read from disk, not the drafting conversation (plan-mode style
 
 4. **Review** (`needs-review`). Run up to `reviews.selfReviewCount` self-reviews then
    `reviews.criticReviewCount` critic reviews (configured critics) BEFORE escalating to a
-   human. Then run the **security review gate** (`security.review` — built-in
-   security-review skill when available, else the-loop's checklist in
-   `reference/security.md`); risk tier ≥ `security.review.humanSignOffMinTier` waits
-   for a named human security sign-off. Record every review as a PR/ticket comment and
+   human. Then run the **security review gate** (built-in security-review skill when
+   available, else the-loop's checklist in `reference/security.md`); risk tier 4 or
+   above waits for a named human security sign-off. Record every review as a
+   PR/ticket comment and
    in the log's review table (the security round in its Security review section).
    A pending human action is notified by the graph's `notify` hook on the event bus;
    delivery is the operator's channel (`channels.slack` in the CLI config), not a
@@ -81,12 +81,11 @@ locked spec files read from disk, not the drafting conversation (plan-mode style
    acceptance criteria are met — **summarised from the verification results** rather than
    re-derived (tests, screenshots, logs). BEFORE requesting human
    review, **post/update the R10 reviewer briefing in the PR** — produced from
-   `userInteraction.prSummary.templatePath` (the-loop's internal
-   `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/pr-briefing.md`): a
+   the-loop's internal
+   `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/pr-briefing.md`: a
    condensed, prioritized summary (where to focus), **mermaid** diagram(s), and the
-   low-level decisions the harness made. This is a ready-to-ship gate item
-   (`userInteraction.prSummary.required`) — educating the reviewer is mandatory, not
-   optional; do not request review without it.
+   low-level decisions the harness made. This is a ready-to-ship gate item (fixed) —
+   educating the reviewer is mandatory, not optional; do not request review without it.
 
 6. **Next step:** once every task is checked and reviewed, `/the-loop:finish-tasks <id>`.
 

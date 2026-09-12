@@ -8,7 +8,7 @@ you want is the whole trick:
 | **File** | `.the-loop/harness-config.yaml` | `cli-config.yaml` |
 | **Installed** | **per repository**, by `/the-loop:init` | **per operator**, wherever you keep it |
 | **Read by** | the `/the-loop:*` commands and the operating skill — the agent doing the work. **Never the CLI** ([decision-123](/decisions/decision-123)) | every `the-loop` command and daemon |
-| **Governs** | *how work is done here* — layout, tooling, reviews, autonomy, security | *how work is triggered, hosted and gated* — ingress, routing, sessions, the spec directory, critics, graph hooks, integrations, logging |
+| **Governs** | *how work is done here* — layout, tooling, reviews, testing, instruction docs | *how work is triggered, hosted and gated* — ingress, routing, sessions, the spec directory, critics, graph hooks, integrations, logging |
 | **Schema** | `harness-config.schema.json` | `cli-config.schema.json` |
 | **Where the schema lives** | [with the plugin](#where-the-schemas-live), never copied into your repo | [with the plugin](#where-the-schemas-live), never copied into your repo |
 | **Committed?** | yes — it is a statement about the project | usually not; it describes *your machine* |
@@ -34,7 +34,7 @@ nothing.
 ```mermaid
 graph TD
   Q{"What are you changing?"}
-  Q -->|"specs layout, reviews counts,<br/>autonomy, tooling, security"| H["<b>harness config</b><br/>.the-loop/harness-config.yaml<br/>in the repo — read by the agent"]
+  Q -->|"specs layout, reviews counts,<br/>tooling, testing, instruction docs"| H["<b>harness config</b><br/>.the-loop/harness-config.yaml<br/>in the repo — read by the agent"]
   Q -->|"webhook port, polling, who may trigger,<br/>spec directory, critics, graph hooks,<br/>event log, GitHub/Slack transport"| C["<b>CLI config</b><br/>cli-config.yaml<br/>on your machine — read by the CLI"]
   H --> H2["written by <code>/the-loop:init</code>"]
   C --> C2["copied from<br/>skills/the-loop/templates/cli-config.yaml"]

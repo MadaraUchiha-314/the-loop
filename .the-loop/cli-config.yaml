@@ -13,7 +13,7 @@
 #   4. ~/.the-loop/cli-config.yaml (the always-available fallback)
 #
 # See .the-loop/harness-config.yaml for the-loop's own PLUGIN config — the
-# agent's file (workflow, tooling, reviews, autonomy, …), which the CLI never
+# agent's file (workflow, tooling, reviews, …), which the CLI never
 # reads (issue-352, decision-123).
 
 version: "0.9.0"

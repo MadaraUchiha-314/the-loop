@@ -26,7 +26,7 @@ overrides: {}
 Each task is a checkbox, references the requirement(s) it satisfies, declares its
 dependencies so the-loop can build the execution DAG, and names the **test(s) that will
 prove it** — a row of `testing-plan.md`'s matrix, so the DAG and the plan cannot describe
-different work. Keep tasks small and verifiable. TDD invariant (`tdd.mode`): **no production
+different work. Keep tasks small and verifiable. TDD invariant: **no production
 code without a failing test that motivates it** — write/adjust the test first, watch it go
 red, then make it green. **Security-relevant tasks** (they touch a trust boundary from
 `design.md` §Security design) name the **negative test** proving the boundary holds —
@@ -54,11 +54,11 @@ A quick textual view of the order, e.g. `1 → 2 → 3` (or a mermaid graph).
 ## Checkpoints
 
 At which task boundaries the-loop runs tests/validations and updates the execution log.
-Record each task's test command and its **red→green** transition as evidence (`tdd.mode`).
+Record each task's test command and its **red→green** transition as evidence.
 After the last task, the **verification** node executes `testing-plan.md` — ticking each
 activity and recording its command, outcome and committed evidence — and only then do the
 review phases run the self/critic rounds AND the **security review gate**
-(`security.review`, recorded in the execution log) before the work item can be marked
+(recorded in the execution log) before the work item can be marked
 ready.
 
 ## Review comments

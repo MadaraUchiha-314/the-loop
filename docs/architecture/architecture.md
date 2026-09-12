@@ -32,8 +32,9 @@ Everything the-loop creates/maintains is tracked in `.the-loop/manifest.yaml`.
   required to be per-project — `--config`/`-c`, else `$THE_LOOP_CLI_CONFIG`, else
   `./.the-loop/cli-config.yaml`, else `~/.the-loop/cli-config.yaml`, so the daemon is
   not tied to a single repo (decision-032).
-- `collaborators.yaml` — user-owned registry (external tools now live inline in
-  `config.externalTools`, issue-37).
+- `collaborators.yaml` — user-owned registry of people and roles. External tools are
+  not registered anywhere: the harness discovers its MCP servers, plugins, skills and
+  CLIs itself (`externalTools` left the harness config in issue-352).
 
 ### 3. The loop (runtime workflow)
 

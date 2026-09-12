@@ -94,8 +94,8 @@ gate (`brainstorm.md`, `tasks.md`) advance on shape alone.
    accepted names; write **one**, never both) from the template:
    introduction, user stories, and EARS acceptance criteria — **including the Security
    considerations section** (threat-model-lite: untrusted actors, trust boundaries,
-   abuse cases, fail-closed; `security.threatModel.required` — "no new attack surface"
-   is written and justified, see `reference/security.md`). Post/link it on the ticket,
+   abuse cases, fail-closed; always required — "no new attack surface" is written
+   and justified, see `reference/security.md`). Post/link it on the ticket,
    run `the-loop graph complete`, and let the **`requirements-approval` gate** run the
    review (issue-281): its `request-review` posts the one ask, and on an authorized
    approval the gate records the approver and locks the artifact itself. Never post an
@@ -105,8 +105,8 @@ gate (`brainstorm.md`, `tasks.md`) advance on shape alone.
 5. **Phase 2 — Design** (`design`). Create `docs/specs/<id>/design.md` derived from the
    approved requirements: architecture, components/interfaces, data models, error
    handling, testing strategy — **including the Security design section** stating how
-   each requirements-phase trust boundary is enforced (`security.design.required`; a
-   boundary left unenforced fails the gate). **If the work item has a user-facing
+   each requirements-phase trust boundary is enforced (a boundary left unenforced
+   fails the gate). **If the work item has a user-facing
    surface**, also
    produce **UI/UX design artifacts** under `docs/specs/<id>/design/` (self-contained
    HTML+CSS+JS prototypes and/or a linked Figma file), inventory them in `design.md`, and
@@ -144,16 +144,16 @@ gate (`brainstorm.md`, `tasks.md`) advance on shape alone.
    spec doc are made as **edits to that file, not new comments**.
 
 8. **Implementation** (`implementation`). Entering implementation crosses the big phase
-   boundary: **reset context per `contextManagement.phaseBoundary` (default `clear`)**
-   and execute against the locked spec files read from disk, not the drafting
+   boundary: **clear the context window (the fixed phase-boundary rule)** and execute
+   against the locked spec files read from disk, not the drafting
    conversation (plan-mode style; `reference/context.md`). Execute the task DAG
    autonomously. **Tick each task in `tasks.md` (`- [ ]` → `- [x]`) as it completes.**
    Maintain `docs/specs/<id>/execution-log.md`: append progress and run tests
    (unit/integration per config) at logical checkpoints — self-checking as you go.
    **After each completed task: checkpoint (checkmark, log entry with a concrete Next,
-   WIP committed/noted), then reset per `contextManagement.taskBoundary` (default
-   `compact`); mid-task compact only, never clear; never reset without the
-   checkpoint.** Same tooling as CI; logging/observability identical to runtime.
+   WIP committed/noted), then compact (the fixed task-boundary rule); mid-task
+   compact only, never clear; never reset without the checkpoint.** Same tooling as
+   CI; logging/observability identical to runtime.
 
 9. **Verification** (`verification`). Execute `testing-plan.md`: bring up the declared
    environment, run each planned activity, and tick it **only** once it has run and its
@@ -168,10 +168,10 @@ gate (`brainstorm.md`, `tasks.md`) advance on shape alone.
 10. **Review** (`needs-review`). Run up to `reviews.selfReviewCount` self-reviews and
    `reviews.criticReviewCount` critic reviews (configured critics, e.g. a different
    harness/model) BEFORE escalating to the human reviewer. Then run the **security
-   review gate** (`security.review`): the built-in security-review skill when
-   available, else the-loop's checklist (`reference/security.md`); a work item at
-   risk tier ≥ `security.review.humanSignOffMinTier` waits for a named human security
-   sign-off. Record every review as a PR/ticket comment and in the execution log's
+   review gate**: the built-in security-review skill when available, else the-loop's
+   checklist (`reference/security.md`); a work item at risk tier 4 or above waits for
+   a named human security sign-off. Record every review as a PR/ticket comment and in
+   the execution log's
    review table (the security round in its Security review section). A pending human
    action is notified by the graph's `notify` hook on the event bus; delivery is the
    operator's channel (`channels.slack` in the CLI config), not a per-person lookup.
@@ -180,7 +180,7 @@ gate (`brainstorm.md`, `tasks.md`) advance on shape alone.
    are met — **summarised from the verification results** rather than re-derived — on the
    PR; record it in the execution log.
    **Before requesting human review, post/update the R10 reviewer briefing in the PR**
-   (required gate item — `userInteraction.prSummary.required`), produced from
+   (required gate item, fixed), produced from
    `${CLAUDE_PLUGIN_ROOT}/skills/the-loop/templates/pr-briefing.md`: a **condensed,
    prioritized** summary saying
    **where to focus first**, **mermaid** diagram(s) of the change, and the

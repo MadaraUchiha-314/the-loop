@@ -38,6 +38,14 @@ can use whatever ticketing system they want. Repository shouldn't enforce"*;
 *"delete"*; `localOrchestration` — *"remove this. not needed."*; `reviews.critics[]` —
 *"this should be moved to cli-config."*; `notifications` — *"delete"*.
 
+A second review of the shrunken file (PR #353, 2026-09-12 07:18Z) went further —
+*"remove all the bs in harness config pls"* — with one ruling per remaining policy
+block: `autonomy`, `security`, `tdd`, `minimalism`, `tokenEconomy`, `selfImprovement`,
+`contextManagement`, `userInteraction` — *"we should remove it"* — and `externalTools`
+— *"no need to declare external tools. the harness can auto discover it"*. Those blocks
+configured behaviour that is simply the loop's rule; the rules stay, as the skill's, and
+the keys go (R3.5).
+
 Until this change the CLI read eight keys of a repository's harness config through one
 declared, test-pinned module ([decision-044](../../decisions/decision-044.md)), wrote
 the-loop's default harness config into an unconfigured checkout before spawning a
@@ -128,6 +136,16 @@ that does not read it.
    critics and hooks live now. (AC3.3)
 4. EVERY new CLI-config leaf SHALL be documented under `docs/config/cli/` with its type
    and default. (AC3.4)
+5. THE schema, the template and this repository's config SHALL also drop `autonomy`,
+   `security`, `tdd`, `minimalism`, `tokenEconomy`, `selfImprovement`,
+   `contextManagement`, `userInteraction` and `externalTools`; the behaviour each
+   configured SHALL be stated as the skill's fixed rule in the reference file that
+   owns it (risk tiers and sensitive paths, the security gates, TDD, minimalism, the
+   token economy, learnings, context management, the writing contract), and the
+   harness SHALL discover its own tools. (AC3.5)
+6. WHEN a document, command or docstring names one of those keys as configuration,
+   THE text SHALL state the rule instead — nothing shipped refers to a key that does
+   not exist. (AC3.6)
 
 ## Requirement 4 — The skill tells the harness
 
@@ -156,8 +174,9 @@ itself.
 
 ## Out of scope
 
-- Moving `tokenEconomy`'s model ids, `observability.browserLogging` or
-  `externalTools` — the owner ruled on no such row; they stay agent-read policy.
+- Moving `observability.browserLogging` — the owner ruled on no such row; it stays
+  agent-read policy. (`tokenEconomy` and `externalTools` were out of scope until the
+  second review; R3.5 now removes them.)
 - Per-repository spec directories under one instance. One value per instance is the
   accepted cost; an operator with two layouts runs two instances.
 - A `the-loop graph phases` command. `/init` lists the phases from the graph file the
@@ -176,14 +195,14 @@ Threat-model-lite for the change itself:
 | A5 | The migration silently drops an operator's `repoHooks: false`, re-enabling hooks they refused. | There is nothing to re-enable: hooks run only when declared in the CLI config, and the migration report says so (T9). |
 | A6 | A `--doc` value that is JSON smuggles a key other than `path`/`notes`. | `collect_docs` reads `path` and `notes` only; other keys are ignored, and a doc's body never reaches the report (T10). |
 
-The harness config itself stays in this repository's `autonomy.sensitivePaths` as the
-agent's policy (autonomy tiers, security gates); `.the-loop/cli-config.yaml` joins it
-because `critics[]` and `routing.graph.hooks` are executable configuration.
+`.the-loop/**` is one of the skill's fixed sensitive paths (the `autonomy.sensitivePaths`
+key is gone with R3.5), so an edit to either config raises the tier; `cli-config.yaml`
+matters most because `critics[]` and `routing.graph.hooks` are executable configuration.
 
 ## Risk tier
 
-**Tier 4** (`human-approves-pr`, named security sign-off per
-`security.review.humanSignOffMinTier: 4`): two schemas change, executable configuration
+**Tier 4** (`human-approves-pr`, and a named human security sign-off — the fixed rule
+at tier 4 and above): two schemas change, executable configuration
 moves files, the daemon's coupling changes behaviour, and `.the-loop/harness-config.yaml`
 is a sensitive path. The owner's review on PR #353 is the named decision; their approval
 of the PR is the sign-off.

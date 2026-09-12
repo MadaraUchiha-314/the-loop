@@ -102,11 +102,11 @@ status: in-progress          # in-progress | complete
 
 ## Security review (gate)
 
-> Required before ready-to-ship (`security.review.required`). See `reference/security.md`.
+> Required before ready-to-ship, always. See `reference/security.md`.
 
-- **Mechanism:** <security-review skill | the-loop checklist> (`security.review.mechanism`)
+- **Mechanism:** <security-review skill | the-loop checklist>
 - **Outcome:** <pass | findings fixed (link threads) | escalated>
-- **Human sign-off:** <n/a (tier below `security.review.humanSignOffMinTier`) | @handle + link>
+- **Human sign-off:** <n/a (risk tier below 4) | @handle + link>
 
 ## Final validation evidence
 

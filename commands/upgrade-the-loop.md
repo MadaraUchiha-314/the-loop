@@ -119,12 +119,22 @@ command reconciles them.
    config `0.2.0` → `0.3.0`, CLI config `0.8.0` → `0.9.0`.** Detect a harness config
    declaring any of `ticketing`, `workflow.phases`, `workflow.phaseLabelPrefix`,
    `workflow.specApproach`, `workflow.requireHumanReviewPerPhase`, `localOrchestration`,
-   `notifications`, `reviews.critics` or `graph`, and migrate it:
+   `notifications`, `reviews.critics`, `graph`, or any of the nine policy blocks named
+   below, and migrate it:
    - **Remove** `ticketing` (the work item's ref names its repository), `workflow.phases`
      and `workflow.phaseLabelPrefix` (labels are `loop:<phase>`, fixed),
      `workflow.specApproach`, `workflow.requireHumanReviewPerPhase`, `localOrchestration`
      and `notifications` (delivery is the CLI config's `channels.<name>.subscribe`).
      Report each removal; none of them carried a value the loop still reads.
+   - **Remove** the nine policy blocks that configured what is simply the loop's rule
+     (issue-352, second pass): `autonomy`, `security`, `tdd`, `minimalism`,
+     `tokenEconomy`, `selfImprovement`, `contextManagement`, `userInteraction` and
+     `externalTools`. **No value is carried anywhere** — not into the CLI config, not
+     into another harness-config key. The rules they configured are fixed in the skill's
+     reference files (risk tiers and sensitive paths, the security gates, standard TDD,
+     minimalism, the token-economy guidance, the learnings numbers, the context-window
+     protocol, the user-interaction and writing contract), and the harness discovers
+     its own tools. Report each removal.
    - **Move** `reviews.critics[]` to the CLI config's top-level `critics[]` and
      `graph.hooks` to its `routing.graph.hooks` — **same entry shapes**, so the move is
      a cut and paste into `.the-loop/cli-config.yaml` when the project tracks one, else

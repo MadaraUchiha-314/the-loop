@@ -12,7 +12,7 @@ NO human intervention, escalating only when a decision/opinion is genuinely requ
 
 > **Read the relevant reference file before acting** — they carry the full detail so the
 > essence is not lost:
-> - `reference/workflow.md` — the loop, phases, TDD, reviews, autonomy, DAG, resumability.
+> - `reference/workflow.md` — the loop, phases, TDD, reviews, risk tiers, DAG, resumability.
 > - `reference/context.md` — context-window management: clearing vs compaction, the checkpoint-then-reset protocol, per-harness mechanics.
 > - `reference/onboarding.md` — the guided, schema-driven config onboarding `/init` runs (groups, ask levels, sensible-defaults precedence).
 > - `reference/instructions.md` — user-provided custom instruction docs (`customInstructions`): when to read them, precedence, what they can and cannot override.
@@ -22,7 +22,7 @@ NO human intervention, escalating only when a decision/opinion is genuinely requ
 > - `reference/tooling.md` — repo management, per-language tooling matrix, hooks, CI parity.
 > - `reference/testing.md` — the testing plan and the verification node (test-type matrix, verification environment, evidence and redaction), Gherkin scenario docstrings on integration tests, the queryable scenario view, OpenAPI/GraphQL contract conventions.
 > - `reference/minimalism.md` — generation-time decision ladder to counter code bloat.
-> - `reference/token-economy.md` — token/cost levers (model routing, verbosity, disclosure, sub-agents, telemetry); advisory, never at the expense of rigor.
+> - `reference/token-economy.md` — token/cost levers (model choice, thinking effort, verbosity, disclosure, sub-agents, telemetry); guidance only, never configured, never at the expense of rigor.
 > - `reference/collaboration.md` — collaborators/roles, paper trail, **the self-comment loop-prevention marker (every reply MUST carry it)**, conflict log, notifications, MCP.
 > - `reference/observability.md` — dev==runtime logging, levels, browser logging.
 > - `reference/automation.md` — distribution, the CLI, webhooks, predictability, learnings lifecycle.
@@ -226,22 +226,22 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   (locked spec → fresh window for implementation, plan-mode style), **compact** after
   each completed task and mid-task (never clear mid-task), and isolate high-volume
   exploration in subagents. The checked-in artifacts are the memory that makes resets
-  affordable (`contextManagement`). See `reference/context.md`.
+  affordable. The boundaries are fixed rules; see `reference/context.md`.
 - **Review before escalating.** Run `reviews.selfReviewCount` self-reviews then
   `reviews.criticReviewCount` critic reviews (a different harness/model), default 3
   each, BEFORE reaching out to a human. All reviews are comments. **Follow the defined
   procedure** in `reference/reviewing.md` (attribution prefix, reply-first-then-fix,
   stop on zero new findings, escalate on a repeated finding).
-- **Security is gated, not bolted on** (`config.security`). Every phase gate also asks
+- **Security is gated, not bolted on** (always on). Every phase gate also asks
   the security question: requirements carry a **Security considerations**
   threat-model-lite (untrusted actors, trust boundaries, abuse cases, fail-closed);
   design carries a **Security design** section enforcing those boundaries; the
   ready-to-ship gate includes a **security review** (built-in security-review skill or
-  the-loop's checklist), with a named human sign-off at risk tier ≥
-  `security.review.humanSignOffMinTier`. "No new attack surface" is written and
-  justified, never implied. See `reference/security.md`.
-- **Test-first.** `tdd.mode` (default `standard`): no production code without a failing
-  test that motivates it; record the red→green transition as evidence.
+  the-loop's checklist), with a named human sign-off at risk tier 4 and above. "No new
+  attack surface" is written and justified, never implied. See `reference/security.md`.
+- **Test-first.** Tests are written alongside the implementation: no production code
+  without a failing test that motivates it, and a bug fix reproduces the bug red first;
+  record the red→green transition as evidence.
 - **Plan the proof, then execute the plan.** How a work item will be verified is an
   artifact (`testing-plan.md`), not an afterthought: the `test-planning` node decides
   which kinds of testing apply — unit, integration, contract, e2e, UI/visual, snapshot,
@@ -289,33 +289,34 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
 - **Write the artifacts for the human who has to approve them.** Every document a person
   reads — `requirements.md`, `design.md`, `testing-plan.md`, the PR briefing, decision and
   capability docs, ticket and review comments — follows the bundled **`the-loop:writing`**
-  skill (`userInteraction.writingStyle`): a four-part spine (what was broken → what we did
+  skill — the writing contract, fixed: a four-part spine (what was broken → what we did
   → what it costs → what to check), conclusion-first sections, and **draw it rather than
-  describe it** where three or more named parts are involved
-  (`writingStyle.diagramFirst`). **There is no length limit** — scope is not knowable in
-  advance, so the test is *density* (can a sentence come out without losing information?),
-  and that is a review judgement, never a gate. Two things concision never buys: a **gated
-  section is never deleted to shorten a document** (say it is empty, and why), and the
-  **formal registers stay formal** — EARS criteria, abuse cases, RFC-2119 keywords, API
-  contracts and schema descriptions (`writingStyle.formalRegisters`) are contracts, not
-  prose. Distinct from
-  `tokenEconomy.outputVerbosity`, which compresses chat narration and preserves specs; this
-  governs the specs themselves. Rules and the tells catalogue live in the skill — do not
-  restate them here.
-- **Token economy.** Apply the `reference/token-economy.md` levers (`config.tokenEconomy`):
-  progressive/phase-scoped disclosure, dense prompts, model routing + thinking-effort by
-  stage/risk tier, narration-only output compression (with its preservation list),
-  sub-agent delegation for verbose work, compaction/filesystem-memory, and per-work-item
-  token telemetry. **Advisory, never a gate** — cheaper never means sloppier; the rigor
-  floor (validation/security/tests/paper-trail/review depth) is untouchable.
-- **Risk-tiered autonomy.** Gate completion by the work item's risk tier
-  (`config.autonomy`): low tiers may complete after the review loop; high tiers wait for
-  a human. Only complete autonomously once the **ready-to-ship gate** holds (green
-  checks, all threads resolved, evidence recorded).
+  describe it** where three or more named parts are involved. **There is no length
+  limit** — scope is not knowable in advance, so the test is *density* (can a sentence
+  come out without losing information?), and that is a review judgement, never a gate.
+  Two things concision never buys: a **gated section is never deleted to shorten a
+  document** (say it is empty, and why), and the **formal registers stay formal** — EARS
+  criteria, abuse cases, RFC-2119 keywords, API contracts and schema descriptions are
+  contracts, not prose. Distinct from the token-economy verbosity rule, which compresses
+  chat narration and preserves specs; this governs the specs themselves. Rules and the
+  tells catalogue live in the skill — do not restate them here.
+- **Token economy.** Apply the `reference/token-economy.md` levers: progressive/
+  phase-scoped disclosure, dense prompts, thinking effort by stage, narration-only output
+  compression (with its preservation list), sub-agent delegation for verbose work,
+  compaction/filesystem-memory, and per-work-item token telemetry. **Guidance, never
+  configured, never a gate** — the harness runs the model the operator chose; cheaper
+  never means sloppier; the rigor floor (validation/security/tests/paper-trail/review
+  depth) is untouchable.
+- **Risk tiers.** Gate completion by the work item's risk tier, a fixed rule of
+  `reference/workflow.md`: tiers 1–2 complete after the review loop, tiers 3–4 wait for
+  a human to approve the PR, tier 5 waits for spec and PR approval. The tier is inferred
+  from the change (default 3) and raised by the fixed sensitive paths. Only complete
+  autonomously once the **ready-to-ship gate** holds (green checks, all threads
+  resolved, evidence recorded).
 - **Keep moving; log conflicts.** Resolvable ambiguity → assume a reasonable default and
   continue; genuine block → log to `docs/decisions/conflicts.md`, escalate once, move on.
 - **Learnings lifecycle.** Capture → write-gate (rule-of-three) → consolidate (size cap)
-  → inject a capped index (`config.selfImprovement`), in the tree
+  → inject a capped index (under 200 lines; written on the third occurrence), in the tree
   `workflow.learningsDir` names (default `docs/learnings`). See `reference/automation.md`.
 - **Evidence at the end.** Present validated evidence that acceptance criteria are met.
 - **Communicate for the reviewer (required gate).** Before requesting human review,
@@ -324,8 +325,8 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   prioritized** summary (where to
   focus first), the spec→implementation insights and low-level decisions, and **mermaid**
   diagrams. This is a required item of the ready-to-ship gate
-  (`userInteraction.prSummary.required`), so **mandatory user-education is triggered, not
-  optional** — you cannot request review without it. See `reference/collaboration.md`.
+  (fixed, not configurable), so **mandatory user-education is triggered, not optional** —
+  you cannot request review without it. See `reference/collaboration.md`.
 - **Honor the user's custom instructions.** Read every doc registered in
   `customInstructions.docs` (in order) when starting work on an item, and follow it —
   these are the operator's conventions (developing/testing/coding styles, house rules)
@@ -352,13 +353,23 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
 Behaviour is driven by `.the-loop/harness-config.yaml` — **the agent's file**, validated
 against `harness-config.schema.json`. Read it at the start of every work item and follow
 it: `repository`, `workflow` (`specDir`, `capabilitiesDir`, `learningsDir`), `tooling`,
-`customInstructions`, `testing`, `apiSpecs`, `design`, `hooks`, `observability`,
-`reviews` (the round counts), `autonomy`, `security`, `tdd`, `minimalism`,
-`tokenEconomy`, `selfImprovement`, `contextManagement`, `userInteraction`,
-`externalTools`. A subset of keys can be overridden per work item via the YAML
-front-matter `overrides` of the work-item / spec markdown. People (collaborators and the
-roles they hold) live in `.the-loop/collaborators.yaml`. Managed files are listed in
-`.the-loop/manifest.yaml`.
+`customInstructions`, `testing`, `apiSpecs`, `design`, `hooks`, `observability` and
+`reviews` (the round counts). A subset of these keys can be overridden per work item via
+the YAML front-matter `overrides` of the work-item / spec markdown. People (collaborators
+and the roles they hold) live in `.the-loop/collaborators.yaml`. Managed files are listed
+in `.the-loop/manifest.yaml`.
+
+The file carries **policy only**. Nine blocks that once configured behaviour — `autonomy`,
+`security`, `tdd`, `minimalism`, `tokenEconomy`, `selfImprovement`, `contextManagement`,
+`userInteraction` and `externalTools` — were removed in issue-352 because they
+configured what is simply the loop's rule. Those rules are stated where they belong: the
+risk tiers and sensitive paths in `reference/workflow.md`, the security gates in
+`reference/security.md`, standard TDD in `reference/workflow.md`, the minimalism ladder
+in `reference/minimalism.md`, the token-economy guidance in `reference/token-economy.md`,
+the learnings numbers in `reference/automation.md`, the context-window protocol in
+`reference/context.md`, and the user-interaction and writing contract in
+`reference/collaboration.md` and the `the-loop:writing` skill. Tools are discovered, not
+declared.
 
 **The CLI never reads this file** (issue-352, decision-123). The `the-loop` CLI is the
 operator's tool and takes its configuration from the operator's `cli-config.yaml`
@@ -455,14 +466,14 @@ Granular commands (one step at a time; same flow `work-on` runs end-to-end):
 
 ## Interacting with other tools
 
-the-loop may freely use the MCP servers, CLIs, skills and plugins registered in
-`config.externalTools` (the `externalTools.tools` list + `notes` in
-`.the-loop/harness-config.yaml`). Check that registry before assuming a capability is available.
+the-loop may freely use the MCP servers, CLIs, skills and plugins available in the
+harness. Nothing registers them: discover what the harness actually offers, and check
+before assuming a capability is available.
 
 ## Custom instructions the loop honors
 
-Supplementary to the external-tools registry, `config.customInstructions` registers
-**guidance** rather than tools: user-provided readme/markdown docs (per installation,
+`config.customInstructions` registers **guidance**, not tools: user-provided
+readme/markdown docs (per installation,
 configurable paths) the harness reads at the start of working an item and follows —
 conventions and styles the structured config does not model. Precedence and limits:
 `reference/instructions.md`.

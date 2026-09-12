@@ -51,7 +51,7 @@ file.
 | Section | Covers |
 |---------|--------|
 | `repository` | Monorepo tooling (nx/yarn/pnpm/bun), whether scripts run from root. |
-| `workflow` | Where the-loop's checked-in knowledge lives (`specDir`/`capabilitiesDir`/`learningsDir`). The phases are the [process graph's](/capabilities/process-graph) and the labels are `loop:<phase>`, fixed — neither is configured. |
+| `workflow` | Where the-loop's checked-in knowledge lives (`specDir`/`capabilitiesDir`/`learningsDir`). The phases are the [process graph's](/capabilities/process-graph) and the labels are `loop:<phase>`, fixed — neither is configured. A project which **publishes** its `docs/` tree publishes its learnings with it unless `learningsDir` points elsewhere. |
 | `tooling` | Per-language package manager, unit/integration test runner, lint, type-check, release tooling. |
 | `customInstructions` | User-provided instruction docs the agent reads before working — see [instructions reference](/operating-model/reference/instructions). The agent passes them to [`the-loop instructions`](/cli/commands/instructions) as `--doc`. |
 | `testing` | Gherkin docstring requirement, `integrationTestGlobs` — which the agent passes to [`the-loop scenarios`](/cli/commands/scenarios) as `--glob`. |
@@ -60,20 +60,13 @@ file.
 | `hooks` | Pre-commit / pre-push gate lists, commit convention. |
 | `observability` | Dev/runtime log levels, browser logging — see [observability reference](/operating-model/reference/observability). |
 | `reviews` | Self/critic review counts and stop conditions. **Which** critics exist is the operator's [`critics[]`](/config/cli/critics-options) — see [reviewing reference](/operating-model/reference/reviewing) and [review-loop](/capabilities/review-loop). |
-| `autonomy` | Risk-tiered autonomy (1–5) and sensitive-path detection. |
-| `security` | Threat-model, design, and review gate requirements — see [security reference](/operating-model/reference/security). |
-| `tdd` | TDD mode: `standard` \| `tdd-first` \| `off`. |
-| `minimalism` | Generation-time bloat guard — see [minimalism reference](/operating-model/reference/minimalism). |
-| `tokenEconomy` | Model routing, thinking effort, output verbosity and other cost levers (advisory only) — see [token-economy reference](/operating-model/reference/token-economy). |
-| `selfImprovement` | Learnings index cap and write-gate occurrence threshold. Where the learnings live is `workflow.learningsDir` (default `docs/learnings`) — note that a project which **publishes** its `docs/` tree publishes its learnings with it unless it points that key elsewhere. |
-| `contextManagement` | Checkpoint-then-reset behaviour at phase/task boundaries — see [context reference](/operating-model/reference/context). |
-| `userInteraction` | Diagram format, mandatory PR briefing/education requirements, and `writingStyle` — the diagram-first rule and formal-language carve-out the bundled `the-loop:writing` skill reads (no length limits, by decision). See [writing-style](/capabilities/writing-style). |
-| `externalTools` | Inline registry of MCPs/CLIs/skills the harness may use. |
 
 ## What moved out of it in issue-352
 
 The CLI used to read eight keys from this file ([decision-044](/decisions/decision-044),
-now superseded). Each has a new home, and the file lost a few keys nothing read:
+now superseded). Each has a new home. The file also lost the keys nothing read, and the
+nine blocks that configured behaviour which is now simply the-loop's rule — the same in
+every repository, so not a setting:
 
 | Was in the harness config | Now |
 |---|---|
@@ -87,6 +80,15 @@ now superseded). Each has a new home, and the file lost a few keys nothing read:
 | `testing.integrationTestGlobs` *(still here, for the agent)* | [`the-loop scenarios --glob`](/cli/commands/scenarios). |
 | `customInstructions` *(still here, for the agent)* | [`the-loop instructions --doc … --on-missing …`](/cli/commands/instructions). |
 | `workflow.specApproach`, `workflow.requireHumanReviewPerPhase`, `localOrchestration` | Removed — read by nothing. |
+| `autonomy` | Removed — the rule is fixed: risk tiers 1–2 are autonomous-complete, 3–4 human-approves-pr, 5 human-approves-spec-and-pr; the tier is inferred from the change (default 3), and a fixed set of sensitive paths (schemas, `.the-loop/**`, `.github/workflows/**`, auth/secret/credential paths) raises it. See the [workflow reference](/operating-model/reference/workflow). |
+| `security` | Removed — the rule is fixed: every requirements/bugfix carries a Security considerations section, the design enforces the trust boundaries, a security review passes at the ready-to-ship gate (the built-in security-review skill when available, else the checklist), and tier 4+ waits for a named human security sign-off. See the [security reference](/operating-model/reference/security). |
+| `tdd` | Removed — the rule is fixed: `standard`, always — tests alongside the implementation, a bug fix reproduced red first. See the [workflow reference](/operating-model/reference/workflow). |
+| `minimalism` | Removed — the rule is fixed: always on, at standard intensity, per the ladder in the [minimalism reference](/operating-model/reference/minimalism). |
+| `tokenEconomy` | Removed — the rule is fixed: the [token-economy reference](/operating-model/reference/token-economy) is guidance, always advisory. The harness runs whatever model the operator chose (no routing table); thinking effort and verbosity follow the guidance's stage table; disclosure, sub-agent delegation, compaction and telemetry are practices, not switches. |
+| `selfImprovement` | Removed — the rule is fixed: learnings are always on, the index stays under 200 lines, a learning is written at the third occurrence. `workflow.learningsDir` stays. See the [workflow reference](/operating-model/reference/workflow). |
+| `contextManagement` | Removed — the rule is fixed: clear at a phase boundary, compact after each task, never clear mid-task. See the [context reference](/operating-model/reference/context). |
+| `userInteraction` | Removed — the rule is fixed: mermaid diagrams; the PR briefing (the bundled `pr-briefing.md` template, condensed, with diagrams) is required before human review; educating the user is mandatory; the writing contract is the bundled `the-loop:writing` skill — diagram-first, fixed formal registers, no length limits ([decision-061](/decisions/decision-061)). See [writing-style](/capabilities/writing-style). |
+| `externalTools` | Removed, nothing replaces it: the harness discovers its tools (MCP servers, plugins, skills, CLIs) itself. |
 
 `/the-loop:upgrade-the-loop` performs the migration (harness config `0.2.0` → `0.3.0`) and
 [`the-loop migrate-config`](/cli/commands/migrate-config) the CLI config's half

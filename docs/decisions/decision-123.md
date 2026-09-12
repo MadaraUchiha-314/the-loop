@@ -59,6 +59,7 @@ answered here rather than dismissed:
 | D8 | **Graph hooks move to the CLI config** (`routing.graph.hooks`, same shape; a `path` resolves against each checkout). `routing.graph.repoHooks` is removed and `migrate-config` strips it. | The declaration of what runs inside the-loop's process is the operator's; a switch for refusing a repository's declaration has nothing left to refuse. The module may still live in the repository — what may not is the decision to run it. |
 | D9 | **`scenarios` and `instructions` take what the agent read as flags**: `--glob`, and `--doc` (a path, or a JSON object with `notes`) plus `--on-missing`. The harness config keeps `testing.integrationTestGlobs` and `customInstructions` for the agent. | Both commands exist to make an obligation the agent has observable; the agent is the one who read the obligation, so it hands the list over. The commands work in a bare checkout exactly as before. |
 | D10 | **Dead keys go**: `workflow.specApproach`, `workflow.requireHumanReviewPerPhase`, `localOrchestration`. Harness config `0.2.0` → `0.3.0`; CLI config `0.8.0` → `0.9.0`; `/the-loop:upgrade-the-loop` carries the migration. | Found by the audit, confirmed by the owner's inline review (*"delete"*, *"remove this. not needed."*). |
+| D12 | **Policy is the skill's, not a key.** `autonomy`, `security`, `tdd`, `minimalism`, `tokenEconomy`, `selfImprovement`, `contextManagement`, `userInteraction` and `externalTools` leave the harness config; the behaviour each configured is stated as the loop's fixed rule in the reference file that owns it (risk tiers 1–2 autonomous, 3–4 human-approves-pr, 5 human-approves-spec-and-pr, with fixed sensitive paths; the security gates always on with a named sign-off at tier 4+; TDD standard; minimalism on; the token economy advisory; learnings with a 200-line index and a third-occurrence write gate; clear at a phase boundary, compact after a task; mermaid, the PR briefing and the `the-loop:writing` contract), and the harness discovers its own tools. | The owner's second review of the shrunken file: *"remove all the bs in harness config pls"*, one *"we should remove it"* per block, and for `externalTools`: *"the harness can auto discover it."* A knob nobody turns is a promise the loop cannot keep; a rule stated once in the skill is the same behaviour with nothing to drift. |
 | D11 | **The skill tells the harness.** `SKILL.md` § Configuration states that the file is the agent's, that the CLI never reads it, and — key by key — what the agent passes to which command. | The owner's ask, verbatim. A rule the agent does not know is a flag it will not pass. |
 
 ## Consequences
@@ -69,6 +70,11 @@ answered here rather than dismissed:
   is refused until `the-loop migrate-config` runs. A critic or a hook declared in a
   repository is **inert** until the operator copies it into their CLI config — that is
   the point, and the migration says so.
+- **Eleven keys remain** — `version`, `repository`, `workflow`, `tooling`,
+  `customInstructions`, `testing`, `apiSpecs`, `design`, `hooks`, `observability`,
+  `reviews`: facts about the repository the agent cannot infer and the round counts.
+  Everything that was a policy switch is now a sentence in a reference file; changing it
+  is a change to the-loop, reviewed as one.
 - **One directory per instance.** Two repositories with different spec layouts can no
   longer be driven by one daemon. An operator with that need runs two instances
   (issue-322 made that cheap) or aligns the layouts.

@@ -8,7 +8,7 @@ same detail, up front.
 
 | Reference | Covers |
 |-----------|--------|
-| [Workflow](/operating-model/reference/workflow) | The loop, phases, TDD, reviews, autonomy, DAG, resumability. |
+| [Workflow](/operating-model/reference/workflow) | The loop, phases, tests-alongside, reviews, the fixed risk tiers, DAG, resumability. |
 | [Context](/operating-model/reference/context) | Context-window management: clearing vs. compaction, the checkpoint-then-reset protocol, per-harness mechanics. |
 | [Onboarding](/operating-model/reference/onboarding) | The guided, schema-driven config onboarding `/the-loop:init` runs. |
 | [Instructions](/operating-model/reference/instructions) | User-provided custom instruction docs: when to read them, precedence, what they can and cannot override. |
@@ -18,7 +18,7 @@ same detail, up front.
 | [Tooling](/operating-model/reference/tooling) | Repo management, per-language tooling matrix, hooks, CI parity. |
 | [Testing](/operating-model/reference/testing) | The testing plan and the verification node (test-type matrix, verification environment, evidence and redaction), Gherkin scenario docstrings on integration tests, the queryable scenario view, OpenAPI/GraphQL contract conventions. |
 | [Minimalism](/operating-model/reference/minimalism) | The generation-time decision ladder to counter code bloat. |
-| [Token economy](/operating-model/reference/token-economy) | Token/cost levers (model routing, verbosity, disclosure, sub-agents, telemetry); advisory, never at the expense of rigor. |
+| [Token economy](/operating-model/reference/token-economy) | Token/cost guidance (thinking effort and verbosity by stage, disclosure, sub-agents, compaction, telemetry); advisory, never configured, never at the expense of rigor. |
 | [Collaboration](/operating-model/reference/collaboration) | Personas/roles, paper trail, conflict log, messaging, MCP. |
 | [Observability](/operating-model/reference/observability) | Dev==runtime logging, levels, browser logging. |
 | [Automation](/operating-model/reference/automation) | Distribution, the CLI, webhooks, predictability, learnings lifecycle. |

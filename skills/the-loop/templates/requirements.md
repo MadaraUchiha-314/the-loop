@@ -52,9 +52,9 @@ gated section below.
 
 ## Security considerations
 
-> Threat-model-lite, captured with the requirements (`security.threatModel.required`,
-> default true). "No new attack surface" is a valid answer — written down and
-> justified, never implied by omission. See `reference/security.md`.
+> Threat-model-lite, captured with the requirements (always required). "No new attack
+> surface" is a valid answer — written down and justified, never implied by omission.
+> See `reference/security.md`.
 
 - **Actors & trust:** who interacts with this feature; which actors/inputs are
   **untrusted** (anonymous users, third-party comments, webhook payloads, fetched

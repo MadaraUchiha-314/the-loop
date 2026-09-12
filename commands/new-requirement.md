@@ -37,8 +37,8 @@ into requirements rather than starting from a blank page.
    (`${CLAUDE_PLUGIN_ROOT}` = the installed plugin's root; same in Cursor): introduction, user
    stories, and EARS acceptance criteria (`WHEN <event> THEN the system SHALL
    <response>`), plus the **Security considerations** section (threat-model-lite:
-   untrusted actors, trust boundaries, abuse cases, fail-closed —
-   `security.threatModel.required`; "no new attack surface" is written and justified,
+   untrusted actors, trust boundaries, abuse cases, fail-closed — always required;
+   "no new attack surface" is written and justified,
    see `reference/security.md`). Set front-matter `phase: requirements-definition`,
    `status: draft`, `workItem: draft-<slug>`, and the required `collaborators`.
 

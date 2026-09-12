@@ -27,10 +27,10 @@ human decision the loop records.
 | Phase | Entered | Reviewed/approved by | Notes |
 |-------|---------|----------------------|-------|
 | phase-selection | 2026-09-11 | — | Pass 1: tier 2, audit only. Pass 2 (2026-09-12): tier 4 after the owner's review on PR #353; full chain, named security sign-off = the owner's PR approval |
-| requirements-definition | 2026-09-11 / 2026-09-12 | | [`requirements.md`](requirements.md) — rewritten for the breaking change: five requirements, six abuse cases |
+| requirements-definition | 2026-09-11 / 2026-09-12 | | [`requirements.md`](requirements.md) — rewritten for the breaking change: five requirements, six abuse cases; R3.5–R3.6 added after the owner's second review (the policy blocks) |
 | design | 2026-09-12 | | [`design.md`](design.md) — thirteen design points; [`decision-123`](../../decisions/decision-123.md) supersedes decision-044 |
 | test-planning | 2026-09-12 | | [`testing-plan.md`](testing-plan.md) — thirteen rows, eleven applicable |
-| tasks-breakdown | 2026-09-12 | | [`tasks.md`](tasks.md) — twelve tasks |
+| tasks-breakdown | 2026-09-12 | | [`tasks.md`](tasks.md) — thirteen tasks |
 | implementation | 2026-09-12 | | On `claude/github-issue-352-un79kv` |
 | verification | 2026-09-12 | | [`evidence/verification.md`](evidence/verification.md); [`evidence/security-review.md`](evidence/security-review.md) — six abuse cases, six closed |
 | needs-review | 2026-09-12 | | PR #353 updated; awaiting the owner (tier 4: PR approval is the sign-off) |
@@ -40,7 +40,7 @@ human decision the loop records.
 
 | PR | Scope / tasks | Status |
 |----|---------------|--------|
-| [#353](https://github.com/MadaraUchiha-314/the-loop/pull/353) | pass 1 (the audit) and pass 2 (tasks 1–12, the whole work item) | open |
+| [#353](https://github.com/MadaraUchiha-314/the-loop/pull/353) | pass 1 (the audit), pass 2 (tasks 1–12) and pass 3 (task 13, the policy blocks) — the whole work item | open |
 
 ## Progress entries
 
@@ -93,4 +93,24 @@ human decision the loop records.
 - **Capability docs:** `cli`, `process-graph`, `review-loop`, `webhook-triggers`,
   `spec-workflow`, `testing-and-contracts`, `channels` updated in this PR.
 - **Next:** the owner's review of PR #353 (tier 4: their approval is the sign-off).
+- **Blockers:** none.
+
+### 2026-09-12 — the second review: the policy blocks (pass 3)
+
+- **Phase:** needs-review → requirements-definition → … → needs-review
+- **Decision recorded:** the owner's second review on PR #353 (07:18Z) — *"remove all
+  the bs in harness config pls"* — with an inline *"we should remove it"* on each of
+  `autonomy`, `security`, `tdd`, `minimalism`, `tokenEconomy`, `selfImprovement`,
+  `contextManagement` and `userInteraction`, and on `externalTools`: *"no need to
+  declare external tools. the harness can auto discover it."* Recorded as R3.5–R3.6,
+  D10–D12 and decision-123 D12.
+- **Did (task 13):** the nine blocks and their `$defs` left the schema; the onboarding
+  groups were rewritten (`people` keeps no key, `automation` is gone); the template and
+  this repo's config end at `reviews`; `security.md`, `token-economy.md`, `context.md`,
+  `minimalism.md`, `workflow.md` and the skill state the rules directly; every command,
+  docstring, capability doc and config page that named a key says the rule instead;
+  `test_writing_parity` names the writing skill as a constant.
+- **Checkpoint/tests:** `make check` green on the PR head — 3491 passed, 1 skipped; ruff,
+  pyright and markdownlint clean (`evidence/verification.md`).
+- **Next:** the owner's review of PR #353.
 - **Blockers:** none.

@@ -270,7 +270,8 @@ blow the context budget. Learnings live in `<learningsDir>/learnings.md` (index)
 `config.workflow.learningsDir` — the same block that names the spec and capability
 directories, defaulting to `docs/learnings`. A project that **publishes** its `docs/` tree
 and would rather not publish its learnings points the key elsewhere. The lifecycle itself
-is tuned by `config.selfImprovement` (`enabled`, `maxIndexLines`, `writeGateOccurrences`).
+is fixed: the index stays under 200 lines, and a learning is written once the same
+finding has occurred three times.
 Sources: **user feedback** (requirements/design/tasks iteration, PR reviews) and **system
 feedback** (repeated failures or insights). The skill implements this today; the Python
 CLI can harden it later. Four stages:
@@ -279,13 +280,13 @@ CLI can harden it later. Four stages:
    pass/fail signals it already produces (a red check, a rejected review, a repeated
    reviewer comment) into a **git-ignored pending queue** (`.the-loop/learnings-pending/`).
 2. **Write-gate.** A candidate becomes a durable, injected learning only once it
-   **recurs** (`writeGateOccurrences`, rule-of-three) — or immediately for a clearly
+   **recurs** (rule-of-three: the third occurrence) — or immediately for a clearly
    high-severity one-off. This keeps one-off noise out of the index.
 3. **Consolidate.** At the end of a run, classify each candidate against the existing
    index as **ADD / UPDATE / DELETE** (on contradiction) / **NOOP**, then **prune to the
-   size cap** (`maxIndexLines`) by evicting the least-important/least-recent entries into
+   size cap** (200 lines) by evicting the least-important/least-recent entries into
    `<learningsDir>/topics/<category>.md`.
-4. **Inject.** Load the **capped index** (first `maxIndexLines` lines) into each agent's
+4. **Inject.** Load the **capped index** (under 200 lines) into each agent's
    prompt at the start of a run; overflow detail is read on demand from the topic files.
 
 Everything durable is checked in so you can review it and give feedback.

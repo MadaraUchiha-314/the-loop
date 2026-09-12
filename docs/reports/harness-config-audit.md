@@ -9,8 +9,13 @@
 > recommended: the CLI now reads **no** key of the harness config at all, and the file
 > shrank to the agent's policy — see [decision-123](../decisions/decision-123.md) and
 > [the config reference](../config/harness-config.md#what-moved-out-of-it-in-issue-352)
-> for what moved where. The analysis below is the state **before** that change, kept as
-> the record the decision was made on; its follow-ups are now the change itself.
+> for what moved where. A second review the same day went further still — *"remove all
+> the bs"* — and the policy blocks this report marked **keep** (`autonomy`, `security`,
+> `tdd`, `minimalism`, `tokenEconomy`, `selfImprovement`, `contextManagement`,
+> `userInteraction`, `externalTools`) left the file too: the behaviour each configured is
+> now the skill's fixed rule, and the harness discovers its own tools. The analysis below
+> is the state **before** those changes, kept as the record the decisions were made on;
+> its follow-ups are now the change itself.
 >
 > **Conclusion: the file cannot be removed, but it should shrink.** Two of its keys are
 > the wrong file's (`reviews.critics[]` and the model ids under `tokenEconomy`), one is a

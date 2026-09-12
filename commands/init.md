@@ -73,11 +73,11 @@ to the plugin's install directory.)
    - `always` groups (**People & interaction**: the collaborators file) have no
      sensible default — establish them with the user.
    - `confirm` groups (repository layout, tooling, custom instructions, workflow,
-     quality gates, reviews & autonomy) —
+     quality gates, reviews) —
      present the proposal from step 1's detection (falling back to schema defaults)
      and confirm/adjust the whole group in ONE interaction.
-   - `advanced` groups (API contracts, observability, self-improvement & context
-     management) — default silently; offer a full tour only if the user wants it.
+   - `advanced` groups (API contracts & design artifacts, observability) — default
+     silently; offer a full tour only if the user wants it.
    For every group: explain what it does and why it matters (educating the user is
    mandatory); for enum keys show ALL the possibilities with a one-line meaning each;
    for free-form keys show the schema's `examples` so the user never guesses. Pull
@@ -115,8 +115,8 @@ to the plugin's install directory.)
      `# yaml-language-server: $schema=…` **first line** intact: the directive only works
      there, and it is the operator's editor validation (issue-220).
    - `.the-loop/manifest.yaml` — the manifest.
-   - `.the-loop/collaborators.yaml` — from templates (user-owned). External tools are
-     declared inline in `config.externalTools`, not a separate file (issue-37).
+   - `.the-loop/collaborators.yaml` — from templates (user-owned). No tool registry is
+     written: the harness discovers its own tools (issue-352).
    - **Only if step 2 answered "track it here":** `.the-loop/cli-config.yaml` — from
      `templates/cli-config.yaml`, and nothing else. Never scaffolded on the
      home-directory answer or under `--defaults`.

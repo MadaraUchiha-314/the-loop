@@ -2,31 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/MadaraUchiha-314/the-loop/.the-loop/harness-config.schema.json",
   "title": "the-loop plugin configuration",
-  "description": "Schema for .the-loop/harness-config.yaml — the HARNESS (plugin) config, installed per repo and read by the /the-loop:* commands and the skill working that repo: how work is done HERE (layout, tooling, reviews, autonomy, security, writing). THE CLI NEVER READS THIS FILE (issue-352, decision-123): what the CLI needs it takes from its own cli-config.yaml (spec directory, critics, graph hooks) or from flags the agent passes (`--spec-dir`, `--glob`, `--doc`); the skill tells the agent which. Phase labels are `loop:<phase>`, fixed; the ticket's repository is the work item's ref, not a setting. A subset of these keys may be overridden per work-item via the YAML front-matter of the work-item / spec markdown. People live in .the-loop/collaborators.yaml (collaborators.schema.json).",
+  "description": "Schema for .the-loop/harness-config.yaml — the HARNESS (plugin) config, installed per repo and read by the /the-loop:* commands and the skill working that repo: how work is done HERE (layout, tooling, instructions, testing, contracts, gates, reviews). THE CLI NEVER READS THIS FILE (issue-352, decision-123): what the CLI needs it takes from its own cli-config.yaml (spec directory, critics, graph hooks) or from flags the agent passes (`--spec-dir`, `--glob`, `--doc`); the skill tells the agent which. Phase labels are `loop:<phase>`, fixed; the ticket's repository is the work item's ref, not a setting.",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "repository", "reviews"],
-  "$defs": {
-    "autonomyPolicy": {
-      "type": "string",
-      "enum": ["autonomous-complete", "human-approves-pr", "human-approves-spec-and-pr"],
-      "description": "What a risk tier requires before completion: finish autonomously after the review loop, or require a human to approve the PR (and optionally the spec)."
-    },
-    "modelTier": {
-      "type": "object",
-      "additionalProperties": false,
-      "description": "A model-routing tier bound to a concrete model id per harness. Empty/omitted = use that harness's default model for the tier.",
-      "properties": {
-        "claude": {
-          "type": "string",
-          "description": "Model id passed to the claude CLI for this tier (e.g. --model)."
-        },
-        "cursor": { "type": "string", "description": "Model id passed to cursor-agent for this tier." }
-      }
-    }
-  },
   "x-onboarding": {
-    "description": "Drives the guided onboarding `/the-loop:init` runs (see the the-loop skill's reference/onboarding.md). Groups club related top-level keys that interact and are established with the user together, in this order. Per-key explanations, defaults, enum possibilities and examples come from the property schemas below — this block only adds grouping and ask policy, so the schema stays the single source of truth. `version` belongs to no group: init stamps it. Validators ignore x-* keywords.",
+    "description": "Drives the guided onboarding `/the-loop:init` runs (see the the-loop skill's reference/onboarding.md). Groups club related top-level keys that interact and are established with the user together, in this order. Per-key explanations, defaults, enum possibilities and examples come from the property schemas below — this block only adds grouping and ask policy, so the schema stays the single source of truth. `version` belongs to no group: init stamps it. A group may carry no key (`people`): it exists to establish a sibling file. Validators ignore x-* keywords.",
     "askLevels": {
       "always": "No sensible default exists — init MUST establish this group with the user (or report it under needs-user when running non-interactively).",
       "confirm": "Init proposes sensible values (detected from the repo, else the schema default) and asks the user to confirm or adjust the whole group in one pass.",
@@ -65,22 +46,22 @@
         "id": "quality",
         "title": "Quality gates",
         "ask": "confirm",
-        "explain": "What runs before a commit/push (lint, typecheck, tests), the commit convention, the TDD discipline, Gherkin scenario docstrings on integration tests, and the minimalism guard.",
-        "keys": ["hooks", "testing", "tdd", "minimalism"]
+        "explain": "What runs before a commit/push (lint, typecheck, tests), the commit convention and the Gherkin scenario docstrings on integration tests. The TDD discipline (standard: tests alongside the implementation, a bug fix red first) and the minimalism guard are the loop's fixed rules since issue-352, not keys.",
+        "keys": ["hooks", "testing"]
       },
       {
-        "id": "reviews-autonomy",
-        "title": "Reviews, security & autonomy",
+        "id": "reviews",
+        "title": "Reviews",
         "ask": "confirm",
-        "explain": "How many self/critic review rounds run before escalating to a human, the security gates woven into the phases (threat model, security design, security review, human sign-off tier), and how much a work item may complete without a human (risk tiers 1-Trivial … 5-Critical).",
-        "keys": ["reviews", "security", "autonomy"]
+        "explain": "How many self/critic review rounds run before escalating to a human, and the stop conditions. Which critics exist is the operator's CLI config (critics[]). The risk tiers (1-Trivial … 5-Critical, tiers 1–2 autonomous, 3–4 human-approves-pr, 5 human-approves-spec-and-pr) and the security gates (threat model, security design, security review, human sign-off at tier 4+) are the loop's fixed rules since issue-352, not keys.",
+        "keys": ["reviews"]
       },
       {
         "id": "people",
         "title": "People & interaction",
         "ask": "always",
-        "explain": "Who approves work: collaborators (people, roles) live in .the-loop/collaborators.yaml (collaborators.schema.json) — init establishes that file in this group. Here the group covers how the harness presents work to and educates humans (userInteraction). Every decision needs a paper trail, so at least one collaborator must hold the approver role. Notification delivery is the CLI config's (channels.slack); no event→role filter lives here since issue-352.",
-        "keys": ["userInteraction"]
+        "explain": "Who approves work: collaborators (people, roles) live in .the-loop/collaborators.yaml (collaborators.schema.json) — init establishes that file in this group; it holds no harness-config key. Every decision needs a paper trail, so at least one approver role must resolve to a person. How the harness presents work to humans (mermaid diagrams, the PR briefing, the the-loop:writing contract) is fixed since issue-352.",
+        "keys": []
       },
       {
         "id": "contracts-design",
@@ -91,24 +72,17 @@
       },
       {
         "id": "runtime",
-        "title": "Observability & external tools",
+        "title": "Observability",
         "ask": "advanced",
-        "explain": "Logging levels (dev == runtime, only breakpoints differ), browser logging, and the external-tools registry. Hooks on the process graph and critic harnesses are the operator's CLI config (routing.graph.hooks, critics), not this file's (issue-352).",
-        "keys": ["observability", "externalTools"]
-      },
-      {
-        "id": "automation",
-        "title": "Self-improvement & context management",
-        "ask": "advanced",
-        "explain": "The learnings lifecycle and the context-window management policy. Sensible defaults; configure only when tuning the-loop's runtime behaviour. The webhook receiver / poller that route GitHub events into harness sessions are configured separately, in the CLI config (.the-loop/cli-config.schema.json, decision-032) — not part of this repo's plugin onboarding.",
-        "keys": ["selfImprovement", "contextManagement"]
+        "explain": "Logging levels (dev == runtime, only breakpoints differ) and browser logging. The harness discovers its own tools (MCP servers, plugins, skills, CLIs) — no registry is declared (issue-352). Hooks on the process graph and critic harnesses are the operator's CLI config (routing.graph.hooks, critics), not this file's.",
+        "keys": ["observability"]
       }
     ]
   },
   "properties": {
     "version": {
       "type": "string",
-      "description": "Schema version of this config file. Used by /upgrade-the-loop to reconcile. 0.3.0 (issue-352) removed ticketing, workflow.phases/phaseLabelPrefix/specApproach/requireHumanReviewPerPhase, localOrchestration, notifications, reviews.critics and graph — see the upgrade command for where each went.",
+      "description": "Schema version of this config file. Used by /upgrade-the-loop to reconcile. 0.3.0 (issue-352) removed ticketing, workflow.phases/phaseLabelPrefix/specApproach/requireHumanReviewPerPhase, localOrchestration, notifications, reviews.critics and graph — see the upgrade command for where each went. It also removed autonomy, security, tdd, minimalism, tokenEconomy, selfImprovement, contextManagement, userInteraction and externalTools: those configured what is now simply the loop's rule (risk tiers, security gates, TDD, minimalism, token economy, learnings, context management, the writing contract) and the harness discovers its own tools.",
       "examples": ["0.3.0"]
     },
     "repository": {
@@ -241,10 +215,7 @@
           "description": "Ordered list of instruction documents, read in order when starting work on a work item (later docs win over earlier ones where they conflict).",
           "examples": [
             [
-              {
-                "path": "docs/team-conventions.md",
-                "notes": "House TS style, naming, PR etiquette."
-              }
+              { "path": "docs/team-conventions.md", "notes": "House TS style, naming, PR etiquette." }
             ]
           ],
           "items": {
@@ -472,476 +443,6 @@
           "type": "boolean",
           "default": true,
           "description": "Diminishing-returns guard: if two consecutive rounds surface the SAME finding, escalate to a human instead of looping."
-        }
-      }
-    },
-    "autonomy": {
-      "type": "object",
-      "description": "Risk-tiered autonomy: how much a work item may complete without a human, by risk tier (1-Trivial … 5-Critical). See reference/workflow.md.",
-      "additionalProperties": false,
-      "properties": {
-        "defaultTier": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 5,
-          "default": 3,
-          "description": "Risk tier assumed when a work item does not declare `riskTier` in its front-matter."
-        },
-        "inferFromChange": {
-          "type": "boolean",
-          "default": true,
-          "description": "Raise the effective tier automatically when the change touches sensitive areas (auth/security/schema/public API)."
-        },
-        "sensitivePaths": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "Globs that force a high tier when touched.",
-          "examples": [
-            ["**/auth/**", "**/*secret*", "**/*schema*"]
-          ]
-        },
-        "tiers": {
-          "type": "object",
-          "description": "Per-tier gate policy (keys \"1\"–\"5\"). Lower tiers may complete autonomously after the review loop; higher tiers require the named human gate.",
-          "additionalProperties": false,
-          "properties": {
-            "1": { "$ref": "#/$defs/autonomyPolicy" },
-            "2": { "$ref": "#/$defs/autonomyPolicy" },
-            "3": { "$ref": "#/$defs/autonomyPolicy" },
-            "4": { "$ref": "#/$defs/autonomyPolicy" },
-            "5": { "$ref": "#/$defs/autonomyPolicy" }
-          }
-        }
-      }
-    },
-    "security": {
-      "type": "object",
-      "description": "Security as a first-class, gated concern woven into the phase gates (requirements → design → review), not a separate step. See reference/security.md.",
-      "additionalProperties": false,
-      "properties": {
-        "threatModel": {
-          "type": "object",
-          "description": "The threat-model-lite captured in the requirements phase (the Security considerations section of requirements.md / bugfix.md).",
-          "additionalProperties": false,
-          "properties": {
-            "required": {
-              "type": "boolean",
-              "default": true,
-              "description": "Requirements/bugfix MUST carry a filled Security considerations section (untrusted actors, trust boundaries, abuse cases, fail-closed expectations) to pass the phase gate. \"No new attack surface\" is a valid answer when written and justified."
-            },
-            "projectDoc": {
-              "type": "string",
-              "default": "",
-              "description": "Optional path to a living project-level threat-model doc the per-work-item sections link to and delta against. Empty = none; the per-work-item sections are the record.",
-              "examples": ["docs/security/threat-model.md"]
-            }
-          }
-        },
-        "design": {
-          "type": "object",
-          "description": "The Security design section of design.md: how each requirements-phase trust boundary is enforced (authn/authz, input validation, secrets, least privilege, injection surfaces, fail-closed).",
-          "additionalProperties": false,
-          "properties": {
-            "required": {
-              "type": "boolean",
-              "default": true,
-              "description": "design.md MUST state how every trust boundary from the requirements is enforced; a boundary left unenforced fails the design gate."
-            }
-          }
-        },
-        "review": {
-          "type": "object",
-          "description": "The security review — an explicit ready-to-ship gate item run after the self/critic rounds, before a work item can be marked complete.",
-          "additionalProperties": false,
-          "properties": {
-            "required": {
-              "type": "boolean",
-              "default": true,
-              "description": "The ready-to-ship gate includes a passed security review; an unresolved security finding blocks completion regardless of risk tier."
-            },
-            "mechanism": {
-              "type": "string",
-              "enum": ["auto", "skill", "checklist"],
-              "default": "auto",
-              "description": "auto = use the harness's built-in security-review skill when available, else the-loop's checklist in reference/security.md; skill / checklist force one mechanism."
-            },
-            "humanSignOffMinTier": {
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 6,
-              "default": 4,
-              "description": "Effective risk tier at or above which a NAMED HUMAN must approve the security review (paper trail) — autonomous completion is off the table even if autonomy.tiers allows it. Below the threshold the autonomous review suffices. 6 = never require a human sign-off."
-            }
-          }
-        }
-      }
-    },
-    "tdd": {
-      "type": "object",
-      "description": "Test-driven-development discipline in the implementation phase. See reference/workflow.md.",
-      "additionalProperties": false,
-      "properties": {
-        "mode": {
-          "type": "string",
-          "enum": ["standard", "tdd-first", "off"],
-          "default": "standard",
-          "description": "standard = red→green→refactor per task; tdd-first = all tests for the work item written and failing before any production code; off = no enforced test-first."
-        }
-      }
-    },
-    "minimalism": {
-      "type": "object",
-      "description": "Generation-time minimalism pass to counter code bloat. Advisory: informs generation, never gates a merge and never trades away validation/error-handling/security/accessibility. See reference/minimalism.md.",
-      "additionalProperties": false,
-      "properties": {
-        "enabled": { "type": "boolean", "default": true },
-        "intensity": {
-          "type": "string",
-          "enum": ["low", "standard", "high"],
-          "default": "standard"
-        }
-      }
-    },
-    "tokenEconomy": {
-      "type": "object",
-      "description": "Token/cost-reduction levers for the loop (issue-37). ADVISORY, never a merge gate: no lever may trade away validation, error handling, security, accessibility, test-first discipline, the paper trail, or review depth — cheaper never means sloppier. See reference/token-economy.md.",
-      "additionalProperties": false,
-      "properties": {
-        "enabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "Master switch for the token-economy levers."
-        },
-        "modelRouting": {
-          "type": "object",
-          "additionalProperties": false,
-          "description": "Route different pipeline stages to different model tiers so cheap work does not pay frontier-model prices (issue-37). Harness-agnostic: operators bind abstract tiers to concrete per-harness model ids; advisory where a harness cannot switch models programmatically.",
-          "properties": {
-            "enabled": { "type": "boolean", "default": true },
-            "tiers": {
-              "type": "object",
-              "additionalProperties": false,
-              "description": "Abstract cost tiers → concrete model id per harness. Leave a mapping empty to let the harness use its default model for that tier.",
-              "properties": {
-                "economy": { "$ref": "#/$defs/modelTier" },
-                "standard": { "$ref": "#/$defs/modelTier" },
-                "frontier": { "$ref": "#/$defs/modelTier" }
-              }
-            },
-            "stages": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "string",
-                "enum": ["economy", "standard", "frontier"]
-              },
-              "description": "Stage → tier assignment. Keys are pipeline stages (brainstorm, requirements, design, test-planning, tasks, implementation, verification, self-review, critic-review, evidence, capability-docs, reviewer-briefing, status, learnings). Reasoning-heavy stages default to frontier; mechanical/formatting stages to economy.",
-              "default": {
-                "brainstorm": "frontier",
-                "requirements": "frontier",
-                "design": "frontier",
-                "test-planning": "standard",
-                "tasks": "standard",
-                "implementation": "standard",
-                "verification": "standard",
-                "self-review": "standard",
-                "critic-review": "frontier",
-                "evidence": "economy",
-                "capability-docs": "economy",
-                "reviewer-briefing": "economy",
-                "status": "economy",
-                "learnings": "economy"
-              }
-            },
-            "riskTierFloor": {
-              "type": "object",
-              "additionalProperties": false,
-              "description": "Optional minimum tier by work-item risk tier (1–5): high-risk work never runs below the named tier even on an otherwise-economy stage.",
-              "properties": {
-                "4": {
-                  "type": "string",
-                  "enum": ["economy", "standard", "frontier"]
-                },
-                "5": {
-                  "type": "string",
-                  "enum": ["economy", "standard", "frontier"]
-                }
-              }
-            }
-          }
-        },
-        "thinkingEffort": {
-          "type": "object",
-          "additionalProperties": false,
-          "description": "Cap extended-thinking effort by stage so mechanical steps do not burn reasoning tokens (thinking bills as output). Advisory where a harness cannot set effort.",
-          "properties": {
-            "enabled": { "type": "boolean", "default": true },
-            "stages": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "string",
-                "enum": ["none", "low", "medium", "high"]
-              },
-              "description": "Stage → thinking-effort budget. Design/critic-review default high; status/evidence/formatting default none/low.",
-              "default": {
-                "design": "high",
-                "critic-review": "high",
-                "test-planning": "medium",
-                "implementation": "medium",
-                "verification": "low",
-                "evidence": "none",
-                "capability-docs": "low",
-                "reviewer-briefing": "low",
-                "status": "none"
-              }
-            }
-          }
-        },
-        "outputVerbosity": {
-          "type": "object",
-          "additionalProperties": false,
-          "description": "caveman-style narration compression (issue-37): drop conversational filler in the agent's own prose. NEVER touches the items in `preserve`.",
-          "properties": {
-            "mode": {
-              "type": "string",
-              "enum": ["standard", "concise"],
-              "default": "concise",
-              "description": "concise = fragments over sentences, no filler, in the agent's narration only; standard = no compression."
-            },
-            "preserve": {
-              "type": "array",
-              "items": { "type": "string" },
-              "description": "Content classes compression must never touch — these are contracts and paper trail.",
-              "default": [
-                "code",
-                "commands",
-                "diffs",
-                "errors",
-                "paper-trail-comments",
-                "reviewer-briefing",
-                "specs",
-                "decisions",
-                "capability-docs"
-              ]
-            }
-          }
-        },
-        "progressiveDisclosure": {
-          "type": "object",
-          "additionalProperties": false,
-          "description": "Just-in-time loading of skill reference docs: a step loads only the reference file(s) its phase needs, not the whole corpus (issue-37, deepens the SKILL.md → reference/ split).",
-          "properties": {
-            "enabled": { "type": "boolean", "default": true },
-            "phaseScoped": {
-              "type": "boolean",
-              "default": true,
-              "description": "Load reference docs scoped to the active phase (see the loading map in reference/token-economy.md)."
-            }
-          }
-        },
-        "subAgentDelegation": {
-          "type": "object",
-          "additionalProperties": false,
-          "description": "Delegate verbose work (running tests, fetching docs, scanning large files/logs) to a fresh-context sub-agent so the raw output stays in its window and only a summary returns to the controller (issue-37). Guidance where a harness lacks sub-agents.",
-          "properties": {
-            "enabled": { "type": "boolean", "default": true }
-          }
-        },
-        "compaction": {
-          "type": "object",
-          "additionalProperties": false,
-          "description": "Long-run hygiene: checkpoint durable state to the execution log, then compact/reset the window preserving the spec + open threads (issue-37). Leans on the-loop's existing filesystem-as-memory (why resumability works).",
-          "properties": {
-            "enabled": { "type": "boolean", "default": true }
-          }
-        },
-        "telemetry": {
-          "type": "object",
-          "additionalProperties": false,
-          "description": "Measure token/cost per work item so later levers are tuned against a real baseline, not vendor claims (issue-37). Usage is parsed best-effort from each harness's JSON output; totals surface in execution-log.md.",
-          "properties": {
-            "enabled": { "type": "boolean", "default": true }
-          }
-        }
-      }
-    },
-    "selfImprovement": {
-      "type": "object",
-      "description": "Lifecycle for learnings: capture → write-gate → consolidate → inject. WHERE the learnings live is `workflow.learningsDir` (with the other checked-in-knowledge directories), not a key here. See reference/automation.md.",
-      "additionalProperties": false,
-      "properties": {
-        "enabled": { "type": "boolean", "default": true },
-        "maxIndexLines": {
-          "type": "integer",
-          "minimum": 1,
-          "default": 200,
-          "description": "Cap on the injected learnings index; overflow detail spills to <workflow.learningsDir>/topics/<category>.md, read on demand."
-        },
-        "writeGateOccurrences": {
-          "type": "integer",
-          "minimum": 1,
-          "default": 3,
-          "description": "A learning candidate becomes durable only after recurring this many times (rule-of-three); a clearly high-severity one-off may bypass the gate."
-        }
-      }
-    },
-    "contextManagement": {
-      "type": "object",
-      "description": "How the harness manages its context window while working an item: checkpoint durable state (tasks.md checkmarks, execution-log entry with a concrete next step, phase label), THEN reset. Clearing empties the window (only disk state survives); compaction summarizes it in place (lossy). See reference/context.md for the protocol and per-harness mechanics.",
-      "additionalProperties": false,
-      "properties": {
-        "enabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "false defers window management entirely to the harness's own automatics (e.g. auto-compaction)."
-        },
-        "phaseBoundary": {
-          "type": "string",
-          "enum": ["clear", "compact", "off"],
-          "default": "clear",
-          "description": "Reset when the phase advances across a locked artifact — most importantly tasks-breakdown → implementation: the approved spec is re-read from disk, so a fresh window (clear) is safe and highest-fidelity (plan-mode style). Headless sessions achieve clear by ending at the boundary and letting resumability start the next session fresh."
-        },
-        "taskBoundary": {
-          "type": "string",
-          "enum": ["clear", "compact", "off"],
-          "default": "compact",
-          "description": "Reset after each completed task in the tasks.md DAG (checkpoint first). compact keeps cross-task working knowledge while dropping the finished task's exploration/diff/test noise; clear is the aggressive option the checked-in execution log makes affordable (good for long DAGs)."
-        },
-        "midTask": {
-          "type": "string",
-          "enum": ["compact", "off"],
-          "default": "compact",
-          "description": "Only compaction is permitted mid-task — never clear inside an unfinished task (it has un-checkpointed intent by definition). Write an interim checkpoint before compacting."
-        }
-      }
-    },
-    "userInteraction": {
-      "type": "object",
-      "description": "How the-loop communicates with humans when requesting input and presenting work. RULES: always give enough context to make the call; all diagrams are mermaid; educating the user on low-level decisions is mandatory, not optional.",
-      "additionalProperties": false,
-      "properties": {
-        "diagramFormat": {
-          "type": "string",
-          "enum": ["mermaid"],
-          "default": "mermaid",
-          "description": "RULE: all diagrams (PR summaries, design docs, education) are authored in mermaid."
-        },
-        "prSummary": {
-          "type": "object",
-          "additionalProperties": false,
-          "description": "What every PR the-loop raises must contain so a human can review AI-authored work efficiently.",
-          "properties": {
-            "required": {
-              "type": "boolean",
-              "default": true,
-              "description": "The reviewer briefing MUST be posted/updated in the PR (description or top comment) BEFORE requesting human review — a ready-to-ship gate item, so R10 education is triggered rather than silently skipped."
-            },
-            "templatePath": {
-              "type": "string",
-              "default": "skills/the-loop/templates/pr-briefing.md",
-              "description": "Template the reviewer briefing is produced from. the-loop's internal template, resolved under ${CLAUDE_PLUGIN_ROOT} (the installed plugin). Set a repo-relative path to override with your own."
-            },
-            "condensed": {
-              "type": "boolean",
-              "default": true,
-              "description": "Present a condensed, prioritized summary telling the reviewer where to focus and in what order."
-            },
-            "includeDiagrams": {
-              "type": "boolean",
-              "default": true,
-              "description": "Include mermaid diagrams explaining the low-level details of the change."
-            },
-            "documentInsightsAndDecisions": {
-              "type": "boolean",
-              "default": true,
-              "description": "Document the insights from spec->implementation and every low-level decision the harness had to make, in the PR description."
-            }
-          }
-        },
-        "educateUser": {
-          "type": "boolean",
-          "default": true,
-          "description": "RULE: intentionally and mandatorily educate the user on low-level design decisions as their familiarity with the codebase decreases. Not optional."
-        },
-        "writingStyle": {
-          "type": "object",
-          "additionalProperties": false,
-          "description": "How the-loop writes the artifacts a HUMAN reads (issue-165). Distinct from `tokenEconomy.outputVerbosity`, which compresses chat narration and explicitly preserves specs — this governs the documents themselves. The judgement lives in the bundled `the-loop:writing` skill; this block carries only the policy the skill reads. Deliberately carries NO length limits: a work item's scope is not known in advance, so a number that fits a two-line bug fix is wrong for a new subsystem, and a cap would only push prose into an appendix (owner's call on PR #168, decision-061). The skill's test is density — whether a sentence can come out without losing information — which is a review judgement, never a gate.",
-          "properties": {
-            "enabled": {
-              "type": "boolean",
-              "default": true,
-              "description": "Apply the writing contract when authoring or revising a human-read artifact."
-            },
-            "skill": {
-              "type": "string",
-              "default": "the-loop:writing",
-              "description": "The skill carrying the contract (document spine, diagram-first rule, formal carve-out, revise pass). Bundled with the-loop; set another name to override with your own. Every human-read template names this skill, and `cli/tests/test_writing_parity.py` holds the two together."
-            },
-            "diagramFirst": {
-              "type": "boolean",
-              "default": true,
-              "description": "RULE: where prose would describe a structure, sequence or state change with three or more named parts, author a `userInteraction.diagramFormat` diagram instead and let the prose say only what the diagram cannot. `design.md` carries at least one."
-            },
-            "formalRegisters": {
-              "type": "array",
-              "uniqueItems": true,
-              "default": [
-                "ears-acceptance-criteria",
-                "abuse-cases",
-                "api-contracts",
-                "schema-descriptions",
-                "rfc-2119"
-              ],
-              "description": "Registers the writing contract must NOT relax into informal prose. These are testable contracts, not prose: softening one breaks the gate that reads it. Explanation AROUND them is ordinary prose and follows the skill.",
-              "items": {
-                "type": "string",
-                "enum": [
-                  "ears-acceptance-criteria",
-                  "abuse-cases",
-                  "api-contracts",
-                  "schema-descriptions",
-                  "rfc-2119"
-                ]
-              }
-            }
-          }
-        }
-      }
-    },
-    "externalTools": {
-      "type": "object",
-      "description": "Tools/skills/MCPs/plugins the-loop may freely use, declared inline so the whole config lives in one YAML — no separate registry file (issue-37 PR feedback). The harness checks this registry before assuming a capability is available.",
-      "additionalProperties": false,
-      "properties": {
-        "tools": {
-          "type": "array",
-          "description": "Registered tools the harness is aware of and may use.",
-          "default": [],
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["name"],
-            "properties": {
-              "name": {
-                "type": "string",
-                "description": "Tool/skill/MCP/plugin name, e.g. `github`, `gh`, `ponytail`."
-              },
-              "kind": {
-                "type": "string",
-                "enum": ["mcp", "cli", "skill", "plugin", "other"],
-                "description": "What kind of tool this is."
-              },
-              "url": { "type": "string", "description": "Optional homepage/repository URL." },
-              "notes": {
-                "type": "string",
-                "description": "Access patterns, auth, constraints, or why it is registered."
-              }
-            }
-          }
-        },
-        "notes": {
-          "type": "string",
-          "description": "Global free-form notes (auth, access patterns, constraints) spanning tools."
         }
       }
     }

@@ -52,7 +52,7 @@ For each group, in `x-onboarding.groups` order:
 
 1. **Say what it is.** The group title and its `explain` text — what this part of the
    config controls and why it matters to the loop. Educating the user here is
-   mandatory, not optional (`userInteraction.educateUser`).
+   mandatory, not optional.
 2. **Show the proposal.** The resolved value for each key in the group, marking where
    it came from: *detected*, *default*, or *already configured*. Detected values name
    their signal (e.g. "`packageManager.ts: pnpm` — from `pnpm-lock.yaml`").
@@ -61,7 +61,7 @@ For each group, in `x-onboarding.groups` order:
    The user should never have to guess what the alternatives are.
 4. **Free-form keys show examples.** Use the schema's `examples` (e.g.
    `ticketing.github.owner: "MadaraUchiha-314"`,
-   `sensitivePaths: ["**/auth/**", "**/*secret*"]`) so the expected shape is obvious.
+   `integrationTestGlobs: ["tests/**/*_integration.py"]`) so the expected shape is obvious.
 5. **Ask once per group.** Collect the whole group's answers in a single interaction.
    Where the harness has a structured-question UI (e.g. Claude Code's
    `AskUserQuestion`), use it — one question per key that needs deciding, enum values
@@ -73,7 +73,7 @@ For each group, in `x-onboarding.groups` order:
 
 Keys that interact are decided together, never in isolation — e.g.
 `repository.monorepo` with `monorepoTool`; `testing.gherkinDocstrings` with
-`linkRequirements`; `reviews.*` counts with `autonomy.tiers`. That is exactly what
+`linkRequirements`; `selfReviewCount` with `stopOnNoNewFindings`. That is exactly what
 the grouping encodes.
 
 ## Modes

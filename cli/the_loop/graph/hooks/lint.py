@@ -3,8 +3,8 @@
 ``diagramsRender`` exists because of a real incident, recorded in
 docs/specs/issue-109/design.md: a reviewer caught a mermaid block in this very
 work item that would not render, and checking the whole repository then found
-three more **already merged**. ``userInteraction.diagramFormat: mermaid`` is
-written as a RULE and was enforced by nothing.
+three more **already merged**. "All diagrams are mermaid" is written as a RULE
+and was enforced by nothing.
 
 A rule with no hook drifts. That is issue-109's thesis, demonstrated on a rule
 nobody thought to check — so it is a hook now.

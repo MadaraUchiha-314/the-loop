@@ -71,5 +71,11 @@ flowchart LR
   `hooks.md`, `concepts.md`, CLI index, capabilities with history rows, decision-123,
   decision-044 superseded, the audit's outcome note, `cli/README.md`. _Test:_ T9 (docs
   parity), T11.
+- [x] **13 · The second review: the policy blocks** — drop `autonomy`, `security`, `tdd`,
+  `minimalism`, `tokenEconomy`, `selfImprovement`, `contextManagement`,
+  `userInteraction`, `externalTools` from the schema (and their `$defs`), the template
+  and this repo's config; rewrite the onboarding groups; state each rule in its
+  reference file; fix every command, docstring, capability doc and config page that
+  named a key; `test_writing_parity` without the schema read. _Test:_ T9, T11.
 - [x] **12 · Verification + evidence** — `make check`; the grep; `evidence/verification.md`
   and `evidence/security-review.md`; execution log; PR body. _Test:_ all.

@@ -48,7 +48,7 @@ document is fraud, not editing.
 ## Prefer a diagram
 
 Describing a structure, a sequence or a state change with three or more named parts? Draw
-it. Mermaid, per `userInteraction.diagramFormat`. Then let the prose say only what the
+it. Mermaid, always. Then let the prose say only what the
 diagram cannot — why the arrow points that way, what happens when it fails. `design.md`
 carries at least one.
 
@@ -61,8 +61,8 @@ These are testable artifacts, not prose, and this skill does not touch them:
 - OpenAPI / GraphQL contracts and JSON-Schema `description` values
 - Quoted material, third-party text, committed evidence and code
 
-Listed in `userInteraction.writingStyle.formalRegisters`. Explanation *around* them is
-ordinary prose and follows this skill.
+These are the formal registers of the writing contract (fixed since issue-352).
+Explanation *around* them is ordinary prose and follows this skill.
 
 ## The revise pass
 
@@ -80,6 +80,7 @@ read [`reference/tells.md`](reference/tells.md).
 
 ## Related
 
-`tokenEconomy.outputVerbosity` compresses **chat narration** and preserves specs; this
-skill governs the **artifacts**. Third-party skills covering neighbouring ground are
-registered in `externalTools`, not vendored (decision-005).
+The token-economy verbosity rule (`the-loop` skill, `reference/token-economy.md`)
+compresses **chat narration** and preserves specs; this skill governs the
+**artifacts**. Third-party skills covering neighbouring ground are implemented
+natively, not vendored (decision-005, decision-062).

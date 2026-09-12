@@ -1,7 +1,7 @@
 # Security review — issue-352
 
 > The ready-to-ship security gate (`security.review.required`, mechanism `auto`).
-> **Risk tier 4**, so `security.review.humanSignOffMinTier: 4` applies: the owner's
+> **Risk tier 4**, so the fixed sign-off rule (a named human at tier 4+) applies: the owner's
 > approval of [PR #353](https://github.com/MadaraUchiha-314/the-loop/pull/353) is the
 > named human sign-off, and their review directing the change is the paper trail.
 > Date: 2026-09-12.
@@ -31,8 +31,10 @@ stays because it protects a write too (A3); one ownership proof is untouched (A4
   the fix is a second instance or aligned layouts. Stated in decision-123.
 - **Secrets in `critics[].env`.** The schema and docs say never; the entry now lives in
   the operator's file, where `env.file` (issue-318) is the intended place for values.
-- **The harness config is still executable-adjacent for the agent** (autonomy tiers,
-  security gates), so it stays in this repository's `sensitivePaths`; the CLI config joins
-  it.
+- **`.the-loop/**` is one of the skill's fixed sensitive paths**, so an edit to either
+  config raises the tier; the CLI config is the one that matters, because `critics[]` and
+  `routing.graph.hooks` are executable. The harness config carries no policy switch any
+  more (the second review removed them), so there is nothing in it a pull request can
+  loosen.
 
 No finding blocks completion.

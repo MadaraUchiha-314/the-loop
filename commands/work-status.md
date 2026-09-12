@@ -34,5 +34,5 @@ does not change anything.
    - **Next step** — the command to move forward (`create-design` / `create-tasks-plan` /
      `execute-tasks` / `finish-tasks`).
 
-4. **Present** it as a concise, prioritized summary (mermaid where a diagram helps —
-   `config.userInteraction`). Do not modify any file or ticket.
+4. **Present** it as a concise, prioritized summary (mermaid where a diagram helps).
+   Do not modify any file or ticket.

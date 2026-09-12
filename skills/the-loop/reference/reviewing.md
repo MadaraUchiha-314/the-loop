@@ -153,19 +153,19 @@ converged, exactly as above.
   (it recurs rather than getting resolved), stop looping and **escalate to the human**
   (`reviews.escalateOnRepeatFinding`, default true) — the loop is stuck, not improving.
 
-## The security review round (`security.review`)
+## The security review round
 
 After the self/critic rounds converge, one more recorded round runs with a **security
 lens** — a distinct, required gate item, not an extra critic pass (`security.md` has
 the full procedure and checklist):
 
-- Mechanism per `security.review.mechanism`: the harness's built-in security-review
-  skill when available (`auto`/`skill`), else the-loop's checklist (`checklist`).
+- Mechanism: the harness's built-in security-review skill when it has one, else
+  the-loop's checklist.
 - Findings follow the **same protocol above** (reply-first, one finding per commit),
   with one tightening: a security finding is never silently dismissed — won't-fix
   requires a recorded justification, and an unresolved security finding blocks
   completion regardless of risk tier.
-- An effective risk tier ≥ `security.review.humanSignOffMinTier` needs a named human
+- An effective risk tier of 4 or above needs a named human
   sign-off on this round (paper trail); lower tiers run it autonomously.
 
 ## Record every round

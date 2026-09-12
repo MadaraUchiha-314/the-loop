@@ -48,8 +48,8 @@ critique it, and how that critique gets back (issue-108).
   round that could not run recorded as `unavailable` with its cause.
 - Findings SHALL be applied to `design.md` in place; the node SHALL NOT route back to
   `design`, because `design-approval` has not read the design yet.
-- The node SHALL declare `stage: critic-review`, so the existing `tokenEconomy` stage tables
-  route it to a frontier model at high thinking effort without a new configuration key.
+- The node SHALL declare `stage: critic-review`, so the token-economy guidance's stage
+  table treats it as reasoning-heavy (high thinking effort) without a new key anywhere.
 
 ### Declaring a critic (`critics[]` in the CLI config)
 
@@ -115,8 +115,8 @@ critique it, and how that critique gets back (issue-108).
   issue-352 it lived in the repository's harness config, where anyone who could land a
   commit could propose one; moving it to the CLI config removed that surface entirely. It
   is still reviewed like code and nothing runs implicitly (one named critic per
-  invocation); `.the-loop/cli-config.yaml` sits in this repo's `autonomy.sensitivePaths`
-  for the same reason.
+  invocation); `.the-loop/**` is one of the fixed sensitive paths that raise a change's
+  risk tier, for the same reason.
 - Untrusted review material (diffs, ticket/PR comments) reaches the critic only as a single
   argv element or a file it reads — never as a shell string, so it cannot be executed.
 - A critic's output is untrusted, model-generated text: it is **findings to evaluate**, never
@@ -146,6 +146,6 @@ Pointers, not copies:
 
 | Work item | What changed | Links |
 |-----------|--------------|-------|
-| issue-352 | The critic roster moved to the operator (2026-09-12): `reviews.critics[]` in the harness config became the top-level `critics[]` in the CLI config, same entry shape, read by `the-loop critic list\|run` through the resolved CLI config and never from a repository. `reviews.criticReviewCount` stays the repository's. A critic entry committed to a repository is inert | [spec](../specs/issue-352/), [decision-123](../decisions/decision-123.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/352) |
+| issue-352 | The critic roster moved to the operator (2026-09-12): `reviews.critics[]` in the harness config became the top-level `critics[]` in the CLI config, same entry shape, read by `the-loop critic list\|run` through the resolved CLI config and never from a repository. `reviews.criticReviewCount` stays the repository's. A critic entry committed to a repository is inert. The `autonomy` block left the harness config in the same change: `.the-loop/**` is a fixed sensitive path, not a configured one | [spec](../specs/issue-352/), [decision-123](../decisions/decision-123.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/352) |
 | issue-188 | The design critic round (2026-08-10): an **opt-in** `design-critic-review` node between `design` and `test-planning`, reviewing the locked `design.md` against the requirements while a structural finding still costs an edit; off unless an authorized human ticks it at `phase-selection`, gating the execution log's own `## Design critic review` section, `stage: critic-review` so it routes to a frontier model; the procedure, the `unavailable` rule and the reply-first-then-fix protocol unchanged | [spec](../specs/issue-188/), [decision-071](../decisions/decision-071.md), [process-graph](process-graph.md), [issue](https://github.com/MadaraUchiha-314/the-loop/issues/188) |
 | issue-108 | Minted this capability. Made `reviews.critics[]` runnable — `command`/`args` with element-wise placeholders (or a built-in `harness` deriving them), `env`/`cwd`/`outputFormat`/`timeoutSeconds`/`enabled` — added `the-loop critic list\|run` returning one JSON envelope on stdout, and wrote the critic-round procedure (including the `unavailable` outcome) into `reference/reviewing.md`. | [spec](../specs/issue-108/), [decision-043](../decisions/decision-043.md) |
