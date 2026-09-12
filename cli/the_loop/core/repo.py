@@ -90,6 +90,15 @@ def critics(repo: str = "") -> List[Dict[str, Any]]:
     ]
 
 
+def review_policy(repo: str = "") -> Dict[str, Any]:
+    """The operator's review-round policy (``reviews`` in the CLI config), defaulted.
+
+    ``repo`` is kept for the route's shape and is not consulted: since issue-352 the
+    counts are the operator's, not any repository's.
+    """
+    return critics_mod.load_review_policy()
+
+
 def spec_dir_for(repo: str, work_item: str) -> str:
     """``<specDir>/<work item>`` for the ``{specDir}`` placeholder — the CLI
     config's ``routing.graph.specDir``, else ``docs/specs``."""

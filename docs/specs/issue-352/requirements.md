@@ -46,6 +46,12 @@ block: `autonomy`, `security`, `tdd`, `minimalism`, `tokenEconomy`, `selfImprove
 configured behaviour that is simply the loop's rule; the rules stay, as the skill's, and
 the keys go (R3.5).
 
+A third review (07:43Z) ruled on what was left: `repository` and `tooling` — *"can be
+inferred from repo. we can add it to the-loop's skill to infer this. remove from
+config"*; `hooks` — *"can be inferred from repo assets like package.json or
+pyproject.toml etc. skill can take care of it. remove it."*; `observability` — *"remove
+this."*; `reviews` — *"this should be in cli-config not harness config."* (R3.7–R3.8).
+
 Until this change the CLI read eight keys of a repository's harness config through one
 declared, test-pinned module ([decision-044](../../decisions/decision-044.md)), wrote
 the-loop's default harness config into an unconfigured checkout before spawning a
@@ -146,6 +152,17 @@ that does not read it.
 6. WHEN a document, command or docstring names one of those keys as configuration,
    THE text SHALL state the rule instead — nothing shipped refers to a key that does
    not exist. (AC3.6)
+7. THE schema, the template and this repository's config SHALL also drop `repository`,
+   `tooling`, `hooks` and `observability`; the skill SHALL infer the repository's
+   layout, tooling and git hooks from the repository itself at the start of every work
+   item (the detection table in `reference/tooling.md`), and a project's log levels
+   SHALL be its own logging configuration. Six keys remain: `version`, `workflow`,
+   `customInstructions`, `testing`, `apiSpecs`, `design`. (AC3.7)
+8. THE review-round policy (`selfReviewCount`, `criticReviewCount`,
+   `stopOnNoNewFindings`, `escalateOnRepeatFinding`) SHALL move to the CLI config's
+   top-level `reviews`, every key defaulted; `the-loop critic policy` SHALL print the
+   effective values (the defaults when the block or the file is absent); a `reviews`
+   block committed to a repository's harness config SHALL be inert. (AC3.8)
 
 ## Requirement 4 — The skill tells the harness
 

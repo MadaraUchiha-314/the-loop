@@ -4,38 +4,18 @@
 # .the-loop/harness-config.schema.json. THE AGENT'S FILE: the skill and the
 # /the-loop:* commands read it, and the CLI never does (issue-352, decision-123) —
 # what the CLI needs lives in .the-loop/cli-config.yaml (spec directory, critics,
-# graph hooks) or arrives as a flag the agent passes. People live in
-# .the-loop/collaborators.yaml; this file names no ticketing system (the work
+# review rounds, graph hooks) or arrives as a flag the agent passes. Only what the
+# agent cannot infer is here: layout, tooling and git hooks are read off the
+# repository itself every session (the skill's reference/tooling.md). People live
+# in .the-loop/collaborators.yaml; this file names no ticketing system (the work
 # item's ref says which repository) and no phase labels (they are `loop:<phase>`).
 
 version: "0.3.0"
-
-repository:
-  monorepo: false          # the-loop itself is not (yet) a monorepo
-  monorepoTool: none
-  runScriptsFromRoot: true
 
 workflow:
   specDir: docs/specs                  # the CLI's routing.graph.specDir must agree (issue-352)
   capabilitiesDir: docs/capabilities   # living capability docs — the organized view of specs (issue-25)
   learningsDir: docs/learnings         # issue-224: stated, not defaulted — the learnings sit with every other doc the loop maintains
-
-tooling:
-  languages: [python]      # the-loop itself: a Python CLI + markdown docs
-  packageManager:
-    python: uv
-  unitTest:
-    python: pytest
-  integrationTest:
-    python: pytest
-  lint:
-    python: ruff
-    markdown: markdownlint
-  typeCheck:
-    python: pyright
-  release:
-    python: pypi
-    containers: ghcr
 
 customInstructions:             # user-provided instruction docs the harness reads before working
   docs: []                      # the-loop's own conventions live in the skill itself; none extra
@@ -64,28 +44,10 @@ design:
     selfContained: true         # RULE: html prototypes inline all CSS/JS, no external network deps
     screenshotEvidence: true    # capture rendered screenshots of the locked design as evidence
 
-hooks:
-  preCommit: [lint, typecheck, unit-test]
-  prePush: [lint, typecheck, unit-test]
-  commitConvention: conventional-commits
-
-observability:
-  devLevel: debug
-  runtimeLevel: info
-  browserLogging: chrome-devtools-mcp
-  # eventLog moved to .the-loop/cli-config.yaml (CLI config, decision-032)
-
-reviews:
-  selfReviewCount: 3
-  criticReviewCount: 3
-  stopOnNoNewFindings: true       # stop the loop when a round finds nothing new
-  escalateOnRepeatFinding: true   # same finding twice in a row -> escalate to a human
-  # WHICH critics exist is the operator's: `critics[]` in .the-loop/cli-config.yaml
-  # (issue-352, decision-123). `the-loop critic list` says what this machine has.
-
 # People live in .the-loop/collaborators.yaml (issue-82, decision-035). Which events
 # reach a channel is the CLI config's `channels.<name>.subscribe` (issue-309).
 # Nothing else is configured here: the risk tiers, the security gates, TDD,
 # minimalism, the token economy, learnings, context management and the writing
-# contract are the loop's fixed rules (issue-352, decision-123), and the harness
-# discovers its own tools.
+# contract are the loop's fixed rules (issue-352, decision-123); the harness
+# discovers its own tools; the review-round policy is the operator's `reviews`
+# in .the-loop/cli-config.yaml (`the-loop critic policy`).

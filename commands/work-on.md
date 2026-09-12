@@ -165,8 +165,10 @@ gate (`brainstorm.md`, `tasks.md`) advance on shape alone.
    cannot run stays unticked: record why, then replan (with the reason) or escalate; an
    environment that will not come up escalates rather than passing the gate.
 
-10. **Review** (`needs-review`). Run up to `reviews.selfReviewCount` self-reviews and
-   `reviews.criticReviewCount` critic reviews (configured critics, e.g. a different
+10. **Review** (`needs-review`). Read the operator's review-round policy with
+   `the-loop critic policy` (`selfReviewCount`, `criticReviewCount`, the stop
+   conditions; defaults 3/3 when unset or when the CLI is not installed), then run up
+   to that many self-reviews and critic reviews (configured critics, e.g. a different
    harness/model) BEFORE escalating to the human reviewer. Then run the **security
    review gate**: the built-in security-review skill when available, else the-loop's
    checklist (`reference/security.md`); a work item at risk tier 4 or above waits for

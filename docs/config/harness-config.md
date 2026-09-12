@@ -50,16 +50,17 @@ file.
 
 | Section | Covers |
 |---------|--------|
-| `repository` | Monorepo tooling (nx/yarn/pnpm/bun), whether scripts run from root. |
+| `version` | The schema version the file follows (`0.3.0`); `/the-loop:upgrade-the-loop` migrates it. |
 | `workflow` | Where the-loop's checked-in knowledge lives (`specDir`/`capabilitiesDir`/`learningsDir`). The phases are the [process graph's](/capabilities/process-graph) and the labels are `loop:<phase>`, fixed — neither is configured. A project which **publishes** its `docs/` tree publishes its learnings with it unless `learningsDir` points elsewhere. |
-| `tooling` | Per-language package manager, unit/integration test runner, lint, type-check, release tooling. |
 | `customInstructions` | User-provided instruction docs the agent reads before working — see [instructions reference](/operating-model/reference/instructions). The agent passes them to [`the-loop instructions`](/cli/commands/instructions) as `--doc`. |
 | `testing` | Gherkin docstring requirement, `integrationTestGlobs` — which the agent passes to [`the-loop scenarios`](/cli/commands/scenarios) as `--glob`. |
 | `apiSpecs` | Contract-first REST (OpenAPI) / GraphQL (SDL) locations and doc generation. |
 | `design` | UI/UX design-artifact directory/format — see [design-artifacts reference](/operating-model/reference/design-artifacts). |
-| `hooks` | Pre-commit / pre-push gate lists, commit convention. |
-| `observability` | Dev/runtime log levels, browser logging — see [observability reference](/operating-model/reference/observability). |
-| `reviews` | Self/critic review counts and stop conditions. **Which** critics exist is the operator's [`critics[]`](/config/cli/critics-options) — see [reviewing reference](/operating-model/reference/reviewing) and [review-loop](/capabilities/review-loop). |
+
+Six keys, and nothing about the repository's layout, tooling, git hooks, logging or
+review rounds: the first three the agent **infers from the repository itself** every
+session ([tooling reference](/operating-model/reference/tooling)), logging is the project's
+own, and the review rounds are the operator's — the table below says where each went.
 
 ## What moved out of it in issue-352
 
@@ -75,7 +76,12 @@ every repository, so not a setting:
 | `workflow.phases` | Removed. The graph is the only phase list; `/the-loop:init` creates the labels from it. |
 | `ticketing` | Removed. A work item's ticket is its ref (`github:owner/repo#n`); in-session the CLI derives the repository from the checkout's `origin` remote when no `--ref` is given. |
 | `notifications` | Removed. The graph's `notify` hook publishes on the event bus; which channel receives what is [`channels.<name>.subscribe`](/config/cli/channels-options) in the CLI config. |
-| `reviews.critics[]` | The CLI config's top-level [`critics[]`](/config/cli/critics-options), same entry shape. `reviews.criticReviewCount` stays here. |
+| `reviews.critics[]` | The CLI config's top-level [`critics[]`](/config/cli/critics-options), same entry shape. |
+| `reviews` (`selfReviewCount`, `criticReviewCount`, `stopOnNoNewFindings`, `escalateOnRepeatFinding`) | The CLI config's top-level [`reviews`](/config/cli/critics-options#review-rounds), same four keys — how many rounds a machine runs is the operator's, like which critics it has. The agent reads it with [`the-loop critic policy`](/cli/commands/critic); the defaults (3/3, true, true) apply when the operator set none or the CLI is not installed. |
+| `repository` (`monorepo`, `monorepoTool`, `runScriptsFromRoot`) | Removed — inferred by the skill from the repository itself, every session: `nx.json`, `pnpm-workspace.yaml`, a `workspaces` field; scripts run from the root through the workspace tool when there is one. See the [tooling reference](/operating-model/reference/tooling). |
+| `tooling` (languages, package manager, test runners, lint, type check, release) | Removed — inferred by the skill from manifests, lock files, dev-dependencies and tool config, cross-checked against CI; the per-language matrix is the fallback where no signal exists, and the execution log says what was detected. See the [tooling reference](/operating-model/reference/tooling). |
+| `hooks` (`preCommit`, `prePush`, `commitConvention`) | Removed — the git hooks are the repository's own (`.pre-commit-config.yaml`, husky/lefthook, `package.json` scripts, a `Makefile`/`justfile` target), the same commands CI runs; with none, the loop's baseline is lint, typecheck and unit tests. Conventional Commits is a rule, not a setting. See the [tooling reference](/operating-model/reference/tooling). |
+| `observability` (`devLevel`, `runtimeLevel`, `browserLogging`) | Removed — the dev-time == run-time rule stays; the levels are the project's own logging configuration and browser logging uses whatever tool the harness discovers. See the [observability reference](/operating-model/reference/observability). |
 | `graph.hooks` | The CLI config's [`routing.graph.hooks`](/config/cli/routing-options#graph-hooks), same shape; a `path` resolves against each checkout. |
 | `testing.integrationTestGlobs` *(still here, for the agent)* | [`the-loop scenarios --glob`](/cli/commands/scenarios). |
 | `customInstructions` *(still here, for the agent)* | [`the-loop instructions --doc … --on-missing …`](/cli/commands/instructions). |

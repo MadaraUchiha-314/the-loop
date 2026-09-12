@@ -77,5 +77,12 @@ flowchart LR
   and this repo's config; rewrite the onboarding groups; state each rule in its
   reference file; fix every command, docstring, capability doc and config page that
   named a key; `test_writing_parity` without the schema read. _Test:_ T9, T11.
+- [x] **14 · The third review: inferred facts and the review policy** — drop
+  `repository`, `tooling`, `hooks`, `observability` from the harness schema, template
+  and config; `reviews` to the CLI schema/config/template; `load_review_policy`,
+  `core.repo.review_policy`, `critic policy`, the API route in the authored contract,
+  SDK and MCP; `/init` and `onboarding.md` without the inferred groups;
+  `reference/tooling.md`'s detection as the per-session procedure; every reference in
+  the skill, commands and docs. _Test:_ T2, T3, T9, T11.
 - [x] **12 · Verification + evidence** — `make check`; the grep; `evidence/verification.md`
   and `evidence/security-review.md`; execution log; PR body. _Test:_ all.

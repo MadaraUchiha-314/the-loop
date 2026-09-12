@@ -119,8 +119,8 @@ command reconciles them.
    config `0.2.0` → `0.3.0`, CLI config `0.8.0` → `0.9.0`.** Detect a harness config
    declaring any of `ticketing`, `workflow.phases`, `workflow.phaseLabelPrefix`,
    `workflow.specApproach`, `workflow.requireHumanReviewPerPhase`, `localOrchestration`,
-   `notifications`, `reviews.critics`, `graph`, or any of the nine policy blocks named
-   below, and migrate it:
+   `notifications`, `reviews`, `graph`, `repository`, `tooling`, `hooks`,
+   `observability`, or any of the nine policy blocks named below, and migrate it:
    - **Remove** `ticketing` (the work item's ref names its repository), `workflow.phases`
      and `workflow.phaseLabelPrefix` (labels are `loop:<phase>`, fixed),
      `workflow.specApproach`, `workflow.requireHumanReviewPerPhase`, `localOrchestration`
@@ -135,6 +135,19 @@ command reconciles them.
      minimalism, the token-economy guidance, the learnings numbers, the context-window
      protocol, the user-interaction and writing contract), and the harness discovers
      its own tools. Report each removal.
+   - **Remove** `repository`, `tooling`, `hooks` and `observability` (issue-352, third
+     pass). **No value is carried anywhere**: the repository's layout, tooling and git
+     hooks are inferred from the repository itself every session (manifests, lock
+     files, tool and hook-manager config, CI — `reference/tooling.md`), and log levels
+     are the project's own logging configuration (`reference/observability.md`). A
+     value the operator had set there is at most worth a line in the report, so they
+     can check the inference against it. Report each removal.
+   - **Move** `reviews` (`selfReviewCount`, `criticReviewCount`, `stopOnNoNewFindings`,
+     `escalateOnRepeatFinding`) to the CLI config's top-level `reviews` — the **same
+     four keys** — into `.the-loop/cli-config.yaml` when the project tracks one, else a
+     printed block for the operator to copy into `~/.the-loop/cli-config.yaml`. The
+     agent reads it back with `the-loop critic policy`; what the operator does not copy
+     falls back to the defaults (3/3, stop on no new findings, escalate on a repeat).
    - **Move** `reviews.critics[]` to the CLI config's top-level `critics[]` and
      `graph.hooks` to its `routing.graph.hooks` — **same entry shapes**, so the move is
      a cut and paste into `.the-loop/cli-config.yaml` when the project tracks one, else

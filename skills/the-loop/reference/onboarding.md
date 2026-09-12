@@ -72,8 +72,8 @@ For each group, in `x-onboarding.groups` order:
    summary.
 
 Keys that interact are decided together, never in isolation — e.g.
-`repository.monorepo` with `monorepoTool`; `testing.gherkinDocstrings` with
-`linkRequirements`; `selfReviewCount` with `stopOnNoNewFindings`. That is exactly what
+`testing.gherkinDocstrings` with `linkRequirements`; `apiSpecs.rest.dir` with
+`apiSpecs.rest.format`. That is exactly what
 the grouping encodes.
 
 ## Modes

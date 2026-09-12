@@ -2,32 +2,18 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/MadaraUchiha-314/the-loop/.the-loop/harness-config.schema.json",
   "title": "the-loop plugin configuration",
-  "description": "Schema for .the-loop/harness-config.yaml — the HARNESS (plugin) config, installed per repo and read by the /the-loop:* commands and the skill working that repo: how work is done HERE (layout, tooling, instructions, testing, contracts, gates, reviews). THE CLI NEVER READS THIS FILE (issue-352, decision-123): what the CLI needs it takes from its own cli-config.yaml (spec directory, critics, graph hooks) or from flags the agent passes (`--spec-dir`, `--glob`, `--doc`); the skill tells the agent which. Phase labels are `loop:<phase>`, fixed; the ticket's repository is the work item's ref, not a setting.",
+  "description": "Schema for .the-loop/harness-config.yaml — the HARNESS (plugin) config, installed per repo and read by the /the-loop:* commands and the skill working that repo: the few facts about this repository the agent cannot infer (where the specs live, the instruction docs, the testing conventions, the API contracts, the design artifacts). Layout, tooling and git hooks are inferred from the repository every session; the review-round policy is the operator's cli-config.yaml. THE CLI NEVER READS THIS FILE (issue-352, decision-123): what the CLI needs it takes from its own cli-config.yaml (spec directory, critics, graph hooks) or from flags the agent passes (`--spec-dir`, `--glob`, `--doc`); the skill tells the agent which. Phase labels are `loop:<phase>`, fixed; the ticket's repository is the work item's ref, not a setting.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "repository", "reviews"],
+  "required": ["version"],
   "x-onboarding": {
-    "description": "Drives the guided onboarding `/the-loop:init` runs (see the the-loop skill's reference/onboarding.md). Groups club related top-level keys that interact and are established with the user together, in this order. Per-key explanations, defaults, enum possibilities and examples come from the property schemas below — this block only adds grouping and ask policy, so the schema stays the single source of truth. `version` belongs to no group: init stamps it. A group may carry no key (`people`): it exists to establish a sibling file. Validators ignore x-* keywords.",
+    "description": "Drives the guided onboarding `/the-loop:init` runs (see the the-loop skill's reference/onboarding.md). Groups club related top-level keys that interact and are established with the user together, in this order. Per-key explanations, defaults, enum possibilities and examples come from the property schemas below — this block only adds grouping and ask policy, so the schema stays the single source of truth. `version` belongs to no group: init stamps it. A group may carry no key (`people`): it exists to establish a sibling file. Repository layout and tooling are not groups any more: the skill infers them from the repository every session (issue-352). Validators ignore x-* keywords.",
     "askLevels": {
       "always": "No sensible default exists — init MUST establish this group with the user (or report it under needs-user when running non-interactively).",
       "confirm": "Init proposes sensible values (detected from the repo, else the schema default) and asks the user to confirm or adjust the whole group in one pass.",
       "advanced": "Sensible defaults are applied silently; the group is only walked through when the user asks for the full tour."
     },
     "groups": [
-      {
-        "id": "project",
-        "title": "Repository layout",
-        "ask": "confirm",
-        "explain": "How the repository is laid out — monorepo or not, which tool, whether scripts run from the root. Detected where possible. The ticketing system is NOT configured here: a work item's ticket is named by its ref (issue-352).",
-        "keys": ["repository"]
-      },
-      {
-        "id": "tooling",
-        "title": "Languages & tooling",
-        "ask": "confirm",
-        "explain": "The exact package manager / test runner / linter / type-checker per language. Detected from lock files, manifests and CI config; CI must use exactly the same tooling as local.",
-        "keys": ["tooling"]
-      },
       {
         "id": "instructions",
         "title": "Custom instructions",
@@ -39,22 +25,15 @@
         "id": "workflow",
         "title": "Workflow & phases",
         "ask": "confirm",
-        "explain": "The spec workflow (Kiro-style requirements → design → tasks, plus the testing plan between design and tasks) and where the-loop's checked-in knowledge lives in this repository (specs, capability docs, learnings). Phase labels are fixed (`loop:<phase>`); if specDir moves, the CLI's routing.graph.specDir moves with it.",
+        "explain": "Where the-loop's checked-in knowledge lives in this repository (specs, capability docs, learnings). Phase labels are fixed (`loop:<phase>`); if specDir moves, the CLI's routing.graph.specDir moves with it.",
         "keys": ["workflow"]
       },
       {
-        "id": "quality",
-        "title": "Quality gates",
+        "id": "testing",
+        "title": "Testing conventions",
         "ask": "confirm",
-        "explain": "What runs before a commit/push (lint, typecheck, tests), the commit convention and the Gherkin scenario docstrings on integration tests. The TDD discipline (standard: tests alongside the implementation, a bug fix red first) and the minimalism guard are the loop's fixed rules since issue-352, not keys.",
-        "keys": ["hooks", "testing"]
-      },
-      {
-        "id": "reviews",
-        "title": "Reviews",
-        "ask": "confirm",
-        "explain": "How many self/critic review rounds run before escalating to a human, and the stop conditions. Which critics exist is the operator's CLI config (critics[]). The risk tiers (1-Trivial … 5-Critical, tiers 1–2 autonomous, 3–4 human-approves-pr, 5 human-approves-spec-and-pr) and the security gates (threat model, security design, security review, human sign-off at tier 4+) are the loop's fixed rules since issue-352, not keys.",
-        "keys": ["reviews"]
+        "explain": "Gherkin scenario docstrings on integration tests, requirement links, and the integration-test globs the agent hands to `the-loop scenarios --glob`. What runs before a commit or push is the repository's own hook manager (or lint, typecheck and unit tests when it has none) and is inferred, not configured (issue-352).",
+        "keys": ["testing"]
       },
       {
         "id": "people",
@@ -69,41 +48,14 @@
         "ask": "advanced",
         "explain": "Contract-first API specs (OpenAPI/GraphQL) and how UI/UX design artifacts are captured in the design phase. Only relevant to projects exposing an API or a user-facing surface.",
         "keys": ["apiSpecs", "design"]
-      },
-      {
-        "id": "runtime",
-        "title": "Observability",
-        "ask": "advanced",
-        "explain": "Logging levels (dev == runtime, only breakpoints differ) and browser logging. The harness discovers its own tools (MCP servers, plugins, skills, CLIs) — no registry is declared (issue-352). Hooks on the process graph and critic harnesses are the operator's CLI config (routing.graph.hooks, critics), not this file's.",
-        "keys": ["observability"]
       }
     ]
   },
   "properties": {
     "version": {
       "type": "string",
-      "description": "Schema version of this config file. Used by /upgrade-the-loop to reconcile. 0.3.0 (issue-352) removed ticketing, workflow.phases/phaseLabelPrefix/specApproach/requireHumanReviewPerPhase, localOrchestration, notifications, reviews.critics and graph — see the upgrade command for where each went. It also removed autonomy, security, tdd, minimalism, tokenEconomy, selfImprovement, contextManagement, userInteraction and externalTools: those configured what is now simply the loop's rule (risk tiers, security gates, TDD, minimalism, token economy, learnings, context management, the writing contract) and the harness discovers its own tools.",
+      "description": "Schema version of this config file. Used by /upgrade-the-loop to reconcile. 0.3.0 (issue-352) removed ticketing, workflow.phases/phaseLabelPrefix/specApproach/requireHumanReviewPerPhase, localOrchestration, notifications, reviews.critics and graph — see the upgrade command for where each went. It also removed autonomy, security, tdd, minimalism, tokenEconomy, selfImprovement, contextManagement, userInteraction and externalTools: those configured what is now simply the loop's rule (risk tiers, security gates, TDD, minimalism, token economy, learnings, context management, the writing contract) and the harness discovers its own tools. A third pass removed repository, tooling, hooks and observability (the skill infers layout, tooling and git hooks from the repository; logging is the project's own) and moved reviews to the CLI config's top-level `reviews`.",
       "examples": ["0.3.0"]
-    },
-    "repository": {
-      "type": "object",
-      "description": "Repository layout and tooling.",
-      "additionalProperties": false,
-      "required": ["monorepo"],
-      "properties": {
-        "monorepo": { "type": "boolean", "default": true },
-        "monorepoTool": {
-          "type": "string",
-          "enum": ["nx", "yarn", "pnpm", "bun", "none"],
-          "default": "nx",
-          "description": "Only meaningful when monorepo is true. Default is Nx; the-loop must also work when monorepo is false."
-        },
-        "runScriptsFromRoot": {
-          "type": "boolean",
-          "default": true,
-          "description": "All scripts are invoked from the project root."
-        }
-      }
     },
     "workflow": {
       "type": "object",
@@ -124,83 +76,6 @@
           "type": "string",
           "default": "docs/learnings",
           "description": "The learnings tree the self-improvement lifecycle maintains: the injected index <learningsDir>/learnings.md, one <learningsDir>/learning-<nnn>.md per durable learning, and the consolidated overflow in <learningsDir>/topics/<category>.md. Tuned by `selfImprovement`; the git-ignored write-gate queue stays under .the-loop/learnings-pending/ and is not affected by this key. Repo-relative, like specDir and capabilitiesDir. NOTE that the default places learnings inside the documentation tree: a project that PUBLISHES docs/ and would rather not publish its learnings should point this key somewhere it does not build from."
-        }
-      }
-    },
-    "tooling": {
-      "type": "object",
-      "description": "Per-language tooling. RULE: CI/CD must use exactly the same tooling as local.",
-      "additionalProperties": false,
-      "properties": {
-        "languages": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "enum": ["python", "js", "ts", "go"]
-          },
-          "uniqueItems": true
-        },
-        "packageManager": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "python": { "type": "string", "default": "uv" },
-            "js": { "type": "string", "default": "bun" },
-            "ts": { "type": "string", "default": "bun" },
-            "go": { "type": "string", "default": "go" }
-          }
-        },
-        "unitTest": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "python": { "type": "string", "default": "pytest" },
-            "js": { "type": "string", "default": "vitest" },
-            "ts": { "type": "string", "default": "vitest" },
-            "go": { "type": "string", "default": "go test" }
-          }
-        },
-        "integrationTest": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "python": { "type": "string", "default": "pytest" },
-            "js": { "type": "string", "default": "playwright" },
-            "ts": { "type": "string", "default": "playwright" },
-            "go": { "type": "string", "default": "go test" }
-          }
-        },
-        "lint": {
-          "type": "object",
-          "description": "RULE: all files including markdown should be linted.",
-          "additionalProperties": false,
-          "properties": {
-            "python": { "type": "string", "default": "ruff" },
-            "js": { "type": "string", "default": "oxlint" },
-            "ts": { "type": "string", "default": "oxlint" },
-            "go": { "type": "string", "default": "golangci-lint" },
-            "markdown": { "type": "string", "default": "markdownlint" }
-          }
-        },
-        "typeCheck": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "python": { "type": "string", "default": "pyright" },
-            "ts": { "type": "string", "default": "tsc" },
-            "go": { "type": "string", "default": "go build" }
-          }
-        },
-        "release": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "js": { "type": "string", "default": "npm" },
-            "ts": { "type": "string", "default": "npm" },
-            "python": { "type": "string", "default": "pypi" },
-            "go": { "type": "string", "default": "go-modules" },
-            "containers": { "type": "string", "default": "ghcr" }
-          }
         }
       }
     },
@@ -362,87 +237,6 @@
               "description": "Capture rendered screenshots of the locked design artifacts as design-phase evidence, embedded in the reviewer briefing."
             }
           }
-        }
-      }
-    },
-    "hooks": {
-      "type": "object",
-      "description": "Pre-commit / pre-push gating. RULE: same tooling as CI.",
-      "additionalProperties": false,
-      "properties": {
-        "preCommit": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "enum": ["lint", "typecheck", "unit-test"]
-          },
-          "default": ["lint", "typecheck", "unit-test"]
-        },
-        "prePush": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "enum": ["lint", "typecheck", "unit-test", "integration-test"]
-          },
-          "default": ["lint", "typecheck", "unit-test"]
-        },
-        "commitConvention": {
-          "type": "string",
-          "enum": ["conventional-commits", "none"],
-          "default": "conventional-commits",
-          "description": "Commit-message convention enforced via a commit-msg hook. RULE: all commits are Conventional Commits (https://www.conventionalcommits.org/en/v1.0.0/)."
-        }
-      }
-    },
-    "observability": {
-      "type": "object",
-      "description": "Logging must be identical at dev-time and run-time; only breakpoints differ. The CLI daemon's structured event log (`eventLog`) is a CLI-config concern, not a plugin one — see .the-loop/cli-config.schema.json (decision-032).",
-      "additionalProperties": false,
-      "properties": {
-        "devLevel": {
-          "type": "string",
-          "enum": ["debug", "info", "warn", "error"],
-          "default": "debug"
-        },
-        "runtimeLevel": {
-          "type": "string",
-          "enum": ["debug", "info", "warn", "error"],
-          "default": "info"
-        },
-        "browserLogging": {
-          "type": "string",
-          "description": "How browser logs are surfaced to the harness, e.g. chrome-devtools-mcp.",
-          "default": "chrome-devtools-mcp"
-        }
-      }
-    },
-    "reviews": {
-      "type": "object",
-      "description": "Self-review and critic-review loop before escalating to a human. The counts are caps; see reference/reviewing.md for the procedure they drive. WHICH critics exist is the operator's: `critics[]` in cli-config.yaml (issue-352), listed by `the-loop critic list`.",
-      "additionalProperties": false,
-      "required": ["selfReviewCount", "criticReviewCount"],
-      "properties": {
-        "selfReviewCount": {
-          "type": "integer",
-          "minimum": 0,
-          "default": 3,
-          "description": "Max self-review rounds (a cap; the loop stops early when a round yields zero new actionable findings)."
-        },
-        "criticReviewCount": {
-          "type": "integer",
-          "minimum": 0,
-          "default": 3,
-          "description": "Max critic-review rounds (a cap; also stops early on zero new findings)."
-        },
-        "stopOnNoNewFindings": {
-          "type": "boolean",
-          "default": true,
-          "description": "Stop the review loop as soon as a round surfaces no new actionable finding."
-        },
-        "escalateOnRepeatFinding": {
-          "type": "boolean",
-          "default": true,
-          "description": "Diminishing-returns guard: if two consecutive rounds surface the SAME finding, escalate to a human instead of looping."
         }
       }
     }

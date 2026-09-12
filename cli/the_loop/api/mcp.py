@@ -236,6 +236,10 @@ def build_server(cli_config: Optional[dict] = None) -> MCPServer:
         """The critic harnesses the CLI config declares (critics[])."""
         return core_repo.critics(repo)
 
+    def repo_review_policy(repo: str = "") -> Dict[str, Any]:
+        """The review-round policy (the CLI config's reviews block), defaulted."""
+        return core_repo.review_policy(repo)
+
     def repo_critic_run(
         repo: str,
         name: str,
@@ -281,6 +285,7 @@ def build_server(cli_config: Optional[dict] = None) -> MCPServer:
         repo_scenarios,
         repo_instructions,
         repo_critics,
+        repo_review_policy,
         repo_critic_run,
     ):
         server.add_tool(fn, name=fn.__name__)

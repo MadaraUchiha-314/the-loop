@@ -60,6 +60,7 @@ answered here rather than dismissed:
 | D9 | **`scenarios` and `instructions` take what the agent read as flags**: `--glob`, and `--doc` (a path, or a JSON object with `notes`) plus `--on-missing`. The harness config keeps `testing.integrationTestGlobs` and `customInstructions` for the agent. | Both commands exist to make an obligation the agent has observable; the agent is the one who read the obligation, so it hands the list over. The commands work in a bare checkout exactly as before. |
 | D10 | **Dead keys go**: `workflow.specApproach`, `workflow.requireHumanReviewPerPhase`, `localOrchestration`. Harness config `0.2.0` → `0.3.0`; CLI config `0.8.0` → `0.9.0`; `/the-loop:upgrade-the-loop` carries the migration. | Found by the audit, confirmed by the owner's inline review (*"delete"*, *"remove this. not needed."*). |
 | D12 | **Policy is the skill's, not a key.** `autonomy`, `security`, `tdd`, `minimalism`, `tokenEconomy`, `selfImprovement`, `contextManagement`, `userInteraction` and `externalTools` leave the harness config; the behaviour each configured is stated as the loop's fixed rule in the reference file that owns it (risk tiers 1–2 autonomous, 3–4 human-approves-pr, 5 human-approves-spec-and-pr, with fixed sensitive paths; the security gates always on with a named sign-off at tier 4+; TDD standard; minimalism on; the token economy advisory; learnings with a 200-line index and a third-occurrence write gate; clear at a phase boundary, compact after a task; mermaid, the PR briefing and the `the-loop:writing` contract), and the harness discovers its own tools. | The owner's second review of the shrunken file: *"remove all the bs in harness config pls"*, one *"we should remove it"* per block, and for `externalTools`: *"the harness can auto discover it."* A knob nobody turns is a promise the loop cannot keep; a rule stated once in the skill is the same behaviour with nothing to drift. |
+| D13 | **What the agent can infer, it infers; what the operator runs, the operator sets.** `repository`, `tooling`, `hooks` and `observability` leave the harness config: the skill reads the repository's layout, tooling and git hooks off the repository itself at the start of every work item (the detection table that used to feed `/init`), and a project's log levels are its own logging configuration. `reviews` moves to the CLI config (top-level, four defaulted keys) and `the-loop critic policy` prints it. Six keys remain: `version`, `workflow`, `customInstructions`, `testing`, `apiSpecs`, `design`. | The owner's third review: *"this can be inferred from repo. we can add it to the-loop's skill to infer this. remove from config"*, *"can be inferred from repo assets like package.json or pyproject.toml"*, *"remove this."*, and for `reviews`: *"this should be in cli-config not harness config."* A declared fact that a manifest also states can only disagree with the manifest; the operator who runs the review rounds is the one who knows how many their machine can afford. |
 | D11 | **The skill tells the harness.** `SKILL.md` § Configuration states that the file is the agent's, that the CLI never reads it, and — key by key — what the agent passes to which command. | The owner's ask, verbatim. A rule the agent does not know is a flag it will not pass. |
 
 ## Consequences
@@ -70,11 +71,12 @@ answered here rather than dismissed:
   is refused until `the-loop migrate-config` runs. A critic or a hook declared in a
   repository is **inert** until the operator copies it into their CLI config — that is
   the point, and the migration says so.
-- **Eleven keys remain** — `version`, `repository`, `workflow`, `tooling`,
-  `customInstructions`, `testing`, `apiSpecs`, `design`, `hooks`, `observability`,
-  `reviews`: facts about the repository the agent cannot infer and the round counts.
-  Everything that was a policy switch is now a sentence in a reference file; changing it
-  is a change to the-loop, reviewed as one.
+- **Six keys remain** — `version`, `workflow`, `customInstructions`, `testing`,
+  `apiSpecs`, `design`: the facts about the repository the agent cannot read off the
+  repository itself. Everything that was a policy switch is now a sentence in a
+  reference file; changing it is a change to the-loop, reviewed as one. Layout, tooling
+  and git hooks are inferred every session, so a config cannot go stale on them; the
+  review-round policy is the operator's, beside the critics that run it.
 - **One directory per instance.** Two repositories with different spec layouts can no
   longer be driven by one daemon. An operator with that need runs two instances
   (issue-322 made that cheap) or aligns the layouts.

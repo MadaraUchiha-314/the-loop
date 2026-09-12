@@ -81,9 +81,11 @@ read one.
    is ignored and the conflict is logged (`docs/decisions/conflicts.md`) —
    fail-closed, exactly like any other conflicting input.
 2. **The structured config wins where both speak.** `.the-loop/harness-config.yaml` is
-   the contract for everything it models (tooling, counts, gates, paths). An
-   instruction doc saying "use yarn" does not override
-   `tooling.packageManager` — instead surface the mismatch to the user and log it.
+   the contract for everything it models (paths, testing conventions, API-spec
+   locations), and the same holds for what the loop infers from the repository itself
+   (the detected tooling) and for the operator's CLI config (the review-round policy).
+   An instruction doc saying "use yarn" does not override the detected package
+   manager — instead surface the mismatch to the user and log it.
 3. **Custom instructions win over the-loop's own defaults everywhere else.**
    Style, conventions, idioms, domain guidance — anything the config does not
    model is exactly what these docs exist to decide.

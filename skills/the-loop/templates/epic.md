@@ -6,8 +6,8 @@ status: draft                # draft | ready | in-progress | in-review | done
 collaborators: []            # roles/handles required up-front, e.g. [product-manager, architect]
 # --- per-task overrides of .the-loop/harness-config.yaml (optional) ---
 overrides: {}
-  # reviews:
-  #   selfReviewCount: 1
+  # testing:
+  #   gherkinDocstrings: recommended
 ---
 
 # Epic: <title>

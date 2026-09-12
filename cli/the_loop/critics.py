@@ -1,9 +1,10 @@
 """Critic-review invocation — one configured critic, one process, one envelope.
 
 the-loop's review loop runs self-reviews, then **critic** reviews by a *different*
-harness/model, then the human (``reviews.selfReviewCount`` /
-``reviews.criticReviewCount``). The policy for that lives in the skill's
-``reference/reviewing.md``; what was missing (issue-108) was the mechanism: how a
+harness/model, then the human. How many rounds is the operator's ``reviews`` block
+in the CLI config (:func:`load_review_policy`, ``the-loop critic policy``; moved out
+of the harness config in issue-352); the procedure lives in the skill's
+``reference/reviewing.md``. What was missing (issue-108) was the mechanism: how a
 running harness turns ``critics[]`` into an actual process, and how it gets
 that process's output back.
 
@@ -41,7 +42,7 @@ import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Mapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from .harness import Usage, build_adapters
 from .harness.base import parse_json_object, usage_from_output
@@ -194,6 +195,56 @@ def load_critics(config_path: Optional[Path] = None) -> List[Critic]:
             )
         seen[critic.name] = index
     return critics
+
+
+#: The review-round policy's defaults — what an absent ``reviews`` block means, and
+#: what a harness with no CLI installed follows (the skill states the same numbers).
+REVIEW_POLICY_DEFAULTS: Dict[str, Any] = {
+    "selfReviewCount": 3,
+    "criticReviewCount": 3,
+    "stopOnNoNewFindings": True,
+    "escalateOnRepeatFinding": True,
+}
+
+
+def load_review_policy(config_path: Optional[Path] = None) -> Dict[str, Any]:
+    """The operator's ``reviews`` block, with every key defaulted.
+
+    Moved here from the repository's harness config in issue-352 (decision-123):
+    the operator who runs the rounds sets how many. Read the way :func:`load_critics`
+    reads — strictly, from the resolved CLI config — and, like it, an absent file is
+    simply the defaults. Unknown keys are ignored (the schema refuses them at
+    validation time); a key of the wrong type raises, because a cap that is not an
+    integer is a policy nobody can follow.
+    """
+    from .cli_config import _load_cli_config_raw, default_cli_config_path
+
+    path = Path(config_path) if config_path is not None else default_cli_config_path()
+    policy: Dict[str, Any] = dict(REVIEW_POLICY_DEFAULTS)
+    if not path.is_file():
+        return policy
+    try:
+        data = _load_cli_config_raw(path, strict=True)
+    except Exception as exc:  # noqa: BLE001 — any parse failure is the same to us
+        raise CriticConfigError(f"could not parse {path}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise CriticConfigError(f"{path} does not contain a YAML mapping")
+    block = data.get("reviews") or {}
+    if not isinstance(block, dict):
+        raise CriticConfigError(f"{path}: reviews must be a mapping")
+    for key, default in REVIEW_POLICY_DEFAULTS.items():
+        if key not in block:
+            continue
+        value = block[key]
+        if isinstance(default, bool):
+            if not isinstance(value, bool):
+                raise CriticConfigError(f"{path}: reviews.{key} must be true or false")
+        elif not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise CriticConfigError(
+                f"{path}: reviews.{key} must be a non-negative integer"
+            )
+        policy[key] = value
+    return policy
 
 
 def find_critic(name: str, config_path: Optional[Path] = None) -> Critic:

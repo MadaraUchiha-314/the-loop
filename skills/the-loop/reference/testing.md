@@ -101,7 +101,7 @@ writes is markdown, it renders on the repository host and the docs site, and a r
 opening it gets headings and fenced blocks rather than a wall of console output. Give each
 file a title, a line saying which work item and which activity it belongs to, a section per
 command, and the raw output inside a fenced block so it is never reflowed. It is linted
-like every other markdown file (`tooling.lint.markdown`). Binary captures — screenshots,
+like every other markdown file (the detected markdown linter). Binary captures — screenshots,
 GIFs, recordings — stay in their own formats and are *referenced* from the markdown.
 
 - **Test output** — the summary that shows counts and the red→green transitions.

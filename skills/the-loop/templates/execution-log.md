@@ -85,7 +85,7 @@ status: in-progress          # in-progress | complete
 > left it. Rounds follow `reference/reviewing.md` unchanged: attribution prefix, own-comment
 > marker, reply-first-then-fix, stop on zero new findings, escalate on a repeated finding.
 > A round that could not run is recorded as **`unavailable`** with the cause and does NOT
-> count toward `reviews.criticReviewCount`.
+> count toward the operator's `reviews.criticReviewCount` (`the-loop critic policy`).
 
 | Round | Critic (`<harness>/<model>`) | Outcome | Findings → disposition | Link |
 |-------|-----------------------------|---------|------------------------|------|
@@ -94,7 +94,8 @@ status: in-progress          # in-progress | complete
 ## Review cycles
 
 > Outcome is one of: new findings · zero (converged) · escalated · **unavailable** (the
-> configured critic could not run — it does NOT count toward `reviews.criticReviewCount`).
+> configured critic could not run — it does NOT count toward the operator's
+> `reviews.criticReviewCount`, read with `the-loop critic policy`).
 
 | Cycle | Type (self/critic/security) | Reviewer | Outcome | Link |
 |-------|-----------------------------|----------|---------|------|

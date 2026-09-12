@@ -861,7 +861,7 @@
     },
     "critics": {
       "type": "array",
-      "description": "Alternate harness/model combos used as critics, e.g. cursor+gpt-5.5 reviewing claude-opus output. Each entry is RUNNABLE: `the-loop critic run <name>` spawns it and returns its output as one JSON envelope (issue-108, decision-043). Declared HERE, in the operator's config, since issue-352 (decision-123): a critic is a harness and a model installed on the machine that runs the round, and executable configuration belongs in a file no pull request to a repository can edit. How MANY rounds run is the repository's (`reviews.criticReviewCount` in its harness config); which critics exist is yours. An entry is executable configuration — review one like code, and never put a secret in `env`.",
+      "description": "Alternate harness/model combos used as critics, e.g. cursor+gpt-5.5 reviewing claude-opus output. Each entry is RUNNABLE: `the-loop critic run <name>` spawns it and returns its output as one JSON envelope (issue-108, decision-043). Declared HERE, in the operator's config, since issue-352 (decision-123): a critic is a harness and a model installed on the machine that runs the round, and executable configuration belongs in a file no pull request to a repository can edit. How MANY rounds run is the `reviews` block beside this one (moved here from the harness config in the same change); which critics exist is yours too. An entry is executable configuration — review one like code, and never put a secret in `env`.",
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -928,6 +928,35 @@
         }
       },
       "default": []
+    },
+    "reviews": {
+      "type": "object",
+      "description": "The review-round policy: self-review and critic-review rounds before escalating to a human. The counts are caps; the skill's reference/reviewing.md is the procedure they drive. Moved here from the repository's harness config in issue-352 (decision-123): the operator who runs the rounds sets how many. Read by `the-loop critic policy`; every key has a default, so an absent block means the defaults.",
+      "additionalProperties": false,
+      "properties": {
+        "selfReviewCount": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 3,
+          "description": "Max self-review rounds (a cap; the loop stops early when a round yields zero new actionable findings)."
+        },
+        "criticReviewCount": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 3,
+          "description": "Max critic-review rounds (a cap; also stops early on zero new findings)."
+        },
+        "stopOnNoNewFindings": {
+          "type": "boolean",
+          "default": true,
+          "description": "Stop the review loop as soon as a round surfaces no new actionable finding."
+        },
+        "escalateOnRepeatFinding": {
+          "type": "boolean",
+          "default": true,
+          "description": "Diminishing-returns guard: if two consecutive rounds surface the SAME finding, escalate to a human instead of looping."
+        }
+      }
     },
     "channels": {
       "type": "object",
@@ -1091,7 +1120,7 @@
     },
     "eventLog": {
       "type": "object",
-      "description": "Structured JSONL event log of every routing/dispatch/session decision made by the-loop's CLI processes (gh-webhook, poll, sessions). Queried with `the-loop events`; schema in skills/the-loop/reference/observability.md (decision-025). Top-level here (not nested under an `observability` key) — the CLI config has no dev/runtime log-level concept, that stays with the HARNESS config's `observability.devLevel`/`runtimeLevel`/`browserLogging`.",
+      "description": "Structured JSONL event log of every routing/dispatch/session decision made by the-loop's CLI processes (gh-webhook, poll, sessions). Queried with `the-loop events`; schema in skills/the-loop/reference/observability.md (decision-025). Top-level here (not nested under an `observability` key) — the CLI config has no dev/runtime log-level concept; a project's log levels are its own logging configuration (issue-352 removed the harness config's `observability` block).",
       "additionalProperties": false,
       "properties": {
         "enabled": {

@@ -83,6 +83,22 @@ def test_critics_never_come_from_the_repositorys_harness_config(tmp_path, monkey
     assert core_repo.critics(str(tmp_path)) == []
 
 
+def test_review_policy_is_the_cli_configs_defaulted_block(tmp_path, monkeypatch):
+    """issue-352: the round caps are the operator's; a committed `reviews` block in a
+    repository's harness config is never read."""
+    (tmp_path / ".the-loop").mkdir()
+    (tmp_path / ".the-loop" / "harness-config.yaml").write_text(
+        "reviews:\n  selfReviewCount: 9\n"
+    )
+    _cli_config(tmp_path, monkeypatch, "reviews:\n  selfReviewCount: 1\n")
+    assert core_repo.review_policy(str(tmp_path)) == {
+        "selfReviewCount": 1,
+        "criticReviewCount": 3,
+        "stopOnNoNewFindings": True,
+        "escalateOnRepeatFinding": True,
+    }
+
+
 def test_critic_run_unknown_name_is_config_error(tmp_path, monkeypatch):
     _cli_config(tmp_path, monkeypatch)
     with pytest.raises(CriticConfigError):

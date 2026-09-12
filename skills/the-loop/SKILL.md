@@ -227,9 +227,11 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   each completed task and mid-task (never clear mid-task), and isolate high-volume
   exploration in subagents. The checked-in artifacts are the memory that makes resets
   affordable. The boundaries are fixed rules; see `reference/context.md`.
-- **Review before escalating.** Run `reviews.selfReviewCount` self-reviews then
-  `reviews.criticReviewCount` critic reviews (a different harness/model), default 3
-  each, BEFORE reaching out to a human. All reviews are comments. **Follow the defined
+- **Review before escalating.** Run the operator's `reviews.selfReviewCount`
+  self-reviews then `reviews.criticReviewCount` critic reviews (a different
+  harness/model) BEFORE reaching out to a human — the review-round policy is the
+  operator's CLI config, read with `the-loop critic policy` (default 3 each, also when
+  the CLI is not installed). All reviews are comments. **Follow the defined
   procedure** in `reference/reviewing.md` (attribution prefix, reply-first-then-fix,
   stop on zero new findings, escalate on a repeated finding).
 - **Security is gated, not bolted on** (always on). Every phase gate also asks
@@ -337,14 +339,17 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
   so a registration that silently fails to resolve is a signal rather than guidance you
   never received (the CLI reads no harness config — you hand it the list). See
   `reference/instructions.md`.
-- **Use the configured tooling.** Package managers, test runners, linters, type checkers
-  and release tooling come from `.the-loop/harness-config.yaml`; run scripts from the project
-  root; lint ALL files including markdown. See `reference/tooling.md`.
+- **Use the detected tooling.** Package managers, test runners, linters, type checkers
+  and release tooling are inferred from the repository itself at the start of every work
+  item (manifests, lock files, tool config, CI) — never declared in a config; run scripts
+  from the project root; lint ALL files including markdown. See `reference/tooling.md`.
 - **Same tooling everywhere.** Pre-commit/pre-push hooks and CI run the SAME commands —
-  no last-minute build surprises.
+  no last-minute build surprises. The git hooks are the repository's own (whatever its
+  hook manager runs); where it has none, the loop's baseline before a commit or push is
+  lint, typecheck and unit tests.
 - **Conventional Commits.** All commits follow Conventional Commits v1.0.0
   (`<type>[scope][!]: <desc>`), enforced by a commit-msg hook running **commitizen**
-  (`cz check`, not custom code) — `hooks.commitConvention`. See `reference/tooling.md`.
+  (`cz check`, not custom code). See `reference/tooling.md`.
 - **Identical observability.** Logging is the same at dev-time and runtime; the only dev
   advantage is breakpoints. See `reference/observability.md`.
 
@@ -352,9 +357,9 @@ self/critic-review counts, evidence, resumability and DAG orchestration.
 
 Behaviour is driven by `.the-loop/harness-config.yaml` — **the agent's file**, validated
 against `harness-config.schema.json`. Read it at the start of every work item and follow
-it: `repository`, `workflow` (`specDir`, `capabilitiesDir`, `learningsDir`), `tooling`,
-`customInstructions`, `testing`, `apiSpecs`, `design`, `hooks`, `observability` and
-`reviews` (the round counts). A subset of these keys can be overridden per work item via
+it: `version`, `workflow` (`specDir`, `capabilitiesDir`, `learningsDir`),
+`customInstructions`, `testing`, `apiSpecs` and `design` — six keys, nothing else. A
+subset of these keys can be overridden per work item via
 the YAML front-matter `overrides` of the work-item / spec markdown. People (collaborators
 and the roles they hold) live in `.the-loop/collaborators.yaml`. Managed files are listed
 in `.the-loop/manifest.yaml`.
@@ -371,6 +376,17 @@ the learnings numbers in `reference/automation.md`, the context-window protocol 
 `reference/collaboration.md` and the `the-loop:writing` skill. Tools are discovered, not
 declared.
 
+Five more blocks left in the third pass because they described the repository or the
+operator, not a decision of the project. `repository`, `tooling` and `hooks`: the layout
+(monorepo and its workspace tool), the per-language tooling and the git hooks are
+**inferred from the repository itself, every session** — manifests, lock files, tool
+config, the hook manager's config, cross-checked against CI — per `reference/tooling.md`;
+nothing is written into a config. `observability`: log levels are the project's own
+logging configuration, and browser logging uses whatever tool the harness discovers
+(`reference/observability.md`). `reviews`: the review-round policy is the **operator's**,
+top-level `reviews` in `cli-config.yaml`, read with `the-loop critic policy`
+(`reference/reviewing.md`).
+
 **The CLI never reads this file** (issue-352, decision-123). The `the-loop` CLI is the
 operator's tool and takes its configuration from the operator's `cli-config.yaml`
 (`--config` / `$THE_LOOP_CLI_CONFIG` / `./.the-loop/cli-config.yaml` /
@@ -382,7 +398,7 @@ to it — the file is yours to read, the flags are yours to pass:
 | `workflow.specDir` | The CLI's own `routing.graph.specDir` (default `docs/specs`). Pass `--spec-dir <dir>` to `the-loop check` / `the-loop graph` when the project keeps its specs elsewhere and the operator's config does not say so — and tell the operator to set the key, since the daemon reads nothing else. |
 | `testing.integrationTestGlobs` | `the-loop scenarios --glob <pattern>` (repeatable). No `--glob` means the built-in defaults. |
 | `customInstructions.docs` / `.onMissing` | `the-loop instructions --doc <path> … --on-missing <warn\|error\|ignore>`. A `--doc` may be a JSON object `{"path": …, "notes": …}` to carry the entry's notes. |
-| *(critics)* | Not in this file. Which critic harnesses exist is the operator's `critics[]` in `cli-config.yaml`; `the-loop critic list` tells you what this machine has, and `reviews.criticReviewCount` here says how many rounds to run with them. |
+| *(critics)* | Not in this file. Which critic harnesses exist is the operator's `critics[]` in `cli-config.yaml`, and how many rounds to run with them is the operator's `reviews` there too: `the-loop critic list` tells you what this machine has, `the-loop critic policy` the round counts and stop conditions (the defaults — 3 self, 3 critic, stop on no new findings, escalate on a repeat — when the operator set none, or when the CLI is not installed). |
 | *(graph hooks)* | Not in this file. The operator's `routing.graph.hooks` in `cli-config.yaml`; `the-loop graph hooks` prints what is declared. |
 
 Two things this file **no longer** says, because they were never the repository's to

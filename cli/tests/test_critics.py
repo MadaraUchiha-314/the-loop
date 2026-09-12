@@ -11,6 +11,8 @@ import pytest
 
 from the_loop import critics
 from the_loop.critics import (
+    REVIEW_POLICY_DEFAULTS,
+    load_review_policy,
     Critic,
     CriticConfigError,
     find_critic,
@@ -96,6 +98,45 @@ def test_critics_load_with_their_defaults(tmp_path: Path):
     assert critic.error == ""
     assert critic.attribution == "[cursor/gpt-5.5]"
     assert critic.binary == "cursor-agent"
+
+
+def test_no_config_means_the_default_review_policy(tmp_path: Path):
+    """issue-352: the counts moved to the operator; an absent block is the defaults."""
+    assert load_review_policy(config_path(tmp_path)) == REVIEW_POLICY_DEFAULTS
+    assert REVIEW_POLICY_DEFAULTS == {
+        "selfReviewCount": 3,
+        "criticReviewCount": 3,
+        "stopOnNoNewFindings": True,
+        "escalateOnRepeatFinding": True,
+    }
+
+
+def test_review_policy_reads_the_operators_block_and_defaults_the_rest(tmp_path: Path):
+    config_path(tmp_path).write_text(
+        'version: "0.9.0"\nreviews:\n  criticReviewCount: 1\n  escalateOnRepeatFinding: false\n'
+    )
+    assert load_review_policy(config_path(tmp_path)) == {
+        "selfReviewCount": 3,
+        "criticReviewCount": 1,
+        "stopOnNoNewFindings": True,
+        "escalateOnRepeatFinding": False,
+    }
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        "reviews: 3\n",
+        "reviews:\n  selfReviewCount: many\n",
+        "reviews:\n  selfReviewCount: -1\n",
+        "reviews:\n  selfReviewCount: true\n",
+        "reviews:\n  stopOnNoNewFindings: yes please\n",
+    ],
+)
+def test_a_malformed_review_policy_is_refused(tmp_path: Path, block: str):
+    config_path(tmp_path).write_text('version: "0.9.0"\n' + block)
+    with pytest.raises(CriticConfigError):
+        load_review_policy(config_path(tmp_path))
 
 
 def test_duplicate_names_are_rejected(tmp_path: Path):
@@ -380,13 +421,19 @@ def run_cli(argv: list[str]) -> int:
     The critics live in the operator's CLI config (issue-352), so the tests point
     the CLI at the one they wrote with ``--config`` — exactly what an operator does.
     """
+    from the_loop import cli_config
     from the_loop.cli import main
 
     if "--root" in argv:
         root = Path(argv[argv.index("--root") + 1])
         if config_path(root).is_file():
             argv = ["--config", str(config_path(root)), *argv]
-    return main(argv)
+    try:
+        return main(argv)
+    finally:
+        # ``--config`` is a process-wide override; a leaked one would make every
+        # later test read this test's file instead of its own env var.
+        cli_config.set_override(None)
 
 
 def test_critic_command_is_registered():
@@ -416,6 +463,32 @@ def test_list_reports_availability(tmp_path: Path, capsys):
     assert by_name["cursor-gpt"]["available"] is False  # not installed in CI
     assert by_name["paused"]["enabled"] is False
     assert "no built-in invocation" in by_name["broken"]["error"]
+
+
+def test_policy_prints_the_defaulted_block(tmp_path: Path, capsys):
+    config_path(tmp_path).write_text(
+        'version: "0.9.0"\nreviews:\n  criticReviewCount: 2\n'
+    )
+    assert (
+        run_cli(["critic", "policy", "--root", str(tmp_path), "--format", "json"]) == 0
+    )
+    assert json.loads(capsys.readouterr().out) == {
+        "selfReviewCount": 3,
+        "criticReviewCount": 2,
+        "stopOnNoNewFindings": True,
+        "escalateOnRepeatFinding": True,
+    }
+
+
+def test_policy_text_is_one_key_per_line(tmp_path: Path, capsys):
+    assert run_cli(["critic", "policy", "--root", str(tmp_path)]) == 0
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert lines == [
+        "selfReviewCount: 3",
+        "criticReviewCount: 3",
+        "stopOnNoNewFindings: true",
+        "escalateOnRepeatFinding: true",
+    ]
 
 
 def test_list_with_no_critics_exits_zero(tmp_path: Path, capsys):

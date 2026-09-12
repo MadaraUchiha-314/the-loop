@@ -337,6 +337,9 @@ class Repo(_Namespace):
     def critics(self, repo: str) -> List[Dict[str, Any]]:
         return core_repo.critics(repo)
 
+    def review_policy(self, repo: str = "") -> Dict[str, Any]:
+        return core_repo.review_policy(repo)
+
     def critic_run(
         self,
         repo: str,

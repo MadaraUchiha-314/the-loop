@@ -27,10 +27,10 @@ human decision the loop records.
 | Phase | Entered | Reviewed/approved by | Notes |
 |-------|---------|----------------------|-------|
 | phase-selection | 2026-09-11 | — | Pass 1: tier 2, audit only. Pass 2 (2026-09-12): tier 4 after the owner's review on PR #353; full chain, named security sign-off = the owner's PR approval |
-| requirements-definition | 2026-09-11 / 2026-09-12 | | [`requirements.md`](requirements.md) — rewritten for the breaking change: five requirements, six abuse cases; R3.5–R3.6 added after the owner's second review (the policy blocks) |
+| requirements-definition | 2026-09-11 / 2026-09-12 | | [`requirements.md`](requirements.md) — rewritten for the breaking change: five requirements, six abuse cases; R3.5–R3.6 added after the owner's second review (the policy blocks), R3.7–R3.8 after the third (inferred facts, the review policy) |
 | design | 2026-09-12 | | [`design.md`](design.md) — thirteen design points; [`decision-123`](../../decisions/decision-123.md) supersedes decision-044 |
 | test-planning | 2026-09-12 | | [`testing-plan.md`](testing-plan.md) — thirteen rows, eleven applicable |
-| tasks-breakdown | 2026-09-12 | | [`tasks.md`](tasks.md) — thirteen tasks |
+| tasks-breakdown | 2026-09-12 | | [`tasks.md`](tasks.md) — fourteen tasks |
 | implementation | 2026-09-12 | | On `claude/github-issue-352-un79kv` |
 | verification | 2026-09-12 | | [`evidence/verification.md`](evidence/verification.md); [`evidence/security-review.md`](evidence/security-review.md) — six abuse cases, six closed |
 | needs-review | 2026-09-12 | | PR #353 updated; awaiting the owner (tier 4: PR approval is the sign-off) |
@@ -40,7 +40,7 @@ human decision the loop records.
 
 | PR | Scope / tasks | Status |
 |----|---------------|--------|
-| [#353](https://github.com/MadaraUchiha-314/the-loop/pull/353) | pass 1 (the audit), pass 2 (tasks 1–12) and pass 3 (task 13, the policy blocks) — the whole work item | open |
+| [#353](https://github.com/MadaraUchiha-314/the-loop/pull/353) | pass 1 (the audit), pass 2 (tasks 1–12), pass 3 (task 13, the policy blocks) and pass 4 (task 14, the inferred facts and the review policy) — the whole work item | open |
 
 ## Progress entries
 
@@ -111,6 +111,25 @@ human decision the loop records.
   docstring, capability doc and config page that named a key says the rule instead;
   `test_writing_parity` names the writing skill as a constant.
 - **Checkpoint/tests:** `make check` green on the PR head — 3491 passed, 1 skipped; ruff,
+  pyright and markdownlint clean (`evidence/verification.md`).
+- **Next:** the owner's review of PR #353.
+- **Blockers:** none.
+
+### 2026-09-12 — the third review: inferred facts and the review policy (pass 4)
+
+- **Phase:** needs-review → requirements-definition → … → needs-review
+- **Decision recorded:** the owner's third review on PR #353 (07:43Z): `repository` and
+  `tooling` — *"can be inferred from repo … remove from config"*; `hooks` — *"can be
+  inferred from repo assets like package.json or pyproject.toml"*; `observability` —
+  *"remove this."*; `reviews` — *"this should be in cli-config not harness config."*
+  Recorded as R3.7–R3.8, D14 and decision-123 D13.
+- **Did (task 14):** four blocks left the harness schema (six keys remain); `reviews`
+  became the CLI schema's top-level block with `load_review_policy`, `critic policy`,
+  the `repoReviewPolicy` route in the authored contract, the SDK and MCP methods;
+  `/init` proposes only what the config still carries; the detection table in
+  `reference/tooling.md` is the agent's per-session procedure; the skill, commands,
+  capability docs and config pages say "inferred" and "the operator's policy".
+- **Checkpoint/tests:** `make check` green on the PR head — 3501 passed, 1 skipped; ruff,
   pyright and markdownlint clean (`evidence/verification.md`).
 - **Next:** the owner's review of PR #353.
 - **Blockers:** none.

@@ -9,8 +9,8 @@ Declared **here**, in the operator's config, since
 [issue #352](https://github.com/MadaraUchiha-314/the-loop/issues/352)
 ([decision-123](/decisions/decision-123)): a critic is a harness and a model installed on
 the machine that runs the round, and executable configuration belongs in a file no pull
-request to a repository can edit. How **many** rounds run is the repository's
-(`reviews.criticReviewCount` in its [harness config](/config/harness-config)); **which**
+request to a repository can edit. How **many** rounds run is the [`reviews`](#review-rounds) block beside this one (moved
+here from the harness config in the same change); **which**
 critics exist is yours.
 
 ```yaml
@@ -117,3 +117,51 @@ Hard bound on one critic round, so a hung critic CLI cannot wedge the review loo
 - **Default:** `true`
 
 Set `false` to keep the entry but refuse to run it.
+
+## Review rounds
+
+The top-level `reviews` block — the **review-round policy** the skill follows before it
+escalates to a human. Moved here from the repository's harness config in
+[issue #352](https://github.com/MadaraUchiha-314/the-loop/issues/352): the operator who
+runs the rounds sets how many. Every key has a default, so the block may be omitted;
+[`the-loop critic policy`](/cli/commands/critic#policy) prints the effective values, and a
+harness with no CLI installed follows the same defaults.
+
+```yaml
+reviews:
+  selfReviewCount: 3
+  criticReviewCount: 3
+  stopOnNoNewFindings: true
+  escalateOnRepeatFinding: true
+```
+
+### `reviews.selfReviewCount`
+
+- **Type:** `integer`, at least `0`
+- **Default:** `3`
+
+Cap on self-review rounds. The loop stops early when a round yields zero new actionable
+findings.
+
+### `reviews.criticReviewCount`
+
+- **Type:** `integer`, at least `0`
+- **Default:** `3`
+
+Cap on critic-review rounds, run with the `critics[]` above. Also stops early on zero new
+findings; a critic that could not run does not count toward it.
+
+### `reviews.stopOnNoNewFindings`
+
+- **Type:** `boolean`
+- **Default:** `true`
+
+Stop the review loop as soon as a round surfaces no new actionable finding.
+
+### `reviews.escalateOnRepeatFinding`
+
+- **Type:** `boolean`
+- **Default:** `true`
+
+Diminishing-returns guard: when two consecutive rounds surface the same finding, escalate
+to a human instead of looping.

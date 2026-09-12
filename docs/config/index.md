@@ -8,7 +8,7 @@ you want is the whole trick:
 | **File** | `.the-loop/harness-config.yaml` | `cli-config.yaml` |
 | **Installed** | **per repository**, by `/the-loop:init` | **per operator**, wherever you keep it |
 | **Read by** | the `/the-loop:*` commands and the operating skill — the agent doing the work. **Never the CLI** ([decision-123](/decisions/decision-123)) | every `the-loop` command and daemon |
-| **Governs** | *how work is done here* — layout, tooling, reviews, testing, instruction docs | *how work is triggered, hosted and gated* — ingress, routing, sessions, the spec directory, critics, graph hooks, integrations, logging |
+| **Governs** | *how work is done here* — where the specs live, testing conventions, API-spec locations, design artifacts, instruction docs | *how work is triggered, hosted and gated* — ingress, routing, sessions, the spec directory, critics and review rounds, graph hooks, integrations, logging |
 | **Schema** | `harness-config.schema.json` | `cli-config.schema.json` |
 | **Where the schema lives** | [with the plugin](#where-the-schemas-live), never copied into your repo | [with the plugin](#where-the-schemas-live), never copied into your repo |
 | **Committed?** | yes — it is a statement about the project | usually not; it describes *your machine* |
@@ -16,17 +16,18 @@ you want is the whole trick:
 The split is deliberate ([decision-032](/decisions/decision-032)). The daemon is expected
 to watch **several** repositories at once, so tying its settings to any one checkout would
 mean the same operator maintaining N copies of their own webhook port. Conversely, "this
-project requires three critic rounds" is a property of the project, not of whoever happens
-to be running the daemon today.
+project keeps its specs under `docs/specs/`" is a property of the project, not of whoever
+happens to be running the daemon today. What is neither — the repository's layout, tooling
+and git hooks — is in no config at all: the agent infers it from the repository itself.
 
 ::: warning A repository configures nothing the CLI does
 Since [issue #352](https://github.com/MadaraUchiha-314/the-loop/issues/352)
 ([decision-123](/decisions/decision-123)) the CLI **never opens** a repository's harness
 config. `routing.authorizedUsers` (who may trigger it) and `repositories` (what it works
 with) were always CLI-config-only; now so are the spec directory
-(`routing.graph.specDir`), the critic roster (`critics[]`) and the graph hooks
-(`routing.graph.hooks`). Set them in your CLI config, or the daemon fails closed and does
-nothing.
+(`routing.graph.specDir`), the critic roster (`critics[]`), the review rounds
+(`reviews`) and the graph hooks (`routing.graph.hooks`). Set them in your CLI config, or
+the daemon fails closed and does nothing.
 :::
 
 ## Which one am I editing?
@@ -34,8 +35,8 @@ nothing.
 ```mermaid
 graph TD
   Q{"What are you changing?"}
-  Q -->|"specs layout, reviews counts,<br/>tooling, testing, instruction docs"| H["<b>harness config</b><br/>.the-loop/harness-config.yaml<br/>in the repo — read by the agent"]
-  Q -->|"webhook port, polling, who may trigger,<br/>spec directory, critics, graph hooks,<br/>event log, GitHub/Slack transport"| C["<b>CLI config</b><br/>cli-config.yaml<br/>on your machine — read by the CLI"]
+  Q -->|"specs layout, testing, API specs,<br/>design artifacts, instruction docs"| H["<b>harness config</b><br/>.the-loop/harness-config.yaml<br/>in the repo — read by the agent"]
+  Q -->|"webhook port, polling, who may trigger,<br/>spec directory, critics, review rounds,<br/>graph hooks, event log, GitHub/Slack transport"| C["<b>CLI config</b><br/>cli-config.yaml<br/>on your machine — read by the CLI"]
   H --> H2["written by <code>/the-loop:init</code>"]
   C --> C2["copied from<br/>skills/the-loop/templates/cli-config.yaml"]
 ```

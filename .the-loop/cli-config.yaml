@@ -320,9 +320,9 @@ routing:
 # decision-123). Each entry is RUNNABLE: `the-loop critic run <name> --prompt-file
 # <path>` spawns it — never through a shell — and prints its output as one JSON
 # envelope the running harness reads. A critic is a harness and a model installed
-# on THIS machine, which is why the roster is yours and not any repository's; how
-# many rounds run (`reviews.criticReviewCount`) stays in the repository's harness
-# config. Executable configuration: review an entry like code, never put a secret
+# on THIS machine, which is why the roster is yours and not any repository's, and
+# so is how many rounds run (`reviews` below, `the-loop critic policy`).
+# Executable configuration: review an entry like code, never put a secret
 # in `env` (name a variable; keep the value in `env.file` or the environment).
 critics: []
 # A harness the-loop has an adapter for needs nothing else — the invocation is derived:
@@ -341,6 +341,15 @@ critics: []
 #   outputFormat: text           # text | json (json extracts the reviewer's text)
 #   timeoutSeconds: 900          # a hung critic must not wedge the review loop
 #   enabled: true
+
+# REVIEW ROUNDS (moved here from the harness config in issue-352, decision-123):
+# the operator who runs the rounds sets how many. Every key has a default, so the
+# block may be omitted; `the-loop critic policy` prints the effective values.
+reviews:
+  selfReviewCount: 3              # cap; the loop stops early on zero new findings
+  criticReviewCount: 3            # cap; rounds with the critics[] above
+  stopOnNoNewFindings: true       # stop when a round finds nothing new actionable
+  escalateOnRepeatFinding: true   # same finding twice in a row -> escalate to a human
 
 # Standing sessions (issue-277): the sessions the-loop keeps for ITSELF —
 # no ticket, no spec chain, no completion, started by `the-loop start` and

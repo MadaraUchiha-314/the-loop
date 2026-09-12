@@ -66,9 +66,11 @@ spec files read from disk, not the drafting conversation (plan-mode style).
    the environment will not come up, escalate rather than passing the gate. See
    `reference/testing.md`. (Runnable on its own as `/the-loop:verify-work <id>`.)
 
-4. **Review** (`needs-review`). Run up to `reviews.selfReviewCount` self-reviews then
-   `reviews.criticReviewCount` critic reviews (configured critics) BEFORE escalating to a
-   human. Then run the **security review gate** (built-in security-review skill when
+4. **Review** (`needs-review`). Read the operator's review-round policy with
+   `the-loop critic policy` (`selfReviewCount`, `criticReviewCount`, the stop
+   conditions; defaults 3/3 when unset or when the CLI is not installed), then run up
+   to that many self-reviews and critic reviews (configured critics) BEFORE escalating
+   to a human. Then run the **security review gate** (built-in security-review skill when
    available, else the-loop's checklist in `reference/security.md`); risk tier 4 or
    above waits for a named human security sign-off. Record every review as a
    PR/ticket comment and

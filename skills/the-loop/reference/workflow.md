@@ -636,8 +636,9 @@ its own front page still described one loop and three.
 
 - After the work is done, run **self-reviews** then **critic reviews** using configured
   critics — a *different* harness/model (e.g. Cursor + GPT‑5.5 reviewing Claude Opus
-  output). `reviews.selfReviewCount` / `reviews.criticReviewCount` (default **3**) are
-  caps run BEFORE reaching out to the human reviewer (`needs-review`).
+  output). The operator's `reviews.selfReviewCount` / `reviews.criticReviewCount`
+  (`the-loop critic policy`, default **3**) are caps run BEFORE reaching out to the human
+  reviewer (`needs-review`).
 - **The procedure is defined in `reviewing.md`** — attribution prefixes, reply-first-
   then-fix, one-finding-per-commit, stop-on-zero-new-findings, and the diminishing-
   returns escalation. Follow it so review depth is reproducible and the loop converges.

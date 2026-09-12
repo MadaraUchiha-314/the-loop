@@ -1013,8 +1013,8 @@ def load_config(config_path: Optional[Union[str, Path]] = None) -> dict:
     Defaults to the CLI config's resolved path (``cli_config.default_cli_config_path()``
     — ``--config``, then ``$THE_LOOP_CLI_CONFIG``, then ``./.the-loop/cli-config.yaml``,
     then ``~/.the-loop/cli-config.yaml``, decision-032). ``eventLog`` is top-level in the
-    CLI config, unlike the PLUGIN config's
-    ``observability.devLevel``/``runtimeLevel``/``browserLogging``.
+    CLI config; a project's log levels are its own logging configuration (issue-352
+    removed the harness config's ``observability`` block).
     """
     path = (
         Path(config_path)

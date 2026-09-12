@@ -857,6 +857,13 @@ def build_router(holder: ConfigHolder, **router_kwargs: Any) -> APIRouter:
     def repo_critics(repo: str = Query(...)) -> List[Dict[str, Any]]:
         return core_repo.critics(repo)
 
+    @router.get(
+        f"{API_PREFIX}/repo/critics/policy",
+        operation_id="repoReviewPolicy",
+    )
+    def repo_review_policy(repo: str = Query(...)) -> Dict[str, Any]:
+        return core_repo.review_policy(repo)
+
     @router.post(
         f"{API_PREFIX}/repo/critics/run",
         operation_id="repoCriticRun",
