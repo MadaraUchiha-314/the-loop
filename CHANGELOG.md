@@ -1,3 +1,24 @@
+## v15.0.0 (2026-09-12)
+
+### BREAKING CHANGE
+
+- `the-loop` ignores `.the-loop/harness-config.yaml`. Critics and
+graph hooks must be declared in the CLI config (`critics[]`,
+`routing.graph.hooks`); `routing.graph.repoHooks` is removed; `scenarios` and
+`instructions` take their inputs as flags. Harness config 0.3.0, CLI config 0.9.0.
+- a harness config carrying any of the nine blocks no longer validates;
+run /the-loop:upgrade-the-loop. No value migrates anywhere.
+- a harness config carrying repository, tooling, hooks, observability
+or reviews no longer validates; run /the-loop:upgrade-the-loop. The review-round
+policy is read from the CLI config's `reviews` (defaults 3/3/true/true when absent).
+- a harness config carrying `workflow` no longer validates; run
+/the-loop:upgrade-the-loop. Specs, capability docs and learnings are read from
+docs/specs, docs/capabilities and docs/learnings only.
+
+### Feat
+
+- **issue-352**: the CLI stops reading harness-config.yaml; the file is the agent's alone (#353)
+
 ## v14.1.0 (2026-09-11)
 
 ### Feat
